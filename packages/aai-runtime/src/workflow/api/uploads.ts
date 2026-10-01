@@ -11,7 +11,7 @@
  * ```
  *
  * The two `GET`s are `workflow/api/uploads-read.ts`, which carries why the halves
- * are separate modules. `_upload-route-failures.ts` is the refusal vocabulary they
+ * are separate modules. `upload-failures.ts` is the refusal vocabulary they
  * share.
  *
  * ## POST mints the id; PUT lets the caller choose it
@@ -59,10 +59,10 @@ import { UPLOAD_CLAIM_BATCH, UPLOAD_TOKEN_RE } from "@alexkroman1/aai/host-inter
 import { requestQuery, WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { decodePathSegment } from "../../_path-decode.ts";
-import { sendUploadFailure } from "../../_upload-route-failures.ts";
 import type { Logger } from "../../runtime-config.ts";
 import type { UploadMeta, UploadStore } from "../uploads.ts";
 import { sendJson } from "./http.ts";
+import { sendUploadFailure } from "./upload-failures.ts";
 
 /** Path the upload routes live under. */
 export const UPLOADS_PATH = `${WORKFLOW_API_PREFIX}/uploads`;
@@ -96,7 +96,7 @@ const CHOSEN_ID_MESSAGE =
  * `500 Internal server error` with the reason in the log and not in the answer. That
  * split the same class of mistake across two statuses — `POST …/not..valid/parts`
  * said 400 and named the grammar, `GET …/not..valid/info` said 500 — which is the
- * thing `_upload-route-failures.ts` argues a client must never have to guess at.
+ * thing `upload-failures.ts` argues a client must never have to guess at.
  *
  * Rejecting before the store is also what keeps the id grammar a boundary rule: an
  * id that would escape the store never reaches one, whichever verb asked.

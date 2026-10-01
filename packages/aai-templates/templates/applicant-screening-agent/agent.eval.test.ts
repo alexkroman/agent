@@ -23,17 +23,18 @@
 
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares, plus its PROMPT. */
 import agentDef from "virtual:aai/agent";
-import { dialogRefusalPattern, dialogResultSchema } from "@alexkroman1/aai/testing";
 import { countWords } from "@alexkroman1/aai/utils";
 import {
+  describeEval,
   describeTurn,
+  dialogRefusalPattern,
+  dialogResultSchema,
   type EvalSession,
   expectCalled,
   lastStateIn,
   toolNames,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { LEADS, MAX_FEEDBACK_ROUNDS, SHORTLIST_SIZE } from "./shared.ts";
@@ -64,7 +65,8 @@ const ProjectedHiring = z.object({
   drafts: z.array(z.unknown()),
 });
 
-const hiringState = (session: EvalSession) => lastStateIn(session.events(), ProjectedHiring);
+const hiringState = (session: EvalSession) =>
+  lastStateIn(session.events(), "hiring", ProjectedHiring);
 
 /** What `screen_candidates` answers with. */
 const Screened = z.object({

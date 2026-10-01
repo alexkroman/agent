@@ -38,9 +38,8 @@ import {
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { closeEgressFetch } from "../_egress-fetch.ts";
 import { openAppDb } from "../app-db.ts";
-import { installChannelOutbox } from "../channel-outbox.ts";
-import { type ClientInbox, installClientInbox } from "../client-inbox.ts";
-import { closePlatformSockets, ensurePlatformSocket } from "../platform-socket-registry.ts";
+import { type ClientInbox, installChannelOutbox, installClientInbox } from "../inbox/index.ts";
+import { closePlatformSockets, ensurePlatformSocket } from "../platform/index.ts";
 import type { CloseableDb } from "../postgres-db.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createStepDelegate } from "../step-delegate.ts";
@@ -141,7 +140,7 @@ export function installWorkflowSupport(options: {
   // Sharing the app pool's connections would have been WRONG before the bytes left
   // the database: a part was a `bytea` row held for a megabyte, and it was
   // measured slowing every non-upload query on the guest to p50 1.34s against
-  // 0.43s (`_upload-blobs.ts`, "The pool"). What is left here is one small
+  // 0.43s (`../uploads/blobs.ts`, "The pool"). What is left here is one small
   // `update` naming a window that landed — a round trip, like every other
   // statement on this pool.
   const databaseUrl = options.env?.DATABASE_URL;
@@ -169,7 +168,7 @@ export function installWorkflowSupport(options: {
   // that runs once per `AgentServer` and already owns the egress pools' lifetime
   // (see `close()` below). Every platform client prefers it and falls back to
   // HTTP until it is open, so this is a latency decision rather than a
-  // durability one — `platform-socket.ts` carries the argument.
+  // durability one — `../platform/socket.ts` carries the argument.
   if (home.kind === "platform") ensurePlatformSocket(home.platform, { logger: options.logger });
   const store = createUploadStore({
     home,

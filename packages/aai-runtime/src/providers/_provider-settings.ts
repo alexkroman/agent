@@ -28,6 +28,8 @@ import {
   CARTESIA_KIND,
   DEEPGRAM_KIND,
   ELEVENLABS_KIND,
+  fallbackMembers,
+  isFallbackDescriptor,
   LOCAL_STT_KIND,
   RIME_KIND,
   resolveAssemblyAISttSettings,
@@ -100,9 +102,8 @@ const LLM_SETTINGS: Record<string, SettingsFor> = {
 /**
  * A setting too big to print, printed as its SIZE.
  *
- * One boot line has to stay readable, and two of these settings are unbounded
- * by nature: a keyterm list runs to 100 entries and an agent context to 1,500
- * characters, either of which buries the endpointing window a reader came for.
+ * One boot line has to stay readable, and a list or free-text setting is
+ * unbounded by nature — either buries the endpointing window a reader came for.
  * A count is derived from the same object the opener dials with, so it cannot
  * drift from the wire the way a second copy of the `??` chains would — what it
  * loses is the contents, which belong in the turn trace rather than in a line
@@ -127,6 +128,14 @@ function describe(
   descriptor: Descriptor | undefined,
 ): ProviderSettings | undefined {
   if (!descriptor) return;
+  // A fallback reports each member as that member's own stage would, in order,
+  // so the line shows what the secondary would run with too.
+  if (isFallbackDescriptor(descriptor)) {
+    return {
+      kind: descriptor.kind,
+      providers: fallbackMembers(descriptor).map((member) => describe(table, member)),
+    };
+  }
   // An unregistered kind (a `registerLlmKind` extension, or a descriptor from
   // a newer SDK than this host) still reports its own options rather than
   // dropping to a bare kind — the point is to show what the stage runs with.

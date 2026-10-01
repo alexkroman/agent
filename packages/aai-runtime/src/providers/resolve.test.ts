@@ -424,7 +424,7 @@ describe("requiredProviderEnvVars", () => {
   });
 
   it("selects the vendor key for an explicit S2S descriptor", () => {
-    expect(requiredProviderEnvVars({ s2s: { kind: "openai-realtime" } })).toEqual([
+    expect(requiredProviderEnvVars({ mode: "s2s", s2s: { kind: "openai-realtime" } })).toEqual([
       "OPENAI_API_KEY",
     ]);
   });
@@ -472,16 +472,16 @@ describe("requiredProviderEnvVars", () => {
     // so a third vendor's descriptor silently demanded ASSEMBLYAI_API_KEY — and
     // this list is what the deploy preflight rejects on, so the deploy failed
     // naming a key the agent does not use while never naming the one it does.
-    expect(requiredProviderEnvVars({ s2s: { kind: "some-new-vendor" } })).toEqual([]);
+    expect(requiredProviderEnvVars({ mode: "s2s", s2s: { kind: "some-new-vendor" } })).toEqual([]);
   });
 
   it("names no key for a workflow app, which dials no provider", () => {
-    // `page: "static"` declines /websocket and defaults telephony off, so
+    // `mode: "workflow-app"` declines /websocket and defaults telephony off, so
     // nothing opens a session — but with no providers declared this fell into
     // the default-pipeline branch and demanded ASSEMBLYAI_API_KEY, which
     // `aai dev` answers by hard-failing `not_logged_in`. Both workflow-app
     // templates ship exactly this shape.
-    expect(requiredProviderEnvVars({ page: "static" })).toEqual([]);
+    expect(requiredProviderEnvVars({ mode: "workflow-app" })).toEqual([]);
   });
 
   it("names no key for a static agent carrying the INJECTED default triple", () => {
@@ -491,7 +491,7 @@ describe("requiredProviderEnvVars", () => {
     // cannot tell that apart from an author who named them.
     expect(
       requiredProviderEnvVars({
-        page: "static",
+        mode: "workflow-app",
         stt: { kind: "assemblyai" },
         llm: { kind: "assemblyai" },
         tts: { kind: "assemblyai" },
@@ -499,10 +499,10 @@ describe("requiredProviderEnvVars", () => {
     ).toEqual([]);
   });
 
-  it('still requires the usual keys for an explicit `page: "voice"`', () => {
+  it('still requires the usual keys for an explicit `mode: "pipeline"`', () => {
     // The default and the explicit value must mean the same thing — a voice
-    // agent that spells its front door out loud is not a special case.
-    expect(requiredProviderEnvVars({ page: "voice" })).toEqual(["ASSEMBLYAI_API_KEY"]);
+    // agent that spells its mode out loud is not a special case.
+    expect(requiredProviderEnvVars({ mode: "pipeline" })).toEqual(["ASSEMBLYAI_API_KEY"]);
   });
 
   it("honours a per-descriptor apiKeyEnv on an S2S descriptor", () => {

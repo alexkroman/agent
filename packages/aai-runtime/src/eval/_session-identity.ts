@@ -6,7 +6,7 @@
  *
  * The runtime learns all three before a session exists — the socket's
  * `?client=` and `?phone=`, a carrier `start` frame's call — and records them
- * under the session id (`ws-handler.ts`, `telephony-server.ts`). Everything
+ * under the session id (`../session/ws-handler.ts`, `telephony-server.ts`). Everything
  * downstream reads them back from there: `sessionClientId(ctx)` and friends in
  * a tool, `sessionContext`'s `clientId` and `call`, `onSessionEnd`, the client
  * binding. So the eval records them at the same point and through the same
@@ -27,7 +27,7 @@
 
 import type { AgentDef, SessionCall } from "@alexkroman1/aai";
 import { normalizeE164, recordSessionIdentity } from "@alexkroman1/aai/host-internal";
-import { answeredGreeting } from "../session-context.ts";
+import { answeredGreeting } from "../session/index.ts";
 
 /** The three identity fields of `EvalSessionOptions`. */
 export type EvalSessionIdentity = {

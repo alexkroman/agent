@@ -4,7 +4,7 @@
  *
  * A tool's `endSession(ctx)` reaches whatever ender the runtime registered for
  * the session id. The socket and `connectSession` paths register one through
- * `session-attach.ts`; the eval session is built with `runtime.createSession`
+ * `../session/attach.ts`; the eval session is built with `runtime.createSession`
  * directly and registered none, so the call answered `false` and nothing
  * happened: a calling agent's `end_call` "hung up" and the session kept
  * answering. A downstream suite drove its lines in a loop that broke on the
@@ -12,7 +12,7 @@
  * called rather than about whether the call ended.
  *
  * So this registers the ender, and does what the paced sink does for a real
- * connection (`paced-client-sink.ts`, `endAfterReply`), minus the audio:
+ * connection (`../session/paced-client-sink.ts`, `endAfterReply`), minus the audio:
  *
  * - **`afterReply` (the default) ends the session at the reply's own
  *   terminator.** A real connection waits for the goodbye to finish PLAYING;
@@ -112,7 +112,7 @@ export type EvalSessionEnd = {
   observe(event: SessionEvent): void;
   /** Settles once the stop a request began has finished; at once when none began. */
   settled(): Promise<void>;
-  /** Unregister the ender (by claim, as `session-attach.ts` releases its own). */
+  /** Unregister the ender (by claim, as `../session/attach.ts` releases its own). */
   release(): void;
 };
 

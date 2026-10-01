@@ -28,9 +28,12 @@ import agentDef from "virtual:aai/agent";
 // What no eval here can see: anything below the audio boundary — where the
 // agent decides you stopped talking, how it handles being interrupted, whether
 // two sentences merged into one turn. Those need real paced audio.
-import { errorsIn, toolNames } from "@alexkroman1/aai-runtime/eval";
-import { evalSimulation } from "@alexkroman1/aai-runtime/eval/simulate";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeEval,
+  errorsIn,
+  evalSimulation,
+  toolNames,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 
 describeEval(agentDef, (test) => {
@@ -95,7 +98,7 @@ describeEval(agentDef, (test) => {
   test(
     "a simulated caller gets a forecast, and a judge grades the call",
     async ({ session, mode }) => {
-      // The caller and the judge come from `/eval/simulate`, built over this
+      // The caller and the judge come from `evalSimulation`, built over this
       // case's own session and mode. In a keyless run all three models are
       // scripted: the agent's replies (`stubReply` below), the caller's lines
       // (ending on `end_call`) and the judge's rulings. That checks the loop

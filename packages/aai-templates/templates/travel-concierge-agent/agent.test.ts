@@ -499,13 +499,13 @@ describe("the call log", () => {
 
 describe("a caller who hangs up", () => {
   /** The frame the runtime offers a declared dialog when a session times out. */
-  const CALLER_GONE = { type: "session.timed-out", meta: { id: "evt_1", at: 0 } } as const;
+  const CALLER_GONE = { type: "session.timedOut", meta: { id: "evt_1", at: 0 } } as const;
 
   /**
    * The same event, delivered to the AGENT'S hooks the way the runtime delivers
    * it: the handler declared for the event's own type.
    *
-   * The cast is the runtime's own (`session-emitter.ts` makes it once, at the
+   * The cast is the runtime's own (`aai-runtime/src/session/emitter.ts` makes it once, at the
    * lookup): `events` is typed per key, so a dispatch driven by an event reads
    * its handler back as the union's `SessionEventHandler`. A `ToolContext`
    * stands in for the hook context — a handler is handed `slots` and

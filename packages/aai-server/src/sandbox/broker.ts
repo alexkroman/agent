@@ -22,7 +22,19 @@ import { isLive } from "./slots.ts";
 const log = createLogger("sandbox.broker");
 
 export type BrokeredSession =
-  | { ok: true; sessionUrl: string; guestOrigin: string }
+  | {
+      ok: true;
+      sessionUrl: string;
+      guestOrigin: string;
+      /**
+       * The deploy version of the guest `sessionUrl` reaches, when known. A
+       * session ticket must be minted for THIS version (its key derives from
+       * that guest's bearer), never for whatever the row or the slot says by
+       * the time the ticket is minted — during a redeploy those can be a
+       * version ahead, and the guest would refuse the session (4401).
+       */
+      version?: number | undefined;
+    }
   | { ok: false; status: 404 | 503; cause?: unknown };
 
 /**
@@ -183,7 +195,7 @@ async function awaitBrokeredUrl(
             message: `sandbox not ready within ${readyTimeoutMs}ms`,
           })
         : await ready;
-    return { ok: true, sessionUrl, guestOrigin };
+    return { ok: true, sessionUrl, guestOrigin, version: sandbox.version };
   } catch (err) {
     // Lost the NAME race: a peer created this deploy's sandbox between our
     // directory lookup and the create (sandbox/directory.ts). Go back to the

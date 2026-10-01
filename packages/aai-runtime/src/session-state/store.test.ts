@@ -37,9 +37,9 @@
  * the connection budget, `updated_at`. Those are
  * `aai-server/session-state.scenario.test.ts`'s job, behind `describeWithPg`.
  *
- * It also says nothing about WHO calls `flush` — `runtime-tools.ts` owns that
+ * It also says nothing about WHO calls `flush` — `../runtime/tools.ts` owns that
  * — nor about where a session hydrates, which is
- * `runtime-session-state.test.ts` next door.
+ * `../runtime/session-state.test.ts` next door.
  */
 
 import { MAX_SESSION_STATE_BYTES } from "@alexkroman1/aai/host-internal";

@@ -4,7 +4,7 @@
  * from `subagent.test.ts`, which covers the run itself.
  */
 
-import { subagent, tool } from "@alexkroman1/aai";
+import { speaker, tool } from "@alexkroman1/aai";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -14,7 +14,7 @@ import {
 } from "./_pipeline-test-fakes.ts";
 import { makeUsageMeter } from "./_test-utils.ts";
 import { createSubagentRunner } from "./subagent.ts";
-import type { ToolCallDefaults } from "./tool-executor.ts";
+import type { ToolCallDefaults } from "./tools/index.ts";
 
 let unregister: (() => void) | undefined;
 afterEach(() => {
@@ -72,7 +72,7 @@ describe("createSubagentRunner — the delegating session's budget", () => {
     const { meter: usage, updates } = makeUsageMeter();
 
     const result = await run(
-      subagent({ name: "researcher", systemPrompt: "Research.", tools: { lookup } }),
+      speaker({ name: "researcher", systemPrompt: "Research.", tools: { lookup } }),
       { task: "Is the tide in?" },
       parentCall({ usage }),
     );
@@ -92,7 +92,7 @@ describe("createSubagentRunner — the delegating session's budget", () => {
 
     await expect(
       run(
-        subagent({ name: "researcher", systemPrompt: "Research." }),
+        speaker({ name: "researcher", systemPrompt: "Research." }),
         { task: "Is the tide in?" },
         parentCall({ usage }),
       ),
@@ -109,7 +109,7 @@ describe("createSubagentRunner — the delegating session's budget", () => {
 
     await expect(
       run(
-        subagent({
+        speaker({
           name: "checker",
           systemPrompt: "Check it.",
           maxRevisions: 3,
@@ -129,7 +129,7 @@ describe("createSubagentRunner — the delegating session's budget", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     const result = await run(
-      subagent({ name: "researcher", systemPrompt: "Research." }),
+      speaker({ name: "researcher", systemPrompt: "Research." }),
       { task: "x" },
       { env: {}, logger: silent },
     );

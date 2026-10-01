@@ -7,7 +7,7 @@
  *
  * This type used to carry one method per thing a transport observes — sixteen of
  * them, and its own comment said as much: "one per event the transport produces".
- * `ServerSession` then declared the same sixteen, `runtime-session-callbacks.ts`
+ * `ServerSession` then declared the same sixteen, `../runtime/session-callbacks.ts`
  * forwarded each to its twin, and four test harnesses stubbed the whole set. So a
  * seventeenth thing worth observing cost a declaration in three places and a stub
  * in four, none of which DECIDED anything: the transport already knew what
@@ -40,6 +40,7 @@ import type {
 } from "@alexkroman1/aai";
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 import type { ModelMessage } from "ai";
+import type { TransportCapabilities } from "./capabilities.ts";
 
 /**
  * What a transport may report: everything in the session event vocabulary except
@@ -47,11 +48,11 @@ import type { ModelMessage } from "ai";
  *
  * DERIVED, never listed. This used to spell out the fourteen reportable names by
  * hand, so every new event was an edit here AND a new epoch of this package's
- * `session` capability — `user-turn.exceeded` and `metrics.collected` each cost
+ * `session` capability — `userTurn.exceeded` and `metrics.collected` each cost
  * one — for a change this package did not make. The exclusions are declared once,
  * beside the vocabulary, as `SESSION_SOURCED_EVENT_TYPES` in `@alexkroman1/aai`
  * (with the reason each is there), so a new event is reportable by default — and
- * `handleReport` in `session-core.ts` then fails to COMPILE until it is
+ * `handleReport` in `../session/core.ts` then fails to COMPILE until it is
  * classified: every name here has its own `case`, either acted on or listed as
  * forwarded, and the `default` is `satisfies never`.
  *
@@ -83,9 +84,9 @@ export type TransportCallbacks = {
    * - **`reply.completed` is the PROVIDER's claim, not the turn's end.** A
    *   provider sends its `reply.done` more than once per turn, so the session
    *   decides whether this one closes the turn and may emit nothing at all —
-   *   see `session-reply-done.ts`, which is entirely about the three ways it is
+   *   see `../session/reply-done.ts`, which is entirely about the three ways it is
    *   not the end.
-   * - **`agent-transcript.committed` vs `.updated` replaces a boolean.** The old
+   * - **`agentTranscript.committed` vs `.updated` replaces a boolean.** The old
    *   `onAgentTranscript(text, interrupted)` plus a separate
    *   `onAgentTranscriptPartial(text)` encoded, in two callbacks and a flag,
    *   exactly the distinction these two event names carry — only the committed
@@ -122,7 +123,7 @@ export type EmitError = (
 /** Per-send options for {@link SendTtsText}. */
 export type SendTtsOptions = {
   /**
-   * Publish the cumulative TTS text as an interim `agent-transcript.updated`.
+   * Publish the cumulative TTS text as an interim `agentTranscript.updated`.
    * Defaults to `true`; the greeting and the start-failure line publish their
    * own final instead.
    */
@@ -130,7 +131,7 @@ export type SendTtsOptions = {
   /**
    * These characters are part of the model's own reply. Defaults to `true`;
    * `false` marks dead-air filler — audible, so it moves the heard POSITION,
-   * but never truncated into history (see `pipeline-heard.ts`).
+   * but never truncated into history (see `pipeline/heard/tracker.ts`).
    */
   record?: boolean;
 };
@@ -157,7 +158,7 @@ export type SendTtsText = (text: string, options?: SendTtsOptions) => void;
  * **Runtime-internal, and NOT the type an author writes.** `agent({
  * systemPrompt })` takes `AgentSystemPrompt` — a string or a resolver handed
  * the SESSION (`sdk/agent-instructions.ts`) — and the runtime asks that
- * resolver in `runtime-system-prompt.ts`, where the session context lives. What
+ * resolver in `../runtime/system-prompt.ts`, where the session context lives. What
  * reaches a transport is one layer down: the assembled prompt, or a nullary
  * thunk over `SessionSystemPrompt.resolve()` that re-reads it. A transport has
  * no session context to pass and needs none.
@@ -212,24 +213,38 @@ export type TransportSessionConfig = {
 };
 
 /**
+ * The two decisions every code-initiated line states — the SDK's `SayOptions`
+ * minus `interrupt` (which acts on the reply before the line, not on the line).
+ *
+ * Every code-initiated line in pipeline mode states both — the table in
+ * `pipeline/reply/lines.ts` lists each line and its values.
+ *
+ * @internal
+ */
+export type LineFlags = {
+  /** On the record: history, `ctx.messages`, a committed transcript. */
+  readonly record: boolean;
+  /** A caller's barge-in may cut it. */
+  readonly interruptible: boolean;
+};
+
+/**
  * One {@link Transport.speakLine} call's controls: `signal` takes a still-queued
  * line back, and `onStart` fires as the line takes the floor, which is what
  * tells the session a later take-back must cut a reply rather than skip one.
  * `interruptible: false` holds the caller's barge-in off while the line plays;
- * `record: false` keeps it out of history. Both are the SDK's `SayOptions`.
+ * `record: false` keeps it out of history — the {@link LineFlags} every
+ * code-initiated line states.
  *
  * @internal
  */
-export type SpokenLine = {
+export type SpokenLine = LineFlags & {
   readonly signal: AbortSignal;
   readonly onStart: () => void;
-  readonly interruptible?: boolean | undefined;
-  readonly record?: boolean | undefined;
 };
 
 /**
- * How a {@link Transport.speakLine} line ended. The SDK's `SpeechOutcome` minus
- * `"unsupported"`, which the session answers for a transport with no such verb.
+ * How a {@link Transport.speakLine} line ended — the SDK's `SpeechOutcome`.
  *
  * @internal
  */
@@ -263,11 +278,17 @@ export function resolveGreeting(greeting: GreetingOption | undefined): string | 
 
 /**
  * Transport abstraction — one implementation per provider strategy
- * (see `s2s-transport.ts`, `pipeline-transport.ts`).
+ * (see `s2s-transport.ts`, `pipeline/transport.ts`).
  *
  * @internal
  */
 export interface Transport {
+  /**
+   * What this transport can do — read this, never a verb's presence. Each
+   * optional verb below is implemented iff its capability is `true`
+   * (`capabilities.ts`, which also renders the guide's table).
+   */
+  readonly capabilities: TransportCapabilities;
   /** Open any underlying connections and send initial session config. */
   start(): Promise<void>;
   /** Tear down, flush, close. Idempotent. */
@@ -287,7 +308,7 @@ export interface Transport {
    * `modelView`, when given, is what the MODEL's own list is seeded with in
    * place of `messages` — the same conversation with each prior tool call as a
    * real `tool-call`/`tool-result` pair (`modelHistoryOf` in
-   * `session-event-history.ts`), because a lone `tool` result is an orphan the
+   * `../session/event-history.ts`), because a lone `tool` result is an orphan the
    * provider rejects and a call rendered as TEXT is one the model imitates.
    * `messages` still seeds the tool-facing view whole.
    */
@@ -334,8 +355,8 @@ export interface Transport {
    * OPTIONAL for a sharper reason than `injectTurn`: an S2S service has no
    * verb that speaks host text as written. OpenAI Realtime's greeting is a
    * `response.create` INSTRUCTION ("Say exactly: …") the model may paraphrase,
-   * which is fine for a greeting and is not what "verbatim" promises. The
-   * session reports `"unsupported"` instead.
+   * which is fine for a greeting and is not what "verbatim" promises —
+   * `capabilities.say` is `false` there.
    */
   speakLine?(text: string, line: SpokenLine): Promise<SpokenLineOutcome>;
   /**
@@ -356,7 +377,7 @@ export interface Transport {
    * service lets the host end a caller's turn, so there is nothing to call. A
    * pipeline transport implements them whatever the agent's policy and logs
    * once when an `"auto"` agent is sent one, since its transcriber already owns
-   * the turn. See `transports/pipeline-manual-turn.ts`.
+   * the turn. See `pipeline/speech/manual-turn.ts`.
    */
   startUserTurn?(): boolean;
   /** Push-to-talk: close the turn and answer everything heard inside it. */
@@ -367,7 +388,7 @@ export interface Transport {
    * A TYPED user turn (the client's `user_text`): answer `text` exactly as if
    * the transcriber had committed it. The transport reports everything itself
    * — `reply.cancelled` first when a reply was in flight or still playing,
-   * then the `user-transcript.committed` — because that ORDER is the stream's,
+   * then the `userTranscript.committed` — because that ORDER is the stream's,
    * and a session emitting the cancel after the verb returned would record the
    * new turn before the reply it replaced ended.
    *
@@ -398,7 +419,7 @@ export interface Transport {
    *
    * The caller so far is nothing: this is the seam a `dialog()` phase change
    * will reach for, in the same change that installs the prompt suffix (see
-   * `runtime-system-prompt.ts`).
+   * `../runtime/system-prompt.ts`).
    */
   refreshSystemPrompt?(): void;
   /**

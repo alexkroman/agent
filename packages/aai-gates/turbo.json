@@ -23,8 +23,10 @@
     // pins `lefthook.yml`'s pre-commit headroom line;
     // `guard-invariants-scanner-rules.test.ts` re-derives the corpus for rule
     // 7 across EVERY workflow, whose scanner returns only `found` and so cannot
-    // tell an upheld rule from an empty scan; and `ci-gate-job.test.ts` reads
-    // the required gate job.
+    // tell an upheld rule from an empty scan; `ci-gate-job.test.ts` reads
+    // the required gate job; and `defaults-gate.test.ts` re-reads the three
+    // sources `check:defaults` compares — the SDK's constants and their
+    // `@defaultValue` tags, the docs site's tuning table, and the scaffold guide.
     //
     // Markdown is re-included (the root task drops it) because a CLAUDE.md IS
     // the input here, not documentation about it. `.agents/*.md` joins it for
@@ -57,7 +59,10 @@
         "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/lefthook.yml",
         "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/.github/workflows/*.yml"
+        "$TURBO_ROOT$/.github/workflows/*.yml",
+        "$TURBO_ROOT$/packages/aai/src/sdk/**",
+        "$TURBO_ROOT$/docs/src/content/docs/more/voices-and-models.md",
+        "$TURBO_ROOT$/packages/aai-templates/scaffold/CLAUDE.md"
       ],
       "env": ["CI", "VITEST_POOL"]
     },
@@ -79,7 +84,10 @@
         "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/lefthook.yml",
         "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/.github/workflows/*.yml"
+        "$TURBO_ROOT$/.github/workflows/*.yml",
+        "$TURBO_ROOT$/packages/aai/src/sdk/**",
+        "$TURBO_ROOT$/docs/src/content/docs/more/voices-and-models.md",
+        "$TURBO_ROOT$/packages/aai-templates/scaffold/CLAUDE.md"
       ],
       "outputs": ["coverage/**"],
       "env": ["CI", "VITEST_POOL"]

@@ -75,7 +75,8 @@ export const PAGE_ENDPOINTS: readonly DocEndpoint[] = [
     method: "GET",
     path: CLIENT_CONFIG_PATH,
     summary:
-      "Name, greeting, page kind, and — for a voice agent — the live session's WebSocket URL.",
+      "Name, greeting, page kind, and — for a voice agent — the live session's WebSocket URL " +
+      "and the one-session ticket that opens it (sent as the `aai.auth.<ticket>` subprotocol).",
   },
 ];
 
@@ -101,7 +102,7 @@ export const VOICE_ENDPOINTS: readonly DocEndpoint[] = [
  * The routes to document for one agent's front door, given what the agent says
  * it IS (`ClientConfigResponse.page`, absent reading as `"voice"`).
  *
- * **A workflow app is not offered the carrier webhook.** `page: "static"`
+ * **A workflow app is not offered the carrier webhook.** `mode: "workflow-app"`
  * declines `/websocket` with a reason and cannot declare a carrier at all (see
  * `AgentDef.page`), so a phone number pointed at one answers and hangs up —
  * documenting the route would be an invitation to spend an afternoon in a

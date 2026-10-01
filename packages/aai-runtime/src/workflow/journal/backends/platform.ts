@@ -79,8 +79,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import { PLATFORM_ROUTES, type PlatformEndpoint } from "../../../platform-endpoint.ts";
-import { platformResult } from "../../../platform-rpc.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint, platformResult } from "../../../platform/index.ts";
 import { decodeStorageJson, encodeStorageJson } from "../../typed-json.ts";
 import { shareByKey } from "../_shared-reads.ts";
 import type {

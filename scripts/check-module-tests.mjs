@@ -66,6 +66,7 @@ import {
   updateBaseline,
   warnStale,
 } from "./_ratchet.mjs";
+import { MODULE_DIR_ROOTS } from "./guard-invariants-module-dirs.mjs";
 
 const GATE = "check-module-tests";
 const ROOT = repoRoot(import.meta.url);
@@ -113,6 +114,15 @@ const EXCLUSIONS = [
   {
     why: "a barrel is a pure re-export surface; konsistent's `barrel-modules` convention already enforces that it holds nothing else",
     match: (file) => path.basename(file).endsWith("-barrel.ts"),
+  },
+  {
+    why: "a module directory's `index.ts` (guard-invariants rule 37's directories) is the same pure re-export surface — konsistent's `module-dir-index-is-re-export-only` holds it to that, over exactly these paths",
+    match: (file) =>
+      MODULE_DIR_ROOTS.some(
+        (root) =>
+          /^[^/]+\/(?:.+\/)?index\.ts$/.test(file.slice(root.length + 1)) &&
+          file.startsWith(`${root}/`),
+      ),
   },
   {
     why: "test infrastructure IS a test file by role — every suite that imports it exercises it, and it has no behaviour of its own to claim",

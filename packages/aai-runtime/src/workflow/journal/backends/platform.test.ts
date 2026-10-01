@@ -231,7 +231,7 @@ describe("the wire", () => {
 
   test("names the METHOD in the path, which is what a request log can read", async () => {
     // Fifteen methods on one path made the platform's per-request line — the only
-    // per-call record a deployed run leaves, the debug line in `platform-rpc.ts`
+    // per-call record a deployed run leaves, the debug line in `../../../platform/rpc.ts`
     // being off unless `AAI_DEBUG=1` — say which run was talking and never what it
     // said. Asserted per method rather than once, because the segment is built by
     // one expression and a `label`/`pathSegment` mix-up would still contain

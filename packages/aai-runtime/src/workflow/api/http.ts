@@ -113,11 +113,43 @@ export function sseFrame(event: string, data: unknown): string {
  * streamed response is logged as expected and only a RISE in them is a signal.
  *
  * The code is what is tested rather than the message: `aborted` is Node's wording
- * and a version away from being someone else's.
+ * and a version away from being someone else's. It is read off the INNERMOST
+ * cause ({@link innermostCause}), so how deeply a wrapper nested the reset never
+ * changes the verdict — and the reset's own `syscall` says which way it went.
  */
 export function isCallerGone(err: unknown): boolean {
-  if (!isRecord(err)) return false;
-  return err.code === "ECONNRESET" || err.name === "AbortError";
+  const leaf = innermostCause(err);
+  if (isRecord(err) && err.name === "AbortError") return true;
+  if (!isRecord(leaf)) return false;
+  if (leaf.name === "AbortError") return true;
+  // Direction, read off the reset itself. Node's inbound `aborted` error carries
+  // `ECONNRESET` and NO `syscall`; every OUTBOUND reset — `fetch`'s cause, a
+  // `postgres` driver's top-level socket error — is a libuv errno and names the
+  // `syscall` that failed (`read`, measured on Node 24). Without this, wrapping
+  // decided the verdict: a bare outbound reset was dropped as a hangup while the
+  // same reset wrapped by `fetch` was a 503.
+  return leaf.code === "ECONNRESET" && leaf.syscall === undefined;
+}
+
+/**
+ * The last value in `err`'s `cause` chain — the failure every wrapper above it
+ * is describing, and so the one to classify.
+ *
+ * Cycle-safe for the reason `error-status.ts`'s code walk is: a retry wrapper
+ * that re-throws its own cause makes a cycle, and this runs inside an error
+ * handler, where a hang is hardest to attribute. On a cycle it answers the last
+ * value before the repeat.
+ *
+ * @internal
+ */
+export function innermostCause(err: unknown): unknown {
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (isRecord(cur) && cur.cause !== undefined && !seen.has(cur.cause)) {
+    seen.add(cur);
+    cur = cur.cause;
+  }
+  return cur;
 }
 
 /**
@@ -174,7 +206,7 @@ export function answerHandlerFailure(
  * can present rather than merely a short one.
  *
  * The refusal is HERE, at the comparison, as well as at the env read that feeds
- * it (`agentGateToken`, `server-env.ts`) because this function is reachable
+ * it (`agentGateToken`, `../../server/env.ts`) because this function is reachable
  * without that read: a self-hoster calling `createWorkflowApi({ token })` or
  * `createSessionEventsApi({ token })` directly, and whatever the third caller
  * turns out to be. This layer makes the primitive safe for all of them, and it

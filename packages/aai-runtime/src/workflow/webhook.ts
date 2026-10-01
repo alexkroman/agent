@@ -50,7 +50,7 @@
  * workflow with an empty payload and no human anywhere near it. A delivery
  * carries a payload, so it is a verb that has a body; `createRuntimeServer` answers
  * `405` with `Allow: POST` to anything else, and the route table
- * (`server-routes.ts`) is where the verb is declared.
+ * (`../server/routes.ts`) is where the verb is declared.
  *
  * @internal
  */

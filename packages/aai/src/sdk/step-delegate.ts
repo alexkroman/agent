@@ -13,10 +13,10 @@
  * `subagent()` implementation that does all four and is tested.
  *
  * ```ts
- * import { subagent } from "@alexkroman1/aai";
+ * import { speaker } from "@alexkroman1/aai";
  * import { stepDelegate } from "@alexkroman1/aai/step";
  *
- * const researcher = subagent({
+ * const researcher = speaker({
  *   name: "researcher",
  *   systemPrompt: "Research one angle. Search, then read the best pages.",
  *   expectedOutput: "A paragraph of what you found, naming your sources.",
@@ -73,7 +73,8 @@
  * be mistaken for a real run.
  */
 
-import type { DelegateOptions, DelegateResult, SubagentDef } from "./subagent.ts";
+import { globalSlot } from "./_boundary.ts";
+import type { DelegateOptions, DelegateResult, SpeakerDef } from "./speaker.ts";
 
 /**
  * The registry-wide slot. Prefixed with the package name so a second copy of
@@ -81,23 +82,21 @@ import type { DelegateOptions, DelegateResult, SubagentDef } from "./subagent.ts
  * bundle carries its own copy of this module and the host publishes from its
  * own graph, which is the whole reason this is a `Symbol.for`.
  */
-const STEP_DELEGATE_SLOT = Symbol.for("@alexkroman1/aai.stepDelegate");
+const STEP_DELEGATE_SLOT = globalSlot<StepDelegateFn>("stepDelegate");
 
 /**
  * What a published runner does: run one subagent to completion.
  *
  * Identical in shape to `DelegateFn`, deliberately — the host fills this slot
  * with `createSubagentRunner` bound to a sessionless parent bag, so the same
- * `SubagentDef` behaves the same way whether a tool or a step reached it.
+ * `SpeakerDef` behaves the same way whether a tool or a step reached it.
  *
  * @internal
  */
 export type StepDelegateFn = (
-  subagent: SubagentDef,
+  subagent: SpeakerDef,
   options: DelegateOptions,
 ) => Promise<DelegateResult>;
-
-type StepDelegateSlot = { [STEP_DELEGATE_SLOT]?: StepDelegateFn };
 
 /**
  * Publish the runner this process's steps delegate through.
@@ -109,9 +108,7 @@ type StepDelegateSlot = { [STEP_DELEGATE_SLOT]?: StepDelegateFn };
  * @internal
  */
 export function publishStepDelegate(runner: StepDelegateFn | undefined): void {
-  const slot = globalThis as StepDelegateSlot;
-  if (runner === undefined) delete slot[STEP_DELEGATE_SLOT];
-  else slot[STEP_DELEGATE_SLOT] = runner;
+  STEP_DELEGATE_SLOT.set(runner);
 }
 
 /**
@@ -128,10 +125,10 @@ export function publishStepDelegate(runner: StepDelegateFn | undefined): void {
  * @public
  */
 export function stepDelegate(
-  subagent: SubagentDef,
+  subagent: SpeakerDef,
   options: DelegateOptions,
 ): Promise<DelegateResult> {
-  const runner = (globalThis as StepDelegateSlot)[STEP_DELEGATE_SLOT];
+  const runner = STEP_DELEGATE_SLOT.get();
   if (!runner) {
     return Promise.reject(
       new Error(

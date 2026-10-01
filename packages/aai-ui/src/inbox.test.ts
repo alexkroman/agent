@@ -8,6 +8,7 @@
  * half-received notice NOT surviving one, and `close()` ending the loop.
  */
 
+import { SESSION_AUTH_PROTOCOL_PREFIX, SESSION_PROTOCOL } from "@alexkroman1/aai/protocol";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { type MockWebSocket, recordingWebSocketClass } from "./_session-core-test-utils.ts";
 import { createInbox, INBOX_RECONNECT_BASE_MS, INBOX_RECONNECT_MAX_MS } from "./inbox.ts";
@@ -199,6 +200,66 @@ describe("createInbox", () => {
     socket?.simulateClose(1000);
     vi.advanceTimersByTime(INBOX_RECONNECT_MAX_MS * 2);
     expect(sockets).toHaveLength(1);
+  });
+
+  describe("a gated server's ticket", () => {
+    const offer = (t: string) => [SESSION_PROTOCOL, `${SESSION_AUTH_PROTOCOL_PREFIX}${t}`];
+    const base = { platformUrl: "http://h/", client: "c", holder: "h", WebSocket } as const;
+
+    test("a string token rides the subprotocol, as on the session socket", () => {
+      const inbox = createInbox({ ...base, token: "t1" });
+      expect(last()?.protocols).toEqual(offer("t1"));
+      expect(new URL(last()?.url ?? "").searchParams.has("token")).toBe(false);
+      inbox.close();
+    });
+
+    test("no token offers no subprotocols", () => {
+      const inbox = createInbox(base);
+      expect(last()?.protocols).toBeUndefined();
+      inbox.close();
+    });
+
+    test("an async getter is asked per attempt, so a reconnect presents a fresh ticket", async () => {
+      let n = 0;
+      const asked: unknown[] = [];
+      const inbox = createInbox({
+        ...base,
+        token: async (attempt) => {
+          asked.push(attempt);
+          n++;
+          return `t${n}`;
+        },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(last()?.protocols).toEqual(offer("t1"));
+      last()?.simulateClose(1006);
+      await vi.advanceTimersByTimeAsync(INBOX_RECONNECT_MAX_MS);
+      expect(sockets).toHaveLength(2);
+      expect(last()?.protocols).toEqual(offer("t2"));
+      expect(asked).toEqual([{ sessionId: undefined }, { sessionId: undefined }]);
+      inbox.close();
+    });
+
+    test("a getter that rejects still dials, with none; close() before it settles dials nothing", async () => {
+      const inbox = createInbox({ ...base, token: () => Promise.reject(new Error("down")) });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sockets).toHaveLength(1);
+      expect(last()?.protocols).toBeUndefined();
+      inbox.close();
+
+      let settle: (t: string) => void = () => undefined;
+      const late = createInbox({
+        ...base,
+        token: () =>
+          new Promise<string>((r) => {
+            settle = r;
+          }),
+      });
+      late.close();
+      settle("t");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sockets).toHaveLength(1);
+    });
   });
 
   test("refuses a holder the server would refuse", () => {

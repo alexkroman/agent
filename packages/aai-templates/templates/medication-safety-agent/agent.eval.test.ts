@@ -37,12 +37,12 @@
  */
 import agentDef from "virtual:aai/agent";
 import {
+  describeEval,
   describeTurn,
   type EvalToolCall,
   toolArgsIn,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 

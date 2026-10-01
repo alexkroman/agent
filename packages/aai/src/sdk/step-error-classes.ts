@@ -36,43 +36,33 @@
  * @module step-error-classes
  */
 
-import { isRecord } from "./is-record.ts";
+import { readBrand, setBrand } from "./_boundary.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-
-/**
- * The brand both classes carry.
- *
- * `Symbol.for`, not `Symbol()`, for exactly the duplicate-copy case above: a
- * registry symbol is the same value in every copy of this module, where a fresh
- * one per copy would reintroduce the problem the brand solves.
- */
-const STEP_ERROR_BRAND: unique symbol = Symbol.for("aai.stepError");
 
 /** The two values the brand may hold. */
 type BrandKind = "fatal" | "retryable";
 
-/** Attach the brand without putting it in `Object.keys` or `JSON.stringify`. */
+/**
+ * Attach the brand both classes carry — the registered `stepError` key
+ * (`_boundary.ts`), the same symbol in every copy of this module, where a fresh
+ * `Symbol()` per copy would reintroduce the problem the brand solves — without
+ * putting it in `Object.keys` or `JSON.stringify`.
+ */
 function brand(target: object, kind: BrandKind): void {
-  Object.defineProperty(target, STEP_ERROR_BRAND, {
-    value: kind,
-    enumerable: false,
-    configurable: true,
-  });
+  setBrand(target, "stepError", kind);
 }
 
 /**
  * Read the brand off an unknown value, or `undefined` when it has none.
  *
  * The brand's VALUE is validated rather than trusted, which is not merely
- * defensive: `Symbol.for` is a registry lookup, so any code in the process can
- * mint the same symbol, and a property carrying a garbage value would otherwise
- * flow straight into a verdict. `Reflect.get` rather than a cast through the
- * `isRecord` narrowing, because a cast asserts the thing the check was supposed
- * to establish — the point `guard-invariants` rule 17 makes.
+ * defensive: a registry symbol is something any code in the process can mint,
+ * and a property carrying a garbage value would otherwise flow straight into a
+ * verdict. `readBrand` answers `unknown`, so nothing here casts what the check
+ * is supposed to establish — the point `guard-invariants` rule 17 makes.
  */
 function brandOf(value: unknown): BrandKind | undefined {
-  if (!isRecord(value)) return undefined;
-  const kind = Reflect.get(value, STEP_ERROR_BRAND);
+  const kind = readBrand(value, "stepError");
   return kind === "fatal" || kind === "retryable" ? kind : undefined;
 }
 

@@ -24,8 +24,8 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useUploadPause } from "./_upload-pause.ts";
-import type { UploadGate } from "./_upload-session.ts";
+import type { UploadGate } from "./upload/index.ts";
+import { useUploadPause } from "./upload/index.ts";
 import type { UploadStatus } from "./use-workflow-form.ts";
 
 /**
@@ -136,7 +136,7 @@ export function useSubmissionState<S extends SubmissionToken>(): SubmissionState
   }, []);
 
   // The gate stops the bytes; the hook is what makes the page say so — see
-  // `_upload-pause.ts`.
+  // `upload/pause.ts`.
   const { pauseUpload, resumeUpload } = useUploadPause(
     useCallback(() => current.current?.gate, []),
     setUpload,

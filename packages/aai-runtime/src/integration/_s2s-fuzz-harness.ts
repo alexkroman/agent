@@ -27,9 +27,12 @@ import { invariant } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { silentLogger } from "../runtime-config.ts";
-import { createSessionCore, type ServerSession } from "../session-core.ts";
-import { createSessionEmitter } from "../session-emitter.ts";
-import { createSessionEventStream } from "../session-event-stream.ts";
+import {
+  createSessionCore,
+  createSessionEmitter,
+  createSessionEventStream,
+  type ServerSession,
+} from "../session/index.ts";
 import { createMemoryStateBackend } from "../session-state/store.ts";
 import { createS2sTransport } from "../transports/s2s-transport.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
@@ -61,10 +64,10 @@ const TOOL_SCHEMAS: ToolSchema[] = [
  * whose microphone is gone and whose UI says the call ended.
  */
 const CONVERSATION_EVENTS = new Set<SessionEvent["type"]>([
-  "user-transcript.committed",
-  "user-transcript.updated",
-  "agent-transcript.updated",
-  "agent-transcript.committed",
+  "userTranscript.committed",
+  "userTranscript.updated",
+  "agentTranscript.updated",
+  "agentTranscript.committed",
   "reply.completed",
   "tool.called",
   "speech.started",
@@ -265,7 +268,7 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
     agentConfig: AGENT_CONFIG,
     transport,
     logger: silentLogger,
-    // Modelled on the REAL executor (`tool-executor.ts`), whose contract is
+    // Modelled on the REAL executor (`../tools/executor.ts`), whose contract is
     // narrower than `ExecuteTool`'s type suggests, in two ways that both bit
     // this harness:
     //

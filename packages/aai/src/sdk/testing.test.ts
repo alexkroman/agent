@@ -1,10 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 import { MAX_CLIENT_EVENT_NAME_LENGTH, MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "./constants.ts";
+import { speaker } from "./speaker.ts";
 import { publishStepReporter, stepEmit, stepReport } from "./step-report.ts";
 import { publishUploadReader, stepReadUpload, stepUploadInfo } from "./step-uploads.ts";
 import { stepWriteUpload } from "./step-uploads-write.ts";
-import { subagent } from "./subagent.ts";
 import {
   createStubWorkflows,
   createToolContext,
@@ -140,7 +140,7 @@ describe("createToolContext", () => {
 
   test("a `delegate` script does the same thing for the subagent seam", async () => {
     const ctx = createToolContext({ delegate: { routes: { researcher: "Prices fell 12%." } } });
-    const sub = subagent({ name: "researcher", systemPrompt: "Research prices." });
+    const sub = speaker({ name: "researcher", systemPrompt: "Research prices." });
     expect(await ctx.delegate(sub, { task: "prices" })).toMatchObject({ text: "Prices fell 12%." });
     expect(ctx.desk.calls.map((call) => call.subagent.name)).toEqual(["researcher"]);
   });

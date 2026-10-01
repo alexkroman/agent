@@ -48,10 +48,6 @@ export type FakeSttSession = SttSession & {
   readonly options: SttOpenOptions;
   readonly audioFrames: Int16Array[];
   readonly closed: { value: boolean };
-  readonly updateAgentContext: ReturnType<typeof vi.fn<(text: string) => void>>;
-  readonly updateKeyterms: ReturnType<
-    typeof vi.fn<(keyterms: readonly string[] | undefined) => void>
-  >;
   /** Recorded pushes of the end-of-turn window — see `pipeline-endpointing.ts`. */
   readonly updateEndpointing: ReturnType<typeof vi.fn<(minTurnSilenceMs: number) => void>>;
   /** Recorded forced ends of turn — what `userTurnLimit` asks for. */
@@ -86,12 +82,6 @@ export function createFakeSttProvider(): FakeSttProvider {
         closed,
         sendAudio: vi.fn((pcm: Int16Array) => {
           audioFrames.push(pcm);
-        }),
-        updateAgentContext: vi.fn((_text: string) => {
-          /* recorded via the mock's .mock.calls */
-        }),
-        updateKeyterms: vi.fn((_keyterms: readonly string[] | undefined) => {
-          /* recorded via the mock's .mock.calls */
         }),
         updateEndpointing: vi.fn((_minTurnSilenceMs: number) => {
           /* recorded via the mock's .mock.calls */

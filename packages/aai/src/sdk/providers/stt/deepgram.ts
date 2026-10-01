@@ -8,12 +8,23 @@
  */
 
 import type { ProviderCredentialOptions, SttProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
+
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const DEEPGRAM_PROVIDER = defineProvider({
+  kind: "deepgram",
+  stage: "stt",
+  envVar: "DEEPGRAM_API_KEY",
+  label: "Deepgram",
+  factory: "deepgramStt",
+  subpath: "stt",
+});
 
 /** Kind tag recognised by the host-side resolver. */
-export const DEEPGRAM_KIND = "deepgram" as const;
+export const DEEPGRAM_KIND = DEEPGRAM_PROVIDER.kind;
 
 /** Agent-env variable holding the Deepgram API key. */
-export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
+export const DEEPGRAM_API_KEY_ENV: string = DEEPGRAM_PROVIDER.envVar;
 
 /** Options for {@link deepgramStt}. */
 export interface DeepgramSttOptions extends ProviderCredentialOptions {
@@ -93,7 +104,7 @@ export const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number = 1500;
  * auto-detect: `"en"` is sent for you. Name the code you mean.
  */
 export function deepgramStt(options: DeepgramSttOptions = {}): SttProvider {
-  return { kind: DEEPGRAM_KIND, options: { ...options } };
+  return describeProvider(DEEPGRAM_PROVIDER, options);
 }
 
 /** Streaming model used when the descriptor names none. */

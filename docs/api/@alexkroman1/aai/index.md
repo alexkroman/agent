@@ -11,8 +11,8 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 | session state | [sessionSlot](#sessionslot-1) — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projected` shows it to the browser |
 | conversation order | [dialog](#dialog-1) — a tool declared `when` simply does not run outside those states |
 | work that outlives the call | [workflow](#workflow-3) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
-| a second tool loop | [subagent](#subagent), reached with `ctx.delegate` |
-| who is speaking | [personas](#personas-2) — a roster the session hands the caller between, with `handoff` |
+| a second tool loop | [speaker](#speaker-1), reached with `ctx.delegate` |
+| who is speaking | [roster](#roster-2) — `speaks: true` entries the session hands the caller between, with `handoff` |
 | the default pipeline, spelled out | [assemblyAIPipeline](#assemblyaipipeline); [assemblyAIS2s](#assemblyais2s) opts into speech-to-speech instead |
 
 ```ts
@@ -25,8 +25,7 @@ export const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
 export default agent({
   name: "Storefront",
   systemPrompt: "You help callers order from the catalog.",
-  voice: "michael",
-  syncState: cart.projected,
+  syncState: { cart: cart.projected },
 });
 ```
 
@@ -106,8 +105,10 @@ addDays("2026-01-01", -1); // "2025-12-31"
 
 ### agent()
 
+#### Call Signature
+
 ```ts
-function agent(def: AgentParams): AgentDef;
+function agent(def: PipelineAgentParams): ModeAgentDef<"pipeline">;
 ```
 
 Define an agent: its system prompt, its providers, and its configuration.
@@ -115,22 +116,28 @@ Define an agent: its system prompt, its providers, and its configuration.
 Applies sensible defaults for omitted fields. Export as the default
 export of your `agent.ts` file.
 
+Overloaded over [AgentMode](#agentmode), one signature per member of
+[AgentParams](#agentparams): `mode` picks the member, and a field that member does
+not have is a compile error naming it — `silence` is a pipeline group,
+so it does not exist on [S2sAgentParams](#s2sagentparams) at all. With no `mode` the
+agent is a pipeline agent. [AgentDef](#agentdef) documents what every field means.
+
 **Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
 default-exports `tool({ … })` is the tool `echo`, registered by existing, and
 `agent({ tools })` is a compile error naming the file to create
 (`InlineToolsMisuse`).
 
-#### Parameters
+##### Parameters
 
-##### def
+###### def
 
-[`AgentParams`](#agentparams)
+[`PipelineAgentParams`](#pipelineagentparams)
 
-#### Returns
+##### Returns
 
-[`AgentDef`](#agentdef)
+[`ModeAgentDef`](#modeagentdef)\<`"pipeline"`\>
 
-#### Examples
+##### Examples
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -143,28 +150,117 @@ export default agent({
 
 **Session state is not declared here either** — a [sessionSlot](#sessionslot-1) owns its
 own default and its own storage, so there is no `state` factory to remember.
-`syncState` takes that slot's projection.
+`syncState` takes that slot's projection, keyed by the slot's name.
 
-**Default pipeline with a voice and a different LLM**
+**Default pipeline with another voice and a different LLM**
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "My Agent",
+  tts: assemblyAITts({ voice: "michael" }),
+  llm: "claude-sonnet-4-6",
+});
+```
+
+#### Call Signature
+
+```ts
+function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
+```
+
+Define a speech-to-speech agent: `mode: "s2s"` and its `s2s` descriptor. See
+[S2sAgentParams](#s2sagentparams).
+
+##### Parameters
+
+###### def
+
+[`S2sAgentParams`](#s2sagentparams)
+
+##### Returns
+
+[`ModeAgentDef`](#modeagentdef)\<`"s2s"`\>
+
+##### Example
+
+```ts
+import { agent, assemblyAIS2s } from "@alexkroman1/aai";
+
+export default agent({ name: "Concierge", mode: "s2s", s2s: assemblyAIS2s() });
+```
+
+#### Call Signature
+
+```ts
+function agent(def: TextAgentParams): ModeAgentDef<"text">;
+```
+
+Define a text agent: `mode: "text"`, driven over a message list by
+`createTextAgent` rather than by a session socket. See [TextAgentParams](#textagentparams).
+
+##### Parameters
+
+###### def
+
+[`TextAgentParams`](#textagentparams)
+
+##### Returns
+
+[`ModeAgentDef`](#modeagentdef)\<`"text"`\>
+
+##### Example
 
 ```ts
 import { agent } from "@alexkroman1/aai";
 
 export default agent({
-  name: "My Agent",
-  voice: "michael",
-  llm: "claude-sonnet-4-6",
+  name: "Docs Assistant",
+  mode: "text",
+  systemPrompt: "Answer questions about the docs.",
 });
 ```
 
-#### Remarks
+#### Call Signature
 
-Session mode: with no provider fields the agent runs the default
-all-AssemblyAI cascaded pipeline. Set any subset of `stt`, `llm`, `tts`
-to swap individual stages (unset stages keep the AssemblyAI default), and
-`voice` to pick the default pipeline's TTS voice — or set `s2s` (e.g.
-`assemblyAIS2s()`) to opt into the speech-to-speech path instead. See
-[AgentDef](#agentdef) for every field.
+```ts
+function agent(def: StaticAgentParams): ModeAgentDef<"workflow-app">;
+```
+
+Define a workflow app: `mode: "workflow-app"`. [workflowApp](#workflowapp) is the
+same member with the mode already set. See [StaticAgentParams](#staticagentparams).
+
+##### Parameters
+
+###### def
+
+[`StaticAgentParams`](#staticagentparams)
+
+##### Returns
+
+[`ModeAgentDef`](#modeagentdef)\<`"workflow-app"`\>
+
+#### Call Signature
+
+```ts
+function agent(def: AgentParams): AgentDef;
+```
+
+Any member of [AgentParams](#agentparams) — the signature a value typed as the whole
+union resolves against (an options bag assembled elsewhere, a wrapper that
+forwards its argument).
+
+##### Parameters
+
+###### def
+
+[`AgentParams`](#agentparams)
+
+##### Returns
+
+[`AgentDef`](#agentdef)
 
 ***
 
@@ -246,13 +342,13 @@ import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
+  mode: "s2s",
   s2s: assemblyAIS2s({ voice: "jane", languages: ["en"] }),
 });
 ```
 
-Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline, and the
-top-level `voice` convenience is a compile error alongside it — an S2S
-voice rides on the descriptor, because the service synthesizes.
+Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline. An S2S voice
+rides on this descriptor, because the service synthesizes.
 
 ***
 
@@ -1423,36 +1519,74 @@ const config: { slug: string; name?: string; greeting?: string } = {
 
 ### orFail()
 
+The `T | ToolFailure` union's control flow, beside the guard and the
+constructor it belongs with: a tool body writes all three. Its own statement
+because `tool-failure-flow.ts` imports `sdk/utils.ts`, so re-exporting it
+from there would close a cycle.
+
+#### Call Signature
+
 ```ts
-function orFail<T>(value: ToolFailure | T): T;
+function orFail<A extends readonly unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R>;
 ```
 
-The value, or abandon the surrounding [failable](#failable) with the failure.
+The value, or abandon the surrounding [failable](#failable) with the failure —
+or, handed a FUNCTION, that function with its failure classified for the
+step engine.
 
-#### Type Parameters
+Two arms, one meaning — "this, or fail the way the caller is owed". In a
+tool, failing is answering a [ToolFailure](#toolfailure); in a step, it is throwing
+the verdict the engine retries on.
 
-##### T
+- **A value** (`orFail(lookup())`): the value, unless it is a `ToolFailure`,
+  which abandons the enclosing [failable](#failable) with that exact failure.
+- **A function** (`orFail(stepGenerate)`): the same function, except that
+  what it throws — or a non-2xx `Response` it resolves to — leaves as a
+  `FatalError`, or a `RetryableError` carrying the far side's own
+  `Retry-After` (`toStepError` on `@alexkroman1/aai/step-errors` is the
+  verdict; anything it cannot classify is rethrown unchanged). This is how a
+  `workflows/` step calls a `/step` primitive — `orFail(stepFetch)`,
+  `orFail(stepGenerateJson)`, `orFail(stepTranscribeSubmit)`,
+  `orFail(sendToChannel)` — and it replaced the eight `*OrFail` twins that
+  spelled it one name per call. A failure labelled by its request
+  (`GET https://…`) is the function arm's one special case: a call whose
+  first argument is a URL.
 
-`T`
+A `ToolFailure` is never a function, so the arms cannot be confused at run
+time. A function VALUE passed only to be handed back — a helper answering
+`(() => X) | ToolFailure` — now comes back wrapped; the wrapper calls through
+and answers in kind (sync stays sync).
 
-#### Parameters
+##### Type Parameters
 
-##### value
+###### A
 
-[`ToolFailure`](#toolfailure) \| `T`
+`A` *extends* readonly `unknown`[]
 
-#### Returns
+###### R
 
-`T`
+`R`
 
-#### Throws
+##### Parameters
 
-A private sentinel, caught by the enclosing [failable](#failable). Calling
-it outside one is a programming error and behaves like one — the throw
-escapes and the tool executor reports it — rather than being silently
-swallowed.
+###### call
 
-#### Example
+(...`args`: `A`) => `Promise`\<`R`\>
+
+##### Returns
+
+(...`args`: `A`) => `Promise`\<`R`\>
+
+##### Throws
+
+A private sentinel (value arm), caught by the enclosing
+[failable](#failable). Calling it outside one is a programming error and behaves
+like one — the throw escapes and the tool executor reports it — rather than
+being silently swallowed.
+
+##### Examples
+
+**A tool helper**
 
 ```ts
 import { failable, orFail, type ToolFailure } from "@alexkroman1/aai";
@@ -1464,69 +1598,47 @@ const orderTotal = failable((id: string) => orFail(findOrder(id)).total);
 // orderTotal("A1") is number | ToolFailure
 ```
 
-***
-
-### persona()
+**A step**
 
 ```ts
-function persona<N extends string>(def: PersonaDef<N>): PersonaDef<N>;
+import { stepFetch, stepGenerate } from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
+
+export async function summarizeFeed(url: string): Promise<string> {
+  // A 404 stops the step; a 429 waits the Retry-After the server named.
+  const feed = await (await orFail(stepFetch)(url)).text();
+  return await orFail(stepGenerate)(feed, { system: "Summarize in two sentences." });
+}
 ```
 
-Define a persona. An identity function, like [tool](#tool-2) and [subagent](#subagent):
-it exists for the type, for the name to grep for, and so a persona is
-declared at module scope where both the roster and a tool that hands off to
-it can import it.
-
-The name is inferred as a LITERAL (`const N`), so a roster built from these
-knows its own names and a handoff to one that is not on it fails to compile.
-
-#### Type Parameters
-
-##### N
-
-`N` *extends* `string`
-
-#### Parameters
-
-##### def
-
-[`PersonaDef`](#personadef)\<`N`\>
-
-#### Returns
-
-[`PersonaDef`](#personadef)\<`N`\>
-
-***
-
-### personas()
+#### Call Signature
 
 ```ts
-function personas<N extends string>(list: readonly PersonaDef<N>[]): Personas<N>;
+function orFail<T>(value: ToolFailure | T): T;
 ```
 
-Declare the roster.
+The value arm of [orFail](#orfail): `value`, unless it is a [ToolFailure](#toolfailure),
+which abandons the enclosing [failable](#failable) with that exact failure.
 
-Checked HERE, at module scope, rather than when `agent()` runs — every
-refusal below reaches an author at the declaration, and each is a failure
-with no symptom otherwise: two personas with one name route to whichever the
-lookup finds; a tool two personas both declare is gated by whichever wrapper
-landed last.
+##### Type Parameters
 
-#### Type Parameters
+###### T
 
-##### N
+`T`
 
-`N` *extends* `string`
+##### Parameters
 
-#### Parameters
+###### value
 
-##### list
+[`ToolFailure`](#toolfailure) \| `T`
 
-readonly [`PersonaDef`](#personadef)\<`N`\>[]
+##### Returns
 
-#### Returns
+`T`
 
-[`Personas`](#personas-1)\<`N`\>
+##### Throws
+
+A private sentinel, caught by the enclosing [failable](#failable).
 
 ***
 
@@ -1753,7 +1865,7 @@ Read a variable off [ToolContext.env](#env-6), failing by NAME when it is not se
 The `ToolContext` twin of `requireStepEnv`, and there for the same reason: a
 missing credential is not transient, so it should say which key and how to
 set it rather than surface as a `TypeError` on the first property access —
-which `tool-executor.ts` serializes and hands to the MODEL, so what a caller
+which `aai-runtime/src/tools/executor.ts` serializes and hands to the MODEL, so what a caller
 hears is the agent apologising for something no log line explains.
 
 ```ts no-check
@@ -1966,6 +2078,35 @@ async function startRun(url: string): Promise<string> {
   return ((await res.json()) as { runId: string }).runId;
 }
 ```
+
+***
+
+### roster()
+
+```ts
+function roster<N extends string>(list: readonly SpeakerDef<N>[]): Roster<N>;
+```
+
+Declare the roster — checked HERE, at module scope, because every refusal
+below stands in for a failure with no symptom (two entries of one name route
+to whichever the lookup finds; a tool two speakers own is gated by whichever
+landed last).
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string`
+
+#### Parameters
+
+##### list
+
+readonly [`SpeakerDef`](#speakerdef)\<`N`\>[]
+
+#### Returns
+
+[`Roster`](#roster-1)\<`N`\>
 
 ***
 
@@ -2445,6 +2586,72 @@ shuffled([1, 2, 3], () => 0); // a new array; the input is untouched
 
 ***
 
+### speaker()
+
+#### Call Signature
+
+```ts
+function speaker<N extends string, S extends StandardSchemaV1<unknown, unknown>>(def: SpeakerDef<N> & {
+  schema: S;
+}): TypedSpeakerDef<InferSchemaOutput<S>, N>;
+```
+
+Define a speaker. An identity function, like [tool](#tool-2): it exists for the
+type (the name inferred as a LITERAL, the schema's output typed), for the name
+to grep for, and so a speaker is declared at module scope where both a roster
+and a tool that delegates or hands off to it can import it.
+
+##### Type Parameters
+
+###### N
+
+`N` *extends* `string`
+
+###### S
+
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
+
+##### Parameters
+
+###### def
+
+[`SpeakerDef`](#speakerdef)\<`N`\> & \{
+  `schema`: `S`;
+\}
+
+##### Returns
+
+[`TypedSpeakerDef`](#typedspeakerdef)\<[`InferSchemaOutput`](#inferschemaoutput)\<`S`\>, `N`\>
+
+#### Call Signature
+
+```ts
+function speaker<N extends string>(def: SpeakerDef<N>): SpeakerDef<N>;
+```
+
+Define a speaker. An identity function, like [tool](#tool-2): it exists for the
+type (the name inferred as a LITERAL, the schema's output typed), for the name
+to grep for, and so a speaker is declared at module scope where both a roster
+and a tool that delegates or hands off to it can import it.
+
+##### Type Parameters
+
+###### N
+
+`N` *extends* `string`
+
+##### Parameters
+
+###### def
+
+[`SpeakerDef`](#speakerdef)\<`N`\>
+
+##### Returns
+
+[`SpeakerDef`](#speakerdef)\<`N`\>
+
+***
+
 ### spokenAlphanumeric()
 
 ```ts
@@ -2692,52 +2899,6 @@ spokenTime("00:00"); // "12 AM"
 
 ***
 
-### subagent()
-
-#### Call Signature
-
-```ts
-function subagent<S extends StandardSchemaV1<unknown, unknown>>(def: SubagentDef & {
-  schema: S;
-}): TypedSubagentDef<InferSchemaOutput<S>>;
-```
-
-##### Type Parameters
-
-###### S
-
-`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
-
-##### Parameters
-
-###### def
-
-[`SubagentDef`](#subagentdef) & \{
-  `schema`: `S`;
-\}
-
-##### Returns
-
-[`TypedSubagentDef`](#typedsubagentdef)\<[`InferSchemaOutput`](#inferschemaoutput)\<`S`\>\>
-
-#### Call Signature
-
-```ts
-function subagent(def: SubagentDef): SubagentDef;
-```
-
-##### Parameters
-
-###### def
-
-[`SubagentDef`](#subagentdef)
-
-##### Returns
-
-[`SubagentDef`](#subagentdef)
-
-***
-
 ### tool()
 
 ```ts
@@ -2856,6 +3017,30 @@ export const orderTotal = tool({
   },
 });
 ```
+
+***
+
+### toolRefusal()
+
+```ts
+function toolRefusal(reason: ToolRefusalReason, message: string): ToolRefusal;
+```
+
+Build a [ToolRefusal](#toolrefusal).
+
+#### Parameters
+
+##### reason
+
+[`ToolRefusalReason`](#toolrefusalreason)
+
+##### message
+
+`string`
+
+#### Returns
+
+[`ToolRefusal`](#toolrefusal)
 
 ***
 
@@ -3152,31 +3337,27 @@ export default tool({
 ### workflowApp()
 
 ```ts
-function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
+function workflowApp(def: Omit<StaticAgentParams, "mode">): AgentDef;
 ```
 
 Define a WORKFLOW APP — an agent whose front door is a form rather than a
 microphone, and whose work happens in `workflows`.
 
-`agent({ …, page: "static" })` with the discriminant already set, so the
-mode is the CALL rather than a field to remember, and the fields a workflow
-app has no use for are absent from the parameter type instead of being
-rejected by it. Returns the same [AgentDef](#agentdef) `agent()` does — there is
-one definition type, one config, one deploy path, and `page` is only ever
-about the front door.
+`agent({ mode: "workflow-app", … })` with the discriminant already set, so
+the mode is the CALL rather than a field to remember, and the fields a
+workflow app has no use for are absent from the parameter type. Returns the
+same [AgentDef](#agentdef) `agent()` does — there is one definition type, one
+config, one deploy path.
 
 It mirrors the split `@alexkroman1/aai-ui` already makes in the browser:
 `mountPage()` mounts a workflow app's UI and `mountClient()` mounts a voice
-one,
-because a flag would leave every session-shaped question ("what does this
-mean with no session?") answered by a conditional. Same reasoning, same
-seam, other end of the wire.
+one.
 
 #### Parameters
 
 ##### def
 
-`Omit`\<[`StaticAgentParams`](#staticagentparams), `"page"`\>
+`Omit`\<[`StaticAgentParams`](#staticagentparams), `"mode"`\>
 
 #### Returns
 
@@ -3397,32 +3578,38 @@ export default agent({ name: "Speaker", clientInbox: { sampleRate: 16_000 } });
 
 ### AgentDef
 
-Fully resolved agent definition.
+Fully resolved agent definition — and THE reference for what every field
+means.
 
-**This is what `agent()` RETURNS, not what you write.** You write
-[AgentParams](#agentparams) — the same fields with the defaulted ones optional, plus the
-three conveniences `agent()` normalizes away (`llm` as a model-id string,
-`voice`, `minTurnSilenceMs`/`maxTurnSilenceMs`). This is the reference for what
-a field MEANS; `AgentParams` is the one for which combinations are legal.
+**This is what `agent()` RETURNS, not what you write.** You write one member
+of [AgentParams](#agentparams), chosen by [AgentMode](#agentmode): the same fields, with
+the defaulted ones optional, cut down to the ones that mode has. The members
+carry no prose of their own — a field's documentation lives here once, and
+the member's job is only to say WHICH fields exist in which mode (a
+pipeline-only knob is simply absent from the S2S member). `agent()`
+normalizes the author conveniences (`llm` as a model-id string, the
+end-of-turn window) and the deprecated spellings away, so this shape is
+canonical.
 
-Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`)
+Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`, `mode`)
 are resolved to their final values with defaults applied. Optional fields
 (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
 optional — `undefined` means "not configured."
 
-Eight groups of fields live on interfaces this extends, each sharing ONE rule
-derived from the declaration rather than restated beside it:
-[PipelineVoiceTuning](#pipelinevoicetuning) (pipeline transport or nothing), [AgentModelTuning](#agentmodeltuning)
+The field groups live on interfaces this extends, each sharing ONE rule:
+[PipelineTuning](#pipelinetuning) and [PipelinePhrases](#pipelinephrases) (pipeline transport or
+nothing), [AgentModelTuning](#agentmodeltuning)
 (this runtime assembles the request, so S2S refuses them), [AgentGuardrails](#agentguardrails)
 (the only declarations that may stop a turn), [AgentObservation](#agentobservation) (the two
 that deliberately may not), [AgentVoicePresets](#agentvoicepresets) (paid for on every model
 request), [AgentSessionLifecycle](#agentsessionlifecycle) (once per session), [AgentRoutes](#agentroutes)
-and [AgentClientInbox](#agentclientinbox) (no session at all). `agent()` and the deploy-time
-config check derive their field lists from those, so no field skips either gate.
+and [AgentClientInbox](#agentclientinbox) (no session at all). The `agent()` union and the
+runtime refusal for an untyped caller are both cut from those groups, so no
+field skips either.
 
 #### Extends
 
-- [`PipelineVoiceTuning`](#pipelinevoicetuning).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets).[`AgentSessionLifecycle`](#agentsessionlifecycle).[`AgentRoutes`](#agentroutes).[`AgentClientInbox`](#agentclientinbox)
+- [`PipelineTuning`](#pipelinetuning).[`PipelinePhrases`](#pipelinephrases).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets).[`AgentSessionLifecycle`](#agentsessionlifecycle).[`AgentRoutes`](#agentroutes).[`AgentClientInbox`](#agentclientinbox)
 
 #### Properties
 
@@ -3462,26 +3649,6 @@ export default agent({ name: "Speaker", clientInbox: { sampleRate: 16_000 } });
 
 [`AgentClientInbox`](#agentclientinbox).[`clientInbox`](#clientinbox)
 
-##### deadAirCoverMs?
-
-```ts
-optional deadAirCoverMs?: number;
-```
-
-Pipeline mode only. How long a turn may send nothing to the caller before
-the transport speaks a short filler, so a long tool chain doesn't sound
-like a dropped call. MEASURED silence, so a prompt reply pays nothing; `0`
-disables. The wording is internal and must stay purely declarative — see
-`DEAD_AIR_COVER_PHRASES` for why.
-
-###### Default Value
-
-`2400` (`DEFAULT_DEAD_AIR_COVER_MS`)
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`deadAirCoverMs`](#deadaircoverms-1)
-
 ##### description?
 
 ```ts
@@ -3500,7 +3667,7 @@ point: `tools`, `events` and `workflows` are host-only because a consumer
 of a stored config could not act on a function, but a description is
 exactly what such a consumer wants and could not get. Every peer SDK puts
 one on the agent (Anthropic's `AgentDefinition.description` is required);
-this SDK had one on [SubagentDef](#subagentdef), [WorkflowDef](#workflowdef) and
+this SDK had one on [SpeakerDef](#speakerdef), [WorkflowDef](#workflowdef) and
 [ToolDef](#tooldef) and none on the agent itself.
 
 ##### dialogs?
@@ -3522,10 +3689,8 @@ is running. An UNDECLARED dialog is unchanged. Host-only, like `tools`.
 optional errorPhrase?: string;
 ```
 
-Pipeline mode only. Phrase spoken when the turn's LLM stream fails, so a
-provider outage hands the conversation back instead of going silent — a
-failed turn produces no text, so nothing would otherwise reach TTS. Set
-`""` to disable.
+Phrase spoken when the turn's LLM stream fails — a failed turn produces no
+text, so nothing would otherwise reach TTS. Set `""` to disable.
 
 ###### Default Value
 
@@ -3534,7 +3699,7 @@ again?"` (`DEFAULT_ERROR_PHRASE`)
 
 ###### Inherited from
 
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`errorPhrase`](#errorphrase-1)
+[`PipelinePhrases`](#pipelinephrases).[`errorPhrase`](#errorphrase-1)
 
 ##### events?
 
@@ -3653,46 +3818,18 @@ check so both failures are survivable.
 
 [`AgentGuardrails`](#agentguardrails).[`inputGuardrails`](#inputguardrails-1)
 
-##### interruptionBackoffMs?
+##### interruption?
 
 ```ts
-optional interruptionBackoffMs?: number;
+optional interruption?: InterruptionTuning | "off";
 ```
 
-Pipeline mode only. How long agent audio stays blocked after a real
-interruption, in ms. Vapi's `backoffSeconds`.
-
-SEQUENTIAL with `startSpeakingFloorMs`, never cumulative: the two are one
-deadline, `max(floor, backoff)`.
-
-###### Default Value
-
-`0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`) — today's behaviour.
-Vapi's own default is 1.0s; see that constant for why this one is not.
+When the caller may cut the agent off — see [InterruptionTuning](#interruptiontuning);
+`"off"` means never.
 
 ###### Inherited from
 
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionBackoffMs`](#interruptionbackoffms-1)
-
-##### interruptionMinDurationMs?
-
-```ts
-optional interruptionMinDurationMs?: number;
-```
-
-Pipeline mode only. Minimum sustained speech (ms since the utterance's
-first interim transcript) before an interim-triggered barge-in aborts the
-agent's reply — a duration gate alongside `minBargeInWords`, mirroring
-LiveKit's `min_interruption_duration`. Committed turns (STT finals) are
-never gated. Set 0 to disable the gate.
-
-###### Default Value
-
-`500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionMinDurationMs`](#interruptionmindurationms-1)
+[`PipelineTuning`](#pipelinetuning).[`interruption`](#interruption-3)
 
 ##### llm?
 
@@ -3744,7 +3881,7 @@ the AI SDK's own (2 retries, exponential backoff)
 Transport-level retries of a request that never produced an answer at all
 (a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
 a subagent's requests retry on the AI SDK default, and its guardrail
-sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
+sending an answer back is [SpeakerDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -3800,24 +3937,24 @@ because discovery is a network round trip and `createRuntime` is
 synchronous. A server that is down, slow, or missing its token costs its
 own tools and nothing else — never the session.
 
-##### minBargeInWords?
+##### mode?
 
 ```ts
-optional minBargeInWords?: number;
+optional mode?: AgentMode;
 ```
 
-Pipeline mode only. Minimum words in an interim transcript before user
-speech barges in on (aborts) the agent's in-flight reply. Set 1 to
-interrupt on any word.
+Which kind of agent this is — see [AgentMode](#agentmode), which says what each
+mode has.
 
 ###### Default Value
 
-`2` (`DEFAULT_MIN_BARGE_IN_WORDS`) — so one-word
-backchannels ("yeah", "mm-hmm") don't cut the agent off.
+`"pipeline"`
 
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`minBargeInWords`](#minbargeinwords-1)
+`agent()` always writes it on the definition it returns; absent means
+`"pipeline"` everywhere it is read. It crosses the wire unchanged, so the
+browser, the CLI and a deploy all see the same mode the author declared — a
+workflow app is `"workflow-app"` there too, and its session-less front door
+is a consequence of that rather than a second flag.
 
 ##### name
 
@@ -3895,97 +4032,6 @@ agent opts into rather than a hook every agent pays for.
 
 [`AgentGuardrails`](#agentguardrails).[`outputGuardrails`](#outputguardrails-1)
 
-##### page?
-
-```ts
-optional page?: "voice" | "static";
-```
-
-What this agent's front door IS — and so whether it serves voice at all.
-
-###### Default Value
-
-`"voice"`
-
-`"static"` declares a WORKFLOW APP: an ordinary web page over the workflow
-HTTP API (`/workflows/*`), with no microphone, no WebSocket and no session.
-The page is still a `client.tsx`, still React, still Tailwind — it just
-mounts with `mountPage()` instead of `mountClient()` and reaches the agent
-through
-`createWorkflowApi()` / `useWorkflowRun()` instead of `useSession()`.
-
-Declaring it is not decoration. `createRuntimeServer` refuses the voice surfaces
-for a static agent, so a page that has no session cannot be handed a socket
-that would never answer, and [AgentDef.telephony](#telephony) is a compile error
-on one — an agent with no `stt`/`llm`/`tts` has nothing to put on a call.
-
-The two are not exclusive at the FEATURE level: a `"voice"` agent may
-declare workflows and start them from a tool, and a `"static"` one may
-declare tools it never reaches. This field is only about the surface.
-
-##### personas?
-
-```ts
-optional personas?: Personas<string>;
-```
-
-WHO speaks: a roster handed between mid-call over one history; mints `handoff` and each persona's tools into `tools`. Host-only. See `sdk/persona.ts`.
-
-##### preemptiveGeneration?
-
-```ts
-optional preemptiveGeneration?: boolean;
-```
-
-Pipeline mode only. Start generating the reply from a high-confidence
-INTERIM transcript, and adopt that already-running stream when the
-committed final turns out to say the same thing.
-
-###### Default Value
-
-`false` — measured on a tool-calling agent and not worth its
-cost there. Set `true` where the arithmetic plausibly differs: a text-heavy
-agent, or a longer head start from later endpointing.
-
-###### Remarks
-
-**Why it is off.** A `headStartMs`/adoption-rate log over a tau2-bench
-retail run: 16 speculations started, 14 adopted at a p50 0.44s head start,
-and 5 of those 14 (36%) poisoned after adoption by a tool call — unusable
-whole, so the generation is discarded and the request reissued, each having
-burned p50 0.69s first. Net +8ms per caller turn against a p50 first word of
-~1.0s, for 44% of its LLM requests thrown away.
-
-The head start does not survive contact with time-to-first-token: 0.44s
-against a p50 of 1.10s, so at adoption the speculation has generated
-nothing and whether its first part will be text or a tool call cannot be
-known then. A gate on "has it produced text" was tried and reverted — it
-rejects essentially every adoption, keeping the wasted request and losing
-the benefit.
-
-Its reach is bounded independently of that: across 815 replies in two
-tau2-bench retail runs, 28-33% of replies called a tool at all (the
-distribution recorded on `DEFAULT_MAX_STEPS`), so at most the
-remaining 67-72% can ever be accelerated.
-
-**What it structurally cannot do**, by construction rather than by flag:
-a speculation never reaches TTS, never
-emits a client frame, never writes either history view, and never EXECUTES
-a tool — its tool set is declaration-only, so the model cannot continue past
-a tool call, and a speculation that reaches one is discarded whole. Adoption
-requires the final to match the speculated text after normalization
-(case/punctuation only); an extension, a truncation or a revision all
-discard and the turn runs exactly as it does with the flag off. At most 2
-speculations per utterance. So the worst case is one extra billed LLM
-request for that utterance.
-
-Turning it back on by default is owed a tau2-bench run at the same tasks
-and seed showing no reward regression.
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`preemptiveGeneration`](#preemptivegeneration-1)
-
 ##### requiredEnv?
 
 ```ts
@@ -4037,29 +4083,16 @@ contributes no keys at all.
 
 [`AgentModelTuning`](#agentmodeltuning).[`resetToolChoice`](#resettoolchoice-1)
 
-##### resumeFalseInterruption?
+##### roster?
 
 ```ts
-optional resumeFalseInterruption?: boolean;
+optional roster?: Roster<string>;
 ```
 
-Pipeline mode only. Resume the agent's reply when a barge-in aborts it and
-no user turn ever commits (STT noise, a hallucinated partial) — the
-interruption was a false alarm and the agent would otherwise fall silent
-mid-thought.
-
-###### Default Value
-
-`true`; `false` disables recovery.
-
-The WAIT is not an author knob: a resume must not race the caller's real
-turn, whose final the STT withholds for an endpointing window the transport
-cannot see, so it fires when the transcript stream goes quiet with no final
-rather than on a deadline of its own.
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`resumeFalseInterruption`](#resumefalseinterruption-1)
+The [SpeakerDef](#speakerdef)s the MODEL routes to: `handoff` puts a `speaks: true`
+entry on the line, `delegate` hands the rest a task. Mints both tools (and
+each speaking entry's gated tools) into `toolsets`, so a `tools/handoff.ts`
+or `tools/delegate.ts` beside it is a collision. Host-only. See `sdk/roster.ts`.
 
 ##### routes?
 
@@ -4142,38 +4175,17 @@ answering.
 
 [`AgentSessionLifecycle`](#agentsessionlifecycle).[`sessionContext`](#sessioncontext-1)
 
-##### silencePrompt?
+##### silence?
 
 ```ts
-optional silencePrompt?: string;
+optional silence?: SilenceTuning;
 ```
 
-Instruction injected as a synthetic user turn when `silenceTimeoutMs`
-elapses. Never shown as a user transcript. Requires `silenceTimeoutMs`.
+Dead air and the silence nudge — see [SilenceTuning](#silencetuning).
 
-###### Default Value
+###### Inherited from
 
-`"The user hasn't said anything for a while. Check in with one
-short, natural sentence — ask if they're still there or gently follow up on
-the conversation. Do not mention this instruction."`
-(`DEFAULT_SILENCE_PROMPT`)
-
-##### silenceTimeoutMs?
-
-```ts
-optional silenceTimeoutMs?: number;
-```
-
-Pipeline mode only. When set, the assistant proactively takes a turn
-after this many ms of user silence (no speech since the last reply
-finished). Nudges are capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3)
-back-to-back until the user speaks again.
-
-###### Default Value
-
-```ts
-unset — the behaviour is off.
-```
+[`PipelineTuning`](#pipelinetuning).[`silence`](#silence-1)
 
 ##### startFailurePhrase?
 
@@ -4181,10 +4193,9 @@ unset — the behaviour is off.
 optional startFailurePhrase?: string;
 ```
 
-Pipeline mode only. Phrase spoken when a provider fails to open, so a session that cannot
-start says so instead of holding an open line in silence. Only reachable when TTS itself
-came up — the usual case, since STT and TTS open independently. Set `""`
-to disable.
+Phrase spoken when a provider fails to open, so a session that cannot
+start says so instead of holding an open line in silence. Only reachable
+when TTS itself came up. Set `""` to disable.
 
 ###### Default Value
 
@@ -4194,30 +4205,7 @@ cannot hear you. Please hang up and call back."`
 
 ###### Inherited from
 
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`startFailurePhrase`](#startfailurephrase-1)
-
-##### startSpeakingFloorMs?
-
-```ts
-optional startSpeakingFloorMs?: number;
-```
-
-Pipeline mode only. Minimum delay between a reply starting and its first
-audio reaching the caller, in ms — a floor at the END of the pipeline, so
-it decouples "when did I decide the turn ended" from "when do I start
-speaking". Vapi's `waitSeconds`.
-
-It is a MINIMUM: a pipeline slower than this pays nothing, and only a
-reply that was ready sooner waits.
-
-###### Default Value
-
-`0` (`DEFAULT_START_SPEAKING_FLOOR_MS`) — today's behaviour.
-Vapi's own default is 0.4s; see that constant for why this one is not.
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`startSpeakingFloorMs`](#startspeakingfloorms-1)
+[`PipelinePhrases`](#pipelinephrases).[`startFailurePhrase`](#startfailurephrase-1)
 
 ##### stt?
 
@@ -4251,46 +4239,32 @@ to drop — on tau2-bench retail a transcription prompt took the caller's
 spelled first name from 1 of 6 attempts correct to 6 of 6, and the S2S path
 was ignoring the field without a warning.
 
-##### subagents?
-
-```ts
-optional subagents?: SubagentRoster;
-```
-
-Subagents the MODEL may hand a task to, published as one `delegate` tool.
-
-The other half of `ctx.delegate`: a tool body naming a subagent is the
-AUTHOR routing in code, a roster is the MODEL routing per turn. Every entry
-needs a [SubagentDef.description](#description-4) — the only thing the router reads —
-and `agent()` refuses one without it. The one field whose declaration MINTS
-A TOOL, so a `tools/delegate.ts` beside a roster is a collision; host-only,
-like `tools`. Worked example and argument: `sdk/subagent-roster.ts`.
-
 ##### syncState?
 
 ```ts
-optional syncState?: 
-  | StateProjection<unknown>
-  | readonly StateProjection<unknown>[];
+optional syncState?: Readonly<Record<string, StateProjection<unknown>>>;
 ```
 
 Project per-session state to the browser client, so a custom UI can
 render it without the agent hand-rolling a sync channel.
 
-One projection per slot the client should see, or an array of them — the
-`agent_state` frame carries the merge. A slot the agent does not project
-never leaves the server, which is the point: session state routinely holds
-things a browser should not have, so the author decides what leaves, and
-whatever a projection returns is exactly what `useAgentState` receives.
-Pushed after every tool call, and only when a projection actually changed:
-most turns touch no state, and this shares a socket with 384 kbps of PCM.
+A RECORD keyed by SLOT NAME, one projection per slot the client should
+see: `{ cart: cartSlot.projected }`. The key must be the projection's own
+slot key — `agent()` refuses a mismatch by name — so the `agent_state`
+frame is `{ [slot]: view }` and the browser selects by the same name
+(`useAgentState(cartSlot.projected)` reads `state.cart`). A slot the agent
+does not project never leaves the server, which is the point: session
+state routinely holds things a browser should not have, so the author
+decides what leaves, and whatever a projection returns is exactly what the
+page receives under that key. Pushed after every tool call, and only when
+a projection actually changed: most turns touch no state, and this shares
+a socket with 384 kbps of PCM.
 
 **Declare the view on the slot and pass [SessionSlot.projected](#projected).**
 One object the agent pushes with and the page renders with, so the frame
 shown before the first tool call cannot describe a different view from the
-ones after it. A slot with more than one audience keeps
-[SessionSlot.projection](#projection-1), a second view over the same slot;
-`syncState` takes an array.
+ones after it. One view per slot: a page that needs a second shape derives
+it from the first.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -4299,12 +4273,10 @@ type Item = { sku: string; qty: number };
 const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
   view: (s) => ({ items: s.items }),
 });
-agent({ name: "Cart", syncState: cartSlot.projected });
-// Two audiences over the one slot:
-agent({
-  name: "Cart",
-  syncState: [cartSlot.projected, cartSlot.projection((s) => ({ count: s.items.length }))],
-});
+const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
+agent({ name: "Cart", syncState: { cart: cartSlot.projected } });
+// Two slots, one frame: { cart: { items }, prefs: { units } }.
+agent({ name: "Cart", syncState: { cart: cartSlot.projected, prefs: prefsSlot.projected } });
 ```
 
 ###### Remarks
@@ -4401,42 +4373,6 @@ researcher subagent and the voice that relays what it found.
 
 [`AgentModelTuning`](#agentmodeltuning).[`temperature`](#temperature-1)
 
-##### text?
-
-```ts
-optional text?: true;
-```
-
-Opt into TEXT mode — an agent with no audio path at all, driven over a
-message list by `createTextAgent` (`@alexkroman1/aai-runtime`) instead of
-by a transport over a session socket.
-
-A text agent is the same `agent()` definition every voice agent is —
-`systemPrompt`, `tools`, `maxSteps`, `toolChoice`, `builtinTools`,
-`requiredEnv` and a tool's `sessionSlot`s all mean exactly what they mean
-elsewhere, and
-tools run through the same executor, so one tool works in both. What it
-drops is everything downstream of speech: `stt`, `tts` and `s2s` are
-rejected (there is no audio to transcribe or synthesize), as are the
-voice-UX tuning knobs and the silence nudge. `llm` is the one stage it
-has, and it defaults to the AssemblyAI LLM Gateway like every other.
-
-Explicit, never derived — the same rule `s2s` follows. A mode reachable
-by omission is one a config lands in when it loses a field, and the
-symptom there would be a deployed voice agent that answers nothing.
-
-```ts
-import { agent } from "@alexkroman1/aai";
-
-export default agent({
-  name: "Docs Assistant",
-  text: true,
-  systemPrompt: "Answer questions about the docs.",
-});
-```
-
-Its tools are files under `tools/`, exactly as a voice agent's are.
-
 ##### toolChoice?
 
 ```ts
@@ -4456,7 +4392,7 @@ take a tool-choice parameter.
 ##### tools
 
 ```ts
-tools: ToolSet;
+tools: ToolMap;
 ```
 
 The tools the agent may invoke, keyed by the name the model calls.
@@ -4479,6 +4415,16 @@ in the module that declares the slot. The `NoInfer<S>` this used to hold
 existed to keep a single un-annotated tool from dragging the agent's whole
 state shape back to `unknown`, which is a problem a slot does not have.
 
+##### toolsets?
+
+```ts
+optional toolsets?: readonly Toolset[];
+```
+
+Every toolset beyond the `tools/` files — RESOLVED, never authored: `agent()`
+puts the roster's here and `withMcpTools` an MCP server's. Read the whole
+table through `agentToolsets` (`/manifest`). Host-only. See `sdk/toolset.ts`.
+
 ##### tts?
 
 ```ts
@@ -4486,52 +4432,20 @@ optional tts?: TtsProvider;
 ```
 
 Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
-stage defaults to AssemblyAI TTS (`agent()`'s `voice` shorthand picks
-its voice).
+stage defaults to `assemblyAITts()`. A voice is this descriptor's option
+(`assemblyAITts({ voice: "michael" })`); there is no agent-level field.
 
-##### turnDetection?
-
-```ts
-optional turnDetection?: TurnDetectionMode;
-```
-
-Pipeline mode only. WHO decides that the caller's turn is over.
-
-- `"auto"` — the transcriber does, on a pause. What every agent has always
-  done.
-- `"manual"` — the CLIENT does, which is push-to-talk. The caller's audio
-  reaches the transcriber only between a `user_turn_start` and the
-  `user_turn_commit` or `user_turn_clear` that closes it (`aai-ui`'s
-  `session.userTurn.start` / `.commit` / `.clear`, or its
-  `usePushToTalk` hook). Everything transcribed in that window, across
-  however many pauses, is ONE turn, and nothing is answered until the
-  commit. Outside the window the microphone is replaced with silence
-  server-side, so a caller talking to someone else in the room is never
-  heard.
-
-Under `"manual"` the caller's speech never barges in by itself — opening a
-turn is what interrupts the agent, so the button IS the barge-in — and
-preemptive generation is skipped, since no pause is a turn boundary. A
-`userTurnLimit` still applies and, when it fires, commits the turn exactly
-as the client's commit would have.
-
-###### Default Value
-
-`"auto"`
+##### turnTaking?
 
 ```ts
-import { agent } from "@alexkroman1/aai";
-
-export default agent({
-  name: "Walkie",
-  // Nothing the caller says is answered until they let go of the button.
-  turnDetection: "manual",
-});
+optional turnTaking?: TurnTakingTuning;
 ```
+
+When the caller's turn ends — see [TurnTakingTuning](#turntakingtuning).
 
 ###### Inherited from
 
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`turnDetection`](#turndetection-1)
+[`PipelineTuning`](#pipelinetuning).[`turnTaking`](#turntaking-1)
 
 ##### usageLimits?
 
@@ -4552,33 +4466,6 @@ session emits nothing rather than spending a durable event per model step.
 ###### Inherited from
 
 [`AgentModelTuning`](#agentmodeltuning).[`usageLimits`](#usagelimits-1)
-
-##### userTurnLimit?
-
-```ts
-optional userTurnLimit?: UserTurnLimit;
-```
-
-Pipeline mode only. Cap ONE user turn's length — by words heard, by
-elapsed time, or both — see [UserTurnLimit](#userturnlimit-2).
-
-###### Default Value
-
-unset — no cap on a single user turn's length.
-
-```ts
-import { agent } from "@alexkroman1/aai";
-
-export default agent({
-  name: "Triage",
-  // Answer after 60 words or 20 seconds, whichever the caller reaches first.
-  userTurnLimit: { maxWords: 60, maxDurationMs: 20_000 },
-});
-```
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`userTurnLimit`](#userturnlimit-1)
 
 ##### voicePresets?
 
@@ -4774,7 +4661,7 @@ the AI SDK's own (2 retries, exponential backoff)
 Transport-level retries of a request that never produced an answer at all
 (a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
 a subagent's requests retry on the AI SDK default, and its guardrail
-sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
+sending an answer back is [SpeakerDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -4914,28 +4801,29 @@ of them was reachable from `agent.ts`.
 ##### syncState?
 
 ```ts
-optional syncState?: 
-  | StateProjection<unknown>
-  | readonly StateProjection<unknown>[];
+optional syncState?: Readonly<Record<string, StateProjection<unknown>>>;
 ```
 
 Project per-session state to the browser client, so a custom UI can
 render it without the agent hand-rolling a sync channel.
 
-One projection per slot the client should see, or an array of them — the
-`agent_state` frame carries the merge. A slot the agent does not project
-never leaves the server, which is the point: session state routinely holds
-things a browser should not have, so the author decides what leaves, and
-whatever a projection returns is exactly what `useAgentState` receives.
-Pushed after every tool call, and only when a projection actually changed:
-most turns touch no state, and this shares a socket with 384 kbps of PCM.
+A RECORD keyed by SLOT NAME, one projection per slot the client should
+see: `{ cart: cartSlot.projected }`. The key must be the projection's own
+slot key — `agent()` refuses a mismatch by name — so the `agent_state`
+frame is `{ [slot]: view }` and the browser selects by the same name
+(`useAgentState(cartSlot.projected)` reads `state.cart`). A slot the agent
+does not project never leaves the server, which is the point: session
+state routinely holds things a browser should not have, so the author
+decides what leaves, and whatever a projection returns is exactly what the
+page receives under that key. Pushed after every tool call, and only when
+a projection actually changed: most turns touch no state, and this shares
+a socket with 384 kbps of PCM.
 
 **Declare the view on the slot and pass [SessionSlot.projected](#projected).**
 One object the agent pushes with and the page renders with, so the frame
 shown before the first tool call cannot describe a different view from the
-ones after it. A slot with more than one audience keeps
-[SessionSlot.projection](#projection-1), a second view over the same slot;
-`syncState` takes an array.
+ones after it. One view per slot: a page that needs a second shape derives
+it from the first.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -4944,12 +4832,10 @@ type Item = { sku: string; qty: number };
 const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
   view: (s) => ({ items: s.items }),
 });
-agent({ name: "Cart", syncState: cartSlot.projected });
-// Two audiences over the one slot:
-agent({
-  name: "Cart",
-  syncState: [cartSlot.projected, cartSlot.projection((s) => ({ count: s.items.length }))],
-});
+const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
+agent({ name: "Cart", syncState: { cart: cartSlot.projected } });
+// Two slots, one frame: { cart: { items }, prefs: { units } }.
+agent({ name: "Cart", syncState: { cart: cartSlot.projected, prefs: prefsSlot.projected } });
 ```
 
 ###### Remarks
@@ -5120,7 +5006,7 @@ answering.
 
 The opt-in prompt presets, extended by `AgentDef`.
 
-Its own interface for the reason `PipelineVoiceTuning` and the three other
+Its own interface for the reason `PipelineTuning` and the three other
 field groups have one — `types.ts` sits at the source-length cap, and a group
 of fields sharing one rule reads better stated once. The rule here is the
 cost: **every name in the list is paid for on every model request**, and
@@ -5219,8 +5105,8 @@ TTS voice id, e.g. `"jane"`, `"michael"`, `"alba"`. Defaults to
 language — see
 `ASSEMBLYAI_TTS_VOICES` (from `@alexkroman1/aai/tts`) for the
 catalog; a name outside it fails in-band after connect and leaves the
-agent silent. (`agent({ voice })` is the same setting without the
-preset.)
+agent silent. (`tts: assemblyAITts({ voice })` is the same setting
+without the preset.)
 
 ***
 
@@ -5512,6 +5398,53 @@ listed. Default 10 minutes.
 
 ***
 
+### DelegateAnswer
+
+ONE attempt at an answer — what a [SpeakerGuardrail](#speakerguardrail) judges.
+
+`text` is the answer; `steps` and `toolCalls` are what the attempt COST,
+which is the half a voice agent needs in order to say something true about
+the wait ("I checked four sources"). They are a report, not a transcript: the
+tool RESULTS stay inside the subagent's context, which is the entire reason
+to have delegated.
+
+Split from [DelegateResult](#delegateresult) so a guardrail cannot read the fields that
+only make sense once the run is OVER — `revisions` counts the guardrail's own
+verdicts, and asking it to judge an answer against its own past judgements is
+not a check, it is a loop.
+
+#### Extended by
+
+- [`DelegateResult`](#delegateresult)
+
+#### Properties
+
+##### steps
+
+```ts
+steps: number;
+```
+
+How many steps this attempt took, including the final answering step.
+
+##### text
+
+```ts
+text: string;
+```
+
+The subagent's final message — see [SpeakerDef.expectedOutput](#expectedoutput).
+
+##### toolCalls
+
+```ts
+toolCalls: readonly DelegateToolCall[];
+```
+
+Every tool call this attempt made, in order.
+
+***
+
 ### DelegateOptions
 
 Per-call options for [DelegateFn](#delegatefn).
@@ -5558,7 +5491,7 @@ took.
 
 #### Extends
 
-- [`SubagentAnswer`](#subagentanswer)
+- [`DelegateAnswer`](#delegateanswer)
 
 #### Extended by
 
@@ -5613,7 +5546,7 @@ How many steps this attempt took, including the final answering step.
 
 ###### Inherited from
 
-[`SubagentAnswer`](#subagentanswer).[`steps`](#steps-1)
+[`DelegateAnswer`](#delegateanswer).[`steps`](#steps)
 
 ##### text
 
@@ -5621,23 +5554,47 @@ How many steps this attempt took, including the final answering step.
 text: string;
 ```
 
-The subagent's final message — see [SubagentDef.expectedOutput](#expectedoutput).
+The subagent's final message — see [SpeakerDef.expectedOutput](#expectedoutput).
 
 ###### Inherited from
 
-[`SubagentAnswer`](#subagentanswer).[`text`](#text-2)
+[`DelegateAnswer`](#delegateanswer).[`text`](#text)
 
 ##### toolCalls
 
 ```ts
-toolCalls: readonly SubagentToolCall[];
+toolCalls: readonly DelegateToolCall[];
 ```
 
 Every tool call this attempt made, in order.
 
 ###### Inherited from
 
-[`SubagentAnswer`](#subagentanswer).[`toolCalls`](#toolcalls-1)
+[`DelegateAnswer`](#delegateanswer).[`toolCalls`](#toolcalls)
+
+***
+
+### DelegateToolCall
+
+One tool call a subagent made, as reported back to the caller.
+
+#### Properties
+
+##### input
+
+```ts
+input: unknown;
+```
+
+The arguments it was called with.
+
+##### name
+
+```ts
+name: string;
+```
+
+The tool's name, as the subagent's model called it.
 
 ***
 
@@ -5665,6 +5622,32 @@ The event union [Dialog.send](#send) and a gated tool's
   it builds is an implementation detail and its type carries no events.
 
 #### Methods
+
+##### gate()
+
+```ts
+gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
+```
+
+The refusal for `tool` right now: a [ToolRefusal](#toolrefusal) (`reason: "dialog"`)
+when it is one this dialog's [Dialog.tool](#tool) minted and the conversation
+is outside its `when` states, `undefined` otherwise. The runtime layers it
+over every toolset (`agentToolsets`); the minted tool's own `execute` checks
+the same thing, so a spec calling it directly is gated too.
+
+###### Parameters
+
+###### tool
+
+[`ToolDef`](#tooldef)
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+[`ToolRefusal`](#toolrefusal) \| `undefined`
 
 ##### matches()
 
@@ -5766,14 +5749,14 @@ import { agent, dialog } from "@alexkroman1/aai";
 const claim = dialog("claim", {
   initial: "verifying",
   states: {
-    verifying: { on: { "@session.timed-out": "abandoned" } },
+    verifying: { on: { "@session.timedOut": "abandoned" } },
     abandoned: { final: true },
   },
 });
 
 export default agent({
   name: "Support",
-  events: { "session.timed-out": (event, ctx) => void claim.receive(ctx, event) },
+  events: { "session.timedOut": (event, ctx) => void claim.receive(ctx, event) },
 });
 ```
 
@@ -6158,7 +6141,7 @@ restated every name already written in the `on` maps, and a
 
 The six became eleven when a dialog had to be able to describe a CALL rather
 than a form: a deadline (`timeout`) and the five per-phase voice knobs
-(`voice`, `bargeIn`, `toolChoice`, `temperature`). Every one of
+(`voice`, `interruption`, `toolChoice`, `temperature`). Every one of
 them is plain JSON and rides in the same `meta` the instruction does, so the
 constraint above is untouched and a `durable: true` dialog written before any
 of this resumes byte-identically — a state declaring none of them compiles to
@@ -6186,15 +6169,6 @@ where full XState lives.
 
 #### Properties
 
-##### bargeIn?
-
-```ts
-optional bargeIn?: DialogBargeIn;
-```
-
-How interruptible the agent is here. A disclosure state may need to FINISH;
-a menu state wants to be maximally interruptible. See [DialogBargeIn](#dialogbargein).
-
 ##### final?
 
 ```ts
@@ -6221,6 +6195,18 @@ What the agent is supposed to be doing here, in this state's own words.
 Becomes [DialogPosition.instruction](#instruction) while the state is active, which
 is what a refusal quotes and what every gated tool's result carries.
 
+##### interruption?
+
+```ts
+optional interruption?: InterruptionTuning | "off";
+```
+
+How interruptible the agent is here — the same
+`PipelineTuning["interruption"]` the agent declares, overriding it field by
+field while this state is active. A disclosure state may need to FINISH
+(`"off"`); a menu state wants `{ minWords: 1 }` so a caller can cut in on
+the first word. See [InterruptionTuning](#interruptiontuning).
+
 ##### on?
 
 ```ts
@@ -6245,7 +6231,7 @@ optional persona?: string;
 ```
 
 The persona that speaks while the conversation is in this state, by name —
-one of the agent's `personas`. It PINS: `Personas.handoff` to anyone else
+one of the agent's `personas`. It PINS: `Roster.handoff` to anyone else
 is refused until the dialog moves on, and the pin is a property of the
 position rather than a write, so a resumed session is pinned the same way.
 Checked against the roster by `agent()`.
@@ -6798,13 +6784,15 @@ through `structuredClone` for a `durable` session.
 
 #### Properties
 
-##### bargeIn?
+##### interruption?
 
 ```ts
-readonly optional bargeIn?: DialogBargeIn;
+readonly optional interruption?: InterruptionTuning | "off";
 ```
 
-How interruptible the agent is here. See [DialogBargeIn](#dialogbargein).
+How interruptible the agent is here — the agent's own
+`PipelineTuning["interruption"]`, verbatim, overriding it field by field
+while this state is active (`"off"`: nothing cuts the agent off).
 
 ##### temperature?
 
@@ -6834,7 +6822,7 @@ The TTS voice for this phase of the call.
 
 ### HandoffOptions
 
-Per-call options for [Personas.handoff](#handoff-1).
+Per-call options for [Roster.handoff](#handoff-1).
 
 #### Properties
 
@@ -6844,10 +6832,9 @@ Per-call options for [Personas.handoff](#handoff-1).
 optional note?: string;
 ```
 
-What the next persona should know that the transcript does not say — "the
+What the next speaker should know that the transcript does not say — "the
 caller is verified", "wants a refund on invoice 4471". Rendered into the
-new persona's prompt section until the next handoff, so it survives the
-turn that made it rather than living only in one tool result.
+new speaker's prompt section until the next handoff.
 
 ***
 
@@ -6866,7 +6853,7 @@ model learns, in the same turn, who is speaking now.
 readonly from: string;
 ```
 
-The persona that was speaking.
+The speaker that was on the line.
 
 ##### handoff
 
@@ -6882,9 +6869,7 @@ Always `true`: a discriminant a client or a spec can switch on.
 readonly instruction: string;
 ```
 
-What the MODEL should do next, phrased for it: the tool result is the last
-thing it reads before it speaks, and the persona section of its prompt has
-already changed by the time it does.
+What the MODEL should do next — its prompt section has already changed.
 
 ##### note?
 
@@ -6900,7 +6885,85 @@ The note that travelled with it, when one did.
 readonly to: string;
 ```
 
-The persona speaking now.
+The speaker on the line now.
+
+***
+
+### InterruptionTuning
+
+When the caller's speech may cut the agent off, and what happens after.
+
+As `PipelineTuning["interruption"]` it may also be `"off"`: no interim and no
+final ever cuts the agent off (both barge-in gates become unreachable), while
+the caller's words are still transcribed and answered once the agent
+finishes. That spelling is for a dialog state ([DialogStateSpec.interruption](#interruption-1))
+that must be heard in full — a disclosure — more than for a whole agent.
+
+The one group a dialog state and a persona ([SpeakerDef.interruption](#interruption-4))
+may override, field by field, while they are active.
+
+#### Properties
+
+##### backoffMs?
+
+```ts
+optional backoffMs?: number;
+```
+
+How long agent audio stays blocked after a real interruption, in ms
+(Vapi's `backoffSeconds`). SEQUENTIAL with
+[TurnTakingTuning.startSpeakingFloorMs](#startspeakingfloorms), never cumulative: the two
+are one deadline, `max(floor, backoff)`.
+
+###### Default Value
+
+`0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`)
+
+##### minDurationMs?
+
+```ts
+optional minDurationMs?: number;
+```
+
+Minimum sustained speech (ms since the utterance's first interim
+transcript) before an interim-triggered barge-in aborts the reply — a
+duration gate beside [minWords](#minwords), mirroring LiveKit's
+`min_interruption_duration`. Committed turns are never gated; `0` disables.
+
+###### Default Value
+
+`500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
+
+##### minWords?
+
+```ts
+optional minWords?: number;
+```
+
+Minimum words in an interim transcript before user speech barges in on
+(aborts) the agent's in-flight reply. Set 1 to interrupt on any word.
+
+###### Default Value
+
+`1` (`DEFAULT_MIN_BARGE_IN_WORDS`) — a one-word "Hello?"
+probe must be able to stop the agent; `minDurationMs` is what keeps a
+cough or an echo from doing so.
+
+##### resumeFalseInterruption?
+
+```ts
+optional resumeFalseInterruption?: boolean;
+```
+
+Resume the agent's reply when a barge-in aborts it and no user turn ever
+commits (STT noise, a hallucinated partial) — the interruption was a false
+alarm and the agent would otherwise fall silent mid-thought. The resume
+fires when the transcript stream goes quiet with no final, never on a
+deadline of its own.
+
+###### Default Value
+
+`true`; `false` disables recovery.
 
 ***
 
@@ -7161,20 +7224,20 @@ another drawn, so the caller does not have to loop.
 ### ModelTuning
 
 The per-REQUEST knobs every model loop this runtime runs takes — the agent's
-own conversational loop and a [SubagentDef](#subagentdef)'s delegated one alike.
+own conversational loop and a [SpeakerDef](#speakerdef)'s delegated one alike.
 
 **One declaration, extended by both, rather than a list each restates.**
-`SubagentDef` used to carry its own `temperature` and `maxOutputTokens` beside
+`SpeakerDef` used to carry its own `temperature` and `maxOutputTokens` beside
 `AgentModelTuning`'s, with one-line docs of their own, and a `maxRetries` that
 meant something else entirely (the guardrail's revision budget, now
-[SubagentDef.maxRevisions](#maxrevisions)). A knob added here reaches both loops, and
+[SpeakerDef.maxRevisions](#maxrevisions)). A knob added here reaches both loops, and
 the name means one thing wherever it is written.
 
 Every field is passed straight through to the provider request, so each is
 refused in S2S mode on the AGENT — there the provider runs the loop; see this
 module's header. A subagent always runs on this runtime, whatever the parent's
 mode, so it may set `temperature` and `maxOutputTokens` — but not
-`maxRetries`, which [SubagentDef](#subagentdef) omits so the old guardrail-budget
+`maxRetries`, which [SpeakerDef](#speakerdef) omits so the old guardrail-budget
 spelling fails to compile.
 
 #### Extended by
@@ -7216,7 +7279,7 @@ the AI SDK's own (2 retries, exponential backoff)
 Transport-level retries of a request that never produced an answer at all
 (a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
 a subagent's requests retry on the AI SDK default, and its guardrail
-sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
+sending an answer back is [SpeakerDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -7239,276 +7302,11 @@ researcher subagent and the voice that relays what it found.
 
 ***
 
-### PersonaDef
-
-One persona: a speaker the session can hand the caller to.
-
-Every field but `tools`, `toolChoice` and `temperature` is required, and each
-requirement is a failure with no symptom otherwise: a persona with no
-`description` routes badly and reads as the model being unreliable; one with
-no `systemPrompt` speaks as the agent and nobody can tell it took over.
-
-#### Type Parameters
-
-##### N
-
-`N` *extends* `string` = `string`
-
-The persona's `name`, as a literal when [persona](#persona-4)
-  infers it — what lets [Personas.handoff](#handoff-1) refuse a misspelled target
-  at compile time. Defaults to `string`, which is every persona written
-  before the parameter existed.
-
-#### Properties
-
-##### description
-
-```ts
-description: string;
-```
-
-What this persona is FOR, in one line, written for whoever is choosing
-between personas: the `handoff` tool's description is these lines and
-nothing else, so write it as the job ("Invoices, payments and refunds"),
-not the mechanism.
-
-##### name
-
-```ts
-name: N;
-```
-
-What this persona is called — the value of the `handoff` tool's `persona`
-argument, the name a log line carries, and what `position(ctx).name` is.
-
-##### systemPrompt
-
-```ts
-systemPrompt: string;
-```
-
-The instructions in force while this persona is speaking, appended to the
-agent's own prompt under a heading naming the persona. The agent's
-`systemPrompt` stays — this is the section that CHANGES on a handoff.
-
-##### temperature?
-
-```ts
-optional temperature?: number;
-```
-
-The model's sampling temperature while this persona is speaking.
-
-##### toolChoice?
-
-```ts
-optional toolChoice?: ToolChoice;
-```
-
-The model's tool-choice policy while this persona is speaking.
-
-##### tools?
-
-```ts
-optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
-```
-
-The tools only this persona may call, by the name the model calls them by.
-
-A MAP, like `subagent({ tools })`, because these are declared on the
-persona rather than discovered from `tools/`: the agent's `tools/` files are
-every persona's, and this is the strictly narrower set one persona owns.
-Each name must be unique across the roster and must not collide with a
-`tools/` file — one tool has one owner, or the gate cannot say whose it is.
-
-***
-
-### PersonaPosition
-
-**`Sealed`**
-
-Where a session is, persona-wise — the position [Personas.position](#position-1)
-answers, the shape `DialogPosition` has for a dialog.
-
-#### Type Parameters
-
-##### N
-
-`N` *extends* `string` = `string`
-
-The roster's persona names — see [Personas](#personas-1).
-
-#### Properties
-
-##### from?
-
-```ts
-readonly optional from?: string;
-```
-
-Who handed off to it, when a handoff has happened this session.
-
-##### note?
-
-```ts
-readonly optional note?: string;
-```
-
-The [HandoffOptions.note](#note) that came with that handoff.
-
-##### persona
-
-```ts
-readonly persona: PersonaDef<N>;
-```
-
-The persona speaking now.
-
-##### pinnedBy?
-
-```ts
-readonly optional pinnedBy?: {
-  dialog: string;
-  state: string;
-};
-```
-
-The dialog PINNING this persona, when a dialog state declares one. While a
-pin is in force `handoff` to anyone else is refused — the state said who
-speaks here, and the dialog moving is what releases it.
-
-###### dialog
-
-```ts
-readonly dialog: string;
-```
-
-###### state
-
-```ts
-readonly state: string;
-```
-
-***
-
-### Personas
-
-**`Sealed`**
-
-The roster the agent declares and every tool reaches for — what
-[personas](#personas-2) returns.
-
-A HANDLE with methods that take the session, like [Dialog](#dialog), rather than
-a bare array like `agent({ subagents })`: a handoff has to know the whole
-roster to name who it came FROM and to refuse a target that is not on it, and
-a bare array gives a tool body neither.
-
-#### Type Parameters
-
-##### N
-
-`N` *extends* `string` = `string`
-
-The roster's persona names, inferred by [personas](#personas-2) from
-  the literal names [persona](#persona-4) gives each entry, so
-  `desk.handoff(ctx, "biling")` is a compile error rather than a throw on a
-  live call. Defaults to `string`, so a `Personas` annotation written before
-  the parameter existed still accepts any roster.
-
-#### Methods
-
-##### active()
-
-```ts
-active(ctx: SlotHolder): PersonaDef<N>;
-```
-
-The persona speaking now: `position(ctx).persona`.
-
-###### Parameters
-
-###### ctx
-
-[`SlotHolder`](#slotholder)
-
-###### Returns
-
-[`PersonaDef`](#personadef)\<`N`\>
-
-##### handoff()
-
-```ts
-handoff(
-   ctx: SlotHolder, 
-   to: N | PersonaDef<N>, 
-   options?: HandoffOptions
-): HandoffResult;
-```
-
-Make `to` the speaker from the next model step on.
-
-Synchronous and cheap: one slot write. The prompt section, the pipeline's
-`activeTools` and the gate all READ the slot at the next step, so the same
-turn continues as the new persona — the model is told so through the
-returned [HandoffResult.instruction](#instruction-3), which the calling tool should
-return (or fold into) as its result.
-
-Throws when `to` is not on the roster, or when a dialog state currently
-PINS another persona (see [PersonaPosition.pinnedBy](#pinnedby)). Both are
-authoring mistakes a tool body should not have to defend against; the
-minted `handoff` tool turns them into a `ToolFailure` for the model.
-
-###### Parameters
-
-###### ctx
-
-[`SlotHolder`](#slotholder)
-
-###### to
-
-`N` \| [`PersonaDef`](#personadef)\<`N`\>
-
-###### options?
-
-[`HandoffOptions`](#handoffoptions)
-
-###### Returns
-
-[`HandoffResult`](#handoffresult)
-
-##### position()
-
-```ts
-position(ctx: SlotHolder): PersonaPosition<N>;
-```
-
-Who is speaking, and how they came to be — see [PersonaPosition](#personaposition).
-
-###### Parameters
-
-###### ctx
-
-[`SlotHolder`](#slotholder)
-
-###### Returns
-
-[`PersonaPosition`](#personaposition)\<`N`\>
-
-#### Properties
-
-##### list
-
-```ts
-readonly list: readonly PersonaDef<N>[];
-```
-
-The roster, in declaration order. The first entry is the ENTRY persona.
-
-***
-
-### PipelineVoiceTuning
-
-Pipeline-mode voice-UX tuning, extended by [AgentDef](#agentdef).
+### PipelinePhrases
+
+What the pipeline SAYS when a stage fails, so a provider outage hands the
+conversation back instead of going silent. Pipeline-only, like
+[PipelineTuning](#pipelinetuning); extended by [AgentDef](#agentdef).
 
 #### Extended by
 
@@ -7516,156 +7314,19 @@ Pipeline-mode voice-UX tuning, extended by [AgentDef](#agentdef).
 
 #### Properties
 
-##### deadAirCoverMs?
-
-```ts
-optional deadAirCoverMs?: number;
-```
-
-Pipeline mode only. How long a turn may send nothing to the caller before
-the transport speaks a short filler, so a long tool chain doesn't sound
-like a dropped call. MEASURED silence, so a prompt reply pays nothing; `0`
-disables. The wording is internal and must stay purely declarative — see
-`DEAD_AIR_COVER_PHRASES` for why.
-
-###### Default Value
-
-`2400` (`DEFAULT_DEAD_AIR_COVER_MS`)
-
 ##### errorPhrase?
 
 ```ts
 optional errorPhrase?: string;
 ```
 
-Pipeline mode only. Phrase spoken when the turn's LLM stream fails, so a
-provider outage hands the conversation back instead of going silent — a
-failed turn produces no text, so nothing would otherwise reach TTS. Set
-`""` to disable.
+Phrase spoken when the turn's LLM stream fails — a failed turn produces no
+text, so nothing would otherwise reach TTS. Set `""` to disable.
 
 ###### Default Value
 
 `"Sorry, I had a problem just then. Could you say that
 again?"` (`DEFAULT_ERROR_PHRASE`)
-
-##### interruptionBackoffMs?
-
-```ts
-optional interruptionBackoffMs?: number;
-```
-
-Pipeline mode only. How long agent audio stays blocked after a real
-interruption, in ms. Vapi's `backoffSeconds`.
-
-SEQUENTIAL with `startSpeakingFloorMs`, never cumulative: the two are one
-deadline, `max(floor, backoff)`.
-
-###### Default Value
-
-`0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`) — today's behaviour.
-Vapi's own default is 1.0s; see that constant for why this one is not.
-
-##### interruptionMinDurationMs?
-
-```ts
-optional interruptionMinDurationMs?: number;
-```
-
-Pipeline mode only. Minimum sustained speech (ms since the utterance's
-first interim transcript) before an interim-triggered barge-in aborts the
-agent's reply — a duration gate alongside `minBargeInWords`, mirroring
-LiveKit's `min_interruption_duration`. Committed turns (STT finals) are
-never gated. Set 0 to disable the gate.
-
-###### Default Value
-
-`500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
-
-##### minBargeInWords?
-
-```ts
-optional minBargeInWords?: number;
-```
-
-Pipeline mode only. Minimum words in an interim transcript before user
-speech barges in on (aborts) the agent's in-flight reply. Set 1 to
-interrupt on any word.
-
-###### Default Value
-
-`2` (`DEFAULT_MIN_BARGE_IN_WORDS`) — so one-word
-backchannels ("yeah", "mm-hmm") don't cut the agent off.
-
-##### preemptiveGeneration?
-
-```ts
-optional preemptiveGeneration?: boolean;
-```
-
-Pipeline mode only. Start generating the reply from a high-confidence
-INTERIM transcript, and adopt that already-running stream when the
-committed final turns out to say the same thing.
-
-###### Default Value
-
-`false` — measured on a tool-calling agent and not worth its
-cost there. Set `true` where the arithmetic plausibly differs: a text-heavy
-agent, or a longer head start from later endpointing.
-
-###### Remarks
-
-**Why it is off.** A `headStartMs`/adoption-rate log over a tau2-bench
-retail run: 16 speculations started, 14 adopted at a p50 0.44s head start,
-and 5 of those 14 (36%) poisoned after adoption by a tool call — unusable
-whole, so the generation is discarded and the request reissued, each having
-burned p50 0.69s first. Net +8ms per caller turn against a p50 first word of
-~1.0s, for 44% of its LLM requests thrown away.
-
-The head start does not survive contact with time-to-first-token: 0.44s
-against a p50 of 1.10s, so at adoption the speculation has generated
-nothing and whether its first part will be text or a tool call cannot be
-known then. A gate on "has it produced text" was tried and reverted — it
-rejects essentially every adoption, keeping the wasted request and losing
-the benefit.
-
-Its reach is bounded independently of that: across 815 replies in two
-tau2-bench retail runs, 28-33% of replies called a tool at all (the
-distribution recorded on `DEFAULT_MAX_STEPS`), so at most the
-remaining 67-72% can ever be accelerated.
-
-**What it structurally cannot do**, by construction rather than by flag:
-a speculation never reaches TTS, never
-emits a client frame, never writes either history view, and never EXECUTES
-a tool — its tool set is declaration-only, so the model cannot continue past
-a tool call, and a speculation that reaches one is discarded whole. Adoption
-requires the final to match the speculated text after normalization
-(case/punctuation only); an extension, a truncation or a revision all
-discard and the turn runs exactly as it does with the flag off. At most 2
-speculations per utterance. So the worst case is one extra billed LLM
-request for that utterance.
-
-Turning it back on by default is owed a tau2-bench run at the same tasks
-and seed showing no reward regression.
-
-##### resumeFalseInterruption?
-
-```ts
-optional resumeFalseInterruption?: boolean;
-```
-
-Pipeline mode only. Resume the agent's reply when a barge-in aborts it and
-no user turn ever commits (STT noise, a hallucinated partial) — the
-interruption was a false alarm and the agent would otherwise fall silent
-mid-thought.
-
-###### Default Value
-
-`true`; `false` disables recovery.
-
-The WAIT is not an author knob: a resume must not race the caller's real
-turn, whose final the STT withholds for an endpointing window the transport
-cannot see, so it fires when the transcript stream goes quiet with no final
-rather than on a deadline of its own.
 
 ##### startFailurePhrase?
 
@@ -7673,10 +7334,9 @@ rather than on a deadline of its own.
 optional startFailurePhrase?: string;
 ```
 
-Pipeline mode only. Phrase spoken when a provider fails to open, so a session that cannot
-start says so instead of holding an open line in silence. Only reachable when TTS itself
-came up — the usual case, since STT and TTS open independently. Set `""`
-to disable.
+Phrase spoken when a provider fails to open, so a session that cannot
+start says so instead of holding an open line in silence. Only reachable
+when TTS itself came up. Set `""` to disable.
 
 ###### Default Value
 
@@ -7684,87 +7344,54 @@ to disable.
 cannot hear you. Please hang up and call back."`
 (`DEFAULT_START_FAILURE_PHRASE`)
 
-##### startSpeakingFloorMs?
+***
 
-```ts
-optional startSpeakingFloorMs?: number;
-```
+### PipelineTuning
 
-Pipeline mode only. Minimum delay between a reply starting and its first
-audio reaching the caller, in ms — a floor at the END of the pipeline, so
-it decouples "when did I decide the turn ended" from "when do I start
-speaking". Vapi's `waitSeconds`.
-
-It is a MINIMUM: a pipeline slower than this pays nothing, and only a
-reply that was ready sooner waits.
-
-###### Default Value
-
-`0` (`DEFAULT_START_SPEAKING_FLOOR_MS`) — today's behaviour.
-Vapi's own default is 0.4s; see that constant for why this one is not.
-
-##### turnDetection?
-
-```ts
-optional turnDetection?: TurnDetectionMode;
-```
-
-Pipeline mode only. WHO decides that the caller's turn is over.
-
-- `"auto"` — the transcriber does, on a pause. What every agent has always
-  done.
-- `"manual"` — the CLIENT does, which is push-to-talk. The caller's audio
-  reaches the transcriber only between a `user_turn_start` and the
-  `user_turn_commit` or `user_turn_clear` that closes it (`aai-ui`'s
-  `session.userTurn.start` / `.commit` / `.clear`, or its
-  `usePushToTalk` hook). Everything transcribed in that window, across
-  however many pauses, is ONE turn, and nothing is answered until the
-  commit. Outside the window the microphone is replaced with silence
-  server-side, so a caller talking to someone else in the room is never
-  heard.
-
-Under `"manual"` the caller's speech never barges in by itself — opening a
-turn is what interrupts the agent, so the button IS the barge-in — and
-preemptive generation is skipped, since no pause is a turn boundary. A
-`userTurnLimit` still applies and, when it fires, commits the turn exactly
-as the client's commit would have.
-
-###### Default Value
-
-`"auto"`
-
-```ts
-import { agent } from "@alexkroman1/aai";
-
-export default agent({
-  name: "Walkie",
-  // Nothing the caller says is answered until they let go of the button.
-  turnDetection: "manual",
-});
-```
-
-##### userTurnLimit?
-
-```ts
-optional userTurnLimit?: UserTurnLimit;
-```
-
-Pipeline mode only. Cap ONE user turn's length — by words heard, by
-elapsed time, or both — see [UserTurnLimit](#userturnlimit-2).
-
-###### Default Value
-
-unset — no cap on a single user turn's length.
+The pipeline's turn-taking tuning: three optional groups, extended by
+[AgentDef](#agentdef) and present only on the pipeline member of `agent()`.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Triage",
-  // Answer after 60 words or 20 seconds, whichever the caller reaches first.
-  userTurnLimit: { maxWords: 60, maxDurationMs: 20_000 },
+  turnTaking: { maxSilenceMs: 4500, userTurnLimit: { maxWords: 60 } },
+  interruption: { minWords: 3 },
+  silence: { nudge: { afterMs: 15_000 } },
 });
 ```
+
+#### Extended by
+
+- [`AgentDef`](#agentdef)
+
+#### Properties
+
+##### interruption?
+
+```ts
+optional interruption?: InterruptionTuning | "off";
+```
+
+When the caller may cut the agent off — see [InterruptionTuning](#interruptiontuning);
+`"off"` means never.
+
+##### silence?
+
+```ts
+optional silence?: SilenceTuning;
+```
+
+Dead air and the silence nudge — see [SilenceTuning](#silencetuning).
+
+##### turnTaking?
+
+```ts
+optional turnTaking?: TurnTakingTuning;
+```
+
+When the caller's turn ends — see [TurnTakingTuning](#turntakingtuning).
 
 ***
 
@@ -8079,6 +7706,125 @@ callers wrote this by hand to get.
 ###### Returns
 
 `number`
+
+***
+
+### Roster
+
+**`Sealed`**
+
+The roster the agent declares and every tool reaches for — what
+[roster](#roster-2) returns. A HANDLE, like [Dialog](#dialog): a handoff has to know
+the whole roster to name who it came FROM and refuse a target not on it.
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+The roster's names, inferred from the literal names
+  [speaker](#speaker-1) gives each entry, so `desk.handoff(ctx, "biling")` is a
+  compile error rather than a throw on a live call.
+
+#### Methods
+
+##### active()
+
+```ts
+active(ctx: SlotHolder): SpeakerDef<N>;
+```
+
+The speaker on the line now: `position(ctx).speaker`.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+[`SpeakerDef`](#speakerdef)\<`N`\>
+
+##### handoff()
+
+```ts
+handoff(
+   ctx: SlotHolder, 
+   to: N | SpeakerDef<N>, 
+   options?: HandoffOptions
+): HandoffResult;
+```
+
+Put `to` on the line from the next model step on — one slot write. Return
+(or fold in) the [HandoffResult](#handoffresult) as the calling tool's result.
+
+Throws when `to` is not a speaking entry, or a dialog state PINS another
+one ([SpeakerPosition.pinnedBy](#pinnedby)); the minted `handoff` tool turns
+both into a `ToolRefusal` for the model.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### to
+
+`N` \| [`SpeakerDef`](#speakerdef)\<`N`\>
+
+###### options?
+
+[`HandoffOptions`](#handoffoptions)
+
+###### Returns
+
+[`HandoffResult`](#handoffresult)
+
+##### position()
+
+```ts
+position(ctx: SlotHolder): SpeakerPosition<N>;
+```
+
+Who is on the line, and how they came to be. Throws when nobody speaks.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+[`SpeakerPosition`](#speakerposition)\<`N`\>
+
+#### Properties
+
+##### delegates
+
+```ts
+readonly delegates: readonly SpeakerDef<N>[];
+```
+
+The entries that run off the line — what `delegate` routes between.
+
+##### list
+
+```ts
+readonly list: readonly SpeakerDef<N>[];
+```
+
+Every entry, in declaration order.
+
+##### speaking
+
+```ts
+readonly speaking: readonly SpeakerDef<N>[];
+```
+
+The `speaks: true` entries, in order. The first is the ENTRY speaker.
 
 ***
 
@@ -8482,10 +8228,10 @@ misspelled name, where the `Extract` silently resolves to `never`.
 
 #### Properties
 
-##### agent-transcript.committed
+##### agentTranscript.committed
 
 ```ts
-agent-transcript.committed: {
+agentTranscript.committed: {
   meta: {
      at: number;
      id: string;
@@ -8493,7 +8239,7 @@ agent-transcript.committed: {
   recorded?: false;
   recovery?: "session-failed" | "turn-failed";
   text: string;
-  type: "agent-transcript.committed";
+  type: "agentTranscript.committed";
 };
 ```
 
@@ -8527,25 +8273,25 @@ text: string;
 ###### type
 
 ```ts
-type: "agent-transcript.committed";
+type: "agentTranscript.committed";
 ```
 
 ###### Inherited from
 
 ```ts
-EventMapOf.agent-transcript.committed
+EventMapOf.agentTranscript.committed
 ```
 
-##### agent-transcript.updated
+##### agentTranscript.updated
 
 ```ts
-agent-transcript.updated: {
+agentTranscript.updated: {
   meta: {
      at: number;
      id: string;
   };
   text: string;
-  type: "agent-transcript.updated";
+  type: "agentTranscript.updated";
 };
 ```
 
@@ -8567,13 +8313,13 @@ text: string;
 ###### type
 
 ```ts
-type: "agent-transcript.updated";
+type: "agentTranscript.updated";
 ```
 
 ###### Inherited from
 
 ```ts
-EventMapOf.agent-transcript.updated
+EventMapOf.agentTranscript.updated
 ```
 
 ##### audio.completed
@@ -8929,6 +8675,67 @@ type: "metrics.collected";
 EventMapOf.metrics.collected
 ```
 
+##### provider.failedOver
+
+```ts
+provider.failedOver: {
+  from: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  reason: string;
+  stage: "stt" | "llm" | "tts";
+  to: string;
+  type: "provider.failedOver";
+};
+```
+
+###### from
+
+```ts
+from: string;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### reason
+
+```ts
+reason: string;
+```
+
+###### stage
+
+```ts
+stage: "stt" | "llm" | "tts";
+```
+
+###### to
+
+```ts
+to: string;
+```
+
+###### type
+
+```ts
+type: "provider.failedOver";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.provider.failedOver
+```
+
 ##### reply.cancelled
 
 ```ts
@@ -9089,15 +8896,15 @@ type: "session.reset";
 EventMapOf.session.reset
 ```
 
-##### session.timed-out
+##### session.timedOut
 
 ```ts
-session.timed-out: {
+session.timedOut: {
   meta: {
      at: number;
      id: string;
   };
-  type: "session.timed-out";
+  type: "session.timedOut";
 };
 ```
 
@@ -9113,13 +8920,13 @@ session.timed-out: {
 ###### type
 
 ```ts
-type: "session.timed-out";
+type: "session.timedOut";
 ```
 
 ###### Inherited from
 
 ```ts
-EventMapOf.session.timed-out
+EventMapOf.session.timedOut
 ```
 
 ##### speech.started
@@ -9196,7 +9003,7 @@ state.updated: {
      at: number;
      id: string;
   };
-  state: unknown;
+  state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   type: "state.updated";
 };
 ```
@@ -9213,7 +9020,7 @@ state.updated: {
 ###### state
 
 ```ts
-state: unknown;
+state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 ```
 
 ###### type
@@ -9390,16 +9197,16 @@ type: "usage.updated";
 EventMapOf.usage.updated
 ```
 
-##### user-transcript.committed
+##### userTranscript.committed
 
 ```ts
-user-transcript.committed: {
+userTranscript.committed: {
   meta: {
      at: number;
      id: string;
   };
   text: string;
-  type: "user-transcript.committed";
+  type: "userTranscript.committed";
 };
 ```
 
@@ -9421,26 +9228,26 @@ text: string;
 ###### type
 
 ```ts
-type: "user-transcript.committed";
+type: "userTranscript.committed";
 ```
 
 ###### Inherited from
 
 ```ts
-EventMapOf.user-transcript.committed
+EventMapOf.userTranscript.committed
 ```
 
-##### user-transcript.updated
+##### userTranscript.updated
 
 ```ts
-user-transcript.updated: {
+userTranscript.updated: {
   eotConfidence?: number;
   meta: {
      at: number;
      id: string;
   };
   text: string;
-  type: "user-transcript.updated";
+  type: "userTranscript.updated";
 };
 ```
 
@@ -9468,26 +9275,26 @@ text: string;
 ###### type
 
 ```ts
-type: "user-transcript.updated";
+type: "userTranscript.updated";
 ```
 
 ###### Inherited from
 
 ```ts
-EventMapOf.user-transcript.updated
+EventMapOf.userTranscript.updated
 ```
 
-##### user-turn.exceeded
+##### userTurn.exceeded
 
 ```ts
-user-turn.exceeded: {
+userTurn.exceeded: {
   durationMs: number;
   limit: "words" | "duration";
   meta: {
      at: number;
      id: string;
   };
-  type: "user-turn.exceeded";
+  type: "userTurn.exceeded";
   words: number;
 };
 ```
@@ -9516,7 +9323,7 @@ limit: "words" | "duration";
 ###### type
 
 ```ts
-type: "user-turn.exceeded";
+type: "userTurn.exceeded";
 ```
 
 ###### words
@@ -9528,7 +9335,7 @@ words: number;
 ###### Inherited from
 
 ```ts
-EventMapOf.user-turn.exceeded
+EventMapOf.userTurn.exceeded
 ```
 
 ***
@@ -9610,15 +9417,15 @@ A `syncState` projection over this slot: read the value (defaulting when
 the session has not touched it), then project.
 
 **Reach for [SessionSlot.projected](#projected) first** — one view, declared with
-the slot, passed by both ends. This is the multi-view case: `syncState`
-takes an array, so an agent that shows one slot to two audiences composes a
-second projection here.
+the slot, passed by both ends. This is the spelling for a view composed
+where it is used rather than declared on the slot; `syncState` still takes
+ONE projection per slot, keyed by the slot's name.
 
 The result is CALLABLE as well as declarable, which is what lets a client
 derive its own empty state from the same function the server pushes —
 `slot.projection(view)()` is the pre-first-tool-call frame. Declaring it is
-`agent({ syncState: slot.projection(view) })`, and an agent with more than
-one slot passes an array; the frame carries the merge.
+`agent({ syncState: { [name]: slot.projection(view) } })`, one entry per
+slot; the frame is keyed the same way.
 
 `project` receives a REAL value, so a projection needs no optional chaining
 for the moment before the first tool call.
@@ -9648,7 +9455,7 @@ const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
 
 export default agent({
   name: "Shop",
-  syncState: cartSlot.projection((cart) => ({ count: cart.items.length })),
+  syncState: { cart: cartSlot.projection((cart) => ({ count: cart.items.length })) },
 });
 ```
 
@@ -9944,7 +9751,7 @@ readonly projected: StateProjection<V>;
 This slot's declared view as a `syncState` projection — built ONCE, here,
 so both ends can pass the same object.
 
-`agent({ syncState: cartSlot.projected })` on the server and
+`agent({ syncState: { cart: cartSlot.projected } })` on the server and
 `useAgentState(cartSlot.projected)` in the browser are then the SAME
 projection by construction, and the frame rendered before the first push
 cannot describe a different view than the frames pushed after it. Composing
@@ -9967,7 +9774,7 @@ const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
   view: (cart) => ({ count: cart.items.length }),
 });
 
-export default agent({ name: "Shop", syncState: cartSlot.projected });
+export default agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
 ```
 
 ***
@@ -10097,7 +9904,7 @@ optional view?: (value: DeepReadonly<T>) => V;
 What this slot shows the BROWSER — declared here so it is written once and
 read from both ends as [SessionSlot.projected](#projected).
 
-`agent({ syncState: cartSlot.projected })` and
+`agent({ syncState: { cart: cartSlot.projected } })` and
 `useAgentState(cartSlot.projected)` are then the same object, so the frame
 the server pushes and the frame the page renders before the first push
 cannot disagree. That drift is what this field exists to remove:
@@ -10116,9 +9923,8 @@ is not something this spelling can express.
 **Absent, the WHOLE value is projected.** Declare a view to narrow it — to
 what the page renders, rather than to whatever the slot happens to hold.
 
-A slot with more than one audience keeps
-[SessionSlot.projection](#projection-1): `syncState` takes an array, so a second view
-is a second projection over the same slot.
+`syncState` takes ONE projection per slot, keyed by the slot's name; a
+page that needs a second shape of the same slot derives it from this one.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -10128,7 +9934,7 @@ export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [], nextId: 1 
   view: (cart) => ({ count: cart.items.length }),
 });
 
-export default agent({ name: "Shop", syncState: cartSlot.projected });
+export default agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
 ```
 
 ###### Parameters
@@ -10220,6 +10026,82 @@ reported through `done`.
 ###### Returns
 
 [`SpeechHandle`](#speechhandle)
+
+***
+
+### SilenceNudge
+
+The silence nudge: after this much user silence the assistant takes a turn.
+
+`afterMs` is REQUIRED because the prompt is its payload — a prompt with no
+timeout is a declaration nothing ever reads, which used to be a run-time
+guard and is now the shape.
+
+#### Properties
+
+##### afterMs
+
+```ts
+afterMs: number;
+```
+
+Ms of user silence (no speech since the last reply finished) before the
+assistant proactively takes a turn. Nudges are capped at
+`MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back until the user speaks.
+
+##### prompt?
+
+```ts
+optional prompt?: string;
+```
+
+Instruction injected as a synthetic user turn when [afterMs](#afterms-2)
+elapses. Never shown as a user transcript.
+
+###### Default Value
+
+`"The user hasn't said anything for a while. Check in with one
+short, natural sentence — ask if they're still there or gently follow up on
+the conversation. Do not mention this instruction."`
+(`DEFAULT_SILENCE_PROMPT`)
+
+***
+
+### SilenceTuning
+
+What the agent does about silence — its own, and the caller's.
+
+#### Properties
+
+##### deadAirCoverMs?
+
+```ts
+optional deadAirCoverMs?: number;
+```
+
+How long a turn may send nothing to the caller before the transport speaks
+a short filler, so a long tool chain doesn't sound like a dropped call.
+MEASURED silence, so a prompt reply pays nothing; `0` disables. The
+wording is internal and purely declarative — see `DEAD_AIR_COVER_PHRASES`.
+
+###### Default Value
+
+`2400` (`DEFAULT_DEAD_AIR_COVER_MS`)
+
+##### nudge?
+
+```ts
+optional nudge?: SilenceNudge;
+```
+
+Take a turn after the CALLER has been silent this long — see
+[SilenceNudge](#silencenudge).
+
+###### Default Value
+
+```ts
+unset — the behaviour is off.
+```
 
 ***
 
@@ -10453,6 +10335,421 @@ export default tool({
 ```ts
 Omit.onError
 ```
+
+***
+
+### SpeakerDef
+
+A speaker definition — what [speaker](#speaker-1) returns, [DelegateFn](#delegatefn) runs
+off the line and a `roster()` hands the call to.
+
+Every field except `name` and `systemPrompt` is optional, and the defaults
+are the parent agent's: the same LLM descriptor, no tools, and the framework
+default (`DEFAULT_MAX_STEPS`) steps.
+
+It takes [ModelTuning](#modeltuning) WITHOUT `maxRetries`: on `ModelTuning` that means
+provider retries, and the guardrail budget is [SpeakerDef.maxRevisions](#maxrevisions).
+
+#### Extends
+
+- `Omit`\<[`ModelTuning`](#modeltuning), `"maxRetries"`\>
+
+#### Extended by
+
+- [`TypedSpeakerDef`](#typedspeakerdef)
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+The `name`, as a literal when [speaker](#speaker-1) infers it — what
+  lets `Roster.handoff` refuse a misspelled target at compile time.
+
+#### Properties
+
+##### builtinTools?
+
+```ts
+optional builtinTools?: readonly BuiltinTool[];
+```
+
+Builtins this subagent may call, resolved exactly as `agent({
+builtinTools })` resolves them. Independent of the parent's: a parent that
+enables none can still delegate to a subagent that searches the web.
+
+##### description?
+
+```ts
+optional description?: string;
+```
+
+What this speaker is FOR, in one line, written for whoever is choosing
+between them — the minted `delegate` and `handoff` tools' descriptions are
+these lines. REQUIRED of a roster entry (`roster()` refuses one without
+it); ignored by `ctx.delegate(def, …)` in code, where the choice is made.
+
+Write it as the job, not the mechanism: "Researches a topic on the open web
+and reports what it found" — not "calls web_search".
+
+##### expectedOutput?
+
+```ts
+optional expectedOutput?: string;
+```
+
+What a GOOD final message looks like — the shape of the answer, declared
+apart from the instructions for producing it.
+
+The runtime appends it to the instructions as its own labelled section, so
+it lands in the same place every time rather than wherever an author
+happened to put it in prose. It is also what a [SpeakerDef.guardrail](#guardrail)
+is quoted against when it sends an answer back, so the two halves of "what
+this run owes" stay one sentence rather than two that can disagree.
+
+Split out of `systemPrompt` for the reason CrewAI splits `expected_output`
+off `description`: the failure it prevents is structural, not a matter of
+prompting skill. A subagent whose brief says only what to DO ends its run
+when it is done, which for a delegated run is precisely the wrong moment to
+stop talking.
+
+```ts
+import { speaker } from "@alexkroman1/aai";
+
+const researcher = speaker({
+  name: "researcher",
+  systemPrompt: "Research the task with the tools you have.",
+  expectedOutput:
+    "A self-contained paragraph of what you found, naming the sources you " +
+    "trusted. Three sentences is plenty; do not write a report.",
+});
+```
+
+##### guardrail?
+
+```ts
+optional guardrail?: SpeakerGuardrail;
+```
+
+Check the subagent's answer, and send it back with a complaint when it is
+not good enough.
+
+Return `true` to accept. Return a STRING to reject: the string is the
+complaint, and the runtime re-runs the subagent with its own rejected
+answer and that complaint appended to the conversation it already has — so
+the retry keeps every tool result the first attempt paid for and is told
+exactly what to fix. Bounded by [SpeakerDef.maxRevisions](#maxrevisions).
+
+**A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
+of an answer and cannot say that a citation is missing, that the sources
+were all one publisher, or that the answer contradicts what the caller
+already said. That judgement is a function, and until now the only place to
+put it was after the delegation returned — where the one thing it could not
+do was ask for a better answer.
+
+Runs on every attempt including the last. Throwing from it fails the
+delegation, so a guardrail that cannot decide should return `true`.
+
+```ts
+import { speaker } from "@alexkroman1/aai";
+
+const researcher = speaker({
+  name: "researcher",
+  systemPrompt: "Research the task with the tools you have.",
+  expectedOutput: "A paragraph naming the sources you trusted.",
+  guardrail: ({ text, toolCalls }) =>
+    toolCalls.length === 0
+      ? "You answered without looking anything up. Search first, then answer."
+      : text.length > 1200
+        ? "Too long for someone listening on a phone — three sentences."
+        : true,
+});
+```
+
+##### interruption?
+
+```ts
+optional interruption?: InterruptionTuning | "off";
+```
+
+How interruptible the agent is while this speaker is ON THE LINE — the
+agent's own `interruption` group, overriding it field by field (a dialog
+state's own `interruption` overrides this in turn: dialog → speaker →
+agent). Read only for a `speaks: true` entry. Pipeline only.
+
+##### llm?
+
+```ts
+optional llm?: LlmSpec;
+```
+
+LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
+model-id string — the same shorthand as `agent({ llm })` and
+[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
+
+Naming a cheaper model here is the usual reason to set it: a subagent
+doing lookups is spending most of its tokens on tool results, not on
+reasoning.
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
+```
+
+Not a field. Typed as the message that names the rename, so
+`speaker({ maxRetries: 3 })` fails to compile with the fix in the error
+rather than with a bare excess-property one — the idiom `agent({ tools })`
+uses. See [SpeakerDef.maxRevisions](#maxrevisions).
+
+##### maxRevisions?
+
+```ts
+optional maxRevisions?: number;
+```
+
+How many times a [SpeakerDef.guardrail](#guardrail) may send an answer back.
+
+###### Default Value
+
+`1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
+
+**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-2) retries
+a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
+delegation that SUCCEEDED and was judged not good enough. A subagent does
+not accept `maxRetries` at all, so code written against the old name fails
+to compile rather than quietly meaning something else.
+
+One, not CrewAI's three, because a revision is another FULL run of the
+subagent and the caller is on a live phone call — the third attempt at a
+summary arrives well after the moment anyone was waiting for it. Raise it
+for a subagent delegated from a workflow step, where nobody is listening.
+
+Exhausting the budget is not an error: the last attempt comes back with
+[DelegateResult.accepted](#accepted) `false` and the guardrail's
+[DelegateResult.complaint](#complaint), because a voice agent holding a rejected
+answer still has to say something, and it should be the caller's tool —
+not the runtime — that decides what.
+
+##### maxSteps?
+
+```ts
+optional maxSteps?: number;
+```
+
+Tool-calling steps this subagent may take before it must answer. Defaults
+to the framework's `DEFAULT_MAX_STEPS`.
+
+The budget is the mechanism: a subagent told to "keep looking until sure"
+is a subagent whose cost nobody can quote. Past the cap it is asked for
+its answer with tools withheld, so a capped run still returns prose rather
+than stopping mid-chain.
+
+##### name
+
+```ts
+name: N;
+```
+
+What this speaker is called: the value of the `delegate`/`handoff` tool's
+argument, the id on its own requests, and what a log line names.
+
+##### schema?
+
+```ts
+optional schema?: StandardSchemaV1<unknown, unknown>;
+```
+
+The SHAPE the final message must have — any
+[Standard Schema](https://standardschema.dev), zod being the documented
+default. The runtime parses the answer as JSON and checks it, and a reply
+that does not match is sent BACK the way a
+[SpeakerDef.guardrail](#guardrail) rejection is, with the schema's own issues as
+the complaint. Declare it through [speaker](#speaker-1) to get the parsed value
+typed on [TypedDelegateResult.object](#object).
+
+**This is not the guardrail, and the two are complementary.** A schema
+settles the SHAPE — that a verdict is one of three words rather than a
+sentence that implies one — where a guardrail is the judgement a shape
+cannot express (a missing citation, sources that are all one publisher).
+A subagent may declare both; the shape is checked first, because a
+guardrail asked to judge a malformed answer is being asked the wrong
+question.
+
+Reach for it when the CALLER has to branch on the answer.
+`topic-briefing-agent`'s fact-checker had a three-value verdict crossing three
+layers as an English sentence prefix — restated in `expectedOutput`,
+re-checked by a guardrail doing `startsWith`, and re-asked up to the retry
+budget — because a model that wrote `"Confirmed - "` was wrong in a way
+only prose could describe. A schema makes that a parse.
+
+```ts
+import { speaker } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const factChecker = speaker({
+  name: "fact-checker",
+  systemPrompt: "Check ONE claim against what you can find.",
+  schema: z.object({
+    verdict: z.enum(["confirmed", "contradicted", "unclear"]),
+    detail: z.string(),
+  }),
+});
+```
+
+##### speaks?
+
+```ts
+optional speaks?: boolean;
+```
+
+Whether the CALLER hears this speaker. `true` puts it on the roster's
+`handoff` tool — it takes the call, over the same history and slots; absent
+or `false` puts it on `delegate` — it runs off the line and hands back an
+answer. The first speaking entry of a roster answers the call.
+
+##### systemPrompt
+
+```ts
+systemPrompt: string;
+```
+
+The speaker's instructions — on the line and off it.
+
+**Tell it to summarize** — or, better, declare [SpeakerDef.expectedOutput](#expectedoutput)
+and let the runtime say it. The parent gets [DelegateResult.text](#text),
+which is the subagent's FINAL message, so a subagent that ends its run by
+saying "Done." has thrown away everything it learned and no amount of step
+budget recovers it. This is the single most common way a subagent
+disappoints, and it was a sentence every author had to remember to write
+here; `expectedOutput` is the field that remembers it for them.
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+Sampling temperature.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
+
+##### toolChoice?
+
+```ts
+optional toolChoice?: ToolChoice;
+```
+
+The model's tool-choice policy while this speaker is ON THE LINE.
+
+##### tools?
+
+```ts
+optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
+```
+
+The tools this subagent may call, by the name the model calls them by.
+
+A MAP rather than the filesystem registration `agent()` uses: `tools/`
+declares what every turn can reach, and this the narrower set this speaker
+owns. Off the line, they are its delegated loop's tools; on the line, the
+roster gates them to the turns it is speaking (one owner per name). An
+off-line speaker with no tools and no `builtinTools` is a pure reasoning
+pass.
+
+***
+
+### SpeakerPosition
+
+**`Sealed`**
+
+Who is on the line — what [Roster.position](#position-1) answers, the shape
+`DialogPosition` has for a dialog.
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+#### Properties
+
+##### from?
+
+```ts
+readonly optional from?: string;
+```
+
+Who handed off to it, when a handoff has happened this session.
+
+##### note?
+
+```ts
+readonly optional note?: string;
+```
+
+The [HandoffOptions.note](#note) that came with that handoff.
+
+##### pinnedBy?
+
+```ts
+readonly optional pinnedBy?: {
+  dialog: string;
+  state: string;
+};
+```
+
+The dialog PINNING this speaker, when a dialog state declares one. While a
+pin is in force `handoff` to anyone else is refused.
+
+###### dialog
+
+```ts
+readonly dialog: string;
+```
+
+###### state
+
+```ts
+readonly state: string;
+```
+
+##### speaker
+
+```ts
+readonly speaker: SpeakerDef<N>;
+```
+
+The speaker on the line now.
 
 ***
 
@@ -10723,397 +11020,222 @@ The slot key whose value this projects.
 
 ***
 
-### SubagentAnswer
+### Toolset
 
-ONE attempt at an answer — what a [SubagentGuardrail](#subagentguardrail) judges.
+A source of tools, as the runtime consumes it.
 
-`text` is the answer; `steps` and `toolCalls` are what the attempt COST,
-which is the half a voice agent needs in order to say something true about
-the wait ("I checked four sources"). They are a report, not a transcript: the
-tool RESULTS stay inside the subagent's context, which is the entire reason
-to have delegated.
+The advertised list is fixed per session on every transport (an S2S service
+holds its tool list for the whole session), so a rule about WHEN a tool may
+run is a [Toolset.gate](#gate-1) at the call — which is also where the model is
+told why, and how to recover.
 
-Split from [DelegateResult](#delegateresult) so a guardrail cannot read the fields that
-only make sense once the run is OVER — `revisions` counts the guardrail's own
-verdicts, and asking it to judge an answer against its own past judgements is
-not a check, it is a loop.
+#### Methods
 
-#### Extended by
+##### execute()
 
-- [`DelegateResult`](#delegateresult)
+```ts
+execute(
+   name: string, 
+   args: unknown, 
+   ctx: ToolContext
+): unknown;
+```
+
+Run `name`'s body with already-validated arguments. Gating is the caller's.
+
+###### Parameters
+
+###### name
+
+`string`
+
+###### args
+
+`unknown`
+
+###### ctx
+
+[`ToolContext`](#toolcontext)
+
+###### Returns
+
+`unknown`
+
+##### gate()
+
+```ts
+gate(name: string, ctx: ToolContext): ToolRefusal | undefined;
+```
+
+`undefined` when `name` may run now; otherwise the refusal the model reads.
+
+###### Parameters
+
+###### name
+
+`string`
+
+###### ctx
+
+[`ToolContext`](#toolcontext)
+
+###### Returns
+
+[`ToolRefusal`](#toolrefusal) \| `undefined`
+
+##### list()
+
+```ts
+list(): Readonly<Record<string, ToolsetEntry>>;
+```
+
+Every tool this set advertises, by the name the model calls.
+
+###### Returns
+
+`Readonly`\<`Record`\<`string`, [`ToolsetEntry`](#toolsetentry)\>\>
 
 #### Properties
 
-##### steps
+##### source
 
 ```ts
-steps: number;
+readonly source: ToolSource;
 ```
-
-How many steps this attempt took, including the final answering step.
-
-##### text
-
-```ts
-text: string;
-```
-
-The subagent's final message — see [SubagentDef.expectedOutput](#expectedoutput).
-
-##### toolCalls
-
-```ts
-toolCalls: readonly SubagentToolCall[];
-```
-
-Every tool call this attempt made, in order.
 
 ***
 
-### SubagentDef
+### ToolsetEntry
 
-A subagent definition — what [subagent](#subagent) returns and
-[DelegateFn](#delegatefn) runs.
-
-Every field except `name` and `systemPrompt` is optional, and the defaults
-are the parent agent's: the same LLM descriptor, no tools, and
-the framework default (`DEFAULT_MAX_STEPS`) steps.
-
-It takes [ModelTuning](#modeltuning) WITHOUT `maxRetries`, deliberately. That name
-was this def's guardrail budget before the knobs were unified, and on
-`ModelTuning` it means provider retries; accepting it here would have kept
-`subagent({ guardrail, maxRetries: 3 })` compiling while silently changing
-what the 3 bounds. Refused instead, it is a compile error whose message
-names [SubagentDef.maxRevisions](#maxrevisions). A subagent's provider requests
-retry on the AI SDK's default.
-
-#### Extends
-
-- `Omit`\<[`ModelTuning`](#modeltuning), `"maxRetries"`\>
-
-#### Extended by
-
-- [`TypedSubagentDef`](#typedsubagentdef)
+One advertised tool: the def the model reads, and who executes it.
 
 #### Properties
 
-##### builtinTools?
+##### def
 
 ```ts
-optional builtinTools?: readonly BuiltinTool[];
+readonly def: ToolDef;
 ```
 
-Builtins this subagent may call, resolved exactly as `agent({
-builtinTools })` resolves them. Independent of the parent's: a parent that
-enables none can still delegate to a subagent that searches the web.
+Description, schema, `messages` and `onError` — what the model and the executor read.
 
-##### description?
+##### executor
 
 ```ts
-optional description?: string;
+readonly executor: ToolExecutor;
 ```
 
-What this subagent is FOR, in one line, written for whoever is choosing
-between subagents rather than for the subagent itself.
-
-Ignored by call-site delegation — `ctx.delegate(researcher, …)` names the
-subagent in code, so the choice is already made and there is nothing to
-describe it to. It is REQUIRED of a subagent listed in
-`agent({ subagents })`, and that is the whole reason it exists: a roster is
-routed by the model, which reads this and nothing else. `agent()` refuses a
-roster entry without one rather than shipping an agent that picks a
-subagent off a list of bare names.
-
-Write it as the job, not the mechanism: "Researches a topic on the open web
-and reports what it found" — not "calls web_search".
-
-##### expectedOutput?
+##### timeoutMs?
 
 ```ts
-optional expectedOutput?: string;
+readonly optional timeoutMs?: number;
 ```
 
-What a GOOD final message looks like — the shape of the answer, declared
-apart from the instructions for producing it.
+A per-call deadline the entry carries (a `clientTool`'s `timeoutMs`).
 
-The runtime appends it to the instructions as its own labelled section, so
-it lands in the same place every time rather than wherever an author
-happened to put it in prose. It is also what a [SubagentDef.guardrail](#guardrail)
-is quoted against when it sends an answer back, so the two halves of "what
-this run owes" stay one sentence rather than two that can disagree.
+***
 
-Split out of `systemPrompt` for the reason CrewAI splits `expected_output`
-off `description`: the failure it prevents is structural, not a matter of
-prompting skill. A subagent whose brief says only what to DO ends its run
-when it is done, which for a delegated run is precisely the wrong moment to
-stop talking.
+### TurnTakingTuning
+
+WHEN the caller's turn ends and the agent's begins.
+
+#### Properties
+
+##### detection?
 
 ```ts
-import { subagent } from "@alexkroman1/aai";
-
-const researcher = subagent({
-  name: "researcher",
-  systemPrompt: "Research the task with the tools you have.",
-  expectedOutput:
-    "A self-contained paragraph of what you found, naming the sources you " +
-    "trusted. Three sentences is plenty; do not write a report.",
-});
+optional detection?: TurnDetectionMode;
 ```
 
-##### guardrail?
-
-```ts
-optional guardrail?: SubagentGuardrail;
-```
-
-Check the subagent's answer, and send it back with a complaint when it is
-not good enough.
-
-Return `true` to accept. Return a STRING to reject: the string is the
-complaint, and the runtime re-runs the subagent with its own rejected
-answer and that complaint appended to the conversation it already has — so
-the retry keeps every tool result the first attempt paid for and is told
-exactly what to fix. Bounded by [SubagentDef.maxRevisions](#maxrevisions).
-
-**A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
-of an answer and cannot say that a citation is missing, that the sources
-were all one publisher, or that the answer contradicts what the caller
-already said. That judgement is a function, and until now the only place to
-put it was after the delegation returned — where the one thing it could not
-do was ask for a better answer.
-
-Runs on every attempt including the last. Throwing from it fails the
-delegation, so a guardrail that cannot decide should return `true`.
-
-```ts
-import { subagent } from "@alexkroman1/aai";
-
-const researcher = subagent({
-  name: "researcher",
-  systemPrompt: "Research the task with the tools you have.",
-  expectedOutput: "A paragraph naming the sources you trusted.",
-  guardrail: ({ text, toolCalls }) =>
-    toolCalls.length === 0
-      ? "You answered without looking anything up. Search first, then answer."
-      : text.length > 1200
-        ? "Too long for someone listening on a phone — three sentences."
-        : true,
-});
-```
-
-##### llm?
-
-```ts
-optional llm?: LlmSpec;
-```
-
-LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
-model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
-
-Naming a cheaper model here is the usual reason to set it: a subagent
-doing lookups is spending most of its tokens on tool results, not on
-reasoning.
-
-##### maxOutputTokens?
-
-```ts
-optional maxOutputTokens?: number;
-```
-
-Cap on generated tokens per step, passed straight through to the provider.
-
-The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
-call. Per STEP, not per turn: a reply that calls three tools has four
-generations in it, and the cap bounds each.
-
-On a voice agent it is a bluntness knob rather than a cost one — a model
-that runs long is a model the caller is waiting through — and a value low
-enough to truncate mid-sentence will truncate mid-sentence, because the
-provider stops emitting rather than wrapping up.
-
-###### Inherited from
-
-[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
-
-##### maxRetries?
-
-```ts
-optional maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
-```
-
-Not a field. Typed as the message that names the rename, so
-`subagent({ maxRetries: 3 })` fails to compile with the fix in the error
-rather than with a bare excess-property one — the idiom `agent({ tools })`
-uses. See [SubagentDef.maxRevisions](#maxrevisions).
-
-##### maxRevisions?
-
-```ts
-optional maxRevisions?: number;
-```
-
-How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
+WHO decides that the caller's turn is over: `"auto"` (the transcriber, on a
+pause) or `"manual"` (the client — push-to-talk, via `aai-ui`'s
+`session.userTurn.start`/`.commit`/`.clear` or `usePushToTalk`). Under
+`"manual"` the caller's speech never barges in by itself and preemptive
+generation is skipped; a [userTurnLimit](#userturnlimit) still applies.
 
 ###### Default Value
 
-`1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
+`"auto"`
 
-**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-2) retries
-a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
-delegation that SUCCEEDED and was judged not good enough. A subagent does
-not accept `maxRetries` at all, so code written against the old name fails
-to compile rather than quietly meaning something else.
-
-One, not CrewAI's three, because a revision is another FULL run of the
-subagent and the caller is on a live phone call — the third attempt at a
-summary arrives well after the moment anyone was waiting for it. Raise it
-for a subagent delegated from a workflow step, where nobody is listening.
-
-Exhausting the budget is not an error: the last attempt comes back with
-[DelegateResult.accepted](#accepted) `false` and the guardrail's
-[DelegateResult.complaint](#complaint), because a voice agent holding a rejected
-answer still has to say something, and it should be the caller's tool —
-not the runtime — that decides what.
-
-##### maxSteps?
+##### maxSilenceMs?
 
 ```ts
-optional maxSteps?: number;
+optional maxSilenceMs?: number;
 ```
 
-Tool-calling steps this subagent may take before it must answer. Defaults
-to the framework's `DEFAULT_MAX_STEPS`.
+Pause tolerance for the default AssemblyAI STT stage, in ms — lowered onto
+`stt: assemblyAIStt({ maxTurnSilenceMs })`. **The knob to reach for**: it
+force-ends a turn regardless of content, so raising it is paid for by
+hesitant speech alone. Refused beside an explicit `stt` descriptor.
 
-The budget is the mechanism: a subagent told to "keep looking until sure"
-is a subagent whose cost nobody can quote. Past the cap it is asked for
-its answer with tools withheld, so a capped run still returns prose rather
-than stopping mid-chain.
+###### Default Value
 
-##### name
+`3500` (`DEFAULT_MAX_TURN_SILENCE_MS`)
+
+##### minSilenceMs?
 
 ```ts
-name: string;
+optional minSilenceMs?: number;
 ```
 
-What this subagent is called. It reaches the model only as the id on the
-subagent's own requests; its reader is a log line and a failure message
-("subagent \"researcher\" ran out of steps"), which is why it is required
-and why an anonymous subagent is not expressible.
+End-of-turn CHECK window for the default AssemblyAI STT stage, in ms —
+lowered by `agent()` onto `stt: assemblyAIStt({ minTurnSilenceMs })`, so
+one knob costs one field rather than a whole stage descriptor. It taxes
+EVERY finished utterance, which is why the pause-tolerance knob is
+[maxSilenceMs](#maxsilencems) and not this; read `DEFAULT_MIN_TURN_SILENCE_MS` before
+moving it. An explicit `stt` descriptor owns its own window, so this is
+refused beside one.
 
-##### schema?
+###### Default Value
+
+`1600` (`DEFAULT_MIN_TURN_SILENCE_MS`)
+
+##### preemptiveGeneration?
 
 ```ts
-optional schema?: StandardSchemaV1<unknown, unknown>;
+optional preemptiveGeneration?: boolean;
 ```
 
-The SHAPE the final message must have — any
-[Standard Schema](https://standardschema.dev), zod being the documented
-default. The runtime parses the answer as JSON and checks it, and a reply
-that does not match is sent BACK the way a
-[SubagentDef.guardrail](#guardrail) rejection is, with the schema's own issues as
-the complaint. Declare it through [subagent](#subagent) to get the parsed value
-typed on [TypedDelegateResult.object](#object).
+Start generating the reply from a high-confidence INTERIM transcript, and
+adopt that stream when the committed final says the same thing. A
+speculation never reaches TTS, emits no frame, writes no history and never
+EXECUTES a tool, so the worst case is one extra billed LLM request.
 
-**This is not the guardrail, and the two are complementary.** A schema
-settles the SHAPE — that a verdict is one of three words rather than a
-sentence that implies one — where a guardrail is the judgement a shape
-cannot express (a missing citation, sources that are all one publisher).
-A subagent may declare both; the shape is checked first, because a
-guardrail asked to judge a malformed answer is being asked the wrong
-question.
+###### Default Value
 
-Reach for it when the CALLER has to branch on the answer.
-`topic-briefing-agent`'s fact-checker had a three-value verdict crossing three
-layers as an English sentence prefix — restated in `expectedOutput`,
-re-checked by a guardrail doing `startsWith`, and re-asked up to the retry
-budget — because a model that wrote `"Confirmed - "` was wrong in a way
-only prose could describe. A schema makes that a parse.
+`false` — measured on a tool-calling agent and not worth its
+cost there (net +8ms per turn, 44% of its LLM requests thrown away); see
+`DEFAULTS-CLAUDE.md`. Turning it on by default is owed a tau2-bench run.
+
+##### startSpeakingFloorMs?
 
 ```ts
-import { subagent } from "@alexkroman1/aai";
-import { z } from "zod";
-
-const factChecker = subagent({
-  name: "fact-checker",
-  systemPrompt: "Check ONE claim against what you can find.",
-  schema: z.object({
-    verdict: z.enum(["confirmed", "contradicted", "unclear"]),
-    detail: z.string(),
-  }),
-});
+optional startSpeakingFloorMs?: number;
 ```
 
-##### systemPrompt
+Minimum delay between a reply starting and its first audio reaching the
+caller, in ms — a floor at the END of the pipeline, so it decouples "when
+did I decide the turn ended" from "when do I start speaking" (Vapi's
+`waitSeconds`). A MINIMUM: a pipeline slower than this pays nothing.
+
+###### Default Value
+
+`0` (`DEFAULT_START_SPEAKING_FLOOR_MS`)
+
+##### userTurnLimit?
 
 ```ts
-systemPrompt: string;
+optional userTurnLimit?: UserTurnLimit;
 ```
 
-The subagent's system prompt.
+Cap ONE user turn's length — by words heard, by elapsed time, or both — see
+[UserTurnLimit](#userturnlimit-1).
 
-**Tell it to summarize** — or, better, declare [SubagentDef.expectedOutput](#expectedoutput)
-and let the runtime say it. The parent gets [DelegateResult.text](#text-2),
-which is the subagent's FINAL message, so a subagent that ends its run by
-saying "Done." has thrown away everything it learned and no amount of step
-budget recovers it. This is the single most common way a subagent
-disappoints, and it was a sentence every author had to remember to write
-here; `expectedOutput` is the field that remembers it for them.
-
-##### temperature?
+###### Default Value
 
 ```ts
-optional temperature?: number;
+unset — no cap on a single user turn's length.
 ```
-
-Sampling temperature.
-
-Omitted by default, so the model's own default applies; some models (Claude
-5 among them) ignore it and warn, so set it only for a temperature-capable
-one. A booking desk and a game master want different values; so do a
-researcher subagent and the voice that relays what it found.
-
-###### Inherited from
-
-[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
-
-##### tools?
-
-```ts
-optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
-```
-
-The tools this subagent may call, by the name the model calls them by.
-
-A MAP rather than the filesystem registration `agent()` uses, and the
-difference is deliberate: `tools/` declares what the CALLER can reach, and
-this declares the strictly narrower set one delegated task can reach. A
-subagent with no entry here and no `builtinTools` is a pure reasoning
-pass — legal, and occasionally what you want.
-
-***
-
-### SubagentToolCall
-
-One tool call a subagent made, as reported back to the caller.
-
-#### Properties
-
-##### input
-
-```ts
-input: unknown;
-```
-
-The arguments it was called with.
-
-##### name
-
-```ts
-name: string;
-```
-
-The tool's name, as the subagent's model called it.
 
 ***
 
@@ -11127,7 +11249,7 @@ TOOL fails does not reject: the failure goes back to the subagent as a tool
 result, exactly as it would in the parent loop, and the subagent gets to
 recover from it.
 
-A [SubagentDef.guardrail](#guardrail) that never accepts does not reject either —
+A [SpeakerDef.guardrail](#guardrail) that never accepts does not reject either —
 the run comes back with [DelegateResult.accepted](#accepted) `false`. The two
 rejections above are both "this delegation could not happen"; a rejected
 answer is a delegation that happened and produced something, and a caller on
@@ -11183,7 +11305,7 @@ The guardrail's last complaint. Present exactly when `accepted` is `false`
 object: T;
 ```
 
-The final message, PARSED against [SubagentDef.schema](#schema).
+The final message, PARSED against [SpeakerDef.schema](#schema).
 
 Present exactly when the subagent declares one, which is why it lives on
 this type rather than on [DelegateResult](#delegateresult): a caller that declared no
@@ -11220,7 +11342,7 @@ How many steps this attempt took, including the final answering step.
 
 ###### Inherited from
 
-[`DelegateResult`](#delegateresult).[`steps`](#steps)
+[`DelegateResult`](#delegateresult).[`steps`](#steps-1)
 
 ##### text
 
@@ -11228,7 +11350,7 @@ How many steps this attempt took, including the final answering step.
 text: string;
 ```
 
-The subagent's final message — see [SubagentDef.expectedOutput](#expectedoutput).
+The subagent's final message — see [SpeakerDef.expectedOutput](#expectedoutput).
 
 ###### Inherited from
 
@@ -11237,34 +11359,35 @@ The subagent's final message — see [SubagentDef.expectedOutput](#expectedoutpu
 ##### toolCalls
 
 ```ts
-toolCalls: readonly SubagentToolCall[];
+toolCalls: readonly DelegateToolCall[];
 ```
 
 Every tool call this attempt made, in order.
 
 ###### Inherited from
 
-[`DelegateResult`](#delegateresult).[`toolCalls`](#toolcalls)
+[`DelegateResult`](#delegateresult).[`toolCalls`](#toolcalls-1)
 
 ***
 
-### TypedSubagentDef
+### TypedSpeakerDef
 
-Define a subagent.
-
-An identity function, like [tool](#tool-2) — it exists for the type, for the
-name to grep for, and so a subagent is declared at module scope rather than
-rebuilt inside `execute` on every call.
+A [SpeakerDef](#speakerdef) that declares a [SpeakerDef.schema](#schema) — what
+[speaker](#speaker-1) returns for one, so `ctx.delegate` types `object`.
 
 #### Extends
 
-- [`SubagentDef`](#subagentdef)
+- [`SpeakerDef`](#speakerdef)\<`N`\>
 
 #### Type Parameters
 
 ##### T
 
 `T`
+
+##### N
+
+`N` *extends* `string` = `string`
 
 #### Properties
 
@@ -11280,7 +11403,7 @@ enables none can still delegate to a subagent that searches the web.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`builtinTools`](#builtintools-1)
+[`SpeakerDef`](#speakerdef).[`builtinTools`](#builtintools-1)
 
 ##### description?
 
@@ -11288,23 +11411,17 @@ enables none can still delegate to a subagent that searches the web.
 optional description?: string;
 ```
 
-What this subagent is FOR, in one line, written for whoever is choosing
-between subagents rather than for the subagent itself.
-
-Ignored by call-site delegation — `ctx.delegate(researcher, …)` names the
-subagent in code, so the choice is already made and there is nothing to
-describe it to. It is REQUIRED of a subagent listed in
-`agent({ subagents })`, and that is the whole reason it exists: a roster is
-routed by the model, which reads this and nothing else. `agent()` refuses a
-roster entry without one rather than shipping an agent that picks a
-subagent off a list of bare names.
+What this speaker is FOR, in one line, written for whoever is choosing
+between them — the minted `delegate` and `handoff` tools' descriptions are
+these lines. REQUIRED of a roster entry (`roster()` refuses one without
+it); ignored by `ctx.delegate(def, …)` in code, where the choice is made.
 
 Write it as the job, not the mechanism: "Researches a topic on the open web
 and reports what it found" — not "calls web_search".
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`description`](#description-4)
+[`SpeakerDef`](#speakerdef).[`description`](#description-3)
 
 ##### expectedOutput?
 
@@ -11317,7 +11434,7 @@ apart from the instructions for producing it.
 
 The runtime appends it to the instructions as its own labelled section, so
 it lands in the same place every time rather than wherever an author
-happened to put it in prose. It is also what a [SubagentDef.guardrail](#guardrail)
+happened to put it in prose. It is also what a [SpeakerDef.guardrail](#guardrail)
 is quoted against when it sends an answer back, so the two halves of "what
 this run owes" stay one sentence rather than two that can disagree.
 
@@ -11328,9 +11445,9 @@ when it is done, which for a delegated run is precisely the wrong moment to
 stop talking.
 
 ```ts
-import { subagent } from "@alexkroman1/aai";
+import { speaker } from "@alexkroman1/aai";
 
-const researcher = subagent({
+const researcher = speaker({
   name: "researcher",
   systemPrompt: "Research the task with the tools you have.",
   expectedOutput:
@@ -11341,12 +11458,12 @@ const researcher = subagent({
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`expectedOutput`](#expectedoutput)
+[`SpeakerDef`](#speakerdef).[`expectedOutput`](#expectedoutput)
 
 ##### guardrail?
 
 ```ts
-optional guardrail?: SubagentGuardrail;
+optional guardrail?: SpeakerGuardrail;
 ```
 
 Check the subagent's answer, and send it back with a complaint when it is
@@ -11356,7 +11473,7 @@ Return `true` to accept. Return a STRING to reject: the string is the
 complaint, and the runtime re-runs the subagent with its own rejected
 answer and that complaint appended to the conversation it already has — so
 the retry keeps every tool result the first attempt paid for and is told
-exactly what to fix. Bounded by [SubagentDef.maxRevisions](#maxrevisions).
+exactly what to fix. Bounded by [SpeakerDef.maxRevisions](#maxrevisions).
 
 **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
 of an answer and cannot say that a citation is missing, that the sources
@@ -11369,9 +11486,9 @@ Runs on every attempt including the last. Throwing from it fails the
 delegation, so a guardrail that cannot decide should return `true`.
 
 ```ts
-import { subagent } from "@alexkroman1/aai";
+import { speaker } from "@alexkroman1/aai";
 
-const researcher = subagent({
+const researcher = speaker({
   name: "researcher",
   systemPrompt: "Research the task with the tools you have.",
   expectedOutput: "A paragraph naming the sources you trusted.",
@@ -11386,7 +11503,22 @@ const researcher = subagent({
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`guardrail`](#guardrail)
+[`SpeakerDef`](#speakerdef).[`guardrail`](#guardrail)
+
+##### interruption?
+
+```ts
+optional interruption?: InterruptionTuning | "off";
+```
+
+How interruptible the agent is while this speaker is ON THE LINE — the
+agent's own `interruption` group, overriding it field by field (a dialog
+state's own `interruption` overrides this in turn: dialog → speaker →
+agent). Read only for a `speaks: true` entry. Pipeline only.
+
+###### Inherited from
+
+[`SpeakerDef`](#speakerdef).[`interruption`](#interruption-4)
 
 ##### llm?
 
@@ -11404,7 +11536,7 @@ reasoning.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`llm`](#llm-1)
+[`SpeakerDef`](#speakerdef).[`llm`](#llm-1)
 
 ##### maxOutputTokens?
 
@@ -11430,17 +11562,17 @@ provider stops emitting rather than wrapping up.
 ##### maxRetries?
 
 ```ts
-optional maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+optional maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
 ```
 
 Not a field. Typed as the message that names the rename, so
-`subagent({ maxRetries: 3 })` fails to compile with the fix in the error
+`speaker({ maxRetries: 3 })` fails to compile with the fix in the error
 rather than with a bare excess-property one — the idiom `agent({ tools })`
-uses. See [SubagentDef.maxRevisions](#maxrevisions).
+uses. See [SpeakerDef.maxRevisions](#maxrevisions).
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxRetries`](#maxretries-3)
+[`SpeakerDef`](#speakerdef).[`maxRetries`](#maxretries-3)
 
 ##### maxRevisions?
 
@@ -11448,7 +11580,7 @@ uses. See [SubagentDef.maxRevisions](#maxrevisions).
 optional maxRevisions?: number;
 ```
 
-How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
+How many times a [SpeakerDef.guardrail](#guardrail) may send an answer back.
 
 ###### Default Value
 
@@ -11473,7 +11605,7 @@ not the runtime — that decides what.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxRevisions`](#maxrevisions)
+[`SpeakerDef`](#speakerdef).[`maxRevisions`](#maxrevisions)
 
 ##### maxSteps?
 
@@ -11491,22 +11623,20 @@ than stopping mid-chain.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxSteps`](#maxsteps-2)
+[`SpeakerDef`](#speakerdef).[`maxSteps`](#maxsteps-2)
 
 ##### name
 
 ```ts
-name: string;
+name: N;
 ```
 
-What this subagent is called. It reaches the model only as the id on the
-subagent's own requests; its reader is a log line and a failure message
-("subagent \"researcher\" ran out of steps"), which is why it is required
-and why an anonymous subagent is not expressible.
+What this speaker is called: the value of the `delegate`/`handoff` tool's
+argument, the id on its own requests, and what a log line names.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`name`](#name-2)
+[`SpeakerDef`](#speakerdef).[`name`](#name-2)
 
 ##### schema
 
@@ -11518,8 +11648,8 @@ The SHAPE the final message must have — any
 [Standard Schema](https://standardschema.dev), zod being the documented
 default. The runtime parses the answer as JSON and checks it, and a reply
 that does not match is sent BACK the way a
-[SubagentDef.guardrail](#guardrail) rejection is, with the schema's own issues as
-the complaint. Declare it through [subagent](#subagent) to get the parsed value
+[SpeakerDef.guardrail](#guardrail) rejection is, with the schema's own issues as
+the complaint. Declare it through [speaker](#speaker-1) to get the parsed value
 typed on [TypedDelegateResult.object](#object).
 
 **This is not the guardrail, and the two are complementary.** A schema
@@ -11538,10 +11668,10 @@ budget — because a model that wrote `"Confirmed - "` was wrong in a way
 only prose could describe. A schema makes that a parse.
 
 ```ts
-import { subagent } from "@alexkroman1/aai";
+import { speaker } from "@alexkroman1/aai";
 import { z } from "zod";
 
-const factChecker = subagent({
+const factChecker = speaker({
   name: "fact-checker",
   systemPrompt: "Check ONE claim against what you can find.",
   schema: z.object({
@@ -11553,7 +11683,22 @@ const factChecker = subagent({
 
 ###### Overrides
 
-[`SubagentDef`](#subagentdef).[`schema`](#schema)
+[`SpeakerDef`](#speakerdef).[`schema`](#schema)
+
+##### speaks?
+
+```ts
+optional speaks?: boolean;
+```
+
+Whether the CALLER hears this speaker. `true` puts it on the roster's
+`handoff` tool — it takes the call, over the same history and slots; absent
+or `false` puts it on `delegate` — it runs off the line and hands back an
+answer. The first speaking entry of a roster answers the call.
+
+###### Inherited from
+
+[`SpeakerDef`](#speakerdef).[`speaks`](#speaks)
 
 ##### systemPrompt
 
@@ -11561,10 +11706,10 @@ const factChecker = subagent({
 systemPrompt: string;
 ```
 
-The subagent's system prompt.
+The speaker's instructions — on the line and off it.
 
-**Tell it to summarize** — or, better, declare [SubagentDef.expectedOutput](#expectedoutput)
-and let the runtime say it. The parent gets [DelegateResult.text](#text-2),
+**Tell it to summarize** — or, better, declare [SpeakerDef.expectedOutput](#expectedoutput)
+and let the runtime say it. The parent gets [DelegateResult.text](#text),
 which is the subagent's FINAL message, so a subagent that ends its run by
 saying "Done." has thrown away everything it learned and no amount of step
 budget recovers it. This is the single most common way a subagent
@@ -11573,7 +11718,7 @@ here; `expectedOutput` is the field that remembers it for them.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`systemPrompt`](#systemprompt-2)
+[`SpeakerDef`](#speakerdef).[`systemPrompt`](#systemprompt-1)
 
 ##### temperature?
 
@@ -11592,6 +11737,18 @@ researcher subagent and the voice that relays what it found.
 
 [`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
 
+##### toolChoice?
+
+```ts
+optional toolChoice?: ToolChoice;
+```
+
+The model's tool-choice policy while this speaker is ON THE LINE.
+
+###### Inherited from
+
+[`SpeakerDef`](#speakerdef).[`toolChoice`](#toolchoice-3)
+
 ##### tools?
 
 ```ts
@@ -11600,15 +11757,16 @@ optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
 
 The tools this subagent may call, by the name the model calls them by.
 
-A MAP rather than the filesystem registration `agent()` uses, and the
-difference is deliberate: `tools/` declares what the CALLER can reach, and
-this declares the strictly narrower set one delegated task can reach. A
-subagent with no entry here and no `builtinTools` is a pure reasoning
-pass — legal, and occasionally what you want.
+A MAP rather than the filesystem registration `agent()` uses: `tools/`
+declares what every turn can reach, and this the narrower set this speaker
+owns. Off the line, they are its delegated loop's tools; on the line, the
+roster gates them to the turns it is speaking (one owner per name). An
+off-line speaker with no tools and no `builtinTools` is a pure reasoning
+pass.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`tools`](#tools-2)
+[`SpeakerDef`](#speakerdef).[`tools`](#tools-1)
 
 ***
 
@@ -11684,7 +11842,7 @@ that wants a softer landing watches `usage.updated` through
 
 ### UserTurnLimit
 
-A cap on ONE user turn — see [PipelineVoiceTuning.userTurnLimit](#userturnlimit).
+A cap on ONE user turn — see [TurnTakingTuning.userTurnLimit](#userturnlimit).
 
 End-of-turn detection is the STT provider's, and it is driven by SILENCE: a
 caller who never pauses never ends a turn, so a monologue holds the floor
@@ -11693,7 +11851,7 @@ until it stops. This is the bound on that. When the open utterance crosses
 either cap the runtime asks the transcriber to END THE TURN NOW, exactly as
 a pause would have — the words heard so far commit as the caller's turn, the
 agent replies to them, and whatever the caller says next opens the next turn
-— and a `user-turn.exceeded` event records that it happened.
+— and a `userTurn.exceeded` event records that it happened.
 
 Both members are optional; set one or both. A limit that names neither is
 refused at config time rather than accepted as a cap on nothing.
@@ -11821,6 +11979,32 @@ carries.
 
 ***
 
+### AgentMode
+
+```ts
+type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
+```
+
+Which kind of agent this is — the discriminant `agent()` is overloaded over,
+and the `mode` an [AgentDef](#agentdef) and its serialized config carry.
+
+- `"pipeline"` (the DEFAULT, when `mode` is absent) — STT → LLM → TTS, each
+  stage individually optional and filled from the all-AssemblyAI pipeline.
+  The only mode with the turn-taking tuning, the phrases and guardrails.
+- `"s2s"` — one speech-to-speech provider socket (`s2s: assemblyAIS2s()`).
+  Carries the `s2s` descriptor and nothing pipeline-shaped: the service owns
+  STT, the model loop and TTS.
+- `"text"` — no audio path at all; driven over a message list by
+  `createTextAgent` (`@alexkroman1/aai-runtime`). `llm` is its one stage.
+- `"workflow-app"` — a page over the workflow HTTP API, with no session, no
+  socket and no model. `workflowApp()` is this member with `mode` already set.
+
+Explicit for every mode but the default, and never derived from a field
+going missing: a mode reachable by omission is one a config lands in when it
+loses a field (see "Never let S2S be a fallback" in `packages/aai/CLAUDE.md`).
+
+***
+
 ### AgentParams
 
 ```ts
@@ -11828,55 +12012,10 @@ type AgentParams =
   | PipelineAgentParams
   | S2sAgentParams
   | TextAgentParams
-  | StaticAgentParamsCore;
+  | StaticAgentParams;
 ```
 
-The author-facing parameter shape of [agent](#agent): every [AgentDef](#agentdef)
-field, with the defaulted ones optional.
-
-Derived from `AgentDef` rather than re-declared, so a field added there is
-automatically declarable here — the inline re-declaration this replaces let
-fields (`send`, `state`) ship as runtime-working but excess-property errors
-for authors, because neither bundler typechecks user code. Field docs live
-on [AgentDef](#agentdef) and carry through the mapped types.
-
-Three author-facing conveniences widen the derived shape (all normalized
-away by `agent()`, so `AgentDef` stays canonical). It said FOUR, and the
-fourth — `system` as an alias of `systemPrompt` — has never existed:
-`normalizeAgentConveniences` implements only the three below, so
-`agent({ system })` is refused by name at the stray-field check. That
-refusal is the better error, and it is why the alias is not being added to
-make this paragraph true.
-
-- `llm` also accepts a model-id string: `"creator/model"` routes through
-  the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), a bare id through the
-  AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`).
-- `voice` — the TTS voice for the default AssemblyAI pipeline, desugared
-  to `tts: assemblyAITts({ voice })`. Only valid when no explicit `tts`
-  descriptor is set (the voice rides on the descriptor there) and never
-  in S2S mode (the S2S descriptor owns its voice).
-- `minTurnSilenceMs` / `maxTurnSilenceMs` — the end-of-turn window for the
-  default AssemblyAI STT stage, desugared to `stt: assemblyAIStt({ … })`.
-  Same rule as `voice`: only valid when no explicit `stt` descriptor is set.
-  `maxTurnSilenceMs` is the pause-tolerance knob, and it is here because it
-  is the highest-value tuning an agent has and used to be the highest-friction
-  to express — one number cost a whole stage descriptor, which then silently
-  dropped whatever else the default fill would have supplied.
-
-Pipeline stages are individually optional: declare any subset of
-`stt`/`llm`/`tts` and the unset stages run on the default all-AssemblyAI
-pipeline. The shape is a union over the three session modes — pipeline,
-S2S ([S2sAgentParams](#s2sagentparams)) and text ([TextAgentParams](#textagentparams)) — so a
-field belonging to another mode fails the build with a message naming the
-rule (`PipelineOnlyMisuse`) rather than failing at the first
-`aai dev`/`aai deploy`. Configs that never went through `agent()` are
-still caught when `toAgentConfig` runs in the bundle entry.
-
-The fourth arm ([StaticAgentParams](#staticagentparams)) is the WORKFLOW APP, and it is
-keyed on the front door rather than on a session mode: `page: "static"` has
-no session at all, so every field the other three arms exist to arbitrate
-between is inert there. [workflowApp](#workflowapp) is the same arm with the
-discriminant already set.
+Everything `agent()` accepts: one member per [AgentMode](#agentmode).
 
 ***
 
@@ -11991,51 +12130,6 @@ snapshot of a service that ships models faster than this package releases:
 a model added upstream after this release is still a legal id, and a
 regeneration that drops one breaks no author's build. Autocomplete, not a
 guard.
-
-***
-
-### AssemblyAITtsVoice
-
-```ts
-type AssemblyAITtsVoice = 
-  | "alba"
-  | "anna"
-  | "charles"
-  | "eve"
-  | "george"
-  | "jane"
-  | "jean"
-  | "mary"
-  | "michael"
-  | "paul"
-  | "vera"
-  | "giovanni"
-  | "lola"
-  | "juergen"
-  | "rafael"
-  | "estelle"
-  | string & {
-};
-```
-
-A voice id from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices).
-
-The `(string & {})` arm is deliberate: the catalog is the service's, not
-ours, so a voice added after this release must still compile, and so must
-a deprecated one an existing agent already names. It keeps the current
-names visible at the call site without turning a stale SDK into a build
-failure.
-
-**So this type is AUTOCOMPLETE, not a guard, and there is no runtime assert
-to pair with it** the way `assertAssemblyAITtsLanguage` pairs with
-[AssemblyAITtsLanguage](tts.md#assemblyaittslanguage). The two are not the same job: the language
-map is a TRANSLATION this SDK owns (an ISO code the service has never heard
-of, rendered as a name it accepts), so a code outside it cannot be sent at
-all and rejecting it is a fact about this package. The voice catalog is the
-SERVICE's, and a snapshot of it goes stale between releases — an assert
-would refuse a voice AssemblyAI shipped last week, which is the same
-silent-mute failure from the other side. Read the catalog; do not expect the
-compiler to check you did.
 
 ***
 
@@ -12285,25 +12379,25 @@ once `aai build` type-checked.
 
 ```ts
 type DelegateFn = {
-<T>  (subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
-  (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+<T>  (subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+  (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };
 ```
 
 Run a subagent to completion — the signature of `ctx.delegate`.
 
 OVERLOADED, the way [GenerateFn](#generatefn) is and for the same reason: a subagent
-that declares a [SubagentDef.schema](#schema) answers with the parsed value
+that declares a [SpeakerDef.schema](#schema) answers with the parsed value
 typed on [TypedDelegateResult.object](#object), and one that does not should not
-be handed the field at all. Declaring the def through [subagent](#subagent) is
-what picks the overload — a `SubagentRoster` entry stays a plain
-[SubagentDef](#subagentdef), so a model-chosen delegation is untyped, which is
+be handed the field at all. Declaring the def through [speaker](#speaker-1) is
+what picks the overload — a roster entry stays a plain
+[SpeakerDef](#speakerdef), so a model-chosen delegation is untyped, which is
 correct: nothing at that call site knows which subagent the model picked.
 
 #### Call Signature
 
 ```ts
-<T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+<T>(subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
 ```
 
 ##### Type Parameters
@@ -12316,7 +12410,7 @@ correct: nothing at that call site knows which subagent the model picked.
 
 ###### subagent
 
-[`TypedSubagentDef`](#typedsubagentdef)\<`T`\>
+[`TypedSpeakerDef`](#typedspeakerdef)\<`T`\>
 
 ###### options
 
@@ -12329,14 +12423,14 @@ correct: nothing at that call site knows which subagent the model picked.
 #### Call Signature
 
 ```ts
-(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+(subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 ```
 
 ##### Parameters
 
 ###### subagent
 
-[`SubagentDef`](#subagentdef)
+[`SpeakerDef`](#speakerdef)
 
 ###### options
 
@@ -12345,63 +12439,6 @@ correct: nothing at that call site knows which subagent the model picked.
 ##### Returns
 
 `Promise`\<[`DelegateResult`](#delegateresult)\>
-
-***
-
-### DialogBargeIn
-
-```ts
-type DialogBargeIn = 
-  | "default"
-  | "off"
-  | {
-  minDurationMs?: number;
-  minWords?: number;
-};
-```
-
-How interruptible the agent is while a dialog state is active.
-
-`"default"` leaves the agent's own `minBargeInWords` /
-`interruptionMinDurationMs` in place; `"off"` means the agent finishes what it
-is saying, which is what a disclosure or a legally-required read needs; the
-object form tightens or loosens the same two gates for this phase only — a
-menu wants `{ minWords: 1 }` so a caller can cut in on the first word.
-
-#### Union Members
-
-`"default"`
-
-***
-
-`"off"`
-
-***
-
-##### Type Literal
-
-```ts
-{
-  minDurationMs?: number;
-  minWords?: number;
-}
-```
-
-###### minDurationMs?
-
-```ts
-optional minDurationMs?: number;
-```
-
-Sustained speech before an interim-triggered barge-in counts, in ms.
-
-###### minWords?
-
-```ts
-optional minWords?: number;
-```
-
-Words in an interim transcript before a barge-in counts.
 
 ***
 
@@ -12483,7 +12520,7 @@ type DialogSessionEventName = `@${SessionEventType}`;
 
 A session event as a dialog names it: the wire type under a leading `@`.
 
-`"@session.timed-out"`, `"@speech.started"`, `"@user-transcript.committed"` —
+`"@session.timedOut"`, `"@speech.started"`, `"@userTranscript.committed"` —
 every [SessionEventType](#sessioneventtype) is one of these, and nothing else is. The
 prefix is a NAMESPACE rather than decoration: an author's own event names are
 unconstrained, so a dialog that declared `on: { "reply.completed": … }` for
@@ -12962,7 +12999,7 @@ type LlmSpec =
 };
 ```
 
-What an `llm` FIELD takes — `agent({ llm })`, `subagent({ llm })`,
+What an `llm` FIELD takes — `agent({ llm })`, `speaker({ llm })`,
 `ctx.generate({ llm })`: a descriptor from [llm](llm.md#llm), or a model-id string.
 
 A bare id routes through AssemblyAI's LLM Gateway (so
@@ -13274,40 +13311,64 @@ without its envelope, so a hook's event and a transport's body both fit.
 
 ***
 
-### PipelineAgentParams
+### ModeAgentDef
 
 ```ts
-type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
-  llm?: LlmSpec;
-  page?: "voice" | StaticFrontDoorMisuse;
-  s2s?: undefined;
-  text?: undefined;
-} & 
-  | {
-  maxTurnSilenceMs?: EndpointingOnDescriptorMisuse<"maxTurnSilenceMs">;
-  minTurnSilenceMs?: EndpointingOnDescriptorMisuse<"minTurnSilenceMs">;
-  stt: SttProvider;
-}
-  | {
-  maxTurnSilenceMs?: number;
-  minTurnSilenceMs?: number;
-  stt?: undefined;
-} & 
-  | {
-  tts: TtsProvider;
-  voice?: "`voice` picks the default pipeline's TTS voice — an explicit `tts` descriptor owns its own voice (e.g. `assemblyAITts({ voice })`); set it there or remove `tts`";
-}
-  | {
-  tts?: undefined;
-  voice?: AssemblyAITtsVoice;
+type ModeAgentDef<M extends AgentMode> = AgentDef & {
+  mode: M;
 };
 ```
 
-Pipeline-mode params: any subset of the provider triple (unset stages run
-on the default all-AssemblyAI pipeline), never `s2s`. The `voice`
-shorthand picks the default pipeline's TTS voice; an explicit `tts`
-descriptor owns its voice, so combining the two is a compile error naming
-the rule.
+What `agent()` returns for a declaration in mode `M`: the one definition
+type, with `mode` known. Each overload returns its own, so a reader of the
+result can narrow on the mode it declared without re-deriving it.
+
+#### Type Declaration
+
+##### mode
+
+```ts
+readonly mode: M;
+```
+
+#### Type Parameters
+
+##### M
+
+`M` *extends* [`AgentMode`](#agentmode)
+
+***
+
+### PipelineAgentParams
+
+```ts
+type PipelineAgentParams = SharedAgentParams & Pick<AgentDef, 
+  | keyof AgentModelTuning
+  | keyof PipelineTuning
+  | keyof PipelinePhrases
+  | keyof AgentGuardrails> & {
+  llm?: LlmSpec;
+  mode?: "pipeline";
+  s2s?: undefined;
+  tts?: TtsProvider;
+} & 
+  | {
+  stt: SttProvider;
+  turnTaking?: TurnTakingTuning & {
+     maxSilenceMs?: never;
+     minSilenceMs?: never;
+  };
+}
+  | {
+  stt?: undefined;
+};
+```
+
+The PIPELINE member — `mode: "pipeline"`, or no `mode` at all (the default).
+
+Any subset of the `stt`/`llm`/`tts` triple; the unset stages run on the
+default all-AssemblyAI pipeline. The only member with the
+[PipelineTuning](#pipelinetuning) groups, the phrases and the guardrails.
 
 #### Type Declaration
 
@@ -13317,31 +13378,18 @@ the rule.
 optional llm?: LlmSpec;
 ```
 
-See [AgentDef.llm](#llm); a string is gateway model-id shorthand —
-[AssemblyAIGatewayModel](#assemblyaigatewaymodel) for a bare id on the AssemblyAI LLM
-Gateway, `"creator/model"` for the Vercel AI Gateway. Unset → the default
-AssemblyAI LLM Gateway model.
+See [AgentDef.llm](#llm); a string is gateway model-id shorthand — a bare
+id for the AssemblyAI LLM Gateway, `"creator/model"` for the Vercel AI
+Gateway. Typed against the generated catalog so a typo is caught where
+it is written, and widened by `string & {}` so a newer model compiles.
 
-**Typed against the generated union so a typo is caught where it is
-written**, which is the same job `llm({ provider: "assemblyai", model })` has done all
-along — `from-string.ts` desugars this field straight into that factory,
-so one field had two types and only the longer spelling checked anything.
-A bare `string` here made `llm: "claude-sonnet-4-6"` a name with no
-autocomplete and a typo a gateway 400 at the first live session.
-
-The `string & {}` arm of [LlmSpec](#llmspec) keeps it a WIDENING: the catalog
-is a snapshot of a service that ships models faster than this package
-releases, so every id that compiled before still compiles — see
-[AssemblyAITtsVoice](#assemblyaittsvoice), which is autocomplete over its catalog for
-exactly the same reason and with the same non-guarantee.
-
-##### page?
+##### mode?
 
 ```ts
-optional page?: "voice" | StaticFrontDoorMisuse;
+optional mode?: "pipeline";
 ```
 
-See [AgentDef.page](#page). A pipeline agent's front door is a mic.
+See [AgentDef.mode](#mode). Absent means `"pipeline"`.
 
 ##### s2s?
 
@@ -13349,18 +13397,15 @@ See [AgentDef.page](#page). A pipeline agent's front door is a mic.
 optional s2s?: undefined;
 ```
 
-##### text?
+##### tts?
 
 ```ts
-optional text?: undefined;
+optional tts?: TtsProvider;
 ```
 
-#### Remarks
-
-The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
-not values this arm accepts. Setting one of those fields makes `tsc` print the
-sentence in place of a bare excess-property error, so the diagnostic names the
-rule and what to do about it. Never pass one as a string.
+See [AgentDef.tts](#tts). The voice is the descriptor's own option
+(`assemblyAITts({ voice: "michael" })`); unset, the default stage
+speaks `ASSEMBLYAI_TTS_DEFAULT_VOICE`.
 
 ***
 
@@ -13557,49 +13602,24 @@ message)` answers that status with `{ error: message }`; any other throw is a
 
 ```ts
 type S2sAgentParams = SharedAgentParams & {
-  llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
-  maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
-  minTurnSilenceMs?: "`minTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
-  page?: "voice" | StaticFrontDoorMisuse;
+  mode: "s2s";
   s2s: S2sProvider;
-  stt?: "`stt` cannot be combined with `s2s` — S2S runs STT service-side";
-  text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
-  tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
-  voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
-} & { [K in PipelineOnlyField]?: PipelineOnlyMisuse<K> };
+};
 ```
 
-S2S-mode params: an `s2s` descriptor, no pipeline providers, and the
-pipeline-only tuning knobs typed as `PipelineOnlyMisuse` so setting
-one fails with a message instead of silently doing nothing.
+The S2S member — `mode: "s2s"` and the `s2s` descriptor, and nothing
+pipeline-shaped: the service runs STT, the model loop and TTS, so the
+pipeline stages, their tuning and the model-request knobs are all absent.
 
 #### Type Declaration
 
-##### llm?
+##### mode
 
 ```ts
-optional llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
+mode: "s2s";
 ```
 
-##### maxTurnSilenceMs?
-
-```ts
-optional maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
-```
-
-##### minTurnSilenceMs?
-
-```ts
-optional minTurnSilenceMs?: "`minTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
-```
-
-##### page?
-
-```ts
-optional page?: "voice" | StaticFrontDoorMisuse;
-```
-
-See [AgentDef.page](#page). An S2S agent's front door is a mic.
+See [AgentDef.mode](#mode).
 
 ##### s2s
 
@@ -13607,38 +13627,7 @@ See [AgentDef.page](#page). An S2S agent's front door is a mic.
 s2s: S2sProvider;
 ```
 
-See [AgentDef.s2s](#s2s) — the explicit opt-in to speech-to-speech mode.
-
-##### stt?
-
-```ts
-optional stt?: "`stt` cannot be combined with `s2s` — S2S runs STT service-side";
-```
-
-##### text?
-
-```ts
-optional text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
-```
-
-##### tts?
-
-```ts
-optional tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
-```
-
-##### voice?
-
-```ts
-optional voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
-```
-
-#### Remarks
-
-The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
-not values this arm accepts. Setting one of those fields makes `tsc` print the
-sentence in place of a bare excess-property error, so the diagnostic names the
-rule and what to do about it. Never pass one as a string.
+See [AgentDef.s2s](#s2s).
 
 ***
 
@@ -13832,7 +13821,7 @@ optional record?: boolean;
 ```
 
 `false` to keep this line out of the conversation: it is spoken and
-captioned (its `agent-transcript.committed` carries `recorded: false`),
+captioned (its `agentTranscript.committed` carries `recorded: false`),
 but it enters neither the model's history nor `ctx.messages`, and a
 resumed session does not remember it. For a line the model should not
 treat as something it said, such as a hold message ("one moment while I
@@ -14151,7 +14140,7 @@ reply, so a handler must not hold anything that reply waits on until the
 line's `done` settles.
 
 **A line a handler says emits events that reach the handlers again.** A
-handler that speaks on every `agent-transcript.committed` hears its own
+handler that speaks on every `agentTranscript.committed` hears its own
 line and speaks forever. Decide from an event the line cannot produce, or
 check the event first: see "A handler that speaks can hear itself" in
 `session-speech.ts`.
@@ -14247,6 +14236,22 @@ const AUDITED: readonly SessionEventType[] = ["tool.called", "error.reported"];
 
 ***
 
+### SessionEventTypeList
+
+```ts
+type SessionEventTypeList = readonly ["session.configured", "audio.completed", "speech.started", "speech.stopped", "userTranscript.updated", "userTranscript.committed", "agentTranscript.updated", "agentTranscript.committed", "tool.called", "tool.completed", "reply.completed", "reply.cancelled", "session.reset", "session.timedOut", "error.reported", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "userTurn.exceeded", "provider.failedOver", "metrics.collected", "history.restored"];
+```
+
+Every built-in session event name, spelled out in schema order — the same
+set as [SessionEventType](#sessioneventtype) before any augmentation.
+
+Written out because a rename must move the `aai:events` contract hash, and
+the hash cannot see a name that only reaches it through `SessionEventSchema`
+(a `const`, whose literals it reads as `string`). `session-event-names.test.ts`
+fails if this and the schema disagree.
+
+***
+
 ### SessionSourcedEventType
 
 ```ts
@@ -14262,16 +14267,22 @@ One of [SESSION\_SOURCED\_EVENT\_TYPES](#session_sourced_event_types).
 ```ts
 type SharedAgentParams = Omit<AgentDef, 
   | DefaultedAgentField
-  | PipelineOnlyField
+  | "mode"
   | ProviderField
-  | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+  | PipelineOnlyField
+  | keyof AgentModelTuning
+  | "toolsets"> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
   tools?: InlineToolsMisuse;
 };
 ```
 
-Fields shared by both session modes: everything on [AgentDef](#agentdef) minus
-the providers and the pipeline-only tuning knobs, plus the authoring
-conveniences.
+What every SESSION member shares — pipeline, S2S and text: everything on
+[AgentDef](#agentdef) minus the mode-owned fields, with the defaulted ones
+optional.
+
+The model-loop knobs ([AgentModelTuning](#agentmodeltuning)) are subtracted here and
+re-added by the two members whose runtime assembles the model request; S2S
+runs the model inside the provider's service, so it never has them.
 
 #### Type Declaration
 
@@ -14281,8 +14292,7 @@ conveniences.
 optional tools?: InlineToolsMisuse;
 ```
 
-Not a field. See `InlineToolsMisuse` — a tool is declared by its
-FILE, so this is typed as the message that names the one to create.
+Not a field — see `InlineToolsMisuse`.
 
 ***
 
@@ -14460,10 +14470,33 @@ virtual one is neither, because the things a virtual slot exists to hold
 
 ***
 
+### SpeakerGuardrail
+
+```ts
+type SpeakerGuardrail = (answer: DelegateAnswer) => 
+  | GuardrailVerdict
+| Promise<GuardrailVerdict>;
+```
+
+Judge one attempt — see [SpeakerDef.guardrail](#guardrail).
+
+#### Parameters
+
+##### answer
+
+[`DelegateAnswer`](#delegateanswer)
+
+#### Returns
+
+  \| [`GuardrailVerdict`](#guardrailverdict)
+  \| `Promise`\<[`GuardrailVerdict`](#guardrailverdict)\>
+
+***
+
 ### SpeechOutcome
 
 ```ts
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 ```
 
 How one [SessionSpeech.say](#say) ended.
@@ -14472,11 +14505,11 @@ How one [SessionSpeech.say](#say) ended.
 - `"interrupted"`: it started and was cut off: a barge-in, an
   `interrupt()`, or the session ending mid-line. History holds the heard
   prefix.
-- `"dropped"`: it never started. The session ended, the line was empty, or an
+- `"dropped"`: it never started. The session ended, the line was empty, an
   interrupt stranded it in the queue (an interrupt, from the client or from
-  code, discards EVERY queued reply, queued `say`s included).
-- `"unsupported"`: the session's transport cannot speak verbatim text, which
-  means an S2S agent. See this module's header.
+  code, discards EVERY queued reply, queued `say`s included), or the
+  session's transport cannot speak verbatim text — an S2S agent, said once
+  at session start. See this module's header.
 
 ***
 
@@ -14506,33 +14539,36 @@ A successful or failed Standard Schema validation.
 ### StaticAgentParams
 
 ```ts
-type StaticAgentParams = Omit<StaticAgentParamsCore, WorkflowAppOnlyField> & { [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K> };
+type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | "workflows"> & {
+  mode: "workflow-app";
+  workflows: NonNullable<AgentDef["workflows"]>;
+};
 ```
 
-Workflow-app params: `page: "static"`, the workflows that ARE the product,
-and nothing from the session half of the agent shape.
+The WORKFLOW-APP member — `mode: "workflow-app"`, the workflows that ARE the
+product, and nothing from the session half of the agent shape.
+`workflowApp()` is this member with `mode` already set.
 
-Not a session mode like the other three arms — a front door. What it drops is
-everything downstream of having a session at all.
+`workflows` is REQUIRED here, unlike on [AgentDef](#agentdef): a workflow app that
+declares none serves a form whose every submit is a 400.
 
-What it keeps is the surface a page and a deploy actually read: `name` and
-`greeting` (both served by `GET /client-config`, so a page can render its
-shell from the agent — `mountPage()` does not fetch it the way `mountClient()`
-does, so
-a page that wants them calls `fetchClientConfig()` itself), `workflows`, and
-`requiredEnv` (a step reads keys with `stepEnv` from
-`@alexkroman1/aai/step`, and a deploy still checks they are present).
+#### Type Declaration
 
-`workflows` is REQUIRED here, unlike on [AgentDef](#agentdef): a workflow app whose
-whole API is `/workflows/*` and which declares none serves a form with nothing
-behind it, and the page's `api.start(name, …)` would 400 on every submit.
+##### mode
 
-#### Remarks
+```ts
+mode: "workflow-app";
+```
 
-The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
-not values this arm accepts. Setting one of those fields makes `tsc` print the
-sentence in place of a bare excess-property error, so the diagnostic names the
-rule and what to do about it. Never pass one as a string.
+See [AgentDef.mode](#mode).
+
+##### workflows
+
+```ts
+workflows: NonNullable<AgentDef["workflows"]>;
+```
+
+See [AgentDef.workflows](#workflows) — the whole product.
 
 ***
 
@@ -14664,44 +14700,6 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
-### SubagentGuardrail
-
-```ts
-type SubagentGuardrail = (answer: SubagentAnswer) => 
-  | GuardrailVerdict
-| Promise<GuardrailVerdict>;
-```
-
-Judge one attempt — see [SubagentDef.guardrail](#guardrail).
-
-#### Parameters
-
-##### answer
-
-[`SubagentAnswer`](#subagentanswer)
-
-#### Returns
-
-  \| [`GuardrailVerdict`](#guardrailverdict)
-  \| `Promise`\<[`GuardrailVerdict`](#guardrailverdict)\>
-
-***
-
-### SubagentRoster
-
-```ts
-type SubagentRoster = readonly SubagentDef[];
-```
-
-The subagents an agent publishes for the MODEL to choose between —
-`agent({ subagents })`.
-
-Every entry needs a [SubagentDef.description](#description-4): it is the only thing the
-router reads, and `agent()` refuses a roster without one rather than shipping
-an agent that picks off a list of bare names.
-
-***
-
 ### TelephonyAccess
 
 ```ts
@@ -14750,33 +14748,14 @@ carriers keys off `TELEPHONY_CARRIERS` (`@alexkroman1/aai/internal`) instead.
 ### TextAgentParams
 
 ```ts
-type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
+type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDef, keyof AgentModelTuning> & {
   llm?: LlmSpec;
-  maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
-  minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
-  page?: "voice" | StaticFrontDoorMisuse;
-  s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
-  stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
-  sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
-  telephony?: "`telephony` admits a phone call, which is audio — a text agent has no audio path; remove it or remove `text`";
-  text: true;
-  tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
-  voice?: "`voice` is pipeline-mode only — a text agent never speaks";
-} & { [K in PipelineOnlyField]?: PipelineOnlyMisuse<K, "text"> };
+  mode: "text";
+};
 ```
 
-Text-mode params: `text: true`, optionally an `llm`, and nothing else from
-the audio half of the agent shape.
-
-Every speech field is typed as a message rather than left absent, on the
-same reasoning as [S2sAgentParams](#s2sagentparams): a bare excess-property error
-names the field and not the rule, and the rule here ("a text agent has no
-audio path") is exactly what an author moving a voice agent to text needs
-told. `sttPrompt` is included even though it is otherwise mode-agnostic —
-it biases a transcriber, and there is none.
-
-The pipeline-only voice knobs are derived from `PipelineOnlyField`,
-so a knob added to [PipelineVoiceTuning](#pipelinevoicetuning) is rejected here for free.
+The TEXT member — `mode: "text"`, optionally an `llm`, and nothing from the
+audio half of the agent shape.
 
 #### Type Declaration
 
@@ -14786,86 +14765,15 @@ so a knob added to [PipelineVoiceTuning](#pipelinevoicetuning) is rejected here 
 optional llm?: LlmSpec;
 ```
 
-See [AgentDef.llm](#llm); a string is gateway model-id shorthand. Unset →
-the default AssemblyAI LLM Gateway model. The one provider stage a text
-agent has.
+See [AgentDef.llm](#llm); a model-id string works as on the pipeline member — the one provider stage a text agent has.
 
-Typed exactly as the pipeline arm's `llm` — read the argument there. The
-two are one field to an author, and typing them differently is how the
-shorthand would come to autocomplete on a voice agent and not on a text
-one.
-
-##### maxTurnSilenceMs?
+##### mode
 
 ```ts
-optional maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
+mode: "text";
 ```
 
-##### minTurnSilenceMs?
-
-```ts
-optional minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
-```
-
-##### page?
-
-```ts
-optional page?: "voice" | StaticFrontDoorMisuse;
-```
-
-See [AgentDef.page](#page). A text agent has no browser front door of its
-own — it is driven by `createTextAgent`, not by a page.
-
-##### s2s?
-
-```ts
-optional s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
-```
-
-##### stt?
-
-```ts
-optional stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
-```
-
-##### sttPrompt?
-
-```ts
-optional sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
-```
-
-##### telephony?
-
-```ts
-optional telephony?: "`telephony` admits a phone call, which is audio — a text agent has no audio path; remove it or remove `text`";
-```
-
-##### text
-
-```ts
-text: true;
-```
-
-See [AgentDef.text](#text) — the explicit opt-in to text mode.
-
-##### tts?
-
-```ts
-optional tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
-```
-
-##### voice?
-
-```ts
-optional voice?: "`voice` is pipeline-mode only — a text agent never speaks";
-```
-
-#### Remarks
-
-The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
-not values this arm accepts. Setting one of those fields makes `tsc` print the
-sentence in place of a bare excess-property error, so the diagnostic names the
-rule and what to do about it. Never pass one as a string.
+See [AgentDef.mode](#mode).
 
 ***
 
@@ -15179,7 +15087,7 @@ fails at deploy time.
 **`Partial`, so every read is `string | undefined`.** A variable that was
 never set is `undefined` at runtime whatever the type says, and the type
 used to say `string`: `ctx.env.NEVER_DECLARED` type-checked, built green,
-and threw a `TypeError` on the first live call — which `tool-executor.ts`
+and threw a `TypeError` on the first live call — which `aai-runtime/src/tools/executor.ts`
 then hands to the MODEL, so the caller hears the agent improvise an
 apology. `noUncheckedIndexedAccess` says the same thing, but it is the
 AUTHOR's tsconfig and cannot be relied on from here.
@@ -15437,7 +15345,7 @@ say the cap applied to both, which made an unshaped `await res.json()` look
 free: it is the whole response, in the prompt, for the rest of the turn.
 Return the fields the model needs. A result over the cap is warned about
 once per tool (see `warnOversizedResult` in `aai-runtime`'s
-`tool-executor.ts`).
+`aai-runtime/src/tools/executor.ts`).
 
 ###### Parameters
 
@@ -15594,7 +15502,7 @@ type ToolDelayedMessage = {
 };
 ```
 
-Spoken when the tool has been running for [ToolDelayedMessage.afterMs](#afterms-2).
+Spoken when the tool has been running for [ToolDelayedMessage.afterMs](#afterms-3).
 
 **Same timing means VARIANTS; different timings mean STAGED updates.** Two
 entries at 3000 are two phrasings of one rung and one of them is drawn; an
@@ -15675,6 +15583,17 @@ the runtime refuses a thenable return and treats it as fatal, the same rule
 
 ***
 
+### ToolExecutor
+
+```ts
+type ToolExecutor = "host" | "client";
+```
+
+Who runs a tool's body: this process (`"host"`), or the connected browser page
+(`"client"`, a `clientTool` — the call waits for the page's `tool_result`).
+
+***
+
 ### ToolFailure
 
 ```ts
@@ -15715,6 +15634,22 @@ A schema accepted for tool inputs and `ctx.generate` structured output:
 any Standard Schema that can also convert to JSON Schema (Zod natively,
 or a vendor `toJsonSchema()` method). Zod object schemas are the
 documented default.
+
+***
+
+### ToolMap
+
+```ts
+type ToolMap = Readonly<Record<string, ToolDef>>;
+```
+
+A map of tools by the name the model calls them by — the shape every field
+that DECLARES a set of tools takes: [AgentDef.tools](#tools) (what `tools/`
+lowers to) and [SpeakerDef.tools](#tools-1).
+
+Named once so the two cannot drift, and so a helper that builds or filters
+a set of tools has one type to be written against rather than restating
+`Readonly<Record<string, ToolDef>>`.
 
 ***
 
@@ -15906,19 +15841,63 @@ optional start?:
 
 ***
 
-### ToolSet
+### ToolRefusal
 
 ```ts
-type ToolSet = Readonly<Record<string, ToolDef>>;
+type ToolRefusal = ToolFailure & {
+  reason: ToolRefusalReason;
+};
 ```
 
-A map of tools by the name the model calls them by — the shape every field
-that DECLARES a set of tools takes: [AgentDef.tools](#tools) (what `tools/`
-lowers to), [PersonaDef.tools](#tools-1) and [SubagentDef.tools](#tools-2).
+A [ToolFailure](#toolfailure) the RUNTIME or a gate answered before the body ran, its
+`reason` saying which. Still a `ToolFailure` (`isToolFailure` is `true`); the
+field is not on `ToolFailure` itself, so an author's own `{ error }` literal
+keeps narrowing out of a `T | ToolFailure` union.
 
-Named once so the three cannot drift, and so a helper that builds or filters
-a set of tools has one type to be written against rather than restating
-`Readonly<Record<string, ToolDef>>`.
+#### Type Declaration
+
+##### reason
+
+```ts
+reason: ToolRefusalReason;
+```
+
+***
+
+### ToolRefusalReason
+
+```ts
+type ToolRefusalReason = 
+  | "unknown_tool"
+  | "invalid_arguments"
+  | "cancelled"
+  | "persona"
+  | "dialog"
+  | "roster";
+```
+
+Why a call was REFUSED rather than run — the one discriminant every gate and
+dispatcher answers with, so a spec or a client switches on one field instead
+of matching four sentences.
+
+- `"unknown_tool"` — no toolset advertises the name.
+- `"invalid_arguments"` — the arguments failed the tool's input schema.
+- `"cancelled"` — the turn was cut before the body started.
+- `"persona"` — a roster entry's tool, called while another one speaks, or a
+  handoff a dialog pin forbids.
+- `"dialog"` — a `dialog.tool`, called outside its `when` states.
+- `"roster"` — a handoff or delegation naming nobody the roster can route to.
+
+***
+
+### ToolSource
+
+```ts
+type ToolSource = "files" | "builtin" | "mcp" | "roster" | "subagent";
+```
+
+Where a [Toolset](#toolset)'s tools come from — for a log line, a collision
+message, and a spec. It decides nothing about execution; the entry does.
 
 ***
 
@@ -16007,7 +15986,7 @@ type TurnDetectionMode =
 ```
 
 A turn-detection mode — `"auto"` or `"manual"`, the two this release
-implements (see [PipelineVoiceTuning.turnDetection](#turndetection)), or any other
+implements (see [TurnTakingTuning.detection](#detection)), or any other
 string.
 
 OPEN so a mode a later release adds compiles against this one. The runtime
@@ -17357,7 +17336,7 @@ payment-callback flow is a supported shape.
 It was NOT, until recently, and the note here said so — the URL was served
 by the DevKit's own hook table, which knew nothing about this wait and
 answered `HookNotFound`. Both hops are covered now: the route→`signal` hop
-by `server-workflow-app.test.ts`, and `signal`→resume by
+by `aai-runtime/src/server/workflow-app.test.ts`, and `signal`→resume by
 `workflow/in-process.test.ts`.
 
 ```ts no-check
@@ -17933,68 +17912,14 @@ erased, and a tool importing it is importing the client half on purpose.
 
 ## Variables
 
-### ASSEMBLYAI\_TTS\_VOICES
-
-```ts
-const ASSEMBLYAI_TTS_VOICES: Readonly<Record<
-  | "alba"
-  | "anna"
-  | "charles"
-  | "eve"
-  | "george"
-  | "jane"
-  | "jean"
-  | "mary"
-  | "michael"
-  | "paul"
-  | "vera"
-  | "giovanni"
-  | "lola"
-  | "juergen"
-  | "rafael"
-| "estelle", AssemblyAITtsVoiceInfo>>;
-```
-
-The voice catalog — voice id → the language it speaks and its accent.
-The accent is descriptive metadata for choosing a voice, not a settable
-option: `AssemblyAITtsOptions` has no `accent` field.
-
-A constant rather than a sentence in a doc comment, because a wrong voice
-id is a *silent* failure: it is a free-form string the service rejects
-in-band after the socket opens, so the agent connects, reports ready, and
-never speaks — the same shape as the unmapped-`language` bug below, and
-nothing upstream of a live session catches it.
-
-It is a constant for a second reason, learned the hard way. The list this
-replaced lived in a doc comment and was simply wrong — it carried ten names
-(`azelma`, `cosette`, `fantine`, `javert`, `marius`, `peter_yearsley` …)
-that are in no published catalog, while omitting most of the real ones. A
-list nobody can check drifts into fiction, and here the fiction is
-indistinguishable, at authoring time, from a working agent.
-
-Source: https://assemblyai.com/docs/voice-agents/voice-agent-api/voices
-
-Anything that shows an author their choices — the scaffold guide, a picker
-— should read this rather than restate it. A partial list is what sends
-someone guessing, which is the failure being prevented. To look a voice up by
-a value typed [AssemblyAITtsVoice](#assemblyaittsvoice), use [ttsVoiceInfo](tts.md#ttsvoiceinfo).
-
-The keys are spelled out in the annotation rather than named as a closed
-`AssemblyAITtsVoiceId` union: a closed union an author can import is one a
-catalog refresh breaks, and the open [AssemblyAITtsVoice](#assemblyaittsvoice) carries the
-same literals for autocomplete. `tts-voice-ids.test.ts` holds the two lists
-equal.
-
-***
-
 ### DEFAULT\_GUARDRAIL\_MAX\_REVISIONS
 
 ```ts
 const DEFAULT_GUARDRAIL_MAX_REVISIONS: number;
 ```
 
-How many times a [SubagentDef.guardrail](#guardrail) may send an answer back when
-the subagent names no [SubagentDef.maxRevisions](#maxrevisions) of its own.
+How many times a [SpeakerDef.guardrail](#guardrail) may send an answer back when
+the subagent names no [SpeakerDef.maxRevisions](#maxrevisions) of its own.
 
 Declared here rather than in `constants.ts` for the reason
 `DEFAULT_STEP_MAX_ATTEMPTS` is declared beside `ctx.step`: a budget whose
@@ -18084,17 +18009,7 @@ would drift from the one the agent runs.
 const DELEGATE_TOOL_NAME: "delegate" = "delegate";
 ```
 
-The name the model calls a roster by.
-
-One tool with a `subagent` argument rather than one tool PER subagent, which
-is the other obvious lowering. Per-subagent tools put the roster in the tool
-LIST, which reads well — and the list is fixed for the whole session
-(`toolSchemas` is computed once and handed to the transport at session
-creation, the same constraint `sdk/dialog.ts` documents), so a roster that
-varies by state is unreachable either way, and n tools cost n schemas in every
-request where this costs one. The deciding reason is smaller: `delegate` is
-also where a shared instruction about HOW to brief a subagent goes, and n
-copies of it is n places for it to drift.
+The name the model hands a TASK off by.
 
 ***
 
@@ -18104,7 +18019,7 @@ copies of it is n places for it to drift.
 const HANDOFF_TOOL_NAME: "handoff" = "handoff";
 ```
 
-The name the model hands off by.
+The name the model hands the CALL off by.
 
 ***
 
@@ -18154,14 +18069,14 @@ publishes its own tool names, so without a prefix a server could publish
 stood — the model would call it and nothing would say so. With the prefix,
 shadowing a native tool takes an author writing a `tools/mcp_*.ts` file
 themselves, and even that loses: the native tool wins and the drop is logged
-(`registerTools`, in `@alexkroman1/aai-runtime`'s `mcp-tools.ts`).
+(`registerTools`, in `@alexkroman1/aai-runtime`'s `aai-runtime/src/mcp/tools.ts`).
 
 ***
 
 ### SESSION\_SOURCED\_EVENT\_TYPES
 
 ```ts
-const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
+const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timedOut", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
 ```
 
 The events only the SESSION itself can be the source of — never a transport.
@@ -18171,7 +18086,7 @@ one place that decision is written down, so a new event is REPORTABLE by
 default — the session publishes a report it has no `case` for — and needs
 no edit to a list in another package. Each is here for a reason:
 `session.configured` is the handshake, `session.reset` and
-`session.timed-out` come from the client and the idle watchdog,
+`session.timedOut` come from the client and the idle watchdog,
 `custom.emitted` is `ctx.send`, `state.updated` is a `syncState` projection,
 `usage.updated` and `guardrail.blocked` are the session's own accounting and
 refusals, and `history.restored` is a resume.
@@ -18216,21 +18131,21 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      id: z.ZodString;
   }, z.core.$strip>;
   text: z.ZodString;
-  type: z.ZodLiteral<"user-transcript.updated">;
+  type: z.ZodLiteral<"userTranscript.updated">;
 }, z.core.$strip>, z.ZodObject<{
   meta: z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
   text: z.ZodString;
-  type: z.ZodLiteral<"user-transcript.committed">;
+  type: z.ZodLiteral<"userTranscript.committed">;
 }, z.core.$strip>, z.ZodObject<{
   meta: z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
   text: z.ZodString;
-  type: z.ZodLiteral<"agent-transcript.updated">;
+  type: z.ZodLiteral<"agentTranscript.updated">;
 }, z.core.$strip>, z.ZodObject<{
   meta: z.ZodObject<{
      at: z.ZodNumber;
@@ -18242,7 +18157,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      turn-failed: "turn-failed";
   }>>;
   text: z.ZodString;
-  type: z.ZodLiteral<"agent-transcript.committed">;
+  type: z.ZodLiteral<"agentTranscript.committed">;
 }, z.core.$strip>, z.ZodObject<{
   args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   meta: z.ZodObject<{
@@ -18283,7 +18198,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
-  type: z.ZodLiteral<"session.timed-out">;
+  type: z.ZodLiteral<"session.timedOut">;
 }, z.core.$strip>, z.ZodObject<{
   code: z.ZodEnum<{
      audio: "audio";
@@ -18315,7 +18230,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
-  state: z.ZodUnknown;
+  state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   type: z.ZodLiteral<"state.updated">;
 }, z.core.$strip>, z.ZodObject<{
   inputTokens: z.ZodNumber;
@@ -18348,8 +18263,22 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
-  type: z.ZodLiteral<"user-turn.exceeded">;
+  type: z.ZodLiteral<"userTurn.exceeded">;
   words: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+  from: z.ZodString;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  reason: z.ZodString;
+  stage: z.ZodEnum<{
+     llm: "llm";
+     stt: "stt";
+     tts: "tts";
+  }>;
+  to: z.ZodString;
+  type: z.ZodLiteral<"provider.failedOver">;
 }, z.core.$strip>, z.ZodObject<{
   interrupted: z.ZodBoolean;
   latencyMs: z.ZodOptional<z.ZodNumber>;

@@ -2,8 +2,8 @@
 summary: >-
   The SDK's authoring primitives: `AgentDef` field groups, the `/testing`
   helpers, concurrency primitives, session slots, dialogs, `procedure()`,
-  `ctx.generate`/`messages`/`delegate`, personas, tool `messages`, voice
-  presets, persistence, workflow apps and the upload client
+  `ctx.generate`/`messages`/`delegate`, `speaker()`/`roster()`, `Toolset`, tool
+  `messages`, voice presets, persistence, workflow apps and the upload client
 read_when: >-
   editing anything under `packages/aai/src/sdk/` — an authoring type, a
   testing helper, a slot/dialog/workflow/upload module
@@ -20,22 +20,23 @@ Providers have their own guide in `providers/CLAUDE.md`.
 interface that `AgentDef` extends; each rule is DERIVED from the declaration,
 so a new field cannot skip it.
 
-| Interface             | Module                  | The rule                                                        |
-| --------------------- | ----------------------- | --------------------------------------------------------------- |
-| `PipelineVoiceTuning` | `agent-voice-tuning.ts` | pipeline transport or nothing                                   |
-| `AgentModelTuning`    | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five** |
-| `AgentGuardrails`     | `agent-guardrails.ts`   | the only declarations that may STOP a turn                      |
-| `AgentObservation`    | `agent-observation.ts`  | the two that deliberately may not                               |
-| `AgentRoutes`         | `agent-routes.ts`       | no session: `/api` handlers, data both ways across the bundle   |
+| Interface          | Module                  | The rule                                                                                                                        |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `PipelineTuning`   | `agent-tuning.ts`       | pipeline transport or nothing; `turnTaking`/`interruption`/`silence` groups, `interruption` reused per dialog state and persona |
+| `AgentMode`        | `agent-mode.ts`         | `mode` picks the `agent()` member, and the wire carries it                                                                      |
+| `AgentModelTuning` | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five**                                                                 |
+| `AgentGuardrails`  | `agent-guardrails.ts`   | the only declarations that may STOP a turn                                                                                      |
+| `AgentObservation` | `agent-observation.ts`  | the two that deliberately may not                                                                                               |
+| `AgentRoutes`      | `agent-routes.ts`       | no session: `/api` handlers, data both ways across the bundle                                                                   |
 
 - `assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
   total over `AgentModelTuning` — a knob missing from the table fails to
   compile. `resetToolChoice` defaults **true** and is inert unless `toolChoice`
   demands a call.
 - **`AgentModelTuning` extends `ModelTuning`** (`temperature`,
-  `maxOutputTokens`, `maxRetries`), which `SubagentDef` extends minus
-  `maxRetries`. A subagent's guardrail budget is `maxRevisions`; `SubagentDef`
-  re-types `maxRetries` as a message naming the rename.
+  `maxOutputTokens`, `maxRetries`), which `SpeakerDef` extends minus
+  `maxRetries`. A delegated run's guardrail budget is `maxRevisions`;
+  `SpeakerDef` re-types `maxRetries` as a message naming it.
 - **`SlotToolDef` and `DialogToolDef` are BUILT from `ToolDef`**
   (`Omit<ToolDef, "execute">` + their own `execute`), so a new `ToolDef` field
   reaches both.
@@ -44,15 +45,27 @@ so a new field cannot skip it.
 - **`systemPrompt` takes a RESOLVER** `(ctx: AgentSessionContext) => string`,
   called per model request — `agent-instructions.ts` owns it.
 
-## A misuse arm is defeated by a shape-competing SIBLING arm
+## `agent()`'s legality is a discriminated union, not message types
 
-A union arm typed as an unsatisfiable string literal (so `tsc` prints the RULE)
-works only when no sibling arm is a closer match for the offending value —
-TypeScript elaborates against the closest arm and the literal never reaches the
-output. Before adding a misuse arm, check what else in the union can absorb the
-value, and verify the message with a real `tsc` run. If nothing can print it,
-the union is the bug: NAME its arms (`{ reply }` / `{ routes }`, as the
-testing scripts now do). `PipelineOnlyMisuse` and `AgentParams`' arms print.
+**A field belongs to the members it appears in, and nowhere else.** Each member
+of `AgentParams` is cut from `AgentDef` by subtracting a field-list TYPE
+(`PipelineOnlyField`, `TextOnlyExcludedField`, `WorkflowAppOnlyField` in
+`agent-params.ts`); `_agent-modes.ts`'s refusal tables `satisfies` a `Record`
+over the same types. A new mode-specific field goes in a list — never as a
+message-typed key on a member, and never as a hand-kept run-time table. Members
+stay CLEAN — no `never` keys: an absent key gives the excess-property error
+naming the member, and autocomplete shows only what the mode has. The one
+exception is the pipeline member's `s2s?: undefined`, without which `{ s2s }`
+missing its `mode` would be absorbed by it when `agent()` resolves against the
+whole union. Prove a refusal with `AgentAccepts<X>` (`_test-utils.ts`: the
+excess-property rule over every overload), not an expect-error directive —
+those count against the escape-hatch ratchet.
+`InlineToolsMisuse` and `SyncMutationMisuse` remain: neither is a MODE rule.
+
+**A message arm is defeated by a shape-competing SIBLING arm** (still true of
+the two that remain): TypeScript elaborates against the closest arm. Verify any
+such message with a real `tsc` run; if nothing can print it, NAME the arms
+(`{ reply }` / `{ routes }`, as the testing scripts do).
 
 ## Wire-shape rules
 
@@ -92,8 +105,9 @@ Each helper's doc carries the detail; the rules:
   `ToolBearingAgent & { systemPrompt }` so `AgentDef` stays off this contract;
   `expectDeployable` returns the narrow `DeployedConfig`.
 - **`runTool(tool, args?, ctx?)`** is typed end to end; the name form answers
-  `unknown` (import the tool file instead of casting). Args and ctx are told
-  apart by SHAPE; an omitted context is a distinct session.
+  `unknown` (import the tool file instead of casting) and runs through the
+  toolset's GATE. Args and ctx are told apart by SHAPE; an omitted context is a
+  distinct session.
 - **`expectToolOk`/`expectDialogOk`** fail AT the call quoting the refusal;
   `expectDialogRefused`/`dialogRefusalPattern` mirror them (`_dialog-refusal.ts`
   owns the sentence); `dialogResultSchema` is the envelope as zod.
@@ -145,7 +159,7 @@ hand-rolled copies. Each module doc carries the hazard. `p-timeout` and
 - **`createCoalescingRunner()`** (`coalescing-runner.ts`, `/internal`) — one run
   in flight, triggers share ONE trailing re-run, rejections never wedge it.
 - **`createTurnMachine()`** — in `aai-runtime`'s
-  `transports/pipeline-turn-state.ts`; turn state goes through its transitions.
+  `transports/pipeline/turn/state.ts`; turn state goes through its transitions.
 - **`createKeyedLock()`/`withLock`** (`keyed-lock.ts`, PUBLIC) — per-key
   serialization; `timeoutMs` bounds the ACQUIRE (`KeyedLockTimeoutError` → 409).
   Public because **the LLM loop runs a step's tool calls CONCURRENTLY** (rule
@@ -183,7 +197,7 @@ so nothing on the event stream decides what the reply in flight says. It does
 carry `slots`: slot and dialog accessors take a `SlotHolder`
 (`{ slots, sessionId }`), which a `ToolContext` satisfies. **The line is "cannot
 change the TURN", not "cannot write"** — maintaining session state from
-`user-transcript.committed` or `tool.called` beats a tool the prompt begs the
+`userTranscript.committed` or `tool.called` beats a tool the prompt begs the
 model to call.
 
 It also carries **`speech`** (`session-speech.ts`), which stays on the right
@@ -193,14 +207,15 @@ stream like any reply. The same `SessionSpeech` is `ToolContext.speech` (so a
 `createToolContext()` still stands in for a handler's context, recording into
 `ctx.said`) and `RouteContext.speech(sessionId)` for a webhook. Rules:
 
-- **Pipeline only.** On S2S `done` settles `"unsupported"`; neither service
-  speaks host text verbatim. `interrupt()` works in every mode.
+- **Pipeline only.** On S2S `done` settles `"dropped"` (said once at session
+  start); neither service speaks host text verbatim. `interrupt()` works in
+  every mode.
 - **Never throws**, and every "cannot" is an outcome on `done`: `"dropped"` for
   an ended session, blank text, a line taken back or stranded by an interrupt.
 - **Never await `done` inside the reply it queues behind** (a tool's
   `execute`, a handler holding that reply) — it waits for itself.
 - **A speaking handler can hear itself.** A `say` emits
-  `agent-transcript.committed` and reply events AFTER the handler returned, so
+  `agentTranscript.committed` and reply events AFTER the handler returned, so
   the emitter's re-entry guard does not catch a handler that answers its own
   line; it must key on what triggered it. LiveKit and Pipecat do not guard
   this either. `session-speech.ts` carries the safe pattern.
@@ -239,8 +254,11 @@ on the member it governs**:
 - **A durable value is checked STRUCTURALLY in every backend** (`Map` → `{}`,
   `Date` → string, `NaN` → null don't throw). Running it in memory too is what
   makes memory a valid double.
-- **`syncState` takes `slot.projection(view)`**, callable and carrying key and
-  default, so a session that ran no tool still renders.
+- **`syncState` is a record keyed by SLOT NAME** of `slot.projected` /
+  `slot.projection(view)` values — callable and carrying key and default, so a
+  session that ran no tool still renders. Each key must equal its projection's
+  slot key (`assertSyncStateRecord`, `_author-conveniences.ts`), so the frame
+  is `{ [slot]: view }` and the browser selects by the same name.
 - **`caps` bounds a TOP-LEVEL array on every store, AFTER `after`**;
   `SlotCaps<T>` admits only array keys, bad caps refused at declaration
   (`_session-slot-caps.ts`). The hook sees the untrimmed draft.
@@ -269,8 +287,8 @@ module doc owns it, `packages/aai-runtime/DIALOG-CLAUDE.md` owns the knobs.
   snapshot is persisted. The machine overload stays; both forms compile to the
   same machine. Two type traps are argued in `dialog-types.ts`.
 - **An `on` key starting with `@` is a SESSION event**
-  (`"@session.timed-out"`), kept out of the author's `send` union. A state may
-  carry `timeout: { afterMs, send }` and `voice`/`bargeIn`/`toolChoice`/
+  (`"@session.timedOut"`), kept out of the author's `send` union. A state may
+  carry `timeout: { afterMs, send }` and `voice`/`interruption`/`toolChoice`/
   `temperature`, read deepest-first, riding in `meta`. **`after` is REFUSED**
   — the actor is stopped inside its window, so a delay never fires.
 - **`tool()`, `dialog.tool`, `slot.tool`, `slot.updateTool` all thread `R`
@@ -307,12 +325,12 @@ stays for non-file registries (the studio's coding agent).
   `{ role: "tool", content, toolName?, toolCallId? }`, capped as
   `tool.completed` caps it. Read it by ROLE (the ids are optional). **It never
   reaches the MODEL** — an orphan `tool` message is rejected by providers.
-  `aai-runtime`'s `_tool-result-message.ts` is the one statement of the shape;
+  `aai-runtime/src/tools/result-message.ts` is the one statement of the shape;
   more in `packages/aai-runtime/TOOL-OUTCOMES-CLAUDE.md`.
-- **`ctx.delegate`** runs a whole tool loop (`ToolLoopAgent`) with its own
-  instructions, model, tools and context window; `subagent()` (`subagent.ts`)
-  declares one, including `expectedOutput`, `guardrail`/`maxRevisions` and
-  `agent({ subagents })`. Host half: "Subagents" in
+- **`ctx.delegate`** runs a `SpeakerDef` OFF the line — a whole tool loop
+  (`ToolLoopAgent`) with its own instructions, model, tools and context window;
+  `speaker()` (`speaker.ts`) declares one, including `expectedOutput`,
+  `guardrail`/`maxRevisions` and `schema`. Host half: "Subagents" in
   `packages/aai-runtime/src/CLAUDE.md`.
 
 ## MCP servers: declared here, connected in `aai-runtime`
@@ -358,8 +376,8 @@ and `ensureComposioWebhook` (a setup script's, not an agent's).
 ## `ToolDef.messages` — what a tool SAYS
 
 `tool-messages.ts` declares, `tool-messages-select.ts` chooses (both pure);
-`aai-runtime`'s `tool-messages-runner.ts` speaks. Kinds: `start`, `delayed`,
-`complete`, `failed`.
+`aai-runtime/src/tools/messages-runner.ts` speaks. Kinds:
+`start`, `delayed`, `complete`, `failed`.
 
 - **Same timing = VARIANTS (one drawn); different timings = STAGES.** Group
   before the draw.
@@ -372,15 +390,35 @@ and `ensureComposioWebhook` (a setup script's, not an agent's).
 It rides on `ToolSchema` (via `agentToolsToSchemas`), so it means the same in
 `aai dev`, a deployed guest and host mode.
 
-## Personas and `handoff` (`persona.ts`)
+## One `speaker()`, one `roster()` (`speaker.ts`, `roster.ts`)
 
-`personas([...])` declares a roster (first entry answers); `agent({ personas })`
-lowers it into `tools` — each persona's tools wrapped in a GATE plus a minted
-`handoff` tool. The active persona is the `aai.persona` slot; a dialog state may
-PIN one (`DialogStateSpec.persona`). A persona is not an `AgentDef` nor a dialog
-state, and **the gate is at EXECUTION with tools still advertised** (hiding them
-replaces the named refusal with a generic error). Runtime half: "Personas are
-wired to a SESSION here" in `packages/aai-runtime/src/CLAUDE.md`.
+**A subagent and a persona are one `SpeakerDef`**; where it runs decides what it
+is. `roster([...])` is ONE list: a `speaks: true` entry is handed the CALL by the
+minted `handoff` (first speaking entry answers), the rest a TASK by the minted
+`delegate` (`ctx.delegate`). `agent({ roster })` lowers it into a `"roster"`
+toolset (`roster-tools.ts`). Every entry needs a `description` (the only thing
+either router reads); a speaking entry's tools have one owner and never a minted
+name. The speaker on the line is the `aai.speaker` slot; a dialog state may PIN
+a speaking entry (`DialogStateSpec.persona`). **The gate is at EXECUTION with
+tools still advertised** (hiding them replaces the named refusal with a generic
+error). Runtime half: "A roster's speakers are wired to a SESSION here" in
+`packages/aai-runtime/src/CLAUDE.md`.
+
+## Every tool source is a `Toolset` (`toolset.ts`)
+
+Files, builtins, MCP, a roster, a subagent's map: each is a `Toolset` —
+`list()` (entries: def + executor + deadline), `gate(name, ctx)`,
+`execute(name, args, ctx)` — and `agentToolsToSchemas`/`executeToolCall` read
+nothing else. **Composition is first-wins** (`composeToolsets`): files, then
+`AgentDef.toolsets` (resolved, never authored — `agent()`'s roster set,
+`withMcpTools`' MCP set), then builtins. **`toolEntry` is the only place a def's
+identity is read** (the `clientTool` brand → `executor: "client"`). A dialog's
+`gate(def, ctx)` is layered over every set by `agentToolsets`. **A refusal is a
+`ToolRefusal`** — a `ToolFailure` plus `reason` (`unknown_tool`,
+`invalid_arguments`, `cancelled`, `persona`, `dialog`, `roster`); `reason` is NOT
+on `ToolFailure` itself, so an author's `{ error }` literal still narrows.
+`toolOf` is the lookup (the author's def); `runTool(agent, name)` is the CALL
+(gated).
 
 ## Speech boundary and voice presets
 
@@ -419,9 +457,10 @@ database) — a known gap.
 
 ## Workflow apps and the workflow HTTP API
 
-`AgentDef.page` is `"voice"` (default) or `"static"` — a page over the workflow
-API, declared with `workflowApp()` (`define.ts`), which refuses fields it cannot
-use. Author-facing half: "Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
+`mode: "workflow-app"` is a page over the workflow API, declared with
+`workflowApp()` (`define.ts`), whose member has none of the fields it cannot
+use; `GET /client-config` reports it as `page: "static"`. Author-facing half:
+"Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
 
 - **Read a run's newest line with `ctx.workflows.lastLine(runId)`, never
   `streamTail` + `stream` by hand** — a progress channel is never closed, so
@@ -518,4 +557,4 @@ The store and why record and bytes pair off one `DATABASE_URL` are in
 - **The parts path DECLINES rather than fails** (uncuttable body, one-part file
   for `upload`, 404 on declaration), and is the only path that may RETRY — a
   retried single `POST` mints a second upload. `workflow-upload-parts.ts` and
-  `aai-runtime`'s `_upload-store.ts` carry backoff and `Retry-After`.
+  `aai-runtime/src/uploads/store.ts` carry backoff and `Retry-After`.

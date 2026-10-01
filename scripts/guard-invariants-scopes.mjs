@@ -17,10 +17,10 @@
  * An explicit list, and that is the answer to "scope by module role, not by
  * counting every `on*` in the package" rather than a shortcut around it. Role is
  * not derivable from a path here: `transports/types.ts` declares the session
- * boundary and `transports/pipeline-llm-stream.ts`, its neighbour, decomposes a
+ * boundary and `transports/pipeline/llm/stream.ts`, its neighbour, decomposes a
  * hot path with `on*` parameters — a glob over `transports/` would catch both and
  * a glob over `host/*.ts` would catch neither. The two things NOT in scope are in
- * scope for that reason: provider adapter contracts (`_s2s-dispatch.ts`'s
+ * scope for that reason: provider adapter contracts (`aai-runtime/src/s2s/dispatch.ts`'s
  * `S2sCallbacks`, `providers/**`'s `onSttPartial`/`onTtsAudio`) sit BELOW the
  * session and are what a new provider is written against, and utilities that take
  * an `on*` PARAMETER (`_timer.ts`) are ordinary function decomposition.
@@ -49,13 +49,13 @@ export const TOOL_CONTEXT_PATHS = ["packages/aai/src/sdk/tool-context.ts"];
 export const CHANNEL_MESSAGE_PATHS = ["packages/aai/src/sdk/channels/shared/channel-types.ts"];
 
 export const SESSION_SURFACE_PATHS = [
-  "packages/aai-runtime/src/session-core.ts",
-  "packages/aai-runtime/src/session-commands.ts",
+  "packages/aai-runtime/src/session/core.ts",
+  "packages/aai-runtime/src/session/commands.ts",
   "packages/aai-runtime/src/transports/types.ts",
-  "packages/aai-runtime/src/runtime-types.ts",
-  "packages/aai-runtime/src/runtime-session-callbacks.ts",
-  "packages/aai-runtime/src/runtime.ts",
-  "packages/aai-runtime/src/ws-handler.ts",
+  "packages/aai-runtime/src/runtime/types.ts",
+  "packages/aai-runtime/src/runtime/session-callbacks.ts",
+  "packages/aai-runtime/src/runtime/runtime.ts",
+  "packages/aai-runtime/src/session/ws-handler.ts",
   // The doubles. A per-name callback surface has a MULTIPLIER: every harness
   // standing in for the thing that fires a callback has to satisfy its whole
   // shape, and 78 of the original 157 occurrences were exactly that.
@@ -223,15 +223,15 @@ export const WORKFLOW_BODY_PATHSPECS = ["packages/aai-templates/templates/*/work
  * and for opposite purposes: they are scanned for INLINE literals (which is the
  * gap the rule exists for — a route added to `server.ts` is served by every
  * guest), and they are read again to resolve the `export const` a table entry in
- * `server-routes.ts` references. One list, so a module can never be scanned
+ * `aai-runtime/src/server/routes.ts` references. One list, so a module can never be scanned
  * without also being resolvable, which would report its own declaration as a
  * violation.
  */
 export const RUNTIME_ROUTE_SOURCES = [
-  "packages/aai-runtime/src/server.ts",
-  "packages/aai-runtime/src/server-routes.ts",
+  "packages/aai-runtime/src/server/server.ts",
+  "packages/aai-runtime/src/server/routes.ts",
   "packages/aai-runtime/src/telephony/telephony-server.ts",
-  "packages/aai-runtime/src/session-events-api.ts",
+  "packages/aai-runtime/src/server/session-events-api.ts",
   "packages/aai-runtime/src/workflow/serve.ts",
   "packages/aai-runtime/src/workflow/queue-dispatch.ts",
 ];
@@ -346,7 +346,7 @@ export const SCAN_CORPORA = [
   },
   // The other explicit file list, and the one that had no floor. Rule 12 does
   // not just SCAN these — it `readFileSync`s each to resolve the `export const`
-  // a `server-routes.ts` entry references, unguarded, so a renamed module threw
+  // a `aai-runtime/src/server/routes.ts` entry references, unguarded, so a renamed module threw
   // an uncaught ENOENT out of the gate and took the OTHER 29 rules' findings
   // with it: one moved file, and `check:invariants` reported nothing about
   // anything. Two of these six were repointed when `workflow-*` became

@@ -19,7 +19,7 @@
  * callers classify a throw (a 400, a failed step), while three of this one's
  * six callers decode inside a raw socket `message` handler with no `try` around
  * it (`providers/tts/rime.ts`, `providers/tts/assemblyai-frames.ts`,
- * `step-speak.ts` — the other three, `telephony-bridge.ts`, `s2s.ts` and
+ * `step-speak.ts` — the other three, `telephony-bridge.ts`, `s2s/client.ts` and
  * `transports/openai-realtime-transport.ts`, each wrap theirs and say why).
  * There a throw is an uncaughtException that takes a multi-tenant host down
  * over one bad frame, chosen by a remote party. So the same posture as
@@ -33,7 +33,7 @@
  * available. It is reported now, and three properties are decisions:
  *
  * - **An optional `Logger`, defaulting to `consoleLogger`.** The three CONTAINED
- *   callers pass their own (`s2s.ts`, `telephony/telephony-bridge.ts`,
+ *   callers pass their own (`s2s/client.ts`, `telephony/telephony-bridge.ts`,
  *   `transports/openai-realtime-transport.ts`), so a drop lands in the log the
  *   session's other lines are in. The three uncontained ones are provider
  *   openers with no logger to pass — `TtsOpenOptions` carries none, and it is

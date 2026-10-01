@@ -27,13 +27,13 @@
  *   what it "said".
  *
  * On the session event stream a `say` is an ordinary reply (`reply.started`,
- * `agent-transcript.committed`, `reply.completed` or `reply.cancelled`), so
+ * `agentTranscript.committed`, `reply.completed` or `reply.cancelled`), so
  * a reader of the log sees it as clearly as a model turn.
  *
  * ## A handler that speaks can hear itself
  *
  * **A `say` emits events, and those events reach your `events` handlers.** A
- * handler that answers every `agent-transcript.committed` with a `say` answers
+ * handler that answers every `agentTranscript.committed` with a `say` answers
  * its own line too, and the call never ends:
  *
  * ```ts
@@ -42,8 +42,8 @@
  * export default agent({
  *   name: "Never stops",
  *   events: {
- *     // LOOPS: the line this says is itself an agent-transcript.committed.
- *     "agent-transcript.committed": (_event, ctx) => {
+ *     // LOOPS: the line this says is itself an agentTranscript.committed.
+ *     "agentTranscript.committed": (_event, ctx) => {
  *       ctx.speech.say("Anything else?");
  *     },
  *   },
@@ -53,7 +53,7 @@
  * The emitter's re-entry guard does not catch it, because the line is spoken
  * after the handler has returned. So a handler that speaks must decide from
  * what TRIGGERED it: an event its own line cannot produce (`tool.called`,
- * `user-transcript.committed`, `session.timed-out`), or a check of the event
+ * `userTranscript.committed`, `session.timedOut`), or a check of the event
  * (its `text`, a slot the handler set) that its own line cannot pass. LiveKit's
  * `session.say` and Pipecat's `TTSSpeakFrame` share this property, and neither
  * guards it either.
@@ -63,9 +63,10 @@
  * **Pipeline mode only.** Neither S2S service can speak host-supplied text
  * verbatim: AssemblyAI's builds every reply from its own session, and OpenAI
  * Realtime's `response.create` only takes an instruction the model may
- * paraphrase. On an S2S agent `done` settles `"unsupported"` at once rather
- * than throwing, for the reason `notify` is a no-op there: the caller is often
- * background code with nobody to raise to. `interrupt()` works in every mode.
+ * paraphrase. The runtime says so ONCE, when an S2S session starts, and every
+ * `say` there settles `"dropped"` at once rather than throwing, for the reason
+ * `notify` is a no-op there: the caller is often background code with nobody
+ * to raise to. `interrupt()` works in every mode.
  *
  * @module
  */
@@ -77,15 +78,15 @@
  * - `"interrupted"`: it started and was cut off: a barge-in, an
  *   `interrupt()`, or the session ending mid-line. History holds the heard
  *   prefix.
- * - `"dropped"`: it never started. The session ended, the line was empty, or an
+ * - `"dropped"`: it never started. The session ended, the line was empty, an
  *   interrupt stranded it in the queue (an interrupt, from the client or from
- *   code, discards EVERY queued reply, queued `say`s included).
- * - `"unsupported"`: the session's transport cannot speak verbatim text, which
- *   means an S2S agent. See this module's header.
+ *   code, discards EVERY queued reply, queued `say`s included), or the
+ *   session's transport cannot speak verbatim text — an S2S agent, said once
+ *   at session start. See this module's header.
  *
  * @public
  */
-export type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+export type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 /**
  * Options for {@link SessionSpeech.say}.
@@ -112,7 +113,7 @@ export type SayOptions = {
   interruptible?: boolean | undefined;
   /**
    * `false` to keep this line out of the conversation: it is spoken and
-   * captioned (its `agent-transcript.committed` carries `recorded: false`),
+   * captioned (its `agentTranscript.committed` carries `recorded: false`),
    * but it enters neither the model's history nor `ctx.messages`, and a
    * resumed session does not remember it. For a line the model should not
    * treat as something it said, such as a hold message ("one moment while I

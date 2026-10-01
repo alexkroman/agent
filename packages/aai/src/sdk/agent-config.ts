@@ -13,24 +13,16 @@
  */
 
 import { z } from "zod";
-import { normalizeAgentConveniences } from "./_author-conveniences.ts";
+import { normalizeAgentParams } from "./_author-conveniences.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
+import { InterruptionSchema, SilenceSchema, TurnTakingSchema } from "./_tuning-schema.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { type AgentSystemPrompt, staticSystemPrompt } from "./agent-instructions.ts";
-import {
-  assertGuardrailScope,
-  assertPipelineTuning,
-  assertProviderTriple,
-  assertSamplingScope,
-  assertSilencePolicy,
-} from "./config-rules.ts";
+import { AGENT_MODES, type AgentMode } from "./agent-mode.ts";
+import { assertGuardrailScope, assertProviderTriple, assertSamplingScope } from "./config-rules.ts";
 import { MCP_SERVER_KEY_RE, type McpServers } from "./mcp-config.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
-import {
-  MAX_INTERRUPTION_BACKOFF_MS,
-  MAX_START_SPEAKING_FLOOR_MS,
-} from "./speak-gate-constants.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import {
@@ -214,52 +206,21 @@ export const AgentConfigSchema = z.object({
   // `agentConfigWarnings` — a preset dropped without a word is the failure.
   voicePresets: z.array(VoicePresetNameSchema).readonly().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
-  silenceTimeoutMs: z.number().positive().optional(),
-  silencePrompt: z.string().optional(),
-  minBargeInWords: z.number().int().min(1).optional(),
-  interruptionMinDurationMs: z.number().int().nonnegative().optional(),
-  // The two phrase lists and the endpointing table: serializable for the
-  // reason every other declaration here is — the runtime that reads them is in
-  // a guest sandbox, so they have to survive CLI → server → runtime. Which is
-  // also why an endpointing rule's pattern is a SOURCE STRING: a `RegExp` does
-  // not survive `JSON.stringify`, and one that silently became `{}` would be a
-  // rule that matches nothing with nothing to report it.
-  startSpeakingFloorMs: z.number().int().nonnegative().max(MAX_START_SPEAKING_FLOOR_MS).optional(),
-  interruptionBackoffMs: z.number().int().nonnegative().max(MAX_INTERRUPTION_BACKOFF_MS).optional(),
-  deadAirCoverMs: z.number().int().nonnegative().optional(),
+  // The pipeline's turn-taking tuning, as its three groups — see
+  // `_tuning-schema.ts` for why each is `.strict()`.
+  turnTaking: TurnTakingSchema.optional(),
+  interruption: InterruptionSchema.optional(),
+  silence: SilenceSchema.optional(),
   errorPhrase: z.string().optional(),
   startFailurePhrase: z.string().optional(),
-  resumeFalseInterruption: z.boolean().optional(),
-  preemptiveGeneration: z.boolean().optional(),
-  // A cap on one user turn, by words and/or elapsed time. REFINED rather than
-  // left as two optionals: `{}` is a limit on nothing, and a control that is
-  // accepted and never fires is the failure this whole layer exists to refuse.
-  userTurnLimit: z
-    .object({
-      maxWords: z.number().int().positive().optional(),
-      maxDurationMs: z.number().int().positive().optional(),
-    })
-    .refine((limit) => limit.maxWords !== undefined || limit.maxDurationMs !== undefined, {
-      message: "userTurnLimit must set maxWords, maxDurationMs, or both",
-    })
-    .optional(),
-  // Who ends the caller's turn: the transcriber on a pause, or the client's
-  // push-to-talk commit. A string rather than a boolean so a third policy (a
-  // semantic end-of-turn model, say) is a member rather than a second flag —
-  // and an OPEN string, so a config naming a mode a later SDK implements still
-  // deploys here; the runtime treats anything but "manual" as "auto", and
-  // `agentConfigWarnings` says so at build time.
-  turnDetection: z.string().min(1).optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
   s2s: ProviderDescriptorSchema.optional(),
-  // `z.literal(true)`, not `z.boolean()`: `text: false` would be a second
-  // spelling of "not a text agent", and the field is a mode SELECTOR — the
-  // one thing a mode selector must not have is two ways to say the same
-  // thing, one of which a stale config can carry.
-  text: z.literal(true).optional(),
-  mode: z.enum(["s2s", "pipeline", "text"]).optional(),
+  // The AUTHORED mode, carried unchanged — the browser, the CLI, the studio and
+  // a deploy all read the one field the author wrote. `toAgentConfig` always
+  // writes it, having checked the providers agree with it.
+  mode: z.enum(AGENT_MODES).optional(),
   requiredEnv: z.array(EnvVarName).readonly().optional(),
   /**
    * MCP servers whose tools join the agent's own. Serializable, like every
@@ -276,12 +237,6 @@ export const AgentConfigSchema = z.object({
   clientInbox: z
     .object({ sampleRate: z.number().int().min(8000).max(48_000).optional() })
     .optional(),
-  // Serializable rather than host-only: it is a DECLARATION about the agent's
-  // surface, exactly like `name` and `greeting`, and every consumer of a
-  // serialized config wants it — the browser (does this page open a mic?), the
-  // CLI's build, the studio's preview. The `workflows` record beside it is
-  // host-only for the opposite reason: those are functions.
-  page: z.enum(["voice", "static"]).optional(),
   /**
    * Which carriers may open a media stream against this agent — see
    * `AgentDef.telephony`. Serializable for the same reason `page` is: it is a
@@ -321,15 +276,14 @@ export const HOST_ONLY_AGENT_FIELDS = [
   "tools",
   "syncState",
   "workflows",
-  // A `SubagentDef` may carry tool FUNCTIONS, so a roster cannot be serialized —
-  // and nothing downstream of the wire needs it: the roster's whole effect on
-  // the deployed config is the `delegate` entry `agent()` already put in `tools`,
-  // whose schema travels with every other tool's.
-  "subagents",
-  // A roster of personas is the same shape: each carries tool FUNCTIONS, and
-  // its whole effect on the deployed config is the gated tools and the
-  // `handoff` entry `agent()` already put in `tools`.
-  "personas",
+  // A `SpeakerDef` may carry tool FUNCTIONS, so a roster cannot be serialized —
+  // and nothing downstream of the wire needs it: its whole effect on the
+  // deployed config is the toolset `agent()` minted, whose schemas travel with
+  // every other tool's.
+  "roster",
+  // Toolsets hold defs and gates — functions — and their schemas already ride
+  // the tool list.
+  "toolsets",
   // A dialog holds a compiled XState machine and closures over a session slot.
   // Nothing downstream of the wire could act on one, and the guest runs the
   // agent's own module — where the dialog objects already are.
@@ -369,8 +323,7 @@ export const KNOWN_AGENT_FIELDS: ReadonlySet<string> = new Set([
 
 /**
  * What {@link toAgentConfig} accepts: every serializable {@link AgentConfig}
- * field (`mode` excepted — it is derived, never supplied) plus the host-only
- * fields the deny-list strips. `AgentDef` is assignable to this by
+ * field plus the host-only fields the deny-list strips. `AgentDef` is assignable to this by
  * construction; the explicit `| undefined` on the host-only members keeps
  * spread call sites (`{...agent, stt: maybeUndefined}`) legal under
  * `exactOptionalPropertyTypes`.
@@ -392,6 +345,8 @@ export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcp
    * strips them (see `wireMcpServers`).
    */
   mcpServers?: McpServers | undefined;
+  /** See `AgentDef.mode`; `undefined` from a spread means the default. */
+  mode?: AgentMode | undefined;
 } & {
   [K in HostOnlyAgentField]?: unknown;
 };
@@ -425,21 +380,25 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // (S2S requires an explicit `s2s` descriptor). Runs inside the generated
   // bundle entry, so the defaults are baked into the deployed config at
   // build time.
-  // Author conveniences normalize here too, so a raw `export default {...}`
-  // that skipped `agent()` behaves the same: `voice`, a model-id string for
-  // `llm`, and the `minTurnSilenceMs`/`maxTurnSilenceMs` endpointing pair.
-  // (There is no `system` alias — `agent({ system })` is refused by name at the
-  // stray-field check below, which is the better error.)
-  const normalized = normalizeAgentConveniences(source) as AgentConfigSource;
+  // The same normalization `agent()` runs, so a raw `export default {...}` that
+  // skipped `agent()` behaves the same: the mode and the fields it refuses,
+  // a model-id string for `llm`, and the endpointing pair. Idempotent
+  // over `agent()`'s own output. (There is no `system` alias — `agent({ system
+  // })` is refused by name at the stray-field check below.)
+  const normalized = normalizeAgentParams(source) as AgentConfigSource;
   const src = { ...normalized, ...(defaultProviders(normalized) ?? {}) };
   // BEFORE the cross-field rules, so a misspelled field is reported as itself
   // rather than as whatever rule notices its absence three checks later.
   assertNoStrayFields(src, KNOWN_AGENT_FIELDS);
   // After the fill, `assertProviderTriple` classifies the mode (and still
   // rejects s2s combined with pipeline stages) so the server can trust it.
-  const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s, src.text);
-  assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
-  assertPipelineTuning(mode, src);
+  const mode = assertProviderTriple(
+    src.stt,
+    src.llm,
+    src.tts,
+    src.s2s,
+    src.mode === "text" ? true : undefined,
+  );
   assertSamplingScope(mode, src);
   assertGuardrailScope(mode, src);
   // Runs inside the generated bundle entry too, so the studio's test_agent
@@ -467,15 +426,6 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // The same shape of problem one level down: an MCP server is serializable
   // except for its `url` resolver and its `headers`.
   if (src.mcpServers) wire.mcpServers = wireMcpServers(src.mcpServers);
-  // AFTER the copy, never before it. `mode` is DERIVED — `AgentConfigSource`
-  // omits it precisely so a typed caller cannot supply one — but the copy is a
-  // deny-list over `Object.entries`, so a `mode` on a raw object (a hand-written
-  // `export default {...}`, a config round-tripped through the wire) would
-  // otherwise overwrite the value `assertProviderTriple` just classified. The
-  // deploy boundary rejects the disagreement (`IsolateConfigSchema.superRefine`),
-  // so the symptom was a confusing deploy failure rather than a wrong session —
-  // but the schema is second-guessing a value this function is the authority on.
-  wire.mode = mode;
   // safeParse, then a SENTENCE. The schema re-validates field shapes, copies
   // arrays (the config must not alias caller-owned arrays), and strips any key
   // it does not know — a second net under the deny-list for non-serializable

@@ -37,7 +37,7 @@
  *
  * {@link toVoiceConfig} applies that per DECLARATION rather than per field: the
  * deepest state that declares ANY voice knob supplies the whole config. A phase
- * that pins `voice` and `bargeIn` together means them together — a per-field
+ * that pins `voice` and `interruption` together means them together — a per-field
  * merge would hand a disclosure state its parent's interruptible barge-in while
  * honouring its own voice, which is the half-applied policy this is here to
  * avoid.
@@ -46,8 +46,8 @@
  * this package may import it. `dialog()` is the public surface.
  */
 
+import type { PipelineTuning } from "./agent-tuning.ts";
 import type {
-  DialogBargeIn,
   DialogStateSpec,
   DialogTimeout,
   DialogTimeoutSpec,
@@ -73,7 +73,7 @@ export function toStateMeta(state: DialogStateSpec): Record<string, unknown> | u
     instruction: state.instruction,
     timeout: state.timeout,
     voice: state.voice,
-    bargeIn: state.bargeIn,
+    interruption: state.interruption,
     toolChoice: state.toolChoice,
     temperature: state.temperature,
     persona: state.persona,
@@ -185,14 +185,20 @@ export function toTimeout(meta: Record<string, unknown>): DialogTimeout | undefi
     : { afterMs: declared.afterMs, event: { type: declared.send } };
 }
 
-/** `"default"`, `"off"`, or the two-number form — anything else is not one. */
-function toBargeIn(value: unknown): DialogBargeIn | undefined {
-  if (value === "default" || value === "off") return value;
+/**
+ * `"off"`, or the `InterruptionTuning` object — anything else is not one.
+ * Read field by field off untyped `meta`, so a misspelled key reads as absent.
+ */
+function toInterruption(value: unknown): PipelineTuning["interruption"] | undefined {
+  if (value === "off") return value;
   if (!isRecord(value)) return undefined;
-  const { minWords, minDurationMs } = value;
+  const { minWords, minDurationMs, backoffMs, resumeFalseInterruption } = value;
   return omitUndefined({
     minWords: typeof minWords === "number" ? minWords : undefined,
     minDurationMs: typeof minDurationMs === "number" ? minDurationMs : undefined,
+    backoffMs: typeof backoffMs === "number" ? backoffMs : undefined,
+    resumeFalseInterruption:
+      typeof resumeFalseInterruption === "boolean" ? resumeFalseInterruption : undefined,
   });
 }
 
@@ -209,7 +215,7 @@ function toToolChoice(value: unknown): ToolChoice | undefined {
 function declaredVoiceConfig(declared: Record<string, unknown>): DialogVoiceConfig | undefined {
   const config = omitUndefined({
     voice: typeof declared.voice === "string" ? declared.voice : undefined,
-    bargeIn: toBargeIn(declared.bargeIn),
+    interruption: toInterruption(declared.interruption),
     toolChoice: toToolChoice(declared.toolChoice),
     temperature: typeof declared.temperature === "number" ? declared.temperature : undefined,
   });

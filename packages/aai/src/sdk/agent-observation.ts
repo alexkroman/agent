@@ -32,20 +32,23 @@ export interface AgentObservation {
    * Project per-session state to the browser client, so a custom UI can
    * render it without the agent hand-rolling a sync channel.
    *
-   * One projection per slot the client should see, or an array of them — the
-   * `agent_state` frame carries the merge. A slot the agent does not project
-   * never leaves the server, which is the point: session state routinely holds
-   * things a browser should not have, so the author decides what leaves, and
-   * whatever a projection returns is exactly what `useAgentState` receives.
-   * Pushed after every tool call, and only when a projection actually changed:
-   * most turns touch no state, and this shares a socket with 384 kbps of PCM.
+   * A RECORD keyed by SLOT NAME, one projection per slot the client should
+   * see: `{ cart: cartSlot.projected }`. The key must be the projection's own
+   * slot key — `agent()` refuses a mismatch by name — so the `agent_state`
+   * frame is `{ [slot]: view }` and the browser selects by the same name
+   * (`useAgentState(cartSlot.projected)` reads `state.cart`). A slot the agent
+   * does not project never leaves the server, which is the point: session
+   * state routinely holds things a browser should not have, so the author
+   * decides what leaves, and whatever a projection returns is exactly what the
+   * page receives under that key. Pushed after every tool call, and only when
+   * a projection actually changed: most turns touch no state, and this shares
+   * a socket with 384 kbps of PCM.
    *
    * **Declare the view on the slot and pass {@link SessionSlot.projected}.**
    * One object the agent pushes with and the page renders with, so the frame
    * shown before the first tool call cannot describe a different view from the
-   * ones after it. A slot with more than one audience keeps
-   * {@link SessionSlot.projection}, a second view over the same slot;
-   * `syncState` takes an array.
+   * ones after it. One view per slot: a page that needs a second shape derives
+   * it from the first.
    *
    * ```ts
    * import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -54,12 +57,10 @@ export interface AgentObservation {
    * const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
    *   view: (s) => ({ items: s.items }),
    * });
-   * agent({ name: "Cart", syncState: cartSlot.projected });
-   * // Two audiences over the one slot:
-   * agent({
-   *   name: "Cart",
-   *   syncState: [cartSlot.projected, cartSlot.projection((s) => ({ count: s.items.length }))],
-   * });
+   * const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
+   * agent({ name: "Cart", syncState: { cart: cartSlot.projected } });
+   * // Two slots, one frame: { cart: { items }, prefs: { units } }.
+   * agent({ name: "Cart", syncState: { cart: cartSlot.projected, prefs: prefsSlot.projected } });
    * ```
    *
    * @remarks
@@ -68,7 +69,7 @@ export interface AgentObservation {
    * than remembered. Without it, agents hand-roll a snapshot returned from every
    * tool and mirrored into `useState`; 58% of generated agents built one.
    */
-  syncState?: StateProjection | readonly StateProjection[];
+  syncState?: Readonly<Record<string, StateProjection>>;
   /**
    * Observe the session's own event stream — an audit log, per-turn metrics, or
    * "write every call to my own database".

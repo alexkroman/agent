@@ -16,7 +16,7 @@
  * ## Why a lease rather than a handle
  *
  * Because "what this call opened is what it closes" is the ownership rule every
- * caller here already follows — `runtime.ts` closes the lease it opened so a
+ * caller here already follows — `runtime/runtime.ts` closes the lease it opened so a
  * rebuilt `aai dev` runtime does not strand a pool, and `installWorkflowSupport`
  * closes the upload pool for the same reason. A shared handle with a plain
  * `close()` would break that rule in the worst direction: the first caller to

@@ -5,7 +5,7 @@
  *
  * The sibling of `eval/session.ts`, and it exists because that one structurally
  * cannot serve a text agent: `openEvalSession` stands up `createRuntime`, which
- * REFUSES `text: true` by name (`textAgentHasNoSession`) — a text agent
+ * REFUSES `mode: "text"` by name (`textAgentHasNoSession`) — a text agent
  * fills no pipeline stages and resolves no transport, so there is nothing for
  * the fake speech pair to stand between. Two harnesses, one for each of the two
  * ways an agent runs.
@@ -15,7 +15,7 @@
  * read the same way; the same readers in `eval/events.ts` and the same
  * assertion vocabulary above them apply, because a text agent emits the same
  * {@link SessionEvent} union narrowed to seven members it can fill honestly
- * (`text-agent-events.ts` carries which, and the eleven it refuses). A case
+ * (`../text-agent/events.ts` carries which, and the eleven it refuses). A case
  * author moving between the two harnesses learns the difference between a
  * voice agent and a text one, and nothing else.
  *
@@ -37,7 +37,7 @@
  * and an eval does not choose — the id is minted here in the same `eval-…`
  * shape a session's is, and a `model` would be the resolved value `llm` exists
  * to keep a DESCRIPTOR. Two agent SHAPES are refused outright rather than run:
- * one that does not declare `text: true`, and one that declares `s2s` beside
+ * one that does not declare `mode: "text"`, and one that declares `s2s` beside
  * it.
  *
  * ## A turn ends on a real terminator, and here that is structural
@@ -46,7 +46,7 @@
  * able to begin inside the previous turn, or a recorded tool order belongs to
  * the harness rather than to the agent. `openEvalSession` gets there by polling
  * the event list for a `TURN_ENDS` member anchored to its own
- * `user-transcript.committed`, because the session it drives runs on its own
+ * `userTranscript.committed`, because the session it drives runs on its own
  * clock and pushes events at it.
  *
  * Here the harness OWNS the stream, so the wait is stronger and simpler: it
@@ -124,7 +124,7 @@
  * import { openEvalTextAgent, toolNames } from "@alexkroman1/aai-runtime/eval";
  *
  * export async function drive(): Promise<void> {
- *   const chat = await openEvalTextAgent({ agent: agent({ name: "Coder", text: true }) });
+ *   const chat = await openEvalTextAgent({ agent: agent({ name: "Coder", mode: "text" }) });
  *   try {
  *     const turn = await chat.send("add a health route and check it compiles");
  *     console.log(toolNames(turn.toolCalls), turn.text);
@@ -146,7 +146,7 @@ import type { HostAgentOptions } from "../host-agent-options.ts";
 import { llmProviderEnvVar } from "../providers/_provider-env-var.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { silentLogger } from "../runtime-config.ts";
-import { createTextAgent } from "../text-agent.ts";
+import { createTextAgent } from "../text-agent/index.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { measuredToolCalls, measuredTurn } from "./_turn-faults.ts";
 import { type EvalToolCall, saidIn, TURN_ENDS } from "./events.ts";
@@ -191,7 +191,7 @@ export function evalTextCredentials(
  * What {@link openEvalTextAgent} takes.
  *
  * The fields every way of running an agent shares are {@link HostAgentOptions};
- * here `agent` must declare `text: true`, and the rest mean what they mean on
+ * here `agent` must declare `mode: "text"`, and the rest mean what they mean on
  * `EvalSessionOptions`: `providerEnv` defaults to `env` with any credential it
  * does not carry filled in from this machine's own environment (a value in
  * `env` always wins over the shell), `runCode` absent makes the builtin refuse
@@ -299,7 +299,7 @@ export type EvalTextAgent = {
  * close(); }` either way, and the two harnesses cannot come to want different
  * boilerplate.
  *
- * @throws if the agent does not declare `text: true`. That is the mirror of
+ * @throws if the agent does not declare `mode: "text"`. That is the mirror of
  *   `createTextAgent`'s own refusal, made here so the message names the harness
  *   to use instead.
  * @throws if the agent declares `s2s`. The vendor owns the whole turn there and
@@ -311,16 +311,16 @@ export type EvalTextAgent = {
  */
 export async function openEvalTextAgent(options: EvalTextAgentOptions): Promise<EvalTextAgent> {
   const def = options.agent;
-  if (def.text !== true) {
+  if (def.mode !== "text") {
     throw new Error(
-      `Agent "${def.name}" does not declare \`text: true\`, so it has no text ` +
+      `Agent "${def.name}" does not declare \`mode: "text"\`, so it has no text ` +
         "turn to drive — evaluate it as a voice session with `openEvalSession`, " +
-        "or add `text: true` to its definition.",
+        'or add `mode: "text"` to its definition.',
     );
   }
   if (def.s2s !== undefined) {
     throw new Error(
-      `Agent "${def.name}" declares both \`text: true\` and an s2s provider, which ` +
+      `Agent "${def.name}" declares both \`mode: "text"\` and an s2s provider, which ` +
         "owns a whole SPOKEN turn — a text agent has no speech stage, so this " +
         "would evaluate a configuration nobody deployed. Drop one of the two.",
     );

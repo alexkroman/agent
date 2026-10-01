@@ -45,7 +45,7 @@
  * means, there being no page to put a run back on. A FORM is the other case: it
  * is the page, and losing the run is the thing it cannot recover from. Six of
  * six page templates wrote `useRunKey()` and `recover: true` together, which is
- * the same shape `session-resume-store.ts` names on the voice side — a default
+ * the same shape `session/resume-store.ts` names on the voice side — a default
  * in the wrong place — so `useWorkflowSubmit` now mints the key and asks.
  *
  * `enabled` remains, because `recover: false` remains: a page whose form must

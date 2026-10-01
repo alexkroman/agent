@@ -28,7 +28,7 @@ import type { ToolInputSchema } from "./schema.ts";
 import type { SessionEvent } from "./session-event-map.ts";
 import type { SlotHolder, StateProjection } from "./session-state.ts";
 import type { ToolDef } from "./types.ts";
-import type { ToolFailure } from "./utils.ts";
+import type { ToolFailure, ToolRefusal } from "./utils.ts";
 
 /**
  * A dialog statechart bound to a session, created by {@link dialog}.
@@ -86,14 +86,14 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
    * const claim = dialog("claim", {
    *   initial: "verifying",
    *   states: {
-   *     verifying: { on: { "@session.timed-out": "abandoned" } },
+   *     verifying: { on: { "@session.timedOut": "abandoned" } },
    *     abandoned: { final: true },
    *   },
    * });
    *
    * export default agent({
    *   name: "Support",
-   *   events: { "session.timed-out": (event, ctx) => void claim.receive(ctx, event) },
+   *   events: { "session.timedOut": (event, ctx) => void claim.receive(ctx, event) },
    * });
    * ```
    */
@@ -130,6 +130,14 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
   tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
     def: DialogToolDef<P, R, E>,
   ): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+  /**
+   * The refusal for `tool` right now: a {@link ToolRefusal} (`reason: "dialog"`)
+   * when it is one this dialog's {@link Dialog.tool} minted and the conversation
+   * is outside its `when` states, `undefined` otherwise. The runtime layers it
+   * over every toolset (`agentToolsets`); the minted tool's own `execute` checks
+   * the same thing, so a spec calling it directly is gated too.
+   */
+  gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
   /**
    * A `syncState` projection of this dialog's position, so a client can render
    * the step the caller is on without the agent hand-rolling a sync channel.

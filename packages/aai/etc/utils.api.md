@@ -114,6 +114,9 @@ export function omitUndefined<T extends object>(obj: T): {
 };
 
 // @public
+export function orFail<A extends readonly unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R>;
+
+// @public
 export function orFail<T>(value: T | ToolFailure): T;
 
 // @public
@@ -146,6 +149,17 @@ export type ToolFailure = {
 
 // @public
 export function toolFailure(message: string): ToolFailure;
+
+// @public
+export type ToolRefusal = ToolFailure & {
+    reason: ToolRefusalReason;
+};
+
+// @public
+export function toolRefusal(reason: ToolRefusalReason, message: string): ToolRefusal;
+
+// @public
+export type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster";
 
 // @public
 export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;

@@ -1,0 +1,254 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * `ServerSession`'s conversation: what a restore puts back, and who it reaches.
+ *
+ * Split out of `core.test.ts` at the 700-line test cap, on the seam that
+ * file already had (`describe("createSessionCore — history")`). It is a real
+ * seam rather than a convenient cut: every case here is about the CONVERSATION —
+ * the model's copy of it, the client's, and the retained log — where the suite
+ * next door is about the session's lifecycle and its inbound surfaces.
+ */
+
+import type { SessionEvent } from "@alexkroman1/aai";
+import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
+import { describe, expect, test, vi } from "vitest";
+import { makeCore, makeTransport } from "./_core-harness.ts";
+
+describe("createSessionCore — history", () => {
+  // History is private state, but it is not unobservable: every tool call is
+  // handed a snapshot of it (`executeTool`'s 4th argument), which is the same
+  // view the agent's own tools get. Asserting through that seam is what makes
+  // "appends" and "pushes" claims rather than a sequence of calls that merely
+  // did not throw.
+  test("restoreHistory appends and onUserTranscript pushes user messages", async () => {
+    const executeTool = vi.fn<ExecuteTool>(async () => "ok");
+    const { core } = makeCore({ executeTool });
+    await core.start();
+
+    core.restoreHistory([{ role: "user", content: "prior" }]);
+    core.report({ type: "userTranscript.committed", text: "now" });
+
+    core.onReplyStarted("r1");
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
+    expect(executeTool.mock.calls[0]?.[3]).toEqual([
+      { role: "user", content: "prior" },
+      { role: "user", content: "now" },
+    ]);
+  });
+
+  test("a tool reads what an earlier tool of the reply answered", async () => {
+    // The S2S arm of the `"tool"` arm. The service runs the loop, so the host
+    // sees each call as a `tool.called` report and each result at the moment it
+    // settles — which is where the conversation gains it.
+    const executeTool = vi.fn<ExecuteTool>(async () => '{"eta":"tue"}');
+    const { core } = makeCore({ executeTool });
+    await core.start();
+
+    core.report({ type: "userTranscript.committed", text: "where is my order" });
+    core.onReplyStarted("r1");
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalledTimes(1));
+    core.report({ type: "tool.called", toolCallId: "c2", toolName: "lookup", args: {} });
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalledTimes(2));
+
+    expect(executeTool.mock.calls[0]?.[3]).toEqual([
+      { role: "user", content: "where is my order" },
+    ]);
+    expect(executeTool.mock.calls[1]?.[3]).toEqual([
+      { role: "user", content: "where is my order" },
+      { role: "tool", content: '{"eta":"tue"}', toolName: "lookup", toolCallId: "c1" },
+    ]);
+  });
+
+  test("the MODEL is seeded with each prior tool call as a real pair, ctx.messages with the result", async () => {
+    // A lone `tool` result in the LLM view is an orphan the provider rejects,
+    // dropping it lost the call from the model's memory, and rendering it as
+    // text taught the model to SPEAK calls. The transport gets both lists: the
+    // real one for tools, the paired one for the model.
+    const transport = { ...makeTransport(), seedHistory: vi.fn() };
+    const { core } = makeCore({ transport });
+    await core.start();
+    const messages = [
+      { role: "user" as const, content: "where is my order" },
+      { role: "tool" as const, content: '{"eta":"tue"}', toolName: "lookup", toolCallId: "c1" },
+      { role: "assistant" as const, content: "Tuesday." },
+    ];
+
+    core.restoreHistory(messages, [
+      {
+        callId: "c1",
+        name: "lookup",
+        args: { id: "4471" },
+        status: "done",
+        result: '{"eta":"tue"}',
+        afterMessageIndex: 0,
+      },
+    ]);
+
+    expect(transport.seedHistory).toHaveBeenCalledWith(messages, [
+      { role: "user", content: "where is my order" },
+      {
+        role: "assistant",
+        content: [
+          { type: "tool-call", toolCallId: "c1", toolName: "lookup", input: { id: "4471" } },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "c1",
+            toolName: "lookup",
+            output: { type: "text", value: '{"eta":"tue"}' },
+          },
+        ],
+      },
+      { role: "assistant", content: "Tuesday." },
+    ]);
+  });
+
+  test("the tool arm is kept OFF the client's restored transcript", async () => {
+    // `history.restored` renders dialogue and carries the tool calls separately,
+    // anchored by index into these messages — so a result appearing here would
+    // both render as a bare bubble and slide every anchor.
+    const { core, sink } = makeCore();
+    await core.start();
+
+    core.restoreHistory(
+      [
+        { role: "user", content: "where is my order" },
+        { role: "tool", content: '{"eta":"tue"}', toolName: "lookup", toolCallId: "c1" },
+        { role: "assistant", content: "Tuesday." },
+      ],
+      [
+        {
+          callId: "c1",
+          name: "lookup",
+          args: {},
+          status: "done",
+          result: '{"eta":"tue"}',
+          afterMessageIndex: 0,
+        },
+      ],
+    );
+
+    const sent = sink.events.filter((e: SessionEvent) => e.type === "history.restored");
+    expect(sent[0]).toMatchObject({
+      messages: [
+        { role: "user", content: "where is my order" },
+        { role: "assistant", content: "Tuesday." },
+      ],
+    });
+  });
+
+  test("restoreHistory SENDS the conversation to the client", async () => {
+    // The half that was missing. Everything else `restoreHistory` does restores
+    // the conversation for the MODEL — and the browser, which had stopped
+    // replaying its own on the grounds that the server now owned this, rendered
+    // an empty transcript beside an agent that remembered every word.
+    const { core, sink } = makeCore();
+    await core.start();
+
+    core.restoreHistory([
+      { role: "user", content: "two large pepperoni" },
+      { role: "assistant", content: "Got it." },
+    ]);
+
+    const sent = sink.events.filter((e: SessionEvent) => e.type === "history.restored");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      messages: [
+        { role: "user", content: "two large pepperoni" },
+        { role: "assistant", content: "Got it." },
+      ],
+    });
+    // Stamped like any other event, because the client parses one schema.
+    expect(sent[0]?.meta.id).toMatch(/^evt_/);
+  });
+
+  test("it is NOT recorded, or a resume would double its own log", async () => {
+    // Sent through the SINK rather than emitted: the emitter records first, so
+    // emitting the history just read out of the log appends it straight back —
+    // once per resume, unboundedly.
+    const { core, stream } = makeCore();
+    await core.start();
+    const tailBefore = stream.tail("s-test");
+
+    core.restoreHistory([{ role: "user", content: "prior" }]);
+
+    // The LOG did not grow, while the client did receive the frame.
+    expect(stream.tail("s-test")).toBe(tailBefore);
+  });
+
+  test("a resume with nothing to show sends no frame", async () => {
+    // `tool` messages are in the model's context and are not rendered, so a
+    // restore made entirely of them has nothing for a client to display — and an
+    // empty frame would clear a transcript rather than restore one.
+    const { core, sink } = makeCore();
+    await core.start();
+
+    core.restoreHistory([{ role: "tool", content: '{"ok":true}' }]);
+
+    expect(sink.events.filter((e: SessionEvent) => e.type === "history.restored")).toHaveLength(0);
+  });
+
+  test("a RECOVERY phrase never reaches the model's context", async () => {
+    // `speakRecovery` reports a committed transcript so the CAPTION matches what
+    // the caller heard, and `transports/pipeline/turn-outcome.ts`'s own table says that
+    // phrase reaches "history / ctx.messages: never" — while this dispatch
+    // pushed it, on the same call, into the very array every tool call is handed.
+    const executeTool = vi.fn<ExecuteTool>(async () => "ok");
+    const { core } = makeCore({ executeTool });
+    await core.start();
+
+    core.report({ type: "userTranscript.committed", text: "hi" });
+    core.report({
+      type: "agentTranscript.committed",
+      text: "Sorry, I had a problem just then.",
+      recovery: "turn-failed",
+    });
+    core.report({ type: "agentTranscript.committed", text: "Here you go." });
+
+    core.onReplyStarted("r1");
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
+    expect(executeTool.mock.calls[0]?.[3]).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Here you go." },
+    ]);
+  });
+
+  test("the phrase is still EMITTED, because the caller heard it", async () => {
+    // The other half, and the reason the fix cannot be "stop reporting it": the
+    // client's transcript must match the audio, so the event goes out — tag and
+    // all, since a client may want to render a recovery line differently.
+    const { core, sink } = makeCore();
+    await core.start();
+
+    core.report({
+      type: "agentTranscript.committed",
+      text: "Sorry, I had a problem just then.",
+      recovery: "turn-failed",
+    });
+
+    expect(
+      sink.events.filter((e: SessionEvent) => e.type === "agentTranscript.committed"),
+    ).toMatchObject([{ text: "Sorry, I had a problem just then.", recovery: "turn-failed" }]);
+  });
+
+  test("onReset clears the history the next tool call sees", async () => {
+    const executeTool = vi.fn<ExecuteTool>(async () => "ok");
+    const { core } = makeCore({ executeTool });
+    await core.start();
+    core.restoreHistory([{ role: "user", content: "prior" }]);
+
+    core.command({ type: "reset" });
+
+    core.onReplyStarted("r1");
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
+    expect(executeTool.mock.calls[0]?.[3]).toEqual([]);
+  });
+});

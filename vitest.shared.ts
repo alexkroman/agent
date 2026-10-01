@@ -118,7 +118,7 @@ export const sharedConfig = {
     // Every test runs in UTC, whatever zone the machine is in.
     //
     // A date test is otherwise a test of WHERE it ran.
-    // `aai-runtime/runtime-system-prompt.test.ts` ("a replica that lives across
+    // `aai-runtime/runtime/system-prompt.test.ts` ("a replica that lives across
     // midnight stops serving yesterday's date") failed on every branch on a
     // Pacific laptop and passed in CI, which runs UTC — so a green
     // `pnpm check` was a property of the runner's timezone, and the documented
@@ -186,7 +186,7 @@ export const sharedCoverageExclude = [
   // `_bar-harness.ts` silently counted as production source and dragged a
   // package's coverage floor down for a reason nobody would connect to this
   // file. The leading underscore is load-bearing — production modules like
-  // `aai-server/warm-harness.ts` and `aai-ui/session-core-audio-setup.ts`
+  // `aai-server/warm-harness.ts` and `aai-ui/session/audio-setup.ts`
   // match the un-prefixed shapes and must stay measured.
   "**/_test-utils.ts",
   "**/test-utils.ts",

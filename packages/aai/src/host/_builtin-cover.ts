@@ -4,7 +4,7 @@
  * then.
  *
  * Declaring it is also what keeps the transport's generic dead-air phrase out
- * of the turn (`coveredThisTurn` in `aai-runtime`'s `tool-messages-runner.ts`).
+ * of the turn (`coveredThisTurn` in `aai-runtime`'s `aai-runtime/src/tools/messages-runner.ts`).
  * Without a declaration the generic cover's 1.2s tool window fired on
  * ordinary lookups — on a home-speaker weather turn it went out at 2.3s, after
  * the call had returned, and played straight into the answer as "I'm checking

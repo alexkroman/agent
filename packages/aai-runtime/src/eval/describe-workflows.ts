@@ -10,7 +10,7 @@
  * Two things differ, and both are about honesty rather than convenience.
  *
  * **The credential gate reads `requiredEnv`.** `describeEval` asks
- * `evalCredentials`, which reports `[]` missing for a `page: "static"` agent —
+ * `evalCredentials`, which reports `[]` missing for a `mode: "workflow-app"` agent —
  * correctly, since a workflow app opens no provider socket from a session. Asked
  * alone it makes every keyless workflow suite go LIVE and fail on a 401 inside a
  * step, so this asks `resolveWorkflowEvalMode`, which is the union of the

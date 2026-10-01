@@ -17,7 +17,7 @@ import type { RandomSource } from "./random.ts";
 import type { ClientEventSender } from "./session-event-map.ts";
 import type { SessionSpeech } from "./session-speech.ts";
 import type { SlotStore } from "./session-state.ts";
-import type { DelegateFn } from "./subagent.ts";
+import type { DelegateFn } from "./speaker.ts";
 import type { Message } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
 
@@ -82,7 +82,7 @@ export type ToolContext = {
    * **`Partial`, so every read is `string | undefined`.** A variable that was
    * never set is `undefined` at runtime whatever the type says, and the type
    * used to say `string`: `ctx.env.NEVER_DECLARED` type-checked, built green,
-   * and threw a `TypeError` on the first live call — which `tool-executor.ts`
+   * and threw a `TypeError` on the first live call — which `aai-runtime/src/tools/executor.ts`
    * then hands to the MODEL, so the caller hears the agent improvise an
    * apology. `noUncheckedIndexedAccess` says the same thing, but it is the
    * AUTHOR's tsconfig and cannot be relied on from here.

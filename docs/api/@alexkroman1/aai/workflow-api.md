@@ -205,6 +205,7 @@ type AgentClient = WorkflowApi & {
         static: "static";
         voice: "voice";
      }>;
+     sessionToken?: z.ZodOptional<z.ZodString>;
      sessionUrl?: z.ZodOptional<z.ZodString>;
   }>;
 };
@@ -243,6 +244,7 @@ config(): Promise<{
      static: "static";
      voice: "voice";
   }>;
+  sessionToken?: z.ZodOptional<z.ZodString>;
   sessionUrl?: z.ZodOptional<z.ZodString>;
 }>;
 ```
@@ -269,6 +271,7 @@ this call works with no `token`, and a workflow API closed by
      `static`: `"static"`;
      `voice`: `"voice"`;
   \}\>;
+  `sessionToken?`: `z.ZodOptional`\<`z.ZodString`\>;
   `sessionUrl?`: `z.ZodOptional`\<`z.ZodString`\>;
 \}\>
 
@@ -2148,6 +2151,7 @@ const ClientConfigResponseSchema: z.ZodObject<{
      static: "static";
      voice: "voice";
   }>;
+  sessionToken: z.ZodOptional<z.ZodString>;
   sessionUrl: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 ```

@@ -48,7 +48,7 @@ import type { EvalTurn } from "./session.ts";
  * one of them comes to stop refusing a rejected credential. What is not shared
  * is the mechanism a reader has to be told about — a voice turn the pipeline
  * failed is SPOKEN as `errorPhrase`, where a text turn commits no transcript at
- * all (`text-agent-events.ts`: "an ABORTED or FAILED turn commits no
+ * all (`../text-agent/events.ts`: "an ABORTED or FAILED turn commits no
  * transcript"). Both leave every negative claim holding vacuously, which is the
  * shared conclusion, and a reader chasing one is looking for different text on
  * their screen.

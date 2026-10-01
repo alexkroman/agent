@@ -19,7 +19,7 @@
  *   read it. That is a retention decision, and it is the app's database: an
  *   app that wants less deletes rows itself.
  * - **A client's sessions can be LISTED**, newest first, which is what
- *   `session-client-history.ts` pages through to seed a new session.
+ *   `../session/client-history.ts` pages through to seed a new session.
  *
  * ## Optional on the backend, and absent on the PLATFORM
  *

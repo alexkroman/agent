@@ -63,17 +63,17 @@ const grade = tool({
   execute: async (_args, ctx) => `graded:${(await ctx.generate({ prompt: "grade it" })).text}`,
 });
 
-const desk = agent({ name: "Text Desk", text: true, systemPrompt: "Be brief." });
+const desk = agent({ name: "Text Desk", mode: "text", systemPrompt: "Be brief." });
 
 describe("openEvalTextAgent refusals", () => {
   test("refuses a voice agent, naming the harness that drives one", async () => {
     await expect(openEvalTextAgent({ agent: agent({ name: "Voice" }) })).rejects.toThrow(
-      /does not declare `text: true`[\s\S]*openEvalSession/,
+      /does not declare `mode: "text"`[\s\S]*openEvalSession/,
     );
   });
 
   test("refuses a text agent that also declares s2s", async () => {
-    // Spread rather than `agent({ text: true, s2s })`, which `AgentParams`
+    // Spread rather than `agent({ mode: "text", s2s })`, which `AgentParams`
     // already refuses at COMPILE time with a message of its own — this is the
     // other door: a raw `export default {…}`, or a definition loaded from a
     // config, reaches the harness having skipped that check.
@@ -104,7 +104,7 @@ describe("openEvalTextAgent", () => {
       expect(turn.toolCalls).toEqual([]);
       // The message that provoked the reply is the turn's first event, and the
       // terminator is its last — which is what a reader partitions on.
-      expect(turn.events.at(0)?.type).toBe("user-transcript.committed");
+      expect(turn.events.at(0)?.type).toBe("userTranscript.committed");
       expect(turn.events.at(-1)?.type).toBe("reply.completed");
       // ONE reply, where the voice harness would already have two: a text agent
       // has no greeting turn, so a case ported across is off by one until it

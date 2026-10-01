@@ -45,10 +45,14 @@ import { useCallback, useState } from "react";
 import { useRecoveredRun } from "./_recover-run.ts";
 import { useRunControls } from "./_run-controls.ts";
 import { useSubmissionState } from "./_submission-state.ts";
-import { createUploadSession, type UploadSession, uploadFiles } from "./_upload-files.ts";
-import { coalesceUploadReports } from "./_upload-report.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { FormValues } from "./components/form-types.ts";
+import {
+  coalesceUploadReports,
+  createUploadSession,
+  type UploadSession,
+  uploadFiles,
+} from "./upload/index.ts";
 import { useDefaultRunKey } from "./use-run-key.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -362,7 +366,7 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
         // needs no upload code of its own.
         // Coalesced: the parts uploader reports per XHR progress event across
         // eight concurrent requests, which is far more often than the bar can
-        // render. See `_upload-report.ts`.
+        // render. See `upload/report.ts`.
         const report = coalesceUploadReports(actions.setUpload);
         const started = await uploadFiles(client, input, report, parallel, current);
         // Both paths end in a run id — the difference is only whether the agent

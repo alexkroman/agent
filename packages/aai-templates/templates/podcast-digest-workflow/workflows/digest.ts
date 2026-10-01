@@ -51,13 +51,16 @@
 
 import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
 import type { SlackChannelOptions } from "@alexkroman1/aai/channels";
-import { mapConcurrent, stepReport, TRANSCRIBE_API, type Transcript } from "@alexkroman1/aai/step";
 import {
-  FatalError,
-  stepGenerateJsonOrFail,
-  stepTranscribePollOrFail,
-  stepTranscribeSubmitOrFail,
-} from "@alexkroman1/aai/step-errors";
+  mapConcurrent,
+  stepGenerateJson,
+  stepReport,
+  stepTranscribePoll,
+  stepTranscribeSubmit,
+  TRANSCRIBE_API,
+  type Transcript,
+} from "@alexkroman1/aai/step";
+import { FatalError, orFail } from "@alexkroman1/aai/step-errors";
 import { errorMessage, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import type { dailyDigest } from "../agent.ts";
@@ -171,7 +174,7 @@ export type DailyDigestOutput = {
   } | null;
 };
 
-/** What the model must answer with, and what `stepGenerateJsonOrFail` enforces. */
+/** What the model must answer with, and what `orFail(stepGenerateJson)` enforces. */
 const SummaryReply = z.object({
   summary: z.string().trim().min(1),
   keyPoints: z.array(z.string().trim().min(1)).min(1).max(5),
@@ -357,7 +360,7 @@ function gaveUpOn(job: TranscriptJob): TranscriptState {
  * an `unavailable` VALUE rather than a throw, because one bad episode must not
  * sink a digest of five.
  *
- * The verdict itself is the SDK's: `stepTranscribeSubmitOrFail` reads
+ * The verdict itself is the SDK's: `orFail(stepTranscribeSubmit)` reads
  * `TranscribeError`'s own `retryable` AND its `retryAfter`, and throws a
  * `FatalError` or a `RetryableError` accordingly. The hand-written
  * `err instanceof TranscribeError && err.retryable` this replaces read only the
@@ -367,7 +370,7 @@ function gaveUpOn(job: TranscriptJob): TranscriptState {
 export async function submitTranscript(episode: Episode): Promise<TranscriptJob> {
   await stepReport(`Submitting ${episode.title} for transcription.`);
   try {
-    const { id } = await stepTranscribeSubmitOrFail(episode.audioUrl, {
+    const { id } = await orFail(stepTranscribeSubmit)(episode.audioUrl, {
       // A digest quotes nobody, so who spoke costs time for nothing.
       params: { speaker_labels: false },
     });
@@ -391,7 +394,7 @@ export async function pollTranscript(job: TranscriptJob): Promise<TranscriptStat
   if (job.transcriptStatus === "unavailable") return job;
 
   try {
-    const progress = await stepTranscribePollOrFail(job.transcriptId);
+    const progress = await orFail(stepTranscribePoll)(job.transcriptId);
     // Branch on `done`, never on a status string: a vocabulary this body does
     // not own would otherwise read as "not finished yet" forever.
     if (!progress.done) return job;
@@ -424,7 +427,7 @@ export async function summarizeTranscript(state: TranscriptState): Promise<Episo
   }
 
   await stepReport(`Summarizing ${state.title}.`);
-  const parsed = await stepGenerateJsonOrFail(
+  const parsed = await orFail(stepGenerateJson)(
     [
       `Podcast: ${state.podcastTitle}`,
       `Episode: ${state.title}`,

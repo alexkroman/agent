@@ -69,7 +69,7 @@ import { WORKER_ARTIFACT_REL } from "./build.ts";
 // looks.
 //
 // `link-digest-workflow` is the WORKFLOW APP — `workflowApp()` + `mountPage()`, no
-// stt/llm/tts, `page: "static"`. It is a different front door with different
+// stt/llm/tts, `mode: "workflow-app"`. It is a different front door with different
 // wiring (telephony defaults off, `/websocket` is declined with a reason), and
 // until it was added no workflow app was built or booted anywhere in this tier;
 // the shipped set has six of them.

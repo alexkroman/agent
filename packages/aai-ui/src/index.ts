@@ -11,7 +11,7 @@
  * | The agent is | The page calls | It talks to |
  * | --- | --- | --- |
  * | a voice agent (the default) | {@link mountClient} | a live session: socket, microphone, playback |
- * | a `workflowApp()` / `agent({ page: "static" })` | {@link mountPage} | the workflow HTTP API — no session, no socket, no mic |
+ * | a `workflowApp()` / `agent({ mode: "workflow-app" })` | {@link mountPage} | the workflow HTTP API — no session, no socket, no mic |
  *
  * There is no route to write and no glue file: the agent server already serves
  * both, so a component talks to a live agent directly. {@link createBrowserSession}
@@ -28,10 +28,10 @@
  * | who the client is | {@link useSessionId}, {@link useClientId}, {@link browserClientId}, {@link createLinkedClient} |
  * | a run reaching the page later | {@link useInbox} (a reminder, a finished job — played when it lands) |
  * | what was said | {@link useConversation}, {@link useUserTranscript}, {@link useConversationLog} (across sessions, persisted) |
- * | the talk button | {@link useTapToTalk} (tap on, tap off), {@link usePushToTalk} (hold, for `turnDetection: "manual"`) |
+ * | the talk button | {@link useTapToTalk} (tap on, tap off), {@link usePushToTalk} (hold, for `turnTaking: { detection: "manual" }`) |
  * | the agent's own `/api` routes | {@link useRoute}, {@link useRouteMutation}, {@link routeFetch}, {@link useClientRuns} (a `clientRunsRoutes()` pair) |
  * | what this browser remembers | {@link useStoredValue} / {@link createStoredValue}, {@link phoneE164} |
- * | what the agent projects | {@link useAgentState} — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
+ * | what the agent projects | {@link useAgentState} — pass the `slot.projected` the agent declared under its slot name in `syncState`, and it selects that slot, types it AND supplies the frame rendered before the first push; {@link selectAgentState} is the same slot as a `useSessionSelector` selector |
  * | tools, as they run | {@link useToolCallStart}, {@link useToolResult}, {@link useEvent} |
  * | a durable run | {@link useWorkflowSubmit} (start one), {@link useWorkflowRun} (watch one), {@link useWorkflowRuns} / {@link useWorkflows} (list), {@link useWorkflowProgress} / {@link useWorkflowStream} (its output as it arrives) |
  * | page chrome | {@link useTheme}, {@link useCopy}, {@link useFlash}, {@link useDownloadUrl}, {@link useRunKey} |
@@ -238,7 +238,13 @@ export { type ConversationLogEntry, inboxEventToItem } from "./conversation-log.
 export type { ClientConfig, ClientHandle } from "./define-client.tsx";
 // Entry
 export { mountClient } from "./define-client.tsx";
-export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
+export {
+  selectAgentState,
+  useAgentState,
+  useEvent,
+  useToolCallStart,
+  useToolResult,
+} from "./hooks.ts";
 // The client's `WS /inbox` socket — what a run's `stepNotifyClient` reaches
 // after the session has closed. `createInbox` is the core; `useInbox` below
 // fills it from the session and plays what arrives.
@@ -263,10 +269,9 @@ export { type PhoneE164Options, phoneE164 } from "./phone.ts";
 // with `?client=` and the route's `{ error }` sentence. `useRoute` reads,
 // `useRouteMutation` writes, `useClientRuns` is `clientRunsRoutes()`' page half.
 export { type RouteFetchOptions, type RouteMethod, routeFetch } from "./route-fetch.ts";
-// Session core (for advanced use)
-export { createBrowserSession } from "./session-core.ts";
 export type {
   AgentCustomEvent,
+  AgentStateFrame,
   BrowserSession,
   // The seal `BrowserSession` carries. TYPE-ONLY: there is no value to import,
   // which is what stops a hand-written object from satisfying the type.
@@ -277,7 +282,9 @@ export type {
   // `session.userTurn` — push-to-talk's three edges, the `push-to-talk`
   // capability's beside `usePushToTalk`.
   UserTurnControls,
-} from "./session-core-types.ts";
+} from "./session/index.ts";
+// Session core (for advanced use)
+export { createBrowserSession } from "./session/index.ts";
 // A clipboard write that reports a REFUSED one instead of doing nothing
 // visible, keyed by the copied text so one row's "Copied" does not light up
 // every button. Built on `useFlash` below; three hand-rolled copies preceded
@@ -339,7 +346,7 @@ export { type UseFlashResult, useFlash } from "./use-flash.ts";
 // A notice from a run, played when it lands — busy while a call is on, so it
 // never talks over a reply. Every browser app that wanted reminders wrote it.
 export { type UseInboxOptions, type UseInboxResult, useInbox } from "./use-inbox.ts";
-// A hold-to-speak button for a `turnDetection: "manual"` agent — pointer
+// A hold-to-speak button for a `turnTaking: { detection: "manual" }` agent — pointer
 // capture, key repeat, a lost keyup and an unmount mid-hold, all of which
 // otherwise leave the microphone open on a turn nothing will answer.
 export {

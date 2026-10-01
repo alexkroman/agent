@@ -7,8 +7,8 @@
  * corpus, so the shipped path has to stay byte-identical to the one the
  * tau2-bench numbers in `endpointing-constants.ts` were taken on. The
  * behavioural half of the pin is in `aai-runtime`'s
- * `pipeline-transport-options.test.ts` (the resolver) and
- * `pipeline-turn-taking.test.ts` (the transport); this is the constant itself.
+ * `aai-runtime/src/transports/pipeline/options.test.ts` (the resolver) and
+ * `aai-runtime/src/transports/pipeline/turn-taking.test.ts` (the transport); this is the constant itself.
  */
 
 import { describe, expect, test } from "vitest";

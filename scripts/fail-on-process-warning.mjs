@@ -24,7 +24,7 @@
  * — written because Node warns exactly ONCE per emitter (measured there: 500
  * listeners, one warning, at 11), which made the `streamTail` leak of #1203
  * expensive to diagnose from a log. And
- * `packages/aai/src/host/transports/pipeline-transport.ts` raises the threshold
+ * `packages/aai/src/host/transports/pipeline/transport.ts` raises the threshold
  * deliberately with `setMaxListeners(SESSION_SIGNAL_MAX_LISTENERS, …)` under a
  * comment calling it "A LEAK threshold, not a capacity one".
  *
@@ -117,7 +117,7 @@ function failOnWarning(warning) {
       "\n" +
       "  setMaxListeners(SESSION_SIGNAL_MAX_LISTENERS, signal);\n" +
       "\n" +
-      "See `packages/aai/src/host/transports/pipeline-transport.ts`, which does\n" +
+      "See `packages/aai-runtime/src/transports/pipeline/session-signal.ts`, which does\n" +
       "exactly that under a comment explaining why the number is what it is.\n" +
       "The stack below is where the offending listener was added.",
     { cause: warning },

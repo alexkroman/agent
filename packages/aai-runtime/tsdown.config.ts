@@ -27,7 +27,7 @@ export default defineConfig({
   // in the tree of everyone who installs this package, which is what
   // `artifact-size-report.mjs` fails a new one over regardless of its bytes.
   // This one is 7.9 kB of single-file MIT ESM with no dependencies of its own
-  // and one call site (`transports/pipeline-context-budget.ts`), so inlining it
+  // and one call site (`transports/pipeline/history/context-budget.ts`), so inlining it
   // costs the tarball almost nothing and costs consumers nothing at all.
   // Its MIT notice is carried in the `banner` below, which is what bundling a
   // third party's code obliges.

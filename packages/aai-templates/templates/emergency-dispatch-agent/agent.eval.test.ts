@@ -34,15 +34,16 @@ import type { SessionEvent } from "@alexkroman1/aai";
 // What no eval here can see: anything below the audio boundary. Whether a
 // dispatcher reading a callsign in bursts lands as one turn is a property of
 // endpointing, and these fake speech stages remove it.
-import { dialogRefusalPattern, dialogResultSchema } from "@alexkroman1/aai/testing";
 import {
+  describeEval,
+  dialogRefusalPattern,
+  dialogResultSchema,
   type EvalSession,
   lastStateIn,
   toolNames,
   toolResultIn,
   turnCalling,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 
@@ -122,7 +123,8 @@ const StatusChange = dialogResultSchema(
  * a frame that stopped matching FAILS naming the field, where the cast this
  * replaced would have handed the assertions `undefined`.
  */
-const dashboard = (events: readonly SessionEvent[]) => lastStateIn(events, ProjectedDashboard);
+const dashboard = (events: readonly SessionEvent[]) =>
+  lastStateIn(events, "dispatch", ProjectedDashboard);
 
 /** One incident as the browser sees it. */
 const boardEntry = (events: readonly SessionEvent[], id: string) =>

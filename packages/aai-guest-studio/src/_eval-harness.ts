@@ -15,7 +15,7 @@
  *   credential gate `describeEval` runs and `installStubLlm` the same scripted
  *   fallback. What is NOT reused is `describeEval` itself, and it is structural:
  *   that function stands up `openEvalSession` → `createRuntime`, which REFUSES
- *   `text: true` by name. `openEvalTextAgent`'s module doc names the split and
+ *   `mode: "text"` by name. `openEvalTextAgent`'s module doc names the split and
  *   says where the announce then belongs — "`describeEval` for a template,
  *   `_gate.ts` for `aai-evals`" — and this module is that third owner.
  * - **What is real:** `initStudioSession` (so the tree is materialized,

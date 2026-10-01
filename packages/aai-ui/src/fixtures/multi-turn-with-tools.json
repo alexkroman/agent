@@ -7,7 +7,7 @@
     "sessionId": "sess_fixture_006"
   },
   {
-    "type": "agent-transcript.committed",
+    "type": "agentTranscript.committed",
     "text": "Hi! I can help with weather and more."
   },
   {
@@ -20,7 +20,7 @@
     "type": "speech.stopped"
   },
   {
-    "type": "user-transcript.committed",
+    "type": "userTranscript.committed",
     "text": "Weather in NYC?"
   },
   {
@@ -37,7 +37,7 @@
     "result": "{\"city\":\"New York\",\"temperature\":\"65\u00b0F\",\"condition\":\"cloudy\"}"
   },
   {
-    "type": "agent-transcript.committed",
+    "type": "agentTranscript.committed",
     "text": "It's 65\u00b0F and cloudy in New York."
   },
   {
@@ -50,7 +50,7 @@
     "type": "speech.stopped"
   },
   {
-    "type": "user-transcript.committed",
+    "type": "userTranscript.committed",
     "text": "And in London?"
   },
   {
@@ -67,7 +67,7 @@
     "result": "{\"city\":\"London\",\"temperature\":\"55\u00b0F\",\"condition\":\"rainy\"}"
   },
   {
-    "type": "agent-transcript.committed",
+    "type": "agentTranscript.committed",
     "text": "London is 55\u00b0F and rainy."
   },
   {

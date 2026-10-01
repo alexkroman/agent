@@ -18,6 +18,7 @@ import {
   CLIENT_CONFIG_PATH,
   type ClientConfigResponse,
   ClientConfigResponseSchema,
+  SESSION_TICKET_HEADER,
 } from "@alexkroman1/aai/protocol";
 import { pageBaseUrl } from "./_utils.ts";
 
@@ -55,7 +56,7 @@ const AGENT_DEFAULT: ClientConfigResponse = { page: "voice" };
  * there long after the server is back. Reproduced: zero sockets opened.
  *
  * A timed-out attempt therefore degrades exactly like any other failed one —
- * `null`, so `serverIsBroker` stays unlatched and the attempt falls through
+ * `null`, so `configPerAttempt` stays unlatched and the attempt falls through
  * to the same-origin `websocket` path, whose failure re-enters the normal
  * backoff and re-fetches this on the next attempt.
  *
@@ -86,6 +87,7 @@ export const CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS = 10_000;
 export async function loadClientConfig(
   platformUrl: string,
   fetchFn?: typeof globalThis.fetch,
+  presentedTicket?: string,
 ): Promise<ClientConfigResponse | null> {
   const doFetch =
     fetchFn ?? ((input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init));
@@ -94,6 +96,11 @@ export async function loadClientConfig(
       // Without this a hung lookup wedges the session permanently — see
       // CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS.
       signal: AbortSignal.timeout(CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS),
+      // The last ticket this server issued, so a broker binding tickets to a
+      // session re-mints for THAT session — see `SESSION_TICKET_HEADER`.
+      ...(presentedTicket === undefined
+        ? {}
+        : { headers: { [SESSION_TICKET_HEADER]: presentedTicket } }),
     });
     if (!resp.ok) return null;
     const parsed = ClientConfigResponseSchema.safeParse(await resp.json());

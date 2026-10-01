@@ -6,7 +6,7 @@
  *
  * The framework-agnostic core `useInbox()` wraps; the receiving rules (acks,
  * repeats, busy, a notice cut short) are `inbox-protocol.ts`, and the server
- * half is `aai-runtime`'s `client-inbox.ts`.
+ * half is `aai-runtime`'s `aai-runtime/src/inbox/inbox.ts`.
  *
  * - **Held from creation, reconnected until `close()`**, on a jittered backoff
  *   from 1 s doubling to 30 s (`jitteredBackoff`), reset by every open. The
@@ -23,6 +23,11 @@
  * - **`?holder=` names this TAB** (`session.identity.holderId()`), so the page
  *   coexists with the device and the other tabs holding the same client rather
  *   than replacing their sockets.
+ * - **A gated server checks a ticket here exactly as on `/websocket`**, so the
+ *   inbox presents one the same way (`token`, asked per attempt, carried by
+ *   `session/ticket.ts`). `useInbox()` passes the session's
+ *   (`session.identity.ticket()`). A token answered synchronously (or none)
+ *   dials at once; a Promise dials when it settles.
  * - **The URL is the agent's base URL + `inbox`**, like the session's
  *   `websocket`. On the managed platform the route is DIRECT-DIAL (served on the
  *   sandbox URL, not proxied at `/:slug/inbox`), so today this reaches an agent
@@ -41,7 +46,8 @@ import {
   type InboxNotice,
   parseInboxEvent,
 } from "./inbox-protocol.ts";
-import type { WebSocketConstructor } from "./types.ts";
+import { ticketCarriage } from "./session/index.ts";
+import type { VoiceSessionOptions, WebSocketConstructor } from "./types.ts";
 
 /** The first reconnect window; each failure doubles it. */
 export const INBOX_RECONNECT_BASE_MS = 1000;
@@ -81,6 +87,14 @@ export type CreateInboxOptions = {
    * `onEvent` was given.
    */
   events?: boolean | undefined;
+  /**
+   * The session ticket to present, for a server that requires one — the same
+   * option, with the same rules, as `VoiceSessionOptions.token`: a string, or a
+   * getter asked on EVERY connection attempt (told `sessionId: undefined`; the
+   * inbox resumes no session). A getter that throws or rejects presents none.
+   * `useInbox()` fills it in from the session.
+   */
+  token?: VoiceSessionOptions["token"];
   /** WebSocket constructor override, for tests. Default: the page's `WebSocket`. */
   WebSocket?: WebSocketConstructor | undefined;
 };
@@ -169,13 +183,28 @@ export function createInbox(options: CreateInboxOptions): Inbox {
     );
   }
 
-  function url(client: string): string {
+  function url(client: string, queryToken: string | undefined): string {
     const target = buildAgentUrl(options.platformUrl, "inbox");
     target.protocol = target.protocol === "https:" ? "wss:" : "ws:";
     target.searchParams.set("client", client);
     target.searchParams.set("holder", options.holder);
     if (events) target.searchParams.set("events", "1");
+    if (queryToken !== undefined) target.searchParams.set("token", queryToken);
     return target.toString();
+  }
+
+  /** This attempt's ticket: a value now, a Promise, or none. Never throws. */
+  function askToken(): string | undefined | Promise<string | undefined> {
+    const { token } = options;
+    if (typeof token !== "function") return token;
+    try {
+      const answer = token({ sessionId: undefined });
+      return typeof answer === "string" || answer === undefined
+        ? answer
+        : answer.catch(() => undefined);
+    } catch {
+      return undefined;
+    }
   }
 
   function connect(): void {
@@ -186,7 +215,20 @@ export function createInbox(options: CreateInboxOptions): Inbox {
       scheduleRetry();
       return;
     }
-    const ws = new Socket(url(client));
+    const token = askToken();
+    if (typeof token === "string" || token === undefined) {
+      dial(client, token);
+      return;
+    }
+    void token.then((answer) => {
+      if (!closed) dial(client, answer);
+    });
+  }
+
+  function dial(client: string, token: string | undefined): void {
+    const carriage = ticketCarriage(token?.trim() || undefined);
+    const target = url(client, carriage.queryToken);
+    const ws = carriage.protocols ? new Socket(target, carriage.protocols) : new Socket(target);
     ws.binaryType = "arraybuffer";
     socket = ws;
     const reply = (out: AssemblerOutput | undefined) => {

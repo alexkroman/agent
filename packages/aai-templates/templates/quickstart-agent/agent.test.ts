@@ -48,7 +48,7 @@ describe("quickstart-agent template", () => {
     // `agent()` when you want the stages visible in the config, or reach for
     // `assemblyAIPipeline({ region: "eu" })` to move STT and the LLM gateway
     // together. Each stage is read off the DEF first, so a stage you declare
-    // (or a `voice:`, which desugars to a `tts` descriptor) is compared
+    // (this template declares `tts`, for its voice) is compared
     // against your own value rather than the preset's.
     const preset = assemblyAIPipeline();
     for (const stage of ["stt", "llm", "tts"] as const) {

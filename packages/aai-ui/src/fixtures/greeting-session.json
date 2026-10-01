@@ -13,7 +13,7 @@
     "type": "speech.stopped"
   },
   {
-    "type": "agent-transcript.committed",
+    "type": "agentTranscript.committed",
     "text": "Hello! How can I help you today?"
   },
   {

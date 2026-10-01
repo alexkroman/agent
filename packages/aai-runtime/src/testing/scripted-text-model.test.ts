@@ -23,12 +23,12 @@ import { type AgentDef, agent, tool } from "@alexkroman1/aai";
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createTextAgent } from "../text-agent.ts";
+import { createTextAgent } from "../text-agent/index.ts";
 import { scriptedTextModel } from "./scripted-text-model.ts";
 
 /** A text agent WITH its tools — `agent()` takes none, a tool being a FILE. */
 function textAgent(tools: ToolRegistry = {}): AgentDef {
-  return withTools(agent({ name: "Desk", text: true, systemPrompt: "Be brief." }), tools);
+  return withTools(agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }), tools);
 }
 
 /** Drain a turn, which is also what forces the tool loop to run. */

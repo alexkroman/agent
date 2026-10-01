@@ -1,10 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 import http from "node:http";
 import net, { type AddressInfo } from "node:net";
+import { SESSION_TICKET_HEADER } from "@alexkroman1/aai/protocol";
+import { verifySessionToken } from "@alexkroman1/aai-runtime/auth";
+import { platformSessionSecret } from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
+import { guestTokenFor } from "./guest/token.ts";
 import { createOrchestrator } from "./orchestrator.ts";
+import { agentSandboxName } from "./sandbox/directory.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import type { Sandbox } from "./sandbox.ts";
 import {
@@ -87,6 +92,7 @@ describe("handleAgentClientConfig", () => {
       name: "guest-agent",
       greeting: "hello from the bundle",
       sessionUrl: "wss://tunnel.test:443/websocket",
+      sessionToken: expect.any(String),
       page: "voice",
     });
     // The proxy dialed the sandbox's own origin, scheme swapped ws→http
@@ -108,7 +114,118 @@ describe("handleAgentClientConfig", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       sessionUrl: "wss://tunnel.test:443/websocket",
+      sessionToken: expect.any(String),
       page: "voice",
+    });
+  });
+
+  describe("the session ticket", () => {
+    async function brokered(slug: string) {
+      const slots = createSlotCache();
+      const guestFetch: typeof globalThis.fetch = async () => Response.json({ page: "voice" });
+      const ctx = await createTestOrchestrator({ slots, guestFetch });
+      await seedResident(ctx.fetch, ctx.store, slots, slug);
+      const version = (await ctx.store.getAgentVersion(slug)) ?? 1;
+      // What the guest verifies with: a key derived from ITS bearer.
+      const secret = platformSessionSecret(guestTokenFor(agentSandboxName(slug, version)));
+      const lookup = async (presented?: string) => {
+        const res = await ctx.fetch(
+          `/${slug}/client-config`,
+          presented ? { headers: { [SESSION_TICKET_HEADER]: presented } } : {},
+        );
+        const body = (await res.json()) as { sessionToken: string };
+        const sessionId = verifySessionToken(body.sessionToken, { secret })?.sessionId;
+        return { res, ticket: body.sessionToken, sessionId };
+      };
+      return { ...ctx, lookup };
+    }
+
+    test("is one the sandbox can verify, bound to a new session, and never cached", async () => {
+      const { lookup } = await brokered("ticket-agent");
+      const first = await lookup();
+      expect(first.res.headers.get("cache-control")).toBe("no-store");
+      expect(first.sessionId).toEqual(expect.any(String));
+      expect((await lookup()).sessionId).not.toBe(first.sessionId);
+    });
+
+    test("presenting the last ticket re-mints for the SAME session", async () => {
+      const { lookup } = await brokered("ticket-agent");
+      const first = await lookup();
+      const again = await lookup(first.ticket);
+      expect(again.sessionId).toBe(first.sessionId);
+      expect(again.ticket).not.toBe(first.ticket);
+    });
+
+    describe("during a redeploy, it is minted for the guest the session is ROUTED to", () => {
+      const keyFor = (slug: string, version: number) =>
+        platformSessionSecret(guestTokenFor(agentSandboxName(slug, version)));
+
+      /** Deploy twice, so the row is at v2 while a v1 guest may still be serving. */
+      async function redeployed(
+        slug: string,
+        overrides: Parameters<typeof createTestOrchestrator>[0],
+      ) {
+        const guestFetch: typeof globalThis.fetch = async () => Response.json({ page: "voice" });
+        const ctx = await createTestOrchestrator({ guestFetch, ...overrides });
+        await deployAgent(ctx.fetch, slug);
+        await deployAgent(ctx.fetch, slug);
+        const current = (await ctx.store.getAgentVersion(slug)) ?? 0;
+        if (current < 2) throw new Error("a second deploy did not bump the version");
+        return { ...ctx, current };
+      }
+      const ticketOf = async (fetch: (p: string) => Promise<Response>, slug: string) =>
+        ((await (await fetch(`/${slug}/client-config`)).json()) as { sessionToken: string })
+          .sessionToken;
+
+      test("a v1 resident still serving after the row moved on gets a v1 ticket", async () => {
+        const slots = createSlotCache();
+        const { fetch, current } = await redeployed("race-agent", { slots });
+        const old = current - 1;
+        setSlot(slots, {
+          slug: "race-agent",
+          version: old,
+          sandbox: fakeSandbox({ version: old }),
+        });
+
+        const ticket = await ticketOf(fetch, "race-agent");
+        expect(verifySessionToken(ticket, { secret: keyFor("race-agent", old) })).toBeDefined();
+        expect(
+          verifySessionToken(ticket, { secret: keyFor("race-agent", current) }),
+        ).toBeUndefined();
+      });
+
+      test("a session routed to a PEER's new guest gets its version, not the local slot's", async () => {
+        // The race: this replica's slot still names the old deploy (its guest
+        // just died), the broker routes the session to a peer replica's guest of
+        // the new one, and a ticket keyed off the local slot was refused 4401.
+        const slots = createSlotCache();
+        const found: [string, number][] = [];
+        const directory = {
+          find: async (slug: string, version: number) => {
+            found.push([slug, version]);
+            return { sessionUrl: "wss://peer.test/websocket", guestOrigin: "wss://peer.test" };
+          },
+        };
+        const { fetch, current } = await redeployed("peer-agent", { slots, directory });
+        const old = current - 1;
+        const dead = fakeSandbox({ version: old, alive: vi.fn(() => false) });
+        setSlot(slots, { slug: "peer-agent", version: old, sandbox: dead });
+
+        const ticket = await ticketOf(fetch, "peer-agent");
+        expect(found).toEqual([["peer-agent", current]]);
+        expect(verifySessionToken(ticket, { secret: keyFor("peer-agent", current) })).toBeDefined();
+        expect(verifySessionToken(ticket, { secret: keyFor("peer-agent", old) })).toBeUndefined();
+      });
+    });
+
+    test("another agent's ticket, or garbage, proves nothing", async () => {
+      const other = await brokered("other-agent");
+      const foreign = await other.lookup();
+      const { lookup } = await brokered("ticket-agent");
+      const viaForeign = await lookup(foreign.ticket);
+      expect(viaForeign.sessionId).toEqual(expect.any(String));
+      expect(viaForeign.sessionId).not.toBe(foreign.sessionId);
+      expect((await lookup("not-a-ticket")).sessionId).toEqual(expect.any(String));
     });
   });
 

@@ -11,7 +11,7 @@ import { sessionSlot } from "@alexkroman1/aai";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createRuntimeWithSeams } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime/index.ts";
 
 describe("SDK integration: AgentDef → tool execution", () => {
   test("AgentDef + tools + executeToolCall round-trip", async () => {
@@ -93,7 +93,10 @@ describe("SDK integration: AgentDef → tool execution", () => {
     };
     const exec = createRuntimeWithSeams({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
     const result = await exec.executeTool("nonexistent", {}, "s1", []);
-    expect(JSON.parse(result)).toEqual({ error: "Unknown tool: nonexistent" });
+    expect(JSON.parse(result)).toEqual({
+      error: "Unknown tool: nonexistent",
+      reason: "unknown_tool",
+    });
   });
 
   test("tool parameter validation rejects bad input", async () => {

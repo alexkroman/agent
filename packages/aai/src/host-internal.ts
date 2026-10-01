@@ -151,7 +151,35 @@ export {
   TTS_CANCEL_ACK_TIMEOUT_MS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./sdk/pipeline-tuning-constants.ts";
+export { MAX_FAILOVER_REASON_CHARS } from "./sdk/protocol-events-accounting.ts";
 export { defaultProviders } from "./sdk/providers/_default-providers.ts";
+/**
+ * The provider catalog: one `defineProvider` record per vendor, per stage —
+ * kind, credential variable, label and how an author spells the factory. The
+ * runtime's opener tables are keyed to it, and the docs site's provider table
+ * is generated from it (`define-provider.ts` has the design).
+ */
+export {
+  LLM_PROVIDERS,
+  PROVIDER_CATALOG,
+  S2S_PROVIDERS,
+  type S2sKind,
+  STT_PROVIDERS,
+  type SttKind,
+  TTS_PROVIDERS,
+  type TtsKind,
+} from "./sdk/providers/catalog.ts";
+export {
+  defineProvider,
+  describeProvider,
+  type ProviderDefinition,
+  type ProviderStage,
+} from "./sdk/providers/define-provider.ts";
+export {
+  FALLBACK_KIND,
+  fallbackMembers,
+  isFallbackDescriptor,
+} from "./sdk/providers/fallback.ts";
 /**
  * The LLM stage's host half: the AssemblyAI kind, key variable and gateway
  * endpoints (`stepGenerate` dials the gateway itself, so these cannot live in
@@ -159,9 +187,9 @@ export { defaultProviders } from "./sdk/providers/_default-providers.ts";
  * AssemblyAI descriptor's `providerOptions`, and the known-provider list (held
  * equal to `KnownLlmProvider` by `llm.test.ts`) plus that closed union itself —
  * the literal half of the open `LlmProviderName`, for the host registry's
- * `satisfies Record<KnownLlmProvider, …>`. Every OTHER provider's key
- * variable and base URL lives in that table (`aai-runtime`'s
- * `providers/_llm-registry.ts`), beside the client it configures.
+ * `satisfies Record<KnownLlmProvider, …>`. Every provider's key variable is in
+ * `LLM_PROVIDERS` (the catalog, above); every OTHER provider's base URL lives
+ * in `aai-runtime`'s `providers/_llm-registry.ts`, beside its client.
  */
 export {
   ASSEMBLYAI_LLM_API_KEY_ENV,
@@ -346,7 +374,7 @@ export { agentInstructionsSection, buildSystemPrompt } from "./sdk/system-prompt
 // The tool-message DECLARATION is authoring API (`ToolDef.messages`, on the
 // root); choosing which line a given call gets is the runtime's, so the two
 // budgets and the three selectors come out here. The runner that speaks them
-// is `aai-runtime`'s `tool-messages-runner.ts`.
+// is `aai-runtime`'s `aai-runtime/src/tools/messages-runner.ts`.
 export {
   DEFAULT_TOOL_START_PHRASES,
   TOOL_START_BLOCKING_MAX_MS,

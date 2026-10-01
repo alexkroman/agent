@@ -316,3 +316,34 @@ export function isJitteredWindow(node) {
   if (isFractionOf(node.left) && isRandomFraction(node.right)) return true;
   return isFractionOf(node.right) && isRandomFraction(node.left);
 }
+
+/**
+ * Is `node` a write into the `prepareStep` slot that does not go through
+ * `composePreparers`?
+ *
+ * Two writes reach the slot: an object property (`streamText({ prepareStep })`,
+ * `new ToolLoopAgent({ prepareStep: … })`, shorthand included — its value is
+ * the bare identifier) and an assignment to a member (`opts.prepareStep = …`).
+ * The one value either may carry is a direct call of `composePreparers(…)`, the
+ * pipeline every per-step concern registers into; anything else — a single
+ * preparer, a hand-written arrow, a variable holding either — replaces every
+ * other concern silently, which is the whole reason the slot is guarded.
+ *
+ * A TYPE declaring the field (`prepareStep?: PrepareStepFunction<…>`) is a
+ * `TSPropertySignature`, not a `Property`, and is not a write.
+ */
+export function isUncomposedPrepareStep(node) {
+  let value;
+  if (node?.type === "Property" && node.computed !== true) {
+    const { key } = node;
+    const name = key?.type === "Identifier" ? key.name : key?.value;
+    if (name !== "prepareStep") return false;
+    value = node.value;
+  } else if (node?.type === "AssignmentExpression") {
+    if (propertyName(node.left) !== "prepareStep") return false;
+    value = node.right;
+  } else {
+    return false;
+  }
+  return !isCallOf(value, "composePreparers");
+}

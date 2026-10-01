@@ -106,7 +106,7 @@ export const DEFAULT_RUN_TIMEOUT_MS = 300_000;
  *
  * The sibling of `evalCredentials`, and it is a DIFFERENT question rather than a
  * convenience wrapper: `requiredProviderEnvVars` answers `[]` for a
- * `page: "static"` agent — correctly, since a workflow app dials no provider
+ * `mode: "workflow-app"` agent — correctly, since a workflow app dials no provider
  * from a session — so asking it alone reports every workflow app ready and every
  * keyless run live, and every case then fails on a 401 inside a step.
  *

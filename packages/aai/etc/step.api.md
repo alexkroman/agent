@@ -108,9 +108,16 @@ export const DEFAULT_CLIENT_DELIVERY_ATTEMPTS: number;
 export const DEFAULT_CLIENT_RETRY_MS = 30000;
 
 // @public
+interface DelegateAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly DelegateToolCall[];
+}
+
+// @public
 type DelegateFn = {
-    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
-    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+    <T>(subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };
 
 // @public
@@ -121,10 +128,16 @@ interface DelegateOptions {
 }
 
 // @public @sealed
-interface DelegateResult extends SubagentAnswer {
+interface DelegateResult extends DelegateAnswer {
     accepted: boolean;
     complaint?: string;
     revisions: number;
+}
+
+// @public
+interface DelegateToolCall {
+    input: unknown;
+    name: string;
 }
 
 // @public
@@ -184,6 +197,14 @@ type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
 
 // @public
 export function isCallOver(status: string): boolean;
@@ -275,6 +296,13 @@ export type PcmFormat = {
     channels?: number | undefined;
     bitsPerSample?: number | undefined;
 };
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
 
 // @public
 export type PlaceCallCredentials = {
@@ -429,6 +457,18 @@ export type Settled<T, R> = {
 };
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -438,6 +478,28 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public
+interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRetries"> {
+    builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
+    llm?: LlmSpec;
+    maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
+    maxRevisions?: number;
+    maxSteps?: number;
+    name: N;
+    schema?: StandardSchemaV1;
+    speaks?: boolean;
+    systemPrompt: string;
+    toolChoice?: ToolChoice;
+    tools?: ToolMap;
+}
+
+// @public
+type SpeakerGuardrail = (answer: DelegateAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
 // @public
 export type SpeakOptions = {
@@ -455,7 +517,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 export type SpokenAudio = {
@@ -529,7 +591,7 @@ export type StepClientTranscriptOptions = {
 };
 
 // @public
-export function stepDelegate(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+export function stepDelegate(subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 
 // @public
 export function stepEmit<T>(namespace: string, chunk: T): Promise<void>;
@@ -727,36 +789,10 @@ type StreamOptions = {
 export function stripJsonFence(reply: string): string;
 
 // @public
-interface SubagentAnswer {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
-}
-
-// @public
-interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
-    builtinTools?: readonly BuiltinTool[];
-    description?: string;
-    expectedOutput?: string;
-    guardrail?: SubagentGuardrail;
-    llm?: LlmSpec;
-    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
-    maxRevisions?: number;
-    maxSteps?: number;
-    name: string;
-    schema?: StandardSchemaV1;
-    systemPrompt: string;
-    tools?: ToolSet;
-}
-
-// @public
-type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
-
-// @public
-interface SubagentToolCall {
-    input: unknown;
-    name: string;
-}
+type ToolChoice = "auto" | "required" | "none" | {
+    type: "tool";
+    toolName: string;
+};
 
 // @public
 type ToolCompletionMessage = {
@@ -812,6 +848,9 @@ type ToolFailure = {
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+type ToolMap = Readonly<Record<string, ToolDef>>;
+
+// @public
 type ToolMessageCondition = {
     arg: string;
     op?: ToolConditionOperator | undefined;
@@ -825,9 +864,6 @@ type ToolMessagesInput = {
     complete?: string | readonly (string | ToolCompletionMessage)[];
     failed?: string | readonly (string | ToolCompletionMessage)[];
 };
-
-// @public
-type ToolSet = Readonly<Record<string, ToolDef>>;
 
 // @public
 type ToolStartMessage = {
@@ -911,6 +947,19 @@ export type Transcript = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 export const TWILIO_ACCOUNT_SID_ENV = "TWILIO_ACCOUNT_SID";
 
 // @public
@@ -922,7 +971,7 @@ interface TypedDelegateResult<T> extends DelegateResult {
 }
 
 // @public
-interface TypedSubagentDef<T> extends SubagentDef {
+interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
 }
@@ -962,6 +1011,12 @@ export type UploadSlice = {
     start: number;
     end: number;
 };
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
+}
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

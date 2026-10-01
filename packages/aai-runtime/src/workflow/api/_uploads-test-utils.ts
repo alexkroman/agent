@@ -239,7 +239,7 @@ export function fakeStore(): UploadStore & { stored: Map<string, Uint8Array> } {
     // The fake's whole record is one `Map` entry, so `open` is `info` plus a bound
     // reader and buys nothing here — which is exactly the shape the real store's
     // version has and the reason the count is only measurable against a home that
-    // is a round trip away (`upload-record-round-trips.test.ts`).
+    // is a round trip away (`../../uploads/record-round-trips.test.ts`).
     async open(id) {
       const file = files.get(id);
       if (!file) return;

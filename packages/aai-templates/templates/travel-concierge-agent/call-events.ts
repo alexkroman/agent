@@ -15,7 +15,7 @@
  * to take it: a tool the model is ASKED to call after a caller has already gone.
  *
  * **This is the second route the same hang-up takes, and the difference is the
- * point.** `gateFlow` declares `"@session.timed-out"` and moves the
+ * point.** `gateFlow` declares `"@session.timedOut"` and moves the
  * conversation's POSITION to `abandoned`, which is what stops `confirm_action`
  * running for a caller who is not there. A handler cannot do that — it cannot
  * run a tool and does not settle `pending` — and a dialog cannot do this, because
@@ -70,7 +70,7 @@ const noteHangUp: SessionEventHandler = (_event, ctx) =>
  * `code`, `message` and `fatal` with no narrowing at the call site.
  */
 export const callEvents: SessionEventHandlers = {
-  "session.timed-out": noteHangUp,
+  "session.timedOut": noteHangUp,
   "error.reported": (event, ctx) =>
     note(ctx, () =>
       event.fatal

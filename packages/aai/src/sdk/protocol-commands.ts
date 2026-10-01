@@ -30,7 +30,7 @@ export const SessionCommandSchema = z.discriminatedUnion("type", [
   cmd("cancel"),
   cmd("reset"),
   // Push-to-talk — the three edges of a turn the CLIENT ends, honoured only by
-  // an agent declaring `turnDetection: "manual"` (any other agent logs and
+  // an agent declaring `turnTaking: { detection: "manual" }` (any other agent logs and
   // ignores them, since its transcriber already owns the turn). `start` opens
   // the microphone window and interrupts the agent; `commit` closes it and
   // answers everything heard inside it as one turn; `clear` closes it and
@@ -45,9 +45,9 @@ export const SessionCommandSchema = z.discriminatedUnion("type", [
      *
      * Answered exactly as if the transcriber had committed `text` — it
      * interrupts a reply in flight the way a new turn does, lands in the
-     * retained stream as the same `user-transcript.committed` a spoken turn
+     * retained stream as the same `userTranscript.committed` a spoken turn
      * produces (so `messages`, history and a resume all see it), and the agent
-     * answers it aloud. Honoured whatever the agent's `turnDetection`, since it
+     * answers it aloud. Honoured whatever the agent's `turnTaking.detection`, since it
      * bypasses the transcriber that policy is about. Only the pipeline can take
      * it: an S2S service owns its own conversation and has no text input, so
      * such a session logs once and ignores the command.
@@ -66,7 +66,7 @@ export const SessionCommandSchema = z.discriminatedUnion("type", [
      * How much forwarded agent audio the client still holds UNPLAYED.
      *
      * The one closed-loop signal in the protocol. Without it the host models
-     * playback open-loop — `pipeline-heard.ts` assumes every forwarded chunk
+     * playback open-loop — `aai-runtime/src/transports/pipeline/heard/tracker.ts` assumes every forwarded chunk
      * begins playing the instant it is sent, at exactly 1.0x, plus a fixed
      * grace — and nothing anywhere can detect a client that drains slower than
      * real time. Such a client accrues a backlog that grows across a reply and

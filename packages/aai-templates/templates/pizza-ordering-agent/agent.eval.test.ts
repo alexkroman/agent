@@ -14,14 +14,14 @@ import type { SessionEvent } from "@alexkroman1/aai";
 // resolves `tools/`, and still executes the tool a script names — so a stub run
 // proves the wiring and proves nothing about what the agent chose.
 import {
+  describeEval,
+  evalSimulation,
   lastStateIn,
   lastToolResultIn,
   statesIn,
   toolNames,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { evalSimulation } from "@alexkroman1/aai-runtime/eval/simulate";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { MENU } from "./shared.ts";
@@ -43,13 +43,14 @@ const ProjectedOrder = z.object({
 /**
  * The last cart `syncState` pushed to the browser, i.e. what the page shows.
  *
- * This agent declares ONE projection, so the frame IS `orderView`'s result —
- * not a record keyed by the slot. That is the same value `useAgentState(
- * orderProjection)` reads in `client.tsx`, which is why an eval can assert on
- * it: it is the cart the customer is looking at. `lastStateIn` is the SDK's
+ * The frame is keyed by slot name, so the `order` key is `orderView`'s
+ * result — the same value `useAgentState(orderProjection)` selects in
+ * `client.tsx`, which is why an eval can assert on it: it is the cart the
+ * customer is looking at. `lastStateIn` is the SDK's
  * reader for exactly this.
  */
-const lastPushedView = (events: readonly SessionEvent[]) => lastStateIn(events, ProjectedOrder);
+const lastPushedView = (events: readonly SessionEvent[]) =>
+  lastStateIn(events, "order", ProjectedOrder);
 
 /**
  * Every cart the session pushed, in stream order — `statesIn` is `lastStateIn`'s
@@ -58,7 +59,7 @@ const lastPushedView = (events: readonly SessionEvent[]) => lastStateIn(events, 
  * The SEQUENCE is the stronger claim: not "the cart is not placed now" but "no
  * frame the customer ever saw showed it placed".
  */
-const pushedViews = (events: readonly SessionEvent[]) => statesIn(events, ProjectedOrder);
+const pushedViews = (events: readonly SessionEvent[]) => statesIn(events, "order", ProjectedOrder);
 
 describeEval(agentDef, (test) => {
   test(

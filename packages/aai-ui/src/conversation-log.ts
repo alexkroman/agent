@@ -180,9 +180,9 @@ export function inboxEventToItem(event: InboxEvent, id = 0): ConversationItem | 
   const e = event.event;
   const text = typeof e.text === "string" ? e.text.trim() : "";
   switch (e.type) {
-    case "user-transcript.committed":
+    case "userTranscript.committed":
       return text ? message(id, "user", text) : undefined;
-    case "agent-transcript.committed":
+    case "agentTranscript.committed":
       return text && !e.recovery ? message(id, "assistant", text) : undefined;
     case "tool.called":
       return mirroredToolCall(e, id);

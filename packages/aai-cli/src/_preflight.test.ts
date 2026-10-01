@@ -50,12 +50,12 @@ describe("missingCredentials", () => {
     // static agent that declared nothing arrives carrying the whole injected
     // AssemblyAI triple. Its front door is a form; the deploy must not demand a
     // credential for a session that cannot be opened.
-    const workflowApp: PreflightConfig = { page: "static", ...PIPELINE_AGENT };
+    const workflowApp: PreflightConfig = { mode: "workflow-app", ...PIPELINE_AGENT };
     expect(missingCredentials(workflowApp, {})).toEqual([]);
   });
 
   test("still names a workflow app's own requiredEnv keys", () => {
-    const workflowApp: PreflightConfig = { page: "static", requiredEnv: ["STRIPE_KEY"] };
+    const workflowApp: PreflightConfig = { mode: "workflow-app", requiredEnv: ["STRIPE_KEY"] };
     expect(missingCredentials(workflowApp, {})).toEqual(["STRIPE_KEY"]);
   });
 
@@ -110,7 +110,7 @@ describe("requiredEnvNames", () => {
   test("names a requiredEnv key with no provider credential beside it", () => {
     // The `--target` case exactly: an agent whose only declaration is a custom
     // key its tools read, on a front door that dials no provider.
-    expect(requiredEnvNames({ page: "static", requiredEnv: ["ORDERS_API_KEY"] })).toEqual([
+    expect(requiredEnvNames({ mode: "workflow-app", requiredEnv: ["ORDERS_API_KEY"] })).toEqual([
       "ORDERS_API_KEY",
     ]);
   });

@@ -184,11 +184,20 @@ Directory guides govern one area of a package and load when you work in it:
 | Guide | Covers |
 | --- | --- |
 | `packages/aai-guest/src/harness/CLAUDE.md` | The harness's agent mode: boot contract, the bundle fetch and hash check, the manage surface and its derived token, guest-owned idle/drain lifecycle, the log ring, the debug-logging forward, and `/phone`. |
-| `packages/aai-runtime/src/CLAUDE.md` | Rules for aai-runtime's flat `src/` modules: session lifecycle and vocabularies, `createAgentServer`, tools, subagents, the prompt suffix, dialogs/personas wiring, hook commits, the upload store, egress pools, reply metrics |
+| `packages/aai-runtime/src/CLAUDE.md` | aai-runtime's `src/` map — which directory holds what, what stays flat and why — plus the cross-directory rules: client surfaces, subagents, egress pools, reply metrics |
 | `packages/aai-runtime/src/contracts/CLAUDE.md` | aai-runtime's capabilities and epochs: how a signature change is classified, when a capability splits, and the frozen compatibility templates |
 | `packages/aai-runtime/src/integration/CLAUDE.md` | The integration-tier property tests: the S2S model-based fuzz, the pipeline fuzz, and the history-rollback oracle |
+| `packages/aai-runtime/src/runtime/CLAUDE.md` | The runtime object's session wiring: the keyed system-prompt suffix, dialogs and a roster's speakers |
+| `packages/aai-runtime/src/server/CLAUDE.md` | The server: `createAgentServer` as the front door — self-hosted workflows, serverless hosts, and what it forwards |
+| `packages/aai-runtime/src/session/CLAUDE.md` | One session: the attach lifecycle and socket adapter, the two inbound vocabularies, hook commits, and the session directory |
 | `packages/aai-runtime/src/telephony/CLAUDE.md` | Where the phone-call design lives, and the one telephony remainder in this package |
-| `packages/aai-runtime/src/transports/CLAUDE.md` | Pipeline and S2S transport behaviour: `speech_started`, per-turn prompt resolution, heard-history, the context budget, rollback at the cap, reset, push-to-talk |
+| `packages/aai-runtime/src/tools/CLAUDE.md` | Tool execution: toolsets, `withToolsDir`, the tool-result message, error classification, `clientTool`, tool speech |
+| `packages/aai-runtime/src/transports/CLAUDE.md` | Transport-wide rules: the `Transport` boundary, the capability table, when each transport resolves the system prompt, and run notify |
+| `packages/aai-runtime/src/transports/pipeline/CLAUDE.md` | The pipeline transport's stage map and the one-way dependency direction between stages, the heard-history record, reset re-greeting, and `speakLine` |
+| `packages/aai-runtime/src/transports/pipeline/history/CLAUDE.md` | Pipeline history: token budgets for the request and the record, the preparer pipeline, and a rollback undoing its push's eviction |
+| `packages/aai-runtime/src/transports/pipeline/reply/CLAUDE.md` | Pipeline replies: every code-initiated line states `{ record, interruptible }` and picks one of three placements |
+| `packages/aai-runtime/src/transports/pipeline/speech/CLAUDE.md` | The caller's side of the pipeline: `speech_started` as "the agent is yielding", speculation's prompt check, push-to-talk and typed turns |
+| `packages/aai-runtime/src/uploads/CLAUDE.md` | The upload store: bytes as objects, the record's two homes, immutability, window sizing and concurrency |
 | `packages/aai-runtime/src/workflow/CLAUDE.md` | aai-runtime's durable-workflow half: journal selection, webhook URLs, the public vs platform base URL, and the typed-JSON codec's escape |
 | `packages/aai-runtime/src/workflow/api/CLAUDE.md` | The workflow HTTP API's error-to-status classification and its upload-id boundary |
 | `packages/aai-server/src/guest/CLAUDE.md` | The platform's view of a guest: the one platform→guest forward and its header policy, route exposure, the bearer gate, and exec-env/boot wiring. |
@@ -197,13 +206,14 @@ Directory guides govern one area of a package and load when you work in it:
 | `packages/aai-studio-server/src/CLAUDE.md` | The studio service's feature rules: workspaces, the CLI round-trip, projects, coding-agent sessions and the fleet-wide sandbox, previews and their event streams, project secrets, agent logs, Publish, LLM selection, auth, and rate limits. |
 | `packages/aai-studio-server/src/prompts/CLAUDE.md` | The studio coding agent's system prompt: the per-kind preambles, the scaffold reference they embed, the project kind that selects one, and what the prompt must say about the agent's capabilities. |
 | `packages/aai-templates/src/CLAUDE.md` | The template gate specs in `aai-templates/src/`: API coverage and its allowlist, the durability and layout gates, `templates.test.ts`'s scaffold pins, prompt discovery, and what this package's tsconfig type-checks |
-| `packages/aai-ui/src/CLAUDE.md` | The browser session core (statecharts, fatal latch, handshake guard, client-config lookup), client identity and the inbox, the public hooks, the fuzz harnesses, and the workflow-app hooks (`useWorkflowRun`/`Submit`/`Stream`/`Progress`, uploads, reload recovery) over the workflow HTTP API. |
+| `packages/aai-ui/src/CLAUDE.md` | The module-directory rules (`session/`, `audio/`, `upload/` entered through `index.ts` only, and their one-way edges), the client-config lookup, client identity and the inbox, the public hooks, the fuzz harnesses, and the workflow-app hooks (`useWorkflowRun`/`Submit`/`Stream`/`Progress`, uploads, reload recovery) over the workflow HTTP API. |
 | `packages/aai-ui/src/components/CLAUDE.md` | The React component kit: memoized-props and TypeDoc rules, the conversation view and chrome pieces, `AutoScroll`, forms and `<WorkflowFields>`, and the workflow-page components (progress, run panel, upload bar, audio result). |
 | `packages/aai-ui/src/contracts/CLAUDE.md` | This package's capability contracts: the fifteen capabilities, what each promises, qualified ids, and the `.tsx` compatibility fixtures. |
+| `packages/aai-ui/src/session/CLAUDE.md` | The browser session core as a module directory: what `index.ts` exports and why, the statecharts (agent state and the fatal latch, the audio path), pre-connect audio, drain completion across turns, and the handshake guard. |
 | `packages/aai-ui/src/worklets/CLAUDE.md` | The capture and playback AudioWorklets: the jitter buffer, gap concealment, underrun stats, capture sample rate and constraints, the dead-mic probe, and the worklet stress/bench harnesses. |
 | `packages/aai/src/host/CLAUDE.md` | The SDK's Node-only modules: guest network access and `ssrf.ts`, the bounded builtin fetch, `/step-files`, `/coding-tools` |
-| `packages/aai/src/sdk/CLAUDE.md` | The SDK's authoring primitives: `AgentDef` field groups, the `/testing` helpers, concurrency primitives, session slots, dialogs, `procedure()`, `ctx.generate`/`messages`/`delegate`, personas, tool `messages`, voice presets, persistence, workflow apps and the upload client |
-| `packages/aai/src/sdk/providers/CLAUDE.md` | STT/LLM/TTS/S2S provider descriptors: the shipped providers and their rules, the AssemblyAI gateway default model and its measurement, voices, adding a provider, the stage registries, and the "Session mode resolved" settings log |
+| `packages/aai/src/sdk/CLAUDE.md` | The SDK's authoring primitives: `AgentDef` field groups, the `/testing` helpers, concurrency primitives, session slots, dialogs, `procedure()`, `ctx.generate`/`messages`/`delegate`, `speaker()`/`roster()`, `Toolset`, tool `messages`, voice presets, persistence, workflow apps and the upload client |
+| `packages/aai/src/sdk/providers/CLAUDE.md` | STT/LLM/TTS/S2S provider descriptors: one defineProvider record per vendor and the generated docs table, fallback(), the shipped providers and their rules, the AssemblyAI gateway default model and its measurement, voices, adding a provider, the stage registries, and the "Session mode resolved" settings log |
 <!-- /guide-index:directories -->
 <!-- prettier-ignore-end -->
 

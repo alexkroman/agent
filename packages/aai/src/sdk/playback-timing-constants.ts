@@ -16,7 +16,7 @@
  * That asymmetry is real and is why they are two numbers rather than one.
  *
  * **What they have in common is the trap.** Both are applied on top of the
- * playback clock in `pipeline-heard.ts`, whose `endsAtMs` already tracks how much
+ * playback clock in `aai-runtime/src/transports/pipeline/heard/tracker.ts`, whose `endsAtMs` already tracks how much
  * forwarded audio the client has not played — so neither of them is the client's
  * buffer depth, and sizing either one against that depth double-counts it. Both
  * were sized that way at some point, and the second one twice. What is left for
@@ -73,7 +73,7 @@ export const PIPELINE_PLAYBACK_GRACE_MS = 750;
  * accounts for. Subtracted from the estimated playback position to get the heard
  * cursor — the character of the reply the caller had heard when a barge-in cut it
  * — which decides both what an interrupted turn records in history and where the
- * resume prompt's anchor sits (`pipeline-heard.ts`).
+ * resume prompt's anchor sits (`aai-runtime/src/transports/pipeline/heard/tracker.ts`).
  *
  * **"Over and above" is the whole of it, and two successive derivations got it
  * wrong by ignoring that clause.** `heardMs()` is
@@ -90,7 +90,7 @@ export const PIPELINE_PLAYBACK_GRACE_MS = 750;
  * term at ZERO the cursor is already accurate to +8 ms on a loopback link, +55 ms
  * on a typical one and +130 ms on a mobile one, and the error is IDENTICAL at
  * pacer leads of 1000, 1500 and 2000 ms. 150 makes the residual non-positive on
- * all three, which is the required direction: the roundings in `pipeline-heard.ts`
+ * all three, which is the required direction: the roundings in `aai-runtime/src/transports/pipeline/heard/tracker.ts`
  * all err toward UNDER-keeping.
  *
  * **The two wrong derivations, because both are instructive.** It was a literal

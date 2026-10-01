@@ -12,7 +12,7 @@
  * every capability that reaches it, and this one was reached by `agent` (the
  * handler map), `dialog` (`Dialog.receive` and the `@` names), `metrics` (the
  * frame's type) and — through `TransportEventBody`'s hand-written list —
- * `aai-runtime:session`: `user-turn.exceeded` and `metrics.collected` each bumped
+ * `aai-runtime:session`: `userTurn.exceeded` and `metrics.collected` each bumped
  * all four. Contracting `/protocol` instead would have made every wire export
  * authoring surface and pulled it into the template-coverage ratchet, so the
  * vocabulary moved to the root barrel, where an author already met it through
@@ -45,5 +45,6 @@ export {
   type SessionEventMap,
   SessionEventSchema,
   type SessionEventType,
+  type SessionEventTypeList,
   type SessionSourcedEventType,
 } from "../../index.ts";

@@ -24,13 +24,7 @@ export {
 // while `docs/api` denied it existed. Every caller is inside this package
 // (`sdk/agent-config.ts`, `host/runtime-providers.ts`), so the barrel entry was
 // buying nothing; import it from `./config-rules.ts` directly.
-export {
-  agentConfigWarnings,
-  assertPipelineTuning,
-  assertSilencePolicy,
-  type PipelineTuning,
-  type SessionMode,
-} from "./config-rules.ts";
+export { agentConfigWarnings, type SessionMode } from "./config-rules.ts";
 // The same seam for the other thing a file beside `agent.ts` can BE: its
 // `system-prompt.md`.
 export { withSystemPrompt } from "./system-prompt-file.ts";
@@ -56,3 +50,16 @@ export {
   withTools,
 } from "./tool-registry.ts";
 export { type ToolSchema, ToolSchemaSchema } from "./tool-schema.ts";
+// The ONE shape every tool source hands the runtime — see `sdk/toolset.ts`.
+export {
+  agentToolsets,
+  composeToolsets,
+  type DialogToolGate,
+  gateToolset,
+  type ResolvedTool,
+  type ToolBearingDef,
+  type ToolGate,
+  type ToolTable,
+  toolEntry,
+  toolset,
+} from "./toolset.ts";

@@ -275,7 +275,7 @@ describe("token", () => {
    * above pinned "no token" and "a real token" and left the misconfiguration
    * between them untested. It fails CLOSED here rather than reverting to the open
    * default — the right way round for a caller nobody can send a log line to;
-   * `agentGateToken` (`server-env.test.ts`) is where a blank variable becomes
+   * `agentGateToken` (`../../server/env.test.ts`) is where a blank variable becomes
    * "absent", with the announcement.
    */
   test.each(["", "   "])("a BLANK token (%j) admits nobody", async (token) => {

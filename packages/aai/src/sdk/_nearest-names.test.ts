@@ -52,4 +52,20 @@ describe("nearestNames", () => {
   test("an empty catalog is not an error", () => {
     expect(nearestNames("michael", [])).toEqual([]);
   });
+
+  test("a caller sets its own bounds — the stray-field check offers one name at distance 3", () => {
+    const fields = new Set(["systemPrompt", "greeting", "maxSteps"]);
+    expect(nearestNames("systemPromtp", fields, { maxDistance: 3, maxNames: 1 })).toEqual([
+      "systemPrompt",
+    ]);
+    // Three edits is past the default bound, inside the stray-field one.
+    expect(nearestNames("grtng", ["greeting"])).toEqual([]);
+    expect(nearestNames("grtng", ["greeting"], { maxDistance: 3 })).toEqual(["greeting"]);
+  });
+
+  test("a pure case slip is distance 0 and wins outright", () => {
+    expect(nearestNames("MAXSTEPS", ["maxSteps", "maxsteps2"], { maxNames: 1 })).toEqual([
+      "maxSteps",
+    ]);
+  });
 });

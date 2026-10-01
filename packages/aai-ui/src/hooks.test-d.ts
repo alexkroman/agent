@@ -7,7 +7,7 @@
  *
  * The reason these need a type test rather than a runtime one: nothing here
  * has runtime behaviour to observe. `useAgentState` is one `useSessionSelector`
- * call plus a cast, and `useToolResult`'s two overloads erase to the same
+ * call over a per-slot selector, and `useToolResult`'s two overloads erase to the same
  * `(...args: unknown[])` implementation. What a consumer actually depends on
  * is the SIGNATURE, and a signature is exactly what a runtime suite cannot
  * assert.
@@ -16,8 +16,15 @@
 import { type DefaultToolResult, sessionSlot } from "@alexkroman1/aai";
 import { expectTypeOf, test } from "vitest";
 import type { FormValues } from "./components/form-types.ts";
-import { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
-import type { BrowserSession, browserSessionBrand } from "./session-core-types.ts";
+import { useSessionSelector } from "./context.ts";
+import {
+  selectAgentState,
+  useAgentState,
+  useEvent,
+  useToolCallStart,
+  useToolResult,
+} from "./hooks.ts";
+import type { AgentStateFrame, BrowserSession, browserSessionBrand } from "./session/index.ts";
 import type { ChatMessage, ToolCallInfo } from "./types.ts";
 import { type ConversationItem, useConversation } from "./use-conversation.ts";
 import { useDownloadUrl } from "./use-download-url.ts";
@@ -81,20 +88,31 @@ test("an un-parameterized tool result is `unknown`, not `any`", () => {
   });
 });
 
-test("useAgentState returns the caller's projection or null", () => {
+test("useAgentState() is the whole keyed frame, or null", () => {
   // Nullable on purpose: nothing has been pushed before the first tool call,
   // and a UI has to render that moment.
-  expectTypeOf(useAgentState<{ cart: string[] }>()).toEqualTypeOf<{ cart: string[] } | null>();
-  expectTypeOf(useAgentState()).toBeAny();
+  expectTypeOf(useAgentState()).toEqualTypeOf<AgentStateFrame | null>();
 });
 
-test("useAgentState with a fallback drops the null", () => {
-  // The whole point of the overload: a client that supplies the empty
-  // projection needs no branch for the pre-first-tool-call frame, so the
-  // `null` must be gone from the type and not merely unlikely at runtime.
-  expectTypeOf(useAgentState<{ cart: string[] }>({ cart: [] })).toEqualTypeOf<{
+test("useAgentState(slot) is that slot's value, typed by the caller, or null", () => {
+  expectTypeOf(useAgentState<{ cart: string[] }>("cart")).toEqualTypeOf<{
+    cart: string[];
+  } | null>();
+  // The deliberate `any` default, as for `useToolResult`.
+  expectTypeOf(useAgentState("cart")).toBeAny();
+});
+
+test("useAgentState(slot, fallback) drops the null", () => {
+  // A client that supplies the empty view needs no branch for the
+  // pre-first-tool-call frame, so the `null` must be gone from the type.
+  expectTypeOf(useAgentState("cart", { cart: [] as string[] })).toEqualTypeOf<{
     cart: string[];
   }>();
+});
+
+test("selectAgentState is a useSessionSelector selector for one slot", () => {
+  const select = selectAgentState<{ count: number }>("cart");
+  expectTypeOf(useSessionSelector(select)).toEqualTypeOf<{ count: number } | undefined>();
 });
 
 test("useAgentState infers its type from a slot projection", () => {

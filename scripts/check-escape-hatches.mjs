@@ -115,7 +115,7 @@ const PATTERNS = [
   // suppressions moved elsewhere — each concentration got a TYPED SEAM, one
   // narrowing in one helper that every call site then goes through:
   // `fakeOf(session)` in stt/assemblyai.test.ts (35 -> 1),
-  // `asSessionWs(ws)` in host-mode.test.ts (13 -> 2),
+  // `asSessionWs(ws)` in aai-runtime/src/server/host-mode.test.ts (13 -> 2),
   // `okFetch().fetch` / `.firstCall()` in ssrf-pinning.test.ts (12 -> 2),
   // `MockWebSocketConstructor` + `recordingWebSocketClass` shared across the
   // aai-ui session-core suites (26 -> 7 for the package). Some vanished
@@ -136,7 +136,7 @@ const PATTERNS = [
   // halved `as unknown as` — a TYPED SEAM per concentration, not a cast per
   // assertion. The two worst are `web-search.test.ts` (13 `{} as never` for a
   // `ToolContext` that already has a builder at `host/_test-utils.ts`) and
-  // `runtime-transport.test.ts` (13 on whole options objects, so a renamed or
+  // `aai-runtime/src/runtime/transport.test.ts` (13 on whole options objects, so a renamed or
   // newly required option on the very builder under test compiles silently).
   { label: "as never", re: "(^|[^A-Za-z0-9_])as never([^A-Za-z0-9_]|$)" },
 ];

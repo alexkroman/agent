@@ -2,14 +2,14 @@
 /**
  * Unit tests for the runner behind `stepDelegate` — that a step really gets the
  * subagent loop (not a second, thinner one), on the sessionless bag the module
- * doc argues for, with the gateway default a `SubagentDef.llm` overrides.
+ * doc argues for, with the gateway default a `SpeakerDef.llm` overrides.
  *
  * The SLOT is `@alexkroman1/aai`'s (`sdk/step-delegate.test.ts`); the LOOP is
  * `subagent.test.ts` beside this. What this file owns is the binding between
  * them.
  */
 
-import { subagent, tool } from "@alexkroman1/aai";
+import { speaker, tool } from "@alexkroman1/aai";
 import { publishStepDelegate } from "@alexkroman1/aai/host-internal";
 import { stepDelegate } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, it } from "vitest";
@@ -48,7 +48,7 @@ describe("createStepDelegate", () => {
     const result = await run(
       // Naming the LLM is what makes this test independent of the gateway
       // default, which no fake registry can resolve.
-      subagent({ name: "researcher", systemPrompt: "Research it.", llm: descriptor }),
+      speaker({ name: "researcher", systemPrompt: "Research it.", llm: descriptor }),
       { task: "battery prices" },
     );
 
@@ -85,7 +85,7 @@ describe("createStepDelegate", () => {
     });
 
     await run(
-      subagent({
+      speaker({
         name: "researcher",
         systemPrompt: "Look things up.",
         llm: descriptor,
@@ -124,7 +124,7 @@ describe("createStepDelegate", () => {
       },
     });
     const run = createStepDelegate({ env, logger: silent });
-    const researcher = subagent({
+    const researcher = speaker({
       name: "researcher",
       systemPrompt: "Look things up.",
       llm: descriptor,
@@ -143,7 +143,7 @@ describe("createStepDelegate", () => {
     const run = createStepDelegate({ env, logger: silent });
 
     await run(
-      subagent({
+      speaker({
         name: "researcher",
         systemPrompt: "Research it.",
         expectedOutput: "One paragraph.",
@@ -164,7 +164,7 @@ describe("createStepDelegate", () => {
     const run = createStepDelegate({ env, logger: silent });
 
     const result = await run(
-      subagent({
+      speaker({
         name: "checker",
         systemPrompt: "Check it.",
         llm: descriptor,
@@ -182,7 +182,7 @@ describe("createStepDelegate", () => {
     publishStepDelegate(createStepDelegate({ env, logger: silent }));
 
     const result = await stepDelegate(
-      subagent({ name: "researcher", systemPrompt: "Research it.", llm: descriptor }),
+      speaker({ name: "researcher", systemPrompt: "Research it.", llm: descriptor }),
       { task: "x" },
     );
 
@@ -196,7 +196,7 @@ describe("createStepDelegate", () => {
     // some other provider — or, worse, resolve one.
     const run = createStepDelegate({ env: {}, logger: silent });
     await expect(
-      run(subagent({ name: "researcher", systemPrompt: "Research it." }), { task: "x" }),
+      run(speaker({ name: "researcher", systemPrompt: "Research it." }), { task: "x" }),
     ).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
   });
 });

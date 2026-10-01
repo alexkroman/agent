@@ -37,9 +37,9 @@ describe("createConsoleSink", () => {
 
   test("committed transcripts are printed; interim ones are not", () => {
     const { sink, print } = setup();
-    sink.event(ev({ type: "user-transcript.committed", text: "What time is it?" }));
-    sink.event(ev({ type: "agent-transcript.updated", text: "It is" }));
-    sink.event(ev({ type: "agent-transcript.committed", text: "It is noon." }));
+    sink.event(ev({ type: "userTranscript.committed", text: "What time is it?" }));
+    sink.event(ev({ type: "agentTranscript.updated", text: "It is" }));
+    sink.event(ev({ type: "agentTranscript.committed", text: "It is noon." }));
 
     expect(print.user).toHaveBeenCalledWith("What time is it?");
     expect(print.agent).toHaveBeenCalledTimes(1);
@@ -48,7 +48,7 @@ describe("createConsoleSink", () => {
 
   test("a barge-in flushes the speaker and prints what was said so far as interrupted", () => {
     const { sink, player, print } = setup();
-    sink.event(ev({ type: "agent-transcript.updated", text: "Let me tell you about" }));
+    sink.event(ev({ type: "agentTranscript.updated", text: "Let me tell you about" }));
     sink.event(ev({ type: "reply.cancelled" }));
 
     expect(player.flush).toHaveBeenCalledTimes(1);
@@ -57,7 +57,7 @@ describe("createConsoleSink", () => {
 
   test("a reset flushes the speaker without printing a reply", () => {
     const { sink, player, print } = setup();
-    sink.event(ev({ type: "agent-transcript.updated", text: "Half a sentence" }));
+    sink.event(ev({ type: "agentTranscript.updated", text: "Half a sentence" }));
     sink.event(ev({ type: "session.reset" }));
     sink.event(ev({ type: "reply.cancelled" }));
 

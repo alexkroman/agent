@@ -1,7 +1,7 @@
 {
-  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 2, rule 3, rule 5, rule 7, rule 8, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 23, rule 26, rule 28, rule 31, rule 32, rule 33.",
+  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 2, rule 3, rule 5, rule 7, rule 8, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 26, rule 28, rule 31, rule 32, rule 33, rule 35, rule 36.",
   "rule4_inlineTickPromise": {
-    "packages/aai-runtime/src/tool-executor.ts": 1,
+    "packages/aai-runtime/src/tools/executor.ts": 1,
     "packages/aai-studio-client/src/_test-utils.ts": 1
   },
   "rule11_hardcodedTmp": {
@@ -10,14 +10,14 @@
   "rule16_sessionCallbackName": {
     "packages/aai-runtime/src/integration/_pipeline-fuzz-model.ts": 1,
     "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts": 2,
-    "packages/aai-runtime/src/runtime-session-callbacks.ts": 2,
-    "packages/aai-runtime/src/runtime-types.ts": 5,
-    "packages/aai-runtime/src/runtime.ts": 1,
-    "packages/aai-runtime/src/session-commands.ts": 1,
-    "packages/aai-runtime/src/session-core.ts": 3,
+    "packages/aai-runtime/src/runtime/session-callbacks.ts": 2,
+    "packages/aai-runtime/src/runtime/types.ts": 5,
+    "packages/aai-runtime/src/runtime/runtime.ts": 1,
+    "packages/aai-runtime/src/session/commands.ts": 1,
+    "packages/aai-runtime/src/session/core.ts": 3,
     "packages/aai-runtime/src/transports/_transport-recorder.ts": 2,
     "packages/aai-runtime/src/transports/types.ts": 3,
-    "packages/aai-runtime/src/ws-handler.ts": 3
+    "packages/aai-runtime/src/session/ws-handler.ts": 3
   },
   "rule17_openCodedRecordGuard": {
     "packages/aai-evals/src/assertions.ts": 1,
@@ -32,7 +32,7 @@
   },
   "rule22_truthySpread": {
     "packages/aai-runtime/src/providers/stt/elevenlabs.ts": 1,
-    "packages/aai-runtime/src/transports/pipeline-llm-trace.ts": 1,
+    "packages/aai-runtime/src/transports/pipeline/llm/trace.ts": 1,
     "packages/aai-runtime/src/workflow/report.ts": 2,
     "packages/aai-server/src/guest/forward.ts": 1,
     "packages/aai-studio-server/src/studio-session-ensure.ts": 1,
@@ -109,7 +109,7 @@
     "packages/aai-runtime/src/providers/tts/assemblyai.test.ts": 1,
     "packages/aai-runtime/src/providers/tts/cartesia.test.ts": 2,
     "packages/aai-runtime/src/providers/tts/rime.test.ts": 1,
-    "packages/aai-runtime/src/session-auth.test.ts": 1,
+    "packages/aai-runtime/src/server/session-auth.test.ts": 1,
     "packages/aai-runtime/src/ssrf-pinning.test.ts": 1,
     "packages/aai-runtime/src/step-fetch.test.ts": 1,
     "packages/aai-runtime/src/step-speak.test.ts": 1,
@@ -135,7 +135,7 @@
     "packages/aai-ui/src/default-client.test.tsx": 2,
     "packages/aai-ui/src/define-client.test.tsx": 1,
     "packages/aai-ui/src/page.test.tsx": 1,
-    "packages/aai-ui/src/session-core-audio-init.test.ts": 1,
+    "packages/aai-ui/src/session/audio-init.test.ts": 1,
     "packages/aai/src/host/coding-spawn.test.ts": 1,
     "packages/aai/src/host/ffmpeg.test.ts": 1,
     "packages/aai/src/host/step-files.disk-full.test.ts": 1

@@ -262,7 +262,7 @@ describe("POST /:slug/workflow-journal", () => {
      *
      * `platform/_route.test.ts` pins that every line the frame writes carries the
      * id; what only a route can show is that the id is READ — that the header the
-     * runtime mints (`aai-runtime/platform-rpc.ts`) reaches `guestTrace` through
+     * runtime mints (`aai-runtime/platform/rpc.ts`) reaches `guestTrace` through
      * hono's own request, which is the half a middleware change can break with
      * every unit test still green.
      */

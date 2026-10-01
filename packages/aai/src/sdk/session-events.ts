@@ -94,7 +94,7 @@ export type SessionEventContext = {
    * line's `done` settles.
    *
    * **A line a handler says emits events that reach the handlers again.** A
-   * handler that speaks on every `agent-transcript.committed` hears its own
+   * handler that speaks on every `agentTranscript.committed` hears its own
    * line and speaks forever. Decide from an event the line cannot produce, or
    * check the event first: see "A handler that speaks can hear itself" in
    * `session-speech.ts`.

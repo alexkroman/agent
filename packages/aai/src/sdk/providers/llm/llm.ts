@@ -80,7 +80,7 @@ export type LlmProviderName =
 export type KnownLlmProvider = KnownLiterals<LlmProviderName>;
 
 /**
- * What an `llm` FIELD takes — `agent({ llm })`, `subagent({ llm })`,
+ * What an `llm` FIELD takes — `agent({ llm })`, `speaker({ llm })`,
  * `ctx.generate({ llm })`: a descriptor from {@link llm}, or a model-id string.
  *
  * A bare id routes through AssemblyAI's LLM Gateway (so
@@ -160,7 +160,7 @@ export interface LlmOptions<P extends LlmProviderName = LlmProviderName>
 }
 
 /**
- * Build an LLM descriptor for `agent({ llm })`, `subagent({ llm })` or
+ * Build an LLM descriptor for `agent({ llm })`, `speaker({ llm })` or
  * `ctx.generate({ llm })`.
  *
  * The API key is resolved host-side from the agent's env, by a name the

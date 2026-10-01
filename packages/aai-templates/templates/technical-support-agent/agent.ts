@@ -26,7 +26,7 @@ export default agent({
   // something to project.
   // The projection is also the privacy boundary: a logged ticket carries the
   // caller's callback number, and only its reference crosses to the browser.
-  syncState: supportProjection,
+  syncState: { support: supportProjection },
   greeting: `${PRODUCT} support, you're through to the automated line. What's happened?`,
   // A support line is a PHONE line, so this one declares the carrier its number
   // is with. Nothing serves `WS /phone` without this — the route is an

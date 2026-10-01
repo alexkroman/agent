@@ -3,7 +3,7 @@
 /**
  * The banner's whole reason for existing is a pair of things a reviewer cannot
  * see are missing: the `role="alert"` (per the `fatalError` latch in
- * `session-core.ts` this banner is the only remaining signal a session died)
+ * `session/browser-session.ts` this banner is the only remaining signal a session died)
  * and the error CODE (the three chromes that hand-rolled it had already drifted
  * on whether to print it — one dropped it entirely). Both are asserted here,
  * plus that it reads the session rather than a prop, which is what makes them

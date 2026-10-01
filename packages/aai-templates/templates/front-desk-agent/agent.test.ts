@@ -1,7 +1,8 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 import { HANDOFF_TOOL_NAME } from "@alexkroman1/aai";
-import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
+
+import { createToolContext, toolOf, toolRunner } from "@alexkroman1/aai/testing";
 import { isToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { billing, desk, deskSlot, support, triage, whichDesk } from "./shared.ts";
@@ -18,7 +19,12 @@ function refusal(result: unknown): string {
 describe("the roster", () => {
   test("triage answers the phone, and every persona's tools plus `handoff` are on the agent", () => {
     expect(desk.list.map((one) => one.name)).toEqual(["triage", "billing", "support"]);
-    expect(Object.keys(agentDef.tools).sort()).toEqual([
+    // The `tools/` files, plus the toolset the roster minted.
+    const served = [
+      ...Object.keys(agentDef.tools),
+      ...(agentDef.toolsets ?? []).flatMap((set) => Object.keys(set.list())),
+    ];
+    expect(served.sort()).toEqual([
       HANDOFF_TOOL_NAME,
       "issue_refund",
       "lookup_invoice",
@@ -30,9 +36,9 @@ describe("the roster", () => {
   });
 
   test("the minted handoff tool describes each desk, which is the whole routing decision", () => {
-    const minted = agentDef.tools[HANDOFF_TOOL_NAME];
-    expect(minted?.description).toContain(`- billing: ${billing.description}`);
-    expect(minted?.description).toContain(`- support: ${support.description}`);
+    const minted = toolOf(agentDef, HANDOFF_TOOL_NAME);
+    expect(minted.description).toContain(`- billing: ${billing.description}`);
+    expect(minted.description).toContain(`- support: ${support.description}`);
   });
 });
 
@@ -140,7 +146,7 @@ describe("handing back", () => {
     const ctx = createToolContext();
     await run("verify_account", { accountNumber: "1001", zip: "94107", needs: "billing" }, ctx);
     await run(HANDOFF_TOOL_NAME, { persona: "support" }, ctx);
-    expect(desk.position(ctx)).toMatchObject({ persona: support, from: "billing" });
+    expect(desk.position(ctx)).toMatchObject({ speaker: support, from: "billing" });
     expect(await run("run_diagnostic", {}, ctx)).toMatchObject({ line: "intermittent" });
     await run(HANDOFF_TOOL_NAME, { persona: "triage" }, ctx);
     expect(desk.active(ctx)).toBe(triage);

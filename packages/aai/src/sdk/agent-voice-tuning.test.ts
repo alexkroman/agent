@@ -6,9 +6,9 @@
  */
 
 import { describe, expect, expectTypeOf, test } from "vitest";
+import type { PipelineTuning, SilenceNudge, TurnTakingTuning } from "./agent-tuning.ts";
 import {
   KNOWN_TURN_DETECTION_MODES,
-  type PipelineVoiceTuning,
   type TurnDetectionMode,
   type UserTurnLimit,
 } from "./agent-voice-tuning.ts";
@@ -37,14 +37,18 @@ describe("TurnDetectionMode", () => {
   });
 });
 
-describe("PipelineVoiceTuning", () => {
-  test("every field is optional, so an empty object is a valid declaration", () => {
-    const none: PipelineVoiceTuning = {};
+describe("PipelineTuning", () => {
+  test("every group and every field is optional, so an empty object is a valid declaration", () => {
+    const none: PipelineTuning = {};
     expect(Object.keys(none)).toEqual([]);
-    expectTypeOf<
-      Required<PipelineVoiceTuning>["turnDetection"]
-    >().toEqualTypeOf<TurnDetectionMode>();
-    expectTypeOf<Required<PipelineVoiceTuning>["userTurnLimit"]>().toEqualTypeOf<UserTurnLimit>();
+    expectTypeOf<Required<TurnTakingTuning>["detection"]>().toEqualTypeOf<TurnDetectionMode>();
+    expectTypeOf<Required<TurnTakingTuning>["userTurnLimit"]>().toEqualTypeOf<UserTurnLimit>();
+  });
+
+  test("the nudge's timeout is REQUIRED inside its optional object", () => {
+    // The dependency the old flat pair needed a run-time guard for.
+    expectTypeOf<SilenceNudge["afterMs"]>().toEqualTypeOf<number>();
+    expectTypeOf<{ prompt: string }>().not.toExtend<SilenceNudge>();
   });
 
   test("a user turn limit takes an explicit `undefined` for either bound", () => {

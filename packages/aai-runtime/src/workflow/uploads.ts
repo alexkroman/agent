@@ -9,7 +9,7 @@
  * fine for a recording that is already hosted and useless for a person with a file
  * on their laptop.
  *
- * **`_upload-store.ts` is the contract** — the types, the chunking, and the
+ * **`../uploads/store.ts` is the contract** — the types, the chunking, and the
  * invariants every reader depends on (an ordinary upload does not exist until it is
  * finished; a STREAMED one exists from its first byte and says so with `complete`;
  * a PARTS one arrives over several connections at once and publishes only its
@@ -17,7 +17,7 @@
  *
  * ## One store, its home is the RUNS' home
  *
- * `_upload-store-blobs.ts` is the only store, and it names neither half's home: a
+ * `../uploads/store-blobs.ts` is the only store, and it names neither half's home: a
  * RECORD through {@link UploadRecords}, BYTES through {@link UploadBackend}. What
  * this module owns is the pairing, and it follows ONE rule — **an upload must be at
  * least as durable as the runs that read it** — which is why the record's home is
@@ -29,7 +29,7 @@
  *   store at all: {@link createUnavailableUploadStore} refuses every method,
  *   naming what is missing.
  * - **local** → the LOCAL world, whose run state is a directory and whose queue is
- *   in memory. Record and bytes go in that same directory (`_upload-files.ts`), so
+ *   in memory. Record and bytes go in that same directory (`../uploads/files.ts`), so
  *   the two lifetimes are equal by construction.
  *
  * That last arm looks like the file backend this store used to have, and the
@@ -48,52 +48,51 @@
 import { MAX_WORKFLOW_UPLOAD_BYTES, type OpenUpload } from "@alexkroman1/aai/host-internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { UploadBackend } from "../_upload-blobs.ts";
-import { createBrokeredUploadBlobs } from "../_upload-blobs-brokered.ts";
-import { createHttpUploadBackend } from "../_upload-blobs-http.ts";
+import type { UploadBackend } from "../uploads/index.ts";
 import {
+  createBlobUploadStore,
+  createBrokeredUploadBlobs,
+  createFileUploadBlobs,
+  createFileUploadRecords,
+  createHttpUploadBackend,
+  createPlatformUploadRecords,
+  createPostgresUploadRecords,
   UPLOAD_STORAGE_BUCKET_ENV,
   UPLOAD_STORAGE_KEY_ENV,
   UPLOAD_STORAGE_URL_ENV,
-} from "../_upload-env.ts";
-import { createFileUploadBlobs, createFileUploadRecords } from "../_upload-files.ts";
-import { createPostgresUploadRecords } from "../_upload-records.ts";
-import { type UploadStore, UploadsUnavailableError } from "../_upload-store.ts";
-import { createBlobUploadStore } from "../_upload-store-blobs.ts";
-import { createPlatformUploadRecords } from "../uploads-platform.ts";
+  type UploadStore,
+  UploadsUnavailableError,
+} from "../uploads/index.ts";
 import { isDurableHome, type StorageHome } from "./storage-home.ts";
 
-export {
-  createMemoryUploadBackend,
-  partKey,
-  partsCovering,
-  partsOf,
-  rangesOf,
-  type UploadBackend,
-  type UploadPart,
-} from "../_upload-blobs.ts";
-export { createHttpUploadBackend, type HttpUploadBackendOptions } from "../_upload-blobs-http.ts";
-export {
-  UPLOAD_STORAGE_BUCKET_ENV,
-  UPLOAD_STORAGE_KEY_ENV,
-  UPLOAD_STORAGE_URL_ENV,
-} from "../_upload-env.ts";
 export {
   assertPartOffset,
   assertPartTotal,
   type ByteRange,
   contiguousBytes,
+  createHttpUploadBackend,
+  createMemoryUploadBackend,
+  type HttpUploadBackendOptions,
+  partKey,
+  partsCovering,
+  partsOf,
+  rangesOf,
   UnknownUploadError,
+  UPLOAD_STORAGE_BUCKET_ENV,
+  UPLOAD_STORAGE_KEY_ENV,
+  UPLOAD_STORAGE_URL_ENV,
   UPLOAD_WINDOW_CONCURRENCY,
   UPLOADS_TABLE,
+  type UploadBackend,
   UploadCompleteError,
   UploadIdTakenError,
   type UploadMeta,
+  type UploadPart,
   UploadPartError,
   type UploadStore,
   UploadsUnavailableError,
   UploadTooLargeError,
-} from "../_upload-store.ts";
+} from "../uploads/index.ts";
 
 /** Where one deployment's upload objects live, under whichever bucket it uses. */
 export const UPLOAD_KEY_PREFIX = "uploads";
@@ -162,7 +161,7 @@ export function uploadBytesAreRemote(home: StorageHome, blobs: UploadBackend | u
  *   the bucket `blobs` reaches.
  * - **postgres** → the agent's own table, bytes in the bucket.
  * - **local** → both halves in `localDir`, the local workflow world's own data
- *   directory. See `_upload-files.ts` for why that is not the file backend this
+ *   directory. See `../uploads/files.ts` for why that is not the file backend this
  *   store used to have.
  *
  * A durable home with NO byte backend is the one refusal: a durable record behind
@@ -229,7 +228,7 @@ export function createUploadStore(options: {
  * Resolve where bytes go from an agent's environment, or `undefined`.
  *
  * Two shapes, and which one applies is decided by whether a PLATFORM said it serves
- * this agent's bytes — see `_upload-blobs.ts` for why that split is the security
+ * this agent's bytes — see `../uploads/blobs.ts` for why that split is the security
  * boundary rather than a preference:
  *
  * - **`broker` set** → brokered. A deployed guest sends every byte operation to the

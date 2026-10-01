@@ -14,7 +14,7 @@
  * ## The `@` namespace, and why it is a namespace
  *
  * A session event reaches a dialog as an ordinary XState event named for the
- * wire type under a leading `@` — `on: { "@session.timed-out": "abandoned" }`.
+ * wire type under a leading `@` — `on: { "@session.timedOut": "abandoned" }`.
  * The prefix is what keeps the two vocabularies apart: an author's own events
  * are SCREAMING_CASE by convention but nothing enforces that, and a dialog that
  * happened to declare `on: { "reply.completed": … }` for its own purposes would
@@ -24,7 +24,7 @@
  *
  * The names are VALIDATED against the real {@link SessionEventType} union at
  * declaration ({@link assertDialogSessionEvents}), for the same reason a
- * `when` naming no state is: `@sesion.timed-out` is an event XState would
+ * `when` naming no state is: `@session.timedOut` is an event XState would
  * accept, store and never match, so the state that was supposed to catch a
  * dead call would simply never be entered — with nothing at run time to say so.
  *

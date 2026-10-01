@@ -33,6 +33,7 @@
 
 import type { AgentDef } from "@alexkroman1/aai";
 import { DEFAULT_BUILTIN_TOOLS } from "@alexkroman1/aai/internal";
+import { agentToolsets } from "@alexkroman1/aai/manifest";
 import { announceEvalMode } from "./_announce.ts";
 import type { StubScript } from "./stub-llm.ts";
 
@@ -95,11 +96,11 @@ export function checkStubReplyTools(
   // Unset means DEFAULT_BUILTIN_TOOLS, as it does in `mergeBuiltinSurface`
   // — but only what the author WROTE decides the hint below, since the default
   // is on every def, the mistaken authored one included.
-  const authored = [...Object.keys(agent.tools ?? {}), ...(agent.builtinTools ?? [])];
-  const declared = [
-    ...Object.keys(agent.tools ?? {}),
-    ...(agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS),
-  ];
+  // Every toolset the def carries (its files, a roster's minted tools), not
+  // just `tools` — a roster's `delegate` is as callable as a file.
+  const own = agentToolsets(agent).flatMap((set) => Object.keys(set.list()));
+  const authored = [...own, ...(agent.builtinTools ?? [])];
+  const declared = [...own, ...(agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS)];
   const missing = toolsNamedBy(script).find((name) => !declared.includes(name));
   if (missing === undefined) return;
   throw new Error(
@@ -133,7 +134,7 @@ export function checkStubReplyTools(
  * the notice would be noise.
  */
 export function announceToollessAgent(agent: AgentDef): void {
-  if (Object.keys(agent.tools ?? {}).length > 0) return;
+  if (agentToolsets(agent).some((set) => Object.keys(set.list()).length > 0)) return;
   if (hasWorkflows(agent)) return;
   announceEvalMode(
     `eval: ${agent.name} — this agent declares no tools and no workflows, so this suite can ` +

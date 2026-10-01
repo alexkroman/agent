@@ -43,12 +43,8 @@
  */
 
 import type { WorkflowContext } from "@alexkroman1/aai";
-import { stepReport } from "@alexkroman1/aai/step";
-import {
-  FatalError,
-  stepGenerateJsonOrFail,
-  stepGenerateOrFail,
-} from "@alexkroman1/aai/step-errors";
+import { stepGenerate, stepGenerateJson, stepReport } from "@alexkroman1/aai/step";
+import { FatalError, orFail } from "@alexkroman1/aai/step-errors";
 import { countWords } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { CRITIC_SYSTEM, REVISER_SYSTEM, WRITER_SYSTEM } from "./prompts.ts";
@@ -227,7 +223,7 @@ export async function writeDraft(input: RedlineInput): Promise<string> {
   // `stepGenerate` already refuses an empty completion, as a RETRYABLE
   // `StepGenerateError` — which is the right answer, and one a hand-written
   // check would have to re-derive.
-  const draft = await stepGenerateOrFail(briefBlock(input), { system: WRITER_SYSTEM });
+  const draft = await orFail(stepGenerate)(briefBlock(input), { system: WRITER_SYSTEM });
   return draft.trim();
 }
 
@@ -248,10 +244,13 @@ export async function critiqueDraft(
   // `stepGenerateJson` owns the fence, the parse, the non-object case and the
   // shape — and throws PLAINLY when any of them misses, unlike the fatal one
   // above: a model that answered with prose may well obey on the next attempt.
-  const parsed = await stepGenerateJsonOrFail(`${briefBlock(input)}\n\nThe submission:\n${draft}`, {
-    schema: CritiqueReply,
-    system: CRITIC_SYSTEM,
-  });
+  const parsed = await orFail(stepGenerateJson)(
+    `${briefBlock(input)}\n\nThe submission:\n${draft}`,
+    {
+      schema: CritiqueReply,
+      system: CRITIC_SYSTEM,
+    },
+  );
 
   const critique: Critique = {
     verdict: parsed.verdict,
@@ -277,7 +276,7 @@ export async function reviseDraft(
   round: number,
 ): Promise<string> {
   await stepReport(`Round ${round}: revising.`);
-  const revised = await stepGenerateOrFail(
+  const revised = await orFail(stepGenerate)(
     [
       briefBlock(input),
       `Your current draft:\n${draft}`,
@@ -310,8 +309,8 @@ export function clampScore(score: number): number {
 // There is no local `ask()` any more, and its absence is the point. The SDK
 // classifies the gateway's failure (`StepGenerateError.retryable`) and stops
 // there — whether a terminal failure should burn the step's remaining attempts
-// is the caller's call — so `stepGenerateOrFail` and
-// `stepGenerateJsonOrFail` (`@alexkroman1/aai/step-errors`) are that call
+// is the caller's call — so `orFail(stepGenerate)` and
+// `orFail(stepGenerateJson)` (`@alexkroman1/aai/step-errors`) are that call
 // made one way: terminal stays terminal, and a rate limit becomes a
 // `RetryableError` carrying the delay the gateway itself named, which beats
 // `RetryableError`'s own one-second default. Three templates each wrapped the

@@ -71,8 +71,8 @@
  * ```
  */
 
+import { globalSlot } from "./_boundary.ts";
 import { concatBytes } from "./_bytes.ts";
-import { globalSlot } from "./_global-slot.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 
 /**
@@ -116,7 +116,7 @@ export type StepFetchInit = {
 };
 
 /** The registry-wide slot — see the module doc for why it is not a module-level `let`. */
-const STEP_FETCH_SLOT = globalSlot<StepFetch>("@alexkroman1/aai.stepFetch");
+const STEP_FETCH_SLOT = globalSlot<StepFetch>("stepFetch");
 
 /**
  * Publish the HTTP/1.1 fetch for this process's steps.
@@ -185,8 +185,8 @@ function isStreamingBody(body: StepFetchInit["body"]): boolean {
  *   `404` is fatal.
  * @public
  *
- * **From a step, prefer `stepFetchOrFail`
- * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
+ * **From a step, prefer `orFail(stepFetch)` (`orFail` is on
+ * `@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
  */

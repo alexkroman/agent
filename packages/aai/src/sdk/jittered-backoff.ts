@@ -13,7 +13,7 @@
  *
  * `sdk/_upload-retry.ts` (re-sending one upload window), `sdk/_upload-resume.ts`
  * (re-entering a whole upload after an outage) and
- * `aai-runtime/_upload-blobs-brokered.ts` (a guest re-issuing one brokered byte
+ * `aai-runtime/uploads/blobs-brokered.ts` (a guest re-issuing one brokered byte
  * op). Two of them even named their local function `retryDelay`. Each carried
  * its own comment explaining the jitter, which is the tell this repo already
  * reads as a missing shared primitive — the same tell that produced `sleep()`,
@@ -63,7 +63,7 @@ export type JitteredBackoffOptions = {
    * The largest window the doubling may reach, if any.
    *
    * Omitted means uncapped, which is only safe when the ATTEMPT COUNT is the
-   * bound instead — `_upload-blobs-brokered.ts` is the one such caller, at
+   * bound instead — `aai-runtime/src/uploads/blobs-brokered.ts` is the one such caller, at
    * three attempts off a 250ms base, so its worst case is ~750ms by
    * construction. A caller that retries until a deadline needs a cap here, or
    * the doubling reaches minutes.

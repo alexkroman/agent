@@ -3,7 +3,7 @@
  * A tool as a self-hosted agent's author writes one: a file under `tools/`,
  * named for what the model calls, default-exporting `tool({ … })`.
  *
- * Read by `tools-dir.test.ts` through `withToolsDir`, which is the only thing
+ * Read by `../../../../tools/tools-dir.test.ts` through `withToolsDir`, which is the only thing
  * that imports it — nothing here registers it.
  */
 

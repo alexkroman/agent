@@ -16,7 +16,7 @@
  *
  * A session bound to a client keeps its events past its own end, and every
  * later connect naming the same id is seeded with them (`aai-runtime`'s
- * `session-client-history.ts`). So a connect that PRESENTS an id receives that
+ * `aai-runtime/src/session/client-history.ts`). So a connect that PRESENTS an id receives that
  * client's history: on a server listening beyond loopback (`AAI_DEV_HOST`,
  * `aai start` behind a LAN address) the id is the only thing standing between
  * a stranger on the network and what the household said. Nothing here

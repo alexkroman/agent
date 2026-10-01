@@ -1,10 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The wire events that make a control auditable: `usage.updated` is what
 // `AgentDef.usageLimits` is measured against, `guardrail.blocked` is what
-// the two guardrail lists leave behind, and `user-turn.exceeded` is what
+// the two guardrail lists leave behind, and `userTurn.exceeded` is what
 // `AgentDef.userTurnLimit` leaves behind. A control with no event is a control
 // nobody can audit — so what these schemas admit, and the fields
-// `guardrail.blocked` and `user-turn.exceeded` deliberately do NOT carry, are
+// `guardrail.blocked` and `userTurn.exceeded` deliberately do NOT carry, are
 // the claims here.
 
 import { describe, expect, test } from "vitest";
@@ -151,14 +151,14 @@ describe("guardrail.blocked", () => {
 });
 
 const EXCEEDED = {
-  type: "user-turn.exceeded" as const,
+  type: "userTurn.exceeded" as const,
   meta: META,
   limit: "words" as const,
   words: 60,
   durationMs: 14_200,
 };
 
-describe("user-turn.exceeded", () => {
+describe("userTurn.exceeded", () => {
   test("is a member of the session event union", () => {
     expect(SessionEventSchema.safeParse(EXCEEDED).success).toBe(true);
     expect(SessionEventSchema.safeParse({ ...EXCEEDED, limit: "duration" }).success).toBe(true);

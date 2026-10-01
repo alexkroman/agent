@@ -210,8 +210,8 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
  *
  * @public
  *
- * **From a step, prefer `stepTranscribeUploadOrFail`
- * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
+ * **From a step, prefer `orFail(stepTranscribeUpload)` (`orFail` is on
+ * `@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
  */
@@ -288,8 +288,8 @@ export async function stepTranscribeUpload(
  *
  * @public
  *
- * **From a step, prefer `stepTranscribeSubmitOrFail`
- * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
+ * **From a step, prefer `orFail(stepTranscribeSubmit)` (`orFail` is on
+ * `@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
  */
@@ -338,8 +338,8 @@ export async function stepTranscribeSubmit(
  *
  * @public
  *
- * **From a step, prefer `stepTranscribePollOrFail`
- * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
+ * **From a step, prefer `orFail(stepTranscribePoll)` (`orFail` is on
+ * `@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out.
  */

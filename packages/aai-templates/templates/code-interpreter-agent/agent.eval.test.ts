@@ -28,6 +28,7 @@
 import agentDef from "virtual:aai/agent";
 import {
   createVmRunCode,
+  describeEval,
   describeTurn,
   expectCalled,
   expectToolBeforeSpeech,
@@ -36,8 +37,7 @@ import {
   runCodeOutput,
   toolNames,
   type VmRunCodeOptions,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 
 /**

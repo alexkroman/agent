@@ -43,7 +43,7 @@ import { agent } from "@alexkroman1/aai";
 import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
 
 const run = await runTextAgent(
-  agent({ name: "Desk", text: true, systemPrompt: "Be brief." }),
+  agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }),
   "where is order 7?",
   { script: [{ text: "It shipped yesterday." }] },
 );
@@ -85,7 +85,7 @@ function runTextAgent(
 
 Run one turn of `def` against `script`, and hand back what it did.
 
-`def` must declare `text: true` — `createTextAgent` refuses a voice agent by
+`def` must declare `mode: "text"` — `createTextAgent` refuses a voice agent by
 name, and this makes no exception, so a spec cannot accidentally measure an
 agent whose `greeting` and voice tuning are being silently dropped.
 
@@ -117,7 +117,7 @@ The conversation, or a string standing for one user message.
 import { agent } from "@alexkroman1/aai";
 import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
 
-const desk = agent({ name: "Desk", text: true, systemPrompt: "Be brief." });
+const desk = agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." });
 
 const run = await runTextAgent(desk, "where is order 7?", {
   script: [
@@ -257,7 +257,7 @@ import { createTextAgent } from "@alexkroman1/aai-runtime";
 import { scriptedTextModel } from "@alexkroman1/aai-runtime/testing";
 
 const chat = createTextAgent({
-  agent: agent({ name: "Desk", text: true, systemPrompt: "Be brief." }),
+  agent: agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }),
   model: scriptedTextModel([
     { text: "Let me check.", toolCalls: [{ name: "look_up", input: { id: "7" } }] },
     { text: "It shipped yesterday." },
@@ -351,7 +351,7 @@ cross-copy `instanceof` is false for an error the other copy constructed.
 Session-fixed configuration for `createTextAgent`.
 
 The fields every way of running an agent shares are [HostAgentOptions](eval.md#hostagentoptions).
-Here: `agent` must declare `text: true`; `providerEnv` defaults to `env`, split
+Here: `agent` must declare `mode: "text"`; `providerEnv` defaults to `env`, split
 for the reason `RuntimeOptions` splits them (a host-fallback env may resolve a
 model and must never become `ctx.env`); an absent `workflows` substitutes a
 client that rejects with the reason; `fetch` is for tests (see
@@ -495,7 +495,7 @@ assertion built on them works over a text turn unchanged.
 ADDITIVE, and deliberately so: [TextAgent.stream](https://github.com/alexkroman/agent/tree/main/packages/aai-runtime#readme) still returns the
 vendor's `StreamTextResult` and nothing about it changes. A chat surface
 consumes that; this is for whoever is GRADING or auditing the agent.
-`text-agent-events.ts` carries which events are emitted, which eleven are
+`text-agent/events.ts` carries which events are emitted, which eleven are
 not, and why the turn terminator fires exactly once.
 
 **Conversation-scoped, and the envelope carries no turn coordinate** (see
@@ -1634,7 +1634,7 @@ What [runTextAgent](#runtextagent) takes, beyond the definition and the conversa
 
 The agent half is `TextAgentOptions` MINUS the two things this helper
 supplies — derived by subtraction rather than restated, for the reason
-`agent-server-forwarding.ts` exists in this package: every field of that type
+`server/agent-server-forwarding.ts` exists in this package: every field of that type
 is optional, so an omission is valid TypeScript and presents as a harness
 quietly ignoring part of its own configuration. A capability added to a text
 agent is reachable from here the day it lands.
@@ -1809,7 +1809,7 @@ The arguments, as an object.
 
 Serialized to the JSON string the wire carries, so a spec writes the
 arguments it means and the real coercion, Standard Schema validation and
-repair path (`tool-call-repair.ts`) all still run on the way in — which is
+repair path (`tools/call-repair.ts`) all still run on the way in — which is
 the point of scripting a MODEL rather than calling `execute` directly.
 Defaults to `{}`.
 
@@ -2077,7 +2077,7 @@ import { agent } from "@alexkroman1/aai";
 import { saidIn, toolCallsInEvents, toolNames } from "@alexkroman1/aai-runtime/eval";
 import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
 
-const desk = agent({ name: "Desk", text: true });
+const desk = agent({ name: "Desk", mode: "text" });
 const run = await runTextAgent(desk, "where is order 7?", {
   script: [
     { text: "Let me check.", toolCalls: [{ name: "look_up", input: { id: "7" } }] },
@@ -2099,7 +2099,7 @@ for a reply to end rather than for a timer.
 
 Ends in exactly one `reply.completed` or `reply.cancelled`, on every turn
 this helper drives: it consumes the whole stream, so the terminal part has
-always passed through by the time this resolves. `text-agent-events.ts`
+always passed through by the time this resolves. `text-agent/events.ts`
 carries which events a text agent emits and which it refuses.
 
 ##### messages

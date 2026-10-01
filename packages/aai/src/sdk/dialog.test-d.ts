@@ -166,13 +166,13 @@ test("a spec's `@` names stay OUT of the event union an author may send", () => 
   const callSpec = {
     initial: "greeting",
     states: {
-      greeting: { on: { HEARD: "helping", "@session.timed-out": "abandoned" } },
+      greeting: { on: { HEARD: "helping", "@session.timedOut": "abandoned" } },
       helping: { on: { DONE: "abandoned" } },
       abandoned: { final: true },
     },
   } as const satisfies DialogSpec;
   expectTypeOf<DialogEvent<typeof callSpec>["type"]>().toEqualTypeOf<"DONE" | "HEARD">();
-  expectTypeOf<{ type: "@session.timed-out" }>().not.toExtend<DialogEvent<typeof callSpec>>();
+  expectTypeOf<{ type: "@session.timedOut" }>().not.toExtend<DialogEvent<typeof callSpec>>();
 
   // ...and `receive` is how they arrive instead: a wire event, not a dialog one.
   const call = dialog("call", callSpec);

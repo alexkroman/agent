@@ -8,7 +8,7 @@
  * holding for this session — which is what makes `check()` meaningful rather
  * than decorative: no audio outside a reply, no `reply.started` while the
  * service is awaiting a `tool.result`, no `transcript.agent` on a tool-call turn
- * (measured behaviour, see `_s2s-reply.ts`). A generator that emits what no real
+ * (measured behaviour, see `../s2s/reply.ts`). A generator that emits what no real
  * service would produces findings that cost real time to dismiss, and this is
  * where that is prevented.
  *

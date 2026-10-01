@@ -1,7 +1,7 @@
 /**
  * A coding agent: it reads a codebase, changes it, and runs commands in it.
  *
- * `text: true` is the whole shape of it. A text agent has no audio path at all
+ * `mode: "text"` is the whole shape of it. A text agent has no audio path at all
  * — no microphone, no speech, no transport — so what runs it is
  * `createTextAgent` rather than a voice session, and a turn is a message in and
  * a reply out. That is the right mode for work measured in files rather than in
@@ -36,7 +36,7 @@ export default agent({
   // ASSEMBLYAI_API_KEY. Swap in `llm({ provider: "anthropic", model: "claude-opus-5" })` (or
   // any provider from `@alexkroman1/aai/llm`) when a task needs a stronger
   // model — the credential follows the descriptor.
-  text: true,
+  mode: "text",
   // Long, deliberately: a real change is read-read-edit-run-fix, and a budget
   // that runs out mid-task leaves a half-applied edit behind. The last step is
   // always spent ANSWERING rather than calling another tool, so a capped task

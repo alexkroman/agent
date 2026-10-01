@@ -85,8 +85,8 @@ export type ProviderEnvVarsQuery = {
   tts?: object | undefined;
   s2s?: object | undefined;
   /**
-   * The agent's front door (`AgentDef.page`). A `"static"` one needs no
-   * provider credential at all — see the first branch.
+   * The agent's mode (`AgentDef.mode`). A `"workflow-app"` needs no provider
+   * credential at all — see the first branch.
    */
-  page?: AgentDef["page"] | undefined;
+  mode?: AgentDef["mode"] | undefined;
 };

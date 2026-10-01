@@ -31,7 +31,7 @@
  */
 
 // The seal `SessionAuth` carries. TYPE-ONLY: there is no value to import.
-export type { sessionAuthBrand } from "./session-auth.ts";
+export type { sessionAuthBrand } from "./server/index.ts";
 export {
   createSessionAuth,
   createSessionToken,
@@ -45,4 +45,4 @@ export {
   type SessionVerifier,
   type VerifySessionTokenOptions,
   verifySessionToken,
-} from "./session-auth.ts";
+} from "./server/index.ts";

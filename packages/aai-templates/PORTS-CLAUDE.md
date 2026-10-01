@@ -188,8 +188,9 @@ no equivalent, because a conversation has no invalid input; the state's
 `instruction` does the asking again. Four things are decisions:
 
 - **`evaluate_candidate` is `ctx.generate({ schema })`, and `send_followup_email`
-  is a `subagent()`.** The first declares `output_pydantic=CandidateScore`, a
-  SHAPE, and a schema call is what `output_pydantic` is: validated on the way
+  is a `speaker()` run off the line.** The first declares
+  `output_pydantic=CandidateScore`, a SHAPE, and a schema call is what
+  `output_pydantic` is: validated on the way
   back, no loop to run, twelve of them through a `mapConcurrent` window where
   theirs issued thirty in one `asyncio.gather` and met a rate limit as thirty
   429s. The second produces an email with two rules no schema can carry — a
@@ -260,7 +261,7 @@ carries the table. Five things are decisions:
   booking back before it may be confirmed — with a counter over the caller's
   turns in the history, and the comment explains why the history rather than a
   VAD hook: it had to hold for a caller who types. `offering` and `readBack`
-  each leave on `@user-transcript.committed`, and `confirm_booking` is gated on
+  each leave on `@userTranscript.committed`, and `confirm_booking` is gated on
   `agreeing`, so the confirm is unreachable until the read-back has been
   ANSWERED. `agent.test.ts` drives the event with `deskFlow.receive`. This is
   the reason the template needs `agent({ dialogs })`.

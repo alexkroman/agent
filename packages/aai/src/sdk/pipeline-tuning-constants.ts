@@ -212,7 +212,7 @@ export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
  * commit.
  *
  * **It is also THE false-interruption resume deadline** — the sole one. A
- * barge-in that commits no user turn arms a latch (`pipeline-recovery.ts`) with
+ * barge-in that commits no user turn arms a latch (`aai-runtime/src/transports/pipeline/heard/recovery.ts`) with
  * no clock of its own, and this watchdog firing is what releases it, so this
  * number is how long a genuinely false interruption leaves the agent silent
  * before it picks its reply back up (this window, then the resume turn's own
@@ -274,7 +274,7 @@ export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
  * An agent raising `minTurnSilenceMs`/`maxTurnSilenceMs` must raise this with
  * it (the transport's `speechIdleTimeoutMs` option) — `assemblyai.test.ts`
  * asserts the default ordering, and the mooted-resume abort in
- * pipeline-user-speech.ts is the backstop when a live config breaks it anyway.
+ * aai-runtime/src/transports/pipeline/speech/user-speech.ts is the backstop when a live config breaks it anyway.
  *
  * @internal
  */
@@ -283,7 +283,7 @@ export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 4000;
 /**
  * `SttTurnMeta.endOfTurnConfidence` at or above which preemptive generation
  * starts a speculative reply from an INTERIM transcript (`preemptiveGeneration`;
- * see `host/transports/pipeline-speculation.ts`).
+ * see `host/transports/pipeline/speech/speculation.ts`).
  *
  * **A JUDGEMENT CALL, not a measurement.** What is real is the SHAPE of the
  * signal, recorded verbatim on `SttTurnMeta.endOfTurnConfidence` in

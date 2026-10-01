@@ -45,17 +45,17 @@
  * ## Why a global slot
  *
  * The same reason as {@link stepWebhookUrl}: the sockets live in the server
- * (`aai-runtime`'s `client-inbox.ts`) and the step runs from the agent bundle's
+ * (`aai-runtime`'s `aai-runtime/src/inbox/inbox.ts`) and the step runs from the agent bundle's
  * own copy of this module. An unpublished slot THROWS a `FatalError` — there is
  * no inbox to wait for, and retrying would only wait longer to say so.
  *
  * @module
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot } from "./_boundary.ts";
 import { FatalError, RetryableError } from "./step-error-classes.ts";
 
-const STEP_NOTIFY_CLIENT_SLOT = globalSlot<ClientNotifier>("@alexkroman1/aai.stepNotifyClient");
+const STEP_NOTIFY_CLIENT_SLOT = globalSlot<ClientNotifier>("stepNotifyClient");
 
 /**
  * What a client id may look like: it is a map key on a public endpoint and a

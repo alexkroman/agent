@@ -1,0 +1,23 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "events",
+  "epoch": 2,
+  "rule": 2,
+  "sha256": "ba75fda6dc1c9591f231f7053a4afb6935e5fa115030d60571d94ff611ed2993",
+  "exports": [
+    "ClientEventMap",
+    "ClientEventSender",
+    "EventMapOf",
+    "SESSION_SOURCED_EVENT_TYPES",
+    "SessionEvent",
+    "SessionEventBody",
+    "SessionEventHandler",
+    "SessionEventHandlers",
+    "SessionEventMap",
+    "SessionEventSchema",
+    "SessionEventType",
+    "SessionEventTypeList",
+    "SessionSourcedEventType"
+  ],
+  "rollup": "38e88ee9583e6dd38c652377633bd0b6fa16d08075a3f6e0712ad9308f6a8303"
+}

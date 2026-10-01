@@ -46,13 +46,13 @@ export default agent({
   // One projection pushed after every tool call. It is a projection, not a
   // flag, because the state holds all six seeded customers and only the
   // authenticated one may reach the browser.
-  syncState: retailSlot.projection(storeView),
+  syncState: { retail: retailSlot.projection(storeView) },
 
   /**
    * Declaring the flow is what lets the CALL move it, not just a tool.
    *
    * `callFlow` gated tools without this and still would; what the declaration
-   * adds is the half no tool can reach — `"@session.timed-out"` carries a call
+   * adds is the half no tool can reach — `"@session.timedOut"` carries a call
    * whose caller has hung up into `abandoned`, and `awaitingConfirmation`'s
    * instruction reaches the turn that reads a staged change back. Both
    * happen when no tool is running, which is exactly why neither was

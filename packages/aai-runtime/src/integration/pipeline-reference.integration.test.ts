@@ -52,7 +52,7 @@ import { cartesiaTts } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
 import { sleep } from "../_test-utils.ts";
 import { LLM_REGISTRY } from "../providers/_llm-registry.ts";
-import { createRuntimeWithSeams } from "../runtime.ts";
+import { createRuntimeWithSeams } from "../runtime/index.ts";
 import { consoleLogger } from "../runtime-config.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -117,7 +117,7 @@ describe.skipIf(missing.length > 0 && !requireStack)(
       const client: ClientSink = {
         open: true,
         event: (e) => {
-          if (e.type === "user-transcript.committed") userTranscripts.push(e.text);
+          if (e.type === "userTranscript.committed") userTranscripts.push(e.text);
           else if (e.type === "reply.completed") replyDone = true;
         },
         playAudioChunk: (chunk) => {

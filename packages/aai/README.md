@@ -23,6 +23,7 @@ import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 export default agent({
   name: "Support",
   systemPrompt: "Help callers with their orders.",
+  mode: "s2s",
   s2s: assemblyAIS2s({ voice: "jane", keyterms: ["AssemblyAI"] }),
 });
 ```
@@ -58,7 +59,7 @@ export default agent({
   name: "Notes",
   systemPrompt: "You take short notes for the caller.",
   // Show the slot to the browser client, read there with `useAgentState`.
-  syncState: notesSlot.projection((notes) => ({ count: notes.items.length })),
+  syncState: { notes: notesSlot.projection((notes) => ({ count: notes.items.length })) },
 });
 ```
 
@@ -77,7 +78,8 @@ export default agent({
   synchronously. There is no `ctx.state` and no `ctx.db`.
 - `dialog()` / `procedure()` — a flow the model is gated by, and a flow your
   own code drives.
-- `subagent()` — a second tool loop to delegate to.
+- `speaker()` / `roster()` — a second voice: delegated to off the line
+  (`ctx.delegate`), or handed the call (`speaks: true`).
 - `workflow()` / `workflowApp()` — a durable run, and a form-shaped agent whose
   front door is a workflow rather than a microphone.
 - `assemblyAIPipeline()` — the same default pipeline as an explicit spread
@@ -91,6 +93,7 @@ fields the example above leaves out:
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 const cart = sessionSlot("cart", () => ({ items: [] as string[] }));
 
@@ -98,14 +101,14 @@ export default agent({
   name: "Storefront",
   systemPrompt: "You help callers order from the catalog. Confirm before charging.",
   greeting: "Storefront here — what are you after?",
-  voice: "michael",
+  tts: assemblyAITts({ voice: "michael" }),
   // Server-side helpers the model may call, on top of your own tool files.
   builtinTools: ["calculate"],
   // Tool-calling steps per reply, and how long a pause ends the caller's turn.
   maxSteps: 6,
-  minTurnSilenceMs: 1200,
+  turnTaking: { minSilenceMs: 1200 },
   // What the browser client renders with `useAgentState`.
-  syncState: cart.projection((c) => ({ count: c.items.length })),
+  syncState: { cart: cart.projection((c) => ({ count: c.items.length })) },
   // Observe-only hooks over the session event stream.
   events: {
     "tool.called": (event) => {
@@ -328,10 +331,10 @@ several angles — and the call carries only the answer. A subagent is a second
 tool loop with its own system prompt, model, tools and context window:
 
 ```ts
-import { subagent, tool } from "@alexkroman1/aai";
+import { speaker, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-const researcher = subagent({
+const researcher = speaker({
   name: "researcher",
   systemPrompt:
     "Research the task with the tools you have. IMPORTANT: your final message " +
@@ -423,7 +426,7 @@ export const cartSlot = sessionSlot("cart", () => ({
 // `staffPin` never reaches the browser.
 export const cartProjection = cartSlot.projection((s) => ({ cart: s.cart }));
 
-export default agent({ name: "Storefront", syncState: cartProjection });
+export default agent({ name: "Storefront", syncState: { cart: cartProjection } });
 ```
 
 ```tsx

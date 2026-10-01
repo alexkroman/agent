@@ -43,7 +43,7 @@ function shell(
 
 describe("ConsoleShell", () => {
   test("announces its error banner, which is the reason it is published", () => {
-    // Per the `fatalError` latch in `session-core.ts` the banner is the ONLY
+    // Per the `fatalError` latch in `session/browser-session.ts` the banner is the ONLY
     // remaining signal — the state eyebrow beside it goes back to reading like
     // a live session — so an unannounced banner is a session that failed
     // silently for a screen reader.

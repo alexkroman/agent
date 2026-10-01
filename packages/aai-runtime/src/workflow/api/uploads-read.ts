@@ -12,7 +12,7 @@
  * are about admitting bytes: an id grammar, an offset grid, a cap, and the five
  * refusals that come with them. The reads are about answering with them: range
  * arithmetic, a `Content-Disposition`, and the pacing below. The only thing they
- * share is how a store failure becomes a status, which is `_upload-route-failures.ts`
+ * share is how a store failure becomes a status, which is `upload-failures.ts`
  * and is imported by both.
  *
  * **`…/info` must be matched BEFORE `/uploads/:id`**, which is a prefix rule that
@@ -60,9 +60,9 @@ import {
   UPLOAD_CHUNK_BYTES,
   UPLOAD_CLAIM_BATCH,
 } from "@alexkroman1/aai/host-internal";
-import { sendUploadFailure } from "../../_upload-route-failures.ts";
 import type { UploadStore } from "../uploads.ts";
 import { sendJson } from "./http.ts";
+import { sendUploadFailure } from "./upload-failures.ts";
 
 /**
  * Chunks read ahead of what has been written to the socket.

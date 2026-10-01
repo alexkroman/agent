@@ -26,9 +26,11 @@
 
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { stubGatewayRoute } from "@alexkroman1/aai/testing";
-import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
-import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeWorkflowEval,
+  installStubStepFetch,
+  stubGatewayRoute,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect, onTestFinished } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import { SETTLE_MS } from "./workflows/digest.ts";
@@ -139,7 +141,7 @@ describeWorkflowEval(agentDef, (test) => {
     //
     // The digest step asks its call site for six attempts precisely because a
     // model that answers with prose, or with JSON it truncated, may well obey
-    // the next time — `stepGenerateJsonOrFail` throws retryably for exactly
+    // the next time — `orFail(stepGenerateJson)` throws retryably for exactly
     // that. This harness has no retry to give it (`maxAttempts: 1`, and the eval
     // engine says so in as many words), so a live run here spends the step's
     // whole reliability budget on one draw and a single malformed reply failed

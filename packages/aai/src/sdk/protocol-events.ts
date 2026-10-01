@@ -50,9 +50,9 @@
 
 import { z } from "zod";
 import {
-  DEFAULT_MAX_HISTORY,
   MAX_AUDIO_SAMPLE_RATE,
   MAX_CLIENT_EVENT_NAME_LENGTH,
+  MAX_CLIENT_MESSAGES,
   MAX_ERROR_MESSAGE_CHARS,
   MAX_TOOL_RESULT_CHARS,
   MAX_TRANSCRIPT_CHARS,
@@ -60,6 +60,7 @@ import {
 import { SessionEventMetaSchema } from "./protocol-event-meta.ts";
 import {
   GuardrailBlockedEventSchema,
+  ProviderFailedOverEventSchema,
   UsageUpdatedEventSchema,
   UserTurnExceededEventSchema,
 } from "./protocol-events-accounting.ts";
@@ -248,10 +249,10 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   /**
    * Interim (in-progress) user transcript — live captions while the user is
    * still speaking. Pipeline mode forwards STT partials here; the committed
-   * turn still arrives as `user-transcript.committed`.
+   * turn still arrives as `userTranscript.committed`.
    */
   z.object({
-    type: z.literal("user-transcript.updated"),
+    type: z.literal("userTranscript.updated"),
     meta: SessionEventMetaSchema,
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
     /**
@@ -269,7 +270,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   }),
   /** The caller's committed turn — this is the one that enters history. */
   z.object({
-    type: z.literal("user-transcript.committed"),
+    type: z.literal("userTranscript.committed"),
     meta: SessionEventMetaSchema,
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
   }),
@@ -295,7 +296,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
    * incrementally, or assumes a common prefix will corrupt — replace the text.
    */
   z.object({
-    type: z.literal("agent-transcript.updated"),
+    type: z.literal("agentTranscript.updated"),
     meta: SessionEventMetaSchema,
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
   }),
@@ -305,7 +306,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
    *
    * Its own event, where the old protocol reused one name for the interim
    * snapshots and the final alike. A client renders it exactly like an
-   * `agent-transcript.updated`, so nothing about the caption changes; what needs
+   * `agentTranscript.updated`, so nothing about the caption changes; what needs
    * the distinction is the STREAM, because reconstructing a conversation from
    * the log is otherwise guesswork — an interim snapshot and a committed reply
    * are indistinguishable by shape, and an INTERRUPTED reply's last snapshot is
@@ -326,7 +327,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
    * both.
    */
   z.object({
-    type: z.literal("agent-transcript.committed"),
+    type: z.literal("agentTranscript.committed"),
     meta: SessionEventMetaSchema,
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
     recovery: AgentTranscriptRecoverySchema.optional(),
@@ -359,7 +360,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
    * Silence outlasted `idleTimeoutMs`. Informational: the server closes the
    * socket itself, because the event alone retires nothing.
    */
-  ev("session.timed-out"),
+  ev("session.timedOut"),
   z.object({
     type: z.literal("error.reported"),
     meta: SessionEventMetaSchema,
@@ -395,7 +396,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("state.updated"),
     meta: SessionEventMetaSchema,
-    state: z.unknown(),
+    state: z.record(z.string(), z.unknown()),
   }),
   // The events about what a session SPENDS, REFUSES and CUTS SHORT. Their
   // schemas live in `protocol-events-accounting.ts` — named here rather than
@@ -405,6 +406,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   UsageUpdatedEventSchema,
   GuardrailBlockedEventSchema,
   UserTurnExceededEventSchema,
+  ProviderFailedOverEventSchema,
   // What one reply cost, stage by stage — `protocol-events-metrics.ts`.
   MetricsCollectedEventSchema,
   /**
@@ -442,7 +444,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
           content: z.string().max(MAX_TRANSCRIPT_CHARS),
         }),
       )
-      .max(DEFAULT_MAX_HISTORY),
+      .max(MAX_CLIENT_MESSAGES),
     /**
      * The tool calls interleaved through those messages.
      *
@@ -456,7 +458,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
      * did. A call with no completion stays `pending` — it may really have been in
      * flight when the process died.
      */
-    toolCalls: z.array(RestoredToolCallSchema).max(DEFAULT_MAX_HISTORY),
+    toolCalls: z.array(RestoredToolCallSchema).max(MAX_CLIENT_MESSAGES),
   }),
 ]);
 

@@ -44,6 +44,7 @@ import { defaultClientPlugins } from "./_client-plugins.ts";
 import { ensureApiKey } from "./_config.ts";
 import { createDevLogger, devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
+import { devSessionTicketing } from "./_dev-session-ticket.ts";
 import { createDevTypecheck } from "./_dev-typecheck.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
 import { type DevWatcher, type DevWatchFn, watchDirectory } from "./_dev-watch.ts";
@@ -69,10 +70,10 @@ import { buildWorker } from "./worker-bundler.ts";
  *   can't mask one that would be missing both here and after deploy.
  */
 export function agentEnvWarnings(
-  // `page` because a workflow app needs no provider credential at all — see
-  // `requiredProviderEnvVars`. Omitted here, every static agent was warned
+  // `mode` because a workflow app needs no provider credential at all — see
+  // `requiredProviderEnvVars`. Omitted here, every workflow app was warned
   // about an AssemblyAI key it never dials.
-  agentDef: Pick<AgentDef, "stt" | "llm" | "tts" | "s2s" | "requiredEnv" | "page">,
+  agentDef: Pick<AgentDef, "stt" | "llm" | "tts" | "s2s" | "requiredEnv" | "mode">,
   env: Record<string, string>,
   shellEnv: Record<string, string | undefined> = process.env,
 ): string[] {
@@ -347,6 +348,15 @@ export async function startDevServer(
       ...omitUndefined({ runCode }),
     };
 
+    // `AAI_SESSION_SECRET` set: tickets for the client this server serves — see
+    // `_dev-session-ticket.ts`. Read from the env the gate itself reads.
+    const serverEnv = hostModeEnv(providerEnv);
+    const ticketing = devSessionTicketing(serverEnv, {
+      name: agentDef.name,
+      greeting: agentDef.greeting,
+      page: agentDef.mode === "workflow-app" ? "static" : undefined,
+    });
+
     return serve(runtimeOptions, (runtime) => ({
       runtime,
       name: agentDef.name,
@@ -359,7 +369,8 @@ export async function startDevServer(
       // is read from the shell explicitly — otherwise host mode would be
       // unreachable for anyone who exports it the usual way. Host sessions
       // open their own provider connections, so they get `providerEnv`.
-      env: hostModeEnv(providerEnv),
+      env: serverEnv,
+      ...omitUndefined({ auth: ticketing?.auth }),
       // Host sessions inherit this agent's stt/llm/tts pipeline config.
       hostBaseAgent: agentDef,
       // Served pre-connection via GET /client-config.
@@ -369,12 +380,14 @@ export async function startDevServer(
       // Parity matters more here than usual, because a page mounted with
       // `mountClient()` by mistake fails identically in both places instead of
       // only after a deploy.
-      //
       // `telephony` rides along for the same reason and is the sharper half of
       // it: an agent that declares a carrier serves `/phone` here, one that
       // does not serves it nowhere, and a carrier pointed at an `aai dev`
       // tunnel gets the same 404 it would get after a deploy.
-      ...omitUndefined({ page: agentDef.page, telephony: agentDef.telephony }),
+      ...omitUndefined({
+        page: agentDef.mode === "workflow-app" ? "static" : undefined,
+        telephony: agentDef.telephony,
+      }),
       // The PLATFORM's delivery door, and `aai dev` deliberately supplies no
       // `allowRemote`, so it answers 401. That is correct rather than an
       // omission: there is no queue outside this process — the engine's
@@ -386,11 +399,13 @@ export async function startDevServer(
       // production is the kind of difference a feature is developed against.
       //
       // `deliver` is a THUNK and `logger` is `devLogger`, both spelled the way
-      // `agent-server.ts` and the guest's `harness/manage.ts` spell them so the
+      // `aai-runtime/src/server/agent-server.ts` and the guest's `harness/manage.ts` spell them so the
       // three mounts of this one door cannot drift. The logger matters here in
       // particular: the door's fallback is `consoleLogger`, whose `info` is
       // `console.log`, and `aai dev --json` owes stdout exactly one line.
+      // Dev ticketing's `client-config` first: this hook precedes the server's own.
       request: (req, res, url, method) =>
+        ticketing?.clientConfig(req, res, url, method) ??
         handleWorkflowRequest(req, res, url, method, {
           deliver: () => runtime.deliverWorkflow,
           logger: devLogger,

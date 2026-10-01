@@ -18,7 +18,7 @@ import { missingEnvMessage } from "./_missing-env.ts";
  * The `ToolContext` twin of `requireStepEnv`, and there for the same reason: a
  * missing credential is not transient, so it should say which key and how to
  * set it rather than surface as a `TypeError` on the first property access —
- * which `tool-executor.ts` serializes and hands to the MODEL, so what a caller
+ * which `aai-runtime/src/tools/executor.ts` serializes and hands to the MODEL, so what a caller
  * hears is the agent apologising for something no log line explains.
  *
  * ```ts no-check

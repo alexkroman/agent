@@ -3,7 +3,7 @@
   "capability": "inbox",
   "epoch": 1,
   "rule": 2,
-  "sha256": "a925ea6da51ad70ac150437e1625d8d1b43d6a5ac585cd131f7a06d7a000a38d",
+  "sha256": "0424b66c4b79d5583da7af12956c1fa1469160fdd7a0b3c3900d89819fa81787",
   "exports": [
     "CreateInboxOptions",
     "Inbox",
@@ -14,5 +14,20 @@
     "createInbox",
     "useInbox"
   ],
-  "rollup": "224c7db2d4beef0873b8d2737bd2556722a055691add44b4febea9c72578e080"
+  "rollup": "224c7db2d4beef0873b8d2737bd2556722a055691add44b4febea9c72578e080",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "a925ea6da51ad70ac150437e1625d8d1b43d6a5ac585cd131f7a06d7a000a38d",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "0424b66c4b79d5583da7af12956c1fa1469160fdd7a0b3c3900d89819fa81787",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

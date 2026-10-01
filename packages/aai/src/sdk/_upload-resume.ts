@@ -33,7 +33,7 @@
  * the caller pays for four times:
  *
  * - **An abort.** The caller said stop, which is an answer. It is also how a
- *   PAUSE reaches this code (`aai-ui/_upload-session.ts`), so treating it as an
+ *   PAUSE reaches this code (`aai-ui/upload/session.ts`), so treating it as an
  *   outage would fight the person who pressed the button.
  * - **A refusal.** A 400 (the offset contradicts the declared total), a 409 on a
  *   first claim, a 413 (the file is over the agent's cap) are all answers that

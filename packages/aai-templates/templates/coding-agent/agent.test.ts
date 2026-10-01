@@ -47,7 +47,7 @@ describe("coding-agent template", () => {
     // The mode is the template's point: `createRuntime` refuses a text agent by
     // name, so this is what says it runs on `createTextAgent` instead. A
     // provider triple appearing here would mean the mode had been lost.
-    expect(config.text).toBe(true);
+    expect(config.mode).toBe("text");
     expect(config.s2s).toBeUndefined();
   });
 

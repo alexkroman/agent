@@ -20,9 +20,9 @@ function sessionOf(events: readonly SessionEvent[]) {
   return { events: () => events };
 }
 
-const user = (text: string): SessionEvent => ({ type: "user-transcript.committed", meta, text });
+const user = (text: string): SessionEvent => ({ type: "userTranscript.committed", meta, text });
 const agentSaid = (text: string): SessionEvent => ({
-  type: "agent-transcript.committed",
+  type: "agentTranscript.committed",
   meta,
   text,
 });

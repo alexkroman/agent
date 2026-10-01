@@ -78,20 +78,21 @@ export type AgentDef = {
   state?: () => Record<string, unknown>;
   maxSteps?: number;
   /**
-   * `"static"` when the agent serves a page rather than voice sessions — read
-   * here so the harness can pass it to `createRuntimeServer`, which then declines the
-   * voice surfaces and reports it in `/client-config`. Optional because this is
-   * a MIRROR of the SDK's `AgentDef` and a bundle built with an older SDK simply
-   * has none; absent reads as `"voice"`, as it does everywhere else.
+   * The agent's mode — `"workflow-app"` when it serves a page rather than voice
+   * sessions. Read here so the harness can pass `page: "static"` to
+   * `createRuntimeServer`, which then declines the voice surfaces and reports
+   * it in `/client-config`. A MIRROR of the SDK's `AgentDef.mode`, spelled as a
+   * string for this file's no-workspace-imports reason; absent reads as a voice
+   * agent, as it does everywhere else.
    */
-  page?: "voice" | "static";
+  mode?: string;
   /**
    * Which phone carriers may open a media stream on `WS /phone` — read here so
    * the harness can pass the declaration to `createRuntimeServer`, which serves
    * the route for exactly those carriers and refuses every other upgrade.
    *
    * Spelled out rather than imported for this file's stated reason (no
-   * workspace imports), and optional for `page`'s: it MIRRORS the SDK's
+   * workspace imports), and optional for `mode`'s: it MIRRORS the SDK's
    * `AgentDef`, and a bundle built with an older SDK carries none — which reads
    * as no carrier, the same refusal an explicit `false` makes. A carrier name a
    * newer SDK adds is carried at run time regardless, the bundle's agent being

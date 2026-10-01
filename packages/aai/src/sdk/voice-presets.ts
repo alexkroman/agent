@@ -366,7 +366,7 @@ export function voicePresetSection(
 /**
  * The opt-in prompt presets, extended by `AgentDef`.
  *
- * Its own interface for the reason `PipelineVoiceTuning` and the three other
+ * Its own interface for the reason `PipelineTuning` and the three other
  * field groups have one — `types.ts` sits at the source-length cap, and a group
  * of fields sharing one rule reads better stated once. The rule here is the
  * cost: **every name in the list is paid for on every model request**, and

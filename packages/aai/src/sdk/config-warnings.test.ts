@@ -8,6 +8,8 @@
 
 import { describe, expect, test } from "vitest";
 import { agentConfigWarnings } from "./config-warnings.ts";
+import { fallback } from "./providers/fallback.ts";
+import { llm } from "./providers/llm/llm.ts";
 import {
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
   ASSEMBLYAI_TTS_HOST,
@@ -198,9 +200,9 @@ describe("open vocabularies warn rather than refuse", () => {
     ]);
   });
 
-  test("an unknown turnDetection mode says it runs as auto", () => {
-    expect(agentConfigWarnings({ turnDetection: "manual" })).toEqual([]);
-    expect(agentConfigWarnings({ turnDetection: "semantic" })).toEqual([
+  test("an unknown turnTaking.detection mode says it runs as auto", () => {
+    expect(agentConfigWarnings({ turnTaking: { detection: "manual" } })).toEqual([]);
+    expect(agentConfigWarnings({ turnTaking: { detection: "semantic" } })).toEqual([
       expect.stringContaining('runs with "auto"'),
     ]);
   });
@@ -220,5 +222,20 @@ describe("open vocabularies warn rather than refuse", () => {
     expect(agentConfigWarnings({ telephony: ["twilio", "vonage"] })).toEqual([
       expect.stringContaining('Telephony carrier "vonage"'),
     ]);
+  });
+});
+
+describe("a fallback([...]) stage", () => {
+  test("is warned about member by member, and its own kind is never 'an unknown provider'", () => {
+    const warnings = agentConfigWarnings({
+      tts: fallback([assemblyAITts({ voice: "no-such-voice" }), cartesiaTts()]),
+      llm: fallback([
+        llm({ provider: "assemblyai", model: "m" }),
+        llm({ provider: "anthropc", model: "m" }),
+      ]),
+    });
+    expect(warnings.some((w) => w.includes("no-such-voice"))).toBe(true);
+    expect(warnings.some((w) => w.includes('"anthropc"'))).toBe(true);
+    expect(warnings.some((w) => w.includes('"fallback"'))).toBe(false);
   });
 });

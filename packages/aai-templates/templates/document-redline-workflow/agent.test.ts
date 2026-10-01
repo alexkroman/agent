@@ -2,7 +2,7 @@
  * Specs for the redline desk — the reflection port, as a workflow app.
  *
  * The declaration is testable (three things that are silent when wrong — the
- * `page: "static"` field, the workflow's name, and the input schema) and so are
+ * `mode: "workflow-app"` field, the workflow's name, and the input schema) and so are
  * the STEPS, which imported with no bundler in the path are ordinary async
  * functions: their JSON contract with the model, their `FatalError` guards, and
  * the pure helpers underneath them.
@@ -375,7 +375,7 @@ describe("the steps", () => {
  * to take the same branch on every walk.
  *
  * The model is the whole world here (`writeDraft`, `critiqueDraft` and
- * `reviseDraft` are all `stepGenerate*OrFail`), so `stubGateway`'s scripted
+ * `reviseDraft` are all `orFail(stepGenerate*)`), so `stubGateway`'s scripted
  * replies ARE the run, and its call log is what proves a replay did not pay for
  * a round twice. Scripted in body order, with the last reply repeating.
  */

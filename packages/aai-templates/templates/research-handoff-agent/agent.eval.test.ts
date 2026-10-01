@@ -29,10 +29,16 @@
 // endpointing, barge-in, whether two sentences merged into one turn.
 
 import agentDef from "virtual:aai/agent";
-import { routeStepFetch, stubGatewayRoute } from "@alexkroman1/aai/testing";
-import { installStubStepDelegate, installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
-import { type EvalToolCall, type EvalWorkflows, toolResultIn } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeEval,
+  type EvalToolCall,
+  type EvalWorkflows,
+  installStubStepDelegate,
+  installStubStepFetch,
+  routeStepFetch,
+  stubGatewayRoute,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { research } from "./shared.ts";

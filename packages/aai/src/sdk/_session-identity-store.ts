@@ -19,7 +19,7 @@
  *
  * The runtime records and a tool in the agent bundle reads, and those are two
  * copies of this module, so each map hangs off `globalThis` under a `Symbol.for`
- * key both copies agree on (`_global-slot.ts`). The keys are unchanged from
+ * key both copies agree on (registered in `_boundary.ts`). The keys are unchanged from
  * when each map lived in its own module — a bundle built against either layout
  * shares them. Each map is bounded by a TTL plus a hard cap, so an abandoned
  * process cannot grow it.
@@ -30,7 +30,7 @@
  * @internal
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot, type SlotName } from "./_boundary.ts";
 import type { SessionCall } from "./session-call.ts";
 
 /** Longer than any session; this only reaps abandoned entries. */
@@ -73,9 +73,9 @@ type CallEntry = { call: SessionCall; expiresAt: number };
 /**
  * A lazily created map in a global slot.
  *
- * @param key - The `Symbol.for` key. Never rename one: see the module doc.
+ * @param key - The registered slot name. Never rename one: see the module doc.
  */
-function mapSlot<E>(key: string): () => Map<string, E> {
+function mapSlot<E>(key: SlotName): () => Map<string, E> {
   const slot = globalSlot<Map<string, E>>(key);
   return () => {
     let map = slot.get();
@@ -88,15 +88,13 @@ function mapSlot<E>(key: string): () => Map<string, E> {
 }
 
 /** @internal */
-export const sessionClientEntries = mapSlot<ClientEntry>("@alexkroman1/aai.sessionClients");
+export const sessionClientEntries = mapSlot<ClientEntry>("sessionClients");
 /** @internal */
-export const sessionLocationEntries = mapSlot<SessionLocationEntry>(
-  "@alexkroman1/aai.sessionLocations",
-);
+export const sessionLocationEntries = mapSlot<SessionLocationEntry>("sessionLocations");
 /** @internal */
-export const sessionPhoneEntries = mapSlot<PhoneEntry>("@alexkroman1/aai.sessionPhones");
+export const sessionPhoneEntries = mapSlot<PhoneEntry>("sessionPhones");
 /** @internal */
-export const sessionCallEntries = mapSlot<CallEntry>("@alexkroman1/aai.sessionCalls");
+export const sessionCallEntries = mapSlot<CallEntry>("sessionCalls");
 
 /**
  * A per-session entry that has not outlived its TTL, reaping it if it has — the

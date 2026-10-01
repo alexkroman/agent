@@ -4,11 +4,15 @@
 //
 // CHOOSING between the declared lines is `tool-messages-select.test.ts`, beside
 // the module that does it. The runtime half — the timers, the barge-in rules,
-// the model skip — is `aai-runtime`'s `tool-messages-runner.test.ts` and
-// `pipeline-tool-messages.test.ts`.
+// the model skip — is `aai-runtime`'s `aai-runtime/src/tools/messages-runner.test.ts` and
+// `aai-runtime/src/transports/pipeline/tool-messages.test.ts`.
 
 import { describe, expect, test } from "vitest";
 import { agentToolsToSchemas } from "./_internal-types.ts";
+import { toolset } from "./toolset.ts";
+
+const files = (tools: Parameters<typeof toolset>[1]) => [toolset("files", tools)];
+
 import { DEFAULT_TOOL_START_PHRASES, normalizeToolMessages } from "./tool-messages.ts";
 
 describe("normalizeToolMessages", () => {
@@ -35,14 +39,16 @@ describe("normalizeToolMessages", () => {
   });
 
   test("agentToolsToSchemas carries the normalized form, and only when there is one", () => {
-    const [withMessages, without] = agentToolsToSchemas({
-      lookup: {
-        description: "d",
-        messages: { start: "One sec.", complete: [{ role: "system", content: "summarize" }] },
-        execute: () => undefined,
-      },
-      plain: { description: "d", execute: () => undefined },
-    });
+    const [withMessages, without] = agentToolsToSchemas(
+      files({
+        lookup: {
+          description: "d",
+          messages: { start: "One sec.", complete: [{ role: "system", content: "summarize" }] },
+          execute: () => undefined,
+        },
+        plain: { description: "d", execute: () => undefined },
+      }),
+    );
     expect(withMessages?.messages).toEqual({
       start: [{ content: "One sec." }],
       complete: [{ role: "system", content: "summarize" }],

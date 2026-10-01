@@ -52,7 +52,7 @@
  */
 
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import type { PlatformEndpoint } from "../platform-endpoint.ts";
+import type { PlatformEndpoint } from "../platform/index.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createPlatformQueueSend } from "./platform-queue.ts";
 

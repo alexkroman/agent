@@ -24,7 +24,7 @@ import type { AgentDef } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { ASSEMBLYAI_TTS_DEPRECATED_VOICES } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_STEPS, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
-import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
+import { agentToolsets, agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
 import biomeConfig from "../../../biome.json?raw";
@@ -38,7 +38,7 @@ import { byCodeUnit } from "./_template-support.ts";
 /** What a template's default export must satisfy — derived from the exact
  * functions the CLI bundler feeds it to. */
 type AgentDefLike = Parameters<typeof toAgentConfig>[0] & {
-  tools?: Parameters<typeof agentToolsToSchemas>[0];
+  tools?: AgentDef["tools"];
 };
 
 // Lazy glob: each agent.ts (and its asset imports) is only loaded inside its
@@ -100,7 +100,7 @@ describe("template build smoke", () => {
       // asserts every tool file's name, shape and uniqueness — `toolRegistry`
       // throws naming the file, so a template's tools are validated here.
       const resolved = withTemplateTools(name, agentDef as AgentDef);
-      expect(() => agentToolsToSchemas(resolved.tools)).not.toThrow();
+      expect(() => agentToolsToSchemas(agentToolsets(resolved))).not.toThrow();
       // And the prose half, for the same reason: `system-prompt.md` BECOMES the
       // prompt, so this is where an empty one — or one the agent ignores while
       // declaring its own — fails, for every template at once.

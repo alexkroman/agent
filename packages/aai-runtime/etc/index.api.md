@@ -28,6 +28,7 @@ import { SessionEventBody } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
 import type { streamText } from 'ai';
 import type { SttProvider } from '@alexkroman1/aai/stt';
+import { ToolBearingDef } from '@alexkroman1/aai/manifest';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';
@@ -79,7 +80,7 @@ export interface AgentServerOptions extends SharedServerOptions {
     db?: Db | undefined;
     env: AgentEnv;
     journal?: JournalStore | undefined;
-    page?: AgentDef["page"] | undefined;
+    page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
     runCode?: RunCodeExecutor | undefined;
@@ -515,7 +516,7 @@ export type RuntimeServerOptions = {
     uploadBroker?: string;
     upgrade?: ServerUpgradeHook | undefined;
     request?: ServerRequestHook | undefined;
-    page?: NonNullable<AgentDef["page"]>;
+    page?: "voice" | "static";
     telephony?: boolean | readonly CarrierName[];
     auth?: SessionAuth | undefined;
 };
@@ -850,8 +851,7 @@ export class UploadTooLargeError extends Error {
 }
 
 // @public
-export function withMcpTools<D extends {
-    readonly tools: ToolRegistry;
+export function withMcpTools<D extends ToolBearingDef & {
     readonly mcpServers?: McpServers | undefined;
 }>(def: D, options?: McpToolsOptions): Promise<McpToolSurface<D>>;
 

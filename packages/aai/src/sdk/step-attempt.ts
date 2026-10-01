@@ -61,13 +61,13 @@
  * @module
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot } from "./_boundary.ts";
 
 /**
  * The registry-wide slot. Prefixed with the package name so a second copy of
  * this SDK in the same process shares it rather than shadowing it.
  */
-const STEP_INFO_SLOT = globalSlot<StepInfoReader>("@alexkroman1/aai.stepInfoReader");
+const STEP_INFO_SLOT = globalSlot<StepInfoReader>("stepInfoReader");
 
 /**
  * Which step is running, and which attempt of it.

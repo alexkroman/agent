@@ -4,10 +4,10 @@
  * Every template declares its front door consistently at BOTH ends: the helper
  * its `agent.ts` calls, and the mount its `client.tsx` uses.
  *
- * There are two of each and the agent's own `page` field decides which. A VOICE
+ * There are two of each and the agent's own `mode` decides which. A VOICE
  * agent is declared with `agent()` and mounts with `mountClient()`, which
  * builds a `BrowserSession` — a WebSocket URL provider, an audio graph and a
- * microphone request. A WORKFLOW APP (`page: "static"`) is declared with
+ * microphone request. A WORKFLOW APP (`mode: "workflow-app"`) is declared with
  * `workflowApp()` and mounts with `mountPage()`, which builds none of them.
  *
  * **konsistent cannot express either half**, which is why both checks live
@@ -71,9 +71,9 @@ const agentPages = new Map<string, "voice" | "static">();
 beforeAll(async () => {
   await Promise.all(
     Object.entries(agentModules).map(async ([path, load]) => {
-      const mod = (await load()) as { default?: { page?: "voice" | "static" } };
+      const mod = (await load()) as { default?: { mode?: string } };
       // Absent reads as "voice" everywhere else, so it reads that way here.
-      agentPages.set(path, mod.default?.page === "static" ? "static" : "voice");
+      agentPages.set(path, mod.default?.mode === "workflow-app" ? "static" : "voice");
     }),
   );
 }, 60_000);
@@ -228,7 +228,7 @@ describe("template agent declarations", () => {
       const isStatic = pageOf(agentPath) === "static";
       const imports = importsFrom(source, "@alexkroman1/aai");
 
-      // `workflowApp()` is `agent({ …, page: "static" })` with the discriminant
+      // `workflowApp()` is `agent({ …, mode: "workflow-app" })` with the discriminant
       // set, so the long form still WORKS — but a template is a worked example,
       // and the helper is what keeps the fields a workflow app cannot use
       // (`systemPrompt`, `tools`, the provider triple) out of it by
@@ -251,7 +251,7 @@ describe("template agent declarations", () => {
  * Two of the three that do had exactly that gap, and it is invisible in a diff
  * (nothing is removed) and invisible to every other gate here.
  *
- * Scoped to voice, deliberately. A workflow app (`page: "static"`) has no
+ * Scoped to voice, deliberately. A workflow app (`mode: "workflow-app"`) has no
  * conversation to restart; what it has is a run, and clearing one is a
  * different affordance with a different name.
  */

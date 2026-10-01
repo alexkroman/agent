@@ -60,7 +60,7 @@ describe("the table is what makes the s2s refusal un-skippable", () => {
   for (const field of FIELDS) {
     test(`${field} is refused in s2s mode, quoting its own description`, () => {
       expect(() =>
-        rawConfig({ name: "Line", s2s: assemblyAIS2s(), [field]: SAMPLE[field] }),
+        rawConfig({ name: "Line", mode: "s2s", s2s: assemblyAIS2s(), [field]: SAMPLE[field] }),
       ).toThrow(`${field} has no effect in s2s mode — it is ${MODEL_TUNING_FIELDS[field]} `);
     });
 
@@ -72,7 +72,7 @@ describe("the table is what makes the s2s refusal un-skippable", () => {
       // The rule is "this runtime assembles the request", and a text agent
       // assembles its own — so text is the arm that tells the shared rule apart
       // from the pipeline-only voice knobs next door.
-      expect(rawConfig({ name: "Docs", text: true, [field]: SAMPLE[field] })[field]).toEqual(
+      expect(rawConfig({ name: "Docs", mode: "text", [field]: SAMPLE[field] })[field]).toEqual(
         SAMPLE[field],
       );
     });
@@ -81,7 +81,7 @@ describe("the table is what makes the s2s refusal un-skippable", () => {
   test("an s2s agent that sets none of them is legal", () => {
     // The refusal is per FIELD, not per interface: the loop above must not be
     // reachable for an agent that declared nothing.
-    expect(() => rawConfig({ name: "Line", s2s: assemblyAIS2s() })).not.toThrow();
+    expect(() => rawConfig({ name: "Line", mode: "s2s", s2s: assemblyAIS2s() })).not.toThrow();
   });
 
   test("`maxRetries: 0` survives — a `??` default would swallow it", () => {

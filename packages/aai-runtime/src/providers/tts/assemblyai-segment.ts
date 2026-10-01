@@ -131,7 +131,7 @@
  * `PIPELINE_FLUSH_TIMEOUT_MS`), and every byte of audio arriving before `done`.
  */
 
-import { hasMinWords } from "../../transports/pipeline-text.ts";
+import { hasMinWords } from "../../transports/pipeline/index.ts";
 
 /** The text to synthesize now, and the remainder to keep buffering. */
 export interface Segment {

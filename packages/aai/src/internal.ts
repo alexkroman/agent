@@ -36,10 +36,9 @@
  * @module internal
  */
 
-// One value on `globalThis` under a `Symbol.for` key — the rendezvous every
-// process-wide publisher uses, so the two copies of the SDK (host and agent
-// bundle) and the runtime's own slots share one spelling of it.
-export { type GlobalSlot, globalSlot } from "./sdk/_global-slot.ts";
+// The bundle/runtime boundary: every key two copies of the SDK (host and agent
+// bundle) meet on, and the one way to reach a slot by it — see `_boundary.ts`.
+export { BOUNDARY_KEYS, type GlobalSlot, globalSlot, type SlotName } from "./sdk/_boundary.ts";
 // The framework's own wire helpers — see `sdk/_wire-helpers.ts`'s module doc.
 export {
   capToolResult,
@@ -102,6 +101,8 @@ export {
   clientEventDropMessage,
   decideClientEvent,
 } from "./sdk/client-event.ts";
+// `clientToolBrand` is the one brand check — `toolEntry` (`sdk/toolset.ts`) is
+// its runtime caller; the boundary scenario reads it across the bundle seam.
 export {
   bindClientToolCall,
   type ClientToolBrand,
@@ -139,7 +140,6 @@ export {
   DEFAULT_ERROR_PHRASE,
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
-  DEFAULT_MAX_HISTORY,
   DEFAULT_MAX_STEPS,
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_BARGE_IN_WORDS,
@@ -150,6 +150,7 @@ export {
   DEFAULT_TOOL_CHOICE,
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_CLIENT_EVENT_PAYLOAD_BYTES,
+  MAX_CLIENT_MESSAGES,
   MAX_TOOL_RESULT_CHARS,
   TOOL_EXECUTION_TIMEOUT_MS,
   TOOL_RESULT_TRUNCATION_MARKER,

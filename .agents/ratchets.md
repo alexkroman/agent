@@ -251,17 +251,17 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   reads it until something is already red. Measured 2026-09-11 on the
   integration branch: **105 files sit within 10% of a cap.** Two of them were
   already over on an unpushed branch —
-  `aai-runtime/src/transports/pipeline-transport.ts` at 530 and
-  `pipeline-user-speech.ts` at 592, neither allowlisted, 122 lines over between
-  them — and the violation went unnoticed only because that branch had never
-  been pushed and so had never run a pre-push `pnpm check`. Both files sat
-  within six lines of the cap on `main` (500 and 494), so _any_ feature touching
-  them owed a split before it owed anything else. Two branches then extracted
-  from the SAME
-  file independently and produced duplicate modules, which is the shape to
-  expect when a hot file has no headroom.
+  `aai-runtime/src/transports/pipeline/transport.ts` at 530 and
+  `aai-runtime/src/transports/pipeline/speech/user-speech.ts` at 592, neither
+  allowlisted, 122 lines over between them — and the violation went unnoticed
+  only because that branch had never been pushed and so had never run a pre-push
+  `pnpm check`. Both files sat within six lines of the cap on `main` (500 and
+  494), so _any_ feature touching them owed a split before it owed anything
+  else. Two branches then extracted from the SAME file independently and
+  produced duplicate modules, which is the shape to expect when a hot file has
+  no headroom.
 
-  **And `aai-runtime/src/session-history-replay-equivalence.test.ts` is at
+  **And `aai-runtime/src/session/history-replay-equivalence.test.ts` is at
   exactly 700/700**, so the next line added there forces a split. Recorded
   rather than pre-split: the seam is not obvious and the split should belong to
   whoever next needs the room.
@@ -351,6 +351,16 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   four guide tables match what `pnpm sync:guide-index` generates from them; a
   missing marker pair fails. Hand-kept tables drift. `pnpm docs:list` prints
   the same index for a reader. Floored at 30 guides.
+- **`pnpm check:defaults`** (`scripts/check-defaults.mjs`) — every stated
+  default agrees with the `DEFAULT_*` constant that is the default. It imports
+  the constants' real values from `packages/aai/src/sdk/` and checks every
+  `@defaultValue` there (a literal against the constant the tag names, or the
+  `export const` it sits on; a NUMBER naming no constant fails), the docs
+  site's "Tuning the conversation" table in `more/voices-and-models.md`, and
+  every "(default X)" the scaffold guide states for a field (its copies are
+  held by `check:agent-guide` / `check:studio-prompt`). Written after
+  `minBargeInWords` moved 2 → 1 and all three kept saying 2. Floored at each
+  source's measured count; spec `packages/aai-gates/src/defaults-gate.test.ts`.
 - **`pnpm check:workflows`** (`scripts/check-workflows.mjs`) — actionlint and
   zizmor over `.github/workflows/`, the config agents edit most and which
   nothing read before GitHub ran it. actionlint type-checks expressions,
@@ -396,20 +406,20 @@ every block after an unclosed fence, which now throws); and `guard-invariants`
 rules 11, 12 and 13 had no corpus floor.
 
 **An EXPLICIT FILE LIST gets a floor too, and its floor is its own LENGTH.**
-`SCAN_CORPORA`'s glob entries carry a measured number with headroom, because
-the interesting failure there is partial; a hand-written list of exact paths
-has no headroom to allow — every entry must resolve, so `minFiles:
-THE_LIST.length` is the honest floor and a single renamed file fails it by
-name. `SESSION_SURFACE_PATHS` had that from the start and
-`RUNTIME_ROUTE_SOURCES` did not, which is the worse of the two failure modes
-rather than a smaller one: rule 12 does not merely SCAN those six modules, it
-`readFileSync`s each to resolve the `export const` a `server-routes.ts` entry
-references — unguarded — so one moved file threw an uncaught `ENOENT` out of
-the gate and took the OTHER 29 rules' findings with it. `check:invariants`
-reported nothing about anything, which is the one output a ratchet must never
-have. Being SPREAD into a wider pathspec list is not a floor for the entries
-either: `RUNTIME_ROUTE_SOURCES` feeds `GUEST_SURFACE_PATHSPECS`, whose 32 files
-clear a floor of 20 with five of the six missing.
+`SCAN_CORPORA`'s glob entries carry a measured number with headroom, because the
+interesting failure there is partial; a hand-written list of exact paths has no
+headroom to allow — every entry must resolve, so `minFiles: THE_LIST.length` is
+the honest floor and a single renamed file fails it by name.
+`SESSION_SURFACE_PATHS` had that from the start and `RUNTIME_ROUTE_SOURCES` did
+not, which is the worse of the two failure modes rather than a smaller one: rule
+12 does not merely SCAN those six modules, it `readFileSync`s each to resolve
+the `export const` a `aai-runtime/src/server/routes.ts` entry references —
+unguarded — so one moved file threw an uncaught `ENOENT` out of the gate and
+took the OTHER 29 rules' findings with it. `check:invariants` reported nothing
+about anything, which is the one output a ratchet must never have. Being SPREAD
+into a wider pathspec list is not a floor for the entries either:
+`RUNTIME_ROUTE_SOURCES` feeds `GUEST_SURFACE_PATHSPECS`, whose 32 files clear a
+floor of 20 with five of the six missing.
 
 The general rule, which is what the `src/` restructuring cost four times over:
 **a path or specifier written down in a gate needs an assertion that it still
