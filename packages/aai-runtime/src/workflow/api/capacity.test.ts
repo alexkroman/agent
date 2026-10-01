@@ -153,10 +153,13 @@ describe("workflowApiErrorStatus on a full disk", () => {
  * re-sending 8 MB windows it had already stored into the same fault.
  */
 describe("workflowApiErrorStatus on a transport failure", () => {
-  /** What `fetch` really throws: a bare TypeError with the code two hops down. */
+  /**
+   * What `fetch` really throws: a bare TypeError with the code two hops down,
+   * on a libuv error that names its `syscall` (measured on Node 24: `read`).
+   */
   const fetchFailed = new TypeError("fetch failed", {
     cause: new Error("other side closed", {
-      cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+      cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET", syscall: "read" }),
     }),
   });
 
@@ -216,11 +219,13 @@ describe("workflowApiErrorStatus on a transport failure", () => {
   });
 
   test("a CALLER hanging up is still the caller, not a transport failure", () => {
-    // `isCallerGone` reads the TOP-level value and is checked first; this reads a
-    // wrapped cause. An ECONNRESET on the inbound socket must not become a 503
-    // written to a socket that has closed.
+    // `isCallerGone` is checked first, and tells the two resets apart by the
+    // innermost cause's `syscall`: Node's inbound `aborted` carries none. An
+    // ECONNRESET on the inbound socket must not become a 503 written to a socket
+    // that has closed.
     const aborted = Object.assign(new Error("aborted"), { code: "ECONNRESET" });
     expect(isCallerGone(aborted)).toBe(true);
+    expect(isCallerGone(new Error("stream failed", { cause: aborted }))).toBe(true);
     expect(isCallerGone(fetchFailed)).toBe(false);
     // The one that matters, and the A/B that found it: `claimUnder` runs the
     // status table BEFORE its own caller-gone branch, so an unguarded entry
