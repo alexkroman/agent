@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { isBlankSecret, parseBearer } from "./bearer.ts";
+import { constantTimeEquals, isBlankSecret, parseBearer } from "./bearer.ts";
 
 /**
  * The scheme match, the credential's case, and the extra-space case.
@@ -90,5 +90,15 @@ describe("isBlankSecret", () => {
     // workflow API that default is OPEN. Widening past "no secret at all" would
     // let a typo open a surface instead of closing it.
     expect(isBlankSecret(" x ")).toBe(false);
+  });
+});
+
+describe("constantTimeEquals", () => {
+  test("equal strings match, and a length mismatch answers false rather than throwing", () => {
+    expect(constantTimeEquals("s3cret", "s3cret")).toBe(true);
+    expect(constantTimeEquals("s3cret", "s3creT")).toBe(false);
+    expect(constantTimeEquals("s3cret", "s3cret-longer")).toBe(false);
+    // Compared as UTF-8 bytes: one string length can be two byte lengths.
+    expect(constantTimeEquals("é", "e")).toBe(false);
   });
 });

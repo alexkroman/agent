@@ -14,7 +14,8 @@
  * @module session-ticket
  */
 
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
+import { constantTimeEquals, isBlankSecret } from "@alexkroman1/aai/host-internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 
 /** Ticket lifetime when {@link SessionTokenInput.ttlSeconds} is omitted. */
@@ -65,7 +66,7 @@ function sign(body: string, secret: string): string {
 }
 
 export function requireSecret(secret: string): void {
-  if (secret.trim() === "") throw new Error("A session ticket secret must not be blank");
+  if (isBlankSecret(secret)) throw new Error("A session ticket secret must not be blank");
 }
 
 /**
@@ -156,11 +157,7 @@ function checkTicket(
   const dot = token.indexOf(".");
   if (dot <= 0 || dot !== token.lastIndexOf(".")) return undefined;
   const body = token.slice(0, dot);
-  const presented = Buffer.from(token.slice(dot + 1));
-  const expected = Buffer.from(sign(body, secret));
-  if (presented.length !== expected.length || !timingSafeEqual(presented, expected)) {
-    return undefined;
-  }
+  if (!constantTimeEquals(token.slice(dot + 1), sign(body, secret))) return undefined;
   const payload = parsePayload(body);
   if (payload === undefined) return undefined;
   const now = Math.floor((nowMs ?? Date.now()) / 1000);

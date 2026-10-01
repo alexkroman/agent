@@ -22,6 +22,7 @@
  * @module
  */
 
+import { isBlankSecret } from "@alexkroman1/aai/host-internal";
 import type { SessionAuth, SessionIdentity } from "@alexkroman1/aai-runtime/auth";
 import type { GuestHost } from "aai-guest-core/types";
 
@@ -44,7 +45,7 @@ export function guestTicketVerifier(
   const { platformSessionSecret, SESSION_SECRET_ENV, verifySessionToken } = host;
   const keys = [platformSessionSecret(guestToken)];
   const authorSecret = agentEnv[SESSION_SECRET_ENV];
-  if (authorSecret !== undefined && authorSecret.trim() !== "") keys.push(authorSecret);
+  if (authorSecret !== undefined && !isBlankSecret(authorSecret)) keys.push(authorSecret);
   return (token) => {
     for (const secret of keys) {
       const identity = verifySessionToken(token, { secret });

@@ -19,6 +19,8 @@
  * @module bearer
  */
 
+import { timingSafeEqual } from "node:crypto";
+
 /**
  * The `auth-scheme` this parses, lower-cased for comparison.
  *
@@ -91,4 +93,18 @@ export function parseBearer(header: string | null | undefined): string {
  */
 export function isBlankSecret(secret: string | null | undefined): boolean {
   return secret === null || secret === undefined || secret.trim() === "";
+}
+
+/**
+ * True when `a` and `b` are equal, without a data-dependent early exit — the
+ * one constant-time string comparison every host-side gate shares.
+ *
+ * `node:crypto`'s `timingSafeEqual` THROWS on a length mismatch, so the lengths
+ * are compared first. That leaks only the length of a value the CALLER chose,
+ * never anything about the expected one.
+ */
+export function constantTimeEquals(a: string, b: string): boolean {
+  const left = Buffer.from(a, "utf-8");
+  const right = Buffer.from(b, "utf-8");
+  return left.length === right.length && timingSafeEqual(left, right);
 }
