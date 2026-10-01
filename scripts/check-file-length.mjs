@@ -55,15 +55,19 @@ import { readJson, repoRoot } from "./_fs.mjs";
 
 const ROOT = repoRoot(import.meta.url);
 
-// Caps. Tests get more headroom — exhaustive cases legitimately run long.
-const SOURCE_MAX = 500;
-const TEST_MAX = 700;
+// Caps. They catch OUTLIERS, not ordinary growth: at 500/700 the cap forced
+// splits along whatever seam was nearest, and the coupling it stood in for is
+// now checked directly — a module directory is entered through its `index.ts`
+// only (guard-invariants rule 37, konsistent `module-dir-entered-through-index`).
+// Tests get more headroom — exhaustive cases legitimately run long.
+const SOURCE_MAX = 900;
+const TEST_MAX = 1200;
 
 /**
  * A file at or past this fraction of its cap is reported as approaching it.
- * 0.9 leaves 50 lines of warning on a source file and 70 on a test — roughly
- * one function's worth, which is the scale at which "split this next" is still
- * a cheap decision.
+ * 0.9 leaves 90 lines of warning on a source file and 120 on a test — a
+ * function or two, the scale at which "split this next" is still a cheap
+ * decision.
  */
 const WARN_RATIO = 0.9;
 

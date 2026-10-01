@@ -189,8 +189,8 @@ importers:
         specifier: ^6.34.0
         version: 6.34.0
       konsistent:
-        specifier: 1.0.0-beta.4
-        version: 1.0.0-beta.4
+        specifier: 1.0.0-beta.11
+        version: 1.0.0-beta.11
       lefthook:
         specifier: ^2.1.12
         version: 2.1.12
@@ -2349,8 +2349,8 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@konsistent/convention@1.0.0-beta.4':
-    resolution: {integrity: sha512-Wv+ISxerqvw2NYoyjuPCOsxrai2p4/FguO+KD6qfXYXW3vNLz2tdnADFET81chiNIvWjwa0/rS5zFc/bRf5FFg==}
+  '@konsistent/convention@1.0.0-beta.11':
+    resolution: {integrity: sha512-lONY189+kpxSkZi2/022gc3QKghXwvWikCKQfmgWD2fh9fnIIWN/M/iVGCwg2OcdesYOc8ZhdRI7fDIt6gKQOw==}
     engines: {node: '>=22.11.0'}
     hasBin: true
     peerDependencies:
@@ -5650,8 +5650,8 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
-  konsistent@1.0.0-beta.4:
-    resolution: {integrity: sha512-O8t9pBITO0WspmOd7XFl4OcadmKXmoY2ZE4WrHrRk7odSra5kAXEATeyGl4d9dwjwS/GrmXtpsf1PRY6vRj7Sg==}
+  konsistent@1.0.0-beta.11:
+    resolution: {integrity: sha512-INQnoeQMFQWjAHnqrZRYuovq6sjd2F/SSmqvlaSJqv0vnntUOFLiu6RfyrA/kmNLVXL8T1ksQ/sNcOGlwcgFiw==}
     engines: {node: '>=22.11.0'}
     hasBin: true
 
@@ -9266,7 +9266,7 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@konsistent/convention@1.0.0-beta.4(zod@4.5.4)':
+  '@konsistent/convention@1.0.0-beta.11(zod@4.5.4)':
     dependencies:
       citty: 0.2.2
       jiti: 2.7.0
@@ -12494,11 +12494,12 @@ snapshots:
       yaml: 2.9.0
       zod: 4.5.4
 
-  konsistent@1.0.0-beta.4:
+  konsistent@1.0.0-beta.11:
     dependencies:
-      '@konsistent/convention': 1.0.0-beta.4(zod@4.5.4)
+      '@konsistent/convention': 1.0.0-beta.11(zod@4.5.4)
       citty: 0.2.2
       picocolors: 1.1.1
+      picomatch: 4.0.7
       resolve.exports: 2.0.3
       tinyglobby: 0.2.17
       typescript: 5.9.3

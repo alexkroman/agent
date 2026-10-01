@@ -40,6 +40,7 @@ type MustBlock = {
   name?: string;
   if?: Record<string, unknown>;
   for?: { files: string | string[] };
+  excludeFiles?: string[];
   must?: Record<string, unknown>;
   mustNot?: Record<string, unknown>;
 };
@@ -226,6 +227,66 @@ const NON_PACKAGE_BOUNDARIES: readonly string[] = [
   "template-authoring-boundary",
 ];
 
+/** The packages whose `src/` holds module directories, and the convention for each. */
+const MODULE_DIR_CONVENTIONS: ReadonlyArray<readonly [root: string, name: string]> = [
+  ["packages/aai-ui/src", "ui-module-dir-entered-through-index"],
+  ["packages/aai-runtime/src", "runtime-module-dir-entered-through-index"],
+];
+
+/** `path.posix.relative` for two root-relative directories (`""` is the root). */
+const relativeDir = (from: string, to: string): string => {
+  const a = from === "" ? [] : from.split("/");
+  const b = to.split("/");
+  let common = 0;
+  while (common < a.length && common < b.length && a[common] === b[common]) common++;
+  const up = a.length - common;
+  const rest = b.slice(common).join("/");
+  return up === 0 ? `./${rest}` : `${"../".repeat(up)}${rest}`;
+};
+
+/**
+ * The blocks `<root>`'s module-directory convention must hold: one per
+ * directory with an `index.ts`, forbidding every relative spelling of it from
+ * every importer directory except the index itself. A nested module directory
+ * is checked only against importers inside the module that encloses it — from
+ * further out, the enclosing directory's block already forbids it.
+ */
+const expectedModuleDirBlocks = (root: string): MustBlock[] => {
+  const files = allPaths
+    .filter((p) => p.startsWith(`${root}/`) && /\.tsx?$/.test(p))
+    .map((p) => p.slice(root.length + 1));
+  const dirOf = (file: string) => (file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "");
+  const dirs = [...new Set(files.map(dirOf))];
+  const modules = files
+    .filter((f) => f.endsWith("/index.ts"))
+    .map(dirOf)
+    .sort(byCodeUnit);
+  const within = (dir: string, mod: string) => dir === mod || dir.startsWith(`${mod}/`);
+  return modules.map((mod) => {
+    const enclosing = modules
+      .filter((other) => other !== mod && mod.startsWith(`${other}/`))
+      .sort((a, b) => b.length - a.length)[0];
+    const spellings = [
+      ...new Set(
+        dirs
+          .filter((d) => !within(d, mod) && (enclosing === undefined || within(d, enclosing)))
+          .map((d) => relativeDir(d, mod)),
+      ),
+    ].sort(byCodeUnit);
+    const selectors = spellings.flatMap((s) => [`${s}/*`, `!${s}/index.ts`]);
+    return {
+      name: mod.replaceAll("/", "-"),
+      for: {
+        files: enclosing
+          ? [`${enclosing}/**/*.ts`, `${enclosing}/**/*.tsx`]
+          : ["**/*.ts", "**/*.tsx"],
+      },
+      excludeFiles: [`${mod}/**`],
+      mustNot: { importValuesFrom: selectors, importTypesFrom: selectors },
+    };
+  });
+};
+
 /**
  * A convention's predicate blocks, normalized to the array form.
  *
@@ -374,6 +435,29 @@ describe("konsistent.json", () => {
     }
   });
 
+  test("no convention uses a deprecated predicate name", () => {
+    // konsistent only WARNS on these, and the warnings scroll past a passing
+    // run. The old `importFrom` also matched type and value imports alike, so
+    // its replacement in a `mustNot` is the pair `importValuesFrom` +
+    // `importTypesFrom`, not one of them.
+    const deprecated = [
+      "export",
+      "import",
+      "importFrom",
+      "importFromCurrentDir",
+      "importFromParents",
+      "importFromExternals",
+    ];
+    for (const convention of config.conventions) {
+      for (const block of blocksOf(convention)) {
+        const used = Object.keys({ ...block.must, ...block.mustNot }).filter((key) =>
+          deprecated.includes(key),
+        );
+        expect(used, `${convention.name}${block.name ? ` / ${block.name}` : ""}`).toEqual([]);
+      }
+    }
+  });
+
   test("every paths pattern points at a directory that exists", () => {
     // This is the typo that makes konsistent go quiet: `providers/llm` for
     // `providers/llm/`, `sdk/provider/` for `sdk/providers/`. The rule matches
@@ -511,11 +595,17 @@ describe("konsistent.json", () => {
     for (const [name, owner] of Object.entries(BOUNDARY_OWNERS)) {
       const convention = config.conventions.find((entry) => entry.name === name);
       expect(convention, `${name} is in BOUNDARY_OWNERS but not in konsistent.json`).toBeDefined();
-      const denied = convention?.mustNot?.importFrom;
+      // konsistent splits import sources by kind, so a boundary forbids each:
+      // a type-only import still makes the package a typecheck dependency.
+      const denied = convention?.mustNot?.importValuesFrom;
       expect(
         Array.isArray(denied),
-        `${name} declares no mustNot.importFrom, so it forbids nothing`,
+        `${name} declares no mustNot.importValuesFrom, so it forbids nothing`,
       ).toBe(true);
+      expect(
+        convention?.mustNot?.importTypesFrom,
+        `${name}: mustNot.importTypesFrom must deny the same list as importValuesFrom`,
+      ).toEqual(denied);
       const denySet = new Set(Array.isArray(denied) ? (denied as string[]) : []);
       for (const other of packageNames) {
         if (other === owner.pkg || other === SDK_PACKAGE || owner.allows.includes(other)) continue;
@@ -524,6 +614,24 @@ describe("konsistent.json", () => {
           `${name} does not forbid "${other}" — ${owner.pkg} may import it and nothing reports it`,
         ).toBe(true);
       }
+    }
+  });
+
+  test("every module directory is entered through its index, at every importer depth", () => {
+    // konsistent matches specifiers as TEXT, so the rule is one block per
+    // module directory listing that directory's relative spelling from each
+    // importer directory. A new module directory, or a file at a new depth,
+    // would leave a spelling unlisted and every import through it unchecked —
+    // so the expected blocks are derived from the tree, the way
+    // guard-invariants rule 37 derives its directory list.
+    for (const [root, name] of MODULE_DIR_CONVENTIONS) {
+      const convention = config.conventions.find((entry) => entry.name === name);
+      expect(convention, `${name} is not in konsistent.json`).toBeDefined();
+      expect(convention?.paths).toBe(root);
+      const actual = Array.isArray(convention?.must) ? convention.must : [];
+      const expected = expectedModuleDirBlocks(root);
+      expect(expected.length, `no module directory under ${root}`).toBeGreaterThan(0);
+      expect(actual, `${name}: regenerate the blocks from the tree`).toEqual(expected);
     }
   });
 

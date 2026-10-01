@@ -28,8 +28,10 @@ upload id claiming, pause gate, recall and report coalescing).
 
 - **A sibling of `index.ts` is private** — "not re-exported there" — and
   guard-invariants rule 37 fails an import from outside the directory that
-  names one (specs and test helpers included). A directory opts in by holding
-  an `index.ts`, so a new one is covered on arrival.
+  names one (specs and test helpers included); konsistent
+  `ui-module-dir-entered-through-index` states the same rule per directory.
+  A directory opts in by holding an `index.ts`, so a new one is covered on
+  arrival.
 - **Inside a directory, names carry no prefix and no underscore**:
   `session/dial.ts`, not `session-core-dial.ts`; privacy is the index's job.
 - **`index.ts` is re-export only** (konsistent
