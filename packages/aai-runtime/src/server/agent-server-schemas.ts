@@ -94,7 +94,7 @@ const applied = new Map<string, Promise<void>>();
  */
 export function ensureOwnedSchemas(url: string, logger: Logger): Promise<void> {
   const inFlight = applied.get(url);
-  if (inFlight) return inFlight;
+  if (inFlight !== undefined) return inFlight;
   const applying = (async () => {
     try {
       await ensureSessionStateSchema({ url, logger });

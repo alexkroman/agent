@@ -157,8 +157,8 @@ describe("workspace siblings of the bundled server", () => {
 });
 
 /**
- * The config must keep using `deps.alwaysBundle`, and `external` must keep
- * naming the packages that cannot survive being inlined.
+ * The config must keep using `deps.alwaysBundle`, and `deps.neverBundle` must
+ * keep naming the packages that cannot survive being inlined.
  *
  * Value assertions over the config's own default export, because the checks
  * above are blind to both. They hold `BUNDLED_WORKSPACE_DEPS` to the specifiers
@@ -213,7 +213,7 @@ describe("the bundling posture", () => {
    * should be, and bundling it is the only reason it was ever reachable there.
    */
   test("keeps the packages that resolve files by their own location whole", () => {
-    const external = entry?.external as string[] | undefined;
+    const external = entry?.deps?.neverBundle as string[] | undefined;
     expect(external).toContain("modal");
     expect(external).toContain("microsandbox");
     // An external specifier is resolved at RUNTIME from `dist/`, so anything

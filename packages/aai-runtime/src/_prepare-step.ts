@@ -161,6 +161,67 @@ export function resetToolChoiceAfterFirstStep(
   return ({ stepNumber }) => (stepNumber === 0 ? undefined : { toolChoice: "auto" });
 }
 
+/** The slice of a finished step {@link createPinRelease} reads. */
+interface PinStep {
+  readonly toolCalls: readonly { readonly toolName: string }[];
+}
+
+/**
+ * Let a dialog state's or a persona's DEMANDING `toolChoice` go once a step has
+ * obeyed it, for the rest of the reply.
+ *
+ * Those two scopes are re-read on every step, and the AI SDK enforces a demand
+ * on every step it is sent with: a step under `{ type: "tool" }` or
+ * `"required"` that answers in text fails with `ToolChoiceViolationError`
+ * rather than being spoken. So a pin left standing after its tool has run
+ * leaves a compliant model no move but to call the tool again, every step,
+ * until {@link forceFinalAnswer} spends the reserved step — and a model that
+ * answers instead fails the reply. What a pin means is "do not speak before
+ * calling this", which one obeyed step satisfies.
+ *
+ * Returns the pin to send for this step, or `undefined` — no key, so the
+ * agent's own `toolChoice` (and its reset) applies — once a step that ran under
+ * the SAME pin called what it demanded. Only a step that ran under the pin
+ * counts: a tool call that moved the dialog INTO the pinning state ran under
+ * the previous state's knobs, so it cannot satisfy the new state's
+ * `"required"`. A different pin later in the reply (the dialog moved on) is
+ * enforced afresh. One instance per preparer; its state is one reply's,
+ * cleared at step 0 (speculation is off whenever these preparers exist, so a
+ * session never runs two of their replies at once).
+ *
+ * @internal
+ */
+export function createPinRelease(): (
+  pin: ToolChoice | undefined,
+  options: { readonly stepNumber: number; readonly steps: readonly PinStep[] },
+) => ToolChoice | undefined {
+  /** The demanding pin the previous step was SENT with, as a key. */
+  let sent: string | undefined;
+  /** The pins this reply has already seen obeyed. */
+  let obeyed = new Set<string>();
+  return (pin, { stepNumber, steps }) => {
+    if (stepNumber === 0) {
+      sent = undefined;
+      obeyed = new Set();
+    }
+    if (pin === undefined || pin === "auto" || pin === "none") {
+      sent = undefined;
+      return pin;
+    }
+    const key = typeof pin === "string" ? pin : `tool:${pin.toolName}`;
+    const previous = steps.at(-1)?.toolCalls ?? [];
+    const satisfied =
+      pin === "required" ? previous.length > 0 : previous.some((c) => c.toolName === pin.toolName);
+    if (sent === key && satisfied) obeyed.add(key);
+    if (obeyed.has(key)) {
+      sent = undefined;
+      return;
+    }
+    sent = key;
+    return pin;
+  };
+}
+
 /**
  * Spend the step after the tool budget on an answer the caller can hear.
  *

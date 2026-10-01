@@ -19,8 +19,10 @@ Each directory below is entered through its `index.ts` alone, and a module
 not re-exported there is private — so there is no `_` prefix inside these
 directories (test scaffolding keeps one: the coverage and lint globs key on
 it). `guard-invariants` rule 37 refuses an import from outside that names any
-other file, specs included; konsistent's `module-dir-index-is-re-export-only`
-keeps each index a list of named re-exports.
+other file, specs included (konsistent's
+`runtime-module-dir-entered-through-index` states it per directory);
+`module-dir-index-is-re-export-only` keeps each index a list of named
+re-exports.
 
 | Directory              | Holds                                                                    | Guide                                                   |
 | ---------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------- |

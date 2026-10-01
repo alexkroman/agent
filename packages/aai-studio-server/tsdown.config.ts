@@ -66,8 +66,7 @@ export default defineConfig([
     platform: "node",
     target: "node22",
     outDir: "dist",
-    external: EXTERNAL_LOCATION_DEPENDENT,
-    deps: { alwaysBundle: BUNDLED_WORKSPACE_DEPS },
+    deps: { alwaysBundle: BUNDLED_WORKSPACE_DEPS, neverBundle: EXTERNAL_LOCATION_DEPENDENT },
   },
 ]);
 

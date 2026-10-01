@@ -386,14 +386,18 @@ aai-studio-server`) and reads turbo's task log
   workspace's devDependency.
 
 - **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
-  source files at 500 CODE lines and test files at 700: blank lines and lines
+  source files at 900 CODE lines and test files at 1200: blank lines and lines
   wholly inside comments do not count (comment ranges from `oxc-parser`), so
-  documentation never forces a split. Files that already exceed the cap are
-  grandfathered in `scripts/file-length-allowlist.json` (empty today), which
-  records each file's ceiling; a grandfathered file may not grow past it, and
-  `pnpm file-length:update` only ever lowers or removes entries. A ceiling
-  above the file's count WARNS. New files must come in under the cap.
-  Templates under `packages/aai-templates/templates/` are exempt.
+  documentation never forces a split. The caps catch OUTLIERS, not ordinary
+  growth: the coupling they stood in for is checked directly — a module
+  directory (one holding an `index.ts`) is entered through that index only
+  (guard-invariants rule 37, and konsistent's `module-dir-entered-through-index`
+  per directory). Files that already exceed the cap are grandfathered in
+  `scripts/file-length-allowlist.json`, which records each file's ceiling; a
+  grandfathered file may not grow past it, and `pnpm file-length:update` only
+  ever lowers or removes entries. A ceiling above the file's count WARNS. New
+  files must come in under the cap. Templates under
+  `packages/aai-templates/templates/` are exempt.
 
   **Its `scripts/` pathspec measured nothing at the top level for as long as it
   existed**, and the trap generalizes to every git pathspec in the repo. A
@@ -409,12 +413,11 @@ aai-studio-server`) and reads turbo's task log
   the miss survived review. Verify any pathspec with `git ls-files "<glob>"`
   rather than reading it; `file-length-gate.test.ts` pins both shapes.
 
-  **Read the HEADROOM report before starting a feature in a hot file.** The
-  gate prints the files closest to their ceiling (`--top N`, `--all`, `--json`)
-  and the pre-commit hook prints it for staged files, because it is advisory and
-  nobody reads it once something is already red. A hot file with no headroom is
-  where two branches extract the same module independently and produce
-  duplicates; plan the split as its own commit before the feature that forces it.
+  **The gate prints a HEADROOM report** (the files closest to their ceiling,
+  `--top N`/`--all`/`--json`) on every run and for staged files in pre-commit.
+  It is advisory; read it before starting a feature in a file near its cap, so
+  the split lands as its own commit rather than inside the feature. Two branches
+  extracting from the same hot file independently produce duplicate modules.
 
 - **`pnpm check:test-assertions`** (`scripts/check-test-assertions.mjs`) —
   fails on any `test()`/`it()` body containing no `expect` / `expectTypeOf` /
