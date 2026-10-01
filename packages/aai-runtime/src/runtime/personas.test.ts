@@ -6,7 +6,7 @@ import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { makeConfig, makeLogger, makeSessionContext } from "../_test-utils.ts";
-import { OPENAI_REALTIME_CAPABILITIES } from "../transports/capabilities.ts";
+import { OPENAI_REALTIME_CAPABILITIES, PIPELINE_CAPABILITIES } from "../transports/capabilities.ts";
 import type { Transport } from "../transports/types.ts";
 import { openSessionDialogs } from "./dialogs.ts";
 import { openSessionPersonas, PERSONA_SUFFIX_KEY } from "./personas.ts";
@@ -41,10 +41,13 @@ const proseOnly = roster([
   { ...billingWithoutKnobs, name: "back" },
 ]);
 
-function makeTransport(): { transport: Transport; refreshes: () => number } {
+function makeTransport(capabilities = OPENAI_REALTIME_CAPABILITIES): {
+  transport: Transport;
+  refreshes: () => number;
+} {
   const refreshSystemPrompt = vi.fn();
   const transport: Transport = {
-    capabilities: OPENAI_REALTIME_CAPABILITIES,
+    capabilities,
     start: async () => undefined,
     stop: async () => undefined,
     sendUserAudio: () => undefined,
@@ -70,8 +73,12 @@ const configured = () =>
 const toolDone = () => event({ type: "tool.completed", toolCallId: "call_1", result: "{}" });
 const heard = () => event({ type: "userTranscript.committed", text: "hello" });
 
-function setup(roster: Parameters<typeof openSessionPersonas>[0], slots?: SlotStore) {
-  const { transport, refreshes } = makeTransport();
+function setup(
+  roster: Parameters<typeof openSessionPersonas>[0],
+  slots?: SlotStore,
+  capabilities = OPENAI_REALTIME_CAPABILITIES,
+) {
+  const { transport, refreshes } = makeTransport(capabilities);
   const logger = makeLogger();
   const store = slots ?? createDetachedSlotStore();
   const prompts = createSystemPromptResolver({
@@ -177,6 +184,15 @@ describe("the push to a transport holding its prompt as session state", () => {
     expect(refreshes()).toBe(1);
     bound.observe(toolDone());
     expect(refreshes()).toBe(1);
+  });
+
+  test("a transport that resolves the prompt per request is never pushed to", () => {
+    const desk = roster([triage, billing]);
+    const { bound, slots, refreshes } = setup(desk, undefined, PIPELINE_CAPABILITIES);
+    bound.observe(configured());
+    desk.handoff({ slots, sessionId: SID }, billing);
+    bound.observe(toolDone());
+    expect(refreshes()).toBe(0);
   });
 
   test("a stale slot — a persona the roster no longer has — answers as the entry persona and warns", () => {
