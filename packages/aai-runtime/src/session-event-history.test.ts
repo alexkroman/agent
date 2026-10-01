@@ -3,7 +3,6 @@
 import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { MAX_CLIENT_MESSAGES } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
-import { estimateConversationTokens } from "./_history-retention.ts";
 import {
   clientHistoryFrame,
   historyFromEvents,
@@ -15,6 +14,7 @@ import {
   SEEDED_TOOL_RESULT_CHARS,
 } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
+import { estimateConversationTokens } from "./transports/pipeline/history/retention.ts";
 
 /** A small retention bound, so a spec reaches it in tens of events. */
 const RETAIN = 400;
@@ -94,7 +94,7 @@ describe("messagesFromEvents", () => {
     // The defect this field exists for. `errorPhrase` and `startFailurePhrase`
     // are committed transcripts — deliberately, so the caption matches what the
     // caller heard — and both are kept out of the LIVE record for a measured
-    // reason (`pipeline-turn-outcome.ts`: teaching the model that its own replies
+    // reason (`transports/pipeline/turn-outcome.ts`: teaching the model that its own replies
     // open with apologies is how it starts producing them unprompted). Reading
     // them here put them back on the first reconnect, via `seedHistory`, and
     // every reconnect re-seeded.

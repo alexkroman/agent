@@ -23,9 +23,13 @@ loads them when you work there:
   pools, reply metrics.
 - [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — capabilities, epochs,
   and the frozen compatibility templates.
-- [`src/transports/CLAUDE.md`](src/transports/CLAUDE.md) — pipeline/S2S
-  behaviour: `speech_started`, per-turn prompt resolution, heard history,
-  context budget, reset, push-to-talk.
+- [`src/transports/CLAUDE.md`](src/transports/CLAUDE.md) — the transport
+  boundary, the capability table, per-turn prompt resolution.
+- [`src/transports/pipeline/CLAUDE.md`](src/transports/pipeline/CLAUDE.md) —
+  the pipeline's stage directories and their import direction, heard history,
+  reset, `speakLine`; its `speech/`, `history/` and `reply/` guides hold
+  `speech_started` and push-to-talk, the context budget and rollback, and
+  code-initiated lines.
 - [`src/workflow/CLAUDE.md`](src/workflow/CLAUDE.md) — journal selection,
   webhook URLs, the two base URLs, run notify, the typed-JSON codec.
 - [`src/workflow/api/CLAUDE.md`](src/workflow/api/CLAUDE.md) — HTTP status

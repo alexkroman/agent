@@ -96,7 +96,7 @@ describe("errorMessage", () => {
  * The failed `fetch` and the `AggregateError` below are the genuine articles.
  * The HTTP failure is a field-for-field stand-in for the AI SDK's
  * `APICallError`, because `ai` is a dependency of `aai-runtime` and not of this
- * package — `pipeline-llm-stream.test.ts` builds the same cases with the real
+ * package — `aai-runtime/src/transports/pipeline/llm/stream.test.ts` builds the same cases with the real
  * constructor, which is what keeps this stand-in honest. Detection here is
  * structural for the same reason (see {@link errorMessage}), so the stand-in is
  * exactly what the implementation sees.
@@ -302,7 +302,7 @@ describe("normalizeSpeechText", () => {
   });
 
   // THE invariant. The heard cursor indexes a reply's TTS text by
-  // `text.length` (pipeline-heard.ts), and that index decides what history
+  // `text.length` (aai-runtime/src/transports/pipeline/heard/tracker.ts), and that index decides what history
   // records as heard and where a resume picks up. A substitution that changed
   // length would silently shift both.
   test.each(["You’re “done”", "‘’‚‛ʼ′“”„″", "no typography here"])(

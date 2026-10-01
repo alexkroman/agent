@@ -50,7 +50,7 @@
  * `session-core.ts`'s live event dispatch all went through their own copy of
  * "append on a committed transcript, in this role", which is how the two rules
  * governing a RECOVERY phrase came to compose into the outcome both forbid.
- * `pipeline-turn-outcome.ts`'s table says `errorPhrase` and
+ * `transports/pipeline/turn-outcome.ts`'s table says `errorPhrase` and
  * `startFailurePhrase` reach `history / ctx.messages: never`, and its transcript
  * row says FINAL — so the phrase was committed for the caption's sake, kept out
  * of the live pipeline history by the transport, and then appended anyway by
@@ -65,12 +65,12 @@ import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { MAX_CLIENT_MESSAGES } from "@alexkroman1/aai/internal";
 import type { RestoredToolCall } from "@alexkroman1/aai/protocol";
 import type { ModelMessage } from "ai";
+import { toolResultMessage } from "./_tool-result-message.ts";
 import {
   estimateConversationTokens,
   evictBeyondRetention,
   HISTORY_RETAIN_TOKENS,
-} from "./_history-retention.ts";
-import { toolResultMessage } from "./_tool-result-message.ts";
+} from "./transports/pipeline/index.ts";
 
 /**
  * The conversation message one event contributes, or `undefined` for an event
@@ -119,7 +119,7 @@ export function messagesFromEvents(
 export interface HistoryFromEventsOptions {
   /**
    * Estimated tokens of conversation retained — the live record's own memory
-   * bound (`_history-retention.ts`), default `HISTORY_RETAIN_TOKENS`. A spec
+   * bound (`transports/pipeline/history/retention.ts`), default `HISTORY_RETAIN_TOKENS`. A spec
    * lowers it, as it lowers the live one, to reach the bound.
    */
   retainTokens?: number;
@@ -223,7 +223,7 @@ export function historyFromEvents(
         break;
     }
   }
-  // Retained at the FRONT exactly as the live record is (`_history-retention.ts`,
+  // Retained at the FRONT exactly as the live record is (`transports/pipeline/history/retention.ts`,
   // in TOKENS): a resumed session must not come back holding more than it could
   // have kept without dropping. The full log stays the source of truth; this is
   // only what a session REMEMBERS of it.
@@ -385,7 +385,7 @@ function seededCallId(callId: string, ordinal: number, taken: Set<string>): stri
  * ```
  *
  * That is the shape `streamText`'s own step messages have
- * (`transports/pipeline-history.ts`, `pushLlm`), so a resumed or reloaded
+ * (`transports/pipeline/history/history.ts`, `pushLlm`), so a resumed or reloaded
  * conversation reads to the model exactly as it would have had the session
  * never dropped. `ctx.messages` is untouched by this: it keeps the
  * `role: "tool"` messages, which is what a tool reads.

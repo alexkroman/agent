@@ -188,7 +188,11 @@ Directory guides govern one area of a package and load when you work in it:
 | `packages/aai-runtime/src/contracts/CLAUDE.md` | aai-runtime's capabilities and epochs: how a signature change is classified, when a capability splits, and the frozen compatibility templates |
 | `packages/aai-runtime/src/integration/CLAUDE.md` | The integration-tier property tests: the S2S model-based fuzz, the pipeline fuzz, and the history-rollback oracle |
 | `packages/aai-runtime/src/telephony/CLAUDE.md` | Where the phone-call design lives, and the one telephony remainder in this package |
-| `packages/aai-runtime/src/transports/CLAUDE.md` | Pipeline and S2S transport behaviour: `speech_started`, per-turn prompt resolution, heard-history, the context budget, rollback at the cap, reset, push-to-talk |
+| `packages/aai-runtime/src/transports/CLAUDE.md` | Transport-wide rules: the `Transport` boundary, the capability table, when each transport resolves the system prompt, and run notify |
+| `packages/aai-runtime/src/transports/pipeline/CLAUDE.md` | The pipeline transport's stage map and the one-way dependency direction between stages, the heard-history record, reset re-greeting, and `speakLine` |
+| `packages/aai-runtime/src/transports/pipeline/history/CLAUDE.md` | Pipeline history: token budgets for the request and the record, the preparer pipeline, and a rollback undoing its push's eviction |
+| `packages/aai-runtime/src/transports/pipeline/reply/CLAUDE.md` | Pipeline replies: every code-initiated line states `{ record, interruptible }` and picks one of three placements |
+| `packages/aai-runtime/src/transports/pipeline/speech/CLAUDE.md` | The caller's side of the pipeline: `speech_started` as "the agent is yielding", speculation's prompt check, push-to-talk and typed turns |
 | `packages/aai-runtime/src/workflow/CLAUDE.md` | aai-runtime's durable-workflow half: journal selection, webhook URLs, the public vs platform base URL, and the typed-JSON codec's escape |
 | `packages/aai-runtime/src/workflow/api/CLAUDE.md` | The workflow HTTP API's error-to-status classification and its upload-id boundary |
 | `packages/aai-server/src/guest/CLAUDE.md` | The platform's view of a guest: the one platform→guest forward and its header policy, route exposure, the bearer gate, and exec-env/boot wiring. |

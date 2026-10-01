@@ -3,7 +3,7 @@
  * Which of a dialog's five per-state voice knobs this runtime can actually
  * apply — the DECLARATION check, and the translation of the three that survive.
  *
- * `pipeline-dialog-knobs.ts` carries the table of where each knob is fixed and
+ * `transports/pipeline/knobs/dialog.ts` carries the table of where each knob is fixed and
  * why two of them cannot vary within a session. This module is the half an
  * AUTHOR meets: it walks every declared dialog's machine once, warns for each
  * state that declares a knob nothing applies, and answers whether any state
@@ -31,7 +31,7 @@ import type { AnyDialog, SlotHolder } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { AnyStateMachine } from "xstate";
 import type { Logger } from "./runtime-config.ts";
-import { type DialogTurnKnobs, interruptionKnobs } from "./transports/pipeline-dialog-knobs.ts";
+import { type DialogTurnKnobs, interruptionKnobs } from "./transports/pipeline/index.ts";
 
 /**
  * The knobs a declared state may carry that nothing in this runtime applies.

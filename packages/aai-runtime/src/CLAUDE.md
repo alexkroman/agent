@@ -197,7 +197,7 @@ PER TURN".
 it, per-state deadlines are armed, the active instruction becomes the
 `"dialogs"` suffix, and three of five voice knobs apply (the other two are
 refused with a warning naming the state). `runtime-dialog-knobs.ts` decides
-which; `transports/pipeline-dialog-knobs.ts` applies them. Everything else is
+which; `transports/pipeline/knobs/dialog.ts` applies them. Everything else is
 in [`../DIALOG-CLAUDE.md`](../DIALOG-CLAUDE.md).
 
 ## A roster's speakers are wired to a SESSION here
@@ -208,7 +208,7 @@ no `speaks: true` entry installs nothing), pushes it to a transport that holds i
 prompt as session state only when it CHANGED (re-rendered on `tool.completed`
 and `state.updated`), and hands the pipeline the persona's
 `toolChoice`/`temperature` as a `prepareStep` preparer between the agent's reset
-and the dialog state's (`transports/pipeline-persona-knobs.ts`). A stale slot
+and the dialog state's (`transports/pipeline/knobs/persona.ts`). A stale slot
 answers as the entry persona with a warning, never a throw.
 
 **Do not narrow the tool set per step**: the AI SDK's `filterActiveTools`
@@ -325,15 +325,15 @@ every `tool_result` in host mode).
   (`beginTurn()` clears it).
 - **Filler goes out `record: false`, and nothing here may abort anything.**
   Every line goes through `ToolSpeechChannel.speak` → `speakInReply`
-  (`transports/pipeline-lines.ts`), the dead-air cover's placement, so it is
-  separated from the words around it. START/DELAYED lines use the dead-air
-  flag that `HeardTracker.spokeRecordable()` reads, so filler alone never
-  makes a turn interruptible. The runner owns no signal, cancels no TTS,
-  flushes nothing; a `blocking` wait is an ESTIMATE of spoken length bounded
-  by `pTimeout`, never a TTS acknowledgement (touching the reply's lifecycle
-  is what once muted an agent for 20+ s).
+  (`transports/pipeline/reply/lines.ts`), the dead-air cover's placement, so it
+  is separated from the words around it. START/DELAYED lines use the dead-air
+  flag that `HeardTracker.spokeRecordable()` reads, so filler alone never makes
+  a turn interruptible. The runner owns no signal, cancels no TTS, flushes
+  nothing; a `blocking` wait is an ESTIMATE of spoken length bounded by
+  `pTimeout`, never a TTS acknowledgement (touching the reply's lifecycle is
+  what once muted an agent for 20+ s).
 - The generic dead-air cover stands down while a tool covers its own gap
-  (`toolCovering` in `transports/pipeline-stream-parts.ts`).
+  (`toolCovering` in `transports/pipeline/reply/stream-parts.ts`).
 
 ## A client's surfaces: `/api`, several inbox holders, a live feed
 
@@ -464,8 +464,8 @@ status-less reset (`sdk/step-fetch.ts` has the measurement).
 ## A reply's metrics are ONE frame, and every reader takes it from there
 
 `metrics.collected` is reported once per settled pipeline reply;
-`transports/pipeline-turn-metrics.ts` assembles it from marks the existing
-producers already take (`pipeline-llm-trace.ts`, `pipeline-audio-out.ts`).
+`transports/pipeline/turn/metrics.ts` assembles it from marks the existing
+producers already take (`transports/pipeline/llm/trace.ts`, `transports/pipeline/output/audio-out.ts`).
 
 - **A stage that did not happen is ABSENT, never zero.**
 - **STT marks are QUEUED per committed text and CLAIMED by the turn answering

@@ -13,7 +13,7 @@ import {
   type S2sSessionConfig,
 } from "../s2s.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "./capabilities.ts";
-import { createEmitError } from "./pipeline-error.ts";
+import { createEmitError } from "./emit-error.ts";
 import { createS2sLifecycle } from "./s2s-lifecycle.ts";
 import type { Transport, TransportCallbacks } from "./types.ts";
 

@@ -58,7 +58,7 @@
  * while triage speaks is the roster toolset's GATE: the call is refused with a
  * `ToolRefusal` (`reason: "persona"`) naming who is speaking and how to hand
  * off. Hiding the tool per step would replace that sentence with a generic "no
- * such tool"; `aai-runtime/transports/pipeline-persona-knobs.ts` records it.
+ * such tool"; `aai-runtime/transports/pipeline/knobs/persona.ts` records it.
  *
  * @module roster
  */

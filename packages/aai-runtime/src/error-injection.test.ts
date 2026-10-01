@@ -6,8 +6,8 @@
  * ## Why a table plus a driver, rather than a spec per failure
  *
  * There are specs per failure already, and they are good ones
- * (`pipeline-transport-error-phrase.test.ts` covers what the caller hears when
- * an LLM turn fails, `pipeline-stream.test.ts` the drain timeout). What none of
+ * (`transports/pipeline/transport-error-phrase.test.ts` covers what the caller hears when
+ * an LLM turn fails, `transports/pipeline/output/tts.test.ts` the drain timeout). What none of
  * them can do is fail when a NINTH `SessionErrorCode` lands with no recovery
  * story, because each names its own code and no file enumerates the union at
  * the behaviour level. That gate is `unclassifiedCodes()`, and it is the reason
@@ -47,8 +47,8 @@ import {
   createFakeLanguageModel,
   createFakeTtsProvider,
 } from "./_pipeline-test-fakes.ts";
-import { makeOpts, useVirtualTime } from "./transports/_pipeline-transport-harness.ts";
-import { createPipelineTransport } from "./transports/pipeline-transport.ts";
+import { makeOpts, useVirtualTime } from "./transports/pipeline/_transport-harness.ts";
+import { createPipelineTransport } from "./transports/pipeline/transport.ts";
 import type { TransportEventBody } from "./transports/types.ts";
 
 /**
@@ -287,7 +287,7 @@ async function open(
  * refused LLM request reports TWICE — see the pinned finding at the foot of
  * this file — so a `.find()` here asserted on whichever reporter happened to
  * fire first and left the other free to say anything. Flipping
- * `pipeline-llm-stream.ts`'s `fatal` to `true` passed a green suite; against
+ * `transports/pipeline/llm/stream.ts`'s `fatal` to `true` passed a green suite; against
  * the plural it fails, which is the whole difference between an oracle and a
  * restatement of the table.
  */
@@ -365,9 +365,9 @@ describe("each declared site produces its declared frame and recovery", () => {
  * error.reported  llm  "No output generated. Check the stream for errors." fatal:false
  * ```
  *
- * The first is the stream-part handler (`pipeline-stream-parts.ts`), which sees
+ * The first is the stream-part handler (`transports/pipeline/reply/stream-parts.ts`), which sees
  * the AI SDK's conversion of the rejection into an `error` part. The second was
- * the outer catch in `consumeLlmStream` (`pipeline-llm-stream.ts`), which then
+ * the outer catch in `consumeLlmStream` (`transports/pipeline/llm/stream.ts`), which then
  * sees `streamText` throw `NoOutputGeneratedError` because the stream it was
  * consuming produced nothing. Neither reporter knew the other had fired.
  *

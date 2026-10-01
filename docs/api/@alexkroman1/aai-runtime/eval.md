@@ -5774,7 +5774,7 @@ capability flag to check.
 
 **Carries no turn id**, exactly like [TtsEvents.done](#done): the transport
 cannot filter a stale one itself and gates the event on its own turn state
-(the audio gate in `pipeline-transport.ts`). An adapter must not emit
+(the audio gate in `transports/pipeline/transport.ts`). An adapter must not emit
 timings for a cancelled turn.
 
 ###### Parameters

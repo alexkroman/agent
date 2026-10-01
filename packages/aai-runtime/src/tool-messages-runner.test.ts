@@ -45,7 +45,7 @@ function harness(
 
 // Virtual time, per the rule in `packages/aai/CLAUDE.md`, "Specs that observe a
 // timer" — the ladder's shipped offsets are seconds. Spelled out rather than
-// reached for through `transports/_pipeline-transport-harness.ts`'s
+// reached for through `transports/pipeline/_transport-harness.ts`'s
 // `useVirtualTime()`: this module is not a transport and importing that helper
 // would pull the whole pipeline in for two lines.
 beforeEach(() => {

@@ -115,6 +115,14 @@ const EXCLUSIONS = [
     match: (file) => path.basename(file).endsWith("-barrel.ts"),
   },
   {
+    // konsistent's `runtime-directory-index-barrels` holds every such index to it.
+    why: "a directory index in aai-runtime that only re-exports is that directory's barrel — decided by reading the file",
+    match: (file) =>
+      file.startsWith("packages/aai-runtime/src/") &&
+      path.basename(file) === "index.ts" &&
+      isPureReExport(file),
+  },
+  {
     why: "test infrastructure IS a test file by role — every suite that imports it exercises it, and it has no behaviour of its own to claim",
     match: (file) => {
       const base = path.basename(file);
@@ -167,6 +175,26 @@ function hasRuntimeExport(file) {
   return /^export\s+(?:async\s+function|function|const|let|var|class|abstract\s+class|enum|default|\*|\{)/m.test(
     code,
   );
+}
+
+/**
+ * Whether a file is nothing but `export … from` clauses. Read the same way as
+ * {@link hasRuntimeExport}, and conservative the same way: anything else left
+ * over keeps the file in scope.
+ */
+function isPureReExport(file) {
+  let source;
+  try {
+    source = readFileSync(path.join(ROOT, file), "utf8");
+  } catch {
+    return false;
+  }
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+  const rest = code.replace(
+    /export\s+(?:type\s+)?(?:\{[^}]*\}|\*(?:\s+as\s+\w+)?)\s+from\s+["'][^"']+["'];?/g,
+    "",
+  );
+  return code.trim() !== "" && rest.trim() === "";
 }
 
 /** The in-scope modules, and the ones with no co-located test. */

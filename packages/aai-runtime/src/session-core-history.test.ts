@@ -196,7 +196,7 @@ describe("createSessionCore — history", () => {
 
   test("a RECOVERY phrase never reaches the model's context", async () => {
     // `speakRecovery` reports a committed transcript so the CAPTION matches what
-    // the caller heard, and `pipeline-turn-outcome.ts`'s own table says that
+    // the caller heard, and `transports/pipeline/turn-outcome.ts`'s own table says that
     // phrase reaches "history / ctx.messages: never" — while this dispatch
     // pushed it, on the same call, into the very array every tool call is handed.
     const executeTool = vi.fn<ExecuteTool>(async () => "ok");

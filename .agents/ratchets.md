@@ -251,15 +251,15 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   reads it until something is already red. Measured 2026-09-11 on the
   integration branch: **105 files sit within 10% of a cap.** Two of them were
   already over on an unpushed branch —
-  `aai-runtime/src/transports/pipeline-transport.ts` at 530 and
-  `pipeline-user-speech.ts` at 592, neither allowlisted, 122 lines over between
-  them — and the violation went unnoticed only because that branch had never
-  been pushed and so had never run a pre-push `pnpm check`. Both files sat
-  within six lines of the cap on `main` (500 and 494), so _any_ feature touching
-  them owed a split before it owed anything else. Two branches then extracted
-  from the SAME
-  file independently and produced duplicate modules, which is the shape to
-  expect when a hot file has no headroom.
+  `aai-runtime/src/transports/pipeline/transport.ts` at 530 and
+  `aai-runtime/src/transports/pipeline/speech/user-speech.ts` at 592, neither
+  allowlisted, 122 lines over between them — and the violation went unnoticed
+  only because that branch had never been pushed and so had never run a pre-push
+  `pnpm check`. Both files sat within six lines of the cap on `main` (500 and
+  494), so _any_ feature touching them owed a split before it owed anything
+  else. Two branches then extracted from the SAME file independently and
+  produced duplicate modules, which is the shape to expect when a hot file has
+  no headroom.
 
   **And `aai-runtime/src/session-history-replay-equivalence.test.ts` is at
   exactly 700/700**, so the next line added there forces a split. Recorded

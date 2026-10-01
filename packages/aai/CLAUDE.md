@@ -203,7 +203,7 @@ one of three SESSION modes underneath:
   **A failing TURN is not a failing SESSION**: `onError` defaults to
   `fatal: true` and aai-ui ends the call on a fatal frame, so every turn-level
   reporter passes `{ fatal: false }` — `aai-runtime`'s
-  `transports/pipeline-error.ts` owns it.
+  `transports/emit-error.ts` owns it.
 - **S2S mode** (`mode: "s2s"` + `assemblyAIS2s()`/`openAIS2s()`) — one
   WebSocket; STT, LLM and TTS run service-side. **Never reachable by
   omission.** [`S2S-CLAUDE.md`](S2S-CLAUDE.md) owns the wire rules (24 kHz both
@@ -296,8 +296,9 @@ changing one.**
 
 These are cited from this guide by older comments. The first four are owned by
 `packages/aai-runtime/src/CLAUDE.md` and
-`packages/aai-runtime/src/transports/CLAUDE.md`, the last by
-`packages/aai-runtime/src/integration/CLAUDE.md`; the rest live only here.
+`packages/aai-runtime/src/transports/pipeline/` (its `CLAUDE.md` and the
+`speech/` one), the last by `packages/aai-runtime/src/integration/CLAUDE.md`;
+the rest live only here.
 
 - **Session vocabularies**: `ServerSession` takes `command(cmd)` and
   `report(event)` plus two audio paths — no `on*` callbacks
@@ -306,7 +307,7 @@ These are cited from this guide by older comments. The first four are owned by
   `skipGreeting` does not reach it; S2S does not re-greet (a known gap).
 - **History records what was HEARD**: an interrupted reply is stored as the
   estimated heard words, marked `[interrupted]`
-  (`transports/pipeline-heard.ts`).
+  (`transports/pipeline/heard/tracker.ts`).
 - **`speech_started` means "the agent is yielding"** on both transports;
   pipeline mode holds it back while the agent has the floor.
 - **A request-path decode never throws**: `decodePathSegment`
@@ -335,7 +336,7 @@ coverage floors.
 ### Specs that observe a timer
 
 **A spec that observes a TIMER runs on virtual time, never the wall clock.**
-`useVirtualTime()` (`transports/_pipeline-transport-harness.ts`) installs fake
+`useVirtualTime()` (`transports/pipeline/_transport-harness.ts`) installs fake
 timers per file; drive with `vi.advanceTimersByTimeAsync(ms)`. `_fake-llm.ts`'s
 `delayMs` uses the global `setTimeout`, so no scheduler needs threading. Under
 virtual time `tick()` hangs (use `vi.advanceTimersByTimeAsync(0)`), and

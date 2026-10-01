@@ -215,7 +215,7 @@ class HintedModelCopies {
 
 /**
  * The same tool declarations with NO `execute`, for a speculative LLM stream
- * (preemptive generation — see `transports/pipeline-speculation.ts`).
+ * (preemptive generation — see `transports/pipeline/speech/speculation.ts`).
  *
  * **The ABSENCE of the property is the guardrail, not a flag.** A speculation
  * runs from an interim transcript the caller may still be revising, so it must

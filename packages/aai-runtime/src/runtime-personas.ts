@@ -22,7 +22,7 @@
  *    dialog too.
  * 3. **The pipeline re-tunes per step.** The active persona's two model knobs
  *    reach `streamText` through a `prepareStep` preparer — see
- *    `transports/pipeline-persona-knobs.ts`, which also records why the tool
+ *    `transports/pipeline/knobs/persona.ts`, which also records why the tool
  *    set is deliberately NOT narrowed there.
  *
  * ## The key sorts BEFORE the dialogs', and that is the intended reading
@@ -51,11 +51,8 @@ import type { Roster, SessionEvent, SlotHolder, SlotStore, SpeakerDef } from "@a
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionSystemPrompt } from "./runtime-system-prompt.ts";
-import {
-  interruptionKnobs,
-  type PersonaInterruptionSource,
-} from "./transports/pipeline-dialog-knobs.ts";
-import type { PersonaTurnSource } from "./transports/pipeline-persona-knobs.ts";
+import type { PersonaTurnSource } from "./transports/pipeline/index.ts";
+import { interruptionKnobs, type PersonaInterruptionSource } from "./transports/pipeline/index.ts";
 import type { Transport } from "./transports/types.ts";
 
 /** The suffix key — sorts before the dialogs' `"dialogs"`; see the module doc. */

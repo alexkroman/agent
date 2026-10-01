@@ -66,7 +66,7 @@ export const SessionCommandSchema = z.discriminatedUnion("type", [
      * How much forwarded agent audio the client still holds UNPLAYED.
      *
      * The one closed-loop signal in the protocol. Without it the host models
-     * playback open-loop — `pipeline-heard.ts` assumes every forwarded chunk
+     * playback open-loop — `aai-runtime/src/transports/pipeline/heard/tracker.ts` assumes every forwarded chunk
      * begins playing the instant it is sent, at exactly 1.0x, plus a fixed
      * grace — and nothing anywhere can detect a client that drains slower than
      * real time. Such a client accrues a backlog that grows across a reply and

@@ -131,7 +131,7 @@ export type SendTtsOptions = {
   /**
    * These characters are part of the model's own reply. Defaults to `true`;
    * `false` marks dead-air filler — audible, so it moves the heard POSITION,
-   * but never truncated into history (see `pipeline-heard.ts`).
+   * but never truncated into history (see `pipeline/heard/tracker.ts`).
    */
   record?: boolean;
 };
@@ -217,7 +217,7 @@ export type TransportSessionConfig = {
  * minus `interrupt` (which acts on the reply before the line, not on the line).
  *
  * Every code-initiated line in pipeline mode states both — the table in
- * `pipeline-lines.ts` lists each line and its values.
+ * `pipeline/reply/lines.ts` lists each line and its values.
  *
  * @internal
  */
@@ -278,7 +278,7 @@ export function resolveGreeting(greeting: GreetingOption | undefined): string | 
 
 /**
  * Transport abstraction — one implementation per provider strategy
- * (see `s2s-transport.ts`, `pipeline-transport.ts`).
+ * (see `s2s-transport.ts`, `pipeline/transport.ts`).
  *
  * @internal
  */
@@ -377,7 +377,7 @@ export interface Transport {
    * service lets the host end a caller's turn, so there is nothing to call. A
    * pipeline transport implements them whatever the agent's policy and logs
    * once when an `"auto"` agent is sent one, since its transcriber already owns
-   * the turn. See `transports/pipeline-manual-turn.ts`.
+   * the turn. See `pipeline/speech/manual-turn.ts`.
    */
   startUserTurn?(): boolean;
   /** Push-to-talk: close the turn and answer everything heard inside it. */

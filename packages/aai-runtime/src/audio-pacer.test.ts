@@ -64,7 +64,7 @@ describe("createAudioPacer", () => {
 
   test("the heard cursor's ear-lag is NOT derived from the lead", () => {
     // This reads like a missing coupling and is the opposite. Both this pacer's
-    // lead and the playback clock in `pipeline-heard.ts` accumulate from
+    // lead and the playback clock in `transports/pipeline/heard/tracker.ts` accumulate from
     // `max(previous, now())`, so `remainingMs()` already tracks whatever lead is
     // set here — the client's buffer depth is subtracted from the heard cursor
     // before HEARD_AUDIO_LAG_MS is applied at all. Measured

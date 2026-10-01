@@ -138,7 +138,7 @@ export const CAPABILITY_ROWS = {
       "This agent's tools declare onError, and the {transport} transport cannot stop a turn on a FATAL verdict: the service runs the turn and has no abort the host can send. A fatal verdict there reaches the model as an ordinary failure result.",
   },
   turnMetrics: {
-    feature: "one `metrics.collected` frame per settled reply (`pipeline-turn-metrics.ts`)",
+    feature: "one `metrics.collected` frame per settled reply (`pipeline/turn/metrics.ts`)",
     verbs: [],
     absent: "no frame — the service reports no per-stage marks (a known gap)",
   },

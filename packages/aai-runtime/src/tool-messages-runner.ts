@@ -32,7 +32,7 @@
  *    bounded with `pTimeout` at the call site rather than by trusting the
  *    channel, so a channel that never settles costs one slow call.
  * 3. **A caller who is talking is not talked over.** Every filler send checks
- *    `callerSpeaking()` first, the rule `pipeline-stream-parts.ts` already
+ *    `callerSpeaking()` first, the rule `transports/pipeline/reply/stream-parts.ts` already
  *    applies to the dead-air cover for the same measured reason.
  * 4. **The generic cover stands down for a turn whose tool covers itself**,
  *    which is Vapi's "idle messages are disabled during tool calls" — see
@@ -55,7 +55,7 @@ import { isToolFailure, omitUndefined, safeJsonParse } from "@alexkroman1/aai/ut
 import pTimeout from "p-timeout";
 import { createRestartableTimer } from "./_timer.ts";
 import type { Logger } from "./runtime-config.ts";
-import type { InReplyLineFlags } from "./transports/pipeline-lines.ts";
+import type { InReplyLineFlags } from "./transports/pipeline/index.ts";
 
 /** START and DELAYED lines: filler, never on the record — rule 1 above. */
 const FILLER: InReplyLineFlags = { record: false, interruptible: true };
@@ -70,7 +70,7 @@ const COMPLETION: InReplyLineFlags = { record: true, interruptible: true };
 export type ToolSpeechChannel = {
   /**
    * Speak one line inside the turn's reply — `speakInReply`
-   * (`transports/pipeline-lines.ts`), the placement the dead-air cover shares:
+   * (`transports/pipeline/reply/lines.ts`), the placement the dead-air cover shares:
    * TTS boundaries on both sides, the segment separator, and the turn's
    * transcript when `record` is set. The two flag values this module passes
    * are {@link FILLER} and {@link COMPLETION}; nothing here spells a send of
@@ -120,7 +120,7 @@ export type ToolSpeechChannel = {
  * {@link ToolSpeechChannel.awaitSpoken}'s estimate.
  *
  * The CEILING rather than a typical rate (it is `MAX_SPEECH_CHARS_PER_MS` in
- * `transports/pipeline-heard.ts`, kept in step with it), so the estimate errs
+ * `transports/pipeline/heard/tracker.ts`, kept in step with it), so the estimate errs
  * SHORT: a blocking start that under-waits releases the tool a beat early,
  * where one that over-waits charges every call for a guess.
  */
@@ -212,7 +212,7 @@ export type ToolSpeechController = {
    * The verbatim completion this turn spoke, if any — and therefore the signal
    * that the model must NOT be called again.
    *
-   * `pipeline-llm-stream.ts` reads it twice: once as a `stopWhen` condition, so
+   * `transports/pipeline/llm/stream.ts` reads it twice: once as a `stopWhen` condition, so
    * the step loop ends at this tool result, and once after the stream to append
    * the sentence to the turn's model messages — without which the next turn's
    * model would not know the agent had said it.

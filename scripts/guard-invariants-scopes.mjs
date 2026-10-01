@@ -17,7 +17,7 @@
  * An explicit list, and that is the answer to "scope by module role, not by
  * counting every `on*` in the package" rather than a shortcut around it. Role is
  * not derivable from a path here: `transports/types.ts` declares the session
- * boundary and `transports/pipeline-llm-stream.ts`, its neighbour, decomposes a
+ * boundary and `transports/pipeline/llm/stream.ts`, its neighbour, decomposes a
  * hot path with `on*` parameters — a glob over `transports/` would catch both and
  * a glob over `host/*.ts` would catch neither. The two things NOT in scope are in
  * scope for that reason: provider adapter contracts (`_s2s-dispatch.ts`'s
@@ -61,7 +61,7 @@ export const SESSION_SURFACE_PATHS = [
   // shape, and 78 of the original 157 occurrences were exactly that.
   "packages/aai/src/host/_test-utils.ts",
   "packages/aai-runtime/src/transports/_transport-recorder.ts",
-  "packages/aai-runtime/src/transports/_pipeline-transport-harness.ts",
+  "packages/aai-runtime/src/transports/pipeline/_transport-harness.ts",
   "packages/aai-runtime/src/integration/_pipeline-fuzz-model.ts",
   "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts",
 ];

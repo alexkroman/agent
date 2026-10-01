@@ -24,11 +24,6 @@
 import type { Message } from "@alexkroman1/aai";
 import { DEFAULT_IDLE_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import {
-  estimateConversationTokens,
-  evictBeyondRetention,
-  HISTORY_RETAIN_TOKENS,
-} from "./_history-retention.ts";
 import type { ClientToolAnswer } from "./client-tool-broker.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { createCommandDispatcher } from "./session-commands.ts";
@@ -42,6 +37,11 @@ import { createIdleWatchdog } from "./session-idle.ts";
 import { dispatchReplyDone } from "./session-reply-done.ts";
 import { createSpeechVerbs } from "./session-speech.ts";
 import { type ReplyToolState, runToolStep } from "./session-tool-steps.ts";
+import {
+  estimateConversationTokens,
+  evictBeyondRetention,
+  HISTORY_RETAIN_TOKENS,
+} from "./transports/pipeline/index.ts";
 import type { TransportEventBody } from "./transports/types.ts";
 
 /**
@@ -155,7 +155,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
 
   function pushMessages(...msgs: Message[]): void {
     history.push(...msgs);
-    // A MEMORY bound in tokens, never a message count — see `_history-retention.ts`.
+    // A MEMORY bound in tokens, never a message count — see `transports/pipeline/history/retention.ts`.
     evictBeyondRetention(history, HISTORY_RETAIN_TOKENS, estimateConversationTokens);
   }
 
@@ -254,7 +254,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
         // The COMMITTED event only, which is what makes the stream's assistant
         // turns the session's own rather than a re-derivation. An INTERRUPTED
         // reply is reported as `.updated` and enters no history — see the event's
-        // own doc, and "History records what was HEARD" in `transports/CLAUDE.md`. A
+        // own doc, and "History records what was HEARD" in `transports/pipeline/CLAUDE.md`. A
         // committed RECOVERY phrase is the third case and the one this used to
         // get wrong: emitted, because the caller heard it, and never recorded.
         pushConversation(event);

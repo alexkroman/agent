@@ -32,7 +32,7 @@
   },
   "rule22_truthySpread": {
     "packages/aai-runtime/src/providers/stt/elevenlabs.ts": 1,
-    "packages/aai-runtime/src/transports/pipeline-llm-trace.ts": 1,
+    "packages/aai-runtime/src/transports/pipeline/llm/trace.ts": 1,
     "packages/aai-runtime/src/workflow/report.ts": 2,
     "packages/aai-server/src/guest/forward.ts": 1,
     "packages/aai-studio-server/src/studio-session-ensure.ts": 1,

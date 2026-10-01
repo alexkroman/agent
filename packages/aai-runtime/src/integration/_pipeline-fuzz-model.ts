@@ -199,7 +199,7 @@ export interface Monitor {
  * (guardrail 1, request validity, serialization, no-callback-after-stop,
  * audio-after-done, no-record-without-audio) runs unchanged in both arms, and
  * the adopted reply's TEXT is pinned deterministically instead, in
- * `transports/pipeline-preemption.test.ts`.
+ * `../transports/pipeline/preemption.test.ts`.
  */
 export function checkReplyIntegrity(reply: ReplyRecord, tts: FakeTtsProvider, mon: Monitor): void {
   if (mon.speculating || reply.disturbed || reply.failed) return;

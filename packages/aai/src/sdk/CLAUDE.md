@@ -159,7 +159,7 @@ hand-rolled copies. Each module doc carries the hazard. `p-timeout` and
 - **`createCoalescingRunner()`** (`coalescing-runner.ts`, `/internal`) — one run
   in flight, triggers share ONE trailing re-run, rejections never wedge it.
 - **`createTurnMachine()`** — in `aai-runtime`'s
-  `transports/pipeline-turn-state.ts`; turn state goes through its transitions.
+  `transports/pipeline/turn/state.ts`; turn state goes through its transitions.
 - **`createKeyedLock()`/`withLock`** (`keyed-lock.ts`, PUBLIC) — per-key
   serialization; `timeoutMs` bounds the ACQUIRE (`KeyedLockTimeoutError` → 409).
   Public because **the LLM loop runs a step's tool calls CONCURRENTLY** (rule

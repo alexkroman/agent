@@ -86,7 +86,7 @@ keeps the agent's narrative text. Tier 2 (LLM summary) runs only if still over
 budget. **Cut points must fall on turn boundaries:** a cut at index `i` is safe
 iff `messages[i]` is not a `tool` message (providers reject an unmatched tool
 result; same failure `capLlm` documents in
-`aai/host/transports/pipeline-history.ts`). Boundaries only move OUTWARD.
+`aai/host/transports/pipeline/history/history.ts`). Boundaries only move OUTWARD.
 
 `STUDIO_TOOL_LABELS` and `MUTATING_TOOLS` are checked against
 `createStudioAgent`'s real tool surface, never a hand-merged copy.

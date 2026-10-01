@@ -97,7 +97,7 @@ export type S2sSessionConfig = {
    *
    * It used to be pipeline-only, which made it a SILENT config drop: `agent({
    * sttPrompt })` and host mode's `host.sttPrompt` both reached the agent
-   * definition, and only `pipeline-transport.ts` ever read it, so an S2S agent
+   * definition, and only `transports/pipeline/transport.ts` ever read it, so an S2S agent
    * that set one got unbiased transcription and no warning. That is the
    * dropped-field bug class the SDK guide warns about — a working agent quietly
    * ignoring part of its own config.

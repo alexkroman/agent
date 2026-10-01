@@ -402,7 +402,7 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
         // Claiming this callback is what keeps a provider failure to one log
         // line: the SDK's default is `console.error(error)`, which spends
         // ~100 lines on three nested stack traces plus the whole request body
-        // (see the same note in `pipeline-llm-stream.ts`).
+        // (see the same note in `transports/pipeline/llm/stream.ts`).
         onError: ({ error }) => {
           logger.debug("streamText onError", { error: String(error), sid: sessionId });
         },

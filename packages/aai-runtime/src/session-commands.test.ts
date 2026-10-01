@@ -2,8 +2,8 @@
 // The user-turn half of the command dispatcher: what the SESSION does with
 // `user_turn_start` / `user_turn_commit` / `user_turn_clear` and the typed
 // `user_text`. The transport's half — what a turn holds and when it is
-// answered — is `transports/pipeline-manual-turn.test.ts` and
-// `transports/pipeline-typed-turn.test.ts`.
+// answered — is `transports/pipeline/speech/manual-turn.test.ts` and
+// `transports/pipeline/typed-turn.test.ts`.
 
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";

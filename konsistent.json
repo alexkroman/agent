@@ -850,7 +850,7 @@
     },
     {
       "name": "concurrency-primitives",
-      "description": "The repo's recurring async-coordination patterns are reified as small primitives, and this pins each one's HOME so the roster cannot go stale and a call site can be checked against it. Almost all are packages/aai exports; createTurnMachine() is the one that lives in aai-runtime (transports/pipeline-turn-state.ts). The catalogue: createEpoch() (sdk/epoch.ts), createOwnedMap() (sdk/owned-map.ts), createCoalescingRunner() (sdk/coalescing-runner.ts), createKeyedLock()/withLock() (sdk/keyed-lock.ts - withLock is a const arrow, not a function declaration, which is why it is asserted as a constant), sleep(ms, { signal?, unref? }) (sdk/sleep.ts - the ONE wait, and NOT a test helper, which the root guide used to imply; guard-invariants rule 19 keeps the seventh hand-rolled spelling out), jitteredBackoff(attempt, ...) (sdk/jittered-backoff.ts - rule 31 keeps the fourth copy out; the JITTER is the half a copy gets wrong), sessionSlot() (sdk/session-slot.ts), ToolFailure/toolFailure()/isToolFailure()/pushCapped() (sdk/utils.ts), resolveOne() (sdk/spoken.ts), omitUndefined() (sdk/omit-undefined.ts - rules 2 and 22 are its enforcement half), isRecord() (sdk/is-record.ts). What this convention deliberately cannot do is see a hand-rolled copy at a call site: that is inside a function body, hence guard-invariants (rules 2, 3, 4, 19, 21, 22, 23, 31). It covers the other direction - a primitive renamed, moved or deleted out from under those rules, which would leave every one of them matching nothing while printing the same checkmark as a rule upheld. Two repo-wide members are absent because they are not ours to export: p-timeout for timeouts (never a hand-rolled Promise.race with a timer) and native AbortSignal.any([...]) for combining signals; both stay as prose in AGENTS.md. packages/aai/src/sdk/CLAUDE.md, \"Concurrency primitives\", carries the argument behind each primitive.",
+      "description": "The repo's recurring async-coordination patterns are reified as small primitives, and this pins each one's HOME so the roster cannot go stale and a call site can be checked against it. Almost all are packages/aai exports; createTurnMachine() is the one that lives in aai-runtime (transports/pipeline/turn/state.ts). The catalogue: createEpoch() (sdk/epoch.ts), createOwnedMap() (sdk/owned-map.ts), createCoalescingRunner() (sdk/coalescing-runner.ts), createKeyedLock()/withLock() (sdk/keyed-lock.ts - withLock is a const arrow, not a function declaration, which is why it is asserted as a constant), sleep(ms, { signal?, unref? }) (sdk/sleep.ts - the ONE wait, and NOT a test helper, which the root guide used to imply; guard-invariants rule 19 keeps the seventh hand-rolled spelling out), jitteredBackoff(attempt, ...) (sdk/jittered-backoff.ts - rule 31 keeps the fourth copy out; the JITTER is the half a copy gets wrong), sessionSlot() (sdk/session-slot.ts), ToolFailure/toolFailure()/isToolFailure()/pushCapped() (sdk/utils.ts), resolveOne() (sdk/spoken.ts), omitUndefined() (sdk/omit-undefined.ts - rules 2 and 22 are its enforcement half), isRecord() (sdk/is-record.ts). What this convention deliberately cannot do is see a hand-rolled copy at a call site: that is inside a function body, hence guard-invariants (rules 2, 3, 4, 19, 21, 22, 23, 31). It covers the other direction - a primitive renamed, moved or deleted out from under those rules, which would leave every one of them matching nothing while printing the same checkmark as a rule upheld. Two repo-wide members are absent because they are not ours to export: p-timeout for timeouts (never a hand-rolled Promise.race with a timer) and native AbortSignal.any([...]) for combining signals; both stay as prose in AGENTS.md. packages/aai/src/sdk/CLAUDE.md, \"Concurrency primitives\", carries the argument behind each primitive.",
       "paths": "packages",
       "must": [
         {
@@ -957,7 +957,7 @@
         {
           "name": "turn-machine",
           "for": {
-            "files": "aai-runtime/src/transports/pipeline-turn-state.ts"
+            "files": "aai-runtime/src/transports/pipeline/turn/state.ts"
           },
           "must": {
             "exportFunctions": ["createTurnMachine"]
@@ -1046,8 +1046,11 @@
     },
     {
       "name": "runtime-transports",
-      "description": "A `transports/<name>-transport.ts` file IS a transport, and it exports `create<Name>Transport(opts: <Name>TransportOptions): Transport`. Three of them \u2014 pipeline (STT \u2192 LLM \u2192 TTS, assembled here), s2s (AssemblyAI's speech-to-speech) and openai-realtime \u2014 one interface (`transports/types.ts`), and the session core is written against that interface and nothing else. That is the property worth stating mechanically, because the guide's rule for this seam is a NEGATIVE one no per-file tool can see: the session takes two vocabularies rather than nineteen callbacks, so a `Transport` is the whole inbound surface plus the two audio paths, and every divergence between the three implementations has cost something (`speech_started` derived from a partial in pipeline mode against a real yield in S2S; `reply.completed` being the provider's claim rather than the turn's end). The RETURN TYPE is what this convention actually buys: a factory that kept its name and returned a structural near-miss of `Transport` still compiles at every call site that only reads part of it, and the divergence surfaces as one transport behaving differently on a live call. The parameter type is checked with it so a transport's options stay one named type rather than an inline bag that cannot be referenced from a host's own wiring. Note the filename grammar is what makes a fourth transport's factory name derivable \u2014 and that `openai-realtime` resolves to `OpenaiRealtime` rather than `OpenAIRealtime`, because `kebabToPascalMap` is consulted for the whole captured value and not per segment.",
-      "paths": ["packages/aai-runtime/src/transports/{transportId}-transport.ts"],
+      "description": "A `transports/<name>-transport.ts` file \u2014 or `transports/<name>/transport.ts` for a transport large enough to be a directory, which is the pipeline's \u2014 IS a transport, and it exports `create<Name>Transport(opts: <Name>TransportOptions): Transport`. Three of them \u2014 pipeline (STT \u2192 LLM \u2192 TTS, assembled here), s2s (AssemblyAI's speech-to-speech) and openai-realtime \u2014 one interface (`transports/types.ts`), and the session core is written against that interface and nothing else. That is the property worth stating mechanically, because the guide's rule for this seam is a NEGATIVE one no per-file tool can see: the session takes two vocabularies rather than nineteen callbacks, so a `Transport` is the whole inbound surface plus the two audio paths, and every divergence between the three implementations has cost something (`speech_started` derived from a partial in pipeline mode against a real yield in S2S; `reply.completed` being the provider's claim rather than the turn's end). The RETURN TYPE is what this convention actually buys: a factory that kept its name and returned a structural near-miss of `Transport` still compiles at every call site that only reads part of it, and the divergence surfaces as one transport behaving differently on a live call. The parameter type is checked with it so a transport's options stay one named type rather than an inline bag that cannot be referenced from a host's own wiring. Note the filename grammar is what makes a fourth transport's factory name derivable \u2014 and that `openai-realtime` resolves to `OpenaiRealtime` rather than `OpenAIRealtime`, because `kebabToPascalMap` is consulted for the whole captured value and not per segment.",
+      "paths": [
+        "packages/aai-runtime/src/transports/{transportId}-transport.ts",
+        "packages/aai-runtime/src/transports/{transportId}/transport.ts"
+      ],
       "must": {
         "exportFunctions": [
           {
@@ -1055,6 +1058,234 @@
             "receiveParamsOfTypes": ["${transportId.toPascalCase()}TransportOptions"],
             "returnValueOfType": "Transport"
           }
+        ]
+      }
+    },
+    {
+      "name": "runtime-directory-index-barrels",
+      "description": "In aai-runtime a directory's `index.ts` is its WHOLE surface: inside a bounded directory there is no underscore prefix, so 'private' means 'not re-exported from index.ts', and `module-boundaries.test.ts` refuses any import from outside the directory that names another module of it. That only means something if the index is a pure re-export list \u2014 a declaration in one is a symbol with no home module, and an `export *` re-exports everything and so makes nothing private. So each index is a barrel (this convention) and spells its names (`noReExportAll`). The indexes list exactly what the rest of the package imports; a name nothing outside imports is simply not on it.",
+      "paths": [
+        "packages/aai-runtime/src/transports/pipeline/index.ts",
+        "packages/aai-runtime/src/transports/pipeline/*/index.ts"
+      ],
+      "must": {
+        "areBarrelFiles": true
+      }
+    },
+    {
+      "name": "pipeline-stage-heard",
+      "description": "`transports/pipeline/heard/` is the heard cursor, its word alignment and playback clock, and the recovery latch: the one owner of 'what the caller actually heard', which history truncation and the resume anchor both READ and which therefore reads nothing back. It may import no other stage, always through that stage's `index.ts`, and never the assembly beside `transports/pipeline/index.ts` (`transport.ts`, `commands.ts`, `lifecycle.ts`, \u2026), which imports every stage. The stage directions together are one DAG \u2014 turn, heard and knobs at the bottom; output; history; reply; llm; speech; the assembly on top \u2014 and Biome's `noImportCycles` cannot hold it on its own: it sees a FILE cycle only once one closes, while a stage reaching 'down the wrong way' through an index is legal until the day the far side imports back, which is how a barrel turns one new import into a cycle across a dozen files. Specs are excluded because a stage's spec legitimately drives the whole assembled transport (`../transport.ts`, `../_transport-harness.ts`). The specifiers are matched RAW, which is exact here because every stage file sits one level below `transports/pipeline/`; the index-only half of the rule is `module-boundaries.test.ts` in aai-runtime, and the map is `transports/pipeline/CLAUDE.md`.",
+      "paths": [
+        "packages/aai-runtime/src/transports/pipeline/heard/*.ts",
+        "!packages/aai-runtime/src/transports/pipeline/heard/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "../history/*",
+          "../knobs/*",
+          "../llm/*",
+          "../output/*",
+          "../reply/*",
+          "../speech/*",
+          "../turn/*",
+          "../commands.ts",
+          "../index.ts",
+          "../lifecycle.ts",
+          "../options.ts",
+          "../providers.ts",
+          "../session-signal.ts",
+          "../transport.ts",
+          "../turn-body.ts",
+          "../turn-outcome.ts",
+          "../_transport-harness.ts"
+        ]
+      }
+    },
+    {
+      "name": "pipeline-stage-history",
+      "description": "`transports/pipeline/history/` is conversation memory and the request budget, which reads the heard cursor (what to keep of a cut reply), `output/tts.ts`'s `toModelMessage`, and the turn gate, and is read by the reply and model stages rather than reading them. It may import `heard/`, `output/`, `turn/`, always through that stage's `index.ts`, and never the assembly beside `transports/pipeline/index.ts` (`transport.ts`, `commands.ts`, `lifecycle.ts`, \u2026), which imports every stage. The stage directions together are one DAG \u2014 turn, heard and knobs at the bottom; output; history; reply; llm; speech; the assembly on top \u2014 and Biome's `noImportCycles` cannot hold it on its own: it sees a FILE cycle only once one closes, while a stage reaching 'down the wrong way' through an index is legal until the day the far side imports back, which is how a barrel turns one new import into a cycle across a dozen files. Specs are excluded because a stage's spec legitimately drives the whole assembled transport (`../transport.ts`, `../_transport-harness.ts`). The specifiers are matched RAW, which is exact here because every stage file sits one level below `transports/pipeline/`; the index-only half of the rule is `module-boundaries.test.ts` in aai-runtime, and the map is `transports/pipeline/CLAUDE.md`.",
+      "paths": [
+        "packages/aai-runtime/src/transports/pipeline/history/*.ts",
+        "!packages/aai-runtime/src/transports/pipeline/history/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "../knobs/*",
+          "../llm/*",
+          "../reply/*",
+          "../speech/*",
+          "../commands.ts",
+          "../index.ts",
+          "../lifecycle.ts",
+          "../options.ts",
+          "../providers.ts",
+          "../session-signal.ts",
+          "../transport.ts",
+          "../turn-body.ts",
+          "../turn-outcome.ts",
+          "../_transport-harness.ts"
+        ]
+      }
+    },
+    {
+      "name": "pipeline-stage-knobs",
+      "description": "`transports/pipeline/knobs/` is the per-step model knobs a dialog state and a persona ask for, which the assembly wires into the `prepareStep` pipeline and nothing else consults. It may import no other stage, always through that stage's `index.ts`, and never the assembly beside `transports/pipeline/index.ts` (`transport.ts`, `commands.ts`, `lifecycle.ts`, \u2026), which imports every stage. The stage directions together are one DAG \u2014 turn, heard and knobs at the bottom; output; history; reply; llm; speech; the assembly on top \u2014 and Biome's `noImportCycles` cannot hold it on its own: it sees a FILE cycle only once one closes, while a stage reaching 'down the wrong way' through an index is legal until the day the far side imports back, which is how a barrel turns one new import into a cycle across a dozen files. Specs are excluded because a stage's spec legitimately drives the whole assembled transport (`../transport.ts`, `../_transport-harness.ts`). The specifiers are matched RAW, which is exact here because every stage file sits one level below `transports/pipeline/`; the index-only half of the rule is `module-boundaries.test.ts` in aai-runtime, and the map is `transports/pipeline/CLAUDE.md`.",
+      "paths": [
+        "packages/aai-runtime/src/transports/pipeline/knobs/*.ts",
+        "!packages/aai-runtime/src/transports/pipeline/knobs/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "../heard/*",
+          "../history/*",
+          "../llm/*",
+          "../output/*",
+          "../reply/*",
+          "../speech/*",
+          "../turn/*",
+          "../commands.ts",
+          "../index.ts",
+          "../lifecycle.ts",
+          "../options.ts",
+          "../providers.ts",
+          "../session-signal.ts",
+          "../transport.ts",
+          "../turn-body.ts",
+          "../turn-outcome.ts",
+          "../_transport-harness.ts"
+        ]
+      }
+    },
+    {
+      "name": "pipeline-stage-llm",
+      "description": "`transports/pipeline/llm/` is one model request, which consumes history, emits through the reply and output stages and stamps the turn's metrics; nothing below it may call back into a request. It may import `history/`, `output/`, `reply/`, `turn/`, always through that stage's `index.ts`, and never the assembly beside `transports/pipeline/index.ts` (`transport.ts`, `commands.ts`, `lifecycle.ts`, \u2026), which imports every stage. The stage directions together are one DAG \u2014 turn, heard and knobs at the bottom; output; history; reply; llm; speech; the assembly on top \u2014 and Biome's `noImportCycles` cannot hold it on its own: it sees a FILE cycle only once one closes, while a stage reaching 'down the wrong way' through an index is legal until the day the far side imports back, which is how a barrel turns one new import into a cycle across a dozen files. Specs are excluded because a stage's spec legitimately drives the whole assembled transport (`../transport.ts`, `../_transport-harness.ts`). The specifiers are matched RAW, which is exact here because every stage file sits one level below `transports/pipeline/`; the index-only half of the rule is `module-boundaries.test.ts` in aai-runtime, and the map is `transports/pipeline/CLAUDE.md`.",
+      "paths": [
+        "packages/aai-runtime/src/transports/pipeline/llm/*.ts",
+        "!packages/aai-runtime/src/transports/pipeline/llm/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "../heard/*",
+          "../knobs/*",
+          "../speech/*",
+          "../commands.ts",
+          "../index.ts",
+          "../lifecycle.ts",
+          "../options.ts",
+          "../providers.ts",
+          "../session-signal.ts",
+          "../transport.ts",
+          "../turn-body.ts",
+          "../turn-outcome.ts",
+          "../_transport-harness.ts"
+        ]
+      }
+    },
+    {
+      "name": "pipeline-stage-output",
+      "description": "`transports/pipeline/output/` is the text-to-ear path (TTS coalescer, guardrail hold, speak gate, audio handlers), which reports into the heard cursor and the turn's state and must not know about history or the model. It may import `heard/`, `turn/`, always through that stage's `index.ts`, and never the assembly beside `transports/pipeline/index.ts` (`transport.ts`, `commands.ts`, `lifecycle.ts`, \u2026), which imports every stage. The stage directions together are one DAG \u2014 turn, heard and knobs at the bottom; output; history; reply; llm; speech; the assembly on top \u2014 and Biome's `noImportCycles` cannot hold it on its own: it sees a FILE cycle only once one closes, while a stage reaching 'down the wrong way' through an index is legal until the day the far side imports back, which is how a barrel turns one new import into a cycle across a dozen files. Specs are excluded because a stage's spec legitimately drives the whole assembled transport (`../transport.ts`, `../_transport-harness.ts`). The specifiers are matched RAW, which is exact here because every stage file sits one level below `transports/pipeline/`; the index-only half of the rule is `module-boundaries.test.ts` in aai-runtime, and the map is `transports/pipeline/CLAUDE.md`.",
+      "paths": [
+        "packages/aai-runtime/src/transports/pipeline/output/*.ts",
+        "!packages/aai-runtime/src/transports/pipeline/output/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "../history/*",
+          "../knobs/*",
+          "../llm/*",
+          "../reply/*",
+          "../speech/*",
+          "../commands.ts",
+          "../index.ts",
+          "../lifecycle.ts",
+          "../options.ts",
+          "../providers.ts",
+          "../session-signal.ts",
+          "../transport.ts",
+          "../turn-body.ts",
+          "../turn-outcome.ts",
+          "../_transport-harness.ts"
+        ]
+      }
+    },
+    {
+      "name": "pipeline-stage-reply",
+      "description": "`transports/pipeline/reply/` is what a reply SAYS as it is produced (stream-part handler, line placements, dead-air cover), which writes captions into history and reads the heard cursor, but is driven BY the model stage and never drives it. It may import `heard/`, `history/`, `turn/`, always through that stage's `index.ts`, and never the assembly beside `transports/pipeline/index.ts` (`transport.ts`, `commands.ts`, `lifecycle.ts`, \u2026), which imports every stage. The stage directions together are one DAG \u2014 turn, heard and knobs at the bottom; output; history; reply; llm; speech; the assembly on top \u2014 and Biome's `noImportCycles` cannot hold it on its own: it sees a FILE cycle only once one closes, while a stage reaching 'down the wrong way' through an index is legal until the day the far side imports back, which is how a barrel turns one new import into a cycle across a dozen files. Specs are excluded because a stage's spec legitimately drives the whole assembled transport (`../transport.ts`, `../_transport-harness.ts`). The specifiers are matched RAW, which is exact here because every stage file sits one level below `transports/pipeline/`; the index-only half of the rule is `module-boundaries.test.ts` in aai-runtime, and the map is `transports/pipeline/CLAUDE.md`.",
+      "paths": [
+        "packages/aai-runtime/src/transports/pipeline/reply/*.ts",
+        "!packages/aai-runtime/src/transports/pipeline/reply/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "../knobs/*",
+          "../llm/*",
+          "../output/*",
+          "../speech/*",
+          "../commands.ts",
+          "../index.ts",
+          "../lifecycle.ts",
+          "../options.ts",
+          "../providers.ts",
+          "../session-signal.ts",
+          "../transport.ts",
+          "../turn-body.ts",
+          "../turn-outcome.ts",
+          "../_transport-harness.ts"
+        ]
+      }
+    },
+    {
+      "name": "pipeline-stage-speech",
+      "description": "`transports/pipeline/speech/` is the caller's side \u2014 STT in, a committed turn out \u2014 which starts preemptive generation (`speculation.ts`, hence `llm/` and `history/`) and arms the recovery latch (`heard/`); no other stage imports it. It may import `heard/`, `history/`, `llm/`, always through that stage's `index.ts`, and never the assembly beside `transports/pipeline/index.ts` (`transport.ts`, `commands.ts`, `lifecycle.ts`, \u2026), which imports every stage. The stage directions together are one DAG \u2014 turn, heard and knobs at the bottom; output; history; reply; llm; speech; the assembly on top \u2014 and Biome's `noImportCycles` cannot hold it on its own: it sees a FILE cycle only once one closes, while a stage reaching 'down the wrong way' through an index is legal until the day the far side imports back, which is how a barrel turns one new import into a cycle across a dozen files. Specs are excluded because a stage's spec legitimately drives the whole assembled transport (`../transport.ts`, `../_transport-harness.ts`). The specifiers are matched RAW, which is exact here because every stage file sits one level below `transports/pipeline/`; the index-only half of the rule is `module-boundaries.test.ts` in aai-runtime, and the map is `transports/pipeline/CLAUDE.md`.",
+      "paths": [
+        "packages/aai-runtime/src/transports/pipeline/speech/*.ts",
+        "!packages/aai-runtime/src/transports/pipeline/speech/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "../knobs/*",
+          "../output/*",
+          "../reply/*",
+          "../turn/*",
+          "../commands.ts",
+          "../index.ts",
+          "../lifecycle.ts",
+          "../options.ts",
+          "../providers.ts",
+          "../session-signal.ts",
+          "../transport.ts",
+          "../turn-body.ts",
+          "../turn-outcome.ts",
+          "../_transport-harness.ts"
+        ]
+      }
+    },
+    {
+      "name": "pipeline-stage-turn",
+      "description": "`transports/pipeline/turn/` is the turn's own primitives \u2014 the invalidation gate and chain, the state machine, the metrics frame \u2014 which every other stage reads, so importing any stage from here would close a loop through all of them. It may import no other stage, always through that stage's `index.ts`, and never the assembly beside `transports/pipeline/index.ts` (`transport.ts`, `commands.ts`, `lifecycle.ts`, \u2026), which imports every stage. The stage directions together are one DAG \u2014 turn, heard and knobs at the bottom; output; history; reply; llm; speech; the assembly on top \u2014 and Biome's `noImportCycles` cannot hold it on its own: it sees a FILE cycle only once one closes, while a stage reaching 'down the wrong way' through an index is legal until the day the far side imports back, which is how a barrel turns one new import into a cycle across a dozen files. Specs are excluded because a stage's spec legitimately drives the whole assembled transport (`../transport.ts`, `../_transport-harness.ts`). The specifiers are matched RAW, which is exact here because every stage file sits one level below `transports/pipeline/`; the index-only half of the rule is `module-boundaries.test.ts` in aai-runtime, and the map is `transports/pipeline/CLAUDE.md`.",
+      "paths": [
+        "packages/aai-runtime/src/transports/pipeline/turn/*.ts",
+        "!packages/aai-runtime/src/transports/pipeline/turn/*.test.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "../heard/*",
+          "../history/*",
+          "../knobs/*",
+          "../llm/*",
+          "../output/*",
+          "../reply/*",
+          "../speech/*",
+          "../commands.ts",
+          "../index.ts",
+          "../lifecycle.ts",
+          "../options.ts",
+          "../providers.ts",
+          "../session-signal.ts",
+          "../transport.ts",
+          "../turn-body.ts",
+          "../turn-outcome.ts",
+          "../_transport-harness.ts"
         ]
       }
     },
@@ -1158,7 +1389,7 @@
     },
     {
       "name": "template-eval-runtime-subpaths",
-      "description": "A template's eval imports its HARNESS from ONE subpath, `@alexkroman1/aai-runtime/eval/vitest`, which re-exports the runner-free `/eval` half, the simulated caller and judge, and the `@alexkroman1/aai/testing` stubs a case composes with \u2014 one door because an eval file used to reach four subpaths of two packages for one harness. So `/eval`, `@alexkroman1/aai/testing` and `/testing/vitest` are refused HERE as well: `/eval` is the door for a harness that is not vitest, and the SDK's testing subpaths stay the unit-level surface a tool's or a step's own spec imports (a stub an eval needs and the one door lacks is a line in `eval-vitest-barrel.ts`, not a second import). No other subpath of the runtime package either. The root barrel is the one that bites: it reaches `agent-server.ts` \u2192 `server.ts` \u2192 `workflow/install.ts` \u2192 `step-fetch.ts`, so an eval that imports the root for one TYPE drags this runtime's node-reaching module graph into the template's own TypeScript program \u2014 three `BodyInit`/`exactOptionalPropertyTypes` errors in runtime files the eval never calls. It happened the day the surface shipped, in three template evals reaching for `RunCodeExecutor`, which is why `/eval` re-exports that type rather than letting a template reach past it. `/testing` is forbidden HERE and not in templates generally: eight template `agent.test.ts` files legitimately use `runWorkflow` from it, but an eval driving a real session has no business starting a durable run through a second door, and the two subpaths gate on different credentials. `/auth`, `/metrics` and `/tracing` are an EMBEDDER's — a server's ticket gate and its telemetry — and nothing an eval of the agent itself has reason to reach. `/internal` is already refused for every template file by `template-authoring-boundary`, so this list plus that one is TOTAL over the package's export map \u2014 an allow-list spelled as a complete deny-list, which is the only form konsistent has. It was written down before only inside a JSDoc block copied verbatim into four template evals, and deduplicating those onto `createVmRunCode` is what left it with no home \u2014 the general hazard in a dedupe being that the copies carry prose as well as code, and the prose is the half a diff does not miss.",
+      "description": "A template's eval imports its HARNESS from ONE subpath, `@alexkroman1/aai-runtime/eval/vitest`, which re-exports the runner-free `/eval` half, the simulated caller and judge, and the `@alexkroman1/aai/testing` stubs a case composes with \u2014 one door because an eval file used to reach four subpaths of two packages for one harness. So `/eval`, `@alexkroman1/aai/testing` and `/testing/vitest` are refused HERE as well: `/eval` is the door for a harness that is not vitest, and the SDK's testing subpaths stay the unit-level surface a tool's or a step's own spec imports (a stub an eval needs and the one door lacks is a line in `eval-vitest-barrel.ts`, not a second import). No other subpath of the runtime package either. The root barrel is the one that bites: it reaches `agent-server.ts` \u2192 `server.ts` \u2192 `workflow/install.ts` \u2192 `step-fetch.ts`, so an eval that imports the root for one TYPE drags this runtime's node-reaching module graph into the template's own TypeScript program \u2014 three `BodyInit`/`exactOptionalPropertyTypes` errors in runtime files the eval never calls. It happened the day the surface shipped, in three template evals reaching for `RunCodeExecutor`, which is why `/eval` re-exports that type rather than letting a template reach past it. `/testing` is forbidden HERE and not in templates generally: eight template `agent.test.ts` files legitimately use `runWorkflow` from it, but an eval driving a real session has no business starting a durable run through a second door, and the two subpaths gate on different credentials. `/auth`, `/metrics` and `/tracing` are an EMBEDDER's \u2014 a server's ticket gate and its telemetry \u2014 and nothing an eval of the agent itself has reason to reach. `/internal` is already refused for every template file by `template-authoring-boundary`, so this list plus that one is TOTAL over the package's export map \u2014 an allow-list spelled as a complete deny-list, which is the only form konsistent has. It was written down before only inside a JSDoc block copied verbatim into four template evals, and deduplicating those onto `createVmRunCode` is what left it with no home \u2014 the general hazard in a dedupe being that the copies carry prose as well as code, and the prose is the half a diff does not miss.",
       "paths": ["packages/aai-templates/templates/**/*.eval.test.ts"],
       "mustNot": {
         "importFrom": [

@@ -8,7 +8,7 @@ read_when: >-
 # Dialogs, wired to a session
 
 Reference for `runtime-dialogs.ts`, `runtime-dialog-knobs.ts` and
-`transports/pipeline-dialog-knobs.ts` — the runtime half of `dialog()`. A
+`transports/pipeline/knobs/dialog.ts` — the runtime half of `dialog()`. A
 SIBLING of the package guide rather than a section of it, per the root
 `AGENTS.md`: this is read once you are already changing the dialog bridge, and
 none of it is needed to work elsewhere in the package. `packages/aai/CLAUDE.md`
@@ -104,9 +104,9 @@ the dialog actually is instead of firing a transition the conversation has left.
 
 ### Three of the five voice knobs are live; two are impossible
 
-`transports/pipeline-dialog-knobs.ts` carries the table. The short version:
+`transports/pipeline/knobs/dialog.ts` carries the table. The short version:
 
-- **`interruption`** — live. The two interim gates in `pipeline-user-speech.ts`
+- **`interruption`** — live. The two interim gates in `transports/pipeline/speech/user-speech.ts`
   are read at the moment a partial is classified, so they became thunks.
   `interruption: "off"` is an infinite word threshold (the transport's
   `minBargeInWords: Infinity`): both gates are `words >= threshold` tests, so an

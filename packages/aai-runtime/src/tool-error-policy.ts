@@ -155,7 +155,7 @@ export function resolveToolError(params: {
  *
  * {@link FatalToolError} rejects the tool call, and on its own that is not
  * enough: the AI SDK catches a rejecting `execute`, emits a `tool-error` stream
- * part and keeps stepping. `pipeline-stream-parts.ts` drops that part on its
+ * part and keeps stepping. `transports/pipeline/reply/stream-parts.ts` drops that part on its
  * `default:` arm, so the model was handed *something* it could retry against
  * while the author had declared the failure unrecoverable — the exact outcome
  * `onError`'s fatal arm exists to prevent, one layer up.

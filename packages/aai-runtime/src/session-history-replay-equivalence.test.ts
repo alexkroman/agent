@@ -58,7 +58,7 @@
  *
  * ## The third row WAS a defect, and closing it is what the tag is for
  *
- * `pipeline-turn-outcome.ts` rules `history / ctx.messages: never` for both
+ * `transports/pipeline/turn-outcome.ts` rules `history / ctx.messages: never` for both
  * failure phrases, with the reason measured: *"teaching the model that its own
  * replies open with apologies (or with filler) is how it starts producing them
  * unprompted."* Its transcript row reads `FINAL` — deliberately, so the UI
@@ -112,7 +112,6 @@ import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import { estimateConversationTokens, HISTORY_RETAIN_TOKENS } from "./_history-retention.ts";
 import { recordingTts } from "./_pipeline-test-fakes.ts";
 import {
   contentsOf,
@@ -128,10 +127,14 @@ import {
 import type { TtsSession } from "./providers/openers.ts";
 import { messagesFromEvents } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
-import { createPipelineHistory } from "./transports/pipeline-history.ts";
-import type { PipelineProviderSessions } from "./transports/pipeline-providers.ts";
-import { createTurnGate } from "./transports/pipeline-turn-gate.ts";
-import { createTurnOutcome } from "./transports/pipeline-turn-outcome.ts";
+import { createPipelineHistory } from "./transports/pipeline/history/history.ts";
+import {
+  estimateConversationTokens,
+  HISTORY_RETAIN_TOKENS,
+} from "./transports/pipeline/history/retention.ts";
+import type { PipelineProviderSessions } from "./transports/pipeline/providers.ts";
+import { createTurnGate } from "./transports/pipeline/turn/gate.ts";
+import { createTurnOutcome } from "./transports/pipeline/turn-outcome.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
 
 /** One turn of a pipeline session, as the transport really ends one. */

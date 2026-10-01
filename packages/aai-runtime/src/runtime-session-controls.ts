@@ -42,7 +42,7 @@ import type { RuntimeSessionState } from "./runtime-session-state.ts";
 import type { SystemPromptResolver } from "./runtime-system-prompt.ts";
 import type { ServerSession } from "./session-core.ts";
 import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "./session-emitter.ts";
-import { createTurnGuardrails, type TurnGuardrails } from "./transports/pipeline-guardrails.ts";
+import { createTurnGuardrails, type TurnGuardrails } from "./transports/pipeline/index.ts";
 import type { Transport } from "./transports/types.ts";
 import { createUsageMeter, type UsageMeter } from "./usage-meter.ts";
 

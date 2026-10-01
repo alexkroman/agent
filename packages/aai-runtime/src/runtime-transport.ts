@@ -30,15 +30,17 @@ import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import { reportSessionCapabilities } from "./transports/capabilities.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
+import type {
+  PersonaTurnSource,
+  PipelineTransportOptions,
+  TurnGuardrails,
+} from "./transports/pipeline/index.ts";
 import {
+  createPipelineTransport,
   type DialogTurnSource,
   interruptionKnobs,
   type PersonaInterruptionSource,
-} from "./transports/pipeline-dialog-knobs.ts";
-import type { TurnGuardrails } from "./transports/pipeline-guardrails.ts";
-import type { PersonaTurnSource } from "./transports/pipeline-persona-knobs.ts";
-import { createPipelineTransport } from "./transports/pipeline-transport.ts";
-import type { PipelineTransportOptions } from "./transports/pipeline-transport-options.ts";
+} from "./transports/pipeline/index.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type { SystemPromptOption, Transport, TransportCallbacks } from "./transports/types.ts";
 import { resolveSystemPrompt } from "./transports/types.ts";
@@ -86,7 +88,7 @@ function readAssemblyS2sOptions(options: Record<string, unknown> | undefined): {
  * Two members rather than one because the resume skip is scoped to a
  * connection's OPENING line, and two readers want the line without it: the
  * pipeline's `reset()` starts a new conversation and must greet (see
- * `transports/CLAUDE.md`), and AssemblyAI S2S has never honoured a resume skip —
+ * `transports/pipeline/CLAUDE.md`), and AssemblyAI S2S has never honoured a resume skip —
  * a known gap, kept as it was rather than changed here.
  *
  * @internal

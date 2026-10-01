@@ -23,7 +23,7 @@
  * the providers themselves (OpenAI: "messages with role 'tool' must be a
  * response to a preceding message with 'tool_calls'"). The history's front trim
  * never makes the one shape of it a trim could (`evictLlm`,
- * `pipeline-history.ts`); this guard covers the rest.
+ * `transports/pipeline/history/history.ts`); this guard covers the rest.
  *
  * **The rules match the SDK's own check, not a stricter one.** A call is
  * answered by a result anywhere after it and before the next `user` or

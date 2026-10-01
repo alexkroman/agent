@@ -80,7 +80,7 @@ import { createRestartableTimer, type RestartableTimer } from "./_timer.ts";
 import type { Logger } from "./runtime-config.ts";
 import { mergeTurnKnobs, reportDialogKnobs } from "./runtime-dialog-knobs.ts";
 import type { SessionSystemPrompt } from "./runtime-system-prompt.ts";
-import type { DialogTurnSource } from "./transports/pipeline-dialog-knobs.ts";
+import type { DialogTurnSource } from "./transports/pipeline/index.ts";
 import type { Transport } from "./transports/types.ts";
 
 /**

@@ -4,7 +4,7 @@
  *
  * `dropTrailingUser` exists to undo one push: the injected prompt (a
  * false-interruption resume, a silence nudge, `injectTurn`) that
- * `pipeline-turn-body.ts` writes BEFORE the LLM stream runs and that
+ * `../transports/pipeline/turn-body.ts` writes BEFORE the LLM stream runs and that
  * `persistBargeIn` rolls back when the turn left no trace at all. The claim it
  * makes is total — "so this can never eat a message it did not write" — and the
  * only way to state that is as an equality against the history as it stood
@@ -63,10 +63,13 @@ import type { ModelMessage } from "ai";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import type { TtsSession, Unsubscribe } from "../providers/openers.ts";
-import { createPipelineHistory, type PipelineHistory } from "../transports/pipeline-history.ts";
-import type { PipelineProviderSessions } from "../transports/pipeline-providers.ts";
-import { createTurnGate } from "../transports/pipeline-turn-gate.ts";
-import { createTurnOutcome } from "../transports/pipeline-turn-outcome.ts";
+import {
+  createPipelineHistory,
+  type PipelineHistory,
+} from "../transports/pipeline/history/history.ts";
+import type { PipelineProviderSessions } from "../transports/pipeline/providers.ts";
+import { createTurnGate } from "../transports/pipeline/turn/gate.ts";
+import { createTurnOutcome } from "../transports/pipeline/turn-outcome.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
 
 /**

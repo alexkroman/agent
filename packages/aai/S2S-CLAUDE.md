@@ -65,11 +65,11 @@ was stated alongside it.
 
   `sttPrompt` was pipeline-only until 2026-08-06 — a SILENT config drop, since
   both `agent({ sttPrompt })` and `host.sttPrompt` reached the agent definition
-  and only `pipeline-transport.ts` read it. **The fix then landed the runtime
-  half and left the TYPE half closed for three days**, which is worth more than
-  the bug was: `PipelineOnlyField` still listed `sttPrompt`, so
-  `agent({ s2s, sttPrompt })` was a compile error naming a rule that was no
-  longer true, and the only way to reach the measured win was a raw
+  and only `aai-runtime/src/transports/pipeline/transport.ts` read it. **The fix
+  then landed the runtime half and left the TYPE half closed for three days**,
+  which is worth more than the bug was: `PipelineOnlyField` still listed
+  `sttPrompt`, so `agent({ s2s, sttPrompt })` was a compile error naming a rule
+  that was no longer true, and the only way to reach the measured win was a raw
   `export default {...}`. A dropped field has a mirror image — a REJECTED field
   the runtime honours — and it reads to an author as "unsupported", so it draws
   no bug report at all. **When a config field's mode rule changes, the type

@@ -16,7 +16,7 @@
  * Matches LiveKit's `max_tool_steps`. The cap bounds tool steps only: on
  * reaching it the pipeline spends ONE more step with `toolChoice: "none"`, so
  * the model must produce speech (`forceFinalAnswer` in
- * `host/transports/pipeline-llm-stream.ts`).
+ * `host/transports/pipeline/llm/stream.ts`).
  *
  * **The forced step is what makes ANY cap safe, and the two must move
  * together.** Without it, hitting the cap ends the turn wherever it lands, so

@@ -18,7 +18,7 @@
  * `guard-invariants` rule 35 holds every `prepareStep:` in this package to it.
  *
  * {@link forceFinalAnswer} sits beside it — the preparer every one of those
- * call sites ends with. It came out of `pipeline-llm-stream.ts`, which three
+ * call sites ends with. It came out of `transports/pipeline/llm/stream.ts`, which three
  * modules imported it from and which the context budget took past the file-line
  * cap; a preparer belongs with the seam that composes preparers rather than
  * inside the one turn assembler that happens to have declared it first.

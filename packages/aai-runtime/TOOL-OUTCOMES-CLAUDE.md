@@ -61,13 +61,13 @@ and a `{ toolName: undefined }` reaching a `structuredClone` or a JSON round
 trip is a key that survives one and not the other.
 
 The four call sites, and the one thing each contributes that the others do not
-(`transports/pipeline-transport.ts` is listed because it is where the first
+(`transports/pipeline/transport.ts` is listed because it is where the first
 one's sink is bound, not as a fifth literal):
 
 | Producer                                    | Sink                                              | What is particular to it                                                                                                                                                                                                               |
 | ------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `to-vercel-tools.ts`                        | `recordToolResult?` on the tool context           | The pipeline's and the text agent's tool loop. The AI SDK hands the string straight back to the model and the assistant/`tool` pair only materializes at the END of the step, so this is the one moment the host knows a result at all |
-| `transports/pipeline-transport.ts`          | `history.pushToolResult(message)`                 | Wires that sink to the pipeline's own conversation view                                                                                                                                                                                |
+| `transports/pipeline/transport.ts`          | `history.pushToolResult(message)`                 | Wires that sink to the pipeline's own conversation view                                                                                                                                                                                |
 | `text-agent.ts`                             | a per-turn `view` array, plus `toContextMessages` | Two entries: the sink for a turn it runs, and the conversion of an INCOMING `ToolModelMessage`'s `tool-result` parts when a caller hands the agent a history                                                                           |
 | `session-tool-steps.ts` → `session-core.ts` | `recordToolResult` → `pushMessages`               | S2S, where the provider runs the loop and the runtime only observes it                                                                                                                                                                 |
 | `session-event-history.ts`                  | the rebuilt `messages` array                      | RESUME, from the `tool.completed` events in the session's own log                                                                                                                                                                      |
@@ -127,12 +127,12 @@ no `toolName`, because the RESULT is the half a tool reads.
 
 ## Trap 2: a `"tool"` message must never be SEEDED into the model's view
 
-`toModelMessage` (`transports/pipeline-stream.ts`) maps `user` to `user` and
+`toModelMessage` (`transports/pipeline/output/tts.ts`) maps `user` to `user` and
 **everything else to `assistant`**. Hand it a `"tool"` message and the model is
 told it SAID the tool's serialized output. That is why `isLlmSeedable` exists in
-`pipeline-history.ts` and why both `createPipelineHistory` and `seed()` filter
-with it: the conversation view holds tool results, the LLM view holds tool-call
-PAIRS, and this half arrives without the other one.
+`transports/pipeline/history/history.ts` and why both `createPipelineHistory`
+and `seed()` filter with it: the conversation view holds tool results, the LLM
+view holds tool-call PAIRS, and this half arrives without the other one.
 
 Widening `toModelMessage` is the wrong repair for the right reason. An orphan
 `tool` message is rejected outright by both providers — OpenAI with "messages
@@ -216,7 +216,7 @@ apart, and its module doc carries the full argument. The three:
 - **Unrecoverable** — `execute` throws and `onError` throws in turn. The call
   REJECTS with a `FatalToolError` and the model is handed nothing, **and the
   turn stops.** The rejection alone would not stop it: the AI SDK catches a
-  rejecting `execute`, emits a `tool-error` part that `pipeline-stream-parts.ts`
+  rejecting `execute`, emits a `tool-error` part that `transports/pipeline/reply/stream-parts.ts`
   only logs (`Tool call failed`), and keeps stepping. `FatalToolLatch` is the side
   channel that carries the verdict out of the tool call — `to-vercel-tools.ts`
   fires it through `onFatalToolError`, and `withFatalSignal` folds its signal
@@ -240,7 +240,7 @@ same `...rest` spread `description` rides, and each has a spec asserting nothing
 eats it. `SlotToolDef` and `DialogToolDef` are BUILT from `ToolDef`
 (`Omit<ToolDef, "execute">`), so `onError` and `messages` — and whatever
 `ToolDef` grows next — reach both builders by construction;
-`transports/pipeline-tool-messages.test.ts` runs a real `slot.updateTool` and
+`transports/pipeline/tool-messages.test.ts` runs a real `slot.updateTool` and
 `dialog.tool` through a turn. A dialog REFUSAL is a returned `ToolFailure`, so it
 takes the tool's `messages.failed` line. On a GATED tool there is one thing extra
 to know, and it is on `DialogToolDef`'s doc: the handler runs after the gated

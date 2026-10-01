@@ -5,7 +5,7 @@
  * webhook route reaching a live call through `ctx.speech(sessionId)`.
  *
  * The pieces have their own specs (`session-speech.test.ts` for the session
- * half, `transports/pipeline-say.test.ts` for the transport's). What only this
+ * half, `transports/pipeline/say.test.ts` for the transport's). What only this
  * file shows is the WIRING: that the handle an author is given is bound to the
  * session in the runtime's map, so a `say` from either surface reaches TTS
  * verbatim, and a route asking for an id no call holds gets `undefined`.
