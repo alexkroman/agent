@@ -1,11 +1,13 @@
 ---
 summary: >-
-  STT/LLM/TTS/S2S provider descriptors: the shipped providers and their rules,
+  STT/LLM/TTS/S2S provider descriptors: one defineProvider record per vendor
+  and the generated docs table, fallback(), the shipped providers and their rules,
   the AssemblyAI gateway default model and its measurement, voices, adding a
   provider, the stage registries, and the "Session mode resolved" settings log
 read_when: >-
   editing a provider descriptor under `packages/aai/src/sdk/providers/`,
-  changing a default model or voice, or adding a provider
+  changing a default model or voice, adding a provider, or touching
+  `fallback([...])`
 ---
 
 # packages/aai/src/sdk/providers — provider descriptors
@@ -13,6 +15,46 @@ read_when: >-
 Descriptors here are pure data (no vendor SDK, no `node:`). The OPENERS that
 dial them, the resolvers and `_llm-registry.ts` live in `aai-runtime`'s
 `providers/`. S2S wire rules: [`S2S-CLAUDE.md`](../../../S2S-CLAUDE.md).
+
+## One registration per vendor, split along the package boundary
+
+**A vendor is ONE `defineProvider({ kind, stage, envVar, label, factory,
+subpath })` record here and ONE opener there**, keyed by `(stage, kind)`
+(`define-provider.ts` has the design). The SDK may not import an opener, so the
+two halves cannot be one call; everything that is data derives from the record:
+
+- **The factory stamps it** — `describeProvider(DEFINITION, options)`, so a
+  factory cannot name a kind of its own; the `*_KIND` / `*_API_KEY_ENV`
+  constants on `host-internal` are read off it.
+- **`catalog.ts` lists them** (`STT_PROVIDERS`, `TTS_PROVIDERS`,
+  `S2S_PROVIDERS`, and `LLM_PROVIDERS`, total over `KnownLlmProvider` by
+  `satisfies`); `PROVIDER_CATALOG` is all of them in docs order.
+- **`aai-runtime`'s `providers/registry.ts` is the join**: each opener table is
+  `{ [K in SttKind]: … }` over the catalog's kinds (a missing or extra opener
+  fails `tsc`) and takes `envVar` from the definition; `registry.test.ts` holds
+  every registry equal to the catalog at run time. `_llm-registry.ts` holds
+  only clients and base URLs.
+- **`requiredProviderEnvVars` and the host-credential allowlist read those
+  registries**, so neither restates a key.
+- **The docs site's provider table is GENERATED** from `PROVIDER_CATALOG` by
+  `pnpm sync:provider-table`; `check:provider-table` fails when it is stale.
+  One row per key variable; credential-free and `/experimental` providers are
+  left out.
+
+## `fallback([...])` — failover as a descriptor
+
+`fallback.ts` (on `/stt`, `/llm` and `/tts`, owned by `aai:stt`) is
+`{ kind: "fallback", options: { providers } }`, flattened, at least two
+members, the primary's `model` copied up for an LLM's readers. **The policy is
+on `fallback`'s doc and nowhere else**: STT/TTS switch on an open failure or an
+error before the first output (a transcript / audio); the LLM switches per
+REQUEST on a throw or a stream error before the first content part; never on an
+abort or after output. The host half is `aai-runtime`'s `providers/fallback.ts`
+and `_fallback-llm.ts`; each switch is a `provider.failed-over` session event
+(`protocol-events-accounting.ts`), bound per session in `runtime-transport.ts`
+because resolution is per runtime. **Every member's key is required** — the
+preflight demands them all, and `resolveLlm` resolves every member eagerly.
+`agentConfigWarnings` and the settings log read members one by one.
 
 ## STT
 
@@ -36,8 +78,9 @@ stage-suffixed so the bare name is free for TTS), `sonioxStt({ model:
 
 ONE factory, `llm({ provider, model, baseUrl?, apiKeyEnv?, providerOptions? })`
 (`llm/llm.ts`), whose `kind` IS the provider. `@ai-sdk/*` is imported only by
-the host resolver, never the agent bundle. **Key variables, base URLs and
-clients live in `aai-runtime`'s `providers/_llm-registry.ts`** (`anthropic`,
+the host resolver, never the agent bundle. **Key variables and labels are
+`catalog.ts`'s `LLM_PROVIDERS`; base URLs and clients live in `aai-runtime`'s
+`providers/_llm-registry.ts`** (`anthropic`,
 `openai`, `google`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`,
 `gateway`, `assemblyai`). An UNREGISTERED provider with a `baseUrl` resolves as
 OpenAI-compatible, keyed by `apiKeyEnv` (else `<PROVIDER>_API_KEY`). On
@@ -107,13 +150,17 @@ there.
 
 ## Adding a provider
 
-`host-internal.ts` publishes each provider's `KIND` and `<PROVIDER>_API_KEY_ENV`,
-never a stage subpath. **STT/TTS/S2S**: descriptor in
-`{stt,tts,s2s}/<name>.ts`, its two constants in `host-internal.ts`, an opener in
-`aai-runtime`'s `providers/{stt,tts}/`, one entry in `providers/resolve.ts`'s
-registry. **LLM**: one `_llm-registry.ts` entry plus its literal in
-`LlmProviderName` and `KNOWN_LLM_PROVIDERS` (held together by
-`satisfies Record<KnownLlmProvider, …>`).
+**STT/TTS/S2S**: the descriptor and its `defineProvider` record in
+`{stt,tts,s2s}/<name>.ts`, the record in `catalog.ts`'s stage list, the two
+derived constants in `host-internal.ts`, an opener in `aai-runtime`'s
+`providers/{stt,tts}/`, and its entry in `providers/registry.ts`'s opener table
+(`tsc` refuses the build until it exists). **LLM**: its literal in
+`LlmProviderName` and `KNOWN_LLM_PROVIDERS`, a `LLM_PROVIDERS` entry (key
+variable, label), and its client in `_llm-registry.ts`'s `LLM_CLIENTS` — each
+held total against `KnownLlmProvider`. Then `pnpm sync:provider-table`. A HOST
+adds a kind without any of this through `registerSttKind` / `registerTtsKind` /
+`registerLlmKind` (`@alexkroman1/aai-runtime`, documented on the docs site's
+"Your own provider").
 
 Opener rules (`aai-runtime`'s `providers/_utils.ts`, `_socket.ts`):
 
@@ -125,7 +172,7 @@ Opener rules (`aai-runtime`'s `providers/_utils.ts`, `_socket.ts`):
   connect deadline (`WS_OPEN_TIMEOUT_MS`, under the session start timeout) and
   the pre-connect `error` guard.
 - **All four stages are registries, S2S included**: `S2sKind` is the closed
-  union of `S2S_REGISTRY`'s keys and `runtime-transport.ts` switches
+  union of `S2S_PROVIDERS`' kinds and `runtime-transport.ts` switches
   exhaustively over it; S2S credentials resolve through `resolveS2sEnvVar`
   honouring `apiKeyEnv`, so the preflight and the session read the same key.
 

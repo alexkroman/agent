@@ -185,9 +185,9 @@ export {
  * AssemblyAI descriptor's `providerOptions`, and the known-provider list (held
  * equal to `KnownLlmProvider` by `llm.test.ts`) plus that closed union itself —
  * the literal half of the open `LlmProviderName`, for the host registry's
- * `satisfies Record<KnownLlmProvider, …>`. Every OTHER provider's key
- * variable and base URL lives in that table (`aai-runtime`'s
- * `providers/_llm-registry.ts`), beside the client it configures.
+ * `satisfies Record<KnownLlmProvider, …>`. Every provider's key variable is in
+ * `LLM_PROVIDERS` (the catalog, above); every OTHER provider's base URL lives
+ * in `aai-runtime`'s `providers/_llm-registry.ts`, beside its client.
  */
 export {
   ASSEMBLYAI_LLM_API_KEY_ENV,
