@@ -70,9 +70,13 @@ and only the request is trimmed. The window is
 window yields NO preparer; the count is calibrated per SESSION against reported
 `usage.inputTokens`. The module doc carries the argument.
 
-**Preparers COMPOSE** (`../_prepare-step.ts`): the budget owns `messages`,
-`forceFinalAnswer` goes last and owns `toolChoice`. Writing either straight
-into the slot silently deletes the other.
+**Preparers REGISTER into one pipeline** (`../_prepare-step.ts`):
+`composePreparers([{ stage, prepare }, …])` layers them in `PREPARER_ORDER`
+(budget → agent reset → persona → dialog → error budget → `forceFinalAnswer`)
+whatever order a call site lists them in, last writer winning per key. Writing
+any preparer straight into the slot silently deletes the others, so
+`guard-invariants` rule 35 rejects a `prepareStep:` in this package whose value
+is not a `composePreparers(…)` call; a new concern is a new stage.
 
 ## A rollback must undo the eviction its push caused
 

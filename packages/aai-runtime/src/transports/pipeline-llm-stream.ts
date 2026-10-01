@@ -17,7 +17,7 @@
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { type ModelMessage, stepCountIs, streamText } from "ai";
 import {
-  composePrepareStep,
+  composePreparers,
   forceFinalAnswer,
   resetToolChoiceAfterFirstStep,
   toolErrorBudget,
@@ -123,44 +123,23 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // Evaluated after each step, and the latch is set during the step's tool
     // execution, so it is already true when the SDK asks.
     stopWhen: [stepCountIs(req.maxSteps + 1), () => req.toolSpeech?.verbatim() !== undefined],
-    // ONE slot, SIX things to say — see `_prepare-step.ts`. Last writer wins
-    // per key, so the ORDER is `ToolChoice`'s documented scope precedence
-    // (agent → persona → dialog state → forced answers) written out:
-    //
-    // 1. the context budget, which owns `messages` and shares no key with the
-    //    four below;
-    // 2. the AGENT-scoped reset, which puts a demanding `toolChoice` back to
-    //    `"auto"` after step 0;
-    // 3. the active PERSONA's tool set and knobs — who is speaking is broader
-    //    than where in their script they are, so it sits between the agent and
-    //    the dialog state, and it alone owns `activeTools`;
-    // 4. the DIALOG STATE's knobs, which beat the agent's and the persona's for
-    //    exactly as long as the conversation is in that state — so this must
-    //    come AFTER the reset. It used to come before, and the reset then
-    //    overwrote a state's pin with `"auto"` from step 1 on: a state that
-    //    must call a tool (or must not) silently stopped meaning it after the
-    //    first step of every turn, on every agent whose own `toolChoice`
-    //    demands something;
-    // 5. the tool-error budget, which forces `"none"` once this turn's tool
-    //    calls keep failing (an identical retry of a failed call, or three
-    //    failures) — AFTER the dialog state, because a state that pins a tool
-    //    must not keep the model calling one that cannot succeed while the
-    //    caller waits in silence; it says nothing on any other step, so every
-    //    pin above stands until the budget is spent;
-    // 6. `forceFinalAnswer`, which owns the same key on the one step the budget
-    //    reserved and must win there over all five. Both force `"none"`, so
-    //    their relative order changes no request — last only by convention.
-    //
-    // Writing any of them straight into the slot deletes the others, silently.
-    // Built HERE, per request, because the error budget counts one turn.
-    prepareStep: composePrepareStep(
-      req.contextBudget,
-      resetToolChoiceAfterFirstStep(req.toolChoice, req.resetToolChoice ?? true),
-      req.personaStep,
-      req.dialogStep,
-      toolErrorBudget(req.log, req.sid),
-      forceFinalAnswer(req.maxSteps, req.log, req.sid),
-    ),
+    // ONE slot, SIX things to say — see `_prepare-step.ts`. Each concern
+    // REGISTERS by stage and `composePreparers` layers them in
+    // `PREPARER_ORDER` (budget → agent reset → persona → dialog state → the
+    // two forced answers), so the precedence is decided there and pinned by
+    // its spec, not by the order of this list. Built HERE, per request,
+    // because the error budget counts one turn.
+    prepareStep: composePreparers([
+      { stage: "context-budget", prepare: req.contextBudget },
+      {
+        stage: "agent-tool-choice",
+        prepare: resetToolChoiceAfterFirstStep(req.toolChoice, req.resetToolChoice ?? true),
+      },
+      { stage: "persona", prepare: req.personaStep },
+      { stage: "dialog", prepare: req.dialogStep },
+      { stage: "tool-error-budget", prepare: toolErrorBudget(req.log, req.sid) },
+      { stage: "force-final-answer", prepare: forceFinalAnswer(req.maxSteps, req.log, req.sid) },
+    ]),
     abortSignal: req.signal,
     onStepFinish: (step) => {
       // The provider's own counts, folded in before the messages: a step that

@@ -542,7 +542,7 @@ describe("the context budget and forceFinalAnswer share the prepareStep slot", (
   });
 
   test("nothing is trimmed when the model's window is unknown", async () => {
-    // `createContextBudget` answers `undefined`, so `composePrepareStep` skips
+    // `createContextBudget` answers `undefined`, so `composePreparers` skips
     // it and the request carries the whole history — the documented fallback.
     const llm = createFakeLanguageModel({ steps: [[{ type: "text", text: "ok" }]] });
     const messages = overflowingHistory();

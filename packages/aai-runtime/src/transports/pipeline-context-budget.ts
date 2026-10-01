@@ -252,7 +252,7 @@ export function createContextBudget(
   const limit = contextTokenBudget(options.llm);
   // An unknown window overrides NOTHING — see the module doc. Answering
   // `undefined` rather than an inert preparer keeps that fact at the call site,
-  // where `composePrepareStep` skips it.
+  // where `composePreparers` skips it.
   if (limit === undefined) return undefined;
   const { log, sid } = options;
   /**

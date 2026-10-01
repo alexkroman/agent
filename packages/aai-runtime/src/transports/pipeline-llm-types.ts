@@ -79,7 +79,7 @@ export interface ConsumeLlmStreamParams {
    * Bounds what each step SENDS to the model — see `pipeline-context-budget.ts`.
    *
    * A `prepareStep` preparer, composed with `forceFinalAnswer` rather than
-   * replacing it (`composePrepareStep`), and `undefined` when the model's
+   * replacing it (`composePreparers`), and `undefined` when the model's
    * context window is not known, at which point nothing is trimmed. It is
    * SESSION-scoped: the fixed cost it learns from one step's reported usage is
    * the right number for the next turn's first step.
