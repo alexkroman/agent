@@ -2,25 +2,33 @@
 
 exports[`cli usage snapshots > aai --help 1`] = `
 "Voice agent development kit (aai vX.X.X)
-USAGE aai init|dev|console|start|test|eval|build|list|pull|push|publish|delete|login|secret|logs|workflow|templates
-COMMANDS
-       init    Scaffold a new agent project
-        dev    Start a local development server
-    console    Talk to the agent through your microphone and speakers
-      start    Serve the built agent (production)
-       test    Run the project's tests
-       eval    Run agent behaviour evals against a live model
-      build    Bundle agent without deploying
-       list    List your studio projects
-       pull    Pull a studio project into a local directory
-       push    Sync this project's source to its studio workspace
-    publish    Push to the studio and deploy to production (the studio's Publish button)
-     delete    Delete the studio project and its deployed agents
-      login    Link your signed-in browser account and save your API key
-     secret    Manage agent secrets
-       logs    Show what the deployed agent has printed
-   workflow    Inspect and steer durable workflow runs
-  templates    List available project templates
+USAGE aai <command> [OPTIONS]
+LOCAL DEVELOPMENT (THIS MACHINE)
+  init       Scaffold a new agent project
+  dev        Start a local development server
+  console    Talk to the agent through your microphone and speakers
+  test       Run the project's tests
+  eval       Run agent behaviour evals against a live model
+  build      Bundle agent without deploying
+STUDIO ROUND-TRIP (SOURCE ↔ THE STUDIO WORKSPACE)
+  pull       Pull a studio project into a local directory
+  push       Sync this project's source to its studio workspace
+  publish    Push to the studio and deploy to production (the studio's Publish button)
+  delete     Delete the studio project and its deployed agents
+  list       List your studio projects
+DEPLOYED AGENT
+  logs       Show what the deployed agent has printed
+  secret     Manage agent secrets
+  workflow   Inspect and steer durable workflow runs
+SELF-HOSTING
+  start      Serve the built agent (production)
+ACCOUNT
+  login      Link your signed-in browser account and save your API key
+TEMPLATES
+  templates  List available project templates
+With no command, \`aai\` in an agent directory (one with agent.ts) runs \`aai publish\`:
+it pushes to the studio and deploys to PRODUCTION. At a terminal it asks first;
+a non-interactive run publishes without asking. Elsewhere it runs \`aai init\`.
 Use aai <command> --help for more information about a command."
 `;
 
@@ -29,8 +37,8 @@ exports[`cli usage snapshots > aai build --help 1`] = `
 USAGE build [OPTIONS]
 OPTIONS
              --json    Output JSON (auto-detected in non-TTY)
-        --skipTests    Skip running tests before build
-    --skipTypecheck    Skip type checking before build
+       --skip-tests    Skip running tests before build
+   --skip-typecheck    Skip type checking before build
   --target=<target>    Deployment shape to emit (node, vercel, deno, modal; default: detected)"
 `;
 
@@ -48,8 +56,8 @@ USAGE deploy [OPTIONS]
 OPTIONS
   -s, --server=<server>    Platform server URL
                  --json    Output JSON (auto-detected in non-TTY)
-     --allowPreviewSlug    Permit a \`-preview\`-suffixed slug (reserved for studio auto-previews; studio-internal — a slug you claim this way is subject to the preview reaper)
-        --skipTypecheck    Skip type checking before deploy"
+   --allow-preview-slug    Permit a \`-preview\`-suffixed slug (reserved for studio auto-previews; studio-internal — a slug you claim this way is subject to the preview reaper)
+       --skip-typecheck    Skip type checking before deploy"
 `;
 
 exports[`cli usage snapshots > aai dev --help 1`] = `
@@ -128,5 +136,5 @@ USAGE test [OPTIONS]
 OPTIONS
   --json    Output JSON (auto-detected in non-TTY)
   --only    Run agent.test.ts alone, not every spec in the project
-   --all    Deprecated: every spec in the project is the default"
+   --all    Deprecated, does nothing: every spec in the project is the default"
 `;

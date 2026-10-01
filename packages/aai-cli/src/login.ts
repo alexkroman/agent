@@ -27,7 +27,7 @@ import { linkConfirmationCode, sleep } from "@alexkroman1/aai/internal";
 import { resolveApprovedServer } from "./_agent.ts";
 import { updateGlobalConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
-import { log } from "./_ui.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 
 export type LoginDeps = {
   /** Test seam — never set outside tests. */
@@ -38,6 +38,8 @@ export type LoginDeps = {
   pollIntervalMs?: number;
   /** Test seam — never set outside tests. */
   timeoutMs?: number;
+  /** The terminal; defaults to the process's. */
+  ui?: Ui;
 };
 
 const LINK_POLL_INTERVAL_MS = 2000;
@@ -184,11 +186,14 @@ function openerFor(platform: NodeJS.Platform): [string, string[]] {
   return ["xdg-open", []];
 }
 
-/** Best-effort: the link URL is always printed, so a failure is fine. */
-function defaultOpenBrowser(url: string): void {
+/**
+ * Best-effort: the link URL is always printed, so a failure is fine.
+ * `spawnFn` is the seam a spec drives the swallowed-error path through.
+ */
+export function defaultOpenBrowser(url: string, spawnFn: typeof spawn = spawn): void {
   const [cmd, args] = openerFor(process.platform);
   try {
-    const child = spawn(cmd, [...args, url], { stdio: "ignore", detached: true });
+    const child = spawnFn(cmd, [...args, url], { stdio: "ignore", detached: true });
     child.on("error", () => {
       // Swallowed: the URL is printed either way.
     });
@@ -203,6 +208,7 @@ export async function executeLogin(
   deps: LoginDeps = {},
 ): Promise<CommandResult<{ email: string; server: string }>> {
   const fetchFn = deps.fetchFn ?? globalThis.fetch;
+  const ui = deps.ui ?? defaultUi;
   requireTty();
 
   // `resolveApprovedServer`, not a second copy of the trust-and-approve
@@ -227,12 +233,12 @@ export async function executeLogin(
 
   const code = randomBytes(32).toString("base64url");
   const linkUrl = `${serverUrl}/?cli-link=${code}`;
-  log.info(`Opening the browser to link your account…\n  ${linkUrl}`);
-  log.info(`Confirmation code: ${linkConfirmationCode(code)}`);
-  log.info(
+  ui.log.info(`Opening the browser to link your account…\n  ${linkUrl}`);
+  ui.log.info(`Confirmation code: ${linkConfirmationCode(code)}`);
+  ui.log.info(
     "Approve the link in the browser (sign in there first if you need to) — the approval page shows the same code.",
   );
-  (deps.openBrowser ?? defaultOpenBrowser)(linkUrl);
+  (deps.openBrowser ?? ((url: string) => defaultOpenBrowser(url)))(linkUrl);
 
   const granted = await pollForGrant(fetchFn, serverUrl, code, {
     intervalMs: deps.pollIntervalMs ?? LINK_POLL_INTERVAL_MS,
@@ -253,6 +259,6 @@ export async function executeLogin(
   // their key was saved.
   await updateGlobalConfig((config) => ({ ...config, apiKey: granted.apiKey }));
   const email = granted.email ?? "your account";
-  log.success(`Linked ${email} — your API key is saved for future commands.`);
+  ui.log.success(`Linked ${email} — your API key is saved for future commands.`);
   return ok({ email, server: serverUrl });
 }

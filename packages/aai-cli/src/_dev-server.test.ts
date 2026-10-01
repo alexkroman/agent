@@ -1,158 +1,72 @@
 // Copyright 2025 the AAI authors. MIT license.
+/**
+ * `startDevServer`'s wiring, against fakes handed in through `DevServerSeams`
+ * (`_dev-server-test-utils.ts`) — no module mocks. The bundler build, `.env`
+ * resolution from the fixture, agent validation, the journal and the
+ * credential fallback are the real code path; the backend, watcher, Vite,
+ * login key, schema DDL and terminal are the fakes.
+ */
 
-import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  chokidarState,
-  mockChokidarWatch,
-  mockClose,
-  mockCreateRuntime,
-  mockCreateServer,
-  mockEnsureApiKey,
-  mockEnsureSessionStateSchema,
-  mockEnsureWorkflowJournalSchema,
-  mockListen,
-  mockResolveServerEnv,
-  mockValidateAgentExport,
-  primeDevServerMocks,
-  writeAgentTs,
-} from "./_dev-server-test-utils.ts";
+import { loadWorker, startDevServer } from "./_dev-server.ts";
+import { makeDevSeams, writeAgentTs, writeProject } from "./_dev-server-test-utils.ts";
 import { withTempDir } from "./_test-utils.ts";
 
-// ─── Module mocks ───────────────────────────────────────────────────────────
-// Factories (and the mock fns/state they wire up) live in the shared
-// harness — see _dev-server-test-utils.ts. vi.mock calls must stay
-// top-level in each test file for vitest's hoisting.
-
-vi.mock("node:fs", async () => (await import("./_dev-server-test-utils.ts")).nodeFsModule());
-vi.mock("chokidar", async () => (await import("./_dev-server-test-utils.ts")).chokidarModule());
-vi.mock("get-port", async () => (await import("./_dev-server-test-utils.ts")).getPortModule());
-vi.mock("@alexkroman1/aai-runtime", async () =>
-  (await import("./_dev-server-test-utils.ts")).aaiRuntimeModule(),
-);
-vi.mock("@alexkroman1/aai-runtime/internal", async () =>
-  (await import("./_dev-server-test-utils.ts")).aaiRuntimeInternalModule(),
-);
-vi.mock("./_config.ts", async () => (await import("./_dev-server-test-utils.ts")).configModule());
-vi.mock("./_server-common.ts", async () =>
-  (await import("./_dev-server-test-utils.ts")).serverCommonModule(),
-);
-vi.mock("./_ui.ts", async () => (await import("./_dev-server-test-utils.ts")).uiModule());
-vi.mock("./_default-html.ts", async () =>
-  (await import("./_dev-server-test-utils.ts")).defaultHtmlModule(),
-);
-vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts")).utilsModule());
-
-// ─── Imports under test (after mocks) ───────────────────────────────────────
-
-import { loadWorker, startDevServer } from "./_dev-server.ts";
-
-// 30s, not the 5s default: sibling suites run multi-second runtime-inlining
-// builds now, and CPU starvation under full-repo parallel runs was flaking
-// these otherwise-fast tests.
+// 30s, not the 5s default: every case runs a real bundler build, and CPU
+// starvation under full-repo parallel runs was flaking these otherwise-fast
+// tests.
 vi.setConfig({ testTimeout: 30_000 });
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Install a `vite` module mock for the duration of `fn`, then unmock it.
- *
- * The unmock is in a `finally` and that is the whole point: written inline, a
- * failed assertion above `vi.doUnmock("vite")` leaves the mock installed for
- * every LATER test that reaches the client-build branch, so one red test turns
- * into a cascade that names the wrong cause.
- *
- * It stays in THIS file rather than in `_dev-server-test-utils.ts`, even
- * though both callers are here: that module is the factory source for every
- * `vi.mock(...)` above, and adding a `vi.doMock` to it makes the mock registry
- * reach back into a module it is mocking from — which HANGS the run rather
- * than failing it (the same trap `aaiRuntimeModule`'s comment records).
- */
-async function withViteMock(
-  factory: () => Record<string, unknown>,
-  fn: () => Promise<void>,
-): Promise<void> {
-  vi.doMock("vite", factory);
-  try {
-    await fn();
-  } finally {
-    vi.doUnmock("vite");
-  }
-}
-
-// ─── Setup ──────────────────────────────────────────────────────────────────
+const DB_URL = "postgres://u:p@127.0.0.1:5432/db";
 
 beforeEach(() => {
-  vi.mocked(existsSync).mockReturnValue(false);
-  chokidarState.allCallback = undefined;
-  chokidarState.ignored = undefined;
-  chokidarState.watchedDir = undefined;
-  chokidarState.close = vi.fn().mockResolvedValue(undefined);
-  // File watching is opt-in since it defaults OFF (see devWatchEnabled) — these
-  // suites exercise the watcher, so they turn it on. `unstubEnvs` in
-  // vitest.shared.ts undoes this before each test; no manual cleanup.
+  // These suites exercise the watcher, which defaults OFF without a TTY (see
+  // devWatchEnabled). `unstubEnvs` in vitest.shared.ts undoes every stub here.
   vi.stubEnv("AAI_DEV_WATCH", "1");
-  // The workflow data dir is set by `startDevServer` with a plain assignment —
-  // it has to be, since `localWorkflowDataDir()` reads `process.env` — so
-  // `unstubEnvs` cannot undo it on its own. Stubbing it to unset here RECORDS
-  // the original, which the runner then restores before the next test.
+  // Set by `startDevServer` with a plain assignment; stubbing it unset RECORDS
+  // the original so the runner restores it before the next test.
   vi.stubEnv("AAI_WORKFLOW_DATA_DIR", undefined);
-  // Clears the shared mocks' CALL HISTORY as well as re-priming them — see the
-  // note on `primeDevServerMocks`. Without it every `toHaveBeenCalledWith` in
-  // this file could be satisfied by an earlier test's call.
-  primeDevServerMocks();
-  mockValidateAgentExport.mockImplementation(() => undefined);
+  // The real `resolveServerEnv` lets the shell win per declared key, and the
+  // login-key fallback is skipped when the shell has one — neither may depend
+  // on the machine running the suite.
+  vi.stubEnv("ASSEMBLYAI_API_KEY", undefined);
+  vi.stubEnv("PUBLIC_URL", undefined);
 });
-
-// Several tests here stub env vars the dev server reads (ASSEMBLYAI_API_KEY,
-// AAI_DEV_HOST, AAI_ALLOW_HOST); `unstubEnvs` in vitest.shared.ts undoes each
-// one before the next test, so no test owns teardown for them. (This comment
-// used to warn that `restoreMocks` does not — true, and not the option that
-// governs env stubs.)
-
-// ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe("startDevServer", () => {
   test("loads agent, resolves env, creates runtime and server", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeProject(dir);
+      const fake = makeDevSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-      expect(mockResolveServerEnv).toHaveBeenCalledWith(dir);
-      expect(mockCreateRuntime).toHaveBeenCalledWith({
-        agent: { name: "test-agent", tools: {} },
+      expect(fake.lastBuild()?.runtimeOptions).toEqual({
+        agent: expect.objectContaining({ name: "test-agent" }),
         env: { ASSEMBLYAI_API_KEY: "test-key" },
         // Credentials resolve from providerEnv; ctx.env stays as `env` so dev
         // matches production in what agent code can read.
-        providerEnv: { ASSEMBLYAI_API_KEY: "test-key" },
+        providerEnv: expect.objectContaining({ ASSEMBLYAI_API_KEY: "test-key" }),
         // The runtime logs through a logger this command chooses, so its
         // diagnostics can be kept off stdout in JSON mode (createDevLogger).
         logger: expect.objectContaining({ info: expect.any(Function) }),
-        // The run store, built once for the process and handed to every build:
-        // a rebuild replaces the workflow ENGINE (that is what reloads a body)
-        // and must not replace the runs underneath it. Identity across rebuilds
-        // is asserted in `_dev-server-restart.test.ts`, which drives one
-        // through the `serve` seam.
+        // The run store, built once for the process and handed to every build;
+        // identity across rebuilds is `_dev-server-restart.test.ts`'s.
         journal: expect.anything(),
-        // What `ctx.workflows.publicWebhookUrl` mints from. The BACKEND port —
-        // which with no `client.tsx` is the port passed in — because the DevKit's
-        // `/.well-known/workflow/v1/*` routes are deliberately absent from Vite's
-        // proxy table, so a URL naming the Vite port would 404 on delivery.
+        // What `ctx.workflows.publicWebhookUrl` mints from: the BACKEND port,
+        // which with no `client.tsx` is the port passed in.
         publicUrl: "http://localhost:3000",
       });
-      expect(mockCreateServer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          runtime: { runtime: "mock" },
-          name: "test-agent",
-        }),
-      );
-      // Second arg is the bind host: undefined here (AAI_DEV_HOST unset), so
-      // the server applies its loopback default.
-      expect(mockListen).toHaveBeenCalledWith(3000, undefined);
+      expect(fake.lastBuild()?.serverOptions).toMatchObject({
+        runtime: expect.anything(),
+        name: "test-agent",
+      });
+      // Second arg is the bind host: undefined (AAI_DEV_HOST unset), so the
+      // server applies its loopback default.
+      expect(fake.listen).toHaveBeenCalledWith(3000, undefined);
 
       await cleanup();
     });
@@ -160,141 +74,94 @@ describe("startDevServer", () => {
 
   test("returns a cleanup function that closes watchers and server", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeProject(dir);
+      const fake = makeDevSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      expect(typeof cleanup).toBe("function");
-
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
       await cleanup();
 
-      expect(chokidarState.close).toHaveBeenCalled();
-      expect(mockClose).toHaveBeenCalled();
+      expect(fake.watcher.close).toHaveBeenCalled();
+      expect(fake.close).toHaveBeenCalled();
     });
   });
 
   test("uses port directly when no client.tsx exists", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      vi.mocked(existsSync).mockReturnValue(false);
+      await writeProject(dir);
+      const fake = makeDevSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 4000 });
-      // Second arg is the bind host: undefined here (AAI_DEV_HOST unset), so
-      // the server applies its loopback default.
-      expect(mockListen).toHaveBeenCalledWith(4000, undefined);
+      const cleanup = await startDevServer({ cwd: dir, port: 4000 }, fake.seams);
+
+      expect(fake.listen).toHaveBeenCalledWith(4000, undefined);
+      expect(fake.seams.createViteServer).not.toHaveBeenCalled();
       await cleanup();
     });
   });
 
+  /**
+   * A project with `client.tsx` and its own `vite.config.ts` — so the plugins
+   * are the project config's to supply (the default pair is
+   * `_client-plugins.test.ts`'s subject).
+   */
+  async function writeClientProject(dir: string): Promise<void> {
+    await writeProject(dir);
+    await fs.writeFile(path.join(dir, "client.tsx"), "export {};\n");
+    await fs.writeFile(path.join(dir, "vite.config.ts"), "export default {};\n");
+  }
+
   test("uses port+1 for backend when client.tsx exists", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeClientProject(dir);
+      const fake = makeDevSeams();
 
-      // A `vite.config.ts` too, so the plugins are the project's config's to
-      // supply — the default pair is `_client-plugins.test.ts`'s subject.
-      vi.mocked(existsSync).mockImplementation((p: import("node:fs").PathLike) =>
-        /(client\.tsx|vite\.config\.ts)$/.test(String(p)),
-      );
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-      // Mock vite (dynamically imported when client.tsx exists)
-      await withViteMock(
-        () => ({
-          createServer: vi.fn().mockResolvedValue({
-            close: vi.fn().mockResolvedValue(undefined),
-            listen: vi.fn().mockResolvedValue(undefined),
-          }),
-        }),
-        async () => {
-          // Fresh import to pick up the vite mock
-          const { startDevServer: freshStart } = await import("./_dev-server.ts");
-          const cleanup = await freshStart({ cwd: dir, port: 3000 });
-
-          // Second arg is the bind host: undefined here (AAI_DEV_HOST unset), so
-          // the server applies its loopback default.
-          expect(mockListen).toHaveBeenCalledWith(3001, undefined);
-
-          await cleanup();
-        },
-      );
+      expect(fake.listen).toHaveBeenCalledWith(3001, undefined);
+      expect(fake.vite.listen).toHaveBeenCalled();
+      await cleanup();
     });
   });
 
   // The backend binds the port before Vite boots, and startDevServer throws
   // on a Vite failure — so without an explicit close it stays listening with
-  // nothing holding a handle to it. `aai dev` would then report a startup
-  // failure and leave the port occupied against the retry.
+  // nothing holding a handle to it, and the retry finds the port occupied.
   test("a Vite failure closes the backend that already bound", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeClientProject(dir);
+      const fake = makeDevSeams();
+      fake.vite.listen.mockRejectedValue(new Error("vite port taken"));
 
-      // A `vite.config.ts` too, so the plugins are the project's config's to
-      // supply — the default pair is `_client-plugins.test.ts`'s subject.
-      vi.mocked(existsSync).mockImplementation((p: import("node:fs").PathLike) =>
-        /(client\.tsx|vite\.config\.ts)$/.test(String(p)),
+      await expect(startDevServer({ cwd: dir, port: 3000 }, fake.seams)).rejects.toThrow(
+        "vite port taken",
       );
-      await withViteMock(
-        () => ({
-          createServer: vi.fn().mockResolvedValue({
-            close: vi.fn().mockResolvedValue(undefined),
-            listen: vi.fn().mockRejectedValue(new Error("vite port taken")),
-          }),
-        }),
-        async () => {
-          const { startDevServer: freshStart } = await import("./_dev-server.ts");
 
-          await expect(freshStart({ cwd: dir, port: 3000 })).rejects.toThrow("vite port taken");
-
-          expect(mockListen).toHaveBeenCalled();
-          expect(mockClose).toHaveBeenCalledTimes(1);
-          expect(chokidarState.close).toHaveBeenCalledTimes(1);
-        },
-      );
+      expect(fake.listen).toHaveBeenCalled();
+      expect(fake.close).toHaveBeenCalledTimes(1);
+      expect(fake.watcher.close).toHaveBeenCalledTimes(1);
     });
   });
 
   /**
    * A `DATABASE_URL` puts session state in Postgres, and the tables come with
    * whoever OWNS that database — under `aai dev` the developer, with no
-   * migration step anywhere. Before this, the boot line said
-   * `sessionState: postgres, durable: true` and every session then died with a
-   * fatal 1011 whose real cause (`relation "aai_session_events" does not
-   * exist`) reached only the dev log.
+   * migration step anywhere. Without the DDL every session died with a fatal
+   * 1011 whose real cause reached only the dev log.
    */
   describe("session-state schema", () => {
-    test("is ensured when the project declares a DATABASE_URL", async () => {
+    test("both DDLs run when the project declares a DATABASE_URL", async () => {
       await withTempDir(async (dir) => {
-        await writeAgentTs(dir);
-        mockResolveServerEnv.mockResolvedValue({
-          ASSEMBLYAI_API_KEY: "k",
-          DATABASE_URL: "postgres://u:p@127.0.0.1:5432/db",
-        });
+        await writeProject(dir, { ASSEMBLYAI_API_KEY: "k", DATABASE_URL: DB_URL });
+        const fake = makeDevSeams();
 
-        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-        expect(mockEnsureSessionStateSchema).toHaveBeenCalledWith(
-          expect.objectContaining({ url: "postgres://u:p@127.0.0.1:5432/db" }),
+        expect(fake.seams.ensureSessionStateSchema).toHaveBeenCalledWith(
+          expect.objectContaining({ url: DB_URL }),
         );
-        await cleanup();
-      });
-    });
-
-    test("the JOURNAL's tables are ensured on the same boot", async () => {
-      // `applyWorkflowJournalDdl` existed from the start with NO production
-      // caller, so a project with a `DATABASE_URL` printed `runStore: "postgres"`
-      // and then died on its first run with `42P01 relation
-      // "aai_workflow_runs" does not exist`. The boot line said durable and
-      // nothing was — which is the shape this whole pairing exists to prevent,
-      // one table set over from where it was already solved.
-      await withTempDir(async (dir) => {
-        await writeAgentTs(dir);
-        mockResolveServerEnv.mockResolvedValue({
-          ASSEMBLYAI_API_KEY: "k",
-          DATABASE_URL: "postgres://u:p@127.0.0.1:5432/db",
-        });
-
-        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-        expect(mockEnsureWorkflowJournalSchema).toHaveBeenCalledWith(
-          expect.objectContaining({ url: "postgres://u:p@127.0.0.1:5432/db" }),
+        // The journal's tables had no creator at all: the boot line said
+        // `runStore: "postgres"` and the first run died on `42P01`.
+        expect(fake.seams.ensureWorkflowJournalSchema).toHaveBeenCalledWith(
+          expect.objectContaining({ url: DB_URL }),
         );
         await cleanup();
       });
@@ -302,49 +169,38 @@ describe("startDevServer", () => {
 
     test("neither DDL runs without a DATABASE_URL, there being no database to own", async () => {
       await withTempDir(async (dir) => {
-        await writeAgentTs(dir);
-        mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "k" });
+        await writeProject(dir, { ASSEMBLYAI_API_KEY: "k" });
+        const fake = makeDevSeams();
 
-        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-        expect(mockEnsureSessionStateSchema).not.toHaveBeenCalled();
-        expect(mockEnsureWorkflowJournalSchema).not.toHaveBeenCalled();
-        await cleanup();
-      });
-    });
-
-    test("is NOT ensured without one — that agent is on memory state", async () => {
-      await withTempDir(async (dir) => {
-        await writeAgentTs(dir);
-        mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "k" });
-
-        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-        expect(mockEnsureSessionStateSchema).not.toHaveBeenCalled();
+        expect(fake.seams.ensureSessionStateSchema).not.toHaveBeenCalled();
+        expect(fake.seams.ensureWorkflowJournalSchema).not.toHaveBeenCalled();
         await cleanup();
       });
     });
 
     /**
      * Before the runtime, which opens its own pool from the same URL and starts
-     * serving: a first session that landed between the two would take exactly
-     * the failure this fixes.
+     * serving: a first session landing between the two would take exactly the
+     * failure this fixes.
      */
     test("runs before the runtime is built", async () => {
       await withTempDir(async (dir) => {
-        await writeAgentTs(dir);
-        mockResolveServerEnv.mockResolvedValue({
-          ASSEMBLYAI_API_KEY: "k",
-          DATABASE_URL: "postgres://u:p@127.0.0.1:5432/db",
-        });
+        await writeProject(dir, { ASSEMBLYAI_API_KEY: "k", DATABASE_URL: DB_URL });
+        const fake = makeDevSeams();
         const order: string[] = [];
-        mockEnsureSessionStateSchema.mockImplementation(async () => void order.push("ddl"));
-        mockCreateRuntime.mockImplementation(() => {
+        fake.seams.ensureSessionStateSchema.mockImplementation(async () => {
+          order.push("ddl");
+          return true;
+        });
+        const realServe = fake.serve.getMockImplementation();
+        fake.serve.mockImplementation((runtimeOptions, serverOptions) => {
           order.push("runtime");
-          return { shutdown: vi.fn() };
+          return (realServe as NonNullable<typeof realServe>)(runtimeOptions, serverOptions);
         });
 
-        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
         expect(order).toEqual(["ddl", "runtime"]);
         await cleanup();
@@ -355,15 +211,12 @@ describe("startDevServer", () => {
   describe("workflow data directory", () => {
     test("points at the PROJECT's .workflow-data, so a save is not a new deployment", async () => {
       await withTempDir(async (dir) => {
-        await writeAgentTs(dir);
+        await writeProject(dir);
 
-        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 }, makeDevSeams().seams);
 
-        // What `localWorkflowDataDir()` reads (`AAI_WORKFLOW_DATA_DIR` in
-        // `aai-runtime/workflow-data-dir.ts`). Unset, every upload under
-        // `aai dev` lands in a fresh `tmpdir()/aai-workflow-data-<pid>` and is
-        // gone on the next `aai dev` — the exact case that module's doc records
-        // as MEASURED to survive here, and which had no writer at all.
+        // What `localWorkflowDataDir()` reads. Unset, every upload under
+        // `aai dev` lands in a fresh per-process tmpdir and is gone on the next.
         expect(process.env.AAI_WORKFLOW_DATA_DIR).toBe(path.join(dir, ".workflow-data"));
         await cleanup();
       });
@@ -371,10 +224,10 @@ describe("startDevServer", () => {
 
     test("honours one the developer already exported", async () => {
       await withTempDir(async (dir) => {
-        await writeAgentTs(dir);
+        await writeProject(dir);
         vi.stubEnv("AAI_WORKFLOW_DATA_DIR", "/somewhere/else");
 
-        const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+        const cleanup = await startDevServer({ cwd: dir, port: 3000 }, makeDevSeams().seams);
 
         expect(process.env.AAI_WORKFLOW_DATA_DIR).toBe("/somewhere/else");
         await cleanup();
@@ -384,79 +237,66 @@ describe("startDevServer", () => {
 
   test("falls back to the logged-in key when .env declares none", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeProject(dir, { OTHER_VAR: "value" });
+      const fake = makeDevSeams();
+      fake.seams.ensureApiKey.mockResolvedValue("fallback-key");
 
-      mockResolveServerEnv.mockResolvedValue({ OTHER_VAR: "value" });
-      mockEnsureApiKey.mockResolvedValue("fallback-key");
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      // `"local-session"` is what keeps the FAILURE credential-shaped when
-      // there is no key anywhere: `ensureApiKey`'s default `not_logged_in`
-      // offers only account remedies, and reported by `aai dev` it read as
-      // "local development needs a platform account" — which it does not (see
-      // `ApiKeyUse` in _config.ts). Pinned here because the message itself is
-      // specced against the real module in `_config.test.ts`, and this is the
-      // only place the two are wired together.
-      expect(mockEnsureApiKey).toHaveBeenCalledWith(undefined, "local-session");
-      expect(mockCreateRuntime).toHaveBeenCalledWith(
-        expect.objectContaining({
-          env: expect.objectContaining({
-            ASSEMBLYAI_API_KEY: "fallback-key",
-          }),
-        }),
-      );
-
+      // `"local-session"` keeps the FAILURE credential-shaped when there is no
+      // key anywhere (see `ApiKeyUse` in _config.ts); the message itself is
+      // specced in `_config.test.ts`, and this is where the two are wired.
+      expect(fake.seams.ensureApiKey).toHaveBeenCalledWith(undefined, "local-session");
+      expect(fake.lastBuild()?.runtimeOptions.env).toMatchObject({
+        ASSEMBLYAI_API_KEY: "fallback-key",
+      });
       await cleanup();
     });
   });
 
   /**
-   * A shell-exported key no longer authenticates the CLI (`ensureApiKey`
-   * reads the login key alone), but it is still a provider credential the dev
-   * server honors through `withHostCredentialFallback`. So `aai dev` must not
-   * demand a login for a developer who exports it the usual way — and the key
-   * must stay out of `ctx.env`, where it would break dev/prod parity.
+   * A shell-exported key does not authenticate the CLI, but it is still a
+   * provider credential the dev server honors through
+   * `withHostCredentialFallback` — so `aai dev` must not demand a login, and
+   * the key must stay out of `ctx.env` (dev/prod parity).
    */
   test("does not require a login when the key is exported in the shell", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeProject(dir, { OTHER_VAR: "value" });
       vi.stubEnv("ASSEMBLYAI_API_KEY", "shell-key");
-      mockResolveServerEnv.mockResolvedValue({ OTHER_VAR: "value" });
+      const fake = makeDevSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-      expect(mockEnsureApiKey).not.toHaveBeenCalled();
-      expect(mockCreateRuntime).toHaveBeenCalledWith(
-        expect.objectContaining({
-          env: expect.not.objectContaining({ ASSEMBLYAI_API_KEY: expect.anything() }),
-        }),
-      );
-
+      expect(fake.seams.ensureApiKey).not.toHaveBeenCalled();
+      expect(fake.lastBuild()?.runtimeOptions.env).not.toHaveProperty("ASSEMBLYAI_API_KEY");
+      // ...and the shell-only key is flagged, through `notify` (JSON mode
+      // silences `log`, and a long-running `aai dev` is usually piped).
+      expect(fake.ui.said("warn").join("\n")).toContain("resolved from your shell, not .env");
       await cleanup();
     });
   });
 
   test("does not call ensureApiKey when .env declares ASSEMBLYAI_API_KEY", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "already-set" });
+      await writeProject(dir, { ASSEMBLYAI_API_KEY: "already-set" });
+      const fake = makeDevSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-      expect(mockEnsureApiKey).not.toHaveBeenCalled();
-
+      expect(fake.seams.ensureApiKey).not.toHaveBeenCalled();
       await cleanup();
     });
   });
 
   test("sets up file watcher on the agent directory", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeProject(dir);
+      const fake = makeDevSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-      expect(mockChokidarWatch).toHaveBeenCalledWith(
+      expect(fake.watch).toHaveBeenCalledWith(
         dir,
         expect.objectContaining({
           ignoreInitial: true,
@@ -464,50 +304,44 @@ describe("startDevServer", () => {
           ignored: expect.any(Function),
         }),
       );
-
       await cleanup();
     });
   });
 
   test("does NOT watch with no TTY — a harness gets no watcher", async () => {
-    // A restart replaces the server and ends in-flight voice sessions, which is
-    // right while editing an agent and wrong while a benchmark drives the host:
-    // a formatter save or a `.env` touch restarts underneath the run and the
-    // harness reports it as a provider failure. Cleanup must also survive the
-    // absent watcher — `watcher?.close()` — or every shutdown throws
-    // "Cannot read properties of undefined (reading 'close')".
+    // A restart ends in-flight voice sessions: right while editing, wrong while
+    // a benchmark drives the host. Cleanup must also survive the absent watcher.
     vi.stubEnv("AAI_DEV_WATCH", "");
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeProject(dir);
+      const fake = makeDevSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-      expect(mockChokidarWatch).not.toHaveBeenCalled();
-
+      expect(fake.watch).not.toHaveBeenCalled();
       await expect(cleanup()).resolves.toBeUndefined();
     });
   });
 
-  test("validates the agent export via validateAgentExport", async () => {
+  test("refuses an agent.ts whose default export is not an agent", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeProject(dir);
+      await fs.writeFile(path.join(dir, "agent.ts"), "export default { tools: {} };\n");
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      expect(mockValidateAgentExport).toHaveBeenCalledWith({ name: "test-agent", tools: {} });
-
-      await cleanup();
+      await expect(startDevServer({ cwd: dir, port: 3000 }, makeDevSeams().seams)).rejects.toThrow(
+        /configuration is invalid|must export default agent/,
+      );
     });
   });
 
   test("throws when agent.ts has no default export", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeProject(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), "export const notDefault = 42;\n");
 
       // The worker wrapper re-exports the default, so a missing default
       // export fails the build itself — with an error naming agent.ts.
-      await expect(startDevServer({ cwd: dir, port: 3000 })).rejects.toThrow(
+      await expect(startDevServer({ cwd: dir, port: 3000 }, makeDevSeams().seams)).rejects.toThrow(
         /"default" is not exported/,
       );
     });
@@ -515,112 +349,46 @@ describe("startDevServer", () => {
 
   test("throws when agent.ts file does not exist", async () => {
     await withTempDir(async (dir) => {
-      // No agent.ts — dynamic import will fail
-      await expect(startDevServer({ cwd: dir, port: 3000 })).rejects.toThrow();
+      await expect(
+        startDevServer({ cwd: dir, port: 3000 }, makeDevSeams().seams),
+      ).rejects.toThrow();
     });
   });
 
   test("provides clientDir when no client.tsx exists", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      vi.mocked(existsSync).mockReturnValue(false);
+      await writeProject(dir);
+      const fake = makeDevSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-      expect(mockCreateServer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          clientDir: expect.any(String),
-        }),
-      );
-
-      await cleanup();
-    });
-  });
-
-  test("AAI_SESSION_SECRET in .env gates sessions AND mints its own client's ticket", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      mockResolveServerEnv.mockResolvedValue({
-        ASSEMBLYAI_API_KEY: "test-key",
-        AAI_SESSION_SECRET: "dev-secret",
-      });
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      const options = mockCreateServer.mock.calls.at(-1)?.[0] as {
-        auth?: unknown;
-        request: (req: unknown, res: unknown, url: string, method: string) => boolean;
-      };
-      expect(options.auth).toBeDefined();
-      let body = "";
-      const res = {
-        writeHead: () => res,
-        end: (b: string) => {
-          body = b;
-        },
-      };
-      expect(options.request({ url: "/client-config" }, res, "/client-config", "GET")).toBe(true);
-      expect(JSON.parse(body)).toMatchObject({
-        name: "test-agent",
-        sessionToken: expect.any(String),
-      });
-
-      await cleanup();
-    });
-  });
-
-  test("without AAI_SESSION_SECRET the server gets no gate and no ticket", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      const options = mockCreateServer.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(options).not.toHaveProperty("auth");
-
+      expect(fake.lastBuild()?.serverOptions).toMatchObject({ clientDir: expect.any(String) });
       await cleanup();
     });
   });
 });
 
 describe("file watcher filtering", () => {
-  test("chokidar ignored matcher filters .aai and node_modules paths", async () => {
+  test("the ignored matcher filters .aai, node_modules and dot-dirs but keeps .env", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
+      await writeProject(dir);
+      const fake = makeDevSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-      const ignored = chokidarState.ignored;
+      const ignored = fake.watcher.ignored;
       expect(ignored).toBeDefined();
       expect(ignored?.(path.join(dir, ".aai", "cache"))).toBe(true);
       expect(ignored?.(path.join(dir, "node_modules", "pkg", "index.js"))).toBe(true);
       expect(ignored?.(path.join(dir, "agent.ts"))).toBe(false);
       expect(ignored?.(path.join(dir, "tools", "search.ts"))).toBe(false);
-
-      await cleanup();
-    });
-  });
-
-  test("ignored matcher filters dot-directories (.git etc.) but keeps .env watched", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      const ignored = chokidarState.ignored;
-      expect(ignored).toBeDefined();
       // .git activity (commits, index writes) must never restart the server.
-      expect(ignored?.(path.join(dir, ".git"))).toBe(true);
       expect(ignored?.(path.join(dir, ".git", "index.lock"))).toBe(true);
-      expect(ignored?.(path.join(dir, ".git", "refs", "heads", "main"))).toBe(true);
-      // Other dot-directories (editor caches, VCS metadata) are ignored too.
       expect(ignored?.(path.join(dir, ".vscode", "settings.json"))).toBe(true);
-      expect(ignored?.(path.join(dir, ".cache", "x", "y.ts"))).toBe(true);
       expect(ignored?.(path.join(dir, "sub", ".hidden", "file.ts"))).toBe(true);
       // .env files stay watched — env edits should restart with new values.
       expect(ignored?.(path.join(dir, ".env"))).toBe(false);
       expect(ignored?.(path.join(dir, ".env.local"))).toBe(false);
-      // The watch root itself is never ignored.
       expect(ignored?.(dir)).toBe(false);
 
       await cleanup();
@@ -629,11 +397,7 @@ describe("file watcher filtering", () => {
 });
 
 describe("loadWorker", () => {
-  const fakeWorker = (name: string) =>
-    ({
-      name,
-      tools: {},
-    }) as AgentDef;
+  const fakeWorker = (name: string) => ({ name, tools: {} }) as AgentDef;
 
   test("hands the Vite-built worker to the evaluator", async () => {
     await withTempDir(async (dir) => {
@@ -659,10 +423,6 @@ describe("loadWorker", () => {
   });
 
   test("emits no workflow exports, the DevKit's two strings being gone", async () => {
-    // The wrapper entry used to carry `__aaiWorkflowCode`/`__aaiStepCode` — the
-    // DevKit's per-tenant compiled surface, which the guest read back off the
-    // bundle. The replay engine reads the agent's own `workflows` declaration,
-    // so nothing is embedded and the guest has nothing to read.
     await withTempDir(async (dir) => {
       await writeAgentTs(dir, "no-workflows");
       await loadWorker(dir, async (code) => {

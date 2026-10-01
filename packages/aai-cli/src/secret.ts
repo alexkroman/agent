@@ -2,13 +2,12 @@
 
 import type { Readable } from "node:stream";
 import { isRecord, plural } from "@alexkroman1/aai/utils";
-import * as p from "@clack/prompts";
 import pTimeout from "p-timeout";
 import { checkedResponse, isStringArray } from "./_api-client.ts";
 import { deleteLocalSecret, putLocalSecret } from "./_dotenv-file.ts";
 import { CliError, type CommandResult, fail, type OutputMode, ok } from "./_output.ts";
-import { secretRequest } from "./_slug-api.ts";
-import { log, unwrapCancel } from "./_ui.ts";
+import { type PlatformDeps, REAL_PLATFORM, secretRequest } from "./_slug-api.ts";
+import { defaultUi, type Ui, unwrapCancel } from "./_ui.ts";
 
 /**
  * The one `no_input` failure for `secret put`, shared by every path that can
@@ -168,9 +167,15 @@ type SecretListData = { secrets: string[] };
  * The value to store: `value` when the invocation supplied one (stdin), else a
  * masked prompt's answer — empty when the prompt was dismissed or left blank.
  */
-async function valueOrPrompt(name: string, value: string | undefined): Promise<string | undefined> {
+async function valueOrPrompt(
+  name: string,
+  value: string | undefined,
+  ui: Ui,
+): Promise<string | undefined> {
   if (value) return value;
-  return unwrapCancel(await p.password({ message: `Enter value for ${name}` })) || undefined;
+  return (
+    unwrapCancel(ui, await ui.prompts.password({ message: `Enter value for ${name}` })) || undefined
+  );
 }
 
 /**
@@ -182,13 +187,14 @@ async function storeSecret(
   name: string,
   value: string | undefined,
   store: (value: string) => Promise<string>,
+  ui: Ui,
 ): Promise<CommandResult<SecretNameData>> {
-  const secretValue = await valueOrPrompt(name, value);
+  const secretValue = await valueOrPrompt(name, value, ui);
   if (!secretValue) {
     const { code, message, hint } = noInput(name, "the prompt came back empty");
     return fail(code, message, hint);
   }
-  log.success(`Set ${name} ${await store(secretValue)}`);
+  ui.log.success(`Set ${name} ${await store(secretValue)}`);
   return ok({ name });
 }
 
@@ -202,16 +208,24 @@ export async function executeSecretPut(
   name: string,
   value: string | undefined,
   server: string | undefined,
+  ui: Ui = defaultUi,
+  platform: PlatformDeps = REAL_PLATFORM,
 ): Promise<CommandResult<SecretNameData>> {
-  return storeSecret(name, value, async (secretValue) => {
-    const { target } = await secretRequest(
-      cwd,
-      "",
-      { method: "PUT", body: { [name]: secretValue }, action: "secret" },
-      server,
-    );
-    return `for ${target}`;
-  });
+  return storeSecret(
+    name,
+    value,
+    async (secretValue) => {
+      const { target } = await secretRequest(
+        cwd,
+        "",
+        { method: "PUT", body: { [name]: secretValue }, action: "secret" },
+        server,
+        platform,
+      );
+      return `for ${target}`;
+    },
+    ui,
+  );
 }
 
 /**
@@ -223,11 +237,13 @@ export async function executeLocalSecretPut(
   cwd: string,
   name: string,
   value: string | undefined,
+  ui: Ui = defaultUi,
 ): Promise<CommandResult<SecretNameData>> {
   return storeSecret(
     name,
     value,
     async (secretValue) => `in ${await putLocalSecret(cwd, name, secretValue)}`,
+    ui,
   );
 }
 
@@ -235,10 +251,11 @@ export async function executeLocalSecretPut(
 export async function executeLocalSecretDelete(
   cwd: string,
   name: string,
+  ui: Ui = defaultUi,
 ): Promise<CommandResult<SecretNameData>> {
   const removed = await deleteLocalSecret(cwd, name);
   if (!removed) return fail("not_found", `${name} is not set in ${cwd}/.env`);
-  log.success(`Deleted ${name} from ${cwd}/.env`);
+  ui.log.success(`Deleted ${name} from ${cwd}/.env`);
   return ok({ name });
 }
 
@@ -246,6 +263,8 @@ export async function executeSecretDelete(
   cwd: string,
   name: string,
   server: string | undefined,
+  ui: Ui = defaultUi,
+  platform: PlatformDeps = REAL_PLATFORM,
 ): Promise<CommandResult<SecretNameData>> {
   // Encoded so a name containing `/`, `?`, `#`, or `%` can't target a
   // different path (or truncate the request) on the server.
@@ -254,16 +273,19 @@ export async function executeSecretDelete(
     `/${encodeURIComponent(name)}`,
     { method: "DELETE", action: "secret" },
     server,
+    platform,
   );
-  log.success(`Deleted ${name} from ${target}`);
+  ui.log.success(`Deleted ${name} from ${target}`);
   return ok({ name });
 }
 
 export async function executeSecretList(
   cwd: string,
   server: string | undefined,
+  ui: Ui = defaultUi,
+  platform: PlatformDeps = REAL_PLATFORM,
 ): Promise<CommandResult<SecretListData>> {
-  const { data, target } = await secretRequest(cwd, "", { action: "secret" }, server);
+  const { data, target } = await secretRequest(cwd, "", { action: "secret" }, server, platform);
   // Checked, not cast: a 200 without `vars` died on `Cannot read properties of
   // undefined (reading 'length')` — a stack trace where the CLI's own error
   // sentence belongs. See `checkedResponse`.
@@ -273,11 +295,11 @@ export async function executeSecretList(
     `the secret list for ${target}`,
   );
   if (vars.length === 0) {
-    log.info("No secrets set. Use `aai secret put <name>` to add one.");
+    ui.log.info("No secrets set. Use `aai secret put <name>` to add one.");
   } else {
-    log.message(`${vars.length} ${plural(vars.length, "secret")}:`);
+    ui.log.message(`${vars.length} ${plural(vars.length, "secret")}:`);
     for (const v of vars) {
-      log.message(`  ${v}`);
+      ui.log.message(`  ${v}`);
     }
   }
   return ok({ secrets: vars });

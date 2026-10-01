@@ -39,9 +39,8 @@ project runs on every save and in `aai build` (`eval.ts`).
   does not import from the other command's file. Each tier's filenames stay
   with its command (`TEST_FILES` in `test.ts`, `EVAL_FILES` in `eval.ts`);
   `candidates` has no default so the runner never names a tier.
-- **It passes `--testTimeout`** (`EVAL_TEST_TIMEOUT_MS`, 5 min) — vitest's 5s
-  is shorter than one model turn. The useful diagnostic is the harness's own
-  90s per-turn timeout.
+- **It passes `--testTimeout`** (`EVAL_TEST_TIMEOUT_MS`, 5 min): vitest's 5s
+  is shorter than one model turn; the harness's 90s per-turn timeout diagnoses.
 - **It hands the project's `.env` to the child** via `resolveServerEnv`
   (declared keys only, shell wins), or every case skips for want of a key.
 
@@ -61,10 +60,10 @@ A narrowed run must never report a green verdict over specs it skipped.
 - **The result carries the set** — `cli-test-data-carries-the-set` and
   `cli-eval-data-carries-the-set` in `konsistent.json` require
   `ran`/`unrun`/`complete` on `TestData` and `ran` on `EvalData`.
-- **`--all` is accepted and does nothing** — old CI pipelines pass it and
-  `assertKnownArgv` would otherwise reject them.
+- **`--all` is accepted, does nothing, and warns** (`TEST_ALL_DEPRECATION`,
+  via `notify`) — old CI pipelines pass it and `assertKnownArgv` would refuse it.
 - **`aai build` runs the whole suite**
-  (`runVitest(cwd, { candidates: TEST_FILES, all: true })`); `--skipTests` is
+  (`runVitest(cwd, { candidates: TEST_FILES, all: true })`); `--skip-tests` is
   the honest opt-out.
 - **`runVitest` announces the unrun set itself** (`announceUnrun`, default
   `true`). `aai test` passes `false` (its result reports it); `aai eval` passes
@@ -80,9 +79,8 @@ A narrowed run must never report a green verdict over specs it skipped.
 ### `aai console`, `aai workflow`, `aai logs`
 
 **`aai console` is `connectSession` with a microphone** (`console.ts`,
-`_console-session.ts`, `_console-audio.ts`): loads the agent as `aai dev` does,
-builds a runtime in-process and runs one session over a `ClientSink` — no
-server, socket or browser.
+`_console-session.ts`, `_console-audio.ts`): one in-process session over a
+`ClientSink`, the agent loaded as `aai dev` does — no server, socket or browser.
 
 - **SoX subprocesses (`rec`/`play`), not a native addon**; a missing binary
   fails as `audio_device` naming the install command.
@@ -98,9 +96,9 @@ over the brokered `/:slug/workflows` surface. **Never an `apiRequest`**: that
 surface takes the agent's own bearer (`AAI_WORKFLOW_API_TOKEN`, `--token`) or
 none, so sending the platform API key would leak it. Every request brokers (may
 boot the sandbox). `--limit` is parsed in the command so a bad value names the
-flag. Requests are the SDK's `createWorkflowApiClient`; `api.get` resolves
-`undefined` on 404, which also means "no workflow API", so the failure names
-neither cause and `HINT_BROKER` lists all three.
+flag. Requests are the SDK's `createWorkflowApiClient`; `api.get`'s
+`undefined` on 404 also means "no workflow API", so `HINT_BROKER` lists all
+three causes.
 
 **`aai logs` reads a RING, so `--follow` polls** (`logs.ts` →
 `GET /:slug/logs`, the guest's bounded buffer with a cursor — see
@@ -118,31 +116,36 @@ failed poll under `--follow` is not a failed command; only a signal ends it.
   each body — it keeps a subcommand's deps off every other startup. Group
   commands (`secret`, `workflow`) are plain citty `defineCommand`s.
 - **A returned `fail(...)` and a thrown error converge on one emitter keyed on
-  `result.ok`**, never on the code path — or a returned failure exits 1 with an
-  empty terminal.
+  `result.ok`**, never on the code path (else a returned failure exits 1 silently).
 - **A 2xx body is CHECKED, not cast** (`checkedResponse`, `_api-client.ts`):
-  `apiRequest<T>` is a cast, and a 200 from a proxy/portal/mismatched backend
-  once wrote `slug: undefined` into `.aai/project.json` and orphaned an agent.
-  The predicate is the caller's; the helper owns `bad_response` + hint.
-- **A long-running command's post-startup output goes through `notify`
-  (`_ui.ts`), not `log`.** `silenceOutput()` no-ops `log` in JSON mode, which a
-  pipe auto-selects (`aai dev > dev.log`); `notify` writes a plain stderr line
-  once silenced. Applies to restart failures, watcher errors, crash handlers and
-  `resolveAgentEnv`'s credential warnings.
+  `apiRequest<T>` is a cast, and a proxy's 200 once wrote `slug: undefined`
+  into `.aai/project.json`. The predicate is the caller's; the helper owns
+  `bad_response` + hint.
+- **All terminal I/O goes through the `Ui` seam (`_ui.ts`)**, never clack,
+  `console.*` or `process.stdout`: `defineExec` hands `ctx.ui` to the body;
+  executors take `ui` (default `defaultUi`, which published `/start` keeps).
+  Specs pass `createFakeUi()` (`_test-utils.ts`), never a `vi.mock` of `_ui.ts`
+  or clack; collaborators are seams too (`DevServerSeams`, `ConsoleSeams`,
+  `PlatformDeps`, `VitestDeps`, `InitDeps`).
+- **A long-running command's post-startup output is `ui.notify`**: `silence()`
+  no-ops `log` in JSON mode (a pipe auto-selects it); `notify` then writes
+  plain stderr. Restart failures, watcher errors, crash handlers,
+  `resolveAgentEnv`'s warnings.
+- **`--help` is grouped** (`HELP_SECTIONS`, `_help.ts`; `cli.test.ts` places
+  every visible subcommand once) and says what bare `aai` does. **Flags are
+  kebab-case**; camelCase still parses, unadvertised.
 - **Pre-parse failures honour JSON mode too.** `usageForMode` and
   `assertKnownFlags` run in the `runDefault().then(assertKnownFlags)` chain
   before `defineExec`, so a new guard there owes an explicit
   `getOutputMode({})` branch. `cli.test.ts` covers it by running the real bin
   with stdout piped.
-- **`aai init` with no `--template` picks one** (`promptTemplate`, a `p.select`
-  over `listTemplates()`, `quickstart-agent` first and pre-selected). **The
-  picker must never be reachable without a human**: `--yes` and `silent` (how
-  JSON mode arrives) resolve `DEFAULT_TEMPLATE`. The specs asserting `select`
-  was NOT called are the point.
+- **`aai init` with no `--template` picks one** (`promptTemplate`, a select
+  over `listTemplates()`, `quickstart-agent` first). **Never without a human**:
+  `--yes` and `silent` (JSON mode) resolve `DEFAULT_TEMPLATE`; the specs
+  asserting `select` was NOT called are the point.
 - **`bin.mjs` is the bin in both layouts** (source → `cli.ts`, tarball →
-  `dist/cli.mjs`; source wins when both exist). Loading the entry by dynamic
-  import from a wrapper is the only ordering that makes
-  `module.enableCompileCache()` run before the (external) dependencies load.
+  `dist/cli.mjs`; source wins). A wrapper's dynamic import is the only ordering
+  that runs `module.enableCompileCache()` before the dependencies load.
 
 ## The studio round-trip
 
@@ -164,19 +167,17 @@ production comes from Publish.
   `dependencies`/`devDependencies`/`scripts` fill per ENTRY — a studio manifest
   carries no toolchain (it is baked in the guest), and per-entry keeps the
   workspace's exact pins.
-- **A pull that finds nothing prints the project list**: a typo shows other
-  projects; an empty list means the login belongs to another account (see
-  `packages/aai-server/CLAUDE.md`). The extra request must never replace the
-  404; it degrades to "run `aai list`".
+- **A pull that finds nothing prints the project list** (a typo shows other
+  projects; empty means another account's login — `packages/aai-server/CLAUDE.md`).
+  The extra request never replaces the 404; it degrades to "run `aai list`".
 - **`aai delete` in a linked directory deletes the STUDIO PROJECT**
   (`DELETE /studio/projects/:project`, cascading server-side) and clears the
   link fields from `.aai/project.json`, keeping `serverUrl` — stale link fields
   make the next push unrecoverable without `--force`.
 - **`layerScaffold` substitutes the scaffold's `CLAUDE.md`** with a ~30-line
   pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md`
-  (`PROJECT_GUIDE_POINTER`, which carries the argument): a copy would go stale
-  and a project-root `CLAUDE.md` loads in full every session. Matched on full
-  path — a template's own `CLAUDE.md` is still copied.
+  (`PROJECT_GUIDE_POINTER` has the argument). Matched on full path — a
+  template's own `CLAUDE.md` is still copied.
 - **A workspace carries UTF-8 text only.** Both snapshots (`collectSourceFiles`
   here, the guest's `snapshotWorkspace`) decode with
   `TextDecoder({ fatal: true, ignoreBOM: true })` and SKIP non-UTF-8 files,
@@ -188,7 +189,7 @@ production comes from Publish.
   `@alexkroman1/aai/workspace-files`).
 - **`aai init` scaffolds and stops** — no publish, no `--server`, no
   `--skip-deploy` (now an unknown flag via `findUnknownFlags`). `init.test.ts`
-  mocks `executePublish` only to assert it is never called.
+  asserts it makes no `fetch`.
 - **A dev-mode `aai init` links EVERY `@alexkroman1/*` the scaffold names**
   (`WORKSPACE_PKG_DIRS`, `_init.ts`). The spec in `init.test.ts` derives the
   expected set from `scaffold/package.json` with a floor — never hand-list it.
@@ -206,8 +207,8 @@ production comes from Publish.
   once more, a failed build keeps the old server, the new server is built before
   the old one closes, a lost port race retries, and teardown is idempotent and
   beats an in-flight rebuild. Spec new logic in `_dev-restart.test.ts` (no
-  mocks). `_dev-server-restart.test.ts` is WIRING only and takes fakes through
-  `startDevServer`'s `DevServerSeams` (`watch`, `serve`), not module mocks.
+  mocks). The wiring specs take fakes through `DevServerSeams`
+  (`makeDevSeams`, `_dev-server-test-utils.ts`), not module mocks.
 - **Coalescing is `createCoalescingRunner`**, not a local flag pump. The boot
   window is a separate flag released by `adopt`; `restartOnce` returns early
   once `closed`.
@@ -326,7 +327,7 @@ This package owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`;
   must use the wrapper by hand.
 - **Builds and deploys are type-checked.** `aai build` and `aai deploy` run the
   project's `tsc --noEmit` (`typecheck.ts`, gated on a `tsconfig.json`,
-  `--skipTypecheck` opts out); the guest's `test_agent` does too. The dev watch
+  `--skip-typecheck` opts out); the guest's `test_agent` does too. The dev watch
   loop deliberately does not. **`--singleThreaded` is a speedup** for one small
   project on the guest's one reserved CPU; it is passed only when the
   compiler's major is >= 7 (older TypeScript rejects the unknown option,
@@ -401,16 +402,15 @@ is what approves an origin** (user intent, not repo content) and is remembered.
   `continue` above the deadline check. `.aai/project.json` stays
   last-write-wins (per directory).
 - **`aai dev` is the one command a shell-exported key reaches, and only as a
-  provider credential.** `resolveAgentEnv` (`_dev-server.ts`) falls back to the
-  login key only when neither `.env` nor the shell has one. The shell value
-  never enters `ctx.env`: it goes through `withHostCredentialFallback`, and
-  `agentEnvWarnings` flags it as shell-only.
-- **Tests must never resolve the real config dir.** `getConfigDir()` returns a
-  per-process temp dir whenever `VITEST` is set (unless `AAI_CONFIG_DIR` says
-  otherwise), and `aaiEnv()` sets `AAI_CONFIG_DIR` for spawned CLIs (which run
-  with `VITEST` cleared). The guard is in the code path, not a setup file, since
-  a config can omit one — and a polluted `approvedServers` (e.g. test loopback
-  origins) would let a cloned repo collect the developer's key.
+  provider credential.** `resolveAgentEnv` (`_dev-agent-env.ts`) falls back
+  to the login key only if neither `.env` nor the shell has one. The shell
+  value never enters `ctx.env`: it goes through `withHostCredentialFallback`,
+  and `agentEnvWarnings` flags it shell-only.
+- **Tests must never resolve the real config dir.** Under `VITEST`,
+  `getConfigDir()` returns a per-process temp dir (unless `AAI_CONFIG_DIR` is
+  set); `aaiEnv()` sets it for spawned CLIs (`VITEST` cleared). The guard is in
+  the code path because a config can omit a setup file, and a polluted
+  `approvedServers` would let a cloned repo collect the developer's key.
 - **`aai build`, `aai dev` and `aai deploy` execute the repo's code locally**
   (`evalWorkerBundle` / `evalWorkerConfig`, and the project's `vite.config.ts`
   since `buildAgentBundle` does not pass `configFile: false` — only the guest's
@@ -495,9 +495,8 @@ refuses. The module doc lists every flag and why;
 
 `e2e.test.ts` installs an `aai init` project from a mock verdaccio registry.
 CI runs pnpm only; `publint` + `attw` cover non-pnpm `exports` resolution.
-`AAI_TEST_PM` (`_e2e-test-utils.ts`, declared in `check:e2e`'s `env`) switches
-the install for reproducing a user report — a debugging tool, not covered
-ground:
+`AAI_TEST_PM` (`_e2e-test-utils.ts`, in `check:e2e`'s `env`) switches the
+install to reproduce a user report — a debugging tool, not covered ground:
 
 ```sh
 AAI_TEST_PM=npm pnpm test:e2e
@@ -520,16 +519,15 @@ one-off `windows-latest` run found two causes:
 
 **Do not re-add a Windows matrix without a Windows machine to reproduce on,
 and never as `continue-on-error`** — a leg green while broken is worse than
-none. The scenario/integration tiers are Linux-by-design and not worth a
-Windows leg.
+none. The scenario/integration tiers are Linux-by-design.
 
 ## Key files
 
 - `cli.ts` — arg parsing, dispatch; `_cli-common.ts` — `defineExec`,
   `sharedArgs`, `setup`, `runCommand`; `_studio-commands.ts` —
   list/pull/push/publish definitions
-- `init.ts` / `dev.ts` / `test.ts` / `eval.ts` / `deploy.ts` (internal) /
-  `delete.ts` / `secret.ts` — subcommand entry points
+- `init.ts`, `dev.ts`, `test.ts`, `eval.ts`, `deploy.ts` (internal),
+  `delete.ts`, `secret.ts` — entry points
 - `_vitest-runner.ts` — the vitest launcher shared by `test`, `eval` and
   `build`, the spec inventory, and the unrun-spec notice
 - `studio.ts` / `_studio.ts` — pull/push/publish over `/studio/projects`
@@ -546,4 +544,5 @@ Windows leg.
   format.
 - `_agent.ts` — agent discovery, dev mode, server URL resolution
 - `_utils.ts` (`resolveCwd`, `fileExists`), `_server-common.ts`,
-  `_templates.ts`, `_ui.ts` (`log`, `notify`, `fmtUrl`, `parsePort`)
+  `_templates.ts`, `_ui.ts` (`Ui`, `defaultUi`, `fmtUrl`, `parsePort`),
+  `_help.ts` (grouped `--help`)

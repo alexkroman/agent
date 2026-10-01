@@ -8,7 +8,6 @@
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { type DevWatchFn, isIgnoredPath, watchDirectory } from "./_dev-watch.ts";
-import { log } from "./_ui.ts";
 
 type Listeners = { all?: () => void; error?: (err: unknown) => void };
 
@@ -67,21 +66,21 @@ describe("watchDirectory", () => {
   });
 
   test("logs watcher errors, with an inotify hint for ENOSPC", () => {
-    const error = vi.spyOn(log, "error").mockImplementation(() => undefined);
+    const notify = vi.fn();
+    const errors = () => notify.mock.calls.filter(([l]) => l === "error").map(([, m]) => m);
     const fake = fakeWatch();
-    watchDirectory("/tmp/watched", () => undefined, fake.watchFn);
+    watchDirectory("/tmp/watched", () => undefined, fake.watchFn, notify);
 
     fake.listeners.error?.(Object.assign(new Error("watch limit"), { code: "ENOSPC" }));
-    expect(error).toHaveBeenCalledWith(expect.stringContaining("max_user_watches"));
+    expect(errors()[0]).toContain("max_user_watches");
 
     fake.listeners.error?.(new Error("disk gone"));
-    expect(error).toHaveBeenLastCalledWith(expect.stringContaining("disk gone"));
-    expect(error).toHaveBeenLastCalledWith(expect.not.stringContaining("max_user_watches"));
+    expect(errors()[1]).toContain("disk gone");
+    expect(errors()[1]).not.toContain("max_user_watches");
   });
 
   test("a throwing onChange is logged, not an unhandled rejection", async () => {
-    vi.spyOn(log, "info").mockImplementation(() => undefined);
-    const error = vi.spyOn(log, "error").mockImplementation(() => undefined);
+    const notify = vi.fn();
     const fake = fakeWatch();
     watchDirectory(
       "/tmp/watched",
@@ -89,11 +88,12 @@ describe("watchDirectory", () => {
         throw new Error("restart exploded");
       },
       fake.watchFn,
+      notify,
     );
     fake.listeners.all?.();
     // The debounce window is 300ms; the throw surfaces via the catch handler.
     await vi.waitFor(() =>
-      expect(error).toHaveBeenCalledWith(expect.stringContaining("restart exploded")),
+      expect(notify).toHaveBeenCalledWith("error", expect.stringContaining("restart exploded")),
     );
   });
 });

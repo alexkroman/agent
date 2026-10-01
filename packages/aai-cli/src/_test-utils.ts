@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, type MockInstance, vi } from "vitest";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
+import type { LogLevel, NotifyLevel, Ui, UiPrompts, UiSpinner } from "./_ui.ts";
 
 /**
  * Stub `process.exit` with a function that RETURNS, so the code after the exit
@@ -156,15 +157,115 @@ export async function writeFiles(rootDir: string, files: Record<string, string>)
   return rootDir;
 }
 
-/** Stub of the `log` export from `_ui.ts`, for use inside `vi.mock` factories. */
-export function makeMockLog() {
+/** One line a {@link FakeUi} recorded: which channel, and what it said. */
+export type UiLine = { level: LogLevel | `notify:${NotifyLevel}`; message: string };
+
+/** The prompts of a {@link FakeUi}, as spies a spec scripts or asserts on. */
+export type FakePrompts = {
+  confirm: MockInstance<UiPrompts["confirm"]> & UiPrompts["confirm"];
+  text: MockInstance<UiPrompts["text"]> & UiPrompts["text"];
+  password: MockInstance<UiPrompts["password"]> & UiPrompts["password"];
+  select: MockInstance<
+    (opts: { message: string; initialValue?: unknown; options: unknown[] }) => Promise<unknown>
+  > &
+    UiPrompts["select"];
+  spinner: () => UiSpinner;
+  intro: MockInstance<UiPrompts["intro"]> & UiPrompts["intro"];
+  cancel: MockInstance<UiPrompts["cancel"]> & UiPrompts["cancel"];
+  isCancel: UiPrompts["isCancel"];
+};
+
+/**
+ * An in-memory {@link Ui}: what a command said, prompted and wrote, recorded
+ * instead of printed. Pass it as the executor's `ui` (or `runCommand`'s /
+ * `defineExec`'s) rather than `vi.mock("./_ui.ts")` or
+ * `vi.mock("@clack/prompts")`.
+ */
+export type FakeUi = Ui & {
+  /** Every `log.*` and `notify` call, in order. A silenced `log` records nothing. */
+  readonly lines: UiLine[];
+  /** Each `writeResult` call — the JSON result line(s). */
+  readonly stdout: string[];
+  /** Raw stderr lines, including a silenced `notify`. */
+  readonly stderr: string[];
+  /** The messages logged at `level` (a `notify` counts at its level). */
+  said(level: LogLevel): string[];
+  /** Every message, all levels, one string per call. */
+  all(): string[];
+  readonly prompts: FakePrompts;
+  /** What `spinner()` was started and stopped with. */
+  readonly spinner: { started: string[]; stopped: string[] };
+};
+
+/** The value a fake prompt answers to mean "the user pressed Ctrl-C". */
+export const CANCEL: unique symbol = Symbol("fake-ui-cancel");
+
+/**
+ * Build a {@link FakeUi}. `silenced: true` starts it in JSON mode. Unscripted
+ * prompts REJECT, so a spec that reaches a prompt it did not expect fails
+ * naming the prompt rather than hanging on a terminal read.
+ */
+export function createFakeUi(opts: { silenced?: boolean } = {}): FakeUi {
+  let silenced = opts.silenced ?? false;
+  const lines: UiLine[] = [];
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const spinner = { started: [] as string[], stopped: [] as string[] };
+  const record = (level: LogLevel) => (message: string) => {
+    if (!silenced) lines.push({ level, message });
+  };
+  const unscripted = (name: string) => () =>
+    Promise.reject(new Error(`createFakeUi: unexpected ${name} prompt`));
+  const prompts: FakePrompts = {
+    confirm: vi.fn(unscripted("confirm")) as FakePrompts["confirm"],
+    text: vi.fn(unscripted("text")) as FakePrompts["text"],
+    password: vi.fn(unscripted("password")) as FakePrompts["password"],
+    select: vi.fn(unscripted("select")) as unknown as FakePrompts["select"],
+    spinner: () => ({
+      start: (msg?: string) => spinner.started.push(msg ?? ""),
+      stop: (msg?: string) => spinner.stopped.push(msg ?? ""),
+    }),
+    intro: vi.fn() as FakePrompts["intro"],
+    cancel: vi.fn() as FakePrompts["cancel"],
+    isCancel: (value: unknown): value is symbol => value === CANCEL,
+  };
+  const levelOf = (line: UiLine): LogLevel =>
+    (line.level.startsWith("notify:") ? line.level.slice(7) : line.level) as LogLevel;
   return {
-    info: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    step: vi.fn(),
-    message: vi.fn(),
+    log: {
+      info: record("info"),
+      success: record("success"),
+      error: record("error"),
+      warn: record("warn"),
+      step: record("step"),
+      message: record("message"),
+    },
+    notify(level, message) {
+      if (silenced) stderr.push(message);
+      else lines.push({ level: `notify:${level}`, message });
+    },
+    silence() {
+      silenced = true;
+    },
+    get silenced() {
+      return silenced;
+    },
+    async writeResult(line) {
+      stdout.push(line);
+    },
+    writeOut(line) {
+      stdout.push(line);
+    },
+    writeErr(line) {
+      stderr.push(line);
+    },
+    prompts,
+    lines,
+    stdout,
+    stderr,
+    spinner,
+    said: (level) => lines.filter((l) => levelOf(l) === level).map((l) => l.message),
+    all: () => lines.map((l) => l.message),
   };
 }
 

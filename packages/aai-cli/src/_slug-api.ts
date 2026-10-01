@@ -5,14 +5,23 @@
  * command (secret, storage) shares, including the standard "not deployed"
  * 404 hint.
  *
- * Its own module (rather than living beside `getServerInfo` in `_agent.ts`)
- * so tests can mock `_agent.ts`/`_api-client.ts` while this composition
- * stays real — an intra-module call would bypass those mocks.
+ * Both collaborators — target resolution and the HTTP call — arrive as a
+ * {@link PlatformDeps}, so a spec hands in fakes rather than mocking
+ * `_agent.ts`/`_api-client.ts`.
  */
 
 import { getServerInfo } from "./_agent.ts";
 import { type ApiRequestOptions, apiRequest, HINT_NOT_DEPLOYED } from "./_api-client.ts";
 import { studioProjectApiUrl } from "./_studio.ts";
+
+/** How a per-agent command reaches the platform: the seam its specs fake. */
+export type PlatformDeps = {
+  getServerInfo: typeof getServerInfo;
+  apiRequest: typeof apiRequest;
+};
+
+/** The real platform. */
+export const REAL_PLATFORM: PlatformDeps = { getServerInfo, apiRequest };
 
 /** What both requests below pass through to the API client. */
 type SlugRequestInit = Pick<ApiRequestOptions, "method" | "body" | "action">;
@@ -22,8 +31,13 @@ type SlugRequestInit = Pick<ApiRequestOptions, "method" | "body" | "action">;
  * module exists to attach cannot be present on one route and missing on the
  * other. Only the URL differs between the two callers.
  */
-function deployedAgentRequest<T>(url: string, init: SlugRequestInit, apiKey: string): Promise<T> {
-  return apiRequest<T>(url, { ...init, apiKey, hints: { 404: HINT_NOT_DEPLOYED } });
+function deployedAgentRequest<T>(
+  url: string,
+  init: SlugRequestInit,
+  apiKey: string,
+  platform: PlatformDeps,
+): Promise<T> {
+  return platform.apiRequest<T>(url, { ...init, apiKey, hints: { 404: HINT_NOT_DEPLOYED } });
 }
 
 /**
@@ -43,12 +57,18 @@ export async function secretRequest<T = unknown>(
   resourcePath: string,
   init: SlugRequestInit,
   server?: string,
+  platform: PlatformDeps = REAL_PLATFORM,
 ): Promise<{ data: T; target: string }> {
-  const { serverUrl, slug, apiKey, studioProject } = await getServerInfo(cwd, server);
+  const { serverUrl, slug, apiKey, studioProject } = await platform.getServerInfo(cwd, server);
   const base = studioProject
     ? studioProjectApiUrl(serverUrl, studioProject)
     : `${serverUrl}/${slug}`;
-  const data = await deployedAgentRequest<T>(`${base}/secret${resourcePath}`, init, apiKey);
+  const data = await deployedAgentRequest<T>(
+    `${base}/secret${resourcePath}`,
+    init,
+    apiKey,
+    platform,
+  );
   return { data, target: studioProject ?? slug };
 }
 
@@ -71,9 +91,10 @@ export async function slugRequestOn<T = unknown>(
   target: SlugTarget,
   resourcePath: string,
   init: SlugRequestInit,
+  platform: PlatformDeps = REAL_PLATFORM,
 ): Promise<T> {
   const { serverUrl, slug, apiKey } = target;
-  return deployedAgentRequest<T>(`${serverUrl}/${slug}${resourcePath}`, init, apiKey);
+  return deployedAgentRequest<T>(`${serverUrl}/${slug}${resourcePath}`, init, apiKey, platform);
 }
 
 export async function slugRequest<T = unknown>(
@@ -81,7 +102,11 @@ export async function slugRequest<T = unknown>(
   resourcePath: string,
   init: SlugRequestInit,
   server?: string,
+  platform: PlatformDeps = REAL_PLATFORM,
 ): Promise<{ data: T; slug: string }> {
-  const target = await getServerInfo(cwd, server);
-  return { data: await slugRequestOn<T>(target, resourcePath, init), slug: target.slug };
+  const target = await platform.getServerInfo(cwd, server);
+  return {
+    data: await slugRequestOn<T>(target, resourcePath, init, platform),
+    slug: target.slug,
+  };
 }

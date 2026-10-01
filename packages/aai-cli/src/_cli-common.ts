@@ -13,15 +13,8 @@ import {
   type ParsedArgs,
   type Resolvable,
 } from "citty";
-import {
-  CliError,
-  type CommandResult,
-  fail,
-  getOutputMode,
-  type OutputMode,
-  writeLine,
-} from "./_output.ts";
-import { log, silenceOutput } from "./_ui.ts";
+import { CliError, type CommandResult, fail, getOutputMode, type OutputMode } from "./_output.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, fileExists, resolveCwd } from "./_utils.ts";
 
 /** Shared arg definitions for citty commands. */
@@ -225,9 +218,10 @@ export async function setup(opts?: { agent?: boolean }): Promise<string> {
 export async function runCommand(
   args: { json?: boolean | undefined },
   fn: (mode: OutputMode) => Promise<CommandResult<unknown>>,
+  ui: Ui = defaultUi,
 ): Promise<void> {
   const mode = getOutputMode(args);
-  if (mode === "json") silenceOutput();
+  if (mode === "json") ui.silence();
   let result: CommandResult<unknown>;
   try {
     result = await fn(mode);
@@ -237,14 +231,14 @@ export async function runCommand(
     result = fail(code, errorMessage(err), hint);
   }
   if (mode === "human" && !result.ok) {
-    log.error(result.error);
+    ui.log.error(result.error);
     // The hint is the recovery step — it must reach the terminal, not just
     // the JSON result line (for a long time it reached machines only).
-    if (result.hint) log.info(result.hint);
+    if (result.hint) ui.log.info(result.hint);
   }
   // Await the flush before exiting: on a pipe (the JSON-mode case) stdout is
   // async, so process.exit() would truncate the JSON line just queued.
-  if (mode === "json") await writeLine(`${JSON.stringify(result)}\n`);
+  if (mode === "json") await ui.writeResult(`${JSON.stringify(result)}\n`);
   if (!result.ok) process.exit(1);
 }
 
@@ -266,6 +260,8 @@ export type ExecContext<T extends ArgsDef, P extends CwdPolicy> = {
   args: ParsedArgs<T>;
   mode: OutputMode;
   cwd: CwdFor<P>;
+  /** The terminal. Hand it to the executor; never import clack or `log`. */
+  ui: Ui;
 };
 
 /**
@@ -312,21 +308,28 @@ async function resolvePolicyCwd<P extends CwdPolicy>(policy: P): Promise<CwdFor<
  * `{ agent: true }`" stops being a representable mistake — the alternative
  * spelling is a policy name that does not exist.
  */
-export function defineExec<const T extends ArgsDef, P extends CwdPolicy>(spec: {
-  meta: CommandMeta;
-  args: T;
-  cwd: P;
-  run: (ctx: ExecContext<T, P>) => Promise<CommandResult<unknown>>;
-}): CommandDef<T> {
+export function defineExec<const T extends ArgsDef, P extends CwdPolicy>(
+  spec: {
+    meta: CommandMeta;
+    args: T;
+    cwd: P;
+    run: (ctx: ExecContext<T, P>) => Promise<CommandResult<unknown>>;
+  },
+  deps: { ui?: Ui } = {},
+): CommandDef<T> {
+  const ui = deps.ui ?? defaultUi;
   return defineCommand<T>({
     meta: spec.meta,
     args: spec.args,
     async run({ args }) {
-      await runCommand({ json: jsonFlag(args) }, async (mode) =>
-        // Inside `runCommand`'s body, so the cwd policy's own failure ("No
-        // agent.ts found…") converges on the same emitter as everything else
-        // rather than escaping as an unhandled rejection.
-        spec.run({ args, mode, cwd: await resolvePolicyCwd(spec.cwd) }),
+      await runCommand(
+        { json: jsonFlag(args) },
+        async (mode) =>
+          // Inside `runCommand`'s body, so the cwd policy's own failure ("No
+          // agent.ts found…") converges on the same emitter as everything else
+          // rather than escaping as an unhandled rejection.
+          spec.run({ args, mode, cwd: await resolvePolicyCwd(spec.cwd), ui }),
+        ui,
       );
     },
   });

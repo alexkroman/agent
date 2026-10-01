@@ -60,11 +60,11 @@ describe("the workflow command group", () => {
     await subs.runs?.run({ args: { workflow: "digest", agent: url, json: false } });
     await subs.show?.run({ args: { runId: "wrun_1", agent: url, json: false } });
     await subs.cancel?.run({ args: { runId: "wrun_1", agent: url, json: false } });
-    // The options bag is every executor's LAST parameter — the one thing the
-    // four signatures share, `runs` and `show` carrying a positional before it.
+    // The options bag is every executor's second-to-last parameter (`ui` is
+    // last) — `runs` and `show` carry a positional before it.
     for (const [name, exec] of Object.entries(executors)) {
       const args = exec.mock.calls[0] as unknown[];
-      expect(args.at(-1), name).toMatchObject({ agent: url });
+      expect(args.at(-2), name).toMatchObject({ agent: url });
     }
   });
 
@@ -75,8 +75,8 @@ describe("the workflow command group", () => {
     // whatever the agent says about an unparseable query.
     // `json: false` keeps human mode, where `runCommand` prints the message;
     // JSON mode silences every `log` method for the rest of the process.
-    const { log } = await import("./_ui.ts");
-    const error = vi.spyOn(log, "error").mockImplementation(() => undefined);
+    const { defaultUi } = await import("./_ui.ts");
+    const error = vi.spyOn(defaultUi.log, "error").mockImplementation(() => undefined);
     await expect(
       subs.runs?.run({ args: { workflow: "digest", limit: "lots", json: false } }),
     ).rejects.toThrow(/process\.exit/);
@@ -90,6 +90,7 @@ describe("the workflow command group", () => {
       expect.any(String),
       "digest",
       expect.objectContaining({ limit: 3 }),
+      expect.anything(),
     );
   });
 
@@ -99,6 +100,7 @@ describe("the workflow command group", () => {
       expect.any(String),
       "digest",
       expect.objectContaining({ limit: undefined }),
+      expect.anything(),
     );
   });
 });

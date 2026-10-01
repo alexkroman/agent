@@ -14,10 +14,11 @@ import {
   resolveArgv,
   sharedArgs,
 } from "./_cli-common.ts";
-import { fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
+import { rootHelp } from "./_help.ts";
+import { fail, getOutputMode, installStdoutGuard } from "./_output.ts";
 import { logs, secret } from "./_resource-commands.ts";
 import { list, publish, pull, push } from "./_studio-commands.ts";
-import { log, parsePort } from "./_ui.ts";
+import { defaultUi, parsePort } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, readPackageJson, resolveCwd } from "./_utils.ts";
 import { workflow } from "./cli-workflow.ts";
 
@@ -41,15 +42,9 @@ function readCliVersion(dir: string): string {
 }
 
 /**
- * The version, read on FIRST ACCESS rather than at module load.
- *
- * Two synchronous reads and a parse used to run for every invocation of every
- * subcommand, on the startup path this package deliberately budgets (the same
- * one that keeps zod out of `_utils.ts` and `_ui.ts`, and that `bin.mjs` exists
- * to put `module.enableCompileCache()` in front of). Only `--version` and the
- * usage renderer read `meta.version`, and citty reads it as a property — so a
- * getter is transparent to both while charging the file read to the two
- * commands that display it. Memoized because usage rendering reads it twice.
+ * The version, read on FIRST ACCESS rather than at module load: only
+ * `--version` and the usage renderer read it, so the file read stays off every
+ * other command's startup path. Memoized because usage reads it twice.
  */
 let _version: string | undefined;
 const mainMeta = {
@@ -60,6 +55,11 @@ const mainMeta = {
     return _version;
   },
 };
+
+/** What `aai test --all` says: the flag is kept for old CI scripts, and does nothing. */
+export const TEST_ALL_DEPRECATION =
+  "`aai test --all` is deprecated and does nothing — every spec in the project runs by default. " +
+  "Drop the flag; use `--only` to narrow to agent.test.ts.";
 
 const init = defineExec({
   meta: { name: "init", description: "Scaffold a new agent project" },
@@ -78,7 +78,7 @@ const init = defineExec({
   },
   // It creates the directory it works in, and resolves the target itself.
   cwd: "none",
-  async run({ args, mode }) {
+  async run({ args, mode, ui }) {
     const { executeInit } = await import("./init.ts");
     return executeInit(
       {
@@ -88,7 +88,7 @@ const init = defineExec({
         // JSON mode is non-interactive — accept defaults as if --yes was passed.
         yes: mode === "json" ? true : args.yes,
       },
-      mode === "json" ? { silent: true } : undefined,
+      { silent: mode === "json", ui },
     );
   },
 });
@@ -119,15 +119,18 @@ const dev = defineExec({
     json: sharedArgs.json,
   },
   cwd: "agent",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeDev } = await import("./dev.ts");
-    return executeDev({
-      cwd,
-      port: args.port,
-      watch: args.watch,
-      tunnel: args.tunnel,
-      onPublicUrl: args["on-public-url"],
-    });
+    return executeDev(
+      {
+        cwd,
+        port: args.port,
+        watch: args.watch,
+        tunnel: args.tunnel,
+        onPublicUrl: args["on-public-url"],
+      },
+      { ui },
+    );
   },
 });
 
@@ -140,9 +143,9 @@ const consoleCommand = defineExec({
     verbose: { type: "boolean", description: "Print the runtime's session log to stderr" },
   },
   cwd: "agent",
-  async run({ args, cwd, mode }) {
+  async run({ args, cwd, mode, ui }) {
     const { executeConsole } = await import("./console.ts");
-    return executeConsole({ cwd, verbose: args.verbose, mode });
+    return executeConsole({ cwd, verbose: args.verbose, mode, ui });
   },
 });
 
@@ -185,25 +188,23 @@ const test = defineExec({
       type: "boolean",
       description: "Run agent.test.ts alone, not every spec in the project",
     },
-    // Accepted and IGNORED, because it is what the old failure's own hint told
-    // people to put in CI: `assertKnownArgv` refuses an undeclared flag, so
-    // dropping it would turn every scripted `aai test --all` into a usage
-    // error over behaviour that is now the default. Its description says so
-    // rather than pretending the flag still does something.
+    // Accepted, IGNORED and announced: it is what the old failure's own hint
+    // told people to put in CI, and `assertKnownArgv` refuses an undeclared
+    // flag, so dropping it would turn every scripted `aai test --all` into a
+    // usage error over behaviour that is now the default.
     all: {
       type: "boolean",
-      description: "Deprecated: every spec in the project is the default",
+      description: "Deprecated, does nothing: every spec in the project is the default",
     },
   },
-  // Like dev/build/push/publish. This command shipped once WITHOUT the agent
-  // gate, and that is the incident `defineExec`'s `cwd` field exists for: in a
-  // directory with no agent.ts it found no test file, reported
-  // `{ passed: true, skipped: true }` and exited 0 — a green result for a
-  // project that is not there, which in CI reads as a passing suite.
+  // Without the agent gate, a directory with no agent.ts reported a green,
+  // skipped run — which in CI reads as a passing suite.
   cwd: "agent",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
+    // `notify`, so a CI log (JSON mode, auto-selected on a pipe) still shows it.
+    if (args.all === true) ui.notify("warn", TEST_ALL_DEPRECATION);
     const { executeTest } = await import("./test.ts");
-    return executeTest(cwd, { only: args.only === true });
+    return executeTest(cwd, { only: args.only === true }, { ui });
   },
 });
 
@@ -216,9 +217,9 @@ const evalCommand = defineExec({
   // there is nothing to evaluate, and a `{ passed: true, skipped: true }` for a
   // project that is not there reads as a passing run.
   cwd: "agent",
-  async run({ cwd }) {
+  async run({ cwd, ui }) {
     const { executeEval } = await import("./eval.ts");
-    return executeEval(cwd);
+    return executeEval(cwd, { ui });
   },
 });
 
@@ -226,8 +227,10 @@ const build = defineExec({
   meta: { name: "build", description: "Bundle agent without deploying" },
   args: {
     json: sharedArgs.json,
-    skipTests: { type: "boolean", description: "Skip running tests before build" },
-    skipTypecheck: { type: "boolean", description: "Skip type checking before build" },
+    // Kebab-case is the spelling `--help` shows; citty aliases the camelCase
+    // one (`--skipTests`), which keeps working, unadvertised.
+    "skip-tests": { type: "boolean", description: "Skip running tests before build" },
+    "skip-typecheck": { type: "boolean", description: "Skip type checking before build" },
     // No `default`, deliberately: absence is what leaves the host-environment
     // detection in charge, and a default here would make the flag the only way
     // to reach any target but `node`.
@@ -240,14 +243,17 @@ const build = defineExec({
     },
   },
   cwd: "agent",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeBuild } = await import("./build.ts");
-    return executeBuild({
-      cwd,
-      skipTests: args.skipTests,
-      skipTypecheck: args.skipTypecheck,
-      target: args.target,
-    });
+    return executeBuild(
+      {
+        cwd,
+        skipTests: args["skip-tests"],
+        skipTypecheck: args["skip-typecheck"],
+        target: args.target,
+      },
+      { ui },
+    );
   },
 });
 
@@ -259,23 +265,26 @@ const deploy = defineExec({
   meta: { name: "deploy", description: "(internal) used by studio Publish", hidden: true },
   args: {
     ...platformArgs,
-    allowPreviewSlug: {
+    "allow-preview-slug": {
       type: "boolean",
       description:
         "Permit a `-preview`-suffixed slug (reserved for studio auto-previews; " +
         "studio-internal — a slug you claim this way is subject to the preview reaper)",
     },
-    skipTypecheck: { type: "boolean", description: "Skip type checking before deploy" },
+    "skip-typecheck": { type: "boolean", description: "Skip type checking before deploy" },
   },
   cwd: "agent",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeDeploy } = await import("./deploy.ts");
-    return executeDeploy({
-      cwd,
-      server: args.server,
-      allowPreviewSlug: args.allowPreviewSlug,
-      skipTypecheck: args.skipTypecheck,
-    });
+    return executeDeploy(
+      {
+        cwd,
+        server: args.server,
+        allowPreviewSlug: args["allow-preview-slug"],
+        skipTypecheck: args["skip-typecheck"],
+      },
+      ui,
+    );
   },
 });
 
@@ -290,9 +299,9 @@ const del = defineExec({
   // The link in `.aai/project.json` is what it deletes; a directory that has
   // lost its agent.ts can still own a studio project.
   cwd: "any",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeDelete } = await import("./delete.ts");
-    return executeDelete({ cwd, server: args.server });
+    return executeDelete({ cwd, server: args.server }, ui);
   },
 });
 
@@ -303,9 +312,9 @@ const login = defineExec({
   },
   // Account-level, not project-level: it works from anywhere.
   cwd: "none",
-  async run({ args }) {
+  async run({ args, ui }) {
     const { executeLogin } = await import("./login.ts");
-    return executeLogin({ server: args.server });
+    return executeLogin({ server: args.server }, { ui });
   },
 });
 
@@ -316,12 +325,12 @@ const templates = defineExec({
   },
   // Reads the CLI's own bundled templates; the working directory is irrelevant.
   cwd: "none",
-  async run({ mode }) {
+  async run({ mode, ui }) {
     const { listTemplates } = await import("./_templates.ts");
     const names = await listTemplates();
     if (mode === "human") {
-      for (const name of names) log.message(name);
-      log.info("Scaffold one with `aai init --template <name>`.");
+      for (const name of names) ui.log.message(name);
+      ui.log.info("Scaffold one with `aai init --template <name>`.");
     }
     return { ok: true, data: { templates: names } };
   },
@@ -373,10 +382,11 @@ if (process.env.VITEST !== "true") {
     // make sure a bare `aai` (often "what does this do?") means it. Non-TTY
     // keeps the implicit behavior: scripts invoking bare `aai` are deliberate.
     if (process.stdin.isTTY && process.stdout.isTTY) {
-      const p = await import("@clack/prompts");
-      const confirmed = await p.confirm({ message: "Publish this agent to production?" });
+      const confirmed = await defaultUi.prompts.confirm({
+        message: "Publish this agent to production?",
+      });
       if (confirmed !== true) {
-        log.info("Cancelled. Run `aai --help` to see all commands.");
+        defaultUi.log.info("Cancelled. Run `aai --help` to see all commands.");
         process.exit(0);
       }
     }
@@ -384,31 +394,23 @@ if (process.env.VITEST !== "true") {
   };
 
   /**
-   * Render usage the way the active output mode allows.
-   *
-   * citty calls `showUsage` from two places: the `--help` path, and its
-   * `catch` for a `CLIError` (a missing positional, an unknown subcommand) —
-   * where it writes the usage block to STDOUT and the reason to stderr. That
-   * second one breaks JSON mode's contract of exactly one result line on
-   * stdout, and JSON mode is auto-detected on a pipe: `aai secret put --json`
-   * put a usage block where a script's `jq` expected a result, with no JSON
-   * emitted at all. Every other failure path in this CLI converges on one
-   * emitter and gets this right.
-   *
-   * `--help` is explicitly still the human block whatever the mode — piping
-   * it into a pager is the normal way to read it, and it is not an error.
-   * The specific reason keeps going to stderr as citty already writes it, so
-   * nothing is lost to a human watching the terminal.
+   * Render usage the way the active output mode allows. citty also calls this
+   * from its `CLIError` catch (a missing positional), where a usage block on
+   * stdout would break JSON mode's one-result-line contract — so a non-help
+   * call in JSON mode emits a `usage` failure instead. `--help` is always the
+   * human block (piping it to a pager is normal).
    */
   const usageForMode: typeof showUsage = async (cmd, parent) => {
     const argv = process.argv.slice(2);
     const wantsHelp = argv.includes("--help") || argv.includes("-h");
     if (wantsHelp || getOutputMode({}) === "human") {
-      await showUsage(cmd, parent);
+      // The ROOT gets the grouped help (`_help.ts`); a subcommand keeps citty's.
+      if ((cmd as unknown) === mainCommand) defaultUi.writeOut(await rootHelp(mainCommand));
+      else await showUsage(cmd, parent);
       return;
     }
     const named = commandPath(cmd, parent);
-    await writeLine(
+    await defaultUi.writeResult(
       `${JSON.stringify(
         fail(
           "usage",
@@ -421,21 +423,15 @@ if (process.env.VITEST !== "true") {
 
   /**
    * Report a pre-parse failure the way the active output mode allows, then
-   * exit 1.
-   *
-   * Mode-aware for the same reason `usageForMode` is: JSON mode promises
-   * exactly one result line on stdout, and it is auto-detected on a pipe —
-   * so a clack block here left `aai push --json --serverr=x` emitting a
-   * human error where a script's `jq` expected a result, and no JSON at all.
-   * The guards below run BEFORE citty parses, so neither can lean on
+   * exit 1. These guards run BEFORE citty parses, so they cannot lean on
    * `defineExec`'s mode plumbing.
    */
   const reportAndExit = async (label: string, hint: string): Promise<never> => {
     if (getOutputMode({}) === "json") {
-      await writeLine(`${JSON.stringify(fail("usage", label, hint))}\n`);
+      await defaultUi.writeResult(`${JSON.stringify(fail("usage", label, hint))}\n`);
     } else {
-      log.error(label);
-      log.info(hint);
+      defaultUi.log.error(label);
+      defaultUi.log.info(hint);
     }
     process.exit(1);
   };
@@ -485,7 +481,7 @@ if (process.env.VITEST !== "true") {
     .then(assertKnownArgv)
     .then(() => runMain(mainCommand, { showUsage: usageForMode }))
     .catch((err: unknown) => {
-      log.error(errorMessage(err));
+      defaultUi.log.error(errorMessage(err));
       process.exitCode = 1;
     });
 }

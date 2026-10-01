@@ -5,13 +5,17 @@ import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
-// Keep the real module surface (`log` is needed by _ui.ts) and stub the prompts.
-vi.mock("@clack/prompts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@clack/prompts")>()),
-  password: vi.fn(),
-  isCancel: vi.fn(),
-  cancel: vi.fn(),
-}));
+/**
+ * `ensureApiKey` must never prompt (a pasted key authenticated as an account
+ * the user could not see). It CANNOT: the module imports neither clack nor the
+ * CLI's `Ui`, the only two ways a prompt is reachable — asserted on its source,
+ * since there is no prompt to spy on.
+ */
+test("_config.ts has no way to prompt", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(path.join(import.meta.dirname, "_config.ts"), "utf-8");
+  expect(source).not.toMatch(/from "@clack\/prompts"|from "\.\/_ui\.ts"/);
+});
 
 describe("readProjectConfig / writeProjectConfig", () => {
   test("returns null when no config exists", async () => {
@@ -141,15 +145,12 @@ describe("ensureApiKey", () => {
   // `unstubEnvs` in vitest.shared.ts is what keeps that out of later tests.
 
   test("returns saved key without prompting", async () => {
-    const p = await import("@clack/prompts");
     await withTempDir(async (dir) => {
       const { writeGlobalConfig, ensureApiKey } = await import("./_config.ts");
       await writeGlobalConfig(dir, { apiKey: "existing-key" });
       const key = await ensureApiKey(dir);
       expect(key).toBe("existing-key");
-      expect(p.password).not.toHaveBeenCalled();
     });
-    vi.mocked(p.password).mockReset();
   });
 
   /**
@@ -169,8 +170,6 @@ describe("ensureApiKey", () => {
   }
 
   test("directs an unauthenticated user to `aai login` instead of prompting", async () => {
-    const p = await import("@clack/prompts");
-
     // Pasting a raw key is no longer an authentication path. `aai login`
     // links a real account (and is what the studio's own onboarding sets up),
     // so a pasted key produced a half-configured CLI that could push and
@@ -182,21 +181,17 @@ describe("ensureApiKey", () => {
           code: "not_logged_in",
           hint: expect.stringContaining("aai login"),
         });
-        expect(p.password).not.toHaveBeenCalled();
       }),
     );
   });
 
   test("refuses the same way with no TTY — the failure is not about prompting", async () => {
-    const p = await import("@clack/prompts");
-
     await withTempDir(async (dir) => {
       const { ensureApiKey } = await import("./_config.ts");
       await expect(ensureApiKey(dir)).rejects.toMatchObject({
         code: "not_logged_in",
         hint: expect.stringContaining("aai login"),
       });
-      expect(p.password).not.toHaveBeenCalled();
     });
   });
 
