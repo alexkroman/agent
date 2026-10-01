@@ -14,7 +14,9 @@ read_when: >-
   `check-doc-examples` compiles every `ts` fence in it by reading the directory,
   so a new module here is gated by default.
 - `studio-prompt.ts` composes a kind's preamble with the scaffold `CLAUDE.md`
-  (or a built-in fallback), cached per kind. `studio-preamble.ts` is the shared
+  plus every `agent-guide/` topic file inlined after it in routing-table order
+  (the studio agent cannot open a topic file the way a laptop agent does), or a
+  built-in fallback, cached per kind. `studio-preamble.ts` is the shared
   preamble; `studio-preamble-mode.ts` names the fragments that differ.
 - `pnpm sync:studio-prompt` regenerates the committed copies in
   `packages/aai-guest-studio/studio-prompts/` that the guest's eval reads;

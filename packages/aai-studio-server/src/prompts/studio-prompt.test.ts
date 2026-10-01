@@ -30,6 +30,20 @@ describe("loadScaffoldGuide", () => {
     expect(guide).toContain("### Design guidelines");
   });
 
+  test("inlines every topic file after the core, in routing-table order", () => {
+    // The studio agent cannot open `agent-guide/TOOLS.md` the way a laptop
+    // agent can, so the core's routing table must resolve to text in the prompt.
+    const guide = loadScaffoldGuide() ?? "";
+    const core = guide.slice(0, guide.indexOf("<!-- agent-guide/"));
+    expect(core).toContain("## Read X when Y");
+    const inlined = [...guide.matchAll(/<!-- agent-guide\/([A-Z-]+\.md) — inlined/g)].map(
+      (m) => m[1],
+    );
+    const routed = [...new Set([...core.matchAll(/agent-guide\/([A-Z-]+\.md)/g)].map((m) => m[1]))];
+    expect(inlined.length).toBeGreaterThanOrEqual(5);
+    expect(inlined).toEqual(routed);
+  });
+
   test("returns null for a missing path", () => {
     expect(loadScaffoldGuide("/nonexistent/CLAUDE.md")).toBeNull();
   });

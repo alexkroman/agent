@@ -29,8 +29,9 @@
  *    (`docs/src/content/docs/more/voices-and-models.md`): a row whose Default
  *    cell opens with a backticked literal must match the `@defaultValue` of the
  *    field it names, as established by (1).
- * 3. **The authoring guide** (`packages/aai-templates/scaffold/CLAUDE.md`, the
- *    single source `AGENT_GUIDE.md` and the studio prompts are synced from):
+ * 3. **The authoring guide** (`packages/aai-templates/scaffold/CLAUDE.md` and
+ *    its `agent-guide/` topic files, the single source `AGENT_GUIDE.md` and the
+ *    studio prompts are synced from — `scripts/_agent-guide.mjs`):
  *    every "(default X)" stated for a backticked field, in the `agent()`
  *    listing's comments or in prose, must match that field's `@defaultValue`.
  *
@@ -42,6 +43,7 @@ import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { guideFiles } from "./_agent-guide.mjs";
 import { parseScriptArgs } from "./_args.mjs";
 import { repoRoot } from "./_fs.mjs";
 import { assertScanCorpus, git } from "./_ratchet.mjs";
@@ -53,7 +55,6 @@ const SDK_PATHSPEC = "packages/aai/src/sdk";
 const SDK_DIR = join(ROOT, SDK_PATHSPEC);
 const DOCS_TABLE_PATH = join(ROOT, "docs/src/content/docs/more/voices-and-models.md");
 const DOCS_TABLE_HEADING = "## Tuning the conversation";
-const GUIDE_PATH = join(ROOT, "packages/aai-templates/scaffold/CLAUDE.md");
 
 /** Measured 2026-10: 494 files under the SDK directory, 281 of them non-test `.ts`. */
 const MIN_SDK_FILES = 400;
@@ -293,53 +294,53 @@ if (tableRows < MIN_TABLE_ROWS) {
 // (3) The authoring guide
 // ---------------------------------------------------------------------------
 
-const guide = readFileSync(GUIDE_PATH, "utf8");
-const guideLines = guide.split("\n");
 let guideStatements = 0;
-/**
- * @param {string} field
- * @param {string} statedText
- * @param {number} lineNo
- */
-function checkGuide(field, statedText, lineNo) {
-  const truth = defaultOf(field);
-  if (truth === undefined) return;
-  const stated = parseLiteral(statedText);
-  if (stated === undefined) return;
-  guideStatements += 1;
-  if (!same(stated.value, truth.value)) {
-    problems.push(
-      `${rel(GUIDE_PATH)}:${lineNo}: says \`${field}\` defaults to ${statedText}, but ` +
-        `${truth.where} (checked against its constant) says ${show(truth.value)}.`,
-    );
-  }
-}
-
 const DEFAULT_TEXT = String.raw`\(default ("[^"]*"|[\w.]+)`;
-for (let i = 0; i < guideLines.length; i += 1) {
-  // The `agent()` field listing: `  name?: type; // ... (default X)`, where the
-  // comment may continue on lines that are only a `//` comment.
-  const field = /^\s+([a-zA-Z_$][\w$]*)\??:\s.*?\/\//.exec(guideLines[i] ?? "")?.[1];
-  if (field !== undefined) {
-    let comment = (guideLines[i] ?? "").slice((guideLines[i] ?? "").indexOf("//"));
-    for (let j = i + 1; /^\s*\/\//.test(guideLines[j] ?? ""); j += 1)
-      comment += ` ${guideLines[j]}`;
-    const stated = new RegExp(DEFAULT_TEXT).exec(comment)?.[1];
-    if (stated !== undefined) checkGuide(field, stated, i + 1);
+for (const { source: guidePath, text: guide } of guideFiles()) {
+  const guideLines = guide.split("\n");
+  /**
+   * @param {string} field
+   * @param {string} statedText
+   * @param {number} lineNo
+   */
+  const checkGuide = (field, statedText, lineNo) => {
+    const truth = defaultOf(field);
+    if (truth === undefined) return;
+    const stated = parseLiteral(statedText);
+    if (stated === undefined) return;
+    guideStatements += 1;
+    if (!same(stated.value, truth.value)) {
+      problems.push(
+        `${rel(guidePath)}:${lineNo}: says \`${field}\` defaults to ${statedText}, but ` +
+          `${truth.where} (checked against its constant) says ${show(truth.value)}.`,
+      );
+    }
+  };
+  for (let i = 0; i < guideLines.length; i += 1) {
+    // The `agent()` field listing: `  name?: type; // ... (default X)`, where the
+    // comment may continue on lines that are only a `//` comment.
+    const field = /^\s+([a-zA-Z_$][\w$]*)\??:\s.*?\/\//.exec(guideLines[i] ?? "")?.[1];
+    if (field !== undefined) {
+      let comment = (guideLines[i] ?? "").slice((guideLines[i] ?? "").indexOf("//"));
+      for (let j = i + 1; /^\s*\/\//.test(guideLines[j] ?? ""); j += 1)
+        comment += ` ${guideLines[j]}`;
+      const stated = new RegExp(DEFAULT_TEXT).exec(comment)?.[1];
+      if (stated !== undefined) checkGuide(field, stated, i + 1);
+    }
   }
-}
-// Prose: "`field` is how many words interrupt a reply (default 2, ...".
-const flat = guide.replace(/\n/g, " ");
-const lineOf = lineCounter(guide);
-for (const match of flat.matchAll(
-  new RegExp(String.raw`\`([a-zA-Z_$][\w$]*)\`[^\`(]{0,120}?${DEFAULT_TEXT}`, "g"),
-)) {
-  checkGuide(match[1] ?? "", match[2] ?? "", lineOf(match.index));
+  // Prose: "`field` is how many words interrupt a reply (default 2, ...".
+  const flat = guide.replace(/\n/g, " ");
+  const lineOf = lineCounter(guide);
+  for (const match of flat.matchAll(
+    new RegExp(String.raw`\`([a-zA-Z_$][\w$]*)\`[^\`(]{0,120}?${DEFAULT_TEXT}`, "g"),
+  )) {
+    checkGuide(match[1] ?? "", match[2] ?? "", lineOf(match.index));
+  }
 }
 if (guideStatements < MIN_GUIDE_STATEMENTS) {
   problems.push(
     `Only ${guideStatements} "(default X)" statements for a documented field found in ` +
-      `${rel(GUIDE_PATH)} (floor ${MIN_GUIDE_STATEMENTS}). The guide's parser stopped matching.`,
+      `the authoring guide (floor ${MIN_GUIDE_STATEMENTS}). The guide's parser stopped matching.`,
   );
 }
 

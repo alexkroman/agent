@@ -28,6 +28,10 @@
     // sources `check:defaults` compares — the SDK's constants and their
     // `@defaultValue` tags, the docs site's tuning table, and the scaffold guide.
     //
+    // `authoring-guide-gate.test.ts` and `agent-guide-gate.test.ts` read the
+    // scaffold's authoring guide, its SDK copies, the shipped skill and the
+    // SDK manifest's `exports`.
+    //
     // Markdown is re-included (the root task drops it) because a CLAUDE.md IS
     // the input here, not documentation about it. `.agents/*.md` joins it for
     // the same reason: `claude-md-limit.test.ts` measures those on the same
@@ -62,7 +66,11 @@
         "$TURBO_ROOT$/.github/workflows/*.yml",
         "$TURBO_ROOT$/packages/aai/src/sdk/**",
         "$TURBO_ROOT$/docs/src/content/docs/more/voices-and-models.md",
-        "$TURBO_ROOT$/packages/aai-templates/scaffold/CLAUDE.md"
+        "$TURBO_ROOT$/packages/aai-templates/scaffold/**",
+        "$TURBO_ROOT$/packages/aai/AGENT_GUIDE.md",
+        "$TURBO_ROOT$/packages/aai/agent-guide/*.md",
+        "$TURBO_ROOT$/packages/aai/skills/**",
+        "$TURBO_ROOT$/packages/aai/package.json"
       ],
       "env": ["CI", "VITEST_POOL"]
     },
@@ -87,7 +95,11 @@
         "$TURBO_ROOT$/.github/workflows/*.yml",
         "$TURBO_ROOT$/packages/aai/src/sdk/**",
         "$TURBO_ROOT$/docs/src/content/docs/more/voices-and-models.md",
-        "$TURBO_ROOT$/packages/aai-templates/scaffold/CLAUDE.md"
+        "$TURBO_ROOT$/packages/aai-templates/scaffold/**",
+        "$TURBO_ROOT$/packages/aai/AGENT_GUIDE.md",
+        "$TURBO_ROOT$/packages/aai/agent-guide/*.md",
+        "$TURBO_ROOT$/packages/aai/skills/**",
+        "$TURBO_ROOT$/packages/aai/package.json"
       ],
       "outputs": ["coverage/**"],
       "env": ["CI", "VITEST_POOL"]
