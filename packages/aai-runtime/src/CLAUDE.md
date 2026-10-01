@@ -94,11 +94,14 @@ the agent is silent. `say` goes to `Transport.speakLine`, or settles
 `"dropped"` when the transport lacks the `say` capability (said once at session
 start — `transports/CLAUDE.md`, "What works on which transport").
 
-- **Every author-facing handle resolves the session per CALL**, through
-  `speechDirectory(sessions)` built once in `runtime.ts`: `of(sid)` for a tool
-  or handler context (a timer can fire after a resume swapped the session),
-  `live(sid)` for `RouteContext.speech`, and `announce` for a run's `notify`.
-  Never capture a `ServerSession` in a context.
+- **Every reach for a live session goes through ONE `SessionDirectory`**
+  (`session-directory.ts`, built once in `runtime.ts`), resolved per CALL: the
+  session (`session-attach.ts`'s resume takeover claims it), its emitter and
+  meter (`ctx.send`, a hook commit, `ctx.generate`), and `speech` — `of(sid)`
+  for a tool or handler context (a timer can fire after a resume swapped the
+  session), `live(sid)` for `RouteContext.speech`, `announce` for a run's
+  `notify`. Never capture a `ServerSession` in a context; `guard-invariants`
+  rule 35 refuses a session-keyed map anywhere else in the package.
 - A sessionless context (a step's `stepDelegate`, an unwired double) holds
   `DETACHED_SESSION_SPEECH` from `/host-internal`: every line `"dropped"`.
 

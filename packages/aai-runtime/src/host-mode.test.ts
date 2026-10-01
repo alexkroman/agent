@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import type { SessionEvent } from "@alexkroman1/aai";
-import { createOwnedMap } from "@alexkroman1/aai/internal";
+
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { describe, expect, test, vi } from "vitest";
@@ -20,6 +20,7 @@ import { createRelayExecuteTool } from "./host-relay.ts";
 import type { Runtime, runtimeBrand } from "./runtime.ts";
 import type { HostRuntimeOptions } from "./runtime-types.ts";
 import { createSessionCore } from "./session-core.ts";
+import { createSessionDirectory } from "./session-directory.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
@@ -623,7 +624,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
     let core: ReturnType<typeof createSessionCore> | undefined;
     wireSessionSocket(asSessionWs(ws), {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       logger,
       readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
       createSession: (_sid, client) => {

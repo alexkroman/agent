@@ -185,16 +185,15 @@ export function openSessionWiring(deps: {
  * caller force-closes what is left. Never rejects.
  */
 export async function stopSessionsWithin(
-  sessions: { readonly size: number; values(): Iterable<ServerSession> },
+  sessions: { readonly size: number; live(): Iterable<ServerSession> },
   timeoutMs: number,
   logger: Logger,
 ): Promise<void> {
   if (sessions.size === 0) return;
   try {
-    const results = await pTimeout(
-      Promise.allSettled([...sessions.values()].map((s) => s.stop())),
-      { milliseconds: timeoutMs },
-    );
+    const results = await pTimeout(Promise.allSettled([...sessions.live()].map((s) => s.stop())), {
+      milliseconds: timeoutMs,
+    });
     for (const r of results) {
       if (r.status === "rejected") logger.warn(`Session stop failed during shutdown: ${r.reason}`);
     }

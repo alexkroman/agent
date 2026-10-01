@@ -2,11 +2,10 @@
 // Races between the WebSocket closing and session.start() settling.
 // (Lives outside ws-handler.test.ts, which is at its file-length ceiling.)
 
-import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeMockCore, silentLogger, tick } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
-import type { ServerSession } from "./session-core.ts";
+import { createSessionDirectory } from "./session-directory.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 describe("wireSessionSocket — close during start()", () => {
@@ -14,7 +13,7 @@ describe("wireSessionSocket — close during start()", () => {
     const startGate = Promise.withResolvers<void>();
     const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
     const ws = openSocket();
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
 
     wireSessionSocket(ws, {
       sessions,
@@ -45,7 +44,7 @@ describe("wireSessionSocket — close during start()", () => {
     const onSessionEnd = vi.fn();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap<string, ServerSession>(),
+      sessions: createSessionDirectory(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -66,7 +65,7 @@ describe("wireSessionSocket — close during start()", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap<string, ServerSession>(),
+      sessions: createSessionDirectory(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,

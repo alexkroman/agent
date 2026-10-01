@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 181 names
 - [Testing and evals](#testing-and-evals) — 254 names
 - [Hosting and tooling](#hosting-and-tooling) — 236 names
-- [Framework internals](#framework-internals) — 385 names
+- [Framework internals](#framework-internals) — 387 names
 
 ## Agent authoring
 
@@ -1400,6 +1400,7 @@ trace or a type error can be traced back to something.
 | `ServerRoute` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ServerRouteMatch` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ServerSession` | type | `@alexkroman1/aai-runtime/internal` |  | One live server-side session: the runtime's bridge between a transport (S2S, pipeline, or OpenAI Realtime) and the connected client. |
+| `SessionDirectory` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `SessionEnder` | type | `@alexkroman1/aai/host-internal` |  | What the runtime registers for a session — see `claimSessionEnder`. |
 | `SessionProvider` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `SessionStateBackend` | type | `@alexkroman1/aai-runtime/internal` |  | Where a session's durable things are kept between processes — its slot values AND its event log. |
@@ -1488,6 +1489,7 @@ trace or a type error can be traced back to something.
 | `createPlatformStateBackend` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createPostgresJournal` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createPostgresStateBackend` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createSessionDirectory` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createSessionEventStream` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createSessionStateStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createUploadStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |

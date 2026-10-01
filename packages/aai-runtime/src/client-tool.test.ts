@@ -7,7 +7,6 @@
  */
 
 import { clientTool } from "@alexkroman1/aai";
-import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { MockWebSocket } from "./_mock-ws.ts";
@@ -22,11 +21,10 @@ import {
 import { createClientToolBroker } from "./client-tool-broker.ts";
 import { setupTools } from "./runtime-tools.ts";
 import { createSessionCore } from "./session-core.ts";
-import type { SessionEmitter } from "./session-emitter.ts";
+import { createSessionDirectory } from "./session-directory.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "./session-state/store.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
-import type { UsageMeter } from "./usage-meter.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 function makeFakeTransport(): Transport {
@@ -59,9 +57,11 @@ describe("clientTool over a session socket", () => {
       providerEnv: {},
       workflows: undefined,
       logger: silentLogger,
-      emitters: createOwnedMap<string, SessionEmitter>(),
-      meters: createOwnedMap<string, UsageMeter>(),
-      speech: { of: () => makeSpeech() },
+      sessions: {
+        emitter: () => undefined,
+        meter: () => undefined,
+        speech: { of: () => makeSpeech() },
+      },
       clientTools,
       stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
     });
@@ -71,7 +71,7 @@ describe("clientTool over a session socket", () => {
 
     let core: ReturnType<typeof createSessionCore> | undefined;
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       logger,
       readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
       createSession: (_sid, client) => {

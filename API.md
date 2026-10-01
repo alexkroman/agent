@@ -15106,7 +15106,6 @@ import type { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
-import type { OwnedMap } from '@alexkroman1/aai/internal';
 import { publishClientInboxDefaults } from '@alexkroman1/aai/host-internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
@@ -15146,7 +15145,7 @@ export function applyWorkflowJournalDdl(options: {
 
 // @public
 export type AttachSessionOptions = {
-    sessions: OwnedMap<string, ServerSession>;
+    sessions: Pick<SessionDirectory, "claim" | "session">;
     createSession: (sessionId: string, client: ClientSink) => ServerSession;
     readyConfig: ReadyConfig;
     logContext?: Record<string, string>;
@@ -15236,6 +15235,9 @@ export function createPostgresJournal(options: {
 export function createPostgresStateBackend(options: {
     db: Db;
 }): SessionStateBackend;
+
+// @internal
+export function createSessionDirectory(): SessionDirectory;
 
 // @internal
 export function createSessionEventStream(options: {
@@ -15649,6 +15651,25 @@ export const SESSION_EVENT_TABLE = "aai_session_events";
 // @internal
 export const SESSION_STATE_TABLE = "aai_session_state";
 
+// @internal
+export type SessionDirectory = {
+    claim(sessionId: string, session: ServerSession): () => boolean;
+    session(sessionId: string): ServerSession | undefined;
+    claimWiring(sessionId: string, wiring: SessionWiring): () => boolean;
+    emitter(sessionId: string): SessionEmitter | undefined;
+    meter(sessionId: string): UsageMeter | undefined;
+    readonly speech: SpeechDirectory;
+    live(): IterableIterator<ServerSession>;
+    ids(): IterableIterator<string>;
+    readonly size: number;
+    clear(): void;
+};
+
+// @public
+type SessionEmitter = {
+    emit(body: SessionEventBody): SessionEvent;
+};
+
 // @public
 type SessionEventPage = {
     events: readonly SessionEvent[];
@@ -15733,6 +15754,13 @@ type SessionWebSocket = {
     }) => void): void;
 };
 
+// @internal
+type SessionWiring = {
+    sink: ClientSink;
+    emitter: SessionEmitter;
+    meter: UsageMeter;
+};
+
 // @public
 type SleepEntry = SleepRecord & {
     key: string;
@@ -15744,6 +15772,13 @@ type SleepRecord = {
     woken: boolean;
     correlationId?: string | undefined;
     kind: "sleep" | "hookTimeout";
+};
+
+// @internal
+type SpeechDirectory = {
+    of(sessionId: string): SessionSpeech;
+    live(sessionId: string): SessionSpeech | undefined;
+    announce(sessionId: string, instruction: string): boolean;
 };
 
 // @internal

@@ -208,6 +208,9 @@ export type { AttachSessionOptions } from "./session-attach.ts";
 // that returned one (`Runtime.createSession`) was a testing seam. The two
 // `TransportEvent*` types are what its `report` takes, so they travel with it.
 export type { ServerSession } from "./session-core.ts";
+// The live-session directory `wireSessionSocket` claims into — a host wiring
+// its own socket server builds one per runtime (`session-directory.ts`).
+export { createSessionDirectory, type SessionDirectory } from "./session-directory.ts";
 // Reading a session's events back, and stamping one on the way in. The two
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
 // contracted, on the root barrel.
