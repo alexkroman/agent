@@ -33,8 +33,8 @@ The replay engine executes a run in THIS process off the agent's own
   declares. Construction, not `listen()`, because a host that binds
   `AgentServer.node` itself never calls `listen()`.
 - **The delivery door**: `handleWorkflowRequest` is composed into
-  `createServerForRuntime`'s `request` hook, wired identically to `aai dev` and the
-  harness, with no `allowRemote` — so `POST /workflow-queue` answers 401 (no
+  `createServerForRuntime`'s `request` hook, wired identically to `aai dev` and
+  the harness, with no `allowRemote` — so `POST /workflow-queue` answers 401 (no
   platform queue to vouch for it; in-process timers deliver).
 - **A test must boot a workflow through this door** — `aai-cli`'s
   `e2e.test.ts` and the `pack + build + boot` subset do.

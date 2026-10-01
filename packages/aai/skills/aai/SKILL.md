@@ -113,6 +113,6 @@ shared across tool files, `slot.update` for a serialized async mutation,
 `ToolFailure` / `isToolFailure()` for a failure the model should recover from,
 `pushCapped()` for a capped append-only list, `omitUndefined()` for the optional
 half of an object literal, and `createToolContext()` from
-`@alexkroman1/aai-runtime/testing` for testing a tool's `execute`. The guide covers each
-with a worked example; the point of this list is only that you look before
-writing the pattern by hand.
+`@alexkroman1/aai-runtime/testing` for testing a tool's `execute`. The guide
+covers each with a worked example; the point of this list is only that you look
+before writing the pattern by hand.
