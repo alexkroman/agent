@@ -46,12 +46,12 @@ export type SessionMode = "s2s" | "pipeline" | "text";
  *
  * Pipeline mode requires STT, LLM, and TTS all set; S2S mode requires
  * none of them. An `s2s` descriptor selects the S2S provider — it must not
- * be combined with any pipeline field. `mode: "text"` selects the text mode
- * and takes only `llm`: it is the same explicit-opt-in shape as `s2s`, for
- * the same reason (see "Never let S2S be a fallback" in
- * `packages/aai/CLAUDE.md`) — a mode reachable by OMISSION is a mode an
- * agent lands in when its config loses a field, and the failure there is a
- * voice agent that silently answers nothing.
+ * be combined with any pipeline field. Text mode is not classified here: it
+ * is selected only by an explicit `mode: "text"` — the same opt-in shape as
+ * `s2s`, for the same reason (see "Never let S2S be a fallback" in
+ * `packages/aai/CLAUDE.md`) — and by the time a caller holds a resolved
+ * `mode`, `assertModeFields` has refused a text agent's `stt`/`tts`/`s2s`, so
+ * the caller answers `"text"` itself and asks this only about a voice agent.
  *
  * This function only classifies what it is given — it injects nothing. The
  * pipeline-by-default rule lives in `defaultProviders`
@@ -70,34 +70,7 @@ export function assertProviderTriple(
   llm: unknown,
   tts: unknown,
   s2s?: unknown,
-  text?: undefined,
-): Exclude<SessionMode, "text">;
-/**
- * The `text`-accepting overload.
- *
- * Carries its own `@internal` deliberately: an overload with no doc comment
- * defaults to `@public` in the API report, so the symbol would be tagged two
- * ways and `api-surface-file.test.ts` fails on exactly that.
- *
- * @internal
- */
-export function assertProviderTriple(
-  stt: unknown,
-  llm: unknown,
-  tts: unknown,
-  s2s?: unknown,
-  text?: unknown,
-): SessionMode;
-// Two signatures rather than one, because a caller that passes no `text` at
-// all — every voice path — cannot possibly be told "text", and saying so in
-// the type is what keeps the voice call sites free of a cast asserting it.
-export function assertProviderTriple(
-  stt: unknown,
-  llm: unknown,
-  tts: unknown,
-  s2s?: unknown,
-  text?: unknown,
-): SessionMode {
+): Exclude<SessionMode, "text"> {
   const hasStt = stt != null;
   const hasLlm = llm != null;
   const hasTts = tts != null;
@@ -105,18 +78,6 @@ export function assertProviderTriple(
   const anyPipeline = hasStt || hasLlm || hasTts;
   const allSet = hasStt && hasLlm && hasTts;
   const noneSetPipeline = !anyPipeline;
-  // Checked before the triple rules: a text agent legitimately carries an
-  // `llm` and nothing else, which the partial-triple error below would
-  // otherwise reject with a message about a pipeline it is not in.
-  if (text === true) {
-    if (hasS2s) {
-      throw new Error("text and s2s cannot be set together — a text agent has no speech stage");
-    }
-    if (hasStt || hasTts) {
-      throw new Error("a text agent cannot set stt or tts — it has no audio path, only `llm`");
-    }
-    return "text";
-  }
   if (hasS2s && anyPipeline) {
     throw new Error("s2s and the stt/llm/tts pipeline cannot be set together");
   }

@@ -250,7 +250,6 @@ interface DelegateToolCall {
 
 // @public @sealed
 interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
-    gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
     readonly key: string;
     readonly machine: M;
     matches(ctx: SlotHolder, state: string): boolean;
@@ -727,7 +726,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.updated">;
+    type: z.ZodLiteral<"userTranscript.updated">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -735,21 +734,21 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     text: z.ZodString;
     eotConfidence: z.ZodOptional<z.ZodNumber>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.committed">;
+    type: z.ZodLiteral<"userTranscript.committed">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.updated">;
+    type: z.ZodLiteral<"agentTranscript.updated">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.committed">;
+    type: z.ZodLiteral<"agentTranscript.committed">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -796,7 +795,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.timed-out">;
+    type: z.ZodLiteral<"session.timedOut">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -856,7 +855,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     replacement: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-turn.exceeded">;
+    type: z.ZodLiteral<"userTurn.exceeded">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -868,7 +867,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"provider.failed-over">;
+    type: z.ZodLiteral<"provider.failedOver">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -1069,7 +1068,7 @@ interface StateProjection<V = unknown> {
 }
 
 // @public
-export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | "workflows"> & {
+export type StaticAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
     mode: "workflow-app";
     workflows: NonNullable<AgentDef["workflows"]>;
 };
@@ -1319,7 +1318,7 @@ export interface WebhookRouteOptions {
 export function workflowApp(def: Omit<StaticAgentParams, "mode">): AgentDef;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | Exclude<keyof SharedAgentParams, keyof TextAgentParams> | keyof AgentModelTuning | "systemPrompt" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";
+type WorkflowAppOnlyField = "systemPrompt" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;

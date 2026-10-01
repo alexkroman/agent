@@ -25,6 +25,7 @@ import type { GuardrailField } from "./agent-guardrails.ts";
 import { AGENT_MODES, type AgentMode } from "./agent-mode.ts";
 import { MODEL_TUNING_FIELDS } from "./agent-model-tuning.ts";
 import type {
+  DefaultedAgentField,
   PipelineOnlyField,
   TextOnlyExcludedField,
   WorkflowAppOnlyField,
@@ -65,18 +66,21 @@ const TEXT_EXCLUDED = {
 } as const satisfies Record<TextOnlyExcludedField, string>;
 
 /**
- * What a workflow app refuses beyond the pipeline-only tuning. Total over
- * {@link WorkflowAppOnlyField} minus the fields the FRAMEWORK fills on every
- * definition by the time the config boundary sees it — `systemPrompt` and
- * `maxSteps` (`agent()`'s defaults) and the three pipeline stages (the default
- * fill, which a workflow app gets like any agent and which a runtime passes
- * back in as its effective providers). Those five stay type-level refusals.
+ * The guardrails, as a workflow app refuses them (no other member refuses
+ * them here: `assertGuardrailScope` does, with its own argument).
  */
-const WORKFLOW_APP_EXCLUDED = {
-  ...MODEL_TUNING_FIELDS,
+const GUARDRAIL_CHECKS = {
   inputGuardrails: "a check on what the caller said",
   outputGuardrails: "a check on what the agent is about to say",
-  s2s: "the speech-to-speech stage",
+} as const satisfies Record<GuardrailField, string>;
+
+/**
+ * What only a workflow app refuses: {@link WorkflowAppOnlyField} minus the
+ * fields `agent()` DEFAULTS on every definition (`systemPrompt`, `maxSteps`),
+ * which the config boundary always sees set and so stay type-level refusals.
+ * The rest of the member's subtraction is the tables above.
+ */
+const WORKFLOW_APP_EXCLUDED = {
   voicePresets: "prompt text",
   toolChoice: "the model's tool-choice policy",
   builtinTools: "tools the model chooses between",
@@ -86,27 +90,30 @@ const WORKFLOW_APP_EXCLUDED = {
   sessionContext: "a hook that runs when a session opens",
   onSessionEnd: "a hook that runs when a session closes",
   idleTimeoutMs: "the session idle timer",
-} as const satisfies Record<
-  Exclude<
-    WorkflowAppOnlyField,
-    | Exclude<PipelineOnlyField, GuardrailField>
-    | TextOnlyExcludedField
-    | "systemPrompt"
-    | "maxSteps"
-    | "llm"
-  >,
-  string
->;
+} as const satisfies Record<Exclude<WorkflowAppOnlyField, DefaultedAgentField>, string>;
 
 /** The S2S descriptor, which only the S2S member has. */
 const S2S_ONLY = { s2s: "the speech-to-speech descriptor" } as const;
 
-/** The fields each mode does not have, and what each is for. */
+/**
+ * The fields each mode does not have, and what each is for.
+ *
+ * A workflow app's pipeline STAGES and `llm` are absent from its member but
+ * not refused here: the default fill gives a workflow app them like any agent,
+ * and a runtime passes them back in as its effective providers.
+ */
 const MODE_EXCLUSIONS: { readonly [M in AgentMode]: Readonly<Record<string, string>> } = {
   pipeline: S2S_ONLY,
   s2s: { ...PIPELINE_ONLY, llm: "the pipeline's model stage" },
   text: { ...PIPELINE_ONLY, ...TEXT_EXCLUDED, ...S2S_ONLY },
-  "workflow-app": { ...PIPELINE_TUNING, ...TEXT_EXCLUDED, ...WORKFLOW_APP_EXCLUDED },
+  "workflow-app": {
+    ...PIPELINE_TUNING,
+    ...TEXT_EXCLUDED,
+    ...MODEL_TUNING_FIELDS,
+    ...GUARDRAIL_CHECKS,
+    ...S2S_ONLY,
+    ...WORKFLOW_APP_EXCLUDED,
+  },
 };
 
 /** Why a mode has none of the fields it excludes, for the refusal. */

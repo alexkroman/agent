@@ -16,9 +16,10 @@
  *   decided once when a set is built. {@link toolEntry} is the only code that
  *   inspects a def's identity (the `clientTool` brand), so swapping that brand
  *   for a wire contract is a one-function change.
- * - **A gate answers a {@link ToolRefusal}** — one shape, one `reason`
- *   discriminant, whichever gate declined: a roster entry that is not speaking
- *   (`"persona"`), a dialog outside its `when` states (`"dialog"`).
+ * - **A refusal is a {@link ToolRefusal}** — one shape, one `reason`
+ *   discriminant, whoever declined: a roster entry that is not speaking
+ *   (`"persona"`, its set's gate), a dialog tool outside its `when` states
+ *   (`"dialog"`, the minted def's own `execute`).
  * - **Composition is first-wins** ({@link composeToolsets}), and the order is
  *   the precedence: an agent's own files, then what `agent()` minted, then MCP,
  *   then builtins — so a file shadows a builtin and a remote tool never shadows
@@ -28,7 +29,6 @@
  */
 
 import { clientToolBrand } from "./client-tool.ts";
-import type { SlotHolder } from "./session-state.ts";
 import type { ToolContext } from "./tool-context.ts";
 import type { ToolDef, ToolMap } from "./tool-def.ts";
 import type { ToolRefusal } from "./utils.ts";
@@ -178,39 +178,22 @@ export function composeToolsets(
   return { tools: [...byName.values()], resolve: (name) => byName.get(name) };
 }
 
-/**
- * A dialog, as far as gating goes: it refuses a def it minted (`dialog.tool`)
- * outside its `when` states, and answers `undefined` for anything else.
- *
- * @public
- */
-export interface DialogToolGate {
-  gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
-}
-
 /** What {@link agentToolsets} reads off a definition. @public */
 export interface ToolBearingDef {
   readonly tools: ToolMap;
   readonly toolsets?: readonly Toolset[] | undefined;
-  readonly dialogs?: readonly DialogToolGate[] | undefined;
 }
 
 /**
  * Every toolset an agent definition carries, in precedence order: its `tools/`
  * files, then what `agent()` and a host step attached (`toolsets` — the roster,
- * MCP) — each layered with the agent's dialog gates, so a `dialog.tool` refuses
- * through {@link Toolset.gate} wherever it is declared. Builtins are the
- * runtime's to append, since they resolve against host options.
+ * MCP). A `dialog.tool` needs no layer here: its own `execute` refuses out of
+ * state, and that check travels with the def wherever it is declared — a spec,
+ * a subagent, a direct call. Builtins are the runtime's to append, since they
+ * resolve against host options.
  *
  * @public
  */
 export function agentToolsets(def: ToolBearingDef): Toolset[] {
-  const gates: ToolGate[] = (def.dialogs ?? []).map(
-    (dialog) =>
-      (_name, tool, ctx): ToolRefusal | undefined =>
-        dialog.gate(tool, ctx),
-  );
-  return [toolset("files", def.tools), ...(def.toolsets ?? [])].map((set) =>
-    gateToolset(set, gates),
-  );
+  return [toolset("files", def.tools), ...(def.toolsets ?? [])];
 }

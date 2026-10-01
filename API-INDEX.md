@@ -21,7 +21,7 @@ of it — and want the import.
 - [Agent authoring](#agent-authoring) — 591 names
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 254 names
-- [Hosting and tooling](#hosting-and-tooling) — 235 names
+- [Hosting and tooling](#hosting-and-tooling) — 234 names
 - [Framework internals](#framework-internals) — 427 names
 
 ## Agent authoring
@@ -1000,7 +1000,6 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `DEFAULT_SERVICE_NAME` | const | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | What a span says it came from when the operator did not say. |
 | `DEFAULT_START_PORT` | const | `@alexkroman1/aai-cli/start` |  | The port `aai start` binds when neither an argument nor `PORT` says otherwise. |
 | `DEFAULT_WORKFLOW_FIND_LIMIT` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | How many runs a keyed or keyless lookup returns when the caller names no limit. |
-| `DialogToolGate` | interface | `@alexkroman1/aai/manifest` |  | A dialog, as far as gating goes: it refuses a def it minted (`dialog.tool`) outside its `when` states, and answers `undefined` for anything else. |
 | `EVENT_ID_PREFIX` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The prefix every session-event id carries, so an id names its own kind. |
 | `ExecuteTool`, `ExecuteToolOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Executes a named tool with parsed arguments and returns its string result. |
 | `GlobalConfig` | type | `@alexkroman1/aai-cli/project-config` |  |  |
@@ -1139,7 +1138,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `WorkspaceWalkOptions` | type | `@alexkroman1/aai/workspace-files` |  | Options shared by the walk and the snapshot. |
 | `agentConfigWarnings` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `agentToolsToSchemas` | function | `@alexkroman1/aai/manifest` |  |  |
-| `agentToolsets` | function | `@alexkroman1/aai/manifest` |  | Every toolset an agent definition carries, in precedence order: its `tools/` files, then what `agent()` and a host step attached (`toolsets` — the roster, MCP) … |
+| `agentToolsets` | function | `@alexkroman1/aai/manifest` |  | Every toolset an agent definition carries, in precedence order: its `tools/` files, then what `agent()` and a host step attached (`toolsets` — the roster, MCP). |
 | `buildClient`, `BuildClientOptions` | function · `@internal` | `@alexkroman1/aai-cli/client-bundler` |  |  |
 | `buildClientConfig` | function | `@alexkroman1/aai/protocol` | `aai:protocol` | Build the `GET /client-config` response body from an agent-shaped config. |
 | `buildReadyConfig` | function | `@alexkroman1/aai/protocol` | `aai:protocol` | Build the protocol-level session config (the `config` frame's audio fields) from the session's input/output sample rates — used by every session mode, pipeline … |
@@ -1540,6 +1539,7 @@ trace or a type error can be traced back to something.
 | `firstWriteWins` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `formatSchemaIssues` | function | `@alexkroman1/aai/internal` (also `@alexkroman1/aai/host-internal`) |  | Render Standard Schema issues as one human-readable line. |
 | `freezeStorable` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `frontDoorOf` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `gatewayModelIds` | function | `@alexkroman1/aai/host-internal` |  | Ids usable for a streaming, tool-calling agent — the only shape this SDK runs — and that actually answer. |
 | `getSessionLocation` | function | `@alexkroman1/aai/host-internal` |  | The session's effective location, if any — see `sessionClientLocation`. |
 | `globalSlot` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1630,7 +1630,6 @@ trace or a type error can be traced back to something.
 | `setSessionPhone` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `sleep` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `ssrfSafeFetch` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
-| `stageMembers` | function | `@alexkroman1/aai/host-internal` |  | A stage field as the descriptors it dials: a fallback's members, else itself, and nothing for an unset stage. |
 | `stampSessionEvent` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `staticSystemPrompt` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `systemPromptResolver` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

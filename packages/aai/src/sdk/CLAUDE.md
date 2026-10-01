@@ -412,8 +412,9 @@ Files, builtins, MCP, a roster, a subagent's map: each is a `Toolset` —
 nothing else. **Composition is first-wins** (`composeToolsets`): files, then
 `AgentDef.toolsets` (resolved, never authored — `agent()`'s roster set,
 `withMcpTools`' MCP set), then builtins. **`toolEntry` is the only place a def's
-identity is read** (the `clientTool` brand → `executor: "client"`). A dialog's
-`gate(def, ctx)` is layered over every set by `agentToolsets`. **A refusal is a
+identity is read** (the `clientTool` brand → `executor: "client"`). A
+`dialog.tool` refuses in its OWN `execute`, with no toolset layer, so the check
+travels with the def (specs, subagents). **A refusal is a
 `ToolRefusal`** — a `ToolFailure` plus `reason` (`unknown_tool`,
 `invalid_arguments`, `cancelled`, `persona`, `dialog`, `roster`); `reason` is NOT
 on `ToolFailure` itself, so an author's `{ error }` literal still narrows.

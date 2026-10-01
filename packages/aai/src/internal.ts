@@ -53,6 +53,9 @@ export { WORKFLOW_API_PREFIX } from "./sdk/_workflow-api-envelope.ts";
 // composed, so no `agent.ts` names it — while a client rendering it before a
 // socket exists does.
 export { DEFAULT_GREETING } from "./sdk/agent-defaults.ts";
+// The mode → front-door mapping every server hosting an agent derives (`aai
+// dev`, the deployed guest, `createAgentServer`): one spelling, not four.
+export { frontDoorOf } from "./sdk/agent-mode.ts";
 // The barge-in phrase lists and the classifier that reads them. The LISTS an
 // author may replace are authoring data and ride the `agent()` field; the
 // classifier is the framework's reading of them, and the transport is its only

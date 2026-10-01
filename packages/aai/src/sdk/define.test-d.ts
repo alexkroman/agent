@@ -5,7 +5,7 @@ import type { AgentAccepts } from "./_test-utils.ts";
 // `InlineToolsMisuse` is off the public barrel (it is the implementation of a
 // compile error, not authoring API), so this spec names it at its own module.
 import type { InlineToolsMisuse } from "./agent-params.ts";
-import type { TurnDetectionMode } from "./agent-voice-tuning.ts";
+import type { TurnDetectionMode } from "./agent-tuning.ts";
 import { type AgentParams, agent, type SharedAgentParams, tool } from "./define.ts";
 import type { AssemblyAIGatewayModel } from "./providers/llm/llm.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
@@ -535,7 +535,7 @@ test("telephony is declarable on a voice agent and refused where there is no cal
  * compiling while silently changing what the 3 bounds. The error is the point:
  * the field is typed as a message naming `maxRevisions`, so it says the fix.
  */
-test("subagent() rejects maxRetries and takes maxRevisions", () => {
+test("speaker() rejects maxRetries and takes maxRevisions", () => {
   const guardrail = () => true as const;
   speaker({ name: "r", systemPrompt: "S.", guardrail, maxRevisions: 3 });
   // Structural, not only excess-property: `maxRetries` is typed as the rename

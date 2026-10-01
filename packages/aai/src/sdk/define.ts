@@ -193,14 +193,17 @@ function buildAgent(def: object): AgentDef {
    * fields' docs ("Defaults to …") already promise.
    */
   const params = omitUndefined(normalized as AgentParamsCore) as AgentParamsCore;
-  assertNoOrphanPins(params);
+  checkPins(params.roster, params.dialogs);
   // The two tables `agent()` fills itself, and neither is a parameter: `tools`
   // is filled by `withTools` from `tools/`, and a declared roster lowers into a
   // TOOLSET (`sdk/roster-tools.ts`) — schema'd, gated and executed by the same
   // paths a `tools/` file takes, on all three transports. The sandbox path needs
   // nothing: the guest holds the real definition, the only side that can hold a
   // `SpeakerDef`'s functions anyway.
-  const toolsets = params.roster ? [rosterToolset(bindRoster(params.roster, params.dialogs))] : [];
+  // Binding the dialogs is what lets a pin be read back through
+  // `Roster.position` afterwards.
+  if (params.roster) bindRosterDialogs(params.roster, params.dialogs ?? []);
+  const toolsets = params.roster ? [rosterToolset(params.roster)] : [];
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
@@ -213,40 +216,29 @@ function buildAgent(def: object): AgentDef {
 }
 
 /**
- * Bind the dialogs to the roster, and check every `persona` a dialog state pins
- * is a SPEAKING entry — at the declaration, where an author is standing,
- * rather than on the first turn the dialog reaches that state.
+ * Check every `persona` a dialog state pins against the roster — at the
+ * declaration, where an author is standing, rather than on the first turn the
+ * dialog reaches that state. A pin must name a SPEAKING entry, and a pin on an
+ * agent with NO roster is a setting that silently does nothing — refused for
+ * the same reason a stray field is.
  *
  * The roster is built at module scope, before `agent()` runs, so this is the
- * first moment the two can be compared; `bindRosterDialogs` is what lets a
- * pin be read back through `Roster.position` afterwards.
+ * first moment the two can be compared.
  */
-function bindRoster(roster: Roster, dialogs: AgentDef["dialogs"]): Roster {
-  const known = new Set(roster.speaking.map((one) => one.name));
+function checkPins(roster: Roster | undefined, dialogs: AgentDef["dialogs"]): void {
+  const known = roster && new Set(roster.speaking.map((one) => one.name));
   for (const dialog of dialogs ?? []) {
     for (const name of declaredPersonas(dialog.machine)) {
+      if (known === undefined) {
+        throw new Error(
+          `The "${dialog.key}" dialog pins the speaker "${name}", but this agent declares no \`roster\`. Declare the roster, or drop the \`persona\` field from that state.`,
+        );
+      }
       if (known.has(name)) continue;
       throw new Error(
         `The "${dialog.key}" dialog pins a speaker called "${name}" that is not a speaking entry of this agent's roster. Speaking: ${[...known].join(", ") || "(none)"}.`,
       );
     }
-  }
-  bindRosterDialogs(roster, dialogs ?? []);
-  return roster;
-}
-
-/**
- * A dialog state that pins a persona on an agent with NO roster is a setting
- * that silently does nothing — refused for the same reason a stray field is.
- */
-function assertNoOrphanPins(params: { roster?: Roster; dialogs?: AgentDef["dialogs"] }): void {
-  if (params.roster) return;
-  for (const dialog of params.dialogs ?? []) {
-    const pinned = [...declaredPersonas(dialog.machine)];
-    if (pinned.length === 0) continue;
-    throw new Error(
-      `The "${dialog.key}" dialog pins the speaker "${pinned[0]}", but this agent declares no \`roster\`. Declare the roster, or drop the \`persona\` field from that state.`,
-    );
   }
 }
 

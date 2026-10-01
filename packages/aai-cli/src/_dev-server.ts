@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
+import { frontDoorOf } from "@alexkroman1/aai/internal";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { omitUndefined, plural } from "@alexkroman1/aai/utils";
 // One static import: the runtime barrel is already loaded for the helpers
@@ -351,10 +352,11 @@ export async function startDevServer(
     // `AAI_SESSION_SECRET` set: tickets for the client this server serves — see
     // `_dev-session-ticket.ts`. Read from the env the gate itself reads.
     const serverEnv = hostModeEnv(providerEnv);
+    const page = frontDoorOf(agentDef.mode);
     const ticketing = devSessionTicketing(serverEnv, {
       name: agentDef.name,
       greeting: agentDef.greeting,
-      page: agentDef.mode === "workflow-app" ? "static" : undefined,
+      page,
     });
 
     return serve(runtimeOptions, (runtime) => ({
@@ -384,10 +386,8 @@ export async function startDevServer(
       // it: an agent that declares a carrier serves `/phone` here, one that
       // does not serves it nowhere, and a carrier pointed at an `aai dev`
       // tunnel gets the same 404 it would get after a deploy.
-      ...omitUndefined({
-        page: agentDef.mode === "workflow-app" ? "static" : undefined,
-        telephony: agentDef.telephony,
-      }),
+      page,
+      ...omitUndefined({ telephony: agentDef.telephony }),
       // The PLATFORM's delivery door, and `aai dev` deliberately supplies no
       // `allowRemote`, so it answers 401. That is correct rather than an
       // omission: there is no queue outside this process — the engine's

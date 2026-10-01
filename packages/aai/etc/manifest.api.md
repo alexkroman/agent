@@ -307,7 +307,6 @@ interface DelegateToolCall {
 
 // @public @sealed
 interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
-    gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
     readonly key: string;
     readonly machine: M;
     matches(ctx: SlotHolder, state: string): boolean;
@@ -347,12 +346,6 @@ interface DialogTimeout {
 // @public
 interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-}
-
-// @public
-export interface DialogToolGate {
-    // (undocumented)
-    gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
 }
 
 // @public @sealed
@@ -1095,8 +1088,6 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig;
 
 // @public
 export interface ToolBearingDef {
-    // (undocumented)
-    readonly dialogs?: readonly DialogToolGate[] | undefined;
     // (undocumented)
     readonly tools: ToolMap;
     // (undocumented)

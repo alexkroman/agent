@@ -50,3 +50,19 @@ export const AGENT_MODES = [
   "text",
   "workflow-app",
 ] as const satisfies readonly AgentMode[];
+
+/**
+ * What a server's front door IS for an agent in `mode`: a workflow app's page
+ * over the workflow API (`"static"` — the voice surfaces are declined, and
+ * `GET /client-config` says so), anything else a `"voice"` page. The ONE
+ * mapping from the mode to the wire's `page`, read by every server that hosts
+ * an agent (`aai dev`, the deployed guest, `createAgentServer`).
+ *
+ * Takes any string because the guest reads `mode` off a tenant bundle it has
+ * not validated; an unknown value is a voice page, as an absent one is.
+ *
+ * @internal
+ */
+export function frontDoorOf(mode: string | undefined): "voice" | "static" {
+  return mode === ("workflow-app" satisfies AgentMode) ? "static" : "voice";
+}

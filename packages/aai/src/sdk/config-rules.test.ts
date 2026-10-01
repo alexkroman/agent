@@ -505,11 +505,13 @@ describe("author conveniences on raw configs (no agent())", () => {
     );
   });
 
-  test("assertProviderTriple only answers `text` when asked about text", () => {
-    // The overload says so at the type level; this pins the runtime half, so
-    // the voice call sites' `Exclude<SessionMode, "text">` cannot become a lie.
-    expect(assertProviderTriple(undefined, undefined, undefined, undefined)).toBe("s2s");
-    expect(assertProviderTriple(undefined, {}, undefined, undefined, true)).toBe("text");
+  test("text is the resolved mode, never assertProviderTriple's answer", () => {
+    // A text agent's lone `llm` would be a partial triple to the classifier;
+    // the config boundary answers "text" from `mode` before asking it.
+    expect(rawConfig({ name: "chat", mode: "text" }).mode).toBe("text");
+    expect(() => assertProviderTriple(undefined, {}, undefined, undefined)).toThrow(
+      "stt, llm, and tts must be set together",
+    );
   });
 });
 

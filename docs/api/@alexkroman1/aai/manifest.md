@@ -15,9 +15,10 @@ function agentToolsets(def: ToolBearingDef): Toolset[];
 
 Every toolset an agent definition carries, in precedence order: its `tools/`
 files, then what `agent()` and a host step attached (`toolsets` — the roster,
-MCP) — each layered with the agent's dialog gates, so a `dialog.tool` refuses
-through [Toolset.gate](index.md#gate-1) wherever it is declared. Builtins are the
-runtime's to append, since they resolve against host options.
+MCP). A `dialog.tool` needs no layer here: its own `execute` refuses out of
+state, and that check travels with the def wherever it is declared — a spec,
+a subagent, a direct call. Builtins are the runtime's to append, since they
+resolve against host options.
 
 #### Parameters
 
@@ -689,35 +690,6 @@ carries none still passes and this module still names no builtin catalog.
 
 ## Interfaces
 
-### DialogToolGate
-
-A dialog, as far as gating goes: it refuses a def it minted (`dialog.tool`)
-outside its `when` states, and answers `undefined` for anything else.
-
-#### Methods
-
-##### gate()
-
-```ts
-gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
-```
-
-###### Parameters
-
-###### tool
-
-[`ToolDef`](index.md#tooldef)
-
-###### ctx
-
-[`SlotHolder`](index.md#slotholder)
-
-###### Returns
-
-[`ToolRefusal`](index.md#toolrefusal) \| `undefined`
-
-***
-
 ### ResolvedTool
 
 One resolved name in a [ToolTable](#tooltable).
@@ -749,12 +721,6 @@ readonly toolset: Toolset;
 What [agentToolsets](#agenttoolsets) reads off a definition.
 
 #### Properties
-
-##### dialogs?
-
-```ts
-readonly optional dialogs?: readonly DialogToolGate[];
-```
 
 ##### tools
 
@@ -902,7 +868,7 @@ transport over a socket.
 type ToolGate = (name: string, def: ToolDef, ctx: ToolContext) => ToolRefusal | undefined;
 ```
 
-A gate over one def — what [toolset](#toolset-1) composes into [Toolset.gate](index.md#gate-1).
+A gate over one def — what [toolset](#toolset-1) composes into [Toolset.gate](index.md#gate).
 
 #### Parameters
 

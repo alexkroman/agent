@@ -52,6 +52,7 @@ import type { AgentDef } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { publishClientInboxDefaults, publishStepEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
+import { frontDoorOf } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createRuntime } from "../runtime/index.ts";
 import { consoleLogger } from "../runtime-config.ts";
@@ -163,8 +164,8 @@ export interface AgentServerOptions extends SharedServerOptions {
   publicUrl?: string | undefined;
   /**
    * What this server's front door IS — see `RuntimeServerOptions.page`. Defaults to
-   * the agent's own `page`, so declaring `mode: "workflow-app"` on the agent is
-   * enough.
+   * what the agent's own `mode` implies (`"static"` for `mode: "workflow-app"`,
+   * else `"voice"`), so declaring the mode on the agent is enough.
    *
    * Read off the agent for the same reason `name` and `greeting` are, and it is
    * the same silent drop: a `mode: "workflow-app"` agent served through this door
@@ -295,7 +296,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
    * absence of every route it omits) over the wire. If `createRuntimeServer`'s default
    * moves, that spec fails rather than the log quietly becoming false.
    */
-  const effectivePage = page ?? (agent.mode === "workflow-app" ? "static" : "voice");
+  const effectivePage = page ?? frontDoorOf(agent.mode);
   const isStatic = effectivePage === "static";
   const servesCarriers = enabledCarriers(telephony ?? agent.telephony);
   const servesWorkflows = Object.keys(agent.workflows ?? {}).length > 0;

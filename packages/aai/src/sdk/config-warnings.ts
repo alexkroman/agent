@@ -12,7 +12,7 @@
  * with nowhere to put a warning ignores it without a channel to thread.
  */
 
-import { KNOWN_TURN_DETECTION_MODES } from "./agent-voice-tuning.ts";
+import { KNOWN_TURN_DETECTION_MODES } from "./agent-tuning.ts";
 import { isKnown } from "./is-known.ts";
 import { isRecord } from "./is-record.ts";
 import { stageMembers } from "./providers/fallback.ts";

@@ -26,7 +26,7 @@
  */
 
 import { readFile, rm } from "node:fs/promises";
-import { globalSlot } from "@alexkroman1/aai/internal";
+import { frontDoorOf, globalSlot } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { emptyHarnessState, lazyRuntime, loadBundle } from "aai-guest-core/bundle";
 import { AGENT_IDLE_EXIT_MS, AGENT_IDLE_POLL_MS } from "aai-guest-core/limits";
@@ -269,7 +269,7 @@ export async function mainAgent(port: number, host: string, token: string): Prom
       greeting: state.agent?.greeting,
       // The workflow-app declaration, honoured identically to `aai dev`: the
       // voice surfaces are declined with a reason.
-      page: state.agent?.mode === "workflow-app" ? "static" : undefined,
+      page: frontDoorOf(state.agent?.mode),
       // And the phone declaration beside it. A deployed agent serves `WS /phone`
       // only for the carriers its own definition names — the platform's TwiML
       // webhook hands a carrier this sandbox's URL, and an agent that declares

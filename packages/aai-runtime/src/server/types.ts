@@ -151,8 +151,8 @@ export type RuntimeServerOptions = {
   /** First look at every HTTP request (after `/health`) — see {@link ServerRequestHook}. */
   request?: ServerRequestHook | undefined;
   /**
-   * What this server's front door IS — see `AgentDef.page`. Defaults to
-   * `"voice"`.
+   * What this server's front door IS: `"static"` for a `mode: "workflow-app"`
+   * agent (see `AgentDef.mode`), else `"voice"`. Defaults to `"voice"`.
    *
    * `"static"` turns off the voice surfaces rather than merely not advertising
    * them: `/websocket` is declined with a reason. It is reported in

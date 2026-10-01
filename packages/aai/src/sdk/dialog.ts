@@ -31,9 +31,9 @@
  *
  * So a {@link Dialog.tool} refuses at EXECUTION: out of state it runs nothing and
  * the call answers a `ToolRefusal` (`reason: "dialog"`) naming where the
- * conversation is and what has to happen first — {@link Dialog.gate}, which the
- * runtime layers over every toolset, so it holds identically on all three
- * transports. A schema gate would have hidden the tool and left the model
+ * conversation is and what has to happen first. The check is inside the minted
+ * def's own `execute`, so it travels with the def and holds identically on all
+ * three transports, in a subagent and in a spec. A schema gate would have hidden the tool and left the model
  * guessing. The body does not run; the model may still call early, be refused,
  * and be told what to do — the intended loop.
  *
@@ -375,9 +375,6 @@ export function dialog(
   const matches = (ctx: SlotHolder, state: string): boolean =>
     withActor(readState(slot.get(ctx)), (a) => a.getSnapshot().matches(state));
 
-  /** The gate of every tool `tool()` minted, by identity — read by {@link Dialog.gate}. */
-  const gates = new WeakMap<object, (ctx: SlotHolder) => ToolRefusal | undefined>();
-
   return {
     key,
     machine,
@@ -461,7 +458,7 @@ export function dialog(
         // this primitive most needs not to have.
         execute: async (args, ctx): Promise<DialogToolResult<R> | ToolFailure> => {
           // Read BEFORE the body runs — what the caller's turn is allowed to do.
-          // The runtime asked `gate` already; a direct call (a spec) asks here.
+          // The ONE gate: every path (the runtime, a subagent, a spec) runs it.
           const refused = refusal(ctx);
           if (refused) return refused;
           // ANNOTATED rather than inferred: `await` on `R | ToolFailure |
@@ -491,9 +488,7 @@ export function dialog(
           return { ...moved, result };
         },
       };
-      gates.set(minted, refusal);
       return minted;
     },
-    gate: (tool, ctx) => gates.get(tool)?.(ctx),
   };
 }

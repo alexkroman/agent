@@ -259,25 +259,18 @@ export function roster<const N extends string>(list: readonly SpeakerDef<N>[]): 
         );
       }
       const from = at.speaker.name;
-      const note = omitUndefined({ note: options.note });
+      const already = from === target.name;
       // Handing off to whoever is already speaking WRITES NOTHING: a write would
       // record a handoff to itself, and under a pin outlive the pin.
-      if (from === target.name) {
-        return {
-          handoff: true,
-          from,
-          to: target.name,
-          ...note,
-          instruction: `You are already ${target.name}. Carry on.`,
-        };
-      }
-      record.set(ctx, { active: target.name, from, note: options.note ?? null });
+      if (!already) record.set(ctx, { active: target.name, from, note: options.note ?? null });
       return {
         handoff: true,
         from,
         to: target.name,
-        ...note,
-        instruction: `You are now ${target.name}. From here on, speak and act as ${target.name}: follow that speaker's instructions in your system prompt, and use its tools. Continue the conversation without restarting it.`,
+        ...omitUndefined({ note: options.note }),
+        instruction: already
+          ? `You are already ${target.name}. Carry on.`
+          : `You are now ${target.name}. From here on, speak and act as ${target.name}: follow that speaker's instructions in your system prompt, and use its tools. Continue the conversation without restarting it.`,
       };
     },
   };

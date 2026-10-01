@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 17,
   "rule": 2,
-  "sha256": "f1becd780092a25c4fe636c9c5f58d12d929a00371f03f65928f8b0bd892a30b",
+  "sha256": "49644d9a5a23def6f1555a2e8d3500a80f927a112762b81e3cb96fb233710a95",
   "exports": [
     "AgentClientInbox",
     "AgentDef",
@@ -82,5 +82,5 @@
     "webhookRoute",
     "workflowApp"
   ],
-  "rollup": "963d3387f9d485527baa55d6fc0795646759e9f36daf3947e9d2e4d61be545f8"
+  "rollup": "e6d93a87d83bedfbe1b8df1ba13c199813497a156cdfb005a25d55a2bbd2be11"
 }

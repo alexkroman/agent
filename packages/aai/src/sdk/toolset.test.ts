@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Unit tests for `Toolset` — the executor classification (the one place a
- * def's identity is read), gating, first-wins composition, and the dialog gate
- * layered over every toolset an agent carries.
+ * def's identity is read), gating, first-wins composition, and how a dialog
+ * tool refuses inside an agent's toolsets (its own execute, no layer).
  */
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -105,15 +105,19 @@ describe("agentToolsets", () => {
     expect(sets.map((set) => set.source)).toEqual(["files", "mcp"]);
   });
 
-  it("layers every dialog's gate, so a dialog tool refuses through `gate`", () => {
-    const [files] = agentToolsets({ tools: { gated, echo }, dialogs: [flow] });
+  it("leaves a dialog tool to refuse in its own execute, so the call answers the refusal", async () => {
+    const [files] = agentToolsets({ tools: { gated, echo } });
     const ctx = createToolContext();
-    expect(files?.gate("gated", ctx)).toEqual({
+    // No layer: the set's gate passes it, and the minted def's execute refuses.
+    expect(files?.gate("gated", ctx)).toBeUndefined();
+    expect(await files?.execute("gated", { text: "hi" }, ctx)).toEqual({
       error: 'Not available yet: this conversation is at "start". Verify first.',
       reason: "dialog",
     });
-    expect(files?.gate("echo", ctx)).toBeUndefined();
     flow.send(ctx, { type: "GO" });
-    expect(files?.gate("gated", ctx)).toBeUndefined();
+    expect(await files?.execute("gated", { text: "hi" }, ctx)).toMatchObject({
+      state: "open",
+      result: "hi",
+    });
   });
 });

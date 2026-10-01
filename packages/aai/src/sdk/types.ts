@@ -67,9 +67,10 @@ export type {
   PipelineTuning,
   SilenceNudge,
   SilenceTuning,
+  TurnDetectionMode,
   TurnTakingTuning,
+  UserTurnLimit,
 } from "./agent-tuning.ts";
-export type { TurnDetectionMode, UserTurnLimit } from "./agent-voice-tuning.ts";
 /**
  * The built-in tool vocabulary. A re-export because this module is the import
  * path everything already uses; the union itself moved when this file reached

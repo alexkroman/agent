@@ -67,7 +67,7 @@ test("the model-tuning knobs and the guardrails are session-arm fields", () => {
   >().toEqualTypeOf<true>();
 
   // A workflow app runs no model and opens no session, so all seven are the
-  // same silent no-op the rest of `WorkflowAppOnlyField` is.
+  // same silent no-op every field the workflow-app member lacks is.
   expectTypeOf<
     AgentAccepts<{
       name: string;
