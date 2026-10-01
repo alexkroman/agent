@@ -22,8 +22,8 @@
     "start": "node dist/index.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:eval": "VITEST_PROFILE=eval VITEST_INCLUDE=**/*.eval.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:eval": "VITEST_PROFILE=eval VITEST_INCLUDE=src/**/*.eval.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=src/**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

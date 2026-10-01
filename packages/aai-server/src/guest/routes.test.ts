@@ -30,9 +30,9 @@ import {
   WORKFLOW_CALLBACK_ROUTES,
 } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
+import { createTestStore, NO_CLIENT_DIR } from "../_orchestrator-test-utils.ts";
 import { createOrchestrator } from "../orchestrator.ts";
 import { createSlotCache } from "../sandbox/slots.ts";
-import { createTestStore, NO_CLIENT_DIR } from "../test-utils.ts";
 import {
   GUEST_ROUTE_EXPOSURE,
   GUEST_ROUTES,

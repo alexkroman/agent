@@ -9,6 +9,8 @@ import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
 import { describe, expect, test, vi } from "vitest";
+import { makeAgent } from "../_agent-test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import {
   createFailingSttProvider,
   createFakeLanguageModel,
@@ -17,7 +19,7 @@ import {
   FAKE_STT_API_KEY_ENV,
   FAKE_TTS_API_KEY_ENV,
 } from "../_pipeline-test-fakes.ts";
-import { makeAgent, makeClientSink, makeLogger, silentLogger } from "../_test-utils.ts";
+import { makeClientSink } from "../_session-test-utils.ts";
 import { createFallbackSttOpener } from "../providers/fallback.ts";
 import { DEFAULT_S2S_CONFIG } from "../runtime-config.ts";
 import { PIPELINE_CAPABILITIES } from "../transports/capabilities.ts";

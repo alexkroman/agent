@@ -173,7 +173,7 @@ describe("the scope decides what a deploy carries", () => {
     const inert = [
       "packages/aai-server/src/sandbox.test.ts",
       "packages/aai-server/src/_pg-test-utils.ts",
-      "packages/aai-server/src/test-utils.ts",
+      "packages/aai-server/src/_request-test-utils.ts",
       "packages/aai-server/CLAUDE.md",
       "packages/aai-server/MODAL-CLAUDE.md",
       "packages/aai-server/turbo.json",

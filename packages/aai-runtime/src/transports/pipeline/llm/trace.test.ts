@@ -4,7 +4,7 @@
 // distinguish the causes — not the exact numbers.
 
 import { describe, expect, test, type vi } from "vitest";
-import { makeLogger } from "../../../_test-utils.ts";
+import { makeLogger } from "../../../_logger-test-utils.ts";
 import { createTurnTrace } from "./trace.ts";
 
 /** A logger that records `info` calls, plus a clock the test drives. */

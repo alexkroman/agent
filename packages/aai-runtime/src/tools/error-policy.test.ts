@@ -8,7 +8,7 @@
 
 import type { ToolFailure } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext, malformedOnError } from "../_test-utils.ts";
+import { createMockToolContext, malformedOnError } from "../_agent-test-utils.ts";
 import {
   createFatalToolLatch,
   FatalToolError,

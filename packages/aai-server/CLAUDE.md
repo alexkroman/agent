@@ -593,7 +593,7 @@ failed accepts then closes 1011).
 ### Building a platform request in a test
 
 **Build requests with `authFetch` / `deploy(fetch, { key, body })` from
-`test-utils.ts`, never a `Bearer` header literal**; `deployPayload()` is
+`_request-test-utils.ts`, never a `Bearer` header literal**; `deployPayload()` is
 `deployBody()` as an object. Use a bare `fetch` only when the REQUEST is the
 subject (bearer-gate specs, `resolveBearer` cases, header assertions, gzip or
 raw bodies).
@@ -631,7 +631,7 @@ driver-level bugs.
 
 `createLogger("<namespace>")` at module scope; nothing writes to `console.*`.
 It is built on the SDK's `Logger` (konsistent `platform-logger`). Specs use
-`captureLogs()` (`test-utils.ts`) and assert THAT a line was written, not its
+`captureLogs()` (`_logger-test-utils.ts`) and assert THAT a line was written, not its
 wording.
 
 ### An agent's own output — `GET /:slug/logs`

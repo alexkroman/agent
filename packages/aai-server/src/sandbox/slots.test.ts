@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { captureLogs } from "../test-utils.ts";
+import { captureLogs } from "../_logger-test-utils.ts";
 import {
   type AgentSlot,
   createSlotCache,

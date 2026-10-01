@@ -9,7 +9,7 @@ import { sessionClientId } from "@alexkroman1/aai";
 import { stepNotifyClient } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
 import { createSessionAuth, SESSION_UNAUTHORIZED_CLOSE_CODE } from "./session-auth.ts";
 

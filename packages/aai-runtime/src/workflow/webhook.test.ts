@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { WORKFLOW_WEBHOOK_PREFIX } from "./serve.ts";
 import { createWebhookHandler, MAX_WEBHOOK_BODY_BYTES, webhookToken } from "./webhook.ts";
 

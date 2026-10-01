@@ -260,7 +260,7 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
       // A REAL stream on the memory backend, not a stub: the stamping, the index
       // assignment and the client-then-hooks ordering are part of what the
       // property exercises, and every oracle above reads the sink the emitter
-      // writes to. Built here rather than with `_test-utils.ts`'s `makeEmitter`
+      // writes to. Built here rather than with `_session-test-utils.ts`'s `makeEmitter`
       // for the reason at the top of this file — these modules must not import
       // the vitest-backed helpers.
       stream: createSessionEventStream({ backend: createMemoryStateBackend() }),

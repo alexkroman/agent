@@ -6,8 +6,9 @@
 import { DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
 
 import { describe, expect, test, vi } from "vitest";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { MockWebSocket } from "../_mock-ws.ts";
-import { makeLogger, makeMockCore, silentLogger } from "../_test-utils.ts";
+import { makeMockCore } from "../_session-test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
 import { createSessionDirectory } from "./directory.ts";
 import { wireSessionSocket } from "./ws-handler.ts";

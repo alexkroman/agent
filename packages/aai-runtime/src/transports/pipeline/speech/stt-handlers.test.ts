@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { makeLogger, silentLogger } from "../../../_test-utils.ts";
+import { makeLogger, silentLogger } from "../../../_logger-test-utils.ts";
 import { AUTO_TURN_DETECTION } from "./manual-turn.ts";
 import { createSttEventHandlers } from "./stt-handlers.ts";
 import { NO_USER_TURN_LIMIT } from "./user-turn-limit.ts";

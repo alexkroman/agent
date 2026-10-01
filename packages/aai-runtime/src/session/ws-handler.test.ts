@@ -3,8 +3,9 @@
 // Lifecycle/callback/ClientSink specs live in ws-handler-lifecycle.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { MockWebSocket } from "../_mock-ws.ts";
-import { makeLogger, makeMockCore, silentLogger } from "../_test-utils.ts";
+import { makeMockCore } from "../_session-test-utils.ts";
 import {
   defaultConfig,
   openSocket,

@@ -3,7 +3,7 @@
 import { RIME_DEFAULT_LANGUAGE, RIME_DEFAULT_MODEL } from "@alexkroman1/aai/host-internal";
 import { RIME_DEFAULT_VOICE, type RimeTtsOptions } from "@alexkroman1/aai/tts";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { flush } from "../../_test-utils.ts";
+import { flush } from "../../_timing-test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
 // The shared TTS fake, not a fourth copy of it — see its module comment for
 // the divergence three hand-rolled copies had already produced.

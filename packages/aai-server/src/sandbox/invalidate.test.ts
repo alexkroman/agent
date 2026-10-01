@@ -10,9 +10,11 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { captureLogs } from "../_logger-test-utils.ts";
+import { createTestStore } from "../_orchestrator-test-utils.ts";
+import { spawnedAgent } from "../_sandbox-test-utils.ts";
 import { createMemoryPlatformEvents } from "../platform/events.ts";
 import type { Sandbox } from "../sandbox.ts";
-import { captureLogs, createTestStore, spawnedAgent } from "../test-utils.ts";
 import { watchAgentInvalidation } from "./invalidate.ts";
 import { resolveSandbox } from "./resolve.ts";
 import { createSlotCache } from "./slots.ts";

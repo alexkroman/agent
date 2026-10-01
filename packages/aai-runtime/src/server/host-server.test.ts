@@ -18,7 +18,8 @@
  */
 
 import { afterEach, describe, expect, test } from "vitest";
-import { silentLogger, withDeadline } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
+import { withDeadline } from "../_timing-test-utils.ts";
 import { createHostServer } from "./host-server.ts";
 
 type Frame = Record<string, unknown>;

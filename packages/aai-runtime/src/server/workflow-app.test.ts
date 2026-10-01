@@ -19,7 +19,8 @@ import { rejectingWorkflows } from "@alexkroman1/aai/internal";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
-import { silentLogger, withDeadline } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
+import { withDeadline } from "../_timing-test-utils.ts";
 import { MAX_WEBHOOK_BODY_BYTES } from "../workflow/webhook.ts";
 import { createRuntimeServer, type SessionRuntime } from "./server.ts";
 

@@ -16,9 +16,9 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { captureLogs } from "../_logger-test-utils.ts";
 import { GUEST_ROUTES, guestWsUrl } from "../guest/routes.ts";
 import { agentSandboxName } from "../sandbox/directory.ts";
-import { captureLogs } from "../test-utils.ts";
 import {
   GUEST_PORT,
   type ModalSandboxLike,

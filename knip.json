@@ -116,7 +116,6 @@
       "entry": [
         // Test helpers and fuzz harnesses: imported only by sibling specs, and
         // the fixtures directory is read at runtime by the replay harness.
-        "src/_test-utils.ts",
         "**/*-test-utils.ts",
         "src/integration/**/*.integration.test.ts",
         "**/*.test.ts",

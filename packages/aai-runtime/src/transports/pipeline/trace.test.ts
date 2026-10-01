@@ -6,7 +6,8 @@
 // never said. Enabled by AAI_DEBUG=1 (see runtime-config.debugLoggingEnabled).
 
 import { describe, expect, test, vi } from "vitest";
-import { makeLogger, tick } from "../../_test-utils.ts";
+import { makeLogger } from "../../_logger-test-utils.ts";
+import { tick } from "../../_timing-test-utils.ts";
 import { makeOpts } from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 

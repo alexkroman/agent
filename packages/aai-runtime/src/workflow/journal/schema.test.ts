@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { recordingDb } from "../../_test-utils.ts";
+import { recordingDb } from "../../_db-test-utils.ts";
 import { applyWorkflowJournalDdl, workflowJournalDdl } from "./schema.ts";
 
 /** A `Logger` that records rather than prints. */

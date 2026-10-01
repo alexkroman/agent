@@ -4,7 +4,7 @@
 import { MAX_PROVIDER_WS_BUFFERED_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
 import { createAudioSendGate } from "./_audio-gate.ts";
-import { makeLogger } from "./_test-utils.ts";
+import { makeLogger } from "./_logger-test-utils.ts";
 
 const OVER_CAP = MAX_PROVIDER_WS_BUFFERED_BYTES + 1;
 

@@ -9,14 +9,14 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { fakeFetch } from "../_test-utils.ts";
+import { fakeFetch } from "../_fetch-test-utils.ts";
 import { createPlatformUploadRecords } from "./platform.ts";
 import { UploadIdTakenError, UploadsUnavailableError } from "./store.ts";
 
 /**
  * A fetch that records the bodies it was sent and answers `answer`.
  *
- * Built on `fakeFetch` from `../_test-utils.ts`, which is where the ONE sanctioned
+ * Built on `fakeFetch` from `../_fetch-test-utils.ts`, which is where the ONE sanctioned
  * narrowing to `typeof globalThis.fetch` lives: a double never matches it
  * structurally, and the root guide's rule is one typed seam rather than a cast per
  * call site.

@@ -13,7 +13,7 @@
 
 import type { AgentDef } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 
 describe("createRuntime provider resolution", () => {

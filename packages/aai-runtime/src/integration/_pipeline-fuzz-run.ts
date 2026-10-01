@@ -22,7 +22,7 @@ import {
   type FakeSttProvider,
   type FakeTtsProvider,
 } from "../_pipeline-test-fakes.ts";
-import { sleep } from "../_test-utils.ts";
+import { sleep } from "../_timing-test-utils.ts";
 import { silentLogger } from "../runtime-config.ts";
 import { createPipelineTransport } from "../transports/pipeline/index.ts";
 import { buildActions } from "./_pipeline-fuzz-actions.ts";

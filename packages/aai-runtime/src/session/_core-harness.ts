@@ -16,7 +16,7 @@ import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { vi } from "vitest";
-import { makeEmitter } from "../_test-utils.ts";
+import { makeEmitter } from "../_session-test-utils.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "../transports/capabilities.ts";
 import type { Transport } from "../transports/types.ts";
 import type { ServerSession, ServerSessionOptions } from "./core.ts";

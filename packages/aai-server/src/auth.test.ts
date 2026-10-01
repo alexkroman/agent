@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { timingSafeEqual } from "node:crypto";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { createTestStore } from "./_orchestrator-test-utils.ts";
 import { hashApiKey, verifyApiKeyHash, verifySlugOwner } from "./secrets.ts";
-import { createTestStore } from "./test-utils.ts";
 
 // Everything except the compare primitive stays real. Wrapping
 // `timingSafeEqual` is the only way to assert the constant-time claim without a

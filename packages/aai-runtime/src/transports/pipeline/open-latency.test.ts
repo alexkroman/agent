@@ -4,12 +4,12 @@
 // (Lives outside pipeline-transport.test.ts, which is near its length cap.)
 
 import { describe, expect, test, vi } from "vitest";
+import { silentLogger } from "../../_logger-test-utils.ts";
 import {
   createFakeLanguageModel,
   createFakeSttProvider,
   createFakeTtsProvider,
 } from "../../_pipeline-test-fakes.ts";
-import { silentLogger } from "../../_test-utils.ts";
 import type { SttOpener, SttOpenOptions, SttSession } from "../../providers/openers.ts";
 import { makeCallbacks } from "../_transport-recorder.ts";
 import { createPipelineTransport, type PipelineTransportOptions } from "./transport.ts";

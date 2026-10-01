@@ -13,7 +13,7 @@ import { publishStepMcp } from "@alexkroman1/aai/host-internal";
 import { createToolContext } from "@alexkroman1/aai/testing";
 import { tool as aiTool, jsonSchema } from "ai";
 import { afterEach, describe, expect, test } from "vitest";
-import { silentLogger } from "./_test-utils.ts";
+import { silentLogger } from "./_logger-test-utils.ts";
 import type { McpSession, ResolvedMcpServer } from "./mcp/index.ts";
 import { createStepMcp } from "./step-mcp.ts";
 

@@ -46,7 +46,7 @@ re-exports both names for the call sites that read them from there.
 
 `_*.ts` is package-private (Biome's `noPrivateImports`), so a helper three
 packages' suites share has to be a real subpath export. Same shape and same
-reason as `aai-server/src/test-utils.ts`.
+reason as `aai-server`'s `test-utils` subpath (`test-utils-barrel.ts`).
 
 What stayed behind is what cannot come here: `npmResult` fixtures a `runNpm`
 result and that function is the studio's, so importing it would point core at

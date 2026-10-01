@@ -2,7 +2,7 @@
 
 import { requestPath } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { createSessionEventStream, type SessionEventStream } from "../session/index.ts";
 import { createMemoryStateBackend } from "../session-state/store.ts";
 import {

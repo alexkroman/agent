@@ -132,7 +132,7 @@ export const consoleLogger: Logger = createConsoleLogger();
  * four lines — one of which already carried the comment "one silent logger
  * rather than the second copy of six lines".
  *
- * Here rather than in `_test-utils.ts`, which is the version several of those
+ * Here rather than in `_logger-test-utils.ts`, which is the version several of those
  * copies deliberately refused: the fuzz harnesses are not `.test.ts` files, so
  * `tsconfig.build.json` compiles them, and importing the vitest-backed helpers
  * drags `@vitest/spy` types into the published `.d.ts` graph and fails the build.

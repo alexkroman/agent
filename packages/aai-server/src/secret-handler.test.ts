@@ -2,7 +2,8 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { expect, test } from "vitest";
-import { authFetch, createTestOrchestrator, deployAgent, type TestFetch } from "./test-utils.ts";
+import { createTestOrchestrator, type TestFetch } from "./_orchestrator-test-utils.ts";
+import { authFetch, deployAgent } from "./_request-test-utils.ts";
 
 async function deployAndAuth() {
   const orch = await createTestOrchestrator();

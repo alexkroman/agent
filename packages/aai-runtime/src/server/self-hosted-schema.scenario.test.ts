@@ -52,8 +52,8 @@
 
 import { agent } from "@alexkroman1/aai";
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
-import { silentLogger } from "../_test-utils.ts";
 import { createPostgresDb } from "../postgres-db.ts";
 import {
   SESSION_CLIENT_TABLE,

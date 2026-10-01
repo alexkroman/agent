@@ -13,7 +13,7 @@
  * `WorkflowClient` — which is the assertion this file makes by construction: a
  * route that needed more than a client would not compile.
  *
- * The harness lives in `workflow/api/test-utils.ts`, shared with
+ * The harness lives in `workflow/api/_test-utils.ts`, shared with
  * `workflow/api/sync.test.ts` (the `?wait=` mode) and
  * `workflow/api/router.test.ts` (the router's own decisions — claiming, the
  * token gate, engine resolution, route ordering, the catch). Both splits were
@@ -22,8 +22,8 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { WorkflowRequestError } from "./_request-error.ts";
+import { chunkStream, fakeClient, type Harness, run, serve } from "./api/_test-utils.ts";
 import { MAX_WORKFLOW_KEY_LENGTH } from "./api/runs.ts";
-import { chunkStream, fakeClient, type Harness, run, serve } from "./api/test-utils.ts";
 import { MAX_WORKFLOW_INPUT_BYTES } from "./api.ts";
 
 let harness: Harness | undefined;

@@ -7,9 +7,9 @@
  * numbers are the only actionable part of the warning.
  */
 import { describe, expect, test, vi } from "vitest";
+import { captureLogs } from "../_logger-test-utils.ts";
 import { MAX_PLATFORM_DB_CONNECTIONS } from "../constants.ts";
 import type { SqlExec } from "../secret-store.ts";
-import { captureLogs } from "../test-utils.ts";
 import {
   announcePlatformDbCapacity,
   capacityLine,

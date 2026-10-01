@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { createRuntimeServer, type SessionRuntime } from "./server.ts";
 
 /**

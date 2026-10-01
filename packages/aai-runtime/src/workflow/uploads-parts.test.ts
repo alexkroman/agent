@@ -10,7 +10,7 @@
 
 import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
-import { tick } from "../_test-utils.ts";
+import { tick } from "../_timing-test-utils.ts";
 import { body, digest, memoryStore, ramp } from "../_upload-store-test-utils.ts";
 import type { UploadBackend } from "../uploads/index.ts";
 import {

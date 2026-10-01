@@ -13,7 +13,8 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { makeAgent, makeLogger } from "../_test-utils.ts";
+import { makeAgent } from "../_agent-test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 
 describe("the platform session-state backend", () => {

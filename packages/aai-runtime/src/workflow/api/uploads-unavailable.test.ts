@@ -21,7 +21,7 @@ import type { AddressInfo } from "node:net";
 import { RETRYABLE_STATUS } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test } from "vitest";
-import { silentLogger } from "../../_test-utils.ts";
+import { silentLogger } from "../../_logger-test-utils.ts";
 import { createWorkflowApi } from "../api.ts";
 import { createUnavailableUploadStore } from "../uploads.ts";
 

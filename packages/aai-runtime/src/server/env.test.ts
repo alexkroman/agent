@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { agentGateToken, agentServerEnv } from "./env.ts";
 import { isHostAllowed } from "./host-mode.ts";
 

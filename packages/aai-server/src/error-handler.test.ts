@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { captureLogs } from "./_logger-test-utils.ts";
 import {
   createErrorHandler,
   PLATFORM_DB_UNAVAILABLE_MESSAGE,
@@ -13,7 +14,6 @@ import {
 import { PlatformDbUnavailableError } from "./platform/db-errors.ts";
 import { PlatformServiceUnavailableError } from "./platform/service-errors.ts";
 import { SandboxUnavailableError } from "./sandbox/errors.ts";
-import { captureLogs } from "./test-utils.ts";
 
 function throwError(err: Error): never {
   throw err;

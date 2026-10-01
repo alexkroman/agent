@@ -14,6 +14,8 @@
 import type { SessionEndContext, SessionEvent } from "@alexkroman1/aai";
 import { setSessionClient } from "@alexkroman1/aai/host-internal";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { makeAgent } from "../_agent-test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import {
   createFakeLanguageModel,
   createFakeSttProvider,
@@ -22,7 +24,7 @@ import {
   FAKE_TTS_API_KEY_ENV,
   registerFakeProviders,
 } from "../_pipeline-test-fakes.ts";
-import { makeAgent, makeClientSink, silentLogger } from "../_test-utils.ts";
+import { makeClientSink } from "../_session-test-utils.ts";
 import { type ClientEventFeed, publishClientEventFeed } from "../inbox/index.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
 

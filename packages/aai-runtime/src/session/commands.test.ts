@@ -7,7 +7,8 @@
 
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
-import { flush, makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
+import { flush } from "../_timing-test-utils.ts";
 import type { Transport } from "../transports/types.ts";
 import { makeCore } from "./_core-harness.ts";
 

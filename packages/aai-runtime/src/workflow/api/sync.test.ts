@@ -4,7 +4,7 @@
  *
  * Split from `workflow/api.test.ts`, which sat at 697 lines against the 700-line
  * test cap, on the seam the file already had — the `describe("wait")` block. The
- * shared harness is in `workflow/api/test-utils.ts`.
+ * shared harness is in `workflow/api/_test-utils.ts`.
  *
  * The property under test is the one a caller branches on: a wait that PRODUCED
  * a finished run is a 200, and a wait that ran out is a 202 carrying the run id
@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { fakeClient, type Harness, run, serve } from "./test-utils.ts";
+import { fakeClient, type Harness, run, serve } from "./_test-utils.ts";
 
 let harness: Harness | undefined;
 

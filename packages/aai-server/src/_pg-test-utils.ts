@@ -34,7 +34,7 @@
  * **Both gates are FUNCTIONS, and the enforcement lives inside them rather than
  * in this module's body.** It used to warn-or-throw at import time, which made
  * the gate a property of *importing this file* instead of a property of using
- * it — and `test-utils.ts` re-exports from here, so all 49 unit test files that
+ * it — and the `test-utils` barrel re-exports from here, so all 49 unit test files that
  * import the package's test surface tripped it: `vitest run auth.test.ts`
  * printed the "real-Postgres suite not run" banner over a file containing no
  * such suite, and `AAI_REQUIRE_PG=1 vitest run auth.test.ts` FAILED two of

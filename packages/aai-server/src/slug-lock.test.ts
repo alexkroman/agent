@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { setImmediate } from "node:timers/promises";
 import { expect, test } from "vitest";
+import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
+import { authFetch, deploy, deployAgent } from "./_request-test-utils.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform/lock.ts";
-import { authFetch, createTestOrchestrator, deploy, deployAgent } from "./test-utils.ts";
 
 test("concurrent deploy and delete are serialized", async () => {
   // The claim is EXCLUSION, so the lock is what the test has to watch. The

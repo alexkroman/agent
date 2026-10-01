@@ -16,7 +16,7 @@ import { DEFAULT_MIN_TURN_SILENCE_MS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { TurnEvent } from "assemblyai";
 import { describe, expect, test, vi } from "vitest";
-import { flush } from "../../_test-utils.ts";
+import { flush } from "../../_timing-test-utils.ts";
 import type { SttTurnMeta } from "../openers.ts";
 import { fakeOf, openSessionWith } from "./_assemblyai-test-utils.ts";
 import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";

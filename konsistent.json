@@ -24,20 +24,12 @@
     },
     {
       "name": "package-vitest-config",
-      "description": "Each package's vitest.config.ts spreads the shared config rather than re-declaring it: writing test:{} without ...sharedConfig.test REPLACES the shared object, which is how every package silently lost `reporters`. `sharedCoverageExclude` is required for the same reason one level down: it is the list that keeps test INFRASTRUCTURE \u2014 `_test-utils.ts`, mocks, fixtures, setup files \u2014 out of the measurement, so a package that forgets it counts its own harness as production source, and the number it reports is part code and part scaffolding. That is worse than a wrong number, because the per-package coverage FLOOR is ratcheted up against the measured actual: a config missing this import inflates the floor it is then gated on, and the only symptom is a percentage that still looks plausible. All ten configs import it today.",
+      "description": "Each package's vitest.config.ts is `export default defineUnitProject({ ... })` from `vitest.shared.ts`. The factory owns what a hand-written `test: { ... }` kept losing: the shared options (a config writing test:{} without ...sharedConfig.test REPLACES them, which is how every package silently lost `reporters`), the unit-tier excludes (`*.integration`, `*.scenario`, `*.eval`, `e2e*`), and the array/object MERGES of `setupFiles`, `env` and the coverage `exclude` over the shared lists \u2014 so `sharedCoverageExclude`, which keeps test infrastructure out of the per-package floors, cannot be forgotten. `vitest-setup-wiring.test.ts` asserts the same from the source side.",
       "paths": "packages/{packageName}/vitest.config.ts",
       "must": {
         "import": [
           {
-            "name": "defineConfig",
-            "from": "vitest/config"
-          },
-          {
-            "name": "sharedConfig",
-            "from": "../../vitest.shared.ts"
-          },
-          {
-            "name": "sharedCoverageExclude",
+            "name": "defineUnitProject",
             "from": "../../vitest.shared.ts"
           }
         ]
@@ -708,7 +700,7 @@
     },
     {
       "name": "test-helper-modules",
-      "description": "Each package's test-helper module is its OWN and they are not interchangeable: the helpers are named for that package's domain, so a spec reaches for the module beside it rather than importing another package's. This pins where each one lives and the roster it owes. That roster used to be a hand-kept list in the root AGENTS.md and had gone stale in four places, which is the argument for checking it: flush() had moved from aai/src/host/_test-utils.ts to aai-runtime/src/_test-utils.ts while the guide still named the former; sleep() was attributed to that host module too, though it is a published SDK export (sdk/sleep.ts) and never lived there; makeTool()/makeAgent() had left the host module for the runtime one and silenceSteps() had stopped being exported at all; and aai-runtime's module, the largest in the repo, was absent from the list entirely. A rename or a move now fails the gate instead of quietly making a guide wrong. The rosters: aai/src/host/_test-utils.ts - tick() (a full macrotask yield), createMockToolContext(), makeConfig(), fakeFetch(). aai-runtime/src/_test-utils.ts - flush() (MICROTASK-only; the one to reach for instead of `await new Promise(r => setTimeout(r, 0))`), tick(), makeTool(), makeAgent(), makeConfig(), loadFixture() (fixture replay, incl. S2S mocking). aai-cli/src/_test-utils.ts - withTempDir() (temp dir + cleanup), silenced(), makeBundle(); the dev-server specs additionally share their fake chokidar and runtime/server mocks via _dev-server-test-utils.ts, and a _test-setup.ts setup file points AAI_CONFIG_DIR at a per-run temp dir so a CLI spec can never touch the developer's real ~/.config/aai/config.json (API key + approved servers). aai-ui/src/_react-test-utils.ts - createMockSessionCore(), installAudioMocks(), and the MockAudioContext class. aai-studio-client/src/_test-utils.ts - stubFetch() and its readers, renderWithClient(), the button/input/textarea element seams, installResizeObserver(). aai-server/src/test-utils.ts (no underscore) - createTestStore() (in-memory BundleStore), createTestOrchestrator(), authHeaders()/authFetch()/deploy()/deployAgent()/deployPayload()/deployBody(), makeSlot(), captureLogs(). Build a platform request with authFetch/deploy, never a header literal - see \"Building a platform request in a test\" in packages/aai-server/CLAUDE.md for the ~47 converted sites and the three shapes that deliberately stay raw. Each roster is a FLOOR: a module may export more, and several do.",
+      "description": "Each package's test-helper modules are its OWN and they are not interchangeable: the helpers are named for that package's domain, so a spec reaches for the module beside it rather than importing another package's. A package whose helpers outgrew one file splits them BY DOMAIN into `_<domain>-test-utils.ts` modules (the `*-test-utils.ts` grammar is what the coverage excludes, `tsconfig.build.json`, biome and the guard scopes key on), so a spec imports the module whose name says what it fakes. This pins where each helper lives and the roster it owes; a rename or a move fails the gate instead of quietly making a guide wrong. The rosters: aai/src/host/_test-utils.ts - tick() (a full macrotask yield), createMockToolContext(), makeConfig(), fakeFetch(). aai-runtime/src: _timing-test-utils.ts - flush() (MICROTASK-only; the one to reach for instead of `await new Promise(r => setTimeout(r, 0))`), tick(), withDeadline(); _agent-test-utils.ts - makeTool(), makeAgent(), makeConfig(), createMockToolContext(); _session-test-utils.ts - makeMockCore(), makeTrackingClient(); _s2s-fixture-test-utils.ts - loadFixture(), createFixtureSession() (fixture replay, incl. S2S mocking); _logger-test-utils.ts - makeLogger(); _db-test-utils.ts - recordingDb(). aai-cli/src/_test-utils.ts - withTempDir() (temp dir + cleanup), silenced(), makeBundle(); the dev-server specs additionally share their fake chokidar and runtime/server mocks via _dev-server-test-utils.ts, and a _test-setup.ts setup file points AAI_CONFIG_DIR at a per-run temp dir so a CLI spec can never touch the developer's real ~/.config/aai/config.json (API key + approved servers). aai-ui/src/_react-test-utils.ts - createMockSessionCore(), installAudioMocks(), and the MockAudioContext class. aai-studio-client/src/_test-utils.ts - stubFetch() and its readers, renderWithClient(), the button/input/textarea element seams, installResizeObserver(). aai-server/src: _orchestrator-test-utils.ts - createTestStore() (in-memory BundleStore), createTestOrchestrator(), makeSlot(); _request-test-utils.ts - authHeaders()/authFetch()/deploy()/deployAgent()/deployPayload()/deployBody(); _logger-test-utils.ts - captureLogs(); _sql-test-utils.ts - createDispatchingSql(), createRecordingSql(), fakeAdminDbOver(); _sandbox-test-utils.ts - fakeSandbox(), spawnedAgent(); _modal-test-utils.ts - fakeModalImage(). Build a platform request with authFetch/deploy, never a header literal - see \"Building a platform request in a test\" in packages/aai-server/CLAUDE.md. Two helper SUBPATHS keep the un-underscored `test-utils` name because they cross a package boundary and `_*.ts` is package-private (Biome's noPrivateImports): `aai-server/test-utils` (a barrel, `test-utils-barrel.ts`, over the private modules above, for aai-studio-server) and `aai-guest-core/test-utils` (`src/test-utils.ts` itself, shared by the three guest packages). Each roster is a FLOOR: a module may export more, and several do.",
       "paths": "packages",
       "must": [
         {
@@ -721,19 +713,57 @@
           }
         },
         {
-          "name": "runtime-helpers",
+          "name": "runtime-timing-helpers",
           "for": {
-            "files": "aai-runtime/src/_test-utils.ts"
+            "files": "aai-runtime/src/_timing-test-utils.ts"
           },
           "must": {
-            "exportFunctions": [
-              "flush",
-              "tick",
-              "makeTool",
-              "makeAgent",
-              "makeConfig",
-              "loadFixture"
-            ]
+            "exportFunctions": ["flush", "tick", "withDeadline"]
+          }
+        },
+        {
+          "name": "runtime-agent-helpers",
+          "for": {
+            "files": "aai-runtime/src/_agent-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": ["makeTool", "makeAgent", "makeConfig", "createMockToolContext"]
+          }
+        },
+        {
+          "name": "runtime-session-helpers",
+          "for": {
+            "files": "aai-runtime/src/_session-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": ["makeMockCore", "makeTrackingClient"]
+          }
+        },
+        {
+          "name": "runtime-fixture-helpers",
+          "for": {
+            "files": "aai-runtime/src/_s2s-fixture-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": ["loadFixture", "createFixtureSession"]
+          }
+        },
+        {
+          "name": "runtime-logger-helpers",
+          "for": {
+            "files": "aai-runtime/src/_logger-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": ["makeLogger"]
+          }
+        },
+        {
+          "name": "runtime-db-helpers",
+          "for": {
+            "files": "aai-runtime/src/_db-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": ["recordingDb"]
           }
         },
         {
@@ -772,23 +802,64 @@
           }
         },
         {
-          "name": "server-helpers",
+          "name": "server-orchestrator-helpers",
           "for": {
-            "files": "aai-server/src/test-utils.ts"
+            "files": "aai-server/src/_orchestrator-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": ["createTestStore", "createTestOrchestrator", "makeSlot"]
+          }
+        },
+        {
+          "name": "server-request-helpers",
+          "for": {
+            "files": "aai-server/src/_request-test-utils.ts"
           },
           "must": {
             "exportFunctions": [
-              "createTestStore",
-              "createTestOrchestrator",
               "authHeaders",
               "authFetch",
               "deploy",
               "deployAgent",
               "deployPayload",
-              "deployBody",
-              "makeSlot",
-              "captureLogs"
+              "deployBody"
             ]
+          }
+        },
+        {
+          "name": "server-logger-helpers",
+          "for": {
+            "files": "aai-server/src/_logger-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": ["captureLogs"]
+          }
+        },
+        {
+          "name": "server-sql-helpers",
+          "for": {
+            "files": "aai-server/src/_sql-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": ["createDispatchingSql", "createRecordingSql", "fakeAdminDbOver"]
+          }
+        },
+        {
+          "name": "server-sandbox-helpers",
+          "for": {
+            "files": "aai-server/src/_sandbox-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": ["fakeSandbox", "spawnedAgent"]
+          }
+        },
+        {
+          "name": "server-modal-helpers",
+          "for": {
+            "files": "aai-server/src/_modal-test-utils.ts"
+          },
+          "must": {
+            "exportFunctions": ["fakeModalImage"]
           }
         }
       ]

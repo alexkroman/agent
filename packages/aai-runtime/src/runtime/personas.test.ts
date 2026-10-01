@@ -5,7 +5,8 @@ import { agent, dialog, roster, type SlotStore, speaker, tool } from "@alexkroma
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { makeConfig, makeLogger, makeSessionContext } from "../_test-utils.ts";
+import { makeConfig, makeSessionContext } from "../_agent-test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { OPENAI_REALTIME_CAPABILITIES, PIPELINE_CAPABILITIES } from "../transports/capabilities.ts";
 import type { Transport } from "../transports/types.ts";
 import { openSessionDialogs } from "./dialogs.ts";

@@ -24,9 +24,9 @@ import { traceIdOf } from "@alexkroman1/aai-runtime/internal";
 import { InMemorySpanExporter, type SpanExporter } from "@opentelemetry/sdk-trace-base";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
 import { applyPlatformMiddleware } from "./app-middleware.ts";
 import type { HonoEnv } from "./context.ts";
-import { captureLogs } from "./test-utils.ts";
 import {
   DEFAULT_SERVICE_NAME,
   OTEL_ENDPOINT_ENVS,

@@ -22,6 +22,10 @@
         "$TURBO_ROOT$/packages/aai-templates/scaffold/**"
       ],
       "outputs": ["dist/**"]
-    }
+    },
+    // The build specs bundle a worker that imports `@alexkroman1/aai-runtime`
+    // from `dist`, and the output specs copy `aai-ui/dist/default-client`.
+    "test": { "dependsOn": ["^build"] },
+    "test:coverage": { "dependsOn": ["^build"] }
   }
 }

@@ -2,17 +2,10 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
+import { createTestOrchestrator, createTestStore, VALID_ENV } from "./_orchestrator-test-utils.ts";
+import { authHeaders, deploy, deployAgent, deployBody } from "./_request-test-utils.ts";
 import { deployAgentBundle } from "./deploy.ts";
 import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
-import {
-  authHeaders,
-  createTestOrchestrator,
-  createTestStore,
-  deploy,
-  deployAgent,
-  deployBody,
-  VALID_ENV,
-} from "./test-utils.ts";
 
 test("hashApiKey produces a sha256 digest and verifies", () => {
   const hash = hashApiKey("test-key");

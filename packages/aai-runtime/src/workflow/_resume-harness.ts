@@ -42,7 +42,7 @@
  */
 
 import { workflow } from "@alexkroman1/aai";
-import { tick } from "../_test-utils.ts";
+import { tick } from "../_timing-test-utils.ts";
 import { silentLogger } from "../runtime-config.ts";
 import {
   type HookMode,

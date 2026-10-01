@@ -8,7 +8,7 @@ import { workflow } from "@alexkroman1/aai";
 import { createRunSnapshot } from "@alexkroman1/aai/testing";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { createWorkflowClient } from "./client.ts";
 import { cancelAllByKey, findByKeyAcross, type KeyedReadScope, keyedFind } from "./client-keyed.ts";
 import { createWorkflowEngine } from "./engine.ts";

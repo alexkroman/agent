@@ -35,7 +35,7 @@ import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
 import type { SqlExec } from "../secret-store.ts";
-import { ensurePlatformTables } from "./schema-test-utils.ts";
+import { ensurePlatformTables } from "./_schema-test-utils.ts";
 import * as journal from "./workflow-journal.ts";
 
 /** Two tenants, so every read can be asked whether it crosses. */

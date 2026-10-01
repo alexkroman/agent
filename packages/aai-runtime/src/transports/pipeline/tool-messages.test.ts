@@ -13,8 +13,8 @@ import { DEAD_AIR_OPENING_PHRASE, DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1
 import { sleep } from "@alexkroman1/aai/internal";
 import { agentToolsToSchemas, type ToolSchema, toolset } from "@alexkroman1/aai/manifest";
 import { describe, expect, test, vi } from "vitest";
+import { silentLogger } from "../../_logger-test-utils.ts";
 import { createFakeLanguageModel } from "../../_pipeline-test-fakes.ts";
-import { silentLogger } from "../../_test-utils.ts";
 import { createToolSpeechController, executeToolCall, toVercelTools } from "../../tools/index.ts";
 import { useVirtualTime } from "../_pipeline-transport-harness.ts";
 import { consumeLlmStream } from "./llm/index.ts";

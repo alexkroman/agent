@@ -91,9 +91,14 @@ the assertion.**
 pnpm test:aai-core       # Run only aai unit tests
 pnpm test:aai-ui         # Run only aai-ui unit tests
 pnpm test:aai-cli        # Run only aai-cli unit tests
+pnpm test:aai-runtime    # Run only aai-runtime unit tests
 pnpm test:aai-server     # Run only aai-server unit tests
+pnpm test:aai-guest      # Also test:aai-guest-core, test:aai-guest-studio
+pnpm test:aai-gates      # Run the meta-gate suite
 pnpm test:aai-studio-client  # Run studio front-end unit tests
 pnpm test:templates      # Run template agent tests
+pnpm test:affected       # Unit tests of packages changed since main, no coverage
+pnpm test:watch --project aai  # Watch mode
 pnpm dev:aai-server      # Start aai-server in dev mode
 ```
 
@@ -103,8 +108,12 @@ pnpm dev:aai-server      # Start aai-server in dev mode
 pnpm vitest run --project aai                   # Single package via --project
 pnpm vitest run packages/aai/src/sdk/types.test.ts  # Single file
 pnpm vitest run session                         # All files matching "session"
+pnpm vitest run --project aai -t "rejects"      # Tests whose NAME matches
 pnpm --filter @alexkroman1/aai test             # Single package via pnpm filter
 ```
+
+A root `vitest` run loads every package config, and `aai-templates`' imports
+the SDK's `dist`: run `pnpm --filter @alexkroman1/aai build` first.
 
 ## Architecture
 

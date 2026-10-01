@@ -6,9 +6,9 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
 import { createRpcConnection } from "./rpc-transport.ts";
 import { createFakeGuestSocket } from "./sandbox/_vm-test-utils.ts";
-import { captureLogs } from "./test-utils.ts";
 
 describe("createRpcConnection", () => {
   const logs = captureLogs();

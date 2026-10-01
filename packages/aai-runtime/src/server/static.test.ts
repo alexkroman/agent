@@ -21,7 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { isPathInside, serveStatic } from "./static.ts";
 
 let dir: string | null = null;

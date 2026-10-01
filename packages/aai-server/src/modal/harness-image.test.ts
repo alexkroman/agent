@@ -6,8 +6,8 @@ import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import type { App, ModalClient } from "modal";
 import { describe, expect, test, vi } from "vitest";
+import { fakeModalImage as fakeImage } from "../_modal-test-utils.ts";
 import { resolveHarnessPath } from "../constants.ts";
-import { fakeModalImage as fakeImage } from "../test-utils.ts";
 import {
   createHarnessImageResolver,
   GUEST_ROOT,

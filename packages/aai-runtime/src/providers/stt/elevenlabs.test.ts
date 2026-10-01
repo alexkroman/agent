@@ -4,7 +4,7 @@
 import { ELEVENLABS_DEFAULT_MODEL } from "@alexkroman1/aai/host-internal";
 import type { ElevenLabsSttOptions } from "@alexkroman1/aai/stt";
 import { describe, expect, test, vi } from "vitest";
-import { flush } from "../../_test-utils.ts";
+import { flush } from "../../_timing-test-utils.ts";
 import { openElevenLabs } from "./elevenlabs.ts";
 
 interface FakeConnection {

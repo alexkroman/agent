@@ -41,7 +41,7 @@
 import { sleep } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { createSeveringProxy, type SeveringProxy } from "./_fault-socket.ts";
 import { createRuntimeServer, type SessionRuntime } from "./server.ts";
 

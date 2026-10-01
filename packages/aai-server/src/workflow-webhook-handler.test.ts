@@ -13,16 +13,12 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
+import { createTestOrchestrator, type TestFetch } from "./_orchestrator-test-utils.ts";
+import { deployAgent } from "./_request-test-utils.ts";
+import { fakeSandbox, spawnedAgent } from "./_sandbox-test-utils.ts";
 import { GUEST_ROUTE_EXPOSURE } from "./guest/routes.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
-import {
-  captureLogs,
-  createTestOrchestrator,
-  deployAgent,
-  fakeSandbox,
-  spawnedAgent,
-  type TestFetch,
-} from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({
   // A cold broker must reach a real spawn for the "the guest exited" case to

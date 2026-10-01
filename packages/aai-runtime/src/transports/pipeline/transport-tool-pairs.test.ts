@@ -17,8 +17,8 @@
 
 import type { SessionEventBody } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
+import { makeLogger } from "../../_logger-test-utils.ts";
 import { createFakeLanguageModel, type ScriptedPart } from "../../_pipeline-test-fakes.ts";
-import { makeLogger } from "../../_test-utils.ts";
 import { historyFromEvents, modelHistoryOf, stampSessionEvent } from "../../session/index.ts";
 import { FatalToolError } from "../../tools/index.ts";
 import {

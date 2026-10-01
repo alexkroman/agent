@@ -6,8 +6,10 @@ import { toolFailure } from "@alexkroman1/aai/utils";
 import { TimeoutError } from "p-timeout";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { makeTool, makeUsageMeter, malformedOnError } from "../_agent-test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { createScriptedOneShotModel, registerFakeProviders } from "../_pipeline-test-fakes.ts";
-import { makeLogger, makeTool, makeUsageMeter, malformedOnError, sleep } from "../_test-utils.ts";
+import { sleep } from "../_timing-test-utils.ts";
 import { createGenerateFn } from "../generate.ts";
 import { executeToolCall, type FatalToolError, isFatalToolError } from "./executor.ts";
 
@@ -93,13 +95,8 @@ describe("executeToolCall", () => {
   });
 
   test("the context carries NO db, so a tool reaching for one finds nothing", async () => {
-    // `ctx.db` is gone: the platform provisions no database and no longer hands one
-    // to tool code, so an author who wants SQL brings their own client and
-    // credential. This used to answer a curated "storage is not enabled" message.
-    //
-    // Asserted rather than deleted, because "the field is absent" is the contract
-    // now and a tool written against the old API has to fail LOUDLY rather than
-    // reading `undefined` and moving on.
+    // `ctx.db` is gone (an author who wants SQL brings their own client), and a
+    // tool written against the old API must see it absent, not a replacement.
     const tool = makeTool({
       execute: (_args, ctx) => {
         // Read through an assertion because the field is GONE from the type — which

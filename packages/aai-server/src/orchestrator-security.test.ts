@@ -6,16 +6,11 @@
  * orchestrator-security-validation.test.ts.
  */
 import { describe, expect, test } from "vitest";
+import { createTestOrchestrator, createTestStore } from "./_orchestrator-test-utils.ts";
+import { authFetch, deploy, deployAgent } from "./_request-test-utils.ts";
 import { loadBundleParts } from "./sandbox/resolve.ts";
 import { createSlotCache } from "./sandbox/slots.ts";
 import { hashApiKey } from "./secrets.ts";
-import {
-  authFetch,
-  createTestOrchestrator,
-  createTestStore,
-  deploy,
-  deployAgent,
-} from "./test-utils.ts";
 
 // ── Cross-Agent Auth Isolation ─────────────────────────────────────────
 //

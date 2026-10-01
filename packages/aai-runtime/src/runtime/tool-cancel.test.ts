@@ -4,7 +4,8 @@
 // hung tools. (Lives outside runtime.test.ts, which is at its ceiling.)
 
 import { describe, expect, test, vi } from "vitest";
-import { makeAgent, makeTool, silentLogger } from "../_test-utils.ts";
+import { makeAgent, makeTool } from "../_agent-test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
 
 describe("runtime executeTool — cancellation (self-hosted tools)", () => {

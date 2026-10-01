@@ -9,6 +9,8 @@ import type { S2sProvider } from "@alexkroman1/aai/s2s";
 import { openAIS2s } from "@alexkroman1/aai/s2s";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { makeAgent } from "../_agent-test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { MockWebSocket } from "../_mock-ws.ts";
 import {
   createFakeLanguageModel,
@@ -18,15 +20,9 @@ import {
   FAKE_TTS_API_KEY_ENV,
   registerFakeProviders,
 } from "../_pipeline-test-fakes.ts";
-import {
-  flush,
-  makeAgent,
-  makeClientSink,
-  makeLogger,
-  makeMockHandle,
-  silentLogger,
-  tick,
-} from "../_test-utils.ts";
+import { makeMockHandle } from "../_s2s-fixture-test-utils.ts";
+import { makeClientSink } from "../_session-test-utils.ts";
+import { flush, tick } from "../_timing-test-utils.ts";
 import type { ConnectS2sOptions, S2sCallbacks } from "../s2s/index.ts";
 import { asSessionWebSocket } from "../session/index.ts";
 import type { OpenaiRealtimeWebSocket } from "../transports/openai-realtime-transport.ts";

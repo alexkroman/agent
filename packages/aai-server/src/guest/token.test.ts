@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { afterEach, describe, expect, test } from "vitest";
-import { captureLogs } from "../test-utils.ts";
+import { captureLogs } from "../_logger-test-utils.ts";
 import {
   assertGuestTokenSecret,
   GUEST_TOKEN_SECRET_ENV,

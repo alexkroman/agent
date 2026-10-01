@@ -22,12 +22,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sleep } from "@alexkroman1/aai/internal";
 import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { registerLiveStream } from "./live-streams.ts";
 import { LOCAL_GUEST_IMAGE_TAG } from "./microsandbox/sandbox.ts";
 import { isModalConfigured, prewarmModal } from "./modal/context.ts";
 import { assertSandboxBackendOrWarn, installProcessSafetyNets } from "./service-boot.ts";
-import { captureLogs } from "./test-utils.ts";
 
 /**
  * The microVM image lookup, typed by what the CALLER does with it: the boot

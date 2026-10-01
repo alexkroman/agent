@@ -1,0 +1,10 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // The deploy-flow specs boot the platform, which resolves the built
+    // `aai-guest` harness; the root `test` task declares no build.
+    "test": { "dependsOn": ["^build"] },
+    "test:coverage": { "dependsOn": ["^build"] }
+  }
+}

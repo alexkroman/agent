@@ -8,7 +8,7 @@
 // handler is read LIVE.
 
 import { describe, expect, test } from "vitest";
-import { silentLogger } from "../../../_test-utils.ts";
+import { silentLogger } from "../../../_logger-test-utils.ts";
 import { createToolSpeechController } from "../../../tools/index.ts";
 import { createTtsTextCoalescer } from "../output/index.ts";
 import { createStreamPartHandler, type StreamPartHandler } from "../reply/index.ts";

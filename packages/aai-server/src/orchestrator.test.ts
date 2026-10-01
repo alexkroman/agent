@@ -4,13 +4,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { expect, test } from "vitest";
-import {
-  authHeaders,
-  createTestOrchestrator,
-  deploy,
-  deployAgent,
-  deployBody,
-} from "./test-utils.ts";
+import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
+import { authHeaders, deploy, deployAgent, deployBody } from "./_request-test-utils.ts";
 
 /**
  * An orchestrator serving aai-ui's REAL built default client.

@@ -12,7 +12,7 @@ import { workflow } from "@alexkroman1/aai";
 import type { Db } from "@alexkroman1/aai/internal";
 import type { WorkflowBody } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { createMemoryJournal } from "./journal/backends/memory.ts";
 import { buildWorkflowClient } from "./runtime.ts";
 

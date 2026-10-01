@@ -7,7 +7,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, test, vi } from "vitest";
 import type WebSocket from "ws";
-import { flush } from "../../_test-utils.ts";
+import { flush } from "../../_timing-test-utils.ts";
 import { buildLocalConfigFrame, handleLocalFrame, openLocalStt } from "./local.ts";
 
 function fakeEmit() {

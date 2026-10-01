@@ -5,7 +5,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { makeOpts } from "./_pipeline-transport-harness.ts";
 import { makeCallbacks } from "./_transport-recorder.ts";
 import {

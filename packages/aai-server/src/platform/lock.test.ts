@@ -2,11 +2,11 @@
 
 import { setImmediate } from "node:timers/promises";
 import { describe, expect, test, vi } from "vitest";
+import { captureLogs } from "../_logger-test-utils.ts";
 import { createMemoryAgentRows } from "../agent-store.ts";
 import { createMemoryBlobStorage } from "../blob-storage.ts";
 import { createBundleStore } from "../bundle-store.ts";
 import { createMemorySecretStore } from "../secret-store.ts";
-import { captureLogs } from "../test-utils.ts";
 import {
   type AdminDb,
   assertSessionModeUrl,

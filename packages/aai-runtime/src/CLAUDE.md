@@ -49,7 +49,7 @@ hands the guest); `_egress-*`, `app-db.ts` and
 or `runtime/` without a cycle; `subagent.ts`, whose model resolution would
 pull the provider registry into the `tools/` index (and back into the
 pipeline); the `step-*` primitives; `generate.ts`; the tracing and metrics
-internals; and the test helpers several directories share (`_test-utils.ts`,
+internals; and the test helpers several directories share (`_*-test-utils.ts`,
 `_fake-llm.ts`, `_pipeline-test-fakes.ts`, …). **Before adding a directory,
 find what discovers files by NAME** (scans, `guard-invariants-scopes.mjs`,
 baseline JSONs) — see "Layout" in [`../CLAUDE.md`](../CLAUDE.md).

@@ -34,7 +34,7 @@
  * module-level `const log = createLogger(…)` evaluated at import, long before a
  * spec gets to install anything.
  *
- * Tests should reach for `silenceLogs()` (`test-utils.ts`) rather than this —
+ * Tests should reach for `captureLogs()` (`_logger-test-utils.ts`) rather than this —
  * it registers its own restore.
  *
  * @module

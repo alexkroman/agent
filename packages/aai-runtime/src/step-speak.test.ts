@@ -8,7 +8,7 @@
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { flush } from "./_test-utils.ts";
+import { flush } from "./_timing-test-utils.ts";
 import { FakeWebSocket, pcmBase64 } from "./providers/tts/_fake-ws-test-utils.ts";
 import { speakOverWebSocket } from "./step-speak.ts";
 import { withRunContext } from "./workflow/run-context.ts";

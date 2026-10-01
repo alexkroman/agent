@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { fakeFetch } from "../_test-utils.ts";
+import { fakeFetch } from "../_fetch-test-utils.ts";
 import { openMcpSession, toCallResult } from "./connect.ts";
 
 const ENDPOINT = "https://mcp.example.com/mcp";

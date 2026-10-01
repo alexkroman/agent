@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
-import { makeMockCore } from "../_test-utils.ts";
+import { makeMockCore } from "../_session-test-utils.ts";
 import {
   createResumeFindings,
   createSessionEventStream,

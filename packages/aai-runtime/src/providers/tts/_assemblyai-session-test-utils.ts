@@ -4,7 +4,7 @@
 // adapter (which imports "ws"), and the mock factory must not.
 
 import type { AssemblyAITtsOptions } from "@alexkroman1/aai/tts";
-import { flush } from "../../_test-utils.ts";
+import { flush } from "../../_timing-test-utils.ts";
 import { FakeWebSocket } from "./_fake-ws-test-utils.ts";
 import { type AssemblyAITtsSession, openAssemblyAITts } from "./assemblyai.ts";
 

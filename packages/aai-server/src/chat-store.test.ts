@@ -5,18 +5,18 @@
 
 import { describe, expect, test } from "vitest";
 import {
+  createDispatchingSql,
+  createRecordingSql,
+  refusingDdl,
+  type SqlHandler,
+} from "./_sql-test-utils.ts";
+import {
   createMemoryChatStore,
   createPgChatStore,
   MAX_STUDIO_CHAT_STORE_BYTES,
   trimChatToByteBudget,
 } from "./chat-store.ts";
 import { chatStoreConformance } from "./store-conformance-cases.ts";
-import {
-  createDispatchingSql,
-  createRecordingSql,
-  refusingDdl,
-  type SqlHandler,
-} from "./test-utils.ts";
 
 function msg(id: string, text = "hi"): Record<string, unknown> {
   return { id, role: "user", parts: [{ type: "text", text }] };

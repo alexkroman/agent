@@ -4,7 +4,8 @@ import { Socket } from "node:net";
 import { SESSION_PROTOCOL } from "@alexkroman1/aai/protocol";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
-import { makeClientSink, silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
+import { makeClientSink } from "../_session-test-utils.ts";
 import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
 import {
   createSessionAuth,

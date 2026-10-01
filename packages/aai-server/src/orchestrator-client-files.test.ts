@@ -17,7 +17,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { createTestOrchestrator } from "./test-utils.ts";
+import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
 
 describe("deploy serves client files", () => {
   test("deploy → GET / returns HTML, GET /assets/* returns JS", async () => {

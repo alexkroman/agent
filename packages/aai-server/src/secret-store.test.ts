@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
+import { createRecordingSql as fakeSql } from "./_sql-test-utils.ts";
 import { createMemorySecretStore, createVaultSecretStore } from "./secret-store.ts";
 import { secretStoreConformance } from "./store-conformance-cases.ts";
-import { createRecordingSql as fakeSql } from "./test-utils.ts";
 
 // ── The CONTRACT, over the arm that runs everywhere ─────────────────────────
 //

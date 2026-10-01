@@ -27,7 +27,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { createRecordingSql } from "../test-utils.ts";
+import { createRecordingSql } from "../_sql-test-utils.ts";
 import { nextEventIndex, readEvents } from "./session-state.ts";
 
 /** A driver answering one row's `next`, as postgres.js would shape it. */

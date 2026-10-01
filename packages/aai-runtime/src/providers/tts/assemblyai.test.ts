@@ -2,7 +2,7 @@
 
 import type { AssemblyAITtsLanguage } from "@alexkroman1/aai/tts";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { flush } from "../../_test-utils.ts";
+import { flush } from "../../_timing-test-utils.ts";
 import type { TtsError } from "../openers.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
 import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";

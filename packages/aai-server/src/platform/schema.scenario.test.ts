@@ -53,10 +53,10 @@ import { describeWithStack, pgUrl } from "../_pg-test-utils.ts";
 import { createPgChatStore } from "../chat-store.ts";
 import type { SqlExec } from "../secret-store.ts";
 import { createPgWorkspaceStore } from "../workspace-store.ts";
-import { platformMigrationSql } from "./schema-test-utils.ts";
+import { platformMigrationSql } from "./_schema-test-utils.ts";
 
 // The migration as it ships, minus the one line a throwaway database cannot
-// run, comes from `platformMigrationSql()` in `test-utils.ts` — the reader
+// run, comes from `platformMigrationSql()` in `_schema-test-utils.ts` — the reader
 // `pg-cron.scenario.test.ts` already uses, and whose own doc says the regex no
 // longer lives in this file. It did: a second copy, down to the `skipped`
 // counter. pg_cron is single-database by design (its worker reads job

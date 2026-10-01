@@ -1,9 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, it, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import { SHUTDOWN_GRACE_MS, shutdownGraceMs, teardownSandboxes } from "./teardown-sandboxes.ts";
-import { captureLogs } from "./test-utils.ts";
 
 const fakeSandbox = () => ({
   shutdown: vi.fn().mockResolvedValue(undefined),

@@ -22,7 +22,7 @@ import { workflow } from "@alexkroman1/aai";
 import type { WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createWorkflowClient, type WdkAdapter } from "./client.ts";
 import { createWorkflowEngine } from "./engine.ts";

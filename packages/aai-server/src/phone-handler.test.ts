@@ -1,10 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { createHmac } from "node:crypto";
 import { describe, expect, test, vi } from "vitest";
+import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
+import { deployAgent } from "./_request-test-utils.ts";
+import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { PHONE_READY_TIMEOUT_MS } from "./phone-handler.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createTestOrchestrator, deployAgent, fakeSandbox } from "./test-utils.ts";
 
 type TestFetch = Awaited<ReturnType<typeof createTestOrchestrator>>["fetch"];
 

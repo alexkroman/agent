@@ -11,7 +11,7 @@
 
 import type { SessionEvent } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
-import { makeMockCore } from "../_test-utils.ts";
+import { makeMockCore } from "../_session-test-utils.ts";
 import { attachSessionStream } from "../runtime/index.ts";
 import type { SessionEventStream } from "./event-stream.ts";
 import { composeSessionGreeting, createResumeFindings } from "./resume-found.ts";

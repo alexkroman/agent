@@ -17,7 +17,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { ensureOwnedSchemas, ownedSchemaUrl } from "./agent-server-schemas.ts";
 
 describe("ownedSchemaUrl", () => {

@@ -7,7 +7,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
 
 let server: AgentServer | undefined;

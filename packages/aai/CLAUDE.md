@@ -348,6 +348,6 @@ observations and stay.
 
 A real `Runtime` and tool executor over a mocked S2S socket, replaying recorded
 AssemblyAI messages from `fixtures/`. `createFixtureSession` /
-`fireFixtureMessage` / `makeMockHandle` in `_test-utils.ts`.
+`fireFixtureMessage` / `makeMockHandle` in `aai-runtime/src/_s2s-fixture-test-utils.ts`.
 `fireFixtureMessage` drives `S2sCallbacks` (the wire contract), not the
 session's `report` surface.

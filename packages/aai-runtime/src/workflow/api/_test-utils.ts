@@ -1,17 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Shared scaffolding for the workflow HTTP API suites.
- *
- * `workflow/api.test.ts` reached 697 lines against the 700-line test cap, so
- * the synchronous-mode block moved to `workflow/api/sync.test.ts`. Both drive
- * the API the same way — a real loopback `node:http` server, a spying
- * `WorkflowClient` as the engine — and a second copy of that harness is the
- * duplicated-fixture failure the root guide records: the copies diverge, and
- * the one that rots is the one nobody is looking at.
- *
- * No leading underscore, because `*-test-utils.ts` is what the shared coverage
- * excludes and `tsconfig.build.json` both key on; nothing outside this package
- * imports it.
+ * Shared scaffolding for the workflow HTTP API suites: a real loopback
+ * `node:http` server with a spying `WorkflowClient` as the engine.
  */
 
 import http from "node:http";
@@ -20,7 +10,7 @@ import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { vi } from "vitest";
-import { makeLogger } from "../../_test-utils.ts";
+import { makeLogger } from "../../_logger-test-utils.ts";
 import { createWorkflowApi } from "../api.ts";
 import type { UploadStore } from "../uploads.ts";
 

@@ -19,7 +19,9 @@
 
 import { type AgentDef, endSession, type SessionEndContext } from "@alexkroman1/aai";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { makeAgent } from "../_agent-test-utils.ts";
 import type { ScriptedPart } from "../_fake-llm.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { MockWebSocket } from "../_mock-ws.ts";
 import {
   createFakeLanguageModel,
@@ -28,7 +30,6 @@ import {
   type FakeTtsSession,
   registerFakeProviders,
 } from "../_pipeline-test-fakes.ts";
-import { makeAgent, makeLogger } from "../_test-utils.ts";
 import { createRuntimeWithSeams } from "../runtime/index.ts";
 import { twilioCodec } from "./carriers.ts";
 import { startTelephonySession } from "./telephony-server.ts";

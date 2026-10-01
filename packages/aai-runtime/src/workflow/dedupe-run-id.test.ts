@@ -6,7 +6,7 @@
 
 import { workflow } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { dedupedRunId } from "./dedupe-run-id.ts";
 import { createWorkflowEngine } from "./engine.ts";
 import { createMemoryJournal } from "./journal/backends/memory.ts";

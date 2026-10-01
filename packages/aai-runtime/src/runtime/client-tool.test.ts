@@ -9,15 +9,10 @@
 import { clientTool } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { makeAgent, makeConfig, makeSpeech } from "../_agent-test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { MockWebSocket } from "../_mock-ws.ts";
-import {
-  makeAgent,
-  makeConfig,
-  makeEmitter,
-  makeLogger,
-  makeSpeech,
-  silentLogger,
-} from "../_test-utils.ts";
+import { makeEmitter } from "../_session-test-utils.ts";
 import { createSessionCore, createSessionDirectory, wireSessionSocket } from "../session/index.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "../session-state/store.ts";
 import { createClientToolBroker } from "../tools/index.ts";

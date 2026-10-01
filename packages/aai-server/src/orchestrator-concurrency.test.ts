@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { authHeaders, createTestOrchestrator, deploy } from "./test-utils.ts";
+import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
+import { authHeaders, deploy } from "./_request-test-utils.ts";
 
 describe("orchestrator concurrency", () => {
   test("parallel deploys of different slugs all succeed", async () => {

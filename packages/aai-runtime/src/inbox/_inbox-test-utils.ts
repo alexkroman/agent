@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { vi } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { type ClientInbox, createClientInbox } from "./inbox.ts";
 
 /** One device (or browser) on the far end of the inbox. */

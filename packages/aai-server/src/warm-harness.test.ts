@@ -10,8 +10,8 @@
 import net, { type AddressInfo } from "node:net";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
+import { captureLogs } from "./_logger-test-utils.ts";
 import { forgetObservedPublicOrigin, rememberPublicOrigin } from "./public-origin.ts";
-import { captureLogs } from "./test-utils.ts";
 import { agentBootEnv, dialGuest, drainProcStream } from "./warm-harness.ts";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {

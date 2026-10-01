@@ -15,13 +15,8 @@
  *
  * ## Only ONE config can reach them, and the exclude belongs there
  *
- * The obvious home is `vitest.shared.ts`, and it is the wrong one twice over.
- * Nine of the ten package configs declare their own `exclude`, which REPLACES a
- * shared one rather than extending it (the trap AGENTS.md records for `test` and
- * `setupFiles`), so it would be dead config in almost every package. And it
- * would be dead there anyway: a package config's `root` is its own directory, so
- * `.worktrees/` is not under it — measured, `vitest list <filter>` at the repo
- * root collects only the real file.
+ * A package config's `root` is its own directory, so `.worktrees/` is not under
+ * it and `defineUnitProject`'s tier excludes need no worktree entry.
  *
  * `vitest.slow.config.ts` is the exception, and the whole exposure: it is a
  * ROOT-level config whose `root` is wherever it is invoked from, so a run from
@@ -79,9 +74,12 @@ const packageConfigs = Object.entries(
  * own excludes, so any assertion over the raw text is satisfied by the
  * explanation of the rule instead of the rule. Measured — `toContain
  * (".worktrees")` over the raw source passed with the exclude deleted.
+ *
+ * Only a comment that OPENS a line (or follows whitespace) is one: a glob
+ * literal such as `"**\/*.test.ts"` contains both `/*` and `*\/`.
  */
 const withoutComments = (source: string | undefined): string =>
-  (source ?? "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  (source ?? "").replace(/^\s*\/\*[\s\S]*?\*\//gm, "").replace(/(^|\s)\/\/.*$/gm, "$1");
 
 /** The `test.exclude` array literal, comments already gone. */
 const excludeArray = (source: string | undefined): string =>
@@ -91,7 +89,7 @@ describe("no vitest run can collect a worktree copy", () => {
   test("the configs were discovered", () => {
     // The floor every gate in this package carries: each assertion below reads a
     // source string, so a glob that stopped resolving would check an `undefined`
-    // and pass. Nine packages today.
+    // and pass.
     expect(slow, "vitest.slow.config.ts not readable").toBeTypeOf("string");
     expect(root, "vitest.config.ts not readable").toBeTypeOf("string");
     expect(gitignore, ".gitignore not readable").toBeTypeOf("string");
@@ -142,10 +140,10 @@ describe("no vitest run can collect a worktree copy", () => {
 
   test.each(packageConfigs)("$path is scoped to its own package", ({ source }) => {
     // The other half of the same claim. A package config with an explicit `root`
-    // pointing outside its directory — or one that stopped spreading the shared
-    // options and so lost the rest of this file's assumptions — would need its
-    // own exclude. Neither is true today, and this is what says so.
-    expect(source, "does not spread ...sharedConfig.test").toContain("...sharedConfig.test");
+    // pointing outside its directory — or one that bypassed the shared factory
+    // and so lost the rest of this file's assumptions — would need its own
+    // exclude. Neither is true today, and this is what says so.
+    expect(source, "does not go through defineUnitProject").toContain("defineUnitProject({");
     expect(source, "declares a root outside its own package").not.toMatch(/root:\s*"\.\.\//);
   });
 });

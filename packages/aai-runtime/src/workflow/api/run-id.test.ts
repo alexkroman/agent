@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { fakeClient, type Harness, run, serve } from "./test-utils.ts";
+import { fakeClient, type Harness, run, serve } from "./_test-utils.ts";
 
 let harness: Harness | undefined;
 

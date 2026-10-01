@@ -8,7 +8,7 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../../_pipeline-test-fakes.ts";
-import { flush } from "../../_test-utils.ts";
+import { flush } from "../../_timing-test-utils.ts";
 import { createUsageMeter } from "../../usage-meter.ts";
 import {
   llmCalls,

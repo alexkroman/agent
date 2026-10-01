@@ -7,19 +7,18 @@ import { platformSessionSecret } from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
+import {
+  createTestOrchestrator,
+  createTestStore,
+  NO_CLIENT_DIR,
+} from "./_orchestrator-test-utils.ts";
+import { deploy, deployAgent } from "./_request-test-utils.ts";
+import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import type { Sandbox } from "./sandbox.ts";
-import {
-  createTestOrchestrator,
-  createTestStore,
-  deploy,
-  deployAgent,
-  fakeSandbox,
-  NO_CLIENT_DIR,
-} from "./test-utils.ts";
 
 describe("handleAgentHealth", () => {
   test("returns 404 for non-existent agent", async () => {

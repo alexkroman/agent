@@ -7,7 +7,8 @@ import type { SessionEventBody } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
-import { makeAgent, makeLogger, silentLogger } from "../_test-utils.ts";
+import { makeAgent } from "../_agent-test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { createRuntime } from "../runtime/index.ts";
 import { createRuntimeServer, type SessionRuntime } from "./server.ts";
 

@@ -12,15 +12,10 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
+import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
+import { authFetch, authHeaders, deploy, deployBody } from "./_request-test-utils.ts";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import { createRateLimiter } from "./rate-limit.ts";
-import {
-  authFetch,
-  authHeaders,
-  createTestOrchestrator,
-  deploy,
-  deployBody,
-} from "./test-utils.ts";
 
 /** Accepts exactly the listed keys, rejects everything else. */
 const verifierAccepting = (...valid: string[]): ApiKeyVerifier =>

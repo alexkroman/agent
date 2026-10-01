@@ -1,18 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
+import {
+  createTestOrchestrator,
+  createTestStore,
+  NO_CLIENT_DIR,
+} from "./_orchestrator-test-utils.ts";
+import { authFetch, deploy, deployAgent } from "./_request-test-utils.ts";
 import { invalidateApiKeyOwner, requireOwner, resolveBearer } from "./middleware.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox/slots.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
 import { apiKeyOwnerSecretName } from "./supabase-auth.ts";
-import {
-  authFetch,
-  createTestOrchestrator,
-  createTestStore,
-  deploy,
-  deployAgent,
-  NO_CLIENT_DIR,
-} from "./test-utils.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
   const store = createTestStore();

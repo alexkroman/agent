@@ -58,7 +58,7 @@
 
 import { type WorkflowContext, type WorkflowDef, workflow } from "@alexkroman1/aai";
 import { expect, type Mock, onTestFinished, vi } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { createWorkflowEngine, type WorkflowEngine } from "./engine.ts";
 import { checkJournalInvariants } from "./journal/_invariants.ts";
 import {
