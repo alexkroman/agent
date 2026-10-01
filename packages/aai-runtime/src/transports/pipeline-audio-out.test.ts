@@ -87,8 +87,8 @@ describe("sendTtsText", () => {
     audioOut.sendTtsText("Hello. ");
     audioOut.sendTtsText("How are you?");
     expect(reported).toEqual([
-      { type: "agent-transcript.updated", text: "Hello. " },
-      { type: "agent-transcript.updated", text: "Hello. How are you?" },
+      { type: "agentTranscript.updated", text: "Hello. " },
+      { type: "agentTranscript.updated", text: "Hello. How are you?" },
     ]);
   });
 
@@ -98,9 +98,7 @@ describe("sendTtsText", () => {
     audioOut.sendTtsText("Welcome.", { publishTranscript: false });
     expect(reported).toEqual([]);
     audioOut.sendTtsText("Anything else?");
-    expect(reported).toEqual([
-      { type: "agent-transcript.updated", text: "Welcome.Anything else?" },
-    ]);
+    expect(reported).toEqual([{ type: "agentTranscript.updated", text: "Welcome.Anything else?" }]);
     // The tail is the cursor's, so the skipped line is still part of what the
     // caller heard — which is what feeds the tail-resume estimate.
     expect(heard.spokeRecordable()).toBe(true);

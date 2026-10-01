@@ -38,8 +38,8 @@ describe("a typed turn through the pipeline transport", () => {
     await vi.waitFor(() => {
       expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
     });
-    expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledExactlyOnceWith({
-      type: "user-transcript.committed",
+    expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledExactlyOnceWith({
+      type: "userTranscript.committed",
       text: "what's the weather",
     });
     // The model was asked the typed words as the caller's turn...
@@ -70,14 +70,14 @@ describe("a typed turn through the pipeline transport", () => {
     typer(t)("actually, stop — what time is it");
     const order = callbacks.events
       .map((e) => e.type)
-      .filter((type) => type === "reply.cancelled" || type === "user-transcript.committed");
+      .filter((type) => type === "reply.cancelled" || type === "userTranscript.committed");
     expect(order).toEqual([
-      "user-transcript.committed",
+      "userTranscript.committed",
       "reply.cancelled",
-      "user-transcript.committed",
+      "userTranscript.committed",
     ]);
-    expect(callbacks.reported("user-transcript.committed")).toHaveBeenLastCalledWith({
-      type: "user-transcript.committed",
+    expect(callbacks.reported("userTranscript.committed")).toHaveBeenLastCalledWith({
+      type: "userTranscript.committed",
       text: "actually, stop — what time is it",
     });
     await vi.waitFor(() => {
@@ -120,8 +120,8 @@ describe("a typed turn through the pipeline transport", () => {
     await vi.waitFor(() => {
       expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
     });
-    expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-      type: "user-transcript.committed",
+    expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+      type: "userTranscript.committed",
       text: "book it",
     });
     await t.stop();
@@ -137,7 +137,7 @@ describe("a typed turn through the pipeline transport", () => {
 
     typer(t)("hello?");
     await vi.advanceTimersByTimeAsync(100);
-    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("userTranscript.committed")).not.toHaveBeenCalled();
     expect(llmCalls(opts).calls).toHaveLength(0);
   });
 });

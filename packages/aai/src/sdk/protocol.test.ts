@@ -58,8 +58,8 @@ describe("SessionEventSchema", () => {
     expect({ type: "speech.started" }).toBeValidSessionEvent();
   });
 
-  test("accepts user-transcript.committed", () => {
-    expect({ type: "user-transcript.committed", text: "hello world" }).toBeValidSessionEvent();
+  test("accepts userTranscript.committed", () => {
+    expect({ type: "userTranscript.committed", text: "hello world" }).toBeValidSessionEvent();
   });
 
   test("accepts error event", () => {
@@ -115,7 +115,7 @@ describe("SessionCommandSchema", () => {
     });
 
     test("rejects rather than truncates past the transcript cap it becomes", () => {
-      // The text becomes a `user-transcript.committed`, whose own cap is this
+      // The text becomes a `userTranscript.committed`, whose own cap is this
       // one — so a command that parsed here could never produce an event that
       // did not.
       const at = "x".repeat(MAX_TRANSCRIPT_CHARS);
@@ -187,7 +187,7 @@ describe("property: lenientParse", () => {
     });
     const bodyArb = fc.oneof(
       fc.constant({ type: "speech.started" as const }),
-      fc.record({ type: fc.constant("user-transcript.committed" as const), text: fc.string() }),
+      fc.record({ type: fc.constant("userTranscript.committed" as const), text: fc.string() }),
       fc.record({
         type: fc.constant("error.reported" as const),
         code: fc.constantFrom(...ERROR_CODES),
@@ -242,8 +242,8 @@ describe("property: lenientParse", () => {
 });
 
 describe("protocol type contracts", () => {
-  test("SessionEvent narrows on user-transcript.committed", () => {
-    type UserTranscript = SessionEvent<"user-transcript.committed">;
+  test("SessionEvent narrows on userTranscript.committed", () => {
+    type UserTranscript = SessionEvent<"userTranscript.committed">;
     expectTypeOf<UserTranscript>().toHaveProperty("text");
     expectTypeOf<UserTranscript["text"]>().toBeString();
   });

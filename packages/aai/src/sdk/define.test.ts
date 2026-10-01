@@ -396,7 +396,7 @@ describe("agent({ dialogs })", () => {
   const call = dialog("call", {
     initial: "greeting",
     states: {
-      greeting: { instruction: "Say hello.", on: { "@session.timed-out": "gone" } },
+      greeting: { instruction: "Say hello.", on: { "@session.timedOut": "gone" } },
       gone: { final: true },
     },
   });

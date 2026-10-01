@@ -77,10 +77,10 @@ describe("createTextAgent event stream", () => {
     await chat.stream({ messages: [{ role: "user", content: "hi" }] }).consumeStream();
 
     expect(types(events)).toEqual([
-      "user-transcript.committed",
+      "userTranscript.committed",
       // One per completed step — the conversation's running token total.
       "usage.updated",
-      "agent-transcript.committed",
+      "agentTranscript.committed",
       "reply.completed",
     ]);
     expect(saidIn(events)).toEqual(["hello there"]);
@@ -341,13 +341,13 @@ describe("createTextAgent event stream", () => {
     // set has to be argued for in the module doc first.
     expect(new Set(types(events))).toEqual(
       new Set([
-        "user-transcript.committed",
+        "userTranscript.committed",
         "tool.called",
         "tool.completed",
         // One per completed step, carrying the conversation's running total —
         // see `usage-meter.ts`.
         "usage.updated",
-        "agent-transcript.committed",
+        "agentTranscript.committed",
         "reply.completed",
       ]),
     );
@@ -373,7 +373,7 @@ describe("createTextAgent event stream", () => {
 
     expect(types(events)).toEqual([
       "usage.updated",
-      "agent-transcript.committed",
+      "agentTranscript.committed",
       "reply.completed",
     ]);
   });
@@ -395,7 +395,7 @@ describe("createTextAgent event stream", () => {
       })
       .consumeStream();
 
-    expect(types(events)).not.toContain("user-transcript.committed");
+    expect(types(events)).not.toContain("userTranscript.committed");
   });
 
   test("an unobserved turn installs no chunk callback at all", () => {
@@ -426,8 +426,8 @@ describe("createTextAgentEvents", () => {
     turn?.onChunk({ chunk: { type: "abort" } });
 
     expect(types(events)).toEqual([
-      "user-transcript.committed",
-      "agent-transcript.committed",
+      "userTranscript.committed",
+      "agentTranscript.committed",
       "reply.completed",
     ]);
   });
@@ -438,7 +438,7 @@ describe("createTextAgentEvents", () => {
     turn?.onChunk({ chunk: { type: "text-delta", id: "t1", text: "said something" } });
     turn?.onEnd();
 
-    expect(types(events)).toEqual(["agent-transcript.committed", "reply.completed"]);
+    expect(types(events)).toEqual(["agentTranscript.committed", "reply.completed"]);
     expect(saidIn(events)).toEqual(["said something"]);
   });
 

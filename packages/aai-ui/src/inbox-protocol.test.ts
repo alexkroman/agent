@@ -48,7 +48,7 @@ describe("parseNoticeHeader", () => {
 
 describe("parseInboxEvent", () => {
   test("reads the two live frames and nothing else", () => {
-    const event = { type: "user-transcript.committed", text: "hi" };
+    const event = { type: "userTranscript.committed", text: "hi" };
     expect(
       parseInboxEvent(JSON.stringify({ type: "session_event", sessionId: "s1", event })),
     ).toEqual({ type: "session_event", sessionId: "s1", event });

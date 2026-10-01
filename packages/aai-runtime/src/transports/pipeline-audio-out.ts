@@ -114,7 +114,7 @@ export function createAudioOut(deps: {
     deps.tts()?.sendText(normalizeSpeechText(text));
     const tail = heard.onText(text, opts?.record !== false);
     if (opts?.publishTranscript !== false)
-      callbacks.report({ type: "agent-transcript.updated", text: tail });
+      callbacks.report({ type: "agentTranscript.updated", text: tail });
   }
 
   const speech = createSpeechGate(deps.guardrails.holdsSpeech, sendTtsTextNow);

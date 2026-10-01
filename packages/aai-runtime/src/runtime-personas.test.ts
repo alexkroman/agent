@@ -64,7 +64,7 @@ const configured = () =>
     ttsSampleRate: 24_000,
   });
 const toolDone = () => event({ type: "tool.completed", toolCallId: "call_1", result: "{}" });
-const heard = () => event({ type: "user-transcript.committed", text: "hello" });
+const heard = () => event({ type: "userTranscript.committed", text: "hello" });
 
 function setup(roster: Parameters<typeof openSessionPersonas>[0], slots?: SlotStore) {
   const { transport, refreshes } = makeTransport();

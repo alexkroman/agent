@@ -328,7 +328,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   test.concurrent("thinking state: user message appears after user_transcript", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user-transcript.committed", text: "What is the meaning of life?" });
+    await inject({ type: "userTranscript.committed", text: "What is the meaning of life?" });
     await expect(page.getByText("What is the meaning of life?").waitFor()).resolves.toBeUndefined();
 
     // State indicator should show "thinking"
@@ -336,7 +336,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
       page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 }),
     ).resolves.toBeUndefined();
 
-    await inject({ type: "agent-transcript.updated", text: "42." });
+    await inject({ type: "agentTranscript.updated", text: "42." });
     await expect(page.getByText("42.").waitFor()).resolves.toBeUndefined();
 
     await page.close();
@@ -345,12 +345,12 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   test.concurrent("state transitions: thinking → listening after reply_done", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user-transcript.committed", text: "Hello" });
+    await inject({ type: "userTranscript.committed", text: "Hello" });
     await expect(
       page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 }),
     ).resolves.toBeUndefined();
 
-    await inject({ type: "agent-transcript.updated", text: "Hi there!" });
+    await inject({ type: "agentTranscript.updated", text: "Hi there!" });
     await inject({ type: "reply.completed" });
     await expect(
       page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 }),

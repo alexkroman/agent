@@ -149,9 +149,7 @@ describe("initAudioCapture races", () => {
     await vi.waitFor(() => expect(core.getSnapshot().recording).toBe(true));
 
     // Barge-in mid-greeting commits a user turn: state moves to "thinking".
-    lastSocket?.simulateMessage(
-      JSON.stringify({ type: "user-transcript.committed", text: "wait" }),
-    );
+    lastSocket?.simulateMessage(JSON.stringify({ type: "userTranscript.committed", text: "wait" }));
     expect(core.getSnapshot().state).toBe("thinking");
 
     // The stale greeting drain resolving late must not flip state back.

@@ -48,7 +48,7 @@ plus the two audio paths is the whole inbound surface. `guard-invariants` rule
 - **A callback survives only when there is NO EVENT for it** — binary audio,
   `onReplyStarted` (the wire has no `reply.started`; minting one is a protocol
   change), `onSessionReady`, and socket-lifecycle hooks a caller must ACT on.
-- **Report `agent-transcript.committed` or `.updated`, never a boolean.** Only
+- **Report `agentTranscript.committed` or `.updated`, never a boolean.** Only
   the committed one enters history.
 - **`reply.completed` is the PROVIDER's claim, not the turn's end** — see
   `session-reply-done.ts`.

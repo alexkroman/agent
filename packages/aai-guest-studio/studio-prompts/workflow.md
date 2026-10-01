@@ -936,7 +936,7 @@ export default agent({
   resumeFalseInterruption?: boolean;         // pipeline only — resume an interrupted reply if no user turn commits (default true)
   preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default false; true opts in)
   userTurnLimit?: { maxWords?: number;       // pipeline only — cap ONE user turn: end it after this many words
-                    maxDurationMs?: number };//   and/or this long (ms). Default: no cap. Emits `user-turn.exceeded`.
+                    maxDurationMs?: number };//   and/or this long (ms). Default: no cap. Emits `userTurn.exceeded`.
   turnDetection?: "auto" | "manual";         // pipeline only — "manual" is push-to-talk: the CLIENT ends each turn
   syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
                                              // (read it with useAgentState; see UI hooks)
@@ -2017,7 +2017,7 @@ so it never races a real turn.
 `userTurnLimit` (`UserTurnLimit`; default no cap) bounds ONE user turn —
 `{ maxWords }`, `{ maxDurationMs }`, or both: past a cap the transcriber ends
 the turn as a pause would (heard words commit, the rest opens the next turn),
-emitting `user-turn.exceeded` (`limit`, `words`, `durationMs`); `{}` is
+emitting `userTurn.exceeded` (`limit`, `words`, `durationMs`); `{}` is
 refused. Inert (logged once) on a transcriber that cannot end a turn on demand;
 the default `assemblyAIStt()` can.
 `turnDetection: "manual"` is PUSH-TO-TALK (`usePushToTalk()` in `aai-ui`):
@@ -2083,7 +2083,7 @@ export default agent({
 ```
 
 **A handler that speaks can hear itself**: the line is an
-`agent-transcript.committed` that reaches your handlers again, so a handler
+`agentTranscript.committed` that reaches your handlers again, so a handler
 speaking on every one never stops. Speak from an event your line cannot produce
 (`tool.called`, a timer), or check the event's `text` first.
 

@@ -11,7 +11,7 @@
  * **`playing` declares no transition on anything but the two ways out, and that
  * is the clock's whole correctness.** The deadline clock runs from the dialog's
  * last MOVE (`packages/aai-runtime/DIALOG-CLAUDE.md`), so a state that moved on
- * every guess — a self transition on `@user-transcript.committed`, say — would
+ * every guess — a self transition on `@userTranscript.committed`, say — would
  * re-arm the two minutes on every sentence and the round would never end. The
  * tools that run during a round (`relay_description`, `skip_word`, `repeat_word`)
  * therefore send NOTHING; they read and write the slot and leave the position

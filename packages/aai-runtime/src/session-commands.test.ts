@@ -86,7 +86,7 @@ describe("session commands — a typed turn", () => {
     // read it.
     const { core, transport, stream } = makeCore();
     const sendUserText = vi.fn((text: string) => {
-      core.report({ type: "user-transcript.committed", text });
+      core.report({ type: "userTranscript.committed", text });
     });
     Object.assign(transport, { sendUserText });
     await core.start();
@@ -95,7 +95,7 @@ describe("session commands — a typed turn", () => {
     expect(sendUserText).toHaveBeenCalledExactlyOnceWith("what's on today");
     const page = await stream.read("s-test", 0);
     expect(page.events).toContainEqual(
-      expect.objectContaining({ type: "user-transcript.committed", text: "what's on today" }),
+      expect.objectContaining({ type: "userTranscript.committed", text: "what's on today" }),
     );
   });
 

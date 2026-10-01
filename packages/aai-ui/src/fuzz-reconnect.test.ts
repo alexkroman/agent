@@ -218,13 +218,13 @@ function applyStep(run: Run, step: ReconnectStep, index: number): void {
   } else if (step.kind === "userTurn" && socket) {
     run.log.push("user turn");
     socket.simulateMessage(
-      JSON.stringify({ type: "user-transcript.committed", text: `hi ${index}` }),
+      JSON.stringify({ type: "userTranscript.committed", text: `hi ${index}` }),
     );
-    socket.simulateMessage(JSON.stringify({ type: "agent-transcript.updated", text: "hello" }));
+    socket.simulateMessage(JSON.stringify({ type: "agentTranscript.updated", text: "hello" }));
     socket.simulateMessage(JSON.stringify({ type: "reply.completed" }));
   } else if (step.kind === "idleTimeout" && socket) {
     run.log.push("idle_timeout (server retires)");
-    socket.simulateMessage(JSON.stringify({ type: "session.timed-out" }));
+    socket.simulateMessage(JSON.stringify({ type: "session.timedOut" }));
     run.retiredByServer = true;
   } else if (step.kind === "close" && socket) {
     run.log.push("close");

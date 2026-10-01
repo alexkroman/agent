@@ -170,11 +170,11 @@ describe("createTelephonyBridge", () => {
   });
 
   test.each([
-    ["agent_transcript", { type: "agent-transcript.updated", text: "hello" }],
+    ["agent_transcript", { type: "agentTranscript.updated", text: "hello" }],
     // Guards the spelling above: a bare `reset` is not a protocol event, and a
     // branch that answers one is a branch nothing on the wire reaches.
     ["bare reset", { type: "reset" }],
-    ["user_transcript", { type: "user-transcript.committed", text: "hi" }],
+    ["user_transcript", { type: "userTranscript.committed", text: "hi" }],
     ["tool_call", { type: "tool.called", toolCallId: "1", toolName: "x", args: {} }],
     ["reply_done", { type: "reply.completed" }],
     ["audio_done", { type: "audio.completed" }],
@@ -453,8 +453,8 @@ describe("ACTED_ON_EVENTS", () => {
     // a transcript frame carries the reply's cumulative text and is the largest
     // thing on the wire.
     for (const type of [
-      "user-transcript.updated",
-      "agent-transcript.committed",
+      "userTranscript.updated",
+      "agentTranscript.committed",
       "tool.called",
       "turn.ended",
       "state.updated",

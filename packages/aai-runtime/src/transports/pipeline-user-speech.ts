@@ -130,7 +130,7 @@ export function createUserActivity(deps: {
   const commitUserTurn = (text: string): void => {
     // Debug trace (AAI_DEBUG=1): verbatim what the turn prompts the LLM with.
     log.debug("Pipeline turn committed", { sid, text });
-    callbacks.report({ type: "user-transcript.committed", text });
+    callbacks.report({ type: "userTranscript.committed", text });
     deps.runChainedTurn(text, "Pipeline turn crashed");
   };
   const manualTurn = createManualTurn(deps.turnDetection, {
@@ -173,7 +173,7 @@ export function createUserActivity(deps: {
       // The record first, then the cut: the transcriber answers the cut with
       // a final, which commits on the ordinary path — so a reader of the
       // stream sees the cap fire and then the turn it cut, in that order.
-      callbacks.report({ type: "user-turn.exceeded", limit, words, durationMs });
+      callbacks.report({ type: "userTurn.exceeded", limit, words, durationMs });
       // Under push-to-talk a forced final would only be HELD, so the cap ends
       // the turn the way the caller's own release would have.
       if (manualTurn.enabled) manualTurn.commit();

@@ -79,7 +79,7 @@ export function createUserInput(deps: UserTurnDeps): {
     // pressing the button does.
     interruptLocally(deps);
     // No local echo into `messages`: the server answers with the same
-    // `user-transcript.committed` a spoken turn produces, and THAT is what
+    // `userTranscript.committed` a spoken turn produces, and THAT is what
     // adds the row — so a resumed session, which replays the stream, shows
     // exactly what this one did.
     deps.sendJson({ type: "user_text", text: trimmed });

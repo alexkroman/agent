@@ -99,7 +99,7 @@ describe("createBrowserSession", () => {
           toolCalls: [],
         }),
       );
-      socket?.simulateMessage(JSON.stringify({ type: "user-transcript.committed", text: "now" }));
+      socket?.simulateMessage(JSON.stringify({ type: "userTranscript.committed", text: "now" }));
       const ids = core.getSnapshot().messages.map((m) => m.id);
       expect(new Set(ids).size).toBe(ids.length);
     });

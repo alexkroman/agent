@@ -53,8 +53,8 @@ const FEED_SLOT = globalSlot<ClientEventFeed>("@alexkroman1/aai-runtime.clientEv
  */
 export const CLIENT_FEED_EVENT_TYPES: ReadonlySet<SessionEvent["type"]> = new Set([
   "session.configured",
-  "user-transcript.committed",
-  "agent-transcript.committed",
+  "userTranscript.committed",
+  "agentTranscript.committed",
   "tool.called",
   "reply.completed",
   "reply.cancelled",

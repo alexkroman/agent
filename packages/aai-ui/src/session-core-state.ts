@@ -108,7 +108,7 @@ type Context = { error: SessionError | null };
  * this guards are the three that used to consult `conn.fatalError` by hand at
  * five call sites; `THINK` is a fourth that did not, and should have — the doc
  * on that flag says outright that "no later frame may take its banner off the
- * screen", and a `user-transcript.committed` arriving behind a fatal error
+ * screen", and a `userTranscript.committed` arriving behind a fatal error
  * painted `"thinking"` over it.
  */
 const NOT_FATAL = not(stateIn({ fatal: "yes" }));

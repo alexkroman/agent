@@ -41,8 +41,8 @@ describe("PipelineTransport", () => {
 
       stt.last()?.fireFinal("hello there agent");
       await vi.waitFor(() => {
-        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-          type: "user-transcript.committed",
+        expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+          type: "userTranscript.committed",
           text: "hello there agent",
         });
       });
@@ -59,8 +59,8 @@ describe("PipelineTransport", () => {
 
       stt.last()?.fireFinal("short utterance.");
       await vi.waitFor(() => {
-        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-          type: "user-transcript.committed",
+        expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+          type: "userTranscript.committed",
           text: "short utterance.",
         });
       });
@@ -105,8 +105,8 @@ describe("PipelineTransport", () => {
       expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
       expect(callbacks.reported("speech.started")).not.toHaveBeenCalled();
       // Live captions are independent of the gate.
-      expect(callbacks.reported("user-transcript.updated")).toHaveBeenCalledWith({
-        type: "user-transcript.updated",
+      expect(callbacks.reported("userTranscript.updated")).toHaveBeenCalledWith({
+        type: "userTranscript.updated",
         text: "mm-hmm",
         eotConfidence: undefined,
       });
@@ -170,12 +170,12 @@ describe("PipelineTransport", () => {
       // No `eotConfidence` key at all when the provider reported none — absent
       // means "no opinion", never zero, and `omitUndefined` is what keeps that
       // true on the wire.
-      expect(callbacks.reported("user-transcript.updated")).toHaveBeenNthCalledWith(1, {
-        type: "user-transcript.updated",
+      expect(callbacks.reported("userTranscript.updated")).toHaveBeenNthCalledWith(1, {
+        type: "userTranscript.updated",
         text: "track my",
       });
-      expect(callbacks.reported("user-transcript.updated")).toHaveBeenNthCalledWith(2, {
-        type: "user-transcript.updated",
+      expect(callbacks.reported("userTranscript.updated")).toHaveBeenNthCalledWith(2, {
+        type: "userTranscript.updated",
         text: "track my order",
       });
       await t.stop();
@@ -191,7 +191,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("");
       stt.last()?.firePartial("   ");
       expect(callbacks.reported("speech.started")).not.toHaveBeenCalled();
-      expect(callbacks.reported("user-transcript.updated")).not.toHaveBeenCalled();
+      expect(callbacks.reported("userTranscript.updated")).not.toHaveBeenCalled();
       await t.stop();
     });
   });
@@ -233,13 +233,13 @@ describe("PipelineTransport", () => {
         expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
       });
       await vi.waitFor(() => {
-        expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-          type: "agent-transcript.committed",
+        expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+          type: "agentTranscript.committed",
           text: "As I was saying…",
         });
       });
       // The synthetic continuation prompt is never surfaced as a user transcript.
-      expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledTimes(1);
       // The unresolved speaking edge from the noise partial is closed out.
       expect(callbacks.reported("speech.stopped")).toHaveBeenCalled();
       await t.stop();
@@ -267,8 +267,8 @@ describe("PipelineTransport", () => {
       expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
       stt.last()?.fireFinal("wait actually cancel it.");
       await vi.waitFor(() => {
-        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-          type: "user-transcript.committed",
+        expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+          type: "userTranscript.committed",
           text: "wait actually cancel it.",
         });
       });
@@ -342,15 +342,15 @@ describe("PipelineTransport", () => {
         expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
       });
       await vi.waitFor(() => {
-        expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-          type: "agent-transcript.committed",
+        expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+          type: "agentTranscript.committed",
           text: "As I was counting…",
         });
       });
       // The resume turn's synthetic prompt tells the model about the cut; it
       // is never surfaced as a user transcript.
       expect(JSON.stringify(llm.calls.at(-1))).toContain("cut off by a false interruption");
-      expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledTimes(1);
       await t.stop();
     });
 
@@ -420,8 +420,8 @@ describe("PipelineTransport", () => {
       // The utterance finally commits as the real turn it always was.
       stt.last()?.fireFinal("wait actually hold on, cancel it.");
       await vi.waitFor(() => {
-        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-          type: "user-transcript.committed",
+        expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+          type: "userTranscript.committed",
           text: "wait actually hold on, cancel it.",
         });
       });
@@ -446,7 +446,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("stop please");
       // The client's `cancelled` handler clears userTranscript, so the interim
       // must be emitted after onCancelled or the caption is blanked.
-      const partialCall = callbacks.reported("user-transcript.updated").mock.invocationCallOrder[0];
+      const partialCall = callbacks.reported("userTranscript.updated").mock.invocationCallOrder[0];
       const cancelledCall = callbacks.reported("reply.cancelled").mock.invocationCallOrder[0];
       expect(partialCall).toBeGreaterThan(cancelledCall as number);
       await t.stop();
@@ -474,7 +474,7 @@ describe("PipelineTransport", () => {
       stt.last()?.fireFinal("okay, cool.");
       expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
       const cancelledCall = callbacks.reported("reply.cancelled").mock.invocationCallOrder[0];
-      const transcriptCalls = callbacks.reported("user-transcript.committed").mock;
+      const transcriptCalls = callbacks.reported("userTranscript.committed").mock;
       const idx = transcriptCalls.calls.findIndex(
         (c) => (c[0] as { text?: string }).text === "okay, cool.",
       );
@@ -521,8 +521,8 @@ describe("PipelineTransport", () => {
       expect(callbacks.onAudioChunk).toHaveBeenCalledTimes(1); // turn 1's only
       stt.last()?.fireFinal("actually where is my refund");
       await vi.waitFor(() => {
-        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-          type: "user-transcript.committed",
+        expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+          type: "userTranscript.committed",
           text: "actually where is my refund",
         });
       });
@@ -581,8 +581,8 @@ describe("PipelineTransport", () => {
 
       stt.last()?.fireFinal("never mind then");
       await vi.waitFor(() => {
-        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-          type: "user-transcript.committed",
+        expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+          type: "userTranscript.committed",
           text: "never mind then",
         });
       });

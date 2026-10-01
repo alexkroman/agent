@@ -33,7 +33,7 @@ function claimDialog(key = "claim") {
         on: {
           VERIFIED: "quoting",
           GAVE_UP: "abandoned",
-          "@user-transcript.committed": "verifying",
+          "@userTranscript.committed": "verifying",
         },
       },
       quoting: {
@@ -68,7 +68,7 @@ function event(body: SessionEventBody): SessionEvent {
   return { ...body, meta: { id: `evt_${stamped}`, at: stamped } } as SessionEvent;
 }
 
-const heard = (text: string) => event({ type: "user-transcript.committed", text });
+const heard = (text: string) => event({ type: "userTranscript.committed", text });
 
 /**
  * The handshake frame — the FIRST event of every session, and so what primes the

@@ -342,7 +342,7 @@ describe("createBrowserSession", () => {
 
       // Accumulate a message
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "Hello" }),
+        JSON.stringify({ type: "userTranscript.committed", text: "Hello" }),
       );
       expect(core.getSnapshot().messages).toHaveLength(1);
 
@@ -407,7 +407,7 @@ describe("createBrowserSession", () => {
 
       first?.simulateOpen();
       first?.simulateMessage(makeConfig(16_000, 24_000, "sess-1"));
-      first?.simulateMessage(JSON.stringify({ type: "user-transcript.committed", text: "Hello" }));
+      first?.simulateMessage(JSON.stringify({ type: "userTranscript.committed", text: "Hello" }));
       expect(core.getSnapshot().messages).toHaveLength(1);
 
       // Unexpected close: the session surfaces "connecting" (not
@@ -500,14 +500,14 @@ describe("createBrowserSession", () => {
 
       // Transcript arrives
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "What time is it?" }),
+        JSON.stringify({ type: "userTranscript.committed", text: "What time is it?" }),
       );
       expect(core.getSnapshot().state).toBe("thinking");
       expect(core.getSnapshot().messages).toHaveLength(1);
 
       // Agent responds with text -- the live caption, not a message yet
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "agent-transcript.updated", text: "It is 3pm." }),
+        JSON.stringify({ type: "agentTranscript.updated", text: "It is 3pm." }),
       );
       expect(core.getSnapshot().agentTranscript).toBe("It is 3pm.");
       expect(core.getSnapshot().messages).toHaveLength(1);
@@ -529,7 +529,7 @@ describe("createBrowserSession", () => {
     it("handles a turn with tool calls", () => {
       // User message
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "Search for cats" }),
+        JSON.stringify({ type: "userTranscript.committed", text: "Search for cats" }),
       );
 
       // Tool call started
@@ -553,7 +553,7 @@ describe("createBrowserSession", () => {
 
       // Agent responds
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "agent-transcript.updated", text: "I found 42 cats." }),
+        JSON.stringify({ type: "agentTranscript.updated", text: "I found 42 cats." }),
       );
       lastSocket?.simulateMessage(JSON.stringify({ type: "reply.completed" }));
       expect(core.getSnapshot().messages).toHaveLength(2);
@@ -562,14 +562,14 @@ describe("createBrowserSession", () => {
     it("tool call afterMessageId anchors to the last message at insert time", () => {
       // Three messages first (ids 1, 2, 3)
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "msg1" }),
+        JSON.stringify({ type: "userTranscript.committed", text: "msg1" }),
       );
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "agent-transcript.updated", text: "reply1" }),
+        JSON.stringify({ type: "agentTranscript.updated", text: "reply1" }),
       );
       lastSocket?.simulateMessage(JSON.stringify({ type: "reply.completed" }));
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "msg2" }),
+        JSON.stringify({ type: "userTranscript.committed", text: "msg2" }),
       );
       expect(core.getSnapshot().messages).toHaveLength(3);
 

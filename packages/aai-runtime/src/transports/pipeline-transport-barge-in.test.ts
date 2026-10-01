@@ -88,8 +88,8 @@ describe("PipelineTransport", () => {
 
       stt.last()?.fireFinal("hello any update");
       await vi.waitFor(() => {
-        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-          type: "user-transcript.committed",
+        expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+          type: "userTranscript.committed",
           text: "hello any update",
         });
       });
@@ -178,8 +178,8 @@ describe("PipelineTransport", () => {
       expect(tts.last()?.cancel).toHaveBeenCalled();
       // The new turn still runs after the stale audio is cancelled.
       await vi.waitFor(() => {
-        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-          type: "user-transcript.committed",
+        expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+          type: "userTranscript.committed",
           text: "stop that",
         });
       });
@@ -264,8 +264,8 @@ describe("PipelineTransport", () => {
       // A one-word FINAL arrives while the agent is speaking — below threshold.
       stt.last()?.fireFinal("yeah");
       await vi.waitFor(() => {
-        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-          type: "user-transcript.committed",
+        expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+          type: "userTranscript.committed",
           text: "yeah",
         });
       });
@@ -391,7 +391,7 @@ describe("PipelineTransport", () => {
       stt.last()?.fireFinal("yeah");
       await vi.waitFor(() => {
         const committed = callbacks.events.filter(
-          (e) => e.type === "user-transcript.committed" && e.text === "yeah",
+          (e) => e.type === "userTranscript.committed" && e.text === "yeah",
         );
         if (committed.length === 0) throw new Error("not committed");
       });
@@ -597,14 +597,14 @@ describe("PipelineTransport", () => {
       });
       tts.last()?.fireAudio(new Int16Array(2400));
 
-      const transcriptsBefore = vi.mocked(callbacks.reported("agent-transcript.committed")).mock
+      const transcriptsBefore = vi.mocked(callbacks.reported("agentTranscript.committed")).mock
         .calls.length;
       stt.last()?.firePartial("actually stop");
       expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
       // Well past the aborted stream settling, which is when the frame used to
       // arrive; the interim snapshots (onAgentTranscriptPartial) are unaffected.
       await vi.advanceTimersByTimeAsync(80);
-      expect(vi.mocked(callbacks.reported("agent-transcript.committed")).mock.calls.length).toBe(
+      expect(vi.mocked(callbacks.reported("agentTranscript.committed")).mock.calls.length).toBe(
         transcriptsBefore,
       );
       await t.stop();

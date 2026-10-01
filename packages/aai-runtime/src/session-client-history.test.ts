@@ -41,8 +41,8 @@ async function session(sessionId: string, at: number, bodies: SessionEventBody[]
   await deps.stream.flush(sessionId);
 }
 
-const said = (text: string): SessionEventBody => ({ type: "user-transcript.committed", text });
-const replied = (text: string): SessionEventBody => ({ type: "agent-transcript.committed", text });
+const said = (text: string): SessionEventBody => ({ type: "userTranscript.committed", text });
+const replied = (text: string): SessionEventBody => ({ type: "agentTranscript.committed", text });
 
 describe("loadClientHistory", () => {
   test("the client's prior sessions, OLDEST first, never the session being started", async () => {

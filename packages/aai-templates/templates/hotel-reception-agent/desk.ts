@@ -16,14 +16,14 @@
  * | --- | --- |
  * | `_Step` enum, `_ALLOWED[step]`, `_closed(tool)` | the `booking` children, each tool's `when`, and the SDK's refusal |
  * | `_step()` derived from the draft | `nextStep` (`booking.ts`), sent by every recording tool |
- * | `_must_offer` (armed when a re-dated pick dies) | `offering`, left on `@user-transcript.committed` |
- * | `_must_read_back` (armed on every change) | `readBack`, left on `@user-transcript.committed` |
+ * | `_must_offer` (armed when a re-dated pick dies) | `offering`, left on `@userTranscript.committed` |
+ * | `_must_read_back` (armed on every change) | `readBack`, left on `@userTranscript.committed` |
  * | `complete(booking)` / `give_up` | `BOOKED` / `ABANDONED`, both back to `desk` |
  *
  * **The two `_Owed` states are the reason this needs `agent({ dialogs })`.** An
  * obligation to SPEAK is discharged by the caller's next turn, which no tool
  * call can observe; a session event can. `offering` and `readBack` each declare
- * one transition, on `@user-transcript.committed`, and the state it leads to is
+ * one transition, on `@userTranscript.committed`, and the state it leads to is
  * where the gated tool becomes legal. That is their `_Owed.pending(turns)` with
  * the counter deleted — and it holds for a caller who types as for one who
  * speaks, which their comment records as the reason the counter read the
@@ -49,7 +49,7 @@ import { dialog } from "@alexkroman1/aai";
  * speaking: `lookup_policy` on a cancellation question, a second
  * `record_guest_details` "to be sure". Either way the turn ends with a tool
  * result rather than a sentence, the caller has nothing to answer, and the
- * transition out of the state — `@user-transcript.committed` — never fires.
+ * transition out of the state — `@userTranscript.committed` — never fires.
  *
  * `toolChoice: "none"` is the rule stated instead of asked for: for that turn
  * the model has no tools at all, so the only thing it can produce is the
@@ -72,7 +72,7 @@ const deskSpec = {
       on: {
         BOOKING_STARTED: "booking",
         MODIFY_STARTED: "booking.editing",
-        "@session.timed-out": "hungUp",
+        "@session.timedOut": "hungUp",
       },
     },
     booking: {
@@ -87,7 +87,7 @@ const deskSpec = {
         READ_BACK: ".readBack",
         BOOKED: "desk",
         ABANDONED: "desk",
-        "@session.timed-out": "hungUp",
+        "@session.timedOut": "hungUp",
       },
       states: {
         stay: {
@@ -103,7 +103,7 @@ const deskSpec = {
             "The dates changed and the room the caller had picked is no longer available for them. " +
             "Tell them, offer the room types set_stay just returned, and ask which they want. " +
             "choose_room stays closed until they have answered.",
-          on: { "@user-transcript.committed": "room" },
+          on: { "@userTranscript.committed": "room" },
         },
         room: {
           instruction:
@@ -137,7 +137,7 @@ const deskSpec = {
             "Every detail is captured. Read the booking back in ONE sentence - dates, guests, " +
             "room and extras, the total the tool quoted, the card's last four - and ask if that " +
             "is right. Then WAIT. confirm_booking is closed until the caller has answered.",
-          on: { "@user-transcript.committed": "agreeing" },
+          on: { "@userTranscript.committed": "agreeing" },
         },
         agreeing: {
           instruction:
@@ -178,7 +178,7 @@ export const deskFlow = dialog("desk", deskSpec);
 
 /**
  * What `agent({ dialogs })` is handed — the line that wires
- * `@user-transcript.committed` and `@session.timed-out` to the dialog. Without
+ * `@userTranscript.committed` and `@session.timedOut` to the dialog. Without
  * it the two owed states could never be left.
  */
 export const DIALOGS: readonly AnyDialog[] = [deskFlow];

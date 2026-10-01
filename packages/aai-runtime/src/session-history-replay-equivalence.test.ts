@@ -67,7 +67,7 @@
  * kept out of history for a whole call, then put INTO it by the first reconnect
  * via `seedHistory` — and into `ctx.messages` on the very call the caller heard
  * it. Nothing on the wire told a failure phrase from a reply; both are
- * `agent-transcript.committed`.
+ * `agentTranscript.committed`.
  *
  * A discriminating field closed it — `recovery?: "turn-failed" |
  * "session-failed"`, read by the one `historyMessageOf` that all three former
@@ -146,10 +146,10 @@ const KIND = {
   errorPhrase: "e",
   /** `startFailurePhrase`. NEITHER side, since the `recovery` tag. */
   startFailure: "f",
-  /** A `user-transcript.updated` partial. NEITHER side. */
+  /** A `userTranscript.updated` partial. NEITHER side. */
   userPartial: "p",
   /**
-   * An `agent-transcript.updated` interim. NEITHER side.
+   * An `agentTranscript.updated` interim. NEITHER side.
    *
    * Tagged distinctly from the committed text it precedes, which is the
    * FAITHFUL choice and not a convenience: interim snapshots "legitimately
@@ -323,14 +323,14 @@ async function driveSession(turns: readonly Turn[], reached: Reached): Promise<D
     const t = text(KIND.user);
     // The partial that precedes every commit. In the log and in neither
     // reconstruction — the rule `session-event-history.ts` opens by stating.
-    callbacks.report({ type: "user-transcript.updated", text: text(KIND.userPartial) });
-    callbacks.report({ type: "user-transcript.committed", text: t });
+    callbacks.report({ type: "userTranscript.updated", text: text(KIND.userPartial) });
+    callbacks.report({ type: "userTranscript.committed", text: t });
     history.pushConversation({ role: "user", content: t });
     ledger.push(t);
   };
   /** What `sendTtsText` publishes while a reply streams. */
   const replyInterim = (): void => {
-    callbacks.report({ type: "agent-transcript.updated", text: text(KIND.agentInterim) });
+    callbacks.report({ type: "agentTranscript.updated", text: text(KIND.agentInterim) });
   };
   /** `pipeline-transport.ts:424` — pushed, never reported. */
   const syntheticTurn = (): string => {
@@ -348,7 +348,7 @@ async function driveSession(turns: readonly Turn[], reached: Reached): Promise<D
   /** `pipeline-transport-lifecycle.ts:188-189`. */
   const greet = (): void => {
     const t = text(KIND.greeting);
-    callbacks.report({ type: "agent-transcript.committed", text: t });
+    callbacks.report({ type: "agentTranscript.committed", text: t });
     history.pushConversation({ role: "assistant", content: t });
     ledger.push(t);
   };
@@ -522,7 +522,7 @@ function boundary(driven: Driven, mode: "exact" | "windowed"): Record<string, un
     replayOnlyKindsInLive: contentsOf(keep(driven.live, REPLAY_ONLY_KINDS)),
     liveOnlyKindsInReplay: contentsOf(keep(driven.replayed, LIVE_ONLY_KINDS)),
     // The interim rule: `session-event-history.ts:16-21` forbids reading
-    // `agent-transcript.updated`, and the log is full of them.
+    // `agentTranscript.updated`, and the log is full of them.
     interimsInLive: contentsOf(keep(driven.live, INTERIM_KINDS)),
     interimsInReplay: contentsOf(keep(driven.replayed, INTERIM_KINDS)),
     // Guards the classification itself: an unclassified text would silently

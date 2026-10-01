@@ -70,6 +70,6 @@ export default agent({
    * reads the result on its next `game_state_get`.
    */
   events: {
-    "user-transcript.committed": (event, ctx) => recordTurn(ctx, event.text),
+    "userTranscript.committed": (event, ctx) => recordTurn(ctx, event.text),
   },
 });

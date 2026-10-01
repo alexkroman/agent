@@ -61,10 +61,10 @@ const TOOL_SCHEMAS: ToolSchema[] = [
  * whose microphone is gone and whose UI says the call ended.
  */
 const CONVERSATION_EVENTS = new Set<SessionEvent["type"]>([
-  "user-transcript.committed",
-  "user-transcript.updated",
-  "agent-transcript.updated",
-  "agent-transcript.committed",
+  "userTranscript.committed",
+  "userTranscript.updated",
+  "agentTranscript.updated",
+  "agentTranscript.committed",
   "reply.completed",
   "tool.called",
   "speech.started",

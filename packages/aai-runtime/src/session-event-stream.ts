@@ -114,9 +114,9 @@ const FLUSH_AFTER: ReadonlySet<SessionEvent["type"]> = new Set([
   "reply.completed",
   "reply.cancelled",
   // Session boundaries. `session.reset` discards the conversation, and
-  // `session.timed-out` is followed by the socket closing — the last chance.
+  // `session.timedOut` is followed by the socket closing — the last chance.
   "session.reset",
-  "session.timed-out",
+  "session.timedOut",
   // A fatal error is the one event most worth having survived the thing that
   // caused it, so it is not left to the turn boundary that may never come.
   "error.reported",

@@ -16,7 +16,7 @@ import { dialog } from "@alexkroman1/aai";
  *
  * | state | what it needs | what carries it |
  * | --- | --- | --- |
- * | `onCall.locating` | a caller who has gone quiet gets re-prompted, and a talkative one does not | `timeout` + a self transition on `@user-transcript.committed` |
+ * | `onCall.locating` | a caller who has gone quiet gets re-prompted, and a talkative one does not | `timeout` + a self transition on `@userTranscript.committed` |
  * | `onCall.quiet` | the re-prompt is a different instruction, not a louder one | `instruction` |
  * | `onCall.verifying` | do not invent a policy, and give up after two minutes | `instruction` + `timeout` |
  * | `onCall.disclosure` | the fee disclosure is delivered IN FULL | `bargeIn: "off"` |
@@ -35,7 +35,7 @@ import { dialog } from "@alexkroman1/aai";
  * The silence ladder's first rung.
  *
  * The clock runs from the dialog's last MOVE, and `onCall.locating` declares a
- * self transition on `@user-transcript.committed` — so every committed turn is
+ * self transition on `@userTranscript.committed` — so every committed turn is
  * a move, re-arms this window, and only real silence ever reaches it. That is
  * what makes the number a SILENCE budget rather than a call budget: a caller
  * who is talking us through what happened can take as long as they like.
@@ -93,9 +93,9 @@ const UNINTERRUPTIBLE: DialogBargeIn = "off";
  * audit below reaches `abandoned` and any state added after it.
  *
  * **The hang-up is declared ONCE, on the parent.** Being in a state is being in
- * all of them, so `@session.timed-out` on `onCall` reaches all five phases —
+ * all of them, so `@session.timedOut` on `onCall` reaches all five phases —
  * where the same line repeated five times is five chances for the sixth phase
- * to be added without it. The contrast with `@user-transcript.committed` is the
+ * to be added without it. The contrast with `@userTranscript.committed` is the
  * lesson: that one is declared on ONE state, because only the silence ladder
  * cares that the caller said something, and hoisting it would silently turn the
  * verification deadline into one a talkative caller can extend forever.
@@ -105,7 +105,7 @@ export const CALL_SPEC = {
   states: {
     onCall: {
       initial: "locating",
-      on: { "@session.timed-out": "abandoned" },
+      on: { "@session.timedOut": "abandoned" },
       states: {
         locating: {
           instruction:
@@ -124,7 +124,7 @@ export const CALL_SPEC = {
             // A self transition, and the whole silence ladder rests on it: it
             // is a MOVE, so it re-arms the deadline above. Nothing else here
             // extends it.
-            "@user-transcript.committed": "locating",
+            "@userTranscript.committed": "locating",
             QUIET: "quiet",
             LOCATED: "verifying",
           },
@@ -138,7 +138,7 @@ export const CALL_SPEC = {
           on: {
             // Hearing anything at all puts the call back on the ladder's first
             // rung, which re-arms the window from that moment.
-            "@user-transcript.committed": "locating",
+            "@userTranscript.committed": "locating",
             LOCATED: "verifying",
           },
         },

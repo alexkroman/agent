@@ -242,7 +242,7 @@ export const KNOWN_TURN_DETECTION_MODES = ["auto", "manual"] as const;
  * either cap the runtime asks the transcriber to END THE TURN NOW, exactly as
  * a pause would have — the words heard so far commit as the caller's turn, the
  * agent replies to them, and whatever the caller says next opens the next turn
- * — and a `user-turn.exceeded` event records that it happened.
+ * — and a `userTurn.exceeded` event records that it happened.
  *
  * Both members are optional; set one or both. A limit that names neither is
  * refused at config time rather than accepted as a cap on nothing.

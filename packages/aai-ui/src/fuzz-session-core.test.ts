@@ -125,13 +125,13 @@ function serverOp(ctx: Ctx, op: (typeof SERVER_OPS)[number]): void {
       send({ type: "speech.started" });
       break;
     case "user_partial":
-      send({ type: "user-transcript.updated", text: "par" });
+      send({ type: "userTranscript.updated", text: "par" });
       break;
     case "user_transcript":
-      send({ type: "user-transcript.committed", text: "hello" });
+      send({ type: "userTranscript.committed", text: "hello" });
       break;
     case "agent_transcript":
-      send({ type: "agent-transcript.updated", text: "hi there" });
+      send({ type: "agentTranscript.updated", text: "hi there" });
       break;
     case "tool_call":
       send({
@@ -180,7 +180,7 @@ function serverOp(ctx: Ctx, op: (typeof SERVER_OPS)[number]): void {
       send({ type: "error.reported", code: "stt", message: "meh", fatal: false });
       break;
     case "idle_timeout":
-      send({ type: "session.timed-out" });
+      send({ type: "session.timedOut" });
       break;
     case "audio_done":
       send({ type: "audio.completed" });

@@ -25,7 +25,7 @@ it), so pipeline mode matches S2S:
 - **While the agent holds the floor the edge is HELD**, released only when a
   barge-in really fires (alongside `cancelled`) or the agent stops on its own.
   While the agent is silent it passes straight through.
-- Live captions are unaffected — `user-transcript.updated` is independent of
+- Live captions are unaffected — `userTranscript.updated` is independent of
   the gate.
 - **`pipeline-speech-edges.ts` owns it in two layers**:
   `createSpeechEdgeTracker` decides WHEN an utterance starts and ends (partials,
@@ -147,7 +147,7 @@ for a manual agent.
 **A typed turn (`user_text`) is a committed transcript with no transcriber.**
 `Transport.sendUserText` → `commitTypedTurn` in `pipeline-user-speech.ts` cuts a
 reply in flight or playing (reporting `reply.cancelled` BEFORE the
-`user-transcript.committed`, so the stream's order is right), then commits on
+`userTranscript.committed`, so the stream's order is right), then commits on
 the same path a final does, under either `turnDetection`. S2S omits the verb;
 the dispatcher warns once.
 

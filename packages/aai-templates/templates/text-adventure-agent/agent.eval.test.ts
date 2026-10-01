@@ -127,7 +127,7 @@ describeEval(agentDef, (test) => {
       expect(fresh.currentRoom).toBe(DEFAULT_GAME_STATE.currentRoom);
       // ONE, not zero — and this is the assertion that proves the turn counter
       // is the framework's. The reset emptied it, then the player said the line
-      // above, and the `user-transcript.committed` hook counted it before the
+      // above, and the `userTranscript.committed` hook counted it before the
       // narrator took its turn. No tool call is involved anywhere in that.
       expect(fresh.moves).toBe(1);
     },

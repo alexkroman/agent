@@ -13,7 +13,7 @@
  * member. Worse, the union itself was exported only from the non-authoring
  * `/protocol` subpath, so NO capability contract owned it: its body was hashed
  * in full by every capability that reached it, and one new event
- * (`user-turn.exceeded`, `metrics.collected`) bumped `aai:agent`, `aai:dialog`,
+ * (`userTurn.exceeded`, `metrics.collected`) bumped `aai:agent`, `aai:dialog`,
  * `aai:testing` and `aai-runtime:session` at once.
  *
  * Now the zod schema is the one source of truth, {@link SessionEventMap} is
@@ -162,7 +162,7 @@ export type SessionEventBody<K extends SessionEventType = SessionEventType> = {
  * default — the session publishes a report it has no `case` for — and needs
  * no edit to a list in another package. Each is here for a reason:
  * `session.configured` is the handshake, `session.reset` and
- * `session.timed-out` come from the client and the idle watchdog,
+ * `session.timedOut` come from the client and the idle watchdog,
  * `custom.emitted` is `ctx.send`, `state.updated` is a `syncState` projection,
  * `usage.updated` and `guardrail.blocked` are the session's own accounting and
  * refusals, and `history.restored` is a resume.
@@ -172,7 +172,7 @@ export type SessionEventBody<K extends SessionEventType = SessionEventType> = {
 export const SESSION_SOURCED_EVENT_TYPES = [
   "session.configured",
   "session.reset",
-  "session.timed-out",
+  "session.timedOut",
   "custom.emitted",
   "state.updated",
   "usage.updated",

@@ -61,7 +61,7 @@ describe("speech through the runtime (pipeline)", () => {
     const outcomes: Promise<SpeechOutcome>[] = [];
     const call = await liveCall({
       events: {
-        "agent-transcript.committed": (event, ctx) => {
+        "agentTranscript.committed": (event, ctx) => {
           if (event.text === GREETING) outcomes.push(ctx.speech.say("And one more thing.").done);
         },
       },
@@ -112,7 +112,7 @@ describe("speech through the runtime (pipeline)", () => {
       events: {
         // Fired synchronously from inside the greeting's caption, i.e. with the
         // transport mid-reply on the stack: the re-entrant case.
-        "agent-transcript.committed": (event, ctx) => {
+        "agentTranscript.committed": (event, ctx) => {
           if (event.text !== GREETING) return;
           interrupted = ctx.speech.interrupt();
           outcomes.push(ctx.speech.say("Sorry, one moment.").done);

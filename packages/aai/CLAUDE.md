@@ -227,11 +227,17 @@ server locally.
 
 - **S2S**: PCM → WebSocket → one provider socket → service-side LLM + tools →
   audio back through the same socket → browser.
-- **Pipeline**: PCM → STT → `user-transcript.updated` partials and
-  `speech.started`/`speech.stopped` → `user-transcript.committed` → host LLM
+- **Pipeline**: PCM → STT → `userTranscript.updated` partials and
+  `speech.started`/`speech.stopped` → `userTranscript.committed` → host LLM
   loop (`streamText`, tools host-side) → TTS → browser. A barge-in that never
   commits a user turn resumes the reply (`resumeFalseInterruption`).
   `preemptiveGeneration` is OFF by default.
+- **Every session event name is `<subject>.<verb>`, both segments camelCase**
+  (`tool.called`, `userTranscript.committed`, `session.timedOut`), so a name is
+  predictable from its neighbours; `sdk/session-event-names.test.ts` fails on
+  any `SessionEventSchema` member off that grammar. Commands
+  (`SessionCommand`, snake_case imperatives) and author-chosen custom event
+  names are a different vocabulary and are not held to it.
 
 ## Default values and magic numbers
 

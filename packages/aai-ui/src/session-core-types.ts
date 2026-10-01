@@ -272,7 +272,7 @@ export type BrowserSession = {
    * Interrupts the agent if it is speaking or thinking (its queued audio is
    * discarded here at once, as `cancel()` does). The message is NOT echoed into
    * `messages` locally: the server reports it as the same
-   * `user-transcript.committed` a spoken turn produces, and that is what adds
+   * `userTranscript.committed` a spoken turn produces, and that is what adds
    * the row — so it is also what a resumed session replays.
    *
    * `text` is trimmed; an empty message sends nothing, and so does a call

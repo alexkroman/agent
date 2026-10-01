@@ -41,7 +41,7 @@ export default agent({
   /**
    * Declared so the CALL can move the gate, not only a tool.
    *
-   * The one thing it buys this template is `"@session.timed-out"`: a caller who
+   * The one thing it buys this template is `"@session.timedOut"`: a caller who
    * hangs up while a booking change is staged leaves a confirmation gate that
    * would otherwise stay open for the rest of the session, with every sensitive
    * tool still legal in it.
@@ -52,7 +52,7 @@ export default agent({
    * a call rather than in it.
    *
    * A dialog moves the POSITION; a hook writes a LINE. `call-events.ts` carries
-   * why both are declared for `"session.timed-out"` and why neither covers the
+   * why both are declared for `"session.timedOut"` and why neither covers the
    * other — and it is the only route by which the sidebar's call log can end
    * with how the call ended rather than with whatever the model last did.
    */

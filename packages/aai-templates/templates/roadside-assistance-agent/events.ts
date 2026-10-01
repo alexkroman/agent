@@ -16,7 +16,7 @@ import { roadsideSlot } from "./shared.ts";
  * how an agent observes its own stream.
  *
  * This is the second half of what `agent({ dialogs })` already does with
- * `@session.timed-out`. The dialog MOVES on a hang-up (to the final `abandoned`
+ * `@session.timedOut`. The dialog MOVES on a hang-up (to the final `abandoned`
  * state, which refuses every tool for the rest of the session); a handler
  * RECORDS it. Neither can do the other's job — a handler cannot change what the
  * agent says or does, by design, and a dialog transition writes nothing to the
@@ -40,7 +40,7 @@ import { roadsideSlot } from "./shared.ts";
  * what {@link DESK_EVENTS} actually declares.
  */
 export const LOGGED_EVENTS = [
-  "session.timed-out",
+  "session.timedOut",
   "error.reported",
 ] as const satisfies readonly SessionEventType[];
 
@@ -80,7 +80,7 @@ const noteHangUp: SessionEventHandler = (_event, ctx) => {
  * without a guard and could not read a field belonging to another event.
  */
 export const DESK_EVENTS: SessionEventHandlers = {
-  "session.timed-out": noteHangUp,
+  "session.timedOut": noteHangUp,
   // Not always fatal — a turn-level STT failure is one the session survives —
   // so the line says which it was. A caller who was cut off mid-disclosure and
   // one whose transcription hiccuped are the same silence on a recording and

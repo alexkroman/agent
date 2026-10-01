@@ -65,7 +65,7 @@ function coreWith() {
 }
 
 const USER_TURN: SessionEvent = {
-  type: "user-transcript.committed",
+  type: "userTranscript.committed",
   text: "two large pepperoni",
 } as SessionEvent;
 

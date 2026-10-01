@@ -123,8 +123,8 @@ describe("interrupted-speech persistence", () => {
     t.cancelReply();
 
     // No text accumulated → no interrupted transcript surfaced.
-    expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).not.toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: expect.anything(),
     });
 
@@ -313,8 +313,8 @@ describe("interrupted-speech persistence", () => {
     // `HeardTracker.spokeRecordable`.
     expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
     // Only filler was audible → nothing persisted as interrupted.
-    expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).not.toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: expect.anything(),
     });
     // …and the HISTORY probe, the stronger of the two this file uses (see the

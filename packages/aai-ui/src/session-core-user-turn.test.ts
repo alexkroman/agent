@@ -110,7 +110,7 @@ describe("BrowserSession push-to-talk", () => {
   it("clearing a turn clears the caption it left behind", async () => {
     const core = await live();
     core.userTurn.start();
-    socket?.simulateMessage(JSON.stringify({ type: "user-transcript.updated", text: "never mi" }));
+    socket?.simulateMessage(JSON.stringify({ type: "userTranscript.updated", text: "never mi" }));
     expect(core.getSnapshot().userTranscript).toBe("never mi");
     core.userTurn.clear();
     expect(core.getSnapshot().userTranscript).toBeNull();
@@ -173,14 +173,14 @@ describe("BrowserSession sendText", () => {
   });
 
   it("does not echo the message into `messages` — the server's committed turn does", async () => {
-    // One row, not two: the row comes from the same `user-transcript.committed`
+    // One row, not two: the row comes from the same `userTranscript.committed`
     // a spoken turn produces, which is also what a resume replays.
     const core = await live();
     core.sendText("book a table");
     expect(core.getSnapshot().messages).toEqual([]);
 
     socket?.simulateMessage(
-      JSON.stringify({ type: "user-transcript.committed", text: "book a table" }),
+      JSON.stringify({ type: "userTranscript.committed", text: "book a table" }),
     );
     expect(core.getSnapshot().messages.map(({ role, content }) => ({ role, content }))).toEqual([
       { role: "user", content: "book a table" },

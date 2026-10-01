@@ -88,16 +88,16 @@ const bargeInAt = (ctx: SlotHolder): DialogBargeIn | undefined => knobsAt(ctx)?.
  */
 const WIRED: readonly { declared: DialogSessionEventName; event: SessionEvent }[] = [
   {
-    declared: "@user-transcript.committed",
+    declared: "@userTranscript.committed",
     event: {
-      type: "user-transcript.committed",
+      type: "userTranscript.committed",
       text: "I'm on the shoulder of route nine",
       meta: { id: "evt_1", at: 0 },
     },
   },
   {
-    declared: "@session.timed-out",
-    event: { type: "session.timed-out", meta: { id: "evt_2", at: 0 } },
+    declared: "@session.timedOut",
+    event: { type: "session.timedOut", meta: { id: "evt_2", at: 0 } },
   },
 ];
 
@@ -552,8 +552,8 @@ describe("what the desk is REACHED by, and what it writes down", () => {
       },
       ctx,
     );
-    DESK_EVENTS["session.timed-out"]?.(
-      { type: "session.timed-out", meta: { id: "evt_gone", at: 0 } },
+    DESK_EVENTS["session.timedOut"]?.(
+      { type: "session.timedOut", meta: { id: "evt_gone", at: 0 } },
       ctx,
     );
 

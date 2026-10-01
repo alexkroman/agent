@@ -566,12 +566,12 @@ const gateSpec = {
     browsing: {
       instruction:
         "Nothing is waiting for the caller's yes. Stage a change with a booking tool first.",
-      on: { STAGED: "awaitingConfirmation", "@session.timed-out": "abandoned" },
+      on: { STAGED: "awaitingConfirmation", "@session.timedOut": "abandoned" },
     },
     awaitingConfirmation: {
       instruction:
         "Read the staged change back and hear a clear yes or no, then use confirm_action or cancel_action.",
-      on: { SETTLED: "browsing", "@session.timed-out": "abandoned" },
+      on: { SETTLED: "browsing", "@session.timedOut": "abandoned" },
     },
     /**
      * The caller hung up, or the session timed out under them.

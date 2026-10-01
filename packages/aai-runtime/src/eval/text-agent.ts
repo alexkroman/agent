@@ -46,7 +46,7 @@
  * able to begin inside the previous turn, or a recorded tool order belongs to
  * the harness rather than to the agent. `openEvalSession` gets there by polling
  * the event list for a `TURN_ENDS` member anchored to its own
- * `user-transcript.committed`, because the session it drives runs on its own
+ * `userTranscript.committed`, because the session it drives runs on its own
  * clock and pushes events at it.
  *
  * Here the harness OWNS the stream, so the wait is stronger and simpler: it

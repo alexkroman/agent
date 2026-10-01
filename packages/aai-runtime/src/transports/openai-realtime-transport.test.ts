@@ -364,8 +364,8 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
         transcript: "hello world",
       }),
     });
-    expect(cbs.reported("user-transcript.committed")).toHaveBeenCalledWith({
-      type: "user-transcript.committed",
+    expect(cbs.reported("userTranscript.committed")).toHaveBeenCalledWith({
+      type: "userTranscript.committed",
       text: "hello world",
     });
   });
@@ -392,12 +392,12 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
     fake.fire("message", {
       data: JSON.stringify({ type: `${prefix}.delta`, item_id, delta: "there." }),
     });
-    expect(cbs.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+    expect(cbs.reported("agentTranscript.committed")).not.toHaveBeenCalled();
     fake.fire("message", {
       data: JSON.stringify({ type: `${prefix}.done`, item_id }),
     });
-    expect(cbs.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(cbs.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: "Hi there.",
     });
   });
@@ -411,7 +411,7 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
         item_id: "empty",
       }),
     });
-    expect(cbs.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+    expect(cbs.reported("agentTranscript.committed")).not.toHaveBeenCalled();
   });
 });
 
@@ -624,8 +624,8 @@ describe("cancel, error, close", () => {
     fake.fire("message", {
       data: JSON.stringify({ type: "response.output_audio_transcript.done", item_id: "i1" }),
     });
-    expect(cbs.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(cbs.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: "Your balance is five hundred dollars.",
     });
   });
@@ -649,7 +649,7 @@ describe("cancel, error, close", () => {
     fake.fire("message", {
       data: JSON.stringify({ type: "response.output_audio_transcript.done", item_id: "i2" }),
     });
-    expect(cbs.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+    expect(cbs.reported("agentTranscript.committed")).not.toHaveBeenCalled();
   });
 
   test("error event with missing message uses fallback", async () => {

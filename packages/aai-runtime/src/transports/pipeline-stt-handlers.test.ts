@@ -115,7 +115,7 @@ describe("onSttPartial", () => {
     const { handlers, edges, reported } = makeHandlers();
     handlers.onSttPartial("cancel my");
     expect(edges.started).toBe(1);
-    expect(reported).toEqual(["user-transcript.updated"]);
+    expect(reported).toEqual(["userTranscript.updated"]);
   });
 
   test("an empty interim publishes nothing and opens no edge", () => {
@@ -130,7 +130,7 @@ describe("onSttPartial", () => {
     const { handlers } = makeHandlers({ callbacks: { report: (event) => events.push(event) } });
     handlers.onSttPartial("cancel my", { endOfTurnConfidence: 0.4 });
     expect(events).toEqual([
-      { type: "user-transcript.updated", text: "cancel my", eotConfidence: 0.4 },
+      { type: "userTranscript.updated", text: "cancel my", eotConfidence: 0.4 },
     ]);
   });
 
@@ -138,7 +138,7 @@ describe("onSttPartial", () => {
     const events: unknown[] = [];
     const { handlers } = makeHandlers({ callbacks: { report: (event) => events.push(event) } });
     handlers.onSttPartial("cancel my");
-    expect(events).toEqual([{ type: "user-transcript.updated", text: "cancel my" }]);
+    expect(events).toEqual([{ type: "userTranscript.updated", text: "cancel my" }]);
   });
 });
 

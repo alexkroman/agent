@@ -1200,7 +1200,7 @@ async function stageFor(ctx: ToolContext): Promise<string> {
 
 describe("a caller who hangs up", () => {
   /** The frame the runtime offers a declared dialog when a session times out. */
-  const CALLER_GONE = { type: "session.timed-out", meta: { id: "evt_1", at: 0 } } as const;
+  const CALLER_GONE = { type: "session.timedOut", meta: { id: "evt_1", at: 0 } } as const;
 
   test("ends the call from `identifying`, before anyone is on it", () => {
     const ctx = createToolContext();

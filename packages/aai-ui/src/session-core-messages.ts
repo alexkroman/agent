@@ -129,7 +129,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       ),
       // `THINK`, not `state: "thinking"`: this was the fourth site that should
       // have consulted the fatal latch and did not, so a
-      // `user-transcript.committed` arriving behind a fatal error painted a
+      // `userTranscript.committed` arriving behind a fatal error painted a
       // working state over the banner. Declining it is now the machine's, not
       // this caller's, so the site could not have missed it.
       ...agentState.apply({ type: "THINK" }),
@@ -137,7 +137,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   }
 
   /**
-   * The agent-transcript events carry the reply's text so far as a full-replacement
+   * The `agentTranscript.*` events carry the reply's text so far as a full-replacement
    * snapshot (see the protocol schema), so it renders as the live assistant
    * bubble and only becomes a message when the reply closes. Pipeline mode sends
    * one per piece of speech, so appending each would break a single reply into a
@@ -247,18 +247,18 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "speech.stopped":
         // VAD detected end of speech -- processing will follow.
         break;
-      case "user-transcript.committed":
+      case "userTranscript.committed":
         handleUserTranscriptEvent(e.text);
         break;
-      case "user-transcript.updated":
+      case "userTranscript.updated":
         // Live captions while the user is still speaking; the committed turn
-        // follows as `user-transcript.committed`, which moves it into `messages`.
+        // follows as `userTranscript.committed`, which moves it into `messages`.
         updateState({ userTranscript: e.text });
         break;
       // Both carry the reply's text so far; only the STREAM needs them apart
       // (see the events' own docs), and a caption renders either identically.
-      case "agent-transcript.updated":
-      case "agent-transcript.committed":
+      case "agentTranscript.updated":
+      case "agentTranscript.committed":
         handleAgentTranscriptEvent(e.text);
         break;
       case "tool.called":
@@ -351,7 +351,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "error.reported":
         handleErrorEvent(e);
         break;
-      case "session.timed-out":
+      case "session.timedOut":
         // The server closes the socket itself; this only marks the close as
         // expected so the automatic reconnect doesn't undo the reclamation.
         conn.retiredByServer = true;

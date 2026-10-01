@@ -48,7 +48,7 @@ import type { TurnMachine } from "./pipeline-turn-state.ts";
 import type { SendTtsText, TransportCallbacks } from "./types.ts";
 
 /** The tag a failure phrase's caption carries — `AgentTranscriptRecovery`. */
-type Recovery = NonNullable<SessionEventBody<"agent-transcript.committed">["recovery"]>;
+type Recovery = NonNullable<SessionEventBody<"agentTranscript.committed">["recovery"]>;
 
 /**
  * One fixed line. The union is the rule: a line is either on the RECORD or a
@@ -75,7 +75,7 @@ export function speakFixedLine(
   line: FixedLine,
 ): void {
   deps.callbacks.report({
-    type: "agent-transcript.committed",
+    type: "agentTranscript.committed",
     text: line.text,
     ...omitUndefined({ recovery: line.recovery, recorded: line.recorded }),
   });

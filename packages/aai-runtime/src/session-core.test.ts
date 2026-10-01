@@ -67,7 +67,7 @@ describe("createSessionCore — lifecycle", () => {
       await core.stop();
       core.onAudio(new Uint8Array([1]));
       vi.advanceTimersByTime(5000);
-      expect(sink.events.some((e) => e.type === "session.timed-out")).toBe(false);
+      expect(sink.events.some((e) => e.type === "session.timedOut")).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -173,8 +173,8 @@ describe("createSessionCore — transport inbound (basic)", () => {
   test("onUserTranscript pushes to history and emits", async () => {
     const { core, sink } = makeCore();
     await core.start();
-    core.report({ type: "user-transcript.committed", text: "hello" });
-    expect(sink.events.some((e) => e.type === "user-transcript.committed")).toBe(true);
+    core.report({ type: "userTranscript.committed", text: "hello" });
+    expect(sink.events.some((e) => e.type === "userTranscript.committed")).toBe(true);
   });
 });
 
@@ -297,12 +297,12 @@ describe("createSessionCore — tool concurrency", () => {
     };
     const { core } = makeCore({ executeTool });
     await core.start();
-    core.report({ type: "user-transcript.committed", text: "first" });
+    core.report({ type: "userTranscript.committed", text: "first" });
     core.onReplyStarted("r1");
     core.report({ type: "tool.called", toolCallId: "cid", toolName: "t", args: {} });
     // Arrives while the tool is (conceptually) still running — must not
     // appear in the view the tool captured.
-    core.report({ type: "user-transcript.committed", text: "second" });
+    core.report({ type: "userTranscript.committed", text: "second" });
     await flush();
     expect(captured?.map((m) => m.content)).toEqual(["first"]);
   });
@@ -360,7 +360,7 @@ describe("createSessionCore — duplicate reply.done in multi-hop turns", () => 
     expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(0);
 
     // The real continuation arrives and ends the turn exactly once.
-    core.report({ type: "agent-transcript.committed", text: "answer" });
+    core.report({ type: "agentTranscript.committed", text: "answer" });
     core.report({ type: "reply.completed" });
     await vi.waitFor(() =>
       expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(1),
@@ -385,7 +385,7 @@ describe("createSessionCore — duplicate reply.done in multi-hop turns", () => 
     await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("c2", "out"));
     expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(0);
 
-    core.report({ type: "agent-transcript.committed", text: "final answer" });
+    core.report({ type: "agentTranscript.committed", text: "final answer" });
     core.report({ type: "reply.completed" });
     await vi.waitFor(() =>
       expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(1),
@@ -401,9 +401,9 @@ describe("createSessionCore — idle timeout", () => {
         agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
-      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(0);
+      expect(sink.events.filter((e) => e.type === "session.timedOut")).toHaveLength(0);
       vi.advanceTimersByTime(1001);
-      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(1);
+      expect(sink.events.filter((e) => e.type === "session.timedOut")).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
@@ -425,7 +425,7 @@ describe("createSessionCore — idle timeout", () => {
         core.onAudio(new Uint8Array(640));
         vi.advanceTimersByTime(20);
       }
-      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(1);
+      expect(sink.events.filter((e) => e.type === "session.timedOut")).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
@@ -438,11 +438,11 @@ describe("createSessionCore — idle timeout", () => {
     ["speech the transport detected", (c: ServerSession) => c.report({ type: "speech.started" })],
     [
       "an interim user transcript",
-      (c: ServerSession) => c.report({ type: "user-transcript.updated", text: "hel" }),
+      (c: ServerSession) => c.report({ type: "userTranscript.updated", text: "hel" }),
     ],
     [
       "a committed user turn",
-      (c: ServerSession) => c.report({ type: "user-transcript.committed", text: "hello" }),
+      (c: ServerSession) => c.report({ type: "userTranscript.committed", text: "hello" }),
     ],
     ["the agent replying", (c: ServerSession) => c.onReplyStarted("r1")],
     ["agent audio", (c: ServerSession) => c.onAudioChunk(new Uint8Array([1]))],
@@ -461,9 +461,9 @@ describe("createSessionCore — idle timeout", () => {
       vi.advanceTimersByTime(800);
       act(core);
       vi.advanceTimersByTime(800);
-      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(0);
+      expect(sink.events.filter((e) => e.type === "session.timedOut")).toHaveLength(0);
       vi.advanceTimersByTime(300);
-      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(1);
+      expect(sink.events.filter((e) => e.type === "session.timedOut")).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
@@ -480,13 +480,13 @@ describe("createSessionCore — idle timeout", () => {
       });
       await core.start();
       vi.advanceTimersByTime(1001);
-      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(1);
+      expect(sink.events.filter((e) => e.type === "session.timedOut")).toHaveLength(1);
       expect(sink.closeReasons).toEqual(["idle timeout"]);
     } finally {
       vi.useRealTimers();
     }
   });
-  test("emits session.timed-out before closing, so the client learns why", async () => {
+  test("emits session.timedOut before closing, so the client learns why", async () => {
     vi.useFakeTimers();
     try {
       const order: string[] = [];
@@ -508,7 +508,7 @@ describe("createSessionCore — idle timeout", () => {
       });
       await core.start();
       vi.advanceTimersByTime(1001);
-      expect(order).toEqual(["event:session.timed-out", "close"]);
+      expect(order).toEqual(["event:session.timedOut", "close"]);
     } finally {
       vi.useRealTimers();
     }
@@ -635,14 +635,14 @@ describe("createSessionCore — report classification", () => {
     | "metrics.collected"
     | "speech.stopped"
     | "tool.completed"
-    | "user-turn.exceeded";
+    | "userTurn.exceeded";
   const forwarded: { [K in Forwarded]: TransportEventBody<K> } = {
     "audio.completed": { type: "audio.completed" },
     "metrics.collected": { type: "metrics.collected", interrupted: false },
     "speech.stopped": { type: "speech.stopped" },
     "tool.completed": { type: "tool.completed", toolCallId: "c1", result: "ok" },
-    "user-turn.exceeded": {
-      type: "user-turn.exceeded",
+    "userTurn.exceeded": {
+      type: "userTurn.exceeded",
       limit: "words",
       words: 40,
       durationMs: 9000,

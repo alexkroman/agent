@@ -280,7 +280,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   function handleUserTranscript(obj: Record<string, unknown>): void {
     if (typeof obj.transcript === "string") {
-      opts.callbacks.report({ type: "user-transcript.committed", text: obj.transcript });
+      opts.callbacks.report({ type: "userTranscript.committed", text: obj.transcript });
     }
   }
 
@@ -299,7 +299,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const id = asString(obj.item_id);
     const text = agentTranscriptBuffers.get(id) ?? "";
     agentTranscriptBuffers.delete(id);
-    if (text) opts.callbacks.report({ type: "agent-transcript.committed", text });
+    if (text) opts.callbacks.report({ type: "agentTranscript.committed", text });
   }
 
   function handleResponseDone(): void {

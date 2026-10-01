@@ -67,7 +67,7 @@ describe("speakRecovery", () => {
     // The caller heard it, so the caption carries it...
     expect(spoken).toEqual([ERROR_PHRASE]);
     expect(reported).toEqual([
-      { type: "agent-transcript.committed", text: ERROR_PHRASE, recovery: "turn-failed" },
+      { type: "agentTranscript.committed", text: ERROR_PHRASE, recovery: "turn-failed" },
     ]);
     // ...and nothing recorded it. Both views, because the LLM's is the one the
     // apology would teach.
@@ -93,7 +93,7 @@ describe("speakStartFailure", () => {
     return outcome.speakStartFailure().then(() => {
       expect(reported).toEqual([
         {
-          type: "agent-transcript.committed",
+          type: "agentTranscript.committed",
           text: START_FAILURE_PHRASE,
           recovery: "session-failed",
         },
@@ -117,7 +117,7 @@ describe("finishSpokenTurn", () => {
 
     outcome.finishSpokenTurn("Here you go.");
 
-    expect(reported).toEqual([{ type: "agent-transcript.committed", text: "Here you go." }]);
+    expect(reported).toEqual([{ type: "agentTranscript.committed", text: "Here you go." }]);
     expect(history.conversation).toEqual([{ role: "assistant", content: "Here you go." }]);
   });
 });

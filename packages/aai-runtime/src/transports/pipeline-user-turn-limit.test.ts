@@ -144,11 +144,11 @@ describe("PipelineTransport — userTurnLimit", () => {
     stt.last()?.firePartial("word ".repeat(500).trim());
     await vi.advanceTimersByTimeAsync(600_000);
     expect(stt.last()?.forceEndOfTurn).not.toHaveBeenCalled();
-    expect(callbacks.reported("user-turn.exceeded")).not.toHaveBeenCalled();
+    expect(callbacks.reported("userTurn.exceeded")).not.toHaveBeenCalled();
     await t.stop();
   });
 
-  test("the word cap reports user-turn.exceeded and asks the transcriber to end the turn", async () => {
+  test("the word cap reports userTurn.exceeded and asks the transcriber to end the turn", async () => {
     const { opts, stt, callbacks } = makeOpts({
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
       userTurnLimit: { maxWords: 4 },
@@ -158,9 +158,9 @@ describe("PipelineTransport — userTurnLimit", () => {
 
     stt.last()?.firePartial("I would");
     stt.last()?.firePartial("I would like to");
-    expect(callbacks.reported("user-turn.exceeded")).toHaveBeenCalledTimes(1);
-    expect(callbacks.reported("user-turn.exceeded")).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "user-turn.exceeded", limit: "words", words: 4 }),
+    expect(callbacks.reported("userTurn.exceeded")).toHaveBeenCalledTimes(1);
+    expect(callbacks.reported("userTurn.exceeded")).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "userTurn.exceeded", limit: "words", words: 4 }),
     );
     expect(stt.last()?.forceEndOfTurn).toHaveBeenCalledTimes(1);
 
@@ -169,19 +169,19 @@ describe("PipelineTransport — userTurnLimit", () => {
     stt.last()?.firePartial("I would like to ask");
     stt.last()?.fireFinal("I would like to ask");
     await vi.waitFor(() => {
-      expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-        type: "user-transcript.committed",
+      expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+        type: "userTranscript.committed",
         text: "I would like to ask",
       });
     });
-    expect(callbacks.reported("user-turn.exceeded")).toHaveBeenCalledTimes(1);
+    expect(callbacks.reported("userTurn.exceeded")).toHaveBeenCalledTimes(1);
     expect(stt.last()?.forceEndOfTurn).toHaveBeenCalledTimes(1);
 
     // The record precedes the turn it cut.
     const order = callbacks.events
       .map((event) => event.type)
-      .filter((type) => type === "user-turn.exceeded" || type === "user-transcript.committed");
-    expect(order).toEqual(["user-turn.exceeded", "user-transcript.committed"]);
+      .filter((type) => type === "userTurn.exceeded" || type === "userTranscript.committed");
+    expect(order).toEqual(["userTurn.exceeded", "userTranscript.committed"]);
     await t.stop();
   });
 
@@ -195,9 +195,9 @@ describe("PipelineTransport — userTurnLimit", () => {
 
     stt.last()?.firePartial("so");
     await talk(stt, 19_500, (i) => `so ${"anyway ".repeat(i).trim()}`);
-    expect(callbacks.reported("user-turn.exceeded")).not.toHaveBeenCalled();
+    expect(callbacks.reported("userTurn.exceeded")).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(500);
-    expect(callbacks.reported("user-turn.exceeded")).toHaveBeenCalledWith(
+    expect(callbacks.reported("userTurn.exceeded")).toHaveBeenCalledWith(
       // 39 partials of "so anyway…", the last carrying "so" + 39 words.
       expect.objectContaining({ limit: "duration", words: 40, durationMs: 20_000 }),
     );
@@ -217,16 +217,16 @@ describe("PipelineTransport — userTurnLimit", () => {
     await talk(stt, 4000, () => "short one");
     stt.last()?.fireFinal("short one");
     await vi.waitFor(() => {
-      expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalled();
     });
     await vi.advanceTimersByTimeAsync(4000);
-    expect(callbacks.reported("user-turn.exceeded")).not.toHaveBeenCalled();
+    expect(callbacks.reported("userTurn.exceeded")).not.toHaveBeenCalled();
 
     // The next utterance starts its own clock.
     stt.last()?.firePartial("and");
     await talk(stt, 5000, (i) => `and now ${"a longer one ".repeat(i).trim()}`);
-    expect(callbacks.reported("user-turn.exceeded")).toHaveBeenCalledTimes(1);
-    expect(callbacks.reported("user-turn.exceeded")).toHaveBeenCalledWith(
+    expect(callbacks.reported("userTurn.exceeded")).toHaveBeenCalledTimes(1);
+    expect(callbacks.reported("userTurn.exceeded")).toHaveBeenCalledWith(
       expect.objectContaining({ limit: "duration", durationMs: 5000 }),
     );
     await t.stop();
@@ -249,11 +249,11 @@ describe("PipelineTransport — userTurnLimit", () => {
     session.firePartial("one two");
     session.fireFinal("one two");
     await vi.waitFor(() => {
-      expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalled();
     });
     session.firePartial("three four");
     // Reported both times — the record is the provider-independent half.
-    expect(callbacks.reported("user-turn.exceeded")).toHaveBeenCalledTimes(2);
+    expect(callbacks.reported("userTurn.exceeded")).toHaveBeenCalledTimes(2);
     // Said ONCE per session, not per utterance.
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toMatch(/cannot end a turn on demand/);

@@ -196,9 +196,9 @@ function sayThrough(target: SimulationTarget): (text: string) => Promise<EvalTur
 
 /** Committed utterance → first reply text, read off the turn's own event stamps. */
 function latencyOf(events: readonly SessionEvent[]): number | undefined {
-  const start = events.find((e) => e.type === "user-transcript.committed")?.meta.at;
+  const start = events.find((e) => e.type === "userTranscript.committed")?.meta.at;
   const first = events.find(
-    (e) => e.type === "agent-transcript.updated" || e.type === "agent-transcript.committed",
+    (e) => e.type === "agentTranscript.updated" || e.type === "agentTranscript.committed",
   )?.meta.at;
   if (start === undefined || first === undefined) return undefined;
   return Math.max(0, first - start);

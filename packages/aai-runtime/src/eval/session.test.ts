@@ -130,7 +130,7 @@ describe("openEvalSession", () => {
       expect(turn.text).toBe("Noted.");
       expect(turn.completed).toBe(true);
       expect(
-        turn.events.filter((e) => e.type === "user-transcript.committed").map((e) => e.text),
+        turn.events.filter((e) => e.type === "userTranscript.committed").map((e) => e.text),
       ).toEqual(["Remember to call the plumber"]);
     } finally {
       await session.close();

@@ -254,7 +254,7 @@ describe("createBrowserSession", () => {
 
     it("user_transcript_partial sets the live userTranscript without touching messages", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.updated", text: "hello wor" }),
+        JSON.stringify({ type: "userTranscript.updated", text: "hello wor" }),
       );
       const snap = core.getSnapshot();
       expect(snap.userTranscript).toBe("hello wor");
@@ -263,10 +263,10 @@ describe("createBrowserSession", () => {
 
     it("user_transcript after partials commits the message and clears the live transcript", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.updated", text: "hello wor" }),
+        JSON.stringify({ type: "userTranscript.updated", text: "hello wor" }),
       );
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "Hello world" }),
+        JSON.stringify({ type: "userTranscript.committed", text: "Hello world" }),
       );
       const snap = core.getSnapshot();
       expect(snap.messages).toEqual([{ id: 1, role: "user", content: "Hello world" }]);
@@ -275,7 +275,7 @@ describe("createBrowserSession", () => {
 
     it("user_transcript appends user message and sets state to thinking", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "Hello world" }),
+        JSON.stringify({ type: "userTranscript.committed", text: "Hello world" }),
       );
       const snap = core.getSnapshot();
       expect(snap.messages).toEqual([{ id: 1, role: "user", content: "Hello world" }]);
@@ -286,9 +286,9 @@ describe("createBrowserSession", () => {
     it("agent_transcript renders live and commits on reply_done", () => {
       // Cumulative within a reply: pipeline mode sends one per piece of speech,
       // so each is the caption to show, not a turn of its own.
-      lastSocket?.simulateMessage(JSON.stringify({ type: "agent-transcript.updated", text: "Hi" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "agentTranscript.updated", text: "Hi" }));
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "agent-transcript.updated", text: "Hi there" }),
+        JSON.stringify({ type: "agentTranscript.updated", text: "Hi there" }),
       );
       expect(core.getSnapshot().agentTranscript).toBe("Hi there");
       expect(core.getSnapshot().messages).toEqual([]);
@@ -301,7 +301,7 @@ describe("createBrowserSession", () => {
 
     it("keeps what the caller heard when a reply is cancelled", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "agent-transcript.updated", text: "The total is" }),
+        JSON.stringify({ type: "agentTranscript.updated", text: "The total is" }),
       );
       lastSocket?.simulateMessage(JSON.stringify({ type: "reply.cancelled" }));
       expect(core.getSnapshot().messages).toEqual([
@@ -311,14 +311,12 @@ describe("createBrowserSession", () => {
 
     it("assigns monotonic ids to messages across roles", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "one" }),
+        JSON.stringify({ type: "userTranscript.committed", text: "one" }),
       );
-      lastSocket?.simulateMessage(
-        JSON.stringify({ type: "agent-transcript.updated", text: "two" }),
-      );
+      lastSocket?.simulateMessage(JSON.stringify({ type: "agentTranscript.updated", text: "two" }));
       lastSocket?.simulateMessage(JSON.stringify({ type: "reply.completed" }));
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "three" }),
+        JSON.stringify({ type: "userTranscript.committed", text: "three" }),
       );
       expect(core.getSnapshot().messages.map((m) => m.id)).toEqual([1, 2, 3]);
     });
@@ -393,7 +391,7 @@ describe("createBrowserSession", () => {
     it("reset clears all state and transitions to listening", () => {
       // Accumulate some state
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "msg1" }),
+        JSON.stringify({ type: "userTranscript.committed", text: "msg1" }),
       );
       lastSocket?.simulateMessage(
         JSON.stringify({ type: "tool.called", toolCallId: "tc-1", toolName: "t", args: {} }),
@@ -472,9 +470,7 @@ describe("createBrowserSession", () => {
       const v1 = core.getSnapshot().contentVersion;
       expect(v1).toBeGreaterThan(v0);
 
-      lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user-transcript.committed", text: "hi" }),
-      );
+      lastSocket?.simulateMessage(JSON.stringify({ type: "userTranscript.committed", text: "hi" }));
       const v2 = core.getSnapshot().contentVersion;
       expect(v2).toBeGreaterThan(v1);
 

@@ -11,10 +11,10 @@
  *
  * ## Two events for a TRANSCRIPT, and only two
  *
- * `user-transcript.committed` and `agent-transcript.committed` are exactly the
+ * `userTranscript.committed` and `agentTranscript.committed` are exactly the
  * events the session emits at the moments it appends to history, which is what
  * makes this a READ of the record rather than a second derivation of it. In
- * particular it must not read `agent-transcript.updated`: those are interim
+ * particular it must not read `agentTranscript.updated`: those are interim
  * snapshots, they legitimately shrink and differ mid-string (the dead-air filler
  * the caller hears is in them and not in the reply), and an INTERRUPTED reply's
  * last snapshot is not a record of anything — see "History records what was
@@ -84,8 +84,8 @@ import { toolResultMessage } from "./_tool-result-message.ts";
  * @internal
  */
 export function historyMessageOf(event: SessionEventBody): Message | undefined {
-  if (event.type === "user-transcript.committed") return { role: "user", content: event.text };
-  if (event.type !== "agent-transcript.committed") return undefined;
+  if (event.type === "userTranscript.committed") return { role: "user", content: event.text };
+  if (event.type !== "agentTranscript.committed") return undefined;
   // Spoken but deliberately unrecorded: a failure phrase, or a `say` with
   // `record: false`. See the event's own doc in `sdk/protocol-events.ts`.
   if (event.recovery !== undefined || event.recorded === false) return undefined;
@@ -149,8 +149,8 @@ export function historyFromEvents(events: readonly SessionEvent[]): {
   let visible = 0;
   for (const event of events) {
     switch (event.type) {
-      case "user-transcript.committed":
-      case "agent-transcript.committed": {
+      case "userTranscript.committed":
+      case "agentTranscript.committed": {
         // The same one rule the model's own view reads, so a phrase skipped
         // there and kept here would slide every tool-call ANCHOR below by one.
         const message = historyMessageOf(event);

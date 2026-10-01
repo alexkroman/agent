@@ -133,7 +133,7 @@ describe("session-core server events", () => {
   describe("agent transcript commit", () => {
     it("moves spoken text into the conversation on reply_done", () => {
       const socket = connect();
-      send(socket, { type: "agent-transcript.updated", text: "Hello there" });
+      send(socket, { type: "agentTranscript.updated", text: "Hello there" });
       expect(core.getSnapshot().agentTranscript).toBe("Hello there");
 
       send(socket, { type: "reply.completed" });
@@ -147,7 +147,7 @@ describe("session-core server events", () => {
       // An empty string is not a message: appending it would put a blank
       // assistant bubble in the transcript for a turn that said nothing.
       const socket = connect();
-      send(socket, { type: "agent-transcript.updated", text: "" });
+      send(socket, { type: "agentTranscript.updated", text: "" });
       send(socket, { type: "reply.completed" });
 
       const snap = core.getSnapshot();
@@ -159,7 +159,7 @@ describe("session-core server events", () => {
       // The caller heard that much; dropping it would leave the transcript
       // claiming the agent never spoke.
       const socket = connect();
-      send(socket, { type: "agent-transcript.updated", text: "Let me check th" });
+      send(socket, { type: "agentTranscript.updated", text: "Let me check th" });
       send(socket, { type: "reply.cancelled" });
 
       const snap = core.getSnapshot();
@@ -332,7 +332,7 @@ describe("session-core server events", () => {
       // all, where the "unrecognised type" comment implies it would.
       const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "agent-transcript.updated", text: 42 });
+      send(socket, { type: "agentTranscript.updated", text: 42 });
 
       expect(spy).not.toHaveBeenCalled();
       expect(core.getSnapshot().agentTranscript).toBeNull();
@@ -341,7 +341,7 @@ describe("session-core server events", () => {
     it("drops a non-string, non-binary frame with a warning", () => {
       const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "agent-transcript.updated", text: "kept" });
+      send(socket, { type: "agentTranscript.updated", text: "kept" });
       socket.simulateMessage("not json at all");
 
       expect(spy).toHaveBeenCalledWith("session-core: invalid JSON; dropping");
@@ -474,8 +474,8 @@ describe("session-core server events", () => {
       // finishing normally must not, or captions for speech the user is still
       // producing vanish mid-utterance.
       const socket = connect();
-      send(socket, { type: "user-transcript.updated", text: "and another thi" });
-      send(socket, { type: "agent-transcript.updated", text: "Sure." });
+      send(socket, { type: "userTranscript.updated", text: "and another thi" });
+      send(socket, { type: "agentTranscript.updated", text: "Sure." });
 
       send(socket, { type: "reply.completed" });
 

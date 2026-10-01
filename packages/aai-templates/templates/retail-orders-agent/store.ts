@@ -134,7 +134,7 @@ const callSpec = {
       on: {
         IDENTIFIED: "serving",
         TRANSFERRED: "transferred",
-        "@session.timed-out": "abandoned",
+        "@session.timedOut": "abandoned",
       },
     },
     serving: {
@@ -144,7 +144,7 @@ const callSpec = {
       // often than anywhere else on this call. It targets a SIBLING rather than
       // itself, so it is not the re-entering self-transition the `IDENTIFIED`
       // note below refuses.
-      on: { TRANSFERRED: "transferred", "@session.timed-out": "abandoned" },
+      on: { TRANSFERRED: "transferred", "@session.timedOut": "abandoned" },
       states: {
         helping: {
           instruction:
@@ -196,7 +196,7 @@ export const callFlow = dialog("call", callSpec);
  * duplication was the live kind: an event added to the spec was legal for
  * `callFlow.send` and rejected by {@link RetailToolSpec}, so the wrapper's
  * `send` field could only ever be a stale copy of the machine. Session events
- * (`@session.timed-out`) are excluded by the SDK — a tool cannot send one.
+ * (`@session.timedOut`) are excluded by the SDK — a tool cannot send one.
  */
 type CallEvent = DialogEvent<typeof callSpec>;
 

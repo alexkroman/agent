@@ -27,13 +27,13 @@
  *   what it "said".
  *
  * On the session event stream a `say` is an ordinary reply (`reply.started`,
- * `agent-transcript.committed`, `reply.completed` or `reply.cancelled`), so
+ * `agentTranscript.committed`, `reply.completed` or `reply.cancelled`), so
  * a reader of the log sees it as clearly as a model turn.
  *
  * ## A handler that speaks can hear itself
  *
  * **A `say` emits events, and those events reach your `events` handlers.** A
- * handler that answers every `agent-transcript.committed` with a `say` answers
+ * handler that answers every `agentTranscript.committed` with a `say` answers
  * its own line too, and the call never ends:
  *
  * ```ts
@@ -42,8 +42,8 @@
  * export default agent({
  *   name: "Never stops",
  *   events: {
- *     // LOOPS: the line this says is itself an agent-transcript.committed.
- *     "agent-transcript.committed": (_event, ctx) => {
+ *     // LOOPS: the line this says is itself an agentTranscript.committed.
+ *     "agentTranscript.committed": (_event, ctx) => {
  *       ctx.speech.say("Anything else?");
  *     },
  *   },
@@ -53,7 +53,7 @@
  * The emitter's re-entry guard does not catch it, because the line is spoken
  * after the handler has returned. So a handler that speaks must decide from
  * what TRIGGERED it: an event its own line cannot produce (`tool.called`,
- * `user-transcript.committed`, `session.timed-out`), or a check of the event
+ * `userTranscript.committed`, `session.timedOut`), or a check of the event
  * (its `text`, a slot the handler set) that its own line cannot pass. LiveKit's
  * `session.say` and Pipecat's `TTSSpeakFrame` share this property, and neither
  * guards it either.
@@ -112,7 +112,7 @@ export type SayOptions = {
   interruptible?: boolean | undefined;
   /**
    * `false` to keep this line out of the conversation: it is spoken and
-   * captioned (its `agent-transcript.committed` carries `recorded: false`),
+   * captioned (its `agentTranscript.committed` carries `recorded: false`),
    * but it enters neither the model's history nor `ctx.messages`, and a
    * resumed session does not remember it. For a line the model should not
    * treat as something it said, such as a hold message ("one moment while I

@@ -73,7 +73,7 @@ export const TURN_ENDS: ReadonlySet<SessionEvent["type"]> = new Set([
  * eval comes to pass on text no caller received.
  */
 export function saidIn(events: readonly SessionEvent[]): readonly string[] {
-  return events.flatMap((e) => (e.type === "agent-transcript.committed" ? [e.text] : []));
+  return events.flatMap((e) => (e.type === "agentTranscript.committed" ? [e.text] : []));
 }
 
 /**

@@ -83,8 +83,8 @@ async function call(
 
 function seeded(): SessionEventStream {
   const stream = createSessionEventStream({ backend: createMemoryStateBackend() });
-  stream.append(SID, { type: "user-transcript.committed", text: "one" });
-  stream.append(SID, { type: "agent-transcript.committed", text: "two" });
+  stream.append(SID, { type: "userTranscript.committed", text: "one" });
+  stream.append(SID, { type: "agentTranscript.committed", text: "two" });
   return stream;
 }
 

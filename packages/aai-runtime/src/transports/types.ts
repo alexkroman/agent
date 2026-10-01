@@ -47,7 +47,7 @@ import type { ModelMessage } from "ai";
  *
  * DERIVED, never listed. This used to spell out the fourteen reportable names by
  * hand, so every new event was an edit here AND a new epoch of this package's
- * `session` capability — `user-turn.exceeded` and `metrics.collected` each cost
+ * `session` capability — `userTurn.exceeded` and `metrics.collected` each cost
  * one — for a change this package did not make. The exclusions are declared once,
  * beside the vocabulary, as `SESSION_SOURCED_EVENT_TYPES` in `@alexkroman1/aai`
  * (with the reason each is there), so a new event is reportable by default — and
@@ -85,7 +85,7 @@ export type TransportCallbacks = {
    *   decides whether this one closes the turn and may emit nothing at all —
    *   see `session-reply-done.ts`, which is entirely about the three ways it is
    *   not the end.
-   * - **`agent-transcript.committed` vs `.updated` replaces a boolean.** The old
+   * - **`agentTranscript.committed` vs `.updated` replaces a boolean.** The old
    *   `onAgentTranscript(text, interrupted)` plus a separate
    *   `onAgentTranscriptPartial(text)` encoded, in two callbacks and a flag,
    *   exactly the distinction these two event names carry — only the committed
@@ -122,7 +122,7 @@ export type EmitError = (
 /** Per-send options for {@link SendTtsText}. */
 export type SendTtsOptions = {
   /**
-   * Publish the cumulative TTS text as an interim `agent-transcript.updated`.
+   * Publish the cumulative TTS text as an interim `agentTranscript.updated`.
    * Defaults to `true`; the greeting and the start-failure line publish their
    * own final instead.
    */
@@ -367,7 +367,7 @@ export interface Transport {
    * A TYPED user turn (the client's `user_text`): answer `text` exactly as if
    * the transcriber had committed it. The transport reports everything itself
    * — `reply.cancelled` first when a reply was in flight or still playing,
-   * then the `user-transcript.committed` — because that ORDER is the stream's,
+   * then the `userTranscript.committed` — because that ORDER is the stream's,
    * and a session emitting the cancel after the verb returned would record the
    * new turn before the reply it replaced ended.
    *

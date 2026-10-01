@@ -27,7 +27,7 @@ export default agent({
   // the ledger of everything this call wrote — their SQLite changeset stream.
   syncState: deskProjection,
   /**
-   * Wires `@user-transcript.committed` and `@session.timed-out` to the desk
+   * Wires `@userTranscript.committed` and `@session.timedOut` to the desk
    * dialog. Without it `offering` and `readBack` — the two states that exist to
    * make the model SPEAK before the next tool is legal — could never be left,
    * and a caller who hung up mid-booking would leave the flow open.

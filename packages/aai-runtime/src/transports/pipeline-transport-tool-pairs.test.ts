@@ -200,10 +200,10 @@ describe("a RESUMED conversation's tool calls reach the model as pairs", () => {
     // makes. The digest text this replaced was imitated live — the model spoke
     // `[tool think(…) … to=functions.prepare_call …` instead of calling.
     const log: SessionEventBody[] = [
-      { type: "user-transcript.committed", text: "where is my order" },
+      { type: "userTranscript.committed", text: "where is my order" },
       { type: "tool.called", toolCallId: "tc-1", toolName: "lookup", args: { id: "4471" } },
       { type: "tool.completed", toolCallId: "tc-1", result: "eta=tue" },
-      { type: "agent-transcript.committed", text: "Tuesday." },
+      { type: "agentTranscript.committed", text: "Tuesday." },
     ];
     const { messages, toolCalls } = historyFromEvents(log.map((body) => stampSessionEvent(body)));
     const logger = makeLogger();
@@ -218,7 +218,7 @@ describe("a RESUMED conversation's tool calls reach the model as pairs", () => {
     t.seedHistory?.(messages, modelHistoryOf(messages, toolCalls));
     stt.last()?.fireFinal("are you sure");
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalled();
     });
     const prompt = promptOf(llmCalls(opts).calls[0]).filter((m) => m.role !== "system");
     await t.stop();

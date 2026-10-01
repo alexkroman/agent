@@ -85,7 +85,7 @@ describe("speakFixedLine", () => {
       },
       { text: "Sorry, I had a problem." },
     );
-    expect(order).toEqual(["agent-transcript.committed", "tts publish=false"]);
+    expect(order).toEqual(["agentTranscript.committed", "tts publish=false"]);
   });
 
   test("a recovery phrase carries its tag; a recorded line carries none", () => {
@@ -97,8 +97,8 @@ describe("speakFixedLine", () => {
     speakFixedLine(deps, { text: "Sorry.", recovery: "turn-failed" });
     speakFixedLine(deps, { text: "Hi!" });
     expect(reported).toEqual([
-      { type: "agent-transcript.committed", text: "Sorry.", recovery: "turn-failed" },
-      { type: "agent-transcript.committed", text: "Hi!" },
+      { type: "agentTranscript.committed", text: "Sorry.", recovery: "turn-failed" },
+      { type: "agentTranscript.committed", text: "Hi!" },
     ]);
   });
 });
@@ -202,7 +202,7 @@ describe("createLineReply", () => {
   test("the caption is still committed up front, whatever the outcome", async () => {
     const { reply, reported, sends } = harness(({ cut }) => cut());
     await reply("pipeline-greeting", LINE);
-    expect(reported).toEqual([{ type: "agent-transcript.committed", text: LINE }]);
+    expect(reported).toEqual([{ type: "agentTranscript.committed", text: LINE }]);
     expect(sends).toEqual([{ text: LINE, opts: { publishTranscript: false } }]);
   });
 });

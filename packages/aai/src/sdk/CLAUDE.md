@@ -183,7 +183,7 @@ so nothing on the event stream decides what the reply in flight says. It does
 carry `slots`: slot and dialog accessors take a `SlotHolder`
 (`{ slots, sessionId }`), which a `ToolContext` satisfies. **The line is "cannot
 change the TURN", not "cannot write"** — maintaining session state from
-`user-transcript.committed` or `tool.called` beats a tool the prompt begs the
+`userTranscript.committed` or `tool.called` beats a tool the prompt begs the
 model to call.
 
 It also carries **`speech`** (`session-speech.ts`), which stays on the right
@@ -200,7 +200,7 @@ stream like any reply. The same `SessionSpeech` is `ToolContext.speech` (so a
 - **Never await `done` inside the reply it queues behind** (a tool's
   `execute`, a handler holding that reply) — it waits for itself.
 - **A speaking handler can hear itself.** A `say` emits
-  `agent-transcript.committed` and reply events AFTER the handler returned, so
+  `agentTranscript.committed` and reply events AFTER the handler returned, so
   the emitter's re-entry guard does not catch a handler that answers its own
   line; it must key on what triggered it. LiveKit and Pipecat do not guard
   this either. `session-speech.ts` carries the safe pattern.
@@ -269,7 +269,7 @@ module doc owns it, `packages/aai-runtime/DIALOG-CLAUDE.md` owns the knobs.
   snapshot is persisted. The machine overload stays; both forms compile to the
   same machine. Two type traps are argued in `dialog-types.ts`.
 - **An `on` key starting with `@` is a SESSION event**
-  (`"@session.timed-out"`), kept out of the author's `send` union. A state may
+  (`"@session.timedOut"`), kept out of the author's `send` union. A state may
   carry `timeout: { afterMs, send }` and `voice`/`bargeIn`/`toolChoice`/
   `temperature`, read deepest-first, riding in `meta`. **`after` is REFUSED**
   — the actor is stopped inside its window, so a delay never fires.

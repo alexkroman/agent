@@ -49,10 +49,10 @@ describe("Transport contract", () => {
       onAudioChunk: () => undefined,
     };
 
-    callbacks.report({ type: "user-transcript.committed", text: "hi" });
+    callbacks.report({ type: "userTranscript.committed", text: "hi" });
     callbacks.report({ type: "reply.cancelled" });
 
-    expect(seen.map((e) => e.type)).toEqual(["user-transcript.committed", "reply.cancelled"]);
-    expect(seen[0]).toEqual({ type: "user-transcript.committed", text: "hi" });
+    expect(seen.map((e) => e.type)).toEqual(["userTranscript.committed", "reply.cancelled"]);
+    expect(seen[0]).toEqual({ type: "userTranscript.committed", text: "hi" });
   });
 });

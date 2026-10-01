@@ -413,9 +413,9 @@ describe("a dropped 911 call", () => {
    * hook that never ran.
    */
   function hangUpOn(ctx: ToolContext): void {
-    const onHangUp = DISPATCH_EVENTS["session.timed-out"];
-    if (onHangUp === undefined) throw new Error("DISPATCH_EVENTS declares no session.timed-out");
-    onHangUp({ type: "session.timed-out", meta: { id: "evt-1", at: Date.now() } }, ctx);
+    const onHangUp = DISPATCH_EVENTS["session.timedOut"];
+    if (onHangUp === undefined) throw new Error("DISPATCH_EVENTS declares no session.timedOut");
+    onHangUp({ type: "session.timedOut", meta: { id: "evt-1", at: Date.now() } }, ctx);
   }
 
   test("is written on the incident in hand, and moves the shift nowhere", async () => {

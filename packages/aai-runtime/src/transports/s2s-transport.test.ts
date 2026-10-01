@@ -428,7 +428,7 @@ describe("S2sTransport reconnect", () => {
     // And the retired transport relays nothing further from that socket.
     const audioCalls = vi.mocked(callbacks.onAudioChunk).mock.calls.length;
     cb2.onUserTranscript("are you still there");
-    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("userTranscript.committed")).not.toHaveBeenCalled();
     expect(callbacks.onAudioChunk).toHaveBeenCalledTimes(audioCalls);
   });
 
@@ -495,7 +495,7 @@ describe("S2sTransport reconnect", () => {
     // And the machine is still answering: a trailing frame is refused rather
     // than relayed, which is what a frozen actor would have allowed through.
     cb1.onUserTranscript("still talking");
-    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("userTranscript.committed")).not.toHaveBeenCalled();
   });
 
   test("cancelReply drops in-flight audio until the next reply starts", async () => {
@@ -523,8 +523,8 @@ describe("S2sTransport reconnect", () => {
     cb.onSessionReady("sess");
     cb.onUserTranscriptPartial("what's the wea");
 
-    expect(callbacks.reported("user-transcript.updated")).toHaveBeenCalledWith({
-      type: "user-transcript.updated",
+    expect(callbacks.reported("userTranscript.updated")).toHaveBeenCalledWith({
+      type: "userTranscript.updated",
       text: "what's the wea",
     });
   });
@@ -549,11 +549,11 @@ describe("S2sTransport reconnect", () => {
     cb.onReplyStarted("r1");
     cb.onAgentTranscript("It's sunny.", false);
 
-    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: "It's sunny.",
     });
-    expect(callbacks.reported("agent-transcript.updated")).not.toHaveBeenCalled();
+    expect(callbacks.reported("agentTranscript.updated")).not.toHaveBeenCalled();
   });
 
   test("an INTERRUPTED agent transcript is updated, never committed", async () => {
@@ -566,11 +566,11 @@ describe("S2sTransport reconnect", () => {
     cb.onReplyStarted("r1");
     cb.onAgentTranscript("It's sun", true);
 
-    expect(callbacks.reported("agent-transcript.updated")).toHaveBeenCalledWith({
-      type: "agent-transcript.updated",
+    expect(callbacks.reported("agentTranscript.updated")).toHaveBeenCalledWith({
+      type: "agentTranscript.updated",
       text: "It's sun",
     });
-    expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("agentTranscript.committed")).not.toHaveBeenCalled();
   });
 
   test("forwards agent transcript deltas as interim updates", async () => {
@@ -584,14 +584,14 @@ describe("S2sTransport reconnect", () => {
     cb.onAgentTranscriptPartial("It's");
     cb.onAgentTranscriptPartial("It's sunny");
 
-    expect(callbacks.reported("agent-transcript.updated")).toHaveBeenNthCalledWith(1, {
-      type: "agent-transcript.updated",
+    expect(callbacks.reported("agentTranscript.updated")).toHaveBeenNthCalledWith(1, {
+      type: "agentTranscript.updated",
       text: "It's",
     });
-    expect(callbacks.reported("agent-transcript.updated")).toHaveBeenNthCalledWith(2, {
-      type: "agent-transcript.updated",
+    expect(callbacks.reported("agentTranscript.updated")).toHaveBeenNthCalledWith(2, {
+      type: "agentTranscript.updated",
       text: "It's sunny",
     });
-    expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("agentTranscript.committed")).not.toHaveBeenCalled();
   });
 });

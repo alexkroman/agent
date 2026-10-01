@@ -56,13 +56,13 @@ describe("openSessionMemory", () => {
     const { memory, backend, stream, sessionId, history } = wire({ sessionContext });
     // A previous session of the same speaker.
     await bindClientSession(history, "earlier", "porch");
-    stream.append("earlier", { type: "user-transcript.committed", text: "remind me at six" });
+    stream.append("earlier", { type: "userTranscript.committed", text: "remind me at six" });
     await stream.flush("earlier");
     setSessionClient(sessionId, "porch");
 
     const prior = await memory.open();
 
-    expect(prior.map((e) => e.type)).toEqual(["user-transcript.committed"]);
+    expect(prior.map((e) => e.type)).toEqual(["userTranscript.committed"]);
     expect(sessionContext).toHaveBeenCalledWith(expect.objectContaining({ clientId: "porch" }));
     const listed = await backend.clientSessions?.("porch", { limit: 10 });
     expect(listed?.map((s) => s.sessionId).sort()).toEqual(["earlier", sessionId].sort());
@@ -73,7 +73,7 @@ describe("openSessionMemory", () => {
       sessionContext: () => ({ historySince: Date.now() + 60_000 }),
     });
     await bindClientSession(history, "earlier", "porch");
-    stream.append("earlier", { type: "user-transcript.committed", text: "summarized already" });
+    stream.append("earlier", { type: "userTranscript.committed", text: "summarized already" });
     await stream.flush("earlier");
     setSessionClient(sessionId, "porch");
 

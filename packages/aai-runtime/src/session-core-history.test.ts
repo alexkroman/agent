@@ -26,7 +26,7 @@ describe("createSessionCore — history", () => {
     await core.start();
 
     core.restoreHistory([{ role: "user", content: "prior" }]);
-    core.report({ type: "user-transcript.committed", text: "now" });
+    core.report({ type: "userTranscript.committed", text: "now" });
 
     core.onReplyStarted("r1");
     core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
@@ -45,7 +45,7 @@ describe("createSessionCore — history", () => {
     const { core } = makeCore({ executeTool });
     await core.start();
 
-    core.report({ type: "user-transcript.committed", text: "where is my order" });
+    core.report({ type: "userTranscript.committed", text: "where is my order" });
     core.onReplyStarted("r1");
     core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalledTimes(1));
@@ -203,13 +203,13 @@ describe("createSessionCore — history", () => {
     const { core } = makeCore({ executeTool });
     await core.start();
 
-    core.report({ type: "user-transcript.committed", text: "hi" });
+    core.report({ type: "userTranscript.committed", text: "hi" });
     core.report({
-      type: "agent-transcript.committed",
+      type: "agentTranscript.committed",
       text: "Sorry, I had a problem just then.",
       recovery: "turn-failed",
     });
-    core.report({ type: "agent-transcript.committed", text: "Here you go." });
+    core.report({ type: "agentTranscript.committed", text: "Here you go." });
 
     core.onReplyStarted("r1");
     core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
@@ -228,13 +228,13 @@ describe("createSessionCore — history", () => {
     await core.start();
 
     core.report({
-      type: "agent-transcript.committed",
+      type: "agentTranscript.committed",
       text: "Sorry, I had a problem just then.",
       recovery: "turn-failed",
     });
 
     expect(
-      sink.events.filter((e: SessionEvent) => e.type === "agent-transcript.committed"),
+      sink.events.filter((e: SessionEvent) => e.type === "agentTranscript.committed"),
     ).toMatchObject([{ text: "Sorry, I had a problem just then.", recovery: "turn-failed" }]);
   });
 

@@ -39,9 +39,9 @@ describe("agent({ events }) through the runtime", () => {
 
     const session = runtime.createSession({ id: SID, agent: "a", client });
     session.configure(runtime.readyConfig);
-    session.report({ type: "user-transcript.committed", text: "hello" });
+    session.report({ type: "userTranscript.committed", text: "hello" });
 
-    expect(seen.map((e) => e.type)).toEqual(["session.configured", "user-transcript.committed"]);
+    expect(seen.map((e) => e.type)).toEqual(["session.configured", "userTranscript.committed"]);
   });
 
   test("a typed handler gets its own event with its own fields", () => {
@@ -76,9 +76,7 @@ describe("agent({ events }) through the runtime", () => {
     const client = makeClientSink();
     const session = runtime.createSession({ id: SID, agent: "a", client });
 
-    expect(() =>
-      session.report({ type: "user-transcript.committed", text: "hello" }),
-    ).not.toThrow();
+    expect(() => session.report({ type: "userTranscript.committed", text: "hello" })).not.toThrow();
     // And the client still got its frame.
     expect(client.event).toHaveBeenCalled();
   });
@@ -113,12 +111,12 @@ describe("agent({ events }) through the runtime", () => {
     const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
 
     session.configure(runtime.readyConfig);
-    session.report({ type: "user-transcript.committed", text: "hello" });
+    session.report({ type: "userTranscript.committed", text: "hello" });
 
     const page = await runtime.sessionEvents?.read(SID, 0);
     expect(page?.events.map((e) => e.type)).toEqual([
       "session.configured",
-      "user-transcript.committed",
+      "userTranscript.committed",
     ]);
   });
 
@@ -141,7 +139,7 @@ describe("agent({ events }) through the runtime", () => {
     const intake = dialog("intake", {
       initial: "greeting",
       states: {
-        greeting: { instruction: "Say hello.", on: { "@user-transcript.committed": "greeted" } },
+        greeting: { instruction: "Say hello.", on: { "@userTranscript.committed": "greeted" } },
         greeted: { instruction: "Find out why they called.", final: true },
       },
     });
@@ -151,7 +149,7 @@ describe("agent({ events }) through the runtime", () => {
         dialogs: [intake],
         // `SessionEventContext` IS a `SlotHolder`, which is what lets a handler
         // read a dialog with no wiring of its own.
-        events: { "user-transcript.committed": (_e, ctx) => at.push(intake.position(ctx).state) },
+        events: { "userTranscript.committed": (_e, ctx) => at.push(intake.position(ctx).state) },
       }),
       env: {},
       logger: silentLogger,
@@ -159,7 +157,7 @@ describe("agent({ events }) through the runtime", () => {
     const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
     session.configure(runtime.readyConfig);
 
-    session.report({ type: "user-transcript.committed", text: "hi there" });
+    session.report({ type: "userTranscript.committed", text: "hi there" });
 
     expect(at).toEqual(["greeted"]);
   });

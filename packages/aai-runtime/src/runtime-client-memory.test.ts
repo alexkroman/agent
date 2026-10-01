@@ -69,8 +69,8 @@ describe("a client's conversation across sessions, through the runtime", () => {
       client: makeClientSink(),
     });
     await first.start();
-    first.report({ type: "user-transcript.committed", text: "my name is Ana" });
-    first.report({ type: "agent-transcript.committed", text: "Nice to meet you, Ana." });
+    first.report({ type: "userTranscript.committed", text: "my name is Ana" });
+    first.report({ type: "agentTranscript.committed", text: "Nice to meet you, Ana." });
     await first.stop();
 
     expect(ended).toHaveLength(1);
@@ -119,7 +119,7 @@ describe("a client's conversation across sessions, through the runtime", () => {
       setSessionClient(id, client);
       const session = runtime.createSession({ id, agent: "a", client: makeClientSink() });
       await session.start();
-      session.report({ type: "user-transcript.committed", text: said });
+      session.report({ type: "userTranscript.committed", text: said });
       await session.stop();
     }
 
@@ -158,15 +158,15 @@ describe("a client's conversation across sessions, through the runtime", () => {
         client: makeClientSink(),
       });
       await session.start();
-      session.report({ type: "user-transcript.committed", text: "lights off" });
+      session.report({ type: "userTranscript.committed", text: "lights off" });
       await session.stop();
       const frames = feed.mock.calls.map(([to, frame]) => {
         expect(to).toBe(client);
         return frame.type === "session_event" ? frame.event.type : frame.type;
       });
       // The greeting and the turn, as they were committed.
-      expect(frames).toContain("agent-transcript.committed");
-      expect(frames).toContain("user-transcript.committed");
+      expect(frames).toContain("agentTranscript.committed");
+      expect(frames).toContain("userTranscript.committed");
       expect(frames.at(-1)).toBe("session_ended");
       await runtime.shutdown();
     } finally {

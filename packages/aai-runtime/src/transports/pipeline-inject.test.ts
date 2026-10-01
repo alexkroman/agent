@@ -29,9 +29,9 @@ describe("injectTurn", () => {
     expect(JSON.stringify(llm.calls[0]?.prompt)).toContain("has finished");
     // Never a user transcript: nobody said this, and a client rendering it as
     // the caller's own words would be a lie about the conversation.
-    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
-    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("userTranscript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: "Your research is done — tulips were mostly fine.",
     });
     await t.stop();

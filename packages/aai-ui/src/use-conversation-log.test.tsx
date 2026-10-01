@@ -82,13 +82,13 @@ describe("useConversationLog", () => {
       core.update({ contentVersion: 1 });
     });
     act(() =>
-      hook.result.current.mirror(frame("mine", { type: "user-transcript.committed", text: "x" })),
+      hook.result.current.mirror(frame("mine", { type: "userTranscript.committed", text: "x" })),
     );
     expect(hook.result.current.entries).toEqual([]);
 
     act(() =>
       hook.result.current.mirror(
-        frame("speaker", { type: "user-transcript.committed", text: "lights off" }),
+        frame("speaker", { type: "userTranscript.committed", text: "lights off" }),
       ),
     );
     act(() =>
@@ -100,7 +100,7 @@ describe("useConversationLog", () => {
       hook.result.current.mirror(frame("speaker", { type: "tool.completed", toolCallId: "t" })),
     );
     act(() =>
-      hook.result.current.mirror(frame("speaker", { type: "user-transcript.updated", text: "th" })),
+      hook.result.current.mirror(frame("speaker", { type: "userTranscript.updated", text: "th" })),
     );
     const [entry] = hook.result.current.entries;
     expect(entry).toMatchObject({ kind: "session", sessionId: "speaker" });

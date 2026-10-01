@@ -75,14 +75,14 @@ describe("session event stream — recording", () => {
 describe("session event stream — reading", () => {
   test("a read replays from index 0 by default", async () => {
     const { stream } = makeStream();
-    stream.append(SID, { type: "user-transcript.committed", text: "one" });
-    stream.append(SID, { type: "user-transcript.committed", text: "two" });
+    stream.append(SID, { type: "userTranscript.committed", text: "one" });
+    stream.append(SID, { type: "userTranscript.committed", text: "two" });
 
     const page = await stream.read(SID, 0);
 
     expect(page.events.map((e) => e.type)).toEqual([
-      "user-transcript.committed",
-      "user-transcript.committed",
+      "userTranscript.committed",
+      "userTranscript.committed",
     ]);
     expect(page.tail).toBe(2);
   });
@@ -90,7 +90,7 @@ describe("session event stream — reading", () => {
   test("startIndex selects a position", async () => {
     const { stream } = makeStream();
     for (const text of ["a", "b", "c"]) {
-      stream.append(SID, { type: "user-transcript.committed", text });
+      stream.append(SID, { type: "userTranscript.committed", text });
     }
 
     const page = await stream.read(SID, 2);
@@ -115,7 +115,7 @@ describe("session event stream — reading", () => {
   test("a limit bounds the page, and the tail says there is more", async () => {
     const { stream } = makeStream();
     for (const text of ["a", "b", "c"]) {
-      stream.append(SID, { type: "user-transcript.committed", text });
+      stream.append(SID, { type: "userTranscript.committed", text });
     }
 
     const page = await stream.read(SID, 0, 2);
@@ -160,7 +160,7 @@ describe("session event stream — persistence", () => {
       },
     });
 
-    stream.append(SID, { type: "user-transcript.committed", text: "hi" });
+    stream.append(SID, { type: "userTranscript.committed", text: "hi" });
     expect(written).toHaveLength(0);
     stream.append(SID, { type: "reply.completed" });
     // Fire-and-forget from `append`, so the write lands on a later microtask.
@@ -258,13 +258,13 @@ describe("session event stream — hydration", () => {
   test("a resume continues the log rather than restarting at 0", async () => {
     const backend = createMemoryStateBackend();
     const first = createSessionEventStream({ backend });
-    first.append(SID, { type: "user-transcript.committed", text: "before" });
+    first.append(SID, { type: "userTranscript.committed", text: "before" });
     await first.flush(SID);
 
     // A replacement process: same backend, fresh in-process state.
     const second = createSessionEventStream({ backend });
     await second.hydrate(SID);
-    second.append(SID, { type: "user-transcript.committed", text: "after" });
+    second.append(SID, { type: "userTranscript.committed", text: "after" });
     await second.flush(SID);
 
     const page = await second.read(SID, 0);
@@ -275,7 +275,7 @@ describe("session event stream — hydration", () => {
   test("hydration RE-BASES an event recorded before the position was known", async () => {
     const backend = createMemoryStateBackend();
     const first = createSessionEventStream({ backend });
-    first.append(SID, { type: "user-transcript.committed", text: "before" });
+    first.append(SID, { type: "userTranscript.committed", text: "before" });
     await first.flush(SID);
 
     // The ordinary resume path: the handshake frame is emitted at zero RTT,
@@ -295,7 +295,7 @@ describe("session event stream — hydration", () => {
     // where `on conflict do nothing` silently drops it in favour of the stored
     // event — losing the frame AND leaving the reported tail wrong.
     expect(page.events.map((e) => e.type)).toEqual([
-      "user-transcript.committed",
+      "userTranscript.committed",
       "session.configured",
     ]);
     expect(page.tail).toBe(2);
@@ -319,7 +319,7 @@ describe("session event stream — hydration", () => {
     const stream = createSessionEventStream({ backend });
     await stream.hydrate(SID);
     expect(stream.tail(SID)).toBe(6);
-    stream.append(SID, { type: "user-transcript.committed", text: "after" });
+    stream.append(SID, { type: "userTranscript.committed", text: "after" });
     await stream.flush(SID);
 
     const page = await stream.read(SID, 0);

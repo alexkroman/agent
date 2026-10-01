@@ -80,7 +80,7 @@ export function createCommandDispatcher(deps: CommandDeps): CommandDispatcher {
     if (transport.sendUserText !== undefined) {
       // The transport reports the cancel (if any) and the committed turn
       // itself, in that order — see `Transport.sendUserText`. The idle
-      // deadline is re-armed by that `user-transcript.committed`, the same
+      // deadline is re-armed by that `userTranscript.committed`, the same
       // report a spoken turn re-arms it with.
       transport.sendUserText(text);
       return;

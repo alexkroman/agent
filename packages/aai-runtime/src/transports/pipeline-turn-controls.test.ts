@@ -51,14 +51,14 @@ describe("PipelineTransport — an OUTPUT guardrail", () => {
     stt.last()?.fireFinal("how much should I take");
 
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalled();
     });
     // The load-bearing assertion: not one character of the model's answer
     // reached the synthesizer.
     expect(spoken(tts)).not.toContain("400 mg");
     expect(spoken(tts)).toContain("pharmacist");
-    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: "I can't give dosage advice. Please call your pharmacist.",
     });
     expect(blocked).toEqual(["I can't give dosage advice. Please call your pharmacist."]);
@@ -84,7 +84,7 @@ describe("PipelineTransport — an OUTPUT guardrail", () => {
     await t.start();
     stt.last()?.fireFinal("where is my order");
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalled();
     });
     expect(spoken(tts)).toContain("Your order ships tomorrow.");
     await t.stop();
@@ -188,7 +188,7 @@ describe("PipelineTransport — an INPUT guardrail", () => {
     await t.start();
     stt.last()?.fireFinal("my number is 123-45-6789");
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalled();
     });
     expect(llmCalls(opts).calls).toHaveLength(0);
     expect(spoken(tts)).toContain("Please don't read that out.");
@@ -210,8 +210,8 @@ describe("PipelineTransport — an INPUT guardrail", () => {
     await t.start();
     stt.last()?.fireFinal("something forbidden");
     await vi.waitFor(() => {
-      expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-        type: "user-transcript.committed",
+      expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+        type: "userTranscript.committed",
         text: "something forbidden",
       });
     });

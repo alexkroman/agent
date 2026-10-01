@@ -125,7 +125,7 @@ harness:
 
 - **The turn wait is STRUCTURAL here, not a poll.** The voice harness polls the
   event list for a `TURN_ENDS` member anchored to its own
-  `user-transcript.committed`, because the session runs on its own clock. This
+  `userTranscript.committed`, because the session runs on its own clock. This
   harness owns the stream, so `await result.consumeStream()` IS the wait: the
   terminator is a synchronous consequence of the stream's terminal part, so a
   turn with none is a HARNESS fault reported as such rather than waited out. A
@@ -510,7 +510,7 @@ decisions worth not undoing:
   skipped fails with that said. An empty criteria list throws.
 - **The judge reads BOTH sides.** Handed turns it rendered tool calls and
   replies only, so "only 9 PM was offered" had no evidence and failed by the
-  judge's own rule; each turn now opens with its `user-transcript.committed`
+  judge's own rule; each turn now opens with its `userTranscript.committed`
   line. It also takes a session (`Pick<EvalSession, "events">`) and reads the
   whole conversation, uncut (`conversationOf` in `transcript.ts`), which is
   what retired a downstream suite's own transcript function for the judge.

@@ -168,7 +168,7 @@ export function createSttEventHandlers(deps: {
     const caption = manualTurn.onPartial(text);
     if (caption === undefined || words < 1) return;
     callbacks.report({
-      type: "user-transcript.updated",
+      type: "userTranscript.updated",
       text: caption,
       ...omitUndefined({ eotConfidence: meta?.endOfTurnConfidence }),
     });
@@ -294,7 +294,7 @@ export function createSttEventHandlers(deps: {
       const emitPartial = (): void => {
         if (words >= 1) {
           callbacks.report({
-            type: "user-transcript.updated",
+            type: "userTranscript.updated",
             text,
             ...omitUndefined({ eotConfidence: meta?.endOfTurnConfidence }),
           });

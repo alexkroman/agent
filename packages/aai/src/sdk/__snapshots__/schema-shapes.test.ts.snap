@@ -101,14 +101,14 @@ exports[`protocol schema shapes > SessionCommandSchema option shapes 1`] = `
 
 exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
 {
-  "agent-transcript.committed": [
+  "agentTranscript.committed": [
     "meta",
     "recorded",
     "recovery",
     "text",
     "type",
   ],
-  "agent-transcript.updated": [
+  "agentTranscript.updated": [
     "meta",
     "text",
     "type",
@@ -171,7 +171,7 @@ exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
     "meta",
     "type",
   ],
-  "session.timed-out": [
+  "session.timedOut": [
     "meta",
     "type",
   ],
@@ -209,18 +209,18 @@ exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
     "totalTokens",
     "type",
   ],
-  "user-transcript.committed": [
+  "userTranscript.committed": [
     "meta",
     "text",
     "type",
   ],
-  "user-transcript.updated": [
+  "userTranscript.updated": [
     "eotConfidence",
     "meta",
     "text",
     "type",
   ],
-  "user-turn.exceeded": [
+  "userTurn.exceeded": [
     "durationMs",
     "limit",
     "meta",

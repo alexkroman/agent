@@ -69,12 +69,12 @@ async function startSession(
   await started;
   /** Everything TTS was asked to synthesize, joined. */
   const spoken = (): string => tts.sessions.flatMap((s) => s.textChunks).join("");
-  /** The `agent-transcript.committed` texts the client was sent. */
+  /** The `agentTranscript.committed` texts the client was sent. */
   const committed = (): string[] =>
     vi
       .mocked(client.event)
       .mock.calls.map(([event]) => event)
-      .flatMap((e) => (e.type === "agent-transcript.committed" ? [e.text] : []));
+      .flatMap((e) => (e.type === "agentTranscript.committed" ? [e.text] : []));
   return { session, stt, llm, spoken, committed };
 }
 

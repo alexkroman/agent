@@ -28,7 +28,7 @@
  * the position of step three is the decision. A dialog is part of the session's
  * STATE; a hook is an observer of what the session did. By the time an observer
  * runs, everything the event caused should already have happened — so a
- * `"session.timed-out"` handler that reads `claim.position(ctx)` sees the state
+ * `"session.timedOut"` handler that reads `claim.position(ctx)` sees the state
  * the dialog moved TO, which is the state it declared a transition to precisely
  * in order to handle this event. The other order hands that handler the state
  * the call has just left, silently and with no way to tell from the handler.
@@ -60,7 +60,7 @@
  * expressible, without the runtime guessing which events count as "activity":
  *
  * - **A silence ladder** wants "since we last heard anything". Declare the
- *   hearing: `on: { "@user-transcript.committed": "listening" }` on the state
+ *   hearing: `on: { "@userTranscript.committed": "listening" }` on the state
  *   itself is a self-transition, so every committed utterance re-arms the window
  *   and only real silence reaches the deadline.
  * - **An abandonment or escalation deadline** wants wall clock from entry —

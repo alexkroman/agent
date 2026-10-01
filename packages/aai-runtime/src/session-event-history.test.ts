@@ -17,11 +17,11 @@ import { stampSessionEvent } from "./session-event-stream.ts";
 /** Stamp a body, the way the log holds it. */
 const at = (body: SessionEventBody): SessionEvent => stampSessionEvent(body);
 
-const user = (text: string) => at({ type: "user-transcript.committed", text });
-const agent = (text: string) => at({ type: "agent-transcript.committed", text });
+const user = (text: string) => at({ type: "userTranscript.committed", text });
+const agent = (text: string) => at({ type: "agentTranscript.committed", text });
 /** The two phrases the TRANSPORT speaks itself when the model cannot. */
 const recovery = (text: string, recovery: "turn-failed" | "session-failed") =>
-  at({ type: "agent-transcript.committed", text, recovery });
+  at({ type: "agentTranscript.committed", text, recovery });
 
 describe("messagesFromEvents", () => {
   test("reads the conversation back in order", () => {
@@ -41,9 +41,9 @@ describe("messagesFromEvents", () => {
     // interrupted reply's last one is not a record of anything — so reading them
     // would invent turns the session never committed.
     const events = [
-      at({ type: "user-transcript.updated", text: "h" }),
+      at({ type: "userTranscript.updated", text: "h" }),
       user("hi"),
-      at({ type: "agent-transcript.updated", text: "hel" }),
+      at({ type: "agentTranscript.updated", text: "hel" }),
       agent("hello"),
     ];
     expect(messagesFromEvents(events)).toEqual([
@@ -56,7 +56,7 @@ describe("messagesFromEvents", () => {
     // `onAgentTranscript(text, interrupted: true)` emits only the UPDATED event,
     // which is exactly the live session's own history rule — see the module doc
     // for why under-keeping is the cheap direction.
-    const events = [user("stop"), at({ type: "agent-transcript.updated", text: "I was say" })];
+    const events = [user("stop"), at({ type: "agentTranscript.updated", text: "I was say" })];
     expect(messagesFromEvents(events)).toEqual([{ role: "user", content: "stop" }]);
   });
 
@@ -108,7 +108,7 @@ describe("messagesFromEvents", () => {
   test("a say spoken with record: false is captioned but never part of the conversation", () => {
     // Live, on resume and in `ctx.messages` alike: this is the one reader.
     const unrecorded = at({
-      type: "agent-transcript.committed",
+      type: "agentTranscript.committed",
       text: "One moment while I check.",
       recorded: false,
     });
@@ -256,7 +256,7 @@ describe("modelHistoryOf — prior tool calls as REAL call/result pairs", () => 
   test("a call is seeded as a tool-call part and a result under the same id, then the reply", () => {
     expect(
       modelView([
-        { type: "user-transcript.committed", text: "weather in Portland?" },
+        { type: "userTranscript.committed", text: "weather in Portland?" },
         {
           type: "tool.called",
           toolCallId: "c1",
@@ -264,7 +264,7 @@ describe("modelHistoryOf — prior tool calls as REAL call/result pairs", () => 
           args: { city: "Portland" },
         },
         { type: "tool.completed", toolCallId: "c1", result: '{"temp":12}' },
-        { type: "agent-transcript.committed", text: "Twelve degrees." },
+        { type: "agentTranscript.committed", text: "Twelve degrees." },
       ]),
     ).toEqual([
       { role: "user", content: "weather in Portland?" },
@@ -295,7 +295,7 @@ describe("modelHistoryOf — prior tool calls as REAL call/result pairs", () => 
     // tool-call channel markup instead of calling. The content check is over
     // every part, so a call smuggled into any text field fails here.
     const seeded = modelView([
-      { type: "user-transcript.committed", text: "call the dentist" },
+      { type: "userTranscript.committed", text: "call the dentist" },
       { type: "tool.called", toolCallId: "c1", toolName: "think", args: { thought: "who" } },
       { type: "tool.completed", toolCallId: "c1", result: "ok" },
       {
@@ -305,7 +305,7 @@ describe("modelHistoryOf — prior tool calls as REAL call/result pairs", () => 
         args: { callee: "Dr. Ada" },
       },
       { type: "tool.completed", toolCallId: "c2", result: '{"ready":true}' },
-      { type: "agent-transcript.committed", text: "Calling now." },
+      { type: "agentTranscript.committed", text: "Calling now." },
     ]);
     const texts = seeded.flatMap((m) =>
       typeof m.content === "string"
@@ -330,10 +330,10 @@ describe("modelHistoryOf — prior tool calls as REAL call/result pairs", () => 
   test("a call with no reply after it is a pair on its own, before the next user turn", () => {
     expect(
       modelView([
-        { type: "user-transcript.committed", text: "set a timer" },
+        { type: "userTranscript.committed", text: "set a timer" },
         { type: "tool.called", toolCallId: "c1", toolName: "timer", args: { minutes: 5 } },
         { type: "tool.completed", toolCallId: "c1", result: "ok" },
-        { type: "user-transcript.committed", text: "hello?" },
+        { type: "userTranscript.committed", text: "hello?" },
       ]).map((m) => m.role),
     ).toEqual(["user", "assistant", "tool", "user"]);
   });
@@ -343,7 +343,7 @@ describe("modelHistoryOf — prior tool calls as REAL call/result pairs", () => 
     // pair can be built — and a text mention is exactly what was imitated.
     const seeded = modelView([
       { type: "tool.completed", toolCallId: "gone", result: "eta=tue" },
-      { type: "agent-transcript.committed", text: "Tuesday." },
+      { type: "agentTranscript.committed", text: "Tuesday." },
     ]);
     expect(seeded).toEqual([{ role: "assistant", content: "Tuesday." }]);
     expect(JSON.stringify(seeded)).not.toContain("eta=tue");
@@ -351,7 +351,7 @@ describe("modelHistoryOf — prior tool calls as REAL call/result pairs", () => 
 
   test("a PENDING call (no result) contributes nothing either", () => {
     const seeded = modelView([
-      { type: "user-transcript.committed", text: "book it" },
+      { type: "userTranscript.committed", text: "book it" },
       { type: "tool.called", toolCallId: "c1", toolName: "book", args: { day: "tue" } },
     ]);
     expect(seeded).toEqual([{ role: "user", content: "book it" }]);
@@ -359,7 +359,7 @@ describe("modelHistoryOf — prior tool calls as REAL call/result pairs", () => 
 
   test("a long result and long arguments are capped; a call id no provider takes is replaced", () => {
     const seeded = modelView([
-      { type: "user-transcript.committed", text: "go" },
+      { type: "userTranscript.committed", text: "go" },
       {
         type: "tool.called",
         toolCallId: "tc:1/with.odd-chars",
@@ -400,7 +400,7 @@ describe("modelHistoryOf — prior tool calls as REAL call/result pairs", () => 
     const seeded = modelView([
       { type: "tool.called", toolCallId: "call_1", toolName: "a", args: {} },
       { type: "tool.completed", toolCallId: "call_1", result: "first" },
-      { type: "user-transcript.committed", text: "again" },
+      { type: "userTranscript.committed", text: "again" },
       { type: "tool.called", toolCallId: "call_1", toolName: "a", args: {} },
       { type: "tool.completed", toolCallId: "call_1", result: "second" },
     ]);

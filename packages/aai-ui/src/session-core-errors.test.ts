@@ -247,7 +247,7 @@ describe("session-core error handling", () => {
     expect(core.getSnapshot().state).toBe("error");
 
     lastSocket?.simulateMessage(
-      JSON.stringify({ type: "agent-transcript.updated", text: "still here" }),
+      JSON.stringify({ type: "agentTranscript.updated", text: "still here" }),
     );
     const snap = core.getSnapshot();
     expect(snap.state).toBe("error");
@@ -270,7 +270,7 @@ describe("session-core error handling", () => {
     expect(core.getSnapshot().error?.code).toBe("stt");
 
     lastSocket?.simulateMessage(
-      JSON.stringify({ type: "agent-transcript.updated", text: "still here" }),
+      JSON.stringify({ type: "agentTranscript.updated", text: "still here" }),
     );
     expect(core.getSnapshot().error).toBe(null);
   });

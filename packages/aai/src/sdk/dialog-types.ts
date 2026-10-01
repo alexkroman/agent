@@ -195,7 +195,7 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E>
 /**
  * A session event as a dialog names it: the wire type under a leading `@`.
  *
- * `"@session.timed-out"`, `"@speech.started"`, `"@user-transcript.committed"` —
+ * `"@session.timedOut"`, `"@speech.started"`, `"@userTranscript.committed"` —
  * every {@link SessionEventType} is one of these, and nothing else is. The
  * prefix is a NAMESPACE rather than decoration: an author's own event names are
  * unconstrained, so a dialog that declared `on: { "reply.completed": … }` for

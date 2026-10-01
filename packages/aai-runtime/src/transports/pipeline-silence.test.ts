@@ -26,10 +26,10 @@ describe("silence nudge", () => {
     });
     // The injected instruction reaches the LLM as a user message but is
     // never surfaced as a user transcript.
-    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("userTranscript.committed")).not.toHaveBeenCalled();
     expect(JSON.stringify(llm.calls[0]?.prompt)).toContain("Check in now.");
-    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: "Still there?",
     });
     await t.stop();
@@ -95,8 +95,8 @@ describe("silence nudge", () => {
     await vi.waitFor(() => {
       expect(replyDone.mock.calls.length).toBeGreaterThanOrEqual(5);
     });
-    expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-      type: "user-transcript.committed",
+    expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+      type: "userTranscript.committed",
       text: "I'm back",
     });
     await t.stop();
@@ -118,8 +118,8 @@ describe("silence nudge", () => {
       1,
       expect.stringContaining("greeting"),
     );
-    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenLastCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).toHaveBeenLastCalledWith({
+      type: "agentTranscript.committed",
       text: "hello?",
     });
     await t.stop();

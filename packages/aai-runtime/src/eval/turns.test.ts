@@ -170,7 +170,7 @@ describe("expectToolBeforeSpeech", () => {
     args: { query: "who won" },
   };
   const saidEvent = (text: string): SessionEvent => ({
-    type: "agent-transcript.committed",
+    type: "agentTranscript.committed",
     meta,
     text,
   });

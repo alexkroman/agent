@@ -360,7 +360,7 @@ export const AWAITING = "onCall.awaitingDecision";
  * compile error: `SessionEventType` is the union of what the runtime actually
  * delivers, and the literal type survives it, which the `as const` below needs.
  */
-const HUNG_UP = "@session.timed-out" satisfies `@${SessionEventType}`;
+const HUNG_UP = "@session.timedOut" satisfies `@${SessionEventType}`;
 
 /**
  * `as const` is load-bearing: the event union is synthesized from the `on` keys.

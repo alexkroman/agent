@@ -147,7 +147,7 @@ export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolC
  */
 export function expectToolBeforeSpeech(turn: EvalTurn): void {
   const firstTool = turn.events.find((e) => e.type === "tool.called");
-  const firstSaid = turn.events.find((e) => e.type === "agent-transcript.committed");
+  const firstSaid = turn.events.find((e) => e.type === "agentTranscript.committed");
   if (firstTool === undefined) {
     throw new Error(`no tool was called, so nothing came before speech: ${describeTurn(turn)}`);
   }

@@ -176,7 +176,7 @@ describe("compileAgentRoutes", () => {
       "GET /sessions": (req, ctx) => ctx.clientTranscript(req.clientId ?? ""),
     });
     await bindClientSession(history, "route-earlier", "porch");
-    stream.append("route-earlier", { type: "user-transcript.committed", text: "remind me at six" });
+    stream.append("route-earlier", { type: "userTranscript.committed", text: "remind me at six" });
     const reply = await serve?.(call({ path: "/sessions", clientId: "porch" }));
     expect(reply).toMatchObject({
       status: 200,

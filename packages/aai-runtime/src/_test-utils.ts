@@ -443,11 +443,11 @@ export function makeTrackingClient(): TrackingClientSink {
         // Both: an interim snapshot and the reply's committed text. They are
         // separate events now (only the second enters history), and a recorder
         // that took one would have stopped seeing whole replies.
-        case "agent-transcript.updated":
-        case "agent-transcript.committed":
+        case "agentTranscript.updated":
+        case "agentTranscript.committed":
           agentTranscripts.push(e.text);
           break;
-        case "user-transcript.committed":
+        case "userTranscript.committed":
           userTranscripts.push(e.text);
           break;
         case "tool.called":

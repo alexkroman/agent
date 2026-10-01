@@ -279,11 +279,11 @@ describe("session event hooks", () => {
   test("a hook's write reaches the SAME store a tool call reads", () => {
     const slots = slotsFor();
     const { emitter } = setup({
-      handlers: { "user-transcript.committed": (e, ctx) => ctx.slots.write("last", e.text, true) },
+      handlers: { "userTranscript.committed": (e, ctx) => ctx.slots.write("last", e.text, true) },
       slots,
     });
 
-    emitter.emit({ type: "user-transcript.committed", text: "go north" });
+    emitter.emit({ type: "userTranscript.committed", text: "go north" });
 
     // The point of the whole capability: a tool body reading this slot next turn
     // sees what the hook recorded, with no model cooperation in between.

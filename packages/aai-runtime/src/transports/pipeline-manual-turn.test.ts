@@ -191,9 +191,9 @@ describe("push-to-talk through the pipeline transport", () => {
     stt.last()?.fireFinal("To the airport.");
     await vi.advanceTimersByTimeAsync(100);
     // Nothing answered while the button is held.
-    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("userTranscript.committed")).not.toHaveBeenCalled();
     // The caption spans the pause.
-    expect(callbacks.reported("user-transcript.updated")).toHaveBeenLastCalledWith(
+    expect(callbacks.reported("userTranscript.updated")).toHaveBeenLastCalledWith(
       expect.objectContaining({ text: "I need a cab. To the" }),
     );
 
@@ -201,9 +201,9 @@ describe("push-to-talk through the pipeline transport", () => {
     await vi.waitFor(() => {
       expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
     });
-    expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledTimes(1);
-    expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-      type: "user-transcript.committed",
+    expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledTimes(1);
+    expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+      type: "userTranscript.committed",
       text: "I need a cab. To the airport.",
     });
     await t.stop();
@@ -252,7 +252,7 @@ describe("push-to-talk through the pipeline transport", () => {
     // And the transcriber still owns the turn: a final is answered as always.
     stt.last()?.fireFinal("hello");
     await vi.waitFor(() => {
-      expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalled();
     });
     await t.stop();
   });

@@ -274,11 +274,11 @@ async function openWithFakes(
    * belong to the PREVIOUS reply (a `reply.cancelled` from a barge-in, a late
    * completion), so `say()` returned before the model had run and the case
    * recorded "called no tools". The utterance's own
-   * `user-transcript.committed` is the anchor — every event of its reply follows
+   * `userTranscript.committed` is the anchor — every event of its reply follows
    * it.
    */
   const repliedTo = (since: readonly SessionEvent[]): boolean => {
-    const at = since.findIndex((e) => e.type === "user-transcript.committed");
+    const at = since.findIndex((e) => e.type === "userTranscript.committed");
     return at !== -1 && since.slice(at).some((e) => TURN_ENDS.has(e.type));
   };
 

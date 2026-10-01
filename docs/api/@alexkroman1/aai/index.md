@@ -5766,14 +5766,14 @@ import { agent, dialog } from "@alexkroman1/aai";
 const claim = dialog("claim", {
   initial: "verifying",
   states: {
-    verifying: { on: { "@session.timed-out": "abandoned" } },
+    verifying: { on: { "@session.timedOut": "abandoned" } },
     abandoned: { final: true },
   },
 });
 
 export default agent({
   name: "Support",
-  events: { "session.timed-out": (event, ctx) => void claim.receive(ctx, event) },
+  events: { "session.timedOut": (event, ctx) => void claim.receive(ctx, event) },
 });
 ```
 
@@ -8482,10 +8482,10 @@ misspelled name, where the `Extract` silently resolves to `never`.
 
 #### Properties
 
-##### agent-transcript.committed
+##### agentTranscript.committed
 
 ```ts
-agent-transcript.committed: {
+agentTranscript.committed: {
   meta: {
      at: number;
      id: string;
@@ -8493,7 +8493,7 @@ agent-transcript.committed: {
   recorded?: false;
   recovery?: "session-failed" | "turn-failed";
   text: string;
-  type: "agent-transcript.committed";
+  type: "agentTranscript.committed";
 };
 ```
 
@@ -8527,25 +8527,25 @@ text: string;
 ###### type
 
 ```ts
-type: "agent-transcript.committed";
+type: "agentTranscript.committed";
 ```
 
 ###### Inherited from
 
 ```ts
-EventMapOf.agent-transcript.committed
+EventMapOf.agentTranscript.committed
 ```
 
-##### agent-transcript.updated
+##### agentTranscript.updated
 
 ```ts
-agent-transcript.updated: {
+agentTranscript.updated: {
   meta: {
      at: number;
      id: string;
   };
   text: string;
-  type: "agent-transcript.updated";
+  type: "agentTranscript.updated";
 };
 ```
 
@@ -8567,13 +8567,13 @@ text: string;
 ###### type
 
 ```ts
-type: "agent-transcript.updated";
+type: "agentTranscript.updated";
 ```
 
 ###### Inherited from
 
 ```ts
-EventMapOf.agent-transcript.updated
+EventMapOf.agentTranscript.updated
 ```
 
 ##### audio.completed
@@ -9089,15 +9089,15 @@ type: "session.reset";
 EventMapOf.session.reset
 ```
 
-##### session.timed-out
+##### session.timedOut
 
 ```ts
-session.timed-out: {
+session.timedOut: {
   meta: {
      at: number;
      id: string;
   };
-  type: "session.timed-out";
+  type: "session.timedOut";
 };
 ```
 
@@ -9113,13 +9113,13 @@ session.timed-out: {
 ###### type
 
 ```ts
-type: "session.timed-out";
+type: "session.timedOut";
 ```
 
 ###### Inherited from
 
 ```ts
-EventMapOf.session.timed-out
+EventMapOf.session.timedOut
 ```
 
 ##### speech.started
@@ -9390,16 +9390,16 @@ type: "usage.updated";
 EventMapOf.usage.updated
 ```
 
-##### user-transcript.committed
+##### userTranscript.committed
 
 ```ts
-user-transcript.committed: {
+userTranscript.committed: {
   meta: {
      at: number;
      id: string;
   };
   text: string;
-  type: "user-transcript.committed";
+  type: "userTranscript.committed";
 };
 ```
 
@@ -9421,26 +9421,26 @@ text: string;
 ###### type
 
 ```ts
-type: "user-transcript.committed";
+type: "userTranscript.committed";
 ```
 
 ###### Inherited from
 
 ```ts
-EventMapOf.user-transcript.committed
+EventMapOf.userTranscript.committed
 ```
 
-##### user-transcript.updated
+##### userTranscript.updated
 
 ```ts
-user-transcript.updated: {
+userTranscript.updated: {
   eotConfidence?: number;
   meta: {
      at: number;
      id: string;
   };
   text: string;
-  type: "user-transcript.updated";
+  type: "userTranscript.updated";
 };
 ```
 
@@ -9468,26 +9468,26 @@ text: string;
 ###### type
 
 ```ts
-type: "user-transcript.updated";
+type: "userTranscript.updated";
 ```
 
 ###### Inherited from
 
 ```ts
-EventMapOf.user-transcript.updated
+EventMapOf.userTranscript.updated
 ```
 
-##### user-turn.exceeded
+##### userTurn.exceeded
 
 ```ts
-user-turn.exceeded: {
+userTurn.exceeded: {
   durationMs: number;
   limit: "words" | "duration";
   meta: {
      at: number;
      id: string;
   };
-  type: "user-turn.exceeded";
+  type: "userTurn.exceeded";
   words: number;
 };
 ```
@@ -9516,7 +9516,7 @@ limit: "words" | "duration";
 ###### type
 
 ```ts
-type: "user-turn.exceeded";
+type: "userTurn.exceeded";
 ```
 
 ###### words
@@ -9528,7 +9528,7 @@ words: number;
 ###### Inherited from
 
 ```ts
-EventMapOf.user-turn.exceeded
+EventMapOf.userTurn.exceeded
 ```
 
 ***
@@ -11693,7 +11693,7 @@ until it stops. This is the bound on that. When the open utterance crosses
 either cap the runtime asks the transcriber to END THE TURN NOW, exactly as
 a pause would have — the words heard so far commit as the caller's turn, the
 agent replies to them, and whatever the caller says next opens the next turn
-— and a `user-turn.exceeded` event records that it happened.
+— and a `userTurn.exceeded` event records that it happened.
 
 Both members are optional; set one or both. A limit that names neither is
 refused at config time rather than accepted as a cap on nothing.
@@ -12483,7 +12483,7 @@ type DialogSessionEventName = `@${SessionEventType}`;
 
 A session event as a dialog names it: the wire type under a leading `@`.
 
-`"@session.timed-out"`, `"@speech.started"`, `"@user-transcript.committed"` —
+`"@session.timedOut"`, `"@speech.started"`, `"@userTranscript.committed"` —
 every [SessionEventType](#sessioneventtype) is one of these, and nothing else is. The
 prefix is a NAMESPACE rather than decoration: an author's own event names are
 unconstrained, so a dialog that declared `on: { "reply.completed": … }` for
@@ -13832,7 +13832,7 @@ optional record?: boolean;
 ```
 
 `false` to keep this line out of the conversation: it is spoken and
-captioned (its `agent-transcript.committed` carries `recorded: false`),
+captioned (its `agentTranscript.committed` carries `recorded: false`),
 but it enters neither the model's history nor `ctx.messages`, and a
 resumed session does not remember it. For a line the model should not
 treat as something it said, such as a hold message ("one moment while I
@@ -14151,7 +14151,7 @@ reply, so a handler must not hold anything that reply waits on until the
 line's `done` settles.
 
 **A line a handler says emits events that reach the handlers again.** A
-handler that speaks on every `agent-transcript.committed` hears its own
+handler that speaks on every `agentTranscript.committed` hears its own
 line and speaks forever. Decide from an event the line cannot produce, or
 check the event first: see "A handler that speaks can hear itself" in
 `session-speech.ts`.
@@ -18161,7 +18161,7 @@ themselves, and even that loses: the native tool wins and the drop is logged
 ### SESSION\_SOURCED\_EVENT\_TYPES
 
 ```ts
-const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
+const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timedOut", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
 ```
 
 The events only the SESSION itself can be the source of — never a transport.
@@ -18171,7 +18171,7 @@ one place that decision is written down, so a new event is REPORTABLE by
 default — the session publishes a report it has no `case` for — and needs
 no edit to a list in another package. Each is here for a reason:
 `session.configured` is the handshake, `session.reset` and
-`session.timed-out` come from the client and the idle watchdog,
+`session.timedOut` come from the client and the idle watchdog,
 `custom.emitted` is `ctx.send`, `state.updated` is a `syncState` projection,
 `usage.updated` and `guardrail.blocked` are the session's own accounting and
 refusals, and `history.restored` is a resume.
@@ -18216,21 +18216,21 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      id: z.ZodString;
   }, z.core.$strip>;
   text: z.ZodString;
-  type: z.ZodLiteral<"user-transcript.updated">;
+  type: z.ZodLiteral<"userTranscript.updated">;
 }, z.core.$strip>, z.ZodObject<{
   meta: z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
   text: z.ZodString;
-  type: z.ZodLiteral<"user-transcript.committed">;
+  type: z.ZodLiteral<"userTranscript.committed">;
 }, z.core.$strip>, z.ZodObject<{
   meta: z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
   text: z.ZodString;
-  type: z.ZodLiteral<"agent-transcript.updated">;
+  type: z.ZodLiteral<"agentTranscript.updated">;
 }, z.core.$strip>, z.ZodObject<{
   meta: z.ZodObject<{
      at: z.ZodNumber;
@@ -18242,7 +18242,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      turn-failed: "turn-failed";
   }>>;
   text: z.ZodString;
-  type: z.ZodLiteral<"agent-transcript.committed">;
+  type: z.ZodLiteral<"agentTranscript.committed">;
 }, z.core.$strip>, z.ZodObject<{
   args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   meta: z.ZodObject<{
@@ -18283,7 +18283,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
-  type: z.ZodLiteral<"session.timed-out">;
+  type: z.ZodLiteral<"session.timedOut">;
 }, z.core.$strip>, z.ZodObject<{
   code: z.ZodEnum<{
      audio: "audio";
@@ -18348,7 +18348,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
-  type: z.ZodLiteral<"user-turn.exceeded">;
+  type: z.ZodLiteral<"userTurn.exceeded">;
   words: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
   interrupted: z.ZodBoolean;

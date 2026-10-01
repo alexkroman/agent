@@ -333,7 +333,7 @@ of bug that would have made a report LIE rather than error:
 - **`say()` waits for the reply to THIS utterance.** Waiting for "a reply
   terminator" settled on the previous reply's cancel, so `say()` returned before
   the model had run and the case recorded "called no tools" — a green harness
-  reporting a broken agent. The utterance's own `user-transcript.committed` is the
+  reporting a broken agent. The utterance's own `userTranscript.committed` is the
   anchor; every event of its reply follows it.
 
 **What ENDS a reply is declared once**, `TURN_ENDS` in

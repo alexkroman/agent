@@ -53,8 +53,8 @@ describe("speakLine", () => {
     expect(controls.started()).toBe(true);
     expect(spoken(tts)).toBe(LINE);
     expect(llm.calls).toHaveLength(0);
-    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: LINE,
     });
     expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
@@ -221,8 +221,8 @@ describe("speakLine", () => {
 
     await expect(t.speakLine?.(LINE, { ...line(), record: false })).resolves.toBe("played");
     expect(spoken(tts)).toBe(LINE);
-    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: LINE,
       recorded: false,
     });

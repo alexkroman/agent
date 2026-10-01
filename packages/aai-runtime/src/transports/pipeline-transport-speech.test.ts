@@ -83,19 +83,19 @@ describe("PipelineTransport speech vs. record", () => {
       // Nothing yet: the caller is in an ordinary pause, and covering it here
       // would cost the reply's opening sentence.
       await vi.advanceTimersByTimeAsync(DEAD_AIR_TOOL_COVER_MS - 1);
-      expect(callbacks.reported("agent-transcript.updated")).not.toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.updated")).not.toHaveBeenCalled();
 
       // +1 beat for the model's own delayMs — see the voice-events sibling.
       await vi.advanceTimersByTimeAsync(21);
-      expect(callbacks.reported("agent-transcript.updated")).toHaveBeenCalledWith({
-        type: "agent-transcript.updated",
+      expect(callbacks.reported("agentTranscript.updated")).toHaveBeenCalledWith({
+        type: "agentTranscript.updated",
         text: DEAD_AIR_OPENING_PHRASE,
       });
       // Still cumulative, and still one final transcript for history.
       await vi.advanceTimersByTimeAsync(DEFAULT_DEAD_AIR_COVER_MS * 2);
       await vi.waitFor(() => {
-        expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-          type: "agent-transcript.committed",
+        expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+          type: "agentTranscript.committed",
           text: expect.stringContaining("It's sunny."),
         });
       });
@@ -116,8 +116,8 @@ describe("PipelineTransport speech vs. record", () => {
       // TTS at once, so an interim copy would be identical) — so that, not a
       // partial, is the signal that the greeting turn is behind us.
       await vi.waitFor(() => {
-        expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-          type: "agent-transcript.committed",
+        expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+          type: "agentTranscript.committed",
           text: "Hi there!",
         });
       });
@@ -125,7 +125,7 @@ describe("PipelineTransport speech vs. record", () => {
 
       stt.last()?.fireFinal("what time is it?");
       await vi.waitFor(() => {
-        expect(callbacks.reported("agent-transcript.updated")).toHaveBeenCalled();
+        expect(callbacks.reported("agentTranscript.updated")).toHaveBeenCalled();
       });
       // Carrying the previous reply's text over would restate the greeting as
       // part of this reply's caption.
@@ -164,9 +164,9 @@ describe("PipelineTransport speech vs. record", () => {
       // ...but absent from the reply's final transcript, which is what history,
       // ctx.messages, resume, and the STT agent-context hint are built from.
       // Every COMMITTED transcript — the interrupted arm is a separate event now
-      // (`agent-transcript.updated`), so there is no flag left to filter on.
+      // (`agentTranscript.updated`), so there is no flag left to filter on.
       const finals = callbacks.events
-        .filter((e) => e.type === "agent-transcript.committed")
+        .filter((e) => e.type === "agentTranscript.committed")
         .map((e) => e.text);
       expect(finals.some((text) => text.includes("It's sunny."))).toBe(true);
       for (const text of finals) expect(text).not.toContain(DEAD_AIR_OPENING_PHRASE);

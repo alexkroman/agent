@@ -2,7 +2,7 @@
  * The one thing that happens on this call when no tool is running: the caller
  * goes away.
  *
- * `desk.ts` already handles the CONVERSATION half — `@session.timed-out` moves
+ * `desk.ts` already handles the CONVERSATION half — `@session.timedOut` moves
  * the dialog to `hungUp`, which is `final`, so a model still talking to a dead
  * line cannot confirm a booking. What a transition does not do is WRITE
  * anything, and a booking abandoned at the card step is exactly the row their
@@ -76,5 +76,5 @@ const onCallerGone: SessionEventHandler = (_event, ctx) => {
  * property name and the handler would simply never run.
  */
 export const DESK_EVENTS: SessionEventHandlers = {
-  "session.timed-out": onCallerGone,
+  "session.timedOut": onCallerGone,
 };

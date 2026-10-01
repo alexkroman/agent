@@ -79,8 +79,8 @@ const saidAloud = (content: string): Message => ({ role: "user", content });
  * notice if the hook stopped running.
  */
 const heard = (text: string, ctx: ToolContext) =>
-  agentDef.events?.["user-transcript.committed"]?.(
-    { type: "user-transcript.committed", text, meta: { id: "evt_1", at: 0 } },
+  agentDef.events?.["userTranscript.committed"]?.(
+    { type: "userTranscript.committed", text, meta: { id: "evt_1", at: 0 } },
     ctx,
   );
 

@@ -58,8 +58,8 @@ describe("PipelineTransport — recovery when the LLM stream fails", () => {
     stt.last()?.fireFinal("are you there?");
 
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-        type: "agent-transcript.committed",
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+        type: "agentTranscript.committed",
         text: expect.stringContaining("Sorry, I had a problem"),
         // Tagged, so the caption can carry the phrase while no reader of the
         // stream records it — see `AgentTranscriptRecovery`.
@@ -80,7 +80,7 @@ describe("PipelineTransport — recovery when the LLM stream fails", () => {
     stt.last()?.fireFinal("are you there?");
 
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalled();
     });
     expect(
       partialTranscripts(callbacks).filter((text) => text.includes("Sorry, I had a problem")),

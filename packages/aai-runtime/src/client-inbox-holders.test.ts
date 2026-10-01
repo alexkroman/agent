@@ -138,7 +138,7 @@ describe("the live event feed on /inbox?events=1", () => {
     const { inbox, url } = await startInbox(cleanups);
     const firmware = await connect(url, inbox);
     const browser = await connect(url, inbox, "holder=tab&events=1");
-    const committed = event({ type: "user-transcript.committed", text: "what's the weather" });
+    const committed = event({ type: "userTranscript.committed", text: "what's the weather" });
     inbox.feed("speaker", { type: "session_event", sessionId: "s-1", event: committed });
     expect(await browser.next()).toEqual({
       type: "session_event",

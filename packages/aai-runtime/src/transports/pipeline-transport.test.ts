@@ -438,8 +438,8 @@ describe("PipelineTransport", () => {
 
       expect(tts.last()?.textChunks.join("")).toContain("cannot hear you");
       // Spoken, and surfaced as a transcript so captions match the audio.
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-        type: "agent-transcript.committed",
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+        type: "agentTranscript.committed",
         text: expect.stringContaining("cannot hear you"),
         // ...and tagged as a recovery phrase, which is what keeps it out of the
         // conversation every reader reconstructs from the stream.
@@ -463,7 +463,7 @@ describe("PipelineTransport", () => {
       });
       const t = createPipelineTransport(opts);
       await t.start();
-      expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).not.toHaveBeenCalled();
       await t.stop();
     });
 
@@ -479,7 +479,7 @@ describe("PipelineTransport", () => {
       );
       const t = createPipelineTransport(opts);
       await t.start();
-      expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).not.toHaveBeenCalled();
       expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
         type: "error.reported",
         code: "stt",

@@ -55,8 +55,8 @@ const called = (id: string, toolName: string, args: Record<string, unknown> = {}
   ev({ type: "tool.called", toolCallId: id, toolName, args });
 const completed = (id: string, result: string): SessionEvent =>
   ev({ type: "tool.completed", toolCallId: id, result });
-const said = (text: string): SessionEvent => ev({ type: "agent-transcript.committed", text });
-const heard = (text: string): SessionEvent => ev({ type: "user-transcript.committed", text });
+const said = (text: string): SessionEvent => ev({ type: "agentTranscript.committed", text });
+const heard = (text: string): SessionEvent => ev({ type: "userTranscript.committed", text });
 const done = (): SessionEvent => ev({ type: "reply.completed" });
 
 /** One tool turn: the caller spoke, a tool ran, the agent answered. */
@@ -162,7 +162,7 @@ describe("what the agent said", () => {
   test("reads committed transcripts only, case-insensitively", () => {
     const rec = recorder();
     const events = [
-      ev({ type: "agent-transcript.updated", text: "I'm checking" }),
+      ev({ type: "agentTranscript.updated", text: "I'm checking" }),
       said("It SHIPPED yesterday."),
       done(),
     ];
@@ -231,7 +231,7 @@ describe("events", () => {
   test("eventOrder is a subsequence over types", () => {
     const rec = recorder();
     const scope = eventScope(rec, toolTurn());
-    scope.eventOrder(["user-transcript.committed", "tool.called", "reply.completed"]);
+    scope.eventOrder(["userTranscript.committed", "tool.called", "reply.completed"]);
     scope.eventOrder(["reply.completed", "tool.called"]);
     expect(rec.failed()).toEqual(["eventOrder(reply.completed → tool.called)"]);
   });
@@ -408,7 +408,7 @@ describe("the vocabulary over a TEXT agent's events", () => {
     scope.saidNothingAbout("refund");
     scope.event("tool.called", { count: 2 });
     scope.notEvent("reply.cancelled");
-    scope.eventOrder(["user-transcript.committed", "tool.called", "reply.completed"]);
+    scope.eventOrder(["userTranscript.committed", "tool.called", "reply.completed"]);
     expect(rec.failed()).toEqual([]);
     // One turn, and it is the whole run: a text turn emits exactly one
     // terminator, which is what `turnsOf` partitions on.

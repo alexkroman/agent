@@ -68,7 +68,7 @@ describe("preemptive generation — guardrail 1: nothing speculative is ever spo
     expect(tts.last()?.sendText).not.toHaveBeenCalled();
     expect(callbacks.onAudioChunk).not.toHaveBeenCalled();
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
-    expect(callbacks.reported("agent-transcript.updated")).not.toHaveBeenCalled();
+    expect(callbacks.reported("agentTranscript.updated")).not.toHaveBeenCalled();
     expect(callbacks.reported("tool.called")).not.toHaveBeenCalled();
     await t.stop();
   });

@@ -158,7 +158,7 @@ export function recordSpoken(ctx: SlotHolder, text: string): void {
  * reads the result on its next call.
  */
 export const GAME_EVENTS: SessionEventHandlers = {
-  "user-transcript.committed": (event, ctx) => recordSpoken(ctx, event.text),
+  "userTranscript.committed": (event, ctx) => recordSpoken(ctx, event.text),
 };
 
 /** The game as a READ hands it out: deep-frozen, and typed to say so. */

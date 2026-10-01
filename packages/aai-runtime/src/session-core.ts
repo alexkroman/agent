@@ -94,7 +94,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     sid: opts.id,
     idleMs: rawIdleMs,
     logger: log,
-    notify: () => emit({ type: "session.timed-out" }),
+    notify: () => emit({ type: "session.timedOut" }),
     close: () => opts.client.close?.("idle timeout"),
   });
 
@@ -234,18 +234,18 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       case "tool.called":
         handleToolCalled(event);
         return;
-      case "user-transcript.committed":
+      case "userTranscript.committed":
         resetIdle();
         emit(event);
         pushConversation(event);
         return;
-      case "user-transcript.updated":
+      case "userTranscript.updated":
         // Partials too, not just the committed turn: one long utterance would
         // otherwise only count at its `speech.started`, and could be reaped
         // mid-sentence.
         resetIdle();
         break;
-      case "agent-transcript.committed":
+      case "agentTranscript.committed":
         resetIdle();
         reply.flushedAwaitingContinuation = false;
         emit(event);
@@ -257,7 +257,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
         // get wrong: emitted, because the caller heard it, and never recorded.
         pushConversation(event);
         return;
-      case "agent-transcript.updated":
+      case "agentTranscript.updated":
         resetIdle();
         reply.flushedAwaitingContinuation = false;
         break;
@@ -291,7 +291,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       case "metrics.collected":
       case "speech.stopped":
       case "tool.completed":
-      case "user-turn.exceeded":
+      case "userTurn.exceeded":
         break;
       default: {
         // Unreachable by type; at runtime an untyped transport's unknown report

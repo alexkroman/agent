@@ -36,8 +36,8 @@ describe("pipeline greeting", () => {
       });
       expect(tts.last()?.textChunks).toContain(GREETING);
       expect(callbacks.onReplyStarted).toHaveBeenCalledWith(expect.stringContaining("greeting"));
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-        type: "agent-transcript.committed",
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+        type: "agentTranscript.committed",
         text: GREETING,
       });
       // onAudioDone is owned by session-core's flushReply, not the transport.
@@ -56,11 +56,11 @@ describe("pipeline greeting", () => {
       await vi.waitFor(() => {
         expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
       });
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledExactlyOnceWith({
-        type: "agent-transcript.committed",
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledExactlyOnceWith({
+        type: "agentTranscript.committed",
         text: GREETING,
       });
-      expect(callbacks.reported("agent-transcript.updated")).not.toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.updated")).not.toHaveBeenCalled();
       await t.stop();
     });
 
@@ -155,7 +155,7 @@ describe("pipeline greeting", () => {
         expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(2);
       });
       expect(tts.last()?.textChunks.filter((c) => c === GREETING)).toHaveLength(2);
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledTimes(2);
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledTimes(2);
       await t.stop();
     });
 
@@ -208,7 +208,7 @@ describe("pipeline greeting", () => {
 
       t.reset?.();
       await vi.waitFor(() => {
-        expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledTimes(2);
+        expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledTimes(2);
       });
       stt.last()?.fireFinal("what now");
       await vi.waitFor(() => {

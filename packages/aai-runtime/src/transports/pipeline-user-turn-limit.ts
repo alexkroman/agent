@@ -8,7 +8,7 @@
  * watches the open utterance — the words in each interim transcript and the
  * time since the speaking edge opened — and when either crosses its cap it
  * fires `onExceeded` ONCE for that utterance. The transport answers by
- * reporting `user-turn.exceeded` and asking the transcriber to end the turn
+ * reporting `userTurn.exceeded` and asking the transcriber to end the turn
  * now, so the words heard so far commit on the ordinary final path and speech
  * after the cut opens the provider's next turn.
  *
@@ -40,7 +40,7 @@ import type { SttSession } from "../providers/openers.ts";
 import type { Logger } from "../runtime-config.ts";
 import { scanWords } from "./pipeline-text.ts";
 
-/** Which cap an utterance crossed — the `limit` field of `user-turn.exceeded`. */
+/** Which cap an utterance crossed — the `limit` field of `userTurn.exceeded`. */
 export type UserTurnLimitKind = "words" | "duration";
 
 /** The cap on one user turn, bound to a session — see {@link createUserTurnLimiter}. */

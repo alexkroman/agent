@@ -45,7 +45,7 @@ export const SessionCommandSchema = z.discriminatedUnion("type", [
      *
      * Answered exactly as if the transcriber had committed `text` — it
      * interrupts a reply in flight the way a new turn does, lands in the
-     * retained stream as the same `user-transcript.committed` a spoken turn
+     * retained stream as the same `userTranscript.committed` a spoken turn
      * produces (so `messages`, history and a resume all see it), and the agent
      * answers it aloud. Honoured whatever the agent's `turnDetection`, since it
      * bypasses the transcriber that policy is about. Only the pipeline can take

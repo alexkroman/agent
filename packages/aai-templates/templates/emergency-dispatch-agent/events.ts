@@ -12,7 +12,7 @@ import { callInHand, dispatchSlot, logEvent } from "./shared.ts";
  *
  * **The dialog deliberately does NOT move on it, and that is the difference
  * between this desk and a phone desk.** `retail-orders-agent` and `roadside-assistance-agent` both
- * carry `"@session.timed-out"` into a `final` state, because there the caller
+ * carry `"@session.timedOut"` into a `final` state, because there the caller
  * IS the conversation and a hang-up ends it. Here the caller is one input to a
  * shift: units are rolling, the board is live, and the dispatcher goes on
  * working every incident on it. So a hang-up is a FACT ABOUT ONE INCIDENT,
@@ -31,7 +31,7 @@ import { callInHand, dispatchSlot, logEvent } from "./shared.ts";
  * a duplicated timeline entry is a cosmetic repeat, not a duplicated truck.
  */
 export const DISPATCH_EVENTS: SessionEventHandlers = {
-  "session.timed-out": (_event, ctx) => {
+  "session.timedOut": (_event, ctx) => {
     // A `SessionEventContext` is a `SlotHolder`, which is all a slot write
     // needs — and all it is: there is no `generate`, no `send`, and no way for
     // this to reach the caller who has just gone.

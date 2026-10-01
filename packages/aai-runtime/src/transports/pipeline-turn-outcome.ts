@@ -51,7 +51,7 @@
  *
  * This module can only decline to push; it cannot stop a reader that sees the
  * committed transcript from recording it, and for a long time two of them did.
- * `agent-transcript.committed` was the same event for a reply and for an
+ * `agentTranscript.committed` was the same event for a reply and for an
  * apology, so `session-core.ts`'s live dispatch appended the phrase to
  * `ctx.messages` on the same call the caller heard it, and
  * `messagesFromEvents` handed it back to the model on the first reconnect —
@@ -209,7 +209,7 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
     },
 
     finishSpokenTurn(text) {
-      callbacks.report({ type: "agent-transcript.committed", text });
+      callbacks.report({ type: "agentTranscript.committed", text });
       const message: Message = { role: "assistant", content: text };
       history.pushConversation(message);
       return message;

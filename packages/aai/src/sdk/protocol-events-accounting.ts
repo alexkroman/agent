@@ -13,7 +13,7 @@
  * of a CONTROL an agent declares. `usage.updated` is what `AgentDef.usageLimits`
  * is measured against, `guardrail.blocked` is what
  * `AgentDef.inputGuardrails`/`outputGuardrails` leave behind, and
- * `user-turn.exceeded` is what `AgentDef.userTurnLimit` leaves behind. A
+ * `userTurn.exceeded` is what `AgentDef.userTurnLimit` leaves behind. A
  * control with no event is a control nobody can audit.
  *
  * @module
@@ -107,7 +107,7 @@ export const GuardrailBlockedEventSchema = z.object({
  * the one number that says whether it is set right — and, for a UI, the moment
  * to show that the agent is answering what it has heard so far.
  *
- * The turn's text is NOT carried: it arrives as the `user-transcript.committed`
+ * The turn's text is NOT carried: it arrives as the `userTranscript.committed`
  * that follows, once the transcriber has ended the turn, and a second copy
  * here could disagree with it.
  *
@@ -117,7 +117,7 @@ export const GuardrailBlockedEventSchema = z.object({
  * provider that cannot force an end of turn is logged once as inert.
  */
 export const UserTurnExceededEventSchema = z.object({
-  type: z.literal("user-turn.exceeded"),
+  type: z.literal("userTurn.exceeded"),
   meta: SessionEventMetaSchema,
   /** Which cap the utterance crossed. */
   limit: z.enum(["words", "duration"]),

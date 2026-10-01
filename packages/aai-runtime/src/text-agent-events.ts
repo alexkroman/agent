@@ -46,10 +46,10 @@
  *
  * | Event | When |
  * | --- | --- |
- * | `user-transcript.committed` | the turn opens, when the conversation ends in a user message |
+ * | `userTranscript.committed` | the turn opens, when the conversation ends in a user message |
  * | `tool.called` | one tool invocation, with its name and arguments |
  * | `tool.completed` | that call's serialized result — a failure included |
- * | `agent-transcript.committed` | the reply's full text, on a turn that finished |
+ * | `agentTranscript.committed` | the reply's full text, on a turn that finished |
  * | `reply.completed` / `reply.cancelled` | the turn's terminator, exactly one |
  * | `error.reported` | the model stream failed (`llm`), or a tool THREW (`tool`) |
  * | `custom.emitted` | `ctx.send` from a tool body |
@@ -58,8 +58,8 @@
  * ### The eleven that are not, each for a stated reason
  *
  * Six are speech and have no text analogue at all: `speech.started`,
- * `speech.stopped`, `audio.completed`, `user-transcript.updated` (there is no
- * interim — a typed message arrives whole), `session.timed-out` (no idle timer)
+ * `speech.stopped`, `audio.completed`, `userTranscript.updated` (there is no
+ * interim — a typed message arrives whole), `session.timedOut` (no idle timer)
  * and `session.reset` (no reset command; a text agent's conversation is the
  * `messages` its caller passes).
  *
@@ -77,7 +77,7 @@
  * believe it. Its one useful payload, the session id, is on the handle
  * (`TextAgent.sessionId`) where a caller already has it.
  *
- * `agent-transcript.updated` is the deliberate omission that is NOT about
+ * `agentTranscript.updated` is the deliberate omission that is NOT about
  * honesty: a per-delta snapshot would be truthful and is simply redundant here.
  * `text-agent.ts` returns the vendor's `StreamTextResult` precisely so a chat
  * surface consumes `textStream`, so the interim text is already in the caller's
@@ -270,7 +270,7 @@ function openTurn(
   messages: readonly ModelMessage[],
 ): TextTurnEventHooks {
   const prompt = trailingUserText(messages);
-  if (prompt !== undefined) emit({ type: "user-transcript.committed", text: prompt });
+  if (prompt !== undefined) emit({ type: "userTranscript.committed", text: prompt });
 
   let said = "";
   let ended = false;
@@ -282,7 +282,7 @@ function openTurn(
     // Committed only on a turn that FINISHED, and only when it said something:
     // the voice rule, kept so `saidIn` means one thing in both modes.
     if (terminator === "reply.completed" && said !== "") {
-      emit({ type: "agent-transcript.committed", text: said });
+      emit({ type: "agentTranscript.committed", text: said });
     }
     emit({ type: terminator });
   };

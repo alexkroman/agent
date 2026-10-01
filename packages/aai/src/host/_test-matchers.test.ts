@@ -10,7 +10,7 @@ describe("toBeValidSessionEvent", () => {
 
   it("passes for a valid event with fields", () => {
     expect({
-      type: "user-transcript.committed",
+      type: "userTranscript.committed",
       text: "hello world",
     }).toBeValidSessionEvent();
   });
@@ -31,7 +31,7 @@ describe("toBeValidSessionEvent", () => {
 describe("toContainEvent", () => {
   const events = [
     { type: "speech.started" },
-    { type: "user-transcript.committed", text: "hello" },
+    { type: "userTranscript.committed", text: "hello" },
     { type: "tool.called", toolCallId: "tc1", toolName: "search", args: { q: "test" } },
     { type: "reply.completed" },
   ];

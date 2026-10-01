@@ -139,14 +139,14 @@ nested confirmation gate), `tabletop-rpg-agent` (nested, plus `final`),
   the PARENT state (has anything been logged this shift); the children carry
   the instruction.
 - **`roadside-assistance-agent`**:
-  `on: { "@user-transcript.committed": "locating" }` on the state itself is the
+  `on: { "@userTranscript.committed": "locating" }` on the state itself is the
   silence ladder (re-arms on every committed turn); `onCall.verifying` declares
   no chatter transition, so its deadline is wall clock. `onCall.quiet` is the
   ladder's landing rung (a shorter question). `service_disclosure` hands over
   the words and `acknowledge_disclosure` advances a turn later, so the
   disclosure is spoken under `bargeIn: "off"`. `toolChoice` is pinned on
   `onCall.dispatching`, not on `verifying`; `dispatch_truck` is idempotent. The
-  hang-up (`@session.timed-out` → final `abandoned`) is declared once on the
+  hang-up (`@session.timedOut` → final `abandoned`) is declared once on the
   `onCall` parent. `agent.test.ts` asserts no state declares `voice`/`keyterms`.
 - **`retail-orders-agent`**: the seven changing tools are STAGERS writing a
   `PendingAction`; `confirm_change` is the only store writer, gated on

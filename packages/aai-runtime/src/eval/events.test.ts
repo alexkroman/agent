@@ -38,7 +38,7 @@ const completed = (id: string, result: string): SessionEvent => ({
   result,
 });
 const saidByAgent = (text: string): SessionEvent => ({
-  type: "agent-transcript.committed",
+  type: "agentTranscript.committed",
   meta,
   text,
 });
@@ -48,7 +48,7 @@ describe("saidIn", () => {
     expect(
       saidIn([
         saidByAgent("Hi there."),
-        { type: "agent-transcript.updated", meta, text: "It sh" },
+        { type: "agentTranscript.updated", meta, text: "It sh" },
         saidByAgent("It shipped."),
       ]),
     ).toEqual(["Hi there.", "It shipped."]);
@@ -86,7 +86,7 @@ describe("toolCallsInEvents", () => {
 describe("TURN_ENDS", () => {
   test("is the two reply terminators, and nothing that merely looks like one", () => {
     expect([...TURN_ENDS].sort()).toEqual(["reply.cancelled", "reply.completed"]);
-    expect(TURN_ENDS.has("agent-transcript.committed")).toBe(false);
+    expect(TURN_ENDS.has("agentTranscript.committed")).toBe(false);
   });
 });
 

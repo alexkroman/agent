@@ -74,8 +74,8 @@ const ok = <T>(result: T): Exclude<T, ToolFailure> => {
  * below.
  */
 const say = (text: string, ctx: SessionEventContext) =>
-  agentDef.events?.["user-transcript.committed"]?.(
-    { type: "user-transcript.committed", text, meta: { id: "evt_1", at: 0 } },
+  agentDef.events?.["userTranscript.committed"]?.(
+    { type: "userTranscript.committed", text, meta: { id: "evt_1", at: 0 } },
     ctx,
   );
 

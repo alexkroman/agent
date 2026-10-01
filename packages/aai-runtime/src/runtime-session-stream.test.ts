@@ -15,8 +15,8 @@ describe("attachSessionStream", () => {
     const backend = createMemoryStateBackend();
     // A previous connection's session, on a process that is now gone.
     const before = createSessionEventStream({ backend });
-    before.append(SID, { type: "user-transcript.committed", text: "my order is 4471" });
-    before.append(SID, { type: "agent-transcript.committed", text: "Found it." });
+    before.append(SID, { type: "userTranscript.committed", text: "my order is 4471" });
+    before.append(SID, { type: "agentTranscript.committed", text: "Found it." });
     await before.flush(SID);
 
     const stream = createSessionEventStream({ backend });
@@ -42,7 +42,7 @@ describe("attachSessionStream", () => {
     // the same walk so the two cannot disagree.
     const backend = createMemoryStateBackend();
     const before = createSessionEventStream({ backend });
-    before.append(SID, { type: "user-transcript.committed", text: "where is order 4471" });
+    before.append(SID, { type: "userTranscript.committed", text: "where is order 4471" });
     before.append(SID, {
       type: "tool.called",
       toolCallId: "c1",
@@ -50,7 +50,7 @@ describe("attachSessionStream", () => {
       args: { id: "4471" },
     });
     before.append(SID, { type: "tool.completed", toolCallId: "c1", result: '{"eta":"tue"}' });
-    before.append(SID, { type: "agent-transcript.committed", text: "Tuesday." });
+    before.append(SID, { type: "agentTranscript.committed", text: "Tuesday." });
     await before.flush(SID);
 
     const stream = createSessionEventStream({ backend });
@@ -127,7 +127,7 @@ describe("attachSessionStream", () => {
   test("the log CONTINUES after a resume rather than overwriting itself", async () => {
     const backend = createMemoryStateBackend();
     const before = createSessionEventStream({ backend });
-    before.append(SID, { type: "user-transcript.committed", text: "first" });
+    before.append(SID, { type: "userTranscript.committed", text: "first" });
     await before.flush(SID);
 
     const stream = createSessionEventStream({ backend });
@@ -139,7 +139,7 @@ describe("attachSessionStream", () => {
     attachSessionStream(core, { stream, sessionId: SID, resumed: true });
     await core.start();
 
-    stream.append(SID, { type: "user-transcript.committed", text: "second" });
+    stream.append(SID, { type: "userTranscript.committed", text: "second" });
     await stream.flush(SID);
 
     const page = await stream.read(SID, 0);
@@ -174,7 +174,7 @@ describe("attachSessionStream", () => {
     const order: string[] = [];
     const backend = createMemoryStateBackend();
     const before = createSessionEventStream({ backend });
-    before.append(SID, { type: "user-transcript.committed", text: "hi" });
+    before.append(SID, { type: "userTranscript.committed", text: "hi" });
     await before.flush(SID);
 
     const core = makeMockCore({
@@ -229,7 +229,7 @@ describe("attachSessionStream — a client's prior sessions (`memory`)", () => {
   function priorMemory(backendSid: string, texts: string[]) {
     const backend = createMemoryStateBackend();
     const other = createSessionEventStream({ backend });
-    for (const text of texts) other.append(backendSid, { type: "user-transcript.committed", text });
+    for (const text of texts) other.append(backendSid, { type: "userTranscript.committed", text });
     const ended = vi.fn<(lastEventIndex: number) => void>();
     const memory: SessionMemory = {
       open: async () => (await readAllEvents(other, backendSid)).slice(),
@@ -265,7 +265,7 @@ describe("attachSessionStream — a client's prior sessions (`memory`)", () => {
   test("a resume restores prior sessions THEN its own log, in ONE call, never doubled", async () => {
     const backend = createMemoryStateBackend();
     const before = createSessionEventStream({ backend });
-    before.append(SID, { type: "user-transcript.committed", text: "mine" });
+    before.append(SID, { type: "userTranscript.committed", text: "mine" });
     await before.flush(SID);
     const { memory } = priorMemory("earlier", ["theirs"]);
     const core = makeMockCore();
@@ -331,7 +331,7 @@ describe("readAllEvents", () => {
     const stream = createSessionEventStream({ backend: createMemoryStateBackend() });
     const total = SESSION_EVENT_READ_LIMIT + 7;
     for (let i = 0; i < total; i++) {
-      stream.append(SID, { type: "user-transcript.committed", text: `m${i}` });
+      stream.append(SID, { type: "userTranscript.committed", text: `m${i}` });
     }
 
     const events = await readAllEvents(stream, SID);

@@ -104,7 +104,7 @@ describe("openEvalTextAgent", () => {
       expect(turn.toolCalls).toEqual([]);
       // The message that provoked the reply is the turn's first event, and the
       // terminator is its last — which is what a reader partitions on.
-      expect(turn.events.at(0)?.type).toBe("user-transcript.committed");
+      expect(turn.events.at(0)?.type).toBe("userTranscript.committed");
       expect(turn.events.at(-1)?.type).toBe("reply.completed");
       // ONE reply, where the voice harness would already have two: a text agent
       // has no greeting turn, so a case ported across is off by one until it

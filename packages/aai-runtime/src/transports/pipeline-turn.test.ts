@@ -27,8 +27,8 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("Hello agent");
     await vi.waitFor(() => {
-      expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-        type: "user-transcript.committed",
+      expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+        type: "userTranscript.committed",
         text: "Hello agent",
       });
       // The reply starts a tick after the transcript (chainTurn defers past a
@@ -44,7 +44,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("   ");
     await vi.advanceTimersByTimeAsync(10);
-    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("userTranscript.committed")).not.toHaveBeenCalled();
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
     await t.stop();
   });
@@ -84,10 +84,10 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("look it up");
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalled();
     });
-    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: "Let me look that up. Got it. Here's the answer.",
     });
     expect(tts.last()?.textChunks.join("")).toBe("Let me look that up. Got it. Here's the answer.");
@@ -140,7 +140,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
     finishTool.resolve();
 
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalled();
     });
     expect(tts.last()?.textChunks.join("")).toBe("Sure, let me found it.");
     await t.stop();
@@ -164,10 +164,10 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("look it up");
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalled();
     });
-    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: "First sentence. Second sentence.",
     });
     await t.stop();
@@ -196,13 +196,13 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await vi.waitFor(() => {
       expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
     });
-    expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-      type: "user-transcript.committed",
+    expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+      type: "userTranscript.committed",
       text: "test question",
     });
     expect(callbacks.onReplyStarted).toHaveBeenCalled();
-    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-      type: "agent-transcript.committed",
+    expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+      type: "agentTranscript.committed",
       text: "Sure!",
     });
     // onAudioDone is owned by session-core's flushReply, not the transport.
@@ -225,7 +225,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
       expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
     });
     expect(tts.last()?.flush).not.toHaveBeenCalled();
-    expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("agentTranscript.committed")).not.toHaveBeenCalled();
     await t.stop();
   });
 
@@ -303,8 +303,8 @@ describe("PipelineTransport — STT → LLM turn", () => {
     // about the tool context surviving into turn 2, not about the exact text.)
     stt.last()?.fireFinal("look me up");
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-        type: "agent-transcript.committed",
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
+        type: "agentTranscript.committed",
         text: expect.stringContaining("Found your account."),
       });
     });
@@ -385,8 +385,8 @@ describe("PipelineTransport — turn commit on STT final", () => {
     const t = createPipelineTransport(opts);
     await t.start();
     stt.last()?.fireFinal("track order BOB12"); // no punctuation, still immediate
-    expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
-      type: "user-transcript.committed",
+    expect(callbacks.reported("userTranscript.committed")).toHaveBeenCalledWith({
+      type: "userTranscript.committed",
       text: "track order BOB12",
     });
     await t.stop();
@@ -487,7 +487,7 @@ describe("PipelineTransport — a tool reads what an earlier tool answered", () 
     await t.start();
     stt.last()?.fireFinal("where is my order");
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalled();
     });
 
     expect(seen).toHaveLength(2);
@@ -530,7 +530,7 @@ describe("PipelineTransport — a tool reads what an earlier tool answered", () 
     await t.start();
     stt.last()?.fireFinal("where is my order");
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledTimes(1);
     });
     stt.last()?.fireFinal("are you sure");
     await vi.waitFor(() => {
@@ -573,7 +573,7 @@ describe("PipelineTransport — a tool reads what an earlier tool answered", () 
     ]);
     stt.last()?.fireFinal("are you sure");
     await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalled();
     });
 
     expect(seen[0]).toEqual([

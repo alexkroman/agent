@@ -231,7 +231,7 @@ the active `instruction` on every turn, per-state `bargeIn`/`toolChoice`/
 still gates and moves on `send`. `packages/aai-runtime/DIALOG-CLAUDE.md` owns
 the wiring; `roadside-assistance-agent` is the example.
 
-- A self transition on `@user-transcript.committed` is a silence ladder; no
+- A self transition on `@userTranscript.committed` is a silence ladder; no
   chatter transition makes the deadline wall clock from entry.
 - A `timeout` needs a state to LAND in (a different instruction). A committed
   turn, not a partial, restarts the clock, so a deadline leads to a nudge,
@@ -371,10 +371,10 @@ asked about, not the id the model echoed.
 
 ### Two templates are ports of the other voice frameworks' largest samples
 
-| Source                                | Template                | What the port changed                                                                                                                                                                  |
-| ------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| LiveKit `examples/hotel_receptionist` | `hotel-reception-agent` | `AgentTask` sub-agents become `when` gates on one `booking` dialog; speech-owed counter becomes two states left on `@user-transcript.committed`; the DB becomes a seeded `sessionSlot` |
-| Pipecat `word-wrangler-gemini-live`   | `word-game-agent`       | the second model becomes `ctx.generate` in one tool; the timer becomes `playing`'s `timeout`; filters become a referee function                                                        |
+| Source                                | Template                | What the port changed                                                                                                                                                                 |
+| ------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LiveKit `examples/hotel_receptionist` | `hotel-reception-agent` | `AgentTask` sub-agents become `when` gates on one `booking` dialog; speech-owed counter becomes two states left on `@userTranscript.committed`; the DB becomes a seeded `sessionSlot` |
+| Pipecat `word-wrangler-gemini-live`   | `word-game-agent`       | the second model becomes `ctx.generate` in one tool; the timer becomes `playing`'s `timeout`; filters become a referee function                                                       |
 
 A sub-agent is a dialog state (instructions) plus a gate (tool set); a model
 that must not hear the first is a tool boundary. Neither needs a second session.

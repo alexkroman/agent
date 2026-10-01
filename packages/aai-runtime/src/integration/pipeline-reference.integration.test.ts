@@ -117,7 +117,7 @@ describe.skipIf(missing.length > 0 && !requireStack)(
       const client: ClientSink = {
         open: true,
         event: (e) => {
-          if (e.type === "user-transcript.committed") userTranscripts.push(e.text);
+          if (e.type === "userTranscript.committed") userTranscripts.push(e.text);
           else if (e.type === "reply.completed") replyDone = true;
         },
         playAudioChunk: (chunk) => {

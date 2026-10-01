@@ -260,7 +260,7 @@ carries the table. Five things are decisions:
   booking back before it may be confirmed — with a counter over the caller's
   turns in the history, and the comment explains why the history rather than a
   VAD hook: it had to hold for a caller who types. `offering` and `readBack`
-  each leave on `@user-transcript.committed`, and `confirm_booking` is gated on
+  each leave on `@userTranscript.committed`, and `confirm_booking` is gated on
   `agreeing`, so the confirm is unreachable until the read-back has been
   ANSWERED. `agent.test.ts` drives the event with `deskFlow.receive`. This is
   the reason the template needs `agent({ dialogs })`.

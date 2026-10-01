@@ -37,7 +37,7 @@ export type EventSpy = ReturnType<typeof vi.fn<(event: TransportEventBody) => vo
  * A better double than the fourteen named `vi.fn()`s it replaces, not merely a
  * smaller one: the spies are minted on demand from the wire vocabulary, so a new
  * event needs no entry here, and an assertion reads the whole event —
- * `toHaveBeenCalledWith({ type: "user-transcript.updated", text: "hi" })` — where
+ * `toHaveBeenCalledWith({ type: "userTranscript.updated", text: "hi" })` — where
  * `onUserTranscriptPartial` could only ever show its positional arguments.
  */
 export type RecordingCallbacks = TransportCallbacks & {
@@ -77,10 +77,10 @@ export function makeCallbacks(): RecordingCallbacks {
  *
  * Replaces `partialTranscriptSpy`, which existed only to narrow away
  * `onAgentTranscriptPartial`'s optionality — an optionality that no longer
- * exists, because an interim snapshot is `agent-transcript.updated` and every
+ * exists, because an interim snapshot is `agentTranscript.updated` and every
  * transport reports the same event. What is left is the projection its four
  * callers actually wanted: each reached through `.mock.calls` for the string.
  */
 export function partialTranscripts(callbacks: RecordingCallbacks): string[] {
-  return callbacks.events.filter((e) => e.type === "agent-transcript.updated").map((e) => e.text);
+  return callbacks.events.filter((e) => e.type === "agentTranscript.updated").map((e) => e.text);
 }

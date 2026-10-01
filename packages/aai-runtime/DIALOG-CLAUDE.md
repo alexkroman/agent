@@ -40,7 +40,7 @@ IS a `SlotHolder`).
 The emitter's order is record → send → **dialogs** → hooks → commit. A dialog is
 part of the session's STATE; a hook is an observer of what the session did, and
 by the time an observer runs everything the event caused should already have
-happened. So a `"session.timed-out"` handler reading `claim.position(ctx)` sees
+happened. So a `"session.timedOut"` handler reading `claim.position(ctx)` sees
 the state the dialog moved TO — the state it declared a transition to precisely
 in order to handle that event. The other order hands that handler the state the
 call has just left, silently, with nothing in the handler to tell.
@@ -77,7 +77,7 @@ extended by nothing else. Both shapes a voice call wants are then expressible,
 with the runtime guessing nothing:
 
 - **A silence ladder** wants "since we last heard anything". Declare the hearing:
-  `on: { "@user-transcript.committed": "listening" }` on the state itself is a
+  `on: { "@userTranscript.committed": "listening" }` on the state itself is a
   self transition, so every committed utterance restarts the window and only real
   silence reaches the deadline.
 - **An abandonment or escalation deadline** wants wall clock from entry — "still
@@ -176,7 +176,7 @@ transport holding its prompt as session state.
 - **A transition cannot run a TOOL, so a state whose exit must also mutate a
   slot cannot safely be timed out.** A deadline and a session event both SEND AN
   EVENT: the dialog moves, and nothing else does. That is fine when the target
-  is terminal — `retail-orders-agent` and `travel-concierge-agent` both carry `"@session.timed-out"`
+  is terminal — `retail-orders-agent` and `travel-concierge-agent` both carry `"@session.timedOut"`
   into a `final` state, where the point is that nothing acts again and nobody
   reads the staged change either. It is NOT fine for the shape it most looks
   like: a `timeout` on a confirmation gate that returns to the browsing state

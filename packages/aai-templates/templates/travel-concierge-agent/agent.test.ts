@@ -499,7 +499,7 @@ describe("the call log", () => {
 
 describe("a caller who hangs up", () => {
   /** The frame the runtime offers a declared dialog when a session times out. */
-  const CALLER_GONE = { type: "session.timed-out", meta: { id: "evt_1", at: 0 } } as const;
+  const CALLER_GONE = { type: "session.timedOut", meta: { id: "evt_1", at: 0 } } as const;
 
   /**
    * The same event, delivered to the AGENT'S hooks the way the runtime delivers

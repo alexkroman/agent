@@ -21,9 +21,9 @@ describe("the client event feed", () => {
     const feed = vi.fn<ClientEventFeed>();
     publishClientEventFeed(feed);
     setSessionClient("feed-a", "porch");
-    const said = event({ type: "user-transcript.committed", text: "hi" });
+    const said = event({ type: "userTranscript.committed", text: "hi" });
     feedClientEvent("feed-a", said);
-    feedClientEvent("feed-a", event({ type: "user-transcript.updated", text: "h" }));
+    feedClientEvent("feed-a", event({ type: "userTranscript.updated", text: "h" }));
     feedClientEvent("feed-a", event({ type: "tool.completed", toolCallId: "t", result: "{}" }));
     feedClientEvent("feed-a", event({ type: "reply.completed" }));
     expect(feed.mock.calls).toEqual([
