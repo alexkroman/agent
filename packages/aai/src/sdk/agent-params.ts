@@ -23,7 +23,6 @@ import type { AgentMode } from "./agent-mode.ts";
 import type { AgentModelTuning } from "./agent-model-tuning.ts";
 import type { PipelinePhrases, PipelineTuning, TurnTakingTuning } from "./agent-tuning.ts";
 import type { LlmSpec } from "./providers/llm/llm.ts";
-import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { AgentDef } from "./types.ts";
 
@@ -63,9 +62,8 @@ export type ModeSelectorField = "mode";
 export type ProviderField = "stt" | "llm" | "tts" | "s2s";
 
 /**
- * Every field only the PIPELINE member has — the STT/TTS stages and the
- * `voice` shorthand, the {@link PipelineTuning} groups, the phrases and the
- * guardrails. The three other members subtract it.
+ * Every field only the PIPELINE member has — the STT/TTS stages, the
+ * {@link PipelineTuning} groups, the phrases and the guardrails. The three other members subtract it.
  *
  * Derived from the interfaces rather than re-listed, so a group added to
  * `PipelineTuning` is pipeline-only on every other member — and, through the
@@ -77,8 +75,7 @@ export type PipelineOnlyField =
   | keyof PipelinePhrases
   | keyof AgentGuardrails
   | "stt"
-  | "tts"
-  | "voice";
+  | "tts";
 
 /**
  * What every SESSION member shares — pipeline, S2S and text: everything on
@@ -118,22 +115,6 @@ type PipelineSttStage =
   | { stt?: undefined };
 
 /**
- * The pipeline member's TTS stage: an explicit descriptor (which owns its
- * voice), or the default one with the `voice` shorthand.
- */
-type PipelineTtsStage =
-  | { tts: TtsProvider; voice?: never }
-  | {
-      tts?: undefined;
-      /**
-       * TTS voice for the default AssemblyAI pipeline — shorthand for
-       * `tts: assemblyAITts({ voice })`. See `ASSEMBLYAI_TTS_VOICES`
-       * (`@alexkroman1/aai/tts`) for the catalog.
-       */
-      voice?: AssemblyAITtsVoice;
-    };
-
-/**
  * The PIPELINE member — `mode: "pipeline"`, or no `mode` at all (the default).
  *
  * Any subset of the `stt`/`llm`/`tts` triple; the unset stages run on the
@@ -162,8 +143,13 @@ export type PipelineAgentParams = SharedAgentParams &
     // this member absorbs when `agent()` resolves against the whole union — a
     // pipeline agent carrying an unused descriptor.
     s2s?: undefined;
-  } & PipelineSttStage &
-  PipelineTtsStage;
+    /**
+     * See {@link AgentDef.tts}. The voice is the descriptor's own option
+     * (`assemblyAITts({ voice: "michael" })`); unset, the default stage
+     * speaks `ASSEMBLYAI_TTS_DEFAULT_VOICE`.
+     */
+    tts?: TtsProvider;
+  } & PipelineSttStage;
 
 /**
  * The S2S member — `mode: "s2s"` and the `s2s` descriptor, and nothing

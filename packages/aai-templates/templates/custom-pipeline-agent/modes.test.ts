@@ -27,6 +27,7 @@ import {
 } from "@alexkroman1/aai";
 import { llm } from "@alexkroman1/aai/llm";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
 
 /**
@@ -80,10 +81,14 @@ describe("three modes, three members", () => {
   test("`agent()` returns an `AgentDef` — the params with the conveniences lowered", () => {
     // The two types are not the same shape, and this is the difference worth
     // seeing: `AgentParams` is what an author WRITES (a model id string for
-    // `llm`, `voice` as a bare voice name), `AgentDef` is what comes back, with
-    // each of those already a provider descriptor. Everything downstream — the
-    // config, the bundle, the runtime — reads the second.
-    const def: AgentDef = agent({ ...SHARED, voice: "michael", llm: "claude-sonnet-4-6" });
+    // `llm`), `AgentDef` is what comes back, with it already a provider
+    // descriptor. Everything downstream — the config, the bundle, the runtime —
+    // reads the second. A voice has no shorthand: it is the TTS descriptor's.
+    const def: AgentDef = agent({
+      ...SHARED,
+      tts: assemblyAITts({ voice: "michael" }),
+      llm: "claude-sonnet-4-6",
+    });
     expect(def.tts?.kind).toBe("assemblyai");
     expect(def.tts?.options.voice).toBe("michael");
     expect(def.llm?.options.model).toBe("claude-sonnet-4-6");

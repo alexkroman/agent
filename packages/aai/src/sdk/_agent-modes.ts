@@ -48,7 +48,6 @@ const PIPELINE_STAGES = {
  * these tables and on no member is a compile error too.
  */
 const PIPELINE_TUNING = {
-  voice: "the default pipeline's TTS voice",
   turnTaking: "the pipeline's turn-taking tuning",
   interruption: "the pipeline's barge-in tuning",
   silence: "the pipeline's dead-air cover and silence nudge",
@@ -151,8 +150,9 @@ export function resolveAgentMode(src: Readonly<Record<string, unknown>>): AgentM
  * Refuse every field `mode`'s member does not have — the run-time twin of the
  * subtraction each member's type is built by.
  *
- * Reads the AUTHORED fields, before the conveniences are lowered: `voice` on an
- * S2S agent is refused as `voice`, not as the `tts` stage it would have become.
+ * Reads the AUTHORED fields, before the conveniences are lowered:
+ * `turnTaking.maxSilenceMs` on an S2S agent is refused as `turnTaking`, not as
+ * the `stt` stage it would have become.
  *
  * @internal
  */

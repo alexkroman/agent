@@ -39,7 +39,6 @@ describe("assertModeFields", () => {
     expect(() =>
       assertModeFields("pipeline", {
         silence: { deadAirCoverMs: 1 },
-        voice: "jane",
         temperature: 0.1,
       }),
     ).not.toThrow();
@@ -54,7 +53,6 @@ describe("assertModeFields", () => {
     "stt",
     "tts",
     "llm",
-    "voice",
     "turnTaking",
     "interruption",
     "silence",
@@ -66,7 +64,7 @@ describe("assertModeFields", () => {
     );
   });
 
-  test.each(["stt", "tts", "s2s", "voice", "sttPrompt", "telephony", "turnTaking"])(
+  test.each(["stt", "tts", "s2s", "sttPrompt", "telephony", "turnTaking"])(
     "a text agent refuses %s",
     (field) => {
       expect(() => assertModeFields("text", { [field]: 1 })).toThrow(
@@ -76,7 +74,6 @@ describe("assertModeFields", () => {
   );
 
   test.each([
-    "voice",
     "silence",
     "voicePresets",
     "toolChoice",
@@ -122,7 +119,7 @@ describe("agent() and toAgentConfig carry the mode", () => {
       { name: "t", mode: "text", temperature: 0.2 },
       { name: "s", mode: "s2s", s2s: assemblyAIS2s() },
       { name: "a", mode: "workflow-app", workflows },
-      { name: "p", voice: "jane", turnTaking: { maxSilenceMs: 4000, detection: "manual" } },
+      { name: "p", turnTaking: { maxSilenceMs: 4000, detection: "manual" } },
     ]) {
       const once = normalizeAgentParams(fields);
       expect(normalizeAgentParams(once)).toEqual(once);

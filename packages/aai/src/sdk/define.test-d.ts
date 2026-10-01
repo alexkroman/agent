@@ -271,19 +271,17 @@ test("llm accepts a generated gateway id, an aggregator id, and any other string
   expectTypeOf<AgentAccepts<{ name: string; llm: 7 }>>().toEqualTypeOf<false>();
 });
 
-test("voice picks the default pipeline's TTS voice, never a descriptor's or S2S's", () => {
-  // The shorthand for the golden path…
-  expectTypeOf<AgentAccepts<{ name: string; voice: "michael" }>>().toEqualTypeOf<true>();
-  expectTypeOf<
-    AgentAccepts<{ name: string; voice: string; llm: LlmProvider }>
-  >().toEqualTypeOf<true>();
-  // …is rejected when an explicit `tts` descriptor owns the voice…
+test("a voice is the TTS descriptor's option — there is no agent-level `voice`", () => {
+  expectTypeOf<AgentAccepts<{ name: string; tts: TtsProvider }>>().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; voice: "michael" }>>().toEqualTypeOf<false>();
   expectTypeOf<
     AgentAccepts<{ name: string; tts: TtsProvider; voice: "michael" }>
   >().toEqualTypeOf<false>();
-  // …and in S2S mode, where the `s2s` descriptor owns it.
   expectTypeOf<
     AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider; voice: "michael" }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; voice: "michael" }>
   >().toEqualTypeOf<false>();
 });
 

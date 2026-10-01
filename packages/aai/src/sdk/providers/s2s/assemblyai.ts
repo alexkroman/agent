@@ -90,13 +90,13 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
+ *   mode: "s2s",
  *   s2s: assemblyAIS2s({ voice: "jane", languages: ["en"] }),
  * });
  * ```
  *
- * Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline, and the
- * top-level `voice` convenience is a compile error alongside it — an S2S
- * voice rides on the descriptor, because the service synthesizes.
+ * Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline. An S2S voice
+ * rides on this descriptor, because the service synthesizes.
  *
  * @public
  */

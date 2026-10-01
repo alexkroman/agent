@@ -383,7 +383,7 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // build time.
   // The same normalization `agent()` runs, so a raw `export default {...}` that
   // skipped `agent()` behaves the same: the mode and the fields it refuses,
-  // `voice`, a model-id string for `llm`, and the endpointing pair. Idempotent
+  // a model-id string for `llm`, and the endpointing pair. Idempotent
   // over `agent()`'s own output. (There is no `system` alias — `agent({ system
   // })` is refused by name at the stray-field check below.)
   const normalized = normalizeAgentParams(source) as AgentConfigSource;

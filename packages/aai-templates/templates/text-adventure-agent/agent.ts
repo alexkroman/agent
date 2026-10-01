@@ -1,4 +1,5 @@
 import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 import { gameSlot, gameStatus, recordTurn, statusBlock } from "./shared.ts";
 // The prose half of the prompt. `system-prompt.md` beside this file is
 // discovered by the build either way — importing it is what lets the resolver
@@ -15,7 +16,7 @@ export default agent({
   // something to project rather than an empty state object.
   // A narrator wants a narrative voice; everything else stays on the
   // default all-AssemblyAI pipeline.
-  voice: "paul",
+  tts: assemblyAITts({ voice: "paul" }),
   /**
    * The status line, pushed to the CRT's top bar — where you are, your score,
    * your rank and the turn count, the four facts the printed games put across

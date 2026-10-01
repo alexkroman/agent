@@ -330,9 +330,6 @@ export default agent({
                                              // instead; declare it only to COMPOSE one.
                                              // There is no `system` alias — one name.
   greeting?: string;                         // default: "Hey there..."
-  voice?: string;                            // TTS voice for the default pipeline, e.g. "michael"
-                                             // (shorthand for tts: assemblyAITts({ voice });
-                                             // invalid with an explicit `tts` or with `s2s`)
   stt?: SttProvider;                         // pipeline stage overrides — set any subset;
   llm?: LlmProvider | string;                // unset stages default to AssemblyAI
   tts?: TtsProvider;                         // (llm also takes a model-id string)
@@ -405,14 +402,15 @@ export default agent({
 
 No provider fields means the default all-AssemblyAI pipeline: all three
 stages bill to the one key a published agent is guaranteed to have. Pick
-its voice with the `voice` field:
+its voice on the TTS descriptor, which replaces only that stage:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  voice: "paul",
+  tts: assemblyAITts({ voice: "paul" }),
 });
 ```
 
@@ -1356,15 +1354,15 @@ providers when:
 - you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq,
   hundreds of models via OpenRouter, or 25+ models via the AssemblyAI
   LLM Gateway)
-- you want a specific STT model, or a non-AssemblyAI TTS provider (for the
-  default pipeline's voice, use the `voice` field instead)
+- you want a specific STT model, a non-AssemblyAI TTS provider, or another
+  voice (`tts: assemblyAITts({ voice })`)
 - you need to swap providers without changing agent code
 
 **The rule:** declare only the stages you're changing — any subset of
 `stt`, `llm`, `tts`; each unset stage runs on the AssemblyAI default.
 Combining `s2s` with any pipeline provider or pipeline-only tuning field is
-a compile error naming the rule, as is `voice` alongside an explicit `tts`
-descriptor (the descriptor owns its own voice). A raw config that skips
+a compile error naming the rule; a voice has one place to live, the TTS
+descriptor (there is no agent-level `voice`). A raw config that skips
 `agent()` is still checked at parse time.
 
 ```ts
@@ -1590,8 +1588,8 @@ Override with `{ voice, model, language }`.
 
 **AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the
 LLM Gateway, so an all-AssemblyAI pipeline needs exactly one secret. On the
-default pipeline, `agent({ voice: "michael" })` is the shorthand for
-`tts: assemblyAITts({ voice: "michael" })` — same catalog, same rules. Each
+default pipeline, `tts: assemblyAITts({ voice: "michael" })` changes the voice
+and leaves the other two stages on the default. Each
 voice speaks one language, and this is the whole catalog — **a voice not on
 this list is rejected after the socket opens, which leaves the agent
 connected, "ready", and permanently silent**, so pick one from here rather
@@ -2537,7 +2535,7 @@ own journaled `ctx.random()` instead.
   LLM context = the model thinks the tool failed.
 - **Declare only the pipeline stages you're changing.** Unset stages of
   `stt` / `llm` / `tts` default to AssemblyAI (omit all three for the full
-  default pipeline; `voice` picks its TTS voice). S2S needs an explicit
+  default pipeline; `tts: assemblyAITts({ voice })` picks a voice). S2S needs an explicit
   `mode: "s2s"` and `s2s: assemblyAIS2s()`, and takes no pipeline fields.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.

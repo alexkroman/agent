@@ -10,10 +10,10 @@
  * because `providers/tts/*.ts` is a place where every file must BE a provider
  * (konsistent's `tts-providers`), and because nothing about it is TTS.
  *
- * `_`-prefixed: the sentence it contributes to is `assemblyAIVoiceWarning`'s,
- * and that stays the published one. The next catalog that needs "did you mean"
- * — a gateway model id is the obvious one — should call this rather than copy
- * it.
+ * `_`-prefixed: it is plumbing for two sentences, `assemblyAIVoiceWarning`'s
+ * and the stray-field refusal's (`_stray-fields.ts`), each passing its own
+ * bounds. The next catalog that needs "did you mean" — a gateway model id is
+ * the obvious one — should call this rather than copy it.
  */
 
 /**
@@ -29,9 +29,18 @@ const SUGGEST_MAX_DISTANCE = 2;
 /** At most this many suggestions — a longer list is the haystack again. */
 const SUGGEST_MAX_NAMES = 3;
 
+/** How far a suggestion may be, and how many to offer — see the defaults above. */
+export interface NearestNamesOptions {
+  /** Largest edit distance still read as a typo. Default {@link SUGGEST_MAX_DISTANCE}. */
+  maxDistance?: number;
+  /** At most this many names. Default {@link SUGGEST_MAX_NAMES}. */
+  maxNames?: number;
+}
+
 /**
  * The names closest to `wanted`, best first — at most
- * {@link SUGGEST_MAX_NAMES}, and none at all when nothing is close.
+ * {@link SUGGEST_MAX_NAMES}, and none at all when nothing is close. Compared
+ * case-insensitively, so a pure case slip is distance 0 and wins outright.
  *
  * The commonest wrong voice is a TYPO of a real one (`"michal"`, `"estele"`),
  * and for that reader a catalog's 40-odd names are a haystack while the one they
@@ -47,13 +56,18 @@ const SUGGEST_MAX_NAMES = 3;
  * Not on any hot path: it runs once per config, inside a warning that is itself
  * computed once per build.
  */
-export function nearestNames(wanted: string, names: readonly string[]): string[] {
+export function nearestNames(
+  wanted: string,
+  names: Iterable<string>,
+  options: NearestNamesOptions = {},
+): string[] {
+  const { maxDistance = SUGGEST_MAX_DISTANCE, maxNames = SUGGEST_MAX_NAMES } = options;
   const needle = wanted.toLowerCase();
-  return names
+  return [...names]
     .map((name) => ({ name, distance: editDistance(needle, name.toLowerCase()) }))
-    .filter((one) => one.distance <= SUGGEST_MAX_DISTANCE)
+    .filter((one) => one.distance <= maxDistance)
     .sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name))
-    .slice(0, SUGGEST_MAX_NAMES)
+    .slice(0, maxNames)
     .map((one) => one.name);
 }
 

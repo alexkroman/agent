@@ -278,28 +278,20 @@ describe("agent()", () => {
     expect(parsed.tts).toEqual(assemblyAIPipeline().tts);
   });
 
-  test("`voice` desugars to the default pipeline's TTS descriptor", () => {
-    const def = agent({ name: "t", voice: "michael" });
-    expect("voice" in def).toBe(false);
-    expect(def.tts).toEqual(assemblyAITts({ voice: "michael" }));
-    // stt/llm stay undeclared on the def; toAgentConfig fills them.
-    expect(def.stt).toBeUndefined();
-    expect(def.llm).toBeUndefined();
-    const parsed = toAgentConfig(def);
-    expect(parsed.mode).toBe("pipeline");
-    expect(parsed.tts).toEqual(assemblyAITts({ voice: "michael" }));
-  });
-
-  test("`voice` combined with an explicit tts descriptor throws", () => {
-    expect(() =>
-      agentMisuse({ name: "t", voice: "michael", tts: cartesiaTts({ voice: "v" }) }),
-    ).toThrow(/`voice` picks the default pipeline's TTS voice/);
-  });
-
-  test("`voice` combined with s2s throws", () => {
+  test("`voice` is not an agent field: the stray-field check names its replacement", () => {
+    // One owner per value — the voice is the TTS descriptor's option.
+    expect(() => agentMisuse({ name: "t", voice: "michael" })).toThrow(
+      /`voice` \(renamed to `tts: assemblyAITts\(\{ voice \}\)`\)/,
+    );
     expect(() =>
       agentMisuse({ name: "t", voice: "michael", mode: "s2s", s2s: assemblyAIS2s() }),
-    ).toThrow(/`voice` is .* no effect on a "s2s" agent/);
+    ).toThrow(/`voice` \(renamed to/);
+  });
+
+  test("the voice lives on the descriptor, and the default stage carries the default", () => {
+    const def = agent({ name: "t", tts: assemblyAITts({ voice: "michael" }) });
+    expect(toAgentConfig(def).tts).toEqual(assemblyAITts({ voice: "michael" }));
+    expect(toAgentConfig(agent({ name: "u" })).tts).toEqual(assemblyAITts());
   });
 
   test("the end-of-turn window lowers onto the default pipeline's STT descriptor", () => {

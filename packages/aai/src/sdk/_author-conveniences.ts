@@ -9,11 +9,12 @@
  * 1. **The mode** (`resolveAgentMode`, `_agent-modes.ts`) — `mode`, or the
  *    pipeline default, written onto the definition.
  * 2. **Field legality** (`assertModeFields`) — every field the mode's member
- *    does not have, refused by name. Against the AUTHORED fields, so `voice` on
- *    an S2S agent is reported as `voice`.
- * 3. **The conveniences** — a model-id string for `llm`, `voice` as shorthand
- *    for `tts: assemblyAITts({ voice })`, and `turnTaking.minSilenceMs`/
- *    `maxSilenceMs` lowered onto the same two options of `assemblyAIStt()`.
+ *    does not have, refused by name. Against the AUTHORED fields, so
+ *    `turnTaking` on an S2S agent is reported as `turnTaking`.
+ * 3. **The conveniences** — a model-id string for `llm`, and
+ *    `turnTaking.minSilenceMs`/`maxSilenceMs` lowered onto the same two
+ *    options of `assemblyAIStt()`. A TTS voice has no shorthand: it is the
+ *    descriptor's option (`assemblyAITts({ voice })`), so it has one owner.
  *
  * **There is no `system` alias.** `agent({ system: "…" })` reaches
  * `assertNoStrayFields` and is refused BY NAME, which is the better error: two
@@ -33,7 +34,6 @@ import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { normalizeLlm } from "./providers/llm/shared/from-string.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
-import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 
 /**
  * Returns a NEW object (never mutates); non-objects pass through untouched
@@ -46,7 +46,6 @@ export function normalizeAgentParams(input: unknown): unknown {
   assertModeFields(mode, rest);
   rest.mode = mode;
   if (typeof rest.llm === "string") rest.llm = normalizeLlm(rest.llm);
-  lowerVoice(rest);
   normalizeEndpointing(rest);
   // AFTER the desugaring, and over `rest.stt` rather than over the two
   // shorthands: the same contradiction is expressible on an explicit
@@ -54,25 +53,6 @@ export function normalizeAgentParams(input: unknown): unknown {
   // lowered onto one there is a single shape to check.
   assertTurnSilenceWindow(rest.stt);
   return rest;
-}
-
-/**
- * `agent({ voice })` → `tts: assemblyAITts({ voice })`, in place. Which modes
- * may carry `voice` at all is `assertModeFields`' question, already answered.
- */
-function lowerVoice(rest: Record<string, unknown>): void {
-  const { voice } = rest;
-  if (voice === undefined) return;
-  delete rest.voice;
-  if (typeof voice !== "string") {
-    throw new Error('`voice` must be a voice-id string (e.g. "jane").');
-  }
-  if (rest.tts !== undefined) {
-    throw new Error(
-      "`voice` picks the default pipeline's TTS voice — an explicit `tts` descriptor owns its own voice (e.g. `assemblyAITts({ voice })`); set it there or remove `tts`.",
-    );
-  }
-  rest.tts = assemblyAITts({ voice });
 }
 
 /**

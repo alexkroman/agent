@@ -23,6 +23,7 @@ import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 export default agent({
   name: "Support",
   systemPrompt: "Help callers with their orders.",
+  mode: "s2s",
   s2s: assemblyAIS2s({ voice: "jane", keyterms: ["AssemblyAI"] }),
 });
 ```
@@ -91,6 +92,7 @@ fields the example above leaves out:
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 const cart = sessionSlot("cart", () => ({ items: [] as string[] }));
 
@@ -98,12 +100,12 @@ export default agent({
   name: "Storefront",
   systemPrompt: "You help callers order from the catalog. Confirm before charging.",
   greeting: "Storefront here — what are you after?",
-  voice: "michael",
+  tts: assemblyAITts({ voice: "michael" }),
   // Server-side helpers the model may call, on top of your own tool files.
   builtinTools: ["calculate"],
   // Tool-calling steps per reply, and how long a pause ends the caller's turn.
   maxSteps: 6,
-  minTurnSilenceMs: 1200,
+  turnTaking: { minSilenceMs: 1200 },
   // What the browser client renders with `useAgentState`.
   syncState: cart.projection((c) => ({ count: c.items.length })),
   // Observe-only hooks over the session event stream.

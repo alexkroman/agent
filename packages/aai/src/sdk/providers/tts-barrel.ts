@@ -26,9 +26,9 @@
  * ready and is permanently silent. For AssemblyAI the ids are enumerated in
  * {@link ASSEMBLYAI_TTS_VOICES}, with each accent alongside — read them there
  * rather than trusting a name from anywhere else, and note the TYPE cannot
- * enforce it ({@link AssemblyAITtsVoice} says why). On the default pipeline
- * you do not need this barrel at all: `agent({ voice: "michael" })` desugars
- * to {@link assemblyAITts}.
+ * enforce it ({@link AssemblyAITtsVoice} says why). A voice is always a
+ * descriptor option — `tts: assemblyAITts({ voice: "michael" })` — so this
+ * barrel is where one is chosen.
  *
  * **Credentials are never passed here.** Each factory's vendor names the env
  * var its key is read from — `ASSEMBLYAI_API_KEY`, `CARTESIA_API_KEY`,

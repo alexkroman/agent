@@ -74,24 +74,14 @@ describe("toAgentConfig — mode classification", () => {
     );
   });
 
-  test("voice shorthand ⇒ default pipeline with that TTS voice", () => {
-    const parsed = config({ voice: "michael" });
-    expect(parsed.mode).toBe("pipeline");
-    expect(parsed.tts).toEqual(assemblyAITts({ voice: "michael" }));
-    expect(parsed.stt).toEqual(assemblyAIPipeline().stt);
-    expect(parsed.llm).toEqual(assemblyAIPipeline().llm);
-  });
-
-  test("voice + explicit tts ⇒ throws (the descriptor owns its voice)", () => {
-    expect(() => config({ voice: "michael", tts: pipelineFields.tts })).toThrow(
-      /`voice` picks the default pipeline's TTS voice/,
-    );
-  });
-
-  test("voice + s2s ⇒ throws (pipeline-mode only)", () => {
-    expect(() => config({ voice: "michael", mode: "s2s", s2s: assemblyAIS2s() })).toThrow(
-      /`voice` is the default pipeline's TTS voice — it has no effect on a "s2s" agent/,
-    );
+  test("an agent-level `voice` is refused by name in every mode, naming the descriptor", () => {
+    for (const fields of [
+      { voice: "michael" },
+      { voice: "michael", tts: pipelineFields.tts },
+      { voice: "michael", mode: "s2s", s2s: assemblyAIS2s() },
+    ]) {
+      expect(() => config(fields)).toThrow(/`voice` \(renamed to `tts: assemblyAITts/);
+    }
   });
 
   test("accepts an s2s descriptor by raw shape", () => {
@@ -509,9 +499,9 @@ describe("author conveniences on raw configs (no agent())", () => {
     ).toThrow(/`silence` is .* no effect on a "text" agent/);
   });
 
-  test("rejects the `voice` shorthand rather than fabricating a tts stage", () => {
+  test("rejects `voice` rather than fabricating a tts stage", () => {
     expect(() => rawConfig({ name: "chat", mode: "text", voice: "jane" })).toThrow(
-      /`voice` is .* no effect on a "text" agent/,
+      /`voice` \(renamed to/,
     );
   });
 

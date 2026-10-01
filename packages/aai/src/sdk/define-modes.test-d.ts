@@ -165,7 +165,7 @@ test("a pipeline agent refuses the other modes' selectors and descriptors", () =
     }>
   >().toEqualTypeOf<true>();
   expectTypeOf<
-    AgentAccepts<{ name: string; voice: "michael"; turnTaking: { maxSilenceMs: number } }>
+    AgentAccepts<{ name: string; tts: TtsProvider; turnTaking: { detection: "manual" } }>
   >().toEqualTypeOf<true>();
   // An s2s descriptor on a declared pipeline agent.
   expectTypeOf<

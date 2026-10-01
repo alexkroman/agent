@@ -15,8 +15,9 @@ default — so swapping one thing is one line.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
-export default agent({ name: "My Agent", voice: "michael" });
+export default agent({ name: "My Agent", tts: assemblyAITts({ voice: "michael" }) });
 ```
 
 The ids are the keys of `ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai/tts`). Every
@@ -47,7 +48,7 @@ A bare id routes through the AssemblyAI LLM gateway on your existing key. A
 `AI_GATEWAY_API_KEY` in your secrets.
 
 Bare ids autocomplete from `AssemblyAIGatewayModel` (`@alexkroman1/aai`), the
-union generated from what the gateway advertises. Like `voice`, it is
+union generated from what the gateway advertises. Like a voice id, it is
 autocomplete rather than a guard.
 
 :::caution[A wrong model id is a gateway error on the first turn]
@@ -112,14 +113,14 @@ is an explicit opt-in, never something you reach by omission.
 import { agent } from "@alexkroman1/aai";
 import { openAIS2s } from "@alexkroman1/aai/s2s";
 
-export default agent({ name: "My Agent", s2s: openAIS2s() });
+export default agent({ name: "My Agent", mode: "s2s", s2s: openAIS2s() });
 ```
 
 `assemblyAIS2s()` is the other one, from the same subpath.
 
 What you buy is one round trip instead of three hops. What you give up is the
-seams. Providers can no longer be mixed, the S2S descriptor owns its own voice
-rather than the `voice` field, and the tuning fields below are implemented by
+seams. Providers can no longer be mixed, the S2S descriptor owns its own
+voice, and the tuning groups below are implemented by
 the three-stage pipeline alone — so setting one on an S2S agent is a compile
 error naming the rule rather than a silent no-op.
 

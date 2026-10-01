@@ -200,8 +200,8 @@ an explicit deny-list instead of copying fields**:
 - **`agent()`** derives each member of its parameters from `AgentDef` (`Omit`
   plus `Pick` per mode) plus the conveniences `normalizeAgentParams`
   (`sdk/_author-conveniences.ts`) lowers away (`llm` as a model-id string via
-  `sdk/providers/llm/shared/from-string.ts`, `voice` →
-  `tts: assemblyAITts({ voice })`, the endpointing pair). Never re-declare the
+  `sdk/providers/llm/shared/from-string.ts`, and the endpointing pair). A voice
+  has no shorthand: it is the TTS descriptor's option. Never re-declare the
   shape inline — neither bundler typechecks user code. `define.test-d.ts` and
   `define-modes.test-d.ts` lock this. **Defaults go
   through `omitUndefined`**: a spread lets a present-and-`undefined` key (from

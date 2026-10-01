@@ -151,7 +151,7 @@ export {
  * carry no prose of their own — a field's documentation lives here once, and
  * the member's job is only to say WHICH fields exist in which mode (a
  * pipeline-only knob is simply absent from the S2S member). `agent()`
- * normalizes the author conveniences (`llm` as a model-id string, `voice`, the
+ * normalizes the author conveniences (`llm` as a model-id string, the
  * end-of-turn window) and the deprecated spellings away, so this shape is
  * canonical.
  *
@@ -396,8 +396,8 @@ export interface AgentDef
   llm?: LlmProvider;
   /**
    * Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
-   * stage defaults to AssemblyAI TTS (`agent()`'s `voice` shorthand picks
-   * its voice).
+   * stage defaults to `assemblyAITts()`. A voice is this descriptor's option
+   * (`assemblyAITts({ voice: "michael" })`); there is no agent-level field.
    */
   tts?: TtsProvider;
   /**

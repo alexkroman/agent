@@ -100,10 +100,11 @@ silent). Forms read `ttsVoiceIds(language?)` (`/tts`, the non-empty tuple
 autocomplete, not a guard**; `assertAssemblyAITtsLanguage` says why only the
 language pairing is checked. Both are on the root and `/tts`.
 
-On the default pipeline, `agent({ voice })` desugars to `tts: assemblyAITts({
-voice })` (`normalizeAgentConveniences`) and is invalid beside an explicit
-`tts`. S2S's voice rides on the `s2s` descriptor; `voice` is a compile error
-there.
+A voice has ONE spelling, the descriptor's option (`assemblyAITts({ voice })`,
+`assemblyAIS2s({ voice })`); there is no agent-level `voice`, and the
+stray-field check names the descriptor. Its unknown/near-miss warning is
+computed once, off the descriptor, by `agentConfigWarnings` (`_nearest-names.ts`
+ranks the suggestions, shared with the stray-field check).
 
 ## Adding a provider
 
