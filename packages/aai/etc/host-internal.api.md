@@ -485,10 +485,7 @@ interface AssemblyAITtsOptions extends ProviderCredentialOptions {
 type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @internal
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: undefined): Exclude<SessionMode, "text">;
-
-// @internal
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: unknown): SessionMode;
+export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown): Exclude<SessionMode, "text">;
 
 // @internal
 export function assertUploadToken(id: string): void;

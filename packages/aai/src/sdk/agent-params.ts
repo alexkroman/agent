@@ -217,9 +217,12 @@ export type WorkflowAppOnlyField =
  *
  * @public
  */
+// The text member's two drops (`sttPrompt`, `telephony`) are spelled as it
+// spells them, rather than as `TextOnlyExcludedField`, so the published shape
+// reaches no unexported name.
 export type StaticAgentParams = Omit<
   SharedAgentParams,
-  TextOnlyExcludedField | WorkflowAppOnlyField | "workflows"
+  "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"
 > & {
   /** See {@link AgentDef.mode}. */
   mode: "workflow-app";

@@ -5623,32 +5623,6 @@ The event union [Dialog.send](#send) and a gated tool's
 
 #### Methods
 
-##### gate()
-
-```ts
-gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
-```
-
-The refusal for `tool` right now: a [ToolRefusal](#toolrefusal) (`reason: "dialog"`)
-when it is one this dialog's [Dialog.tool](#tool) minted and the conversation
-is outside its `when` states, `undefined` otherwise. The runtime layers it
-over every toolset (`agentToolsets`); the minted tool's own `execute` checks
-the same thing, so a spec calling it directly is gated too.
-
-###### Parameters
-
-###### tool
-
-[`ToolDef`](#tooldef)
-
-###### ctx
-
-[`SlotHolder`](#slotholder)
-
-###### Returns
-
-[`ToolRefusal`](#toolrefusal) \| `undefined`
-
 ##### matches()
 
 ```ts
@@ -11026,7 +11000,7 @@ A source of tools, as the runtime consumes it.
 
 The advertised list is fixed per session on every transport (an S2S service
 holds its tool list for the whole session), so a rule about WHEN a tool may
-run is a [Toolset.gate](#gate-1) at the call — which is also where the model is
+run is a [Toolset.gate](#gate) at the call — which is also where the model is
 told why, and how to recover.
 
 #### Methods
@@ -11786,7 +11760,7 @@ Every model request the runtime makes for this session:
 
 - the **conversational loop** — every step of every turn;
 - **`ctx.generate`** from a tool body;
-- **`ctx.delegate` / `subagent()`** — every step of the delegated run,
+- **`ctx.delegate`** of a `speaker()` — every step of the delegated run,
   including a guardrail's revisions.
 
 That list is the whole budget, and it is stated because the first release of
@@ -11856,8 +11830,8 @@ agent replies to them, and whatever the caller says next opens the next turn
 Both members are optional; set one or both. A limit that names neither is
 refused at config time rather than accepted as a cap on nothing.
 
-Two things it is NOT: it is not a barge-in gate (`minBargeInWords` and
-`interruptionMinDurationMs` decide whether the caller's speech interrupts a
+Two things it is NOT: it is not a barge-in gate (`interruption.minWords` and
+`interruption.minDurationMs` decide whether the caller's speech interrupts a
 reply; this decides when the caller's own turn is long enough), and it does
 not discard anything the caller says — speech after the cut lands in the
 turn that follows.
@@ -11887,7 +11861,7 @@ optional maxWords?: number;
 
 End the caller's turn once this many words have been heard in it. A
 positive integer; counted on the transcriber's interim transcript, so it
-is what the transcriber HEARD, exactly as `minBargeInWords` is.
+is what the transcriber HEARD, exactly as `interruption.minWords` is.
 
 ***
 
@@ -14539,7 +14513,7 @@ A successful or failed Standard Schema validation.
 ### StaticAgentParams
 
 ```ts
-type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | "workflows"> & {
+type StaticAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
   mode: "workflow-app";
   workflows: NonNullable<AgentDef["workflows"]>;
 };

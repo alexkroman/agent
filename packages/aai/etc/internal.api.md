@@ -249,6 +249,9 @@ type FindOptions = {
 // @public
 export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
 
+// @internal
+export function frontDoorOf(mode: string | undefined): "voice" | "static";
+
 // @public
 type GenerateFn = {
     <S extends StandardSchemaV1>(options: GenerateOptions & {

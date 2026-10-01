@@ -62,7 +62,6 @@ interface DelegateToolCall {
 
 // @public @sealed
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
-    gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
     readonly key: string;
     readonly machine: M;
     matches(ctx: SlotHolder, state: string): boolean;
@@ -360,7 +359,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.updated">;
+    type: z.ZodLiteral<"userTranscript.updated">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -368,21 +367,21 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     text: z.ZodString;
     eotConfidence: z.ZodOptional<z.ZodNumber>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.committed">;
+    type: z.ZodLiteral<"userTranscript.committed">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.updated">;
+    type: z.ZodLiteral<"agentTranscript.updated">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.committed">;
+    type: z.ZodLiteral<"agentTranscript.committed">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -429,7 +428,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.timed-out">;
+    type: z.ZodLiteral<"session.timedOut">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -489,7 +488,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     replacement: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-turn.exceeded">;
+    type: z.ZodLiteral<"userTurn.exceeded">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -501,7 +500,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"provider.failed-over">;
+    type: z.ZodLiteral<"provider.failedOver">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -772,14 +771,6 @@ type ToolMessagesInput = {
     complete?: string | readonly (string | ToolCompletionMessage)[];
     failed?: string | readonly (string | ToolCompletionMessage)[];
 };
-
-// @public
-type ToolRefusal = ToolFailure & {
-    reason: ToolRefusalReason;
-};
-
-// @public
-type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster";
 
 // @public
 type ToolStartMessage = {

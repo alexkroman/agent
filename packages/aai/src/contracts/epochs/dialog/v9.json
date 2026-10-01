@@ -3,7 +3,7 @@
   "capability": "dialog",
   "epoch": 9,
   "rule": 2,
-  "sha256": "1f955cdec13f02988e10576cd2f1b34816ca07fb1c1541b4c4b7d1e4abb29d5a",
+  "sha256": "94b6aa654ca46bec592fb098ee551027e996b54822f8982e29e594ac282e7304",
   "exports": [
     "AnyDialog",
     "Dialog",
@@ -22,5 +22,5 @@
     "DialogVoiceConfig",
     "dialog"
   ],
-  "rollup": "a08d0948a3c40aef89d8bb367b84263b308dd0ce2e958f9183431d8aa206c80e"
+  "rollup": "8106e4c42a03a9201edf853dc31b9139cc36010e63aa52eb4fe9c01463fd7a66"
 }

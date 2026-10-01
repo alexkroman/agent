@@ -2423,10 +2423,7 @@ interface AssemblyAITtsOptions extends ProviderCredentialOptions {
 type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @internal
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: undefined): Exclude<SessionMode, "text">;
-
-// @internal
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: unknown): SessionMode;
+export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown): Exclude<SessionMode, "text">;
 
 // @internal
 export function assertUploadToken(id: string): void;
@@ -4433,7 +4430,6 @@ export interface DelegateToolCall {
 
 // @public @sealed
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
-    gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
     readonly key: string;
     readonly machine: M;
     matches(ctx: SlotHolder, state: string): boolean;
@@ -5612,7 +5608,7 @@ export interface StateProjection<V = unknown> {
 }
 
 // @public
-export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | "workflows"> & {
+export type StaticAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
     mode: "workflow-app";
     workflows: NonNullable<AgentDef["workflows"]>;
 };
@@ -5893,7 +5889,7 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknow
 export function workflowApp(def: Omit<StaticAgentParams, "mode">): AgentDef;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | Exclude<keyof SharedAgentParams, keyof TextAgentParams> | keyof AgentModelTuning | "systemPrompt" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";
+type WorkflowAppOnlyField = "systemPrompt" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
@@ -6268,6 +6264,9 @@ type FindOptions = {
 
 // @public
 export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
+
+// @internal
+export function frontDoorOf(mode: string | undefined): "voice" | "static";
 
 // @public
 type GenerateFn = {
@@ -7347,7 +7346,6 @@ interface DelegateToolCall {
 
 // @public @sealed
 interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
-    gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
     readonly key: string;
     readonly machine: M;
     matches(ctx: SlotHolder, state: string): boolean;
@@ -7387,12 +7385,6 @@ interface DialogTimeout {
 // @public
 interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-}
-
-// @public
-export interface DialogToolGate {
-    // (undocumented)
-    gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
 }
 
 // @public @sealed
@@ -8135,8 +8127,6 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig;
 
 // @public
 export interface ToolBearingDef {
-    // (undocumented)
-    readonly dialogs?: readonly DialogToolGate[] | undefined;
     // (undocumented)
     readonly tools: ToolMap;
     // (undocumented)
@@ -10793,7 +10783,6 @@ export interface DeployedStage {
 
 // @public @sealed
 interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
-    gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
     readonly key: string;
     readonly machine: M;
     matches(ctx: SlotHolder, state: string): boolean;

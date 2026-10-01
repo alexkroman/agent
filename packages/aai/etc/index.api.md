@@ -317,7 +317,6 @@ export interface DelegateToolCall {
 
 // @public @sealed
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
-    gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
     readonly key: string;
     readonly machine: M;
     matches(ctx: SlotHolder, state: string): boolean;
@@ -1496,7 +1495,7 @@ export interface StateProjection<V = unknown> {
 }
 
 // @public
-export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | "workflows"> & {
+export type StaticAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
     mode: "workflow-app";
     workflows: NonNullable<AgentDef["workflows"]>;
 };
@@ -1777,7 +1776,7 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknow
 export function workflowApp(def: Omit<StaticAgentParams, "mode">): AgentDef;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | Exclude<keyof SharedAgentParams, keyof TextAgentParams> | keyof AgentModelTuning | "systemPrompt" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";
+type WorkflowAppOnlyField = "systemPrompt" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
