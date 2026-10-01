@@ -38,7 +38,8 @@
 
 import type { Db } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
-import { makeClientSink, makeEmitter, makeLogger, makeMockCore } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
+import { makeClientSink, makeEmitter, makeMockCore } from "../_session-test-utils.ts";
 import { createSessionEventStream } from "../session/index.ts";
 import {
   createMemoryStateBackend,

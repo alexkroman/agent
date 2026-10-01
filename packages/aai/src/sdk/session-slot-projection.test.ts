@@ -126,32 +126,52 @@ describe("projected", () => {
   });
 });
 
-describe("agent({ syncState }) is keyed by slot name", () => {
+describe("agent({ syncState }) takes projections and keys them by slot name", () => {
   /** Past the overloads on purpose — the run-time half an untyped config meets. */
   const untyped = (syncState: unknown) =>
     agent({ name: "Shop", syncState } as Parameters<typeof agent>[0]);
+  const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
 
-  test("one entry per slot, keyed by the slot's own name", () => {
+  test("one projection resolves to one entry under its slot's name", () => {
+    const def = agent({ name: "Shop", syncState: cartSlot.projected });
+    expect(def.syncState).toEqual({ cart: cartSlot.projected });
+  });
+
+  test("a list resolves to one entry per slot, in order", () => {
+    const def = agent({ name: "Shop", syncState: [cartSlot.projected, prefsSlot.projected] });
+    expect(Object.keys(def.syncState ?? {})).toEqual(["cart", "prefs"]);
+    expect(def.syncState?.prefs).toBe(prefsSlot.projected);
+  });
+
+  test("the deprecated record form still resolves to the same thing", () => {
     const def = agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
-    expect(Object.keys(def.syncState ?? {})).toEqual(["cart"]);
+    expect(def.syncState).toEqual({ cart: cartSlot.projected });
   });
 
-  test("a key that disagrees with its slot is refused, naming the slot", () => {
+  test("a record key that disagrees with its slot is refused, naming the slot", () => {
     expect(() => untyped({ basket: cartSlot.projected })).toThrow(
-      /`syncState.basket` projects the "cart" slot — key it by that slot's name/,
+      /`syncState.basket` projects the "cart" slot — pass the projection itself/,
     );
   });
 
-  test("the bare and array forms the record replaced are refused with the spelling to write", () => {
-    expect(() => untyped(cartSlot.projected)).toThrow(
-      /record keyed by slot name — write `syncState: \{ cart: cartSlot.projected \}`/,
+  test("two projections of one slot are refused", () => {
+    expect(() => untyped([cartSlot.projected, cartSlot.projected])).toThrow(
+      /projects the "cart" slot twice/,
     );
-    expect(() => untyped([cartSlot.projected])).toThrow(/record keyed by slot name/);
   });
 
-  test("an entry that is not a projection is refused", () => {
+  test("an entry that is not a projection is refused with the spelling to write", () => {
     expect(() => untyped({ cart: { items: [] } })).toThrow(
-      /`syncState.cart` is not a slot projection/,
+      /`syncState.cart` is not a slot projection — write `syncState: cartSlot.projected`/,
+    );
+    expect(() => untyped([{ items: [] }])).toThrow(/`syncState\[0\]` is not a slot projection/);
+    expect(() => untyped("cart")).toThrow(/takes a slot projection or a list of them/);
+  });
+
+  test("normalizing is idempotent, as toAgentConfig re-normalizes agent()'s output", () => {
+    const def = agent({ name: "Shop", syncState: [cartSlot.projected] });
+    expect(agent({ name: "Shop", syncState: def.syncState ?? [] }).syncState).toEqual(
+      def.syncState,
     );
   });
 });

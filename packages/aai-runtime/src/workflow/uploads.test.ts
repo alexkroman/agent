@@ -16,7 +16,7 @@
 
 import { UPLOAD_CHUNK_BYTES, UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
-import { fakeFetch } from "../_test-utils.ts";
+import { fakeFetch } from "../_fetch-test-utils.ts";
 import { body, memoryStore, ramp, recordingDb } from "../_upload-store-test-utils.ts";
 import type { UploadBackend } from "../uploads/index.ts";
 import { UPLOAD_WINDOW_CONCURRENCY } from "../uploads/index.ts";
@@ -498,7 +498,7 @@ describe("where an upload's record lives", () => {
   function platformFetch(): { fetch: typeof globalThis.fetch; methods: () => string[] } {
     const methods: string[] = [];
     // `fakeFetch` is the one place a double is narrowed to `fetch` — see
-    // `_test-utils.ts` on why a cast per call site is the wrong shape.
+    // `_fetch-test-utils.ts` on why a cast per call site is the wrong shape.
     const fetch = fakeFetch(async (_url, init) => {
       const body = JSON.parse(String(init.body ?? "{}")) as { method?: string };
       methods.push(String(body.method));

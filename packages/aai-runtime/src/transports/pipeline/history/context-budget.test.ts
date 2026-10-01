@@ -7,7 +7,7 @@ import { ASSEMBLYAI_GATEWAY_MODELS } from "@alexkroman1/aai/host-internal";
 import type { LanguageModel, ModelMessage } from "ai";
 import { describe, expect, test } from "vitest";
 import { createFakeLanguageModel } from "../../../_fake-llm.ts";
-import { silentLogger } from "../../../_test-utils.ts";
+import { silentLogger } from "../../../_logger-test-utils.ts";
 import {
   CONTEXT_WINDOW_RESERVE,
   type ContextBudgetStep,

@@ -34,7 +34,7 @@ import {
   installStubStepFetch,
   routeStepFetch,
   stubGatewayRoute,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import agentDef, { MAX_ROUNDS, redline } from "./agent.ts";
 

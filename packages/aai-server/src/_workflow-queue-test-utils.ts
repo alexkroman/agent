@@ -35,16 +35,16 @@ import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { createPlatformQueueSend } from "@alexkroman1/aai-runtime/internal";
 import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, vi } from "vitest";
+import { createTestStore, type TestFetch } from "./_orchestrator-test-utils.ts";
 import { pgUrl } from "./_pg-test-utils.ts";
 import type { HonoEnv } from "./context.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { createWorkflowEnqueueHandler } from "./guest-handlers/workflow-enqueue.ts";
 import { slugMw } from "./middleware.ts";
+import { ensurePlatformTables } from "./platform/_schema-test-utils.ts";
 import type { AdminDb } from "./platform/lock.ts";
-import { ensurePlatformTables } from "./platform/schema-test-utils.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
-import type { SqlExec } from "./secret-store.ts";
-import { createTestStore, type TestFetch } from "./test-utils.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import { type EnqueueParams, WORKFLOW_QUEUE_CHANNEL } from "./workflow-queue-store.ts";
 
 /** What {@link withQueueNotifications} lends a test body. */
@@ -154,7 +154,7 @@ export const byCodeUnit = (a: string, b: string) => Number(a > b) - Number(a < b
  * replays the migrations' own statements, so the foreign keys, the cascades and
  * the unique idempotency index are the SHIPPED ones. A hand-written schema in a
  * private database would be a shape the migration might not have, which is the
- * trap `test-utils.ts` records.
+ * trap `platform/_schema-test-utils.ts` records.
  */
 export function useThrowawayPlatformDb(label: string): {
   sql: () => SqlExec;

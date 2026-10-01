@@ -37,6 +37,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { assertEveryGuideFileListed } from "./_agent-guide.mjs";
 import { parseScriptArgs } from "./_args.mjs";
 import { stripReferenceDirectives } from "./_doc-example-ambients.mjs";
 import { assertEveryDocsPageListed } from "./_docs-site-pages.mjs";
@@ -108,7 +109,19 @@ const MARKDOWN_FILES = [
   "packages/aai-ui/README.md",
   "packages/aai-cli/README.md",
   "packages/aai-runtime/README.md",
+  // The authoring guide: the core, then one line per topic file, for the same
+  // reason the docs pages below are literal (both gate specs scrape this array).
+  // `sync-agent-guide.mjs --check` fails a topic file the core does not route
+  // to; `assertEveryGuideFileListed` (`_agent-guide.mjs`) fails one this omits.
   "packages/aai-templates/scaffold/CLAUDE.md",
+  "packages/aai-templates/scaffold/agent-guide/AGENT-API.md",
+  "packages/aai-templates/scaffold/agent-guide/HOSTING.md",
+  "packages/aai-templates/scaffold/agent-guide/PIPELINE-TUNING.md",
+  "packages/aai-templates/scaffold/agent-guide/PROVIDERS.md",
+  "packages/aai-templates/scaffold/agent-guide/TESTING-EVALS.md",
+  "packages/aai-templates/scaffold/agent-guide/TOOLS.md",
+  "packages/aai-templates/scaffold/agent-guide/UI.md",
+  "packages/aai-templates/scaffold/agent-guide/WORKFLOWS.md",
   "examples/host-server/README.md",
   "examples/self-hosted-server/README.md",
   // The narrative documentation site. Every fence here is something a reader
@@ -141,6 +154,7 @@ const MARKDOWN_FILES = [
 ];
 
 assertEveryDocsPageListed(repo, MARKDOWN_FILES);
+assertEveryGuideFileListed(MARKDOWN_FILES);
 
 /**
  * Prompt text the studio's coding agent treats as ground truth — a DIRECTORY,

@@ -33,13 +33,13 @@ The boot line names the winner. `wait-durability.scenario.test.ts` pins that a
   (`platformGuestOptions`), never the agent's: an agent may set any `AAI_*` key
   as a secret and would otherwise choose where its journal is sent.
 
-## A callback URL comes from `publicWebhookUrl`, and the route is on `createRuntimeServer`
+## A callback URL comes from `publicWebhookUrl`, and the route is on `createServerForRuntime`
 
 `ctx.workflows.publicWebhookUrl(token)` mints the one workflow URL that LEAVES
 the system: `RuntimeOptions.publicUrl` + `WORKFLOW_WEBHOOK_PREFIX`, the constant
 the router parses, so they cannot drift.
 
-- **The route hangs off `createRuntimeServer`**, which every door goes through
+- **The route hangs off `createServerForRuntime`**, which every door goes through
   (`aai dev`, `server.mjs`, the guest) — never off a build artifact. A missing
   route is invisible: the run looks healthily suspended.
 - **It reads `runtime.workflows` through a LAZY getter** — the guest builds its

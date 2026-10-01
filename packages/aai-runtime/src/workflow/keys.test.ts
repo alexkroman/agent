@@ -28,7 +28,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { recordingDb } from "../_test-utils.ts";
+import { recordingDb } from "../_db-test-utils.ts";
 import {
   createMemoryKeyStore,
   createPostgresKeyStore,

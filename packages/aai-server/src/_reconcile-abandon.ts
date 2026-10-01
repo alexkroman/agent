@@ -15,7 +15,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { createLogger } from "./logger.ts";
 import { setStatus } from "./platform/workflow-journal.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import type { StalledRun } from "./workflow-queue-reconcile.ts";
 
 // The pass's own namespace deliberately: an abandonment is one outcome of a

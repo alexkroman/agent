@@ -2,7 +2,7 @@
 
 import type { SessionContextArgs } from "@alexkroman1/aai";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import {
   MAX_REFUSE_REASON_CHARS,
   MAX_SESSION_GREETING_CHARS,

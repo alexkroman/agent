@@ -26,7 +26,7 @@ import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { invariant } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
-import { silentLogger } from "../runtime-config.ts";
+import { silentLogger } from "../logger.ts";
 import {
   createSessionCore,
   createSessionEmitter,
@@ -260,7 +260,7 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
       // A REAL stream on the memory backend, not a stub: the stamping, the index
       // assignment and the client-then-hooks ordering are part of what the
       // property exercises, and every oracle above reads the sink the emitter
-      // writes to. Built here rather than with `_test-utils.ts`'s `makeEmitter`
+      // writes to. Built here rather than with `_session-test-utils.ts`'s `makeEmitter`
       // for the reason at the top of this file — these modules must not import
       // the vitest-backed helpers.
       stream: createSessionEventStream({ backend: createMemoryStateBackend() }),

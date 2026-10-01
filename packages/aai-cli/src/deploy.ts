@@ -9,7 +9,7 @@ import { type CommandResult, ok } from "./_output.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { projectNameFromDir } from "./_studio.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
-import { fmtUrl, log, notify } from "./_ui.ts";
+import { defaultUi, fmtUrl, type Ui } from "./_ui.ts";
 import { errorMessage } from "./_utils.ts";
 import { determinismWarnings, scanWorkflowDeterminism } from "./_workflow-determinism.ts";
 
@@ -25,17 +25,20 @@ type DeployData = {
   webhooks?: { carrier: string; url: string }[];
 };
 
-export async function executeDeploy(opts: {
-  cwd: string;
-  server?: string | undefined;
-  /** See DeployOpts.allowPreviewSlug (`--allow-preview-slug`; studio-internal). */
-  allowPreviewSlug?: boolean | undefined;
-  /** `--skipTypecheck`: deploy without the tsc gate. */
-  skipTypecheck?: boolean | undefined;
-}): Promise<CommandResult<DeployData>> {
+export async function executeDeploy(
+  opts: {
+    cwd: string;
+    server?: string | undefined;
+    /** See DeployOpts.allowPreviewSlug (`--allow-preview-slug`; studio-internal). */
+    allowPreviewSlug?: boolean | undefined;
+    /** `--skip-typecheck`: deploy without the tsc gate. */
+    skipTypecheck?: boolean | undefined;
+  },
+  ui: Ui = defaultUi,
+): Promise<CommandResult<DeployData>> {
   const { cwd } = opts;
   const { config: projectConfig, serverUrl, apiKey } = await resolveDeployTarget(cwd, opts.server);
-  await assertTypechecks(cwd, { skip: opts.skipTypecheck });
+  await assertTypechecks(cwd, { skip: opts.skipTypecheck, ui });
   // Minify the worker for deploy — smaller upload and stored bundle. Dev
   // builds (`aai dev`) stay unminified for readable stack traces.
   // Loaded beside the build rather than at module scope: it pulls in the
@@ -88,9 +91,9 @@ export async function executeDeploy(opts: {
     ...missingTelephonySecretWarnings(missingPhone),
     ...determinismWarnings(await scanWorkflowDeterminism(cwd)),
   ];
-  for (const warning of warnings) notify("warn", warning);
+  for (const warning of warnings) ui.notify("warn", warning);
 
-  log.step(`Deploying${slug ? ` ${slug}` : ""}…`);
+  ui.log.step(`Deploying${slug ? ` ${slug}` : ""}…`);
   const deployed = await runDeploy({
     url: serverUrl,
     bundle,
@@ -113,14 +116,14 @@ export async function executeDeploy(opts: {
     // (studioProject/studioSourceHash) must survive a deploy.
     await updateProjectConfig(cwd, { slug: deployed.slug, serverUrl });
   } catch (err) {
-    log.warn(
+    ui.log.warn(
       `Deployed as ${deployed.slug}, but couldn't save .aai/project.json: ${errorMessage(err)}\n` +
         "  Write it manually so future deploys reuse this slug:\n" +
         `  ${JSON.stringify({ slug: deployed.slug, serverUrl })}`,
     );
   }
 
-  log.success(`Deployed ${fmtUrl(agentUrl)}`);
+  ui.log.success(`Deployed ${fmtUrl(agentUrl)}`);
   // The webhook URL per declared carrier, `?carrier=` already filled in. Both
   // halves are otherwise reconstructed by hand from the docs, and the platform
   // cannot supply either — its phone route defaults the parameter to `twilio`
@@ -130,7 +133,7 @@ export async function executeDeploy(opts: {
   // carrier prints nothing.
   const webhooks = config ? telephonyWebhooks(config, agentUrl) : [];
   for (const { carrier, url } of webhooks) {
-    log.info(`${carrier} webhook (paste into the phone number's config): ${fmtUrl(url)}`);
+    ui.log.info(`${carrier} webhook (paste into the phone number's config): ${fmtUrl(url)}`);
   }
 
   return ok({

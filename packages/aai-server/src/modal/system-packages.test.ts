@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { fakeModalImage as fakeImage } from "../test-utils.ts";
+import { fakeModalImage as fakeImage } from "../_modal-test-utils.ts";
 import { GUEST_SYSTEM_PACKAGES, systemPackagesImage } from "./system-packages.ts";
 
 describe("systemPackagesImage", () => {

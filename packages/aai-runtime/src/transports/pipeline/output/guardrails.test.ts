@@ -4,7 +4,7 @@
 
 import type { AgentGuardrail, AgentSessionContext } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
-import { makeSessionContext } from "../../../_test-utils.ts";
+import { makeSessionContext } from "../../../_agent-test-utils.ts";
 import type { SendTtsOptions } from "../../types.ts";
 import { createSpeechGate, createTurnGuardrails, NO_GUARDRAILS } from "./guardrails.ts";
 

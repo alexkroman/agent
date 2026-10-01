@@ -1,16 +1,16 @@
 # testing
 
-`@alexkroman1/aai-runtime/testing` — driving an agent's own machinery from a
-spec: a DURABLE workflow run, and a TEXT agent turn.
+`@alexkroman1/aai-runtime/testing` — the PURE testing door of an agent
+project: every fake, recorder and reader a spec needs that installs nothing,
+and the drivers that run an agent's own machinery for real — a DURABLE
+workflow run and a TEXT agent turn.
 
-The one thing an agent author could not test. A workflow's steps are ordinary
-exported functions and its declaration is a value, so both have always been
-reachable from a vitest file; the BODY takes a `ctx` only an engine
-constructs. `@alexkroman1/aai/testing`'s `createWorkflowContext` gives it one that
-records — which is the right tool for asserting what a body ASKED FOR, and
-says outright that it is not a durability test — and this gives it the real
-engine, over the memory journal, so a spec can assert that a run slept,
-resumed, retried, was answered, and survived a dead worker.
+A test file imports from two places: this subpath, and
+`@alexkroman1/aai-runtime/testing/vitest` for everything that INSTALLS or
+RESTORES (and for the eval suites). This one carries every public name of
+`@alexkroman1/aai/testing` — `createToolContext`, `runTool`, `expectToolOk`,
+`stubGenerate`, `createWorkflowContext`, … — re-exported as the SAME
+declarations, so a type from either package is one type.
 
 ```ts
 import { workflow } from "@alexkroman1/aai";
@@ -28,15 +28,17 @@ await run.signal("approval:1", { approved: true });
 console.log(run.status); // "completed"
 ```
 
-## The TEXT half
+## The CONTEXT and the ENGINE
 
-`scriptedTextModel` and `runTextAgent` are the same idea one mode over.
-`createTextAgent` takes a pre-resolved `LanguageModel` and says outright that
-tests are the majority use of that field, and there was nothing published to
-put in it — so every caller wrote the provider shape out by hand and cast it,
-and each copy re-derived the `finish` frame's shape (the one whose bare-string
-spelling silently stops every tool from running). The script is a step —
-what the model says, what it calls — and the agent underneath is the real one.
+`createWorkflowContext` (declared in the SDK) hands a workflow body a `ctx`
+that RECORDS — the right tool for asserting what a body asked for, and
+explicitly not a durability test. `runWorkflow` runs the real engine over the
+memory journal, so a spec can assert that a run slept, resumed, retried, was
+answered, and survived a dead worker.
+
+`scriptedTextModel` and `runTextAgent` are the same idea one mode over: the
+script is a step — what the model says, what it calls — and the text agent
+underneath is the real one.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -50,28 +52,1079 @@ const run = await runTextAgent(
 console.log(run.text); // "It shipped yesterday."
 ```
 
-## Why it is on the RUNTIME rather than beside `createWorkflowContext`
+## Why the SDK's helpers are re-exported HERE
 
-`@alexkroman1/aai` is the shared core and imports no sibling package — a hard
-boundary this repo checks with `konsistent`, and one the engine sits on the
-far side of. The engine, the journal and `createInProcessWorkflowEngine` are
-`@alexkroman1/aai-runtime`'s, so a helper that runs a real one has to live
-here. The split a template sees is therefore: `@alexkroman1/aai/testing` for
-the CONTEXT (no journal, one walk, everything recorded), this for the ENGINE
-(a journal, real replays, real suspensions).
+`@alexkroman1/aai` never imports this package (the dependency runs one way),
+and the engine is runtime — so the one door has to be on the runtime, and
+the SDK's helpers are re-exported in this direction. They stay DECLARED (and
+versioned, as `aai:testing`) in the SDK; here they are owned by this
+package's `eval-stubs` and `testing-stubs` capabilities, because dropping
+one from this door would be this package's break.
 
 ## Runner-agnostic, deliberately
 
 Nothing here installs a global or owns a lifetime a runner has to unwind —
-the driver injects its own dispatcher, so no timer is ever armed — which is
-this repo's rule for what may stay off a `/vitest` subpath. It works from any
-harness.
+the workflow driver injects its own dispatcher, so no timer is ever armed —
+which is this repo's rule for what may stay off a `/vitest` subpath
+(konsistent `published-testing-split`). It does not import vitest.
 
 Exports are enumerated explicitly (no `export *`) so the public surface is
 deliberate: a new symbol in one of these modules does not ship as public API
 until it is added here.
 
 ## Functions
+
+### commandedBuiltins()
+
+```ts
+function commandedBuiltins(config: {
+  systemPrompt: string;
+}): BuiltinTool[];
+```
+
+Every builtin the system prompt COMMANDS by name, in first-mention order.
+
+The prompt is scanned for snake_case tokens and each is asked of the SDK's own
+builtin schema — so `run_code` and `fetch_json` are found, and the
+`vs_currencies`, `per_person` and `annual_rate` a finance prompt names in its
+endpoints and formulas are not. A builtin whose name is one English word
+(`think`, `calculate`, `remember`, `recall`) is found only where the prose
+NAMES it — in backticks, as "the calculate tool", or as the object of
+use/call/invoke — so "think before you answer" commands nothing; the rule and
+its reasons are on `SINGLE_WORD_POSITIONS` in this module. Reading the
+CONFIG's prompt rather than a file: that is what a deploy carries, and it is
+where `system-prompt.md` lands only if the build applied it.
+
+Takes only the field it reads, so an `AgentConfig` passes and so does a
+`{ systemPrompt }` a spec assembled itself — a resolver's own text, say.
+
+A reader, not an assertion — [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) is the
+claim most specs want. This is exported for the spec that wants to say more:
+that a particular builtin is among the commanded ones, or that the prompt
+commands exactly the set the template is about.
+
+**It reads what the CONFIG carries, which for a RESOLVER is nothing.**
+`AgentDef.systemPrompt` may be a function, and `toAgentConfig` cannot
+serialize one — it drops the field and the schema fills in
+`DEFAULT_SYSTEM_PROMPT` — so a config converted from a resolver-based agent
+hands this function the FRAMEWORK's prompt and gets `[]` back, which is a
+true answer to the wrong question. Nothing here can tell that config from one
+whose author simply wrote no prompt; the def can, which is why the check that
+refuses is [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) and not this reader. To scan a
+resolver's own text, resolve it and substitute it:
+`commandedBuiltins({ systemPrompt: resolver(ctx) })`.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { toAgentConfig } from "@alexkroman1/aai/manifest";
+import { commandedBuiltins } from "@alexkroman1/aai/testing";
+
+const config = toAgentConfig(
+  agent({ name: "Penny", systemPrompt: "Use fetch_json for rates; annual_rate is a number." }),
+);
+console.log(commandedBuiltins(config)); // ["fetch_json"]
+```
+
+#### Parameters
+
+##### config
+
+###### systemPrompt
+
+`string`
+
+#### Returns
+
+[`BuiltinTool`](../aai/index.md#builtintool)[]
+
+***
+
+### createProgressStream()
+
+```ts
+function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
+```
+
+The progress channel of a run, from the read side — what
+`ctx.workflows.stream` resolves with.
+
+Closes after the given lines, which is what makes a tool that drains it
+terminate. A run's real stream never closes (no step knows it is the last
+one), and the tool bounds itself with `streamTail` instead — so a spec that
+wants to exercise THAT bound stubs `streamTail`, not this.
+
+#### Parameters
+
+##### lines?
+
+readonly `unknown`[]
+
+#### Returns
+
+`ReadableStream`\<`unknown`\>
+
+#### Example
+
+```ts
+import { createProgressStream, createStubWorkflows } from "@alexkroman1/aai/testing";
+
+const workflows = createStubWorkflows({
+  streamTail: () => Promise.resolve(0),
+  stream: () => Promise.resolve(createProgressStream(["Reading the sources…"])),
+});
+```
+
+***
+
+### createRunSnapshot()
+
+```ts
+function createRunSnapshot<R = unknown>(overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+```
+
+Build a [WorkflowRunSnapshot](../aai/workflow-api.md#workflowrunsnapshot) — the right arm of the union, without a
+cast.
+
+Defaults to a `running` run, which is the state a tool that has just started
+one reads back.
+
+#### Type Parameters
+
+##### R
+
+`R` = `unknown`
+
+#### Parameters
+
+##### overrides?
+
+[`RunSnapshotOverrides`](#runsnapshotoverrides)\<`R`\>
+
+#### Returns
+
+[`WorkflowRunSnapshot`](../aai/workflow-api.md#workflowrunsnapshot)\<`R`\>
+
+#### Example
+
+```ts
+import { createRunSnapshot, createStubWorkflows } from "@alexkroman1/aai/testing";
+
+const workflows = createStubWorkflows({
+  find: () => Promise.resolve([createRunSnapshot({ status: "failed", error: "gateway down" })]),
+});
+```
+
+***
+
+### createStubWorkflows()
+
+```ts
+function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
+```
+
+A `ctx.workflows` for testing a tool that starts or reads durable runs: every
+method rejects by default, and `overrides` replaces the ones the test drives.
+
+**The alternative is a cast, and the cast is what goes wrong.** A complete
+`WorkflowClient` is eight methods, of which a tool's test usually drives one or
+two, so the hand-rolled version is a literal with `as WorkflowClient` — which
+keeps compiling when the client GAINS a method and leaves that method
+`undefined`. Two shipped templates had exactly that, and adding `wakeUp` and
+`stream` to the client is what surfaced it: the casts still compiled.
+
+Rejecting rather than no-op defaults, for the reason `createUnusedDb` rejected
+before it went away with `ctx.db` — a tool that reaches for a method the test
+did not stub should say so, not silently receive `undefined`. `listing` is the exception and returns `[]`,
+because it is synchronous and an empty list is a truthful answer.
+
+```ts
+import { createStubWorkflows, createToolContext } from "@alexkroman1/aai/testing";
+
+const workflows = createStubWorkflows({ start: async () => "wrun_1" });
+const ctx = createToolContext({ workflows });
+```
+
+#### Parameters
+
+##### overrides?
+
+`Partial`\<[`WorkflowClient`](../aai/index.md#workflowclient)\>
+
+#### Returns
+
+[`WorkflowClient`](../aai/index.md#workflowclient)
+
+***
+
+### createToolContext()
+
+```ts
+function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
+```
+
+Build a [ToolContext](../aai/index.md#toolcontext) for testing a tool's `execute` in isolation.
+
+Defaults are chosen so the context is inert: empty `env`, an empty slot store,
+`workflows`, `generate` and `delegate` that reject with a message naming
+themselves, a `signal` that never aborts, and a `send` that records.
+Override any of them.
+
+**`generate` and `delegate` also take a SCRIPT**, which is the way in for a
+tool that calls a model: pass `stubGenerate`'s own argument and the fake is
+built here, installed, and handed back on `ctx.model` (`ctx.desk` for
+`delegate`). It replaces the deprecated [scriptedToolContext](#scriptedtoolcontext-1), which
+returned the same two fakes beside the context.
+
+**Each call is a distinct session.** `sessionId` auto-increments, which is
+what makes the two-context isolation test — the same tool run against two
+contexts must not share state — read the way it does. Pass `sessionId`
+explicitly when a test needs two contexts to be the SAME session (a
+reconnect, a keyed lock).
+
+**An override may be `undefined`**, which means "I do not have one" and
+leaves the default in place — see [ToolContextOverrides](#toolcontextoverrides) for why that
+is not `Partial<ToolContext>`.
+
+There is no state type parameter, because there is no `ctx.state` bag to
+type: a slot types its own value in the module that declares it, and reading
+the slot back is how a spec asserts what a tool wrote.
+
+#### Parameters
+
+##### overrides?
+
+[`ToolContextOverrides`](#toolcontextoverrides)
+
+#### Returns
+
+[`TestToolContext`](#testtoolcontext)
+
+#### Examples
+
+```ts no-check
+// `no-check`: the tool under test is in another file, which is the point.
+import { createToolContext } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import { cartSlot } from "./shared.ts";
+import addItem from "./tools/add_item.ts";
+
+test("add_item appends to this session's cart", async () => {
+  const ctx = createToolContext();
+  await addItem.execute({ item: "apple" }, ctx);
+  expect(cartSlot.get(ctx).items).toEqual(["apple"]);
+});
+```
+
+**Asserting on what a tool sent**
+
+```ts no-check
+import { createToolContext } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import { recommend } from "./tools/recommend.ts";
+
+test("recommend pushes its picks to the client", async () => {
+  const ctx = createToolContext();
+  await recommend.execute({ mood: "chill" }, ctx);
+  expect(ctx.sent).toEqual([{ event: "recommendations", data: expect.anything() }]);
+});
+```
+
+**Scripting the model in the same call**
+
+```ts
+import { createToolContext } from "@alexkroman1/aai/testing";
+
+// `{ reply }` answers every call; `{ routes }`, keyed by system prompt,
+// answers a tool that plays more than one model role.
+const ctx = createToolContext({ generate: { reply: "A short summary." } });
+// … run the tool, then assert on what it asked:
+// expect(ctx.model.calls.map((call) => call.prompt)).toEqual([…]);
+```
+
+***
+
+### createWorkflowContext()
+
+```ts
+function createWorkflowContext(options?: WorkflowContextOptions): WorkflowContextRecorder;
+```
+
+Build a `WorkflowContext` that runs a body and records what it asked for.
+
+#### Parameters
+
+##### options?
+
+[`WorkflowContextOptions`](#workflowcontextoptions)
+
+#### Returns
+
+[`WorkflowContextRecorder`](#workflowcontextrecorder)
+
+#### Example
+
+```ts no-check
+const ctx = createWorkflowContext();
+const output = await digestFlow({ url: "https://example.com/a" }, ctx);
+
+expect(output.headline).toBe("…");
+expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
+expect(ctx.slept).toEqual([{ label: "settle", until: 10_000 }]);
+```
+
+***
+
+### deployedAgent()
+
+```ts
+function deployedAgent<D extends ToolBearingAgent & {
+  systemPrompt: AgentSystemPrompt;
+}>(authored: D, project: ProjectFiles): D;
+```
+
+The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its
+`tools/` directory declares, plus what its `system-prompt.md` says.
+
+**This is one call because forgetting HALF of it is the failure it exists to
+prevent, and that failure is silent.** Neither lowering is applied by
+`agent()` — both are applied by the BUILD (`aai build` enumerates `tools/`
+and resolves the prompt file) — so a spec or an eval driving the raw default
+export measures an agent with NO TOOLS and the FRAMEWORK-DEFAULT system
+prompt. Nothing fails: the model answers plausibly out of its own knowledge,
+every case that asserts a sentence still passes, and the suite reports green
+on a different agent than the one anybody deploys. It produced four bogus
+green eval results in one day, and the two nested wrappers it replaces — a
+tools lowering inside a prompt lowering, written out in seventeen template
+evals — are exactly the shape where one of the two goes missing under an edit.
+
+**Under vitest, prefer `import agentDef from "virtual:aai/agent"`**, which is
+this call made for you against the importing spec's own directory (see the
+module doc). Reach for this one when the runner is not vitest, or when the
+lowering itself is the subject of the spec.
+
+**An EMPTY `tools` glob throws.** That is the same bug wearing its other
+face: `import.meta.glob("./tool/*.ts")` (or a `tools/` directory that moved)
+matches nothing, and lowering nothing onto the def is indistinguishable from
+not lowering at all. A project with no tools omits the field instead, which
+is a statement rather than an accident.
+
+```ts no-check
+// `no-check`: two of these imports are files YOU own — `./agent.ts` and
+// `./system-prompt.md?raw` — which exist in your project and in no tree of
+// ours, so nothing here can resolve them. (`import.meta.glob` is not the
+// blocker: the doc-example gate compiles with Vite's client types, as the
+// scaffold's `@alexkroman1/aai/tsconfig` preset does.)
+import { deployedAgent } from "@alexkroman1/aai/testing";
+import authored from "./agent.ts";
+import systemPrompt from "./system-prompt.md?raw";
+
+const agentDef = deployedAgent(authored, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+  systemPrompt,
+});
+```
+
+Every rule the build applies applies here too, and each is an error naming
+the file: the tool-name grammar, the default-export requirement, no nested
+files, a name declared twice, an empty prompt file, and a
+`system-prompt.md` that exists while `agent.ts` declares a different prompt
+STRING — the "I edited the prompt and nothing changed" failure.
+
+**Bounded by the two fields it lowers ONTO, not by `AgentDef`.** An `agent()`
+def satisfies it and comes back as its own type, so a template keeps its
+exported workflow types; the bound says what the function reads, and keeps
+`AgentDef` and everything behind it off `@alexkroman1/aai/testing`'s contract.
+
+#### Type Parameters
+
+##### D
+
+`D` *extends* [`ToolBearingAgent`](#toolbearingagent) & \{
+  `systemPrompt`: [`AgentSystemPrompt`](../aai/index.md#agentsystemprompt);
+\}
+
+#### Parameters
+
+##### authored
+
+`D`
+
+##### project
+
+[`ProjectFiles`](#projectfiles)
+
+#### Returns
+
+`D`
+
+***
+
+### endSessionCalls()
+
+```ts
+function endSessionCalls(ctx: Pick<ToolContext, "sessionId">): readonly {
+  afterReply: boolean;
+}[];
+```
+
+Every `endSession(ctx, …)` a tool made on a [createToolContext](#createtoolcontext)
+context's session, in call order, with its options resolved (`afterReply`
+defaults to `true`). Empty when the tool never ended the session.
+
+A function of the context rather than a field on `TestToolContext`, for the
+reason `endSession` is one: it reads the session, which `ctx.sessionId` names.
+
+```ts
+import { endSession, tool } from "@alexkroman1/aai";
+import { createToolContext, endSessionCalls } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import { z } from "zod";
+
+const endCall = tool({
+  description: "Hang up.",
+  inputSchema: z.object({}),
+  execute: (_args, ctx) => ({ ended: endSession(ctx) }),
+});
+
+test("end_call hangs up after the goodbye", async () => {
+  const ctx = createToolContext();
+  await endCall.execute({}, ctx);
+  expect(endSessionCalls(ctx)).toEqual([{ afterReply: true }]);
+});
+```
+
+#### Parameters
+
+##### ctx
+
+`Pick`\<[`ToolContext`](../aai/index.md#toolcontext), `"sessionId"`\>
+
+#### Returns
+
+readonly \{
+  `afterReply`: `boolean`;
+\}[]
+
+***
+
+### expectDeployable()
+
+```ts
+function expectDeployable<D extends {
+  llm?: unknown;
+  name: unknown;
+  stt?: unknown;
+  tts?: unknown;
+}>(def: D): DeployedConfig;
+```
+
+Run the invariants a deployable agent owes, and hand back the RESOLVED config
+so a spec can go on to assert its own specifics — a chosen model, a declared
+builtin — without converting twice.
+
+Three invariants, each thrown by name:
+
+- **The config passes manifest validation** — the same `toAgentConfig` that
+  `aai build` and `aai deploy` run, so an invalid provider combination or
+  tuning fails here rather than at the first live session.
+- **The platform can name it** — there IS a name, and the conversion carries
+  it through. Not the literal: renaming the agent is the first edit a starter
+  invites, and the studio lists a deployed agent by exactly this string.
+- **Every stage its mode needs is filled, declared or defaulted** — asserted
+  per MODE so it survives a swap. A pipeline agent has an `stt`, `llm` and
+  `tts` kind, each declared stage surviving as declared and each unset one
+  filled by `defaultProviders`; a text agent has no audio stage (its `llm`
+  may be absent — `createTextAgent` defaults the one stage it has); an `s2s`
+  agent has an `s2s` kind and NO cascade, since speech-to-speech replaces the
+  pipeline rather than joining it — the one thing that must never happen by
+  fallthrough.
+
+`toAgentConfig` already refuses most of the states the second and third
+invariants describe (a blank name, `s2s` beside a pipeline stage). They are
+checked here anyway, and BEFORE or AFTER the conversion as the message needs,
+because the value of this helper is the sentence: a spec that failed on
+"expected function not to throw" has to re-run the conversion by hand to
+learn which invariant went.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { expectDeployable } from "@alexkroman1/aai/testing";
+
+const config = expectDeployable(agent({ name: "Desk", builtinTools: ["run_code"] }));
+// The invariants held; now the template's own claim.
+console.log(config.builtinTools); // ["run_code"]
+```
+
+#### Type Parameters
+
+##### D
+
+`D` *extends* \{
+  `llm?`: `unknown`;
+  `name`: `unknown`;
+  `stt?`: `unknown`;
+  `tts?`: `unknown`;
+\}
+
+#### Parameters
+
+##### def
+
+`D`
+
+The agent under test — an `agent()` definition, or the raw
+  default export of an `agent.ts`. Structural: only `name` is required of
+  the TYPE, because validating the rest is this helper's job at run time —
+  the same `toAgentConfig` a deploy runs. Generic only so a spread literal
+  carrying a field this type does not name (`{ ...def, maxSteps: 0 }`) is
+  not an excess-property error.
+
+#### Returns
+
+[`DeployedConfig`](#deployedconfig)
+
+The config a deploy carries, mode derived and defaults injected —
+  see [DeployedConfig](#deployedconfig) for the fields it names.
+
+#### Throws
+
+Naming the invariant that failed, and — for the validation one — the
+  sentence `toAgentConfig` wrote about the field.
+
+***
+
+### expectDialogOk()
+
+```ts
+function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+```
+
+The dialog envelope a gated tool answered, keeping WHERE the dialog landed.
+
+The half a spec needs when the assertion is about the conversation rather
+than about the tool's own value — that a call advanced the machine into
+`quote.pending`, that a final state reports `done`. Unlike
+[expectToolOk](#expecttoolok), which passes a plain tool's value through, this THROWS
+on anything that is not a dialog envelope: keeping a position claims there is
+one.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+What the tool's `execute` returns, under `result`.
+
+#### Parameters
+
+##### result
+
+`unknown`
+
+#### Returns
+
+[`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`T`\>
+
+#### Throws
+
+When the tool refused, quoting the refusal, as [expectToolOk](#expecttoolok) does.
+
+#### Throws
+
+When the value is not a dialog envelope — a plain `tool()` has no
+  position to keep; use [expectToolOk](#expecttoolok) for it.
+
+#### Example
+
+```ts no-check
+import { expectDialogOk, runTool } from "@alexkroman1/aai/testing";
+
+const answered = expectDialogOk<{ quoted: number }>(
+  await runTool(agentDef, "quote", {}, ctx),
+);
+expect(answered.state).toBe("quote.pending");
+expect(answered.result.quoted).toBe(42);
+```
+
+***
+
+### expectDialogRefused()
+
+```ts
+function expectDialogRefused(result: unknown, state?: string): ToolFailure;
+```
+
+The refusal a gated tool answered with, or a throw saying the gate did NOT hold.
+
+The mirror of [expectDialogOk](#expectdialogok), for the spec whose subject is that a
+tool was REFUSED: called before the dialog reached its state, or after it
+left. Six template specs had written the other half by hand — an
+`isToolFailure` check, a `toBe(true)`, and a regex for the sentence the gate
+writes — and a success slipped through that shape as three assertions that
+never ran, because each sat inside the `if` the guard opened.
+
+With a `state`, the refusal must also NAME it: that the tool was refused is
+half the claim, and that the conversation was where the spec thinks it was is
+the half a gate on the wrong state hides in. Matched with
+[dialogRefusalPattern](eval/vitest.md#dialogrefusalpattern), so a spec never spells the sentence.
+
+#### Parameters
+
+##### result
+
+`unknown`
+
+What `runTool` / `toolOf(...).execute(...)` answered.
+
+##### state?
+
+`string`
+
+The position the refusal must name, as `DialogPosition.state`
+  spells it. Omit to accept a refusal at any state.
+
+#### Returns
+
+[`ToolFailure`](../aai/index.md#toolfailure)
+
+#### Throws
+
+When the tool was NOT refused — a dialog envelope is reported with the
+  state it landed in, since that is the fact the spec got wrong.
+
+#### Throws
+
+When it was refused for some other reason, or at some other state,
+  quoting the refusal.
+
+#### Example
+
+```ts
+import { expectDialogRefused } from "@alexkroman1/aai/testing";
+
+const refused = expectDialogRefused(
+  { error: 'Not available yet: this conversation is at "idle". Call start_plan first.' },
+  "idle",
+);
+refused.error.includes("start_plan"); // true — the instruction the model recovers from
+```
+
+***
+
+### expectPromptBuiltinsDeclared()
+
+```ts
+function expectPromptBuiltinsDeclared(def: {
+  builtinTools?: readonly BuiltinTool[];
+  systemPrompt?: AgentSystemPrompt;
+  tools?: Readonly<Record<string, unknown>>;
+}): BuiltinTool[];
+```
+
+Every builtin the prompt commands is one `builtinTools` declares — or a throw
+naming the ones that are not.
+
+The pairing a prompt-driven template is made of: the prose holds the rules
+("you MUST use `run_code` for arithmetic", "look rates up with `fetch_json`"),
+and `agent.ts` holds the array that makes those tools exist. The failure is
+silent in both directions and shows up in a diff of neither file — a prompt
+commanding `fetch_json` at an agent that never declared it produces a model
+apologizing for a tool it cannot see, and a builtin dropped from `agent.ts`
+alone leaves an endpoint list addressed to nothing.
+
+**A prompt commanding NO builtin is a failure, not a pass.** Non-vacuity earns
+its keep twice: a loop over nothing asserts nothing, and it is also the state a
+template lands in when `system-prompt.md` was not applied — the framework
+default names no builtin, so "I edited the prompt and nothing changed" fails
+here instead of passing quietly with the template's rules nowhere in its
+context. A spec whose prompt legitimately describes its tools rather than
+naming them does not want this helper; it asserts on `builtinTools` directly.
+
+The converse is deliberately NOT asserted: declaring a builtin the prompt never
+mentions is an ordinary edit, and the model learns about it from its own tool
+schema rather than from the prose.
+
+**A custom tool of the same NAME declares it too.** An agent may replace a
+builtin with its own `tools/text_me.ts` — a different channel, a different
+recipient rule — and the prompt's "text it with `text_me`" is then addressed
+to that tool, which the model sees under exactly that name. The claim is "the
+model has a tool called this", and `def.tools` answers it as well as
+`builtinTools` does. That is why `tools` is read, and why a def lowered with
+`deployedAgent` (or imported from `virtual:aai/agent`) is the one to pass: the
+authored `./agent.ts` carries no `tools`.
+
+**A RESOLVER is CALLED, and refused when it cannot be.** `systemPrompt` may be
+a function, and `toAgentConfig` drops one rather than putting it on the wire —
+so scanning the converted config would read the FRAMEWORK's default prompt and
+report on a prompt this agent never sends. That is the one outcome a check may
+not have: the default names no builtin, so scanning it fails for the wrong
+reason — pointing at an unapplied `system-prompt.md` that is not the problem —
+and PASSES the day the default happens to name one. So the resolver is
+called with a bare [createToolContext](#createtoolcontext) — a fresh session id, no env, an
+empty slot store — and its answer is what gets scanned. That is enough for the
+prose half, which is a `?raw` import closed over by the function and does not
+vary with session state. A resolver that cannot answer from a bare context
+(it reads an env var, or a slot it expects seeded) THROWS, and this refuses by
+name rather than falling back to the default: seed a context and scan the text
+yourself with [commandedBuiltins](#commandedbuiltins), or assert on `builtinTools` directly.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
+
+const commanded = expectPromptBuiltinsDeclared(
+  agent({
+    name: "Coda",
+    systemPrompt: "Answer every sum by calling run_code.",
+    builtinTools: ["run_code"],
+  }),
+);
+console.log(commanded); // ["run_code"]
+```
+
+#### Parameters
+
+##### def
+
+The agent under test — only its `systemPrompt`, `builtinTools`
+  and the KEYS of `tools` are read, so an `agent()` def passes as it is. Whether the
+  WHOLE def converts is [expectDeployable](#expectdeployable)'s claim, not this one's.
+
+###### builtinTools?
+
+readonly [`BuiltinTool`](../aai/index.md#builtintool)[]
+
+###### systemPrompt?
+
+[`AgentSystemPrompt`](../aai/index.md#agentsystemprompt)
+
+###### tools?
+
+`Readonly`\<`Record`\<`string`, `unknown`\>\>
+
+#### Returns
+
+[`BuiltinTool`](../aai/index.md#builtintool)[]
+
+The commanded builtins, for a spec that wants to say more about them.
+
+#### Throws
+
+When the prompt names no builtin, when it names one `builtinTools`
+lacks, or when a `systemPrompt` resolver cannot answer from a bare context.
+
+***
+
+### expectToolOk()
+
+#### Call Signature
+
+```ts
+function expectToolOk<R>(result: R): R extends DialogToolResult<V> ? V : Exclude<R, ToolFailure>;
+```
+
+What a tool answered, minus the refusal — or a throw quoting the refusal.
+
+Takes ANY tool's result. A `dialog()` tool's envelope ([DialogToolResult](../aai/index.md#dialogtoolresult))
+is unwrapped to the author's own value under `result`; a plain `tool()`'s
+value comes back as it is. Either way a `ToolFailure` throws HERE, naming it,
+rather than as an `undefined` read off the failure several assertions later.
+
+**Typed by INFERENCE**: handed a typed result — `runTool(theTool, …)`, or
+`theTool.execute(…)` directly — it answers that type minus `ToolFailure`
+(for a dialog tool, the type under `result`), so no type argument is needed.
+The name form (`runTool(agent, "name", …)`, a `toolRunner`) answers
+`unknown`, because a name is a string; there, say the type you expect —
+`expectToolOk<Order>(…)` — which is unchecked at runtime, like any claim about
+a value crossing an `unknown` boundary.
+
+Use [expectDialogOk](#expectdialogok) to keep WHERE a dialog landed, and
+[expectDialogRefused](#expectdialogrefused) when the refusal is the subject.
+
+##### Type Parameters
+
+###### R
+
+`R`
+
+What was handed in, inferred — never written. The CLAIMED form
+  below takes the type a spec asserts instead.
+
+##### Parameters
+
+###### result
+
+`R`
+
+What a tool's `execute`, `runTool` or a `toolRunner` answered.
+
+##### Returns
+
+`R` *extends* [`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`V`\> ? `V` : `Exclude`\<`R`, [`ToolFailure`](../aai/index.md#toolfailure)\>
+
+##### Throws
+
+When the tool refused (`ToolFailure`), quoting the refusal —
+  which for a `dialog()` tool is the sentence naming the state the
+  conversation is actually in and what has to happen first.
+
+##### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { expectToolOk, runTool } from "@alexkroman1/aai/testing";
+import { toolFailure } from "@alexkroman1/aai/utils";
+import { z } from "zod";
+
+// In a spec this is `import placeOrder from "./tools/place_order.ts"`.
+const placeOrder = tool({
+  description: "Place the order",
+  inputSchema: z.object({ item: z.string() }),
+  execute: async ({ item }) => (item ? { id: "ord_1" } : toolFailure("Name an item.")),
+});
+const order = expectToolOk(await runTool(placeOrder, { item: "pizza" }));
+console.log(order.id); // typed: the failure arm is subtracted
+```
+
+#### Call Signature
+
+```ts
+function expectToolOk<T>(result: unknown): T;
+```
+
+What a tool answered, minus the refusal — the CLAIMED form, for a result
+typed `unknown` (`runTool(agent, "name", …)`, a `toolRunner`).
+
+`T` is what the spec says the tool answers, unchecked at runtime. Behaves as
+the inferred form does: a dialog envelope is unwrapped, a plain value passes
+through, a `ToolFailure` throws quoting the refusal.
+
+##### Type Parameters
+
+###### T
+
+`T`
+
+The type the spec claims for the tool's own value.
+
+##### Parameters
+
+###### result
+
+`unknown`
+
+##### Returns
+
+`T`
+
+##### Example
+
+```ts no-check
+import { expectToolOk, toolRunner } from "@alexkroman1/aai/testing";
+
+const run = toolRunner(agentDef);
+const order = expectToolOk<{ id: string }>(await run("place_order", { item: "pizza" }));
+```
+
+***
+
+### parseSchemaInput()
+
+```ts
+function parseSchemaInput<T = Record<string, unknown>>(
+   schema: 
+  | StandardSchemaV1<unknown, unknown>
+  | undefined, 
+   value: unknown, 
+   what?: string
+): Promise<T>;
+```
+
+Validate `value` against `schema`, or throw naming every issue.
+
+#### Type Parameters
+
+##### T
+
+`T` = `Record`\<`string`, `unknown`\>
+
+What the schema produces. Defaults to
+  `Record<string, unknown>`, which is what a tool input schema is declared as.
+
+#### Parameters
+
+##### schema
+
+  \| [`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `unknown`\>
+  \| `undefined`
+
+A Standard Schema, or `undefined` — the shape
+  `tool.inputSchema` and `workflow.input` both have. `undefined` is an ERROR
+  rather than a pass, because "this declares no schema" is a different fact
+  from "the schema accepted it" and a spec asserting the second must not be
+  satisfied by the first.
+
+##### value
+
+`unknown`
+
+##### what?
+
+`string`
+
+How the schema is named in a failure. Defaults to
+  `"the schema"`; pass the tool or workflow name where one is at hand.
+
+#### Returns
+
+`Promise`\<`T`\>
+
+#### Throws
+
+When the schema refuses `value`, with the issues rendered as one line
+  (`quantity: too small; size: invalid enum value`) — which is what makes the
+  failure readable at all, since a raw issue array prints as `[Object]`.
+
+#### Example
+
+```ts no-check
+import { parseSchemaInput } from "@alexkroman1/aai/testing";
+
+const parsed = await parseSchemaInput<{ voice: string }>(myWorkflow.input, {
+  recording: "upl_1",
+  voice: "jane",
+});
+expect(parsed.voice).toBe("jane");
+```
+
+***
+
+### parseToolInput()
+
+```ts
+function parseToolInput<T = Record<string, unknown>>(
+   agent: ToolBearingAgent, 
+   name: string, 
+   value: unknown
+): Promise<T>;
+```
+
+Validate `value` against the input schema of the tool `name`.
+
+[parseSchemaInput](#parseschemainput) with the lookup done — including `toolOf`'s "no such
+tool" sentence, which names the tools that DO exist, since a lookup that
+misses is nearly always a rename.
+
+#### Type Parameters
+
+##### T
+
+`T` = `Record`\<`string`, `unknown`\>
+
+What the schema produces.
+
+#### Parameters
+
+##### agent
+
+[`ToolBearingAgent`](#toolbearingagent)
+
+##### name
+
+`string`
+
+##### value
+
+`unknown`
+
+#### Returns
+
+`Promise`\<`T`\>
+
+#### Throws
+
+When the agent declares no tool called `name` (see `toolOf`), when
+  that tool declares no `inputSchema`, or when the schema refuses `value`.
+
+#### Example
+
+```ts
+import agentDef from "virtual:aai/agent";
+import { parseToolInput } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
+
+const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza", {
+  size: "small",
+  crust: "thin",
+  toppings: [],
+});
+// The schema's own default, which is the thing worth asserting here.
+expect(parsed.quantity).toBe(1);
+```
+
+***
+
+### runGuardrail()
+
+```ts
+function runGuardrail(
+   def: SpeakerDef, 
+   text: string, 
+   answer?: Partial<DelegateAnswer>
+): GuardrailVerdict;
+```
+
+Run `def`'s guardrail over one answer and return its verdict.
+
+The answer is `text` with a ZERO cost report — one step, no tool calls —
+because that is what most guardrails read; a guardrail that judges the cost
+(`toolCalls.length === 0`, say) is handed it through `answer`, which is
+spread over the defaults.
+
+**Throws when the def declares no guardrail**, rather than returning `true`:
+a spec calling this is asserting that a check exists, and a def that lost its
+guardrail should fail here, not pass by default. **Throws when the guardrail
+returns a promise**: this helper is for the SYNCHRONOUS guardrail, which is
+the ordinary one, and an async guardrail's spec awaits `def.guardrail(answer)`
+itself — the verdict is then a promise a test can `await`, and nothing here
+would add to that.
+
+#### Parameters
+
+##### def
+
+[`SpeakerDef`](../aai/index.md#speakerdef)
+
+##### text
+
+`string`
+
+##### answer?
+
+`Partial`\<[`DelegateAnswer`](../aai/index.md#delegateanswer)\>
+
+#### Returns
+
+[`GuardrailVerdict`](../aai/index.md#guardrailverdict)
+
+#### Example
+
+```ts
+import { speaker } from "@alexkroman1/aai";
+import { runGuardrail } from "@alexkroman1/aai/testing";
+
+const checker = speaker({
+  name: "fact-checker",
+  systemPrompt: "Open with Confirmed:, Contradicted: or Unclear:.",
+  guardrail: ({ text }) => /^(Confirmed|Contradicted|Unclear):/.test(text) || "Open with a verdict word.",
+});
+
+runGuardrail(checker, "Confirmed: the figure is 12%."); // true
+runGuardrail(checker, "It seems prices fell."); // "Open with a verdict word."
+```
+
+***
 
 ### runTextAgent()
 
@@ -136,6 +1189,170 @@ whatever ended the model stream, rather than reporting a turn that
   silently produced nothing. A scripted stream fails only when something under
   it is broken, and a harness that swallowed that would report the broken path
   as an agent with nothing to say.
+
+***
+
+### runTool()
+
+#### Call Signature
+
+```ts
+function runTool<T extends {
+  execute: (...args: never[]) => unknown;
+}>(
+   tool: T, 
+   argsOrCtx?: 
+  | ToolContext
+  | Parameters<T["execute"]>[0], 
+   ctx?: ToolContext
+): Promise<Awaited<ReturnType<T["execute"]>>>;
+```
+
+Run a tool — the tool DEF itself, or by the name the model calls it by.
+
+**Handed the tool, it is TYPED end to end**: the arguments are checked
+against what `execute` takes and the result is what it returns, so
+`await runTool(addItem, { item: "apple" }, ctx)` needs no cast. The name
+form below answers `unknown`, because a name is a string and nothing can
+type what it looks up; a spec reading fields off that result used to cast it
+(`(await run("add_item", ctx)) as { added: string }`), which is an unchecked
+claim that stops meaning anything the day the tool's return changes. A tool
+FILE's default export is the very object a deployed agent registers under its
+name, so importing it runs the same code the name would reach.
+
+Matched on `execute` alone rather than on `ToolDef`, so any tool shape —
+`tool()`, `slot.tool()`, `dialog.tool()` — is accepted and keeps its own
+result type.
+
+##### Type Parameters
+
+###### T
+
+`T` *extends* \{
+  `execute`: (...`args`: `never`[]) => `unknown`;
+\}
+
+##### Parameters
+
+###### tool
+
+`T`
+
+###### argsOrCtx?
+
+  \| [`ToolContext`](../aai/index.md#toolcontext)
+  \| `Parameters`\<`T`\[`"execute"`\]\>\[`0`\]
+
+###### ctx?
+
+[`ToolContext`](../aai/index.md#toolcontext)
+
+##### Returns
+
+`Promise`\<`Awaited`\<`ReturnType`\<`T`\[`"execute"`\]\>\>\>
+
+##### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { createToolContext, runTool } from "@alexkroman1/aai/testing";
+import { z } from "zod";
+
+// In a spec this is `import addItem from "./tools/add_item.ts"`.
+const addItem = tool({
+  description: "Add an item",
+  inputSchema: z.object({ item: z.string() }),
+  execute: async ({ item }) => ({ added: item }),
+});
+const { added } = await runTool(addItem, { item: "apple" }, createToolContext());
+console.log(added.toUpperCase()); // typed: `added` is a string
+```
+
+#### Call Signature
+
+```ts
+function runTool(
+   agent: ToolBearingAgent, 
+   name: string, 
+   argsOrCtx?: 
+  | Record<string, unknown>
+  | ToolContext, 
+   ctx?: ToolContext
+): Promise<unknown>;
+```
+
+Run a tool by the name the model calls it by.
+
+`args` is unvalidated on purpose: the runtime parses a model's arguments
+against `inputSchema` BEFORE `execute` sees them, so a spec that pre-validated
+would be testing a path the tool never runs on. Pass the arguments the tool
+body expects to receive. (To test the SCHEMA itself, which is a different
+question, use `parseToolInput` / `toolInputIssues`.)
+
+The def to pass is the one a DEPLOYED agent runs — `virtual:aai/agent` under
+vitest, or `deployedAgent` under any other runner, since a tool is a file and
+`agent.ts`'s default export carries none. See [toolOf](#toolof), which this is
+built on.
+
+**A tool that takes no arguments may say so by leaving them out**, passing the
+context in their place: `runTool(agentDef, "view_order", ctx)`. A no-argument
+tool is common — one shipped template has thirteen — and the `{}` those calls
+were obliged to pass appeared 66 times across seven template specs, always
+between the two values a reader actually cares about. Both spellings are one
+signature rather than an overload pair, so a bound runner forwards either
+shape without restating the union — which is what [toolRunner](#toolrunner-1) is, and
+how every template reaches this.
+
+The two are told apart by SHAPE, and the probe is narrow enough to be safe:
+a `ToolContext` is a record carrying a string `sessionId`, a `slots` store and
+a `send` function, and tool arguments arrive as JSON from a model, which
+cannot contain a function. A context is never a plausible argument object.
+
+##### Parameters
+
+###### agent
+
+[`ToolBearingAgent`](#toolbearingagent)
+
+###### name
+
+`string`
+
+###### argsOrCtx?
+
+  \| `Record`\<`string`, `unknown`\>
+  \| [`ToolContext`](../aai/index.md#toolcontext)
+
+###### ctx?
+
+[`ToolContext`](../aai/index.md#toolcontext)
+
+The context. Defaults to a fresh [createToolContext](#createtoolcontext) — so
+  an omitted context is a DISTINCT SESSION with empty slots, which is what a
+  stateless tool wants and never what two calls sharing state want. Pass one
+  explicitly wherever the second call is supposed to see the first call's
+  work.
+
+##### Returns
+
+`Promise`\<`unknown`\>
+
+##### Example
+
+```ts
+import agentDef from "virtual:aai/agent";
+import { createToolContext, runTool } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
+
+expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
+  added: "apple",
+});
+
+// No arguments, one session shared across the two calls.
+const ctx = createToolContext();
+await runTool(agentDef, "add_item", { item: "apple" }, ctx);
+expect(await runTool(agentDef, "view_order", ctx)).toEqual({ items: ["apple"] });
+```
 
 ***
 
@@ -219,6 +1436,64 @@ console.log(run.status, run.output, run.deliveries);
 
 ***
 
+### schemaInputIssues()
+
+```ts
+function schemaInputIssues(
+   schema: 
+  | StandardSchemaV1<unknown, unknown>
+  | undefined, 
+   value: unknown, 
+   what?: string
+): Promise<
+  | readonly StandardSchemaIssue[]
+| undefined>;
+```
+
+The issues `schema` found in `value`, or `undefined` when it accepted it.
+
+The negative half of [parseSchemaInput](#parseschemainput), and `undefined`-on-success is
+deliberate: `expect(await schemaInputIssues(…)).toBeUndefined()` is the
+accepting case and `…toBeDefined()` the refusing one, which is the pair every
+hand-rolled site was already writing against `.issues`.
+
+#### Parameters
+
+##### schema
+
+  \| [`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `unknown`\>
+  \| `undefined`
+
+As [parseSchemaInput](#parseschemainput): `undefined` throws rather than
+  reporting "no issues", which would make a negative test pass for a schema
+  that does not exist.
+
+##### value
+
+`unknown`
+
+##### what?
+
+`string`
+
+How the schema is named in that error.
+
+#### Returns
+
+`Promise`\<
+  \| readonly [`StandardSchemaIssue`](../aai/index.md#standardschemaissue)[]
+  \| `undefined`\>
+
+#### Example
+
+```ts no-check
+import { schemaInputIssues } from "@alexkroman1/aai/testing";
+
+expect(await schemaInputIssues(myWorkflow.input, { voice: "not-a-voice" })).toBeDefined();
+```
+
+***
+
 ### scriptedTextModel()
 
 ```ts
@@ -267,6 +1542,872 @@ const chat = createTextAgent({
 const turn = chat.stream({ messages: [{ role: "user", content: "where is order 7?" }] });
 for await (const delta of turn.textStream) console.log(delta);
 ```
+
+***
+
+### ~~scriptedToolContext()~~
+
+```ts
+function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
+```
+
+Build a [TestToolContext](#testtoolcontext) whose `generate` and `delegate` are both
+scripted, and hand back the fakes beside it.
+
+#### Parameters
+
+##### options?
+
+[`ScriptedToolContextOptions`](#scriptedtoolcontextoptions)
+
+#### Returns
+
+[`ScriptedToolContext`](#scriptedtoolcontext)
+
+#### Deprecated
+
+Use `createToolContext({ generate, delegate })` — it takes the
+same two scripts and exposes the same fakes as `ctx.model` and `ctx.desk`, so
+`const { model, desk } = scriptedToolContext(…)` is `const ctx =
+createToolContext(…)` read as `ctx.model` / `ctx.desk`. This predates it and
+stays working.
+
+Each call is a distinct session, as with `createToolContext`. A spec that
+wants two sessions sharing one script calls this twice with the same routes
+object — the routes are read at call time, so a function route with its own
+queue is shared and a fixed route is not affected either way.
+
+#### Example
+
+```ts
+import { scriptedToolContext } from "@alexkroman1/aai/testing";
+
+const TRIAGE = "You triage email.";
+const { ctx, model, desk } = scriptedToolContext({
+  generate: { routes: { [TRIAGE]: { object: { response: "email" } } } },
+  delegate: { routes: { "meeting-assistant": "Free Wednesday 1pm." } },
+});
+// … run the tool against `ctx`, then:
+// expect(model.calls.map((call) => call.system)).toEqual([TRIAGE]);
+// expect(desk.calls[0]?.subagent.name).toBe("meeting-assistant");
+```
+
+***
+
+### stubClientInbox()
+
+```ts
+function stubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
+```
+
+Publish an inbox whose device records every notice and answers it.
+
+#### Parameters
+
+##### options?
+
+[`StubClientInboxOptions`](#stubclientinboxoptions)
+
+#### Returns
+
+[`StubClientInbox`](#stubclientinbox)
+
+***
+
+### stubClientTranscript()
+
+```ts
+function stubClientTranscript(answer?: StubClientTranscriptAnswer): StubClientTranscript;
+```
+
+Publish a reader that answers every `stepClientTranscript` with `answer` —
+a fixed transcript, or one computed per call (e.g. honouring the cursor).
+Omitted, every client has said nothing.
+
+#### Parameters
+
+##### answer?
+
+[`StubClientTranscriptAnswer`](#stubclienttranscriptanswer)
+
+#### Returns
+
+[`StubClientTranscript`](#stubclienttranscript)
+
+***
+
+### stubDelegate()
+
+```ts
+function stubDelegate(script: StubDelegateScript): StubDelegate;
+```
+
+Build a fake `ctx.delegate` from a script: one reply, or routes keyed by
+subagent name.
+
+Pass `{ reply }` to answer every delegation the same way, which is what a
+one-subagent tool wants.
+
+#### Parameters
+
+##### script
+
+[`StubDelegateScript`](#stubdelegatescript)
+
+#### Returns
+
+[`StubDelegate`](#stubdelegate)
+
+#### Example
+
+**Two subagents, one queue**
+
+```ts
+import { createToolContext, stubDelegate } from "@alexkroman1/aai/testing";
+
+const findings = ["Rain on Tuesday.", "Clear on Wednesday."];
+const desk = stubDelegate({
+  routes: {
+    researcher: () => ({ text: findings.shift() ?? "Nothing found.", steps: 3 }),
+    "fact-checker": "Both claims check out.",
+  },
+});
+const ctx = createToolContext({ delegate: desk.delegate });
+// … run the tool, then assert on who was asked what:
+// expect(desk.calls.map((call) => call.subagent.name)).toEqual([…]);
+```
+
+***
+
+### stubFetchRoutes()
+
+```ts
+function stubFetchRoutes(routes: 
+  | Readonly<Record<string, 
+  | StubStepAnswer
+  | FetchRouteHandler>>
+  | readonly FetchRouteHandler[], options?: FetchRoutesOptions): StubFetchRoutes;
+```
+
+Install one router as the global `fetch` (and, by default, the published
+step fetch), and return its log. Call `restore` when the test ends — or use
+`installFetchRoutes`, which registers it for you.
+
+#### Parameters
+
+##### routes
+
+  \| `Readonly`\<`Record`\<`string`, 
+  \| [`StubStepAnswer`](#stubstepanswer)
+  \| [`FetchRouteHandler`](#fetchroutehandler)\>\>
+  \| readonly [`FetchRouteHandler`](#fetchroutehandler)[]
+
+A [FetchRouteTable](#fetchroutetable), or a list of handlers tried in
+  order (the first that answers wins).
+
+##### options?
+
+[`FetchRoutesOptions`](#fetchroutesoptions)
+
+#### Returns
+
+[`StubFetchRoutes`](#stubfetchroutes)
+
+#### Example
+
+```ts
+import { stubFetchRoutes } from "@alexkroman1/aai/testing";
+
+const net = stubFetchRoutes({
+  "GET supabase.test": (req) => ({ body: req.searchParams.get("id") ? [{ id: 1 }] : [] }),
+  "POST supabase.test": { status: 201 },
+  "https://api.mem0.ai/v3/memories/": { body: { results: [] } },
+});
+await fetch("https://supabase.test/rest/v1/calls", { method: "POST", body: "{}" });
+console.log(net.to("POST supabase.test").length); // 1
+net.restore();
+```
+
+***
+
+### stubGateway()
+
+```ts
+function stubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGateway;
+```
+
+Build a fake LLM gateway answering `replies` in order, as a `fetch` for the
+caller to install on the GLOBAL `fetch`.
+
+Three names, one fake, picked by SEAM:
+
+| You need | Use |
+| --- | --- |
+| the global `fetch`, installed and undone for you (vitest) | `installStubGateway` (`@alexkroman1/aai/testing/vitest`) |
+| the global `fetch`, installed by you (any runner) | `stubGateway` — this |
+| a published `stepFetch` that other fakes share (a page, a transcription) | [stubGatewayRoute](eval/vitest.md#stubgatewayroute-1), composed into `installStubStepFetch` |
+
+The LAST reply repeats once the list runs out, so a spec names only the turns
+it cares about — which is what makes this usable for a step whose model call
+sits in a LOOP: a stub that says the same thing every turn can only ever drive
+such a loop into its budget, and one that runs out mid-loop fails on the stub
+rather than on the code.
+
+#### Parameters
+
+##### replies
+
+`string` \| readonly `string`[]
+
+Completion contents, in order. A bare string is one reply.
+
+##### options?
+
+[`StubGatewayOptions`](#stubgatewayoptions)
+
+#### Returns
+
+[`StubGateway`](#stubgateway)
+
+#### Example
+
+```ts no-check
+// `no-check`: the step under test is in another file, which is the point.
+import { stubGateway } from "@alexkroman1/aai/testing";
+import { expect, test, vi } from "vitest";
+import { summarize } from "./workflows/digest.ts";
+
+test("summarize sends the article and returns the headline", async () => {
+  const gateway = stubGateway(['{"headline":"Otters use tools"}']);
+  vi.stubGlobal("fetch", gateway.fetch);
+  vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+
+  expect(await summarize("Otters use tools.")).toEqual({ headline: "Otters use tools" });
+  expect(gateway.calls[0]?.prompt).toContain("Otters use tools.");
+});
+```
+
+***
+
+### stubGenerate()
+
+```ts
+function stubGenerate(script: StubGenerateScript): StubGenerate;
+```
+
+Build a fake `ctx.generate` from a script: one reply, or routes keyed by
+system prompt.
+
+A call whose system prompt names no route throws, naming it — an unscripted
+model call is a spec that has drifted from the tool, not a case to paper over.
+Pass `{ reply }` to answer every call the same way, which is what a one-model
+tool wants.
+
+#### Parameters
+
+##### script
+
+[`StubGenerateScript`](#stubgeneratescript)
+
+#### Returns
+
+[`StubGenerate`](#stubgenerate)
+
+#### Examples
+
+**Two model roles, one queue**
+
+```ts
+import { createToolContext, stubGenerate } from "@alexkroman1/aai/testing";
+
+const verdicts = ["yes", "no"];
+const model = stubGenerate({
+  routes: {
+    "You grade documents.": () => ({ object: { score: verdicts.shift() ?? "yes" } }),
+    "You answer questions.": "The documented answer.",
+  },
+});
+const ctx = createToolContext({ generate: model.generate });
+// … run the tool, then assert on the roles it played:
+// expect(model.calls.map((call) => call.system)).toEqual([…]);
+```
+
+**One model role**
+
+```ts
+import { stubGenerate } from "@alexkroman1/aai/testing";
+
+const model = stubGenerate({ reply: { object: { steps: ["Only step"] } } });
+const answerer = stubGenerate({ reply: "The documented answer." });
+```
+
+***
+
+### stubPlaceCall()
+
+```ts
+function stubPlaceCall(options?: StubPlaceCallOptions): StubPlaceCall;
+```
+
+Publish a Twilio whose Calls API records every dial and answers it.
+
+#### Parameters
+
+##### options?
+
+[`StubPlaceCallOptions`](#stubplacecalloptions)
+
+#### Returns
+
+[`StubPlaceCall`](#stubplacecall)
+
+#### Example
+
+```ts
+import { stubPlaceCall } from "@alexkroman1/aai/testing";
+
+const twilio = stubPlaceCall({ status: (call) => (call.polls < 2 ? "ringing" : "completed") });
+// … run the workflow, then read what it dialled, as the answering session sees it:
+console.log(twilio.calls[0]?.parameters.call);
+twilio.restore(); // in an `afterEach`
+```
+
+***
+
+### stubReporter()
+
+```ts
+function stubReporter(): StubReporter;
+```
+
+Capture what a step narrates and emits.
+
+`stepReport()` and `stepEmit()` both go through a published slot, and with nothing
+published they fall back to the console — which is right for a step under test
+that nobody is asserting on, and useless the moment the narration IS the
+subject. It is for a step whose partial results are part of its contract: a
+fan-out that emits each segment as it lands has a page depending on the shape
+of those chunks, and nothing else in a spec can see them.
+
+The two are separated the way the streams are, so a spec asserting a chunk
+never has to filter the sentences out of it.
+
+```ts no-check
+const reported = stubReporter();
+afterEach(reported.restore);
+
+await transcribeSegment(uploadId, format, segment);
+expect(reported.emitted).toEqual([
+  { namespace: "transcript", chunk: { index: 0, text: "hello there" } },
+]);
+```
+
+Publishing REPLACES, so a spec that forgets to restore leaves this one
+answering the next file's steps — the same rule [stubStepFetch](#stubstepfetch) follows,
+and the same remedy.
+
+#### Returns
+
+[`StubReporter`](#stubreporter)
+
+***
+
+### stubSpeech()
+
+```ts
+function stubSpeech(options?: StubSpeechOptions): StubSpeech;
+```
+
+Publish a synthesizer that records what it was asked to say and answers with
+silence.
+
+Silence rather than a tone, because nothing downstream of a step listens: a
+spec asserts on the TEXT that was spoken, the duration, and where the bytes
+went. Generating audible audio would only make the fixtures bigger.
+
+#### Parameters
+
+##### options?
+
+[`StubSpeechOptions`](eval/vitest.md#stubspeechoptions)
+
+#### Returns
+
+[`StubSpeech`](eval/vitest.md#stubspeech)
+
+***
+
+### stubStepDelegate()
+
+```ts
+function stubStepDelegate(script: StubDelegateScript): StubStepDelegate;
+```
+
+PUBLISH a fake runner, so an exported step that calls `stepDelegate` can be
+driven without a host.
+
+`stubDelegate` with the slot filled in, and deliberately nothing more: the
+step-side and tool-side capabilities have the same signature because they are
+the same runner bound differently, so a spec routes them the same way and a
+template that moves a subagent from a tool into a step rewrites no fake.
+
+An unpublished slot THROWS rather than degrading (see `sdk/step-delegate.ts`),
+which is what makes this the ONE way to test such a step — and why the failure
+an author meets first names this function.
+
+#### Parameters
+
+##### script
+
+[`StubDelegateScript`](#stubdelegatescript)
+
+#### Returns
+
+[`StubStepDelegate`](eval/vitest.md#stubstepdelegate)
+
+#### Example
+
+```ts
+import { stubStepDelegate } from "@alexkroman1/aai/testing";
+
+const desk = stubStepDelegate({ routes: { researcher: "Prices fell 12% in 2025." } });
+try {
+  // … call the exported step, then assert on `desk.calls`
+} finally {
+  desk.restore();
+}
+```
+
+***
+
+### stubStepFetch()
+
+```ts
+function stubStepFetch(answer?: (request: StubStepRequest) => 
+  | StubStepAnswer
+  | Promise<StubStepAnswer>): StubStepFetch;
+```
+
+Publish a fake `stepFetch`, so a step's HTTP can be asserted
+without a server and without stubbing a global.
+
+A step's outbound call goes through a process-wide slot rather than
+`globalThis.fetch` (see `stepFetch` on `@alexkroman1/aai/step` for why —
+HTTP/1.1 pinning, and a fan-out that breaks on HTTP/2 stream resets), so this is the honest way to
+intercept it. `vi.stubGlobal("fetch", …)` still works, because an unpublished
+slot falls back to the global; it just tests a path production does not take,
+and it cannot see the request BODY as bytes.
+
+`answer` may return a `Response`, or a `{ status, body, headers }` shorthand,
+or throw — a throw is what a connection failure looks like, and `stepFetch`
+wraps it in a `StepTransportError` exactly as it would in production.
+
+Returns `restore`, and calling it in an `afterEach` is not optional — a fetch
+left published makes the next file's steps answer to this one's handler.
+`installStubStepFetch` (`@alexkroman1/aai/testing/vitest`) is the same fake
+with that registration already done.
+
+#### Parameters
+
+##### answer?
+
+(`request`: [`StubStepRequest`](#stubsteprequest)) => 
+  \| [`StubStepAnswer`](#stubstepanswer)
+  \| `Promise`\<[`StubStepAnswer`](#stubstepanswer)\>
+
+Called per request with the recorded request. Defaults to an
+  empty `200`.
+
+#### Returns
+
+[`StubStepFetch`](eval/vitest.md#stubstepfetch)
+
+#### Example
+
+```ts no-check
+// `no-check`: the assertion is the point, and a doc example may not import a
+// test runner — the same reason `createToolContext`'s example opts out.
+import { stubStepFetch } from "@alexkroman1/aai/testing";
+
+const sync = stubStepFetch(() => ({ body: { text: "hello there" } }));
+// … call the step …
+expect(sync.calls[0]?.headers.Authorization).toBe("sk-test");
+sync.restore();
+```
+
+***
+
+### stubStepInfo()
+
+```ts
+function stubStepInfo(step: {
+  attempt?: number;
+  maxAttempts?: number;
+  name?: string;
+}): {
+  restore: () => void;
+};
+```
+
+Answer `stepInfo()` for the step under test, so a body's RETRY branch is
+reachable from a spec.
+
+A step that degrades on its last attempt has two paths and a spec could only
+ever take one: outside a run `stepInfo()` answers `undefined`, which a body
+reads as "not retrying". So the branch that exists precisely for the case that
+goes wrong was the branch no test could enter — and it is the one whose
+failure is quiet, since a body that mis-reads the ceiling degrades early on
+every run and still returns an answer.
+
+```ts
+import { stubStepInfo } from "@alexkroman1/aai/testing";
+import { onTestFinished, expect, test } from "vitest";
+
+declare function summarizeChapter(text: string): Promise<string>;
+
+test("falls back to the cheap model on the last attempt", async () => {
+  const stub = stubStepInfo({ attempt: 3, maxAttempts: 3 });
+  onTestFinished(stub.restore);
+  expect(await summarizeChapter("…")).toContain("…");
+});
+```
+
+`isLastAttempt` is DERIVED from the two numbers rather than accepted, for the
+reason the real reader derives it: a fake that let a spec set `attempt: 1` and
+`isLastAttempt: true` would let a body pass against a state no run can be in.
+
+Publishing REPLACES, so a spec that forgets to restore leaves this answering
+the next file's steps — the same rule [stubReporter](#stubreporter-1) follows, and the
+same remedy.
+
+#### Parameters
+
+##### step
+
+###### attempt?
+
+`number`
+
+1-based. Defaults to 1.
+
+###### maxAttempts?
+
+`number`
+
+Defaults to whichever is larger of 3 (the SDK's own default) and `attempt`.
+
+###### name?
+
+`string`
+
+Defaults to `"step"`.
+
+#### Returns
+
+```ts
+{
+  restore: () => void;
+}
+```
+
+##### restore
+
+```ts
+() => void
+```
+
+***
+
+### stubTranscribe()
+
+```ts
+function stubTranscribe(options?: StubTranscribeOptions): StubTranscribe;
+```
+
+Answer AssemblyAI's transcription endpoints in memory, and record what was
+sent.
+
+Covers all four calls — the async trio (`stepTranscribeUpload`,
+`stepTranscribeSubmit`, `stepTranscribePoll`) and `stepTranscribeSync` — so a
+workflow that uploads, submits, polls and reads is testable end to end without
+naming `upload_url`, `audio_duration` or `status: "completed"` anywhere in the
+spec.
+
+What it does NOT do is stand in for the upload STORE: `stepTranscribeUpload`
+streams the recording out of the app's own store, so a spec still publishes
+one with `stubUploads`. The two fakes fill different slots and compose.
+
+#### Parameters
+
+##### options?
+
+[`StubTranscribeOptions`](eval/vitest.md#stubtranscribeoptions)
+
+#### Returns
+
+[`StubTranscribe`](eval/vitest.md#stubtranscribe)
+
+#### Examples
+
+**A whole async job, in one line of setup**
+
+```ts no-check
+// `no-check`: the workflow under test is in another file, which is the point.
+import { stubTranscribe, stubUploads } from "@alexkroman1/aai/testing";
+
+const uploads = stubUploads({ upl_1: new Uint8Array(5000) });
+const provider = stubTranscribe({ text: "we ship tuesday", durationSec: 42 });
+
+expect(await transcribeRecording("upl_1")).toBe("we ship tuesday");
+// The file really streamed: `stubStepFetch` drains the body into bytes.
+expect(provider.calls.find((call) => call.leg === "upload")?.body).toBeInstanceOf(Uint8Array);
+
+provider.restore();
+uploads.restore();
+```
+
+**A rate limit, classified by the SDK rather than by the fake**
+
+```ts no-check
+const provider = stubTranscribe({
+  failure: { leg: "sync", status: 429, retryAfterSeconds: 30 },
+});
+// `toStepError` reads `retryable` and `retryAfter` off the real TranscribeError.
+await expect(transcribeSegment("upl_1", segment)).rejects.toBeInstanceOf(RetryableError);
+```
+
+***
+
+### stubUploads()
+
+```ts
+function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
+```
+
+Publish an in-memory upload store, so a step that calls
+`stepReadUpload` can be tested without a server.
+
+A step reads uploads through a process-wide slot rather than dialling
+anything, which is what makes this possible at all: a spec supplies its own
+bytes and the step under test is unchanged.
+
+Returns a [StubUploads](eval/vitest.md#stubuploads) — `restore`, plus what a step WROTE. Calling
+`restore` in an `afterEach` is not optional; a store left published makes the
+next file's steps read this one's bytes, which is the kind of cross-file leak
+that presents as a passing test somewhere else.
+
+#### Parameters
+
+##### files
+
+`Readonly`\<`Record`\<`string`, [`StubUpload`](#stubupload)\>\>
+
+Keyed by upload id — the same string a run input would carry.
+
+##### options?
+
+[`StubUploadsOptions`](eval/vitest.md#stubuploadsoptions)
+
+#### Returns
+
+[`StubUploads`](eval/vitest.md#stubuploads)
+
+#### Examples
+
+```ts
+import { stubUploads } from "@alexkroman1/aai/testing";
+
+const uploads = stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
+// … call the step …
+uploads.restore();
+
+// A streamed upload mid-flight: `stepReadUpload` comes back short and
+// `stepUploadInfo(...).complete` is false, which is what a polling body sees.
+const firstHalf = new Uint8Array([1, 2]);
+stubUploads({ upl_2: { bytes: firstHalf, complete: false } }).restore();
+```
+
+**What a step wrote, without reading it back through the slot**
+
+```ts no-check
+const uploads = stubUploads({}, { writable: true });
+// … call the step …
+expect(uploads.writes.map((one) => one.name)).toEqual(["summary.wav"]);
+```
+
+***
+
+### toolInputIssues()
+
+```ts
+function toolInputIssues(
+   agent: ToolBearingAgent, 
+   name: string, 
+   value: unknown
+): Promise<
+  | readonly StandardSchemaIssue[]
+| undefined>;
+```
+
+The issues the tool `name`'s input schema found in `value`, or `undefined`.
+
+The negative half of [parseToolInput](#parsetoolinput) — the assertion behind "a mood
+outside the enum is refused by the schema", which is the one thing standing
+between an LLM's untyped tool call and the tool body.
+
+#### Parameters
+
+##### agent
+
+[`ToolBearingAgent`](#toolbearingagent)
+
+##### name
+
+`string`
+
+##### value
+
+`unknown`
+
+#### Returns
+
+`Promise`\<
+  \| readonly [`StandardSchemaIssue`](../aai/index.md#standardschemaissue)[]
+  \| `undefined`\>
+
+#### Throws
+
+When the agent declares no such tool, or when it declares no
+  `inputSchema`. A tool that takes no arguments accepts anything, and saying
+  so out loud beats answering `undefined` — which reads as "accepted".
+
+#### Example
+
+```ts no-check
+import { toolInputIssues } from "@alexkroman1/aai/testing";
+
+expect(await toolInputIssues(agentDef, "recommend", { mood: "melancholy" })).toBeDefined();
+```
+
+***
+
+### toolOf()
+
+```ts
+function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>;
+```
+
+The tool `name` is declared under, or a throw naming the ones that are.
+
+Three names for three jobs: `toolOf` hands back the DEF, to assert on what
+the agent declares (its description, its schema); [runTool](#runtool) CALLS a
+tool, gated as the runtime gates it; [toolRunner](#toolrunner-1) is `runTool` with the
+agent bound, the `run(name, …)` a spec calls throughout.
+
+A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
+import the agent as DEPLOYED, exactly as this example does and as every
+shipped template's spec does: `virtual:aai/agent` under vitest, or
+`deployedAgent` (`@alexkroman1/aai/testing`) under any other runner. Handing
+this the authored def directly is the common mistake, and it fails with
+"(none)".
+
+#### Parameters
+
+##### agent
+
+[`ToolBearingAgent`](#toolbearingagent)
+
+##### name
+
+`string`
+
+#### Returns
+
+[`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
+
+#### Example
+
+```ts
+import agentDef from "virtual:aai/agent";
+import { toolOf } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
+
+expect(toolOf(agentDef, "add_item").description).toContain("cart");
+```
+
+***
+
+### toolRunner()
+
+```ts
+function toolRunner(agent: ToolBearingAgent): ToolRunner;
+```
+
+[runTool](#runtool) bound to one agent — the `run(...)` a spec actually calls.
+
+A spec drives one agent, so `agentDef` is the same in every call and the name
+is the thing that varies. Every shipped template therefore opened with the
+same wrapper:
+
+```ts no-check
+const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
+  runTool(agentDef, name, argsOrCtx, ctx);
+```
+
+Ten of them, and [runTool](#runtool)'s own documentation named that wrapper as how
+every template reaches it — which is the point at which the wrapper is part of
+the API and belongs in it. `const run = toolRunner(agentDef);` is the same
+thing in one line.
+
+**The union is what is worth removing, not the line.** A spec that writes the
+signature out has to restate `Record<string, unknown> | ToolContext` to
+forward both of `runTool`'s shapes — arguments, or the context in their place
+for a tool that takes none — and a spec that narrows it to
+`(name: string, args: Record<string, unknown>)` has quietly given up the
+second shape. Four templates had; three of those then passed `{}` by hand
+where the whole point of the shorter form is not having to. Binding the agent
+keeps the union in one place, where it stays right.
+
+The runner is stateless and holds only the agent, so one per spec file at the
+top level is the shape: each call still defaults to a FRESH context, i.e. a
+distinct session with empty slots. Pass a context explicitly wherever the
+second call is meant to see the first call's work — see [runTool](#runtool).
+
+#### Parameters
+
+##### agent
+
+[`ToolBearingAgent`](#toolbearingagent)
+
+#### Returns
+
+[`ToolRunner`](#toolrunner)
+
+#### Example
+
+```ts
+import agentDef from "virtual:aai/agent";
+import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
+import { expect } from "vitest";
+
+const run = toolRunner(agentDef);
+
+expect(await run("add_item", { item: "apple" })).toEqual({ added: "apple" });
+
+// No arguments, one session shared across the two calls.
+const ctx = createToolContext();
+await run("add_item", { item: "apple" }, ctx);
+expect(await run("view_order", ctx)).toEqual({ items: ["apple"] });
+```
+
+**A runner over an agent with NO tools is refused HERE**, rather than at the
+first `run(...)`. A tool is a file, so `agent.ts`'s default export declares an
+empty table and every call through such a runner fails identically — the
+mistake is the argument on this line, and reporting it at a call site several
+dozen lines away names the symptom instead. It is the one shape that cannot be
+a legitimate runner: a runner exists to reach tools by name, and there are no
+names to reach. Reach for [toolOf](#toolof) or [runTool](#runtool) directly if a spec
+really means to assert on an empty table.
 
 ## Classes
 
@@ -344,6 +2485,496 @@ that crossed a structured clone or a JSON-RPC boundary on its way here.
 `value is JournalConflictError`
 
 ## Interfaces
+
+### DeployedConfig
+
+**`Sealed`**
+
+What [expectDeployable](#expectdeployable) hands back: the RESOLVED config a deploy
+carries, narrowed to the fields a starter spec asserts on.
+
+Not the whole `AgentConfig`, on purpose. That type is inferred from the
+canonical config SCHEMA, so returning it put the schema — every serializable
+agent field, each with its own validation shape — into this subpath's
+contract, and a new agent field moved a TEST helper's hash. These are the
+fields the shipped specs read; the object returned is the real config, so a
+spec that needs one more can read it off `toAgentConfig`
+(`@alexkroman1/aai/manifest`) directly.
+
+`mode` is always present: [expectDeployable](#expectdeployable) refuses a conversion that
+derived none.
+
+#### Properties
+
+##### builtinTools?
+
+```ts
+readonly optional builtinTools?: readonly BuiltinTool[];
+```
+
+The builtins the agent declares (absent: the default surface).
+
+##### llm?
+
+```ts
+readonly optional llm?: DeployedStage;
+```
+
+The LLM stage — declared, or the injected default in pipeline mode.
+
+##### mcpServers?
+
+```ts
+readonly optional mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+```
+
+The MCP servers whose tools join the agent's own, by key.
+
+##### mode
+
+```ts
+readonly mode: AgentMode;
+```
+
+The agent's mode, as the deploy carries it.
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+The name the platform lists the agent under.
+
+##### requiredEnv?
+
+```ts
+readonly optional requiredEnv?: readonly string[];
+```
+
+The env var names a deploy preflights.
+
+##### s2s?
+
+```ts
+readonly optional s2s?: DeployedStage;
+```
+
+The speech-to-speech descriptor, for an s2s agent.
+
+##### stt?
+
+```ts
+readonly optional stt?: DeployedStage;
+```
+
+The STT stage — declared, or the injected default in pipeline mode.
+
+##### systemPrompt
+
+```ts
+readonly systemPrompt: string;
+```
+
+The system prompt a deploy carries — the author's string, or the framework
+default when there is none. A RESOLVER is not carried (it cannot be
+serialized), so an agent with one reads the default here.
+
+##### tts?
+
+```ts
+readonly optional tts?: DeployedStage;
+```
+
+The TTS stage — declared, or the injected default in pipeline mode.
+
+##### turnTaking?
+
+```ts
+readonly optional turnTaking?: {
+  detection?: string;
+};
+```
+
+Pipeline turn-taking — `detection: "manual"` is push-to-talk.
+
+###### detection?
+
+```ts
+readonly optional detection?: string;
+```
+
+##### usageLimits?
+
+```ts
+readonly optional usageLimits?: {
+  totalTokens?: number;
+};
+```
+
+The session's token budget, when it declares one.
+
+###### totalTokens?
+
+```ts
+readonly optional totalTokens?: number;
+```
+
+***
+
+### DeployedStage
+
+**`Sealed`**
+
+One provider stage of a [DeployedConfig](#deployedconfig) — the descriptor as it will be
+deployed: its `kind`, and its `options` exactly as serialized.
+
+#### Properties
+
+##### kind
+
+```ts
+readonly kind: string;
+```
+
+The provider the stage resolves through, e.g. `"assemblyai"`.
+
+##### options?
+
+```ts
+readonly optional options?: Readonly<Record<string, unknown>>;
+```
+
+The descriptor's options, as they cross the wire.
+
+***
+
+### SaidLine
+
+One `ctx.speech.say` a [createToolContext](#createtoolcontext) context recorded.
+
+#### Properties
+
+##### interrupt
+
+```ts
+readonly interrupt: boolean;
+```
+
+Whether it asked to cut the agent off first (`{ interrupt: true }`).
+
+##### interruptible
+
+```ts
+readonly interruptible: boolean;
+```
+
+`false` when it asked not to be cut off by the caller (`{ interruptible: false }`).
+
+##### record
+
+```ts
+readonly record: boolean;
+```
+
+`false` when it asked to stay out of history (`{ record: false }`).
+
+##### text
+
+```ts
+readonly text: string;
+```
+
+The text, exactly as passed.
+
+***
+
+### ~~ScriptedToolContext~~
+
+What [scriptedToolContext](#scriptedtoolcontext-1) answers: the context to run tools against,
+and the two fakes it was built from, for asserting what each was asked.
+
+#### Deprecated
+
+`createToolContext` answers a `TestToolContext`, which carries
+both fakes itself (`ctx.model`, `ctx.desk`). See [scriptedToolContext](#scriptedtoolcontext-1).
+
+#### Properties
+
+##### ~~ctx~~
+
+```ts
+ctx: TestToolContext;
+```
+
+Pass to `runTool`/`toolRunner`, or straight to a tool's `execute`.
+
+##### ~~desk~~
+
+```ts
+desk: StubDelegate;
+```
+
+The `ctx.delegate` fake — `desk.calls` is every subagent run the tools asked for.
+
+##### ~~model~~
+
+```ts
+model: StubGenerate;
+```
+
+The `ctx.generate` fake — `model.calls` is every prompt the tools sent.
+
+***
+
+### SentEvent
+
+One `ctx.send(event, data)` call that would REACH the client, as recorded by
+[createToolContext](#createtoolcontext) — see the `send` default for what is left out.
+
+#### Properties
+
+##### data
+
+```ts
+data: unknown;
+```
+
+##### event
+
+```ts
+event: string;
+```
+
+***
+
+### StubDelegate
+
+A fake `ctx.delegate`: the function to pass, and what it was asked.
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubDelegateCall[];
+```
+
+Every call, in order.
+
+##### delegate
+
+```ts
+delegate: DelegateFn;
+```
+
+Pass as `delegate` to `createToolContext`.
+
+***
+
+### StubDelegateCall
+
+One `ctx.delegate` call, as recorded by [stubDelegate](#stubdelegate-1).
+
+#### Properties
+
+##### options
+
+```ts
+options: DelegateOptions;
+```
+
+The whole options object, for asserting `context` and `maxSteps`.
+
+##### subagent
+
+```ts
+subagent: SpeakerDef;
+```
+
+The subagent that was asked.
+
+##### task
+
+```ts
+task: string;
+```
+
+The task it was given.
+
+***
+
+### StubGateway
+
+A fake gateway: the `fetch` to install, and what it was asked.
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubGatewayCall[];
+```
+
+Every request, in call order.
+
+##### fetch
+
+```ts
+fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+```
+
+Install with `vi.stubGlobal("fetch", gateway.fetch)`.
+
+###### Parameters
+
+###### url
+
+`string` \| `URL` \| `Request`
+
+###### init?
+
+`RequestInit`
+
+###### Returns
+
+`Promise`\<`Response`\>
+
+***
+
+### StubGatewayCall
+
+One request a [StubGateway](#stubgateway) answered.
+
+#### Properties
+
+##### body
+
+```ts
+body: Record<string, unknown>;
+```
+
+The whole decoded request body, for asserting model, temperature, …
+
+##### headers
+
+```ts
+headers: Record<string, string>;
+```
+
+The request headers, lower-cased.
+
+Worth asserting rather than assuming: the gateway is OpenAI-compatible and
+takes the key as a `Bearer`, where AssemblyAI's streaming sockets take it
+raw — and getting that backwards is a 401 that reads like a wrong key.
+
+##### prompt
+
+```ts
+prompt: string;
+```
+
+The user message — what the step actually asked.
+
+##### system
+
+```ts
+system: string | undefined;
+```
+
+The system instruction, or `undefined` when the step sent none.
+
+##### url
+
+```ts
+url: string;
+```
+
+The endpoint the call went to, so a spec can assert the gateway URL.
+
+***
+
+### StubGatewayOptions
+
+Options for [stubGateway](#stubgateway-1).
+
+#### Properties
+
+##### headers?
+
+```ts
+optional headers?: Record<string, string>;
+```
+
+Extra response headers — `Retry-After` is the one specs reach for.
+
+##### status?
+
+```ts
+optional status?: number;
+```
+
+HTTP status to answer with. Defaults to 200. A non-2xx answers with an
+error body, which is what `stepGenerate` (`@alexkroman1/aai/step`)
+quotes back in its `StepGenerateError`.
+
+***
+
+### StubGenerate
+
+A fake `ctx.generate`: the function to pass, and what it was asked.
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubGenerateCall[];
+```
+
+Every call, in order.
+
+##### generate
+
+```ts
+generate: GenerateFn;
+```
+
+Pass as `generate` to `createToolContext`.
+
+***
+
+### StubGenerateCall
+
+One `ctx.generate` call, as recorded by [stubGenerate](#stubgenerate-1).
+
+#### Properties
+
+##### options
+
+```ts
+options: GenerateOptions;
+```
+
+The whole options object, for asserting `llm`, `temperature`, `schema`, …
+
+##### prompt
+
+```ts
+prompt: string;
+```
+
+The user prompt — what the tool actually asked.
+
+##### system
+
+```ts
+system: string | undefined;
+```
+
+The system instruction, or `undefined` when the call carried none.
+
+***
 
 ### TextAgentOptions
 
@@ -698,6 +3329,209 @@ type DeterminismKind = "now" | "random" | "uuid";
 ```
 
 The three reads, which is also the reserved half of the journal's key space.
+
+***
+
+### FetchRouteHandler
+
+```ts
+type FetchRouteHandler = (request: FetchRouteRequest) => 
+  | StubStepAnswer
+  | undefined
+| Promise<StubStepAnswer | undefined>;
+```
+
+A route: answers a request with a `Response` or the `{ status, body, headers }`
+shorthand `stubStepFetch` takes — or `undefined` to DECLINE, leaving it to
+the next route (in a list) or to [FetchRoutesOptions.unmatched](#unmatched).
+
+A `StepRoute` (`routeStepFetch`'s leg, `stubGatewayRoute().route`) is one.
+
+#### Parameters
+
+##### request
+
+[`FetchRouteRequest`](#fetchrouterequest)
+
+#### Returns
+
+  \| [`StubStepAnswer`](#stubstepanswer)
+  \| `undefined`
+  \| `Promise`\<[`StubStepAnswer`](#stubstepanswer) \| `undefined`\>
+
+***
+
+### FetchRouteHit
+
+```ts
+type FetchRouteHit = FetchRouteRequest & {
+  outcome: "routed" | "passthrough" | "unmatched";
+  route?: string;
+  status?: number;
+  via: "fetch" | "stepFetch";
+};
+```
+
+One request the router saw, whatever became of it.
+
+#### Type Declaration
+
+##### outcome
+
+```ts
+readonly outcome: "routed" | "passthrough" | "unmatched";
+```
+
+Answered by a route, sent to the real network, or answered by nothing.
+
+##### route?
+
+```ts
+readonly optional route?: string;
+```
+
+The table key that answered it (a list's routes have none).
+
+##### status?
+
+```ts
+readonly optional status?: number;
+```
+
+The response's status, for a request that got one.
+
+##### via
+
+```ts
+readonly via: "fetch" | "stepFetch";
+```
+
+Which fetch it arrived through.
+
+***
+
+### FetchRouteRequest
+
+```ts
+type FetchRouteRequest = StubStepRequest & {
+  host: string;
+  json: unknown;
+  pathname: string;
+  searchParams: URLSearchParams;
+};
+```
+
+One request as a route sees it: the recorded request (`url`, `method`,
+`headers`, `body` — the same fields `stubStepFetch` records) plus the parts a
+route branches on, already parsed.
+
+#### Type Declaration
+
+##### host
+
+```ts
+readonly host: string;
+```
+
+`new URL(url).hostname`.
+
+##### json
+
+```ts
+readonly json: unknown;
+```
+
+The body parsed as JSON when it parses; `undefined` otherwise (and for none).
+
+##### pathname
+
+```ts
+readonly pathname: string;
+```
+
+`new URL(url).pathname`.
+
+##### searchParams
+
+```ts
+readonly searchParams: URLSearchParams;
+```
+
+`new URL(url).searchParams` — PostgREST filters, query strings.
+
+***
+
+### FetchRoutesOptions
+
+```ts
+type FetchRoutesOptions = {
+  passThrough?: RegExp;
+  stepFetch?: boolean;
+  unmatched?: "throw" | "notFound" | "passthrough";
+};
+```
+
+What [stubFetchRoutes](#stubfetchroutes-1) may be told.
+
+#### Properties
+
+##### passThrough?
+
+```ts
+optional passThrough?: RegExp;
+```
+
+URLs that reach the REAL network before any route is consulted, tested
+against the full URL — e.g. `/^https://[^/]*assemblyai\.com//` for a
+live model's own traffic.
+
+##### stepFetch?
+
+```ts
+optional stepFetch?: boolean;
+```
+
+Publish the router as the step fetch too (the default), so a step's
+`stepFetch` lands in the same routes and the same log as a tool's
+`fetch`. Pass `false` for a spec that installs its own step fetch.
+
+##### unmatched?
+
+```ts
+optional unmatched?: "throw" | "notFound" | "passthrough";
+```
+
+What a request no route answers means.
+
+- `"throw"` (the default) — a finding: the fetch rejects naming the method
+  and URL, the way an unreachable host does, and the request is logged
+  with `outcome: "unmatched"`. An invented `200 {}` reads to a tool as
+  success, so the spec would pass having tested the wrong branch.
+- `"notFound"` — a real 404, for a spec whose subject is one.
+- `"passthrough"` — the REAL network. Rarely right in a unit test.
+
+***
+
+### FetchRouteTable
+
+```ts
+type FetchRouteTable = Readonly<Record<string, 
+  | FetchRouteHandler
+| StubStepAnswer>>;
+```
+
+Routes by where they answer. A key is an optional METHOD, then one of:
+
+- a HOST — `"api.mem0.ai"` — matching that hostname exactly;
+- a WILDCARD host — `"*.example"` — matching any subdomain of it;
+- a URL PREFIX — `"https://api.mem0.ai/v3/memories/"` — matching any URL that
+  starts with it.
+
+So `"POST textbelt.com"` answers only a POST. The most specific key answers:
+a URL prefix (longest first), then an exact host, then a wildcard (longest
+first); a METHOD-qualified key beats the same key without one. A value is a
+[FetchRouteHandler](#fetchroutehandler), or a fixed answer given to every request it
+matches.
 
 ***
 
@@ -1154,7 +3988,7 @@ already does.
 
 Both KINDS are in it: a `ctx.sleep` and the deadline half of a
 `ctx.waitFor(token, { timeoutMs })` share this table, so a reader that wants
-only one filters on [SleepRecord.kind](#kind) rather than expecting the store
+only one filters on [SleepRecord.kind](#kind-1) rather than expecting the store
 to have done it.
 
 Ordered by `key` rather than left unspecified, so the three backends answer
@@ -1380,7 +4214,7 @@ Cut short the run's outstanding waits, and resolve how many were stopped.
 
 `correlationIds` narrows to the waits declared with one of those ids;
 omitted, every outstanding `sleep` is woken and a hook's DEADLINE is not —
-see [SleepRecord.kind](#kind) for the approval window that used to close. A wait already woken,
+see [SleepRecord.kind](#kind-1) for the approval window that used to close. A wait already woken,
 or already elapsed, is NOT counted — the number is what this call changed,
 which is what makes `{ woken: 0 }` an answer a caller can act on rather than
 a tie between "nothing was waiting" and "I woke something twice".
@@ -1451,6 +4285,179 @@ that module's own note.
 ###### Returns
 
 `Promise`\<[`ResumableRun`](#resumablerun)[]\>
+
+***
+
+### ProjectFiles
+
+```ts
+type ProjectFiles = {
+  systemPrompt?: string;
+  tools?: ToolModules;
+};
+```
+
+What the BUILD lowers onto an `agent.ts` default export — the files beside it
+that a deployed agent runs with and a spec has to apply itself.
+
+Both fields are optional and at least one must be present: an empty object is
+a call that does nothing, which is the shape of a forgotten argument rather
+than of a project with no files.
+
+#### Properties
+
+##### systemPrompt?
+
+```ts
+readonly optional systemPrompt?: string;
+```
+
+`import prompt from "./system-prompt.md?raw"`.
+
+Omit it for a project with no `system-prompt.md`. Pass it even when
+`agent.ts` imports the file itself — whether it composes a string out of it
+or closes over it in a `systemPrompt` resolver, the def is left exactly as
+the author built it, so a spec never has to know which of the three shapes
+its own project uses.
+
+##### tools?
+
+```ts
+readonly optional tools?: ToolModules;
+```
+
+`import.meta.glob("./tools/*.ts", { eager: true })`, written at the CALL
+SITE — see the module doc for why it cannot be a directory string.
+
+Omit it for a project with no `tools/` directory. Passing an EMPTY glob is
+an error, not a no-op: see [deployedAgent](#deployedagent).
+
+***
+
+### RecordedSleep
+
+```ts
+type RecordedSleep = {
+  correlationId?: string;
+  label: string;
+  until: number | Date;
+};
+```
+
+One wait the body asked for — and did NOT take.
+
+#### Properties
+
+##### correlationId?
+
+```ts
+optional correlationId?: string;
+```
+
+##### label
+
+```ts
+label: string;
+```
+
+The wait's `label` — its identity in a real run's journal, and the field a
+case asserting a SCHEDULE actually wants: a body with two waits is telling
+you WHICH one it reached, which a duration cannot.
+
+##### until
+
+```ts
+until: number | Date;
+```
+
+Exactly what the body passed: milliseconds, or a `Date`.
+
+***
+
+### RecordedStart
+
+```ts
+type RecordedStart = {
+  def: AnyWorkflowDef | undefined;
+  input: unknown;
+  options: StartOptions | undefined;
+  runId: string;
+  workflow: string;
+};
+```
+
+One `start` the client recorded.
+
+#### Properties
+
+##### def
+
+```ts
+readonly def: AnyWorkflowDef | undefined;
+```
+
+The def passed, when one was (`undefined` for a start by name).
+
+##### input
+
+```ts
+readonly input: unknown;
+```
+
+The input, exactly as the tool passed it — not validated, since nothing runs.
+
+##### options
+
+```ts
+readonly options: StartOptions | undefined;
+```
+
+The start options (`key`, `label`, `notify`, …), when any were passed.
+
+##### runId
+
+```ts
+readonly runId: string;
+```
+
+The run id `start` resolved with.
+
+##### workflow
+
+```ts
+readonly workflow: string;
+```
+
+The declared name — the key in `agent({ workflows })` — or the string passed.
+
+***
+
+### RecordedStep
+
+```ts
+type RecordedStep = {
+  maxAttempts?: number;
+  name: string;
+};
+```
+
+One step the body reached, as the recorder saw it.
+
+#### Properties
+
+##### maxAttempts?
+
+```ts
+optional maxAttempts?: number;
+```
+
+What the body asked for, or `undefined` when it passed no options.
+
+##### name
+
+```ts
+name: string;
+```
 
 ***
 
@@ -1602,6 +4609,43 @@ status: RunStatus;
 ```ts
 workflow: string;
 ```
+
+***
+
+### RunSnapshotOverrides
+
+```ts
+type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & 
+  | {
+  status?: "pending" | "running";
+}
+  | {
+  output: R;
+  status: "completed";
+}
+  | {
+  error: string;
+  status: "failed";
+}
+  | {
+  status: "cancelled";
+};
+```
+
+What [createRunSnapshot](#createrunsnapshot) accepts: the shared fields, plus whatever the
+chosen status requires.
+
+The `status`-bearing half mirrors [WorkflowRunSnapshot](../aai/workflow-api.md#workflowrunsnapshot)'s own union, so
+asking for `status: "completed"` without an `output` is a compile error rather
+than a fixture that lies.
+
+#### Type Parameters
+
+##### R
+
+`R` = `unknown`
+
+The workflow's return type, when the caller names it.
 
 ***
 
@@ -1819,6 +4863,54 @@ readonly name: string;
 ```
 
 The tool's name, as the agent's `tools` record keys it.
+
+***
+
+### ~~ScriptedToolContextOptions~~
+
+```ts
+type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
+  delegate?: StubDelegateScript;
+  generate?: StubGenerateScript;
+};
+```
+
+What [scriptedToolContext](#scriptedtoolcontext-1) takes: `stubGenerate`'s script as
+`generate`, `stubDelegate`'s as `delegate`, and any other field of the
+context — `sessionId`, `env`, `workflows` — as `createToolContext` takes it.
+
+Either script may be omitted: the fake is still built, so `model.calls` and
+`desk.calls` are always there to assert on, and a call it was not scripted
+for rejects naming the route it lacked — which is a spec that drifted from
+its tool, not a case to paper over.
+
+An intersection ALIAS rather than an `interface extends`, because TypeDoc
+renders an interface's inherited members with their ORIGINAL doc comments —
+`ToolContext`'s, whose `{@link}`s resolve on the root entry and not on this
+one, which failed the docs build as three unresolved links.
+
+#### Type Declaration
+
+##### ~~delegate?~~
+
+```ts
+optional delegate?: StubDelegateScript;
+```
+
+The script `stubDelegate` takes — `{ reply }`, or `{ routes }` keyed by subagent name.
+
+##### ~~generate?~~
+
+```ts
+optional generate?: StubGenerateScript;
+```
+
+The script `stubGenerate` takes — `{ reply }`, or `{ routes }` keyed by system prompt.
+
+#### Deprecated
+
+Pass these to `createToolContext` — `ToolContextOverrides`
+takes both scripts. See [scriptedToolContext](#scriptedtoolcontext-1).
 
 ***
 
@@ -2040,6 +5132,1263 @@ status: "ok" | "failed";
 
 ***
 
+### StubClientInbox
+
+```ts
+type StubClientInbox = {
+  calls: StubClientInboxCall[];
+  restore: void;
+};
+```
+
+What [stubClientInbox](#stubclientinbox-1) returns: the call log, and how to put the slot back.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish the inbox. Call it in an `afterEach`, like `stubSpeech`'s.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubClientInboxCall[];
+```
+
+Every notice pushed, in order — including those the device did not take.
+
+***
+
+### StubClientInboxCall
+
+```ts
+type StubClientInboxCall = {
+  clientId: string;
+  notice: ClientNotice;
+};
+```
+
+One pushed notice, as [stubClientInbox](#stubclientinbox-1) records it.
+
+#### Properties
+
+##### clientId
+
+```ts
+clientId: string;
+```
+
+##### notice
+
+```ts
+notice: ClientNotice;
+```
+
+***
+
+### StubClientInboxOptions
+
+```ts
+type StubClientInboxOptions = {
+  answer?:   | "acked"
+     | ClientUnreachableReason
+     | ((call: StubClientInboxCall) => 
+     | "acked"
+     | ClientUnreachableReason);
+};
+```
+
+What [stubClientInbox](#stubclientinbox-1) may be told.
+
+#### Properties
+
+##### answer?
+
+```ts
+optional answer?: 
+  | "acked"
+  | ClientUnreachableReason
+  | ((call: StubClientInboxCall) => 
+  | "acked"
+  | ClientUnreachableReason);
+```
+
+How the device answers each notice: `"acked"` (the default), or a reason it
+did not take it — `"offline"`, `"busy"`, `"no-ack"`, `"disconnected"`. A
+function answers per call, e.g. busy once and then acked.
+
+***
+
+### StubClientTranscript
+
+```ts
+type StubClientTranscript = {
+  calls: StubClientTranscriptCall[];
+  restore: void;
+};
+```
+
+What [stubClientTranscript](#stubclienttranscript-1) returns: the call log, and how to put the slot back.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish the reader. Call it in an `afterEach`, like `stubClientInbox`'s.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubClientTranscriptCall[];
+```
+
+Every read, in order.
+
+***
+
+### StubClientTranscriptAnswer
+
+```ts
+type StubClientTranscriptAnswer = 
+  | ClientTranscript
+  | ((call: StubClientTranscriptCall) => ClientTranscript);
+```
+
+What [stubClientTranscript](#stubclienttranscript-1) answers each read with.
+
+***
+
+### StubClientTranscriptCall
+
+```ts
+type StubClientTranscriptCall = {
+  clientId: string;
+  options: StepClientTranscriptOptions;
+};
+```
+
+One read, as [stubClientTranscript](#stubclienttranscript-1) records it.
+
+#### Properties
+
+##### clientId
+
+```ts
+clientId: string;
+```
+
+##### options
+
+```ts
+options: StepClientTranscriptOptions;
+```
+
+***
+
+### StubDelegateReply
+
+```ts
+type StubDelegateReply = 
+  | string
+  | {
+  complaint?: string;
+  revisions?: number;
+  steps?: number;
+  text: string;
+  toolCalls?: readonly DelegateToolCall[];
+};
+```
+
+What one route answers with.
+
+A bare string is the subagent's final text with an empty cost report, which
+is what a tool that only reads `text` wants. The object form fills in
+`steps` and `toolCalls` for a tool that narrates the wait.
+
+#### Union Members
+
+`string`
+
+***
+
+##### Type Literal
+
+```ts
+{
+  complaint?: string;
+  revisions?: number;
+  steps?: number;
+  text: string;
+  toolCalls?: readonly DelegateToolCall[];
+}
+```
+
+###### complaint?
+
+```ts
+optional complaint?: string;
+```
+
+Stage a run the subagent's GUARDRAIL never accepted: the complaint the
+real runtime returns beside the last rejected attempt.
+
+Its presence is what makes the result's `accepted` false — the
+two cannot be staged apart, because in the runtime they cannot occur
+apart. A spec cannot describe an unaccepted answer with no reason, and
+a caller reading `complaint` on an accepted one would be reading a
+field that is never set.
+
+###### revisions?
+
+```ts
+optional revisions?: number;
+```
+
+How many times a guardrail sent an answer back. Defaults to `0`.
+
+###### steps?
+
+```ts
+optional steps?: number;
+```
+
+###### text
+
+```ts
+text: string;
+```
+
+###### toolCalls?
+
+```ts
+optional toolCalls?: readonly DelegateToolCall[];
+```
+
+***
+
+### StubDelegateRoute
+
+```ts
+type StubDelegateRoute = 
+  | StubDelegateReply
+  | ((call: StubDelegateCall) => StubDelegateReply);
+```
+
+How a route answers: a fixed reply, or a function of the call — the function
+form being what a route asked more than once (a subagent run per document)
+needs in order to shift its own script.
+
+***
+
+### StubDelegateScript
+
+```ts
+type StubDelegateScript = 
+  | {
+  reply: StubDelegateRoute;
+  routes?: never;
+}
+  | {
+  reply?: never;
+  routes: Readonly<Record<string, StubDelegateRoute>>;
+};
+```
+
+Everything [stubDelegate](#stubdelegate-1) and [stubStepDelegate](#stubstepdelegate) accept: ONE route
+answering every delegation, or a table of routes keyed by subagent name —
+each under a key that says which.
+
+The same two shapes [StubGenerateScript](#stubgeneratescript) takes, for the same reason: a
+bare "a table, or a reply" union is told apart at runtime by the reply's
+shape, so a subagent named `text` could never be routed and a reply object
+could be read as a table. Named, there is nothing to guess.
+
+#### Union Members
+
+##### Type Literal
+
+```ts
+{
+  reply: StubDelegateRoute;
+  routes?: never;
+}
+```
+
+###### reply
+
+```ts
+readonly reply: StubDelegateRoute;
+```
+
+Answers EVERY delegation, whichever subagent it names.
+
+###### routes?
+
+```ts
+readonly optional routes?: never;
+```
+
+***
+
+##### Type Literal
+
+```ts
+{
+  reply?: never;
+  routes: Readonly<Record<string, StubDelegateRoute>>;
+}
+```
+
+###### reply?
+
+```ts
+readonly optional reply?: never;
+```
+
+###### routes
+
+```ts
+readonly routes: Readonly<Record<string, StubDelegateRoute>>;
+```
+
+One route per subagent, keyed by its `name`. A delegation naming no
+route rejects, naming the subagent.
+
+***
+
+### StubEmitted
+
+```ts
+type StubEmitted = {
+  chunk: unknown;
+  namespace: string;
+};
+```
+
+One chunk `stepEmit()` wrote, and the stream it went to.
+
+#### Properties
+
+##### chunk
+
+```ts
+chunk: unknown;
+```
+
+The value, exactly as the step passed it.
+
+##### namespace
+
+```ts
+namespace: string;
+```
+
+The stream named at the call site.
+
+***
+
+### StubFetchRoutes
+
+```ts
+type StubFetchRoutes = {
+  fetch: typeof globalThis.fetch;
+  hits: FetchRouteHit[];
+  restore: void;
+  to: FetchRouteHit[];
+};
+```
+
+What [stubFetchRoutes](#stubfetchroutes-1) returns.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Put the global `fetch` back and unpublish the step fetch.
+
+###### Returns
+
+`void`
+
+##### to()
+
+```ts
+to(filter: string | RegExp): FetchRouteHit[];
+```
+
+The hits a filter selects: a string matched the way a route KEY is
+(`"POST supabase.test"`, `"*.example"`), a `RegExp` tested against the URL.
+
+###### Parameters
+
+###### filter
+
+`string` \| `RegExp`
+
+###### Returns
+
+[`FetchRouteHit`](#fetchroutehit)[]
+
+#### Properties
+
+##### fetch
+
+```ts
+readonly fetch: typeof globalThis.fetch;
+```
+
+The router as a `fetch`, for code handed one explicitly.
+
+##### hits
+
+```ts
+readonly hits: FetchRouteHit[];
+```
+
+Every request, in order, including passed-through and unmatched ones.
+
+***
+
+### StubGenerateReply
+
+```ts
+type StubGenerateReply = 
+  | string
+  | {
+  object: unknown;
+  text?: string;
+};
+```
+
+What one route answers with.
+
+A bare string is text (the schemaless shape); an object is structured output,
+and its `text` defaults to the JSON the real host would have returned — a
+schema call's `text` IS the stringified object, so a fake that left it empty
+would differ from production in the one place a caller might read it.
+
+***
+
+### StubGenerateRoute
+
+```ts
+type StubGenerateRoute = 
+  | StubGenerateReply
+  | ((call: StubGenerateCall) => StubGenerateReply);
+```
+
+How a route answers: a fixed reply, or a function of the call.
+
+The function form is what a route with a QUEUE needs — a grader asked once per
+document, an executor asked once per turn — since it can shift its own script.
+
+***
+
+### StubGenerateScript
+
+```ts
+type StubGenerateScript = 
+  | {
+  reply: StubGenerateRoute;
+  routes?: never;
+}
+  | {
+  reply?: never;
+  routes: Readonly<Record<string, StubGenerateRoute>>;
+};
+```
+
+Everything [stubGenerate](#stubgenerate-1) accepts: ONE route answering every call, or a
+table of routes keyed by system prompt — each under a key that says which.
+
+```ts
+import { stubGenerate } from "@alexkroman1/aai/testing";
+
+stubGenerate({ reply: "The documented answer." });
+stubGenerate({ routes: { "You grade documents.": { object: { score: 1 } } } });
+```
+
+**Why two keys rather than "a record, or a route".** The bare form was a union
+of a route table and a single reply, told apart at runtime by whether the
+object had an `object` key — so `stubGenerate({ text: "…" })` type-checked as
+a table with one route named `text` and rejected every call. A misuse arm in
+the type was meant to refuse it, and could not SPEAK: the reply arm's
+optional `text` out-scored it, so `tsc` printed "Property 'object' is
+missing" — the wrong remedy. With the shape named, there is nothing to
+disambiguate: `{ reply: { text } }` is a reply, and a function under `reply`
+is a computed route, never mistaken for the seam itself (see
+`ToolContextOverrides.generate`).
+
+Named because it is written down in three places — that function, the
+`generate` field of `createToolContext`'s overrides, and
+`ScriptedToolContextOptions` — and a union restated at each of them is a union
+that drifts.
+
+#### Union Members
+
+##### Type Literal
+
+```ts
+{
+  reply: StubGenerateRoute;
+  routes?: never;
+}
+```
+
+###### reply
+
+```ts
+readonly reply: StubGenerateRoute;
+```
+
+Answers EVERY call, whatever its system prompt.
+
+###### routes?
+
+```ts
+readonly optional routes?: never;
+```
+
+***
+
+##### Type Literal
+
+```ts
+{
+  reply?: never;
+  routes: Readonly<Record<string, StubGenerateRoute>>;
+}
+```
+
+###### reply?
+
+```ts
+readonly optional reply?: never;
+```
+
+###### routes
+
+```ts
+readonly routes: Readonly<Record<string, StubGenerateRoute>>;
+```
+
+One route per model ROLE, keyed by the call's system prompt. A call
+whose system prompt names no route rejects, naming it; `""` is the
+route for a call that carries none.
+
+***
+
+### StubPlaceCall
+
+```ts
+type StubPlaceCall = {
+  calls: StubPlacedCall[];
+  restore: void;
+};
+```
+
+What [stubPlaceCall](#stubplacecall-1) returns: the call log, and how to put the slot back.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish the `stepFetch`. Call it in an `afterEach`.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubPlacedCall[];
+```
+
+Every dial, in order — including refused ones.
+
+***
+
+### StubPlaceCallOptions
+
+```ts
+type StubPlaceCallOptions = {
+  dial?:   | "accept"
+     | StubPlaceCallRefusal
+     | ((call: StubPlacedCall) => "accept" | StubPlaceCallRefusal);
+  otherwise?: (request: StubStepRequest) => 
+     | StubStepAnswer
+    | Promise<StubStepAnswer>;
+  status?:   | PlacedCallStatus
+     | "initiated"
+     | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
+};
+```
+
+What [stubPlaceCall](#stubplacecall-1) may be told.
+
+#### Properties
+
+##### dial?
+
+```ts
+optional dial?: 
+  | "accept"
+  | StubPlaceCallRefusal
+  | ((call: StubPlacedCall) => "accept" | StubPlaceCallRefusal);
+```
+
+How Twilio answers each dial: `"accept"` (the default), or a refusal —
+`{ status: 400, code: 21219 }` is a trial account calling an unverified
+number. A function answers per call.
+
+##### otherwise?
+
+```ts
+optional otherwise?: (request: StubStepRequest) => 
+  | StubStepAnswer
+| Promise<StubStepAnswer>;
+```
+
+Every request that is not to Twilio's Calls API. Default: throw, naming it —
+a request nobody set up is a finding (see `routeStepFetch`).
+
+###### Parameters
+
+###### request
+
+[`StubStepRequest`](#stubsteprequest)
+
+###### Returns
+
+  \| [`StubStepAnswer`](#stubstepanswer)
+  \| `Promise`\<[`StubStepAnswer`](#stubstepanswer)\>
+
+##### status?
+
+```ts
+optional status?: 
+  | PlacedCallStatus
+  | "initiated"
+  | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
+```
+
+What each status read answers: a status, or a function of the call (its
+`polls` already counts this read). Default `"completed"`.
+
+***
+
+### StubPlaceCallRefusal
+
+```ts
+type StubPlaceCallRefusal = {
+  code?: number;
+  message?: string;
+  status: number;
+};
+```
+
+A Twilio refusal to stage: the HTTP status and, optionally, Twilio's error code and message.
+
+#### Properties
+
+##### code?
+
+```ts
+optional code?: number;
+```
+
+##### message?
+
+```ts
+optional message?: string;
+```
+
+##### status
+
+```ts
+status: number;
+```
+
+***
+
+### StubPlacedCall
+
+```ts
+type StubPlacedCall = {
+  callId: string | undefined;
+  from: string;
+  parameters: Record<string, string>;
+  polls: number;
+  ringTimeoutS: number;
+  streamUrl: string | undefined;
+  timeLimitS: number;
+  to: string;
+};
+```
+
+One call a step placed, as [stubPlaceCall](#stubplacecall-1) records it.
+
+#### Properties
+
+##### callId
+
+```ts
+callId: string | undefined;
+```
+
+The call id the stub answered with (`CA` + a counter), or `undefined` for a refused dial.
+
+##### from
+
+```ts
+from: string;
+```
+
+##### parameters
+
+```ts
+parameters: Record<string, string>;
+```
+
+The `<Parameter>`s, decoded — what the answering session reads as `call.parameters`.
+
+##### polls
+
+```ts
+polls: number;
+```
+
+How many times [StubPlaceCallOptions.status](#status-3) has been asked about this call.
+
+##### ringTimeoutS
+
+```ts
+ringTimeoutS: number;
+```
+
+##### streamUrl
+
+```ts
+streamUrl: string | undefined;
+```
+
+Where the answered call's audio would be streamed: `wss://…/phone?carrier=twilio`.
+
+##### timeLimitS
+
+```ts
+timeLimitS: number;
+```
+
+##### to
+
+```ts
+to: string;
+```
+
+***
+
+### StubReporter
+
+```ts
+type StubReporter = {
+  emitted: StubEmitted[];
+  lines: string[];
+  restore: () => void;
+};
+```
+
+What [stubReporter](#stubreporter-1) returns.
+
+#### Properties
+
+##### emitted
+
+```ts
+emitted: StubEmitted[];
+```
+
+Every chunk `stepEmit()` wrote, oldest first.
+
+##### lines
+
+```ts
+lines: string[];
+```
+
+Every line `stepReport()` wrote, oldest first.
+
+##### restore
+
+```ts
+restore: () => void;
+```
+
+Unpublish. Call it in an `afterEach` — see [stubReporter](#stubreporter-1).
+
+###### Returns
+
+`void`
+
+***
+
+### StubSpeechCall
+
+```ts
+type StubSpeechCall = {
+  apiKey: string;
+  language: string | undefined;
+  sampleRate: number;
+  text: string;
+  voice: string;
+};
+```
+
+One `stepSpeak` call, as [stubSpeech](#stubspeech) records it.
+
+#### Properties
+
+##### apiKey
+
+```ts
+apiKey: string;
+```
+
+The credential `stepSpeak` resolved out of the step env — `""` when the
+env holds none, which the stub accepts unless
+[StubSpeechOptions.requireApiKey](eval/vitest.md#requireapikey) is set.
+
+##### language
+
+```ts
+language: string | undefined;
+```
+
+The language code, or `undefined` when the caller named none.
+
+##### sampleRate
+
+```ts
+sampleRate: number;
+```
+
+The rate the audio was asked for at.
+
+##### text
+
+```ts
+text: string;
+```
+
+The text handed to the synthesizer, trimmed the way `stepSpeak` trims it.
+
+##### voice
+
+```ts
+voice: string;
+```
+
+The voice, with `stepSpeak`'s default already filled in.
+
+***
+
+### StubStepAnswer
+
+```ts
+type StubStepAnswer = 
+  | Response
+  | {
+  body?: unknown;
+  headers?: Record<string, string>;
+  status?: number;
+};
+```
+
+What a [stubStepFetch](#stubstepfetch) answer may be: a whole `Response`, or the
+`{ status, body, headers }` shorthand that JSON-encodes `body`.
+
+Named because the transcription fake (`stubTranscribe`) hands its
+`otherwise` handler the same vocabulary, and a spec routing by URL should not
+have to restate the union to write one.
+
+***
+
+### StubStepRequest
+
+```ts
+type StubStepRequest = {
+  body: Uint8Array | string | undefined;
+  headers: Record<string, string>;
+  method: string;
+  url: string;
+};
+```
+
+One request a [stubStepFetch](#stubstepfetch) recorder captured.
+
+#### Properties
+
+##### body
+
+```ts
+body: Uint8Array | string | undefined;
+```
+
+The body as sent.
+
+A STREAMING body (an async iterable — see `StepFetchInit.body`) is DRAINED into
+a `Uint8Array` before it reaches a spec, so an assertion reads the bytes that
+went out rather than an iterator it would have to consume itself — and
+consuming it in the spec would be consuming the one the request was going to
+send.
+
+##### headers
+
+```ts
+headers: Record<string, string>;
+```
+
+##### method
+
+```ts
+method: string;
+```
+
+##### url
+
+```ts
+url: string;
+```
+
+***
+
+### StubTranscribeCall
+
+```ts
+type StubTranscribeCall = StubStepRequest & {
+  leg: StubTranscribeLeg;
+};
+```
+
+One request [stubTranscribe](#stubtranscribe) answered, with the leg it belonged to.
+
+#### Type Declaration
+
+##### leg
+
+```ts
+leg: StubTranscribeLeg;
+```
+
+Which of the four calls this was, or `"other"`.
+
+***
+
+### StubTranscribeFailure
+
+```ts
+type StubTranscribeFailure = {
+  leg?:   | StubTranscribeLeg
+     | readonly StubTranscribeLeg[];
+  message?: string;
+  retryAfterSeconds?: number;
+  status?: number;
+};
+```
+
+A refusal to stage, as an HTTP answer the SDK then classifies.
+
+Deliberately not a `TranscribeError`: the verdict a spec cares about
+(`retryable`, `retryAfter`) is computed by `transcribeFailure` from the status
+and the headers, so staging the STATUS exercises that classification and
+staging the error would replace it. `429` and `5xx` are the transient pair,
+`408` counts, and everything else is terminal — see `isTransientStatus` on
+`@alexkroman1/aai/step`.
+
+#### Properties
+
+##### leg?
+
+```ts
+optional leg?: 
+  | StubTranscribeLeg
+  | readonly StubTranscribeLeg[];
+```
+
+Which leg refuses. Defaults to ALL FOUR, which is what a spec asserting
+"this flow reports a 429 as retryable" wants — it does not care which call
+met the limit.
+
+##### message?
+
+```ts
+optional message?: string;
+```
+
+What the body says went wrong.
+
+Sent as `{ error }`, which both endpoints' readers understand — the async
+API's own spelling, and one of the three `transcribeFailure` accepts.
+
+##### retryAfterSeconds?
+
+```ts
+optional retryAfterSeconds?: number;
+```
+
+Seconds to put in `Retry-After`.
+
+The field a fan-out's behaviour turns on: four segments that hit a
+per-minute limit together re-collect their 429s on a backoff nobody chose
+unless the header is honoured, so a spec about batching needs to be able to
+send one.
+
+##### status?
+
+```ts
+optional status?: number;
+```
+
+The status to answer. Defaults to `500`.
+
+***
+
+### StubTranscribeLeg
+
+```ts
+type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other";
+```
+
+Which transcription call a request was.
+
+`"other"` is anything that is not one of the four — a model call, a feed
+download — which reaches the `otherwise` handler rather than this fake.
+
+***
+
+### StubUpload
+
+```ts
+type StubUpload = 
+  | Uint8Array
+  | {
+  bytes: Uint8Array;
+  complete?: boolean;
+  name?: string;
+  type?: string;
+};
+```
+
+One file a [stubUploads](#stubuploads) store answers for.
+
+A bare `Uint8Array` is the common case and means "these bytes, no name".
+
+#### Union Members
+
+`Uint8Array`
+
+***
+
+##### Type Literal
+
+```ts
+{
+  bytes: Uint8Array;
+  complete?: boolean;
+  name?: string;
+  type?: string;
+}
+```
+
+###### bytes
+
+```ts
+bytes: Uint8Array;
+```
+
+###### complete?
+
+```ts
+optional complete?: boolean;
+```
+
+Whether every byte is in. Defaults to `true`.
+
+`false` stages a STREAMED upload that is still arriving, which is the state
+a step polling one has to handle and the only one where `stepReadUpload`
+legitimately comes back short. Being able to write that down is most of why
+this field exists: a body that treats a stalled size as the end returns a
+transcript of most of a recording and reports success, and a spec cannot
+catch that without an incomplete upload to hand it.
+
+###### name?
+
+```ts
+optional name?: string;
+```
+
+###### type?
+
+```ts
+optional type?: string;
+```
+
+***
+
+### StubUploadWrite
+
+```ts
+type StubUploadWrite = {
+  bytes: Uint8Array;
+  id: string;
+  name: string;
+  type: string;
+};
+```
+
+One file a step WROTE into a [stubUploads](#stubuploads) store.
+
+#### Properties
+
+##### bytes
+
+```ts
+bytes: Uint8Array;
+```
+
+Every byte written, drained from the step's stream.
+
+##### id
+
+```ts
+id: string;
+```
+
+The minted id the step was handed back — `upl_stub_1`, unless renamed.
+
+##### name
+
+```ts
+name: string;
+```
+
+The name the step declared, or `""` when it named none.
+
+##### type
+
+```ts
+type: string;
+```
+
+The content type the step declared, or `""`.
+
+***
+
+### TestToolContext
+
+```ts
+type TestToolContext = ToolContext & {
+  desk: StubDelegate;
+  interrupts: number;
+  model: StubGenerate;
+  said: SaidLine[];
+  sent: SentEvent[];
+};
+```
+
+**`Sealed`**
+
+A [ToolContext](../aai/index.md#toolcontext) that records what its tools sent and said.
+
+Assignable to `ToolContext` wherever one is required, so it passes straight
+to `execute`. Only [createToolContext](#createtoolcontext) makes one, so a recorder it
+gains is a revision rather than a break.
+
+#### Type Declaration
+
+##### desk
+
+```ts
+readonly desk: StubDelegate;
+```
+
+The `ctx.delegate` fake — `desk.calls` is every subagent run the tools asked
+for. Present and wired on the same terms as `TestToolContext.model`.
+
+##### interrupts
+
+```ts
+readonly interrupts: number;
+```
+
+How many times `ctx.speech.interrupt()` was called.
+
+##### model
+
+```ts
+readonly model: StubGenerate;
+```
+
+The `ctx.generate` fake — `model.calls` is every prompt the tools sent.
+
+Present on every context, so an assertion needs no null check, and WIRED
+whenever `generate` arrived as a script or as a fake. Given a bare function
+(or nothing at all) it is a fake nothing reaches: `model.calls` stays empty
+for the same reason `TestToolContext.sent` does when a test brings its
+own `send` spy — the seam belongs to the caller, and so does the log.
+
+##### said
+
+```ts
+readonly said: SaidLine[];
+```
+
+Every `ctx.speech.say`, in call order. Empty when a spec passes its own
+`speech`, on the rule `sent` follows for `send`.
+
+##### sent
+
+```ts
+readonly sent: SentEvent[];
+```
+
+Events `ctx.send` would put on the wire, in call order. An event the
+runtime would drop (over the payload cap, an over-long name, no JSON form)
+is not here, for the same reason it is not in the browser.
+
+***
+
 ### TextAgentTestRun
 
 ```ts
@@ -2113,7 +6462,7 @@ tool exchange, as the SDK reconstructs them.
 What a caller persists, and what a second turn of the same conversation is
 built on: `[...sent, ...run.messages]`. Taken from `responseMessages`
 (every step) rather than from `response` (the last step only), for the
-reason [TextAgentTestRun.text](#text-1) carries — a tool-calling turn's own
+reason [TextAgentTestRun.text](#text-3) carries — a tool-calling turn's own
 exchange lives in the steps before the last one, so the narrower field
 hands back an assistant message with no tool call to explain it.
 
@@ -2235,6 +6584,474 @@ tool result is a wire value. So a tool returning `5` reads back `"5"`.
 
 `undefined` for a call the turn never came back from: an aborted turn, or
 one the step budget ended on the call.
+
+***
+
+### ToolBearingAgent
+
+```ts
+type ToolBearingAgent = {
+  dialogs?: readonly AnyDialog[];
+  tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+  toolsets?: readonly Toolset[];
+};
+```
+
+The slice of an agent these helpers read: its tool table — the `tools/`
+files plus every toolset `agent()` attached (a roster's `handoff`, `delegate`
+and gated tools), gated by its dialogs.
+
+Structural rather than `AgentDef`, so a spec may pass the agent's default
+export, a bare `{ tools }` literal, or anything else carrying one.
+
+#### Properties
+
+##### dialogs?
+
+```ts
+readonly optional dialogs?: readonly AnyDialog[];
+```
+
+##### tools
+
+```ts
+readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+```
+
+##### toolsets?
+
+```ts
+readonly optional toolsets?: readonly Toolset[];
+```
+
+***
+
+### ToolContextOverrides
+
+```ts
+type ToolContextOverrides = {
+  call?: SessionCall;
+  clientId?: string;
+  clientLocation?: string;
+  clientPhone?: string;
+  deadlineAt?: ToolContext["deadlineAt"];
+  delegate?:   | ToolContext["delegate"]
+     | StubDelegateScript;
+  desk?: StubDelegate;
+  env?: ToolContext["env"];
+  generate?:   | ToolContext["generate"]
+     | StubGenerateScript;
+  messages?: ToolContext["messages"];
+  model?: StubGenerate;
+  random?: ToolContext["random"];
+  send?: ToolContext["send"];
+  sessionId?: ToolContext["sessionId"];
+  signal?: ToolContext["signal"];
+  slots?: ToolContext["slots"];
+  speech?: ToolContext["speech"];
+  workflows?: ToolContext["workflows"];
+};
+```
+
+What [createToolContext](#createtoolcontext) accepts: a field per [ToolContext](../aai/index.md#toolcontext) field,
+each also taking `undefined` for one the caller does not have.
+
+**Not `Partial<ToolContext>`, and the difference is the whole point.** Under
+`exactOptionalPropertyTypes` — which this repo and the scaffold both set —
+`Partial<T>` means `sessionId?: string`, a property that may be ABSENT but
+whose value may never be `undefined`. So a spec holding a `string |
+undefined` could not pass it, and the workaround it reached for instead was a
+conditional spread:
+
+```ts no-check
+createToolContext({ generate, ...(sessionId ? { sessionId } : {}) });
+```
+
+Two shipped templates had that line byte-identical, and it is the exact shape
+this repo's own `guard-invariants` rule 22 counts as debt — so the SDK's
+signature was teaching the pattern its gates refuse. Adding `| undefined` to
+every field costs nothing (an explicit `undefined` and an absent key
+both fall through to the default, because [createToolContext](#createtoolcontext) takes the
+overrides through `omitUndefined` before spreading them) and strictly widens what compiles.
+
+**Every field is NAMED rather than mapped over `keyof ToolContext`.** A mapped
+type is one a reader cannot see the members of without expanding it, and one
+that silently grows a field when `ToolContext` does — which is the moment a
+test double should have to decide what its default is. `testing.test-d.ts`
+pins that the two key sets agree, so a new `ToolContext` field fails there
+rather than being unoverridable.
+
+The two MODEL seams also accept the SCRIPT their fake is built from — see
+their own docs below.
+
+#### Properties
+
+##### call?
+
+```ts
+optional call?: SessionCall;
+```
+
+The phone call this session is, as `sessionCall(ctx)` will read it —
+recorded under the context's `sessionId` the way the runtime records a
+`WS /phone` stream's `start` frame. Omitted, `sessionCall` answers
+`undefined`, which is what a browser tab gets.
+
+##### clientId?
+
+```ts
+optional clientId?: string;
+```
+
+The device this session belongs to, as `sessionClientId(ctx)` will read it —
+recorded under the context's `sessionId` the way the runtime records a
+socket's `?client=`. Omitted, `sessionClientId` answers `undefined`, which is
+what a browser tab or a phone call gets.
+
+##### clientLocation?
+
+```ts
+optional clientLocation?: string;
+```
+
+Where this session's client is, as `sessionClientLocation(ctx)` — and the
+`google_places` / `open_meteo` builtins — will read it, cleaned by the
+`?location=` rule. Omitted, or refused by it, it answers `undefined`.
+
+##### clientPhone?
+
+```ts
+optional clientPhone?: string;
+```
+
+The phone number this session's client reported, as `sessionClientPhone(ctx)`
+will read it — recorded the way the runtime records `?phone=`, in E.164
+(`"+1 (503) 555-0123"` reads back `"+15035550123"`). Omitted, or not an
+E.164 number at all, `sessionClientPhone` answers `undefined`.
+
+##### deadlineAt?
+
+```ts
+optional deadlineAt?: ToolContext["deadlineAt"];
+```
+
+See [ToolContext.deadlineAt](../aai/index.md#deadlineat). Defaults to the runtime's tool deadline, from now.
+
+##### delegate?
+
+```ts
+optional delegate?: 
+  | ToolContext["delegate"]
+  | StubDelegateScript;
+```
+
+A real `ctx.delegate`, or `stubDelegate`'s own SCRIPT — `{ reply }` or
+`{ routes }` keyed by subagent name. A function is the seam, on the same
+rule as `generate` above; the fake comes back on `TestToolContext.desk`.
+
+##### desk?
+
+```ts
+optional desk?: StubDelegate;
+```
+
+The `stubDelegate` twin of `ToolContextOverrides.model`.
+
+##### env?
+
+```ts
+optional env?: ToolContext["env"];
+```
+
+See [ToolContext.env](../aai/index.md#env-6). Defaults to `{}`.
+
+##### generate?
+
+```ts
+optional generate?: 
+  | ToolContext["generate"]
+  | StubGenerateScript;
+```
+
+A real `ctx.generate`, or `stubGenerate`'s own SCRIPT — `{ reply }` or
+`{ routes }`.
+
+A script is built into the fake here, so the two-step every spec wrote —
+`stubGenerate(script)`, destructure, `createToolContext({ generate })` — is
+one call, and the fake comes back on `TestToolContext.model`.
+
+**A FUNCTION in this position is always the seam itself**, and nothing else
+can be one: a computed route is written `{ reply: (call) => … }`, so it
+cannot be mistaken for a `GenerateFn` the way a bare function route used to
+be.
+
+##### messages?
+
+```ts
+optional messages?: ToolContext["messages"];
+```
+
+See [ToolContext.messages](../aai/index.md#messages-2). Defaults to `[]`.
+
+##### model?
+
+```ts
+optional model?: StubGenerate;
+```
+
+A fake this spec built itself, to be exposed as `TestToolContext.model`
+— and, unless `generate` also names a function, INSTALLED as the seam.
+
+The escape hatch under the script sugar: a caller holding a `stubGenerate`
+it wants to share across two contexts names it here rather than leaving
+`ctx.model` pointing at a fake nothing reaches.
+
+##### random?
+
+```ts
+optional random?: ToolContext["random"];
+```
+
+See [ToolContext.random](../aai/index.md#random-1). Defaults to a SEEDED source.
+
+##### send?
+
+```ts
+optional send?: ToolContext["send"];
+```
+
+See [ToolContext.send](../aai/index.md#send-4). Defaults to the recorder behind `TestToolContext.sent`.
+
+##### sessionId?
+
+```ts
+optional sessionId?: ToolContext["sessionId"];
+```
+
+See [ToolContext.sessionId](../aai/index.md#sessionid-5). Defaults to a fresh id per call.
+
+##### signal?
+
+```ts
+optional signal?: ToolContext["signal"];
+```
+
+See [ToolContext.signal](../aai/index.md#signal-5). Defaults to a signal that never aborts.
+
+##### slots?
+
+```ts
+optional slots?: ToolContext["slots"];
+```
+
+See [ToolContext.slots](../aai/index.md#slots-3). Defaults to a fresh, empty, REAL slot store.
+
+##### speech?
+
+```ts
+optional speech?: ToolContext["speech"];
+```
+
+See [ToolContext.speech](../aai/index.md#speech-2). Defaults to the recorder behind `TestToolContext.said`.
+
+##### workflows?
+
+```ts
+optional workflows?: ToolContext["workflows"];
+```
+
+See [ToolContext.workflows](../aai/index.md#workflows-4). Defaults to a client whose every method rejects.
+
+***
+
+### ToolRunner
+
+```ts
+type ToolRunner = (name: string, argsOrCtx?: 
+  | InferSchemaOutput<ToolInputSchema>
+| ToolContext, ctx?: ToolContext) => Promise<unknown>;
+```
+
+What [toolRunner](#toolrunner-1) hands back: [runTool](#runtool) with the agent already
+supplied.
+
+Named so a caller can annotate a helper that takes one, and so the union in
+the second position is written down once here rather than at every call site
+that binds it.
+
+#### Parameters
+
+##### name
+
+`string`
+
+##### argsOrCtx?
+
+  \| [`InferSchemaOutput`](../aai/index.md#inferschemaoutput)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
+  \| [`ToolContext`](../aai/index.md#toolcontext)
+
+##### ctx?
+
+[`ToolContext`](../aai/index.md#toolcontext)
+
+#### Returns
+
+`Promise`\<`unknown`\>
+
+***
+
+### WorkflowContextOptions
+
+```ts
+type WorkflowContextOptions = {
+  hooks?: Record<string, unknown>;
+  now?: number | (() => number);
+  random?: number | (() => number);
+  results?: Record<string, unknown>;
+  runId?: string;
+  runSteps?: boolean;
+  uuid?: string | (() => string);
+  workflow?: string;
+};
+```
+
+What [createWorkflowContext](#createworkflowcontext) takes.
+
+#### Properties
+
+##### hooks?
+
+```ts
+optional hooks?: Record<string, unknown>;
+```
+
+Payloads for `ctx.waitFor`, by token.
+
+A token that is absent THROWS rather than hanging, because a spec that hangs
+reports a timeout naming the runner instead of the missing payload.
+
+##### now?
+
+```ts
+optional now?: number | (() => number);
+```
+
+What `ctx.now()` answers — a fixed number, or a function called per reach.
+
+Defaults to [WORKFLOW\_CONTEXT\_NOW](#workflow_context_now), a FIXED instant, so a body's derived
+durations are constants a spec can write down. There is no journal here, so
+nothing is memoized: a function is called once per reach, which is what a
+spec asserting on two reads (a start and an end) wants.
+
+##### random?
+
+```ts
+optional random?: number | (() => number);
+```
+
+What `ctx.random()` answers. Defaults to a fixed `0.5`.
+
+##### results?
+
+```ts
+optional results?: Record<string, unknown>;
+```
+
+Results to answer particular steps with, by step NAME.
+
+Takes precedence over running the step, so it works in both modes: with
+`runSteps: true` it stubs one expensive step and leaves the rest real, and
+with `runSteps: false` it is what makes a body whose control flow READS its
+steps drivable at all — `planAngles` returning `undefined` otherwise reaches
+the fan-out below it as a missing list.
+
+Keyed by name rather than by occurrence: a step in a loop is one name, and a
+spec that needs the iterations to differ wants `runSteps: true` with the
+collaborator stubbed instead.
+
+##### runId?
+
+```ts
+optional runId?: string;
+```
+
+Defaults to `"wrun_test"`.
+
+##### runSteps?
+
+```ts
+optional runSteps?: boolean;
+```
+
+Run each step's `fn`, or only record that it was reached.
+
+Defaults to `true`, which is what makes this drive a REAL body. Pass `false`
+when the subject is the policy or the order — a step that is not run needs
+no collaborator stubbed, so such a spec stays short.
+
+Note a recorded-only step resolves `undefined`, so a body that reads its
+result will see one. That is the honest cost of not running it.
+
+##### uuid?
+
+```ts
+optional uuid?: string | (() => string);
+```
+
+What `ctx.uuid()` answers.
+
+Defaults to a DISTINCT value per reach — `"uuid-0"`, `"uuid-1"`, … — because
+a body that mints two ids and gets one is a body whose bug the spec would
+hide. Not a real UUID, deliberately: a spec asserting on a shape rather than
+on a value is asserting on the fake.
+
+##### workflow?
+
+```ts
+optional workflow?: string;
+```
+
+The declared key. Defaults to `"test"`.
+
+***
+
+### WorkflowContextRecorder
+
+```ts
+type WorkflowContextRecorder = WorkflowContext & {
+  slept: RecordedSleep[];
+  steps: RecordedStep[];
+  waited: string[];
+};
+```
+
+What [createWorkflowContext](#createworkflowcontext) answers: a real `WorkflowContext` plus its log.
+
+#### Type Declaration
+
+##### slept
+
+```ts
+readonly slept: RecordedSleep[];
+```
+
+Every `ctx.sleep`, in order.
+
+##### steps
+
+```ts
+readonly steps: RecordedStep[];
+```
+
+Every step reached, in the order the body reached them.
+
+##### waited
+
+```ts
+readonly waited: string[];
+```
+
+Every token `ctx.waitFor` was called with, in order.
 
 ***
 
@@ -2699,8 +7516,151 @@ Generous — a template's longest body suspends twice — and low enough that a
 body woken in a loop fails in milliseconds with a message naming the bound
 rather than hanging until the runner's own timeout, which reports the runner.
 
+***
+
+### STUB\_SPEECH\_PCM\_BYTES
+
+```ts
+const STUB_SPEECH_PCM_BYTES: 12000 = 12000;
+```
+
+PCM bytes [stubSpeech](#stubspeech) answers with when no size is named — ~0.25s at 24 kHz.
+
+***
+
+### WORKFLOW\_CONTEXT\_NOW
+
+```ts
+const WORKFLOW_CONTEXT_NOW: 1767225600000 = 1767225600000;
+```
+
+The instant [createWorkflowContext](#createworkflowcontext) freezes `ctx.now()` at.
+
+`2026-01-01T00:00:00.000Z`. Exported so a spec computes an expected duration
+from it rather than copying the number.
+
 ## References
+
+### createRecordingWorkflows
+
+Re-exports [createRecordingWorkflows](eval/vitest.md#createrecordingworkflows)
+
+***
+
+### dialogRefusalPattern
+
+Re-exports [dialogRefusalPattern](eval/vitest.md#dialogrefusalpattern)
+
+***
+
+### dialogResultSchema
+
+Re-exports [dialogResultSchema](eval/vitest.md#dialogresultschema)
+
+***
+
+### eventsOf
+
+Re-exports [eventsOf](eval/vitest.md#eventsof)
+
+***
 
 ### HostAgentOptions
 
 Re-exports [HostAgentOptions](eval.md#hostagentoptions)
+
+***
+
+### isEvent
+
+Re-exports [isEvent](eval/vitest.md#isevent)
+
+***
+
+### RecordingWorkflows
+
+Re-exports [RecordingWorkflows](eval/vitest.md#recordingworkflows)
+
+***
+
+### RecordingWorkflowsOptions
+
+Re-exports [RecordingWorkflowsOptions](eval/vitest.md#recordingworkflowsoptions)
+
+***
+
+### routeStepFetch
+
+Re-exports [routeStepFetch](eval/vitest.md#routestepfetch)
+
+***
+
+### StepRoute
+
+Re-exports [StepRoute](eval/vitest.md#steproute)
+
+***
+
+### StepUnmatched
+
+Re-exports [StepUnmatched](eval/vitest.md#stepunmatched)
+
+***
+
+### stubGatewayRoute
+
+Re-exports [stubGatewayRoute](eval/vitest.md#stubgatewayroute-1)
+
+***
+
+### StubGatewayRoute
+
+Re-exports [StubGatewayRoute](eval/vitest.md#stubgatewayroute)
+
+***
+
+### StubSpeech
+
+Re-exports [StubSpeech](eval/vitest.md#stubspeech)
+
+***
+
+### StubSpeechOptions
+
+Re-exports [StubSpeechOptions](eval/vitest.md#stubspeechoptions)
+
+***
+
+### StubStepDelegate
+
+Re-exports [StubStepDelegate](eval/vitest.md#stubstepdelegate)
+
+***
+
+### StubStepFetch
+
+Re-exports [StubStepFetch](eval/vitest.md#stubstepfetch)
+
+***
+
+### StubTranscribe
+
+Re-exports [StubTranscribe](eval/vitest.md#stubtranscribe)
+
+***
+
+### StubTranscribeOptions
+
+Re-exports [StubTranscribeOptions](eval/vitest.md#stubtranscribeoptions)
+
+***
+
+### StubUploads
+
+Re-exports [StubUploads](eval/vitest.md#stubuploads)
+
+***
+
+### StubUploadsOptions
+
+Re-exports [StubUploadsOptions](eval/vitest.md#stubuploadsoptions)

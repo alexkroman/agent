@@ -2,7 +2,7 @@
 /** Unit test for the Soniox real-time STT adapter (mocked WebSocket). */
 
 import { describe, expect, test, vi } from "vitest";
-import { flush } from "../../_test-utils.ts";
+import { flush } from "../../_timing-test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
 import { openSoniox } from "./soniox.ts";
 

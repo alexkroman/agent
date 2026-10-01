@@ -12,7 +12,9 @@
 import type { SessionEvent } from "@alexkroman1/aai";
 import { dialog, type SessionEventHandlers } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import { makeAgent, makeClientSink, silentLogger } from "../_test-utils.ts";
+import { makeAgent } from "../_agent-test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
+import { makeClientSink } from "../_session-test-utils.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
 
 const SID = "s-1";

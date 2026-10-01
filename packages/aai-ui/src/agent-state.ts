@@ -73,7 +73,7 @@ export function useAgentState(): AgentStateFrame | null;
  * import { useAgentState } from "@alexkroman1/aai-ui";
  *
  * // In a real project the slot is declared beside the agent and imported here;
- * // the agent declares `syncState: { cart: cartSlot.projected }`.
+ * // the agent declares `syncState: cartSlot.projected`.
  * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
  *   view: (cart) => ({ count: cart.items.length }),
  * });
@@ -85,7 +85,7 @@ export function useAgentState(): AgentStateFrame | null;
  * ```
  *
  * The projection carries its slot key, so this selects `state[projection.key]`
- * — the key `agent()` requires the agent's `syncState` to use. Before the first
+ * — the key the agent's `syncState` frame is keyed by. Before the first
  * push it answers `projection()`, the slot's DEFAULT through the same view,
  * memoized on the projection's identity; `slot.projected` is built once with
  * the slot, so that identity is stable for the life of the component.

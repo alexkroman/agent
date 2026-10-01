@@ -17,7 +17,7 @@
 import { expectTypeOf, test } from "vitest";
 import type { AgentAccepts } from "./_test-utils.ts";
 import type { AgentGuardrail, GuardrailVerdict } from "./agent-guardrails.ts";
-import type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.ts";
+import type { AgentSystemPrompt } from "./agent-instructions.ts";
 import type { AgentSessionContext } from "./agent-session-context.ts";
 import { agent } from "./define.ts";
 import type { S2sProvider } from "./providers.ts";
@@ -27,6 +27,9 @@ import type { SessionSpeech } from "./session-speech.ts";
 import { type SpeakerDef, speaker } from "./speaker.ts";
 import type { ToolMap } from "./tool-def.ts";
 import type { AgentDef, ToolContext } from "./types.ts";
+
+/** The function half of `AgentSystemPrompt` (the deprecated `AgentInstructions`). */
+type Resolver = Exclude<AgentSystemPrompt, string>;
 
 /**
  * The five model-tuning knobs, both guardrails and the `description` are on
@@ -114,9 +117,9 @@ test("systemPrompt accepts a per-request resolver", () => {
   expectTypeOf(
     agent({ name: "T", systemPrompt: (ctx: AgentSessionContext) => ctx.sessionId }).systemPrompt,
   ).toEqualTypeOf<AgentSystemPrompt>();
-  expectTypeOf<() => string>().toExtend<AgentInstructions>();
-  expectTypeOf<AgentInstructions>().parameter(0).toEqualTypeOf<AgentSessionContext>();
-  expectTypeOf<AgentInstructions>().returns.toBeString();
+  expectTypeOf<() => string>().toExtend<Resolver>();
+  expectTypeOf<Resolver>().parameter(0).toEqualTypeOf<AgentSessionContext>();
+  expectTypeOf<Resolver>().returns.toBeString();
   expectTypeOf<AgentAccepts<{ name: string; systemPrompt: string }>>().toEqualTypeOf<true>();
   expectTypeOf<AgentAccepts<{ name: string; systemPrompt: Resolve }>>().toEqualTypeOf<true>();
   expectTypeOf<

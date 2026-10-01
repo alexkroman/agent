@@ -21,11 +21,10 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import { getServerInfo } from "./_agent.ts";
 import { checkedResponse } from "./_api-client.ts";
 import { type CommandResult, ok } from "./_output.ts";
-import { type SlugTarget, slugRequestOn } from "./_slug-api.ts";
-import { log } from "./_ui.ts";
+import { type PlatformDeps, REAL_PLATFORM, type SlugTarget, slugRequestOn } from "./_slug-api.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 
 /** One captured line, as the platform reports it. */
 export type LogLine = {
@@ -85,8 +84,12 @@ export function formatLine(line: LogLine): string {
  * second for the life of the command, and the target is immutable — see that
  * function's doc for what re-resolving it cost.
  */
-async function readPage(target: SlugTarget, after: number): Promise<LogsPage> {
-  const data = await slugRequestOn(target, `/logs?after=${after}`, { action: "logs" });
+async function readPage(
+  target: SlugTarget,
+  after: number,
+  platform: PlatformDeps,
+): Promise<LogsPage> {
+  const data = await slugRequestOn(target, `/logs?after=${after}`, { action: "logs" }, platform);
   return checkedResponse(data, isLogsPage, `the logs route for ${target.slug}`);
 }
 
@@ -102,26 +105,28 @@ type LogsData = { slug: string; lines: number; running: boolean };
 export async function executeLogs(
   cwd: string,
   opts: LogsOpts = {},
+  ui: Ui = defaultUi,
+  platform: PlatformDeps = REAL_PLATFORM,
 ): Promise<CommandResult<LogsData>> {
-  const target = await getServerInfo(cwd, opts.server);
+  const target = await platform.getServerInfo(cwd, opts.server);
   const { slug } = target;
-  const page = await readPage(target, -1);
+  const page = await readPage(target, -1, platform);
   let cursor = page.cursor;
-  let printed = printPage(page);
+  let printed = printPage(page, ui);
 
   if (!opts.follow) {
     if (printed === 0) {
-      log.info(
+      ui.log.info(
         page.running
           ? `${slug} is running and has printed nothing yet.`
           : `${slug} isn't running. Start a session, or send it a request, and its output shows up here.`,
       );
     }
-    log.info("Recent output only — an agent's log lives in its sandbox and goes when it does.");
+    ui.log.info("Recent output only — an agent's log lives in its sandbox and goes when it does.");
     return ok({ slug, lines: printed, running: page.running });
   }
 
-  log.info(`Following ${slug}. Ctrl-C to stop.`);
+  ui.log.info(`Following ${slug}. Ctrl-C to stop.`);
   const pollMs = opts.pollMs ?? FOLLOW_POLL_MS;
   let running = page.running;
   while (!opts.signal?.aborted) {
@@ -135,22 +140,24 @@ export async function executeLogs(
     // A failed poll is not a failed command: an agent between sandboxes answers
     // exactly like a network blip, and the next tick is a second away. Only a
     // signalled stop ends the loop.
-    const next = await readPage(target, cursor).catch(() => undefined);
+    const next = await readPage(target, cursor, platform).catch(() => undefined);
     if (!next) continue;
     cursor = next.cursor;
     running = next.running;
-    printed += printPage(next);
+    printed += printPage(next, ui);
   }
   return ok({ slug, lines: printed, running });
 }
 
 /** Write a page's lines (and any gap) to the log. Returns how many lines. */
-function printPage(page: LogsPage): number {
+function printPage(page: LogsPage, ui: Ui): number {
   if (page.dropped > 0) {
     // Reported rather than swallowed: a tail that silently skips is
     // indistinguishable from an agent that went quiet.
-    log.warn(`… ${page.dropped} earlier line(s) dropped — the agent printed faster than this read`);
+    ui.log.warn(
+      `… ${page.dropped} earlier line(s) dropped — the agent printed faster than this read`,
+    );
   }
-  for (const line of page.lines) log.message(formatLine(line));
+  for (const line of page.lines) ui.log.message(formatLine(line));
   return page.lines.length;
 }

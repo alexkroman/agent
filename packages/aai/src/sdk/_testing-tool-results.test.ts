@@ -31,16 +31,27 @@ describe("expectToolOk", () => {
     );
   });
 
-  test("says so when handed something that is not an envelope at all", () => {
-    // A plain `tool()` answers with its own value; there is nothing to unwrap,
-    // and `undefined` would be the silent alternative.
-    expect(() => expectToolOk({ quoted: 42 })).toThrow(/Expected a dialog tool result/);
+  test("passes a plain tool's own value through, since there is nothing to unwrap", () => {
+    expect(expectToolOk({ quoted: 42 })).toEqual({ quoted: 42 });
+    expect(expectToolOk(null)).toBeNull();
+    expect(expectToolOk("done")).toBe("done");
+    expect(expectToolOk([1, 2])).toEqual([1, 2]);
   });
 
-  test("a null or a primitive is reported by what it IS", () => {
-    expect(() => expectToolOk(null)).toThrow(/and got null/);
-    expect(() => expectToolOk("done")).toThrow(/and got string/);
-    expect(() => expectToolOk([1, 2])).toThrow(/and got an array/);
+  test("a record that only LOOKS like an envelope is a plain value", () => {
+    // `state` and `done` must both be there, typed, before `.result` is read.
+    expect(expectToolOk({ result: 1, state: "x" })).toEqual({ result: 1, state: "x" });
+    expect(expectToolOk({ result: 1, state: 2, done: true })).toEqual({
+      result: 1,
+      state: 2,
+      done: true,
+    });
+  });
+
+  test("throws on a plain tool's refusal too", () => {
+    expect(() => expectToolOk<{ quoted: number }>(toolFailure("No stock."))).toThrow(
+      "tool refused: No stock.",
+    );
   });
 
   test("a `result` of undefined is still a result", () => {

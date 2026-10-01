@@ -79,6 +79,12 @@ export const DOC_EXAMPLE_MARKDOWN: Record<string, string> = Object.fromEntries(
       import: "default",
       eager: true,
     }),
+    // The authoring guide's topic files, beside the core above.
+    ...import.meta.glob<string>("../../aai-templates/scaffold/agent-guide/*.md", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
     // The narrative docs site. A directory rather than named files, because
     // the gate's own list has to be literal (this module's regex reads it) and
     // a hand-kept copy of a growing directory HERE would then have to be kept

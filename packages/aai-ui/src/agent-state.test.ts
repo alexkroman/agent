@@ -77,7 +77,7 @@ describe("useAgentState", () => {
 
   it("takes the slot's DECLARED view, and the two ends are one object", () => {
     // The browser half of the round trip: the agent declares
-    // `syncState: { cart: cartSlot.projected }` and this passes the same field,
+    // `syncState: cartSlot.projected` and this passes the same field,
     // so the frame rendered before the first push and the frames pushed after
     // it are the same view by construction.
     const core = createMockCore();

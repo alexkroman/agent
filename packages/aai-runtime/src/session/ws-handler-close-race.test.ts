@@ -3,7 +3,9 @@
 // (Lives outside ws-handler.test.ts, which is at its file-length ceiling.)
 
 import { describe, expect, test, vi } from "vitest";
-import { makeMockCore, silentLogger, tick } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
+import { makeMockCore } from "../_session-test-utils.ts";
+import { tick } from "../_timing-test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
 import { createSessionDirectory } from "./directory.ts";
 import { wireSessionSocket } from "./ws-handler.ts";

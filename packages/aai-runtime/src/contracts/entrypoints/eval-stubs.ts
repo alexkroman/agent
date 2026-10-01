@@ -19,8 +19,10 @@
  * with the SDK, and an SDK stub growing an option is not a change to the
  * harness that runs the case.
  *
- * Re-exported from `@alexkroman1/aai-runtime/eval/vitest`. This file is not
- * shipped and nothing imports it — it exists so `pnpm check:api-contracts` can
+ * Re-exported from `@alexkroman1/aai-runtime/eval/vitest`, and from the two
+ * testing doors (`/testing` the pure stubs, `/testing/vitest` the installers);
+ * the rest of the SDK's helpers on those doors are `testing-stubs`'. This file
+ * is not shipped and nothing imports it — it exists so `pnpm check:api-contracts` can
  * extract a report for this capability alone, hash it, and hold it to a
  * committed epoch. See `scripts/api-contracts.mjs`.
  */

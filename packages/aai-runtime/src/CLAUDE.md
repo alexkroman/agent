@@ -27,7 +27,7 @@ re-exports.
 | Directory              | Holds                                                                    | Guide                                                   |
 | ---------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------- |
 | `runtime/`             | `createRuntime`, its types, and its per-session wiring                   | [`runtime/CLAUDE.md`](runtime/CLAUDE.md)                |
-| `server/`              | `createRuntimeServer`, `createAgentServer`, host mode, session auth      | [`server/CLAUDE.md`](server/CLAUDE.md)                  |
+| `server/`              | `createServerForRuntime`, `createAgentServer`, host mode, session auth   | [`server/CLAUDE.md`](server/CLAUDE.md)                  |
 | `session/`             | one session: attach lifecycle, socket adapter, core, emitter, event log  | [`session/CLAUDE.md`](session/CLAUDE.md)                |
 | `tools/`               | tool execution, tool speech, the builtin surface, the client-tool broker | [`tools/CLAUDE.md`](tools/CLAUDE.md)                    |
 | `transports/pipeline/` | the pipeline transport, one subdirectory per stage                       | [`transports/pipeline/`](transports/pipeline/CLAUDE.md) |
@@ -42,7 +42,7 @@ re-exports.
 `session-state/`, `eval/` and `testing/` predate the rule and hold no index.
 
 **What stays flat, and why**: the six barrels, `internal.ts` and `tracing.ts`
-(a published subpath names each file); `runtime-config.ts` and the small
+(a published subpath names each file); `logger.ts`, `s2s-config.ts` and the small
 leaves every directory imports (`_timer`, `_pcm`, `_base64`, `_ws`,
 `_audio-gate`, `_get-or-create`, `_ensure-once`, `_path-decode`,
 `_compact-records`, `usage-meter`); `guest-host.ts` (the surface `/internal`
@@ -51,7 +51,7 @@ hands the guest); `_egress-*`, `app-db.ts` and
 or `runtime/` without a cycle; `subagent.ts`, whose model resolution would
 pull the provider registry into the `tools/` index (and back into the
 pipeline); the `step-*` primitives; `generate.ts`; the tracing and metrics
-internals; and the test helpers several directories share (`_test-utils.ts`,
+internals; and the test helpers several directories share (`_*-test-utils.ts`,
 `_fake-llm.ts`, `_pipeline-test-fakes.ts`, …). **Before adding a directory,
 find what discovers files by NAME** (scans, `guard-invariants-scopes.mjs`,
 baseline JSONs) — see "Layout" in [`../CLAUDE.md`](../CLAUDE.md).

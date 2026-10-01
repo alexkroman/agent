@@ -1,88 +1,21 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Serving-path tests for the dev server, deliberately mock-free: the
- * existing _dev-server tests mock createRuntimeServer/createRuntime/vite wholesale,
- * so nothing there would catch the real server failing to boot or serve.
+ * Serving-path tests for the dev server, deliberately fake-free: the sibling
+ * `_dev-server` specs hand `startDevServer` a fake backend and Vite through its
+ * seams, so nothing there would catch the real server failing to boot or serve.
  * (The heavier Vite/client path is exercised by e2e; the proxy wiring it
  * depends on is asserted below via `viteDevConfig`.)
  */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
-import { SERVER_ROUTES, WORKFLOW_DATA_DIR_ENV } from "@alexkroman1/aai-runtime/internal";
+import { SERVER_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import getPort from "get-port";
 import { describe, expect, test, vi } from "vitest";
-import { agentEnvWarnings, startDevServer } from "./_dev-server.ts";
-import {
-  aaiRuntimeModule,
-  SERVER_ROUTES_LITERAL,
-  WORKFLOW_DATA_DIR_ENV_LITERAL,
-} from "./_dev-server-test-utils.ts";
+import { startDevServer } from "./_dev-server.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
-
-describe("agentEnvWarnings", () => {
-  const DEFAULT_AGENT = {}; // no descriptors → default AssemblyAI pipeline → needs ASSEMBLYAI_API_KEY
-
-  test("warns when a provider key is missing everywhere", () => {
-    const warnings = agentEnvWarnings(DEFAULT_AGENT, {}, {});
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("Missing provider credential");
-    expect(warnings[0]).toContain("ASSEMBLYAI_API_KEY");
-  });
-
-  test("warns about the deploy cliff when a key resolves from the shell only", () => {
-    const warnings = agentEnvWarnings(DEFAULT_AGENT, {}, { ASSEMBLYAI_API_KEY: "sk-shell" });
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("resolved from your shell, not .env");
-    expect(warnings[0]).toContain("ASSEMBLYAI_API_KEY");
-    expect(warnings[0]).toContain("aai publish");
-  });
-
-  test("silent when the key is declared in .env", () => {
-    expect(agentEnvWarnings(DEFAULT_AGENT, { ASSEMBLYAI_API_KEY: "sk-env" }, {})).toEqual([]);
-  });
-
-  test("a requiredEnv key is flagged even when the shell exports it", () => {
-    const agent = { requiredEnv: ["STRIPE_KEY"] };
-    const warnings = agentEnvWarnings(
-      agent,
-      { ASSEMBLYAI_API_KEY: "sk-env" },
-      { STRIPE_KEY: "sk-shell" }, // custom keys never fall back to the shell
-    );
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("requiredEnv");
-    expect(warnings[0]).toContain("STRIPE_KEY");
-  });
-
-  test("a requiredEnv key present in .env is silent", () => {
-    const agent = { requiredEnv: ["STRIPE_KEY"] };
-    const env = { ASSEMBLYAI_API_KEY: "sk-env", STRIPE_KEY: "sk-env" };
-    expect(agentEnvWarnings(agent, env, {})).toEqual([]);
-  });
-
-  test("a workflow app with no credential anywhere warns about nothing", () => {
-    // The `page` field has to be in the Pick, or a static agent is warned about
-    // a key it never dials — and `resolveAgentEnv` reads the same list to decide
-    // whether to reach for the logged-in key, so on that path the same omission
-    // is a `missing_assemblyai_key` that stops `aai dev` from starting at all —
-    // demanding a credential of an app that dials no provider.
-    expect(agentEnvWarnings({ mode: "workflow-app" }, {}, {})).toEqual([]);
-  });
-
-  test("a workflow app is still told about its own requiredEnv keys", () => {
-    // Suppressing the PROVIDER credential must not suppress the agent's own —
-    // a workflow app reads `ctx.env` like any other.
-    const warnings = agentEnvWarnings(
-      { mode: "workflow-app", requiredEnv: ["STRIPE_KEY"] },
-      {},
-      {},
-    );
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("STRIPE_KEY");
-  });
-});
 
 describe("viteDevConfig", () => {
   test("proxies /websocket with ws:true and /health to the backend", () => {
@@ -122,19 +55,6 @@ describe("viteDevConfig", () => {
     expect(Object.keys(proxy)).toHaveLength(rows.length);
   });
 
-  test("the dev-server mocks spell SERVER_ROUTES the way aai-runtime does", () => {
-    // The sibling suites mock `@alexkroman1/aai-runtime/internal` wholesale, and
-    // `viteDevConfig` derives its whole proxy table from this one name — so a
-    // row missing from the mock silently narrows what those specs see.
-    const real = Object.fromEntries(
-      Object.entries(SERVER_ROUTES).map(([name, { transport, path: p, match }]) => [
-        name,
-        { transport, path: p, match },
-      ]),
-    );
-    expect(SERVER_ROUTES_LITERAL).toEqual(real);
-  });
-
   test("proxies /client-config to the backend", () => {
     const config = viteDevConfig("/proj", 3000, 3001);
     const proxy = config.server?.proxy as Record<string, unknown>;
@@ -170,31 +90,6 @@ describe("viteDevConfig", () => {
     // nothing answers, which is the same silent failure by a new route.
     const proxy = viteDevConfig("/proj", 3000, 3001).server?.proxy as Record<string, unknown>;
     expect(Object.keys(proxy)).toContain(WORKFLOW_API_PREFIX);
-  });
-
-  test("the dev-server mocks spell the workflow data-dir key the way the SDK does", () => {
-    // The sibling suites mock `@alexkroman1/aai-runtime/internal` wholesale, so
-    // the key `startDevServer` writes the project's `.workflow-data` under comes
-    // from a literal in their harness. This file mocks nothing, which makes it
-    // the one place the two can be compared — and a disagreement is otherwise
-    // silent in BOTH directions: the specs keep passing against their own
-    // literal, and uploads land under a directory the reader never looks in.
-    expect(WORKFLOW_DATA_DIR_ENV_LITERAL).toBe(WORKFLOW_DATA_DIR_ENV);
-  });
-
-  test("the dev-server mocks spell the runtime constants the way the SDK does", () => {
-    // Same trap as the row above, one module over: the sibling suites mock
-    // `@alexkroman1/aai-runtime` wholesale, so the proxy KEY and the BIND HOST
-    // that `viteDevConfig` reads come from literals in that harness — a mock
-    // may not import the module it mocks. A disagreement is silent in both
-    // directions, and for `DEFAULT_LISTEN_HOST` it would be worse than for the
-    // prefix: the specs would keep asserting `127.0.0.1` while the real config
-    // handed Vite something else. This file mocks nothing, so it is the one
-    // place the two can be compared.
-    expect(aaiRuntimeModule()).toMatchObject({
-      WORKFLOW_API_PREFIX,
-      DEFAULT_LISTEN_HOST,
-    });
   });
 
   test("every proxy target is an IP LITERAL, never a hostname", () => {

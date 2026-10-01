@@ -58,7 +58,7 @@ import { requestQuery } from "@alexkroman1/aai/internal";
 import { SESSION_AUTH_PROTOCOL_PREFIX as WIRE_AUTH_PREFIX } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WebSocket, WebSocketServer } from "ws";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { agentGateToken } from "./env.ts";
 import { declineSocket } from "./session-decline.ts";
 import { requireSecret, type SessionIdentity, verifySessionToken } from "./session-ticket.ts";
@@ -123,7 +123,7 @@ export declare const sessionAuthBrand: unique symbol;
 
 /**
  * Who may open a session on a server — `auth` on `createAgentServer`,
- * `createRuntimeServer` and `createHostServer`. Opaque: build one with
+ * `createServerForRuntime` and `createHostServer`. Opaque: build one with
  * {@link createSessionAuth}.
  *
  * @sealed

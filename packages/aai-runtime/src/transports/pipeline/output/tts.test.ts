@@ -5,7 +5,7 @@
 
 import { PIPELINE_FLUSH_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../../../_test-utils.ts";
+import { silentLogger } from "../../../_logger-test-utils.ts";
 import type { TtsEvents, TtsSession } from "../../../providers/openers.ts";
 import type { SendTtsText } from "../../types.ts";
 import { createTtsTextCoalescer, flushTtsAndWait } from "./tts.ts";

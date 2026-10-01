@@ -3,7 +3,7 @@
 import { type AnyDialog, type DialogStateSpec, dialog, type SlotHolder } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { mergeTurnKnobs, reportDialogKnobs } from "./dialog-knobs.ts";
 
 const ctx = (): SlotHolder => ({ slots: createDetachedSlotStore(), sessionId: "s-knobs" });

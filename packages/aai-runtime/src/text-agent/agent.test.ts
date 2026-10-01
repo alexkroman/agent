@@ -14,7 +14,7 @@ import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { createRuntime } from "../runtime/index.ts";
 import { createTextAgent } from "./agent.ts";
 

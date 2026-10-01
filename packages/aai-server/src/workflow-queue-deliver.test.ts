@@ -19,10 +19,12 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
+import { createTestStore } from "./_orchestrator-test-utils.ts";
+import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { GUEST_ROUTES } from "./guest/routes.ts";
 import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
-import { captureLogs, createTestStore, fakeSandbox } from "./test-utils.ts";
 import { createQueueDeliverer } from "./workflow-queue-deliver.ts";
 import { isGuestUnreachable } from "./workflow-queue-failure.ts";
 import type { QueuedMessage } from "./workflow-queue-store.ts";

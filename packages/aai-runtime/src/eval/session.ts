@@ -60,10 +60,10 @@ import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { invariant, sleep } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { silentLogger } from "../logger.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntimeWithSeams } from "../runtime/index.ts";
-import { silentLogger } from "../runtime-config.ts";
 import { SessionRefusedError } from "../session/index.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { type EvalSessionEnd, watchSessionEnd, watchSessionEndHook } from "./_session-end.ts";
@@ -109,7 +109,13 @@ export type EvalCredentials = {
 };
 
 /**
- * Can this machine run evals against `agent`?
+ * Can this machine run evals against `agent` — a VOICE agent, through
+ * {@link openEvalSession} / `describeEval`?
+ *
+ * One of three gates, one per harness, because each asks which keys ITS run
+ * dials: this for a voice session, `evalTextCredentials` for a `mode: "text"`
+ * agent (`openEvalTextAgent`), `evalWorkflowCredentials` for a workflow app
+ * (`openEvalWorkflows`). The `describe*Eval` suites call the right one.
  *
  * An eval spends real tokens on a real key, so a suite that cannot find one has
  * to SKIP — and a silent skip is the worst outcome available, because a green

@@ -2,13 +2,13 @@
 
 import { EGRESS_KEEP_ALIVE_MS } from "@alexkroman1/aai-runtime/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
 import { registerLiveStream, resetLiveStreams } from "./live-streams.ts";
 import {
   createShutdownHandler,
   HTTP_KEEP_ALIVE_TIMEOUT_MS,
   startService,
 } from "./serve-lifecycle.ts";
-import { captureLogs } from "./test-utils.ts";
 
 beforeEach(() => {
   // Reset, not drain: a shutdown latches the registry closed, so draining here

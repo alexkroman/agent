@@ -51,6 +51,11 @@
       "types": "./dist/testing-barrel.d.ts",
       "import": "./dist/testing-barrel.js"
     },
+    "./testing/vitest": {
+      "@dev/source": "./src/testing-vitest-barrel.ts",
+      "types": "./dist/testing-vitest-barrel.d.ts",
+      "import": "./dist/testing-vitest-barrel.js"
+    },
     "./internal": {
       "@dev/source": "./src/internal.ts",
       "types": "./dist/internal.d.ts",
@@ -67,8 +72,8 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:integration": "VITEST_INCLUDE=src/**/*.integration.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:integration": "VITEST_PROFILE=integration VITEST_INCLUDE=src/**/*.integration.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=src/**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -61,7 +61,7 @@ import { EVENT_ID_PREFIX } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { monotonicFactory } from "ulid";
 import { getOrCreate } from "../_get-or-create.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { SessionStateBackend, StoredSessionEvent } from "../session-state/store.ts";
 
 /**

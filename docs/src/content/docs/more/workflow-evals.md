@@ -8,9 +8,9 @@ A [background job](/agent/more/background-jobs/) has no session, no turns and no
 run, wait for it, and assert on what it produced.
 
 ```ts
-import { installStubTranscribe } from "@alexkroman1/aai/testing/vitest";
+import { installStubTranscribe } from "@alexkroman1/aai-runtime/testing/vitest";
 import { completedOutput } from "@alexkroman1/aai-runtime/eval";
-import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeWorkflowEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import agentDef from "virtual:aai/agent";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -51,7 +51,7 @@ audio, a summary that has to be _of_ the page.
 There is no `stubReply` here because a workflow has no single model to script.
 Its steps reach a model, a transcription endpoint, an upload store, a stranger's
 web server — and each of those has a published fake on
-`@alexkroman1/aai/testing/vitest`:
+`@alexkroman1/aai-runtime/testing/vitest`:
 
 | Fake                     | Stands in for                                                 |
 | ------------------------ | ------------------------------------------------------------- |
@@ -66,7 +66,7 @@ web server — and each of those has a published fake on
 common case; the object form adds a filename and content type:
 
 ```ts
-import { installStubUploads } from "@alexkroman1/aai/testing/vitest";
+import { installStubUploads } from "@alexkroman1/aai-runtime/testing/vitest";
 
 installStubUploads({
   upl_1: new Uint8Array(64),

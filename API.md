@@ -52,6 +52,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-runtime/internal` — `packages/aai-runtime/etc/internal.api.md`
 - `@alexkroman1/aai-runtime/metrics` — `packages/aai-runtime/etc/metrics.api.md`
 - `@alexkroman1/aai-runtime/testing` — `packages/aai-runtime/etc/testing.api.md`
+- `@alexkroman1/aai-runtime/testing/vitest` — `packages/aai-runtime/etc/testing-vitest.api.md`
 - `@alexkroman1/aai-runtime/tracing` — `packages/aai-runtime/etc/tracing.api.md`
 - `@alexkroman1/aai-ui/client-dir` — `packages/aai-ui/etc/client-dir.api.md`
 - `@alexkroman1/aai-ui` — `packages/aai-ui/etc/index.api.md`
@@ -2047,9 +2048,6 @@ export type AgentEnv = Record<string, string> & {
 // @public
 type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
-// @public
-type AgentInstructions = (ctx: AgentSessionContext) => string;
-
 // @internal
 export function agentInstructionsSection(instructions: string): string;
 
@@ -2061,7 +2059,7 @@ interface AgentSessionContext {
 }
 
 // @public
-type AgentSystemPrompt = string | AgentInstructions;
+type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -3727,7 +3725,7 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @internal
-export function systemPromptResolver(prompt: AgentSystemPrompt | undefined): AgentInstructions | undefined;
+export function systemPromptResolver(prompt: AgentSystemPrompt | undefined): Exclude<AgentSystemPrompt, string> | undefined;
 
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
@@ -4148,7 +4146,7 @@ export function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
 export function agent(def: TextAgentParams): ModeAgentDef<"text">;
 
 // @public
-export function agent(def: StaticAgentParams): ModeAgentDef<"workflow-app">;
+export function agent(def: WorkflowAppAgentParams): ModeAgentDef<"workflow-app">;
 
 // @public
 export function agent(def: AgentParams): AgentDef;
@@ -4159,7 +4157,7 @@ export interface AgentClientInbox {
 }
 
 // @public
-export interface AgentDef extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
+export interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -4178,10 +4176,15 @@ export interface AgentDef extends PipelineTuning, PipelinePhrases, AgentModelTun
     systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
     toolChoice?: ToolChoice;
-    tools: ToolMap;
-    toolsets?: readonly Toolset[];
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
+}
+
+// @public
+export interface AgentDef extends AgentDeclaration {
+    syncState?: Readonly<Record<string, StateProjection>>;
+    tools: ToolMap;
+    toolsets?: readonly Toolset[];
 }
 
 // @public
@@ -4193,8 +4196,8 @@ export interface AgentGuardrails {
     outputGuardrails?: readonly AgentGuardrail[];
 }
 
-// @public
-export type AgentInstructions = (ctx: AgentSessionContext) => string;
+// @public @deprecated
+export type AgentInstructions = Exclude<AgentSystemPrompt, string>;
 
 // @public
 export type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
@@ -4208,11 +4211,11 @@ export interface AgentModelTuning extends ModelTuning {
 // @public
 export interface AgentObservation {
     events?: SessionEventHandlers;
-    syncState?: Readonly<Record<string, StateProjection>>;
+    syncState?: SyncStateDeclaration;
 }
 
 // @public
-export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParams;
+export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | WorkflowAppAgentParams;
 
 // @public
 export interface AgentRoutes {
@@ -4233,7 +4236,7 @@ export interface AgentSessionLifecycle {
 }
 
 // @public
-export type AgentSystemPrompt = string | AgentInstructions;
+export type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 // @public
 export interface AgentVoicePresets {
@@ -4850,7 +4853,7 @@ export function orFail<T>(value: T | ToolFailure): T;
 export function pickOne<T>(items: readonly T[], random?: RandomSource): T | undefined;
 
 // @public
-export type PipelineAgentParams = SharedAgentParams & Pick<AgentDef, keyof AgentModelTuning | keyof PipelineTuning | keyof PipelinePhrases | keyof AgentGuardrails> & {
+export type PipelineAgentParams = SharedAgentParams & Pick<AgentDeclaration, keyof AgentModelTuning | keyof PipelineTuning | keyof PipelinePhrases | keyof AgentGuardrails> & {
     mode?: "pipeline";
     llm?: LlmSpec;
     s2s?: undefined;
@@ -5421,6 +5424,7 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     get(ctx: SlotHolder): DeepReadonly<T>;
     readonly key: K;
     readonly projected: StateProjection<V>;
+    // @deprecated
     projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
     reset(ctx: SlotHolder): DeepReadonly<T>;
     set(ctx: SlotHolder, value: T): DeepReadonly<T>;
@@ -5451,7 +5455,7 @@ export interface SessionSpeech {
 }
 
 // @public
-export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | "mode" | ProviderField | PipelineOnlyField | keyof AgentModelTuning | "toolsets"> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+export type SharedAgentParams = Omit<AgentDeclaration, DefaultedAgentField | "mode" | ProviderField | PipelineOnlyField | keyof AgentModelTuning> & Partial<Pick<AgentDeclaration, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     tools?: InlineToolsMisuse;
 };
 
@@ -5619,11 +5623,8 @@ export interface StateProjection<V = unknown> {
     readonly key: string;
 }
 
-// @public
-export type StaticAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
-    mode: "workflow-app";
-    workflows: NonNullable<AgentDef["workflows"]>;
-};
+// @public @deprecated
+export type StaticAgentParams = WorkflowAppAgentParams;
 
 // @public
 type StepClientTranscriptOptions = {
@@ -5660,13 +5661,16 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
+export type SyncStateDeclaration = StateProjection | readonly StateProjection[] | Readonly<Record<string, StateProjection>>;
+
+// @public
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 
 // @public
 export type TelephonyCarrier = "twilio" | "telnyx" | (string & {});
 
 // @public
-export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDef, keyof AgentModelTuning> & {
+export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDeclaration, keyof AgentModelTuning> & {
     mode: "text";
     llm?: LlmSpec;
 };
@@ -5898,7 +5902,13 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema, O extends 
 export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
 
 // @public
-export function workflowApp(def: Omit<StaticAgentParams, "mode">): AgentDef;
+export function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef;
+
+// @public
+export type WorkflowAppAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
+    mode: "workflow-app";
+    workflows: NonNullable<AgentDeclaration["workflows"]>;
+};
 
 // @public
 type WorkflowAppOnlyField = "systemPrompt" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";
@@ -5980,7 +5990,7 @@ export type WorkflowInputOf<D> = D extends {
 } ? I : never;
 
 // @public
-type WorkflowOutputOf<D> = D extends {
+export type WorkflowOutputOf<D> = D extends {
     readonly run: (input: never, ctx: never) => infer R;
     readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 } ? Awaited<unknown extends O ? R : O> : never;
@@ -6035,6 +6045,11 @@ type WorkflowSummary = {
 // @internal
 export const AGENT_CSP: string;
 
+// @internal
+export function agentRequiredEnv(agent: DerivedEnvQuery & {
+    readonly requiredEnv?: readonly string[] | undefined;
+}): string[];
+
 // @public
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
@@ -6084,6 +6099,9 @@ export const BOUNDARY_KEYS: {
         readonly uploadReader: "@alexkroman1/aai.uploadReader";
     };
 };
+
+// @internal
+export const BUILTIN_TOOL_ENV: Readonly<Partial<Record<BuiltinTool, string>>>;
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
@@ -6253,6 +6271,17 @@ interface DelegateToolCall {
     input: unknown;
     name: string;
 }
+
+// @internal
+export type DerivedEnvQuery = {
+    readonly builtinTools?: readonly string[] | undefined;
+    readonly mcpServers?: Readonly<Record<string, {
+        readonly tokenEnv?: unknown;
+    }>> | undefined;
+};
+
+// @internal
+export function derivedRequiredEnv(agent: DerivedEnvQuery): string[];
 
 // @internal (undocumented)
 export interface Epoch {
@@ -7177,7 +7206,7 @@ export function agentConfigWarnings(config: {
 }): string[];
 
 // @public
-interface AgentDef extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
+interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -7196,10 +7225,15 @@ interface AgentDef extends PipelineTuning, PipelinePhrases, AgentModelTuning, Ag
     systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
     toolChoice?: ToolChoice;
-    tools: ToolMap;
-    toolsets?: readonly Toolset[];
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
+}
+
+// @public
+interface AgentDef extends AgentDeclaration {
+    syncState?: Readonly<Record<string, StateProjection>>;
+    tools: ToolMap;
+    toolsets?: readonly Toolset[];
 }
 
 // @public
@@ -7210,9 +7244,6 @@ interface AgentGuardrails {
     inputGuardrails?: readonly AgentGuardrail[];
     outputGuardrails?: readonly AgentGuardrail[];
 }
-
-// @public
-type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
 type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
@@ -7226,7 +7257,7 @@ interface AgentModelTuning extends ModelTuning {
 // @public
 interface AgentObservation {
     events?: SessionEventHandlers;
-    syncState?: Readonly<Record<string, StateProjection>>;
+    syncState?: SyncStateDeclaration;
 }
 
 // @public
@@ -7248,7 +7279,7 @@ interface AgentSessionLifecycle {
 }
 
 // @public
-type AgentSystemPrompt = string | AgentInstructions;
+type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 // @public
 export function agentToolsets(def: ToolBearingDef): Toolset[];
@@ -8127,6 +8158,9 @@ type StreamOptions = {
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
+
+// @public
+type SyncStateDeclaration = StateProjection | readonly StateProjection[] | Readonly<Record<string, StateProjection>>;
 
 // @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];
@@ -10626,9 +10660,6 @@ import type { EventFromLogic } from 'xstate';
 import { z } from 'zod';
 
 // @public
-type AgentInstructions = (ctx: AgentSessionContext) => string;
-
-// @public
 type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
 
 // @public @sealed
@@ -10639,7 +10670,7 @@ interface AgentSessionContext {
 }
 
 // @public
-type AgentSystemPrompt = string | AgentInstructions;
+type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 // @public
 type AnyDialog = Dialog<AnyStateMachine, unknown>;
@@ -10899,6 +10930,9 @@ export function expectPromptBuiltinsDeclared(def: {
     readonly builtinTools?: readonly BuiltinTool[] | undefined;
     readonly tools?: Readonly<Record<string, unknown>> | undefined;
 }): BuiltinTool[];
+
+// @public
+export function expectToolOk<R>(result: R): R extends DialogToolResult<infer V> ? V : Exclude<R, ToolFailure>;
 
 // @public
 export function expectToolOk<T>(result: unknown): T;
@@ -11177,17 +11211,17 @@ type SayOptions = {
 // @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
-// @public
+// @public @deprecated
 export interface ScriptedToolContext {
     ctx: TestToolContext;
     desk: StubDelegate;
     model: StubGenerate;
 }
 
-// @public
+// @public @deprecated
 export function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
 
-// @public
+// @public @deprecated
 export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
     generate?: StubGenerateScript | undefined;
     delegate?: StubDelegateScript | undefined;
@@ -15837,8 +15871,11 @@ export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 // @public
 export function createRuntime(options: RuntimeOptions): Runtime;
 
-// @public
+// @public @deprecated
 export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
+
+// @public
+export function createServerForRuntime(options: RuntimeServerOptions): AgentServer;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: TelephonyBridgeOptions): SessionWebSocket;
@@ -16499,6 +16536,7 @@ import type { GenerateResult } from '@alexkroman1/aai';
 import type { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
 import type { IncomingMessage } from 'node:http';
+import { isPathInside } from '@alexkroman1/aai/workspace-files';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
 import { parseBearer } from '@alexkroman1/aai/host-internal';
@@ -16668,7 +16706,7 @@ export function createPostgresStateBackend(options: {
 }): SessionStateBackend;
 
 // @public
-function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
+function createServerForRuntime(options: RuntimeServerOptions): AgentServer;
 
 // @public
 function createSessionAuth(options: SessionAuthOptions): SessionAuth;
@@ -16737,7 +16775,7 @@ export const GUEST_HOST_VERSION = 1;
 // @internal
 export interface GuestHost {
     readonly agentServerEnv: typeof agentServerEnv;
-    readonly createRuntimeServer: typeof createRuntimeServer;
+    readonly createRuntimeServer: typeof createServerForRuntime;
     readonly createSessionAuth: typeof createSessionAuth;
     readonly handleWorkflowRequest: typeof handleWorkflowRequest;
     // (undocumented)
@@ -16800,8 +16838,7 @@ export type HttpUploadBackendOptions = {
     fetch?: typeof globalThis.fetch | undefined;
 };
 
-// @internal
-export function isPathInside(dir: string, target: string): boolean;
+export { isPathInside }
 
 // @public
 type JournalArm = {
@@ -17591,26 +17628,188 @@ export function registerMetricsSink(sink: MetricsSink): () => void;
 ```ts
 import type { AgentDef } from '@alexkroman1/aai';
 import type { AgentEnv } from '@alexkroman1/aai/host-internal';
+import { commandedBuiltins } from '@alexkroman1/aai/testing';
+import { createProgressStream } from '@alexkroman1/aai/testing';
+import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
+import { createRunSnapshot } from '@alexkroman1/aai/testing';
+import { createStubWorkflows } from '@alexkroman1/aai/testing';
+import { createToolContext } from '@alexkroman1/aai/testing';
+import { createWorkflowContext } from '@alexkroman1/aai/testing';
 import type { Db } from '@alexkroman1/aai/internal';
+import { deployedAgent } from '@alexkroman1/aai/testing';
+import { DeployedConfig } from '@alexkroman1/aai/testing';
+import { DeployedStage } from '@alexkroman1/aai/testing';
+import { dialogRefusalPattern } from '@alexkroman1/aai/testing';
+import { dialogResultSchema } from '@alexkroman1/aai/testing';
+import { endSessionCalls } from '@alexkroman1/aai/testing';
+import { eventsOf } from '@alexkroman1/aai/testing';
+import { expectDeployable } from '@alexkroman1/aai/testing';
+import { expectDialogOk } from '@alexkroman1/aai/testing';
+import { expectDialogRefused } from '@alexkroman1/aai/testing';
+import { expectPromptBuiltinsDeclared } from '@alexkroman1/aai/testing';
+import { expectToolOk } from '@alexkroman1/aai/testing';
+import { FetchRouteHandler } from '@alexkroman1/aai/testing';
+import { FetchRouteHit } from '@alexkroman1/aai/testing';
+import { FetchRouteRequest } from '@alexkroman1/aai/testing';
+import { FetchRoutesOptions } from '@alexkroman1/aai/testing';
+import { FetchRouteTable } from '@alexkroman1/aai/testing';
+import { isEvent } from '@alexkroman1/aai/testing';
 import type { LanguageModel } from 'ai';
 import type { ModelMessage } from 'ai';
+import { parseSchemaInput } from '@alexkroman1/aai/testing';
+import { parseToolInput } from '@alexkroman1/aai/testing';
 import type { PrepareStepFunction } from 'ai';
+import { ProjectFiles } from '@alexkroman1/aai/testing';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { RecordedSleep } from '@alexkroman1/aai/testing';
+import { RecordedStart } from '@alexkroman1/aai/testing';
+import { RecordedStep } from '@alexkroman1/aai/testing';
+import { RecordingWorkflows } from '@alexkroman1/aai/testing';
+import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
+import { routeStepFetch } from '@alexkroman1/aai/testing';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import { runGuardrail } from '@alexkroman1/aai/testing';
+import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
+import { runTool } from '@alexkroman1/aai/testing';
+import { SaidLine } from '@alexkroman1/aai/testing';
+import { schemaInputIssues } from '@alexkroman1/aai/testing';
+import { ScriptedToolContext } from '@alexkroman1/aai/testing';
+import { scriptedToolContext } from '@alexkroman1/aai/testing';
+import { ScriptedToolContextOptions } from '@alexkroman1/aai/testing';
+import { SentEvent } from '@alexkroman1/aai/testing';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
+import { StepRoute } from '@alexkroman1/aai/testing';
+import { StepUnmatched } from '@alexkroman1/aai/testing';
+import { STUB_SPEECH_PCM_BYTES } from '@alexkroman1/aai/testing';
+import { StubClientInbox } from '@alexkroman1/aai/testing';
+import { stubClientInbox } from '@alexkroman1/aai/testing';
+import { StubClientInboxCall } from '@alexkroman1/aai/testing';
+import { StubClientInboxOptions } from '@alexkroman1/aai/testing';
+import { StubClientTranscript } from '@alexkroman1/aai/testing';
+import { stubClientTranscript } from '@alexkroman1/aai/testing';
+import { StubClientTranscriptAnswer } from '@alexkroman1/aai/testing';
+import { StubClientTranscriptCall } from '@alexkroman1/aai/testing';
+import { StubDelegate } from '@alexkroman1/aai/testing';
+import { stubDelegate } from '@alexkroman1/aai/testing';
+import { StubDelegateCall } from '@alexkroman1/aai/testing';
+import { StubDelegateReply } from '@alexkroman1/aai/testing';
+import { StubDelegateRoute } from '@alexkroman1/aai/testing';
+import { StubDelegateScript } from '@alexkroman1/aai/testing';
+import { StubEmitted } from '@alexkroman1/aai/testing';
+import { StubFetchRoutes } from '@alexkroman1/aai/testing';
+import { stubFetchRoutes } from '@alexkroman1/aai/testing';
+import { StubGateway } from '@alexkroman1/aai/testing';
+import { stubGateway } from '@alexkroman1/aai/testing';
+import { StubGatewayCall } from '@alexkroman1/aai/testing';
+import { StubGatewayOptions } from '@alexkroman1/aai/testing';
+import { StubGatewayRoute } from '@alexkroman1/aai/testing';
+import { stubGatewayRoute } from '@alexkroman1/aai/testing';
+import { StubGenerate } from '@alexkroman1/aai/testing';
+import { stubGenerate } from '@alexkroman1/aai/testing';
+import { StubGenerateCall } from '@alexkroman1/aai/testing';
+import { StubGenerateReply } from '@alexkroman1/aai/testing';
+import { StubGenerateRoute } from '@alexkroman1/aai/testing';
+import { StubGenerateScript } from '@alexkroman1/aai/testing';
+import { StubPlaceCall } from '@alexkroman1/aai/testing';
+import { stubPlaceCall } from '@alexkroman1/aai/testing';
+import { StubPlaceCallOptions } from '@alexkroman1/aai/testing';
+import { StubPlaceCallRefusal } from '@alexkroman1/aai/testing';
+import { StubPlacedCall } from '@alexkroman1/aai/testing';
+import { StubReporter } from '@alexkroman1/aai/testing';
+import { stubReporter } from '@alexkroman1/aai/testing';
+import { StubSpeech } from '@alexkroman1/aai/testing';
+import { stubSpeech } from '@alexkroman1/aai/testing';
+import { StubSpeechCall } from '@alexkroman1/aai/testing';
+import { StubSpeechOptions } from '@alexkroman1/aai/testing';
+import { StubStepAnswer } from '@alexkroman1/aai/testing';
+import { StubStepDelegate } from '@alexkroman1/aai/testing';
+import { stubStepDelegate } from '@alexkroman1/aai/testing';
+import { StubStepFetch } from '@alexkroman1/aai/testing';
+import { stubStepFetch } from '@alexkroman1/aai/testing';
+import { stubStepInfo } from '@alexkroman1/aai/testing';
+import { StubStepRequest } from '@alexkroman1/aai/testing';
+import { StubTranscribe } from '@alexkroman1/aai/testing';
+import { stubTranscribe } from '@alexkroman1/aai/testing';
+import { StubTranscribeCall } from '@alexkroman1/aai/testing';
+import { StubTranscribeFailure } from '@alexkroman1/aai/testing';
+import { StubTranscribeLeg } from '@alexkroman1/aai/testing';
+import { StubTranscribeOptions } from '@alexkroman1/aai/testing';
+import { StubUpload } from '@alexkroman1/aai/testing';
+import { StubUploads } from '@alexkroman1/aai/testing';
+import { stubUploads } from '@alexkroman1/aai/testing';
+import { StubUploadsOptions } from '@alexkroman1/aai/testing';
+import { StubUploadWrite } from '@alexkroman1/aai/testing';
+import { TestToolContext } from '@alexkroman1/aai/testing';
+import { ToolBearingAgent } from '@alexkroman1/aai/testing';
 import type { ToolChoice } from '@alexkroman1/aai';
+import { ToolContextOverrides } from '@alexkroman1/aai/testing';
+import { toolInputIssues } from '@alexkroman1/aai/testing';
 import type { ToolInputSchema } from '@alexkroman1/aai';
+import { toolOf } from '@alexkroman1/aai/testing';
+import { ToolRunner } from '@alexkroman1/aai/testing';
+import { toolRunner } from '@alexkroman1/aai/testing';
 import type { ToolSet } from 'ai';
+import { WORKFLOW_CONTEXT_NOW } from '@alexkroman1/aai/testing';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import { WorkflowContextOptions } from '@alexkroman1/aai/testing';
+import { WorkflowContextRecorder } from '@alexkroman1/aai/testing';
 import type { WorkflowDef } from '@alexkroman1/aai';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+
+export { commandedBuiltins }
+
+export { createProgressStream }
+
+export { createRecordingWorkflows }
+
+export { createRunSnapshot }
+
+export { createStubWorkflows }
+
+export { createToolContext }
+
+export { createWorkflowContext }
 
 // @public
 export const DEFAULT_MAX_DELIVERIES = 50;
 
+export { deployedAgent }
+
+export { DeployedConfig }
+
+export { DeployedStage }
+
 // @public
 export type DeterminismKind = "now" | "random" | "uuid";
+
+export { dialogRefusalPattern }
+
+export { dialogResultSchema }
+
+export { endSessionCalls }
+
+export { eventsOf }
+
+export { expectDeployable }
+
+export { expectDialogOk }
+
+export { expectDialogRefused }
+
+export { expectPromptBuiltinsDeclared }
+
+export { expectToolOk }
+
+export { FetchRouteHandler }
+
+export { FetchRouteHit }
+
+export { FetchRouteRequest }
+
+export { FetchRoutesOptions }
+
+export { FetchRouteTable }
 
 // @public
 export type HookRecord = {
@@ -17630,6 +17829,8 @@ export interface HostAgentOptions {
     toolTimeoutMs?: number;
     workflows?: WorkflowClient | undefined;
 }
+
+export { isEvent }
 
 // @public
 export class JournalConflictError extends Error {
@@ -17680,11 +17881,31 @@ interface Logger {
     warn: LogFn;
 }
 
+export { parseSchemaInput }
+
+export { parseToolInput }
+
+export { ProjectFiles }
+
+export { RecordedSleep }
+
+export { RecordedStart }
+
+export { RecordedStep }
+
+export { RecordingWorkflows }
+
+export { RecordingWorkflowsOptions }
+
 // @public
 export type ResumableRun = {
     runId: string;
     wakeAt?: number | undefined;
 };
+
+export { routeStepFetch }
+
+export { runGuardrail }
 
 // @public
 export type RunRecord = {
@@ -17701,6 +17922,8 @@ export type RunRecord = {
     label?: string | undefined;
 };
 
+export { RunSnapshotOverrides }
+
 // @public
 export type RunStatus = WorkflowRunStatus;
 
@@ -17711,6 +17934,8 @@ export function runTextAgent(def: AgentDef, input: string | readonly ModelMessag
 export type RunTextAgentOptions = Omit<TextAgentOptions, "agent" | "model"> & Pick<TextTurnOptions, "signal" | "systemPrompt" | "maxSteps" | "temperature" | "toolChoice"> & {
     readonly script: readonly ScriptedTextStep[];
 };
+
+export { runTool }
 
 // @public
 export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
@@ -17723,6 +17948,10 @@ export type RunWorkflowOptions = {
     crashAt?: string;
     maxDeliveries?: number;
 };
+
+export { SaidLine }
+
+export { schemaInputIssues }
 
 // @public
 export function scriptedTextModel(steps: readonly ScriptedTextStep[]): LanguageModel;
@@ -17739,6 +17968,14 @@ export type ScriptedToolCall = {
     readonly input?: Record<string, unknown>;
     readonly id?: string;
 };
+
+export { ScriptedToolContext }
+
+export { scriptedToolContext }
+
+export { ScriptedToolContextOptions }
+
+export { SentEvent }
 
 // @public
 export type SleepEntry = SleepRecord & {
@@ -17766,6 +18003,130 @@ export type StepEntry = {
     startedAt?: number | undefined;
     finishedAt: number;
 };
+
+export { StepRoute }
+
+export { StepUnmatched }
+
+export { STUB_SPEECH_PCM_BYTES }
+
+export { StubClientInbox }
+
+export { stubClientInbox }
+
+export { StubClientInboxCall }
+
+export { StubClientInboxOptions }
+
+export { StubClientTranscript }
+
+export { stubClientTranscript }
+
+export { StubClientTranscriptAnswer }
+
+export { StubClientTranscriptCall }
+
+export { StubDelegate }
+
+export { stubDelegate }
+
+export { StubDelegateCall }
+
+export { StubDelegateReply }
+
+export { StubDelegateRoute }
+
+export { StubDelegateScript }
+
+export { StubEmitted }
+
+export { StubFetchRoutes }
+
+export { stubFetchRoutes }
+
+export { StubGateway }
+
+export { stubGateway }
+
+export { StubGatewayCall }
+
+export { StubGatewayOptions }
+
+export { StubGatewayRoute }
+
+export { stubGatewayRoute }
+
+export { StubGenerate }
+
+export { stubGenerate }
+
+export { StubGenerateCall }
+
+export { StubGenerateReply }
+
+export { StubGenerateRoute }
+
+export { StubGenerateScript }
+
+export { StubPlaceCall }
+
+export { stubPlaceCall }
+
+export { StubPlaceCallOptions }
+
+export { StubPlaceCallRefusal }
+
+export { StubPlacedCall }
+
+export { StubReporter }
+
+export { stubReporter }
+
+export { StubSpeech }
+
+export { stubSpeech }
+
+export { StubSpeechCall }
+
+export { StubSpeechOptions }
+
+export { StubStepAnswer }
+
+export { StubStepDelegate }
+
+export { stubStepDelegate }
+
+export { StubStepFetch }
+
+export { stubStepFetch }
+
+export { stubStepInfo }
+
+export { StubStepRequest }
+
+export { StubTranscribe }
+
+export { stubTranscribe }
+
+export { StubTranscribeCall }
+
+export { StubTranscribeFailure }
+
+export { StubTranscribeLeg }
+
+export { StubTranscribeOptions }
+
+export { StubUpload }
+
+export { StubUploads }
+
+export { stubUploads }
+
+export { StubUploadsOptions }
+
+export { StubUploadWrite }
+
+export { TestToolContext }
 
 // @public
 export interface TextAgentOptions extends HostAgentOptions {
@@ -17809,6 +18170,24 @@ export interface TextTurnOptions {
     toolChoice?: ToolChoice;
 }
 
+export { ToolBearingAgent }
+
+export { ToolContextOverrides }
+
+export { toolInputIssues }
+
+export { toolOf }
+
+export { ToolRunner }
+
+export { toolRunner }
+
+export { WORKFLOW_CONTEXT_NOW }
+
+export { WorkflowContextOptions }
+
+export { WorkflowContextRecorder }
+
 // @public
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
     advanceSleep(correlationIds?: readonly string[]): Promise<WorkflowTestHandle<R>>;
@@ -17848,6 +18227,846 @@ export type WorkflowTestStep = {
     readonly output?: unknown;
     readonly error?: string | undefined;
     readonly attempts: number;
+};
+```
+
+## `@alexkroman1/aai-runtime/testing/vitest`
+
+```ts
+import type { AgentDef } from '@alexkroman1/aai';
+import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
+import { dialogRefusalPattern } from '@alexkroman1/aai/testing';
+import { dialogResultSchema } from '@alexkroman1/aai/testing';
+import { eventsOf } from '@alexkroman1/aai/testing';
+import type { GenerateOptions } from '@alexkroman1/aai';
+import type { GenerateResult } from '@alexkroman1/aai';
+import type { InferSchemaOutput } from '@alexkroman1/aai';
+import { installFetchRoutes } from '@alexkroman1/aai/testing/vitest';
+import { installStubClientInbox } from '@alexkroman1/aai/testing/vitest';
+import { installStubGateway } from '@alexkroman1/aai/testing/vitest';
+import { installStubReporter } from '@alexkroman1/aai/testing/vitest';
+import { installStubSpeech } from '@alexkroman1/aai/testing/vitest';
+import { installStubStepDelegate } from '@alexkroman1/aai/testing/vitest';
+import { installStubStepFetch } from '@alexkroman1/aai/testing/vitest';
+import { installStubTranscribe } from '@alexkroman1/aai/testing/vitest';
+import { installStubUploads } from '@alexkroman1/aai/testing/vitest';
+import { installStubWorkflows } from '@alexkroman1/aai/testing/vitest';
+import { isEvent } from '@alexkroman1/aai/testing';
+import { LlmProvider } from '@alexkroman1/aai/llm';
+import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { RecordingWorkflows } from '@alexkroman1/aai/testing';
+import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
+import { routeStepFetch } from '@alexkroman1/aai/testing';
+import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionCall } from '@alexkroman1/aai';
+import type { SessionEvent } from '@alexkroman1/aai';
+import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
+import type { StartOptions } from '@alexkroman1/aai/workflow-api';
+import { StepFetch } from '@alexkroman1/aai/host-internal';
+import { StepRoute } from '@alexkroman1/aai/testing';
+import { StepUnmatched } from '@alexkroman1/aai/testing';
+import type { SttProvider } from '@alexkroman1/aai/stt';
+import { StubGatewayRoute } from '@alexkroman1/aai/testing';
+import { stubGatewayRoute } from '@alexkroman1/aai/testing';
+import { StubSpeech } from '@alexkroman1/aai/testing';
+import { StubSpeechOptions } from '@alexkroman1/aai/testing';
+import { StubStepDelegate } from '@alexkroman1/aai/testing';
+import { StubStepFetch } from '@alexkroman1/aai/testing';
+import { StubTranscribe } from '@alexkroman1/aai/testing';
+import { StubTranscribeOptions } from '@alexkroman1/aai/testing';
+import { StubUploads } from '@alexkroman1/aai/testing';
+import { StubUploadsOptions } from '@alexkroman1/aai/testing';
+import { StubWorkflowsOptions } from '@alexkroman1/aai/testing/vitest';
+import type { ToolInputSchema } from '@alexkroman1/aai';
+import type { TtsProvider } from '@alexkroman1/aai/tts';
+import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+
+// @public
+export type CallVerdict = {
+    readonly pass: boolean;
+    readonly criteria: readonly CriterionVerdict[];
+    readonly summary: string;
+    readonly scripted: boolean;
+    explain(): string;
+};
+
+// @public
+export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
+
+export { createRecordingWorkflows }
+
+// @public
+export function createStubSttOpener(name: string): SttOpener & {
+    last(): StubSttSession | undefined;
+};
+
+// @public
+export function createStubTtsOpener(name: string): TtsOpener & {
+    last(): StubTtsSession | undefined;
+};
+
+// @public
+export function createVmRunCode(options?: VmRunCodeOptions): RunCodeExecutor;
+
+// @public
+export type CriterionVerdict = {
+    readonly criterion: string;
+    readonly pass: boolean;
+    readonly reason: string;
+};
+
+// @public
+export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
+    readonly event: string;
+    readonly data: unknown;
+}[];
+
+// @public
+export const DEFAULT_MAX_TURNS = 12;
+
+// @public
+export const DEFAULT_RUN_TIMEOUT_MS = 300000;
+
+// @public
+export function describeEval<Network extends EvalNetwork = never, Client extends WorkflowClient = never>(agent: AgentDef, define: (test: EvalTest<Network, Client>) => void, options?: Omit<DescribeEvalOptions, "network" | "workflows"> & {
+    readonly network?: Network | (() => Network);
+    readonly workflows?: Client | (() => Client) | undefined;
+}): void;
+
+// @public
+export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
+    readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
+    readonly network?: EvalNetwork | (() => EvalNetwork);
+};
+
+// @public
+export function describeTextEval(agent: AgentDef, define: (test: EvalTextTest) => void, options?: DescribeTextEvalOptions): void;
+
+// @public
+export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
+
+// @public
+export function describeToolCalls(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function describeTurn(turn: EvalTurn): string;
+
+// @public
+export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent">): void;
+
+export { dialogRefusalPattern }
+
+export { dialogResultSchema }
+
+// @public
+export const END_CALL_TOOL = "end_call";
+
+// @public
+export function errorsIn(events: readonly SessionEvent[]): readonly SessionEvent<"error.reported">[];
+
+// @public
+export type EvalCaseOptions = {
+    readonly stubReply?: StubScript;
+    readonly stubGenerate?: StubScript;
+    readonly live?: boolean;
+    readonly scripted?: boolean;
+    readonly clientId?: string | null;
+    readonly phone?: string | null;
+    readonly call?: SessionCall | null;
+    readonly network?: EvalNetwork | (() => EvalNetwork);
+};
+
+// @public
+export type EvalCredentials = {
+    readonly env: ProviderEnv;
+    readonly missing: readonly string[];
+    readonly ready: boolean;
+    readonly reason: string | undefined;
+};
+
+// @public
+export function evalCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+
+// @public
+export type EvalEmitted = {
+    readonly namespace: string;
+    readonly chunk: unknown;
+};
+
+// @public
+export type EvalMode = "live" | "stub";
+
+// @public @sealed
+export type EvalNetwork<State = unknown> = {
+    readonly fetch: typeof globalThis.fetch;
+    readonly state: State;
+    requests(filter?: EvalRequestFilter): readonly EvalRequest[];
+    calls(host: string | RegExp): readonly EvalRequest[];
+    refused(): readonly EvalRequest[];
+    expectNoOutbound(filter: EvalRequestFilter): void;
+    expectNothingRefused(): void;
+    reset(): void;
+};
+
+// @public
+export function evalNetwork<State = undefined>(options?: EvalNetworkOptions<State>): EvalNetwork<State>;
+
+// @public
+export type EvalNetworkOptions<State = undefined> = {
+    readonly state?: () => State;
+    readonly routes?: Readonly<Record<string, EvalRoute<State>>>;
+    readonly passthrough?: readonly string[];
+    readonly refuse?: "throw" | "403";
+};
+
+// @public @sealed
+export type EvalRequest = {
+    readonly method: string;
+    readonly url: URL;
+    readonly host: string;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly text: string;
+    readonly body: unknown;
+    readonly outcome: "routed" | "passthrough" | "refused";
+    readonly route?: string;
+    readonly status?: number;
+};
+
+// @public
+export type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boolean);
+
+// @public
+export type EvalRoute<State = undefined> = (request: Request, info: EvalRequest, state: State) => unknown;
+
+// @public
+export type EvalRunOptions = StartOptions & {
+    readonly timeoutMs?: number | undefined;
+};
+
+// @public @sealed
+export type EvalSession = {
+    readonly id: string;
+    readonly refused: string | undefined;
+    readonly ended: boolean;
+    say(text: string): Promise<EvalTurn>;
+    sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
+    events(): readonly SessionEvent[];
+    said(): readonly string[];
+    toolCalls(): readonly EvalToolCall[];
+    close(): Promise<void>;
+};
+
+// @public
+export interface EvalSessionOptions extends HostAgentOptions {
+    readonly call?: SessionCall;
+    readonly clientId?: string;
+    readonly env?: Record<string, string>;
+    readonly llm?: LlmProvider;
+    readonly phone?: string;
+    // (undocumented)
+    readonly turnTimeoutMs?: number;
+}
+
+// @public
+export function evalSimulation(settings: EvalSimulationOptions): EvalSimulationContext;
+
+// @public
+export type EvalSimulationContext = {
+    simulate(caller: SimulatedCaller, options?: {
+        readonly maxTurns?: number;
+    }): Promise<SimulatedCall>;
+    judge(input: JudgeInput, criteria: readonly string[], options?: {
+        readonly context?: string;
+    }): Promise<CallVerdict>;
+};
+
+// @public
+export type EvalSimulationOptions = {
+    readonly agent: AgentDef;
+    readonly mode: EvalMode;
+    readonly target: SimulationTarget;
+    readonly callerLlm?: LlmProvider;
+    readonly judgeLlm?: LlmProvider;
+    readonly llm?: LlmProvider;
+    readonly env?: Record<string, string>;
+    readonly providerEnv?: ProviderEnv;
+    readonly stubCaller?: StubScript;
+    readonly stubJudge?: readonly boolean[];
+};
+
+// @public
+export type EvalSleep = {
+    readonly label: string;
+    readonly duration: string | number | Date;
+};
+
+// @public
+export type EvalTest<Network extends EvalNetwork = never, Client extends WorkflowClient = never> = (name: string, body: (ctx: EvalTestContext & ([Network] extends [never] ? unknown : {
+    readonly network: Network;
+}) & ([Client] extends [never] ? unknown : {
+    readonly workflowClient: Client;
+})) => Promise<void>, options?: [Network] extends [never] ? EvalCaseOptions : Omit<EvalCaseOptions, "network"> & {
+    readonly network?: Network | (() => Network);
+}) => void;
+
+// @public @sealed
+export type EvalTestContext = {
+    readonly session: EvalSession;
+    readonly mode: EvalMode;
+    readonly workflows: EvalWorkflows | undefined;
+    readonly workflowClient: WorkflowClient | undefined;
+    readonly network: EvalNetwork | undefined;
+};
+
+// @public @sealed
+export type EvalTextAgent = {
+    readonly id: string;
+    send(text: string): Promise<EvalTurn>;
+    sendAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
+    events(): readonly SessionEvent[];
+    said(): readonly string[];
+    toolCalls(): readonly EvalToolCall[];
+    close(): Promise<void>;
+};
+
+// @public
+export interface EvalTextAgentOptions extends HostAgentOptions {
+    readonly env?: Record<string, string>;
+    readonly llm?: LlmProvider;
+    readonly turnTimeoutMs?: number;
+}
+
+// @public
+export function evalTextCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+
+// @public
+export type EvalTextTest = (name: string, body: (ctx: EvalTextTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
+
+// @public @sealed
+export type EvalTextTestContext = {
+    readonly agent: EvalTextAgent;
+    readonly mode: EvalMode;
+};
+
+// @public
+export type EvalToolCall = {
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly args: Record<string, unknown>;
+    readonly result?: string;
+};
+
+// @public
+export type EvalTurn = {
+    readonly text: string;
+    readonly events: readonly SessionEvent[];
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly completed: boolean;
+    readonly errors: readonly SessionEvent<"error.reported">[];
+    readonly endedSession?: boolean;
+};
+
+// @public
+export type EvalWorkflowCaseOptions = {
+    readonly live?: boolean;
+};
+
+// @public
+export function evalWorkflowCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+
+// @public
+export type EvalWorkflowEngineOptions = {
+    readonly workflows: Readonly<Record<string, WorkflowDef>>;
+    readonly env: Readonly<Record<string, string>>;
+    readonly stepFetch?: StepFetch | undefined;
+    readonly stepAttempt?: {
+        readonly attempt: number;
+        readonly maxAttempts: number;
+    } | undefined;
+    readonly speech?: SpeechSynthesizer | undefined;
+};
+
+// @public @sealed
+export type EvalWorkflowRun<R = unknown> = {
+    readonly runId: string;
+    readonly workflow: string;
+    readonly key: string | undefined;
+    readonly status: WorkflowRunStatus;
+    readonly output: R | undefined;
+    readonly error: string | undefined;
+    readonly completed: boolean;
+    readonly reported: readonly string[];
+    readonly emitted: readonly EvalEmitted[];
+    readonly slept: readonly EvalSleep[];
+    readonly elapsedMs: number | undefined;
+    readonly snapshot: WorkflowRunSnapshot<R>;
+};
+
+// @public @sealed
+export type EvalWorkflows = {
+    readonly client: WorkflowClient;
+    run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
+    run(workflow: string, input?: unknown, options?: EvalRunOptions): Promise<EvalWorkflowRun>;
+    settle<R>(runId: string, workflow: AnyWorkflowDef<R>, options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<EvalWorkflowRun<R>>;
+    settle(runId: string, workflow?: undefined, options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<EvalWorkflowRun>;
+    runs(): Promise<readonly EvalWorkflowRun[]>;
+    settleAll(options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<readonly EvalWorkflowRun[]>;
+    close(): Promise<void>;
+};
+
+// @public
+export type EvalWorkflowsOptions = {
+    readonly agent: AgentDef;
+    readonly env?: Record<string, string> | undefined;
+    readonly stepFetch?: EvalWorkflowEngineOptions["stepFetch"];
+    readonly speech?: EvalWorkflowEngineOptions["speech"];
+    readonly timeoutMs?: number | undefined;
+    readonly logger?: Logger | undefined;
+};
+
+// @public
+export type EvalWorkflowTest = (name: string, body: (ctx: EvalWorkflowTestContext) => Promise<void>, options?: EvalWorkflowCaseOptions) => void;
+
+// @public @sealed
+export type EvalWorkflowTestContext = {
+    readonly app: EvalWorkflows;
+    readonly mode: EvalMode;
+};
+
+export { eventsOf }
+
+// @public
+export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+
+// @public
+export function expectToolBeforeSpeech(turn: EvalTurn): void;
+
+// @public
+export interface HostAgentOptions {
+    agent: AgentDef;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
+
+// @public
+export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
+    signal?: AbortSignal | undefined;
+    onUsage?: ((usage: StepUsage) => void) | undefined;
+}) => Promise<GenerateResult>;
+
+export { installFetchRoutes }
+
+export { installStubClientInbox }
+
+export { installStubGateway }
+
+// @public
+export function installStubLlm(script: StubScript): StubLlm;
+
+export { installStubReporter }
+
+export { installStubSpeech }
+
+// @public
+export function installStubSpeechProviders(): StubSpeechProviders;
+
+export { installStubStepDelegate }
+
+export { installStubStepFetch }
+
+export { installStubTranscribe }
+
+export { installStubUploads }
+
+export { installStubWorkflows }
+
+export { isEvent }
+
+// @public
+export function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVerdict>;
+
+// @public
+export type JudgeCallOptions = {
+    readonly criteria: readonly string[];
+    readonly llm: LlmProvider;
+    readonly providerEnv?: ProviderEnv;
+    readonly context?: string;
+};
+
+// @public
+export type JudgeInput = SimulatedCall | readonly EvalTurn[] | Pick<EvalSession, "events"> | string;
+
+// @public
+export function lastStateIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): T | undefined;
+
+// @public (undocumented)
+export function lastStateIn(events: readonly SessionEvent[], slot: string): unknown;
+
+// @public (undocumented)
+export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
+
+// @public
+export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
+
+// @public
+export type LogContext = Record<string, unknown>;
+
+// @public
+export type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public
+export interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
+
+// @public
+export type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export function openEvalSession(options: EvalSessionOptions): Promise<EvalSession>;
+
+// @public
+export function openEvalTextAgent(options: EvalTextAgentOptions): Promise<EvalTextAgent>;
+
+// @public
+export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows;
+
+export { RecordingWorkflows }
+
+export { RecordingWorkflowsOptions }
+
+// @public
+export function resolveEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>,
+overrides?: {
+    readonly llm?: LlmProvider;
+}): {
+    mode: EvalMode;
+    reason: string;
+};
+
+// @public
+export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>): {
+    mode: EvalMode;
+    reason: string;
+};
+
+export { routeStepFetch }
+
+export { RunCodeExecutor }
+
+// @public
+export function runCodeIn(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function runCodeOutput(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function saidIn(events: readonly SessionEvent[]): readonly string[];
+
+// @public
+export function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;
+
+// @public
+export type SimulateCallOptions = {
+    readonly caller: SimulatedCaller;
+    readonly llm: LlmProvider;
+    readonly providerEnv?: ProviderEnv;
+    readonly maxTurns?: number;
+};
+
+// @public
+export type SimulatedCall = {
+    readonly caller: SimulatedCaller;
+    readonly greeting: readonly string[];
+    readonly turns: readonly SimulatedTurn[];
+    readonly endedBy: "caller" | "agent" | "max-turns";
+    readonly endReason: string | undefined;
+    readonly metrics: SimulationMetrics;
+    transcript(): string;
+};
+
+// @public
+export type SimulatedCaller = {
+    readonly persona: string;
+    readonly goal: string;
+    readonly opening?: string;
+};
+
+// @public
+export type SimulatedTurn = {
+    readonly caller: string;
+    readonly turn: EvalTurn;
+    readonly latencyMs: number | undefined;
+};
+
+// @public
+export type SimulationMetrics = {
+    readonly turns: number;
+    readonly durationMs: number;
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly toolCallCounts: Readonly<Record<string, number>>;
+    readonly latencyMs: {
+        readonly mean: number | undefined;
+        readonly p50: number | undefined;
+        readonly max: number | undefined;
+    };
+};
+
+// @public
+export type SimulationTarget = {
+    say(text: string): Promise<EvalTurn>;
+    said(): readonly string[];
+} | {
+    send(text: string): Promise<EvalTurn>;
+    said(): readonly string[];
+};
+
+// @public
+export function statesIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public (undocumented)
+export function statesIn(events: readonly SessionEvent[], slot: string): readonly unknown[];
+
+// @public (undocumented)
+export function statesIn(events: readonly SessionEvent[]): readonly Readonly<Record<string, unknown>>[];
+
+export { StepFetch }
+
+export { StepRoute }
+
+export { StepUnmatched }
+
+// @public
+export interface StepUsage {
+    // (undocumented)
+    inputTokens?: number | undefined;
+    // (undocumented)
+    outputTokens?: number | undefined;
+    // (undocumented)
+    totalTokens?: number | undefined;
+}
+
+// @public
+export interface SttError extends Error {
+    // (undocumented)
+    readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
+}
+
+// @public (undocumented)
+export type SttEvents = {
+    partial: (text: string, meta?: SttTurnMeta) => void;
+    final: (text: string, meta?: SttTurnMeta) => void;
+    error: (err: SttError) => void;
+};
+
+// @public
+export interface SttOpener {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    open(options: SttOpenOptions): Promise<SttSession>;
+}
+
+// @public
+export interface SttOpenOptions {
+    apiKey: string;
+    sampleRate: number;
+    // (undocumented)
+    signal: AbortSignal;
+    // (undocumented)
+    sttPrompt?: string | undefined;
+}
+
+// @public
+export interface SttSession {
+    // (undocumented)
+    close(): Promise<void>;
+    forceEndOfTurn?(): void;
+    // (undocumented)
+    on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
+    sendAudio(pcm: Int16Array): void;
+    updateEndpointing?(minTurnSilenceMs: number): void;
+}
+
+// @public
+export type SttTurnMeta = {
+    endOfTurnConfidence?: number;
+    inputPeakDbfs?: number;
+};
+
+// @public
+export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
+
+// @public
+export const STUB_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
+
+export { StubGatewayRoute }
+
+export { stubGatewayRoute }
+
+// @public
+export type StubLlm = {
+    readonly llm: LlmProvider;
+    readonly env: Record<string, string>;
+    release(): void;
+};
+
+// @public
+export type StubScript = string | readonly (string | StubStep)[];
+
+export { StubSpeech }
+
+export { StubSpeechOptions }
+
+// @public
+export type StubSpeechProviders = {
+    readonly stt: SttProvider;
+    readonly tts: TtsProvider;
+    readonly env: Record<string, string>;
+    sttSession(): StubSttSession | undefined;
+    ttsSession(): StubTtsSession | undefined;
+    release(): void;
+};
+
+// @public
+export type StubStep = {
+    readonly text: string;
+} | {
+    readonly tool: string;
+    readonly args?: Record<string, unknown>;
+};
+
+export { StubStepDelegate }
+
+export { StubStepFetch }
+
+// @public
+export type StubSttSession = SttSession & {
+    partial(text: string): void;
+    commit(text: string): void;
+};
+
+export { StubTranscribe }
+
+export { StubTranscribeOptions }
+
+// @public
+export type StubTtsSession = TtsSession & {
+    readonly spoken: readonly string[];
+};
+
+export { StubUploads }
+
+export { StubUploadsOptions }
+
+export { StubWorkflowsOptions }
+
+// @public
+export function toolArgsIn<T>(calls: readonly EvalToolCall[], name: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public (undocumented)
+export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readonly Record<string, unknown>[];
+
+// @public
+export function toolCallsInEvents(events: readonly SessionEvent[]): readonly EvalToolCall[];
+
+// @public
+export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolCall[];
+
+// @public
+export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
+
+// @public
+export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
+
+// @public
+export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public
+export function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string;
+
+// @public
+export interface TtsError extends Error {
+    // (undocumented)
+    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+}
+
+// @public
+export type TtsEvents = {
+    audio: (pcm: Int16Array) => void;
+    words: (words: readonly TtsWordTiming[]) => void;
+    done: () => void;
+    error: (err: TtsError) => void;
+};
+
+// @public
+export interface TtsOpener {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    open(options: TtsOpenOptions): Promise<TtsSession>;
+}
+
+// @public
+export interface TtsOpenOptions {
+    apiKey: string;
+    sampleRate: number;
+    signal: AbortSignal;
+}
+
+// @public
+export interface TtsSession {
+    cancel(): void;
+    // (undocumented)
+    close(): Promise<void>;
+    flush(): void;
+    // (undocumented)
+    on<E extends keyof TtsEvents>(event: E, fn: TtsEvents[E]): Unsubscribe;
+    sendText(text: string): void;
+}
+
+// @public
+export interface TtsWordTiming {
+    readonly endMs: number;
+    readonly startMs: number;
+    readonly text: string;
+}
+
+// @public
+export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
+
+// @public
+export function turnCalling(turns: readonly EvalTurn[], name: string, where?: (call: EvalToolCall) => boolean): EvalTurn;
+
+// @public
+export type Unsubscribe = () => void;
+
+// @public
+export type VmRunCodeOptions = {
+    readonly timeoutMs?: number;
+    readonly globals?: Record<string, unknown>;
 };
 ```
 

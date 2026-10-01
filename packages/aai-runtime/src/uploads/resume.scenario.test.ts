@@ -42,7 +42,7 @@ import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
 import { createWorkflowApiClient } from "@alexkroman1/aai/workflow-api";
 import { afterEach, expect, test } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { memoryStore } from "../_upload-store-test-utils.ts";
 import { createWorkflowApi } from "../workflow/api.ts";
 

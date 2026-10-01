@@ -12,20 +12,34 @@ import {
   startQuickTunnel,
 } from "./_dev-tunnel.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
-import { fmtUrl, log, notify, parsePort } from "./_ui.ts";
+import { defaultUi, fmtUrl, parsePort, type Ui } from "./_ui.ts";
 import { errorDetail } from "./_utils.ts";
 
 type DevData = { url: string; publicUrl?: string };
 
 /**
- * The tunnel and hook runners `executeDev` calls — the real ones unless a spec
- * hands in fakes, so the `--tunnel` wiring is unit-testable without spawning
- * `cloudflared` or a shell.
+ * What `executeDev` calls out to — the real ones unless a spec hands in fakes,
+ * so its wiring is unit-testable without a bundler, `cloudflared` or a shell.
  */
-export type DevTunnelDeps = {
+export type DevDeps = {
   startQuickTunnel?: typeof startQuickTunnel;
   runPublicUrlHook?: typeof runPublicUrlHook;
+  /** Defaults to `_dev-server.ts`'s, loaded lazily. */
+  startDevServer?: StartDevServer;
+  ui?: Ui;
 };
+
+type StartDevServer = typeof import("./_dev-server.ts").startDevServer;
+
+/** {@link DevDeps} with every default filled in (the dev server loaded lazily). */
+async function resolveDevDeps(deps: DevDeps): Promise<Required<DevDeps>> {
+  return {
+    ui: deps.ui ?? defaultUi,
+    startQuickTunnel: deps.startQuickTunnel ?? startQuickTunnel,
+    runPublicUrlHook: deps.runPublicUrlHook ?? runPublicUrlHook,
+    startDevServer: deps.startDevServer ?? (await import("./_dev-server.ts")).startDevServer,
+  };
+}
 
 /**
  * Start the dev server and return the result.
@@ -42,10 +56,8 @@ export async function executeDev(
     /** `--on-public-url`: run with `PUBLIC_URL` once up, and with it empty on exit. */
     onPublicUrl?: string | undefined;
   },
-  deps: DevTunnelDeps = {},
+  deps: DevDeps = {},
 ): Promise<CommandResult<DevData>> {
-  const startTunnel = deps.startQuickTunnel ?? startQuickTunnel;
-  const runHookCommand = deps.runPublicUrlHook ?? runPublicUrlHook;
   const port = parsePort(opts.port);
   const agentName = path.basename(path.resolve(opts.cwd));
   const hook = opts.onPublicUrl?.trim() || undefined;
@@ -56,7 +68,12 @@ export async function executeDev(
       "Pass --tunnel for a cloudflared quick tunnel, or export PUBLIC_URL.",
     );
   }
-  const { startDevServer } = await import("./_dev-server.ts");
+  const {
+    ui,
+    startQuickTunnel: startTunnel,
+    runPublicUrlHook: runHookCommand,
+    startDevServer,
+  } = await resolveDevDeps(deps);
 
   // Graceful shutdown, installed BEFORE the multi-second startup (bundle +
   // listen + Vite boot): a Ctrl-C during boot used to hit Node's default
@@ -80,7 +97,7 @@ export async function executeDev(
     cleanup().then(
       () => process.exit(exitCode),
       (err: unknown) => {
-        notify("error", `Shutdown failed: ${errorDetail(err)}`);
+        ui.notify("error", `Shutdown failed: ${errorDetail(err)}`);
         process.exit(1);
       },
     );
@@ -93,16 +110,19 @@ export async function executeDev(
   // and cloudflared answers with a URL before its origin is listening.
   if (opts.tunnel) {
     const origin = `http://${tunnelOriginHost()}:${port}`;
-    log.info(`Starting a cloudflared quick tunnel to ${origin}…`);
+    ui.log.info(`Starting a cloudflared quick tunnel to ${origin}…`);
     tunnel = await startTunnel({ origin });
     const exported = process.env.PUBLIC_URL?.trim();
     if (exported && exported !== tunnel.url) {
-      notify("warn", `--tunnel replaces PUBLIC_URL=${exported} with ${tunnel.url} for this run.`);
+      ui.notify(
+        "warn",
+        `--tunnel replaces PUBLIC_URL=${exported} with ${tunnel.url} for this run.`,
+      );
     }
     process.env.PUBLIC_URL = tunnel.url;
     void tunnel.exited.then((code) => {
       if (shuttingDown) return;
-      notify("error", `cloudflared exited (code ${code ?? "signal"}); the public URL is gone.`);
+      ui.notify("error", `cloudflared exited (code ${code ?? "signal"}); the public URL is gone.`);
       shutdown(1);
     });
   }
@@ -115,7 +135,7 @@ export async function executeDev(
   const tracing = await startTracing();
   let serve: () => Promise<void>;
   try {
-    serve = await startDevServer({ cwd: opts.cwd, port, watch: opts.watch });
+    serve = await startDevServer({ cwd: opts.cwd, port, watch: opts.watch }, { ui });
   } catch (err) {
     await tunnel?.close();
     throw err;
@@ -126,7 +146,7 @@ export async function executeDev(
     // awaited `undefined` still yields, and a plain `aai dev` must start its
     // server teardown synchronously with the signal (`dev.test.ts`).
     if (hook && publicUrl)
-      await runHook(runHookCommand, hook, "", opts.cwd, HOOK_SHUTDOWN_TIMEOUT_MS);
+      await runHook(ui, runHookCommand, hook, "", opts.cwd, HOOK_SHUTDOWN_TIMEOUT_MS);
     if (tunnel) await tunnel.close();
     await serve();
     // After the server, so spans from a request still in flight are in the
@@ -135,21 +155,21 @@ export async function executeDev(
   };
 
   const url = `http://localhost:${port}`;
-  log.success(`${styleText("bold", agentName)} running at ${fmtUrl(url)}`);
+  ui.log.success(`${styleText("bold", agentName)} running at ${fmtUrl(url)}`);
   if (publicUrl) {
     // `notify`, not `log`: a supervisor reading a piped `aai dev` needs the one
     // line it cannot get anywhere else.
-    notify("info", `Public URL: ${publicUrl}`);
-    if (hook) await runHook(runHookCommand, hook, publicUrl, opts.cwd);
+    ui.notify("info", `Public URL: ${publicUrl}`);
+    if (hook) await runHook(ui, runHookCommand, hook, publicUrl, opts.cwd);
   }
-  log.info("Press Ctrl-C to stop");
+  ui.log.info("Press Ctrl-C to stop");
 
   // Defense-in-depth: a provider SDK can emit a stray unhandled rejection on a
   // background socket (e.g. a connect-time WebSocket failure such as a TTS
   // provider being out of credits). Log it and keep serving other sessions
   // instead of letting one failed session crash the whole dev host.
   process.on("unhandledRejection", (err) => {
-    notify("error", `Unhandled rejection: ${errorDetail(err)}`);
+    ui.notify("error", `Unhandled rejection: ${errorDetail(err)}`);
   });
 
   // Same rationale for synchronous throws that escape to the top of the event
@@ -158,7 +178,7 @@ export async function executeDev(
   // whole host and drops every other in-flight connection with it. Log the
   // stack and keep serving so a single failure stays isolated to its session.
   process.on("uncaughtException", (err) => {
-    notify("error", `Uncaught exception: ${errorDetail(err)}`);
+    ui.notify("error", `Uncaught exception: ${errorDetail(err)}`);
   });
 
   return ok({ url, ...omitUndefined({ publicUrl }) });
@@ -179,6 +199,7 @@ function tunnelOriginHost(): string {
  * would take the local half down with the public one.
  */
 async function runHook(
+  ui: Ui,
   run: typeof runPublicUrlHook,
   command: string,
   url: string,
@@ -188,8 +209,8 @@ async function runHook(
   const phase = url ? "with the public URL" : "to withdraw the public URL";
   try {
     const code = await run(command, url, { cwd, timeoutMs });
-    if (code !== 0) notify("warn", `--on-public-url exited ${code ?? "(timed out)"} ${phase}.`);
+    if (code !== 0) ui.notify("warn", `--on-public-url exited ${code ?? "(timed out)"} ${phase}.`);
   } catch (err) {
-    notify("warn", `--on-public-url could not run ${phase}: ${errorDetail(err)}`);
+    ui.notify("warn", `--on-public-url could not run ${phase}: ${errorDetail(err)}`);
   }
 }

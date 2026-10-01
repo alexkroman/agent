@@ -10,7 +10,7 @@
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { ResumeFindings, ServerSession, SessionEmitter } from "../session/index.ts";
 import {
   type ClientHistoryDeps,

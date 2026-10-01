@@ -38,7 +38,9 @@
     // test task loads is hashed by none of them — and this one decides whether a
     // suite FAILS on a listener leak, so a cached green run would replay past a
     // change to the gate itself.
-    "scripts/fail-on-process-warning.mjs"
+    "scripts/fail-on-process-warning.mjs",
+    // The other `sharedSetupFiles` entry, hashed for the same reason.
+    "scripts/record-floor-samples.mjs"
   ],
   "globalPassThroughEnv": [
     // Ambient machine config, same class as the proxy/CA vars below. Stripped
@@ -67,6 +69,10 @@
     // `env` because it changes how many processes run the tests, never what they
     // conclude, so it must not fragment the cache across core counts.
     "TURBO_CONCURRENCY",
+    // Read by `scripts/record-floor-samples.mjs`; set only by
+    // `scripts/sample-property-floors.mjs`, which runs vitest directly. It
+    // records assertions and never changes a verdict, so it stays out of the hash.
+    "AAI_FLOOR_SAMPLES",
     // Read by `scripts/dev-server.mjs`, which no turbo task runs — declared for
     // the same reason `TURBO_CONCURRENCY` above is, so the declaration matches
     // what the code reads and `noUndeclaredEnvVars` has something true to check.
@@ -154,13 +160,18 @@
     // mode, so an undeclared variable never reaches the task at all. Declaring
     // it in `env` also puts it in the hash, so a forks run and a threads run
     // cannot share a cache entry.
+    //
+    // No `dependsOn`: `@dev/source` resolves workspace imports to source, so a
+    // unit suite needs no `dist` (measured: aai, aai-ui, aai-runtime, aai-evals,
+    // aai-gates, aai-guest-core and aai-studio-client pass with none built).
+    // The packages that READ a built artifact declare `^build` in their own
+    // turbo.json: aai-cli, aai-server, aai-studio-server, aai-guest (+ its own
+    // `build`), aai-guest-studio and aai-templates.
     "test": {
-      "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "../../vitest.shared.ts"],
       "env": ["CI", "VITEST_POOL"]
     },
     "test:coverage": {
-      "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "../../vitest.shared.ts"],
       "outputs": ["coverage/**"],
       "env": ["CI", "VITEST_POOL"]

@@ -5,8 +5,11 @@ import type { SessionEvent } from "@alexkroman1/aai";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { describe, expect, test, vi } from "vitest";
+import { makeConfig } from "../_agent-test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { MockWebSocket } from "../_mock-ws.ts";
-import { flush, makeConfig, makeEmitter, makeLogger, silentLogger } from "../_test-utils.ts";
+import { makeEmitter } from "../_session-test-utils.ts";
+import { flush } from "../_timing-test-utils.ts";
 import type { HostRuntimeOptions, Runtime, runtimeBrand } from "../runtime/index.ts";
 import type { SessionWebSocket } from "../session/index.ts";
 import {

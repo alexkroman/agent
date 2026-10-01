@@ -89,6 +89,7 @@ const TEST_ONLY_ENTRIES = {
   },
   "@alexkroman1/aai-runtime": {
     "./testing": "runtime test doubles — imported by a project's specs",
+    "./testing/vitest": "installs/restores against vitest, and the eval suites",
     "./eval": "the eval tier's runner, run by vitest",
     "./eval/vitest": "the eval tier's vitest bindings",
   },

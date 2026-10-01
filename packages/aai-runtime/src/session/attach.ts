@@ -39,8 +39,8 @@ import {
 } from "@alexkroman1/aai/protocol";
 import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
-import type { Logger } from "../runtime-config.ts";
-import { consoleLogger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
+import { consoleLogger } from "../logger.ts";
 import { closeRefused, endOnRequest, SessionRefusedError } from "./attach-end.ts";
 import type { ServerSession } from "./core.ts";
 import type { SessionDirectory } from "./directory.ts";

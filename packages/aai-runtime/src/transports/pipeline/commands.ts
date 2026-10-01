@@ -19,7 +19,7 @@
 import type { Message } from "@alexkroman1/aai";
 import type { ModelMessage } from "ai";
 import { bytesToPcm16 } from "../../_pcm.ts";
-import type { Logger } from "../../runtime-config.ts";
+import type { Logger } from "../../logger.ts";
 import { PIPELINE_CAPABILITIES } from "../capabilities.ts";
 import type { SpokenLine, SpokenLineOutcome, Transport } from "../types.ts";
 import type { HeardTracker } from "./heard/index.ts";

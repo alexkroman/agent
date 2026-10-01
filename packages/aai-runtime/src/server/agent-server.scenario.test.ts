@@ -35,7 +35,7 @@
 import { agent } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { WebSocket as NodeWebSocket } from "ws";
-import { withDeadline } from "../_test-utils.ts";
+import { withDeadline } from "../_timing-test-utils.ts";
 import { AGENT_SERVER_ENV, withServer } from "./_agent-server-test-utils.ts";
 
 describe("createAgentServer over a live session", () => {

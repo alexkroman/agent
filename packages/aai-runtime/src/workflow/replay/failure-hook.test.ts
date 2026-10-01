@@ -7,8 +7,8 @@
 
 import { type WorkflowContext, type WorkflowDef, workflow } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../../_test-utils.ts";
-import type { Logger } from "../../runtime-config.ts";
+import { silentLogger } from "../../_logger-test-utils.ts";
+import type { Logger } from "../../logger.ts";
 import { createWorkflowEngine } from "../engine.ts";
 import { createMemoryJournal } from "../journal/backends/memory.ts";
 import { createMemoryStreams } from "../streams.ts";

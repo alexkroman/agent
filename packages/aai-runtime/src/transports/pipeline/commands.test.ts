@@ -10,7 +10,7 @@
 import type { Message } from "@alexkroman1/aai";
 import { createEpoch } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../../_test-utils.ts";
+import { silentLogger } from "../../_logger-test-utils.ts";
 import { createPipelineCommands, type PipelineCommandDeps } from "./commands.ts";
 import type { HeardTracker } from "./heard/index.ts";
 import type { PipelineHistory } from "./history/index.ts";

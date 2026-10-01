@@ -1,16 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `@alexkroman1/aai-runtime/testing` — driving an agent's own machinery from a
- * spec: a DURABLE workflow run, and a TEXT agent turn.
+ * `@alexkroman1/aai-runtime/testing` — the PURE testing door of an agent
+ * project: every fake, recorder and reader a spec needs that installs nothing,
+ * and the drivers that run an agent's own machinery for real — a DURABLE
+ * workflow run and a TEXT agent turn.
  *
- * The one thing an agent author could not test. A workflow's steps are ordinary
- * exported functions and its declaration is a value, so both have always been
- * reachable from a vitest file; the BODY takes a `ctx` only an engine
- * constructs. `@alexkroman1/aai/testing`'s `createWorkflowContext` gives it one that
- * records — which is the right tool for asserting what a body ASKED FOR, and
- * says outright that it is not a durability test — and this gives it the real
- * engine, over the memory journal, so a spec can assert that a run slept,
- * resumed, retried, was answered, and survived a dead worker.
+ * A test file imports from two places: this subpath, and
+ * `@alexkroman1/aai-runtime/testing/vitest` for everything that INSTALLS or
+ * RESTORES (and for the eval suites). This one carries every public name of
+ * `@alexkroman1/aai/testing` — `createToolContext`, `runTool`, `expectToolOk`,
+ * `stubGenerate`, `createWorkflowContext`, … — re-exported as the SAME
+ * declarations, so a type from either package is one type.
  *
  * ```ts
  * import { workflow } from "@alexkroman1/aai";
@@ -28,15 +28,17 @@
  * console.log(run.status); // "completed"
  * ```
  *
- * ## The TEXT half
+ * ## The CONTEXT and the ENGINE
  *
- * `scriptedTextModel` and `runTextAgent` are the same idea one mode over.
- * `createTextAgent` takes a pre-resolved `LanguageModel` and says outright that
- * tests are the majority use of that field, and there was nothing published to
- * put in it — so every caller wrote the provider shape out by hand and cast it,
- * and each copy re-derived the `finish` frame's shape (the one whose bare-string
- * spelling silently stops every tool from running). The script is a step —
- * what the model says, what it calls — and the agent underneath is the real one.
+ * `createWorkflowContext` (declared in the SDK) hands a workflow body a `ctx`
+ * that RECORDS — the right tool for asserting what a body asked for, and
+ * explicitly not a durability test. `runWorkflow` runs the real engine over the
+ * memory journal, so a spec can assert that a run slept, resumed, retried, was
+ * answered, and survived a dead worker.
+ *
+ * `scriptedTextModel` and `runTextAgent` are the same idea one mode over: the
+ * script is a step — what the model says, what it calls — and the text agent
+ * underneath is the real one.
  *
  * ```ts
  * import { agent } from "@alexkroman1/aai";
@@ -50,22 +52,21 @@
  * console.log(run.text); // "It shipped yesterday."
  * ```
  *
- * ## Why it is on the RUNTIME rather than beside `createWorkflowContext`
+ * ## Why the SDK's helpers are re-exported HERE
  *
- * `@alexkroman1/aai` is the shared core and imports no sibling package — a hard
- * boundary this repo checks with `konsistent`, and one the engine sits on the
- * far side of. The engine, the journal and `createInProcessWorkflowEngine` are
- * `@alexkroman1/aai-runtime`'s, so a helper that runs a real one has to live
- * here. The split a template sees is therefore: `@alexkroman1/aai/testing` for
- * the CONTEXT (no journal, one walk, everything recorded), this for the ENGINE
- * (a journal, real replays, real suspensions).
+ * `@alexkroman1/aai` never imports this package (the dependency runs one way),
+ * and the engine is runtime — so the one door has to be on the runtime, and
+ * the SDK's helpers are re-exported in this direction. They stay DECLARED (and
+ * versioned, as `aai:testing`) in the SDK; here they are owned by this
+ * package's `eval-stubs` and `testing-stubs` capabilities, because dropping
+ * one from this door would be this package's break.
  *
  * ## Runner-agnostic, deliberately
  *
  * Nothing here installs a global or owns a lifetime a runner has to unwind —
- * the driver injects its own dispatcher, so no timer is ever armed — which is
- * this repo's rule for what may stay off a `/vitest` subpath. It works from any
- * harness.
+ * the workflow driver injects its own dispatcher, so no timer is ever armed —
+ * which is this repo's rule for what may stay off a `/vitest` subpath
+ * (konsistent `published-testing-split`). It does not import vitest.
  *
  * Exports are enumerated explicitly (no `export *`) so the public surface is
  * deliberate: a new symbol in one of these modules does not ship as public API
@@ -74,7 +75,126 @@
  * @module testing
  */
 
-// And what `TextAgentOptions` extends, for the same reason.
+// Every public name of `@alexkroman1/aai/testing`, as the same declarations.
+// `testing-doors.test.ts` holds this list to that barrel's, so a helper the SDK
+// gains and this door lacks fails there rather than in an author's import.
+export {
+  commandedBuiltins,
+  createProgressStream,
+  createRecordingWorkflows,
+  createRunSnapshot,
+  createStubWorkflows,
+  createToolContext,
+  createWorkflowContext,
+  type DeployedConfig,
+  type DeployedStage,
+  deployedAgent,
+  dialogRefusalPattern,
+  dialogResultSchema,
+  endSessionCalls,
+  eventsOf,
+  expectDeployable,
+  expectDialogOk,
+  expectDialogRefused,
+  expectPromptBuiltinsDeclared,
+  expectToolOk,
+  type FetchRouteHandler,
+  type FetchRouteHit,
+  type FetchRouteRequest,
+  type FetchRoutesOptions,
+  type FetchRouteTable,
+  isEvent,
+  type ProjectFiles,
+  parseSchemaInput,
+  parseToolInput,
+  type RecordedSleep,
+  type RecordedStart,
+  type RecordedStep,
+  type RecordingWorkflows,
+  type RecordingWorkflowsOptions,
+  type RunSnapshotOverrides,
+  routeStepFetch,
+  runGuardrail,
+  runTool,
+  type SaidLine,
+  type ScriptedToolContext,
+  type ScriptedToolContextOptions,
+  type SentEvent,
+  STUB_SPEECH_PCM_BYTES,
+  type StepRoute,
+  type StepUnmatched,
+  type StubClientInbox,
+  type StubClientInboxCall,
+  type StubClientInboxOptions,
+  type StubClientTranscript,
+  type StubClientTranscriptAnswer,
+  type StubClientTranscriptCall,
+  type StubDelegate,
+  type StubDelegateCall,
+  type StubDelegateReply,
+  type StubDelegateRoute,
+  type StubDelegateScript,
+  type StubEmitted,
+  type StubFetchRoutes,
+  type StubGateway,
+  type StubGatewayCall,
+  type StubGatewayOptions,
+  type StubGatewayRoute,
+  type StubGenerate,
+  type StubGenerateCall,
+  type StubGenerateReply,
+  type StubGenerateRoute,
+  type StubGenerateScript,
+  type StubPlaceCall,
+  type StubPlaceCallOptions,
+  type StubPlaceCallRefusal,
+  type StubPlacedCall,
+  type StubReporter,
+  type StubSpeech,
+  type StubSpeechCall,
+  type StubSpeechOptions,
+  type StubStepAnswer,
+  type StubStepDelegate,
+  type StubStepFetch,
+  type StubStepRequest,
+  type StubTranscribe,
+  type StubTranscribeCall,
+  type StubTranscribeFailure,
+  type StubTranscribeLeg,
+  type StubTranscribeOptions,
+  type StubUpload,
+  type StubUploads,
+  type StubUploadsOptions,
+  type StubUploadWrite,
+  schemaInputIssues,
+  scriptedToolContext,
+  stubClientInbox,
+  stubClientTranscript,
+  stubDelegate,
+  stubFetchRoutes,
+  stubGateway,
+  stubGatewayRoute,
+  stubGenerate,
+  stubPlaceCall,
+  stubReporter,
+  stubSpeech,
+  stubStepDelegate,
+  stubStepFetch,
+  stubStepInfo,
+  stubTranscribe,
+  stubUploads,
+  type TestToolContext,
+  type ToolBearingAgent,
+  type ToolContextOverrides,
+  type ToolRunner,
+  toolInputIssues,
+  toolOf,
+  toolRunner,
+  WORKFLOW_CONTEXT_NOW,
+  type WorkflowContextOptions,
+  type WorkflowContextRecorder,
+} from "@alexkroman1/aai/testing";
+// What `TextAgentOptions` extends, so a spec building turn options can name it.
 export type { HostAgentOptions } from "./host-agent-options.ts";
 export {
   type RunTextAgentOptions,

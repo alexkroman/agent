@@ -30,7 +30,7 @@ import {
   describeWorkflowEval,
   installStubStepFetch,
   stubGatewayRoute,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect, onTestFinished } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import { SETTLE_MS } from "./workflows/digest.ts";

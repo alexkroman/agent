@@ -16,7 +16,7 @@ import {
   TOOL_ERROR_BUDGET,
   toolErrorBudget,
 } from "./_prepare-step.ts";
-import { type Logger, silentLogger } from "./runtime-config.ts";
+import { type Logger, silentLogger } from "./logger.ts";
 
 /** The `prepareStep` options object, with only the fields a case varies set. */
 function step(

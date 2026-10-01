@@ -34,7 +34,7 @@ import {
   lastStateIn,
   toolNames,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { LEADS, MAX_FEEDBACK_ROUNDS, SHORTLIST_SIZE } from "./shared.ts";

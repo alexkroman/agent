@@ -2,7 +2,8 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
-import { flush, silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
+import { flush } from "../_timing-test-utils.ts";
 import { makeCallbacks as noopCallbacks } from "./_transport-recorder.ts";
 import {
   createOpenaiRealtimeTransport,

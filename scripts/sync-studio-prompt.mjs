@@ -212,6 +212,6 @@ console.error(
     "so a stale copy means that eval is grading a prompt nobody deploys — which\n" +
     "is the exact failure the copies exist to prevent, arriving from the other\n" +
     "direction and reporting green while it happens.\n\n" +
-    "Run `node scripts/sync-studio-prompt.mjs` and commit the result.\n",
+    "Run `pnpm sync:studio-prompt` and commit the result.\n",
 );
 process.exit(1);

@@ -125,6 +125,10 @@ export type { StateSyncSession } from "./_state-sync.ts";
 export { parseTraceparent, type TraceParent, traceIdOf } from "./_trace-context.ts";
 // What a bundle hands the runtime-less guest harness, as `__aaiCreateRuntime.host`.
 export { GUEST_HOST, GUEST_HOST_VERSION, type GuestHost } from "./guest-host.ts";
+// The console-backed `Logger` the CLI, the guest and the platform's own logger
+// all start from. The `Logger` TYPE — the thing a host implements — is
+// contracted, on the root barrel.
+export { consoleLogger } from "./logger.ts";
 // The two sizes an upload is measured in, plus the id grammar. Exported for the
 // PLATFORM, which owns the byte route a deployed guest brokers through: its window
 // cap and its key derivation have to be stated in the same units the SDK cuts in,
@@ -171,10 +175,6 @@ export type { ProviderEnvVarsQuery } from "./providers/_provider-env-var.ts";
 // one returns, is the SDK's and is named from `@alexkroman1/aai/host-internal`.
 export { withHostCredentialFallback } from "./providers/host-env.ts";
 export { requiredProviderEnvVars } from "./providers/resolve.ts";
-// The console-backed `Logger` the CLI, the guest and the platform's own logger
-// all start from. The `Logger` TYPE — the thing a host implements — is
-// contracted, on the root barrel.
-export { consoleLogger } from "./runtime-config.ts";
 // Which keys of an agent's env a SERVER may read — everything but the host-mode
 // gate. Shared for the same reason `isPathInside` below is: the guest harness makes
 // the identical statement about a deployed agent and had its own copy of the line,
@@ -262,7 +262,7 @@ export {
   type SessionStateStore,
   type StoredSessionEvent,
 } from "./session-state/store.ts";
-// The route `createRuntimeServer` serves carriers on and the query key naming
+// The route `createServerForRuntime` serves carriers on and the query key naming
 // one, for the CLI's preflight, which prints the webhook a carrier is pointed at.
 // An embedder bridging a call itself chooses its own path, so neither is part of
 // the `telephony` contract.
@@ -277,7 +277,7 @@ export type { TransportEventBody, TransportEventType } from "./transports/types.
 // snapshot off `usage.updated` — has to be able to write both types.
 export type { UsageMeter, UsageSnapshot } from "./usage-meter.ts";
 // The workflow HTTP API's method list, which the platform's guest-route table
-// has to agree with. The HANDLER is not here: `createRuntimeServer` mounts the route
+// has to agree with. The HANDLER is not here: `createServerForRuntime` mounts the route
 // itself, so nothing outside this package wires one by hand.
 export { WORKFLOW_API_METHODS } from "./workflow/api.ts";
 // Where a LOCAL deployment keeps a workflow's on-disk state. The READER
@@ -371,7 +371,7 @@ export { handleWorkflowRequest, publishWorkflowWebhookUrl } from "./workflow/ser
 // `aai-server` is the importer — its byte route, its record handlers and the
 // store conformance suite. They were the `uploads` capability's, and no public
 // signature takes or returns any of them: an embedder is handed a store by
-// `createRuntimeServer`, never builds one, so the contract covered plumbing.
+// `createServerForRuntime`, never builds one, so the contract covered plumbing.
 export {
   createHttpUploadBackend,
   createMemoryUploadBackend,

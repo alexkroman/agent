@@ -2,6 +2,7 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
 import {
   assertBucketPrivate,
   type BlobStorage,
@@ -10,7 +11,6 @@ import {
   storageEndpoint,
 } from "./blob-storage.ts";
 import { PlatformServiceUnavailableError } from "./platform/service-errors.ts";
-import { captureLogs } from "./test-utils.ts";
 
 /**
  * Every `code` down an error's `cause` chain.

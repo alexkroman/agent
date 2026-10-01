@@ -2,12 +2,13 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
+import { createTestStore } from "./_orchestrator-test-utils.ts";
 import { SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
 import { inlineWorker } from "./sandbox/_vm-test-utils.ts";
 import { resolveSandbox } from "./sandbox/resolve.ts";
 import { createSlotCache } from "./sandbox/slots.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
-import { captureLogs, createTestStore } from "./test-utils.ts";
 
 // ── Mock sandbox-vm ──────────────────────────────────────────────────────────
 // vi.mock factory is hoisted, so we cannot reference top-level variables.

@@ -21,7 +21,7 @@
  *
  * ## Not a gate, and it cannot become one
  *
- * Same rule as `check:gateway-models`: it spends real bandwidth against a live
+ * Same rule as `audit:gateway-models`: it spends real bandwidth against a live
  * remote, so a bad link would redden unrelated pull requests. Nothing runs it
  * but a person. It also LEAVES ITS UPLOADS BEHIND — there is no delete route on
  * `/workflows/uploads` — so it prints the bytes it is about to store, refuses a

@@ -39,7 +39,7 @@
 import type { Message } from "@alexkroman1/aai";
 import { createEpoch, type Epoch } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 import { pairToolCallsInPlace } from "../../../tools/index.ts";
 import { toModelMessage } from "../output/index.ts";
 import { estimateMessageTokens } from "./context-budget.ts";

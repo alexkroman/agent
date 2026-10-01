@@ -37,9 +37,10 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 import { createPgAgentRows } from "./agent-store.ts";
 import { createPgChatStore } from "./chat-store.ts";
-import { ensurePlatformTables } from "./platform/schema-test-utils.ts";
+import { ensurePlatformTables } from "./platform/_schema-test-utils.ts";
 import { createPgRateLimiter } from "./rate-limit.ts";
-import { createVaultSecretStore, type SqlExec } from "./secret-store.ts";
+import { createVaultSecretStore } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import { CONFORMANCE_PREFIX, conformanceLike } from "./store-conformance.ts";
 import {
   agentRowsConformance,

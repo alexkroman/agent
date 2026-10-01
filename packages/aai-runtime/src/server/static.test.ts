@@ -2,7 +2,7 @@
 /**
  * Specs for the static-asset path, at the level `server.test.ts` cannot reach.
  *
- * That suite drives `createRuntimeServer`, which always hands `serveStatic` whatever
+ * That suite drives `createServerForRuntime`, which always hands `serveStatic` whatever
  * the caller put in `clientDir` — and every in-repo caller passes an absolute
  * path, so the one thing the containment check can get wrong about a RELATIVE
  * one is invisible from up there. `clientDir` is a `@public` option that states
@@ -19,10 +19,11 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { isPathInside } from "@alexkroman1/aai/workspace-files";
 import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
-import { isPathInside, serveStatic } from "./static.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
+import { serveStatic } from "./static.ts";
 
 let dir: string | null = null;
 let close: (() => Promise<void>) | undefined;
@@ -43,7 +44,7 @@ async function assetDir(): Promise<string> {
 
 /**
  * Serve `clientDir` and answer 404 for anything `serveStatic` declines — the
- * same shape `createRuntimeServer` gives it, so a decline is observable as a status.
+ * same shape `createServerForRuntime` gives it, so a decline is observable as a status.
  */
 async function serving(clientDir: string): Promise<string> {
   const server = http.createServer((req, res) => {

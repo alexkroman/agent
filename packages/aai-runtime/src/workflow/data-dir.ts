@@ -72,7 +72,7 @@ function defaultLocalDataDir(): string {
  * The directory this deployment keeps local workflow state in.
  *
  * The fallback is for a host that declared nothing — a self-hosted
- * `createRuntimeServer` — where a per-process directory is the honest answer, that
+ * `createServerForRuntime` — where a per-process directory is the honest answer, that
  * host's runs being per-process too.
  *
  * @internal

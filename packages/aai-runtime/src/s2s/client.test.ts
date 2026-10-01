@@ -5,7 +5,7 @@
 
 import { DEFAULT_VOICE_FOCUS, DEFAULT_VOICE_FOCUS_THRESHOLD } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import {
   createWebSocketStub,
   emitMessage,

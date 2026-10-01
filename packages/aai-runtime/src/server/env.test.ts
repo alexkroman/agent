@@ -1,15 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `agentServerEnv` — which keys of an agent's env reach `createRuntimeServer`.
+ * `agentServerEnv` — which keys of an agent's env reach `createServerForRuntime`.
  *
  * The cases came from the guest harness, which had its own copy of this filter
- * until `createAgentServer` turned out to need the same one. Its `createRuntimeServer`
+ * until `createAgentServer` turned out to need the same one. Its `createServerForRuntime`
  * call was made with no `env` AT ALL; the wrapper's was made with the agent's env
  * going only to the runtime — the same three symptoms by two routes.
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { agentGateToken, agentServerEnv } from "./env.ts";
 import { isHostAllowed } from "./host-mode.ts";
 

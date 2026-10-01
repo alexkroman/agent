@@ -104,16 +104,12 @@ import {
   loadSessionStateConformance,
 } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { createTestOrchestrator, type TestFetch } from "./_orchestrator-test-utils.ts";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
-import { ensurePlatformTables } from "./platform/schema-test-utils.ts";
-import type { SqlExec } from "./secret-store.ts";
-import {
-  bearerFor,
-  createTestOrchestrator,
-  deploy,
-  fakeAdminDbOver,
-  type TestFetch,
-} from "./test-utils.ts";
+import { bearerFor, deploy } from "./_request-test-utils.ts";
+import { fakeAdminDbOver } from "./_sql-test-utils.ts";
+import { ensurePlatformTables } from "./platform/_schema-test-utils.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 /**
  * Awaited at the TOP, so the cases can be declared synchronously inside the

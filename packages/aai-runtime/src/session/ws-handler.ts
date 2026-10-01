@@ -20,8 +20,8 @@ import {
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { errorMessage, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 
-import type { Logger } from "../runtime-config.ts";
-import { consoleLogger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
+import { consoleLogger } from "../logger.ts";
 import { type AttachedSession, type AttachSessionOptions, attachSession } from "./attach.ts";
 import { createClientSink } from "./ws-client-sink.ts";
 import type { SessionWebSocket } from "./ws-frames.ts";

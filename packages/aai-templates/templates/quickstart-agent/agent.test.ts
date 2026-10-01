@@ -1,7 +1,7 @@
 /** The def a DEPLOYED agent runs: authored, plus `tools/` and `system-prompt.md`. */
 import deployedDef from "virtual:aai/agent";
 import { agent, assemblyAIPipeline, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { expectDeployable } from "@alexkroman1/aai/testing";
+import { expectDeployable } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 

@@ -13,12 +13,17 @@
  */
 
 import { styleText } from "node:util";
+import type { AgentDef } from "@alexkroman1/aai";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
   connectSession,
   createRuntime,
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
   type Logger,
+  type RuntimeOptions,
+  type SessionConnection,
+  type SessionConnectOptions,
 } from "@alexkroman1/aai-runtime";
 import { withHostCredentialFallback } from "@alexkroman1/aai-runtime/internal";
 import pTimeout from "p-timeout";
@@ -30,9 +35,10 @@ import {
   createConsoleSink,
   createSampleAligner,
 } from "./_console-session.ts";
-import { loadWorker, resolveAgentEnv } from "./_dev-server.ts";
+import { resolveAgentEnv } from "./_dev-agent-env.ts";
+import { loadWorker } from "./_dev-server.ts";
 import { type CommandResult, fail, type OutputMode, ok } from "./_output.ts";
-import { log } from "./_ui.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 import { errorDetail, errorMessage } from "./_utils.ts";
 
 type ConsoleData = { sessionId: string };
@@ -87,9 +93,53 @@ export function terminalPrinter(write: (line: string) => void): ConsolePrinter {
 }
 
 /**
+ * What `executeConsole` reaches outside itself for, injectable so its
+ * orchestration is specced against fakes rather than module mocks.
+ */
+export type ConsoleSeams = {
+  /** Bundle and evaluate `agent.ts`. */
+  loadAgent: (cwd: string) => Promise<AgentDef>;
+  /** The agent's env, as `aai dev` resolves it. */
+  resolveEnv: typeof resolveAgentEnv;
+  ensureSessionStateSchema: typeof ensureSessionStateSchema;
+  ensureWorkflowJournalSchema: typeof ensureWorkflowJournalSchema;
+  /** Build the runtime — narrowed to the three things the console uses. */
+  startRuntime: (options: RuntimeOptions) => ConsoleRuntime;
+};
+
+/** The part of a session connection the console drives. */
+export type ConsoleConnection = Pick<
+  SessionConnection,
+  "id" | "sendAudio" | "sendCommand" | "close" | "ended"
+>;
+
+/** The part of a runtime the console drives, with `connectSession` bound to it. */
+export type ConsoleRuntime = {
+  readyConfig: { sampleRate: number; ttsSampleRate: number };
+  shutdown(): Promise<void>;
+  connect(sink: ClientSink, options: SessionConnectOptions): ConsoleConnection;
+};
+
+const REAL_CONSOLE_SEAMS: ConsoleSeams = {
+  loadAgent: (cwd) => loadWorker(cwd, createWorkerEvaluator()),
+  resolveEnv: resolveAgentEnv,
+  ensureSessionStateSchema,
+  ensureWorkflowJournalSchema,
+  startRuntime: (options) => {
+    const runtime = createRuntime(options);
+    return {
+      readyConfig: runtime.readyConfig,
+      shutdown: () => runtime.shutdown(),
+      connect: (sink, connectOptions) => connectSession(runtime, sink, connectOptions),
+    };
+  },
+};
+
+/**
  * Run one console session until Ctrl-C, or until the session ends itself.
  *
- * `audio` is a parameter so the spec can drive it without a sound card.
+ * `audio` and `seams` are parameters so the spec can drive it without a sound
+ * card, a bundler or a runtime.
  */
 export async function executeConsole(opts: {
   cwd: string;
@@ -102,14 +152,18 @@ export async function executeConsole(opts: {
   audio?: ConsoleAudio;
   /** Resolves when the user asks to quit. Defaults to the first SIGINT/SIGTERM. */
   untilQuit?: Promise<void>;
+  seams?: Partial<ConsoleSeams>;
+  ui?: Ui;
 }): Promise<CommandResult<ConsoleData>> {
   const audio = opts.audio ?? soxAudio;
+  const ui = opts.ui ?? defaultUi;
+  const seams: ConsoleSeams = { ...REAL_CONSOLE_SEAMS, ...opts.seams };
   const logger = consoleRuntimeLogger(opts.verbose === true);
 
-  log.step("Bundling agent…");
-  let agentDef: Awaited<ReturnType<typeof loadWorker>>;
+  ui.log.step("Bundling agent…");
+  let agentDef: AgentDef;
   try {
-    agentDef = await loadWorker(opts.cwd, createWorkerEvaluator());
+    agentDef = await seams.loadAgent(opts.cwd);
   } catch (err) {
     return fail("build_failed", `Could not load agent.ts: ${errorMessage(err)}`);
   }
@@ -120,15 +174,15 @@ export async function executeConsole(opts: {
       "Run `aai dev` and open the page instead.",
     );
   }
-  const env = await resolveAgentEnv(opts.cwd, agentDef);
+  const env = await seams.resolveEnv(opts.cwd, agentDef, ui);
   // The same reason `aai dev` does this: a project with a DATABASE_URL keeps
   // session state there, and nothing else in a local run creates the tables.
   if (env.DATABASE_URL) {
-    await ensureSessionStateSchema({ url: env.DATABASE_URL, logger });
-    await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger });
+    await seams.ensureSessionStateSchema({ url: env.DATABASE_URL, logger });
+    await seams.ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger });
   }
 
-  const runtime = createRuntime({
+  const runtime = seams.startRuntime({
     agent: agentDef,
     env,
     providerEnv: withHostCredentialFallback(env),
@@ -192,7 +246,7 @@ export async function executeConsole(opts: {
     },
   });
 
-  const connection = connectSession(runtime, sink, {
+  const connection = runtime.connect(sink, {
     audioLeadMs: CONSOLE_AUDIO_LEAD_MS,
     logContext: { transport: "console" },
   });
@@ -201,8 +255,8 @@ export async function executeConsole(opts: {
   // browser client means by `audio_ready` — and it is what releases the greeting.
   connection.sendCommand({ type: "audio_ready" });
 
-  log.success(`Talking to ${agentDef.name}. Press Ctrl-C to hang up.`);
-  log.info("Use headphones: without echo cancellation the agent hears itself and interrupts.");
+  ui.log.success(`Talking to ${agentDef.name}. Press Ctrl-C to hang up.`);
+  ui.log.info("Use headphones: without echo cancellation the agent hears itself and interrupts.");
 
   const quit = opts.untilQuit === undefined ? signalled() : undefined;
   try {

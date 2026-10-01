@@ -46,7 +46,7 @@ import { beforeAll, beforeEach, expect, test } from "vitest";
 import { describeWithPg } from "./_pg-test-utils.ts";
 import { RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import { useThrowawayPlatformDb } from "./_workflow-queue-test-utils.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import {
   findStalledRuns,
   markReconciled,

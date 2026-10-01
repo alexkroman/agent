@@ -29,7 +29,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { execaSync } from "execa";
-import { notify } from "./_ui.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 import {
   binFromPackageJson,
   compareCodeUnits,
@@ -112,7 +112,21 @@ export type VitestRunOptions = {
    * falsely by an eval run.
    */
   readonly announceUnrun?: boolean;
+  /** Where the unrun-spec notice goes. Defaults to the process's terminal. */
+  readonly ui?: Ui | undefined;
+  /** Spawns vitest. Defaults to execa's `execaSync`; a spec passes a recorder. */
+  readonly exec?: VitestExec | undefined;
 };
+
+/** The seams a vitest-running command takes: its terminal and its spawner. */
+export type VitestDeps = { readonly ui?: Ui | undefined; readonly exec?: VitestExec | undefined };
+
+/** The one process call {@link runVitest} makes, in `execaSync`'s shape. */
+export type VitestExec = (
+  cmd: string,
+  args: string[],
+  opts: { cwd: string; stdio: "inherit"; env?: NodeJS.ProcessEnv },
+) => unknown;
 
 /**
  * Run vitest over `candidates` (or, with `all`, the whole project) in the given
@@ -140,16 +154,20 @@ export function runVitest(cwd: string, opts: VitestRunOptions): string[] | false
   // survives only as an alias for `--strip-types`. Setting NODE_OPTIONS is not
   // free either: it propagates to every vitest worker, so a value that ever
   // stops being accepted would fail the whole run rather than degrade.
-  execaSync(cmd, [...args, "run", "--root", ".", ...(opts.extraArgs ?? []), ...files], {
-    cwd,
-    stdio: "inherit",
-    // `omitUndefined`, not a conditional spread: `guard-invariants` rule 2.
-    ...omitUndefined({ env: opts.env ? { ...process.env, ...opts.env } : undefined }),
-  });
+  (opts.exec ?? execaSync)(
+    cmd,
+    [...args, "run", "--root", ".", ...(opts.extraArgs ?? []), ...files],
+    {
+      cwd,
+      stdio: "inherit",
+      // `omitUndefined`, not a conditional spread: `guard-invariants` rule 2.
+      ...omitUndefined({ env: opts.env ? { ...process.env, ...opts.env } : undefined }),
+    },
+  );
 
   // Announced AFTER the run, so a reader sees vitest's own summary and then
   // what it did not cover. `announceUnrun` defaults on — see the option's doc.
-  if (opts.announceUnrun !== false) warnUnrunSpecs(cwd, files);
+  if (opts.announceUnrun !== false) warnUnrunSpecs(cwd, files, opts.ui);
 
   // The NAMES rather than `true`: the caller reports what ran, and
   // `unrunSpecFiles` reports what did not, so the two cannot disagree.
@@ -289,7 +307,7 @@ export const WIDEN_HINT =
  * and printed "Build complete" — that gate passes `all` now, so the notice is
  * silent there, which is the correct end state rather than a lost check.
  */
-export function warnUnrunSpecs(cwd: string, ran: RanSpecs): void {
+export function warnUnrunSpecs(cwd: string, ran: RanSpecs, ui: Ui = defaultUi): void {
   const skipped = unrunSpecFiles(cwd, ran);
   if (skipped.length === 0) return;
   const ranList = coveredList(ran);
@@ -297,5 +315,5 @@ export function warnUnrunSpecs(cwd: string, ran: RanSpecs): void {
     ranList.length === 0
       ? `No agent.test.ts, so vitest ran nothing. ${skipped.length} spec file(s) exist and were NOT run:`
       : `vitest ran ${ranList.join(", ")} only. ${skipped.length} other spec file(s) were NOT run:`;
-  notify("warn", `${preamble} ${formatCappedList(skipped)}. ${WIDEN_HINT}`);
+  ui.notify("warn", `${preamble} ${formatCappedList(skipped)}. ${WIDEN_HINT}`);
 }

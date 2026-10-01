@@ -10,7 +10,9 @@
 import type { AgentGuardrail, SessionEvent, SlotStore } from "@alexkroman1/aai";
 import { eventsOf } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
-import { makeAgent, makeClientSink, makeConfig, makeLogger, makeSpeech } from "../_test-utils.ts";
+import { makeAgent, makeConfig, makeSpeech } from "../_agent-test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
+import { makeClientSink } from "../_session-test-utils.ts";
 import { createSessionEventStream } from "../session/index.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "../session-state/store.ts";
 import { createStateSweeps } from "../session-state/sweeps.ts";

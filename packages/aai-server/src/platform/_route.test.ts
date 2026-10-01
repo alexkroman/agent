@@ -35,8 +35,8 @@
 
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test, vi } from "vitest";
+import { captureLogs } from "../_logger-test-utils.ts";
 import { createLogger } from "../logger.ts";
-import { captureLogs } from "../test-utils.ts";
 import { notConfigured, RESERVE_WAIT_WARN_MS, withReserved } from "./_route.ts";
 import type { AdminDb } from "./lock.ts";
 

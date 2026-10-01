@@ -25,10 +25,15 @@ read_when: >-
   `vitest.config.ts` discovers them (`projects: ["packages/*"]`) and adds only
   the typecheck-only projects. Run one with `--project <name>` (the name is set
   in the package config). Never re-declare a suite at the root — copies drift.
-- **Shared options live in `vitest.shared.ts` and must be SPREAD IN**
-  (`...sharedConfig.test`): writing `test: { … }` without it replaces
-  `restoreMocks`, `unstubEnvs` and the CI `reporters` rather than extending
-  them.
+- **Every package config is `export default defineUnitProject({ … })`**
+  (`vitest.shared.ts`). The factory owns the shared options (`restoreMocks`,
+  `unstubEnvs`, `TZ=UTC`, the CI `reporters`, the worker budget), the unit-tier
+  excludes, and the MERGES a hand-written `test: { … }` gets wrong:
+  `setupFiles` is appended to `sharedSetupFiles`, `env` merged over the shared
+  one, `coverageExclude` appended to `sharedCoverageExclude`. Anything else
+  (`pool`, `testTimeout`, `globalSetup`) goes in its `test` option. konsistent
+  `package-vitest-config` and `aai-gates/src/vitest-setup-wiring.test.ts`
+  enforce it.
 - **A listener LEAK fails the run** via `scripts/fail-on-process-warning.mjs`,
   loaded by every project through `sharedSetupFiles`.
 - **Snapshots are pinned to CI semantics (`update: "none"`)**, so an obsolete
@@ -51,12 +56,16 @@ read_when: >-
   loop is fine when cases share expensive setup or label themselves via
   `expect.soft(value, label)`).
 - **The slow tiers share ONE config, `vitest.slow.config.ts`**, selected by
-  `VITEST_PROFILE` (`integration` 30s / `scenario` 120s / `e2e` 300s) with
-  `VITEST_INCLUDE` choosing files. `integration` is the default when unset, so a
-  scenario script must set the profile explicitly.
-- **Integration- and scenario-tier membership is a NAMING CONVENTION:
-  `*.integration.test.ts` and `*.scenario.test.ts`.** Unit configs exclude both;
-  `test:integration` / `test:scenario` select one each. Only the INFIX decides,
+  `VITEST_PROFILE` (`integration` 30s / `scenario` 120s / `e2e` 300s / `eval`
+  1800s) with `VITEST_INCLUDE` choosing files. Every package script sets the
+  profile explicitly and globs `src/**/*.<tier>.test.ts` (templates:
+  `templates/*/*.eval.test.ts`; aai-cli's e2e: `src/e2e*.test.ts`). `e2e` and
+  `eval` run one file at a time (a shared build and registry; one gateway key).
+- **Tier membership is a NAMING CONVENTION: `*.integration.test.ts`,
+  `*.scenario.test.ts`, `*.eval.test.ts`, and aai-cli's `e2e*.test.ts`.**
+  `defineUnitProject` excludes all four from every unit config;
+  `test:integration` / `test:scenario` / `test:eval` / `test:e2e` select one
+  each. Only the INFIX decides,
   so these are deliberately unit tests despite the name: `aai-cli`'s
   `integration.test.ts` / `integration-edge-cases.test.ts`, and `aai-server`'s
   `agent-server-integration.test.ts` — which boots a real harness and is the
@@ -64,12 +73,21 @@ read_when: >-
   `sandbox/vm.ts`; promote it only after restoring that coverage elsewhere,
   never by lowering aai-server's floor. A package with no files in a tier
   declares no script for it (vitest fails a run matching nothing).
-- **Yielding**: `flush()` from `_test-utils.ts` for microtasks, `tick()` for a
-  macrotask, never `await new Promise(r => setTimeout(r, 0))` or a local
+- **Yielding**: `flush()` for microtasks, `tick()` for a macrotask (from
+  `aai-runtime/src/_timing-test-utils.ts`, or `aai/src/host/_test-utils.ts` in
+  the SDK), never `await new Promise(r => setTimeout(r, 0))` or a local
   `flush`. `sleep(ms)` is a published SDK export, not a test helper. Poll with
   `vi.waitFor()`, never a fixed delay.
-- **A spec that observes a TIMER runs on virtual time**, never the wall clock —
-  see "Specs that observe a timer" in `packages/aai/CLAUDE.md`.
+- **Helpers are split BY DOMAIN** into `_<domain>-test-utils.ts` modules
+  (aai-runtime: timing, agent, session, s2s-fixture, logger, fetch, db;
+  aai-server: orchestrator, request, sandbox, sql, logger, modal). Import the
+  one whose name says what it fakes; the rosters are konsistent's
+  `test-helper-modules`.
+- **A spec that observes a TIMER runs on virtual time**, never the wall clock:
+  `useVirtualTime()` (`aai-runtime/src/transports/_pipeline-transport-harness.ts`)
+  installs fake timers per file; drive with `vi.advanceTimersByTimeAsync(ms)`.
+  Under virtual time `tick()` hangs (advance by 0 instead) and `vi.waitFor`
+  still polls in real time.
 - **Type-level tests** are `.test-d.ts` files using `expectTypeOf`, never
   executed. The `aai-types` / `aai-ui-types` / `aai-runtime-types` projects run
   each under its package tsconfig (aai-ui needs `lib: DOM`, `jsx`).
@@ -94,6 +112,9 @@ read_when: >-
   types).
 - **Coverage**: `pnpm test:coverage` enforces each package's floor (see
   `.agents/ratchets.md`); CI runs it for every package in the test matrix.
+  The per-file floor (`pnpm check:coverage-per-file`) reads that output; after
+  ONE package's coverage run, `pnpm coverage-per-file:update --package <name>`
+  merges that package's gains into the baseline and leaves the rest untouched.
 
 ## Two manual diagnostics, and a knip glob that could not see a dead script
 
@@ -102,10 +123,9 @@ read_when: >-
   dead scripts. A script that is a module is reached through its importer; one
   a `package.json` script or vitest `globalSetup` names is discovered by knip
   and must not be repeated.
-- **`check:gateway-models` is wired into no pipeline, deliberately**: it spends
-  real tokens and depends on a third-party service. It shells out to
-  `gen-gateway-models.mjs` by path, which is why that is `knip.json`'s one named
-  `entry`.
+- **`audit:gateway-models` is wired into no pipeline, deliberately**: it spends
+  real tokens and depends on a third-party service. `pnpm gen:gateway-models`
+  regenerates the catalog it compares against.
 
 ## Mutation score is a manual DIAGNOSTIC, not a tier and not a gate
 
@@ -121,7 +141,7 @@ discriminate.
 
 | Suite                                                                                                                                                             | Guide                                                    |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Pipeline-transport interleaving fuzz, fixture replay (`host/fixtures/`)                                                                                           | `packages/aai/CLAUDE.md`                                 |
+| Pipeline-transport interleaving fuzz, fixture replay (`aai-runtime/src/fixtures/`)                                                                                | `packages/aai/CLAUDE.md`                                 |
 | Template mount correlation (`template-page-mount.test.ts`)                                                                                                        | `packages/aai-templates/STEP-IO-CLAUDE.md`               |
 | Browser session / audio fuzz harnesses (`fuzz-*.test.ts`, worklet stress)                                                                                         | `packages/aai-ui/src/CLAUDE.md`                          |
 | Studio starter evals (what they measure), studio concurrency fuzz                                                                                                 | `packages/aai-studio-server/CLAUDE.md`                   |
@@ -146,23 +166,38 @@ the wire.
 
 ## Vitest config differences per package
 
-| Package           | Pool              | Environment              | Special setup                              | Notes                                                                                                    |
-| ----------------- | ----------------- | ------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| aai               | threads (default) | node                     | —                                          | Excludes pentest, sandbox, integration tests                                                             |
-| aai-ui            | threads           | **node**, jsdom per file | `_jsdom-setup.ts` (stubs `scrollIntoView`) | `globals: true`. No config `environment`; a file opts into jsdom with `// @vitest-environment jsdom`     |
-| aai-cli           | threads           | node                     | —                                          | —                                                                                                        |
-| aai-server        | **forks**         | node                     | —                                          | Forks for process isolation; excludes integration tests                                                  |
-| aai-studio-client | threads           | **node**, jsdom per file | —                                          | jsdom by per-file pragma on line 1. `testTimeout: 20_000` so the source's 10s async ceiling is reachable |
-| aai-templates     | threads           | node                     | —                                          | Also matches `templates.test.ts` + `template-api-coverage.test.ts`                                       |
+Every row is a `defineUnitProject` call; anything not listed is the shared
+default (threads, node, vitest's 5s `testTimeout`, the four tier excludes).
+
+| Package           | Pool      | Timeout | Setup / plugins                                             | Notes                                                                                        |
+| ----------------- | --------- | ------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| aai               | threads   | 5s      | `src/host/_test-matchers.ts`                                | `contracts/` out of coverage                                                                 |
+| aai-ui            | threads   | 5s      | `_jsdom-setup.ts` (stubs `scrollIntoView`)                  | `globals: true`; node by default, a file opts into jsdom with `// @vitest-environment jsdom` |
+| aai-runtime       | **forks** | 5s      | —                                                           | sockets, the workflow world and process-wide dispatchers                                     |
+| aai-cli           | threads   | 5s      | `_test-setup.ts` (temp `AAI_CONFIG_DIR`, scrubs `*API_KEY`) | also passed to its scenario/e2e runs via `VITEST_SETUP`                                      |
+| aai-evals         | threads   | 5s      | —                                                           | `gate.ts` is never loaded by the unit tier                                                   |
+| aai-gates         | threads   | 5s      | —                                                           | `include: ["src/*.test.ts"]`                                                                 |
+| aai-guest-core    | threads   | 5s      | —                                                           | `src/test-utils.ts` (a subpath export) out of coverage                                       |
+| aai-guest-studio  | threads   | 5s      | —                                                           | needs `^build` (reads the SDK, aai-ui and aai-cli `dist`)                                    |
+| aai-guest         | threads   | 5s      | —                                                           | needs its own `build` (`dist/harness.mjs`)                                                   |
+| aai-server        | **forks** | **20s** | `globalSetup`: `scripts/ensure-guest-harness.mjs`           | process isolation; `agent-server-integration.test.ts` stays unit (sole subprocess coverage)  |
+| aai-studio-client | threads   | **20s** | `_test-setup.ts` (10s Testing Library ceiling, unmounts)    | node by default, jsdom by per-file pragma                                                    |
+| aai-studio-server | **forks** | **20s** | —                                                           | headroom under a contended `pnpm check`                                                      |
+| aai-templates     | threads   | 5s      | `aaiAgentPlugin()` (`virtual:aai/agent`)                    | `include`: `src/*.test.ts` + `templates/*/*.test.ts`; its config loads the SDK's `dist`      |
 
 ## Test environment variables
 
 Set in package.json scripts, so not always visible from test code:
 
 - `VITEST_PROFILE` — timeout profile in `vitest.slow.config.ts`: `integration`
-  (30s), `scenario` (120s), `e2e` (300s). No profile sets a `retry`.
+  (30s), `scenario` (120s), `e2e` (300s), `eval` (1800s). No profile sets a
+  `retry`.
 - `VITEST_INCLUDE` — filters which test files to include.
 - `VITEST_POOL` — overrides the pool strategy at runtime.
+- `VITEST_SETUP` — a package's own setup file for a slow-tier run (appended
+  after `sharedSetupFiles`).
+- `AAI_FLOOR_SAMPLES` — set by `pnpm floors:sample` only; records every floor
+  assertion (see the property-test rules below).
 - `AAI_TEST_PM` — package manager the e2e suite installs the scaffolded project
   with (`pnpm` | `npm` | `yarn`; default `pnpm`). CI runs only `pnpm`.
 
@@ -204,7 +239,11 @@ harnesses print a `schedulerFor()` template to paste into a regression test.
   distributions have long left tails. A state whose whole range is small gets
   `> 0`; a state deliberately left unfloored says so in place, with the reason.
   `scripts/check-property-floors.mjs` requires each floor and its recorded
-  actual.
+  actual. **Measure, don't guess**: `pnpm floors:sample --runs 20 <file>...`
+  runs the suite N times (a fresh fast-check seed each, unless the property
+  pins one), records every `toBeGreaterThan(OrEqual)` on a number, and prints
+  each counter's min–max as a ready comment, flagging a floor that is not under
+  the observed minimum.
 - **A generator must not break its own contract** — a failure caused by an
   illegal generated value looks like a finding and is not. Map every generated
   value to a legal one (append rather than filter) so shrinking stays well

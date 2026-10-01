@@ -3,7 +3,7 @@
 // when a budget stops a session.
 
 import { describe, expect, test } from "vitest";
-import { makeUsageMeter } from "./_test-utils.ts";
+import { makeUsageMeter } from "./_agent-test-utils.ts";
 
 describe("createUsageMeter", () => {
   test("accumulates across steps and announces the running total", () => {

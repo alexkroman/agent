@@ -1,9 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Debug-gating specs for the default console logger: `debug` must be a no-op
-// unless AAI_DEBUG enables it, so per-message hot-path logs cost nothing.
+// The logger factories: the console logger's `debug` must be a no-op unless
+// AAI_DEBUG enables it, so per-message hot-path logs cost nothing; the silent
+// logger drops everything and carries no call history.
 
 import { describe, expect, test, vi } from "vitest";
-import { createConsoleLogger, isDebugEnv } from "./runtime-config.ts";
+import { createConsoleLogger, isDebugEnv, silentLogger } from "./logger.ts";
 
 describe("isDebugEnv", () => {
   test("enables on '1' and 'true' only", () => {
@@ -47,5 +48,22 @@ describe("createConsoleLogger", () => {
     expect(info).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), "i");
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), "w");
     expect(error).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), "e");
+  });
+});
+
+describe("silentLogger", () => {
+  test("drops every level without reaching the console", () => {
+    const spies = (["log", "warn", "error", "debug"] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation(() => undefined),
+    );
+    silentLogger.info("i");
+    silentLogger.warn("w");
+    silentLogger.error("e");
+    silentLogger.debug("d");
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+  });
+
+  test("is plain functions, not spies that carry call history across tests", () => {
+    expect(vi.isMockFunction(silentLogger.error)).toBe(false);
   });
 });

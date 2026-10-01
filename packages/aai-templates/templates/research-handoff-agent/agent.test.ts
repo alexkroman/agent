@@ -28,25 +28,6 @@ import {
   DEFAULT_DEEP_RESEARCH_PROMPTS,
 } from "@alexkroman1/aai/experimental";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import {
-  createRunSnapshot,
-  createToolContext,
-  createWorkflowContext,
-  parseSchemaInput,
-  runTool,
-  type StubStepAnswer,
-  type StubStepFetch,
-  type StubStepRequest,
-  schemaInputIssues,
-  toolRunner,
-} from "@alexkroman1/aai/testing";
-import {
-  installStubReporter,
-  installStubStepDelegate,
-  installStubStepFetch,
-  installStubWorkflows,
-  installStubGateway as stubGateway,
-} from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import type {
   JournalStore,
@@ -57,7 +38,26 @@ import type {
   WorkflowTestHandle,
   WorkflowTestRun,
 } from "@alexkroman1/aai-runtime/testing";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+import {
+  createRunSnapshot,
+  createToolContext,
+  createWorkflowContext,
+  parseSchemaInput,
+  runTool,
+  runWorkflow,
+  type StubStepAnswer,
+  type StubStepFetch,
+  type StubStepRequest,
+  schemaInputIssues,
+  toolRunner,
+} from "@alexkroman1/aai-runtime/testing";
+import {
+  installStubGateway,
+  installStubReporter,
+  installStubStepDelegate,
+  installStubStepFetch,
+  installStubWorkflows,
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { research } from "./shared.ts";
 import researchStatus from "./tools/research_status.ts";
@@ -89,7 +89,7 @@ const run = toolRunner(agentDef);
  * Returned WITHOUT a cast, which is the property worth keeping: a cast would
  * also stop reporting the day `WorkflowClient` grows a method, and this stub is
  * how the template's tools reach the client at all. `installStubWorkflows`
- * (`@alexkroman1/aai/testing/vitest`) is what keeps that affordable — a `vi.fn`
+ * (`@alexkroman1/aai-runtime/testing/vitest`) is what keeps that affordable — a `vi.fn`
  * per method over one `runs` list, filling in what this desk does not drive, so
  * the day the client does grow a method only the tests using it change.
  * `stream`/`streamTail` are left rejecting on purpose: `research_progress` reads
@@ -382,7 +382,7 @@ describe("the desk's research configuration", () => {
   test("the brief and the summary are the PHONE prompts, the rest the SDK's", async () => {
     // Every stage but the two this desk overrides is answered, so the two
     // model calls that remain are exactly the overridden ones.
-    const calls = stubGateway([
+    const calls = installStubGateway([
       JSON.stringify({ brief: "How otters use tools", criteria: [] }),
       "# Otters",
       "Otters use stones.",
@@ -497,7 +497,7 @@ describe("the desk's research configuration", () => {
 
   test("a missing key is FATAL, naming the key, and fails the run rather than filing", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    stubGateway(["anything"]);
+    installStubGateway(["anything"]);
     const ctx = createWorkflowContext();
     const err = await Promise.resolve(research.run(INPUT, ctx)).catch((thrown: unknown) => thrown);
     expect(FatalError.is(err)).toBe(true);
@@ -506,7 +506,7 @@ describe("the desk's research configuration", () => {
   });
 
   test("a rate limit is RETRYABLE, so the engine tries again", async () => {
-    stubGateway([""], { status: 429 });
+    installStubGateway([""], { status: 429 });
     const err = await Promise.resolve(research.run(INPUT, createWorkflowContext())).catch(
       (thrown: unknown) => thrown,
     );
@@ -730,7 +730,7 @@ describe("the run is DURABLE", () => {
 
   test("suspends on the review wait with the whole report already journaled", async () => {
     const started = Date.now();
-    const model = stubGateway(SCRIPT);
+    const model = installStubGateway(SCRIPT);
     const run = await runWorkflow(research, INPUT, RUN);
 
     // Not blocked — suspended. The sandbox is free here, which is the whole
@@ -752,7 +752,7 @@ describe("the run is DURABLE", () => {
   });
 
   test("the open wait is the REVIEW wait, by the name the tool wakes", async () => {
-    stubGateway(SCRIPT);
+    installStubGateway(SCRIPT);
     const run = await runWorkflow(research, INPUT, RUN);
 
     const sleep = await reviewSleep(run);
@@ -766,14 +766,14 @@ describe("the run is DURABLE", () => {
     // this body takes none: the fan-out's width comes from a journaled step, and
     // the filing timestamp is a step RESULT. An empty list is the determinism
     // rule this template's doc states, asserted rather than described.
-    stubGateway(SCRIPT);
+    installStubGateway(SCRIPT);
     const run = await runWorkflow(research, INPUT, RUN);
 
     expect(run.reads).toEqual([]);
   });
 
   test("resumes past the review wait and files, without researching again", async () => {
-    const model = stubGateway(SCRIPT);
+    const model = installStubGateway(SCRIPT);
     const run = await runWorkflow(research, INPUT, RUN);
     // `advanceSleep` is `ctx.workflows.wakeUp`'s own mechanism, which is what
     // the `file_it_now` tool calls to cut the review short — and it is given the
@@ -799,7 +799,7 @@ describe("the run is DURABLE", () => {
   test("a worker that dies at the report replays the research rather than repeating it", async () => {
     // The expensive claim. A deep-research pass is five to twelve model calls
     // and as many searches; a resume that redid them would cost the run twice.
-    const model = stubGateway(SCRIPT);
+    const model = installStubGateway(SCRIPT);
     const run = await runWorkflow(research, INPUT, { ...RUN, crashAt: "writeReport" });
 
     expect(run.crashed).toBe(true);

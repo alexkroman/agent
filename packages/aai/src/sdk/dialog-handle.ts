@@ -75,7 +75,7 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
    * machine moved, so on a `durable` dialog that would be a store round-trip per
    * transcript frame.
    *
-   * The runtime calls this for a dialog listed in {@link AgentDef.dialogs}. It
+   * The runtime calls this for a dialog listed in {@link AgentDeclaration.dialogs}. It
    * takes a {@link SlotHolder}, which is what a `SessionEventContext` already
    * is — both carry `slots` and `sessionId` — so an author can drive a dialog
    * from an `events` handler today, with no declaration at all:
@@ -134,17 +134,17 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
    * A `syncState` projection of this dialog's position, so a client can render
    * the step the caller is on without the agent hand-rolling a sync channel.
    *
-   * The projector is REQUIRED, exactly as {@link SessionSlot.projection}'s is,
-   * and for the same reason: an optional one cannot be typed without asserting
-   * that the un-projected {@link DialogPosition} is the caller's `V`. Project the
-   * identity — `dialog.projection((at) => at)` — to push the whole position.
+   * The projector is REQUIRED: an optional one cannot be typed without
+   * asserting that the un-projected {@link DialogPosition} is the caller's `V`.
+   * Project the identity — `dialog.projection((at) => at)` — to push the whole
+   * position.
    */
   projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
 }
 
 /**
  * Any dialog, whatever its machine and event union — what
- * {@link AgentDef.dialogs} holds.
+ * {@link AgentDeclaration.dialogs} holds.
  *
  * The erasure is on `E` and it is what makes the array possible at all: two
  * dialogs in one agent have different event unions by construction (the names

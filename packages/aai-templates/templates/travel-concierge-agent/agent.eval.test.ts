@@ -41,7 +41,7 @@ import {
   toolCallsInTurns,
   toolNames,
   turnCalling,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 
@@ -68,7 +68,7 @@ const ProjectedTrip = z.object({
  * model: the caller's later yes is allowed to move the ticket, so a claim about
  * the FINAL state is a claim about the conversation rather than about the gate.
  * What the gate promises is that every frame before the confirmation shows the
- * booking untouched — and `tripProjection` rides out on `state.updated` after
+ * booking untouched — and `tripSlot.projected` rides out on `state.updated` after
  * every tool call, so the stream carries one per step.
  */
 function framesBeforeConfirm(session: EvalSession): readonly z.infer<typeof ProjectedTrip>[] {

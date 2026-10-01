@@ -7,16 +7,15 @@
  */
 import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
-import { createOrchestrator } from "./orchestrator.ts";
-import { SLUG_WS_RE, wsSlugFromPath } from "./orchestrator-ws.ts";
-import { createSlotCache } from "./sandbox/slots.ts";
 import {
   createTestOrchestrator,
   createTestStore,
-  deploy,
-  deployAgent,
   NO_CLIENT_DIR,
-} from "./test-utils.ts";
+} from "./_orchestrator-test-utils.ts";
+import { deploy, deployAgent } from "./_request-test-utils.ts";
+import { createOrchestrator } from "./orchestrator.ts";
+import { SLUG_WS_RE, wsSlugFromPath } from "./orchestrator-ws.ts";
+import { createSlotCache } from "./sandbox/slots.ts";
 
 // ── Slug Validation & Path Traversal ───────────────────────────────────
 

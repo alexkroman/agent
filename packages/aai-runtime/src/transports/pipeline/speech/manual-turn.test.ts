@@ -6,8 +6,8 @@
 // was SENT and what it was ASKED — never on an internal flag.
 
 import { describe, expect, test, vi } from "vitest";
+import { silentLogger } from "../../../_logger-test-utils.ts";
 import { createFakeLanguageModel } from "../../../_pipeline-test-fakes.ts";
-import { silentLogger } from "../../../_test-utils.ts";
 import {
   inFlightReplyScript,
   makeOpts,

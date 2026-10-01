@@ -1,67 +1,149 @@
 // Copyright 2025 the AAI authors. MIT license.
+/**
+ * The CLI's terminal seam: every human-facing line, every prompt and the one
+ * JSON result line go through a {@link Ui}.
+ *
+ * A command never imports clack or writes to `process.stdout` itself; it is
+ * handed a `Ui` (through `defineExec`'s context, or as its executor's last
+ * parameter, defaulting to {@link defaultUi}). A spec passes
+ * `createFakeUi()` from `_test-utils.ts` instead of `vi.mock("./_ui.ts")` or
+ * `vi.mock("@clack/prompts")`, and reads what was said off the fake.
+ *
+ * Deliberately zod-free and light: this module loads on every invocation,
+ * `aai --help` included.
+ */
 
 import { styleText } from "node:util";
-import * as p from "@clack/prompts";
+import * as clack from "@clack/prompts";
+import { writeLine } from "./_output.ts";
 
-type Log = typeof p.log;
+/** The levels a command reports at. `message` is an unadorned line. */
+export type LogLevel = "info" | "success" | "error" | "warn" | "step" | "message";
+
+/** The levels {@link Ui.notify} accepts — the ones that mean something on stderr. */
+export type NotifyLevel = "error" | "warn" | "info" | "success";
+
+export type UiLog = Record<LogLevel, (message: string) => void>;
+
+/** A spinner, as `aai init` drives one. */
+export type UiSpinner = {
+  start(message?: string): void;
+  stop(message?: string): void;
+};
+
+/**
+ * The interactive half. Each answer may be the cancel symbol; pass it through
+ * {@link unwrapCancel}.
+ */
+export type UiPrompts = {
+  confirm: typeof clack.confirm;
+  text: typeof clack.text;
+  password: typeof clack.password;
+  /** A single choice among string values — the one shape `aai init` asks. */
+  select(opts: {
+    message: string;
+    options: { value: string; label?: string; hint?: string }[];
+    initialValue?: string;
+    maxItems?: number;
+  }): Promise<string | symbol>;
+  spinner(): UiSpinner;
+  intro(title: string): void;
+  cancel(message: string): void;
+  isCancel(value: unknown): value is symbol;
+};
+
+export type Ui = {
+  /** Human output. No-ops once {@link Ui.silence} has run (JSON mode). */
+  readonly log: UiLog;
+  /**
+   * A message that must survive JSON mode: styled `log` in human mode, a plain
+   * STDERR line once silenced. A LONG-RUNNING command (`aai dev`) writes its
+   * one JSON line at startup and keeps running, and JSON mode is auto-selected
+   * on a pipe (`aai dev > dev.log`), so every later failure goes through here.
+   */
+  notify(level: NotifyLevel, message: string): void;
+  /** Switch to JSON mode: `log` goes quiet. Called once by `runCommand`. */
+  silence(): void;
+  /** Whether {@link Ui.silence} has run. */
+  readonly silenced: boolean;
+  /** Write the JSON result line to stdout, resolving once flushed (ANSI stripped). */
+  writeResult(line: string): Promise<void>;
+  /** Write one raw line to stdout — `--help`, never a result. */
+  writeOut(line: string): void;
+  /** Write one raw line to stderr. */
+  writeErr(line: string): void;
+  readonly prompts: UiPrompts;
+};
 
 const noop = () => {
   /* no-op */
 };
-let silenced = false;
 
-const logHandler: ProxyHandler<Log> = {
-  get(target, prop, receiver) {
-    return silenced ? noop : Reflect.get(target, prop, receiver);
-  },
-};
-
-/** Log instance that delegates to clack (human mode) or no-ops (JSON mode). */
-export const log: Log = new Proxy(p.log, logHandler);
-
-/** Replace all log methods with no-ops. Call once in JSON mode. */
-export function silenceOutput(): void {
-  silenced = true;
+/** The real terminal: clack for humans, `process.stdout`/`stderr` for the rest. */
+export function createUi(): Ui {
+  let silenced = false;
+  const level =
+    (name: LogLevel) =>
+    (message: string): void => {
+      if (!silenced) clack.log[name](message);
+    };
+  const log: UiLog = {
+    info: level("info"),
+    success: level("success"),
+    error: level("error"),
+    warn: level("warn"),
+    step: level("step"),
+    message: level("message"),
+  };
+  const writeErr = (line: string): void => {
+    process.stderr.write(`${line}\n`);
+  };
+  return {
+    log,
+    notify(lvl, message) {
+      if (silenced) writeErr(message);
+      else log[lvl](message);
+    },
+    silence() {
+      silenced = true;
+    },
+    get silenced() {
+      return silenced;
+    },
+    writeResult: writeLine,
+    writeOut: (line) => {
+      process.stdout.write(`${line}\n`);
+    },
+    writeErr,
+    prompts: {
+      confirm: clack.confirm,
+      text: clack.text,
+      password: clack.password,
+      select: clack.select,
+      spinner: () => (silenced ? { start: noop, stop: noop } : clack.spinner()),
+      intro: (title) => {
+        if (!silenced) clack.intro(title);
+      },
+      cancel: (message) => clack.cancel(message),
+      isCancel: (value): value is symbol => clack.isCancel(value),
+    },
+  };
 }
 
 /**
- * Emit a message that must survive JSON mode — human mode gets the normal
- * clack styling, JSON mode gets a plain line on STDERR.
- *
- * `silenceOutput` no-ops every `log` method so that JSON mode's contract
- * ("exactly one result line on stdout") holds. That is right for
- * request/response commands, and wrong for LONG-RUNNING ones: `aai dev`
- * writes its single JSON line at startup and then keeps running, so every
- * later message — a failed rebuild, an unhandled rejection, "the dev server
- * is down; save a file to retry" — was silenced for the rest of the process.
- * And JSON mode is AUTO-DETECTED on a pipe, so that is the normal case:
- * `aai dev > dev.log`, a process supervisor, or a container all hid every
- * build failure, leaving the old agent served with nothing to say why edits
- * had stopped taking effect.
- *
- * stderr keeps the stdout contract intact — a script still parses one JSON
- * line — while a human tailing the log sees what happened.
+ * The process's one real {@link Ui}. `defineExec` hands it to every command
+ * body; an executor's `ui` parameter defaults to it. Nothing else should
+ * reach for it — take a `Ui` instead.
  */
-export function notify(level: "error" | "warn" | "info" | "success", message: string): void {
-  if (!silenced) {
-    log[level](message);
-    return;
-  }
-  process.stderr.write(`${message}\n`);
-}
-
-/** Whether `silenceOutput()` has been called — i.e. we are in JSON mode. */
-export function outputSilenced(): boolean {
-  return silenced;
-}
+export const defaultUi: Ui = createUi();
 
 /**
- * Unwrap a clack prompt result, exiting cleanly if the user cancelled.
+ * Unwrap a prompt result, exiting cleanly if the user cancelled.
  * `message` lets the caller name what was cancelled (e.g. "Setup cancelled").
  */
-export function unwrapCancel<T>(result: T, message = "Cancelled"): Exclude<T, symbol> {
-  if (p.isCancel(result)) {
-    p.cancel(message);
+export function unwrapCancel<T>(ui: Ui, result: T, message = "Cancelled"): Exclude<T, symbol> {
+  if (ui.prompts.isCancel(result)) {
+    ui.prompts.cancel(message);
     process.exit(0);
   }
   return result as Exclude<T, symbol>;
@@ -74,10 +156,7 @@ export function fmtUrl(url: string): string {
 
 /**
  * Parse and validate a port string. Returns the numeric port or throws.
- *
- * Deliberately zod-free: this module loads on every CLI invocation
- * (including `aai --help`), and keeping zod off that path is the same
- * startup-cost invariant `_utils.ts` documents for its error helpers.
+ * Zod-free for the startup-cost reason in the module doc.
  */
 export function parsePort(raw: string): number {
   // `Number("")` is 0, so an empty/whitespace string must be rejected up front.

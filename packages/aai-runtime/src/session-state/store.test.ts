@@ -44,7 +44,8 @@
 
 import { MAX_SESSION_STATE_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
-import { flush, makeLogger, sleep, tick } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
+import { flush, sleep, tick } from "../_timing-test-utils.ts";
 import {
   createMemoryStateBackend,
   createSessionStateStore,

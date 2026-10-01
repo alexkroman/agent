@@ -7,50 +7,64 @@
  * specced in `aai-runtime`.
  */
 
+import { type AgentDef, agent } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ConsoleAudio } from "./_console-session.ts";
+import { createFakeUi } from "./_test-utils.ts";
+import {
+  type ConsoleConnection,
+  type ConsoleRuntime,
+  type ConsoleSeams,
+  executeConsole,
+  terminalPrinter,
+} from "./console.ts";
 
-const state = vi.hoisted(() => ({
+const state = {
   sink: undefined as ClientSink | undefined,
   resolveEnded: undefined as (() => void) | undefined,
-  connection: undefined as
-    | { sendCommand: ReturnType<typeof vi.fn>; sendAudio: ReturnType<typeof vi.fn> }
-    | undefined,
-  shutdown: vi.fn(() => Promise.resolve()),
-  mode: undefined as string | undefined,
-}));
+  connection: undefined as ConsoleConnection | undefined,
+  shutdown: vi.fn(async () => undefined),
+  mode: undefined as AgentDef["mode"],
+};
 
-vi.mock("./_dev-server.ts", () => ({
-  loadWorker: vi.fn(async () => ({ name: "Desk", mode: state.mode })),
-  resolveAgentEnv: vi.fn(async () => ({})),
-}));
-
-vi.mock("@alexkroman1/aai-runtime", () => ({
-  ensureSessionStateSchema: vi.fn(),
-  ensureWorkflowJournalSchema: vi.fn(),
-  createRuntime: vi.fn(() => ({
-    readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
-    shutdown: state.shutdown,
-  })),
-  connectSession: vi.fn((_runtime: unknown, sink: ClientSink) => {
-    state.sink = sink;
-    const ended = new Promise<void>((resolve) => {
-      state.resolveEnded = resolve;
-    });
-    const connection = {
-      id: "sess-1",
-      sendCommand: vi.fn(),
-      sendAudio: vi.fn(),
-      close: vi.fn(() => state.resolveEnded?.()),
-      ended,
-    };
-    state.connection = connection;
-    return connection;
-  }),
-}));
-
-const { executeConsole, terminalPrinter } = await import("./console.ts");
+/**
+ * The agent loader and the runtime, handed to `executeConsole` as its seams —
+ * the session itself is `connectSession`'s and is specced in `aai-runtime`.
+ */
+const seams = {
+  loadAgent: vi.fn(
+    async (): Promise<AgentDef> => ({
+      ...agent({ name: "Desk" }),
+      ...omitUndefined({ mode: state.mode }),
+    }),
+  ),
+  resolveEnv: vi.fn(async () => ({})),
+  ensureSessionStateSchema: vi.fn(async () => true),
+  ensureWorkflowJournalSchema: vi.fn(async () => true),
+  startRuntime: vi.fn(
+    (): ConsoleRuntime => ({
+      readyConfig: { sampleRate: 16_000, ttsSampleRate: 24_000 },
+      shutdown: state.shutdown,
+      connect: (sink) => {
+        state.sink = sink;
+        const ended = new Promise<void>((resolve) => {
+          state.resolveEnded = resolve;
+        });
+        const connection: ConsoleConnection = {
+          id: "sess-1",
+          sendCommand: vi.fn(),
+          sendAudio: vi.fn(),
+          close: vi.fn(() => state.resolveEnded?.()),
+          ended,
+        };
+        state.connection = connection;
+        return connection;
+      },
+    }),
+  ),
+} satisfies ConsoleSeams;
 
 /** A quit the user never asks for — the session has to end it. */
 const never = (): Promise<void> => new Promise(() => undefined);
@@ -83,7 +97,14 @@ describe("executeConsole", () => {
       quit = resolve;
     });
 
-    const run = executeConsole({ cwd: "/p", audio, untilQuit, mode: "json" });
+    const run = executeConsole({
+      seams,
+      ui: createFakeUi(),
+      cwd: "/p",
+      audio,
+      untilQuit,
+      mode: "json",
+    });
     await vi.waitFor(() => expect(state.connection).toBeDefined());
 
     expect(audio.startPlayback).toHaveBeenCalledWith(24_000, expect.any(Function));
@@ -124,7 +145,14 @@ describe("executeConsole", () => {
       quit = resolve;
     });
 
-    const run = executeConsole({ cwd: "/p", audio, untilQuit, mode: "json" });
+    const run = executeConsole({
+      seams,
+      ui: createFakeUi(),
+      cwd: "/p",
+      audio,
+      untilQuit,
+      mode: "json",
+    });
     await vi.waitFor(() => expect(audio.startPlayback).toHaveBeenCalled());
     expect(order).toEqual(["mic opened", "mic delivered", "speaker opened"]);
     quit();
@@ -134,6 +162,8 @@ describe("executeConsole", () => {
   test("a fatal session error ends the console as a failure", async () => {
     const { audio, player } = fakeAudio();
     const run = executeConsole({
+      seams,
+      ui: createFakeUi(),
       cwd: "/p",
       audio,
       untilQuit: never(),
@@ -161,6 +191,8 @@ describe("executeConsole", () => {
       return { stop: vi.fn() };
     });
     const run = executeConsole({
+      seams,
+      ui: createFakeUi(),
       cwd: "/p",
       audio,
       untilQuit: never(),
@@ -177,7 +209,7 @@ describe("executeConsole", () => {
     const before = process.listenerCount("SIGINT");
     const beforeTerm = process.listenerCount("SIGTERM");
     const { audio } = fakeAudio();
-    const run = executeConsole({ cwd: "/p", audio, mode: "json" });
+    const run = executeConsole({ seams, ui: createFakeUi(), cwd: "/p", audio, mode: "json" });
     await vi.waitFor(() => expect(state.sink).toBeDefined());
     expect(process.listenerCount("SIGINT")).toBe(before + 1);
 
@@ -191,7 +223,13 @@ describe("executeConsole", () => {
   test("a workflow app is refused before any device opens", async () => {
     state.mode = "workflow-app";
     const { audio } = fakeAudio();
-    const result = await executeConsole({ cwd: "/p", audio, untilQuit: Promise.resolve() });
+    const result = await executeConsole({
+      seams,
+      ui: createFakeUi(),
+      cwd: "/p",
+      audio,
+      untilQuit: Promise.resolve(),
+    });
     expect(result).toMatchObject({ ok: false, code: "not_a_voice_agent" });
     expect(audio.startPlayback).not.toHaveBeenCalled();
   });

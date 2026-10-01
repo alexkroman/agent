@@ -38,7 +38,7 @@ import {
   routeStepFetch,
   stubGatewayRoute,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { research } from "./shared.ts";

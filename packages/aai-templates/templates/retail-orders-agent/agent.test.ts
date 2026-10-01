@@ -1,6 +1,10 @@
 import type { ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext, expectDialogRefused, expectToolOk } from "@alexkroman1/aai/testing";
+import {
+  createToolContext,
+  expectDialogRefused,
+  expectToolOk,
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import type { AuthResult } from "./authenticate.ts";
 import type { StagedResult } from "./pending.ts";

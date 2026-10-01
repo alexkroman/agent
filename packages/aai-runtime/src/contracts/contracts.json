@@ -121,6 +121,11 @@
       "2": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed."
     }
   },
+  "testing-stubs": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "text": {
     "current": 3,
     "supported": [3],

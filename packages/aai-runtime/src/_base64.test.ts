@@ -7,7 +7,7 @@
 import fc from "fast-check";
 import { describe, expect, type Mock, test, vi } from "vitest";
 import { BASE64_DROP_REPORT_MS, base64DropCount, base64ToUint8, uint8ToBase64 } from "./_base64.ts";
-import { makeLogger } from "./_test-utils.ts";
+import { makeLogger } from "./_logger-test-utils.ts";
 
 /** Byte arrays, plus the windowed views a socket frame and a decode hand over. */
 const byteViews = fc

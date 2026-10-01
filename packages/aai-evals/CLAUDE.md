@@ -2,8 +2,9 @@
 summary: >-
   Eval tier: recorded assertions, the spread report, why it does not gate, the
   two levels, and what being a LIBRARY excludes. It is not the only package
-  with `*.eval.test.ts` — `aai-templates` ships 25, `aai-guest` one and
-  `aai-studio-server` the starter eval
+  with `*.eval.test.ts` — most `aai-templates` templates ship one,
+  `aai-guest-studio` has the coding agent's and `aai-studio-server` the
+  starter eval
 read_when: >-
   writing or running a live eval
 ---
@@ -21,20 +22,13 @@ the test-tier table live in the root `AGENTS.md`; the turbo rules are in
 
 ## What this exists for
 
-There was no way, inside this repository, to assert that an agent called the
-right tool in the right order and said the right thing. Every such measurement
-in the guides was produced by a harness that lives somewhere else, and one of
-them no longer exists at all — `packages/aai/CLAUDE.md` cites "184
-`speech_started` against 87 `cancelled`" from `scripts/voice-replay/`, "since
-removed". A measurement that cannot be re-run is indistinguishable from an
-assertion, and these decide shipped constants: `DEFAULT_MAX_TURN_SILENCE_MS` has
-been changed and reverted twice on numbers like those.
-
-Three things looked like they covered this and none did. The fuzz harnesses
-assert INVARIANTS over generated orderings (nothing breaks — not that the right
-thing happened). Unit and integration tests exercise modules. And
-`scripts/starter-eval/` graded generated SOURCE, not behaviour. So the middle
-was missing: **given this input, did the agent do the right thing.**
+Asserting that an agent called the right tool in the right order and said the
+right thing: **given this input, did the agent do the right thing.** The fuzz
+harnesses assert INVARIANTS over generated orderings (nothing breaks, not that
+the right thing happened) and unit/integration tests exercise modules; neither
+answers it. A measurement that decides a shipped constant (such as
+`DEFAULT_MAX_TURN_SILENCE_MS`) must be re-runnable, which is what this tier is
+for.
 
 ## Two levels, and only one of them is built
 
@@ -82,9 +76,8 @@ and never said the confirmation", not "turn 3 failed".
 Two consequences worth knowing:
 
 - **`check` is the only primitive.** The event vocabulary (`assertions.ts`) and
-  the studio's source-grading expectations both go through it, which is what let
-  `scripts/starter-eval/`'s 745-line second runner be deleted rather than
-  reimplemented. One tier, one runner.
+  the studio's source-grading expectations both go through it. One tier, one
+  runner.
 - **A HARNESS failure is kept apart from a failed assertion.** A dead sandbox
   and a wrong tool call want different fixes, and averaging them hides both. A
   throw from the body is recorded as that pass's `error`; the other repeats still
@@ -239,18 +232,15 @@ same tree legitimately differ, so a cache hit would REPLAY a measurement rather
 than take one — the second `pnpm test:eval` of a variance check would print FULL
 TURBO and the first run's number. No `inputs` are declared rather than declaring
 a set nothing reads; if this ever becomes cacheable, a package-relative
-`$TURBO_DEFAULT$` is now enough. It was not always: the starter corpus lived
-OUTSIDE any package at `scripts/starter-eval/expectations.mjs`, which a
-package-relative glob cannot see, and the cached UNIT tier had to name it in a
-`turbo.json` override to avoid replaying a green run over an edited grader.
-Moving the corpus into a package retired both the override and the hazard; it is
-`aai-studio-server/src/studio-starter-expectations.ts` today.
+`$TURBO_DEFAULT$` is enough, because every input — including the starter corpus,
+`aai-studio-server/src/studio-starter-expectations.ts` — lives inside a
+package.
 
-**Four packages declare `check:eval`** — `aai-templates` (the template evals, and
-the only one `pnpm check` and CI run, against a SCRIPTED model), this one,
-`aai-guest` (the coding agent's in-process eval) and `aai-studio-server` (the
-studio starter eval). The `env` block is declared once on the TASK, so every
-package that declares the task gets every variable; `AAI_EVAL_ORIGIN`,
+**Four packages declare `check:eval`** — `aai-templates` (the template evals,
+and the only one `pnpm check` and CI run, against a SCRIPTED model), this one,
+`aai-guest-studio` (the coding agent's in-process eval) and `aai-studio-server`
+(the studio starter eval). The `env` block is declared once on the TASK, so
+every package that declares the task gets every variable; `AAI_EVAL_ORIGIN`,
 `AAI_EVAL_CONTRACTS` and `AAI_STEP_CAP_HINT` are read only by
 `aai-studio-server`.
 
@@ -383,24 +373,18 @@ and the template behaviour contract it can opt into.
 framework-general: it names no product surface, no HTTP route, no prompt and no
 tool. Everything that moved named the studio in every constant it declared — its
 chat route, its per-sandbox token, its step cap, the prose its own tools write,
-the eighteen starter prompts and what each one asked for. The two halves had
-been sitting in one `src/` since the tier absorbed `scripts/starter-eval/`, and
-what that cost was legible: this package depended on `aai-studio-client` for the
-starter list, on `undici`, `ai` and `eventsource-parser` for one target's
-transport, and carried an `evals-package-boundary` exception for a subpath one
-file read. All four are gone, and the boundary is a total deny again — which is
-the half worth keeping, because a package that MAY import the studio's starter
-list is one where the next studio-shaped eval will land.
+the starter prompts and what each one asked for. Keep `evals-package-boundary`
+a total deny: a package that MAY import the studio's starter list is where the
+next studio-shaped eval will land.
 
-Three mechanical consequences, each of which was a small decision:
+Three consequences:
 
-- **`_gate.ts`, `_register.ts` and `_env.ts` lost their underscores.** The
-  prefix means "not part of the public API, never import cross-package" (root
-  `AGENTS.md`), and a subpath export pointing at one would say the opposite.
-- **`evalOrigin`, `evalContracts` and `evalStepCapHint` went with the eval**, to
-  `aai-studio-server/src/studio-eval-env.ts`, and read the environment through
-  `aai-evals/env` from there rather than re-deriving "blank counts as unset" —
-  the rule that was spelled five different ways before it was one function.
+- **`gate.ts`, `register.ts` and `env.ts` carry no underscore**: they are
+  subpath exports, and `_` means "never import cross-package" (root
+  `AGENTS.md`).
+- **`evalOrigin`, `evalContracts` and `evalStepCapHint` live with the studio
+  eval** (`aai-studio-server/src/studio-eval-env.ts`) and read the environment
+  through `aai-evals/env` rather than re-deriving "blank counts as unset".
 - **`eval-case-registration` and `eval-gate-is-not-unit-tier` each have a
   studio-side twin** (`studio-eval-case-registration`,
   `studio-eval-gate-is-not-unit-tier`). Two conventions rather than one widened

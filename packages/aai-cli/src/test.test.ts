@@ -3,26 +3,19 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { silenced } from "./_test-utils.ts";
+import { afterEach, beforeEach, describe, expect, type MockInstance, test, vi } from "vitest";
+import { createFakeUi, type FakeUi, silenced } from "./_test-utils.ts";
 import { executeTest } from "./test.ts";
 
-const execaSync = vi.hoisted(() => vi.fn());
-vi.mock("execa", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("execa")>();
-  return { ...orig, execaSync };
-});
-
+/** The spawner `runVitest` is handed in place of `execaSync`. */
+const execaSync = vi.fn();
 /**
- * `notify` is the channel a NARROWED run's skipped specs go out on — the
- * command no longer reports them itself, so a spec asserting the report has to
- * watch the runner's notice rather than this command's result alone.
+ * The fake terminal, and a spy on its `notify` — the channel the unrun-spec
+ * notice goes out on (not `log`, which JSON mode silences).
  */
-const notify = vi.hoisted(() => vi.fn());
-vi.mock("./_ui.ts", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("./_ui.ts")>();
-  return { ...orig, notify };
-});
+let ui: FakeUi;
+let notify: MockInstance<FakeUi["notify"]>;
+const deps = () => ({ ui, exec: execaSync });
 
 let tempDir: string;
 
@@ -31,7 +24,8 @@ beforeEach(async () => {
   // Factory `vi.fn()`s rather than spies, so `restoreMocks` does not reach them
   // and their call history would otherwise be cumulative across this file.
   execaSync.mockReset();
-  notify.mockReset();
+  ui = createFakeUi();
+  notify = vi.spyOn(ui, "notify");
 });
 
 afterEach(async () => {
@@ -46,7 +40,7 @@ function vitestArgs(): string[] {
 
 describe("executeTest", () => {
   test("returns skipped result when the project has no specs at all", async () => {
-    const result = await silenced(() => executeTest(tempDir))(tempDir);
+    const result = await silenced(() => executeTest(tempDir, {}, deps()))(tempDir);
     expect(result).toEqual({
       ok: true,
       data: { passed: true, skipped: true, ran: [], unrun: [], complete: true },
@@ -68,7 +62,7 @@ describe("executeTest", () => {
     // Evals have their own command; the widened run must not reach them.
     await writeFile(path.join(tempDir, "agent.eval.test.ts"), "");
 
-    const result = await silenced(() => executeTest(tempDir))(tempDir);
+    const result = await silenced(() => executeTest(tempDir, {}, deps()))(tempDir);
 
     expect(result).toEqual({
       ok: true,
@@ -96,7 +90,7 @@ describe("executeTest", () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "");
     await writeFile(path.join(tempDir, "registry.test.ts"), "");
 
-    const result = await silenced(() => executeTest(tempDir, { only: true }))(tempDir);
+    const result = await silenced(() => executeTest(tempDir, { only: true }, deps()))(tempDir);
 
     expect(result).toEqual({
       ok: true,
@@ -122,7 +116,7 @@ describe("executeTest", () => {
     await mkdir(path.join(tempDir, "tools"), { recursive: true });
     await writeFile(path.join(tempDir, "tools", "echo_back.test.ts"), "");
 
-    const result = await silenced(() => executeTest(tempDir))(tempDir);
+    const result = await silenced(() => executeTest(tempDir, {}, deps()))(tempDir);
 
     expect(result).toEqual({
       ok: true,
@@ -139,7 +133,7 @@ describe("executeTest", () => {
     // neither a pass nor silence.
     await mkdir(path.join(tempDir, "tools"), { recursive: true });
     await writeFile(path.join(tempDir, "tools", "echo_back.test.ts"), "");
-    const result = await silenced(() => executeTest(tempDir, { only: true }))(tempDir);
+    const result = await silenced(() => executeTest(tempDir, { only: true }, deps()))(tempDir);
 
     expect(result.ok).toBe(false);
     if (result.ok) expect.fail("an unrun spec must not be a passing result");
@@ -154,7 +148,7 @@ describe("executeTest", () => {
     for (let i = 0; i < 12; i++) {
       await writeFile(path.join(tempDir, `s${String(i).padStart(2, "0")}.test.ts`), "");
     }
-    const result = await silenced(() => executeTest(tempDir, { only: true }))(tempDir);
+    const result = await silenced(() => executeTest(tempDir, { only: true }, deps()))(tempDir);
     if (result.ok) expect.fail("12 unrun specs must not be a passing result");
     expect(result.error).toContain("and 2 more");
     expect(result.error).not.toContain("s11.test.ts");
@@ -162,7 +156,7 @@ describe("executeTest", () => {
 
   test("a passing single-spec run reports the set it covered", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
-    const result = await silenced(() => executeTest(tempDir))(tempDir);
+    const result = await silenced(() => executeTest(tempDir, {}, deps()))(tempDir);
     expect(result).toEqual({
       ok: true,
       data: { passed: true, ran: ["agent.test.ts"], unrun: [], complete: true },
@@ -174,7 +168,7 @@ describe("executeTest", () => {
     execaSync.mockImplementation(() => {
       throw new Error("exit 1");
     });
-    const result = await silenced(() => executeTest(tempDir))(tempDir);
+    const result = await silenced(() => executeTest(tempDir, {}, deps()))(tempDir);
     expect(result).toEqual({ ok: false, code: "test_failed", error: "Tests failed: exit 1" });
   });
 
@@ -185,7 +179,7 @@ describe("executeTest", () => {
       err.code = "ENOENT";
       throw err;
     });
-    const result = await silenced(() => executeTest(tempDir))(tempDir);
+    const result = await silenced(() => executeTest(tempDir, {}, deps()))(tempDir);
     expect(result).toEqual({
       ok: false,
       code: "spawn_failed",

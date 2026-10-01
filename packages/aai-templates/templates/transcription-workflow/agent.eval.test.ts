@@ -35,7 +35,7 @@ import {
   describeWorkflowEval,
   installStubTranscribe,
   installStubUploads,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import agentDef, { transcribe } from "./agent.ts";
 import { TRANSCRIPT_STREAM } from "./workflows/stitch.ts";

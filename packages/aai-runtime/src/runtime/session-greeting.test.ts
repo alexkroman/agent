@@ -16,6 +16,8 @@ import type { AgentDef, SessionContext } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { makeAgent } from "../_agent-test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import {
   createFakeLanguageModel,
   createFakeSttProvider,
@@ -24,7 +26,9 @@ import {
   FAKE_TTS_API_KEY_ENV,
   registerFakeProviders,
 } from "../_pipeline-test-fakes.ts";
-import { makeAgent, makeClientSink, makeMockHandle, silentLogger, tick } from "../_test-utils.ts";
+import { makeMockHandle } from "../_s2s-fixture-test-utils.ts";
+import { makeClientSink } from "../_session-test-utils.ts";
+import { tick } from "../_timing-test-utils.ts";
 import { MAX_SESSION_GREETING_CHARS, SESSION_CONTEXT_TIMEOUT_MS } from "../session/index.ts";
 import { _internals } from "../transports/s2s-transport.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";

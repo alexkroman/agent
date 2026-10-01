@@ -87,12 +87,9 @@
         // Everything a root `package.json` script or a vitest `globalSetup`
         // names is discovered by knip itself and must NOT be repeated here —
         // it reports a repeat as a redundant pattern, which is the same
-        // reviewability property working in the other direction.
-        //
-        // `gen-gateway-models.mjs` is the one script a pipeline never runs:
-        // `check:gateway-models` shells out to it, by path, at runtime. Manual
-        // on purpose — see .agents/testing.md, "Two manual diagnostics".
-        "scripts/gen-gateway-models.mjs",
+        // reviewability property working in the other direction — which is
+        // why `gen-gateway-models.mjs` is not here: `pnpm gen:gateway-models`
+        // names it now.
         "stryker*.config.mjs"
       ],
       // `scripts/check-polyglot.mjs` runs taplo by its `node_modules/.bin` path,
@@ -116,7 +113,6 @@
       "entry": [
         // Test helpers and fuzz harnesses: imported only by sibling specs, and
         // the fixtures directory is read at runtime by the replay harness.
-        "src/_test-utils.ts",
         "**/*-test-utils.ts",
         "src/integration/**/*.integration.test.ts",
         "**/*.test.ts",
@@ -176,7 +172,7 @@
       // from inside this package by `check:template-types` — was its only
       // importer, so the dependency was unused by knip's reading and
       // load-bearing by the gate's. `templates/quickstart-agent/agent.eval.test.ts`
-      // imports `@alexkroman1/aai-runtime/eval/vitest` now, which knip DOES
+      // imports `@alexkroman1/aai-runtime/testing/vitest` now, which knip DOES
       // count, so the entry became a redundant-pattern error. If that eval ever
       // goes away, restore the entry with the paragraph above rather than
       // dropping the dependency: the scaffold still needs it to resolve.

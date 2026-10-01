@@ -69,6 +69,11 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 /**
  * Install a fake LLM gateway as the global `fetch`, and return its call log.
  *
+ * `stubGateway` (`@alexkroman1/aai/testing`) installed for you. Import it under
+ * THIS name — aliasing it to `stubGateway` shadows the uninstalled fake of that
+ * name. A step whose HTTP goes through a published `stepFetch` wants
+ * `stubGatewayRoute` instead; `stubGateway`'s doc has the table.
+ *
  * The calls array is what a spec asserts on, and it is live — a reference taken
  * before the code under test runs holds every call made after.
  *

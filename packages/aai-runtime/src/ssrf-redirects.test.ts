@@ -12,7 +12,7 @@
 
 import { ssrfSafeFetch } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
-import { fakeFetch } from "./_test-utils.ts";
+import { fakeFetch } from "./_fetch-test-utils.ts";
 
 describe("SSRF: redirect status boundaries", () => {
   // `resp.status < 300 || resp.status >= 400` decides what counts as a

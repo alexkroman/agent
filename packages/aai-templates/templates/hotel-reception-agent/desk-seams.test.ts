@@ -23,7 +23,12 @@
 import agentDef from "virtual:aai/agent";
 import type { InferToolInput, SessionEvent, ToolContext } from "@alexkroman1/aai";
 import { isToolFailure, resolveOne } from "@alexkroman1/aai";
-import { createToolContext, expectDialogOk, runTool, toolRunner } from "@alexkroman1/aai/testing";
+import {
+  createToolContext,
+  expectDialogOk,
+  runTool,
+  toolRunner,
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import { validateCard } from "./card.ts";
 import { deskFlow } from "./desk.ts";

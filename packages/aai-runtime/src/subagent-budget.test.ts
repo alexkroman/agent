@@ -7,12 +7,12 @@
 import { speaker, tool } from "@alexkroman1/aai";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { makeUsageMeter } from "./_agent-test-utils.ts";
 import {
   createScriptedOneShotModel,
   registerFakeProviders,
   type ScriptedTurn,
 } from "./_pipeline-test-fakes.ts";
-import { makeUsageMeter } from "./_test-utils.ts";
 import { createSubagentRunner } from "./subagent.ts";
 import type { ToolCallDefaults } from "./tools/index.ts";
 

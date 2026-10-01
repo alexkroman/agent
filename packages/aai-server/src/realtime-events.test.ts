@@ -6,13 +6,13 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
 import {
   createRealtimePlatformEvents,
   type RealtimeChannelLike,
   type RealtimeClientLike,
   realtimeEndpoint,
 } from "./realtime-events.ts";
-import { captureLogs } from "./test-utils.ts";
 
 type ChangeHandler = (payload: {
   new?: Record<string, unknown> | null;

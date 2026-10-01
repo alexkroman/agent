@@ -17,6 +17,9 @@
 import { sleep } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { createTestOrchestrator, type TestFetch } from "./_orchestrator-test-utils.ts";
+import { deployAgent } from "./_request-test-utils.ts";
+import { fakeSandbox, spawnedAgent } from "./_sandbox-test-utils.ts";
 import { GUEST_ROUTE_EXPOSURE } from "./guest/routes.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { endLiveStreams, resetLiveStreams } from "./live-streams.ts";
@@ -24,13 +27,6 @@ import type { RateLimiter } from "./rate-limit.ts";
 import { notFoundMessage } from "./sandbox/broker.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
-import {
-  createTestOrchestrator,
-  deployAgent,
-  fakeSandbox,
-  spawnedAgent,
-  type TestFetch,
-} from "./test-utils.ts";
 import { GUEST_PROXY_TOKEN_HEADER } from "./workflow-proxy-constants.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({ mockSpawnAgentServer: vi.fn() }));

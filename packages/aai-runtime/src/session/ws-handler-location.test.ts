@@ -7,7 +7,8 @@ import { getSessionLocation } from "@alexkroman1/aai/host-internal";
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
-import { makeMockCore, silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
+import { makeMockCore } from "../_session-test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
 import { createSessionDirectory } from "./directory.ts";
 import { wireSessionSocket } from "./ws-handler.ts";

@@ -57,8 +57,8 @@
     // lib's do not. It is the same hazard `packages/aai-runtime/CLAUDE.md`
     // records against handing SDK internals on through
     // `@alexkroman1/aai-runtime/internal`, arriving by the front door: the
-    // template evals stay clean only because `/eval` and `/eval/vitest` reach
-    // a narrower graph.
+    // template specs and evals stay clean only because `/testing` and
+    // `/testing/vitest` reach a narrower graph.
     "templates/coding-agent/chat.ts"
   ]
 }

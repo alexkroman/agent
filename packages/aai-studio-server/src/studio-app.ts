@@ -101,6 +101,10 @@ export type StudioAppOpts = {
   githubApp?: StudioRouteOptions["githubApp"];
   /** Test seam: drive the GitHub routes against a fake API, no module mocks. */
   githubFetch?: StudioRouteOptions["githubFetch"];
+  /** Test seams: the deploy pipeline, session broker and preview wake. */
+  deployProject?: StudioRouteOptions["deployProject"];
+  studioSessionBroker?: StudioRouteOptions["broker"];
+  wakePreview?: StudioRouteOptions["wakePreview"];
   isDraining?: () => boolean;
 };
 
@@ -146,6 +150,9 @@ export function createStudioApp(opts: StudioAppOpts): {
       replicaId: opts.replicaId,
       githubApp: opts.githubApp,
       githubFetch: opts.githubFetch,
+      deployProject: opts.deployProject,
+      broker: opts.studioSessionBroker,
+      wakePreview: opts.wakePreview,
     }),
     previewQueue: opts.previewQueue,
   });

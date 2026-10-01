@@ -20,8 +20,9 @@ import {
   defaultCreateHeaderWebSocket,
   type HeaderWebSocket,
 } from "../_ws.ts";
-import type { Logger, S2sConfig } from "../runtime-config.ts";
-import { consoleLogger, debugLoggingEnabled } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
+import { consoleLogger, debugLoggingEnabled } from "../logger.ts";
+import type { S2sConfig } from "../s2s-config.ts";
 import {
   type DispatchContext,
   type DispatchState,

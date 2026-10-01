@@ -18,17 +18,17 @@
  * either would read as their duplicate.
  *
  * Driven through a REAL `node:http` server via the shared harness
- * (`workflow/api/test-utils.ts`), because every claim here is an HTTP one: a
+ * (`workflow/api/_test-utils.ts`), because every claim here is an HTTP one: a
  * status code, a header, or the absence of a second write to a socket.
  */
 
 import type http from "node:http";
 import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/internal";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeLogger } from "../../_test-utils.ts";
+import { makeLogger } from "../../_logger-test-utils.ts";
 import { createWorkflowApi } from "../api.ts";
 import type { UploadStore } from "../uploads.ts";
-import { fakeClient, type Harness, run, serve } from "./test-utils.ts";
+import { fakeClient, type Harness, run, serve } from "./_test-utils.ts";
 
 let harness: Harness | undefined;
 

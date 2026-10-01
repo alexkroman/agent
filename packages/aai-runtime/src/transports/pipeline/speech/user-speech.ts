@@ -8,7 +8,7 @@
 import type { TurnDetectionMode, UserTurnLimit } from "@alexkroman1/aai";
 import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 import type { TransportCallbacks } from "../../types.ts";
 import { createFalseInterruptionRecovery, type FalseInterruptionRecovery } from "../heard/index.ts";
 import { createAgentSpeakingPredicate, createAudioOnLinePredicate } from "./barge-in-policy.ts";

@@ -12,7 +12,8 @@ import { agentToolsets, agentToolsToSchemas, toAgentConfig } from "@alexkroman1/
 import { resolveAllBuiltins } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { authHeaders, createTestOrchestrator } from "./test-utils.ts";
+import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
+import { authHeaders } from "./_request-test-utils.ts";
 
 /**
  * Build a deploy body from an SDK-defined agent, mimicking what the CLI does.

@@ -54,7 +54,7 @@ import {
   installStubTranscribe,
   installStubUploads,
   stubGatewayRoute,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import agentDef, { spokenSummary } from "./agent.ts";
 import { POLL_INTERVAL_MS } from "./workflows/transcribe.ts";

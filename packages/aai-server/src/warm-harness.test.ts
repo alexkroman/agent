@@ -10,8 +10,8 @@
 import net, { type AddressInfo } from "node:net";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
+import { captureLogs } from "./_logger-test-utils.ts";
 import { forgetObservedPublicOrigin, rememberPublicOrigin } from "./public-origin.ts";
-import { captureLogs } from "./test-utils.ts";
 import { agentBootEnv, dialGuest, drainProcStream } from "./warm-harness.ts";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
@@ -227,7 +227,7 @@ describe("agentBootEnv", () => {
   /**
    * The flag an operator has to be able to set, and could not.
    *
-   * `debugLoggingEnabled` (aai-runtime/runtime-config.ts) is a module-level
+   * `debugLoggingEnabled` (aai-runtime/logger.ts) is a module-level
    * `const` over `process.env`, and a deployed agent's env arrives as a boot FILE
    * the harness parses into an object — never merged into `process.env`. So the
    * one line that decomposes the guest→platform journal RPC

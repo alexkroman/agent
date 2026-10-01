@@ -3,7 +3,7 @@
 import type { SessionEventBody } from "@alexkroman1/aai";
 import { stepClientTranscript } from "@alexkroman1/aai/step";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { createMemoryStateBackend, type SessionStateBackend } from "../session-state/store.ts";
 import {
   bindClientSession,

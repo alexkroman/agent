@@ -20,8 +20,8 @@
 import { workflow } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
-import { makeLogger } from "../_test-utils.ts";
 import { createPostgresDb } from "../postgres-db.ts";
 import { applyWorkflowJournalDdl } from "./journal/schema.ts";
 import { buildWorkflowClient } from "./runtime.ts";

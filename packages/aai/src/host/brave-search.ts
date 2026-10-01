@@ -11,8 +11,9 @@
  * the key for not being bot-challenged. Brave was `web_search`'s backend
  * once, and was dropped only because the key was required for everyone.
  *
- * The key handling — agent env only, not derived into `requiredEnv` — is
- * `_keyed-api.ts`'s, shared with `google_places`.
+ * The key handling — agent env only, derived into the deploy's env check by
+ * `BUILTIN_TOOL_ENV` (`sdk/derived-env.ts`) — is `_keyed-api.ts`'s, shared
+ * with `google_places`.
  */
 
 import { Parser } from "htmlparser2";

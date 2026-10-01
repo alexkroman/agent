@@ -17,8 +17,8 @@
  * instead ({@link TEXTBELT_LINKS_ENV}).
  *
  * Every failure is the tool's RESULT (`{ error }`), never a throw, like every
- * other builtin. The key handling — agent env on each call, not derived into
- * `requiredEnv` — is `_keyed-api.ts`'s rule.
+ * other builtin. The key handling — agent env on each call, `TEXTBELT_KEY`
+ * derived into the deploy's env check — is `_keyed-api.ts`'s rule.
  */
 
 import { z } from "zod";

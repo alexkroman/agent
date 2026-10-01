@@ -47,6 +47,8 @@ a judgement call each time.
 
 ## What the other three engines did
 
+<!-- paths: external -->
+
 - **DBOS Transact** indexed the status row directly. Its
   `src/sysdb_migrations/internal/migrations.ts` issues twenty `create index`
   statements against `workflow_status` and seven drops — two of the drops are
@@ -118,7 +120,7 @@ for the five exceptions.
 Outside `aai_platform`, `aai-sweep-cron-history` prunes
 `cron.job_run_details` and `aai-sweep-preview-archive` prunes
 `pgmq.a_aai_studio_preview`, both at 7 days; `aai-sweep-blob-gc` reclaims
-unreferenced `blobs/` and `uploads/` objects.
+unreferenced blob and upload objects.
 
 **The terminal-run window bounds the table only because every run REACHES a
 terminal status**, which is a claim spanning SQL and TypeScript: the sweep's

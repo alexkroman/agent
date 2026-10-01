@@ -51,7 +51,7 @@ import {
 import * as state from "./platform/session-state.ts";
 import * as uploads from "./platform/uploads.ts";
 import * as journal from "./platform/workflow-journal.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 /** `bigint` arrives as a STRING from the driver; `null` means absent. */
 const num = (value: unknown): number => Number(value);

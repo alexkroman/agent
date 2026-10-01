@@ -95,7 +95,7 @@ export const SELF_REFERENTIAL_ENTRIES = [
   // much — "the one occurrence in this package was in no baseline and reported
   // by nothing". An exemption you can only write once the gate can see the file
   // is the difference between a rule that is at zero and one that is blind.
-  ["packages/aai-runtime/src/_test-utils.ts", ["rule4_inlineTickPromise"]],
+  ["packages/aai-runtime/src/_timing-test-utils.ts", ["rule4_inlineTickPromise"]],
   ["packages/aai-ui/src/_react-test-utils.ts", ["rule4_inlineTickPromise"]],
   ["packages/aai/src/host/_test-utils.ts", ["rule4_inlineTickPromise"]], // its doc quotes the shadowing bug
   ["packages/aai/src/sdk/is-record.ts", ["rule17_openCodedRecordGuard"]], // rule 17 IS `isRecord`'s body

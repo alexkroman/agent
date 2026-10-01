@@ -2,9 +2,9 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, type MockInstance, test, vi } from "vitest";
 import { patchPackageJsonForWorkspace, runInit } from "./_init.ts";
-import { silenced, withTempDir, writeFiles } from "./_test-utils.ts";
+import { createFakeUi, type FakeUi, silenced, withTempDir, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 import { executeInit, promptTemplate } from "./init.ts";
 
@@ -31,44 +31,31 @@ async function useFakeTemplates(dir: string): Promise<void> {
 }
 
 /**
- * `init` SCAFFOLDS and stops — it must never publish. The mock is kept
- * precisely so that stays asserted rather than assumed: it used to deploy to
- * production as a side effect of creating a directory, and the specs below
- * would pass either way without something recording the call that must not
- * happen.
+ * The terminal `executeInit` is handed: a recording spinner (so a spec can
+ * assert it was stopped) and a template picker whose default answers with
+ * `initialValue` — a user pressing Enter — so a spec asserting the picker was
+ * NOT reached (`--yes`, JSON mode) fails on the call count rather than on a
+ * stray `undefined` three functions later.
  */
-const executePublish = vi.hoisted(() => vi.fn());
-vi.mock("./studio.ts", () => ({ executePublish }));
-
-/**
- * Real clack with a RECORDING spinner, so a spec can assert the spinner was
- * stopped. Everything else (intro, text) stays the real thing — only the one
- * affordance under test is replaced.
- */
-const spinnerCalls = vi.hoisted(() => ({ started: [] as string[], stopped: [] as string[] }));
-/**
- * The template picker, recorded. Its default answers with `initialValue` — a
- * user pressing Enter — so a spec asserting the picker was NOT reached
- * (`--yes`, JSON mode) fails on the call count rather than on a stray
- * `undefined` three functions later.
- */
-const selectMock = vi.hoisted(() =>
-  vi.fn(({ initialValue }: { initialValue?: unknown }) => Promise.resolve(initialValue)),
-);
-vi.mock("@clack/prompts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@clack/prompts")>()),
-  spinner: () => ({
-    start: (msg?: string) => spinnerCalls.started.push(msg ?? ""),
-    stop: (msg?: string) => spinnerCalls.stopped.push(msg ?? ""),
-  }),
-  select: selectMock,
-}));
+let ui: FakeUi;
 
 // executeInit shells out (a `--version` probe per manager, safe-chain, the
-// install) only when the scaffolded project has dependencies; mock execa so
-// those paths are testable hermetically.
-const execaMock = vi.hoisted(() => vi.fn());
-vi.mock("execa", () => ({ execa: execaMock }));
+// install) only when the scaffolded project has dependencies; it is handed
+// this recorder in place of execa so those paths are testable hermetically.
+const execaMock = vi.fn();
+
+/**
+ * `init` SCAFFOLDS and stops — it must never publish. It used to deploy to
+ * production as a side effect of creating a directory, so the specs below
+ * assert that nothing reached the network, rather than assume it.
+ */
+let fetchSpy: MockInstance<typeof fetch>;
+
+beforeEach(() => {
+  ui = createFakeUi();
+  ui.prompts.select.mockImplementation(async ({ initialValue }) => initialValue ?? "");
+  fetchSpy = vi.spyOn(globalThis, "fetch");
+});
 
 /**
  * Pin the invoking manager for a spec.
@@ -149,12 +136,9 @@ describe("scaffold client.tsx", () => {
 
 describe("executeInit", () => {
   beforeEach(() => {
-    executePublish.mockReset();
+    // `restoreMocks` restores SPIES; a module-level `vi.fn()` was never one, so
+    // its calls would accumulate across this file.
     execaMock.mockReset();
-    // `restoreMocks` restores SPIES; a factory `vi.fn()` was never one, so its
-    // calls would accumulate across this file and turn every "was not called"
-    // assertion below into an assertion about test order.
-    selectMock.mockClear();
   });
 
   test("installs deps when the template declares dependencies", async () => {
@@ -170,10 +154,13 @@ describe("executeInit", () => {
         execaMock.mockImplementation((cmd: string) =>
           Promise.resolve({ failed: cmd === "safe-chain" }),
         );
-        const result = await executeInit({ dir: target, template: "deps" }, { silent: true });
+        const result = await executeInit(
+          { dir: target, template: "deps" },
+          { silent: true, ui, exec: execaMock },
+        );
 
         expect(result.ok).toBe(true);
-        expect(executePublish).not.toHaveBeenCalled();
+        expect(fetchSpy).not.toHaveBeenCalled();
         const pnpmCall = execaMock.mock.calls.find(([cmd]) => cmd === "pnpm");
         expect(pnpmCall?.[1]).toContain("install");
         expect(pnpmCall?.[2]).toEqual({ cwd: target });
@@ -190,7 +177,7 @@ describe("executeInit", () => {
         stubUserAgent("pnpm/10.29.3 npm/? node/v24.10.0 linux x64");
         execaMock.mockResolvedValue({ failed: false });
 
-        await executeInit({ dir: target, template: "deps" }, { silent: true });
+        await executeInit({ dir: target, template: "deps" }, { silent: true, ui, exec: execaMock });
 
         // Skip the `safe-chain --version` probe; find the actual install.
         const installCall = execaMock.mock.calls.find(
@@ -216,7 +203,10 @@ describe("executeInit", () => {
             : Promise.resolve({ failed: true }),
         );
 
-        const result = await executeInit({ dir: target, template: "deps" }, { silent: true });
+        const result = await executeInit(
+          { dir: target, template: "deps" },
+          { silent: true, ui, exec: execaMock },
+        );
 
         // Both diagnostics ride the RESULT as well as `log.warn`, which JSON
         // mode silences: without them a scripted `aai init` could not tell this
@@ -252,7 +242,7 @@ describe("executeInit", () => {
         execaMock.mockResolvedValue({ failed: false });
         const target = path.join(dir, "npm-user");
 
-        const result = await executeInit({ dir: target }, { silent: true });
+        const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
         expect(result.ok).toBe(true);
 
         // The install RAN npm. Node >= 25 ships no corepack, so the old
@@ -285,7 +275,7 @@ describe("executeInit", () => {
         execaMock.mockResolvedValue({ failed: false });
         const target = path.join(dir, "pnpm-user");
 
-        await executeInit({ dir: target }, { silent: true });
+        await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
 
         const manifest = JSON.parse(
           await fs.readFile(path.join(target, "package.json"), "utf-8"),
@@ -306,7 +296,7 @@ describe("executeInit", () => {
         const target = path.join(dir, "preinstalled");
         await fs.mkdir(path.join(target, "node_modules"), { recursive: true });
 
-        await executeInit({ dir: target, template: "deps" }, { silent: true });
+        await executeInit({ dir: target, template: "deps" }, { silent: true, ui, exec: execaMock });
 
         expect(execaMock).not.toHaveBeenCalled();
       }),
@@ -322,7 +312,7 @@ describe("executeInit", () => {
         // execa is mocked with no implementation, so the scaffold's install
         // fails — hence the warnings; the files below are what say the scaffold
         // itself ran.
-        const result = await executeInit({ dir: target }, { silent: true });
+        const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
 
         expect(result).toMatchObject({
           ok: true,
@@ -330,7 +320,7 @@ describe("executeInit", () => {
         });
         expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
         expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
-        expect(executePublish).not.toHaveBeenCalled();
+        expect(fetchSpy).not.toHaveBeenCalled();
       }),
     );
   });
@@ -342,11 +332,11 @@ describe("executeInit", () => {
         await addDepsTemplate(dir);
         const target = path.join(dir, "picked");
         // The author scrolls off the pre-selected default and chooses `deps`.
-        selectMock.mockResolvedValueOnce("deps");
+        ui.prompts.select.mockResolvedValueOnce("deps");
 
-        const result = await executeInit({ dir: target });
+        const result = await executeInit({ dir: target }, { ui, exec: execaMock });
 
-        expect(selectMock).toHaveBeenCalledTimes(1);
+        expect(ui.prompts.select).toHaveBeenCalledTimes(1);
         if (result.ok) expect(result.data.template).toBe("deps");
         // The template's own file, not the scaffold's — the pick reached the copy.
         expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
@@ -364,9 +354,9 @@ describe("executeInit", () => {
         await addDepsTemplate(dir);
         const target = path.join(dir, "yes-mode");
 
-        const result = await executeInit({ dir: target, yes: true });
+        const result = await executeInit({ dir: target, yes: true }, { ui, exec: execaMock });
 
-        expect(selectMock).not.toHaveBeenCalled();
+        expect(ui.prompts.select).not.toHaveBeenCalled();
         if (result.ok) expect(result.data.template).toBe("quickstart-agent");
       }),
     );
@@ -385,9 +375,9 @@ describe("executeInit", () => {
         await addDepsTemplate(dir);
         const target = path.join(dir, "silent-mode");
 
-        const result = await executeInit({ dir: target }, { silent: true });
+        const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
 
-        expect(selectMock).not.toHaveBeenCalled();
+        expect(ui.prompts.select).not.toHaveBeenCalled();
         if (result.ok) expect(result.data.template).toBe("quickstart-agent");
       }),
     );
@@ -401,9 +391,9 @@ describe("executeInit", () => {
         await fs.mkdir(target, { recursive: true });
         await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
 
-        await expect(executeInit({ dir: target }, { silent: true })).rejects.toThrow(
-          "agent.ts already exists",
-        );
+        await expect(
+          executeInit({ dir: target }, { silent: true, ui, exec: execaMock }),
+        ).rejects.toThrow("agent.ts already exists");
       }),
     );
   });
@@ -416,7 +406,10 @@ describe("executeInit", () => {
         await fs.mkdir(target, { recursive: true });
         await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
 
-        const result = await executeInit({ dir: target, force: true }, { silent: true });
+        const result = await executeInit(
+          { dir: target, force: true },
+          { silent: true, ui, exec: execaMock },
+        );
         expect(result.ok).toBe(true);
         expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
       }),
@@ -437,9 +430,9 @@ describe("executeInit", () => {
         const target = path.join(dir, "not-deployed");
         execaMock.mockResolvedValue({ failed: false });
 
-        const result = await executeInit({ dir: target }, { silent: true });
+        const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
 
-        expect(executePublish).not.toHaveBeenCalled();
+        expect(fetchSpy).not.toHaveBeenCalled();
         expect(result).toEqual({ ok: true, data: { dir: target, template: "quickstart-agent" } });
       }),
     );
@@ -452,7 +445,7 @@ describe("executeInit", () => {
         const target = path.join(dir, "clean");
         execaMock.mockResolvedValue({ failed: false });
 
-        const result = await executeInit({ dir: target }, { silent: true });
+        const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
 
         expect(result).toEqual({ ok: true, data: { dir: target, template: "quickstart-agent" } });
       }),
@@ -463,19 +456,20 @@ describe("executeInit", () => {
     await withTempDir(
       silenced(async (dir) => {
         await useFakeTemplates(dir);
-        spinnerCalls.started.length = 0;
-        spinnerCalls.stopped.length = 0;
 
         // No such template: runInit throws inside the spinner's window. The
         // leak this guards is a clack spinner whose interval and raw-mode
         // stdin hook outlive the throw — it is only ever started when the UI
         // is not suppressed, so this runs without `{ silent: true }`.
         await expect(
-          executeInit({ dir: path.join(dir, "boom"), template: "no-such-template" }),
+          executeInit(
+            { dir: path.join(dir, "boom"), template: "no-such-template" },
+            { ui, exec: execaMock },
+          ),
         ).rejects.toThrow();
 
-        expect(spinnerCalls.started).toHaveLength(1);
-        expect(spinnerCalls.stopped).toEqual([expect.stringContaining("Could not create")]);
+        expect(ui.spinner.started).toHaveLength(1);
+        expect(ui.spinner.stopped).toEqual([expect.stringContaining("Could not create")]);
       }),
     );
   });
@@ -571,17 +565,14 @@ describe("patchPackageJsonForWorkspace", () => {
 });
 
 describe("promptTemplate", () => {
-  beforeEach(() => {
-    selectMock.mockClear();
-  });
-
   test("offers every shipped template, default first and hinted", async () => {
-    const picked = await promptTemplate(() =>
-      Promise.resolve(["topic-briefing-agent", "pizza-ordering-agent", "quickstart-agent"]),
+    const picked = await promptTemplate(
+      () => Promise.resolve(["topic-briefing-agent", "pizza-ordering-agent", "quickstart-agent"]),
+      ui,
     );
 
     expect(picked).toBe("quickstart-agent");
-    const opts = selectMock.mock.calls[0]?.[0] as {
+    const opts = ui.prompts.select.mock.calls[0]?.[0] as {
       initialValue: string;
       options: { value: string; hint?: string }[];
     };
@@ -598,9 +589,9 @@ describe("promptTemplate", () => {
   });
 
   test("keeps the listed order when the default is not among them", async () => {
-    await promptTemplate(() => Promise.resolve(["alpha", "beta"]));
+    await promptTemplate(() => Promise.resolve(["alpha", "beta"]), ui);
 
-    const opts = selectMock.mock.calls[0]?.[0] as {
+    const opts = ui.prompts.select.mock.calls[0]?.[0] as {
       initialValue: string;
       options: { value: string }[];
     };
@@ -609,10 +600,10 @@ describe("promptTemplate", () => {
   });
 
   test("does not prompt when there is nothing to choose between", async () => {
-    expect(await promptTemplate(() => Promise.resolve(["only-one"]))).toBe("only-one");
+    expect(await promptTemplate(() => Promise.resolve(["only-one"]), ui)).toBe("only-one");
     // An empty list is a broken install; the error belongs to the copy step,
     // which names the templates it did find.
-    expect(await promptTemplate(() => Promise.resolve([]))).toBe("quickstart-agent");
-    expect(selectMock).not.toHaveBeenCalled();
+    expect(await promptTemplate(() => Promise.resolve([]), ui)).toBe("quickstart-agent");
+    expect(ui.prompts.select).not.toHaveBeenCalled();
   });
 });

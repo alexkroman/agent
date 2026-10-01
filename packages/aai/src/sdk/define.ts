@@ -11,8 +11,8 @@ import type {
   ModeAgentDef,
   PipelineAgentParams,
   S2sAgentParams,
-  StaticAgentParams,
   TextAgentParams,
+  WorkflowAppAgentParams,
 } from "./agent-params.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
@@ -84,7 +84,8 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  * {@link AgentParams}: `mode` picks the member, and a field that member does
  * not have is a compile error naming it — `silence` is a pipeline group,
  * so it does not exist on {@link S2sAgentParams} at all. With no `mode` the
- * agent is a pipeline agent. {@link AgentDef} documents what every field means.
+ * agent is a pipeline agent. {@link AgentDeclaration} documents what every
+ * field means; the returned {@link AgentDef} is the resolved shape.
  *
  * **Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
  * default-exports `tool({ … })` is the tool `echo`, registered by existing, and
@@ -103,7 +104,7 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  *
  * **Session state is not declared here either** — a {@link sessionSlot} owns its
  * own default and its own storage, so there is no `state` factory to remember.
- * `syncState` takes that slot's projection, keyed by the slot's name.
+ * `syncState` takes that slot's projection, or a list of them.
  *
  * @example Default pipeline with another voice and a different LLM
  * ```ts
@@ -154,11 +155,11 @@ export function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
 export function agent(def: TextAgentParams): ModeAgentDef<"text">;
 /**
  * Define a workflow app: `mode: "workflow-app"`. {@link workflowApp} is the
- * same member with the mode already set. See {@link StaticAgentParams}.
+ * same member with the mode already set. See {@link WorkflowAppAgentParams}.
  *
  * @public
  */
-export function agent(def: StaticAgentParams): ModeAgentDef<"workflow-app">;
+export function agent(def: WorkflowAppAgentParams): ModeAgentDef<"workflow-app">;
 /**
  * Any member of {@link AgentParams} — the signature a value typed as the whole
  * union resolves against (an options bag assembled elsewhere, a wrapper that
@@ -299,7 +300,7 @@ function assertNoInlineTools(def: unknown): void {
  *
  * @public
  */
-export function workflowApp(def: Omit<StaticAgentParams, "mode">): AgentDef {
+export function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef {
   return buildAgent({ ...def, mode: "workflow-app" });
 }
 
@@ -325,4 +326,5 @@ export type {
   SharedAgentParams,
   StaticAgentParams,
   TextAgentParams,
+  WorkflowAppAgentParams,
 } from "./agent-params.ts";

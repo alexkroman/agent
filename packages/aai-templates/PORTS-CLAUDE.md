@@ -150,7 +150,7 @@ them apart. Four things are decisions:
   prompts the feedback touches, rewrite each in parallel — held to the
   `prompt_types` each of their human nodes passes, so an answer to a question can
   teach `background` and nothing else. The store that outlives a run has no
-  equivalent without a database, so memory starts from `config.yaml` on every
+  equivalent without a database, so memory starts from their _config.yaml_ on every
   call and the sidebar shows what this call learned; the spec pins that the next
   `draft_reply` reads the rewritten tone prompt.
 - **`find_meeting_time` is a ReAct agent over one calendar tool, so it is a
@@ -212,13 +212,14 @@ no equivalent, because a conversation has no invalid input; the state's
   to notice. The schema here has no `id`, and the ranking is a JOIN computed
   on read (`ranked`) rather than a third stored list that could disagree with
   the two it was built from.
-- **The shortlist can be spoken, and the drafts are read back.** Their top
-  three is `sorted_candidates[:3]` and their emails are thirty files in
-  `email_responses/`; a hiring manager who has just heard the ranking says
-  "swap Marcus for Aisha", so `proceed_to_emails` resolves names against the
-  RANKING with `resolveOne`'s never-guess rule (the consequence of guessing is
-  inviting the wrong person), and the drafts live in the slot for `read_email`
-  to read down the phone, with an unaccepted one flagged rather than hidden.
+- **The shortlist can be spoken, and the drafts are read back.** Their top three
+  is `sorted_candidates[:3]` and their emails are thirty files in their
+  _email_responses/_ directory; a hiring manager who has just heard the ranking
+  says "swap Marcus for Aisha", so `proceed_to_emails` resolves names against
+  the RANKING with `resolveOne`'s never-guess rule (the consequence of guessing
+  is inviting the wrong person), and the drafts live in the slot for
+  `read_email` to read down the phone, with an unaccepted one flagged rather
+  than hidden.
 
 It is tested by scripting BOTH seams the desk reaches a model through —
 `stubGenerate` keyed on the evaluator's system prompt (the route reads the
@@ -281,10 +282,10 @@ carries the table. Five things are decisions:
   garden view is room 205 kept free on purpose, and July 3 is sold out so the
   waitlist has a reason to exist.
 
-Two things the port dropped, stated rather than hidden. Their `ui_view.py`
+Two things the port dropped, stated rather than hidden. Their _ui_view.py_
 streamed SQLite changesets to the playground; `syncState` pushes the slot, and
 the sidebar renders the ledger of everything the call wrote. And their
-`policies/tours.md` and `spa.md` did not exist while the prompt pointed the
+_policies/tours.md_ and _spa.md_ did not exist while the prompt pointed the
 model at them — the four catalog topics are rendered from `catalogs.ts`, which
 also retires the "keep the two in sync" comment on each catalog.
 

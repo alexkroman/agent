@@ -35,7 +35,7 @@
 
 // Type-only, so this module stays the leaf it was: the door REPORTS a park and
 // never resolves a logger of its own.
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 // The park CADENCE — how long a busy run asks to be brought back, and the line
 // that says so. Its own module because the door decides whether a delivery may
 // walk and that decides what to answer one that may not; see its module doc.

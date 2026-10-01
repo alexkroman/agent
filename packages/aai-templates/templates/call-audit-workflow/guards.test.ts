@@ -29,8 +29,8 @@
 import type { MediaInfo } from "@alexkroman1/aai/ffmpeg";
 import type { StepInfo, UploadSlice } from "@alexkroman1/aai/step";
 import { FatalError } from "@alexkroman1/aai/step-errors";
-import { installStubReporter, installStubUploads } from "@alexkroman1/aai/testing/vitest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { installStubReporter, installStubUploads } from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   attemptSuffix,

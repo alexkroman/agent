@@ -24,8 +24,8 @@
  * }
  * ```
  *
- * **An eval FILE imports `@alexkroman1/aai-runtime/eval/vitest`, not this.**
- * That subpath is the one author-facing entry point: it re-exports every name
+ * **An eval FILE imports `@alexkroman1/aai-runtime/testing/vitest`, not this.**
+ * That subpath (through `/eval/vitest`, which it re-exports) re-exports every name
  * here, plus `describeEval` (the credential gate, the scripted-model fallback
  * and the per-case session, so a case is its assertions and nothing else) and
  * the `@alexkroman1/aai/testing` stubs a case composes with. This subpath is the
@@ -281,6 +281,7 @@ export type { HostGenerateFn } from "./generate.ts";
 // here so a case can name what its options inherit without importing the root,
 // for the node-types reason above.
 export type { HostAgentOptions } from "./host-agent-options.ts";
+export type { LogContext, LogFn, Logger, LogLevel } from "./logger.ts";
 // The opener contract those stubs implement. Owned by the `providers`
 // capability, on the root barrel beside `registerSttKind`; re-exported here
 // because the stubs' own signatures name it — it is declared in this package
@@ -301,7 +302,6 @@ export type {
   TtsWordTiming,
   Unsubscribe,
 } from "./providers/openers.ts";
-export type { LogContext, LogFn, Logger, LogLevel } from "./runtime-config.ts";
 // `HostGenerateFn`'s `onUsage` takes one, so a case holding that callback in a
 // variable has to be able to write its parameter type — the same rule the
 // comment above states for `generate` and `logger` themselves.

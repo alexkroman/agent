@@ -3,11 +3,13 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
-import { renderUsage } from "citty";
+import { type ArgsDef, renderUsage } from "citty";
 import { execa } from "execa";
 import { describe, expect, test } from "vitest";
+import { findUnknownFlags } from "./_cli-common.ts";
+import { HELP_SECTIONS, rootHelp } from "./_help.ts";
 import { withTempDir } from "./_test-utils.ts";
-import { mainCommand } from "./cli.ts";
+import { mainCommand, TEST_ALL_DEPRECATION } from "./cli.ts";
 
 const BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), "../bin.mjs");
 
@@ -103,10 +105,56 @@ describe("cli", () => {
   });
 });
 
+describe("aai --help is grouped", () => {
+  /** Every subcommand `--help` lists: registered and not hidden. */
+  async function visibleCommands(): Promise<string[]> {
+    const subs = mainCommand.subCommands as Record<string, { meta?: { hidden?: boolean } }>;
+    return Object.entries(subs)
+      .filter(([, cmd]) => cmd.meta?.hidden !== true)
+      .map(([name]) => name);
+  }
+
+  test("every visible subcommand sits in exactly one section", async () => {
+    const placed = HELP_SECTIONS.flatMap((section) => section.commands);
+    expect(new Set(placed)).toEqual(new Set(await visibleCommands()));
+    expect(new Set(placed).size).toBe(placed.length);
+    // A command no section names would land under "Other" — never shipped.
+    expect(normalize(await rootHelp(mainCommand))).not.toContain("OTHER");
+  });
+
+  test("the real bin prints the grouped help", async () => {
+    await withTempDir(async (dir) => {
+      const { exitCode, stdout } = await runBin(["--help"], dir);
+      expect(exitCode).toBe(0);
+      expect(normalize(stdout)).toContain("STUDIO ROUND-TRIP");
+      // `deploy` is hidden (in-guest Publish is its only caller).
+      expect(normalize(stdout)).not.toMatch(/^\s+deploy\s/m);
+    });
+  });
+});
+
+describe("kebab-case flags", () => {
+  const argsOf = (name: string): ArgsDef =>
+    (mainCommand.subCommands as Record<string, { args: ArgsDef }>)[name]?.args ?? {};
+
+  test.each([
+    ["build", "skip-tests", "--skipTests"],
+    ["build", "skip-typecheck", "--skipTypecheck"],
+    ["publish", "skip-typecheck", "--skipTypecheck"],
+    ["deploy", "skip-typecheck", "--skipTypecheck"],
+    ["deploy", "allow-preview-slug", "--allowPreviewSlug"],
+  ])("%s declares --%s, and still accepts %s", (cmd, kebab, camel) => {
+    const args = argsOf(cmd);
+    expect(args).toHaveProperty(kebab);
+    // The old spelling is undeclared (so `--help` shows only kebab-case) and
+    // still parses — citty aliases it and the unknown-flag guard normalizes it.
+    expect(findUnknownFlags([camel, `--${kebab}`], args)).toEqual([]);
+  });
+});
+
 describe("cli usage snapshots", () => {
   test("aai --help", async () => {
-    const usage = await renderUsage(mainCommand);
-    expect(normalize(usage)).toMatchSnapshot();
+    expect(normalize(await rootHelp(mainCommand))).toMatchSnapshot();
   });
 
   // Cast is safe — we control the command names.
@@ -207,6 +255,19 @@ describe("aai test's flags", () => {
       const parsed = JSON.parse(stdout.trim()) as { code?: string; error?: string };
       expect(parsed.code).not.toBe("usage");
       expect(parsed.error).toContain("No agent.ts found");
+    });
+  });
+});
+
+describe("aai test --all is deprecated", () => {
+  test("still runs, and says the flag does nothing — on stderr, so a piped CI log shows it", async () => {
+    await withTempDir(async (dir) => {
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(path.join(dir, "agent.ts"), "export default {};\n");
+      const { exitCode, stdout, stderr } = await runBin(["test", "--all"], dir);
+      expect(exitCode).toBe(0);
+      expect(JSON.parse(stdout.trim())).toMatchObject({ ok: true });
+      expect(stderr).toContain(TEST_ALL_DEPRECATION);
     });
   });
 });

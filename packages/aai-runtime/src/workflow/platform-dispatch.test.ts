@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { tick } from "../_test-utils.ts";
+import { tick } from "../_timing-test-utils.ts";
 import { createPlatformDispatch, queueNameFor } from "./platform-dispatch.ts";
 
 /** One enqueue the dispatcher attempted. */

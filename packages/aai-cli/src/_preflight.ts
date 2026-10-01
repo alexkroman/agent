@@ -32,7 +32,11 @@
  * config is unpacked.
  */
 
-import { TELEPHONY_CARRIERS } from "@alexkroman1/aai/internal";
+import {
+  agentRequiredEnv,
+  type DerivedEnvQuery,
+  TELEPHONY_CARRIERS,
+} from "@alexkroman1/aai/internal";
 import { plural } from "@alexkroman1/aai/utils";
 import {
   CARRIER_PARAM,
@@ -64,29 +68,31 @@ type ShippedCarrier = (typeof TELEPHONY_CARRIERS)[number];
  * def silently omits that provider's key. The normalized config is what the
  * runtime will actually resolve against, so it is what the preflight checks.
  */
-export type PreflightConfig = Parameters<typeof requiredProviderEnvVars>[0] & {
-  requiredEnv?: readonly string[] | undefined;
-  /**
-   * `AgentDef.telephony`, for {@link missingTelephonySecrets} and
-   * {@link telephonyWebhooks}. Serializable like `mode` is, so it survives the
-   * trip through `__aaiConfig` — see `packages/aai/src/sdk/telephony-config.ts`.
-   *
-   * `readonly string[]` rather than `TelephonyAccess`'s carrier union, and
-   * deliberately: this value was JSON on the way here, written by whichever
-   * SDK built the bundle, so a name this build has never heard of is a case
-   * that HAPPENS rather than one a cast has to manufacture.
-   * {@link declaredCarriers} filters against `TELEPHONY_CARRIERS` for exactly
-   * that reason, and typing the field narrower than the data made its own
-   * test unwritable without erasing the type.
-   */
-  telephony?: boolean | readonly string[] | undefined;
-};
+export type PreflightConfig = Parameters<typeof requiredProviderEnvVars>[0] &
+  DerivedEnvQuery & {
+    requiredEnv?: readonly string[] | undefined;
+    /**
+     * `AgentDef.telephony`, for {@link missingTelephonySecrets} and
+     * {@link telephonyWebhooks}. Serializable like `mode` is, so it survives the
+     * trip through `__aaiConfig` — see `packages/aai/src/sdk/telephony-config.ts`.
+     *
+     * `readonly string[]` rather than `TelephonyAccess`'s carrier union, and
+     * deliberately: this value was JSON on the way here, written by whichever
+     * SDK built the bundle, so a name this build has never heard of is a case
+     * that HAPPENS rather than one a cast has to manufacture.
+     * {@link declaredCarriers} filters against `TELEPHONY_CARRIERS` for exactly
+     * that reason, and typing the field narrower than the data made its own
+     * test unwritable without erasing the type.
+     */
+    telephony?: boolean | readonly string[] | undefined;
+  };
 
 /**
  * Every env var name the agent needs to start: provider credentials derived
  * from the stt/llm/tts/s2s descriptors (the same registry-backed derivation the
- * runtime resolves keys with), plus the agent's own declared `requiredEnv` — an
- * `agent()` field for custom keys tools read from `ctx.env`, which no static
+ * runtime resolves keys with), each MCP server's `tokenEnv` and each keyed
+ * builtin's key (`agentRequiredEnv`), plus the agent's own declared
+ * `requiredEnv` — custom keys tools read from `ctx.env`, which no static
  * derivation can see.
  *
  * **Named on its own because the CLI has TWO deploy paths and only one of them
@@ -97,7 +103,7 @@ export type PreflightConfig = Parameters<typeof requiredProviderEnvVars>[0] & {
  * One derivation, two callers; each applies its own "what counts as supplied".
  */
 export function requiredEnvNames(config: PreflightConfig): string[] {
-  return [...new Set([...requiredProviderEnvVars(config), ...(config.requiredEnv ?? [])])];
+  return [...new Set([...requiredProviderEnvVars(config), ...agentRequiredEnv(config)])];
 }
 
 /**

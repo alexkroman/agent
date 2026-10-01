@@ -72,8 +72,8 @@ import {
   resetToolChoiceAfterFirstStep,
 } from "../_prepare-step.ts";
 import { createGenerateFn } from "../generate.ts";
+import { consoleLogger } from "../logger.ts";
 import { resolveLlm } from "../providers/resolve.ts";
-import { consoleLogger } from "../runtime-config.ts";
 import { createSubagentRunner } from "../subagent.ts";
 import {
   createFatalToolLatch,

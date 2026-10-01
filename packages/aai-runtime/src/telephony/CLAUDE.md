@@ -9,7 +9,7 @@ read_when: >-
 # Telephony: a phone call is an ordinary session
 
 `WS /phone` runs a carrier's media stream (Twilio Media Streams, Telnyx) as an
-ordinary session, served by `createRuntimeServer` for exactly the carriers
+ordinary session, served by `createServerForRuntime` for exactly the carriers
 `AgentDef.telephony` names and for none if it names nothing.
 `enabledCarriers` in `telephony-server.ts` is the one resolution of that
 declaration, and the boot line prints what it returns.

@@ -10,7 +10,7 @@ import {
   TTS_RECONNECT_TIMEOUT_MS,
 } from "@alexkroman1/aai/host-internal";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { tick } from "../../_test-utils.ts";
+import { tick } from "../../_timing-test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
 import type { TtsError } from "../openers.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";

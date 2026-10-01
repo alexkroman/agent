@@ -26,8 +26,8 @@
 
 import { normalizeSpeechText } from "@alexkroman1/aai/internal";
 import { pcm16ToBytes } from "../../../_pcm.ts";
+import type { Logger } from "../../../logger.ts";
 import type { TtsWordTiming } from "../../../providers/openers.ts";
-import type { Logger } from "../../../runtime-config.ts";
 import type { SendTtsOptions, TransportCallbacks } from "../../types.ts";
 import type { HeardTracker } from "../heard/index.ts";
 import type { TurnMachine, TurnMetrics } from "../turn/index.ts";

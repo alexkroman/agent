@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
-import { flush } from "../_test-utils.ts";
+import { flush } from "../_timing-test-utils.ts";
 import { PIPELINE_CAPABILITIES } from "../transports/capabilities.ts";
 import { makeCore, makeTransport } from "./_core-harness.ts";
 

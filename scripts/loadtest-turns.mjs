@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Sustained TURN load: N long-lived sessions, each taking turns back to back.
 //
-//   pnpm loadtest:turns --port=4900
-//   pnpm loadtest:turns --port=4900 --sessions=40 --duration=30
+//   pnpm loadtest turns --port=4900
+//   pnpm loadtest turns --port=4900 --sessions=40 --duration=30
 //
 // This is a different measurement from `scripts/loadtest.mjs --scenario=session`,
 // and the difference is the point. That one opens a session, waits for

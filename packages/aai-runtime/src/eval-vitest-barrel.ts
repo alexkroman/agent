@@ -1,6 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `@alexkroman1/aai-runtime/eval/vitest` — THE import for an eval file.
+ * `@alexkroman1/aai-runtime/eval/vitest` — the eval harness's vitest door.
+ *
+ * An agent project reaches every name here through
+ * `@alexkroman1/aai-runtime/testing/vitest`, which re-exports them all beside
+ * the SDK's installers, so a test file imports from the two testing doors
+ * (`/testing`, `/testing/vitest`) whether it is a unit spec or an eval. This
+ * subpath keeps working, and it is where a stub an eval needs is added first.
  *
  * One `*.eval.test.ts` used to reach four subpaths of two packages: the suite
  * from here, the readers and the session from `/eval`, the simulated caller from
@@ -12,7 +18,7 @@
  *
  * ```ts
  * import type { AgentDef } from "@alexkroman1/aai";
- * import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/eval/vitest";
+ * import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
  *
  * declare const agentDef: AgentDef;
  *

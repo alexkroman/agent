@@ -43,6 +43,7 @@
 
 import type { CloseableDb, CreatePostgresDbOptions } from "@alexkroman1/aai-runtime";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
 import { ADMIN_POOL_MAX, SLUG_LOCK_POOL_MAX } from "./constants.ts";
 import { GUEST_TOKEN_SECRET_ENV } from "./guest/token.ts";
 import {
@@ -53,7 +54,6 @@ import {
 import { QUEUE_NOTIFY_LISTEN } from "./platform/db-limits.ts";
 import type { AdminDb } from "./platform/lock.ts";
 import { buildPlatformDb, buildServiceConfig } from "./service-config.ts";
-import { captureLogs } from "./test-utils.ts";
 
 /** Every pool `buildPlatformDb` built, in construction order. */
 const pools: CreatePostgresDbOptions[] = [];

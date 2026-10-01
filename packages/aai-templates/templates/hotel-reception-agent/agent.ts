@@ -2,7 +2,7 @@ import { agent } from "@alexkroman1/aai";
 import { DIALOGS } from "./desk.ts";
 import { DESK_EVENTS } from "./events.ts";
 import { PRICING, spokenDate, TODAY, usd } from "./records.ts";
-import { deskProjection } from "./session.ts";
+import { hotelSlot } from "./session.ts";
 import systemPrompt from "./system-prompt.md?raw";
 
 /**
@@ -25,7 +25,7 @@ export default agent({
     "Takes a hotel front desk's calls: room bookings, restaurant tables, folios and concierge requests",
   // The receptionist's own screen: who is verified, what is being booked, and
   // the ledger of everything this call wrote — their SQLite changeset stream.
-  syncState: { hotel: deskProjection },
+  syncState: hotelSlot.projected,
   /**
    * Wires `@userTranscript.committed` and `@session.timedOut` to the desk
    * dialog. Without it `offering` and `readBack` — the two states that exist to

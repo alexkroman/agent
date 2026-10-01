@@ -8,15 +8,15 @@ import {
   expectDeployable,
   expectPromptBuiltinsDeclared,
   runTool,
-} from "@alexkroman1/aai/testing";
+  runWorkflow,
+} from "@alexkroman1/aai-runtime/testing";
 import {
   installStubClientInbox,
   installStubGateway,
   installStubSpeech,
   installStubStepFetch,
   installStubWorkflows,
-} from "@alexkroman1/aai/testing/vitest";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import agentDef from "./agent.ts";
 import {

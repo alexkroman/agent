@@ -4,7 +4,7 @@
 
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { vi } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import type { S2sCallbacks, S2sWebSocket } from "./client.ts";
 import { connectS2s } from "./client.ts";
 

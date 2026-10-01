@@ -11,7 +11,7 @@ import { DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
 import { capToolResult, toArgsRecord } from "@alexkroman1/aai/internal";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { APICallError, RetryError } from "ai";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 import type { EmitError, SendTtsText } from "../../types.ts";
 import { createDeadAirCover } from "./dead-air.ts";
 import { type InReplyLineFlags, speakInReply } from "./lines.ts";

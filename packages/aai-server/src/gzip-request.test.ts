@@ -2,9 +2,10 @@
 import { gzipSync } from "node:zlib";
 import { Hono } from "hono";
 import { describe, expect, test } from "vitest";
+import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
+import { authHeaders, deployBody } from "./_request-test-utils.ts";
 import type { HonoEnv } from "./context.ts";
 import { createGzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
-import { authHeaders, createTestOrchestrator, deployBody } from "./test-utils.ts";
 
 function gzipHeaders(key = "key1"): Record<string, string> {
   return { ...authHeaders(key), "Content-Encoding": "gzip" };

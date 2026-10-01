@@ -6,7 +6,7 @@
 
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 
 /**
  * Minimal WebSocket interface accepted by {@link AgentRuntime.startSession}.
@@ -62,7 +62,7 @@ export type SessionWebSocket = {
  * own event map, which is not assignable to the four overloads declared above.
  *
  * ONE helper rather than a cast per call site. Every front door over
- * `createRuntimeServer` needs this same narrowing — the `/websocket` session path,
+ * `createServerForRuntime` needs this same narrowing — the `/websocket` session path,
  * host mode, the telephony bridge — and a cast repeated per door is both a
  * suppression per door and an invitation to widen one of them by accident.
  * This is the seam; nothing else may cast to `SessionWebSocket`.

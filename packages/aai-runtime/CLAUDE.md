@@ -94,7 +94,7 @@ capability, no epoch, no TypeDoc page, no semver promise.
   `toToolJsonSchema`) import zod.
 - **Adding a symbol:** authoring API → import from the public subpath that owns
   it; otherwise add it to `host-internal.ts`. Never a relative path into
-  `../aai/sdk/` — Biome's `noRestrictedImports` rejects it and
+  `packages/aai/src/sdk/` — Biome's `noRestrictedImports` rejects it and
   `tsconfig.build.json` reports `TS6059`.
 
 ## Layout
@@ -164,7 +164,7 @@ barrel a name goes on.
 minor. Rules that follow:
 
 - A test DOUBLE implements the unsealed slice a consumer takes
-  (`SessionRuntime` for `createRuntimeServer`), never the sealed handle.
+  (`SessionRuntime` for `createServerForRuntime`), never the sealed handle.
 - A method that would widen a sealed handle becomes a free function over it
   (`connectSession`) or a sub-handle.
 - A handle that is only ever received (`AgentServer`, `TextAgent`,
@@ -180,12 +180,12 @@ minor. Rules that follow:
   recorded on the session the server starts, and the ticket subprotocol must be
   kept out of the handshake reply.
 
-### Three subpaths are RENDERED, and the root barrel is not
+### Four subpaths are RENDERED, and the root barrel is not
 
-`typedoc.json` names only `eval-barrel`, `eval-vitest-barrel` and
-`testing-barrel` — they are written by whoever wrote
-the `agent.ts`, so they belong in the authoring reference. The root barrel,
-`/internal`, `/auth`, `/metrics` and `/tracing` stay deny-listed in
+`typedoc.json` names only `eval-barrel`, `eval-vitest-barrel`,
+`testing-barrel` and `testing-vitest-barrel` — they are written by whoever
+wrote the `agent.ts`, so they belong in the authoring reference. The root
+barrel, `/internal`, `/auth`, `/metrics` and `/tracing` stay deny-listed in
 `scripts/docs-markdown.mjs`. See [`docs/CLAUDE.md`](../../docs/CLAUDE.md),
 "Rendering `aai-runtime` is a docs decision", for the files one change touches
 together.
@@ -196,27 +196,41 @@ In [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md): the text-agent surface, why
 a workflow app is evaluated by RUNNING it, and why a keyless run gets a
 SCRIPTED model.
 
-### An eval file has ONE import: `/eval/vitest`
+### A test file has TWO doors: `/testing` and `/testing/vitest`
 
-`@alexkroman1/aai-runtime/eval/vitest` re-exports the runner-free `/eval` half,
-the simulated caller and judge, and the `@alexkroman1/aai/testing` stubs a case
-composes with (`stubGatewayRoute`, `routeStepFetch`, `installStubStepFetch`, …)
-as the SAME declarations, so one `*.eval.test.ts` needs one import line for its
-harness.
+`@alexkroman1/aai-runtime/testing` re-exports every name of
+`@alexkroman1/aai/testing` plus `runWorkflow`, `runTextAgent` and
+`scriptedTextModel`; `@alexkroman1/aai-runtime/testing/vitest` re-exports every
+installer of `@alexkroman1/aai/testing/vitest` plus everything `/eval/vitest`
+carries (the eval suites, the runner-free `/eval` half, the simulated caller and
+judge, the SDK stubs a case composes with). All as the SAME declarations, so a
+unit spec and an eval file each need those two imports for their harness. The
+table of which import serves which FILE is "Which testing import, by FILE" in
+`packages/aai/src/sdk/CLAUDE.md`.
 
-- **Why on the runtime, and why the vitest subpath.** The SDK never imports this
-  package, so the SDK's stubs are re-exported HERE rather than the harness
-  moving there; and `/eval` must stay importable without vitest (an optional
-  peer) for a harness that is not vitest — `scripts/loadtest-stub-agent` and
-  `aai-evals`' runner import it. An eval file is always vitest.
-- **Ownership does not move with a re-export.** The SDK stubs are owned here by
-  `eval-stubs` (dropping one from the door is this package's break), and every
-  other name keeps its capability — `src/contracts/CLAUDE.md`.
-- **`/eval/simulate` is gone** (its names are on `/eval/vitest` and `/eval`);
-  `/eval` stays — it is the runner-free door, not a second author-facing one. A
-  stub an eval needs and the door lacks is a line in `eval-vitest-barrel.ts`.
-- konsistent's `template-eval-runtime-subpaths` holds a template eval to the
-  one door (it refuses `/eval` and the SDK's `/testing` subpaths there).
+- **Why on the runtime, and why two.** The SDK never imports this package, so
+  its helpers are re-exported HERE rather than the engine moving there; and the
+  pure door must stay importable without vitest (an optional peer) —
+  `published-testing-split`'s rule that whatever installs or restores is on a
+  `/vitest` subpath. `runtime-runner-free-subpaths` refuses a `vitest` import in
+  `testing-barrel.ts`.
+- **Ownership does not move with a re-export.** The SDK stubs an eval composes
+  with are owned here by `eval-stubs`, the rest of the SDK's helpers by
+  `testing-stubs` (dropping one from a door is this package's break), and every
+  runtime name keeps its capability — `src/contracts/CLAUDE.md`.
+- **`testing-doors.test.ts` holds each door to its sources** (values by
+  identity, type names by the barrels' lists), so a helper the SDK or
+  `/eval/vitest` gains fails here until the door carries it.
+- **`/eval/vitest` and `/eval` stay.** `/eval/vitest` is the door
+  `/testing/vitest` builds on (a stub an eval needs is a line in
+  `eval-vitest-barrel.ts` and one in `testing-vitest-barrel.ts`); `/eval` is
+  the runner-free door for a harness that is not vitest —
+  `scripts/loadtest-stub-agent` and `aai-evals`' runner import it.
+  `/eval/simulate` is gone.
+- konsistent's `template-testing-doors` holds every template file to the two
+  doors (it refuses the SDK's `/testing` subpaths and `/eval*` there), and
+  `template-eval-runtime-subpaths` keeps the embedder subpaths out of a template
+  eval.
 
 ## The server and the sessions are ONE copy of this package
 
@@ -270,6 +284,6 @@ Stated so far:
 - **`session.page.tail`** (`session/event-stream.ts`) — a page cannot contain
   events its own tail says do not exist (a read starting past the tail is
   legitimate and answers zero events).
-- **`capacity.line.terms`** (`aai-server/platform-db-capacity.ts`) — the terms
+- **`capacity.line.terms`** (`aai-server/platform/db-capacity.ts`) — the terms
   a boot line names must COMPOSE the total it prints. See "The boot line
   describes the reading it was built from" in that package.

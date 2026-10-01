@@ -173,7 +173,7 @@ if (checkOnly) {
   if (problems.length > 0) {
     console.error("Guest toolchain lockfile is out of date:");
     for (const problem of problems) console.error(`  - ${problem}`);
-    console.error("\nRun: node scripts/sync-guest-toolchain.mjs");
+    console.error("\nRun: pnpm sync:guest-toolchain");
     process.exit(1);
   }
   console.log("Guest toolchain lockfile is up to date.");

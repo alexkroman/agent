@@ -21,7 +21,7 @@ import {
   statesIn,
   toolNames,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { MENU } from "./shared.ts";
@@ -44,7 +44,7 @@ const ProjectedOrder = z.object({
  * The last cart `syncState` pushed to the browser, i.e. what the page shows.
  *
  * The frame is keyed by slot name, so the `order` key is `orderView`'s
- * result — the same value `useAgentState(orderProjection)` selects in
+ * result — the same value `useAgentState(orderSlot.projected)` selects in
  * `client.tsx`, which is why an eval can assert on it: it is the cart the
  * customer is looking at. `lastStateIn` is the SDK's
  * reader for exactly this.

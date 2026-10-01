@@ -60,7 +60,7 @@ import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { resolveDenoRunCode } from "./_run-code-deno.ts";
 import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
 import { stopProjectServer } from "./_stop-server.ts";
-import { log } from "./_ui.ts";
+import { defaultUi } from "./_ui.ts";
 
 export { CLIENT_ARTIFACT_REL } from "./_artifacts.ts";
 
@@ -112,7 +112,7 @@ function resolveClientDir(cwd: string): string {
   const built = path.join(cwd, CLIENT_ARTIFACT_REL);
   if (existsSync(path.join(built, "index.html"))) return built;
   if (existsSync(path.join(cwd, "client.tsx"))) {
-    log.warn("client.tsx is not built — serving the default UI. Run `aai build` first.");
+    defaultUi.log.warn("client.tsx is not built — serving the default UI. Run `aai build` first.");
   }
   return defaultClientDir();
 }
@@ -166,7 +166,7 @@ export async function createProjectServer(options: ProjectServerOptions): Promis
     // only about restarts: the browser reconnects with `?sessionId=`, so a
     // reconnect landing on another replica resumes a session that replica has
     // never heard of, and the agent's context is gone mid-call.
-    log.warn(
+    defaultUi.log.warn(
       "No DATABASE_URL: session state and durable runs live in THIS process's memory.\n" +
         "One replica is fine. Behind a load balancer, enable sticky sessions so a reconnect " +
         "(the client re-dials with ?sessionId=) reaches the same process — or set DATABASE_URL " +
@@ -226,7 +226,7 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
   const host = options.host ?? (process.env.HOST?.trim() || undefined);
 
   await server.listen(port, host);
-  log.info(`${agent.name} listening on http://${host ?? "127.0.0.1"}:${server.port}`);
+  defaultUi.log.info(`${agent.name} listening on http://${host ?? "127.0.0.1"}:${server.port}`);
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
@@ -234,7 +234,9 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
       stopProjectServer(server, tracing).then(
         () => process.exit(0),
         (error: unknown) => {
-          log.error(`shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+          defaultUi.log.error(
+            `shutdown failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
           process.exit(1);
         },
       );

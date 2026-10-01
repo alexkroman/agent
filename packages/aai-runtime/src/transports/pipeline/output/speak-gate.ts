@@ -42,7 +42,7 @@
  */
 
 import { createRestartableTimer, type RestartableTimer } from "../../../_timer.ts";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 
 /** One held delivery — the whole downstream effect of one TTS frame. */
 type Delivery = () => void;

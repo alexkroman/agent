@@ -22,14 +22,13 @@ import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { stepReadUpload, type UploadRange, WAV_HEADER_BYTES } from "@alexkroman1/aai/step";
 import { DEFAULT_RETRY_DELAY_MS, FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { createWorkflowContext } from "@alexkroman1/aai/testing";
+import { createWorkflowContext, runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import {
   installStubReporter,
   installStubStepFetch,
   installStubTranscribe,
   installStubUploads,
-} from "@alexkroman1/aai/testing/vitest";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";

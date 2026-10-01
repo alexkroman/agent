@@ -4,14 +4,15 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { readGlobalConfig } from "./_config.ts";
 import { CliError } from "./_output.ts";
-import { executeLogin } from "./login.ts";
+import { createFakeUi } from "./_test-utils.ts";
+import { defaultOpenBrowser, executeLogin, type OpenerSpawn } from "./login.ts";
 
-// The default browser opener spawns the platform's opener command; stub it
-// so tests never launch a real browser, and exercise its swallowed-error
-// path (a missing opener must not fail the login — the URL is printed).
-const spawnMock = vi.fn(() => {
+// The default browser opener's spawn, handed in rather than module-mocked, so
+// its swallowed-error path is exercised without launching a real browser (a
+// missing opener must not fail the login — the URL is printed).
+const spawnMock = vi.fn<OpenerSpawn>(() => {
   const child = {
-    on(_event: string, cb: (err: Error) => void) {
+    on(_event: "error", cb: (err: Error) => void) {
       cb(new Error("opener not installed"));
       return child;
     },
@@ -21,9 +22,6 @@ const spawnMock = vi.fn(() => {
   };
   return child;
 });
-vi.mock("node:child_process", () => ({
-  spawn: (...args: unknown[]) => spawnMock(...(args as [])),
-}));
 
 /** Route-keyed fake fetch; records every call. */
 /**
@@ -79,7 +77,10 @@ describe("aai login", () => {
     });
     const openBrowser = vi.fn();
 
-    const result = await executeLogin({}, { fetchFn, openBrowser, pollIntervalMs: 1 });
+    const result = await executeLogin(
+      {},
+      { ui: createFakeUi(), fetchFn, openBrowser, pollIntervalMs: 1 },
+    );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.email).toBe("dev@example.com");
     expect((await readGlobalConfig()).apiKey).toBe("linked-key");
@@ -102,21 +103,17 @@ describe("aai login", () => {
       "/studio/auth": () => ({ body: { mode: "dev" } }),
       "/studio/cli-link/exchange": () => ({ body: { apiKey: "dev-linked-key" } }),
     });
-    const result = await executeLogin({}, { fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1 });
+    const result = await executeLogin(
+      {},
+      { ui: createFakeUi(), fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1 },
+    );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.email).toBe("your account");
     expect((await readGlobalConfig()).apiKey).toBe("dev-linked-key");
   });
 
-  test("opens the system browser by default; a failed opener is not fatal", async () => {
-    const { fetchFn } = fakeFetch({
-      "/studio/auth": () => ({ body: { mode: "supabase" } }),
-      "/studio/cli-link/exchange": () => ({ body: { apiKey: "linked-key" } }),
-    });
-    // No openBrowser seam: the real (spawn-backed) opener runs, its spawn
-    // error is swallowed, and the poll still completes the login.
-    const result = await executeLogin({}, { fetchFn, pollIntervalMs: 1 });
-    expect(result.ok).toBe(true);
+  test("the default opener swallows a failed spawn — the URL is printed either way", () => {
+    expect(() => defaultOpenBrowser("https://x.test/?cli-link=c", spawnMock)).not.toThrow();
     expect(spawnMock).toHaveBeenCalledOnce();
   });
 
@@ -128,7 +125,7 @@ describe("aai login", () => {
     const fetchFn = vi.fn(() => Promise.reject(new TypeError("fetch failed")));
     const err = (await executeLogin(
       {},
-      { fetchFn: asFetch(fetchFn), openBrowser: vi.fn(), pollIntervalMs: 1 },
+      { ui: createFakeUi(), fetchFn: asFetch(fetchFn), openBrowser: vi.fn(), pollIntervalMs: 1 },
     ).catch((e: unknown) => e)) as { code?: string; message?: string; hint?: string };
 
     expect(err.code).toBe("login_unreachable");
@@ -175,7 +172,7 @@ describe("aai login", () => {
     });
     const result = await executeLogin(
       {},
-      { fetchFn: asFetch(fetchFn), openBrowser: vi.fn(), pollIntervalMs: 1 },
+      { ui: createFakeUi(), fetchFn: asFetch(fetchFn), openBrowser: vi.fn(), pollIntervalMs: 1 },
     );
     expect(result.ok).toBe(true);
   });
@@ -186,7 +183,7 @@ describe("aai login", () => {
       "/studio/cli-link/exchange": () => ({ body: { ok: true } }),
     });
     await expect(
-      executeLogin({}, { fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1 }),
+      executeLogin({}, { ui: createFakeUi(), fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1 }),
     ).rejects.toMatchObject({ code: "login_failed" });
   });
 
@@ -196,7 +193,10 @@ describe("aai login", () => {
       "/studio/cli-link/exchange": () => ({ status: 404, body: { pending: true } }),
     });
     await expect(
-      executeLogin({}, { fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1, timeoutMs: 5 }),
+      executeLogin(
+        {},
+        { ui: createFakeUi(), fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1, timeoutMs: 5 },
+      ),
     ).rejects.toMatchObject({ code: "login_timeout" });
   });
 
@@ -209,13 +209,13 @@ describe("aai login", () => {
       }),
     });
     await expect(
-      executeLogin({}, { fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1 }),
+      executeLogin({}, { ui: createFakeUi(), fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1 }),
     ).rejects.toMatchObject({ code: "login_failed" });
   });
 
   test("fails cleanly when the server has no login configured", async () => {
     const { fetchFn } = fakeFetch({ "/studio/auth": () => ({ body: { mode: "none" } }) });
-    await expect(executeLogin({}, { fetchFn })).rejects.toMatchObject({
+    await expect(executeLogin({}, { ui: createFakeUi(), fetchFn })).rejects.toMatchObject({
       code: "login_unavailable",
     });
   });

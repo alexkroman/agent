@@ -36,8 +36,8 @@
 
 import type { UserTurnLimit } from "@alexkroman1/aai";
 import { createRestartableTimer } from "../../../_timer.ts";
+import type { Logger } from "../../../logger.ts";
 import type { SttSession } from "../../../providers/openers.ts";
-import type { Logger } from "../../../runtime-config.ts";
 import { scanWords } from "./text.ts";
 
 /** Which cap an utterance crossed — the `limit` field of `userTurn.exceeded`. */

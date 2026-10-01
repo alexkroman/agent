@@ -30,7 +30,7 @@
 
 import type { Db } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
-import { type IssuedStatement, recordingDb } from "../../../_test-utils.ts";
+import { type IssuedStatement, recordingDb } from "../../../_db-test-utils.ts";
 import { toRunRecord } from "../_postgres-rows.ts";
 import { isResumableJournal } from "../types.ts";
 import { createPostgresJournal } from "./postgres.ts";

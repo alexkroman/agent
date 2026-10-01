@@ -205,7 +205,7 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E>
  * Declaring one is what lets a dialog move on something the model did not do —
  * the caller went quiet, barged in, hung up, or said something that called no
  * tool. The runtime sends them through {@link Dialog.receive}, which is wired up
- * by listing the dialog in {@link AgentDef.dialogs}.
+ * by listing the dialog in {@link AgentDeclaration.dialogs}.
  *
  * @public
  */

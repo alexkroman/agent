@@ -32,7 +32,7 @@
  *
  * ## Why `createAgentServer` specifically
  *
- * Every other session suite in this package builds `createRuntimeServer` directly. This
+ * Every other session suite in this package builds `createServerForRuntime` directly. This
  * one goes through `createAgentServer`, which is the SELF-HOSTED front door — the
  * one the scaffold's `server.mjs` calls and the only one that reads
  * `DATABASE_URL` out of an agent's own env into `providerEnv`. That mattered
@@ -64,8 +64,9 @@ import { sleep } from "@alexkroman1/aai/internal";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
-import { makeMockHandle, silentLogger } from "../_test-utils.ts";
+import { makeMockHandle } from "../_s2s-fixture-test-utils.ts";
 import type { S2sCallbacks } from "../s2s/index.ts";
 import { ensureSessionStateSchema } from "../session-state/backends/postgres.ts";
 import { _internals as s2sTransportInternals } from "../transports/s2s-transport.ts";

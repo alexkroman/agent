@@ -4637,13 +4637,10 @@ than an omission: a whole-file write has no windows (its bytes are one
 contiguous prefix, which [UploadInfo.size](#size) already states), and a
 finished parts upload is covered end to end by construction.
 
-**A READER may act on it, and [stepReadUpload](#stepreadupload) already does.** This used to
-say `size` was the only field a reader could trust, on the ground that a range
-past the prefix names bytes with a hole in front of them. The bytes are still
-there — the store maps a window onto the objects covering it and never
-consults the prefix — so what the rule really protected was a read STRADDLING
-a hole, and clamping to the containing run protects that exactly while making
-a landed window readable. Without it a parts upload publishes nothing a run
+**A READER may act on it, and [stepReadUpload](#stepreadupload) already does.** The store
+maps a window onto the objects covering it and never consults the prefix, so
+the hazard is a read STRADDLING a hole, and clamping to the containing run
+protects exactly that while making a landed window readable. Without it a parts upload publishes nothing a run
 can use until its first window lands, which under a fan-out is the end of the
 upload; `readableEnd` carries the measurement.
 

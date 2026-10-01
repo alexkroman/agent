@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../../../_test-utils.ts";
+import { silentLogger } from "../../../_logger-test-utils.ts";
 import { createSpeakGate } from "./speak-gate.ts";
 
 const GATE = { log: silentLogger, sid: "t" };

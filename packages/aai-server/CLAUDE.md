@@ -156,7 +156,7 @@ a path based on another variable rather than the file's own directory, and an
     `platformCronJobs()` is the whole truth.
   - Per-app jobs use `cron.schedule_in_database`, and their name prefix must
     stay **disjoint** from `aai-sweep-*` or boot unschedules them
-    (`_session-state-sweep.ts`).
+    (`pg-cron.ts`).
   - The orphan-preview reap takes **the same advisory lock a deploy takes**
     (`pg_try_advisory_xact_lock` shares `withSlugLock`'s lock space), and its
     duplicated delete path is guarded by `pg-cron-delete-parity.test.ts`, which
@@ -233,8 +233,8 @@ table without RLS, or a publication column list.
 
 Session resume needs no cross-replica store: a `?sessionId=` reconnect
 re-brokers via `GET /:slug/client-config`, and a replacement guest recovers slot
-state from the platform tables; `_session-state-sweep.ts` reclaims a dead
-guest's leftovers.
+state from the platform tables; the session-state TTL sweep
+(`pg-cron-bodies.ts`) reclaims a dead guest's leftovers.
 
 Deliberately in-process: the slot cache and resident sandboxes (an
 accelerator; the agents change stream keeps them correct), TTL-bounded or
@@ -363,8 +363,8 @@ guest".
 
 **Cross-agent isolation**: no shared tenant database; the platform's durable
 state is reachable only via HTTP routes gated by the per-sandbox bearer and
-scoped by the caller's slug SERVER-side (`workflow-run-owner.ts`, the session
-state primary key, `guestSlug`). No shared mutable state between sandboxes.
+scoped by the caller's slug SERVER-side (the slug in every workflow-journal and
+session-state primary key, `guestSlug`). No shared mutable state between sandboxes.
 
 **`run_code`** executes only inside the guest on the platform (self-hosted,
 `AAI_RUN_CODE=deno` runs it in a zero-permission Deno;
@@ -459,7 +459,7 @@ means "cannot sign", `guestUnderstandsBundleUrl` for pinned older guests) is
 
 A guest holds no bucket credential (a service key there is a cross-tenant read
 of every upload and bundle). Bytes go through a platform route the guest brokers
-(`aai/host/_upload-blobs-brokered.ts`, selected by `AAI_UPLOAD_BROKER_URL`;
+(`aai-runtime/uploads/blobs-brokered.ts`, selected by `AAI_UPLOAD_BROKER_URL`;
 `agentBootEnv` has why it is a second name). `upload-handler.ts`'s module doc
 carries the argument (key derivation, public posture, reads REDIRECT, writes do
 not). **The key is composed from the slug Hono matched, never from caller
@@ -471,7 +471,7 @@ The route brokers the sandbox and answers with TwiML/TeXML telling the carrier
 to open a media stream at the sandbox's own `/phone`; the carrier then talks to
 the guest directly. Carriers do not follow WebSocket redirects, which is why
 this exists instead of `/:slug/websocket`. The guest half is
-`aai/host/telephony/`.
+`aai-runtime/telephony/`.
 
 - **Whether the guest answers is the agent's declaration**
   (`agent({ telephony: [...] })`); this route never reads config to pre-empt it.
@@ -579,8 +579,8 @@ bundle's runtime.
 
 Isolation itself (filesystem, memory, network, env) is Modal's; no test here
 covers it. `modal/sandbox.test.ts` covers the spawn flow against a fake
-context; `aai-guest/harness.test.ts` the `run_code` executor; `net.test.ts` /
-`ssrf-extended.test.ts` SSRF bypasses.
+context; `aai-guest/harness.test.ts` the `run_code` executor; `aai/host/ssrf.test.ts`
+and aai-runtime's `ssrf-*.test.ts` SSRF bypasses.
 
 There is deliberately **no load or chaos tier**. If one is reintroduced:
 **the hostile code must actually execute** (at the bundle's top level),
@@ -593,7 +593,7 @@ failed accepts then closes 1011).
 ### Building a platform request in a test
 
 **Build requests with `authFetch` / `deploy(fetch, { key, body })` from
-`test-utils.ts`, never a `Bearer` header literal**; `deployPayload()` is
+`_request-test-utils.ts`, never a `Bearer` header literal**; `deployPayload()` is
 `deployBody()` as an object. Use a bare `fetch` only when the REQUEST is the
 subject (bearer-gate specs, `resolveBearer` cases, header assertions, gzip or
 raw bodies).
@@ -631,8 +631,8 @@ driver-level bugs.
 
 `createLogger("<namespace>")` at module scope; nothing writes to `console.*`.
 It is built on the SDK's `Logger` (konsistent `platform-logger`). Specs use
-`captureLogs()` (`test-utils.ts`) and assert THAT a line was written, not its
-wording.
+`captureLogs()` (`_logger-test-utils.ts`) and assert THAT a line was
+written, not its wording.
 
 ### An agent's own output — `GET /:slug/logs`
 

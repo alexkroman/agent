@@ -10,7 +10,7 @@
  * - The STEPS, directly. A step is an ordinary exported async function, so its
  *   HTTP handling, its partial-failure policy and its `FatalError` guards are
  *   all reachable — `installStubStepFetch` answers the network and
- *   `stubGateway` answers the model.
+ *   `installStubGateway` answers the model.
  * - The BODY, twice. `createWorkflowContext` records what it asked for (the digest
  *   loop, the shrinking pending set, the sleep BETWEEN digests and never after
  *   the last), and `runWorkflow` runs it on the real replay engine — which is
@@ -29,16 +29,16 @@ import {
   createWorkflowContext,
   parseSchemaInput,
   routeStepFetch,
+  runWorkflow,
   schemaInputIssues,
   stubGatewayRoute,
   type WorkflowContextRecorder,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import {
+  installStubGateway,
   installStubStepFetch,
   installStubTranscribe,
-  installStubGateway as stubGateway,
-} from "@alexkroman1/aai/testing/vitest";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
 import {
@@ -861,7 +861,9 @@ describe("transcribing one episode", () => {
   });
 
   test("summarizes a finished transcript into the digest entry", async () => {
-    stubGateway('{"summary":"Otters are clever.","keyPoints":["They use tools","They float"]}');
+    installStubGateway(
+      '{"summary":"Otters are clever.","keyPoints":["They use tools","They float"]}',
+    );
 
     expect(
       await summarizeTranscript({

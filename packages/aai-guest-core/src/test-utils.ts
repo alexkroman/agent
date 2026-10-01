@@ -5,7 +5,8 @@
  * NOT `_`-prefixed, and that is the whole reason this module exists rather
  * than a copy per package: `_*.ts` is package-private (Biome's
  * `noPrivateImports`), so a shared helper has to be a real subpath export.
- * `aai-server/src/test-utils.ts` is the same shape for the same reason.
+ * `aai-server`'s `test-utils` subpath (a barrel over `_*-test-utils.ts`) is the
+ * same shape for the same reason.
  *
  * What stays behind is what cannot come here. `npmResult` fixtures a
  * `runNpm` result and that function is `aai-guest-studio`'s, so importing it

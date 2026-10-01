@@ -6,26 +6,188 @@
 
 import type { AgentDef } from '@alexkroman1/aai';
 import type { AgentEnv } from '@alexkroman1/aai/host-internal';
+import { commandedBuiltins } from '@alexkroman1/aai/testing';
+import { createProgressStream } from '@alexkroman1/aai/testing';
+import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
+import { createRunSnapshot } from '@alexkroman1/aai/testing';
+import { createStubWorkflows } from '@alexkroman1/aai/testing';
+import { createToolContext } from '@alexkroman1/aai/testing';
+import { createWorkflowContext } from '@alexkroman1/aai/testing';
 import type { Db } from '@alexkroman1/aai/internal';
+import { deployedAgent } from '@alexkroman1/aai/testing';
+import { DeployedConfig } from '@alexkroman1/aai/testing';
+import { DeployedStage } from '@alexkroman1/aai/testing';
+import { dialogRefusalPattern } from '@alexkroman1/aai/testing';
+import { dialogResultSchema } from '@alexkroman1/aai/testing';
+import { endSessionCalls } from '@alexkroman1/aai/testing';
+import { eventsOf } from '@alexkroman1/aai/testing';
+import { expectDeployable } from '@alexkroman1/aai/testing';
+import { expectDialogOk } from '@alexkroman1/aai/testing';
+import { expectDialogRefused } from '@alexkroman1/aai/testing';
+import { expectPromptBuiltinsDeclared } from '@alexkroman1/aai/testing';
+import { expectToolOk } from '@alexkroman1/aai/testing';
+import { FetchRouteHandler } from '@alexkroman1/aai/testing';
+import { FetchRouteHit } from '@alexkroman1/aai/testing';
+import { FetchRouteRequest } from '@alexkroman1/aai/testing';
+import { FetchRoutesOptions } from '@alexkroman1/aai/testing';
+import { FetchRouteTable } from '@alexkroman1/aai/testing';
+import { isEvent } from '@alexkroman1/aai/testing';
 import type { LanguageModel } from 'ai';
 import type { ModelMessage } from 'ai';
+import { parseSchemaInput } from '@alexkroman1/aai/testing';
+import { parseToolInput } from '@alexkroman1/aai/testing';
 import type { PrepareStepFunction } from 'ai';
+import { ProjectFiles } from '@alexkroman1/aai/testing';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { RecordedSleep } from '@alexkroman1/aai/testing';
+import { RecordedStart } from '@alexkroman1/aai/testing';
+import { RecordedStep } from '@alexkroman1/aai/testing';
+import { RecordingWorkflows } from '@alexkroman1/aai/testing';
+import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
+import { routeStepFetch } from '@alexkroman1/aai/testing';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import { runGuardrail } from '@alexkroman1/aai/testing';
+import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
+import { runTool } from '@alexkroman1/aai/testing';
+import { SaidLine } from '@alexkroman1/aai/testing';
+import { schemaInputIssues } from '@alexkroman1/aai/testing';
+import { ScriptedToolContext } from '@alexkroman1/aai/testing';
+import { scriptedToolContext } from '@alexkroman1/aai/testing';
+import { ScriptedToolContextOptions } from '@alexkroman1/aai/testing';
+import { SentEvent } from '@alexkroman1/aai/testing';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
+import { StepRoute } from '@alexkroman1/aai/testing';
+import { StepUnmatched } from '@alexkroman1/aai/testing';
+import { STUB_SPEECH_PCM_BYTES } from '@alexkroman1/aai/testing';
+import { StubClientInbox } from '@alexkroman1/aai/testing';
+import { stubClientInbox } from '@alexkroman1/aai/testing';
+import { StubClientInboxCall } from '@alexkroman1/aai/testing';
+import { StubClientInboxOptions } from '@alexkroman1/aai/testing';
+import { StubClientTranscript } from '@alexkroman1/aai/testing';
+import { stubClientTranscript } from '@alexkroman1/aai/testing';
+import { StubClientTranscriptAnswer } from '@alexkroman1/aai/testing';
+import { StubClientTranscriptCall } from '@alexkroman1/aai/testing';
+import { StubDelegate } from '@alexkroman1/aai/testing';
+import { stubDelegate } from '@alexkroman1/aai/testing';
+import { StubDelegateCall } from '@alexkroman1/aai/testing';
+import { StubDelegateReply } from '@alexkroman1/aai/testing';
+import { StubDelegateRoute } from '@alexkroman1/aai/testing';
+import { StubDelegateScript } from '@alexkroman1/aai/testing';
+import { StubEmitted } from '@alexkroman1/aai/testing';
+import { StubFetchRoutes } from '@alexkroman1/aai/testing';
+import { stubFetchRoutes } from '@alexkroman1/aai/testing';
+import { StubGateway } from '@alexkroman1/aai/testing';
+import { stubGateway } from '@alexkroman1/aai/testing';
+import { StubGatewayCall } from '@alexkroman1/aai/testing';
+import { StubGatewayOptions } from '@alexkroman1/aai/testing';
+import { StubGatewayRoute } from '@alexkroman1/aai/testing';
+import { stubGatewayRoute } from '@alexkroman1/aai/testing';
+import { StubGenerate } from '@alexkroman1/aai/testing';
+import { stubGenerate } from '@alexkroman1/aai/testing';
+import { StubGenerateCall } from '@alexkroman1/aai/testing';
+import { StubGenerateReply } from '@alexkroman1/aai/testing';
+import { StubGenerateRoute } from '@alexkroman1/aai/testing';
+import { StubGenerateScript } from '@alexkroman1/aai/testing';
+import { StubPlaceCall } from '@alexkroman1/aai/testing';
+import { stubPlaceCall } from '@alexkroman1/aai/testing';
+import { StubPlaceCallOptions } from '@alexkroman1/aai/testing';
+import { StubPlaceCallRefusal } from '@alexkroman1/aai/testing';
+import { StubPlacedCall } from '@alexkroman1/aai/testing';
+import { StubReporter } from '@alexkroman1/aai/testing';
+import { stubReporter } from '@alexkroman1/aai/testing';
+import { StubSpeech } from '@alexkroman1/aai/testing';
+import { stubSpeech } from '@alexkroman1/aai/testing';
+import { StubSpeechCall } from '@alexkroman1/aai/testing';
+import { StubSpeechOptions } from '@alexkroman1/aai/testing';
+import { StubStepAnswer } from '@alexkroman1/aai/testing';
+import { StubStepDelegate } from '@alexkroman1/aai/testing';
+import { stubStepDelegate } from '@alexkroman1/aai/testing';
+import { StubStepFetch } from '@alexkroman1/aai/testing';
+import { stubStepFetch } from '@alexkroman1/aai/testing';
+import { stubStepInfo } from '@alexkroman1/aai/testing';
+import { StubStepRequest } from '@alexkroman1/aai/testing';
+import { StubTranscribe } from '@alexkroman1/aai/testing';
+import { stubTranscribe } from '@alexkroman1/aai/testing';
+import { StubTranscribeCall } from '@alexkroman1/aai/testing';
+import { StubTranscribeFailure } from '@alexkroman1/aai/testing';
+import { StubTranscribeLeg } from '@alexkroman1/aai/testing';
+import { StubTranscribeOptions } from '@alexkroman1/aai/testing';
+import { StubUpload } from '@alexkroman1/aai/testing';
+import { StubUploads } from '@alexkroman1/aai/testing';
+import { stubUploads } from '@alexkroman1/aai/testing';
+import { StubUploadsOptions } from '@alexkroman1/aai/testing';
+import { StubUploadWrite } from '@alexkroman1/aai/testing';
+import { TestToolContext } from '@alexkroman1/aai/testing';
+import { ToolBearingAgent } from '@alexkroman1/aai/testing';
 import type { ToolChoice } from '@alexkroman1/aai';
+import { ToolContextOverrides } from '@alexkroman1/aai/testing';
+import { toolInputIssues } from '@alexkroman1/aai/testing';
 import type { ToolInputSchema } from '@alexkroman1/aai';
+import { toolOf } from '@alexkroman1/aai/testing';
+import { ToolRunner } from '@alexkroman1/aai/testing';
+import { toolRunner } from '@alexkroman1/aai/testing';
 import type { ToolSet } from 'ai';
+import { WORKFLOW_CONTEXT_NOW } from '@alexkroman1/aai/testing';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import { WorkflowContextOptions } from '@alexkroman1/aai/testing';
+import { WorkflowContextRecorder } from '@alexkroman1/aai/testing';
 import type { WorkflowDef } from '@alexkroman1/aai';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+
+export { commandedBuiltins }
+
+export { createProgressStream }
+
+export { createRecordingWorkflows }
+
+export { createRunSnapshot }
+
+export { createStubWorkflows }
+
+export { createToolContext }
+
+export { createWorkflowContext }
 
 // @public
 export const DEFAULT_MAX_DELIVERIES = 50;
 
+export { deployedAgent }
+
+export { DeployedConfig }
+
+export { DeployedStage }
+
 // @public
 export type DeterminismKind = "now" | "random" | "uuid";
+
+export { dialogRefusalPattern }
+
+export { dialogResultSchema }
+
+export { endSessionCalls }
+
+export { eventsOf }
+
+export { expectDeployable }
+
+export { expectDialogOk }
+
+export { expectDialogRefused }
+
+export { expectPromptBuiltinsDeclared }
+
+export { expectToolOk }
+
+export { FetchRouteHandler }
+
+export { FetchRouteHit }
+
+export { FetchRouteRequest }
+
+export { FetchRoutesOptions }
+
+export { FetchRouteTable }
 
 // @public
 export type HookRecord = {
@@ -45,6 +207,8 @@ export interface HostAgentOptions {
     toolTimeoutMs?: number;
     workflows?: WorkflowClient | undefined;
 }
+
+export { isEvent }
 
 // @public
 export class JournalConflictError extends Error {
@@ -95,11 +259,31 @@ interface Logger {
     warn: LogFn;
 }
 
+export { parseSchemaInput }
+
+export { parseToolInput }
+
+export { ProjectFiles }
+
+export { RecordedSleep }
+
+export { RecordedStart }
+
+export { RecordedStep }
+
+export { RecordingWorkflows }
+
+export { RecordingWorkflowsOptions }
+
 // @public
 export type ResumableRun = {
     runId: string;
     wakeAt?: number | undefined;
 };
+
+export { routeStepFetch }
+
+export { runGuardrail }
 
 // @public
 export type RunRecord = {
@@ -116,6 +300,8 @@ export type RunRecord = {
     label?: string | undefined;
 };
 
+export { RunSnapshotOverrides }
+
 // @public
 export type RunStatus = WorkflowRunStatus;
 
@@ -126,6 +312,8 @@ export function runTextAgent(def: AgentDef, input: string | readonly ModelMessag
 export type RunTextAgentOptions = Omit<TextAgentOptions, "agent" | "model"> & Pick<TextTurnOptions, "signal" | "systemPrompt" | "maxSteps" | "temperature" | "toolChoice"> & {
     readonly script: readonly ScriptedTextStep[];
 };
+
+export { runTool }
 
 // @public
 export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
@@ -138,6 +326,10 @@ export type RunWorkflowOptions = {
     crashAt?: string;
     maxDeliveries?: number;
 };
+
+export { SaidLine }
+
+export { schemaInputIssues }
 
 // @public
 export function scriptedTextModel(steps: readonly ScriptedTextStep[]): LanguageModel;
@@ -154,6 +346,14 @@ export type ScriptedToolCall = {
     readonly input?: Record<string, unknown>;
     readonly id?: string;
 };
+
+export { ScriptedToolContext }
+
+export { scriptedToolContext }
+
+export { ScriptedToolContextOptions }
+
+export { SentEvent }
 
 // @public
 export type SleepEntry = SleepRecord & {
@@ -181,6 +381,130 @@ export type StepEntry = {
     startedAt?: number | undefined;
     finishedAt: number;
 };
+
+export { StepRoute }
+
+export { StepUnmatched }
+
+export { STUB_SPEECH_PCM_BYTES }
+
+export { StubClientInbox }
+
+export { stubClientInbox }
+
+export { StubClientInboxCall }
+
+export { StubClientInboxOptions }
+
+export { StubClientTranscript }
+
+export { stubClientTranscript }
+
+export { StubClientTranscriptAnswer }
+
+export { StubClientTranscriptCall }
+
+export { StubDelegate }
+
+export { stubDelegate }
+
+export { StubDelegateCall }
+
+export { StubDelegateReply }
+
+export { StubDelegateRoute }
+
+export { StubDelegateScript }
+
+export { StubEmitted }
+
+export { StubFetchRoutes }
+
+export { stubFetchRoutes }
+
+export { StubGateway }
+
+export { stubGateway }
+
+export { StubGatewayCall }
+
+export { StubGatewayOptions }
+
+export { StubGatewayRoute }
+
+export { stubGatewayRoute }
+
+export { StubGenerate }
+
+export { stubGenerate }
+
+export { StubGenerateCall }
+
+export { StubGenerateReply }
+
+export { StubGenerateRoute }
+
+export { StubGenerateScript }
+
+export { StubPlaceCall }
+
+export { stubPlaceCall }
+
+export { StubPlaceCallOptions }
+
+export { StubPlaceCallRefusal }
+
+export { StubPlacedCall }
+
+export { StubReporter }
+
+export { stubReporter }
+
+export { StubSpeech }
+
+export { stubSpeech }
+
+export { StubSpeechCall }
+
+export { StubSpeechOptions }
+
+export { StubStepAnswer }
+
+export { StubStepDelegate }
+
+export { stubStepDelegate }
+
+export { StubStepFetch }
+
+export { stubStepFetch }
+
+export { stubStepInfo }
+
+export { StubStepRequest }
+
+export { StubTranscribe }
+
+export { stubTranscribe }
+
+export { StubTranscribeCall }
+
+export { StubTranscribeFailure }
+
+export { StubTranscribeLeg }
+
+export { StubTranscribeOptions }
+
+export { StubUpload }
+
+export { StubUploads }
+
+export { stubUploads }
+
+export { StubUploadsOptions }
+
+export { StubUploadWrite }
+
+export { TestToolContext }
 
 // @public
 export interface TextAgentOptions extends HostAgentOptions {
@@ -223,6 +547,24 @@ export interface TextTurnOptions {
     temperature?: number;
     toolChoice?: ToolChoice;
 }
+
+export { ToolBearingAgent }
+
+export { ToolContextOverrides }
+
+export { toolInputIssues }
+
+export { toolOf }
+
+export { ToolRunner }
+
+export { toolRunner }
+
+export { WORKFLOW_CONTEXT_NOW }
+
+export { WorkflowContextOptions }
+
+export { WorkflowContextRecorder }
 
 // @public
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {

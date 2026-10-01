@@ -61,8 +61,9 @@ plus the two audio paths is the whole inbound surface. `guard-invariants` rule
   request the session executes through `tool-steps.ts`. Both run the one call
   core, `../tools/run-tool-call.ts`. The runtime's callbacks are a flat forward.
 
-`../transports/types.ts` holds the boundary and argument; `core.ts` and
-`commands.ts` own the two dispatchers.
+`../transports/types.ts` holds the boundary and argument; `report.ts` and
+`commands.ts` own the two dispatchers, which `core.ts` composes over the
+current reply (`reply-tracker.ts`).
 
 ## A hook's write needs a commit, and a guard
 

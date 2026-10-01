@@ -17,7 +17,7 @@
 
 import { DEAD_AIR_COVER_MAX_MS } from "@alexkroman1/aai/host-internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { makeLogger, type TestLogger } from "../../../_test-utils.ts";
+import { makeLogger, type TestLogger } from "../../../_logger-test-utils.ts";
 import { createDeadAirCover, type DeadAirCover } from "./dead-air.ts";
 
 const COVER_MS = 1000;

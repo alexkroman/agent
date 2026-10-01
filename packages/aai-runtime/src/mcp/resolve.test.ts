@@ -9,7 +9,7 @@
 import type { McpServerConfig } from "@alexkroman1/aai";
 import { tool as aiTool, jsonSchema } from "ai";
 import { describe, expect, test } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { allowTools, displayUrl, resolveServer } from "./resolve.ts";
 
 const signal = new AbortController().signal;

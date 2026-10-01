@@ -200,6 +200,20 @@ describe("the gate table and the CI job", () => {
     }
   });
 
+  test("every gate's `fix` is a script the root manifest declares", () => {
+    // A failing gate prints `pnpm <fix>` and `pnpm fix` runs each one — so a
+    // fix naming nothing is advice that fails when taken.
+    const fixes = [...gatesBlock().matchAll(/fix:\s*"([^"]+)"/g)].map((hit) => hit[1] ?? "");
+    // Measured 2026-10: 17 rows carry one.
+    expect(fixes.length, "no `fix` fields parsed out of the GATES table").toBeGreaterThan(8);
+    for (const fix of fixes) {
+      expect(rootScripts(), `a GATES row's fix \`${fix}\` is not in package.json`).toContain(fix);
+    }
+    expect(rootCommand("fix"), "`pnpm fix` no longer runs check.mjs --fix").toContain(
+      "scripts/check.mjs --fix",
+    );
+  });
+
   test("CI runs the table rather than restating it", () => {
     // The derived invocation has to exist at all: without it the whole table is
     // enforced by the pre-push hook alone, which `git push --no-verify` skips.
@@ -337,16 +351,80 @@ describe("the workflow's own pnpm invocations", () => {
     // package.json does not declare exits non-zero under `bash -e`, in a job
     // the required `ci` gate depends on, with nothing local to catch it.
     const invoked = pnpmInvocations();
-    // Measured 2026-09: 6 (check:knip, lint:root, check:syncpack, check:sherif,
-    // check:markdown, test:scenario). A floor, because the count moves with
-    // ordinary edits — but a scan finding none would pass this whole spec.
-    expect(invoked.length, "no pnpm script invocations parsed out of check.yml").toBeGreaterThan(3);
+    // Measured 2026-10: 2 (check:workflows, test:scenario) — the lint job's
+    // hand-written block is `--turbo ci` now. A floor, because the count moves
+    // with ordinary edits — but a scan finding none would pass this whole spec.
+    expect(invoked.length, "no pnpm script invocations parsed out of check.yml").toBeGreaterThan(0);
     const declared = rootScripts();
     for (const script of invoked) {
       expect(
         declared,
         `check.yml runs \`pnpm run ${script}\`, which package.json does not declare`,
       ).toContain(script);
+    }
+  });
+});
+
+/** `scripts/_check-turbo-tasks.mjs`, as text, for the turbo half below. */
+const turboTasksSource: string =
+  sole(
+    import.meta.glob<string>("../../../scripts/_check-turbo-tasks.mjs", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+  ) ?? "";
+
+/** The quoted strings of one `name: [ … ]` or `NAME = [ … ]` array, comments dropped. */
+function quotedIn(opener: string, closer: string): string[] {
+  const at = turboTasksSource.indexOf(opener);
+  if (at === -1) throw new Error(`_check-turbo-tasks.mjs no longer contains \`${opener}\``);
+  const end = turboTasksSource.indexOf(closer, at);
+  const body = turboTasksSource
+    .slice(at + opener.length, end)
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+  return [...body.matchAll(/"([^"]+)"/g)].map((hit) => hit[1] ?? "");
+}
+
+/** Full mode's first turbo call, `...TYPECHECK` expanded. */
+function fullTurboTasks(): string[] {
+  const typecheck = quotedIn("export const TYPECHECK = [", "];");
+  const full = quotedIn("  full: [", "],");
+  return turboTasksSource.includes("...TYPECHECK") ? [...full, ...typecheck] : full;
+}
+
+describe("the lint job's turbo tasks", () => {
+  test("are run DERIVED, by `check.mjs --turbo ci`", () => {
+    // The hand-written `bash -e` block it replaced stopped at the first
+    // failure and was a second list of full mode's tasks.
+    expect(commands, "check.yml no longer runs `scripts/check.mjs --turbo ci`").toContain(
+      "scripts/check.mjs --turbo ci",
+    );
+    expect(checkScript, "check.mjs no longer runs turbo with --continue").toContain('"--continue"');
+  });
+
+  test("every full-mode task CI owns elsewhere is really run there, and no other is restated", () => {
+    const full = fullTurboTasks();
+    // Measured 2026-10: 22 tasks; 4 owned by other steps or jobs.
+    expect(full.length, "no tasks parsed out of TURBO_TASKS.full").toBeGreaterThan(15);
+    const elsewhere = quotedIn("export const CI_ELSEWHERE = {", "};").filter((s) =>
+      full.includes(s),
+    );
+    expect(elsewhere.length, "no CI_ELSEWHERE keys parsed").toBeGreaterThan(2);
+    for (const task of elsewhere) {
+      expect(
+        commands,
+        `${task} is excluded from \`--turbo ci\` as run elsewhere in CI, but check.yml never runs it`,
+      ).toContain(task);
+    }
+    const invoked = pnpmInvocations();
+    for (const task of full.filter((t) => !elsewhere.includes(t))) {
+      expect(
+        invoked,
+        `check.yml runs ${task} by hand — it is already in \`--turbo ci\``,
+      ).not.toContain(task);
     }
   });
 });

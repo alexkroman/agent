@@ -78,11 +78,29 @@ export function assertProviderTriple(
   const anyPipeline = hasStt || hasLlm || hasTts;
   const allSet = hasStt && hasLlm && hasTts;
   const noneSetPipeline = !anyPipeline;
+  const named = (flags: [string, boolean][]) =>
+    flags
+      .filter(([, on]) => on)
+      .map(([field]) => `\`${field}\``)
+      .join(", ");
+  const stages: [string, boolean][] = [
+    ["stt", hasStt],
+    ["llm", hasLlm],
+    ["tts", hasTts],
+  ];
   if (hasS2s && anyPipeline) {
-    throw new Error("s2s and the stt/llm/tts pipeline cannot be set together");
+    throw new Error(
+      `s2s and the stt/llm/tts pipeline cannot be set together — this config sets \`s2s\` and ${named(stages)}. ` +
+        'Remove the pipeline stage(s) for a speech-to-speech agent (`mode: "s2s"`), or remove `s2s` for a pipeline agent.',
+    );
   }
   if (!(allSet || noneSetPipeline)) {
-    throw new Error("stt, llm, and tts must be set together");
+    const missing = named(stages.map(([field, on]) => [field, !on]));
+    throw new Error(
+      `stt, llm, and tts must be set together on a RESOLVED config — this one sets ${named(stages)} but not ${missing}. ` +
+        "`agent()` and `toAgentConfig` fill unset stages with the AssemblyAI defaults, so an author may set any subset; " +
+        "a config reaching this check skipped that fill. Build it with `agent({ … })`, or set the missing stage(s) explicitly.",
+    );
   }
   return allSet ? "pipeline" : "s2s";
 }

@@ -41,7 +41,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { invariant } from "@alexkroman1/aai/internal";
 import { ADMIN_POOL_MAX, MAX_PLATFORM_DB_CONNECTIONS } from "../constants.ts";
 import { createLogger } from "../logger.ts";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 
 const log = createLogger("platform.db-capacity");
 

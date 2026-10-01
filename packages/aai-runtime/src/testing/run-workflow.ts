@@ -69,7 +69,7 @@
 
 import type { ToolInputSchema, WorkflowDef } from "@alexkroman1/aai";
 import { parseSchemaInput } from "@alexkroman1/aai/testing";
-import { type Logger, silentLogger } from "../runtime-config.ts";
+import { type Logger, silentLogger } from "../logger.ts";
 import {
   createInProcessWorkflowEngine,
   type InProcessWorkflowEngine,

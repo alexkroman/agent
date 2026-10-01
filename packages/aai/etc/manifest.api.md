@@ -126,7 +126,7 @@ export function agentConfigWarnings(config: {
 }): string[];
 
 // @public
-interface AgentDef extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
+interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -145,10 +145,15 @@ interface AgentDef extends PipelineTuning, PipelinePhrases, AgentModelTuning, Ag
     systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
     toolChoice?: ToolChoice;
-    tools: ToolMap;
-    toolsets?: readonly Toolset[];
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
+}
+
+// @public
+interface AgentDef extends AgentDeclaration {
+    syncState?: Readonly<Record<string, StateProjection>>;
+    tools: ToolMap;
+    toolsets?: readonly Toolset[];
 }
 
 // @public
@@ -159,9 +164,6 @@ interface AgentGuardrails {
     inputGuardrails?: readonly AgentGuardrail[];
     outputGuardrails?: readonly AgentGuardrail[];
 }
-
-// @public
-type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
 type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
@@ -175,7 +177,7 @@ interface AgentModelTuning extends ModelTuning {
 // @public
 interface AgentObservation {
     events?: SessionEventHandlers;
-    syncState?: Readonly<Record<string, StateProjection>>;
+    syncState?: SyncStateDeclaration;
 }
 
 // @public
@@ -197,7 +199,7 @@ interface AgentSessionLifecycle {
 }
 
 // @public
-type AgentSystemPrompt = string | AgentInstructions;
+type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 // @public
 export function agentToolsets(def: ToolBearingDef): Toolset[];
@@ -1076,6 +1078,9 @@ type StreamOptions = {
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
+
+// @public
+type SyncStateDeclaration = StateProjection | readonly StateProjection[] | Readonly<Record<string, StateProjection>>;
 
 // @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];

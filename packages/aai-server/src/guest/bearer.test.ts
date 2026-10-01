@@ -18,11 +18,11 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { beforeEach, describe, expect, test } from "vitest";
+import { createTestStore } from "../_orchestrator-test-utils.ts";
 import type { HonoEnv } from "../context.ts";
 import { localSlugLock } from "../platform/lock.ts";
 import { agentSandboxName } from "../sandbox/directory.ts";
 import { createMemorySecretStore } from "../secret-store.ts";
-import { createTestStore } from "../test-utils.ts";
 import { assertGuestBearer } from "./bearer.ts";
 import { guestTokenFor, resetGuestTokenKey } from "./token.ts";
 

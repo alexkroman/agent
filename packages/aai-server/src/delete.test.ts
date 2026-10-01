@@ -1,17 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test, vi } from "vitest";
-import { createOrchestrator } from "./orchestrator.ts";
-import { createMemoryPlatformEvents } from "./platform/events.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import {
-  authFetch,
   createTestStore,
-  deployAgent,
-  fakeSandbox,
   makeSlot,
   NO_CLIENT_DIR,
   type TestFetch,
-} from "./test-utils.ts";
+} from "./_orchestrator-test-utils.ts";
+import { authFetch, deployAgent } from "./_request-test-utils.ts";
+import { fakeSandbox } from "./_sandbox-test-utils.ts";
+import { createOrchestrator } from "./orchestrator.ts";
+import { createMemoryPlatformEvents } from "./platform/events.ts";
+import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 
 async function setup() {
   // Store + event bus are a pair: the delete route only removes the row, and

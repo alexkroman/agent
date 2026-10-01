@@ -8,34 +8,36 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
-import { writeProjectConfig } from "./_config.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { updateGlobalConfig, writeProjectConfig } from "./_config.ts";
 import { runDeploy } from "./_deploy.ts";
 import { runInit } from "./_init.ts";
 import type { MockApi } from "./_mock-api.ts";
 import { startMockApi } from "./_mock-api.ts";
-import { makeBundle, silenced, withTempDir, writeFiles } from "./_test-utils.ts";
+import {
+  createFakeUi,
+  type FakeUi,
+  makeBundle,
+  silenced,
+  withTempDir,
+  writeFiles,
+} from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 import { runDelete } from "./delete.ts";
 import { executeSecretList, executeSecretPut } from "./secret.ts";
 
-// Mock @clack/prompts to avoid interactive input in tests
-vi.mock("@clack/prompts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@clack/prompts")>();
-  return {
-    ...actual,
-    password: vi.fn(() => Promise.resolve("super-secret")),
-    isCancel: actual.isCancel,
-  };
+// The terminal the commands are handed: its masked prompt answers a fixed
+// value, so `secret put` with no stdin value has something to store.
+let ui: FakeUi;
+beforeEach(() => {
+  ui = createFakeUi();
+  ui.prompts.password.mockResolvedValue("super-secret");
 });
 
-// Mock ensureApiKey to avoid interactive prompt and provide a test key
-vi.mock("./_config.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./_config.ts")>();
-  return {
-    ...actual,
-    ensureApiKey: vi.fn(() => Promise.resolve("test-key")),
-  };
+// A REAL login key in this run's config dir (`_test-setup.ts` points
+// AAI_CONFIG_DIR at a temp dir), so `ensureApiKey` runs unmocked.
+beforeAll(async () => {
+  await updateGlobalConfig((config) => ({ ...config, apiKey: "test-key" }));
 });
 
 async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -69,7 +71,7 @@ describe("secrets edge cases", () => {
     let result: Awaited<ReturnType<typeof executeSecretList>> | undefined;
     await withProjectDir(
       silenced(async (dir) => {
-        result = await executeSecretList(dir, api.url);
+        result = await executeSecretList(dir, api.url, ui);
       }),
     );
 
@@ -78,11 +80,10 @@ describe("secrets edge cases", () => {
   });
 
   test("secret put with empty value throws", async () => {
-    const clack = await import("@clack/prompts");
-    vi.mocked(clack.password).mockResolvedValueOnce("");
+    ui.prompts.password.mockResolvedValueOnce("");
 
     await withProjectDir(async (dir) => {
-      const result = await executeSecretPut(dir, "EMPTY_KEY", undefined, api.url);
+      const result = await executeSecretPut(dir, "EMPTY_KEY", undefined, api.url, ui);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain("No value provided");
     });
@@ -132,7 +133,7 @@ describe("missing project config", () => {
 
   test("secret list with no .aai/project.json throws", async () => {
     await withTempDir(async (dir) => {
-      await expect(executeSecretList(dir, api.url)).rejects.toThrow("no deployed agent");
+      await expect(executeSecretList(dir, api.url, ui)).rejects.toThrow("no deployed agent");
     });
   });
 });
@@ -172,7 +173,7 @@ describe("JSON output mode", () => {
     const { executeDelete } = await import("./delete.ts");
     await withProjectDir(
       silenced(async (dir) => {
-        const result = await executeDelete({ cwd: dir, server: api.url });
+        const result = await executeDelete({ cwd: dir, server: api.url }, ui);
         expect(result).toEqual({ ok: true, data: { slug: "my-agent" } });
       }),
     );
@@ -185,7 +186,7 @@ describe("JSON output mode", () => {
     const { executeSecretList } = await import("./secret.ts");
     await withProjectDir(
       silenced(async (dir) => {
-        const result = await executeSecretList(dir, api.url);
+        const result = await executeSecretList(dir, api.url, ui);
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.data.secrets).toContain("KEY_A");
@@ -199,7 +200,7 @@ describe("JSON output mode", () => {
     const { executeSecretPut } = await import("./secret.ts");
     await withProjectDir(
       silenced(async (dir) => {
-        const result = await executeSecretPut(dir, "NEW_KEY", "new-value", api.url);
+        const result = await executeSecretPut(dir, "NEW_KEY", "new-value", api.url, ui);
         expect(result).toEqual({ ok: true, data: { name: "NEW_KEY" } });
         expect(api.secrets.NEW_KEY).toBe("new-value");
       }),
@@ -211,7 +212,7 @@ describe("JSON output mode", () => {
     const { executeSecretDelete } = await import("./secret.ts");
     await withProjectDir(
       silenced(async (dir) => {
-        const result = await executeSecretDelete(dir, "DEL_KEY", api.url);
+        const result = await executeSecretDelete(dir, "DEL_KEY", api.url, ui);
         expect(result).toEqual({ ok: true, data: { name: "DEL_KEY" } });
         expect(api.secrets.DEL_KEY).toBeUndefined();
       }),

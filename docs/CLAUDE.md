@@ -41,10 +41,10 @@ means for that package.
 to `main`; the turbo `docs` task is a merge gate in `pnpm check` and CI.
 
 - **TypeDoc extracts; `starlight-typedoc` only replaces its HTML theme**,
-  writing reference pages into the content collection at
-  `docs/src/content/docs/reference/` inside Starlight's `config:setup` hook.
-  That puts them under `starlight-links-validator`, so a broken internal link
-  fails the build — fix it at the source, never exclude it.
+  writing reference pages into a generated reference collection under
+  `docs/src/content/docs/` inside Starlight's `config:setup` hook. That puts
+  them under `starlight-links-validator`, so a broken internal link fails the
+  build — fix it at the source, never exclude it.
 - **`astro.config.mjs` reads `docs/typedoc.json` by ABSOLUTE path**, so the
   render does not depend on the working directory. The plugin's programmatic
   defaults beat the config file for two options: `readme` (passed explicitly as
@@ -77,8 +77,8 @@ to `main`; the turbo `docs` task is a merge gate in `pnpm check` and CI.
   warning means either the generator changed (remove it) or the sidebar shape
   did (fix it).
 - **What is rendered is what somebody writing an `agent.ts` imports**: all of
-  `aai` and `aai-ui`, and `aai-runtime`'s `/eval`, `/eval/vitest` and
-  `/testing`. What an EMBEDDER imports (`aai-runtime`'s
+  `aai` and `aai-ui`, and `aai-runtime`'s `/eval`, `/eval/vitest`, `/testing`
+  and `/testing/vitest`. What an EMBEDDER imports (`aai-runtime`'s
   root barrel), the `/internal` escape hatches and `aai-cli`'s build hooks are
   excluded, each with a written reason in `UNDOCUMENTED_SUBPATHS`
   (`scripts/docs-markdown.mjs`).
@@ -372,7 +372,7 @@ and backticks there break it open onto the page.
 ## Rendering `aai-runtime` is a docs decision, and it cannot be half-made
 
 `packages/aai-runtime/typedoc.json` renders only the author-facing subpaths
-(`/eval`, `/eval/vitest`, `/testing`). The root barrel (~220
+(`/eval`, `/eval/vitest`, `/testing`, `/testing/vitest`). The root barrel (~220
 exports for EMBEDDERS) and `/internal` stay in `UNDOCUMENTED_SUBPATHS`; the root
 entry says what would change that ("revisit if embedders ask for a rendered
 page — then it gets its own, not a share of the SDK's").

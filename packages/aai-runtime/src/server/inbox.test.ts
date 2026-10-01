@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `WS /inbox` as `createRuntimeServer` serves it: the route, the published step
+ * `WS /inbox` as `createServerForRuntime` serves it: the route, the published step
  * slot a run's `stepNotifyClient` goes through, the session gate in front of it,
  * and `?client=` on a voice socket reaching `sessionClientId`.
  */
@@ -9,8 +9,8 @@ import { sessionClientId } from "@alexkroman1/aai";
 import { stepNotifyClient } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
-import { silentLogger } from "../_test-utils.ts";
-import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
+import { type AgentServer, createServerForRuntime, type SessionRuntime } from "./server.ts";
 import { createSessionAuth, SESSION_UNAUTHORIZED_CLOSE_CODE } from "./session-auth.ts";
 
 let server: AgentServer | undefined;
@@ -19,7 +19,7 @@ afterEach(async () => {
   server = undefined;
 });
 
-async function start(options: Partial<Parameters<typeof createRuntimeServer>[0]> = {}) {
+async function start(options: Partial<Parameters<typeof createServerForRuntime>[0]> = {}) {
   const starts: { clientId?: string | undefined }[] = [];
   const runtime: SessionRuntime = {
     startSession: (_ws, opts) => {
@@ -27,12 +27,12 @@ async function start(options: Partial<Parameters<typeof createRuntimeServer>[0]>
     },
     shutdown: async () => undefined,
   };
-  server = createRuntimeServer({ runtime, logger: silentLogger, ...options });
+  server = createServerForRuntime({ runtime, logger: silentLogger, ...options });
   await server.listen(0);
   return { base: `ws://127.0.0.1:${server.port}`, starts };
 }
 
-describe("WS /inbox on createRuntimeServer", () => {
+describe("WS /inbox on createServerForRuntime", () => {
   test("a step's stepNotifyClient reaches the device connected under that id", async () => {
     const { base } = await start();
     const device = new WebSocket(`${base}/inbox?client=speaker`);

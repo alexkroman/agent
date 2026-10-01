@@ -13,6 +13,11 @@ Named re-exports rather than `export *` for the second half of that: the
 wildcard form re-exports whatever arrives, and needs a `noReExportAll`
 suppression the escape-hatch ratchet only lets move down.
 
+An agent project's test files import these through `@alexkroman1/aai-runtime/testing/vitest`,
+which re-exports every name here as the same declaration alongside the
+runtime's own drivers — one door per kind of helper, whatever package
+declares it. This subpath keeps working; it is where the names are declared.
+
 ## Functions
 
 ### installFetchRoutes()
@@ -114,6 +119,11 @@ function installStubGateway(replies: string | readonly string[], options?: StubG
 ```
 
 Install a fake LLM gateway as the global `fetch`, and return its call log.
+
+`stubGateway` (`@alexkroman1/aai/testing`) installed for you. Import it under
+THIS name — aliasing it to `stubGateway` shadows the uninstalled fake of that
+name. A step whose HTTP goes through a published `stepFetch` wants
+`stubGatewayRoute` instead; `stubGateway`'s doc has the table.
 
 The calls array is what a spec asserts on, and it is live — a reference taken
 before the code under test runs holds every call made after.

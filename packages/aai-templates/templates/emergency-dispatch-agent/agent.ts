@@ -1,7 +1,7 @@
 import { agent } from "@alexkroman1/aai";
 import { DISPATCH_EVENTS } from "./events.ts";
 import { DISPATCH_GUARDRAILS } from "./guardrails.ts";
-import { callFlow, dashboardProjection } from "./shared.ts";
+import { callFlow, dispatchSlot } from "./shared.ts";
 
 export default agent({
   name: "Dispatch Command Center",
@@ -27,7 +27,7 @@ export default agent({
   // something to project rather than an empty state object.
   // One projection replaces eleven `ctx.send("incidents", ...)` calls, and
   // is the single place that decides caller PII stays server-side.
-  syncState: { dispatch: dashboardProjection },
+  syncState: dispatchSlot.projected,
   // A dispatcher reads addresses and unit numbers in bursts with pauses inside
   // one message ("unit twelve … respond to"). The default pipeline's
   // `max_turn_silence` already tolerates that; reach for

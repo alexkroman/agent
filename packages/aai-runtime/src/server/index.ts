@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The HTTP and WebSocket server: `createRuntimeServer` and its route table
+ * The HTTP and WebSocket server: `createServerForRuntime` and its route table
  * (`server.ts`, `routes.ts`, `static.ts`), the front door `createAgentServer`
  * and its forwarding guarantee, host mode (`host-server.ts`, `host-mode.ts`,
  * `host-relay.ts`), `/api/*` over HTTP, the session ticket and auth gate, the
@@ -9,6 +9,7 @@
  * (guard-invariants rule 37).
  */
 
+export { isPathInside } from "@alexkroman1/aai/workspace-files";
 export type { AgentServerOptions } from "./agent-server.ts";
 export { createAgentServer } from "./agent-server.ts";
 export { agentServerEnv } from "./env.ts";
@@ -16,7 +17,8 @@ export type { HostServerOptions, HostSessionDefaults } from "./host-server.ts";
 export { createHostServer } from "./host-server.ts";
 export type { ServerRoute, ServerRouteMatch } from "./routes.ts";
 export { SERVER_ROUTES, WORKFLOW_CALLBACK_ROUTES } from "./routes.ts";
-export { createRuntimeServer, DEFAULT_LISTEN_HOST } from "./server.ts";
+export { createServerForRuntime, DEFAULT_LISTEN_HOST } from "./server.ts";
+export { createRuntimeServer } from "./server-renamed.ts";
 export type {
   SessionAuth,
   SessionAuthOptions,
@@ -44,7 +46,6 @@ export {
   platformSessionSecret,
   verifySessionToken,
 } from "./session-ticket.ts";
-export { isPathInside } from "./static.ts";
 export type {
   AgentServer,
   RuntimeServerOptions,

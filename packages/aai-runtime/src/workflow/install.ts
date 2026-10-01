@@ -13,7 +13,7 @@
  * `sdk/step-env.ts` states — the agent bundle carries its own copy of the SDK,
  * so the publisher and the reader are two module instances in one realm — and
  * all of them are published HERE, in one call, because they have one correct
- * wiring point: `createRuntimeServer`. That is the front door `aai dev`, a
+ * wiring point: `createServerForRuntime`. That is the front door `aai dev`, a
  * self-hosted server and every deployed guest all go through, which is what
  * makes a step behave identically in all three.
  *
@@ -39,9 +39,9 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { closeEgressFetch } from "../_egress-fetch.ts";
 import { openAppDb } from "../app-db.ts";
 import { type ClientInbox, installChannelOutbox, installClientInbox } from "../inbox/index.ts";
+import type { Logger } from "../logger.ts";
 import { closePlatformSockets, ensurePlatformSocket } from "../platform/index.ts";
 import type { CloseableDb } from "../postgres-db.ts";
-import type { Logger } from "../runtime-config.ts";
 import { createStepDelegate } from "../step-delegate.ts";
 import { createStepFetch } from "../step-fetch.ts";
 import { createStepMcp } from "../step-mcp.ts";
@@ -60,7 +60,7 @@ import {
  * What one server's workflow support OWNS, so it can give it back.
  *
  * The `close` half is the whole reason this is an object rather than the store
- * on its own. `aai dev` re-runs `createRuntimeServer` on every file save and
+ * on its own. `aai dev` re-runs `createServerForRuntime` on every file save and
  * `AgentServer.close()` closed the runtime and the sockets and nothing else, so
  * each rebuild stranded a Postgres pool (2 connections, against a role limit of
  * 4 at the time — two saves that touched uploads exhausted it) and an undici
@@ -71,7 +71,7 @@ import {
  * on a shared pool (`host/app-db.ts`), which is what makes that rule survive the
  * sharing: releasing this one closes the pool only if nobody else holds one.
  *
- * Not exported from `/runtime`: `createRuntimeServer` is the only caller and takes it
+ * Not exported from `/runtime`: `createServerForRuntime` is the only caller and takes it
  * by inference.
  *
  * @internal
@@ -246,7 +246,7 @@ export function installWorkflowSupport(options: {
   const inbox = installClientInbox(options.logger);
   // The channel outbox, when `AAI_CHANNEL_OUTBOX` names a file: every text and
   // post is captured there instead of sent. Here because this is the one call
-  // every `createRuntimeServer` makes, workflows or not — and it has to cover
+  // every `createServerForRuntime` makes, workflows or not — and it has to cover
   // both senders: `text_me` runs in the host's copy of the SDK, a step's
   // `sendToChannel` in the bundle's, and the slot is global to both.
   installChannelOutbox(options.logger);

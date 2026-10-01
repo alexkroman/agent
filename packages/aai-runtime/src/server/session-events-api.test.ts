@@ -2,7 +2,7 @@
 
 import { requestPath } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { createSessionEventStream, type SessionEventStream } from "../session/index.ts";
 import { createMemoryStateBackend } from "../session-state/store.ts";
 import {
@@ -71,7 +71,7 @@ async function call(
     logger: silentLogger,
   });
   const res = makeRes();
-  // `createRuntimeServer` strips the query before dispatching, and passes the full URL
+  // `createServerForRuntime` strips the query before dispatching, and passes the full URL
   // on the request — so the helper models both halves rather than one.
   const claimed = api(makeReq(url, opts.bearer), res, requestPath(url), opts.method ?? "GET");
   // The handler claims synchronously and answers from a promise. `waitUntil`

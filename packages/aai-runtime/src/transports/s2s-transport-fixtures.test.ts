@@ -19,7 +19,8 @@ import type { AgentDef } from "@alexkroman1/aai";
 import { sessionSlot } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { createFixtureSession, flush } from "../_test-utils.ts";
+import { createFixtureSession } from "../_s2s-fixture-test-utils.ts";
+import { flush } from "../_timing-test-utils.ts";
 
 type FixtureSession = ReturnType<typeof createFixtureSession>;
 

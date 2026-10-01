@@ -21,8 +21,8 @@ shared guest modules (`rpc`, `types`, `bundle`, `auth`, `http`, `trial`,
 - `src/harness/CLAUDE.md` — agent mode: boot contract, bundle fetch + hash
   check, `/manage/*` and its derived token, guest-owned idle/drain lifecycle,
   the log ring, the `AAI_DEBUG` forward, `/phone`.
-- [`CODING-AGENT-TESTS-CLAUDE.md`](CODING-AGENT-TESTS-CLAUDE.md) (reference
-  sibling) — testing and evaluating the studio coding agent.
+- `packages/aai-guest-studio/CODING-AGENT-TESTS-CLAUDE.md` (reference sibling)
+  — testing and evaluating the studio coding agent.
 
 ## Layout
 
@@ -246,7 +246,7 @@ artifact (`aai-guest#test` declares its own `build`).
 
 **Ask of any new dependency whether it reads its own directory.** A package
 reading data files beside itself cannot be bundled
-(`@workflow/world-postgres`'s Drizzle `meta/_journal.json` → `neverBundle`). One
+(`@workflow/world-postgres`'s Drizzle migration journal → `neverBundle`). One
 reading only its own `package.json` is better PATCHED than externalized:
 `@workflow/world-local` is statically imported by `@workflow/core`, so
 externalizing it costs every spawn; `patches/@workflow__world-local@4.2.4.patch`
@@ -293,8 +293,8 @@ content-addressed tag, `agents.harness_image_tag`) is `aai-server`'s
 - Manifest + lockfile are written by the RUN itself (gzip+base64, no build
   context); the tag hashes the LOCKFILE, so transitive changes mint a new tag.
 - The subprocess backend runs `dist/harness.mjs` and resolves the toolchain from
-  this package's `node_modules`; `workspace-build-integration.test.ts` covers
-  that path.
+  this package's `node_modules`; aai-server's `workspace-build.scenario.test.ts`
+  covers that path.
 
 **Node major.** Base image defaults to `node:26-slim` (pin via
 `MODAL_SANDBOX_IMAGE`; `MODAL_APP_NAME` selects the Modal App, default
@@ -318,7 +318,7 @@ one reference; a build context makes the harness and toolchain plain `COPY`s.
 - **`GUEST_IMAGE_REGISTRY` is the switch**: set → Modal spawns resolve
   `<registry>/aai-guest-harness:<sha16>` via `images.fromRegistry`; unset (the
   code default) → the server builds its own snapshot. **Production sets it** (in
-  the Modal secret). Policy: `aai-server/guest-image-source.ts`
+  the Modal secret). Policy: `aai-server/guest/image-source.ts`
   (`resolvePinAcrossSources` handles pins missing from the registry).
 - **The TAG is identical across sources** (the registry source only prepends a
   registry), so recorded pins survive the switch; tested.
@@ -376,7 +376,7 @@ A guest's agent bundle resolves `@alexkroman1/*` from the IMAGE's
 
 ## ffmpeg is installed, and a step reaches it through the SDK
 
-`GUEST_SYSTEM_PACKAGES` (`aai-server/modal-system-packages.ts`) installs
+`GUEST_SYSTEM_PACKAGES` (`aai-server/modal/system-packages.ts`) installs
 `ffmpeg` (+`ffprobe`) via apt — never an npm binary (`ffmpeg-static` is GPL-3.0
 and counts against a published package's size budget). Steps use
 `@alexkroman1/aai/ffmpeg`; its runner, dev fallback (`AAI_FFMPEG_PATH`) and the

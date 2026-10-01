@@ -4,14 +4,23 @@
  * Max-file-length gate.
  *
  * Long files are where complexity hides and where reviewers stop reading.
- * This gate caps source and test files at a fixed line count, with a
- * grandfather allowlist (`file-length-allowlist.json`) for the handful of
- * files that already exceed the cap today.
+ * This gate caps source and test files at a fixed count of CODE lines, with a
+ * grandfather allowlist (`file-length-allowlist.json`) for files that already
+ * exceed the cap.
  *
- * The allowlist is a ratchet: each entry records the file's *current*
- * ceiling, and the file may not grow past it. As files get split up the
- * ceilings should be lowered (or entries removed) — never raised. New files
- * have no entry and must come in under the cap from day one.
+ * **Code lines, not physical lines**: a line that is blank or lies wholly
+ * inside comments does not count (comment ranges come from `oxc-parser`, so a
+ * `/*` inside a string or regex is not mistaken for one). Counting prose made
+ * documentation the thing that forced a file split, and every split then grew a
+ * new header of its own.
+ *
+ * The allowlist is a ratchet: each entry records the file's ceiling, and the
+ * file may not grow past it. `--update` (`pnpm file-length:update`) lowers a
+ * ceiling to the file's current count and removes entries now under the cap or
+ * gone — it never raises or adds one. An improvement the allowlist has not
+ * recorded yet WARNS, like every baseline ratchet here (`_ratchet.mjs`'s
+ * `warnStale`); only growth fails. New files have no entry and must come in
+ * under the cap from day one.
  *
  * Templates (`packages/aai-templates/templates/`) are exempt: they are
  * self-contained demo agents, not library code, and are already exempt from
@@ -35,7 +44,7 @@
  *   the difference between planning a split and discovering one.
  * - `--staged` measures only what is staged and never fails, for the
  *   pre-commit hook: it is a nudge while the file is still open, not a gate.
- *   The gate is `pnpm check` at push time.
+ *   The gate is `pnpm check:local` at push time, and CI.
  *
  * `--json` prints the same measurements as data, for anything that wants to
  * plan against them (a split list, a report) rather than read the table.
@@ -47,18 +56,21 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { parseScriptArgs } from "./_args.mjs";
+import { parseSync } from "oxc-parser";
+
+import { parseScriptArgs, USAGE_EXIT } from "./_args.mjs";
 import { readJson, repoRoot } from "./_fs.mjs";
 
 const ROOT = repoRoot(import.meta.url);
+const ALLOWLIST = join(ROOT, "scripts", "file-length-allowlist.json");
 
-// Caps. They catch OUTLIERS, not ordinary growth: at 500/700 the cap forced
-// splits along whatever seam was nearest, and the coupling it stood in for is
-// now checked directly — a module directory is entered through its `index.ts`
-// only (guard-invariants rule 37, konsistent `module-dir-entered-through-index`).
+// Caps, in CODE lines (comments and blank lines are not counted). They catch
+// OUTLIERS, not ordinary growth: the coupling a tight cap stood in for is
+// checked directly — a module directory is entered through its `index.ts` only
+// (guard-invariants rule 37, konsistent `module-dir-entered-through-index`).
 // Tests get more headroom — exhaustive cases legitimately run long.
 const SOURCE_MAX = 900;
 const TEST_MAX = 1200;
@@ -103,9 +115,15 @@ const { values: FLAGS } = parseScriptArgs({
     json: { type: "boolean" },
     all: { type: "boolean" },
     top: { type: "string" },
+    update: { type: "boolean" },
   },
 });
 const STAGED = FLAGS.staged === true;
+const UPDATE = FLAGS.update === true;
+if (UPDATE && STAGED) {
+  console.error("check-file-length: --update rewrites the whole allowlist and cannot be --staged.");
+  process.exit(USAGE_EXIT);
+}
 const JSON_OUT = FLAGS.json === true;
 const ALL = FLAGS.all === true;
 /**
@@ -121,7 +139,7 @@ const TOP = (() => {
 
 let allowlist;
 try {
-  allowlist = readJson(join(ROOT, "scripts", "file-length-allowlist.json"));
+  allowlist = readJson(ALLOWLIST);
 } catch (err) {
   console.error(`check-file-length: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
@@ -130,8 +148,30 @@ try {
 const isTest = (path) => /\.test\.tsx?$|\.test-d\.ts$|_test-utils\.ts$|test-utils\.ts$/.test(path);
 const isExempt = (path) => path.startsWith("packages/aai-templates/templates/");
 
-/** Count lines the way `wc -l` does: one per newline, ignoring a trailing newline. */
-const countLines = (text) => text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
+/**
+ * Count CODE lines: every line that is not blank once each comment range has
+ * been blanked out. A line holding code AND a trailing comment counts. If the
+ * file does not parse, nothing is blanked — every non-blank line counts, which
+ * errs toward the cap rather than away from it.
+ */
+function countCodeLines(path, text) {
+  let comments = [];
+  try {
+    comments = [...parseSync(path, text).comments].sort((a, b) => a.start - b.start);
+  } catch {
+    comments = [];
+  }
+  let code = "";
+  let at = 0;
+  for (const comment of comments) {
+    if (comment.start < at) continue;
+    code +=
+      text.slice(at, comment.start) + text.slice(comment.start, comment.end).replace(/[^\n]/g, " ");
+    at = comment.end;
+  }
+  code += text.slice(at);
+  return code.split("\n").filter((line) => line.trim() !== "").length;
+}
 
 const git = (gitArgs) =>
   execFileSync("git", gitArgs, { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
@@ -215,7 +255,7 @@ for (const path of files) {
     console.warn(`check-file-length: skipping ${path} (listed by git but not on disk)`);
     continue;
   }
-  const lines = countLines(text);
+  const lines = countCodeLines(path, text);
   const cap = isTest(path) ? TEST_MAX : SOURCE_MAX;
   // A grandfathered file's own ceiling is the line it may not cross, so that
   // is the number its headroom is measured against.
@@ -226,21 +266,22 @@ for (const path of files) {
     seen.add(path);
     if (lines > ceiling) {
       violations.push(
-        `${path}: ${lines} lines exceeds its grandfathered ceiling of ${ceiling}. ` +
+        `${path}: ${lines} code lines exceeds its grandfathered ceiling of ${ceiling}. ` +
           "This file may not grow further — split it up.",
       );
     } else if (lines <= cap) {
       staleAllowlist.push(
-        `${path}: now ${lines} lines (under the ${cap}-line cap) — remove it from ` +
-          "file-length-allowlist.json.",
+        `${path}: now ${lines} code lines (under the ${cap}-line cap) — its entry can go.`,
       );
+    } else if (lines < ceiling) {
+      staleAllowlist.push(`${path}: ceiling ${ceiling} -> ${lines} code lines.`);
     }
     continue;
   }
 
   if (lines > cap) {
     violations.push(
-      `${path}: ${lines} lines exceeds the ${cap}-line cap for ${isTest(path) ? "test" : "source"} files. ` +
+      `${path}: ${lines} code lines exceeds the ${cap}-line cap for ${isTest(path) ? "test" : "source"} files. ` +
         "Split it into focused modules.",
     );
   }
@@ -253,11 +294,30 @@ if (!STAGED) {
   for (const path of Object.keys(allowlist)) {
     if (path.startsWith("_")) continue;
     if (!seen.has(path)) {
-      staleAllowlist.push(
-        `${path}: listed in file-length-allowlist.json but not found — remove the stale entry.`,
-      );
+      staleAllowlist.push(`${path}: listed in file-length-allowlist.json but not found.`);
     }
   }
+}
+
+/**
+ * `--update`: lower every ceiling to its file's current count and drop the
+ * entries now under the cap or gone. LOWER-ONLY — a file past its ceiling is
+ * left as it was and still fails below, so blessing growth stays a hand edit
+ * in a reviewable diff.
+ */
+if (UPDATE) {
+  const byPath = new Map(measured.map((m) => [m.path, m]));
+  const next = {};
+  for (const [path, ceiling] of Object.entries(allowlist)) {
+    const m = byPath.get(path);
+    if (path.startsWith("_")) next[path] = ceiling;
+    else if (m !== undefined && m.lines > m.cap) next[path] = Math.min(ceiling, m.lines);
+  }
+  writeFileSync(ALLOWLIST, `${JSON.stringify(next, null, 2)}\n`);
+  console.log(
+    `check-file-length: allowlist updated — ${staleAllowlist.length} entr(ies) lowered or removed.`,
+  );
+  staleAllowlist.length = 0;
 }
 
 /** Files at or past WARN_RATIO of their own ceiling, tightest headroom first. */
@@ -281,7 +341,17 @@ if (JSON_OUT) {
       2,
     ),
   );
-  process.exit(violations.length > 0 || staleAllowlist.length > 0 ? 1 : 0);
+  process.exit(violations.length > 0 ? 1 : 0);
+}
+
+/** Recorded improvement: WARN and name the command, never fail. */
+function warnStaleAllowlist() {
+  if (staleAllowlist.length === 0) return;
+  console.warn(
+    `\ncheck-file-length: ${staleAllowlist.length} allowlist entr(ies) give headroom back — ` +
+      "run `pnpm file-length:update`:\n",
+  );
+  for (const s of staleAllowlist) console.warn(`  - ${s}`);
 }
 
 /**
@@ -316,14 +386,11 @@ function reportNearCap() {
 }
 
 if (violations.length > 0) {
-  console.error("check-file-length: file(s) over the line cap:\n");
+  console.error("check-file-length: file(s) over the code-line cap:\n");
   for (const v of violations) console.error(`  - ${v}`);
-  if (staleAllowlist.length > 0) {
-    console.error("\ncheck-file-length: also tidy these allowlist entries:\n");
-    for (const s of staleAllowlist) console.error(`  - ${s}`);
-  }
+  warnStaleAllowlist();
   // Staged mode is a nudge, not a gate: it runs on every commit, and blocking
-  // a work-in-progress commit teaches `--no-verify`. `pnpm check` at push time
+  // a work-in-progress commit teaches `--no-verify`. `pnpm check:local` at push time
   // is what enforces this.
   if (STAGED) {
     reportNearCap();
@@ -332,15 +399,10 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
-if (staleAllowlist.length > 0) {
-  console.error("check-file-length: stale allowlist entries (ratchet them down):\n");
-  for (const s of staleAllowlist) console.error(`  - ${s}`);
-  process.exit(1);
-}
-
 if (!STAGED) {
   console.log(
-    `check-file-length: all files within caps (source ${SOURCE_MAX}, test ${TEST_MAX}). ✓`,
+    `check-file-length: all files within caps (source ${SOURCE_MAX}, test ${TEST_MAX} code lines). ✓`,
   );
 }
+warnStaleAllowlist();
 reportNearCap();

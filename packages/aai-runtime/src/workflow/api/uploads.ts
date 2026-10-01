@@ -59,7 +59,7 @@ import { UPLOAD_CLAIM_BATCH, UPLOAD_TOKEN_RE } from "@alexkroman1/aai/host-inter
 import { requestQuery, WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { decodePathSegment } from "../../_path-decode.ts";
-import type { Logger } from "../../runtime-config.ts";
+import type { Logger } from "../../logger.ts";
 import type { UploadMeta, UploadStore } from "../uploads.ts";
 import { sendJson } from "./http.ts";
 import { sendUploadFailure } from "./upload-failures.ts";

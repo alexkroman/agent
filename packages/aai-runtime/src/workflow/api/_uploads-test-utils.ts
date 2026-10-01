@@ -15,7 +15,7 @@
 import { rejectingWorkflows } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { silentLogger } from "../../_test-utils.ts";
+import { silentLogger } from "../../_logger-test-utils.ts";
 import { createWorkflowApi } from "../api.ts";
 import {
   assertPartOffset,
@@ -26,7 +26,7 @@ import {
   UploadPartError,
   type UploadStore,
 } from "../uploads.ts";
-import { listenLoopback } from "./test-utils.ts";
+import { listenLoopback } from "./_test-utils.ts";
 
 /** An engine that answers nothing: these routes must not touch it. */
 export const engine = () => ({

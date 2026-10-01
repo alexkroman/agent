@@ -34,20 +34,23 @@ import {
   studioProjectUrl,
 } from "./_studio.ts";
 import { layerScaffold } from "./_templates.ts";
-import { fmtUrl, log } from "./_ui.ts";
+import { defaultUi, fmtUrl, type Ui } from "./_ui.ts";
 import { formatCappedList } from "./_utils.ts";
 
-export async function executeList(opts: {
-  cwd: string;
-  server?: string | undefined;
-}): Promise<CommandResult<{ projects: string[] }>> {
+export async function executeList(
+  opts: {
+    cwd: string;
+    server?: string | undefined;
+  },
+  ui: Ui = defaultUi,
+): Promise<CommandResult<{ projects: string[] }>> {
   const { serverUrl, apiKey } = await resolveDeployTarget(opts.cwd, opts.server);
   const projects = await listStudioProjects(serverUrl, apiKey);
   if (projects.length === 0) {
-    log.info("No studio projects yet. Push one with `aai push`, or create one in the studio.");
+    ui.log.info("No studio projects yet. Push one with `aai push`, or create one in the studio.");
   }
   for (const name of projects) {
-    log.message(`${name}  ${fmtUrl(studioProjectUrl(serverUrl, name))}`);
+    ui.log.message(`${name}  ${fmtUrl(studioProjectUrl(serverUrl, name))}`);
   }
   return ok({ projects });
 }
@@ -102,13 +105,16 @@ async function notFoundHint(serverUrl: string, apiKey: string): Promise<string> 
   return `Your projects: ${formatCappedList(projects)}.`;
 }
 
-export async function executePull(opts: {
-  cwd: string;
-  project: string;
-  dir?: string | undefined;
-  force?: boolean | undefined;
-  server?: string | undefined;
-}): Promise<CommandResult<{ project: string; dir: string; files: number }>> {
+export async function executePull(
+  opts: {
+    cwd: string;
+    project: string;
+    dir?: string | undefined;
+    force?: boolean | undefined;
+    server?: string | undefined;
+  },
+  ui: Ui = defaultUi,
+): Promise<CommandResult<{ project: string; dir: string; files: number }>> {
   const { serverUrl, apiKey } = await resolveDeployTarget(opts.cwd, opts.server);
   const remote = await fetchStudioProject(serverUrl, apiKey, opts.project);
   if (!remote) {
@@ -142,9 +148,9 @@ export async function executePull(opts: {
   });
 
   const count = Object.keys(remote.files).length;
-  log.success(`Pulled ${opts.project} (${count} files) into ${target}`);
-  log.info(`Next: cd ${opts.dir ?? opts.project} && pnpm install && aai dev`);
-  log.info(`Studio: ${fmtUrl(studioProjectUrl(serverUrl, opts.project))}`);
+  ui.log.success(`Pulled ${opts.project} (${count} files) into ${target}`);
+  ui.log.info(`Next: cd ${opts.dir ?? opts.project} && pnpm install && aai dev`);
+  ui.log.info(`Studio: ${fmtUrl(studioProjectUrl(serverUrl, opts.project))}`);
   return ok({ project: opts.project, dir: target, files: count });
 }
 
@@ -170,14 +176,17 @@ type PushOutcome = {
  * The shared push core: collect local source, resolve (or mint) the linked
  * project, sync atomically, record the new fast-forward token.
  */
-async function pushProject(opts: {
-  cwd: string;
-  server?: string | undefined;
-  force?: boolean | undefined;
-}): Promise<PushOutcome> {
+async function pushProject(
+  opts: {
+    cwd: string;
+    server?: string | undefined;
+    force?: boolean | undefined;
+  },
+  ui: Ui,
+): Promise<PushOutcome> {
   const { config, serverUrl, apiKey } = await resolveDeployTarget(opts.cwd, opts.server);
   const { files, warnings } = await collectSourceFiles(opts.cwd);
-  for (const warning of warnings) log.warn(warning);
+  for (const warning of warnings) ui.log.warn(warning);
   if (Object.keys(files).length === 0) {
     throw new Error("Nothing to push — this directory has no project files.");
   }
@@ -245,16 +254,17 @@ async function pushProject(opts: {
   };
 }
 
-export async function executePush(opts: {
-  cwd: string;
-  server?: string | undefined;
-  force?: boolean | undefined;
-}): Promise<
-  CommandResult<{ project: string; created: boolean; url: string; warnings?: string[] }>
-> {
-  const pushed = await pushProject(opts);
+export async function executePush(
+  opts: {
+    cwd: string;
+    server?: string | undefined;
+    force?: boolean | undefined;
+  },
+  ui: Ui = defaultUi,
+): Promise<CommandResult<{ project: string; created: boolean; url: string; warnings?: string[] }>> {
+  const pushed = await pushProject(opts, ui);
   const url = studioProjectUrl(pushed.serverUrl, pushed.project);
-  log.success(
+  ui.log.success(
     `${pushed.created ? "Created" : "Synced"} studio project ${pushed.project} — ${fmtUrl(url)}`,
   );
   return ok({
@@ -290,6 +300,7 @@ async function syncEnvSecrets(
   serverUrl: string,
   apiKey: string,
   project: string,
+  ui: Ui,
 ): Promise<string[]> {
   const env = await resolveServerEnv(cwd);
   const names = Object.keys(env);
@@ -304,16 +315,19 @@ async function syncEnvSecrets(
     method: "PUT",
     body: env,
   });
-  log.info(`Synced ${names.length} ${plural(names.length, "secret")} from .env`);
+  ui.log.info(`Synced ${names.length} ${plural(names.length, "secret")} from .env`);
   return names;
 }
 
-export async function executePublish(opts: {
-  cwd: string;
-  server?: string | undefined;
-  force?: boolean | undefined;
-  skipTypecheck?: boolean | undefined;
-}): Promise<
+export async function executePublish(
+  opts: {
+    cwd: string;
+    server?: string | undefined;
+    force?: boolean | undefined;
+    skipTypecheck?: boolean | undefined;
+  },
+  ui: Ui = defaultUi,
+): Promise<
   CommandResult<{
     project: string;
     slug: string;
@@ -324,8 +338,8 @@ export async function executePublish(opts: {
   }>
 > {
   const { assertTypechecks } = await import("./_typecheck-gate.ts");
-  await assertTypechecks(opts.cwd, { skip: opts.skipTypecheck });
-  const pushed = await pushProject(opts);
+  await assertTypechecks(opts.cwd, { skip: opts.skipTypecheck, ui });
+  const pushed = await pushProject(opts, ui);
   const { project, serverUrl, apiKey } = pushed;
 
   // ALWAYS before the deploy, first publish included. Secrets are merged into
@@ -335,9 +349,9 @@ export async function executePublish(opts: {
   // brand-new agent's first deployment ran without its credentials and the
   // docs told the user to publish twice. `syncEnvSecrets` writes to the
   // project route, which needs only the row `pushProject` just created.
-  await syncEnvSecrets(opts.cwd, serverUrl, apiKey, project);
+  await syncEnvSecrets(opts.cwd, serverUrl, apiKey, project, ui);
 
-  log.step(`Publishing ${project} (builds in the project's sandbox)…`);
+  ui.log.step(`Publishing ${project} (builds in the project's sandbox)…`);
   // Wire data, so it is checked rather than trusted. A 200 whose body lacks
   // `slug`/`output` — an intercepting proxy, a mismatched server — used to
   // surface as a bare `Cannot read properties of undefined (reading 'trim')`,
@@ -352,7 +366,7 @@ export async function executePublish(opts: {
       isRecord(value) && typeof value.slug === "string" && typeof value.output === "string",
     `the publish route at ${serverUrl}`,
   );
-  if (result.output.trim()) log.message(result.output.trim());
+  if (result.output.trim()) ui.log.message(result.output.trim());
 
   await updateProjectConfig(opts.cwd, { serverUrl, slug: result.slug });
   // No post-deploy re-sync. It used to run on a first publish, against
@@ -364,8 +378,8 @@ export async function executePublish(opts: {
 
   const agentUrl = `${serverUrl}/${result.slug}`;
   const studioUrl = studioProjectUrl(serverUrl, project);
-  log.success(`Published ${fmtUrl(agentUrl)}`);
-  log.info(`Edit in studio: ${fmtUrl(studioUrl)}`);
+  ui.log.success(`Published ${fmtUrl(agentUrl)}`);
+  ui.log.info(`Edit in studio: ${fmtUrl(studioUrl)}`);
   return ok({
     project,
     slug: result.slug,

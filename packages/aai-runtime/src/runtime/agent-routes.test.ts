@@ -7,7 +7,7 @@
 import { type RouteHandler, routeError, routeResponse } from "@alexkroman1/aai";
 import { createStubWorkflows } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { bindClientSession, createSessionEventStream } from "../session/index.ts";
 import { createMemoryStateBackend } from "../session-state/store.ts";
 import { compileAgentRoutes, type RouteCall } from "./agent-routes.ts";

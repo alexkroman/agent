@@ -23,9 +23,9 @@ export const list = defineExec({
   },
   // Reads the account's projects; the directory only supplies a `serverUrl`.
   cwd: "any",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeList } = await import("./studio.ts");
-    return executeList({ cwd, server: args.server });
+    return executeList({ cwd, server: args.server }, ui);
   },
 });
 
@@ -47,15 +47,18 @@ export const pull = defineExec({
   },
   // It CREATES the project directory — requiring one would be backwards.
   cwd: "any",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executePull } = await import("./studio.ts");
-    return executePull({
-      cwd,
-      project: args.project,
-      dir: args.dir,
-      force: args.force,
-      server: args.server,
-    });
+    return executePull(
+      {
+        cwd,
+        project: args.project,
+        dir: args.dir,
+        force: args.force,
+        server: args.server,
+      },
+      ui,
+    );
   },
 });
 
@@ -66,9 +69,9 @@ export const push = defineExec({
     ...platformArgs,
   },
   cwd: "agent",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executePush } = await import("./studio.ts");
-    return executePush({ cwd, server: args.server, force: args.force });
+    return executePush({ cwd, server: args.server, force: args.force }, ui);
   },
 });
 
@@ -80,16 +83,19 @@ export const publish = defineExec({
   args: {
     force: forceArg,
     ...platformArgs,
-    skipTypecheck: { type: "boolean", description: "Skip type checking before publishing" },
+    "skip-typecheck": { type: "boolean", description: "Skip type checking before publishing" },
   },
   cwd: "agent",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executePublish } = await import("./studio.ts");
-    return executePublish({
-      cwd,
-      server: args.server,
-      force: args.force,
-      skipTypecheck: args.skipTypecheck,
-    });
+    return executePublish(
+      {
+        cwd,
+        server: args.server,
+        force: args.force,
+        skipTypecheck: args["skip-typecheck"],
+      },
+      ui,
+    );
   },
 });

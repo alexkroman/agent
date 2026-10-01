@@ -38,7 +38,7 @@
 import type { WorkflowDef } from "@alexkroman1/aai";
 import { resolveFailureHandler } from "@alexkroman1/aai/host-internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { guestCodeVersion } from "./code-version.ts";
 import { dedupedRunId } from "./dedupe-run-id.ts";
 import { isTerminalStatus, type JournalStore, type RunRecord } from "./journal/types.ts";

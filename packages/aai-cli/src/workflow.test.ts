@@ -14,10 +14,19 @@
 
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 
-import { getServerInfo } from "./_agent.ts";
+import { createFakeUi, type FakeUi } from "./_test-utils.ts";
+import {
+  executeWorkflowCancel,
+  executeWorkflowList,
+  executeWorkflowRuns,
+  executeWorkflowShow,
+  type WorkflowDeps,
+} from "./workflow.ts";
 
-vi.mock("./_agent.ts", () => ({
-  getServerInfo: vi.fn().mockResolvedValue({
+const getServerInfo = vi.fn();
+/** The platform target, as `getServerInfo` would resolve it. */
+function primeServerInfo(): void {
+  getServerInfo.mockResolvedValue({
     // No trailing slash, because the real `getServerInfo` cannot return one:
     // `resolveServerUrl` strips them once, at resolution time, precisely so
     // join sites do not each carry a copy (`_agent.test.ts` pins that). The
@@ -27,8 +36,8 @@ vi.mock("./_agent.ts", () => ({
     serverUrl: "https://agents.example",
     slug: "digest-x7k2mq",
     apiKey: "test-api-key",
-  }),
-}));
+  });
+}
 
 /**
  * The project pin, read for its SLUG before any credential is resolved.
@@ -40,21 +49,10 @@ vi.mock("./_agent.ts", () => ({
  * platform-path cases below reach the client; `readProjectConfig` returning
  * null is its own case further down.
  */
-const mockReadProjectConfig = vi.hoisted(() => vi.fn());
-vi.mock("./_config.ts", () => ({ readProjectConfig: mockReadProjectConfig }));
-
-const mockLog = vi.hoisted(() => ({
-  info: vi.fn(),
-  success: vi.fn(),
-  error: vi.fn(),
-  warn: vi.fn(),
-  step: vi.fn(),
-  message: vi.fn(),
-}));
-vi.mock("./_ui.ts", () => ({ log: mockLog }));
-
-const { executeWorkflowCancel, executeWorkflowList, executeWorkflowRuns, executeWorkflowShow } =
-  await import("./workflow.ts");
+const mockReadProjectConfig = vi.fn();
+/** Handed to every executor in place of the real target resolution. */
+const deps: WorkflowDeps = { getServerInfo, readProjectConfig: mockReadProjectConfig };
+let ui: FakeUi;
 
 // Typed as the fetch it stands in for: `ReturnType<typeof vi.fn>` erases the
 // return to void, which hides every async implementation from the type-aware
@@ -69,13 +67,10 @@ function json(body: unknown, status = 200): Response {
 }
 
 beforeEach(() => {
-  // `mockLog` is module-level, and `restoreMocks: true` registers only
-  // `vi.spyOn` mocks — it clears neither the history nor the implementation of
-  // a plain `vi.fn()`. Without this, an `expect(mockLog.info)
-  // .toHaveBeenCalledWith(…)` below is satisfied by an EARLIER test in this
-  // file: three of the list/runs cases print the same "declares no workflows"
-  // and "No runs of digest yet" lines.
+  // Module-level `vi.fn()`s, which `restoreMocks` does not reach.
   vi.clearAllMocks();
+  ui = createFakeUi();
+  primeServerInfo();
   // After the clear, so the default survives it.
   mockReadProjectConfig.mockResolvedValue({ slug: "digest-x7k2mq" });
   fetchMock = vi.fn();
@@ -90,7 +85,7 @@ function call(n = 0): [string, RequestInit] {
 describe("executeWorkflowList", () => {
   test("reads the agent's own endpoint under the PUBLISHED slug", async () => {
     fetchMock.mockImplementation(async () => json({ workflows: [{ name: "digest" }] }));
-    const result = await executeWorkflowList("/proj", {});
+    const result = await executeWorkflowList("/proj", {}, ui, deps);
     expect(call()[0]).toBe("https://agents.example/digest-x7k2mq/workflows");
     expect(result).toEqual({ ok: true, data: { workflows: [{ name: "digest" }] } });
   });
@@ -99,27 +94,27 @@ describe("executeWorkflowList", () => {
     // The caller's API key is not what authorizes here; sending it would put a
     // platform credential on a route that does not want one.
     fetchMock.mockImplementation(async () => json({ workflows: [] }));
-    await executeWorkflowList("/proj", {});
+    await executeWorkflowList("/proj", {}, ui, deps);
     expect(call()[1].headers).toEqual({});
   });
 
   test("--token rides as the agent's own bearer", async () => {
     fetchMock.mockImplementation(async () => json({ workflows: [] }));
-    await executeWorkflowList("/proj", { token: "s3cret" });
+    await executeWorkflowList("/proj", { token: "s3cret" }, ui, deps);
     expect(call()[1].headers).toMatchObject({ Authorization: "Bearer s3cret" });
   });
 
   test("names the agent when it declares none, rather than printing nothing", async () => {
     fetchMock.mockImplementation(async () => json({ workflows: [] }));
-    await executeWorkflowList("/proj", {});
-    expect(mockLog.info).toHaveBeenCalledWith("digest-x7k2mq declares no workflows");
+    await executeWorkflowList("/proj", {}, ui, deps);
+    expect(ui.said("info")).toContainEqual("digest-x7k2mq declares no workflows");
   });
 
   test("a failure keeps the AGENT'S sentence and carries the broker hint", async () => {
     // A 503 while a sandbox boots reads very differently from a 404 for an
     // agent that declares no workflows, and both look alike as a status code.
     fetchMock.mockImplementation(async () => json({ error: "agent unavailable" }, 503));
-    const result = await executeWorkflowList("/proj", {});
+    const result = await executeWorkflowList("/proj", {}, ui, deps);
     expect(result).toMatchObject({
       ok: false,
       code: "workflow_list_failed",
@@ -133,7 +128,7 @@ describe("executeWorkflowList", () => {
     // answered `<html>` was something in front of the agent, and a bare `502` does
     // not say which surface was being asked.
     fetchMock.mockImplementation(async () => new Response("<html>", { status: 502 }));
-    const result = await executeWorkflowList("/proj", {});
+    const result = await executeWorkflowList("/proj", {}, ui, deps);
     expect(result).toMatchObject({ ok: false, error: "Workflow API 502: <html>" });
   });
 });
@@ -141,7 +136,7 @@ describe("executeWorkflowList", () => {
 describe("executeWorkflowRuns", () => {
   test("asks for the KEYLESS read — a terminal has no correlation key", async () => {
     fetchMock.mockImplementation(async () => json({ runs: [] }));
-    await executeWorkflowRuns("/proj", "digest", {});
+    await executeWorkflowRuns("/proj", "digest", {}, ui, deps);
     const url = new URL(call()[0]);
     expect(url.pathname).toBe("/digest-x7k2mq/workflows/runs");
     expect(url.searchParams.get("workflow")).toBe("digest");
@@ -151,7 +146,7 @@ describe("executeWorkflowRuns", () => {
 
   test("honours an explicit limit", async () => {
     fetchMock.mockImplementation(async () => json({ runs: [] }));
-    await executeWorkflowRuns("/proj", "digest", { limit: 3 });
+    await executeWorkflowRuns("/proj", "digest", { limit: 3 }, ui, deps);
     expect(new URL(call()[0]).searchParams.get("limit")).toBe("3");
   });
 
@@ -171,14 +166,14 @@ describe("executeWorkflowRuns", () => {
         ],
       }),
     );
-    await executeWorkflowRuns("/proj", "digest", {});
-    expect(mockLog.info).toHaveBeenCalledWith("wrun_1  failed  key=caller-1  topic not found");
+    await executeWorkflowRuns("/proj", "digest", {}, ui, deps);
+    expect(ui.said("info")).toContainEqual("wrun_1  failed  key=caller-1  topic not found");
   });
 
   test("says so when a workflow has no runs yet", async () => {
     fetchMock.mockImplementation(async () => json({ runs: [] }));
-    await executeWorkflowRuns("/proj", "digest", {});
-    expect(mockLog.info).toHaveBeenCalledWith("No runs of digest yet");
+    await executeWorkflowRuns("/proj", "digest", {}, ui, deps);
+    expect(ui.said("info")).toContainEqual("No runs of digest yet");
   });
 });
 
@@ -193,10 +188,10 @@ describe("executeWorkflowShow", () => {
         output: { topic: "ai" },
       }),
     );
-    const result = await executeWorkflowShow("/proj", "wrun_1", {});
+    const result = await executeWorkflowShow("/proj", "wrun_1", {}, ui, deps);
     expect(call()[0]).toBe("https://agents.example/digest-x7k2mq/workflows/runs/wrun_1");
-    expect(mockLog.info).toHaveBeenCalledWith("wrun_1  completed");
-    expect(mockLog.info).toHaveBeenCalledWith(JSON.stringify({ topic: "ai" }, null, 2));
+    expect(ui.said("info")).toContainEqual("wrun_1  completed");
+    expect(ui.said("info")).toContainEqual(JSON.stringify({ topic: "ai" }, null, 2));
     expect(result.ok).toBe(true);
   });
 
@@ -206,7 +201,7 @@ describe("executeWorkflowShow", () => {
     // The status also covers "this agent serves no workflow API", so the sentence
     // claims neither and the hint names every cause.
     fetchMock.mockImplementation(async () => json({ error: "No workflow run with id gone" }, 404));
-    const result = await executeWorkflowShow("/proj", "gone", {});
+    const result = await executeWorkflowShow("/proj", "gone", {}, ui, deps);
     expect(result).toMatchObject({
       ok: false,
       code: "workflow_show_failed",
@@ -219,7 +214,7 @@ describe("executeWorkflowShow", () => {
     fetchMock.mockImplementation(async () =>
       json({ runId: "a/b", workflow: "digest", createdAt: 0, status: "running" }),
     );
-    await executeWorkflowShow("/proj", "a/b", {});
+    await executeWorkflowShow("/proj", "a/b", {}, ui, deps);
     expect(call()[0]).toBe("https://agents.example/digest-x7k2mq/workflows/runs/a%2Fb");
   });
 });
@@ -227,9 +222,9 @@ describe("executeWorkflowShow", () => {
 describe("executeWorkflowCancel", () => {
   test("sends a DELETE and reports the stop", async () => {
     fetchMock.mockImplementation(async () => json({ runId: "wrun_1", cancelled: true }));
-    const result = await executeWorkflowCancel("/proj", "wrun_1", {});
+    const result = await executeWorkflowCancel("/proj", "wrun_1", {}, ui, deps);
     expect(call()[1].method).toBe("DELETE");
-    expect(mockLog.info).toHaveBeenCalledWith("Cancelled wrun_1");
+    expect(ui.said("info")).toContainEqual("Cancelled wrun_1");
     expect(result).toEqual({ ok: true, data: { runId: "wrun_1", cancelled: true } });
   });
 
@@ -237,9 +232,9 @@ describe("executeWorkflowCancel", () => {
     // The route answers 200 either way, because "it was already over" is an
     // answer — two operators pressing Stop is ordinary.
     fetchMock.mockImplementation(async () => json({ runId: "wrun_1", cancelled: false }));
-    const result = await executeWorkflowCancel("/proj", "wrun_1", {});
+    const result = await executeWorkflowCancel("/proj", "wrun_1", {}, ui, deps);
     expect(result.ok).toBe(true);
-    expect(mockLog.info).toHaveBeenCalledWith("wrun_1 had already finished");
+    expect(ui.said("info")).toContainEqual("wrun_1 had already finished");
   });
 });
 
@@ -253,7 +248,7 @@ describe("--agent targets a server the caller is running themselves", () => {
    */
   test("builds a slug-LESS base URL, not the platform's /:slug shape", async () => {
     fetchMock.mockImplementation(async () => json({ workflows: [] }));
-    await executeWorkflowList("/proj", { agent: "http://localhost:3000" });
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000" }, ui, deps);
     expect(call()[0]).toBe("http://localhost:3000/workflows");
   });
 
@@ -264,7 +259,7 @@ describe("--agent targets a server the caller is running themselves", () => {
     // never sends the key. Asserted on the mocks rather than on the URL,
     // because a URL assertion passes whether or not either was consulted.
     fetchMock.mockImplementation(async () => json({ workflows: [] }));
-    await executeWorkflowList("/proj", { agent: "http://localhost:3000" });
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000" }, ui, deps);
     expect(getServerInfo).not.toHaveBeenCalled();
     expect(mockReadProjectConfig).not.toHaveBeenCalled();
   });
@@ -273,11 +268,11 @@ describe("--agent targets a server the caller is running themselves", () => {
     // Same posture as the platform path: the workflow API is the agent's own
     // surface. A local target must not become an excuse to send a credential.
     fetchMock.mockImplementation(async () => json({ workflows: [] }));
-    await executeWorkflowList("/proj", { agent: "http://localhost:3000" });
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000" }, ui, deps);
     expect(new Headers(call()[1].headers).get("authorization")).toBe(null);
 
     fetchMock.mockClear();
-    await executeWorkflowList("/proj", { agent: "http://localhost:3000", token: "t0k" });
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000", token: "t0k" }, ui, deps);
     expect(new Headers(call()[1].headers).get("authorization")).toBe("Bearer t0k");
   });
 
@@ -286,7 +281,7 @@ describe("--agent targets a server the caller is running themselves", () => {
     // at resolution time — `--agent` is the one it does not produce, so the
     // strip is owned here rather than at the join.
     fetchMock.mockImplementation(async () => json({ workflows: [] }));
-    await executeWorkflowList("/proj", { agent: "http://localhost:3000///" });
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000///" }, ui, deps);
     expect(call()[0]).toBe("http://localhost:3000/workflows");
   });
 
@@ -294,8 +289,8 @@ describe("--agent targets a server the caller is running themselves", () => {
     // There is no slug to print, and "undefined declares no workflows" is what
     // a `slug`-shaped Target would have produced.
     fetchMock.mockImplementation(async () => json({ workflows: [] }));
-    await executeWorkflowList("/proj", { agent: "http://localhost:3000" });
-    expect(mockLog.info).toHaveBeenCalledWith("http://localhost:3000 declares no workflows");
+    await executeWorkflowList("/proj", { agent: "http://localhost:3000" }, ui, deps);
+    expect(ui.said("info")).toContainEqual("http://localhost:3000 declares no workflows");
   });
 
   test.each([
@@ -307,7 +302,9 @@ describe("--agent targets a server the caller is running themselves", () => {
     // becomes a target rather than interpolated — the rule
     // `resolveDeployTarget`'s slug guard follows. The assertion that matters is
     // that NOTHING was dialled.
-    await expect(executeWorkflowList("/proj", { agent: value })).rejects.toThrow(/--agent/);
+    await expect(executeWorkflowList("/proj", { agent: value }, ui, deps)).rejects.toThrow(
+      /--agent/,
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -320,7 +317,7 @@ describe("a project with no deployment", () => {
     // answering on localhost the whole time. The credential is never resolved
     // on this path now, so the sentence cannot be pre-empted by a login error.
     mockReadProjectConfig.mockResolvedValue(null);
-    await expect(executeWorkflowList("/proj", {})).rejects.toMatchObject({
+    await expect(executeWorkflowList("/proj", {}, ui, deps)).rejects.toMatchObject({
       code: "no_deployment",
       hint: expect.stringContaining("--agent"),
     });
@@ -331,7 +328,7 @@ describe("a project with no deployment", () => {
     // `aai pull` of a never-published project, and `aai delete`, both leave a
     // project.json that keeps `serverUrl` and carries no slug.
     mockReadProjectConfig.mockResolvedValue({ serverUrl: "https://agents.example" });
-    await expect(executeWorkflowList("/proj", {})).rejects.toMatchObject({
+    await expect(executeWorkflowList("/proj", {}, ui, deps)).rejects.toMatchObject({
       code: "no_deployment",
     });
   });

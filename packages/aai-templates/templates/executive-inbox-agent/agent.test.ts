@@ -3,12 +3,12 @@ import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import {
+  createToolContext,
   expectDialogOk,
   expectToolOk,
-  scriptedToolContext,
   stubGenerate,
   toolRunner,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import { DEFAULT_MEMORY, EXECUTIVE, INBOX } from "./inbox.ts";
 import { reflect } from "./nodes.ts";
@@ -24,7 +24,6 @@ import { propose } from "./review.ts";
 import {
   AT_INBOX,
   AWAITING,
-  assistantProjection,
   assistantSlot,
   assistantView,
   DRAFTING,
@@ -73,7 +72,7 @@ function scriptedDesk(
     update?: { logic: string; updatePrompt: boolean; newPrompt: string };
   } = {},
 ) {
-  return scriptedToolContext({
+  const ctx = createToolContext({
     generate: {
       routes: {
         [TRIAGE_SYSTEM]: (call) => ({ object: verdictFor(call.prompt) }),
@@ -101,6 +100,7 @@ function scriptedDesk(
       },
     },
   });
+  return { ctx, model: ctx.model, desk: ctx.desk };
 }
 
 const stateOf = (ctx: ToolContext) => assistantSlot.get(ctx);
@@ -640,7 +640,7 @@ describe("reflect (their multi_reflection_graph)", () => {
 
 describe("assistantView projection", () => {
   test("an untouched call projects the seeded inbox at rest", () => {
-    const view = assistantProjection();
+    const view = assistantSlot.projected();
     expect(view.phase).toBe("inbox");
     expect(view.emails).toHaveLength(INBOX.length);
     expect(view.emails.every((e) => e.status === "untriaged")).toBe(true);

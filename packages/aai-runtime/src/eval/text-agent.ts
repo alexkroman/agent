@@ -143,9 +143,9 @@ import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ModelMessage } from "ai";
 import type { HostAgentOptions } from "../host-agent-options.ts";
+import { silentLogger } from "../logger.ts";
 import { llmProviderEnvVar } from "../providers/_provider-env-var.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
-import { silentLogger } from "../runtime-config.ts";
 import { createTextAgent } from "../text-agent/index.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { measuredToolCalls, measuredTurn } from "./_turn-faults.ts";
@@ -164,7 +164,7 @@ const DEFAULT_TURN_TIMEOUT_MS = 90_000;
 
 /**
  * Can this machine run a TEXT agent's eval live, and if not, which key is
- * missing?
+ * missing? The gate for {@link openEvalTextAgent} / `describeTextEval`.
  *
  * The sibling of `evalCredentials`, and separate because that one OVER-ASKS
  * here: it answers about a voice agent, so an agent with no complete pipeline

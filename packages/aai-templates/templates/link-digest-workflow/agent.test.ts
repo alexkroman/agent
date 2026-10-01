@@ -27,19 +27,14 @@
 
 import {
   createWorkflowContext,
+  type RunWorkflowOptions,
+  runWorkflow,
   schemaInputIssues,
   stubGatewayRoute,
   stubStepInfo,
-} from "@alexkroman1/aai/testing";
-import {
-  installStubStepFetch,
-  installStubGateway as stubGateway,
-} from "@alexkroman1/aai/testing/vitest";
-import {
-  type RunWorkflowOptions,
-  runWorkflow,
   type WorkflowTestStep,
 } from "@alexkroman1/aai-runtime/testing";
+import { installStubGateway, installStubStepFetch } from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import { connect, digestLink, pastDigests } from "./api-client.ts";
@@ -255,7 +250,7 @@ describe("summarize", () => {
   });
 
   test("returns the headline and points the model produced", async () => {
-    const calls = stubGateway('{"headline":"Otters are clever","points":["a","b","c"]}');
+    const calls = installStubGateway('{"headline":"Otters are clever","points":["a","b","c"]}');
     const result = await summarize(ARTICLE);
 
     expect(result).toEqual({
@@ -269,7 +264,7 @@ describe("summarize", () => {
   });
 
   test("unwraps a fenced reply rather than failing on it", async () => {
-    stubGateway('```json\n{"headline":"H","points":["a"]}\n```');
+    installStubGateway('```json\n{"headline":"H","points":["a"]}\n```');
     expect((await summarize(ARTICLE)).headline).toBe("H");
   });
 
@@ -277,7 +272,7 @@ describe("summarize", () => {
     // The distinction that is the whole retry policy: a model that ignored the
     // format may well obey on the next attempt, where a 401 will not. Plain
     // means NOT a `FatalError`, which is what the DevKit stops retrying on.
-    stubGateway("Here is a summary of the article about otters.");
+    installStubGateway("Here is a summary of the article about otters.");
     const err = await summarize(ARTICLE).catch((thrown: unknown) => thrown);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).name).not.toBe("FatalError");
@@ -288,13 +283,13 @@ describe("summarize", () => {
     // The reply parses and is an object, so only the SCHEMA catches it — which
     // is what taking a schema bought over the guard this used to hand-roll: the
     // failure NAMES the field that was missing.
-    stubGateway('{"headline":"H"}');
+    installStubGateway('{"headline":"H"}');
     await expect(summarize(ARTICLE)).rejects.toThrow(/did not match the shape: points/);
   });
 
   test("fails FATALLY with no API key rather than retrying five times", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    stubGateway('{"headline":"H","points":["a"]}');
+    installStubGateway('{"headline":"H","points":["a"]}');
     await expect(summarize(ARTICLE)).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
   });
 
@@ -304,7 +299,7 @@ describe("summarize", () => {
     // `undefined`, which the step reads as the ordinary path. Five attempts of
     // the same ask having failed, the sixth changes the ask.
     onTestFinished(stubStepInfo({ attempt: 6, maxAttempts: 6 }).restore);
-    const calls = stubGateway('{"headline":"H","points":["a","b","c"]}');
+    const calls = installStubGateway('{"headline":"H","points":["a","b","c"]}');
 
     await summarize(ARTICLE);
 
@@ -315,7 +310,7 @@ describe("summarize", () => {
     // The half that makes the case above mean something: a spec that only
     // asserted the fallback would pass against a step that always degraded.
     onTestFinished(stubStepInfo({ attempt: 1, maxAttempts: 6 }).restore);
-    const calls = stubGateway('{"headline":"H","points":["a","b","c"]}');
+    const calls = installStubGateway('{"headline":"H","points":["a","b","c"]}');
 
     await summarize(ARTICLE);
 

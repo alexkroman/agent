@@ -62,10 +62,9 @@ const archiveUrl = process.env[ARCHIVE_URL_ENV];
  * 1. **A URL literal, a token NAME.** `url` is not a secret and is what an
  *    author looks at; the token is one, so the config records which variable
  *    holds it. There is no inline `token` field to reach for.
- * 2. **`tokenEnv` goes in `requiredEnv` too**, below, and nothing derives one
- *    from the other on purpose — `requiredEnv` is what a DEPLOY preflights, so
- *    a server declared without its token is a deploy that fails by name
- *    instead of a session that quietly has no archive tools.
+ * 2. **`tokenEnv` is all a deploy needs to check the token.** The preflight
+ *    derives it, the way it derives provider credentials, so it is not
+ *    repeated in `requiredEnv`.
  * 3. **No `pinnedTools`.** An MCP server owns its own tool descriptions and can
  *    change them after you trusted it; pinning `remote name -> fingerprint`
  *    freezes the set a human reviewed. A template cannot know a real server's
@@ -124,7 +123,6 @@ export default agent({
    */
   usageLimits: { totalTokens: 500_000 },
   // Spread rather than `mcpServers: undefined`: an agent with no archive
-  // declares no server and asks a deploy for no credential, which is the
-  // shape every field on this call already has.
-  ...omitUndefined({ mcpServers, requiredEnv: mcpServers && [ARCHIVE_TOKEN_ENV] }),
+  // declares no server and asks a deploy for no credential.
+  ...omitUndefined({ mcpServers }),
 });

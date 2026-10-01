@@ -167,7 +167,7 @@ export {
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,
 } from "./testing-recording-workflows.ts";
-// Both model seams scripted in one call, for a tool that reasons.
+// Deprecated: `createToolContext({ generate, delegate })` is the same call.
 export {
   type ScriptedToolContext,
   type ScriptedToolContextOptions,

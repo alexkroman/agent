@@ -21,9 +21,10 @@ import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { makeAgent, makeSpeech, makeUsageMeter } from "../_agent-test-utils.ts";
 import { createScriptedOneShotModel, registerFakeProviders } from "../_pipeline-test-fakes.ts";
-import { makeAgent, makeSpeech, makeUsageMeter, tick } from "../_test-utils.ts";
-import { consoleLogger, type Logger } from "../runtime-config.ts";
+import { tick } from "../_timing-test-utils.ts";
+import { consoleLogger, type Logger } from "../logger.ts";
 import {
   createSessionEmitter,
   createSessionEventStream,

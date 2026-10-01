@@ -9,11 +9,12 @@
 
 import { hash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createTestStore } from "../_orchestrator-test-utils.ts";
+import { spawnedAgent } from "../_sandbox-test-utils.ts";
 import { createMemoryAgentRows } from "../agent-store.ts";
 import { createMemoryBlobStorage } from "../blob-storage.ts";
 import { createBundleStore } from "../bundle-store.ts";
 import { createMemorySecretStore } from "../secret-store.ts";
-import { createTestStore, spawnedAgent } from "../test-utils.ts";
 import { resolveSandbox } from "./resolve.ts";
 import { createSlotCache } from "./slots.ts";
 

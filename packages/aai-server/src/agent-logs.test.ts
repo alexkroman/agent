@@ -1,11 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 import type { LogPage } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
+import { createTestStore } from "./_orchestrator-test-utils.ts";
+import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { emptyLogPage, parseLogPage, readAgentLogs, readGuestLogs } from "./agent-logs.ts";
 import { GUEST_TOKEN_SECRET_ENV, guestTokenFor } from "./guest/token.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
-import { createTestStore, fakeSandbox } from "./test-utils.ts";
 
 const ORIGIN = "wss://tunnel.test:443";
 const LINE = { seq: 0, at: 1, stream: "stdout" as const, text: "hello" };

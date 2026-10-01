@@ -1,8 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { MockWebSocket } from "../_mock-ws.ts";
-import { makeMockCore, silentLogger, sleep } from "../_test-utils.ts";
+import { makeMockCore } from "../_session-test-utils.ts";
+import { sleep } from "../_timing-test-utils.ts";
 import { simulateBinaryFrame } from "./_ws-handler-test-utils.ts";
 import type { ServerSession } from "./core.ts";
 import { createSessionDirectory, type SessionDirectory } from "./directory.ts";

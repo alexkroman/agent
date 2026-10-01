@@ -1,3 +1,3 @@
 {
-  "_comment": "Files allowed to exceed the line caps in check-file-length.mjs. The value is the file's grandfathered ceiling — a file may not grow past it, and the ceiling should only ever be lowered as files are split up. Currently empty: no source or test files are grandfathered. Do not add new entries; refactor instead."
+  "_comment": "Files allowed to exceed the CODE-line caps in check-file-length.mjs (blank and comment-only lines do not count). The value is the file's grandfathered ceiling — a file may not grow past it, and `pnpm file-length:update` only ever lowers or removes entries. Currently empty: no source or test files are grandfathered. Do not add new entries; refactor instead."
 }

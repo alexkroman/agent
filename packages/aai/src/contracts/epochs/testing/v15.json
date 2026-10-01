@@ -3,7 +3,7 @@
   "capability": "testing",
   "epoch": 15,
   "rule": 2,
-  "sha256": "f419e2baf3c90030678f688ace560f4422313a4b389f22de7a913cdb36dd2ce8",
+  "sha256": "7bb808b91fbe6217137d4ea24a2343673c95c1f027c81043bba94fdd16787656",
   "exports": [
     "DeployedConfig",
     "DeployedStage",
@@ -131,5 +131,20 @@
     "toolOf",
     "toolRunner"
   ],
-  "rollup": "db9efbc2397243527305e3ce85ae47e14647a7679a03aa25ac78c311f2500ef7"
+  "rollup": "db9efbc2397243527305e3ce85ae47e14647a7679a03aa25ac78c311f2500ef7",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "f419e2baf3c90030678f688ace560f4422313a4b389f22de7a913cdb36dd2ce8",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "7bb808b91fbe6217137d4ea24a2343673c95c1f027c81043bba94fdd16787656",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

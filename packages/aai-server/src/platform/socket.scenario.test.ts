@@ -23,9 +23,10 @@ import {
 import { getRequestListener } from "@hono/node-server";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import WebSocket from "ws";
+import { createTestStore, NO_CLIENT_DIR } from "../_orchestrator-test-utils.ts";
+import { bearerFor } from "../_request-test-utils.ts";
 import { createOrchestrator } from "../orchestrator.ts";
 import { createSlotCache } from "../sandbox/slots.ts";
-import { bearerFor, createTestStore, NO_CLIENT_DIR } from "../test-utils.ts";
 import { createMemoryPlatformEvents } from "./events.ts";
 
 const SLUG = "socket-agent";

@@ -17,8 +17,8 @@ import type { TtsProvider } from "@alexkroman1/aai/tts";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "../generate.ts";
 import type { HostAgentOptions } from "../host-agent-options.ts";
-import type { S2sConfig } from "../runtime-config.ts";
 import type { CreateS2sWebSocket } from "../s2s/index.ts";
+import type { S2sConfig } from "../s2s-config.ts";
 import type { ServerSession, SessionEventStream, SessionWebSocket } from "../session/index.ts";
 import type { ExecuteTool } from "../tools/index.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "../transports/openai-realtime-transport.ts";
@@ -128,7 +128,7 @@ export type AgentRuntime = {
   readonly readyConfig: ReadyConfig;
   /**
    * `ctx.workflows` for this runtime — the same client tool code is given, and
-   * what {@link createRuntimeServer} serves `/workflows/*` from. Undefined for an agent
+   * what {@link createServerForRuntime} serves `/workflows/*` from. Undefined for an agent
    * that declares none, which is what makes that API answer 404 rather than
    * pretending to a surface the agent does not have.
    */
@@ -158,7 +158,7 @@ export type AgentRuntime = {
    */
   readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
   /**
-   * This runtime's session event stream — what {@link createRuntimeServer} serves
+   * This runtime's session event stream — what {@link createServerForRuntime} serves
    * `/session-events/:id` from, and what a resuming session reads its
    * conversation back out of.
    *
@@ -169,7 +169,7 @@ export type AgentRuntime = {
    */
   readonly sessionEvents?: SessionEventStream | undefined;
   /**
-   * Answer one request to the agent's `routes` — what {@link createRuntimeServer}
+   * Answer one request to the agent's `routes` — what {@link createServerForRuntime}
    * serves `/api/*` from, the request already parsed (path without the prefix,
    * first value per query key, a JSON body, a validated `?client=`).
    *
@@ -404,7 +404,7 @@ export type HostRuntimeOptions = RuntimeOptions & {
  * a handle a caller RECEIVES may grow a member in a minor release without
  * breaking anybody, because nobody outside this package can have written one by
  * hand. A double for a server spec implements `SessionRuntime`, which is what
- * `createRuntimeServer` takes, and is not sealed.
+ * `createServerForRuntime` takes, and is not sealed.
  *
  * @public
  */

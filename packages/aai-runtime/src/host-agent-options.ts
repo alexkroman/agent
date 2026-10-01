@@ -24,7 +24,7 @@
 import type { AgentDef } from "@alexkroman1/aai";
 import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
-import type { Logger } from "./runtime-config.ts";
+import type { Logger } from "./logger.ts";
 
 /**
  * What every entry point that runs an agent definition takes — see the module

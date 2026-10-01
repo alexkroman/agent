@@ -14,8 +14,8 @@
 
 import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { debugPartialsEnabled, type Logger } from "../../../logger.ts";
 import type { SttTurnMeta } from "../../../providers/openers.ts";
-import { debugPartialsEnabled, type Logger } from "../../../runtime-config.ts";
 import type { TransportCallbacks } from "../../types.ts";
 import type { FalseInterruptionRecovery } from "../heard/index.ts";
 import { createBargeInPolicy } from "./barge-in-policy.ts";

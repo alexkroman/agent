@@ -1,6 +1,6 @@
 /** The def a DEPLOYED agent runs: authored, plus the `system-prompt.md` beside it. */
 import agentDef from "virtual:aai/agent";
-import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
+import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 
 /**

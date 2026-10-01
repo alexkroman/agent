@@ -24,8 +24,8 @@ try {
 }
 ```
 
-**An eval FILE imports `@alexkroman1/aai-runtime/eval/vitest`, not this.**
-That subpath is the one author-facing entry point: it re-exports every name
+**An eval FILE imports `@alexkroman1/aai-runtime/testing/vitest`, not this.**
+That subpath (through `/eval/vitest`, which it re-exports) re-exports every name
 here, plus `describeEval` (the credential gate, the scripted-model fallback
 and the per-case session, so a case is its assertions and nothing else) and
 the `@alexkroman1/aai/testing` stubs a case composes with. This subpath is the
@@ -452,7 +452,13 @@ readonly \{
 function evalCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
 ```
 
-Can this machine run evals against `agent`?
+Can this machine run evals against `agent` — a VOICE agent, through
+[openEvalSession](#openevalsession) / `describeEval`?
+
+One of three gates, one per harness, because each asks which keys ITS run
+dials: this for a voice session, `evalTextCredentials` for a `mode: "text"`
+agent (`openEvalTextAgent`), `evalWorkflowCredentials` for a workflow app
+(`openEvalWorkflows`). The `describe*Eval` suites call the right one.
 
 An eval spends real tokens on a real key, so a suite that cannot find one has
 to SKIP — and a silent skip is the worst outcome available, because a green
@@ -556,7 +562,7 @@ function evalTextCredentials(agent: AgentDef, hostEnv?: Record<string, string | 
 ```
 
 Can this machine run a TEXT agent's eval live, and if not, which key is
-missing?
+missing? The gate for [openEvalTextAgent](#openevaltextagent) / `describeTextEval`.
 
 The sibling of `evalCredentials`, and separate because that one OVER-ASKS
 here: it answers about a voice agent, so an agent with no complete pipeline
@@ -590,7 +596,8 @@ this does, so the question is asked about the model the run would use.
 function evalWorkflowCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
 ```
 
-Can this machine run workflow evals against `agent`?
+Can this machine run workflow evals against `agent`? The gate for
+[openEvalWorkflows](#openevalworkflows) / `describeWorkflowEval`.
 
 The sibling of `evalCredentials`, and it is a DIFFERENT question rather than a
 convenience wrapper: `requiredProviderEnvVars` answers `[]` for a
@@ -935,17 +942,16 @@ function lastToolResultIn<T = unknown>(
 
 The result of the LAST call to `name` in `calls`, parsed.
 
+One of three result readers, told apart by how many calls the claim allows:
+[toolResultIn](#toolresultin) — EXACTLY one (zero or two throw); this — at least one,
+the settled last; [toolResultsIn](#toolresultsin) — every call, in order (zero is `[]`).
+
 [toolResultIn](#toolresultin) refuses a scope holding two calls to one tool, and that
 refusal is right for a single TURN: two calls there is usually the finding.
 Across turns it is ordinary — a caller nudges, the agent re-reads the state,
 and a case reading `toolCallsInTurns(turns)` meets a duplicate through no
-fault of the agent's.
-
-That left the reader pushing cases back onto single-turn scopes, which is
-exactly the wrong direction: a live model calls a median of one tool per reply
-(`DEFAULT_MAX_STEPS`), so the claims that survive it are the ones read across
-turns. One eval was restructured to give a tool its own turn purely to dodge
-the refusal.
+fault of the agent's — and a live model calls a median of one tool per reply
+(`DEFAULT_MAX_STEPS`), so the claims that survive it are read across turns.
 
 The LAST rather than the first, because a repeated call is the agent settling
 on an answer and the settled one is what the caller was told.
@@ -965,9 +971,6 @@ export function finalScore(turns: readonly EvalTurn[]): number {
   return scored.score;
 }
 ```
-
-Use [toolResultIn](#toolresultin) when "exactly once" is part of the claim. This is for
-when it is not.
 
 #### Type Parameters
 
@@ -1556,7 +1559,9 @@ function toolResultIn<T = unknown>(
 ): T;
 ```
 
-The result of the ONE call to `name` in `calls`, parsed.
+The result of the ONE call to `name` in `calls`, parsed — zero calls or two
+throw. [lastToolResultIn](#lasttoolresultin) allows repeats; [toolResultsIn](#toolresultsin) reads
+them all.
 
 `EvalToolCall.result` is the serialized string the model was handed, so every
 eval that asserts on what a tool ANSWERED was parsing and indexing it by
@@ -1601,7 +1606,8 @@ function toolResultsIn<T = unknown>(
 ```
 
 Every call to `name` in `calls`, with its RESULT parsed — what each answered,
-in call order.
+in call order. The plural of [toolResultIn](#toolresultin) (exactly one) and
+[lastToolResultIn](#lasttoolresultin) (the last of several).
 
 [toolResultIn](#toolresultin) refuses more than one call on purpose: "the one call to
 X" is the common claim and two of them is usually a finding. The plural is the

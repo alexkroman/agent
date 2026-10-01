@@ -1,7 +1,7 @@
 /** The def a DEPLOYED agent runs: authored, plus what `system-prompt.md` says. */
 import agentDef from "virtual:aai/agent";
 import { MCP_TOOL_NAME_MAX, MCP_TOOL_PREFIX, mcpToolName } from "@alexkroman1/aai";
-import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
+import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai-runtime/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ARCHIVE_KEY, ARCHIVE_TOKEN_ENV, ARCHIVE_URL_ENV } from "./agent.ts";
 import promptFile from "./system-prompt.md?raw";
@@ -131,10 +131,10 @@ describe("the archive MCP server", () => {
 
   test("is absent out of the box, so the starter deploys with no credential", () => {
     // The whole reason the declaration is gated. An `mcpServers` entry pointing
-    // at a URL nobody configured is a connect attempt on every boot, and a
-    // `requiredEnv` naming a token nobody set is a deploy that refuses to
-    // happen — either one turns "runs the moment it is deployed" into a
-    // support question, in the template most likely to be somebody's first.
+    // at a URL nobody configured is a connect attempt on every boot, and its
+    // `tokenEnv` is a credential the deploy preflight would ask for — either
+    // one turns "runs the moment it is deployed" into a support question, in
+    // the template most likely to be somebody's first.
     const config = expectDeployable(agentDef);
     expect(config.mcpServers).toBeUndefined();
     expect(config.requiredEnv).toBeUndefined();
@@ -150,7 +150,7 @@ describe("the archive MCP server", () => {
     expect(promptFile).toContain(MCP_TOOL_PREFIX);
   });
 
-  test("pointing the URL variable at a server declares it, and asks a deploy for the token", async () => {
+  test("pointing the URL variable at a server declares it, with its token by name", async () => {
     vi.stubEnv(ARCHIVE_URL_ENV, ARCHIVE_URL);
     vi.resetModules();
     const configured = (await import("virtual:aai/agent")).default;
@@ -161,11 +161,9 @@ describe("the archive MCP server", () => {
     expect(config.mcpServers).toEqual({
       [ARCHIVE_KEY]: { url: ARCHIVE_URL, tokenEnv: ARCHIVE_TOKEN_ENV },
     });
-    // And the token is in `requiredEnv` too. NOTHING derives one from the other
-    // — `requiredEnv` is what a deploy preflights — so this is the assertion
-    // that fails when a future edit adds a second server and forgets its token,
-    // which otherwise surfaces as a session quietly missing those tools.
-    expect(config.requiredEnv).toContain(ARCHIVE_TOKEN_ENV);
+    // The token is NOT repeated in `requiredEnv`: a deploy preflight derives
+    // every `tokenEnv` the way it derives provider credentials.
+    expect(config.requiredEnv).toBeUndefined();
   });
 
   test("its tools reach the model namespaced, inside the name length a provider accepts", () => {

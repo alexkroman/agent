@@ -18,10 +18,9 @@
  */
 
 import { FatalError } from "@alexkroman1/aai/step-errors";
-import { parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
-import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowTestStep } from "@alexkroman1/aai-runtime/testing";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+import { parseSchemaInput, runWorkflow, schemaInputIssues } from "@alexkroman1/aai-runtime/testing";
+import { installStubGateway } from "@alexkroman1/aai-runtime/testing/vitest";
 import { fieldKindFor } from "@alexkroman1/aai-ui";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
@@ -251,7 +250,7 @@ describe("the steps", () => {
 
   describe("writeDraft", () => {
     test("returns the piece the model wrote, trimmed", async () => {
-      const calls = stubGateway("\n  A draft about 402s.  \n");
+      const calls = installStubGateway("\n  A draft about 402s.  \n");
       expect(await writeDraft(INPUT)).toBe("A draft about 402s.");
       // The brief reaches the writer — otherwise it writes something else well.
       expect(calls[0]?.prompt).toContain("how to raise the cap");
@@ -261,7 +260,7 @@ describe("the steps", () => {
       // The schema's `.min(20)` counts CHARACTERS, so twenty spaces validate at
       // `start()` and arrive here as nothing to write from. No number of
       // attempts makes a brief longer, so it is fatal rather than retryable.
-      stubGateway("unused");
+      installStubGateway("unused");
       await expect(writeDraft({ ...INPUT, brief: " ".repeat(25) })).rejects.toThrow(/too short/);
     });
 
@@ -270,7 +269,7 @@ describe("the steps", () => {
       // already has one — and its verdict is the one that matters: retryable, so
       // a blank answer costs an attempt rather than the run. A hand-written
       // check here would have to re-derive that and could get it wrong.
-      stubGateway("   ");
+      installStubGateway("   ");
       const failure = await writeDraft(INPUT).catch((err: unknown) => err);
       expect(failure).toBeInstanceOf(Error);
       expect(failure).not.toBeInstanceOf(FatalError);
@@ -280,7 +279,7 @@ describe("the steps", () => {
 
   describe("acceptDraft", () => {
     test("hands the attached file's text to the loop, trimmed, and calls no model", async () => {
-      const calls = stubGateway("nothing should ask for this");
+      const calls = installStubGateway("nothing should ask for this");
       expect(await acceptDraft({ ...ATTACHED, text: `\n  ${ATTACHED.text}  \n` })).toBe(
         ATTACHED.text.trim(),
       );
@@ -307,7 +306,7 @@ describe("the steps", () => {
 
   describe("critiqueDraft", () => {
     test("returns the verdict the body branches on, with the score clamped", async () => {
-      stubGateway('{"verdict":"ship","score":42,"notes":["nothing major"]}');
+      installStubGateway('{"verdict":"ship","score":42,"notes":["nothing major"]}');
       const critique = await critiqueDraft("A draft.", INPUT, 1);
       expect(critique.verdict).toBe("ship");
       expect(critique.score).toBe(10);
@@ -315,13 +314,13 @@ describe("the steps", () => {
 
     test("keeps at most the notes the prompt asked for", async () => {
       const notes = JSON.stringify(["a", "b", "c", "d", "e"]);
-      stubGateway(`{"verdict":"revise","score":6,"notes":${notes}}`);
+      installStubGateway(`{"verdict":"revise","score":6,"notes":${notes}}`);
       const critique = await critiqueDraft("A draft.", INPUT, 1);
       expect(critique.notes).toHaveLength(MAX_NOTES);
     });
 
     test("unwraps a fenced reply rather than failing on it", async () => {
-      stubGateway('```json\n{"verdict":"revise","score":5,"notes":["thin"]}\n```');
+      installStubGateway('```json\n{"verdict":"revise","score":5,"notes":["thin"]}\n```');
       expect((await critiqueDraft("A draft.", INPUT, 1)).notes).toEqual(["thin"]);
     });
 
@@ -329,7 +328,7 @@ describe("the steps", () => {
       // The distinction that is the whole retry policy: a model that ignored the
       // format may well obey on the next attempt, where a 401 will not. Plain
       // means NOT a `FatalError`, which is what the DevKit stops retrying on.
-      stubGateway("I think the draft is pretty good, honestly.");
+      installStubGateway("I think the draft is pretty good, honestly.");
       const err = await critiqueDraft("A draft.", INPUT, 1).catch((thrown: unknown) => thrown);
 
       expect(FatalError.is(err)).toBe(false);
@@ -340,7 +339,7 @@ describe("the steps", () => {
       // Anything else would be read as "not ship" and quietly cost a round. The
       // schema NAMES the field, which the hand-written guard this replaced could
       // not: it answered a bare false.
-      stubGateway('{"verdict":"looks fine","score":8,"notes":[]}');
+      installStubGateway('{"verdict":"looks fine","score":8,"notes":[]}');
       await expect(critiqueDraft("A draft.", INPUT, 1)).rejects.toThrow(
         /did not match the shape: verdict/,
       );
@@ -351,14 +350,14 @@ describe("the steps", () => {
     const CRITIQUE = { verdict: "revise" as const, score: 5, notes: ["Say what to do about it."] };
 
     test("sends the notes to the reviser and returns the revision", async () => {
-      const calls = stubGateway("A better draft about 402s.");
+      const calls = installStubGateway("A better draft about 402s.");
       const revised = await reviseDraft("A draft.", CRITIQUE, INPUT, 1);
       expect(revised).toBe("A better draft about 402s.");
       expect(calls[0]?.prompt).toContain("Say what to do about it.");
     });
 
     test("trims what the model returned, since it goes on to be the output", async () => {
-      stubGateway("\n  A better draft.  \n");
+      installStubGateway("\n  A better draft.  \n");
       expect(await reviseDraft("A draft.", CRITIQUE, INPUT, 1)).toBe("A better draft.");
     });
   });
@@ -375,7 +374,7 @@ describe("the steps", () => {
  * to take the same branch on every walk.
  *
  * The model is the whole world here (`writeDraft`, `critiqueDraft` and
- * `reviseDraft` are all `orFail(stepGenerate*)`), so `stubGateway`'s scripted
+ * `reviseDraft` are all `orFail(stepGenerate*)`), so `installStubGateway`'s scripted
  * replies ARE the run, and its call log is what proves a replay did not pay for
  * a round twice. Scripted in body order, with the last reply repeating.
  */
@@ -393,7 +392,7 @@ describe("the run is DURABLE", () => {
   });
 
   test("stops on the CRITIC's verdict, and journals one step per call site reached", async () => {
-    const model = stubGateway(["A draft about 402s.", SHIP]);
+    const model = installStubGateway(["A draft about 402s.", SHIP]);
     const run = await runWorkflow(redline, { ...BRIEF, rounds: 3 }, { name: "redline" });
 
     expect(run.status).toBe("completed");
@@ -410,7 +409,7 @@ describe("the run is DURABLE", () => {
     // The branch is on the INPUT, so the journal is the record of it: the walk
     // reached `acceptDraft`, never `writeDraft`, and did so without spending a
     // model call — the desk's first is the critique.
-    const model = stubGateway([SHIP]);
+    const model = installStubGateway([SHIP]);
     const run = await runWorkflow(
       redline,
       { ...BRIEF, rounds: 3, source: ATTACHED },
@@ -430,7 +429,7 @@ describe("the run is DURABLE", () => {
     // the input needs no journaled RESULT to be stable, because the input is the
     // same object on every walk. What a resume must not do is change its mind
     // and go looking for a `writeDraft#0` this run never wrote.
-    const model = stubGateway([REVISE, "A better draft.", SHIP]);
+    const model = installStubGateway([REVISE, "A better draft.", SHIP]);
     const run = await runWorkflow(
       redline,
       { ...BRIEF, rounds: 3, source: ATTACHED },
@@ -456,7 +455,7 @@ describe("the run is DURABLE", () => {
   test("a file with nothing in it fails the run rather than quietly writing one", async () => {
     // `acceptDraft` asks for ONE attempt, so a fatal guard is the whole story:
     // the run fails, and the journal shows the desk never fell back to writing.
-    const model = stubGateway(["nothing should ask for this"]);
+    const model = installStubGateway(["nothing should ask for this"]);
     const run = await runWorkflow(
       redline,
       { ...BRIEF, rounds: 3, source: { name: "empty.md", text: " ".repeat(MIN_DRAFT_CHARS + 5) } },
@@ -471,7 +470,7 @@ describe("the run is DURABLE", () => {
 
   test("journals a round per iteration, so `critiqueDraft#1` is round two", async () => {
     // Revise, revise, then ship: the loop runs to its budget of three.
-    const model = stubGateway([
+    const model = installStubGateway([
       "A draft about 402s.",
       REVISE,
       "A better draft.",
@@ -498,7 +497,7 @@ describe("the run is DURABLE", () => {
     // The claim the module doc makes and nothing could check: "a rate limit in
     // round three replays rounds one and two from the journal for free and
     // re-issues only the call that failed."
-    const model = stubGateway(["A draft about 402s.", REVISE, "A better draft.", SHIP]);
+    const model = installStubGateway(["A draft about 402s.", REVISE, "A better draft.", SHIP]);
     const run = await runWorkflow(
       redline,
       { ...BRIEF, rounds: 3 },
@@ -530,7 +529,7 @@ describe("the run is DURABLE", () => {
     // walk; the model is then scripted to say "revise" to anything asked
     // afterwards. A body that re-decided the loop on a fresh model call would
     // carry on revising — a body that reads its journaled verdict cannot.
-    const model = stubGateway(["A draft about 402s.", SHIP, REVISE]);
+    const model = installStubGateway(["A draft about 402s.", SHIP, REVISE]);
     const run = await runWorkflow(
       redline,
       { ...BRIEF, rounds: 3 },

@@ -43,7 +43,7 @@
     "packages/aai-runtime/src/session/ws-frames.ts": 1,
     "packages/aai-server/src/modal/harness-image.test.ts": 1,
     "packages/aai-server/src/serve-lifecycle.ts": 2,
-    "packages/aai-server/src/test-utils.ts": 1,
+    "packages/aai-server/src/_modal-test-utils.ts": 1,
     "packages/aai-studio-server/src/_studio-session-test-utils.ts": 1,
     "packages/aai-studio-server/src/studio-session-idle.test.ts": 2,
     "packages/aai-studio-server/src/studio-static.test.ts": 2,

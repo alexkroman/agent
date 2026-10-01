@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { MAX_TOOL_RESULT_CHARS } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { stringifyResult, warnOversizedResult } from "./result-text.ts";
 
 describe("stringifyResult", () => {

@@ -27,7 +27,7 @@ import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { capToolResult } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { runToolCall, type ToolCallContext, toolResultMessage } from "../tools/index.ts";
 import type { SessionEmitter } from "./emitter.ts";
 

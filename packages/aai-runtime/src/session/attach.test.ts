@@ -11,7 +11,8 @@ import type { SessionEvent } from "@alexkroman1/aai";
 
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
-import { makeClientSink, makeMockCore, silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
+import { makeClientSink, makeMockCore } from "../_session-test-utils.ts";
 import { type AttachSessionOptions, attachSession } from "./attach.ts";
 import type { ServerSession } from "./core.ts";
 import { createSessionDirectory } from "./directory.ts";

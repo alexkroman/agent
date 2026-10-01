@@ -23,7 +23,7 @@
  */
 
 import { projectKey, splitProjectKey } from "./platform/events.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 /** A stored workspace document with its optimistic-concurrency version. */
 export type WorkspaceRecord = {

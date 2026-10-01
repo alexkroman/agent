@@ -22,7 +22,7 @@ import type { TextStreamPart, ToolSet } from "ai";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
-import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { saidIn, TURN_ENDS, toolCallsInEvents, toolNames } from "../eval/events.ts";
 import { createTextAgent } from "./agent.ts";
 import { createTextAgentEvents } from "./events.ts";

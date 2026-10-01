@@ -32,15 +32,19 @@
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { createWorkflowContext, stubSpeech, WORKFLOW_CONTEXT_NOW } from "@alexkroman1/aai/testing";
+import {
+  createWorkflowContext,
+  runWorkflow,
+  stubSpeech,
+  WORKFLOW_CONTEXT_NOW,
+} from "@alexkroman1/aai-runtime/testing";
 import {
   installStubGateway,
   installStubReporter,
   installStubSpeech,
   installStubTranscribe,
   installStubUploads,
-} from "@alexkroman1/aai/testing/vitest";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { audit } from "./agent.ts";
 import {

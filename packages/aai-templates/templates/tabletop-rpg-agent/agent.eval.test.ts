@@ -46,7 +46,7 @@ import {
   type EvalTurn,
   toolResultIn,
   toolResultsIn,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import type setupCharacter from "./tools/setup_character.ts";

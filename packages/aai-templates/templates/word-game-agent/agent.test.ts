@@ -2,14 +2,14 @@
 import agentDef from "virtual:aai/agent";
 import type { Message, ToolContext } from "@alexkroman1/aai";
 import { createSeededRandom } from "@alexkroman1/aai";
-import type { ToolContextOverrides } from "@alexkroman1/aai/testing";
+import type { ToolContextOverrides } from "@alexkroman1/aai-runtime/testing";
 import {
   createToolContext,
   expectDialogOk,
   expectDialogRefused,
   stubGenerate,
   toolRunner,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { endsRound, gameFlow, TIME_UP_LINE } from "./game.ts";
 import { containsWord, isCorrectGuess, normalizeWord } from "./guess.ts";
@@ -17,7 +17,6 @@ import { PLAYER_SYSTEM, playerPrompt } from "./player.ts";
 import {
   currentWord,
   GAME_SECONDS,
-  gameProjection,
   gameSlot,
   gameView,
   secondsLeft,
@@ -337,7 +336,7 @@ describe("a round", () => {
   });
 
   test("an untouched session projects the idle frame the client renders first", () => {
-    expect(gameProjection()).toMatchObject({
+    expect(gameSlot.projected()).toMatchObject({
       phase: "idle",
       word: null,
       score: 0,

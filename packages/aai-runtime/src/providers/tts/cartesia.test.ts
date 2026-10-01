@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { flush } from "../../_test-utils.ts";
+import { flush } from "../../_timing-test-utils.ts";
 import { type CartesiaSession, openCartesia } from "./cartesia.ts";
 
 interface RecordedSend {

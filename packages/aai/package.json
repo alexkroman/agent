@@ -15,6 +15,7 @@
   "files": [
     "dist",
     "AGENT_GUIDE.md",
+    "agent-guide",
     "skills",
     "presets"
   ],
@@ -154,7 +155,7 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=src/host/**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=src/**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
     "typecheck": "tsc --noEmit && tsc -p src/sdk/tsconfig.json"
   },
   "dependencies": {

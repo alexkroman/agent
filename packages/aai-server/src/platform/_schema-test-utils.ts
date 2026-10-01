@@ -2,15 +2,11 @@
 /**
  * The platform SCHEMA, replayed onto a database under test.
  *
- * Extracted from `test-utils.ts` at the 700-line cap, and the seam is what each
- * half is a fact about. What is left there is test DOUBLES and request builders
- * — a fake sandbox, an SQL recorder, an authenticated `fetch` — every one of
- * them a thing a spec calls. This is the SCHEMA: it reads the repo's own
- * migration files and either verifies a CLI-built database against its ledger
- * or replays the statements itself, which is a subject with its own hazards
- * (a THIRD applier of this schema, a sentinel that must not go true early, a
- * regex over prose that once executed a `drop` out of a sentence) and its own
- * failure modes.
+ * It reads the repo's own migration files and either verifies a CLI-built
+ * database against its ledger or replays the statements itself — a THIRD
+ * applier of this schema, with a sentinel that must not go true early.
+ * Re-exported to `aai-studio-server` through the `aai-server/test-utils`
+ * barrel, which is why the barrel, not this file, carries the subpath name.
  *
  * `ensurePlatformTables` is the door. Everything else here is what it needs.
  *
@@ -19,7 +15,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 
 /**
  * Create the `aai_platform` tables on the database under test, if it has none.

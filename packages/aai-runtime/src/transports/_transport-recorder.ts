@@ -10,7 +10,7 @@
  * in for the thing that fires a callback has to satisfy its whole shape. There is
  * one shape left to satisfy and one place that satisfies it.
  *
- * Deliberately does NOT import `../_test-utils.ts`: that module's exports are
+ * Deliberately does NOT import the `../_*-test-utils.ts` helpers: their exports are
  * vitest-spy-typed and excluded from the declaration build, while this file is
  * compiled by it.
  *

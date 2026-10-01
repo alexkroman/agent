@@ -103,11 +103,10 @@ export type StudioRouteOptions = {
   rateLimiters?: StudioRateLimiters | undefined;
   /** Test seam: swap the deploy pipeline without module mocks. */
   deployProject?: typeof deployStudioProject;
-  /** Test seam: swap the coding-agent session broker. */
-  broker?: (stores: {
-    workspaces: StudioHonoEnv["Bindings"]["workspaces"];
-    chats: StudioHonoEnv["Bindings"]["chats"];
-  }) => StudioSessionBroker;
+  /** Test seam: swap the coding-agent session broker factory. */
+  broker?: typeof createStudioSessionBroker;
+  /** Test seam: swap the project-preview wake (studio-preview-wake.ts). */
+  wakePreview?: typeof wakeProjectPreview;
   /**
    * Cross-replica studio session registry + this replica's identity. Both or
    * neither: the registry's `owner` checks are meaningless without a distinct
@@ -148,6 +147,7 @@ export function createStudioRoutes(options: StudioRouteOptions): {
   dispose: () => Promise<void>;
 } {
   const deploy = options.deployProject ?? deployStudioProject;
+  const wakePreview = options.wakePreview ?? wakeProjectPreview;
   // One broker per app instance, created lazily on the first session request
   // (the stores ride on the request env). Per-replica, like the slot cache.
   let broker: StudioSessionBroker | undefined;
@@ -231,7 +231,7 @@ export function createStudioRoutes(options: StudioRouteOptions): {
    * studio-settled-edit.ts).
    */
   const wake = (c: Context<StudioHonoEnv>, scope: string, project: string): void =>
-    wakeProjectPreview({
+    wakePreview({
       workspaces: c.env.workspaces,
       scope,
       project,

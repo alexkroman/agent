@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { captureLogs } from "../test-utils.ts";
+import { captureLogs } from "../_logger-test-utils.ts";
 import { announceDirectDbHost, platformPoolerUrl } from "./connection-config.ts";
 
 /** Supabase's direct endpoint, and Supavisor's — the pair every rule here sorts. */

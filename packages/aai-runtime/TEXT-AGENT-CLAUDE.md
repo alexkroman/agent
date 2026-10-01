@@ -7,11 +7,8 @@ read_when: >-
 
 # TEXT-AGENT-CLAUDE.md — driving an agent from text, and the eval surface
 
-A sibling of `CLAUDE.md` rather than a section in it, for the reason that guide
-already gives for [`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md): this is REFERENCE —
-which subpath an eval imports, what a keyless run gets — rather than a rule that
-has to be resident in every agent's context. It moved when the guide crossed the
-120,000-char cap; nothing in it changed.
+Reference: which subpath an eval imports, what a keyless run gets, and how
+text mode drives an agent.
 
 ## Driving an agent from text is a published surface
 
@@ -22,16 +19,12 @@ and its slots, history trimming, the step budget, the event stream — with the
 two speech stages replaced by fakes, and hands back a `say()` that returns the
 TURN it provoked.
 
-**It was `aai-evals/session-target.ts` + `stub-speech.ts`, and publishing it is
-what the templates forced.** That harness could answer the one question nothing
-else in the repo could ("given this utterance, did the agent do the right
-thing"), and it could only ever answer it about agents living in this repo. A
-user's project — and every template, which IS a user's project — had no way to
-ask it at all, and the alternative was each project reimplementing the two
-documented harness bugs `eval/stub-speech.ts` and `eval/session.ts` record in
-place (a fake TTS that forwards silence turns every case after the greeting into
-a barge-in; a `say()` that waits for "a reply" settles on the PREVIOUS one).
-`aai-evals` now imports it, so there is one copy of both.
+**It is published so a user's project (and every template, which IS one) can
+ask "given this utterance, did the agent do the right thing".** `aai-evals`
+imports the same surface, so there is one copy of the two harness rules
+`eval/stub-speech.ts` and `eval/session.ts` record in place: a fake TTS that
+forwards silence turns every case after the greeting into a barge-in, and a
+`say()` that waits for "a reply" settles on the PREVIOUS one.
 
 Four decisions worth not relitigating:
 
@@ -149,7 +142,7 @@ harness:
   close; its answer-an-empty-step-past-the-end rule is also wrong for a harness
   that cannot know how many model calls a turn will make. The MODE decision and
   the announce stay with whoever owns the policy (`describeEval`, or
-  `aai-evals`' `_gate.ts`), as they do for `openEvalSession` — with no
+  `aai-evals`' `gate.ts`), as they do for `openEvalSession` — with no
   credential and no `llm` this throws from `resolveLlm` at open time naming the
   env var.
 - **`evalCredentials` over-asks for a text agent, so there is a second gate.**
@@ -183,7 +176,7 @@ client through the options, and the automatic open is missing because nothing
 has needed it rather than for a reason.
 
 `templates/coding-agent` is the worked example, and it is what forced this: a
-template's eval must import `@alexkroman1/aai-runtime/eval/vitest`
+template's eval must import `@alexkroman1/aai-runtime/testing/vitest`
 (konsistent's `template-eval-spec`), and before this the only thing there for a
 text agent was a voice suite that would refuse it.
 
@@ -236,14 +229,16 @@ ordering has no value to hand back, and the two `findIndex`-and-`toBeLessThan`
 copies it replaced failed as "expected 4 to be less than 2", naming neither the
 sentence spoken too early nor the tool.
 
-### A template eval imports from `/eval` and `/eval/vitest`, and NOWHERE else
+### A template eval imports from `/testing` and `/testing/vitest`, and NOWHERE else
 
-**That is konsistent's `template-eval-runtime-subpaths`** — the root barrel and
-`/testing` refused for `templates/**/*.eval.test.ts`, `/internal` already
-refused for every template file by `template-authoring-boundary`, which is a
-complete deny-list over this package's export map. Its description carries the
-argument, including why `/eval` re-exports `RunCodeExecutor` rather than letting
-a template reach past it for a type.
+**That is konsistent's `template-testing-doors`** (the SDK's `/testing`
+subpaths, `/eval` and `/eval/vitest` refused in every template file) **plus
+`template-eval-runtime-subpaths`** (the root barrel, `/auth`, `/metrics` and
+`/tracing` refused for `templates/**/*.eval.test.ts`), with `/internal` already
+refused by `template-authoring-boundary` — together a complete deny-list over
+this package's export map minus the two doors. The descriptions carry the
+argument, including why `/eval` re-exports `RunCodeExecutor` rather than
+letting a template reach past it for a type.
 
 ### A workflow app is evaluated by RUNNING it
 
@@ -278,8 +273,8 @@ tier that does.
 
 **Three things a workflow eval CANNOT reach, each costing a real case.**
 `createHook()` throws untransformed and — unlike `sleep()`, whose slot the
-engine publishes into — offers no seam to fill (`@workflow/core`'s
-`create-hook.js` throws unconditionally), so `meeting-recap-agent`'s retention
+engine publishes into — offers no seam to fill (`@workflow/core`'s hook
+creation throws unconditionally), so `meeting-recap-agent`'s retention
 gate, its headline port of Temporal's `expense`, is unevaluable and its eval
 says so rather than asserting around it. `wakeUp` answers `0`, so a "send it
 now" tool can only ever report that nothing was waiting. And because `sleep` is
@@ -486,7 +481,8 @@ play the user — a `persona` and a `goal` — against an `EvalSession` or an
 `EvalTextAgent`, until it calls `end_call` or `maxTurns` runs out.
 `judgeCall(input, { criteria, llm })` (`eval/judge.ts`) has a model rule on each
 criterion over the result. Both are their own `eval-simulate` capability, on
-`@alexkroman1/aai-runtime/eval/vitest` (the one eval import) and the runner-free
+`@alexkroman1/aai-runtime/eval/vitest` (re-exported by `/testing/vitest`, the
+eval file's door) and the runner-free
 `/eval` — they once had a subpath of their own — and a
 `describeEval`/`describeTextEval` case builds the pair with
 `evalSimulation({ agent, mode, target: session })`
@@ -574,12 +570,11 @@ the pieces to make it for free.
   stack and an assertion's `expected`/`actual` (the diff) survive. The same
   view is public as `transcriptOf(session, network?)` on `/eval`.
 
-  Two bugs the filter had on its first draft, both fixed and both worth not
-  reintroducing: a filtered case was counted as a MODE skip, so the coverage
-  line said "2 skipped as live-only" about cases carrying no marker; and a
-  filter matching nothing tripped `registerEmptySuiteFailure`, which would fail
-  27 suites for a filter aimed at the 28th. `aai-evals/_register.ts` had already
-  reached that second conclusion for the same reason, and warns.
+  Two rules for the filter: a filtered case is NOT a mode skip (the coverage
+  line must not call an unmarked case "live-only"), and a filter matching
+  nothing WARNS rather than tripping `registerEmptySuiteFailure`, which would
+  fail every other suite for a filter aimed at one (`aai-evals/register.ts`
+  warns for the same reason).
 
 - **`expectCalled(turn, ...names)`** names the tier's most common finding. A
   live model calls a median of ONE tool per reply (`DEFAULT_MAX_STEPS`) and then

@@ -73,7 +73,7 @@ import {
   type ResolvedFailureHandler,
   sayOnClientWorkflow,
 } from "@alexkroman1/aai/host-internal";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { describeCodeChange } from "./code-version.ts";
 import { journalBound, WORKFLOW_JOURNAL_MAX_STEPS } from "./journal/bound.ts";
 import type { JournalStore, SleepEntry, SleepRecord, StepEntry } from "./journal/types.ts";

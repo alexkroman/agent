@@ -11,7 +11,7 @@
  * three front doors (`aai start`, `aai dev`, the guest harness) each call
  * `startTracingDetached` once at boot on their behalf. What is versioned here
  * is therefore mostly a contract with a SELF-HOSTER who embeds
- * `createRuntimeServer` in a process of their own and wants spans out of it —
+ * `createServerForRuntime` in a process of their own and wants spans out of it —
  * they are the ones who call `startTracing` directly and hold its handle.
  *
  * The adoption seam (`adoptRequestTrace`, `setRequestTraceAdopter`) is

@@ -12,8 +12,8 @@
 
 import { workflow } from "@alexkroman1/aai";
 import { afterEach, describe, expect, test } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
-import { serve } from "./api/test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
+import { serve } from "./api/_test-utils.ts";
 import { createWorkflowClient } from "./client.ts";
 import { createInProcessWorkflowEngine } from "./in-process.ts";
 import { createMemoryKeyStore } from "./keys.ts";

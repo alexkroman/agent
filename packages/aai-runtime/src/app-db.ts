@@ -28,7 +28,7 @@
  *
  * ## The registry is a module-level `Map`
  *
- * `createRuntime` and `createRuntimeServer` lease off one map because they are
+ * `createRuntime` and `createServerForRuntime` lease off one map because they are
  * one module instance in every host (see "The server and the sessions are ONE
  * copy" in the package guide).
  */
@@ -50,7 +50,7 @@ import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
  * so the sums that used to size a role's `connection limit` went with the
  * provisioning. What is left is true wherever a `DATABASE_URL` comes from, which
  * on the surviving paths is the AUTHOR's own secret — a self-hosted
- * `createRuntimeServer`, or `aai dev` against a project with one. The `APP_DB_`
+ * `createServerForRuntime`, or `aai dev` against a project with one. The `APP_DB_`
  * prefix is vocabulary from that removed feature; read it as "the database this
  * guest was given", whoever gave it.
  */

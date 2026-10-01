@@ -35,7 +35,7 @@
 
 import type { TurnDetectionMode } from "@alexkroman1/aai";
 import { createRestartableTimer } from "../../../_timer.ts";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 
 /**
  * How long a commit waits for the transcriber's final before answering on the

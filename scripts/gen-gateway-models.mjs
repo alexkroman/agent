@@ -186,8 +186,8 @@ const file = `// Copyright 2026 the AAI authors. MIT license.
 /**
  * The AssemblyAI LLM Gateway model catalog.
  *
- * GENERATED — run \`node scripts/gen-gateway-models.mjs --write\` to refresh,
- * and \`pnpm check:gateway-models\` to verify. Do not hand-edit: every
+ * GENERATED — run \`pnpm gen:gateway-models\` to refresh,
+ * and \`pnpm audit:gateway-models\` to verify. Do not hand-edit: every
  * hand-maintained version of this list was wrong. One carried a deprecated
  * model and one that had never existed while missing nine real ones; another
  * inferred EU availability from id prefixes and produced four models the EU

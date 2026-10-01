@@ -8,8 +8,8 @@
 // _pipeline-transport-harness.ts.
 
 import { describe, expect, test, vi } from "vitest";
+import { silentLogger } from "../../../_logger-test-utils.ts";
 import { createFakeLanguageModel } from "../../../_pipeline-test-fakes.ts";
-import { silentLogger } from "../../../_test-utils.ts";
 import { makeOpts, useVirtualTime } from "../../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "../transport.ts";
 import {

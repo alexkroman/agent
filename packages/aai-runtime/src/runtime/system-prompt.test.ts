@@ -5,7 +5,7 @@
 
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeSessionContext } from "../_test-utils.ts";
+import { makeSessionContext } from "../_agent-test-utils.ts";
 import { createSystemPromptResolver } from "./system-prompt.ts";
 
 const TEST_SESSION_CONTEXT = makeSessionContext();

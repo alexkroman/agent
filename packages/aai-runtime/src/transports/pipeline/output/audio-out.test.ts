@@ -20,7 +20,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeLogger } from "../../../_test-utils.ts";
+import { makeLogger } from "../../../_logger-test-utils.ts";
 import { createHeardTracker } from "../heard/index.ts";
 import { createTurnMachine } from "../turn/index.ts";
 import { createAudioOut } from "./audio-out.ts";

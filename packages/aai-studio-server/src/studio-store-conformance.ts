@@ -18,32 +18,13 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
+// Keys and the sweep pattern are the platform's own (`aai-server/store-conformance.ts`
+// argues why the pid is in the PREFIX): this suite and that package's run in
+// PARALLEL against one database, so each may only sweep what its process wrote.
+import { noParent, uniqueKeys } from "aai-server/test-utils";
 import { afterEach, expect, test } from "vitest";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { StudioSessionRecord, StudioSessionRegistry } from "./studio-session-registry.ts";
-
-/**
- * The prefix every key here carries — see `CONFORMANCE_PREFIX` in
- * `aai-server/store-conformance.ts` for why the pid is in the PREFIX rather than
- * the middle. Short version: this suite and that package's run in PARALLEL
- * against one database, and each ended in an `afterAll` sweeping `conf-%`, which
- * matched the other's live rows.
- *
- * Spelled out here rather than imported so this file keeps needing nothing from
- * that module; disjointness comes from the pid, not from a shared constant.
- */
-export const CONFORMANCE_PREFIX = `conf-${process.pid}-`;
-
-/** The `like` pattern for everything THIS process wrote. */
-export const conformanceLike = (): string => `${CONFORMANCE_PREFIX}%`;
-
-function uniqueKeys(label: string): () => string {
-  let n = 0;
-  return () => `${CONFORMANCE_PREFIX}${label}-${Date.now().toString(36)}-${n++}`;
-}
-
-/** No foreign key to satisfy — the memory arm's `parent`. */
-const noParent = (): Promise<void> => Promise.resolve();
 
 const RECORD = (owner: string): StudioSessionRecord => ({
   chatUrl: "https://guest.example/studio/chat",

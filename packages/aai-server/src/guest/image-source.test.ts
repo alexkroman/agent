@@ -15,8 +15,8 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { captureLogs } from "../_logger-test-utils.ts";
 import { localHarnessImageTag } from "../modal/harness-image.ts";
-import { captureLogs } from "../test-utils.ts";
 import {
   createGuestImageSource,
   GUEST_IMAGE_REGISTRY_ENV,

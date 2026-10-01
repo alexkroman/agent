@@ -4,12 +4,12 @@
 // looking like it works while accepting keys AssemblyAI never issued.
 
 import { describe, expect, test, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
 import {
   createApiKeyVerifierFromEnv,
   createAssemblyAiKeyVerifier,
   DEFAULT_KEY_VERIFY_URL,
 } from "./api-key-verify.ts";
-import { captureLogs } from "./test-utils.ts";
 
 /**
  * A fetch double answering one status for every call, counting calls.

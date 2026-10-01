@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
+import { createTestStore } from "./_orchestrator-test-utils.ts";
 import { hashApiKey, matchAnyHash, verifyApiKeyHash, verifySlugOwner } from "./secrets.ts";
-import { createTestStore } from "./test-utils.ts";
 
 describe("hashApiKey", () => {
   test("produces a self-describing sha256 digest", () => {

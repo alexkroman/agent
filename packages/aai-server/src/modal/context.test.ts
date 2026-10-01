@@ -9,9 +9,9 @@
 
 import { AlreadyExistsError } from "modal";
 import { describe, expect, it, vi } from "vitest";
+import { captureLogs } from "../_logger-test-utils.ts";
 import { SandboxNameTakenError } from "../sandbox/directory.ts";
 import { SandboxUnavailableError } from "../sandbox/errors.ts";
-import { captureLogs } from "../test-utils.ts";
 import { resolveSpawnImage, translateCreateError, translateSpawnFailure } from "./context.ts";
 
 /** A stand-in for a Modal `Image`, identified only by tag. */

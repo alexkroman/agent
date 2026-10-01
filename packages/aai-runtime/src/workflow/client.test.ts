@@ -14,7 +14,7 @@ import { workflow } from "@alexkroman1/aai";
 import type { WorkflowBody, WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { createWorkflowClient, type WdkAdapter, type WdkRunRecord } from "./client.ts";
 import { createMemoryKeyStore, type WorkflowKeyStore } from "./keys.ts";
 
@@ -91,7 +91,7 @@ function chunkStream(chunks: readonly unknown[]): ReadableStream<unknown> {
  * implementation of a plain `vi.fn()`, so a shared one accumulates calls
  * across the whole file — and the two `toHaveBeenCalled` assertions below
  * were then satisfied by a warning an EARLIER test logged. See the doc on
- * `silentLogger` in `_test-utils.ts`, which is built from plain no-ops for
+ * `silentLogger` in `_logger-test-utils.ts`, which is built from plain no-ops for
  * exactly this reason and is not for asserting on.
  */
 function makeClient(

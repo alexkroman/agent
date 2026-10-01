@@ -11,13 +11,9 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
-import {
-  bearerFor,
-  createTestOrchestrator,
-  deployAgent,
-  fakeAdminDbOver,
-  type TestFetch,
-} from "../test-utils.ts";
+import { createTestOrchestrator, type TestFetch } from "../_orchestrator-test-utils.ts";
+import { bearerFor, deployAgent } from "../_request-test-utils.ts";
+import { fakeAdminDbOver } from "../_sql-test-utils.ts";
 
 const MINE = "mine-agent";
 const THEIRS = "theirs-agent";

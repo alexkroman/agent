@@ -30,7 +30,7 @@
 import type { AnyDialog, SlotHolder } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { AnyStateMachine } from "xstate";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { type DialogTurnKnobs, interruptionKnobs } from "../transports/pipeline/index.ts";
 
 /**

@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
-import { flush } from "../../_test-utils.ts";
+import { flush } from "../../_timing-test-utils.ts";
 import { type DeepgramSession, openDeepgram } from "./deepgram.ts";
 
 interface FakeSocket {

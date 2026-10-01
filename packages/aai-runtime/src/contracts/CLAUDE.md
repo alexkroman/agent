@@ -23,16 +23,19 @@ compatible, else `--bump aai-runtime:<capability> --drop "<reason>"` or
 - **A new feature gets its own capability**, and its own subpath when a
   different reader imports it. Adding a feature to an existing capability makes
   every change to it an epoch of that capability; that is why `auth`, `metrics`,
-  `eval-simulate`, `eval-assert` and `eval-stubs` are separate.
+  `eval-simulate`, `eval-assert`, `eval-stubs` and `testing-stubs` are
+  separate.
 - `tools` (one name, `withToolsDir`) is its own capability because it assembles
   the DEFINITION a runtime is handed, not any part of the engine.
-- **A capability is not a subpath.** `/eval/vitest` is the ONE import an eval
-  file needs, so it re-exports every eval capability: `eval` (over `/eval` and
-  `/eval/vitest`), `eval-assert`, `eval-network`, `eval-simulate` (also on
-  `/eval`; it once had a subpath of its own) and `eval-stubs` — the SDK's
-  `aai:testing` stubs re-exported for an eval, owned HERE because dropping one
-  from the door is this package's break. A re-export never moves ownership; each
-  keeps its epoch.
+- **A capability is not a subpath.** The two testing doors re-export across
+  capabilities: `/testing` carries `testing` (the workflow and text drivers),
+  `eval-stubs` and `testing-stubs`; `/testing/vitest` carries every eval
+  capability — `eval`, `eval-assert`, `eval-network`, `eval-simulate`,
+  `eval-stubs` — plus `testing-stubs`' installers, as `/eval/vitest` carries the
+  eval ones. `eval-stubs` and `testing-stubs` are the SDK's `aai:testing` names
+  re-exported here (the first the stubs an eval composes with, the second the
+  rest), owned HERE because dropping one from a door is this package's break. A
+  re-export never moves ownership; each keeps its epoch.
 - Which barrel a name goes on, and the `@internal` rules, are in the package
   guide, "The published surface: two barrels and a rule between them".
 
@@ -49,7 +52,7 @@ tree for which exist.
   front to back, edit points marked, no design commentary.
 - **A template need not exercise every contracted name.** The epoch hash covers
   the capability's whole REPORT, so every name is classification-covered; only
-  compile-time exercise is per name. Deliberately absent: `createRuntimeServer`
+  compile-time exercise is per name. Deliberately absent: `createServerForRuntime`
   / `createHostServer` (a different artifact from the bootstrap) and
   `telnyxCodec` / `twilioCodec` (a third-carrier template is the alternative to
   them). Do not contort a starter into a catalogue.

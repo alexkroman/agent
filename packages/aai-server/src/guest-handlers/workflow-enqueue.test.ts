@@ -17,14 +17,10 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
-import {
-  bearerFor,
-  captureLogs,
-  createTestOrchestrator,
-  deployAgent,
-  fakeAdminDbOver,
-  type TestFetch,
-} from "../test-utils.ts";
+import { captureLogs } from "../_logger-test-utils.ts";
+import { createTestOrchestrator, type TestFetch } from "../_orchestrator-test-utils.ts";
+import { bearerFor, deployAgent } from "../_request-test-utils.ts";
+import { fakeAdminDbOver } from "../_sql-test-utils.ts";
 import { MAX_ENQUEUE_BODY_BYTES } from "./workflow-enqueue.ts";
 
 const SLUG = "my-agent";

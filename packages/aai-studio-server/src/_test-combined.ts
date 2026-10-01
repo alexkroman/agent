@@ -33,6 +33,10 @@ type CombinedOverrides = Partial<OrchestratorOpts> & {
   /** The GitHub App + a fake GitHub, for the sync suite. */
   githubApp?: StudioAppOpts["githubApp"];
   githubFetch?: StudioAppOpts["githubFetch"];
+  /** Fakes for the deploy pipeline, session broker and preview wake. */
+  deployProject?: StudioAppOpts["deployProject"];
+  studioSessionBroker?: StudioAppOpts["studioSessionBroker"];
+  wakePreview?: StudioAppOpts["wakePreview"];
 };
 
 export async function createTestCombined(overrides: CombinedOverrides = {}) {
@@ -51,6 +55,11 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     ...omitUndefined({ slugLock: overrides.slugLock }),
     ...omitUndefined({ studioRateLimiters: overrides.studioRateLimiters }),
     ...omitUndefined({ githubApp: overrides.githubApp, githubFetch: overrides.githubFetch }),
+    ...omitUndefined({
+      deployProject: overrides.deployProject,
+      studioSessionBroker: overrides.studioSessionBroker,
+      wakePreview: overrides.wakePreview,
+    }),
     ...omitUndefined({
       studioSessionRegistry: overrides.studioSessionRegistry,
     }),

@@ -21,7 +21,7 @@
  * lose half of it.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createLogger } from "aai-server/logger";
 import { DEFAULT_PROJECT_KIND, type ProjectKind } from "../studio-project-kind.ts";
@@ -97,13 +97,43 @@ export function scaffoldGuidePath(): string {
 /** One composed prompt per project kind, built on first use. */
 const cachedPrompts = new Map<ProjectKind, string>();
 
-/** Read the scaffold authoring guide, or null when not on disk. */
+/** The guide's topic directory, beside the core `CLAUDE.md`. */
+const TOPIC_DIR = "agent-guide";
+
+/**
+ * Read the scaffold authoring guide, or null when its core is not on disk.
+ *
+ * The guide is a core `CLAUDE.md` plus topic files in `agent-guide/`. A laptop
+ * agent reads a topic on demand; the studio's agent has no `node_modules` path
+ * it can be told to read, so every topic is INLINED after the core, in the
+ * order the core's routing table names them, each under a line saying which
+ * file it is — so "read `agent-guide/TOOLS.md`" resolves to the section below.
+ */
 export function loadScaffoldGuide(guidePath: string = scaffoldGuidePath()): string | null {
+  let core: string;
   try {
-    return readFileSync(guidePath, "utf-8");
+    core = readFileSync(guidePath, "utf-8");
   } catch {
     return null;
   }
+  const dir = path.join(path.dirname(guidePath), TOPIC_DIR);
+  let present: string[];
+  try {
+    present = readdirSync(dir).filter((name) => name.endsWith(".md"));
+  } catch {
+    return core;
+  }
+  const routed = [...core.matchAll(/agent-guide\/([A-Z][A-Z0-9-]*\.md)/g)].map((m) => m[1] ?? "");
+  const order = [...new Set([...routed, ...present.sort()])].filter((name) =>
+    present.includes(name),
+  );
+  const topics = order.map(
+    (name) =>
+      `\n\n<!-- ${TOPIC_DIR}/${name} — inlined; where the guide says to read ` +
+      `\`${TOPIC_DIR}/${name}\`, this section is that file. -->\n\n` +
+      readFileSync(path.join(dir, name), "utf-8"),
+  );
+  return core + topics.join("");
 }
 
 /** Pure composition: studio preamble for `kind` + guide (or the fallback). */

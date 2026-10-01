@@ -9,6 +9,8 @@ import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
 import { describe, expect, test, vi } from "vitest";
+import { makeAgent } from "../_agent-test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import {
   createFailingSttProvider,
   createFakeLanguageModel,
@@ -17,9 +19,9 @@ import {
   FAKE_STT_API_KEY_ENV,
   FAKE_TTS_API_KEY_ENV,
 } from "../_pipeline-test-fakes.ts";
-import { makeAgent, makeClientSink, makeLogger, silentLogger } from "../_test-utils.ts";
+import { makeClientSink } from "../_session-test-utils.ts";
 import { createFallbackSttOpener } from "../providers/fallback.ts";
-import { DEFAULT_S2S_CONFIG } from "../runtime-config.ts";
+import { DEFAULT_S2S_CONFIG } from "../s2s-config.ts";
 import { PIPELINE_CAPABILITIES } from "../transports/capabilities.ts";
 import * as pipelineTransport from "../transports/pipeline/index.ts";
 import { _internals } from "../transports/s2s-transport.ts";
@@ -284,7 +286,7 @@ describe("createTransportFactory (pipeline)", () => {
     // Why the dep is a thunk at all: `createRuntime` defers this resolution for
     // a `mode: "workflow-app"` agent, whose injected default providers must not be
     // dialled — and a static agent given a voice surface by an embedder
-    // (`createRuntimeServer({ telephony: true })`) then resolves here. Passing a plain
+    // (`createServerForRuntime({ telephony: true })`) then resolves here. Passing a plain
     // `null` for that case would answer "no transport for session" and bury the
     // real cause.
     const factory = createTransportFactory(

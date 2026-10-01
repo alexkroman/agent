@@ -23,7 +23,7 @@
 import { type AddressInfo, createServer, type Server, type Socket } from "node:net";
 import { AssemblyAI } from "assemblyai";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { sleep } from "../../_test-utils.ts";
+import { sleep } from "../../_timing-test-utils.ts";
 import { suppressDiscardedSocketError } from "./assemblyai.ts";
 
 let server: Server;

@@ -3,9 +3,10 @@
  * The author-facing PARAMETER SHAPE of `agent()` — a union discriminated by
  * `mode`, one member per {@link AgentMode}.
  *
- * Every member is CUT from {@link AgentDef} by subtracting field lists, and
- * carries no prose of its own: what a field means is documented once, on
- * `AgentDef`, and the member says only whether the field exists in that mode.
+ * Every member is CUT from {@link AgentDeclaration} (the authored fields) by
+ * subtracting field lists, and carries no prose of its own: what a field means
+ * is documented once, on `AgentDeclaration`, and the member says only whether
+ * the field exists in that mode.
  * A pipeline-only knob is not typed as an error message on the S2S member — it
  * is ABSENT from it, so `agent({ mode: "s2s", s2s, silence })` is an
  * excess-property error naming {@link S2sAgentParams}, and autocomplete on an
@@ -24,9 +25,9 @@ import type { AgentModelTuning } from "./agent-model-tuning.ts";
 import type { PipelinePhrases, PipelineTuning, TurnTakingTuning } from "./agent-tuning.ts";
 import type { LlmSpec } from "./providers/llm/llm.ts";
 import type { S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
-import type { AgentDef } from "./types.ts";
+import type { AgentDeclaration, AgentDef } from "./types.ts";
 
-/** The {@link AgentDef} fields `agent()` fills with defaults when omitted. */
+/** The {@link AgentDef} fields `agent()` fills with defaults when omitted (`tools` is never authored). */
 export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 
 /**
@@ -73,8 +74,8 @@ export type PipelineOnlyField =
 
 /**
  * What every SESSION member shares — pipeline, S2S and text: everything on
- * {@link AgentDef} minus the mode-owned fields, with the defaulted ones
- * optional.
+ * {@link AgentDeclaration} minus the mode-owned fields, with the defaulted
+ * ones optional.
  *
  * The model-loop knobs ({@link AgentModelTuning}) are subtracted here and
  * re-added by the two members whose runtime assembles the model request; S2S
@@ -83,17 +84,15 @@ export type PipelineOnlyField =
  * @public
  */
 export type SharedAgentParams = Omit<
-  AgentDef,
+  AgentDeclaration,
   | DefaultedAgentField
   // The mode selector: each member re-declares the value it accepts.
   | "mode"
   | ProviderField
   | PipelineOnlyField
   | keyof AgentModelTuning
-  // RESOLVED — `agent()` and host steps (`withMcpTools`) attach it.
-  | "toolsets"
 > &
-  Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+  Partial<Pick<AgentDeclaration, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     /** Not a field — see `InlineToolsMisuse`. */
     tools?: InlineToolsMisuse;
   };
@@ -109,13 +108,13 @@ export type SharedAgentParams = Omit<
  */
 export type PipelineAgentParams = SharedAgentParams &
   Pick<
-    AgentDef,
+    AgentDeclaration,
     keyof AgentModelTuning | keyof PipelineTuning | keyof PipelinePhrases | keyof AgentGuardrails
   > & {
-    /** See {@link AgentDef.mode}. Absent means `"pipeline"`. */
+    /** See {@link AgentDeclaration.mode}. Absent means `"pipeline"`. */
     mode?: "pipeline";
     /**
-     * See {@link AgentDef.llm}; a string is gateway model-id shorthand — a bare
+     * See {@link AgentDeclaration.llm}; a string is gateway model-id shorthand — a bare
      * id for the AssemblyAI LLM Gateway, `"creator/model"` for the Vercel AI
      * Gateway. Typed against the generated catalog so a typo is caught where
      * it is written, and widened by `string & {}` so a newer model compiles.
@@ -128,7 +127,7 @@ export type PipelineAgentParams = SharedAgentParams &
     // pipeline agent carrying an unused descriptor.
     s2s?: undefined;
     /**
-     * See {@link AgentDef.tts}. The voice is the descriptor's own option
+     * See {@link AgentDeclaration.tts}. The voice is the descriptor's own option
      * (`assemblyAITts({ voice: "michael" })`); unset, the default stage
      * speaks `ASSEMBLYAI_TTS_DEFAULT_VOICE`.
      */
@@ -152,9 +151,9 @@ export type PipelineAgentParams = SharedAgentParams &
  * @public
  */
 export type S2sAgentParams = SharedAgentParams & {
-  /** See {@link AgentDef.mode}. */
+  /** See {@link AgentDeclaration.mode}. */
   mode: "s2s";
-  /** See {@link AgentDef.s2s}. */
+  /** See {@link AgentDeclaration.s2s}. */
   s2s: S2sProvider;
 };
 
@@ -168,10 +167,10 @@ export type S2sAgentParams = SharedAgentParams & {
 // biases a transcriber and `telephony` admits a phone call, and a text agent
 // has neither.
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> &
-  Pick<AgentDef, keyof AgentModelTuning> & {
-    /** See {@link AgentDef.mode}. */
+  Pick<AgentDeclaration, keyof AgentModelTuning> & {
+    /** See {@link AgentDeclaration.mode}. */
     mode: "text";
-    /** See {@link AgentDef.llm}; a model-id string works as on the pipeline member — the one provider stage a text agent has. */
+    /** See {@link AgentDeclaration.llm}; a model-id string works as on the pipeline member — the one provider stage a text agent has. */
     llm?: LlmSpec;
   };
 
@@ -212,23 +211,32 @@ export type WorkflowAppOnlyField =
  * product, and nothing from the session half of the agent shape.
  * `workflowApp()` is this member with `mode` already set.
  *
- * `workflows` is REQUIRED here, unlike on {@link AgentDef}: a workflow app that
- * declares none serves a form whose every submit is a 400.
+ * `workflows` is REQUIRED here, unlike on {@link AgentDeclaration}: a workflow
+ * app that declares none serves a form whose every submit is a 400.
  *
  * @public
  */
 // The text member's two drops (`sttPrompt`, `telephony`) are spelled as it
 // spells them, rather than as `TextOnlyExcludedField`, so the published shape
 // reaches no unexported name.
-export type StaticAgentParams = Omit<
+export type WorkflowAppAgentParams = Omit<
   SharedAgentParams,
   "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"
 > & {
-  /** See {@link AgentDef.mode}. */
+  /** See {@link AgentDeclaration.mode}. */
   mode: "workflow-app";
-  /** See {@link AgentDef.workflows} — the whole product. */
-  workflows: NonNullable<AgentDef["workflows"]>;
+  /** See {@link AgentDeclaration.workflows} — the whole product. */
+  workflows: NonNullable<AgentDeclaration["workflows"]>;
 };
+
+/**
+ * The workflow-app member under its old name.
+ *
+ * @deprecated Use {@link WorkflowAppAgentParams}, named after the
+ * `mode: "workflow-app"` it selects. Identical type.
+ * @public
+ */
+export type StaticAgentParams = WorkflowAppAgentParams;
 
 /**
  * What `agent()` returns for a declaration in mode `M`: the one definition
@@ -248,4 +256,4 @@ export type AgentParams =
   | PipelineAgentParams
   | S2sAgentParams
   | TextAgentParams
-  | StaticAgentParams;
+  | WorkflowAppAgentParams;

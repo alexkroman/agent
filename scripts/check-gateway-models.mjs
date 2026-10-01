@@ -13,10 +13,10 @@
  * model, when one misbehaves, and periodically — a model going away is
  * invisible until someone selects it.
  *
- *   pnpm check:gateway-models
+ *   pnpm audit:gateway-models
  *
  * Exits non-zero when the catalog is out of date; regenerate with
- * `node scripts/gen-gateway-models.mjs --write`.
+ * `pnpm gen:gateway-models`.
  */
 
 import { execFileSync } from "node:child_process";
@@ -105,7 +105,7 @@ console.log(changes.join("\n"));
 
 console.error(
   "\ncheck-gateway-models: the catalog no longer matches the gateway.\n" +
-    "Regenerate: node scripts/gen-gateway-models.mjs --write\n" +
+    "Regenerate: pnpm gen:gateway-models\n" +
     "A model that has gone away reaches users as a retried 500, not a clear error.",
 );
 process.exit(1);

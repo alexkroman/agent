@@ -30,7 +30,7 @@ import { tool as aiTool, fingerprintTools, jsonSchema, type ToolSet } from "ai";
 import type { JSONSchema7 } from "json-schema";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { createRuntimeWithSeams } from "../runtime/index.ts";
 import type { McpSession, ResolvedMcpServer } from "./connect.ts";
 import { withMcpTools } from "./tools.ts";

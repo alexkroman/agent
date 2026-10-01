@@ -20,9 +20,8 @@
  *
  * 1. `AAI_PUBLIC_ORIGIN` — operator config, always wins.
  * 2. `x-forwarded-host` / `x-forwarded-proto` — a real reverse proxy in
- *    front. That includes this platform's own agent→studio proxy, which
- *    sets both from THIS resolver, so the two services cannot disagree
- *    about the origin they publish.
+ *    front. (Both surfaces are served by one process on one origin, so
+ *    there is no internal hop that sets them.)
  * 3. Otherwise infer from the host: loopback is `http` (`aai dev`, local
  *    combined runs, the test suites), everything else `https` — a public
  *    hostname served by a TLS-terminating proxy is the only case left, and
@@ -30,8 +29,8 @@
  *    deployment on a public hostname must set `AAI_PUBLIC_ORIGIN`.
  *
  * Note the `Host` and `x-forwarded-*` headers are ALL caller-supplied: Modal's
- * proxy forwards the client's `Host` and adds no `x-forwarded-host`, and in
- * combined mode nothing rewrites either. What that costs depends entirely on
+ * proxy forwards the client's `Host` and adds no `x-forwarded-host`, and
+ * nothing in the process rewrites either. What that costs depends entirely on
  * where the answer goes:
  *
  * - **Within the request that asked** — a redirect `Location`, the URL a

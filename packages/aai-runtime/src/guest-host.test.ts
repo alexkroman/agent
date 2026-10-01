@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from "vitest";
 import { GUEST_HOST, GUEST_HOST_VERSION } from "./guest-host.ts";
-import { createRuntimeServer } from "./server/index.ts";
+import { createServerForRuntime } from "./server/index.ts";
 
 describe("GUEST_HOST", () => {
   test("names exactly the fields the harness reads, at the declared version", () => {
@@ -33,7 +33,7 @@ describe("GUEST_HOST", () => {
   test("is THIS copy's runtime, and cannot be edited by whoever holds it", () => {
     // The point of the surface: the server the harness builds through it is the
     // same module instance the bundle's sessions run on.
-    expect(GUEST_HOST.createRuntimeServer).toBe(createRuntimeServer);
+    expect(GUEST_HOST.createRuntimeServer).toBe(createServerForRuntime);
     expect(Object.isFrozen(GUEST_HOST)).toBe(true);
   });
 });

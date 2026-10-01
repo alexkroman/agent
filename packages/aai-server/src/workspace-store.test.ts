@@ -4,13 +4,13 @@
 // STATEMENTS the Postgres implementation issues, recorded through a fake SqlExec.
 
 import { describe, expect, test } from "vitest";
-import { workspaceStoreConformance } from "./store-conformance-cases.ts";
 import {
   createDispatchingSql,
   createRecordingSql,
   refusingDdl,
   type SqlHandler,
-} from "./test-utils.ts";
+} from "./_sql-test-utils.ts";
+import { workspaceStoreConformance } from "./store-conformance-cases.ts";
 import { createMemoryWorkspaceStore, createPgWorkspaceStore } from "./workspace-store.ts";
 
 /**

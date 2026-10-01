@@ -56,7 +56,7 @@
 import { ASSEMBLYAI_GATEWAY_MODELS } from "@alexkroman1/aai/host-internal";
 import type { LanguageModel, ModelMessage } from "ai";
 import { estimateTokenCount } from "tokenx";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 
 /**
  * Share of the model's context window NOT spendable on the message list.

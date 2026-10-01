@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { flush, tick } from "../_test-utils.ts";
+import { flush, tick } from "../_timing-test-utils.ts";
 import {
   createStepGate,
   DEFAULT_STEP_CONCURRENCY,

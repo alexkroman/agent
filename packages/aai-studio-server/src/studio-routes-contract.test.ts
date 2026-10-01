@@ -13,53 +13,20 @@
 import { createMemorySecretStore, createMemoryWorkspaceStore } from "aai-server/stores";
 import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
+import { devToken, onboardKey } from "./_studio-auth-test-utils.ts";
 import {
   brokerMock,
   brokerOptions,
+  createFakedCombined,
   createProject,
   deployMock,
   deployWorkspaceMock,
   fakeBroker,
+  withFakedDevAuth,
 } from "./_studio-routes-test-utils.ts";
-import { createTestCombined } from "./_test-combined.ts";
 import { MAX_STUDIO_FILES } from "./studio-limits.ts";
 import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
 import { createMemoryStudioSessionRegistry } from "./studio-session-registry.ts";
-
-// The orchestrator constructs its studio routes internally; intercept the
-// deploy pipeline, the session broker, and the preview wake at the module
-// boundary so no bundler or sandbox runs here. The fakes are reached through
-// an `await import()` because a vi.mock factory is hoisted above the imports.
-vi.mock("./studio-deploy.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-deploy.ts")>();
-  const { deployMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return {
-    ...original,
-    deployStudioProject: (...args: Parameters<typeof original.deployStudioProject>) =>
-      mock(...args),
-  };
-});
-
-vi.mock("./studio-session-broker.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-session-broker.ts")>();
-  const { brokerMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return {
-    ...original,
-    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) =>
-      mock(...args),
-  };
-});
-
-vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-preview-wake.ts")>();
-  const { wakePreviewMock } = await import("./_studio-routes-test-utils.ts");
-  return {
-    ...original,
-    wakeProjectPreview: (...args: Parameters<typeof original.wakeProjectPreview>) =>
-      wakePreviewMock(...args),
-  };
-});
 
 /**
  * Every failure the studio surface returns names itself in the body. These
@@ -71,7 +38,7 @@ vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
 describe("response bodies", () => {
   let fetch: TestFetch;
   beforeEach(async () => {
-    ({ fetch } = await createTestCombined());
+    ({ fetch } = await createFakedCombined());
   });
 
   /** The `error` field of a JSON error response. */
@@ -226,7 +193,7 @@ describe("browser-session scoping", () => {
   test("two signed-in users do not see each other's projects", async () => {
     // Browser sessions scope by studio USER id, so the scope input must carry
     // it — a constant would collapse every account into one project list.
-    const { fetch } = await withDevAuth();
+    const { fetch } = await withFakedDevAuth();
     const alice = devToken("alice@example.com");
     const bob = devToken("bob@example.com");
     // Each account onboards its own AssemblyAI key first — a session with no
@@ -258,7 +225,7 @@ describe("session broker wiring", () => {
     const previewQueue = createMemoryPreviewQueue();
 
     const secrets = createMemorySecretStore();
-    const combined = await createTestCombined({
+    const combined = await createFakedCombined({
       secrets,
       studioSessionRegistry: registry,
       previewQueue,
@@ -282,7 +249,7 @@ describe("session broker wiring", () => {
 
   test("omits the fleet options that were not configured", async () => {
     brokerMock.mockClear();
-    const combined = await createTestCombined();
+    const combined = await createFakedCombined();
     await createProject(combined.fetch);
     await authFetch(combined.fetch, "/studio/projects/proj/session", { method: "POST" });
 
@@ -299,7 +266,7 @@ describe("session broker wiring", () => {
 
 describe("workspace failure handling", () => {
   test("deleting one file leaves the rest of the workspace intact", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     await authFetch(fetch, "/studio/projects/multi/source", {
       method: "PUT",
       body: { files: { "agent.ts": "a", "client.tsx": "b", "keep.ts": "c" } },
@@ -317,7 +284,7 @@ describe("workspace failure handling", () => {
   });
 
   test("a file write past the workspace cap is refused with the reason", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     const files: Record<string, string> = {};
     for (let i = 0; i < MAX_STUDIO_FILES; i++) files[`f${i}.ts`] = "x";
     expect(
@@ -344,7 +311,7 @@ describe("workspace failure handling", () => {
     // or a broken store looks to the user like a name they already used.
     const workspaces = createMemoryWorkspaceStore();
     vi.spyOn(workspaces, "put").mockRejectedValue(new Error("store offline"));
-    const { fetch } = await createTestCombined({ workspaces });
+    const { fetch } = await createFakedCombined({ workspaces });
 
     const res = await createProject(fetch);
     expect(res.status).not.toBe(409);
@@ -356,14 +323,14 @@ describe("studio shutdown", () => {
   test("dispose is a no-op when no session ever built the broker", async () => {
     // The broker is lazy, so shutdown on a replica that served no session
     // must not reach into an undefined one.
-    const combined = await createTestCombined();
+    const combined = await createFakedCombined();
     await expect(combined.disposeStudio()).resolves.toBeUndefined();
   });
 
   test("dispose releases the broker's sandboxes once one exists", async () => {
     const disposeMock = vi.fn(async () => undefined);
     brokerMock.mockImplementationOnce(() => fakeBroker({ dispose: disposeMock }));
-    const combined = await createTestCombined();
+    const combined = await createFakedCombined();
     await createProject(combined.fetch);
     await authFetch(combined.fetch, "/studio/projects/proj/session", { method: "POST" });
 
@@ -380,7 +347,7 @@ describe("push creation guards", () => {
     // A first push CREATES the project, so it has to be metered like
     // `POST /projects`. A later push to that same project is an update and
     // must stay unmetered — otherwise a busy `aai push` loop locks itself out.
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     expect((await push(fetch, "existing", { files: { "agent.ts": "v1" } })).status).toBe(201);
     for (let i = 0; i < 59; i += 1) {
       expect((await push(fetch, `pushed-${i}`, { files: { "agent.ts": "x" } })).status).toBe(201);
@@ -397,7 +364,7 @@ describe("push creation guards", () => {
 describe("deploy route wiring", () => {
   test("hands the pipeline the workspace store and a broker-backed deploy", async () => {
     deployMock.mockClear();
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     await createProject(fetch);
     await authFetch(fetch, "/studio/projects/proj/deploy", { body: {} });
 

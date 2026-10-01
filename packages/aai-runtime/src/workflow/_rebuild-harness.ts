@@ -68,7 +68,7 @@
 
 import { workflow } from "@alexkroman1/aai";
 import { vi } from "vitest";
-import { silentLogger } from "../runtime-config.ts";
+import { silentLogger } from "../logger.ts";
 import type { Scenario } from "./_resume-harness.ts";
 import { type Program, type Recorder, runProgram, WAIT_MS } from "./_resume-program.ts";
 import { createTally, journalOutcome } from "./_tally-harness.ts";

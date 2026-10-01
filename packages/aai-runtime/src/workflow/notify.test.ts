@@ -14,7 +14,7 @@
 
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { createRunNotifier, instructionFor } from "./notify.ts";
 
 function run(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot {

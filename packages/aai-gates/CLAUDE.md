@@ -149,24 +149,18 @@ has been paid for.
 ### `vitest-setup-wiring.test.ts` — a gate is only as wide as its rollout
 
 `scripts/fail-on-process-warning.mjs` re-raises `MaxListenersExceededWarning` as
-an unhandled error, turning Node's only built-in leak detector into a failure.
-Measured before it existed: a test attaching 25 listeners to one emitter PASSED
-while printing the warning into a scrollback CI's `dot` reporter buries.
+an unhandled error, turning Node's only built-in leak detector into a failure
+(otherwise a leaking test passes while printing the warning into a scrollback
+CI's `dot` reporter buries).
 
-**The signal was already trusted twice, which is the argument FOR enforcing it
-in tests.** `aai-guest/harness-leak-watch.ts` watches it at RUNTIME in the
-guest, written because Node warns exactly once per emitter (measured there: 500
-listeners, one warning, at 11) — which is what made the `streamTail` leak of
-\#1203 expensive to diagnose from a log. And `aai/host/transports/
-aai-runtime/src/transports/pipeline/transport.ts` raises the threshold with
-`setMaxListeners` under a comment calling it "A LEAK threshold, not a capacity
-one". So a leak reaching production is watched; a leak a suite already provokes
-is what this closes.
+The same signal is watched at RUNTIME in the guest
+(`aai-guest/harness/leak-watch.ts`, since Node warns only once per emitter), and
+`aai-runtime/transports/pipeline/transport.ts` raises the threshold with
+`setMaxListeners` as "A LEAK threshold, not a capacity one". This gate closes
+the remaining half: a leak a suite already provokes.
 
-Measured over the whole unit run (536 files, 7998 tests): **nine occurrences,
-all nine in `aai-guest/harness-leak-watch.test.ts`**, whose subject IS the
-warning — it synthesizes them through `process.emit` and attaches 88 real
-listeners to a real emitter. That suite sets
+**One suite may opt out: `aai-guest/harness/leak-watch.test.ts`**, whose
+subject IS the warning. It sets
 `globalThis[Symbol.for("aai.expectsProcessWarnings")]` at module scope, which is
 the one legitimate opt-out; every other suite is clean, so the rule is absolute
 rather than baselined. `vitest-setup-wiring.test.ts` asserts the opt-out has
@@ -234,8 +228,8 @@ vi.fn>`, which erases the return to `void` and so hid every async implementation
 from both linters — typed as `Mock<(url, init?) => Promise<Response>>` now. The
 rest were real: a `dispatch` option typed `=> void` that the engine awaits, a
 retry button discarding a promise, `.finally(() => shutdown())` in `aai start`,
-and two `examples/` servers registering an `async` SIGINT listener — the exact
-shape that cost `scaffold/server.mjs` a real bug.
+and two `examples/` servers registering an `async` SIGINT listener (a shape
+that has caused a real shutdown bug).
 
 **`guard-invariants` rule 23 is retired**, its number with it. It was the
 listener half, matched by method NAME at argument index 1; the type-aware rule

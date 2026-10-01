@@ -48,9 +48,15 @@
  * exists to catch, recorded as if it were the status quo. `--seed` is the
  * one-time bootstrap that introduces the gate over the tree as it stands.
  *
+ * `--update --package <name>` MERGES: it touches only the baseline entries for
+ * files under `packages/<name>/`, so one package's coverage run (all a CI
+ * matrix job or a local `pnpm --filter <pkg> test:coverage` produces) can lock
+ * in that package's gains without deleting everyone else's entries.
+ *
  *   pnpm check:coverage-per-file
- *   node scripts/check-coverage-per-file.mjs --update   # lock in an improvement
- *   node scripts/check-coverage-per-file.mjs --seed     # introduce the gate
+ *   pnpm coverage-per-file:update                        # lock in an improvement
+ *   pnpm coverage-per-file:update --package aai-ui       # ...from one package's run
+ *   node scripts/check-coverage-per-file.mjs --seed      # introduce the gate
  */
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -118,14 +124,12 @@ function coveragePackages() {
   return out;
 }
 
-// Refused up front rather than at write time: the baseline is ONE file covering
-// every package, and a filtered run's map is built from one package's coverage,
-// so writing it would delete every other package's entries — which then reads as
-// a clean tree.
-if (packageArg !== undefined && (seed || update)) {
+// `--seed` is the one-time whole-tree bootstrap, so it stays unfiltered.
+// `--update --package` is a MERGE (see `inScope` below).
+if (packageArg !== undefined && seed) {
   console.error(
-    "check-coverage-per-file: --seed/--update rewrite the whole baseline and cannot be\n" +
-      "combined with --package. Run `pnpm test:coverage` for every package, then re-run.",
+    "check-coverage-per-file: --seed bootstraps the whole baseline and cannot be combined\n" +
+      "with --package. Run `pnpm test:coverage` for every package, then re-run.",
   );
   process.exit(1);
 }
@@ -156,6 +160,15 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
+/** Whether `file` belongs to this run: every file, or the `--package` one's. */
+const inScope = (file) => packageArg === undefined || file.startsWith(`packages/${packageArg}/`);
+
+/** The command that reproduces this run with `--update`. */
+const updateCommand =
+  packageArg === undefined
+    ? "pnpm coverage-per-file:update"
+    : `pnpm coverage-per-file:update --package ${packageArg}`;
+
 /** @type {{ path: string, pct: number, statements: number }[]} */
 const measured = [];
 let belowMinStatements = 0;
@@ -166,6 +179,9 @@ for (const pkg of packages) {
     const counts = Object.values(record.s ?? {});
     if (counts.length === 0) continue;
     const rel = path.relative(REPO_ROOT, absPath).split(path.sep).join("/");
+    // A filtered run measures only its own package's files: v8 also reports a
+    // workspace dependency the suite LOADED through `@dev/source`.
+    if (!inScope(rel)) continue;
     if (counts.length < MIN_STATEMENTS) {
       belowMinStatements++;
       continue;
@@ -182,7 +198,7 @@ for (const pkg of packages) {
 const corpusFloor = packageArg === undefined ? MIN_FILES : 1;
 if (measured.length < corpusFloor) {
   console.error(
-    `check-coverage-per-file: only ${measured.length} file(s) measured, expected at least ${MIN_FILES}.\n` +
+    `check-coverage-per-file: only ${measured.length} file(s) measured, expected at least ${corpusFloor}.\n` +
       "Either the coverage output is partial or this script stopped reading it correctly.\n" +
       "A count this low is a broken gate, not a clean tree.",
   );
@@ -207,11 +223,9 @@ for (const { path: file, pct, statements } of measured) {
 }
 
 /**
- * Write the baseline, sorted by path so a diff is readable.
- *
- * Refused on a FILTERED run: the baseline is one file covering every package, and
- * a filtered run's `next` map is built from one package's coverage only — writing
- * it would delete every other package's entries, which reads as a clean tree.
+ * Write the baseline, sorted by path so a diff is readable. `files` always
+ * starts from the whole existing baseline, so a filtered run carries every
+ * other package's entries through untouched.
  */
 function writeBaseline(files) {
   writeFileSync(
@@ -270,9 +284,11 @@ if (update) {
     // so the run still fails and the decision to bless it stays a hand edit.
     refused.push({ file, was: floor, now });
   }
-  // A file that climbed above the global floor leaves the baseline entirely.
+  // A file that climbed above the global floor leaves the baseline entirely —
+  // within this run's scope only, so a filtered run never touches another
+  // package's entries.
   for (const file of Object.keys(next)) {
-    if (next[file] >= FLOOR_PCT) delete next[file];
+    if (inScope(file) && next[file] >= FLOOR_PCT) delete next[file];
   }
   if (refused.length > 0) {
     console.error(
@@ -280,7 +296,8 @@ if (update) {
     );
     for (const { file, was, now } of refused) console.error(`  ${file}  ${was} -> ${now}`);
     console.error(
-      "\nCoverage went DOWN for these. Add the tests, or hand-edit the baseline and say why in the PR.",
+      "\nCoverage went DOWN for these. Add the tests, or hand-edit\n" +
+        "scripts/coverage-per-file-baseline.json and say why in the PR.",
     );
   }
   if (raised.length > 0) {
@@ -302,7 +319,9 @@ if (failures.length > 0) {
     "\nThe per-package floors in each vitest.config.ts cannot see this: one file at zero moves\n" +
       "a package average by a fraction of a point. Add tests for the file, or — if its coverage\n" +
       "genuinely improved and the baseline is behind — run:\n\n" +
-      "  node scripts/check-coverage-per-file.mjs --update\n",
+      `  ${updateCommand}\n\n` +
+      "A file NEW to the floor (no baseline entry) cannot be blessed by --update: add tests,\n" +
+      "or hand-edit scripts/coverage-per-file-baseline.json and say why in the PR.\n",
   );
   process.exit(1);
 }
@@ -315,7 +334,7 @@ if (stale.length > 0) {
     console.warn(`  ${file}  ${floor} -> ${now}`);
   if (stale.length > 20) console.warn(`  … and ${stale.length - 20} more`);
   console.warn(
-    "\nRun `node scripts/check-coverage-per-file.mjs --update` to lock the gain in.\n" +
+    `\nRun \`${updateCommand}\` to lock the gain in.\n` +
       "Unclaimed headroom is coverage the next branch may give back for free.",
   );
 }

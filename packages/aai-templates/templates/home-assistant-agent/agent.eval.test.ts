@@ -16,7 +16,7 @@ import {
   toolArgsIn,
   toolNames,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 
 // EVALS: does the home assistant hand the after-the-conversation jobs to the right tool,

@@ -54,11 +54,13 @@ describe("the secret command group", () => {
       expect.any(String),
       "KEY",
       "s3cret",
+      expect.anything(),
     );
     await subsOf(secret).delete?.run({ args: { name: "KEY", json: true, local: true } });
     expect(executors.secret.executeLocalSecretDelete).toHaveBeenCalledWith(
       expect.any(String),
       "KEY",
+      expect.anything(),
     );
     expect(executors.secret.executeSecretPut).not.toHaveBeenCalled();
     expect(executors.secret.executeSecretDelete).not.toHaveBeenCalled();
@@ -86,6 +88,7 @@ describe("the secret command group", () => {
       "OPENAI_API_KEY",
       "s3cret",
       undefined,
+      expect.anything(),
     );
   });
 
@@ -97,6 +100,7 @@ describe("the secret command group", () => {
       "OPENAI_API_KEY",
       undefined,
       undefined,
+      expect.anything(),
     );
   });
 
@@ -147,10 +151,12 @@ describe("the secret command group", () => {
       expect.any(String),
       "OLD",
       "https://s",
+      expect.anything(),
     );
     expect(executors.secret.executeSecretList).toHaveBeenCalledWith(
       expect.any(String),
       "https://s",
+      expect.anything(),
     );
   });
 });
@@ -161,6 +167,7 @@ describe("aai logs", () => {
     expect(executors.logs.executeLogs).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ follow: true }),
+      expect.anything(),
     );
   });
 });

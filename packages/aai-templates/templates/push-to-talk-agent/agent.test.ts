@@ -1,8 +1,8 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import { createToolContext, expectDeployable, toolRunner } from "@alexkroman1/aai/testing";
+import { createToolContext, expectDeployable, toolRunner } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
-import { MAX_NOTES, notebookProjection, notebookSlot } from "./shared.ts";
+import { MAX_NOTES, notebookSlot } from "./shared.ts";
 
 /**
  * What this starter's spec may assert: properties that survive the edits the
@@ -47,7 +47,9 @@ describe("push-to-talk-agent template", () => {
       ],
     });
     // The page reads the same notebook, newest first.
-    expect(notebookProjection(notebookSlot.get(ctx)).notes.map((note) => note.id)).toEqual([2, 1]);
+    expect(notebookSlot.projected(notebookSlot.get(ctx)).notes.map((note) => note.id)).toEqual([
+      2, 1,
+    ]);
   });
 
   test("a full notebook keeps the newest notes and never reuses an id", async () => {

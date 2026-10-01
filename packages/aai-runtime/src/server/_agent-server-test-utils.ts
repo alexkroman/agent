@@ -10,7 +10,7 @@
  * @internal
  */
 
-import { silentLogger } from "../_test-utils.ts";
+import { silentLogger } from "../_logger-test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
 
 /**

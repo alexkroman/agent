@@ -15,7 +15,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { makeLogger } from "../_test-utils.ts";
+import { makeLogger } from "../_logger-test-utils.ts";
 import { createStepInfoReader, createStepReporter } from "./report.ts";
 import { type RunContext, withRunContext, withStepContext } from "./run-context.ts";
 import { DEFAULT_STREAM_NAMESPACE, streamNamespace } from "./streams.ts";
