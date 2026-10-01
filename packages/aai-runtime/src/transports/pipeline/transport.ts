@@ -23,6 +23,7 @@ import { createTurnLlmRunner, type SharedLlmRequest } from "./llm/index.ts";
 import { type PipelineTransportOptions, resolvePipelineOptions } from "./options.ts";
 import { createAudioOut, flushTtsAndWait, NO_GUARDRAILS } from "./output/index.ts";
 import { createPipelineProviderSessions } from "./providers.ts";
+import { createReplyRunner } from "./reply-runner.ts";
 import { createSessionSignal } from "./session-signal.ts";
 import {
   createForceEndOfTurn,
@@ -42,6 +43,36 @@ import { createTurnOutcome } from "./turn-outcome.ts";
 
 export type { PipelineTransportOptions } from "./options.ts";
 
+/**
+ * Everything a `streamText` request carries that a turn and a speculation must
+ * AGREE on, built once and spread into both — see `SharedLlmRequest`. One
+ * assembly, because two lists drift: `maxOutputTokens`, `maxRetries` and
+ * `onUsage` once reached the turn and not the speculation, so an ADOPTED one
+ * ran uncapped, on the vendor's default retries, and off this session's meter.
+ */
+function buildSharedLlmRequest(
+  opts: PipelineTransportOptions,
+  resolved: ReturnType<typeof resolvePipelineOptions>,
+  step: Pick<SharedLlmRequest, "dialogStep" | "personaStep" | "contextBudget">,
+): SharedLlmRequest {
+  const usage = opts.usage;
+  return {
+    llm: opts.llm,
+    toolChoice: resolved.toolChoice,
+    resetToolChoice: resolved.resetToolChoice,
+    temperature: opts.temperature,
+    maxOutputTokens: opts.maxOutputTokens,
+    maxRetries: opts.maxRetries,
+    onUsage: usage === undefined ? undefined : (reported) => usage.record(reported),
+    dialogStep: step.dialogStep,
+    personaStep: step.personaStep,
+    maxSteps: resolved.maxSteps,
+    contextBudget: step.contextBudget,
+    log: resolved.log,
+    sid: opts.sid,
+  };
+}
+
 /** Create a pipeline-mode Transport (STT → LLM → TTS). @internal */
 export function createPipelineTransport(opts: PipelineTransportOptions): Transport {
   const resolved = resolvePipelineOptions(opts);
@@ -49,7 +80,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     log,
     sttSampleRate,
     ttsSampleRate,
-    maxSteps,
     startSpeakingFloorMs,
     deadAirCoverMs,
     heardLagMs,
@@ -57,8 +87,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     startFailurePhrase,
     preemptiveGeneration,
     speechIdleTimeoutMs,
-    toolChoice,
-    resetToolChoice,
     toolSchemas,
     executeTool,
   } = resolved;
@@ -100,7 +128,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Turn-crash handler for turnChain.chain call sites — see turnCrashLogger.
   const logTurnCrash = turnCrashLogger(log, opts.sid);
   let terminated = false;
-  let nextReplyId = 0;
   // Invalidation epochs for queued turns and an aborted turn's deferred
   // persistence — see pipeline-turn-gate.ts.
   const gate = createTurnGate();
@@ -136,27 +163,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     now: opts.heardNow,
   });
 
-  // Everything a `streamText` request carries that a turn and a speculation
-  // must AGREE on, built once and spread into both — see `SharedLlmRequest`.
-  // Two assemblies meant two lists to keep in sync, and they had already
-  // drifted by three fields: `maxOutputTokens`, `maxRetries` and `onUsage`
-  // reached the turn and not the speculation, so an ADOPTED one ran uncapped,
-  // on the vendor's default retries, and off this session's meter.
-  const llmRequest: SharedLlmRequest = {
-    llm: opts.llm,
-    toolChoice,
-    resetToolChoice,
-    temperature: opts.temperature,
-    maxOutputTokens: opts.maxOutputTokens,
-    maxRetries: opts.maxRetries,
-    onUsage: usage === undefined ? undefined : (reported) => usage.record(reported),
+  const llmRequest = buildSharedLlmRequest(opts, resolved, {
     dialogStep: knobs.dialogStep,
     personaStep,
-    maxSteps,
     contextBudget,
-    log,
-    sid: opts.sid,
-  };
+  });
 
   // PREEMPTIVE GENERATION (OFF by default). Constructed before the speech
   // handlers because they drive it, and deliberately NOT wired into `turns` or
@@ -359,64 +370,19 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     return flushTtsAndWait({ tts: providers.tts, signal, log, sid: opts.sid, emitError });
   }
 
-  /**
-   * Shared reply scaffold: mint the reply id and turn controller, run the
-   * turn body, then drain TTS — only when the body produced speech, since a
-   * tool-call-only turn never gets a TTS `done` and would burn the full
-   * flush timeout. Do NOT report `audio.completed` here — session-core's
-   * flushReply emits audioDone + replyDone together; calling it here would
-   * double-fire audio_done.
-   */
-  async function runReply(
-    idPrefix: string,
-    body: (signal: AbortSignal) => Promise<boolean /* spoke */>,
-  ): Promise<void> {
-    // A turn is taking the floor: whatever speculation is still standing was
-    // not claimed by it (`runTurn` claims BEFORE calling in), so it belongs to
-    // an utterance this turn has moved past. Discarded here rather than left to
-    // be adopted later by a turn that never spoke the words it was built on.
-    speculation.discard("turn-started");
-    callbacks.onReplyStarted(`${idPrefix}-${++nextReplyId}`);
-    metrics.begin();
-
-    // One reply, one floor, measured from the moment the turn took the floor
-    // rather than from whenever TTS produced its first frame. It takes the
-    // LATER of this and any backoff still standing, never the sum.
-    audioOut.armFloor();
-
-    const ctl = new AbortController();
-    // stop()/terminate() aborts only the turn of the moment; combine with
-    // the session signal so a turn that starts later still dies with the
-    // session instead of running against closed providers. AbortSignal.any
-    // holds its sources weakly, so a settled turn leaves no listener on the
-    // session-lifetime signal.
-    const signal = AbortSignal.any([sessionAbort.signal, ctl.signal]);
-    turns.begin(ctl);
-    heard.startReply();
-
-    try {
-      const spoke = await body(signal);
-      if (spoke && !signal.aborted) {
-        // The body persisted the full reply; only synthesis/playback remains.
-        // A barge-in in this window is classified as a playback cut (see
-        // TurnMachine.draining).
-        turns.setDraining(true);
-        try {
-          await drainTts(signal);
-        } finally {
-          turns.setDraining(false);
-        }
-      }
-      if (!signal.aborted) callbacks.report({ type: "reply.completed" });
-    } finally {
-      // Return to idle unless a newer turn already replaced this one.
-      turns.settle(ctl);
-      const collected = metrics.finish(signal.aborted);
-      if (collected) callbacks.report(collected);
-      // Aborted turns skip the re-arm: onSttPartial / cancelReply handle those.
-      if (!signal.aborted) nudger.arm();
-    }
-  }
+  // The reply scaffold (reply id, turn controller, TTS drain) — see
+  // reply-runner.ts.
+  const runReply = createReplyRunner({
+    speculation,
+    callbacks,
+    metrics,
+    armFloor: () => audioOut.armFloor(),
+    sessionSignal: sessionAbort.signal,
+    turns,
+    heard,
+    drainTts,
+    rearmNudger: () => nudger.arm(),
+  });
 
   // The ordinary turn body (user message → LLM stream → outcome) — see
   // createTurnBody. Declared after `runReply` because it wraps it.
