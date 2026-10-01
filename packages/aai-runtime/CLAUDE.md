@@ -164,7 +164,7 @@ barrel a name goes on.
 minor. Rules that follow:
 
 - A test DOUBLE implements the unsealed slice a consumer takes
-  (`SessionRuntime` for `createRuntimeServer`), never the sealed handle.
+  (`SessionRuntime` for `createServerForRuntime`), never the sealed handle.
 - A method that would widen a sealed handle becomes a free function over it
   (`connectSession`) or a sub-handle.
 - A handle that is only ever received (`AgentServer`, `TextAgent`,
@@ -202,7 +202,8 @@ SCRIPTED model.
 the simulated caller and judge, and the `@alexkroman1/aai/testing` stubs a case
 composes with (`stubGatewayRoute`, `routeStepFetch`, `installStubStepFetch`, …)
 as the SAME declarations, so one `*.eval.test.ts` needs one import line for its
-harness.
+harness. The table of which testing import serves which FILE is "Which testing
+import, by FILE" in `packages/aai/src/sdk/CLAUDE.md`.
 
 - **Why on the runtime, and why the vitest subpath.** The SDK never imports this
   package, so the SDK's stubs are re-exported HERE rather than the harness

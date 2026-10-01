@@ -290,17 +290,16 @@ function requireCallsTo(calls: readonly EvalToolCall[], name: string): readonly 
 /**
  * The result of the LAST call to `name` in `calls`, parsed.
  *
+ * One of three result readers, told apart by how many calls the claim allows:
+ * {@link toolResultIn} — EXACTLY one (zero or two throw); this — at least one,
+ * the settled last; {@link toolResultsIn} — every call, in order (zero is `[]`).
+ *
  * {@link toolResultIn} refuses a scope holding two calls to one tool, and that
  * refusal is right for a single TURN: two calls there is usually the finding.
  * Across turns it is ordinary — a caller nudges, the agent re-reads the state,
  * and a case reading `toolCallsInTurns(turns)` meets a duplicate through no
- * fault of the agent's.
- *
- * That left the reader pushing cases back onto single-turn scopes, which is
- * exactly the wrong direction: a live model calls a median of one tool per reply
- * (`DEFAULT_MAX_STEPS`), so the claims that survive it are the ones read across
- * turns. One eval was restructured to give a tool its own turn purely to dodge
- * the refusal.
+ * fault of the agent's — and a live model calls a median of one tool per reply
+ * (`DEFAULT_MAX_STEPS`), so the claims that survive it are read across turns.
  *
  * The LAST rather than the first, because a repeated call is the agent settling
  * on an answer and the settled one is what the caller was told.
@@ -320,9 +319,6 @@ function requireCallsTo(calls: readonly EvalToolCall[], name: string): readonly 
  *   return scored.score;
  * }
  * ```
- *
- * Use {@link toolResultIn} when "exactly once" is part of the claim. This is for
- * when it is not.
  */
 export function lastToolResultIn<T = unknown>(
   calls: readonly EvalToolCall[],
@@ -336,7 +332,9 @@ export function lastToolResultIn<T = unknown>(
 }
 
 /**
- * The result of the ONE call to `name` in `calls`, parsed.
+ * The result of the ONE call to `name` in `calls`, parsed — zero calls or two
+ * throw. {@link lastToolResultIn} allows repeats; {@link toolResultsIn} reads
+ * them all.
  *
  * `EvalToolCall.result` is the serialized string the model was handed, so every
  * eval that asserts on what a tool ANSWERED was parsing and indexing it by
@@ -405,7 +403,8 @@ export function toolArgsIn<T>(
 
 /**
  * Every call to `name` in `calls`, with its RESULT parsed — what each answered,
- * in call order.
+ * in call order. The plural of {@link toolResultIn} (exactly one) and
+ * {@link lastToolResultIn} (the last of several).
  *
  * {@link toolResultIn} refuses more than one call on purpose: "the one call to
  * X" is the common claim and two of them is usually a finding. The plural is the

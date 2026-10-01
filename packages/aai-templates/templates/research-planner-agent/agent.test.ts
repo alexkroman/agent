@@ -4,17 +4,15 @@ import type { ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,
+  expectToolOk,
   runGuardrail,
   runTool,
-  type ScriptedToolContext,
   type StubDelegateRoute,
   type StubGenerateRoute,
-  scriptedToolContext,
   stubDelegate,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
-import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { executeStep, executor, MAX_STEP_TURNS, normalizeAct, planNode } from "./procedure.ts";
 import { PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM, type StepAnswer } from "./prompts.ts";
@@ -29,19 +27,6 @@ import {
   searchTool,
 } from "./shared.ts";
 import startPlan from "./tools/start_plan.ts";
-
-/**
- * What a tool answered, or a throw quoting the refusal — at the CALL, rather
- * than as an `undefined` read off a `ToolFailure` several assertions later.
- * Typed by what it is handed: `runTool(theTool, …)` answers the tool's own
- * return type, so this only subtracts the failure arm and restates no shape.
- */
-function ok<T>(result: T): Exclude<T, ToolFailure> {
-  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  // Negating a type predicate does not subtract from a generic; the guard above
-  // is what makes this true.
-  return result as Exclude<T, ToolFailure>;
-}
 
 /**
  * The web, faked at the SDK's own seam.
@@ -62,7 +47,7 @@ vi.mock("@alexkroman1/aai/tools", () => ({ webSearch: vi.fn(), visitWebpage: vi.
 // subagent, so the `delegate` script drives it, routed by subagent name. That
 // split is the conversion showing through in the test file, and it is the
 // honest one: a spec that scripted the executor's turns was scripting a loop
-// this template no longer owns. `scriptedToolContext` builds both fakes and
+// this template no longer owns. `createToolContext` builds both fakes and
 // the context they are wired into, so every test below starts from one call.
 
 interface Script {
@@ -88,7 +73,7 @@ function stepReply(answer: string | StepAnswer): string {
   return JSON.stringify(typeof answer === "string" ? { finding: answer, settled: true } : answer);
 }
 
-function scriptedDesk(script: Script = {}): ScriptedToolContext {
+function scriptedDesk(script: Script = {}) {
   const answers = [...(script.answers ?? [])];
   const acts = [...(script.acts ?? [])];
   // The replanner and the reviser are the same node with a different brief, so
@@ -104,7 +89,7 @@ function scriptedDesk(script: Script = {}): ScriptedToolContext {
     toolCalls: (script.searches ?? []).map((query) => ({ name: "search", input: { query } })),
   });
 
-  return scriptedToolContext({
+  const ctx = createToolContext({
     generate: {
       routes: {
         [PLANNER_SYSTEM]: { object: { steps: script.steps ?? ["Only step"] } },
@@ -114,6 +99,7 @@ function scriptedDesk(script: Script = {}): ScriptedToolContext {
     },
     delegate: { routes: { executor: worksTheStep } },
   });
+  return { ctx, model: ctx.model, desk: ctx.desk };
 }
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup,
@@ -375,7 +361,9 @@ describe("start_plan", () => {
     const { ctx } = scriptedDesk({
       steps: ["Check prices", "Compare hotels", "Book"],
     });
-    const result = ok(await runTool(startPlan, { objective: "a weekend in Lisbon" }, ctx));
+    const result = expectToolOk(
+      await runTool(startPlan, { objective: "a weekend in Lisbon" }, ctx),
+    );
     expect(result.steps).toHaveLength(3);
 
     const state = stateOf(ctx);
@@ -495,7 +483,7 @@ describe("work_next_step", () => {
 
   test("two independent contexts never share a plan", async () => {
     // What this really checks: the state lives in the SLOT and not in a
-    // module-level variable. `scriptedToolContext()` hands each call its own
+    // module-level variable. `createToolContext()` hands each call its own
     // detached slot store, so the isolation is per CONTEXT — two distinct
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.

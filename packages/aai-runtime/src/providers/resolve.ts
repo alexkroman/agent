@@ -308,7 +308,7 @@ export function requiredProviderEnvVars(agent: ProviderEnvVarsQuery): string[] {
   // same object and only `page` still tells them apart.
   //
   // The cost is that a static agent given a voice surface by an EMBEDDER
-  // (`createRuntimeServer({ telephony: true })`, self-hosted) is not preflighted. Its
+  // (`createServerForRuntime({ telephony: true })`, self-hosted) is not preflighted. Its
   // runtime still resolves credentials the ordinary way and reports a missing
   // one at the first call; nothing here gates a session.
   if (agent.mode === "workflow-app") return [];

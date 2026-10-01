@@ -2,7 +2,11 @@
 
 import { describe, expect, test } from "vitest";
 import { speaker } from "./speaker.ts";
-import { scriptedToolContext } from "./testing-scripted.ts";
+// A namespace import: this file pins that the DEPRECATED helper keeps working,
+// which `noDeprecatedImports` exists to keep new code from relying on.
+import * as deprecated from "./testing-scripted.ts";
+
+const { scriptedToolContext } = deprecated;
 
 const planner = speaker({ name: "planner", systemPrompt: "Plan." });
 

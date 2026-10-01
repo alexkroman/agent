@@ -5989,7 +5989,7 @@ export type WorkflowInputOf<D> = D extends {
 } ? I : never;
 
 // @public
-type WorkflowOutputOf<D> = D extends {
+export type WorkflowOutputOf<D> = D extends {
     readonly run: (input: never, ctx: never) => infer R;
     readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 } ? Awaited<unknown extends O ? R : O> : never;
@@ -10931,6 +10931,9 @@ export function expectPromptBuiltinsDeclared(def: {
 }): BuiltinTool[];
 
 // @public
+export function expectToolOk<R>(result: R): R extends DialogToolResult<infer V> ? V : Exclude<R, ToolFailure>;
+
+// @public
 export function expectToolOk<T>(result: unknown): T;
 
 // @public
@@ -11207,17 +11210,17 @@ type SayOptions = {
 // @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
-// @public
+// @public @deprecated
 export interface ScriptedToolContext {
     ctx: TestToolContext;
     desk: StubDelegate;
     model: StubGenerate;
 }
 
-// @public
+// @public @deprecated
 export function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
 
-// @public
+// @public @deprecated
 export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
     generate?: StubGenerateScript | undefined;
     delegate?: StubDelegateScript | undefined;
@@ -15867,8 +15870,11 @@ export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 // @public
 export function createRuntime(options: RuntimeOptions): Runtime;
 
-// @public
+// @public @deprecated
 export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
+
+// @public
+export function createServerForRuntime(options: RuntimeServerOptions): AgentServer;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: TelephonyBridgeOptions): SessionWebSocket;
@@ -16699,7 +16705,7 @@ export function createPostgresStateBackend(options: {
 }): SessionStateBackend;
 
 // @public
-function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
+function createServerForRuntime(options: RuntimeServerOptions): AgentServer;
 
 // @public
 function createSessionAuth(options: SessionAuthOptions): SessionAuth;
@@ -16768,7 +16774,7 @@ export const GUEST_HOST_VERSION = 1;
 // @internal
 export interface GuestHost {
     readonly agentServerEnv: typeof agentServerEnv;
-    readonly createRuntimeServer: typeof createRuntimeServer;
+    readonly createRuntimeServer: typeof createServerForRuntime;
     readonly createSessionAuth: typeof createSessionAuth;
     readonly handleWorkflowRequest: typeof handleWorkflowRequest;
     // (undocumented)

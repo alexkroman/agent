@@ -106,6 +106,14 @@ contracts and wire helpers on `/utils`). **No root export is `@internal`** —
 preserve that. `index.ts`'s module doc holds the test in full and is the only
 thing enforcing membership; keep it accurate.
 
+**A name a narrower subpath owns crosses to the root for one of two reasons
+only**: it is a TYPE (or catalog) a root signature is spelled in — the stage
+types, `LlmSpec`, the voice catalog, all three `…Of<typeof def>` readings,
+`ToolFailure` and the tool-body helpers beside it — or it is a MODE preset
+(`assemblyAIPipeline`, `assemblyAIS2s`). A factory swapping one stage
+(`assemblyAITts`, `assemblyAIStt`, `llm`, any vendor's) stays on its stage
+subpath, and `/utils`' formatters stay on `/utils` (read by a page or a step).
+
 `DEFAULT_SYSTEM_PROMPT` is exported to be READ (printed, diffed, asserted), not
 composed against: `agent({ systemPrompt })` does NOT replace the prompt —
 `buildSystemPrompt` always emits the voice sections and APPENDS the author's
@@ -319,7 +327,8 @@ the rest live only here.
   client spreads `PROVIDER_WS_OPTIONS` (`_ws.ts`; pinned by `_ws.test.ts`).
   Vendor-SDK providers (assemblyai STT, Deepgram, ElevenLabs, Cartesia) cannot
   be covered.
-- **Self-hosted server defaults**: `createRuntimeServer` has no auth, so it
+- **Self-hosted server defaults**: `createServerForRuntime` (formerly
+  `createRuntimeServer`) has no auth, so it
   **binds loopback** (`AAI_DEV_HOST` to override) and **host mode is opt-in**
   (`AAI_ALLOW_HOST`). `createHostServer` is the host-only server in one call.
   The rest is in `packages/aai-cli/CLAUDE.md`, "Running the SDK's own server".

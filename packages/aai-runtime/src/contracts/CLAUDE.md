@@ -49,7 +49,7 @@ tree for which exist.
   front to back, edit points marked, no design commentary.
 - **A template need not exercise every contracted name.** The epoch hash covers
   the capability's whole REPORT, so every name is classification-covered; only
-  compile-time exercise is per name. Deliberately absent: `createRuntimeServer`
+  compile-time exercise is per name. Deliberately absent: `createServerForRuntime`
   / `createHostServer` (a different artifact from the bootstrap) and
   `telnyxCodec` / `twilioCodec` (a third-carrier template is the alternative to
   them). Do not contort a starter into a catalogue.

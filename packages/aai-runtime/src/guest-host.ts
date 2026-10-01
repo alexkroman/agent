@@ -21,7 +21,7 @@
 
 import {
   agentServerEnv,
-  createRuntimeServer,
+  createServerForRuntime,
   createSessionAuth,
   platformSessionSecret,
   SESSION_SECRET_ENV,
@@ -45,8 +45,11 @@ export const GUEST_HOST_VERSION = 1;
  */
 export interface GuestHost {
   readonly version: typeof GUEST_HOST_VERSION;
-  /** The HTTP/session shell (`/health`, `/client-config`, `/websocket`, `/workflows/*`). */
-  readonly createRuntimeServer: typeof createRuntimeServer;
+  /**
+   * The HTTP/session shell (`/health`, `/client-config`, `/websocket`, `/workflows/*`) —
+   * `createServerForRuntime`, under the field name every shipped harness reads.
+   */
+  readonly createRuntimeServer: typeof createServerForRuntime;
   /** The agent env minus what a deployed agent must never set (`AAI_ALLOW_HOST`). */
   readonly agentServerEnv: typeof agentServerEnv;
   /** The platform's workflow delivery door, behind `/manage`. */
@@ -69,7 +72,7 @@ export interface GuestHost {
  */
 export const GUEST_HOST: GuestHost = Object.freeze({
   version: GUEST_HOST_VERSION,
-  createRuntimeServer,
+  createRuntimeServer: createServerForRuntime,
   agentServerEnv,
   handleWorkflowRequest,
   publishWorkflowWebhookUrl,

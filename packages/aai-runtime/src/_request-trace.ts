@@ -5,7 +5,7 @@
  *
  * ## Why this is its own module
  *
- * `createRuntimeServer` calls {@link adoptRequestTrace} at the top of every
+ * `createServerForRuntime` calls {@link adoptRequestTrace} at the top of every
  * request. If that function lived in `tracing.ts` — beside the env gate and its
  * dynamic `import("./_tracing-otel.ts")` — then `server/server.ts` would put the OTel
  * graph in the WORKER's module graph, and the worker is bundled by `aai build`
@@ -65,7 +65,7 @@ let adopter: RequestTraceAdopter | undefined;
  * The installed implementation uses `AsyncLocalStorage.enterWith`, because the
  * seam it serves has nothing to wrap: this is called from a request handler
  * that RETURNS before the work it started finishes — `/workflows/*` falls
- * through `createRuntimeServer`'s hook to the runtime's own router.
+ * through `createServerForRuntime`'s hook to the runtime's own router.
  * `with(ctx, fn)` needs an `fn` and there is none. Node warns `enterWith` is
  * easy to misuse, and the misuse is calling it somewhere that is not a request
  * boundary — which is why this is one named thing with one caller per surface

@@ -187,7 +187,7 @@ export function createPostgresStateBackend(options: {
 }): SessionStateBackend;
 
 // @public
-function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
+function createServerForRuntime(options: RuntimeServerOptions): AgentServer;
 
 // @public
 function createSessionAuth(options: SessionAuthOptions): SessionAuth;
@@ -256,7 +256,7 @@ export const GUEST_HOST_VERSION = 1;
 // @internal
 export interface GuestHost {
     readonly agentServerEnv: typeof agentServerEnv;
-    readonly createRuntimeServer: typeof createRuntimeServer;
+    readonly createRuntimeServer: typeof createServerForRuntime;
     readonly createSessionAuth: typeof createSessionAuth;
     readonly handleWorkflowRequest: typeof handleWorkflowRequest;
     // (undocumented)

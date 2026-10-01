@@ -3,7 +3,7 @@
  * Specs for the adoption seam, and for the property it exists to protect.
  *
  * The load-bearing one is `imports nothing that reaches OpenTelemetry`: this
- * module is in `createRuntimeServer`'s graph, which `aai build` inlines into
+ * module is in `createServerForRuntime`'s graph, which `aai build` inlines into
  * the worker with no `node_modules` behind it, so a static OTel import here is
  * a build failure in every scaffolded project that has not installed the
  * optional peers. That is not hypothetical — it is what six e2e specs caught

@@ -262,7 +262,7 @@ export {
   type SessionStateStore,
   type StoredSessionEvent,
 } from "./session-state/store.ts";
-// The route `createRuntimeServer` serves carriers on and the query key naming
+// The route `createServerForRuntime` serves carriers on and the query key naming
 // one, for the CLI's preflight, which prints the webhook a carrier is pointed at.
 // An embedder bridging a call itself chooses its own path, so neither is part of
 // the `telephony` contract.
@@ -277,7 +277,7 @@ export type { TransportEventBody, TransportEventType } from "./transports/types.
 // snapshot off `usage.updated` — has to be able to write both types.
 export type { UsageMeter, UsageSnapshot } from "./usage-meter.ts";
 // The workflow HTTP API's method list, which the platform's guest-route table
-// has to agree with. The HANDLER is not here: `createRuntimeServer` mounts the route
+// has to agree with. The HANDLER is not here: `createServerForRuntime` mounts the route
 // itself, so nothing outside this package wires one by hand.
 export { WORKFLOW_API_METHODS } from "./workflow/api.ts";
 // Where a LOCAL deployment keeps a workflow's on-disk state. The READER
@@ -371,7 +371,7 @@ export { handleWorkflowRequest, publishWorkflowWebhookUrl } from "./workflow/ser
 // `aai-server` is the importer — its byte route, its record handlers and the
 // store conformance suite. They were the `uploads` capability's, and no public
 // signature takes or returns any of them: an embedder is handed a store by
-// `createRuntimeServer`, never builds one, so the contract covered plumbing.
+// `createServerForRuntime`, never builds one, so the contract covered plumbing.
 export {
   createHttpUploadBackend,
   createMemoryUploadBackend,

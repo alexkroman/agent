@@ -5,6 +5,7 @@ import {
   createToolContext,
   expectDeployable,
   expectPromptBuiltinsDeclared,
+  expectToolOk,
   parseToolInput,
   runTool,
   toolInputIssues,
@@ -13,24 +14,11 @@ import {
 // The failure vocabulary from the subpath that DECLARES it — `/utils` is the
 // zero-dependency half a tool body (and a page) reaches for, and `client.tsx`
 // takes the same guard from the same place.
-import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { CATEGORIES, MAX_RECS, MOODS, nightSlot } from "./shared.ts";
 import recommend from "./tools/recommend.ts";
 import revisit from "./tools/revisit.ts";
-
-/**
- * What a tool answered, or a throw quoting the refusal — at the CALL, rather
- * than as an `undefined` read off a `ToolFailure` several assertions later.
- * Typed by what it is handed: `runTool(theTool, …)` answers the tool's own
- * return type, so this only subtracts the failure arm and restates no shape.
- */
-function ok<T>(result: T): Exclude<T, ToolFailure> {
-  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  // Negating a type predicate does not subtract from a generic; the guard above
-  // is what makes this true.
-  return result as Exclude<T, ToolFailure>;
-}
 
 /**
  * What `recommend` takes, read off the tool itself — and what it answers,
@@ -226,7 +214,7 @@ describe("revisit", () => {
   test("the listener's own words pick one out when they name no position", async () => {
     const ctx = createToolContext();
     await threePicks(ctx);
-    const found = ok(await runTool(revisit, { which: "those spooky books" }, ctx));
+    const found = expectToolOk(await runTool(revisit, { which: "those spooky books" }, ctx));
     expect(found).toMatchObject({ category: "book", mood: "spooky" });
     // It answers with the shelf's own picks, which is what makes this a lookup
     // rather than the model recalling three titles from a trimmed transcript.

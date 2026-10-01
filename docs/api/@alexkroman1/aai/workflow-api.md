@@ -27,7 +27,7 @@ OUTSIDE the agent. This capability still OWNS them, by the rule that a name
 on both `.` and a narrower subpath belongs to the narrower one; the reference
 renders them on the root page and links here.
 
-[WorkflowOutputOf](#workflowoutputof) stayed HERE, and the template API ratchet is what
+[WorkflowOutputOf](index.md#workflowoutputof) stayed HERE, and the template API ratchet is what
 settled that: no author-side example exercises it, because a page is what
 parameterizes `useWorkflowRun<…>` and a status tool takes `WorkflowRunOf`,
 which composes it in. Moving all three because they read alike would have
@@ -1727,93 +1727,6 @@ optional wait?: number;
 
 ***
 
-### WorkflowOutputOf
-
-```ts
-type WorkflowOutputOf<D> = D extends {
-  output?: StandardSchemaV1<unknown, infer O>;
-  run: (input: never, ctx: never) => infer R;
-} ? Awaited<unknown extends O ? R : O> : never;
-```
-
-A workflow's OUTPUT type, for a page that polls its runs.
-
-This is the end-to-end typing a static page would otherwise be missing.
-`useWorkflowRun<R>` makes `run.status === "completed"` narrow to a typed
-`run.output`, and without this the page has to name `R` by hand — restating a
-shape the agent module already declares, with nothing checking the two agree.
-
-It needs no build step and no generated `.d.ts`, because the reason a page
-"cannot import the agent" does not survive contact with `import type`: a
-type-only import is ERASED, so it drags no server graph into the browser
-bundle.
-
-#### Type Parameters
-
-##### D
-
-`D`
-
-#### Example
-
-```ts no-check
-// agent.ts
-export const transcribe = workflow({ input: …, output: transcriptSchema, run: transcribeFlow });
-
-// client.tsx — `import type` is erased, so nothing server-side is bundled.
-import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
-import type { transcribe } from "./agent.ts";
-
-const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
-if (run?.status === "completed") console.log(run.output.text); // typed
-```
-
-## It reads the declared SCHEMA first, and that is what breaks a cycle
-
-The DECLARATION is the better source of this type, and the worse one used to
-be the only one. Deriving `R` from the body means `typeof theDef` needs the
-body's signature — while a body annotated `WorkflowInputOf<typeof theDef>`
-needs `typeof theDef`, which is `TS7022` reported against `agent.ts`. The
-documented way out is to ANNOTATE the declaration, and an annotation whose
-`R` comes from a schema (`WorkflowDef<typeof digestInput, z.infer<typeof
-digestOutput>>`) states the output type once, in the schema, rather than
-naming it a second time by hand.
-
-That annotated shape is also what the second reading gets WRONG, which is
-the other half of this rewrite. `D extends WorkflowDef<ToolInputSchema, infer
-R>` is an assignability test over the whole def, and `run`'s input is a
-function PARAMETER — so a def carrying an input schema is not assignable to
-one taking the open `Record<string, unknown>`, and the conditional silently
-fell to `never`. It is the same contravariance `AnyWorkflowDef` was
-written for, reached by the other route, and it is why the test below matches
-`run` as `(input: never, ctx: never) => infer R` — `never` is assignable to
-every parameter type.
-
-## It matches a SHAPE, not a named declaration
-
-Both readings test `run`'s signature structurally rather than naming
-`WorkflowDef`, `WorkflowBody` or `WorkflowContext`. A reading answers the
-same type either way — `WorkflowDef.run` IS `(input: InferSchemaOutput<P>,
-ctx: WorkflowContext) => …` — but a reading that names the declaration
-carries it (and everything `WorkflowContext` reaches) into the contract of
-every capability that publishes the reading, so a new member on the context
-a body receives moved a PAGE's type.
-
-`unknown extends O` is how "declared nothing" is told from "declared a
-schema": a def with no output schema still HAS the optional property in its
-type, carrying `R` — so the two readings agree, and the fallback only ever
-fires for a def-shaped object that names no output at all.
-
-`Awaited` because a body may be sync or async and the snapshot always holds
-the settled value.
-
-On `@alexkroman1/aai/workflow-api` only, unlike its two siblings: its reader
-is a page. Both templates that name it are a `client.tsx` parameterizing
-`useWorkflowRun<…>`, and a `*_status` tool wants `WorkflowRunOf`, which
-composes this in already.
-
-***
-
 ### WorkflowRunBase
 
 ```ts
@@ -2254,6 +2167,12 @@ Re-exports [WorkflowFailureHook](index.md#workflowfailurehook)
 ### WorkflowInputOf
 
 Re-exports [WorkflowInputOf](index.md#workflowinputof)
+
+***
+
+### WorkflowOutputOf
+
+Re-exports [WorkflowOutputOf](index.md#workflowoutputof)
 
 ***
 

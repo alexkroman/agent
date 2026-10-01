@@ -4,7 +4,7 @@
  * both ways (the request body's exact text handed on beside the parse, for a
  * webhook's signature), the headers as plain strings, and `?client=`.
  *
- * Mounted by `createRuntimeServer` beside the workflow API and the session
+ * Mounted by `createServerForRuntime` beside the workflow API and the session
  * event stream, on the same lazy getter and for the same reason: every front
  * door — `aai dev`, a self-hosted server, a deployed guest — serves it
  * identically, and a guest builds its runtime on the first request that needs

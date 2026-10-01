@@ -17,7 +17,7 @@
  *
  * It used to be `aai-guest/guest-tracing.ts`, which meant the only people who
  * could get a span out of an agent were us — a self-hoster runs
- * `createRuntimeServer` from this package and never loads the harness at all.
+ * `createServerForRuntime` from this package and never loads the harness at all.
  * Moving it here is what makes "point it at your collector" a thing a USER can
  * do, and the platform then runs the same module rather than a second copy.
  *

@@ -164,7 +164,7 @@ const DEFAULT_TURN_TIMEOUT_MS = 90_000;
 
 /**
  * Can this machine run a TEXT agent's eval live, and if not, which key is
- * missing?
+ * missing? The gate for {@link openEvalTextAgent} / `describeTextEval`.
  *
  * The sibling of `evalCredentials`, and separate because that one OVER-ASKS
  * here: it answers about a voice agent, so an agent with no complete pipeline
