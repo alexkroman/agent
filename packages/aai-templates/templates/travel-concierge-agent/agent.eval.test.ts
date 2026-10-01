@@ -35,9 +35,9 @@ import {
   dialogRefusalPattern,
   type EvalSession,
   type EvalToolCall,
-  eventsOf,
   isEvent,
   lastStateIn,
+  statesIn,
   toolCallsInTurns,
   toolNames,
   turnCalling,
@@ -71,15 +71,15 @@ const ProjectedTrip = z.object({
  * booking untouched — and `tripProjection` rides out on `state.updated` after
  * every tool call, so the stream carries one per step.
  */
-function framesBeforeConfirm(session: EvalSession): z.infer<typeof ProjectedTrip>[] {
+function framesBeforeConfirm(session: EvalSession): readonly z.infer<typeof ProjectedTrip>[] {
   const events = [...session.events()];
-  // `isEvent`/`eventsOf` pick members BY NAME, so neither this nor the filter
-  // below restates the event union — a misspelled name is a compile error.
+  // `isEvent` picks members BY NAME, so this does not restate the event union —
+  // a misspelled name is a compile error; `statesIn` reads the `trip` slot.
   const confirmAt = events.findIndex(
     (e) => isEvent(e, "tool.called") && e.toolName === "confirm_action",
   );
   const before = confirmAt < 0 ? events : events.slice(0, confirmAt);
-  return eventsOf(before, "state.updated").map((e) => ProjectedTrip.parse(e.state));
+  return statesIn(before, "trip", ProjectedTrip);
 }
 
 /**
