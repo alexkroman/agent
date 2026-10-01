@@ -27,8 +27,11 @@ import {
 import { buildBrokeredWsUrl, buildWsUrl, type ClientReport } from "./session-core-url.ts";
 import {
   clearStoredSessionId,
+  clearStoredTicket,
   readStoredSessionId,
+  readStoredTicket,
   writeStoredSessionId,
+  writeStoredTicket,
 } from "./session-resume-store.ts";
 import type { WebSocketConstructor } from "./types.ts";
 
@@ -119,6 +122,14 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
    */
   let configPerAttempt: boolean | undefined;
 
+  /**
+   * The last ticket this server's `client-config` issued, presented on the next
+   * lookup that RESUMES (`SESSION_TICKET_HEADER`). On the managed platform a
+   * ticket is bound to its session and possession is the resume credential, so
+   * it is stored beside the id: a reload that lost it would start over.
+   */
+  let serverTicket: string | undefined = readStoredTicket(options.platformUrl);
+
   /** What the last `config` frame said — see `Dialer.sessionId`. */
   let confirmed: string | undefined;
 
@@ -159,7 +170,11 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
    *   a server whose config carried no id.
    * - The session ticket (`session-core-ticket.ts`) is the `token` option's,
    *   asked for THIS attempt, else the `sessionToken` this attempt's
-   *   `client-config` issued.
+   *   `client-config` issued — to a lookup that presented the last one when
+   *   the attempt resumes, so a broker binding tickets to sessions re-mints for
+   *   the same session. A ticket bound to a session opens THAT session, so if
+   *   the broker could not re-mint, the server starts a new one and its
+   *   `config` frame says which.
    */
   async function resolveAttempt(): Promise<Attempt> {
     // Asked NOW, before the lookup, so a ticket fetch overlaps it — and on every
@@ -167,7 +182,11 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
     const ownToken = resolveSessionToken(options.token, { sessionId });
     // Known to say nothing per attempt: skip the fetch and go straight to the
     // same-origin path (the fetch could only return the same nothing again).
-    const cfg = configPerAttempt === false ? null : await loadClientConfig(options.platformUrl);
+    const presented = sessionId === undefined ? undefined : serverTicket;
+    const cfg =
+      configPerAttempt === false
+        ? null
+        : await loadClientConfig(options.platformUrl, undefined, presented);
     // Only an ANSWERED lookup says anything about the server. A failed one (the
     // broker 503s while the sandbox boots, or a network blip) must not latch
     // `configPerAttempt = false`: that skips brokering on every later attempt and
@@ -176,7 +195,12 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
     // agent does. Only an answered lookup may latch.
     if (cfg) configPerAttempt = cfg.sessionUrl !== undefined || cfg.sessionToken !== undefined;
     // The caller's own ticket wins over one the server issued.
-    const carriage = ticketCarriage((await ownToken) ?? cfg?.sessionToken);
+    const own = await ownToken;
+    if (own === undefined && cfg?.sessionToken !== undefined) {
+      serverTicket = cfg.sessionToken;
+      writeStoredTicket(options.platformUrl, serverTicket);
+    }
+    const carriage = ticketCarriage(own ?? cfg?.sessionToken);
     const next = cfg?.sessionUrl
       ? buildBrokeredWsUrl(cfg.sessionUrl, hasConnected, sessionId, report())
       : buildWsUrl(options.platformUrl, hasConnected, sessionId, report());
@@ -238,6 +262,9 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
       // The STORED id goes too, or the next page load would rejoin the
       // conversation this call just discarded, greeting suppressed.
       clearStoredSessionId(options.platformUrl);
+      // And its ticket: presenting it would re-mint for the discarded session.
+      serverTicket = undefined;
+      clearStoredTicket(options.platformUrl);
       hasConnected = false;
       confirm(undefined);
     },

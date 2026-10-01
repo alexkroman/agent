@@ -7,7 +7,11 @@
  * `client-config` when the caller gave none. Over partysocket with the mock as
  * its transport and a stubbed `fetch` — no network.
  */
-import { SESSION_AUTH_PROTOCOL_PREFIX, SESSION_PROTOCOL } from "@alexkroman1/aai/protocol";
+import {
+  SESSION_AUTH_PROTOCOL_PREFIX,
+  SESSION_PROTOCOL,
+  SESSION_TICKET_HEADER,
+} from "@alexkroman1/aai/protocol";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { lastSocket, MockWebSocket, MockWebSocketConstructor } from "./_session-core-test-utils.ts";
 import { createDialer } from "./session-core-dial.ts";
@@ -96,6 +100,8 @@ describe("createDialer over partysocket", () => {
   /** What each `client-config` lookup answers, in order; the last repeats. */
   let configs: Record<string, unknown>[] = [];
   let lookups = 0;
+  /** The ticket each lookup presented in `SESSION_TICKET_HEADER`, in order. */
+  let presented: (string | null)[] = [];
 
   class TrackingWebSocket extends MockWebSocket {
     constructor(url: string, protocols?: string | string[]) {
@@ -119,8 +125,10 @@ describe("createDialer over partysocket", () => {
     created = [];
     configs = [{ page: "voice" }];
     lookups = 0;
+    presented = [];
     vi.stubGlobal("WebSocket", TrackingWebSocket);
-    vi.stubGlobal("fetch", async () => {
+    vi.stubGlobal("fetch", async (_input: unknown, init?: RequestInit) => {
+      presented.push(new Headers(init?.headers).get(SESSION_TICKET_HEADER));
       const body = configs[Math.min(lookups, configs.length - 1)];
       lookups++;
       return new Response(JSON.stringify(body), { status: 200 });
@@ -219,5 +227,72 @@ describe("createDialer over partysocket", () => {
     } finally {
       ws.close();
     }
+  });
+  describe("a server-issued ticket is the resume credential (the managed platform)", () => {
+    const broker = (n: number) => ({
+      page: "voice",
+      sessionUrl: "wss://sandbox.test/websocket",
+      sessionToken: `minted-${n}`,
+    });
+
+    test("a resume presents the LAST ticket the server issued; a new session presents none", async () => {
+      configs = [broker(1), broker(2)];
+      const dialer = createDialer({ platformUrl: "https://platform.test/agent/" });
+      const ws = dialer.open();
+      try {
+        const first = await nextSocket(0);
+        expect(first.protocols).toEqual(offer("minted-1"));
+        first.simulateOpen();
+        dialer.configured("sess-1");
+        first.simulateClose(1006);
+        const second = await nextSocket(1);
+        expect(second.protocols).toEqual(offer("minted-2"));
+        expect(presented).toEqual([null, "minted-1"]);
+      } finally {
+        ws.close();
+      }
+    });
+
+    test("a reload presents the stored ticket beside the stored session id", async () => {
+      configs = [broker(1), broker(2)];
+      const platformUrl = "https://platform.test/agent/";
+      const before = createDialer({ platformUrl });
+      const ws1 = before.open();
+      const first = await nextSocket(0);
+      first.simulateOpen();
+      before.configured("sess-1");
+      ws1.close();
+
+      const after = createDialer({ platformUrl });
+      const ws2 = after.open();
+      try {
+        await nextSocket(1);
+        expect(presented.at(-1)).toBe("minted-1");
+      } finally {
+        ws2.close();
+      }
+    });
+
+    test("forget() drops the ticket with the session", async () => {
+      configs = [broker(1), broker(2)];
+      const platformUrl = "https://platform.test/agent/";
+      const dialer = createDialer({ platformUrl });
+      const ws = dialer.open();
+      const first = await nextSocket(0);
+      first.simulateOpen();
+      dialer.configured("sess-1");
+      ws.close();
+      dialer.forget();
+
+      // Even resuming that id by hand: the ticket that proved it is gone.
+      const fresh = createDialer({ platformUrl, resumeSessionId: "sess-1" });
+      const ws2 = fresh.open();
+      try {
+        await nextSocket(1);
+        expect(presented.at(-1)).toBeNull();
+      } finally {
+        ws2.close();
+      }
+    });
   });
 });

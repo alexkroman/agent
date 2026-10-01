@@ -114,6 +114,11 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   the same one. A getter that throws dials without a ticket (a provider that
   rejects leaves partysocket with no `close`, so "connecting" forever); an
   injected `WebSocket` needs a synchronous one.
+- **The last server-issued ticket is the resume credential** on the platform:
+  stored beside the session id (`session-resume-store.ts`), presented in
+  `SESSION_TICKET_HEADER` on a lookup that resumes, dropped by `forget()`. A
+  bound ticket opens its own session, so a failed re-mint is a new session the
+  `config` frame names, never a refusal.
 - There is no text-only mode; `ChatView` always renders voice `Controls`. The
   endpoint itself is the SDK's ("Pre-connection client config" in
   `packages/aai/src/sdk/CLAUDE.md`).

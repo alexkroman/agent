@@ -81,7 +81,7 @@ export const DEFAULT_PROGRESS_POLL_MS = 5000;
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
 // @internal
-export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
+export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch, presentedTicket?: string): Promise<ClientConfigResponse | null>;
 
 // @public
 export const MAX_MISSING_READS = 3;
