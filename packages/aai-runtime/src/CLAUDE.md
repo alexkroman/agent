@@ -278,7 +278,10 @@ every `tool_result` in host mode).
 - **An answer may beat its wait** (neither transport orders `tool.called` after
   the executor starts), so the broker HOLDS an unmatched answer, bounded
   runtime-wide (`MAX_EARLY_ANSWERS`, oldest evicted), never swept per session.
-- **Both symbols are `Symbol.for`** for the two-copies reason (`../CLAUDE.md`).
+- **The brand and the per-call wait are registered boundary keys** (`clientTool`,
+  `clientToolCall` in the SDK's `_boundary.ts`): the bundle and this runtime
+  hold two SDK copies ("The bundle/runtime boundary" in
+  `packages/aai/CLAUDE.md`). Read the brand only through `clientToolBrand`.
 
 ### A tool can SPEAK, and a filler line may not open the barge-in gate
 

@@ -52,10 +52,10 @@
  * @module
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot } from "./_boundary.ts";
 import { FatalError, RetryableError } from "./step-error-classes.ts";
 
-const STEP_NOTIFY_CLIENT_SLOT = globalSlot<ClientNotifier>("@alexkroman1/aai.stepNotifyClient");
+const STEP_NOTIFY_CLIENT_SLOT = globalSlot<ClientNotifier>("stepNotifyClient");
 
 /**
  * What a client id may look like: it is a map key on a public endpoint and a

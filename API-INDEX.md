@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 181 names
 - [Testing and evals](#testing-and-evals) — 254 names
 - [Hosting and tooling](#hosting-and-tooling) — 236 names
-- [Framework internals](#framework-internals) — 385 names
+- [Framework internals](#framework-internals) — 387 names
 
 ## Agent authoring
 
@@ -1228,6 +1228,7 @@ trace or a type error can be traced back to something.
 | `ASSEMBLYAI_TTS_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `ApiUrlChip` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `AttachSessionOptions` | type | `@alexkroman1/aai-runtime/internal` |  | Options for `attachSession`. |
+| `BOUNDARY_KEYS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `BuiltinToolOptions` | type | `@alexkroman1/aai/host-internal` |  | Options for creating built-in tool definitions. |
 | `CAPTURE_STOP_ACK_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `CARRIER_PARAM` | const | `@alexkroman1/aai-runtime/internal` |  | Query parameter naming the carrier — see `carrierByName`. |
@@ -1407,6 +1408,7 @@ trace or a type error can be traced back to something.
 | `SessionStateStore` | type | `@alexkroman1/aai-runtime/internal` |  | The runtime's view of the store. |
 | `SessionUrlChips` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `SleepTimerOptions` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `SlotName` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `SpawnCappedResult` | type | `@alexkroman1/aai/host-internal` |  | One child-process runner for every tool that shells out. |
 | `SpeechSynthesizer` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StateSyncSession` | type | `@alexkroman1/aai-runtime/internal` |  | The per-session state this decision reads and writes. |

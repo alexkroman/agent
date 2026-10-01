@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { BOUNDARY_KEYS } from "./_boundary.ts";
 import { agentToolsToSchemas } from "./_internal-types.ts";
 import { clientTool, clientToolBrand } from "./client-tool.ts";
 import { tool } from "./define.ts";
@@ -24,7 +25,9 @@ describe("clientTool", () => {
 
   test("the brand survives a spread and a second copy of this module (Symbol.for)", () => {
     expect(clientToolBrand({ ...getLocation })).toEqual({ timeoutMs: 20_000 });
-    expect(Reflect.get(getLocation, Symbol.for("aai.clientTool"))).toEqual({ timeoutMs: 20_000 });
+    expect(Reflect.get(getLocation, Symbol.for(BOUNDARY_KEYS.brands.clientTool))).toEqual({
+      timeoutMs: 20_000,
+    });
   });
 
   test("its schema is an ordinary tool's", () => {

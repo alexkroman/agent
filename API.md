@@ -5724,6 +5724,39 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 // @internal
 export function bindClientToolCall(ctx: ToolContext, call: ClientToolCall): void;
 
+// @internal
+export const BOUNDARY_KEYS: {
+    readonly brands: {
+        readonly clientTool: "@alexkroman1/aai.clientTool";
+        readonly clientToolCall: "@alexkroman1/aai.clientTool.call";
+        readonly routeResponse: "@alexkroman1/aai.routeResponse";
+        readonly routeError: "@alexkroman1/aai.routeError";
+        readonly stepError: "@alexkroman1/aai.stepError";
+        readonly keylessSynthesizer: "@alexkroman1/aai.speechSynthesizer.keyless";
+    };
+    readonly slots: {
+        readonly channelOutbox: "@alexkroman1/aai.channelOutbox";
+        readonly clientEventFeed: "@alexkroman1/aai-runtime.clientEventFeed";
+        readonly clientInboxDefaults: "@alexkroman1/aai.clientInboxDefaults";
+        readonly clientTranscriptReader: "@alexkroman1/aai.clientTranscriptReader";
+        readonly sessionCalls: "@alexkroman1/aai.sessionCalls";
+        readonly sessionClients: "@alexkroman1/aai.sessionClients";
+        readonly sessionEnders: "@alexkroman1/aai.sessionEnders";
+        readonly sessionLocations: "@alexkroman1/aai.sessionLocations";
+        readonly sessionPhones: "@alexkroman1/aai.sessionPhones";
+        readonly speechSynthesizer: "@alexkroman1/aai.speechSynthesizer";
+        readonly stepDelegate: "@alexkroman1/aai.stepDelegate";
+        readonly stepEnv: "@alexkroman1/aai.stepEnv";
+        readonly stepFetch: "@alexkroman1/aai.stepFetch";
+        readonly stepInfoReader: "@alexkroman1/aai.stepInfoReader";
+        readonly stepMcp: "@alexkroman1/aai.stepMcp";
+        readonly stepNotifyClient: "@alexkroman1/aai.stepNotifyClient";
+        readonly stepReporter: "@alexkroman1/aai.stepReporter";
+        readonly stepWebhookUrl: "@alexkroman1/aai.stepWebhookUrl";
+        readonly uploadReader: "@alexkroman1/aai.uploadReader";
+    };
+};
+
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
@@ -5943,7 +5976,7 @@ export type GlobalSlot<T> = {
 };
 
 // @internal
-export function globalSlot<T>(key: string): GlobalSlot<T>;
+export function globalSlot<T>(name: SlotName): GlobalSlot<T>;
 
 // @public
 type GuardrailVerdict = true | string;
@@ -6199,6 +6232,9 @@ export type SleepTimerOptions = {
     signal?: AbortSignal;
     unref?: boolean;
 };
+
+// @internal
+export type SlotName = keyof typeof BOUNDARY_KEYS.slots;
 
 // @public
 type SlotStore = {

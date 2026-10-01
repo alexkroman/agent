@@ -58,7 +58,7 @@
  * @module step-speak
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot, readBrand, setBrand } from "./_boundary.ts";
 import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
@@ -156,7 +156,7 @@ export type SpeechSynthesizer = (request: {
 }) => Promise<Uint8Array>;
 
 /** The registry-wide slot — see the module doc for why it is not a module-level `let`. */
-const STEP_SPEAK_SLOT = globalSlot<SpeechSynthesizer>("@alexkroman1/aai.speechSynthesizer");
+const STEP_SPEAK_SLOT = globalSlot<SpeechSynthesizer>("speechSynthesizer");
 
 /**
  * Publish the speech synthesizer for this process's steps.
@@ -172,22 +172,21 @@ export function publishSpeechSynthesizer(synthesizer: SpeechSynthesizer | undefi
   STEP_SPEAK_SLOT.set(synthesizer);
 }
 
-/** Marks a synthesizer that never dials a provider, so needs no credential. */
-const KEYLESS = Symbol.for("@alexkroman1/aai.speechSynthesizer.keyless");
-
 /**
  * Mark `synthesizer` as one that never reaches a provider — a spec's fake —
  * so {@link stepSpeak} hands it the credential when the env has one and `""`
  * when it does not, rather than refusing over a key nothing will present.
  *
  * A property on the function rather than a second slot, so the one published
- * value says both what speaks and whether it needs a key; `Symbol.for`, so the
- * agent bundle's copy of this module reads the mark the testing module wrote.
+ * value says both what speaks and whether it needs a key; a registered brand
+ * (`_boundary.ts`), so the agent bundle's copy of this module reads the mark
+ * the testing module wrote.
  *
  * @internal — `stubSpeech`'s half. A host never marks its synthesizer.
  */
 export function keylessSynthesizer(synthesizer: SpeechSynthesizer): SpeechSynthesizer {
-  return Object.assign(synthesizer, { [KEYLESS]: true });
+  setBrand(synthesizer, "keylessSynthesizer", true, { enumerable: true });
+  return synthesizer;
 }
 
 /**
@@ -277,6 +276,6 @@ export async function stepSpeak(text: string, options: SpeakOptions = {}): Promi
  * it to nobody, and whose spec should not have to invent one.
  */
 function credentialFor(synthesizer: SpeechSynthesizer, name: string): string {
-  if ((synthesizer as { [KEYLESS]?: true })[KEYLESS] === true) return stepEnv(name) ?? "";
+  if (readBrand(synthesizer, "keylessSynthesizer") === true) return stepEnv(name) ?? "";
   return requireStepEnv(name);
 }
