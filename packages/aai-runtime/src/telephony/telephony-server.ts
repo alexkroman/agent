@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The `/phone` front door: everything `createRuntimeServer` needs to answer a
+ * The `/phone` front door: everything `createServerForRuntime` needs to answer a
  * carrier's media-stream upgrade, kept out of `server.ts` so the route costs
  * that file a handful of lines rather than a section.
  *
@@ -38,7 +38,7 @@ import { asSessionWebSocket, type SessionWebSocket } from "../session/index.ts";
 import { type CarrierCodec, type CarrierName, carrierByName } from "./carriers.ts";
 import { type CarrierStart, createTelephonyBridge } from "./telephony-bridge.ts";
 
-/** Path `createRuntimeServer` serves carrier media streams on. */
+/** Path `createServerForRuntime` serves carrier media streams on. */
 export const TELEPHONY_PATH = "/phone";
 
 /** Query parameter naming the carrier — see `carrierByName`. */
@@ -189,7 +189,7 @@ function refuse(socket: Duplex, status: string, log: Logger, reason: string): vo
  * Claim a `/phone` upgrade, or refuse it.
  *
  * Returns true when the path was `/phone` — claimed either way, since a
- * refusal is still this route's to answer. `createRuntimeServer` calls it before its
+ * refusal is still this route's to answer. `createServerForRuntime` calls it before its
  * own `/websocket` routing.
  *
  * @internal

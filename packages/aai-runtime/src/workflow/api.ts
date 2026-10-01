@@ -55,7 +55,7 @@
  * `workflow/api/events.ts` for the second; the rule tying them together is that
  * waiting is an optimization over reading the run back, never the mechanism.
  *
- * It is mounted by `createRuntimeServer`, so `aai dev`, a self-hosted server and every
+ * It is mounted by `createServerForRuntime`, so `aai dev`, a self-hosted server and every
  * deployed agent serve it identically — the same reasoning `/phone` is mounted
  * there rather than bolted onto the platform.
  *
@@ -183,7 +183,7 @@ export type WorkflowApiOptions = {
    *
    * A VALUE rather than the getter `engine` is, because a store is cheap to
    * build and connects lazily — there is no runtime behind it to defer. Absent,
-   * the pair 404s naming the reason; `createRuntimeServer` always passes one.
+   * the pair 404s naming the reason; `createServerForRuntime` always passes one.
    */
   uploads?: UploadStore | undefined;
   /**
@@ -221,7 +221,7 @@ function requireUploads(res: http.ServerResponse, ctx: RouteContext): UploadStor
   if (ctx.uploads) return ctx.uploads;
   sendJson(res, 404, {
     error:
-      "This server stores no uploads. They are served by `createRuntimeServer`, which every deployed " +
+      "This server stores no uploads. They are served by `createServerForRuntime`, which every deployed " +
       "agent and `aai dev` go through.",
   });
   return undefined;

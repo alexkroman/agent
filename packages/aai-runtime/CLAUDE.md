@@ -164,7 +164,7 @@ barrel a name goes on.
 minor. Rules that follow:
 
 - A test DOUBLE implements the unsealed slice a consumer takes
-  (`SessionRuntime` for `createRuntimeServer`), never the sealed handle.
+  (`SessionRuntime` for `createServerForRuntime`), never the sealed handle.
 - A method that would widen a sealed handle becomes a free function over it
   (`connectSession`) or a sub-handle.
 - A handle that is only ever received (`AgentServer`, `TextAgent`,

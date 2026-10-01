@@ -56,6 +56,28 @@
  * declaration and its `…Of<typeof def>` readings are here, the step vocabulary
  * is `/step`.
  *
+ * ## The membership rule
+ *
+ * A name is on the root when an `agent.ts`, a tool module or a `workflow()`
+ * body NAMES it. A name that a narrower subpath OWNS is re-exported here only
+ * when it is one of:
+ *
+ * 1. **A type (or catalog) a root signature is spelled in** — the stage types
+ *    `AgentDef` names, `LlmSpec`, `AssemblyAIGatewayModel`, the voice catalog,
+ *    the three `…Of<typeof def>` readings, `ToolFailure` and the helpers a tool
+ *    body calls beside it — so an author never needs a second import to write
+ *    down what `agent()`, `tool()` or `workflow()` asked for.
+ * 2. **A MODE preset** — `assemblyAIPipeline` and `assemblyAIS2s`, the two
+ *    configurations that pick a session mode. A factory that swaps ONE stage
+ *    (`assemblyAITts`, `assemblyAIStt`, `llm`, every vendor's) stays on its
+ *    stage subpath; `agent({ voice, llm: "<model id>" })` covers the
+ *    AssemblyAI stages without one.
+ *
+ * Nothing else crosses: `/utils`' formatters are read by a page or a step,
+ * `/step` by a step, `/workflow-api` by a caller outside the agent. The
+ * narrower subpath keeps every name it re-exports here and keeps owning its
+ * capability.
+ *
  * @module
  */
 
@@ -238,33 +260,14 @@ export * from "./sdk/random.ts";
  *
  * `WorkflowClient` stays because `ToolContext.workflows` names it.
  *
- * **{@link WorkflowInputOf} and {@link WorkflowRunOf} are on BOTH, and the root
- * is where an author meets them.** They were on `/workflow-api` alone, on the
- * reading that a body names the input, a page names the output, and neither is
- * `agent.ts`. The second half is right and the first is not: the membership
- * test is "would an `agent.ts`, a TOOL MODULE, or a `workflow()` name it", and
- * both of those clauses hit here. A body in `workflows/` is what `workflow()`
- * declares — the three shipped templates that have one (`call-audit-workflow`,
- * `podcast-digest-workflow`, `spoken-summary-workflow`) each annotate its parameter with
- * `WorkflowInputOf`, which is the ONE annotation that is not optional (see that
- * type's doc: a hand-written parameter is contravariant, so a body disagreeing
- * with its own schema compiles). `WorkflowRunOf` is what a `*_status` TOOL
- * holds, in two more. So an author reaching for the type the compiler is asking
- * them for had to find a subpath documented as the surface for a caller OUTSIDE
- * the agent.
- *
- * **`WorkflowOutputOf` deliberately did NOT come with them.** It is the third
- * of the same family and the temptation is to move all three together, but its
- * reader really is a page: it is what `useWorkflowRun<…>` is parameterized by,
- * and the two templates that name it are both a `client.tsx`. The template API
- * ratchet is what settled it — no author-side example exercises it, and an
- * export no example exercises is either missing its example or should not be
- * public here. A `*_status` tool does not need it either, because
- * `WorkflowRunOf` already composes it in.
- *
- * Both names stay on `/workflow-api` too — that is still where a page imports
- * them — and `workflow-api` still OWNS the capability, by the rule that a name
- * on both `.` and a narrower subpath belongs to the narrower one.
+ * **The three `…Of<typeof def>` readings are on BOTH, and the root is where an
+ * author meets them** (rule 1 above). A body in `workflows/` annotates its
+ * parameter with {@link WorkflowInputOf} — the ONE annotation that is not
+ * optional, since a hand-written parameter is contravariant and a body
+ * disagreeing with its own schema compiles. {@link WorkflowRunOf} is what a
+ * `*_status` TOOL holds, and it is spelled in {@link WorkflowOutputOf}, so the
+ * third travels with it; a page reaches all three on `/workflow-api` too, which
+ * still OWNS the capability.
  *
  * What a BODY is written against joins it, because that is authoring too:
  * {@link WorkflowContext} (an author annotates a body's second parameter with it),
@@ -474,11 +477,10 @@ export {
   type WorkflowFailureContext,
   type WorkflowFailureHandler,
   type WorkflowFailureHook,
-  // Two of the three `…Of<typeof def>` readings of a declaration — see above.
-  // Also on `/workflow-api`, which owns the capability; these are the copies a
-  // `workflows/*.ts` body and a `*_status` tool reach for. `WorkflowOutputOf`
-  // is the one that stayed there, its reader being a `client.tsx`.
+  // The three `…Of<typeof def>` readings of a declaration — see above. Also on
+  // `/workflow-api`, which owns the capability.
   type WorkflowInputOf,
+  type WorkflowOutputOf,
   type WorkflowRunOf,
   workflow,
 } from "./sdk/workflow.ts";

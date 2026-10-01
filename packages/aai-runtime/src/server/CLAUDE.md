@@ -26,7 +26,7 @@ The replay engine executes a run in THIS process off the agent's own
   declares. Construction, not `listen()`, because a host that binds
   `AgentServer.node` itself never calls `listen()`.
 - **The delivery door**: `handleWorkflowRequest` is composed into
-  `createRuntimeServer`'s `request` hook, wired identically to `aai dev` and the
+  `createServerForRuntime`'s `request` hook, wired identically to `aai dev` and the
   harness, with no `allowRemote` — so `POST /workflow-queue` answers 401 (no
   platform queue to vouch for it; in-process timers deliver).
 - **A test must boot a workflow through this door** — `aai-cli`'s
@@ -58,14 +58,14 @@ the socket itself.
 ### `createAgentServer` forwards what only it can
 
 An option the front door does not carry is unreachable, because dropping to
-`createRuntime` + `createRuntimeServer` means restating every derived field by
+`createRuntime` + `createServerForRuntime` means restating every derived field by
 hand. So:
 
 - `page` and `telephony` are read off the AGENT (`telephony` defaults to no
   carrier), with an explicit field still winning; `name` and `greeting` are
   derived.
 - **`env` is forwarded minus the host gate**, through `agentServerEnv`
-  (`env.ts`, shared with the guest). `createRuntimeServer` reads
+  (`env.ts`, shared with the guest). `createServerForRuntime` reads
   `AAI_WORKFLOW_API_TOKEN` (closes `/workflows/*`),
   `AAI_SESSION_EVENTS_TOKEN`, and `DATABASE_URL` (where an upload's record
   lives) from it; the host-mode key is excluded because `?host=1` would run a
@@ -77,7 +77,7 @@ hand. So:
   must be `never`; a violation fails `tsc` and the build (the spec beside it is
   type-level and cannot fail on its own).
 - **A forwarding spec must take the door a caller takes**, not call
-  `createRuntimeServer` directly.
+  `createServerForRuntime` directly.
 - Reasons for each unforwarded member (sandbox seams, `stt`/`llm`/`tts`, two
   tuning numbers) are at the deny-list entry. Forward one when somebody needs
   it — `runCode` was, for `AAI_RUN_CODE=deno` (`packages/aai-cli/CLAUDE.md`).

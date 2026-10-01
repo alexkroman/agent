@@ -123,7 +123,7 @@ export declare const sessionAuthBrand: unique symbol;
 
 /**
  * Who may open a session on a server — `auth` on `createAgentServer`,
- * `createRuntimeServer` and `createHostServer`. Opaque: build one with
+ * `createServerForRuntime` and `createHostServer`. Opaque: build one with
  * {@link createSessionAuth}.
  *
  * @sealed

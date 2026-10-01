@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `/api/*` as `createRuntimeServer` serves it: the prefix, the body cap, JSON
+ * `/api/*` as `createServerForRuntime` serves it: the prefix, the body cap, JSON
  * both ways, the headers and the raw body, `?client=`, and an agent with no routes leaving the prefix alone —
  * then once through a real `createRuntime`, to pin that `agent({ routes })` is
  * all it takes.
@@ -22,7 +22,7 @@ import { compileAgentRoutes, createRuntimeWithSeams } from "../runtime/index.ts"
 import { createSessionEventStream } from "../session/index.ts";
 import { createMemoryStateBackend } from "../session-state/store.ts";
 import { MAX_ROUTE_BODY_BYTES } from "./agent-routes-http.ts";
-import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
+import { type AgentServer, createServerForRuntime, type SessionRuntime } from "./server.ts";
 
 let server: AgentServer | undefined;
 let unregister: (() => void) | undefined;
@@ -47,12 +47,12 @@ async function serve(routes: Record<string, RouteHandler> | undefined): Promise<
       logger: silentLogger,
     }),
   };
-  server = createRuntimeServer({ runtime, logger: silentLogger });
+  server = createServerForRuntime({ runtime, logger: silentLogger });
   await server.listen(0);
   return `http://127.0.0.1:${server.port}`;
 }
 
-describe("/api on createRuntimeServer", () => {
+describe("/api on createServerForRuntime", () => {
   test("GET /api/<path> answers the route's return value as JSON, handed ?client=", async () => {
     const handler = vi.fn<RouteHandler>((req) => ({ client: req.clientId, q: req.query.page }));
     const base = await serve({ "GET /memories": handler });
@@ -179,7 +179,7 @@ describe("agent({ routes }) through createRuntime", () => {
       llm: fakes.llm,
       tts: fakes.tts,
     });
-    server = createRuntimeServer({ runtime, logger: silentLogger });
+    server = createServerForRuntime({ runtime, logger: silentLogger });
     await server.listen(0);
     const res = await fetch(`http://127.0.0.1:${server.port}/api/whoami`);
     expect(await res.json()).toEqual({ name: "Ana" });

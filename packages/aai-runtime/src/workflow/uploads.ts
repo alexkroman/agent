@@ -167,7 +167,7 @@ export function uploadBytesAreRemote(home: StorageHome, blobs: UploadBackend | u
  * A durable home with NO byte backend is the one refusal: a durable record behind
  * bytes that die with the container names an object nothing can produce, and the
  * local arm would be a quieter version of the same loss rather than a fix. A local
- * home with no `localDir` refuses too — a bare `createRuntimeServer` with nothing
+ * home with no `localDir` refuses too — a bare `createServerForRuntime` with nothing
  * configured has to answer the upload routes somehow.
  *
  * @internal

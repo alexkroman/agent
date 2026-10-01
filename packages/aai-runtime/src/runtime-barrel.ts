@@ -166,6 +166,7 @@ export {
   createAgentServer,
   createHostServer,
   createRuntimeServer,
+  createServerForRuntime,
   DEFAULT_LISTEN_HOST,
   type HostServerOptions,
   type HostSessionDefaults,
@@ -224,7 +225,7 @@ export { createToolCallRepair, salvageJson, withToolsDir } from "./tools/index.t
 // THUNK form — which is how a resume that recovered nothing gets greeted —
 // would otherwise have a type to satisfy and no way to name it.
 export type { SkipGreetingOption } from "./transports/types.ts";
-// The workflow HTTP API's ADDRESSING. `createRuntimeServer` mounts the route itself,
+// The workflow HTTP API's ADDRESSING. `createServerForRuntime` mounts the route itself,
 // so nothing outside this package has to wire one — what is exported is the
 // token's env var (the guest's deploy path reads it to decide whether a
 // deployed app's API is closed) and the prefix, so the platform's proxy and

@@ -284,7 +284,7 @@ describe("createTransportFactory (pipeline)", () => {
     // Why the dep is a thunk at all: `createRuntime` defers this resolution for
     // a `mode: "workflow-app"` agent, whose injected default providers must not be
     // dialled — and a static agent given a voice surface by an embedder
-    // (`createRuntimeServer({ telephony: true })`) then resolves here. Passing a plain
+    // (`createServerForRuntime({ telephony: true })`) then resolves here. Passing a plain
     // `null` for that case would answer "no transport for session" and bury the
     // real cause.
     const factory = createTransportFactory(

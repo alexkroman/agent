@@ -73,7 +73,7 @@ export function createChannelOutbox(options: {
 /**
  * Publish the outbox when `AAI_CHANNEL_OUTBOX` names a file, and say so once.
  *
- * Called by `installWorkflowSupport`, which every `createRuntimeServer` runs
+ * Called by `installWorkflowSupport`, which every `createServerForRuntime` runs
  * whether or not the agent declares a workflow — `text_me` is a builtin, so an
  * agent with no workflows sends too. Unset (or blank), nothing is published and
  * sends go out as usual; nothing is UNpublished either, so a sink a test

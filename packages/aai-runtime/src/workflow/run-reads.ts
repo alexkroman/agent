@@ -60,7 +60,7 @@
  *
  * ## The registries are module-level, because there is one copy
  *
- * The three loops live in different places — `createRuntimeServer` holds the
+ * The three loops live in different places — `createServerForRuntime` holds the
  * wait loop and the event stream, `createRuntime` builds `createRunNotifier` —
  * but they are one module instance (see "The server and the sessions are ONE copy"
  * in this package's guide), and all hold the same `WorkflowClient` OBJECT, so a

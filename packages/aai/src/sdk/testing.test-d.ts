@@ -20,7 +20,8 @@ import type { DialogToolResult } from "./dialog-types.ts";
 import type { StubDelegateScript } from "./testing-delegate.ts";
 import type { DeployedConfig } from "./testing-deployable.ts";
 import type { StubGenerateScript } from "./testing-generate.ts";
-import type { ScriptedToolContextOptions } from "./testing-scripted.ts";
+// A namespace import: the deprecated options type is pinned, not relied on.
+import type * as deprecated from "./testing-scripted.ts";
 import { runTool } from "./testing-tools.ts";
 import type { ToolContext } from "./types.ts";
 import { type ToolFailure, toolFailure } from "./utils.ts";
@@ -49,10 +50,12 @@ test("every position that takes a script takes the same two shapes", () => {
   expectTypeOf<{ generate: { reply: string } }>().toExtend<ToolContextOverrides>();
   expectTypeOf<{ generate: { routes: { s: string } } }>().toExtend<ToolContextOverrides>();
   expectTypeOf<{ delegate: { reply: string } }>().toExtend<ToolContextOverrides>();
-  expectTypeOf<{ generate: { reply: string } }>().toExtend<ScriptedToolContextOptions>();
-  expectTypeOf<{ delegate: { routes: { r: string } } }>().toExtend<ScriptedToolContextOptions>();
+  expectTypeOf<{ generate: { reply: string } }>().toExtend<deprecated.ScriptedToolContextOptions>();
+  expectTypeOf<{
+    delegate: { routes: { r: string } };
+  }>().toExtend<deprecated.ScriptedToolContextOptions>();
   expectTypeOf<{ generate: string }>().not.toExtend<ToolContextOverrides>();
-  expectTypeOf<{ generate: string }>().not.toExtend<ScriptedToolContextOptions>();
+  expectTypeOf<{ generate: string }>().not.toExtend<deprecated.ScriptedToolContextOptions>();
 });
 
 test("a FUNCTION in the context's `generate` is the seam, and a route function is not", () => {
