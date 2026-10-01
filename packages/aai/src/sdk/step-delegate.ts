@@ -10,7 +10,7 @@
  * a branch for the turn where it names an action and fills in none of its
  * fields. `research-handoff-agent` wrote exactly that — 82 lines of loop and helpers
  * by itself, and a second model call to compress what they collected — beside a
- * `subagent()` implementation that does all four and is tested.
+ * delegated run (`speaker()` + `ctx.delegate`) that does all four and is tested.
  *
  * ```ts
  * import { speaker } from "@alexkroman1/aai";

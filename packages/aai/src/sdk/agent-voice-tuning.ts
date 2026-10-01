@@ -51,8 +51,8 @@ export const KNOWN_TURN_DETECTION_MODES = ["auto", "manual"] as const;
  * Both members are optional; set one or both. A limit that names neither is
  * refused at config time rather than accepted as a cap on nothing.
  *
- * Two things it is NOT: it is not a barge-in gate (`minBargeInWords` and
- * `interruptionMinDurationMs` decide whether the caller's speech interrupts a
+ * Two things it is NOT: it is not a barge-in gate (`interruption.minWords` and
+ * `interruption.minDurationMs` decide whether the caller's speech interrupts a
  * reply; this decides when the caller's own turn is long enough), and it does
  * not discard anything the caller says — speech after the cut lands in the
  * turn that follows.
@@ -69,7 +69,7 @@ export interface UserTurnLimit {
   /**
    * End the caller's turn once this many words have been heard in it. A
    * positive integer; counted on the transcriber's interim transcript, so it
-   * is what the transcriber HEARD, exactly as `minBargeInWords` is.
+   * is what the transcriber HEARD, exactly as `interruption.minWords` is.
    */
   // `| undefined` on both, unlike the scalar knobs beside this interface: the
   // object crosses the config boundary as a whole, and under

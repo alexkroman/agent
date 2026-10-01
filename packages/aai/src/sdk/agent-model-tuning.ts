@@ -40,7 +40,7 @@
  *
  * - the **conversational loop** — every step of every turn;
  * - **`ctx.generate`** from a tool body;
- * - **`ctx.delegate` / `subagent()`** — every step of the delegated run,
+ * - **`ctx.delegate`** of a `speaker()` — every step of the delegated run,
  *   including a guardrail's revisions.
  *
  * That list is the whole budget, and it is stated because the first release of

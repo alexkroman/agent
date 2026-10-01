@@ -146,7 +146,8 @@ export function setBrand(
 }
 
 /**
- * shape (see the module doc). `undefined` for anything that is not a record or
+ * The brand `name` carried by `value`, as `unknown`: what crosses is plain data
+ * the reader re-validates, never trusts by identity, so the caller checks its
  * shape (see the module doc). `undefined` for anything that is not an object or
  * a function (an array included), or carries no such brand.
  *

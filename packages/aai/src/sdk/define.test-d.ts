@@ -535,7 +535,7 @@ test("telephony is declarable on a voice agent and refused where there is no cal
  * compiling while silently changing what the 3 bounds. The error is the point:
  * the field is typed as a message naming `maxRevisions`, so it says the fix.
  */
-test("subagent() rejects maxRetries and takes maxRevisions", () => {
+test("speaker() rejects maxRetries and takes maxRevisions", () => {
   const guardrail = () => true as const;
   speaker({ name: "r", systemPrompt: "S.", guardrail, maxRevisions: 3 });
   // Structural, not only excess-property: `maxRetries` is typed as the rename
