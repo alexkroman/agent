@@ -6,9 +6,11 @@
 import type { ModelMessage, PrepareStepFunction, ToolSet } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import {
-  composePrepareStep,
+  composePreparers,
   forceFinalAnswer,
   isFailedToolResult,
+  PREPARER_ORDER,
+  type PreparerStage,
   resetToolChoiceAfterFirstStep,
   TOOL_ERROR_BUDGET,
   toolErrorBudget,
@@ -34,7 +36,7 @@ function step(
   return options;
 }
 
-describe("composePrepareStep", () => {
+describe("composePreparers", () => {
   const trimmed: ModelMessage[] = [{ role: "user", content: "trimmed" }];
   /** Stands in for the context budget: owns `messages`, says nothing else. */
   const budget = (): { messages: ModelMessage[] } => ({ messages: trimmed });
@@ -45,61 +47,133 @@ describe("composePrepareStep", () => {
     // The whole reason this exists: writing either preparer straight into the
     // single slot deletes the other, with no error and no symptom until a turn
     // stops mid-chain or a request overflows the window.
-    const result = await composePrepareStep(budget, forceFinal)(step());
+    const result = await composePreparers([
+      { stage: "context-budget", prepare: budget },
+      { stage: "force-final-answer", prepare: forceFinal },
+    ])(step());
     expect(result).toEqual({ messages: trimmed, toolChoice: "none" });
+  });
+
+  test("layers in PREPARER_ORDER: budget → persona → dialog → forceFinalAnswer", async () => {
+    // The order is the pipeline's, not the call site's: registered in REVERSE
+    // here, each stage still runs after the one before it. Every stage writes
+    // `toolChoice`, so the last writer's value plus the call log pin the whole
+    // precedence; the budget also writes `messages`, which no later stage may
+    // erase.
+    const seen: PreparerStage[] = [];
+    const writer =
+      (stage: PreparerStage, toolChoice: "auto" | "none" | "required") =>
+      (): { toolChoice: "auto" | "none" | "required" } => {
+        seen.push(stage);
+        return { toolChoice };
+      };
+    const composed = composePreparers([
+      { stage: "force-final-answer", prepare: writer("force-final-answer", "none") },
+      { stage: "dialog", prepare: writer("dialog", "required") },
+      { stage: "persona", prepare: writer("persona", "auto") },
+      {
+        stage: "context-budget",
+        prepare: () => {
+          seen.push("context-budget");
+          return { messages: trimmed, toolChoice: "required" as const };
+        },
+      },
+    ]);
+    expect(await composed(step())).toEqual({ messages: trimmed, toolChoice: "none" });
+    expect(seen).toEqual(["context-budget", "persona", "dialog", "force-final-answer"]);
+  });
+
+  test("the dialog state beats the persona, which beats the agent-scoped reset", async () => {
+    const composed = composePreparers([
+      { stage: "dialog", prepare: () => ({ toolChoice: "required" as const }) },
+      { stage: "agent-tool-choice", prepare: () => ({ toolChoice: "auto" as const }) },
+      { stage: "persona", prepare: () => ({ toolChoice: "none" as const, temperature: 0.2 }) },
+    ]);
+    expect(await composed(step())).toEqual({ toolChoice: "required", temperature: 0.2 });
+  });
+
+  test("PREPARER_ORDER is the documented scope precedence", () => {
+    // The one statement of the order. A reorder here is a behaviour change on
+    // every call site at once, which is why it is pinned as a literal.
+    expect(PREPARER_ORDER).toEqual([
+      "caller",
+      "context-budget",
+      "agent-tool-choice",
+      "persona",
+      "dialog",
+      "tool-error-budget",
+      "force-final-answer",
+    ]);
+  });
+
+  test("a stage registered twice is refused at construction", () => {
+    expect(() =>
+      composePreparers([
+        { stage: "dialog", prepare: forceFinal },
+        { stage: "dialog", prepare: forceFinal },
+      ]),
+    ).toThrow('prepareStep stage "dialog" registered twice');
   });
 
   test("a preparer answering undefined contributes nothing and erases nothing", async () => {
     // "Nothing to say about this step" — the common case for both real
     // preparers. A `a ?? b` merge would drop everything the first one said.
     const silent = (): undefined => undefined;
-    expect(await composePrepareStep(budget, silent)(step())).toEqual({ messages: trimmed });
-    expect(await composePrepareStep(silent, forceFinal)(step())).toEqual({ toolChoice: "none" });
+    expect(
+      await composePreparers([
+        { stage: "context-budget", prepare: budget },
+        { stage: "dialog", prepare: silent },
+      ])(step()),
+    ).toEqual({ messages: trimmed });
+    expect(
+      await composePreparers([
+        { stage: "caller", prepare: silent },
+        { stage: "force-final-answer", prepare: forceFinal },
+      ])(step()),
+    ).toEqual({ toolChoice: "none" });
   });
 
   test("an undefined preparer is skipped, not called", async () => {
     // The text agent's caller hook is optional.
     const later = vi.fn(forceFinal);
-    expect(await composePrepareStep(undefined, later)(step())).toEqual({ toolChoice: "none" });
+    expect(
+      await composePreparers([
+        { stage: "caller", prepare: undefined },
+        { stage: "force-final-answer", prepare: later },
+      ])(step()),
+    ).toEqual({ toolChoice: "none" });
     expect(later).toHaveBeenCalledTimes(1);
   });
 
-  test("the LAST writer wins per key, which is why forceFinalAnswer goes last", async () => {
+  test("the LAST stage wins per key, which is why forceFinalAnswer goes last", async () => {
     const caller = (): { toolChoice: "required"; messages: ModelMessage[] } => ({
       toolChoice: "required",
       messages: trimmed,
     });
-    const result = await composePrepareStep(caller, forceFinal)(step());
+    const result = await composePreparers([
+      { stage: "force-final-answer", prepare: forceFinal },
+      { stage: "caller", prepare: caller },
+    ])(step());
     // The caller asked for `required`; the reserved answering step overrides
     // that one key and leaves its messages alone.
     expect(result).toEqual({ messages: trimmed, toolChoice: "none" });
   });
 
-  test("every preparer sees the SAME options, in order", async () => {
-    const seen: number[] = [];
-    // Returns an empty result rather than nothing: `void` is not a
-    // `PrepareStepResult`, and this is about ORDER, not about the merge.
-    const record = (n: number) => (): Record<string, never> => {
-      seen.push(n);
-      return {};
-    };
-    await composePrepareStep(record(1), record(2), record(3))(step({ stepNumber: 7 }));
-    expect(seen).toEqual([1, 2, 3]);
-  });
-
   test("awaits an async preparer rather than merging its promise", async () => {
     const asyncBudget = async (): Promise<{ messages: ModelMessage[] }> => ({ messages: trimmed });
-    expect(await composePrepareStep(asyncBudget, forceFinal)(step())).toEqual({
-      messages: trimmed,
-      toolChoice: "none",
-    });
+    expect(
+      await composePreparers([
+        { stage: "context-budget", prepare: asyncBudget },
+        { stage: "force-final-answer", prepare: forceFinal },
+      ])(step()),
+    ).toEqual({ messages: trimmed, toolChoice: "none" });
   });
 
   test("composing nothing is a no-op result, never undefined", async () => {
     // `streamText` accepts an empty result; returning `undefined` from the
     // composed function would be fine too, but the empty object is what every
     // other branch returns and one shape is easier to reason about.
-    expect(await composePrepareStep()(step())).toEqual({});
+    expect(await composePreparers([])(step())).toEqual({});
   });
 });
 
@@ -134,10 +208,10 @@ describe("resetToolChoiceAfterFirstStep", () => {
     // Composed before it deliberately: the reserved step exists so the model
     // has no move left but to speak, and `"auto"` there would let it spend the
     // step on another call.
-    const composed = composePrepareStep(
-      resetToolChoiceAfterFirstStep("required", true),
-      forceFinalAnswer(2, silentLogger, "sid"),
-    );
+    const composed = composePreparers([
+      { stage: "agent-tool-choice", prepare: resetToolChoiceAfterFirstStep("required", true) },
+      { stage: "force-final-answer", prepare: forceFinalAnswer(2, silentLogger, "sid") },
+    ]);
     // `step()` is the real `prepareStep` options shape, which is what the
     // composed function takes — the two preparers under it read only
     // `stepNumber`, but the seam between them is typed and stays typed.
@@ -239,11 +313,11 @@ describe("toolErrorBudget", () => {
 
   test("composes before forceFinalAnswer and overrides a dialog pin", async () => {
     const dialogPin = (): { toolChoice: "required" } => ({ toolChoice: "required" });
-    const composed = composePrepareStep(
-      dialogPin,
-      toolErrorBudget(silentLogger, "sid"),
-      forceFinalAnswer(5, silentLogger, "sid"),
-    );
+    const composed = composePreparers([
+      { stage: "dialog", prepare: dialogPin },
+      { stage: "tool-error-budget", prepare: toolErrorBudget(silentLogger, "sid") },
+      { stage: "force-final-answer", prepare: forceFinalAnswer(5, silentLogger, "sid") },
+    ]);
     const failed = round("t", { q: 1 }, failure);
     const options = step({ stepNumber: 1 });
     expect(await composed({ ...options, steps: [] })).toEqual({ toolChoice: "required" });

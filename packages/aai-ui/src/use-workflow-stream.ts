@@ -72,7 +72,7 @@
  *
  * `pauseUpload()` aborts the bytes in flight and holds the uploader;
  * `resumeUpload()` sends what is missing. The store cannot tell that from an
- * outage, because there is nothing to tell apart — see `_upload-session.ts`. The
+ * outage, because there is nothing to tell apart — see `upload/session.ts`. The
  * RUN is untouched either way: it goes on polling the id it was started with, and
  * `stream.ts`'s idle bound (five minutes of no new bytes) is what decides that a
  * pause has become an abandonment.
@@ -88,15 +88,15 @@ import type {
 import { useCallback, useState } from "react";
 import { useRunControls } from "./_run-controls.ts";
 import { type SubmissionToken, useSubmissionState } from "./_submission-state.ts";
-import { coalesceUploadReports } from "./_upload-report.ts";
+import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
+import { fileFields, filesOf } from "./_workflow-files.ts";
 import {
+  coalesceUploadReports,
   createUploadGate,
   randomUploadId,
   sendThroughGate,
   type UploadGate,
-} from "./_upload-session.ts";
-import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
-import { fileFields, filesOf } from "./_workflow-files.ts";
+} from "./upload/index.ts";
 import type {
   UploadStatus,
   UseWorkflowSubmitOptions,
@@ -118,7 +118,7 @@ import type { SubmitInputOf } from "./workflow-def-types.ts";
  * paying for. Adopting an earlier run by key would hand this hook a run whose
  * input names an upload id it did not mint and is not filling — so the run
  * would sit waiting for bytes nobody is sending until its own abandonment
- * bound. That is the same reason `_upload-recall.ts` deliberately does not
+ * bound. That is the same reason `upload/recall.ts` deliberately does not
  * recall for this hook, one layer up: here the id is part of a run's INPUT.
  * `key` itself still works, and still makes the run findable — but it is NOT
  * defaulted here the way `useWorkflowSubmit` defaults it, because the whole
@@ -224,7 +224,7 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
         actions.setRunId(started);
         if (!chosen) return;
         // Coalesced for the reason `useWorkflowSubmit` coalesces — see
-        // `_upload-report.ts`.
+        // `upload/report.ts`.
         await streamFile({
           client,
           gate,

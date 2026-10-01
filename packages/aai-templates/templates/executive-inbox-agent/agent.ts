@@ -43,7 +43,7 @@ export default agent({
   systemPrompt: `${systemPrompt}\n\n${principalBrief(EXECUTIVE)}`,
   // The inbox, the memory and the proposal exist before the first tool call, so
   // a resumed connection has something to project.
-  syncState: assistantProjection,
+  syncState: { assistant: assistantProjection },
   // Declared so the CALL can move the gate: a caller who hangs up with a draft
   // waiting leaves `accept` legal for the rest of the session otherwise.
   dialogs: [reviewFlow],

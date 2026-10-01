@@ -7,7 +7,7 @@
  * sequential query on the session's write path — for a column whose only reader
  * is `clientSessions`' `since` pre-filter. That `since` is a COARSE cutoff (an
  * app's `historySince`, a transcript's window), and the events inside a session
- * are re-filtered on their own `meta.at` (`session-client-history.ts`), so the
+ * are re-filtered on their own `meta.at` (`../session/client-history.ts`), so the
  * column only has to say "this session was active around then".
  *
  * So it is throttled: at most one touch per session per

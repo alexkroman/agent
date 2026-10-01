@@ -78,7 +78,7 @@ export const defaultCreateHeaderWebSocket: CreateHeaderWebSocket = (url, options
  * two epochs and obliges two frozen templates — for a cap on a socket no provider
  * opens. This is not on that surface.
  *
- * `platform-socket.ts` is the caller: its peer refuses a frame over
+ * `platform/socket.ts` is the caller: its peer refuses a frame over
  * `MAX_PLATFORM_SOCKET_FRAME_BYTES` and a reader that would accept one is a
  * socket that dies mid-run rather than a request that is refused. It goes through
  * here rather than opening its own `ws` because this module owns the ONE

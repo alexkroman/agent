@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { BOUNDARY_KEYS } from "./_boundary.ts";
 import { DEFAULT_RETRY_DELAY_MS, FatalError, RetryableError } from "./step-error-classes.ts";
 
 describe("FatalError", () => {
@@ -64,7 +65,7 @@ describe("the brand", () => {
     // `Symbol.for`, so a second copy's symbol is the same value — simulated here
     // by branding a plain error the way the constructor does.
     const fromElsewhere = new Error("fatal, from a second copy");
-    Object.defineProperty(fromElsewhere, Symbol.for("aai.stepError"), {
+    Object.defineProperty(fromElsewhere, Symbol.for(BOUNDARY_KEYS.brands.stepError), {
       value: "fatal",
       enumerable: false,
     });
@@ -77,17 +78,19 @@ describe("the brand", () => {
     // own enumerable keys, and a symbol it copied would be a second way for a
     // verdict to cross a wire, disagreeing with the one the classes own.
     const err = new RetryableError("later");
-    const brand = Symbol.for("aai.stepError");
+    const brand = Symbol.for(BOUNDARY_KEYS.brands.stepError);
     expect(Object.getOwnPropertyDescriptor(err, brand)?.enumerable).toBe(false);
     expect(Object.getOwnPropertySymbols({ ...err })).not.toContain(brand);
-    expect(JSON.stringify(err)).not.toContain("aai.stepError");
+    expect(JSON.stringify(err)).not.toContain(BOUNDARY_KEYS.brands.stepError);
   });
 
   test("refuses a brand carrying a value it does not recognise", () => {
     // `Symbol.for` is a registry lookup, so any code in the process can mint the
     // same symbol. The VALUE is validated rather than trusted.
     const forged = new Error("pretending");
-    Object.defineProperty(forged, Symbol.for("aai.stepError"), { value: "nonsense" });
+    Object.defineProperty(forged, Symbol.for(BOUNDARY_KEYS.brands.stepError), {
+      value: "nonsense",
+    });
     expect(FatalError.is(forged)).toBe(false);
     expect(RetryableError.is(forged)).toBe(false);
   });

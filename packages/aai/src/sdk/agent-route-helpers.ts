@@ -19,6 +19,7 @@
  * @module
  */
 
+import { readBrand, setBrand } from "./_boundary.ts";
 import {
   type RouteContext,
   type RouteHandler,
@@ -31,9 +32,6 @@ import {
   type InferSchemaOutput,
   type StandardSchemaV1,
 } from "./standard-schema.ts";
-
-/** The brand {@link RouteError} carries. `Symbol.for`, so every copy of this module agrees. */
-const ROUTE_ERROR_BRAND: unique symbol = Symbol.for("@alexkroman1/aai.routeError");
 
 /** A status a route error may answer: 4xx or 5xx. */
 function isErrorStatus(status: unknown): status is number {
@@ -58,8 +56,9 @@ export class RouteError extends Error {
     super(message);
     this.name = "RouteError";
     this.status = status;
-    // Non-enumerable, so the brand never reaches a log line's serialization.
-    Object.defineProperty(this, ROUTE_ERROR_BRAND, { value: true, enumerable: false });
+    // The registered `routeError` brand, so every copy of this module reads it;
+    // non-enumerable, so it never reaches a log line's serialization.
+    setBrand(this, "routeError", true);
   }
 }
 
@@ -93,7 +92,7 @@ export function routeError(status: number, message: string): RouteError {
  * @internal
  */
 export function readRouteError(err: unknown): { status: number; message: string } | undefined {
-  if (!isRecord(err) || Reflect.get(err, ROUTE_ERROR_BRAND) !== true) return undefined;
+  if (!isRecord(err) || readBrand(err, "routeError") !== true) return undefined;
   const { status, message } = err;
   if (!isErrorStatus(status)) return undefined;
   return { status, message: typeof message === "string" ? message : "" };

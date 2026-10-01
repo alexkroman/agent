@@ -12,7 +12,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import type { LogPage } from "@alexkroman1/aai-runtime";
+import type { LogPage } from "@alexkroman1/aai/host-internal";
 import pTimeout from "p-timeout";
 import { emptyLogPage, LOGS_READY_TIMEOUT_MS } from "./agent-logs.ts";
 import { resolveHarnessPath, SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
@@ -56,6 +56,15 @@ export type SandboxOptions = {
 };
 
 export type Sandbox = {
+  /**
+   * The deploy version this sandbox was BUILT from — the other half of its
+   * fleet-wide name, so the version its guest's bearer (`guestTokenFor`) and
+   * its session-ticket key derive from. Carried on the sandbox rather than read
+   * back off its slot, because a handover can swap the slot between brokering a
+   * session to this sandbox and minting that session's ticket. Optional: a test
+   * double need not name one, and the broker then falls back to the row.
+   */
+  readonly version?: number | undefined;
   /**
    * The sandbox's public client-session endpoint (`wss://…/websocket` on its
    * Modal tunnel). Resolves once the guest answers /health; rejects when the
@@ -196,6 +205,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   };
 
   return {
+    version: opts.version,
     sessionUrl: () => vmReady.then((handle) => handle.sessionUrl),
     // Bounded rather than awaited: see the doc on `logs` above. `pTimeout`
     // rather than a race against a timer — `guard-invariants` rule 3.

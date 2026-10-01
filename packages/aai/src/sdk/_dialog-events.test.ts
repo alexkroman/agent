@@ -22,11 +22,11 @@ const callSpec = {
   states: {
     greeting: {
       instruction: "Say hello and ask what they need.",
-      on: { HEARD: "helping", "@session.timed-out": "abandoned" },
+      on: { HEARD: "helping", "@session.timedOut": "abandoned" },
     },
     helping: {
       instruction: "Help them.",
-      on: { DONE: "closed", "@session.timed-out": "abandoned" },
+      on: { DONE: "closed", "@session.timedOut": "abandoned" },
     },
     abandoned: { final: true },
     closed: { final: true },
@@ -57,7 +57,7 @@ describe("session-event transitions", () => {
           abandoned: { final: true },
         },
       }),
-    ).toThrow(/state "greeting".*@session\.timed-out/s);
+    ).toThrow(/state "greeting".*@session\.timedOut/s);
   });
 
   test("the same check runs on a hand-written machine", () => {
@@ -82,7 +82,7 @@ describe("receive", () => {
   test("moves the dialog when the active state declares the event", () => {
     const call = dialog("call", callSpec);
     const ctx = createToolContext();
-    const at = call.receive(ctx, { type: "session.timed-out", meta: { id: "evt_1", at: 0 } });
+    const at = call.receive(ctx, { type: "session.timedOut", meta: { id: "evt_1", at: 0 } });
     expect(at).toMatchObject({ state: "abandoned", done: true });
     expect(call.position(ctx).state).toBe("abandoned");
   });
@@ -122,7 +122,7 @@ describe("receive", () => {
     }
     expect(writes).toBe(0);
 
-    call.receive(counted, { type: "session.timed-out", meta: { id: "evt_1", at: 0 } });
+    call.receive(counted, { type: "session.timedOut", meta: { id: "evt_1", at: 0 } });
     expect(writes).toBe(1);
   });
 
@@ -134,7 +134,7 @@ describe("receive", () => {
       states: {
         working: {
           initial: "triaging",
-          on: { "@session.timed-out": "abandoned" },
+          on: { "@session.timedOut": "abandoned" },
           states: { triaging: {} },
         },
         abandoned: { final: true },
@@ -142,7 +142,7 @@ describe("receive", () => {
     });
     const ctx = createToolContext();
     expect(call.position(ctx).state).toBe("working.triaging");
-    const at = call.receive(ctx, { type: "session.timed-out", meta: { id: "evt_1", at: 0 } });
+    const at = call.receive(ctx, { type: "session.timedOut", meta: { id: "evt_1", at: 0 } });
     expect(at.state).toBe("abandoned");
   });
 
@@ -150,7 +150,7 @@ describe("receive", () => {
     const call = dialog("call", callSpec);
     const alice = createToolContext();
     const bob = createToolContext();
-    call.receive(alice, { type: "session.timed-out", meta: { id: "evt_1", at: 0 } });
+    call.receive(alice, { type: "session.timedOut", meta: { id: "evt_1", at: 0 } });
     expect(call.position(alice).state).toBe("abandoned");
     expect(call.position(bob).state).toBe("greeting");
   });

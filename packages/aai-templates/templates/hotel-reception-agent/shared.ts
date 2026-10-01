@@ -17,7 +17,7 @@
  * | `Userdata` (verified booking, turn counters, transferred_to) | the same fields on {@link HotelState} |
  * | `VerifyBookingTask` (last name + code, or + card last four; three strikes) | `tools/verify_booking.ts` + {@link requireVerified}, checked by every booking tool |
  * | `BookRoomTask` + `ModifyBookingTask` (one `AgentTask` each, `_step()` derived from captured values) | ONE `booking` dialog in `desk.ts`, `nextStep` in `booking.ts`, a `mode` on the draft |
- * | `_Owed` (speech owed before a tool may run, discharged by the caller's next turn) | `offering` and `readBack` states leaving on `@user-transcript.committed` |
+ * | `_Owed` (speech owed before a tool may run, discharged by the caller's next turn) | `offering` and `readBack` states leaving on `@userTranscript.committed` |
  * | `GetNameTask` / `GetEmailTask` / `GetPhoneNumberTask` | `tools/record_guest_details.ts` |
  * | `GetCardTask` (Luhn, expiry, code length) | `tools/record_card.ts`, `tools/update_card.ts` |
  * | `BookRestaurantTask` | `tools/reserve_table.ts`, one call, refusing with the open slots |

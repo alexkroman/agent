@@ -49,8 +49,8 @@ import { createMemoryKeyStore, createPostgresKeyStore, type WorkflowKeyStore } f
 import { createPlatformKeyStore } from "./keys-platform.ts";
 import { createRunNotifier, type RunNotifier } from "./notify.ts";
 import { createPlatformDispatch } from "./platform-dispatch.ts";
-import { platformGuestOptions } from "./platform-world.ts";
 import { resolveStepConcurrency } from "./step-gate.ts";
+import { resolveStorageHome, type StorageHome } from "./storage-home.ts";
 
 /**
  * The client a runtime hands to tools, and the handle its teardown owes.
@@ -74,22 +74,12 @@ export type BuiltWorkflowClient = {
 };
 
 /**
- * Pick the run journal, and name it for the boot line.
+ * The run journal for a resolved {@link StorageHome}, named for the boot line.
  *
- * Three backends and the order is a strict preference, because two of them can be
- * available at once and only one is right: a DEPLOYED guest may also carry an
- * author-supplied `DATABASE_URL`, and its runs belong in the platform's journal
- * beside its session state rather than split across two databases with the wake
- * sweep able to see only one.
- *
- * **The platform pair is read from THIS PROCESS's environment**
- * (`platformGuestOptions`), never from the agent's. That distinction has already
- * cost a deployment: the same two keys read out of the tenant env resolve to
- * nothing — the platform puts them in the sandbox's process env, not in the
- * secrets file — so session state silently fell to memory while the world one
- * line earlier resolved fine. Reading the process env is also the SAFER half: an
- * agent may set any `AAI_*` key as a secret, and under the tenant spelling an
- * agent chose the base URL and bearer its own journal was sent to.
+ * The ORDER between the three backends is not decided here: `resolveStorageHome`
+ * decides it once for the journal, the key index and the upload record, so this is
+ * a mapping from a home to its backend and nothing else. See `storage-home.ts` for
+ * why the platform comes first and why its pair is read from the process env.
  *
  * Memory is last and the boot line SAYS so. A durability tradeoff absent from the
  * log reads as a bug, and this is the one an author is most likely to hit by
@@ -103,7 +93,7 @@ export type BuiltWorkflowClient = {
  * `RuntimeOptions.journal`.
  */
 function selectJournal(
-  db: Db | undefined,
+  home: StorageHome,
   logger: Logger,
   supplied: JournalStore | undefined,
 ): {
@@ -121,17 +111,16 @@ function selectJournal(
   dispatch: ((runId: string, at?: number) => void | Promise<void>) | undefined;
   dispatchKind: string;
 } {
-  const platform = platformGuestOptions();
-  if (platform) {
+  if (home.kind === "platform") {
     // BOTH halves come from the same resolved pair, and that is the property to
     // preserve: a deployment with a platform journal and in-process timers would
     // store a `ctx.sleep`'s deadline durably and then forget to come back for it,
     // which is the same failure as no journal at all with a healthier-looking log.
     return {
-      journal: createPlatformJournal(platform),
+      journal: createPlatformJournal(home.platform),
       journalKind: "platform",
       journalDurable: true,
-      dispatch: createPlatformDispatch({ platform, logger }),
+      dispatch: createPlatformDispatch({ platform: home.platform, logger }),
       dispatchKind: "platform queue",
     };
   }
@@ -152,9 +141,9 @@ function selectJournal(
     dispatch: undefined,
     dispatchKind: "in-process timers (suspended runs re-enqueued at boot)",
   };
-  if (db) {
+  if (home.kind === "postgres") {
     return {
-      journal: createPostgresJournal({ db }),
+      journal: createPostgresJournal({ db: home.db }),
       journalKind: "postgres",
       journalDurable: true,
       ...localTimers,
@@ -180,29 +169,19 @@ function selectJournal(
 }
 
 /**
- * Pick the correlation-key index, and name it for the boot line.
+ * The correlation-key index for a resolved {@link StorageHome}, named for the boot
+ * line.
  *
- * Three backends, the same strict preference as {@link selectJournal} and for the
- * same reasons — which is the property to preserve rather than an echo of it: the
+ * The SAME home as {@link selectJournal}'s, resolved once by the caller — the
  * index and the journal are two halves of one answer to "which run belongs to this
  * caller", so a deployment that resolved them differently would keep runs in one
  * place and the only pointer to them in another.
  *
  * - **platform** — `createPlatformKeyStore`, one `POST /:slug/workflow-keys` per
- *   call, beside the journal, the queue, session state and the upload records that
- *   already work this way. FIRST, because a deployed guest may also carry an
- *   author-supplied `DATABASE_URL` and its keys belong beside its runs rather than
- *   split across two databases.
- * - **postgres** — `createPostgresKeyStore` over that `DATABASE_URL`, which is what
- *   a self-hosted deployment has and the platform never provisions.
- * - **memory** — a `Map`, for `aai dev` and for trying a workflow out before
+ *   call, beside the journal, the queue, session state and the upload records.
+ * - **postgres** — `createPostgresKeyStore` over the agent's `DATABASE_URL`.
+ * - **local** — a `Map`, for `aai dev` and for trying a workflow out before
  *   provisioning anything. Deliberately not durable, and the boot line SAYS so.
- *
- * **The platform pair is read from THIS PROCESS's environment**
- * (`platformGuestOptions`), never the agent's — the distinction that already cost
- * a deployment, and the safer read besides: an agent may set any `AAI_*` key as a
- * secret, so under the tenant spelling an agent would choose the base URL and
- * bearer its own index was sent to.
  *
  * A separate function from `resolveKeyStore`, which is PUBLISHED on this package's
  * root barrel and is the two LOCAL arms an embedder can build from a `Db` they
@@ -215,19 +194,16 @@ function selectJournal(
  * through the LOG rather than by calling this — which is also the only way to
  * answer "will a correlation key survive a restart" from outside.
  */
-function selectKeyStore(db: Db | undefined): {
+function selectKeyStore(home: StorageHome): {
   keys: WorkflowKeyStore;
   keyStoreKind: string;
 } {
-  // `platformGuestOptions()` and NOT `resolvePlatformQueue(env)`: that separate
-  // name exists so a caller cannot accidentally hand it the AGENT's environment,
-  // which is the mistake two callers made and which cost a deployment. A spec
-  // reaches it with `vi.stubEnv`, which is the process env this is meant to read.
-  const platform = platformGuestOptions();
-  if (platform) {
-    return { keys: createPlatformKeyStore(platform), keyStoreKind: "platform" };
+  if (home.kind === "platform") {
+    return { keys: createPlatformKeyStore(home.platform), keyStoreKind: "platform" };
   }
-  if (db) return { keys: createPostgresKeyStore(db), keyStoreKind: "postgres" };
+  if (home.kind === "postgres") {
+    return { keys: createPostgresKeyStore(home.db), keyStoreKind: "postgres" };
+  }
   return {
     keys: createMemoryKeyStore(),
     // Spelled out for the reason the journal's memory arm is: a durability
@@ -288,12 +264,15 @@ export function buildWorkflowClient(
 ): BuiltWorkflowClient | undefined {
   const workflows = agent.workflows;
   if (!workflows || Object.keys(workflows).length === 0) return;
+  // ONE resolution for both stores — the same function the upload store's record
+  // home comes from, so the three cannot disagree (`storage-home.ts`).
+  const home = resolveStorageHome(db);
   const { journal, journalKind, journalDurable, dispatch, dispatchKind } = selectJournal(
-    db,
+    home,
     logger,
     journalOption,
   );
-  const { keys, keyStoreKind } = selectKeyStore(db);
+  const { keys, keyStoreKind } = selectKeyStore(home);
   logger.info?.("Workflows resolved", {
     workflows: Object.keys(workflows),
     // Which store is in play decides whether a correlation key survives a

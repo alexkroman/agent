@@ -34,7 +34,7 @@
  * target — the seam that IS right is the one below the wire.
  *
  * The cost of that is stated rather than papered over: this does not exercise
- * `ws-handler.ts`, the audio pacer, or frame ordering. Those have unit and
+ * `../session/ws-handler.ts`, the audio pacer, or frame ordering. Those have unit and
  * scenario coverage; what had none was "given this utterance, did the agent do
  * the right thing".
  *
@@ -62,9 +62,9 @@ import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
-import { createRuntimeWithSeams } from "../runtime.ts";
+import { createRuntimeWithSeams } from "../runtime/index.ts";
 import { silentLogger } from "../runtime-config.ts";
-import { SessionRefusedError } from "../session-attach-end.ts";
+import { SessionRefusedError } from "../session/index.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { type EvalSessionEnd, watchSessionEnd, watchSessionEndHook } from "./_session-end.ts";
 import { checkedIdentity, observeSessionContext, recordIdentity } from "./_session-identity.ts";
@@ -274,11 +274,11 @@ async function openWithFakes(
    * belong to the PREVIOUS reply (a `reply.cancelled` from a barge-in, a late
    * completion), so `say()` returned before the model had run and the case
    * recorded "called no tools". The utterance's own
-   * `user-transcript.committed` is the anchor — every event of its reply follows
+   * `userTranscript.committed` is the anchor — every event of its reply follows
    * it.
    */
   const repliedTo = (since: readonly SessionEvent[]): boolean => {
-    const at = since.findIndex((e) => e.type === "user-transcript.committed");
+    const at = since.findIndex((e) => e.type === "userTranscript.committed");
     return at !== -1 && since.slice(at).some((e) => TURN_ENDS.has(e.type));
   };
 
@@ -299,7 +299,7 @@ async function openWithFakes(
     stopped ??= session.stop();
     return stopped;
   };
-  // Claimed right after the session is built, where `session-attach.ts` claims
+  // Claimed right after the session is built, where `../session/attach.ts` claims
   // a real connection's — see `_session-end.ts`.
   const ending = watchSessionEnd(sessionId, stopSession);
   end = ending;
@@ -366,7 +366,7 @@ async function openWithFakes(
     const from = events.length;
     // A push-to-talk agent answers only what was RELEASED: frame the utterance
     // as its client does, or the final is held and every case times out.
-    const manual = options.agent.turnDetection === "manual";
+    const manual = options.agent.turnTaking?.detection === "manual";
     if (manual) session.command({ type: "user_turn_start" });
     stt.commit(text);
     if (manual) session.command({ type: "user_turn_commit" });
@@ -431,9 +431,9 @@ async function openWithFakes(
  * Start `session`, answering the app's refusal reason when its `sessionContext`
  * refused — `undefined` when it started.
  *
- * The refusal is the runtime's own (`runtime-session-stream.ts` throws it
+ * The refusal is the runtime's own (`../runtime/session-stream.ts` throws it
  * before the transport starts); this only turns it into a value, and stops the
- * session as `session-attach.ts` does for a refused connection. Any other
+ * session as `../session/attach.ts` does for a refused connection. Any other
  * failure to start is still a throw.
  */
 async function startOrRefusal(

@@ -17,15 +17,25 @@ transports, the provider openers, the workflow API, and the WebSocket handler.
 Rules that govern one area live beside the files they govern, and Claude Code
 loads them when you work there:
 
-- [`src/CLAUDE.md`](src/CLAUDE.md) — the flat `src/` modules: session
-  lifecycle and vocabularies, `createAgentServer`, tools, subagents, the prompt
-  suffix, dialogs/personas wiring, hook commits, the upload store, the egress
-  pools, reply metrics.
+- [`src/CLAUDE.md`](src/CLAUDE.md) — the `src/` map (which directory holds
+  what, what stays flat), client surfaces, subagents, egress pools, reply
+  metrics.
+- [`src/session/CLAUDE.md`](src/session/CLAUDE.md),
+  [`src/server/CLAUDE.md`](src/server/CLAUDE.md),
+  [`src/runtime/CLAUDE.md`](src/runtime/CLAUDE.md),
+  [`src/tools/CLAUDE.md`](src/tools/CLAUDE.md),
+  [`src/uploads/CLAUDE.md`](src/uploads/CLAUDE.md) — one session's lifecycle
+  and vocabularies; `createAgentServer`; the prompt suffix, dialogs and
+  personas; tool execution; the upload store.
 - [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — capabilities, epochs,
   and the frozen compatibility templates.
-- [`src/transports/CLAUDE.md`](src/transports/CLAUDE.md) — pipeline/S2S
-  behaviour: `speech_started`, per-turn prompt resolution, heard history,
-  context budget, reset, push-to-talk.
+- [`src/transports/CLAUDE.md`](src/transports/CLAUDE.md) — the transport
+  boundary, the capability table, per-turn prompt resolution.
+- [`src/transports/pipeline/CLAUDE.md`](src/transports/pipeline/CLAUDE.md) —
+  the pipeline's stage directories and their import direction, heard history,
+  reset, `speakLine`; its `speech/`, `history/` and `reply/` guides hold
+  `speech_started` and push-to-talk, the context budget and rollback, and
+  code-initiated lines.
 - [`src/workflow/CLAUDE.md`](src/workflow/CLAUDE.md) — journal selection,
   webhook URLs, the two base URLs, run notify, the typed-JSON codec.
 - [`src/workflow/api/CLAUDE.md`](src/workflow/api/CLAUDE.md) — HTTP status
@@ -89,10 +99,13 @@ capability, no epoch, no TypeDoc page, no semver promise.
 
 ## Layout
 
-The filename prefix is the grouping: `runtime-*` (the runtime object and its
-wiring), `session-*` (one session), `ws-*` / `_ws*` (the socket layer),
-`_upload-*` (the upload store), plus `providers/`, `transports/`,
-`telephony/`, `eval/`, `testing/` and `session-state/`.
+**A directory holding an `index.ts` is a module**, entered through that index
+alone (`guard-invariants` rule 37, in aai-ui too): `runtime/`, `server/`,
+`session/`, `tools/`, `uploads/`, `mcp/`, `platform/`, `inbox/`, `s2s/`,
+`text-agent/`, and `transports/pipeline/` with one subdirectory per stage. The
+map, and what stays flat and why, is [`src/CLAUDE.md`](src/CLAUDE.md).
+`providers/`, `telephony/`, `eval/`, `testing/` and `session-state/` are
+older directories with no index.
 
 **The durable-workflow half is the directory `workflow/`**, with `api/`,
 `replay/` and `journal/` for its three largest clusters. It holds the
@@ -167,10 +180,10 @@ minor. Rules that follow:
   recorded on the session the server starts, and the ticket subprotocol must be
   kept out of the handshake reply.
 
-### Four subpaths are RENDERED, and the root barrel is not
+### Three subpaths are RENDERED, and the root barrel is not
 
-`typedoc.json` names only `eval-barrel`, `eval-vitest-barrel`,
-`eval-simulate-barrel` and `testing-barrel` — they are written by whoever wrote
+`typedoc.json` names only `eval-barrel`, `eval-vitest-barrel` and
+`testing-barrel` — they are written by whoever wrote
 the `agent.ts`, so they belong in the authoring reference. The root barrel,
 `/internal`, `/auth`, `/metrics` and `/tracing` stay deny-listed in
 `scripts/docs-markdown.mjs`. See [`docs/CLAUDE.md`](../../docs/CLAUDE.md),
@@ -181,26 +194,55 @@ together.
 
 In [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md): the text-agent surface, why
 a workflow app is evaluated by RUNNING it, and why a keyless run gets a
-SCRIPTED model. Which subpaths a template eval may import is konsistent's
-`template-eval-runtime-subpaths` (`/eval`, `/eval/simulate`, `/eval/vitest`).
+SCRIPTED model.
 
-## A deployed guest has TWO copies of this package
+### An eval file has ONE import: `/eval/vitest`
 
-The harness bundles its own `aai-runtime` and calls `createRuntimeServer` from
-it; the agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`
-(`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both load in one
-process, so **anything used to rendezvous between them must be keyed on
-`globalThis` (`Symbol.for`), never a module-level value.** A single-value slot is
-`globalSlot(key)` from `@alexkroman1/aai/internal`, not a hand-written
-`delete (globalThis as S)[SYM]` pair.
+`@alexkroman1/aai-runtime/eval/vitest` re-exports the runner-free `/eval` half,
+the simulated caller and judge, and the `@alexkroman1/aai/testing` stubs a case
+composes with (`stubGatewayRoute`, `routeStepFetch`, `installStubStepFetch`, …)
+as the SAME declarations, so one `*.eval.test.ts` needs one import line for its
+harness.
 
-The workflow run context (`workflow/run-context.ts`) and the metrics sink
-registry (`metrics-sink.ts`) are both `Symbol.for`-keyed for this reason; a
-module-level `AsyncLocalStorage` gives one store per COPY, and the symptom is an
-empty context `{}` on narration lines plus no streamed progress. **Test it with
-`vi.resetModules()`**, which yields a second copy in one process —
-`workflow/run-context.test.ts` loads two and asserts a context entered through
-one is visible through the other.
+- **Why on the runtime, and why the vitest subpath.** The SDK never imports this
+  package, so the SDK's stubs are re-exported HERE rather than the harness
+  moving there; and `/eval` must stay importable without vitest (an optional
+  peer) for a harness that is not vitest — `scripts/loadtest-stub-agent` and
+  `aai-evals`' runner import it. An eval file is always vitest.
+- **Ownership does not move with a re-export.** The SDK stubs are owned here by
+  `eval-stubs` (dropping one from the door is this package's break), and every
+  other name keeps its capability — `src/contracts/CLAUDE.md`.
+- **`/eval/simulate` is gone** (its names are on `/eval/vitest` and `/eval`);
+  `/eval` stays — it is the runner-free door, not a second author-facing one. A
+  stub an eval needs and the door lacks is a line in `eval-vitest-barrel.ts`.
+- konsistent's `template-eval-runtime-subpaths` holds a template eval to the
+  one door (it refuses `/eval` and the SDK's `/testing` subpaths there).
+
+## The server and the sessions are ONE copy of this package
+
+A worker bundle inlines this package (`__aaiCreateRuntime`, "User-shipped
+runtime" in `packages/aai-guest/CLAUDE.md`), and **the guest harness carries no
+copy of its own**: it drives the agent through the bundle's, reached as
+`__aaiCreateRuntime.host` — the typed `GuestHost` surface (`guest-host.ts`:
+`createRuntimeServer`, the delivery door, tracing, the session gate), checked by
+`version` at load. A self-hosted host (`aai dev`, `aai start`, a `--target`
+entry) builds both the server and the runtime from its own copy. So in every
+host the server shell, the engine and the sessions share one module instance,
+and **their state is module-level**: the run context, the shared run reads, the
+app pool registry, and `WorkflowRequestError` (an `instanceof`).
+
+- **What still crosses copies is registered** in the SDK's `BOUNDARY_KEYS`
+  (`aai/src/sdk/_boundary.ts`) and reached by `globalSlot(name)`: the metrics
+  sinks (an agent's own code — `registerMetricsSink`, a `createTextAgent` — runs
+  in the bundle's copy while a self-hosted exporter lives in the host's), the
+  client event feed, and the instance record. Never hand-write `Symbol.for`.
+- **Every copy records its module URL** (`_instance-check.ts`); an agent-mode
+  guest warns when it sees two (`warnOnSecondRuntime`), and
+  `harness/externals.test.ts` fails if the built harness defines a runtime
+  function or imports this package statically.
+- Adding a field to `GuestHost` is additive; removing or changing one bumps
+  `GUEST_HOST_VERSION` and the harness's `SUPPORTED_GUEST_HOST_VERSION`
+  (`aai-guest-core/bundle.ts`, pinned equal by its test).
 
 ## Runtime invariants
 
@@ -225,7 +267,7 @@ detector for it.
 
 Stated so far:
 
-- **`session.page.tail`** (`session-event-stream.ts`) — a page cannot contain
+- **`session.page.tail`** (`session/event-stream.ts`) — a page cannot contain
   events its own tail says do not exist (a read starting past the tail is
   legitimate and answers zero events).
 - **`capacity.line.terms`** (`aai-server/platform-db-capacity.ts`) — the terms

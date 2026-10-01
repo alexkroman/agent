@@ -9,12 +9,23 @@
  */
 
 import type { ProviderCredentialOptions, TtsProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
+
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const CARTESIA_PROVIDER = defineProvider({
+  kind: "cartesia",
+  stage: "tts",
+  envVar: "CARTESIA_API_KEY",
+  label: "Cartesia",
+  factory: "cartesiaTts",
+  subpath: "tts",
+});
 
 /** Kind tag recognised by the host-side resolver. */
-export const CARTESIA_KIND = "cartesia" as const;
+export const CARTESIA_KIND = CARTESIA_PROVIDER.kind;
 
 /** Agent-env variable holding the Cartesia API key. */
-export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
+export const CARTESIA_API_KEY_ENV: string = CARTESIA_PROVIDER.envVar;
 
 /**
  * Default voice used when callers invoke `cartesiaTts()` with no `voice`. This
@@ -50,10 +61,10 @@ export interface CartesiaTtsOptions extends ProviderCredentialOptions {
  * ```
  */
 export function cartesiaTts(options: CartesiaTtsOptions = {}): TtsProvider {
-  return {
-    kind: CARTESIA_KIND,
-    options: { ...options, voice: options.voice ?? CARTESIA_DEFAULT_VOICE },
-  };
+  return describeProvider(CARTESIA_PROVIDER, {
+    ...options,
+    voice: options.voice ?? CARTESIA_DEFAULT_VOICE,
+  });
 }
 
 /** Synthesis model used when the descriptor names none. */

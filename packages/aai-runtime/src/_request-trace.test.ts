@@ -54,10 +54,10 @@ describe("the bundling constraint", () => {
   });
 
   test("the server takes the adopter from HERE, not from the tracing gate", () => {
-    const server = readFileSync(new URL("./server.ts", import.meta.url), "utf-8");
-    expect(server).toContain('import { adoptRequestTrace } from "./_request-trace.ts"');
+    const server = readFileSync(new URL("./server/server.ts", import.meta.url), "utf-8");
+    expect(server).toContain('import { adoptRequestTrace } from "../_request-trace.ts"');
     // `tracing.ts` carries the dynamic import of the OTel graph. The worker's
     // module graph must not reach it, which is this module's reason to exist.
-    expect(server).not.toContain('from "./tracing.ts"');
+    expect(server).not.toContain('from "../tracing.ts"');
   });
 });

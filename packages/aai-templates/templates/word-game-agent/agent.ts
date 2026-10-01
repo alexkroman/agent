@@ -25,7 +25,7 @@ import { GAME_EVENTS, gameProjection } from "./shared.ts";
  * deliberately carries no `messages`. So it cannot tell the round's opening line
  * from a hint. It would also be paid for in this template's one currency: a held
  * reply cannot stream, turning time-to-first-word into time-to-last-token on a
- * two-minute clock whose `bargeIn: { minWords: 1 }` exists so the describer can
+ * two-minute clock whose `interruption: { minWords: 1 }` exists so the describer can
  * talk over the host.
  */
 export default agent({
@@ -35,7 +35,7 @@ export default agent({
   // thing and what makes it worth reading `shared.ts` for.
   description: "Hosts a two-minute word game between the caller and an A.I. guesser",
   // The scoreboard: the word the describer is looking at, the score, the clock.
-  syncState: gameProjection,
+  syncState: { game: gameProjection },
   /**
    * Arms the clock. `playing` declares a two-minute `timeout`, and a dialog's
    * deadline is armed by the runtime only for a dialog listed here — without

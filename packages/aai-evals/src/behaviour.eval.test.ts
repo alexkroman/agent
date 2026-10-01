@@ -141,10 +141,10 @@ describeEvalTier("behaviour eval — level 1 (text-driven)", () => {
           const all = scopeOf(t, session);
           all.eventOrder([
             "session.configured",
-            "user-transcript.committed",
+            "userTranscript.committed",
             "tool.called",
             "tool.completed",
-            "agent-transcript.committed",
+            "agentTranscript.committed",
             "reply.completed",
           ]);
           all.notEvent("reply.cancelled");

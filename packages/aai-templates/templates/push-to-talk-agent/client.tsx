@@ -10,7 +10,7 @@
  *
  * What goes BACK is the button. `usePushToTalk()` is the whole contract: spread
  * `buttonProps` onto any `<button>` and it sends the three push-to-talk
- * commands an agent declaring `turnDetection: "manual"` listens for — open a
+ * commands an agent declaring `turnTaking: { detection: "manual" }` listens for — open a
  * turn on press (which also stops the agent if it is talking), answer it on
  * release, throw it away if the press is cancelled. It also holds the four
  * cases a hand-written `onMouseDown`/`onMouseUp` pair gets wrong, each of

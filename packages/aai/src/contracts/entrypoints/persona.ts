@@ -2,16 +2,16 @@
 /**
  * Capability contract: `persona`.
  *
- * WHO is speaking, as a roster the session hands the caller between mid-call:
- * the `persona()` declaration, the `personas()` roster and its handle, the
- * handoff an author makes from a tool body and what it answers, and the name
- * of the tool the roster mints for the model to route with.
+ * WHO the model may route to, as one roster: the `roster()` handle over
+ * `speaker()` definitions, who is on the line and how they came to be, the
+ * handoff an author makes from a tool body and what it answers, and the names
+ * of the two tools the roster mints (`handoff`, `delegate`). The definition
+ * itself and the off-line run are `subagent`'s.
  *
- * Its own capability rather than part of `agent` or `dialog`, and the reason is
- * the one the root guide gives for naming capabilities at all: `agent` is what
+ * Its own capability rather than part of `agent` or `dialog`: `agent` is what
  * an author writes to declare the agent, `dialog` is where the conversation is,
  * and this is who is talking — the three move for different reasons. The
- * `personas` FIELD on `AgentDef` is covered by `agent`, whose report names
+ * `roster` FIELD on `AgentDef` is covered by `agent`, whose report names
  * `AgentDef`; a dialog state's `persona` pin is covered by `dialog`.
  *
  * Re-exported from `@alexkroman1/aai`. This file is not shipped and nothing
@@ -21,12 +21,11 @@
  */
 
 export {
+  DELEGATE_TOOL_NAME,
   HANDOFF_TOOL_NAME,
   type HandoffOptions,
   type HandoffResult,
-  type PersonaDef,
-  type PersonaPosition,
-  type Personas,
-  persona,
-  personas,
+  type Roster,
+  roster,
+  type SpeakerPosition,
 } from "../../index.ts";

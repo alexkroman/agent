@@ -33,4 +33,4 @@ asked the app about a call before the carrier had named it. The bridge buffers
 the `audio_ready` until the runtime attaches. The two app-initiated closes —
 `refuse` (1008, no `error.reported`) and `endSession(ctx)` (the paced sink's
 `endAfterReply`, which waits out the playout clock) — are
-`session-attach-end.ts`.
+`../session/attach-end.ts`.

@@ -52,10 +52,10 @@ export default agent({
    * **This is what wires the dialog to the session, and it is not a
    * formality.** Without this line `roadsideCall` still gates its tools and
    * still moves on `send` — and none of the five things this template is about
-   * would happen: `@session.timed-out` and `@user-transcript.committed` would
+   * would happen: `@session.timedOut` and `@userTranscript.committed` would
    * reach nothing, the two `timeout` deadlines would never be armed, the active
    * state's `instruction` would reach the model only on turns that happened to
-   * call a tool, and `bargeIn` and `toolChoice` would be declarations nothing
+   * call a tool, and `interruption` and `toolChoice` would be declarations nothing
    * read.
    *
    * The two knobs are a PIPELINE property. On either speech-to-speech
@@ -70,7 +70,7 @@ export default agent({
   /**
    * The desk's own record of what happened, for the two outcomes no tool sees.
    *
-   * The pairing with `dialogs` above is the point: `@session.timed-out` MOVES
+   * The pairing with `dialogs` above is the point: `@session.timedOut` MOVES
    * the dialog to `abandoned`, and this WRITES the line saying so. A handler
    * cannot change what the agent does — that is what keeps the event stream a
    * log rather than a second control path — and a transition writes nothing to

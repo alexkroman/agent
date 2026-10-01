@@ -5,7 +5,7 @@
  *
  * Split out of `pipeline-tuning-constants.ts` at the 500-line cap, along the
  * seam that file already had — these five constants are one mechanism, they
- * are read together by `pipeline-stream-parts.ts`, and nothing else in the
+ * are read together by `aai-runtime/src/transports/pipeline/reply/stream-parts.ts`, and nothing else in the
  * tuning file touches them. Re-exported from there so no import moved.
  *
  * The mechanism in one sentence: a turn that has gone quiet gets a filler,
@@ -80,7 +80,7 @@ export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
  * a caller assumes the line is dead — and a turn can be silent before its first
  * token too: 31.4s after a committed user turn on tau2-bench retail with
  * gpt-5.5, ended only by the first tool call (see the construction-time arm in
- * `pipeline-stream-parts.ts`). Cover is time-based, so both are the same case:
+ * `aai-runtime/src/transports/pipeline/reply/stream-parts.ts`). Cover is time-based, so both are the same case:
  * any gap this long gets filler, whether or not the model already spoke.
  *
  * **Nothing is spoken at t=0.** The ordinary opening gap is about a second:

@@ -48,7 +48,7 @@ const FRAMES_PER_UTTERANCE = 26;
  * `omitUndefined` from `@alexkroman1/aai/utils`, inlined because this harness
  * deliberately has no dependencies (see the header). It keeps `""`, which the
  * truthiness test it replaced dropped — and that matters here: a
- * `user-transcript.updated` with `text: ""` means speech detected with no words
+ * `userTranscript.updated` with `text: ""` means speech detected with no words
  * yet, which is a protocol distinction a probe should show rather than hide.
  */
 const defined = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));

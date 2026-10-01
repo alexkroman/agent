@@ -37,12 +37,12 @@
  */
 import agentDef from "virtual:aai/agent";
 import {
+  describeEval,
   type EvalTurn,
   lastToolResultIn,
   toolCallsInTurns,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { DEFAULT_GAME_STATE, rankFor } from "./shared.ts";
@@ -127,7 +127,7 @@ describeEval(agentDef, (test) => {
       expect(fresh.currentRoom).toBe(DEFAULT_GAME_STATE.currentRoom);
       // ONE, not zero — and this is the assertion that proves the turn counter
       // is the framework's. The reset emptied it, then the player said the line
-      // above, and the `user-transcript.committed` hook counted it before the
+      // above, and the `userTranscript.committed` hook counted it before the
       // narrator took its turn. No tool call is involved anywhere in that.
       expect(fresh.moves).toBe(1);
     },

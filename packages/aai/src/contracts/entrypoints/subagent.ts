@@ -2,18 +2,11 @@
 /**
  * Capability contract: `subagent`.
  *
- * Delegating a bounded task to a second tool loop with its own context window:
- * the `subagent()` declaration, the options one run takes, and what it answers
- * — its final message plus the shape of the work, never the tool results that
- * stayed inside it. Plus the two ways to CHOOSE one: a call site naming a
- * definition, and a ROSTER the model picks from (`SubagentRoster`,
- * `DELEGATE_TOOL_NAME`).
- *
- * The roster's names are here rather than on `agent`, though `subagents` is an
- * `AgentDef` field — the same call `ctx.delegate` makes in the other direction.
- * A capability is a thing an author writes about, and `SubagentRoster` says
- * nothing without `SubagentDef`; the FIELD's signature is covered by `agent`,
- * whose report names `AgentDef`.
+ * The `speaker()` definition — one for every second voice, on the line or off
+ * it — and the off-line run `ctx.delegate` makes of one: the options it takes
+ * and what it answers (its final message plus the shape of the work, never the
+ * tool results that stayed inside it). The ROSTER that routes between speakers
+ * is `persona`'s.
  *
  * Its own capability rather than part of `tool`, and the reason is the one the
  * root guide gives for naming capabilities at all: `tool` is what an author
@@ -30,20 +23,18 @@
 
 export {
   DEFAULT_GUARDRAIL_MAX_REVISIONS,
-  DELEGATE_TOOL_NAME,
+  type DelegateAnswer,
   type DelegateFn,
   type DelegateOptions,
   type DelegateResult,
+  type DelegateToolCall,
   type GuardrailVerdict,
-  type SubagentAnswer,
-  type SubagentDef,
-  type SubagentGuardrail,
-  type SubagentRoster,
-  type SubagentToolCall,
-  subagent,
-  // The typed half of the surface: a subagent declaring a `schema` answers with
-  // a parsed `object`. Both are reached only through `subagent()` and
+  type SpeakerDef,
+  type SpeakerGuardrail,
+  speaker,
+  // The typed half of the surface: a speaker declaring a `schema` answers with
+  // a parsed `object`. Both are reached only through `speaker()` and
   // `ctx.delegate`, so they belong to this capability rather than to `tool`.
   type TypedDelegateResult,
-  type TypedSubagentDef,
+  type TypedSpeakerDef,
 } from "../../index.ts";

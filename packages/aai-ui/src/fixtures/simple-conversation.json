@@ -7,7 +7,7 @@
     "sessionId": "sess_fixture_002"
   },
   {
-    "type": "agent-transcript.committed",
+    "type": "agentTranscript.committed",
     "text": "Hi there!"
   },
   {
@@ -20,11 +20,11 @@
     "type": "speech.stopped"
   },
   {
-    "type": "user-transcript.committed",
+    "type": "userTranscript.committed",
     "text": "Tell me a fun fact about space."
   },
   {
-    "type": "agent-transcript.committed",
+    "type": "agentTranscript.committed",
     "text": "A day on Venus is longer than its year."
   },
   {

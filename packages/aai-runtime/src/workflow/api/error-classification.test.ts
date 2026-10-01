@@ -39,6 +39,7 @@
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { workflowApiErrorStatus } from "./error-status.ts";
+import { isCallerGone } from "./http.ts";
 
 /**
  * Environmental codes a Node service on this platform can actually be handed.
@@ -149,55 +150,69 @@ describe("every environmental code has an answer", () => {
    * is the half that has actually broken: the code is almost never on the value
    * that was thrown, so a recognizer reading only the top level reports nothing
    * for the shape production really produces.
+   *
+   * Every code, ECONNRESET included. Depth is the only thing varied against the
+   * bare value: whether the leaf names a `syscall` is held fixed, because for a
+   * reset it is the DIRECTION (below), and for every other code the next test
+   * asserts it changes nothing.
    */
-  test("depth and shape do not change a verdict", () => {
+  test("depth does not change a verdict", () => {
     fc.assert(
       fc.property(
-        // ECONNRESET is EXCLUDED, and the exclusion is a finding rather than a
-        // convenience — see the test below, which states what it does instead.
-        fc.constantFrom(...ENVIRONMENTAL_CODES.filter((c) => c !== "ECONNRESET")),
+        fc.constantFrom(...ENVIRONMENTAL_CODES),
         fc.integer({ min: 1, max: 4 }),
         fc.boolean(),
         (code, depth, onSyscall) => {
-          const flat = workflowApiErrorStatus(errorWithCode(code, 1, true));
+          const bare = workflowApiErrorStatus(errorWithCode(code, 0, onSyscall));
           const nested = workflowApiErrorStatus(errorWithCode(code, depth, onSyscall));
-          expect(nested).toEqual(flat);
+          expect(nested).toEqual(bare);
         },
       ),
       { numRuns: 400 },
     );
   });
 
+  test("shape does not change a verdict, except a reset's direction", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...ENVIRONMENTAL_CODES.filter((c) => c !== "ECONNRESET")),
+        fc.integer({ min: 0, max: 4 }),
+        (code, depth) => {
+          expect(workflowApiErrorStatus(errorWithCode(code, depth, false))).toEqual(
+            workflowApiErrorStatus(errorWithCode(code, depth, true)),
+          );
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
   /**
-   * ECONNRESET is the one code whose verdict DEPENDS on how deeply it is wrapped,
-   * and this test exists to state that rather than to bless it.
+   * ECONNRESET is the one code whose verdict depends on WHICH WAY the socket
+   * went, and the two answers are both classified — there is still no third
+   * state.
    *
-   * `isCallerGone` reads `code === "ECONNRESET"` off the TOP-level value, and the
-   * transport entry is guarded by `!isCallerGone(err)`. So a reset that arrives
-   * WRAPPED — which is how `fetch` delivers one, as a `TypeError: fetch failed`
-   * with the code a hop down — is an outbound transport failure and answers 503,
-   * while the identical condition arriving BARE is read as the caller having hung
-   * up and falls through to 500.
-   *
-   * For a genuine inbound hangup that is harmless: the socket a 500 would be
-   * written to is the one that closed, and the debug-level log is the point. The
-   * open question is whether anything OUTBOUND can throw a bare top-level
-   * `ECONNRESET` here — a `postgres` driver error carries its code at the top
-   * level, unlike `fetch` — in which case a real client waiting on `POST /runs`
-   * gets a 500 with no `Retry-After` AND the failure is logged as "caller went
-   * away". Direction is not recoverable from the code alone; `syscall` is the
-   * candidate discriminator (Node's inbound `aborted` error carries none).
-   *
-   * Pinned as the CURRENT behaviour with the gap named, deliberately not "fixed"
-   * by guessing at socket error shapes.
+   * Node's inbound request error (`aborted`, the caller hung up) carries
+   * `ECONNRESET` and no `syscall`; an OUTBOUND reset — `fetch`'s cause, or a
+   * `postgres` driver's top-level socket error — is a libuv errno naming the
+   * `syscall` that failed (`read`, measured on Node 24). `isCallerGone` reads
+   * that off the INNERMOST cause, so a hangup is dropped (no status: the socket a
+   * 503 would be written to is the one that closed) and an outbound reset is a
+   * 503 with `Retry-After`, at every depth. It used to read the top-level value,
+   * which made wrapping decide instead: a bare outbound reset was dropped as a
+   * hangup — a real client on `POST /runs` would have lost its socket — while the
+   * same reset wrapped by `fetch` was a 503.
    */
-  test("ECONNRESET's verdict depends on wrapping, which is a known gap", () => {
-    const bare = workflowApiErrorStatus(errorWithCode("ECONNRESET", 0, true));
-    const wrapped = workflowApiErrorStatus(errorWithCode("ECONNRESET", 1, true));
-    expect(bare, "a bare reset reads as the caller hanging up").toBe(false);
-    expect(wrapped, "a wrapped reset is an outbound transport failure").toMatchObject({
+  test.each([0, 1, 2, 3])("ECONNRESET is classified by direction at depth %i", (depth) => {
+    const inbound = workflowApiErrorStatus(errorWithCode("ECONNRESET", depth, false));
+    const outbound = workflowApiErrorStatus(errorWithCode("ECONNRESET", depth, true));
+    expect(inbound, "an inbound reset is the caller hanging up").toBe(false);
+    expect(isCallerGone(errorWithCode("ECONNRESET", depth, false))).toBe(true);
+    expect(outbound, "an outbound reset is a transport failure").toMatchObject({
       status: 503,
+      retryAfter: "1",
     });
+    expect(isCallerGone(errorWithCode("ECONNRESET", depth, true))).toBe(false);
   });
 
   /**

@@ -62,16 +62,18 @@
  * this file SHIPS — see `agent.test.ts`.
  */
 import agentDef from "virtual:aai/agent";
-import { routeStepFetch, type StepRoute, stubGatewayRoute } from "@alexkroman1/aai/testing";
-import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import {
+  describeEval,
   describeToolCalls,
   type EvalToolCall,
   type EvalWorkflows,
+  installStubStepFetch,
+  routeStepFetch,
+  type StepRoute,
+  stubGatewayRoute,
   toolResultIn,
   toolResultsIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { recap, SAMPLE_RECORDING } from "./shared.ts";

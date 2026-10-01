@@ -30,7 +30,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { errorMessage } from "@alexkroman1/aai";
 import { ASSEMBLYAI_LLM_API_KEY_ENV } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { createTextAgent } from "@alexkroman1/aai-runtime";
 import { verifyBearer } from "aai-guest-core/auth";
 import { hostRequest } from "aai-guest-core/rpc";
 import type { HarnessBundleAccess } from "aai-guest-core/types";
@@ -139,6 +138,11 @@ async function runTurn(
   // deadline, the reserved final answering step, and tool-call repair (which
   // matters here because the studio model regularly emits a whole source file
   // inside a JSON string and breaks the parse).
+  // The PLATFORM's runtime (the image's `node_modules`), loaded only here: the
+  // coding agent is the harness's own agent, and a static import would put a
+  // runtime copy in every guest, agent mode included — where the only runtime
+  // is the one the user's bundle carries (`packages/aai-guest/CLAUDE.md`).
+  const { createTextAgent } = await import("@alexkroman1/aai-runtime");
   const chat = createTextAgent({
     agent: createStudioAgent(session, {
       loadBundle: deps.loadBundle,

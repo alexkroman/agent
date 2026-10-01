@@ -73,7 +73,7 @@ export const TURN_ENDS: ReadonlySet<SessionEvent["type"]> = new Set([
  * eval comes to pass on text no caller received.
  */
 export function saidIn(events: readonly SessionEvent[]): readonly string[] {
-  return events.flatMap((e) => (e.type === "agent-transcript.committed" ? [e.text] : []));
+  return events.flatMap((e) => (e.type === "agentTranscript.committed" ? [e.text] : []));
 }
 
 /**
@@ -208,33 +208,35 @@ export function customEventsIn(
 
 /**
  * The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page
- * is showing.
+ * is showing — or one SLOT's value in it. The frame is keyed by slot name, so a
+ * case names its slot exactly as the page does (`useAgentState(slot.projected)`
+ * reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
  *
- * For a template with a projection this is the strongest assertion available:
- * not "the tool returned ok" but "the customer can see it". Three separate eval
- * files hand-rolled this filter plus a cast before it was published.
- *
- * **Pass the SCHEMA.** The frame is `unknown` on the wire, so the alternative is
- * a cast, and a cast is silent exactly when the projection changed shape
- * underneath the eval — which is the regression an eval exists to catch. With a
- * schema, a frame that stopped matching FAILS naming the field. The overload
- * without one is for a case that only asks whether anything was pushed.
+ * **Pass the SCHEMA.** A frame is JSON off the wire, and a cast is silent exactly
+ * when the projection changed shape underneath the eval; with a schema, a value
+ * that stopped matching FAILS naming the field. Without a slot: the whole frame.
  */
 export function lastStateIn<T>(
   events: readonly SessionEvent[],
+  slot: string,
   schema: StandardSchemaV1<unknown, T>,
 ): T | undefined;
-export function lastStateIn(events: readonly SessionEvent[]): unknown;
+export function lastStateIn(events: readonly SessionEvent[], slot: string): unknown;
+export function lastStateIn(
+  events: readonly SessionEvent[],
+): Readonly<Record<string, unknown>> | undefined;
 export function lastStateIn<T>(
   events: readonly SessionEvent[],
+  slot?: string,
   schema?: StandardSchemaV1<unknown, T>,
 ): T | unknown {
   const frames = events.filter((e) => e.type === "state.updated");
   const last = frames.at(-1);
   if (last === undefined) return undefined;
-  const state = last.state;
-  if (schema === undefined) return state;
-  return validate(schema, state, "the last state frame");
+  if (slot === undefined) return last.state;
+  const value = last.state[slot];
+  if (schema === undefined) return value;
+  return validate(schema, value, `the last state frame's "${slot}"`);
 }
 
 /**
@@ -431,36 +433,32 @@ export function toolResultsIn<T = unknown>(
 }
 
 /**
- * Every state frame the agent pushed (`AgentDef.syncState`), oldest first —
- * what the page showed, in order.
- *
- * {@link lastStateIn} answers the newest, which is the right question for "can
- * the customer see it". The SEQUENCE is a different claim and a stronger one:
- * "the cart was never shown as placed before the tool ran", "no frame between
- * these two turns leaked the pending change". Three eval files hand-rolled it —
- * `events.flatMap((e) => (e.type === "state.updated" ? [Schema.parse(e.state)] : []))`
- * in three spellings, one of them a `for` loop — and every one of them reached
- * for the schema, which is the tell that a frame is `unknown` on the wire and
- * asserting on a cast is how a projection that changed shape stops being
- * noticed.
- *
- * A case wanting the frames only up to some point slices `events` first: this
- * reads whatever list it is given, which is why it takes events rather than a
- * session.
+ * Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
+ * one SLOT's value in each. The SEQUENCE is a stronger claim than
+ * {@link lastStateIn}'s: "the cart was never shown as placed before the tool
+ * ran". Pass the schema for its reason. A case wanting the frames only up to
+ * some point slices `events` first, which is why this takes events.
  */
 export function statesIn<T>(
   events: readonly SessionEvent[],
+  slot: string,
   schema: StandardSchemaV1<unknown, T>,
 ): readonly T[];
-export function statesIn(events: readonly SessionEvent[]): readonly unknown[];
+export function statesIn(events: readonly SessionEvent[], slot: string): readonly unknown[];
+export function statesIn(
+  events: readonly SessionEvent[],
+): readonly Readonly<Record<string, unknown>>[];
 export function statesIn<T>(
   events: readonly SessionEvent[],
+  slot?: string,
   schema?: StandardSchemaV1<unknown, T>,
 ): readonly (T | unknown)[] {
   const frames = events.flatMap((e) => (e.type === "state.updated" ? [e.state] : []));
+  if (slot === undefined) return frames;
+  const values = frames.map((frame) => frame[slot]);
   return schema === undefined
-    ? frames
-    : frames.map((state, at) => validate(schema, state, `state frame ${at}`));
+    ? values
+    : values.map((value, at) => validate(schema, value, `state frame ${at}'s "${slot}"`));
 }
 
 /** The calls to one tool, in call order. */

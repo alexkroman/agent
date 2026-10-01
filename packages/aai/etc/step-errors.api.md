@@ -5,36 +5,6 @@
 ```ts
 
 // @public
-type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
-    readonly __surface?: "channel";
-};
-
-// @public
-interface ChannelDescriptor<Kind extends string, Options> {
-    // (undocumented)
-    readonly kind: Kind;
-    // (undocumented)
-    readonly options: Options;
-}
-
-// @public
-interface ChannelMessage {
-    readonly heading?: string;
-    readonly sections?: readonly ChannelSection[];
-    readonly subtitle?: string;
-    readonly text: string;
-}
-
-// @public
-interface ChannelSection {
-    readonly body?: string;
-    readonly bullets?: readonly string[];
-    readonly subtitle?: string;
-    readonly title?: string;
-    readonly url?: string;
-}
-
-// @public
 export const DEFAULT_RETRY_DELAY_MS: number;
 
 // @public
@@ -47,7 +17,10 @@ export class FatalError extends Error {
 }
 
 // @public
-type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+export function orFail<A extends readonly unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R>;
+
+// @public
+export function orFail<T>(value: T | ToolFailure): T;
 
 // @public
 export class RetryableError extends Error {
@@ -63,94 +36,6 @@ export type RetryableErrorOptions = {
 };
 
 // @public
-export function sendToChannelOrFail(channel: Channel, message: ChannelMessage): Promise<string>;
-
-// @public
-interface StandardSchemaIssue {
-    readonly errors?: unknown;
-    readonly issues?: unknown;
-    // (undocumented)
-    readonly message: string;
-    // (undocumented)
-    readonly path?: readonly (PropertyKey | {
-        readonly key: PropertyKey;
-    })[] | undefined;
-}
-
-// @public
-type StandardSchemaResult<Output> = {
-    readonly value: Output;
-    readonly issues?: undefined;
-} | {
-    readonly issues: readonly StandardSchemaIssue[];
-};
-
-// @public
-interface StandardSchemaV1<Input = unknown, Output = Input> {
-    readonly "~standard": {
-        readonly version: 1;
-        readonly vendor: string;
-        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
-        readonly types?: {
-            readonly input: Input;
-            readonly output: Output;
-        } | undefined;
-    };
-}
-
-// @public
-type StepFetchInit = {
-    method?: string | undefined;
-    headers?: Record<string, string> | undefined;
-    body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
-    signal?: AbortSignal | undefined;
-};
-
-// @public
-export function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response>;
-
-// @public
-type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
-    schema: S;
-};
-
-// @public
-export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
-
-// @public
-type StepGenerateOptions = {
-    system?: string;
-    model?: string;
-    apiKeyEnv?: string;
-    gatewayUrl?: string;
-    timeoutMs?: number;
-    temperature?: number;
-    maxTokens?: number;
-    responseSchema?: Record<string, unknown>;
-};
-
-// @public
-export function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions): Promise<string>;
-
-// @public
-export function stepTranscribePollOrFail(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
-
-// @public
-export function stepTranscribeSubmitOrFail(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
-    id: string;
-}>;
-
-// @public
-export function stepTranscribeSyncOrFail(bytes: Uint8Array | readonly Uint8Array[], options?: TranscribeSyncOptions): Promise<{
-    text: string;
-}>;
-
-// @public
-export function stepTranscribeUploadOrFail(uploadId: string, options?: TranscribeRequestOptions): Promise<{
-    audioUrl: string;
-}>;
-
-// @public
 export function throwFatalStepError(cause: unknown, message?: string): never;
 
 // @public
@@ -160,45 +45,12 @@ export function throwFfmpegStepError(cause: unknown, message?: string): never;
 export function throwStepError(cause: unknown, message?: string): never;
 
 // @public
+type ToolFailure = {
+    error: string;
+};
+
+// @public
 export function toStepError(cause: unknown, message?: string): Error;
-
-// @public
-type TranscribeProgress = {
-    done: false;
-    status: "queued" | "processing" | (string & {});
-} | {
-    done: true;
-    status: "completed" | (string & {});
-    transcript: Transcript;
-};
-
-// @public
-type TranscribeRequestOptions = {
-    apiKeyEnv?: string | undefined;
-    timeoutMs?: number | undefined;
-    signal?: AbortSignal | undefined;
-};
-
-// @public
-type TranscribeSubmitOptions = TranscribeRequestOptions & {
-    models?: readonly string[] | undefined;
-    params?: Record<string, unknown> | undefined;
-};
-
-// @public
-type TranscribeSyncOptions = TranscribeRequestOptions & {
-    model?: string | undefined;
-    filename?: string | undefined;
-    type?: string | undefined;
-    label?: string | undefined;
-};
-
-// @public @sealed
-type Transcript = {
-    id: string;
-    text: string;
-    durationMs: number;
-};
 
 // (No @packageDocumentation comment for this package)
 

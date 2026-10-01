@@ -102,7 +102,7 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
    * free: it is the whole response, in the prompt, for the rest of the turn.
    * Return the fields the model needs. A result over the cap is warned about
    * once per tool (see `warnOversizedResult` in `aai-runtime`'s
-   * `tool-executor.ts`).
+   * `aai-runtime/src/tools/executor.ts`).
    */
   execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
   /**
@@ -205,15 +205,15 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
 /**
  * A map of tools by the name the model calls them by — the shape every field
  * that DECLARES a set of tools takes: {@link AgentDef.tools} (what `tools/`
- * lowers to), {@link PersonaDef.tools} and {@link SubagentDef.tools}.
+ * lowers to) and {@link SpeakerDef.tools}.
  *
- * Named once so the three cannot drift, and so a helper that builds or filters
+ * Named once so the two cannot drift, and so a helper that builds or filters
  * a set of tools has one type to be written against rather than restating
  * `Readonly<Record<string, ToolDef>>`.
  *
  * @public
  */
-export type ToolSet = Readonly<Record<string, ToolDef>>;
+export type ToolMap = Readonly<Record<string, ToolDef>>;
 
 /**
  * The validated input type a tool's `execute` receives — inferred from the

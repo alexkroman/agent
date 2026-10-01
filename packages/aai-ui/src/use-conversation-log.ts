@@ -31,7 +31,7 @@ import {
   recordSession,
 } from "./conversation-log.ts";
 import type { InboxEvent } from "./inbox-protocol.ts";
-import type { SessionSnapshot } from "./session-core-types.ts";
+import type { SessionSnapshot } from "./session/index.ts";
 import type { ChatMessage, ToolCallInfo } from "./types.ts";
 import { type ConversationItem, interleave } from "./use-conversation.ts";
 import { useSessionId } from "./use-session-id.ts";

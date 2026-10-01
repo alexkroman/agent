@@ -7,7 +7,7 @@
  *
  * `createRuntimeServer` calls {@link adoptRequestTrace} at the top of every
  * request. If that function lived in `tracing.ts` — beside the env gate and its
- * dynamic `import("./_tracing-otel.ts")` — then `server.ts` would put the OTel
+ * dynamic `import("./_tracing-otel.ts")` — then `server/server.ts` would put the OTel
  * graph in the WORKER's module graph, and the worker is bundled by `aai build`
  * with `ssr: { noExternal: true }` and `codeSplitting: false`, because the guest
  * sandbox has no `node_modules` and the worker is delivered as one ESM string.
@@ -20,7 +20,7 @@
  * caught it: six specs, including `npm start` on a scaffolded project.
  *
  * **That fix was necessary and not sufficient, and this paragraph used to say
- * the opposite.** It argued that reaching OTel the way `mcp-connect.ts` reaches
+ * the opposite.** It argued that reaching OTel the way `mcp/connect.ts` reaches
  * `@ai-sdk/mcp` — off a namespace the dynamic import hands back, so there are no
  * named bindings for rolldown to check — would "hide the failure rather than
  * remove it". It removes it. The named bindings were the failure: keeping this

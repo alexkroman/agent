@@ -7,7 +7,7 @@
     "sessionId": "sess_fixture_003"
   },
   {
-    "type": "agent-transcript.committed",
+    "type": "agentTranscript.committed",
     "text": "Ask me about the weather!"
   },
   {
@@ -20,7 +20,7 @@
     "type": "speech.stopped"
   },
   {
-    "type": "user-transcript.committed",
+    "type": "userTranscript.committed",
     "text": "What is the weather like in San Francisco?"
   },
   {
@@ -37,7 +37,7 @@
     "result": "{\"city\":\"San Francisco\",\"temperature\":\"72\u00b0F\",\"condition\":\"sunny\"}"
   },
   {
-    "type": "agent-transcript.committed",
+    "type": "agentTranscript.committed",
     "text": "The weather in San Francisco is sunny at 72\u00b0F."
   },
   {

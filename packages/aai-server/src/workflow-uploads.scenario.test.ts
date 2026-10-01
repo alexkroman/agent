@@ -92,8 +92,14 @@ describeWithPg("the workflow upload store over a real Postgres", () => {
     // provisions an app role, so the store's unqualified SQL is exercised the way a
     // guest runs it.
     appDb = createPostgresDb({ url: `${pgUrl()}?options=-c%20search_path%3D${SCHEMA}` });
-    store = createUploadStore({ db: appDb, blobs: createMemoryUploadBackend() });
-    rival = createUploadStore({ db: appDb, blobs: createMemoryUploadBackend() });
+    store = createUploadStore({
+      home: { kind: "postgres", db: appDb },
+      blobs: createMemoryUploadBackend(),
+    });
+    rival = createUploadStore({
+      home: { kind: "postgres", db: appDb },
+      blobs: createMemoryUploadBackend(),
+    });
 
     wholeId = (await store.create({ name: "call.wav", type: "audio/wav" }, body(ramp(BODY_BYTES))))
       .id;

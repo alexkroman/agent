@@ -64,35 +64,10 @@
 // author's concern. DECLARED in this package (`providers/openers.ts`), so the
 // `providers` capability that publishes them also owns them.
 export type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
-export {
-  type AgentServerOptions,
-  createAgentServer,
-} from "./agent-server.ts";
 // What every way of RUNNING an agent definition takes — `RuntimeOptions`,
 // `TextAgentOptions` and the two eval option bags all extend it.
 export type { HostAgentOptions } from "./host-agent-options.ts";
-export {
-  createHostServer,
-  type HostServerOptions,
-  type HostSessionDefaults,
-} from "./host-server.ts";
-// The guest's own stdout/stderr ring, and the platform's client of it. Shared
-// rather than guest-local because both ends of one wire read this shape: the
-// guest fills it (`aai-guest/harness-logs.ts`) and the platform serialises what
-// it reads back out (`aai-server/agent-logs.ts`). One definition, or the two
-// sides can disagree about what a cursor means.
-export {
-  createLogBuffer,
-  DEFAULT_LOG_BUFFER_LINES,
-  DEFAULT_LOG_LINE_BYTES,
-  DEFAULT_LOG_PAGE_LINES,
-  LOG_LINE_TRUNCATED,
-  type LogBuffer,
-  type LogBufferOptions,
-  type LogLine,
-  type LogPage,
-  type LogStream,
-} from "./log-buffer.ts";
+export type { McpDrift, McpInputSchema, McpTrust } from "./mcp/index.ts";
 // MCP tool discovery — the other source of tools a host assembles before it
 // builds a runtime, and the only one that reaches a third party. HTTP only; the
 // modules' docs carry why stdio is refused rather than discouraged, and why a
@@ -101,18 +76,14 @@ export {
   MCP_CONNECT_TIMEOUT_MS,
   type McpCallResult,
   type McpConnectOptions,
+  type McpServerStatus,
   type McpSession,
   type McpSessionOpener,
-  type ResolvedMcpServer,
-} from "./mcp-connect.ts";
-export type { McpDrift, McpTrust } from "./mcp-drift.ts";
-export type { McpInputSchema } from "./mcp-schema.ts";
-export {
-  type McpServerStatus,
   type McpToolSurface,
   type McpToolsOptions,
+  type ResolvedMcpServer,
   withMcpTools,
-} from "./mcp-tools.ts";
+} from "./mcp/index.ts";
 export {
   type CloseableDb,
   type CreatePostgresDbOptions,
@@ -160,13 +131,19 @@ export {
   registerTtsKind,
   resolveLlm,
 } from "./providers/resolve.ts";
+// The seal `Runtime` carries. TYPE-ONLY: there is no value to import, which is
+// what stops a hand-written object from satisfying the type.
+export type { runtimeBrand, SessionConnection, SessionConnectOptions } from "./runtime/index.ts";
+// A session over a caller's own audio I/O — a free function over the sealed
+// handle rather than a method on it. See `runtime/connect.ts`.
 export {
   type AgentRuntime,
+  connectSession,
   createRuntime,
   type Runtime,
   type RuntimeOptions,
   type SessionStartOptions,
-} from "./runtime.ts";
+} from "./runtime/index.ts";
 // The logger a host passes in, and the S2S tuning bag a config can override.
 // The two shipped `Logger` VALUES (`consoleLogger`, `createConsoleLogger`) and
 // the debug-env predicates are infrastructure — see
@@ -178,33 +155,32 @@ export type {
   LogLevel,
   S2sConfig,
 } from "./runtime-config.ts";
-// A session over a caller's own audio I/O — a free function over the sealed
-// handle rather than a method on it. See `runtime-connect.ts`.
-export { connectSession } from "./runtime-connect.ts";
-// The seal `Runtime` carries. TYPE-ONLY: there is no value to import, which is
-// what stops a hand-written object from satisfying the type.
-export type { runtimeBrand, SessionConnection, SessionConnectOptions } from "./runtime-types.ts";
-export {
-  type AgentServer,
-  createRuntimeServer,
-  DEFAULT_LISTEN_HOST,
-  type RuntimeServerOptions,
-  rejectingRuntime,
-  type ServerRequestHook,
-  type ServerUpgradeHook,
-  type SessionRuntime,
-  type SharedServerOptions,
-} from "./server.ts";
-// Authenticating `WS /websocket` — `createSessionAuth`, the ticket helpers and
-// their types — is `@alexkroman1/aai-runtime/auth` (`auth-barrel.ts`), its own
-// subpath and capability. A server option names only the opaque `SessionAuth`.
-export type { SessionEventPage, SessionEventStream } from "./session-event-stream.ts";
 // The bearer variable that CLOSES the event-stream read route, beside the types a
 // reader of it names. On the barrel for the same reason `WORKFLOW_API_TOKEN_ENV` is:
 // a host closing a surface has to be able to spell the variable that closes it, and
 // this one reached no published subpath at all — so an embedder either hardcoded the
 // string or left the route as it found it.
-export { SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
+export {
+  type AgentServer,
+  type AgentServerOptions,
+  createAgentServer,
+  createHostServer,
+  createRuntimeServer,
+  DEFAULT_LISTEN_HOST,
+  type HostServerOptions,
+  type HostSessionDefaults,
+  type RuntimeServerOptions,
+  rejectingRuntime,
+  SESSION_EVENTS_TOKEN_ENV,
+  type ServerRequestHook,
+  type ServerUpgradeHook,
+  type SessionRuntime,
+  type SharedServerOptions,
+} from "./server/index.ts";
+// Authenticating `WS /websocket` — `createSessionAuth`, the ticket helpers and
+// their types — is `@alexkroman1/aai-runtime/auth` (`auth-barrel.ts`), its own
+// subpath and capability. A server option names only the opaque `SessionAuth`.
+export type { SessionEventPage, SessionEventStream, SessionWebSocket } from "./session/index.ts";
 // Applying the session-state DDL to a database this deployment OWNS. The tables
 // come with the database and the owner applies them; a self-hosted server is that
 // owner, so it needs a way to say so at boot. See the function's own doc.
@@ -233,18 +209,17 @@ export {
   type TextAgentOptions,
   type TextTurnOptions,
   type TextTurnResult,
-} from "./text-agent.ts";
+} from "./text-agent/index.ts";
+export type { ExecuteTool, ExecuteToolOptions } from "./tools/index.ts";
 // The repair both `streamText` loops share. Exported for a caller assembling
 // its own request against the same model (and because `salvageJson` is the
 // half that costs no tokens).
-export { createToolCallRepair, salvageJson } from "./tool-call-repair.ts";
-export type { ExecuteTool, ExecuteToolOptions } from "./tool-executor.ts";
 // Directory tool discovery — the Node half of `toolRegistry`, and the only
 // source of one that reads a filesystem. A host with a bundler in its path (the
 // CLI's generated worker entry, a spec's `import.meta.glob`) already has its
 // modules; a plain `server.mjs` has neither, and without this the only way to
 // give a self-hosted agent a tool was the hand-written map `agent()` refuses.
-export { withToolsDir } from "./tools-dir.ts";
+export { createToolCallRepair, salvageJson, withToolsDir } from "./tools/index.ts";
 // `PipelineTransportOptions.skipGreeting` names this, and a caller passing the
 // THUNK form — which is how a resume that recovered nothing gets greeted —
 // would otherwise have a type to satisfy and no way to name it.
@@ -290,4 +265,3 @@ export {
   UploadsUnavailableError,
   UploadTooLargeError,
 } from "./workflow/uploads.ts";
-export type { SessionWebSocket } from "./ws-handler.ts";

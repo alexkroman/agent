@@ -2,8 +2,9 @@
 /**
  * Capability contract: `logging`.
  *
- * The logger a host passes in, and the ring buffer a deployment reads a
- * sandbox's output out of.
+ * The logger a host passes in. (The guest's log ring moved to
+ * `@alexkroman1/aai/host-internal`: the guest harness, its one user, carries
+ * no runtime.)
  *
  * Re-exported from `@alexkroman1/aai-runtime`. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
@@ -11,19 +12,9 @@
  * See `scripts/api-contracts.mjs`.
  */
 
-export {
-  createLogBuffer,
-  DEFAULT_LOG_BUFFER_LINES,
-  DEFAULT_LOG_LINE_BYTES,
-  DEFAULT_LOG_PAGE_LINES,
-  LOG_LINE_TRUNCATED,
-  type LogBuffer,
-  type LogBufferOptions,
-  type LogContext,
-  type LogFn,
-  type Logger,
-  type LogLevel,
-  type LogLine,
-  type LogPage,
-  type LogStream,
+export type {
+  LogContext,
+  LogFn,
+  Logger,
+  LogLevel,
 } from "../../runtime-barrel.ts";

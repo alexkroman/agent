@@ -79,13 +79,13 @@ function ok<T>(result: T): Exclude<T, ToolFailure> {
 
 /** What the runtime offers the desk dialog when the caller says something. */
 const HEARD_SOMETHING: SessionEvent = {
-  type: "user-transcript.committed",
+  type: "userTranscript.committed",
   text: "yes, that's right",
   meta: { id: "evt_1", at: 0 },
 };
 
 /** And when they hang up. */
-const CALLER_GONE: SessionEvent = { type: "session.timed-out", meta: { id: "evt_2", at: 0 } };
+const CALLER_GONE: SessionEvent = { type: "session.timedOut", meta: { id: "evt_2", at: 0 } };
 
 /** Where the call is, without going through a tool. */
 const at = (ctx: ToolContext) => deskFlow.position(ctx).state;

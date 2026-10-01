@@ -121,7 +121,7 @@ export function sessionStateEventConformance(arm: SessionStateArm): void {
       });
 
       test("a read at MAX_SAFE_INTEGER answers an empty page", async () => {
-        // The boundary `session-events-api.ts` CLAMPS a query string to, and it
+        // The boundary `../server/session-events-api.ts` CLAMPS a query string to, and it
         // clamps to exactly this number because the value becomes a `bigint`
         // parameter: anything past ~9.22e18 is out of range for the column and
         // anything past ~1e21 arrives as the string `"1e+30"`, a syntax error.

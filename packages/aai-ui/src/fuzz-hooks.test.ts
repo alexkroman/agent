@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import { createMockSessionCore } from "./_react-test-utils.ts";
 import { SessionProvider } from "./context.ts";
 import { useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
-import type { AgentCustomEvent } from "./session-core-types.ts";
+import type { AgentCustomEvent } from "./session/index.ts";
 import type { ToolCallInfo } from "./types.ts";
 
 const CAP = 200;

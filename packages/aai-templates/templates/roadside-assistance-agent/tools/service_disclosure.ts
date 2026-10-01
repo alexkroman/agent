@@ -12,7 +12,7 @@ import { disclosureFor, roadsideSlot } from "../shared.ts";
  * themselves arrive as a tool result the model is being asked to repeat rather
  * than as guidance it is being asked to act on.
  *
- * **This is where `bargeIn: "off"` does its work**, and the ordering is the
+ * **This is where `interruption: "off"` does its work**, and the ordering is the
  * reason the knob is declared on the state rather than passed to a tool. The
  * knobs are applied per STEP: the step that runs after this tool returns is
  * still inside `onCall.disclosure`, so the reply that reads these sentences out

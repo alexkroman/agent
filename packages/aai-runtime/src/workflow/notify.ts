@@ -277,7 +277,7 @@ export function instructionFor(request: WatchRequest, run: WorkflowRunSnapshot):
  * Returns the client UNCHANGED when there is no notifier or no session id, so
  * the wrapper costs nothing for the agents that never use it.
  *
- * Lives here rather than in `runtime-tools.ts`, which is where it was written
+ * Lives here rather than in `../runtime/tools.ts`, which is where it was written
  * and where it is still the only caller: it is the SESSION-scoped half of the
  * notifier this module owns, and that file is at the source-length cap.
  *

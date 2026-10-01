@@ -80,13 +80,13 @@ export function createConsoleSink(opts: {
     },
     event(e: SessionEvent) {
       switch (e.type) {
-        case "user-transcript.committed":
+        case "userTranscript.committed":
           if (e.text.trim()) print.user(e.text);
           return;
-        case "agent-transcript.updated":
+        case "agentTranscript.updated":
           pendingAgentText = e.text;
           return;
-        case "agent-transcript.committed":
+        case "agentTranscript.committed":
           pendingAgentText = "";
           if (e.text.trim()) print.agent(e.text);
           return;

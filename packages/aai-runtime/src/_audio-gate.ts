@@ -3,7 +3,7 @@
  * Backpressure gate for provider-facing audio sends (S2S, OpenAI Realtime,
  * streaming STT).
  *
- * Mirrors the client-facing guard in `ws-handler.ts`
+ * Mirrors the client-facing guard in `session/ws-handler.ts`
  * ({@link MAX_CLIENT_WS_BUFFERED_BYTES}) with the opposite remedy: mic audio
  * is real-time paced and loss-tolerant, so while the provider link is stalled
  * the gate DROPS frames instead of closing — the socket buffer stays bounded
@@ -36,7 +36,7 @@ export interface AudioSendGate {
  * `bufferedAmount` is a callback rather than a value so the gate reads the
  * live buffer level per frame. Sockets (or SDK clients) that don't expose a
  * buffered-byte count return `undefined`, which skips the guard entirely —
- * same policy as the client sink in `ws-handler.ts`.
+ * same policy as the client sink in `session/ws-handler.ts`.
  */
 export function createAudioSendGate(opts: {
   /** Unsent bytes queued on the provider socket; `undefined` skips the guard. */

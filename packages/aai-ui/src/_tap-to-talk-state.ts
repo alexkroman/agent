@@ -4,7 +4,7 @@
  * what a tap does, when a call hangs itself up, and when a connection attempt
  * has failed. The hook feeds it what the session DID (`SESSION`) and what the
  * caller pressed (`TAP`, `TEXT`, `HANG_UP`), and it calls back through
- * {@link TapToTalkEffects} — the pattern `session-core-audio-state.ts` uses, so
+ * {@link TapToTalkEffects} — the pattern `session/audio-state.ts` uses, so
  * `_tap-to-talk-state.test.ts` specs every timer without a browser.
  *
  * Two regions, because they move independently:

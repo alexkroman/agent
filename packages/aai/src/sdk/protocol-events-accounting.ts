@@ -13,7 +13,7 @@
  * of a CONTROL an agent declares. `usage.updated` is what `AgentDef.usageLimits`
  * is measured against, `guardrail.blocked` is what
  * `AgentDef.inputGuardrails`/`outputGuardrails` leave behind, and
- * `user-turn.exceeded` is what `AgentDef.userTurnLimit` leaves behind. A
+ * `userTurn.exceeded` is what `AgentDef.userTurnLimit` leaves behind. A
  * control with no event is a control nobody can audit.
  *
  * @module
@@ -107,7 +107,7 @@ export const GuardrailBlockedEventSchema = z.object({
  * the one number that says whether it is set right — and, for a UI, the moment
  * to show that the agent is answering what it has heard so far.
  *
- * The turn's text is NOT carried: it arrives as the `user-transcript.committed`
+ * The turn's text is NOT carried: it arrives as the `userTranscript.committed`
  * that follows, once the transcriber has ended the turn, and a second copy
  * here could disagree with it.
  *
@@ -117,7 +117,7 @@ export const GuardrailBlockedEventSchema = z.object({
  * provider that cannot force an end of turn is logged once as inert.
  */
 export const UserTurnExceededEventSchema = z.object({
-  type: z.literal("user-turn.exceeded"),
+  type: z.literal("userTurn.exceeded"),
   meta: SessionEventMetaSchema,
   /** Which cap the utterance crossed. */
   limit: z.enum(["words", "duration"]),
@@ -125,4 +125,36 @@ export const UserTurnExceededEventSchema = z.object({
   words: z.number().int().nonnegative(),
   /** How long the turn had run when the cap fired, in ms from its first word. */
   durationMs: z.number().int().nonnegative(),
+});
+
+/** The longest `reason` a `provider.failedOver` carries — an error body can be a page of HTML. */
+export const MAX_FAILOVER_REASON_CHARS = 500;
+
+/**
+ * A `fallback([...])` stage abandoned one provider for the next — see
+ * `fallback` on `@alexkroman1/aai/stt` (`/llm`, `/tts`) for when that happens.
+ *
+ * Its own event rather than an `error.reported`, for the reason
+ * `guardrail.blocked` is: the switch is the control WORKING, and the session
+ * carries on. An error frame would put a banner on a screen for a call the
+ * caller never noticed. What it is for is the audit trail — how often the
+ * primary fails, and why, is the one number that says whether it is the right
+ * primary.
+ *
+ * Emitted once per switch, BEFORE the next provider is tried, so a stage that
+ * walks a three-provider list to its end emits two. An LLM fallback decides
+ * per REQUEST, so it can emit one on every turn of a session whose primary is
+ * down.
+ */
+export const ProviderFailedOverEventSchema = z.object({
+  type: z.literal("provider.failedOver"),
+  meta: SessionEventMetaSchema,
+  /** Which pipeline stage failed over. */
+  stage: z.enum(["stt", "llm", "tts"]),
+  /** The `kind` of the provider abandoned. */
+  from: z.string(),
+  /** The `kind` of the provider tried next. */
+  to: z.string(),
+  /** Why `from` was abandoned — its error's message, bounded. */
+  reason: z.string().max(MAX_FAILOVER_REASON_CHARS),
 });

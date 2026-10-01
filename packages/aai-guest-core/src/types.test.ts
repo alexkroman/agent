@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-// `harness/types.ts` has ZERO workspace imports — it is bundled into the
+// `types.ts` has no workspace VALUE imports — it is bundled into the
 // self-contained guest artifact — so the shapes it shares with the SDK are
 // hand-written copies. These assertions are what makes the duplication safe,
 // exactly as `limits.test.ts` does it for the constants: a TEST file is never
@@ -9,9 +9,9 @@
 // (`pnpm typecheck` covers this file); the runtime `expect`s exist so the
 // failure is also a red test rather than only a red build.
 
-import type { Message as SdkMessage } from "@alexkroman1/aai";
+import type { AgentDef as SdkAgentDef, Message as SdkMessage } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import type { Message } from "./types.ts";
+import type { AgentDef, Message } from "./types.ts";
 
 /** True only when `A` and `B` are the same type in both directions. */
 type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -48,5 +48,22 @@ describe("the guest Message mirrors the SDK's", () => {
     const toSdk: (m: Message) => SdkMessage = (m) => m;
     const sample: Message = { role: "tool", content: "{}" };
     expect(toGuest(toSdk(sample))).toEqual(sample);
+  });
+});
+
+describe("the guest AgentDef mirrors the SDK's", () => {
+  test("every key the mirror reads is a key of the SDK's AgentDef, bar one", () => {
+    // The harness reads these off a tenant bundle's agent, so a field the SDK
+    // removes or renames (as `page` became `mode`) would leave the mirror
+    // reading a key no bundle sets — a silent no-op. Stated as an EXACT set,
+    // distributed over every mode's definition, so a removed or renamed SDK
+    // field fails `tsc` here. The value types stay loose (`string`) on purpose:
+    // the bundle's agent is asserted to the mirror, never validated against it.
+    //
+    // `state` is the one key the SDK no longer has (`ctx.state` is gone): the
+    // trial runner still seeds a trial from it (`trial.ts`).
+    type SdkKeys = SdkAgentDef extends unknown ? keyof SdkAgentDef : never;
+    const extra: Exact<Exclude<keyof AgentDef, SdkKeys>, "state"> = true;
+    expect(extra).toBe(true);
   });
 });

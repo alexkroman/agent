@@ -13,7 +13,7 @@
  * member. Worse, the union itself was exported only from the non-authoring
  * `/protocol` subpath, so NO capability contract owned it: its body was hashed
  * in full by every capability that reached it, and one new event
- * (`user-turn.exceeded`, `metrics.collected`) bumped `aai:agent`, `aai:dialog`,
+ * (`userTurn.exceeded`, `metrics.collected`) bumped `aai:agent`, `aai:dialog`,
  * `aai:testing` and `aai-runtime:session` at once.
  *
  * Now the zod schema is the one source of truth, {@link SessionEventMap} is
@@ -131,6 +131,43 @@ export type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>
 export type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 /**
+ * Every built-in session event name, spelled out in schema order — the same
+ * set as {@link SessionEventType} before any augmentation.
+ *
+ * Written out because a rename must move the `aai:events` contract hash, and
+ * the hash cannot see a name that only reaches it through `SessionEventSchema`
+ * (a `const`, whose literals it reads as `string`). `session-event-names.test.ts`
+ * fails if this and the schema disagree.
+ *
+ * @public
+ */
+export type SessionEventTypeList = readonly [
+  "session.configured",
+  "audio.completed",
+  "speech.started",
+  "speech.stopped",
+  "userTranscript.updated",
+  "userTranscript.committed",
+  "agentTranscript.updated",
+  "agentTranscript.committed",
+  "tool.called",
+  "tool.completed",
+  "reply.completed",
+  "reply.cancelled",
+  "session.reset",
+  "session.timedOut",
+  "error.reported",
+  "custom.emitted",
+  "state.updated",
+  "usage.updated",
+  "guardrail.blocked",
+  "userTurn.exceeded",
+  "provider.failedOver",
+  "metrics.collected",
+  "history.restored",
+];
+
+/**
  * One **server→client** session event, envelope included: a fact the session
  * reports, in the shape it takes on the wire and in the retained stream.
  *
@@ -162,7 +199,7 @@ export type SessionEventBody<K extends SessionEventType = SessionEventType> = {
  * default — the session publishes a report it has no `case` for — and needs
  * no edit to a list in another package. Each is here for a reason:
  * `session.configured` is the handshake, `session.reset` and
- * `session.timed-out` come from the client and the idle watchdog,
+ * `session.timedOut` come from the client and the idle watchdog,
  * `custom.emitted` is `ctx.send`, `state.updated` is a `syncState` projection,
  * `usage.updated` and `guardrail.blocked` are the session's own accounting and
  * refusals, and `history.restored` is a resume.
@@ -172,7 +209,7 @@ export type SessionEventBody<K extends SessionEventType = SessionEventType> = {
 export const SESSION_SOURCED_EVENT_TYPES = [
   "session.configured",
   "session.reset",
-  "session.timed-out",
+  "session.timedOut",
   "custom.emitted",
   "state.updated",
   "usage.updated",

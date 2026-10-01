@@ -16,9 +16,8 @@ import {
 } from "./_session-core-test-utils.ts";
 import { useClientTool } from "./client-tool.ts";
 import { SessionProvider } from "./context.ts";
-import { createBrowserSession } from "./session-core.ts";
-import { loadAudioModules } from "./session-core-audio-setup.ts";
-import type { BrowserSession } from "./session-core-types.ts";
+import type { BrowserSession } from "./session/index.ts";
+import { createBrowserSession, loadAudioModules } from "./session/index.ts";
 
 function noop(): void {
   /* silence */

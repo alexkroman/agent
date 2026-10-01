@@ -307,6 +307,19 @@ declaration:
   `if (isToolFailure(inc)) return inc;` is a perfectly good first line of a
   body. There is no rule here that a chain of two lookups needs this.
 
+### `orFail(fn)` — the same name, handed a FUNCTION, is the step arm
+
+`orFail(stepGenerate)` answers the same call with its failure classified for the
+step engine (`_step-or-fail.ts`): a throw, or a non-2xx `Response` it resolves
+to, leaves as `toStepError`'s verdict; anything unclassifiable is rethrown
+unchanged; a sync function stays sync. It replaced (and removed) the eight
+`*OrFail` twins on `/step-errors`, and `/step-errors` re-exports this ONE
+declaration rather than declaring a second
+`orFail` — `API-INDEX.md` merges a name's rows across subpaths, so two
+declarations would be documented as one. A `ToolFailure` is never a function,
+so the arms cannot collide; a function VALUE passed only to be handed back now
+comes back wrapped (the trade, documented on the overload).
+
 ## Reading a WAV is the SDK's now too (`sdk/wav-parse.ts`)
 
 `sdk/wav.ts`'s module doc used to disclaim the parse direction — "reading an

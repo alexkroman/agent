@@ -566,12 +566,12 @@ const gateSpec = {
     browsing: {
       instruction:
         "Nothing is waiting for the caller's yes. Stage a change with a booking tool first.",
-      on: { STAGED: "awaitingConfirmation", "@session.timed-out": "abandoned" },
+      on: { STAGED: "awaitingConfirmation", "@session.timedOut": "abandoned" },
     },
     awaitingConfirmation: {
       instruction:
         "Read the staged change back and hear a clear yes or no, then use confirm_action or cancel_action.",
-      on: { SETTLED: "browsing", "@session.timed-out": "abandoned" },
+      on: { SETTLED: "browsing", "@session.timedOut": "abandoned" },
     },
     /**
      * The caller hung up, or the session timed out under them.
@@ -866,7 +866,7 @@ export function tripView(state: FrozenTripState): TripView {
  * client.
  *
  * Annotated, because the annotation is the CONTRACT rather than a restatement:
- * `agent({ syncState })` and `useAgentState()` are both declared against
+ * `agent({ syncState: { trip } })` and `useAgentState(tripProjection)` both take a
  * `StateProjection<V>`, so writing it here is what says the frame the server
  * pushes and the frame the browser renders are the same {@link TripView} — and
  * what fails at this line, rather than in `client.tsx`, if `tripView` stops

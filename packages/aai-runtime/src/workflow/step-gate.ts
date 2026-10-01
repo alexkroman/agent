@@ -152,9 +152,9 @@ export type StepGate = <T>(fn: () => Promise<T>) => Promise<T>;
  * still the same step, and a fresh caller arriving from anywhere else is not.
  *
  * The store belongs to THIS gate, rather than being read off the step context
- * `runStepAttempts` already enters. Two engines in one process (a deployed guest
- * has two copies of this package — see the guide) each have their own gate, and
- * holding one's slot says nothing about the other's; the question this asks is
+ * `runStepAttempts` already enters. Two engines in one process (`aai dev`
+ * rebuilds its runtime on every save, host mode builds one per agent) each have
+ * their own gate, and holding one's slot says nothing about the other's; the question this asks is
  * "does this context hold a slot in me", which only a per-gate store answers.
  *
  * **What that costs, stated rather than hidden**: a body's fan-out reached from

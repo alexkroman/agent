@@ -21,18 +21,18 @@
 // discipline.
 
 import agentDef from "virtual:aai/agent";
-import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
 import {
+  describeEval,
   describeToolCalls,
   describeTurn,
+  dialogRefusalPattern,
   type EvalSession,
   expectCalled,
   lastStateIn,
   statesIn,
   toolCallsInTurns,
   toolNames,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { INBOX } from "./inbox.ts";
@@ -48,8 +48,10 @@ const ProjectedAssistant = z.object({
   sent: z.array(z.unknown()),
 });
 
-const frames = (session: EvalSession) => statesIn(session.events(), ProjectedAssistant);
-const latest = (session: EvalSession) => lastStateIn(session.events(), ProjectedAssistant);
+const frames = (session: EvalSession) =>
+  statesIn(session.events(), "assistant", ProjectedAssistant);
+const latest = (session: EvalSession) =>
+  lastStateIn(session.events(), "assistant", ProjectedAssistant);
 
 /** A triage verdict, as the JSON the scripted model returns for `respondTo`. */
 const verdict = (response: "no" | "email" | "notify") =>

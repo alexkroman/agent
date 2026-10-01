@@ -6,14 +6,11 @@
  * comparator, so a fix here cannot miss one of the gates.
  */
 
-import { timingSafeEqual } from "node:crypto";
-import { parseBearer } from "@alexkroman1/aai-runtime/internal";
+import { constantTimeEquals, parseBearer } from "@alexkroman1/aai/host-internal";
 
-export function constantTimeEquals(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ab.length === bb.length && timingSafeEqual(ab, bb);
-}
+// The SDK's one comparator, re-exported so the harness's gates keep importing it
+// from here.
+export { constantTimeEquals } from "@alexkroman1/aai/host-internal";
 
 /**
  * The token from a `Bearer <token>` Authorization header, or null.

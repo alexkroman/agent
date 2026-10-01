@@ -40,22 +40,32 @@ const AgentConfigSchema: z.ZodObject<{
     builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silencePrompt: z.ZodOptional<z.ZodString>;
-    minBargeInWords: z.ZodOptional<z.ZodNumber>;
-    interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
-    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
-    deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+    turnTaking: z.ZodOptional<z.ZodObject<{
+        minSilenceMs: z.ZodOptional<z.ZodNumber>;
+        maxSilenceMs: z.ZodOptional<z.ZodNumber>;
+        detection: z.ZodOptional<z.ZodString>;
+        userTurnLimit: z.ZodOptional<z.ZodObject<{
+            maxWords: z.ZodOptional<z.ZodNumber>;
+            maxDurationMs: z.ZodOptional<z.ZodNumber>;
+        }, z.core.$strip>>;
+        preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+        startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strict>>;
+    interruption: z.ZodOptional<z.ZodUnion<readonly [z.ZodLiteral<"off">, z.ZodObject<{
+        minWords: z.ZodOptional<z.ZodNumber>;
+        minDurationMs: z.ZodOptional<z.ZodNumber>;
+        backoffMs: z.ZodOptional<z.ZodNumber>;
+        resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
+    }, z.core.$strict>]>>;
+    silence: z.ZodOptional<z.ZodObject<{
+        deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+        nudge: z.ZodOptional<z.ZodObject<{
+            afterMs: z.ZodNumber;
+            prompt: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>>;
     errorPhrase: z.ZodOptional<z.ZodString>;
     startFailurePhrase: z.ZodOptional<z.ZodString>;
-    resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
-    preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    userTurnLimit: z.ZodOptional<z.ZodObject<{
-        maxWords: z.ZodOptional<z.ZodNumber>;
-        maxDurationMs: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -72,11 +82,11 @@ const AgentConfigSchema: z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
     }, z.core.$strip>>;
-    text: z.ZodOptional<z.ZodLiteral<true>>;
     mode: z.ZodOptional<z.ZodEnum<{
         pipeline: "pipeline";
         s2s: "s2s";
         text: "text";
+        "workflow-app": "workflow-app";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
@@ -88,10 +98,6 @@ const AgentConfigSchema: z.ZodObject<{
     clientInbox: z.ZodOptional<z.ZodObject<{
         sampleRate: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    page: z.ZodOptional<z.ZodEnum<{
-        static: "static";
-        voice: "voice";
-    }>>;
     telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodString>>]>>;
 }, z.core.$strip>;
 
@@ -393,10 +399,10 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL: string;
 export const ASSEMBLYAI_LLM_GATEWAY_URL: string;
 
 // @public
-export const ASSEMBLYAI_LLM_KIND = "assemblyai";
+export const ASSEMBLYAI_LLM_KIND: "assemblyai";
 
 // @public
-export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_S2S_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_S2S_KIND: "assemblyai";
@@ -405,7 +411,7 @@ export const ASSEMBLYAI_S2S_KIND: "assemblyai";
 export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24000;
 
 // @public
-export const ASSEMBLYAI_STT_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_STT_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
@@ -414,7 +420,7 @@ export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 export const ASSEMBLYAI_STT_KIND: "assemblyai";
 
 // @public
-export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_TTS_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_TTS_DEPRECATED_VOICES: readonly ["arjun", "bella", "david", "diego", "dmitri", "eleanor", "emma", "giulia", "helen", "ivy", "james", "kyle", "luca", "lucia", "martha", "mateo", "pierre", "river", "tyler", "victor", "winter"];
@@ -479,10 +485,7 @@ interface AssemblyAITtsOptions extends ProviderCredentialOptions {
 type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @internal
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: undefined): Exclude<SessionMode, "text">;
-
-// @internal
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: unknown): SessionMode;
+export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown): Exclude<SessionMode, "text">;
 
 // @internal
 export function assertUploadToken(id: string): void;
@@ -504,7 +507,7 @@ export type BuiltinToolOptions = {
 };
 
 // @public
-export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
+export const CARTESIA_API_KEY_ENV: string;
 
 // @public
 export const CARTESIA_KIND: "cartesia";
@@ -600,10 +603,16 @@ type ClientTranscriptTool = {
 type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
 
 // @public
+export function constantTimeEquals(a: string, b: string): boolean;
+
+// @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 
 // @internal
 export function createDetachedSlotStore(): SlotStore;
+
+// @public (undocumented)
+export function createLogBuffer(options?: LogBufferOptions): LogBuffer;
 
 // @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
@@ -618,7 +627,7 @@ export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
 export const DEAD_AIR_TOOL_COVER_MS = 1200;
 
 // @public
-export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
+export const DEEPGRAM_API_KEY_ENV: string;
 
 // @public
 export const DEEPGRAM_KIND: "deepgram";
@@ -638,6 +647,15 @@ export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;
 
 // @internal
 export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15000;
+
+// @public
+export const DEFAULT_LOG_BUFFER_LINES = 2000;
+
+// @public
+export const DEFAULT_LOG_LINE_BYTES = 4096;
+
+// @public
+export const DEFAULT_LOG_PAGE_LINES = 500;
 
 // @internal
 export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120000;
@@ -673,6 +691,9 @@ export function defaultProviders(config: ProviderFields): {
     tts?: TtsProvider;
 } | null;
 
+// @internal
+export function defineProvider<const Kind extends string, const Stage extends ProviderStage>(definition: ProviderDefinition<Kind, Stage>): ProviderDefinition<Kind, Stage>;
+
 // @public
 export type DelayedRung = {
     afterMs: number;
@@ -680,9 +701,16 @@ export type DelayedRung = {
 };
 
 // @public
+interface DelegateAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly DelegateToolCall[];
+}
+
+// @public
 type DelegateFn = {
-    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
-    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+    <T>(subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };
 
 // @public
@@ -693,17 +721,26 @@ interface DelegateOptions {
 }
 
 // @public @sealed
-interface DelegateResult extends SubagentAnswer {
+interface DelegateResult extends DelegateAnswer {
     accepted: boolean;
     complaint?: string;
     revisions: number;
 }
 
+// @public
+interface DelegateToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @internal
+export function describeProvider<Kind extends string>(definition: ProviderDefinition<Kind>, options: object): ProviderDescriptor<Kind, Record<string, unknown>>;
+
 // @internal
 export const DETACHED_SESSION_SPEECH: SessionSpeech;
 
 // @public
-export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
+export const ELEVENLABS_API_KEY_ENV: string;
 
 // @public
 export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
@@ -733,6 +770,15 @@ export interface ExecuteToolOptions {
     // (undocumented)
     toolCallId?: string;
 }
+
+// @public
+export const FALLBACK_KIND: "fallback";
+
+// @public
+export function fallbackMembers(descriptor: unknown): {
+    kind: string;
+    options: Record<string, unknown>;
+}[];
 
 // @internal
 type FetchDispatcher = RequestInit extends {
@@ -822,7 +868,21 @@ const hostCredentialsMarker: unique symbol;
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
+// @public
+export function isBlankSecret(secret: string | null | undefined): boolean;
+
+// @public
 export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
+
+// @public
+export function isFallbackDescriptor(descriptor: unknown): boolean;
 
 // @internal
 export function isUniversal35Pro(model: string): boolean;
@@ -841,6 +901,20 @@ export type KnownLlmProvider = KnownLiterals<LlmProviderName>;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
+
+// @public
+export const LLM_PROVIDERS: {
+    readonly anthropic: ProviderDefinition<"anthropic", "llm">;
+    readonly openai: ProviderDefinition<"openai", "llm">;
+    readonly google: ProviderDefinition<"google", "llm">;
+    readonly mistral: ProviderDefinition<"mistral", "llm">;
+    readonly xai: ProviderDefinition<"xai", "llm">;
+    readonly groq: ProviderDefinition<"groq", "llm">;
+    readonly openrouter: ProviderDefinition<"openrouter", "llm">;
+    readonly cerebras: ProviderDefinition<"cerebras", "llm">;
+    readonly gateway: ProviderDefinition<"gateway", "llm">;
+    readonly assemblyai: ProviderDefinition<"assemblyai", "llm">;
+};
 
 // @public
 type LlmDescriptorOptions = {
@@ -872,8 +946,44 @@ interface LocalSttOptions extends ProviderCredentialOptions {
     url?: string;
 }
 
+// @public
+export const LOG_LINE_TRUNCATED = "\u2026 [truncated]";
+
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
+
+// @public @sealed
+export type LogBuffer = {
+    append(stream: LogStream, chunk: string): void;
+    read(after?: number, limit?: number): LogPage;
+    tail(): number;
+};
+
+// @public (undocumented)
+export type LogBufferOptions = {
+    maxLines?: number;
+    maxLineBytes?: number;
+    maxPageLines?: number;
+    now?: () => number;
+};
+
+// @public
+export type LogLine = {
+    seq: number;
+    at: number;
+    stream: LogStream;
+    text: string;
+};
+
+// @public
+export type LogPage = {
+    lines: LogLine[];
+    cursor: number;
+    dropped: number;
+};
+
+// @public
+export type LogStream = "stdout" | "stderr";
 
 // @internal
 export function mapStream<T, R>(source: AsyncIterable<T> | Iterable<T>, width: number, run: (item: T, index: number) => Promise<R> | R): AsyncGenerator<R>;
@@ -889,6 +999,9 @@ export const MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES = 3;
 
 // @internal
 export const MAX_CONSECUTIVE_SILENCE_NUDGES = 3;
+
+// @public
+export const MAX_FAILOVER_REASON_CHARS = 500;
 
 // @internal (undocumented)
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
@@ -958,7 +1071,7 @@ export function normalizeE164(raw: string): string | undefined;
 export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined;
 
 // @public
-export const OPENAI_S2S_API_KEY_ENV = "OPENAI_API_KEY";
+export const OPENAI_S2S_API_KEY_ENV: string;
 
 // @public
 export const OPENAI_S2S_KIND: "openai-realtime";
@@ -971,6 +1084,9 @@ export type OpenUpload = {
 
 // @public
 export function outputWithKillNote(result: SpawnCappedResult, timeoutMs: number): string;
+
+// @public
+export function parseBearer(header: string | null | undefined): string;
 
 // @public
 export function parseJsonText(text: string | undefined): {
@@ -990,6 +1106,13 @@ export type PinnedRequestInit = RequestInit & {
 
 // @internal
 export const PIPELINE_FLUSH_TIMEOUT_MS = 10000;
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
 
 // @public
 export function planDelayedLadder(list: readonly ToolDelayedMessage[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): DelayedRung[];
@@ -1021,9 +1144,22 @@ export function pollWorkflow<T>(host: PollHost, name: string, check: () => Promi
 // @internal
 export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
 
+// @internal
+export const PROVIDER_CATALOG: readonly ProviderDefinition[];
+
 // @public
 interface ProviderCredentialOptions {
     apiKeyEnv?: string;
+}
+
+// @internal
+export interface ProviderDefinition<Kind extends string = string, Stage extends ProviderStage = ProviderStage> {
+    readonly envVar: string;
+    readonly factory: string;
+    readonly kind: Kind;
+    readonly label: string;
+    readonly stage: Stage;
+    readonly subpath: "stt" | "llm" | "tts" | "s2s" | "experimental";
 }
 
 // @public
@@ -1045,8 +1181,11 @@ type ProviderFields = {
     llm?: unknown;
     tts?: unknown;
     s2s?: unknown;
-    text?: unknown;
+    mode?: unknown;
 };
+
+// @public
+export type ProviderStage = "stt" | "llm" | "tts" | "s2s";
 
 // @internal
 export const PUBLIC_URL_UNCONFIGURED_MESSAGE: string;
@@ -1210,7 +1349,7 @@ export function resolveSonioxSttSettings(options: SonioxSttOptions): {
 export const RETRYABLE_STATUS: Set<number>;
 
 // @public
-export const RIME_API_KEY_ENV = "RIME_API_KEY";
+export const RIME_API_KEY_ENV: string;
 
 // @public
 export const RIME_DEFAULT_LANGUAGE = "eng";
@@ -1289,6 +1428,12 @@ export type RunCodeExecutor = (code: string) => Promise<string | {
 export const S2S_MAX_RESUME_ATTEMPTS = 5;
 
 // @public
+export const S2S_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "s2s">, ProviderDefinition<"openai-realtime", "s2s">];
+
+// @public (undocumented)
+export type S2sKind = (typeof S2S_PROVIDERS)[number]["kind"];
+
+// @public
 export const safeFetch: typeof globalThis.fetch;
 
 // @internal
@@ -1329,7 +1474,7 @@ type SayOptions = {
 export function selectToolMessage<T extends ToolMessageBase>(list: readonly T[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): T | undefined;
 
 // @internal
-export function serializeToolFailure(message: string): string;
+export function serializeToolFailure(message: string, reason?: ToolRefusalReason): string;
 
 // @internal
 export const SESSION_KEEPALIVE_INTERVAL_MS = 15000;
@@ -1379,6 +1524,18 @@ export function setSessionLocation(sessionId: string, location: string): void;
 export function setSessionPhone(sessionId: string, phone: string): void;
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -1390,7 +1547,7 @@ type SlotStore = {
 };
 
 // @public
-export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
+export const SONIOX_API_KEY_ENV: string;
 
 // @public
 export const SONIOX_KIND: "soniox";
@@ -1410,6 +1567,28 @@ export type SpawnCappedResult = {
     stderr: string;
 };
 
+// @public
+interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRetries"> {
+    builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
+    llm?: LlmSpec;
+    maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
+    maxRevisions?: number;
+    maxSteps?: number;
+    name: N;
+    schema?: StandardSchemaV1;
+    speaks?: boolean;
+    systemPrompt: string;
+    toolChoice?: ToolChoice;
+    tools?: ToolMap;
+}
+
+// @public
+type SpeakerGuardrail = (answer: DelegateAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
 // @public @sealed
 interface SpeechHandle {
     readonly done: Promise<SpeechOutcome>;
@@ -1417,7 +1596,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @internal
 export type SpeechSynthesizer = (request: {
@@ -1431,6 +1610,12 @@ export type SpeechSynthesizer = (request: {
 
 // @internal
 export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
+
+// @public
+export function stageMembers<D>(descriptor: D | undefined): (D | {
+    kind: string;
+    options: Record<string, unknown>;
+})[];
 
 // @public
 export interface StandardSchemaIssue {
@@ -1501,7 +1686,7 @@ type StepClientTranscriptOptions = {
 };
 
 // @internal
-export type StepDelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+export type StepDelegateFn = (subagent: SpeakerDef, options: DelegateOptions) => Promise<DelegateResult>;
 
 // @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
@@ -1529,7 +1714,7 @@ export type StepInfoReader = () => StepInfo | undefined;
 
 // @public
 export type StepMcp = {
-    readonly tools: ToolSet;
+    readonly tools: ToolMap;
     readonly servers: readonly StepMcpServer[];
     close(): Promise<void>;
 };
@@ -1593,41 +1778,15 @@ export const STT_FRAME_MAX_MS = 1000;
 export const STT_FRAME_TARGET_MS = 100;
 
 // @public
+export const STT_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "stt">, ProviderDefinition<"deepgram", "stt">, ProviderDefinition<"elevenlabs", "stt">, ProviderDefinition<"soniox", "stt">, ProviderDefinition<"local", "stt">];
+
+// @public
+export type SttKind = (typeof STT_PROVIDERS)[number]["kind"];
+
+// @public
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
-
-// @public
-interface SubagentAnswer {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
-}
-
-// @public
-interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
-    builtinTools?: readonly BuiltinTool[];
-    description?: string;
-    expectedOutput?: string;
-    guardrail?: SubagentGuardrail;
-    llm?: LlmSpec;
-    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
-    maxRevisions?: number;
-    maxSteps?: number;
-    name: string;
-    schema?: StandardSchemaV1;
-    systemPrompt: string;
-    tools?: ToolSet;
-}
-
-// @public
-type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
-
-// @public
-interface SubagentToolCall {
-    input: unknown;
-    name: string;
-}
 
 // @internal
 export function systemPromptResolver(prompt: AgentSystemPrompt | undefined): AgentInstructions | undefined;
@@ -1637,6 +1796,12 @@ export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
 // @public
 export const TOOL_START_BLOCKING_MAX_MS = 8000;
+
+// @public
+type ToolChoice = "auto" | "required" | "none" | {
+    type: "tool";
+    toolName: string;
+};
 
 // @public
 type ToolCompletionMessage = {
@@ -1695,6 +1860,9 @@ type ToolFailure = {
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+type ToolMap = Readonly<Record<string, ToolDef>>;
+
+// @public
 export type ToolMessageBase = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1724,6 +1892,9 @@ type ToolMessagesInput = {
 };
 
 // @public
+type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster";
+
+// @public
 type ToolSchema = {
     type: "function";
     name: string;
@@ -1731,9 +1902,6 @@ type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
 };
-
-// @public
-type ToolSet = Readonly<Record<string, ToolDef>>;
 
 // @public
 type ToolStartMessage = {
@@ -1748,8 +1916,14 @@ export function toToolJsonSchema(schema: StandardSchemaV1, io?: "input" | "outpu
 // @internal
 export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
 
+// @public
+export const TTS_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "tts">, ProviderDefinition<"cartesia", "tts">, ProviderDefinition<"rime", "tts">];
+
 // @internal
 export const TTS_RECONNECT_TIMEOUT_MS = 8000;
+
+// @public (undocumented)
+export type TtsKind = (typeof TTS_PROVIDERS)[number]["kind"];
 
 // @public
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -1757,12 +1931,25 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
 
 // @public
-interface TypedSubagentDef<T> extends SubagentDef {
+interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
 }
@@ -1821,6 +2008,12 @@ export type UploadWriteMeta = {
 export type UploadWriter = {
     create(meta: UploadWriteMeta, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
 };
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
+}
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -1948,6 +2141,9 @@ type WorkflowSummary = {
     outputSchema?: unknown;
     uploads?: readonly string[];
 };
+
+// @internal
+export function writeSessionEntry<K, V>(map: Map<K, V>, key: K, entry: V, max: number): void;
 
 // @internal
 export const WS_NORMAL_CLOSURE = 1000;

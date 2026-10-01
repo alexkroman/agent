@@ -3,7 +3,7 @@ import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { MAX_TOOL_RESULT_CHARS } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { compactRecordsForModel } from "./_compact-records.ts";
-import { stringifyResult } from "./_tool-result-text.ts";
+import { stringifyResult } from "./tools/index.ts";
 
 /** A tool's return value as the executor hands it on. */
 const asText = (value: unknown): string => stringifyResult(value);

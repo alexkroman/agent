@@ -6,7 +6,7 @@
  * is the half that had to survive: the DevKit owned a "local world" whose data
  * directory these two functions described, but the directory is not the DevKit's
  * idea — it is where a databaseless deployment's UPLOAD BYTES live
- * (`_upload-files.ts`), which is a question that outlives whatever executes the
+ * (`../uploads/files.ts`), which is a question that outlives whatever executes the
  * runs.
  *
  * ## The key is OURS now, and that is a rename with a reason

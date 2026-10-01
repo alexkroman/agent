@@ -311,6 +311,44 @@ export function errorDetail(err: unknown): string {
 export type ToolFailure = { error: string };
 
 /**
+ * Why a call was REFUSED rather than run — the one discriminant every gate and
+ * dispatcher answers with, so a spec or a client switches on one field instead
+ * of matching four sentences.
+ *
+ * - `"unknown_tool"` — no toolset advertises the name.
+ * - `"invalid_arguments"` — the arguments failed the tool's input schema.
+ * - `"cancelled"` — the turn was cut before the body started.
+ * - `"persona"` — a roster entry's tool, called while another one speaks, or a
+ *   handoff a dialog pin forbids.
+ * - `"dialog"` — a `dialog.tool`, called outside its `when` states.
+ * - `"roster"` — a handoff or delegation naming nobody the roster can route to.
+ *
+ * @public
+ */
+export type ToolRefusalReason =
+  | "unknown_tool"
+  | "invalid_arguments"
+  | "cancelled"
+  | "persona"
+  | "dialog"
+  | "roster";
+
+/**
+ * A {@link ToolFailure} the RUNTIME or a gate answered before the body ran, its
+ * `reason` saying which. Still a `ToolFailure` (`isToolFailure` is `true`); the
+ * field is not on `ToolFailure` itself, so an author's own `{ error }` literal
+ * keeps narrowing out of a `T | ToolFailure` union.
+ *
+ * @public
+ */
+export type ToolRefusal = ToolFailure & { reason: ToolRefusalReason };
+
+/** Build a {@link ToolRefusal}. @public */
+export function toolRefusal(reason: ToolRefusalReason, message: string): ToolRefusal {
+  return { error: message, reason };
+}
+
+/**
  * Build a {@link ToolFailure} — the failure a tool `execute` RETURNS when the
  * model should see it and recover.
  *

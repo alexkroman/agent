@@ -11,8 +11,9 @@ import {
   type S2sCallbacks,
   type S2sHandle,
   type S2sSessionConfig,
-} from "../s2s.ts";
-import { createEmitError } from "./pipeline-error.ts";
+} from "../s2s/index.ts";
+import { ASSEMBLYAI_S2S_CAPABILITIES } from "./capabilities.ts";
+import { createEmitError } from "./emit-error.ts";
 import { createS2sLifecycle } from "./s2s-lifecycle.ts";
 import type { Transport, TransportCallbacks } from "./types.ts";
 
@@ -253,24 +254,24 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
           opts.callbacks.onAudioChunk(bytes);
         },
         onUserTranscript: (text: string) =>
-          opts.callbacks.report({ type: "user-transcript.committed", text }),
+          opts.callbacks.report({ type: "userTranscript.committed", text }),
         onUserTranscriptPartial: (text: string) =>
-          opts.callbacks.report({ type: "user-transcript.updated", text }),
+          opts.callbacks.report({ type: "userTranscript.updated", text }),
         // An INTERRUPTED reply is `.updated`, never `.committed`: it enters no
         // history, because history records what the caller HEARD and the service
         // trims an interrupted transcript to what was spoken. This is the one call
         // site in the repo that reports either arm — every pipeline path records.
         onAgentTranscript: (text: string, interrupted: boolean) =>
           opts.callbacks.report({
-            type: interrupted ? "agent-transcript.updated" : "agent-transcript.committed",
+            type: interrupted ? "agentTranscript.updated" : "agentTranscript.committed",
             text,
           }),
         // `transcript.agent.delta` DOES arrive — re-measured against the live
-        // service, see `_s2s-reply.ts`. It is the only carrier of text for a reply
+        // service, see `../s2s/reply.ts`. It is the only carrier of text for a reply
         // that sends no final `transcript.agent`, which is the ordinary shape of a
         // tool-preamble turn.
         onAgentTranscriptPartial: (text: string) =>
-          opts.callbacks.report({ type: "agent-transcript.updated", text }),
+          opts.callbacks.report({ type: "agentTranscript.updated", text }),
         onToolCall: (callId: string, name: string, args: Record<string, unknown>) =>
           opts.callbacks.report({ type: "tool.called", toolCallId: callId, toolName: name, args }),
         onSpeechStarted: () => opts.callbacks.report({ type: "speech.started" }),
@@ -360,6 +361,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   return {
+    capabilities: ASSEMBLYAI_S2S_CAPABILITIES,
     start,
     stop,
     sendUserAudio(bytes) {

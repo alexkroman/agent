@@ -282,8 +282,8 @@ describe("SessionEventSchema", () => {
       false,
     ],
     ["audio.completed", { type: "audio.completed" }, true],
-    ["user-transcript.committed", { type: "user-transcript.committed", text: "hello" }, true],
-    ["agent-transcript.updated", { type: "agent-transcript.updated", text: "hi" }, true],
+    ["userTranscript.committed", { type: "userTranscript.committed", text: "hello" }, true],
+    ["agentTranscript.updated", { type: "agentTranscript.updated", text: "hi" }, true],
     ["speech.started", { type: "speech.started" }, true],
     ["unknown event type", { type: "malicious" }, false],
   ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {

@@ -196,9 +196,9 @@ function sayThrough(target: SimulationTarget): (text: string) => Promise<EvalTur
 
 /** Committed utterance → first reply text, read off the turn's own event stamps. */
 function latencyOf(events: readonly SessionEvent[]): number | undefined {
-  const start = events.find((e) => e.type === "user-transcript.committed")?.meta.at;
+  const start = events.find((e) => e.type === "userTranscript.committed")?.meta.at;
   const first = events.find(
-    (e) => e.type === "agent-transcript.updated" || e.type === "agent-transcript.committed",
+    (e) => e.type === "agentTranscript.updated" || e.type === "agentTranscript.committed",
   )?.meta.at;
   if (start === undefined || first === undefined) return undefined;
   return Math.max(0, first - start);
@@ -277,8 +277,7 @@ async function nextMove(
  * ```ts
  * import { agent } from "@alexkroman1/aai";
  * import { llm } from "@alexkroman1/aai/llm";
- * import { openEvalSession } from "@alexkroman1/aai-runtime/eval";
- * import { simulateCall } from "@alexkroman1/aai-runtime/eval/simulate";
+ * import { openEvalSession, simulateCall } from "@alexkroman1/aai-runtime/eval";
  *
  * export async function hurriedCaller(): Promise<void> {
  *   const session = await openEvalSession({ agent: agent({ name: "Order Desk" }) });

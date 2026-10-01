@@ -52,10 +52,11 @@ const scenario = gate.skip ? describe.skip : describe;
  */
 const WORKER_CODE = `
 export const __aaiConfig = { name: "microvm-agent" };
-export const __aaiCreateRuntime = () => ({
+import { GUEST_HOST } from "@alexkroman1/aai-runtime/internal";
+export const __aaiCreateRuntime = Object.assign(() => ({
   startSession: () => undefined,
   shutdown: () => Promise.resolve(),
-});
+}), { host: GUEST_HOST });
 export default { name: "microvm-agent", systemPrompt: "p", greeting: "g", tools: {} };
 `;
 
@@ -113,10 +114,11 @@ async function recordingPlatform(): Promise<{ origin: string; paths: string[] }>
  */
 const DIALING_WORKER_CODE = `
 export const __aaiConfig = { name: "microvm-agent" };
-export const __aaiCreateRuntime = () => ({
+import { GUEST_HOST } from "@alexkroman1/aai-runtime/internal";
+export const __aaiCreateRuntime = Object.assign(() => ({
   startSession: () => undefined,
   shutdown: () => Promise.resolve(),
-});
+}), { host: GUEST_HOST });
 void fetch(process.env.AAI_PLATFORM_BASE_URL + "/workflow-storage", {
   method: "POST",
   body: JSON.stringify({ method: "runs.list", args: [] }),

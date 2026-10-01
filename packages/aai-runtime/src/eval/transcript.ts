@@ -47,8 +47,8 @@ function lineFor(
   results: ReadonlyMap<string, string>,
   limits: Limits,
 ): string | undefined {
-  if (e.type === "user-transcript.committed") return `User: ${clip(e.text, limits.line)}`;
-  if (e.type === "agent-transcript.committed") return `Agent: ${clip(e.text, limits.line)}`;
+  if (e.type === "userTranscript.committed") return `User: ${clip(e.text, limits.line)}`;
+  if (e.type === "agentTranscript.committed") return `Agent: ${clip(e.text, limits.line)}`;
   if (e.type !== "tool.called") return undefined;
   const result = results.get(e.toolCallId);
   const answered =

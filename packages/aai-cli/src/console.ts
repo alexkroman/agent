@@ -113,10 +113,10 @@ export async function executeConsole(opts: {
   } catch (err) {
     return fail("build_failed", `Could not load agent.ts: ${errorMessage(err)}`);
   }
-  if (agentDef.page === "static") {
+  if (agentDef.mode === "workflow-app") {
     return fail(
       "not_a_voice_agent",
-      'This agent declares `page: "static"` — a workflow app has no voice session to talk to.',
+      'This agent declares `mode: "workflow-app"` — a workflow app has no voice session to talk to.',
       "Run `aai dev` and open the page instead.",
     );
   }

@@ -53,6 +53,9 @@ export {
   roundMoney,
   safeJsonParse,
   type ToolFailure,
+  type ToolRefusal,
+  type ToolRefusalReason,
   toolFailure,
+  toolRefusal,
   withLock,
 } from "./utils.ts";

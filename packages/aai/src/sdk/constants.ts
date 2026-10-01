@@ -173,7 +173,7 @@ export const DEFAULT_BUILTIN_TOOLS = ["think"] as const satisfies readonly Built
  * (`ToolDef.execute`, the tools page) turned an unshaped `await res.json()`
  * into advice. Capping the provider's copy too would silently truncate results
  * an author may be relying on, so the framework WARNS instead — once per tool,
- * naming the size (`warnOversizedResult`, `aai-runtime/src/tool-executor.ts`).
+ * naming the size (`warnOversizedResult`, `aai-runtime/src/tools/executor.ts`).
  */
 export const MAX_TOOL_RESULT_CHARS = 16_000;
 
@@ -241,8 +241,18 @@ export const MAX_DESIGN_STYLESHEETS = 5;
  * @internal
  */
 export const MAX_JSON_BYTES = 1_000_000;
-/** Sliding window of conversation messages retained per session. */
-export const DEFAULT_MAX_HISTORY = 200;
+/**
+ * Transcript messages a `history.restored` frame carries, and the browser
+ * client keeps in its session snapshot (tool-call rows likewise).
+ *
+ * A DISPLAY and wire bound, and nothing else: it decides neither what a
+ * session remembers nor what the model is sent. Both of those are budgeted in
+ * TOKENS by the host runtime — the request against the model's context window,
+ * the record against memory — because a message count predicts neither.
+ *
+ * @internal
+ */
+export const MAX_CLIENT_MESSAGES = 200;
 /**
  * The barge-in gates live in `barge-in-constants.ts` — moved when this file
  * reached the source-length cap, and re-exported here so no import moved. See

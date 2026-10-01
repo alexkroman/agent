@@ -1,10 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { subagent } from "./subagent.ts";
+import { speaker } from "./speaker.ts";
 import { scriptedToolContext } from "./testing-scripted.ts";
 
-const planner = subagent({ name: "planner", systemPrompt: "Plan." });
+const planner = speaker({ name: "planner", systemPrompt: "Plan." });
 
 describe("scriptedToolContext", () => {
   test("wires both fakes into one context and hands them back", async () => {

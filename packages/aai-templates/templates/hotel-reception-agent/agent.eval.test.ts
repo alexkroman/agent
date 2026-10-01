@@ -14,17 +14,17 @@ import agentDef from "virtual:aai/agent";
 // resolves `tools/`, still applies the dialog gate and still executes the tool
 // a script names — so a stub run proves the wiring and proves nothing about
 // what the agent chose.
-import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import {
+  describeEval,
   describeToolCalls,
+  dialogResultSchema,
   expectCalled,
   lastStateIn,
   lastToolResultIn,
   toolCallsInTurns,
   toolNames,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 
@@ -128,7 +128,7 @@ describeEval(agentDef, (test) => {
       expect(cancelled.refund).toBe(59_360);
 
       // And the screen shows it: the verification was cleared by the cancel.
-      const desk = lastStateIn(session.events(), ProjectedDesk);
+      const desk = lastStateIn(session.events(), "hotel", ProjectedDesk);
       expect(desk?.verified).toBeNull();
     },
     {
@@ -226,7 +226,7 @@ describeEval(agentDef, (test) => {
       expect(sent.room).toBe("401");
       expect(sent.next).toMatch(/9-1-1/);
       // The ledger's first line is the dispatch — the desk's own people first.
-      expect(lastStateIn(turn.events, ProjectedDesk)?.ledger[0]?.kind).toBe("emergency");
+      expect(lastStateIn(turn.events, "hotel", ProjectedDesk)?.ledger[0]?.kind).toBe("emergency");
     },
     {
       stubReply: [

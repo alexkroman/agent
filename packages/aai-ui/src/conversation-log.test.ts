@@ -170,12 +170,10 @@ describe("inboxEventToItem", () => {
     ({ type: "session_event", sessionId: "other", event }) as const;
 
   test("committed turns and tool calls are rows; the rest is not shown", () => {
-    expect(inboxEventToItem(frame({ type: "user-transcript.committed", text: " hi " }), 3)).toEqual(
-      {
-        kind: "message",
-        message: { id: 3, role: "user", content: "hi" },
-      },
-    );
+    expect(inboxEventToItem(frame({ type: "userTranscript.committed", text: " hi " }), 3)).toEqual({
+      kind: "message",
+      message: { id: 3, role: "user", content: "hi" },
+    });
     expect(
       inboxEventToItem(
         frame({ type: "tool.called", toolCallId: "t1", toolName: "web_search", args: { q: "x" } }),
@@ -186,14 +184,14 @@ describe("inboxEventToItem", () => {
     });
     expect(
       inboxEventToItem(
-        frame({ type: "agent-transcript.committed", text: "Sorry?", recovery: true }),
+        frame({ type: "agentTranscript.committed", text: "Sorry?", recovery: true }),
       ),
     ).toBeUndefined();
     expect(
-      inboxEventToItem(frame({ type: "agent-transcript.committed", text: "  " })),
+      inboxEventToItem(frame({ type: "agentTranscript.committed", text: "  " })),
     ).toBeUndefined();
     expect(
-      inboxEventToItem(frame({ type: "user-transcript.updated", text: "hal" })),
+      inboxEventToItem(frame({ type: "userTranscript.updated", text: "hal" })),
     ).toBeUndefined();
     expect(inboxEventToItem({ type: "session_ended", sessionId: "other" })).toBeUndefined();
   });

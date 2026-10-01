@@ -111,8 +111,8 @@ const TEST_SUFFIXES = [
  */
 const EXCLUSIONS = [
   {
-    why: "a barrel is a pure re-export surface; konsistent's `barrel-modules` convention already enforces that it holds nothing else",
-    match: (file) => path.basename(file).endsWith("-barrel.ts"),
+    why: "a file of nothing but `export … from` statements (a barrel, a module directory's `index.ts`) has no behaviour of its own to test — read, not guessed from the name, so one that grows a declaration enters scope on its own",
+    match: (file) => isPureReExport(file),
   },
   {
     why: "test infrastructure IS a test file by role — every suite that imports it exercises it, and it has no behaviour of its own to claim",
@@ -157,16 +157,45 @@ const EXCLUSIONS = [
  * export and the module stays in scope.
  */
 function hasRuntimeExport(file) {
-  let source;
-  try {
-    source = readFileSync(path.join(ROOT, file), "utf8");
-  } catch {
-    return true;
-  }
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+  const code = codeOf(file);
+  if (code === undefined) return true;
   return /^export\s+(?:async\s+function|function|const|let|var|class|abstract\s+class|enum|default|\*|\{)/m.test(
     code,
   );
+}
+
+/** One `export … from "…"` statement: `*`, `* as x`, or a named list, type-only or not. */
+const RE_EXPORT =
+  /export\s+(?:type\s+)?(?:\*(?:\s+as\s+[\w$]+)?|\{[^}]*\})\s*from\s*["'][^"']+["'];?/g;
+
+/**
+ * Whether a file holds only `export … from` statements — a barrel or a module
+ * directory's `index.ts`, by what it contains rather than by its name. An
+ * unreadable or empty file is not one, so it stays in scope.
+ */
+function isPureReExport(file) {
+  const code = codeOf(file);
+  if (code === undefined) return false;
+  const rest = code.replace(RE_EXPORT, "");
+  return rest !== code && rest.trim() === "";
+}
+
+/** @type {Map<string, string | undefined>} */
+const codeCache = new Map();
+
+/** A file's source with its comments stripped, read once; `undefined` if unreadable. */
+function codeOf(file) {
+  if (codeCache.has(file)) return codeCache.get(file);
+  let code;
+  try {
+    code = readFileSync(path.join(ROOT, file), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+  } catch {
+    // Unreadable (deleted but still listed): each caller decides what that means.
+  }
+  codeCache.set(file, code);
+  return code;
 }
 
 /** The in-scope modules, and the ones with no co-located test. */

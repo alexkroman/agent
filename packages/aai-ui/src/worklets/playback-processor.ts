@@ -37,7 +37,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const opts = options.processorOptions || {};
-    // The node's context IS the playback context (audio.ts asserts its rate),
+    // The node's context IS the playback context (audio/voice-io.ts asserts its rate),
     // so the worklet-global sampleRate is authoritative; the option exists
     // for the node-less test harness.
     const rate = opts.sampleRate ?? sampleRate;

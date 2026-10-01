@@ -285,8 +285,8 @@ describeWithPg("session state over a real Postgres", () => {
     // through `bigint` as a string, a `jsonb` column rejecting what the memory
     // backend holds happily — which is why this tier exists at all.
     const first = streamFor();
-    first.append("s-ev", { type: "user-transcript.committed", text: "my order is 4471" });
-    first.append("s-ev", { type: "agent-transcript.committed", text: "Found it." });
+    first.append("s-ev", { type: "userTranscript.committed", text: "my order is 4471" });
+    first.append("s-ev", { type: "agentTranscript.committed", text: "Found it." });
     await first.flush("s-ev");
 
     const second = streamFor();
@@ -294,8 +294,8 @@ describeWithPg("session state over a real Postgres", () => {
     const page = await second.read("s-ev", 0);
 
     expect(page.events.map((e: { type: string }) => e.type)).toEqual([
-      "user-transcript.committed",
-      "agent-transcript.committed",
+      "userTranscript.committed",
+      "agentTranscript.committed",
     ]);
     // The position continues, so a resumed session cannot overwrite its own log.
     expect(second.tail("s-ev")).toBe(2);

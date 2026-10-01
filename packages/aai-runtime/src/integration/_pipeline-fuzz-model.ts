@@ -199,7 +199,7 @@ export interface Monitor {
  * (guardrail 1, request validity, serialization, no-callback-after-stop,
  * audio-after-done, no-record-without-audio) runs unchanged in both arms, and
  * the adopted reply's TEXT is pinned deterministically instead, in
- * `transports/pipeline-preemption.test.ts`.
+ * `../transports/pipeline/preemption.test.ts`.
  */
 export function checkReplyIntegrity(reply: ReplyRecord, tts: FakeTtsProvider, mon: Monitor): void {
   if (mon.speculating || reply.disturbed || reply.failed) return;
@@ -375,9 +375,9 @@ export function checkPrompt(prompt: readonly unknown[], mon: Monitor): void {
     mon.flag("an interrupted reply was recorded in a session that forwarded no audio");
   }
   if (prompt.some((m) => (m as PromptMsg).role === "tool")) mon.hit("llmRequestWithTool");
-  // Past DEFAULT_MAX_HISTORY the cap trims on every push — the state the
-  // orphan-tool-result oracle exists for.
-  if (prompt.length >= 201) mon.hit("llmRequestAtHistoryCap");
+  // A request past the depth the retired 200-message cap trimmed at — the deep
+  // history the orphan-tool-result oracle exists to validate.
+  if (prompt.length >= 201) mon.hit("llmRequestDeepHistory");
 }
 
 /** Wrap the fake model so every request is validated and every stream tracked. */
@@ -390,7 +390,7 @@ export function instrumentLlm(
   // `LanguageModel` is a union over three provider spec versions plus a bare
   // model id, and a `doStream` override written against the union satisfies
   // none of them. The fake is always the v3 object, so narrow to that arm — the
-  // same move `error-injection.test.ts`'s `refusingLlm` makes.
+  // same move `../transports/pipeline/error-injection.test.ts`'s `refusingLlm` makes.
   if (typeof llm === "string" || llm.specificationVersion !== "v3") {
     throw new Error("the fake model is a v3 object, never an id or another spec version");
   }

@@ -1,12 +1,12 @@
 import agentDef from "virtual:aai/agent";
 import type {
-  DialogBargeIn,
   DialogPosition,
   DialogSessionEventName,
   DialogStateSpec,
   DialogTimeout,
   DialogToolResult,
   DialogVoiceConfig,
+  PipelineTuning,
   SessionEvent,
   SlotHolder,
   TelephonyCarrier,
@@ -74,7 +74,8 @@ const deadlineAt = (ctx: SlotHolder): DialogTimeout | undefined => roadsideCall.
 const knobsAt = (ctx: SlotHolder): DialogVoiceConfig | undefined => roadsideCall.voiceConfig(ctx);
 
 /** How interruptible the agent is right here. See `UNINTERRUPTIBLE` in `call.ts`. */
-const bargeInAt = (ctx: SlotHolder): DialogBargeIn | undefined => knobsAt(ctx)?.bargeIn;
+const bargeInAt = (ctx: SlotHolder): PipelineTuning["interruption"] | undefined =>
+  knobsAt(ctx)?.interruption;
 
 /**
  * The session events this dialog declares a transition on, each paired with the
@@ -88,16 +89,16 @@ const bargeInAt = (ctx: SlotHolder): DialogBargeIn | undefined => knobsAt(ctx)?.
  */
 const WIRED: readonly { declared: DialogSessionEventName; event: SessionEvent }[] = [
   {
-    declared: "@user-transcript.committed",
+    declared: "@userTranscript.committed",
     event: {
-      type: "user-transcript.committed",
+      type: "userTranscript.committed",
       text: "I'm on the shoulder of route nine",
       meta: { id: "evt_1", at: 0 },
     },
   },
   {
-    declared: "@session.timed-out",
-    event: { type: "session.timed-out", meta: { id: "evt_2", at: 0 } },
+    declared: "@session.timedOut",
+    event: { type: "session.timedOut", meta: { id: "evt_2", at: 0 } },
   },
 ];
 
@@ -321,7 +322,7 @@ describe("the roadside call", () => {
     expect(read.result.readThisVerbatim).toContain(PLANS.basic.name);
     expect(read.result.wordCount).toBeGreaterThan(40);
     // A read that changes nothing: it must not have moved the call off the one
-    // state whose `bargeIn: "off"` is what gets these words said in full.
+    // state whose `interruption: "off"` is what gets these words said in full.
     expect(read.state).toBe("onCall.disclosure");
   });
 
@@ -552,8 +553,8 @@ describe("what the desk is REACHED by, and what it writes down", () => {
       },
       ctx,
     );
-    DESK_EVENTS["session.timed-out"]?.(
-      { type: "session.timed-out", meta: { id: "evt_gone", at: 0 } },
+    DESK_EVENTS["session.timedOut"]?.(
+      { type: "session.timedOut", meta: { id: "evt_gone", at: 0 } },
       ctx,
     );
 

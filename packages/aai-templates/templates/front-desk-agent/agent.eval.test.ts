@@ -14,9 +14,12 @@ import agentDef from "virtual:aai/agent";
 // every tool on the active persona, and still executes the tool a script names
 // — so a stub run proves the wiring and proves nothing about what the agent chose.
 import { HANDOFF_TOOL_NAME } from "@alexkroman1/aai";
-import { toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
-import { evalSimulation } from "@alexkroman1/aai-runtime/eval/simulate";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeEval,
+  evalSimulation,
+  toolNames,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { ASSEMBLYAI_S2S_CAPABILITIES } from "./capabilities.ts";
 import type { Transport, TransportCallbacks, TransportEventBody } from "./types.ts";
 
 // This file used to hold one `test("file compiles")` whose whole assertion was
@@ -15,6 +16,7 @@ describe("Transport contract", () => {
     // fails at the call site. `start`/`stop` are awaited on every path.
     const calls: string[] = [];
     const stub: Transport = {
+      capabilities: ASSEMBLYAI_S2S_CAPABILITIES,
       start: () => {
         calls.push("start");
         return Promise.resolve();
@@ -49,10 +51,10 @@ describe("Transport contract", () => {
       onAudioChunk: () => undefined,
     };
 
-    callbacks.report({ type: "user-transcript.committed", text: "hi" });
+    callbacks.report({ type: "userTranscript.committed", text: "hi" });
     callbacks.report({ type: "reply.cancelled" });
 
-    expect(seen.map((e) => e.type)).toEqual(["user-transcript.committed", "reply.cancelled"]);
-    expect(seen[0]).toEqual({ type: "user-transcript.committed", text: "hi" });
+    expect(seen.map((e) => e.type)).toEqual(["userTranscript.committed", "reply.cancelled"]);
+    expect(seen[0]).toEqual({ type: "userTranscript.committed", text: "hi" });
   });
 });

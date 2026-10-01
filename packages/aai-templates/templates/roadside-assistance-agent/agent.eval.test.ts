@@ -14,17 +14,17 @@ import agentDef from "virtual:aai/agent";
 // resolves `tools/`, still applies the dialog gate and still executes the tool
 // a script names — so a stub run proves the wiring and proves nothing about
 // what the agent chose.
-import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import {
+  describeEval,
   describeToolCalls,
+  dialogResultSchema,
   type EvalToolCall,
+  evalSimulation,
   lastToolResultIn,
   toolCallsInTurns,
   toolNames,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { evalSimulation } from "@alexkroman1/aai-runtime/eval/simulate";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { disclosureFor, PLANS } from "./shared.ts";

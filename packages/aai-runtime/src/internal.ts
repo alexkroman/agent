@@ -75,8 +75,18 @@ import type { SessionStateArm } from "./session-state/conformance-slots.ts";
 // a name here owes an importer. A consumer that wants it can have the line.
 import type { JournalArm } from "./workflow/journal/conformance-cases.ts";
 
+// Parsing an `Authorization: Bearer <token>` header. Here because FOUR
+// byte-identical copies existed — the guest's gate (`aai-guest/harness-auth.ts`),
+// `bearerMatches` in this package, `aai-server/_bearer.ts`, and the platform's
+// guest gate through it — and all of them matched the scheme case-sensitively.
+// `aai-server` cannot be imported by the other two, so this is the narrowest home
+// that reaches all three; it is now the ONLY copy, that module having deleted its
+// own once it turned out it could import this subpath (it already does in five
+// others). `isBlankSecret` beside it is deliberately NOT exported: the one caller
+// outside this package, `guest/bearer.ts`, is safe by its own ordering.
 export {
   CONTAINED_ENV,
+  parseBearer,
   publishClientInboxDefaults,
   publishStepEnv,
   resolveAllBuiltins,
@@ -113,16 +123,8 @@ export type { StateSyncSession } from "./_state-sync.ts";
  * and the log line cannot come to disagree about what a header means.
  */
 export { parseTraceparent, type TraceParent, traceIdOf } from "./_trace-context.ts";
-// Parsing an `Authorization: Bearer <token>` header. Here because FOUR
-// byte-identical copies existed — the guest's gate (`aai-guest/harness-auth.ts`),
-// `bearerMatches` in this package, `aai-server/_bearer.ts`, and the platform's
-// guest gate through it — and all of them matched the scheme case-sensitively.
-// `aai-server` cannot be imported by the other two, so this is the narrowest home
-// that reaches all three; it is now the ONLY copy, that module having deleted its
-// own once it turned out it could import this subpath (it already does in five
-// others). `isBlankSecret` beside it is deliberately NOT exported: the one caller
-// outside this package, `guest/bearer.ts`, is safe by its own ordering.
-export { parseBearer } from "./bearer.ts";
+// What a bundle hands the runtime-less guest harness, as `__aaiCreateRuntime.host`.
+export { GUEST_HOST, GUEST_HOST_VERSION, type GuestHost } from "./guest-host.ts";
 // The two sizes an upload is measured in, plus the id grammar. Exported for the
 // PLATFORM, which owns the byte route a deployed guest brokers through: its window
 // cap and its key derivation have to be stated in the same units the SDK cuts in,
@@ -138,31 +140,27 @@ export { parseBearer } from "./bearer.ts";
 // client here takes. Declared on this side because the dependency runs one way —
 // `aai-server` imports this package and never the reverse — so the five handlers
 // take their route from the table rather than restating the literal.
-export {
-  MAX_PLATFORM_SOCKET_FRAME_BYTES,
-  PLATFORM_ROUTES,
-  PLATFORM_SOCKET_PATH,
-  type PlatformEndpoint,
-  type PlatformRoute,
-} from "./platform-endpoint.ts";
 // The guest's own socket CLIENT. Its importer is `aai-server`'s
 // `platform/socket.scenario.test.ts`, which drives the real client against the
 // real platform over a real port — the one spec that can say the two ends are
 // wired to each other, and one neither package can write alone.
-export {
-  createPlatformSocket,
-  type PlatformSocket,
-  platformSocketUrl,
-} from "./platform-socket.ts";
 // The frames that same guest sends when it carries those five routes down ONE
 // socket instead of five POSTs. Declared beside the table and for the same
 // reason: `aai-server/platform-socket-handler.ts` is the other end of this wire,
 // and a schema per side is a frame one of them silently drops.
 export {
+  createPlatformSocket,
+  MAX_PLATFORM_SOCKET_FRAME_BYTES,
+  PLATFORM_ROUTES,
+  PLATFORM_SOCKET_PATH,
+  type PlatformEndpoint,
   PlatformInboundFrameSchema,
   type PlatformReplyFrame,
+  type PlatformRoute,
+  type PlatformSocket,
   parsePlatformFrame,
-} from "./platform-socket-frames.ts";
+  platformSocketUrl,
+} from "./platform/index.ts";
 export type { ProviderEnvVarsQuery } from "./providers/_provider-env-var.ts";
 // The CLI's two credential helpers. `withHostCredentialFallback` fills a
 // provider key from the host shell for `aai dev`/`aai console`/`npm start`;
@@ -181,37 +179,57 @@ export { consoleLogger } from "./runtime-config.ts";
 // gate. Shared for the same reason `isPathInside` below is: the guest harness makes
 // the identical statement about a deployed agent and had its own copy of the line,
 // so a gate variable added later would have had to be remembered in two places.
-export { agentServerEnv } from "./server-env.ts";
 // The two route TABLES — every path this package serves, split by which surface
 // mounts it. `aai-server`'s `GUEST_ROUTES` composes them with the harness's own
 // routes instead of re-typing the strings, which is what it did while
 // `WORKFLOW_FLOW_PATH` below was already exported for exactly that purpose. See
-// `server-routes.ts` for why there are two tables and not one.
+// `server/routes.ts` for why there are two tables and not one.
+// The containment rule under the static-asset server, shared because it is
+// SSRF-adjacent and worth one definition rather than one per caller.
+// The managed platform's session tickets: the broker (`aai-server`'s
+// `client-config` handler) mints with these, and the guest derives the same key
+// from its bearer to verify. Here, not on `/auth`, because only those two do.
 export {
+  agentServerEnv,
+  isPathInside,
+  mintPlatformSessionTicket,
+  PLATFORM_TICKET_RESUME_GRACE_SECONDS,
+  type PlatformTicketInput,
+  platformSessionSecret,
   SERVER_ROUTES,
   type ServerRoute,
   type ServerRouteMatch,
   WORKFLOW_CALLBACK_ROUTES,
-} from "./server-routes.ts";
-// The containment rule under the static-asset server, shared because it is
-// SSRF-adjacent and worth one definition rather than one per caller.
-export { isPathInside } from "./server-static.ts";
+} from "./server/index.ts";
 // Wiring a socket up under a session. `SessionWebSocket` — the minimal socket
 // shape a host supplies — is contracted, on the root barrel. The socket's
 // options are the transport-neutral lifecycle's plus its own, so that type is
 // named here beside the function whose signature carries it.
-export type { AttachSessionOptions } from "./session-attach.ts";
 // The SERVER session one socket bridges, for `aai-server`'s `ws.scenario.test.ts`,
 // which drives the platform's socket handler against a stand-in session. It was
 // the `session` capability's, where nothing published could hand one out: the
 // constructor is `createSessionCore`, which is unexported, and the one method
 // that returned one (`Runtime.createSession`) was a testing seam. The two
 // `TransportEvent*` types are what its `report` takes, so they travel with it.
-export type { ServerSession } from "./session-core.ts";
+export type {
+  AttachSessionOptions,
+  ServerSession,
+  SessionEmitter,
+  SpeechDirectory,
+} from "./session/index.ts";
+// The live-session directory `wireSessionSocket` claims into — a host wiring
+// its own socket server builds one per runtime (`session/directory.ts`).
 // Reading a session's events back, and stamping one on the way in. The two
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
 // contracted, on the root barrel.
-export { createSessionEventStream, stampSessionEvent } from "./session-event-stream.ts";
+export {
+  createSessionDirectory,
+  createSessionEventStream,
+  type SessionDirectory,
+  type SessionWiring,
+  stampSessionEvent,
+  wireSessionSocket,
+} from "./session/index.ts";
 // Session state's PLATFORM backend — the HTTP client `aai-server` serves on
 // `POST /:slug/session-state`. Here for the same reason `createPlatformJournal`
 // below is, and it is the same arm: `session-state-conformance-platform.scenario.test.ts`
@@ -251,7 +269,7 @@ export {
 export { CARRIER_PARAM, TELEPHONY_PATH } from "./telephony/telephony-server.ts";
 // Running one tool call. `ExecuteTool`/`ExecuteToolOptions` — the shapes a host
 // substituting an executor names — are contracted, on the root barrel.
-export { executeToolCall } from "./tool-executor.ts";
+export { executeToolCall } from "./tools/index.ts";
 export type { TransportEventBody, TransportEventType } from "./transports/types.ts";
 // The session-scoped token meter. `RuntimeOptions.usage`,
 // `ExecuteToolCallOptions.usage` and the subagent runner's bag all take one,
@@ -365,7 +383,6 @@ export {
   type UploadBackend,
   type UploadStore,
 } from "./workflow/uploads.ts";
-export { wireSessionSocket } from "./ws-handler.ts";
 
 /**
  * The {@link JournalStore} CONFORMANCE suite, loaded on demand.

@@ -18,19 +18,10 @@ export {
   ProviderDescriptorSchema,
   toAgentConfig,
 } from "./agent-config.ts";
-// `assertProviderTriple` is deliberately NOT here. Its first overload carries
-// `@internal` and the second carries no tag, so API Extractor reported one
-// symbol as both `@internal` and `@public` — `API-EXPORTS.json` listed the name
-// while `docs/api` denied it existed. Every caller is inside this package
-// (`sdk/agent-config.ts`, `host/runtime-providers.ts`), so the barrel entry was
-// buying nothing; import it from `./config-rules.ts` directly.
-export {
-  agentConfigWarnings,
-  assertPipelineTuning,
-  assertSilencePolicy,
-  type PipelineTuning,
-  type SessionMode,
-} from "./config-rules.ts";
+// `assertProviderTriple` is deliberately NOT here: it is `@internal`, and its
+// callers reach it through `./config-rules.ts` or `/host-internal`, so a
+// barrel entry would buy nothing.
+export { agentConfigWarnings, type SessionMode } from "./config-rules.ts";
 // The same seam for the other thing a file beside `agent.ts` can BE: its
 // `system-prompt.md`.
 export { withSystemPrompt } from "./system-prompt-file.ts";
@@ -56,3 +47,15 @@ export {
   withTools,
 } from "./tool-registry.ts";
 export { type ToolSchema, ToolSchemaSchema } from "./tool-schema.ts";
+// The ONE shape every tool source hands the runtime — see `sdk/toolset.ts`.
+export {
+  agentToolsets,
+  composeToolsets,
+  gateToolset,
+  type ResolvedTool,
+  type ToolBearingDef,
+  type ToolGate,
+  type ToolTable,
+  toolEntry,
+  toolset,
+} from "./toolset.ts";

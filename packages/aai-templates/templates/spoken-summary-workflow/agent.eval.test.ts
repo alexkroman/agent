@@ -48,13 +48,13 @@
 // exercised. `run.slept` below is the other half of that admission written as
 // an assertion. `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that
 // really suspends and resumes a run.
-import { stubGatewayRoute } from "@alexkroman1/aai/testing";
 import {
+  describeWorkflowEval,
   installStubSpeech,
   installStubTranscribe,
   installStubUploads,
-} from "@alexkroman1/aai/testing/vitest";
-import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
+  stubGatewayRoute,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import agentDef, { spokenSummary } from "./agent.ts";
 import { POLL_INTERVAL_MS } from "./workflows/transcribe.ts";

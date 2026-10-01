@@ -19,7 +19,7 @@
 // pane (panes/docs.tsx), which passes them in.
 //
 // **Each half is offered only to the agents it is TRUE for.** A workflow app is
-// not shown the carrier webhook — `page: "static"` declines `/websocket` and
+// not shown the carrier webhook — `mode: "workflow-app"` declines `/websocket` and
 // cannot declare a carrier, so a number pointed at one answers and hangs up — and
 // an agent that declares no workflow is not shown the workflow routes, which
 // the platform proxies for every agent and which need a `workflow` name it has

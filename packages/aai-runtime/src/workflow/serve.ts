@@ -61,13 +61,13 @@ import { deliverQueueMessage, WORKFLOW_QUEUE_PATH } from "./queue-dispatch.ts";
  * Two names because the platform must register the slash-less path plus a token
  * segment while the parser needs the trailing slash — derived from one another so
  * the two cannot drift, which they did while `aai-server` spelled the slash-less
- * form as its own literal. See `server-routes.ts`.
+ * form as its own literal. See `../server/routes.ts`.
  *
  * They stay in this module rather than moving to `workflow/webhook.ts` with the
  * handler because that module reaches the runtime's `Logger` and a
- * `WorkflowClient` — a dependency `server-routes.ts` has no business acquiring in
+ * `WorkflowClient` — a dependency `../server/routes.ts` has no business acquiring in
  * order to learn a path, and it is what `aai-server` reads the route table from.
- * The three readers are all in this package: `server-routes.ts`,
+ * The three readers are all in this package: `../server/routes.ts`,
  * `workflow/webhook.ts` and `workflow/client.ts`.
  *
  * @internal

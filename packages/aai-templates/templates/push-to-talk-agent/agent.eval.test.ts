@@ -6,7 +6,7 @@
 // `save_note` call carrying the whole note, rather than a reply to its first
 // half. Each `session.say()` here is one press of the button: the harness
 // frames it with the same `user_turn_start` / `user_turn_commit` pair the
-// page's `usePushToTalk()` sends, because a `turnDetection: "manual"` agent
+// page's `usePushToTalk()` sends, because a `turnTaking: { detection: "manual" }` agent
 // answers nothing that was not released.
 //
 // Without a provider key every case runs against a SCRIPTED model (its
@@ -19,8 +19,12 @@
  * would measure an agent on the framework default prompt.
  */
 import agentDef from "virtual:aai/agent";
-import { expectCalled, lastStateIn, toolNames } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeEval,
+  expectCalled,
+  lastStateIn,
+  toolNames,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 
@@ -37,7 +41,7 @@ describeEval(agentDef, (test) => {
       expectCalled(turn, "save_note");
       // One note, one call: the whole press is one thought.
       expect(toolNames(turn.toolCalls).filter((name) => name === "save_note")).toHaveLength(1);
-      const notes = lastStateIn(turn.events, Projected)?.notes ?? [];
+      const notes = lastStateIn(turn.events, "notebook", Projected)?.notes ?? [];
       expect(notes).toHaveLength(1);
       expect(notes[0]?.text.toLowerCase()).toContain("window seal");
     },

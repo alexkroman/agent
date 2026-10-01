@@ -100,9 +100,9 @@ describe("judgeCall", () => {
 
 describe("what the judge reads", () => {
   const meta = { id: "e", at: 0 };
-  const user = (text: string): SessionEvent => ({ type: "user-transcript.committed", meta, text });
+  const user = (text: string): SessionEvent => ({ type: "userTranscript.committed", meta, text });
   const agentSaid = (text: string): SessionEvent => ({
-    type: "agent-transcript.committed",
+    type: "agentTranscript.committed",
     meta,
     text,
   });

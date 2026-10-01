@@ -96,8 +96,18 @@ export const HARNESS_ORPHAN_POLL_MS = 30_000;
  * identical value, so that guest keeps exactly the behaviour it had. What it
  * does NOT get is the microVM fix, which is local-dev-only and cured by a
  * redeploy.
+ *
+ * v5 made `__aaiCreateRuntime.host` REQUIRED on the harness↔bundle handshake —
+ * the typed `GuestHost` surface (`aai-runtime/guest-host.ts`) a harness that
+ * carries no runtime of its own drives the agent through. It is the bundle side
+ * that changed, and the two ends stay paired: a deployed agent runs the harness
+ * image pinned at ITS deploy, and that deploy's CLI built its bundle, so an older
+ * pinned guest never meets a v5 bundle's field it cannot read (it ignores the
+ * extra property) and a v5 harness never boots an older bundle without a redeploy,
+ * which rebuilds it. A v5 harness REFUSES a bundle with no host surface at load,
+ * naming the rebuild.
  */
-export const GUEST_CONTRACT_VERSION = 4;
+export const GUEST_CONTRACT_VERSION = 5;
 
 /**
  * Wall-clock cap on fetching the worker bundle from `AAI_BUNDLE_URL`. Bounded

@@ -3,8 +3,8 @@
  * Guarded access to the browser's key-value stores.
  *
  * Three modules in this package remember something across a load — the session
- * id (`session-resume-store.ts`), the upload ids a form has minted
- * (`_upload-recall.ts`) and a page's run correlation key (`use-run-key.ts`) —
+ * id (`session/resume-store.ts`), the upload ids a form has minted
+ * (`upload/recall.ts`) and a page's run correlation key (`use-run-key.ts`) —
  * and each had written out the same two rules by hand, eight `try`/`catch`
  * blocks and two URL-derived key builders between them. The tell was that each
  * module's doc cited the others as precedent, which is a convention held by

@@ -32,10 +32,11 @@ const DRAIN_EXIT_BUDGET_MS = 30_000;
 // __aaiCreateRuntime factory; the inert runtime is all agent-mode boot needs.
 const WORKER_CODE = `
 export const __aaiConfig = { name: "server-mode-agent" };
-export const __aaiCreateRuntime = (opts) => ({
+import { GUEST_HOST } from "@alexkroman1/aai-runtime/internal";
+export const __aaiCreateRuntime = Object.assign((opts) => ({
   startSession: () => undefined,
   shutdown: () => Promise.resolve(),
-});
+}), { host: GUEST_HOST });
 export default { name: "server-mode-agent", systemPrompt: "p", greeting: "g", tools: {} };
 `;
 

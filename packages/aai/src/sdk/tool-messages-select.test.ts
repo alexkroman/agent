@@ -6,7 +6,7 @@
 // A sibling of `tool-messages.test.ts`, which owns the DECLARATION half (the
 // shorthands, and what reaches the wire). Everything here is a pure function of
 // (declaration, arguments, random); the runtime half is `aai-runtime`'s
-// `tool-messages-runner.test.ts`.
+// `aai-runtime/src/tools/messages-runner.test.ts`.
 
 import { describe, expect, test } from "vitest";
 import { createSeededRandom } from "./random.ts";

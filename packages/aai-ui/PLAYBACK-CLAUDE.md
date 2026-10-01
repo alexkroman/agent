@@ -146,13 +146,13 @@ against the audio the ear really received (`heardErrorMs` in the test):
 | 950 (`lead - burst/2`) | -942 ms | -894 ms | -819 ms |
 
 Positive means the cursor runs AHEAD of the ear — over-keeping, the failure
-`pipeline-heard.ts` names. At zero it is already accurate to tens of
-milliseconds, and the error is IDENTICAL at leads of 1000, 1500 and 2000, which
-is the evidence that what is left for the term is the one-way network hop and
-nothing else. The old 750 left the cursor ~694 ms early on a typical link — ~10
-words at English narration rates rather than the "word or two of redundancy" the
-asymmetry argument budgets for, pushing toward exactly the repetition
-`buildTailResumePrompt` exists to fix.
+`aai-runtime/src/transports/pipeline/heard/tracker.ts` names. At zero it is
+already accurate to tens of milliseconds, and the error is IDENTICAL at leads of
+1000, 1500 and 2000, which is the evidence that what is left for the term is the
+one-way network hop and nothing else. The old 750 left the cursor ~694 ms early
+on a typical link — ~10 words at English narration rates rather than the "word
+or two of redundancy" the asymmetry argument budgets for, pushing toward exactly
+the repetition `buildTailResumePrompt` exists to fix.
 
 **`PIPELINE_PLAYBACK_GRACE_MS` (750) is likewise fine and likewise
 lead-independent.** The requirement — how long after `endsAtMs` the caller is

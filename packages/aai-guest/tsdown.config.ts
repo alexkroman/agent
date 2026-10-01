@@ -25,9 +25,16 @@ export default defineConfig({
   //   worked ANYWHERE, production included, and nothing noticed because the one
   //   prerequisite -- an agent with storage enabled -- had never been met.
   //   Enabling the database by default for studio projects is what surfaced it.
+  //
+  // - **The host runtime** (`@alexkroman1/aai-runtime`) is external because the
+  //   harness must carry NO copy of it: a deployed agent runs on the runtime its
+  //   own bundle ships, reached through `__aaiCreateRuntime.host`. Only studio
+  //   mode's coding agent imports it, DYNAMICALLY, from the image's install.
+  //   `harness/externals.test.ts` fails if a module of it is inlined here.
   deps: {
     alwaysBundle: [/.*/],
     neverBundle: [
+      /^@alexkroman1\/aai-runtime(\/|$)/,
       /^@alexkroman1\/aai-cli(\/|$)/,
       /^@vitejs\/plugin-react(\/|$)/,
       /^@tailwindcss\/vite(\/|$)/,

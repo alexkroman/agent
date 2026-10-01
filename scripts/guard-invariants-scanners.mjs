@@ -21,7 +21,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 
-import { git } from "./_ratchet.mjs";
+import { git, isCommentOnly } from "./_ratchet.mjs";
 import {
   GUEST_SURFACE_PATHSPECS,
   RUNTIME_ROUTE_SOURCES,
@@ -191,7 +191,7 @@ function guestRouteLiterals() {
  *
  * Ten of `GUEST_ROUTES`' entries are no longer literals — they compose
  * `SERVER_ROUTES` / `WORKFLOW_CALLBACK_ROUTES` from
- * `packages/aai-runtime/src/server-routes.ts`, so the text read below finds seven
+ * `packages/aai-runtime/src/server/routes.ts`, so the text read below finds seven
  * strings where it used to find seventeen and would report the runtime's own
  * declarations as undeclared. That is the reader being right about the text and
  * wrong about the program.
@@ -211,7 +211,7 @@ function guestRouteLiterals() {
  * route out of both checks.
  */
 function tableDeclaredRoutes() {
-  const tableUrl = new URL("../packages/aai-runtime/src/server-routes.ts", import.meta.url);
+  const tableUrl = new URL("../packages/aai-runtime/src/server/routes.ts", import.meta.url);
   const table = readFileSync(tableUrl, "utf8");
 
   // Every `path: <IDENT>` in the two tables, plus the paths this module declares
@@ -221,7 +221,7 @@ function tableDeclaredRoutes() {
   );
   if (referenced.size === 0) {
     throw new Error(
-      "guard-invariants rule 12: packages/aai-runtime/src/server-routes.ts named no " +
+      "guard-invariants rule 12: packages/aai-runtime/src/server/routes.ts named no " +
         "`path: CONSTANT` entries. The scan reads it as text, so a reshaped table " +
         "silently stops declaring the runtime's routes — fix the pattern.",
     );
@@ -314,22 +314,47 @@ export function importEscapesTemplate(file, specifier) {
 }
 
 export function scanTemplateEscapingImports() {
-  const files = git(["ls-files", "--", ...TEMPLATE_PATHSPECS])
-    .split("\n")
-    .filter((f) => /\.(?:m?[jt]s|tsx)$/.test(f));
+  return scanRelativeImports({ pathspecs: TEMPLATE_PATHSPECS, offends: importEscapesTemplate });
+}
+
+/** Files that can hold an import: every TypeScript and JavaScript module. */
+const IMPORTER = /\.(?:m?[jt]s|tsx)$/;
+
+/**
+ * A relative specifier in an import position: `from "…"`, `import "…"`,
+ * `import("…")`, and vitest's `vi.mock("…")` / `vi.doMock("…")` /
+ * `vi.importActual("…")`, which name a module exactly as an import does.
+ */
+const RELATIVE_SPECIFIER =
+  /(?:\bfrom|\bimport|\bmock|\bdoMock|\bimportActual)\s*\(?\s*["'](\.\.?\/[^"']+)["']/g;
+
+/**
+ * Every relative import under `pathspecs` that `offends`, one hit per
+ * offending specifier: the scan rules 13, 37 and 38 share.
+ *
+ * Candidate lines come from ONE `git grep` for a quoted `./` or `../` string
+ * (`--untracked`, so a file not yet staged is checked), and only those are
+ * matched against {@link RELATIVE_SPECIFIER} and resolved. A comment line is
+ * prose about an import, never one.
+ *
+ * @param {{ pathspecs: string[], offends: (file: string, specifier: string) => unknown }} opts
+ * @returns {{ file: string, line: number, text: string }[]}
+ */
+export function scanRelativeImports({ pathspecs, offends }) {
+  const out = git(["grep", "-nIE", "--untracked", "-e", `["']\\.\\.?/`, "--", ...pathspecs], {
+    allowNoMatch: true,
+  });
   const found = [];
-  for (const file of files) {
-    const source = readRepoFile(file);
-    if (source === undefined) continue;
-    const lines = source.split("\n");
-    lines.forEach((text, index) => {
-      const match = /(?:from|import)\s*\(?\s*["'](\.\.?\/[^"']+)["']/.exec(text);
-      const specifier = match?.[1];
-      if (specifier === undefined) return;
-      if (importEscapesTemplate(file, specifier)) {
-        found.push({ file, line: index + 1, text: text.trim() });
+  for (const raw of out.split("\n")) {
+    const [, file, line, source] = /^([^:]+):(\d+):(.*)$/.exec(raw) ?? [];
+    if (file === undefined || source === undefined || !IMPORTER.test(file)) continue;
+    const text = source.trim();
+    if (isCommentOnly(text)) continue;
+    for (const [, specifier] of text.matchAll(RELATIVE_SPECIFIER)) {
+      if (specifier !== undefined && offends(file, specifier)) {
+        found.push({ file, line: Number(line), text });
       }
-    });
+    }
   }
   return found;
 }

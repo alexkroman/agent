@@ -56,3 +56,12 @@ The schemas and messages are v2's; only the cap on a `tool.completed` result
 (and an inbound `tool_result`) grew. A client still validating against 4000
 rejects a longer frame, so the constant is checked against the newest fixture
 only, while v2's messages must still parse.
+
+## v4 renamed the off-grammar event types, and retired v2 and v3 the way v1 went
+
+Every session event name is now `<subject>.<verb>` in camelCase
+(`userTranscript.committed`, `agentTranscript.updated`, `userTurn.exceeded`,
+`session.timedOut`), gated by `session-event-names.test.ts`. That removes six
+variants v2 and v3 pinned, and nothing published depends on either yet, so both
+were deleted rather than kept as a red suite: v1's reasoning above, applied
+again. v4 is v3's messages under the new names, plus a `userTurn.exceeded`.

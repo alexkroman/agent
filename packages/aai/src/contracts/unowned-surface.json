@@ -3,24 +3,15 @@
   "unowned": ["ToolModules"],
   "forgotten": [
     "DefaultedAgentField",
-    "EndpointingOnDescriptorMisuse",
-    "FrontDoorField",
     "InlineToolsField",
     "InlineToolsMisuse",
     "IsAny",
     "Literal",
     "PipelineOnlyField",
-    "PipelineOnlyMisuse",
     "ProviderField",
     "RejectThenable",
     "RejectThenableResult",
-    "SilenceNudgeField",
-    "SilenceNudgeParams",
-    "SilencePromptWithoutTimeoutMisuse",
-    "StaticAgentParamsCore",
-    "StaticFrontDoorMisuse",
     "SyncMutationMisuse",
-    "WorkflowAppMisuse",
     "WorkflowAppOnlyField"
   ]
 }

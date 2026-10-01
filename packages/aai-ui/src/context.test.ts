@@ -91,7 +91,7 @@ describe("useSessionActions", () => {
 
   it("does NOT re-render on a snapshot change, which is the whole reason it exists", () => {
     // The failure this closes: a footer needing `start` and `toggle` held a
-    // whole-snapshot `useSession()`, and `session-core.ts` rebuilds the
+    // whole-snapshot `useSession()`, and `session/browser-session.ts` rebuilds the
     // snapshot object on every change — so the row re-rendered on every STT
     // partial and every streaming delta. A spec that only checked the methods
     // are present would pass straight over that.

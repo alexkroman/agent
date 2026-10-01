@@ -26,16 +26,13 @@
  * only a step body crosses; the capability owning the decision is what retires
  * them.
  *
- * The seven `*OrFail` callers are the SDK's own step calls with exactly that
- * `.catch` already attached — `stepGenerate`, `stepGenerateJson`, the four
- * transcription calls, and `sendToChannel`. They are on the contract rather
- * than left as a recipe for
- * the same reason: every project that called one wrote the identical
- * `.catch(throwStepError)` beside it, and the one that forgot got the
- * one-second default instead of the gateway's own `Retry-After`. None of the seven
- * takes a `message`, which is the boundary — a caller with a label worth
- * attaching writes the explicit `.catch((err) => throwStepError(err, …))` and is
- * back on the three primitives above.
+ * `orFail` is re-exported here — `orFail(stepGenerate)` is a step call with
+ * exactly that `.catch` already attached — but it is `aai:tool`'s, the
+ * capability that owns the declaration (one name, one owner), so this report
+ * does not carry it. It replaced eight `*OrFail` twins that were each one call
+ * plus the `.catch`. A caller with a label worth attaching writes the explicit
+ * `.catch((err) => throwStepError(err, …))` and is back on the three primitives
+ * above.
  *
  * Re-exported from `@alexkroman1/aai/step-errors`. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
@@ -48,14 +45,6 @@ export {
   FatalError,
   RetryableError,
   type RetryableErrorOptions,
-  sendToChannelOrFail,
-  stepFetchOrFail,
-  stepGenerateJsonOrFail,
-  stepGenerateOrFail,
-  stepTranscribePollOrFail,
-  stepTranscribeSubmitOrFail,
-  stepTranscribeSyncOrFail,
-  stepTranscribeUploadOrFail,
   throwFatalStepError,
   throwFfmpegStepError,
   throwStepError,

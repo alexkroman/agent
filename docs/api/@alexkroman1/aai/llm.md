@@ -65,7 +65,7 @@ well: this is where the factory that produces one lives.
 function llm<P extends LlmProviderName>(options: LlmOptions<P>): LlmProvider;
 ```
 
-Build an LLM descriptor for `agent({ llm })`, `subagent({ llm })` or
+Build an LLM descriptor for `agent({ llm })`, `speaker({ llm })` or
 `ctx.generate({ llm })`.
 
 The API key is resolved host-side from the agent's env, by a name the
@@ -432,6 +432,12 @@ move this id on price or first-token numbers alone.
 ### AssemblyAIGatewayModel
 
 Re-exports [AssemblyAIGatewayModel](index.md#assemblyaigatewaymodel)
+
+***
+
+### fallback
+
+Re-exports [fallback](stt.md#fallback)
 
 ***
 

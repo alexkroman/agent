@@ -7,8 +7,8 @@ read_when: >-
 
 # Dialogs, wired to a session
 
-Reference for `runtime-dialogs.ts`, `runtime-dialog-knobs.ts` and
-`transports/pipeline-dialog-knobs.ts` — the runtime half of `dialog()`. A
+Reference for `runtime/dialogs.ts`, `runtime/dialog-knobs.ts` and
+`transports/pipeline/knobs/dialog.ts` — the runtime half of `dialog()`. A
 SIBLING of the package guide rather than a section of it, per the root
 `AGENTS.md`: this is read once you are already changing the dialog bridge, and
 none of it is needed to work elsewhere in the package. `packages/aai/CLAUDE.md`
@@ -20,13 +20,13 @@ owns the authoring half; `sdk/dialog.ts` owns the gate.
 than a formality. Everything `dialog()` promises beyond the tool gate happens
 when no tool is running, which is why none of it could work from inside one:
 
-| Promise                                                | Where                                                    | Reaches                                                                   |
-| ------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------- |
-| session events move it (`@`-prefixed transitions)      | `SessionDialogs.observe`, called by `session-emitter.ts` | every transport                                                           |
-| the active instruction reaches the model on EVERY turn | `SessionSystemPrompt.setSuffix`                          | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
-| a per-state `timeout` is armed and fired               | `createRestartableTimer` per dialog                      | every transport                                                           |
-| `bargeIn` / `toolChoice` / `temperature` per state     | `PipelineTransportOptions.dialogTurn`                    | **pipeline only**                                                         |
-| `voice` per state                                      | nothing                                                  | **nothing — warned at the first session**                                 |
+| Promise                                                 | Where                                                    | Reaches                                                                   |
+| ------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| session events move it (`@`-prefixed transitions)       | `SessionDialogs.observe`, called by `session/emitter.ts` | every transport                                                           |
+| the active instruction reaches the model on EVERY turn  | `SessionSystemPrompt.setSuffix`                          | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
+| a per-state `timeout` is armed and fired                | `createRestartableTimer` per dialog                      | every transport                                                           |
+| `interruption` / `toolChoice` / `temperature` per state | `PipelineTransportOptions.dialogTurn`                    | **pipeline only**                                                         |
+| `voice` per state                                       | nothing                                                  | **nothing — warned at the first session**                                 |
 
 An UNDECLARED dialog is unchanged: its tool gate, `send`, `position` and
 `projection` all work exactly as they did, and an author can still drive one by
@@ -40,7 +40,7 @@ IS a `SlotHolder`).
 The emitter's order is record → send → **dialogs** → hooks → commit. A dialog is
 part of the session's STATE; a hook is an observer of what the session did, and
 by the time an observer runs everything the event caused should already have
-happened. So a `"session.timed-out"` handler reading `claim.position(ctx)` sees
+happened. So a `"session.timedOut"` handler reading `claim.position(ctx)` sees
 the state the dialog moved TO — the state it declared a transition to precisely
 in order to handle that event. The other order hands that handler the state the
 call has just left, silently, with nothing in the handler to tell.
@@ -67,7 +67,7 @@ NESTED, so a phase that pins a voice and a barge-in together means them together
 and `toVoiceConfig` is deepest-DECLARATION for that reason. Two dialogs have no
 containment relation — neither is a special case of the other — so there is no
 "together" to preserve and per-key is the only merge with a meaning. Last writer
-wins is what `composePrepareStep` already does one layer down.
+wins is what `composePreparers` already does one layer down.
 
 ### The deadline clock runs from the dialog's last MOVE
 
@@ -77,7 +77,7 @@ extended by nothing else. Both shapes a voice call wants are then expressible,
 with the runtime guessing nothing:
 
 - **A silence ladder** wants "since we last heard anything". Declare the hearing:
-  `on: { "@user-transcript.committed": "listening" }` on the state itself is a
+  `on: { "@userTranscript.committed": "listening" }` on the state itself is a
   self transition, so every committed utterance restarts the window and only real
   silence reaches the deadline.
 - **An abandonment or escalation deadline** wants wall clock from entry — "still
@@ -93,7 +93,7 @@ names the events that count, which is what `@`-prefixed transitions already are.
 writes the slot when — and only when — the active state handled the event, and it
 returns the position either way, so comparing positions cannot see a self
 transition. The bridge therefore offers events through a write-counting
-`SlotStore`, the same instrument `session-emitter.ts` uses on a hook's context and
+`SlotStore`, the same instrument `session/emitter.ts` uses on a hook's context and
 for the same reason: the commit is what a move costs, and almost every session
 event reaches a dialog that declares no transition on it.
 
@@ -104,15 +104,16 @@ the dialog actually is instead of firing a transition the conversation has left.
 
 ### Three of the five voice knobs are live; two are impossible
 
-`transports/pipeline-dialog-knobs.ts` carries the table. The short version:
+`transports/pipeline/knobs/dialog.ts` carries the table. The short version:
 
-- **`bargeIn`** — live. The two interim gates in `pipeline-user-speech.ts` are
-  read at the moment a partial is classified, so they became thunks.
-  `bargeIn: "off"` is `minBargeInWords: Infinity`: both gates are
-  `words >= threshold` tests, so an unreachable threshold is exactly "the agent
-  finishes its sentence". The word COUNT is still computed, so a caller talking
-  over a disclosure is still transcribed, still opens the speaking edge, and is
-  still answered once the reply ends.
+- **`interruption`** — live. The two interim gates in `transports/pipeline/speech/user-speech.ts`
+  are read at the moment a partial is classified, so they became thunks.
+  `interruption: "off"` is an infinite word threshold (the transport's
+  `minBargeInWords: Infinity`): both gates are `words >= threshold` tests, so an
+  unreachable threshold is exactly "the agent finishes its sentence". The word
+  COUNT is still computed, so a caller talking over a disclosure is still
+  transcribed, still opens the speaking edge, and is still answered once the
+  reply ends.
 - **`toolChoice` / `temperature`** — live, and **per STEP** rather than per turn.
   They arrive as a `prepareStep` preparer composed before `forceFinalAnswer`,
   which is the stronger place: a gated tool can move the dialog in the MIDDLE of
@@ -135,8 +136,8 @@ the dialog actually is instead of firing a transition the conversation has left.
   event a dialog may declare a transition on. The whole settle runs under a latch;
   an event emitted while it is held is recorded and sent to the client like any
   other and offered to no dialog. Same shape and same argument as the emitter's
-  `announcing` guard one layer up. Both `runtime-dialogs.test.ts` and
-  `session-emitter.test.ts` A/B it.
+  `announcing` guard one layer up. Both `runtime/dialogs.test.ts` and
+  `session/emitter.test.ts` A/B it.
 - **`refreshSystemPrompt` is called only when the rendered suffix CHANGED.** The
   suffix thunk itself always renders fresh, so pipeline mode is correct with no
   push at all; the push exists for a service holding its instructions as session
@@ -151,7 +152,7 @@ the dialog actually is instead of firing a transition the conversation has left.
   knobs.** The speculation decides once, from the SESSION's `toolChoice`, whether
   speculating is free at all, so a state that pins a tool would make every
   speculation end at the tool boundary with the gate still believing it was free.
-  Conservative in one direction on purpose: a dialog declaring only `bargeIn`
+  Conservative in one direction on purpose: a dialog declaring only `interruption`
   turns it off too, and preemptive generation ships off by default.
 - **A throwing dialog is contained PER DIALOG**, exactly as the emitter's two
   hook slots are — they are independent declarations, and this runs from transport
@@ -162,12 +163,12 @@ the dialog actually is instead of firing a transition the conversation has left.
 
 ### A state may PIN a persona
 
-`DialogStateSpec.persona` names one of `agent({ personas })`' roster, and
-`Personas.position` answers it for as long as the conversation is in that
+`DialogStateSpec.persona` names a `speaks: true` entry of `agent({ roster })`, and
+`Roster.position` answers it for as long as the conversation is in that
 state — a property of the POSITION rather than a write, so a resumed session is
 pinned the same way and `handoff` to anyone else is refused until the dialog
 moves. `agent()` checks the name against the roster at declaration. The bridge
-here does not apply it: `runtime-personas.ts` re-renders the persona section on
+here does not apply it: `runtime/personas.ts` re-renders the persona section on
 the `state.updated` a move commits, which is what pushes a pin change to a
 transport holding its prompt as session state.
 
@@ -176,7 +177,7 @@ transport holding its prompt as session state.
 - **A transition cannot run a TOOL, so a state whose exit must also mutate a
   slot cannot safely be timed out.** A deadline and a session event both SEND AN
   EVENT: the dialog moves, and nothing else does. That is fine when the target
-  is terminal — `retail-orders-agent` and `travel-concierge-agent` both carry `"@session.timed-out"`
+  is terminal — `retail-orders-agent` and `travel-concierge-agent` both carry `"@session.timedOut"`
   into a `final` state, where the point is that nothing acts again and nobody
   reads the staged change either. It is NOT fine for the shape it most looks
   like: a `timeout` on a confirmation gate that returns to the browsing state

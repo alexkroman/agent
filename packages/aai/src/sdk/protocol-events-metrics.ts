@@ -32,7 +32,7 @@
  * A greeting has no STT stage (nobody spoke), a reply the caller talked over
  * may have no TTS stage (nothing was synthesized yet), and a turn a guardrail
  * refused before the model has no LLM stage. Absent rather than zero, for the
- * reason `pipeline-llm-trace.ts` gives: a zero averages in as the fast case,
+ * reason `aai-runtime/src/transports/pipeline/llm/trace.ts` gives: a zero averages in as the fast case,
  * and "the model answered instantly" is a lie a dashboard would believe.
  *
  * ## Which modes emit it

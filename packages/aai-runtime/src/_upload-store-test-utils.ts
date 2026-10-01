@@ -13,7 +13,7 @@
 import { createHash } from "node:crypto";
 import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { UploadBackend, UploadPart } from "./_upload-blobs.ts";
+import type { UploadBackend, UploadPart } from "./uploads/index.ts";
 import { createMemoryUploadBackend, createUploadStore, UPLOADS_TABLE } from "./workflow/uploads.ts";
 
 /** One body, as the routes hand it over: an async iterable of chunks. */
@@ -145,7 +145,7 @@ export function recordingDb(options: { refuse?: string } = {}) {
     },
     {
       // The unconditional insert `create` finishes with — the row appears only once
-      // every window is stored, which is the invariant `_upload-store.ts` states.
+      // every window is stored, which is the invariant `uploads/store.ts` states.
       when: `insert into ${UPLOADS_TABLE}`,
       run: (params) => {
         uploads.set(String(params[0]), {
@@ -246,7 +246,7 @@ export function memoryStore(options: { refuse?: string; maxBytes?: number } = {}
     },
   };
   const store = createUploadStore({
-    db: recorder.db,
+    home: { kind: "postgres", db: recorder.db },
     blobs,
     ...omitUndefined({ maxBytes: options.maxBytes }),
   });

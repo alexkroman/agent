@@ -245,7 +245,7 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` (4000, internal) less final-emission
  * latency, so an utterance force-ended by this ceiling still delivers its final
  * before the speaking edge goes idle — and the idle edge is what fires a
- * false-interruption resume (`host/transports/pipeline-recovery.ts`), so
+ * false-interruption resume (`host/transports/pipeline/heard/recovery.ts`), so
  * crossing that line does not merely delay a turn, it lets the agent resume a
  * reply the caller really did interrupt. 500 ms of margin is thin, which is why
  * raising this to 3500 took `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` to 4000 with it.

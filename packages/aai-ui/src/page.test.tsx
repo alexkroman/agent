@@ -9,7 +9,7 @@
  * The property worth pinning is what it does NOT do: no `BrowserSession`, no audio
  * graph, no microphone request. That is the whole reason it is a separate entry
  * from `mountClient()` rather than a flag on it, and it is invisible to a rendering
- * assertion — so `session-core.ts` is mocked and the spec asserts it was never
+ * assertion — so `session/browser-session.ts` is mocked and the spec asserts it was never
  * touched.
  *
  * The second half is the DEFAULT SHELL — what a workflow app gets with no
@@ -22,9 +22,12 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { mountPage } from "./page.tsx";
-import { createBrowserSession } from "./session-core.ts";
+import { createBrowserSession } from "./session/index.ts";
 
-vi.mock("./session-core.ts", () => ({ createBrowserSession: vi.fn() }));
+vi.mock(import("./session/index.ts"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  createBrowserSession: vi.fn(),
+}));
 
 function mount(id = "app"): HTMLElement {
   const el = document.createElement("div");

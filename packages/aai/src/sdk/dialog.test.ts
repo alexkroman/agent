@@ -6,6 +6,7 @@ import { agentToolsToSchemas } from "./_internal-types.ts";
 import { runToolDef } from "./_test-utils.ts";
 import { dialog } from "./dialog.ts";
 import { createToolContext } from "./testing.ts";
+import { toolset } from "./toolset.ts";
 import { isToolFailure, toolFailure } from "./utils.ts";
 
 /**
@@ -360,7 +361,7 @@ describe("tool transitions", () => {
       },
     });
     expect(verify).not.toHaveProperty("when");
-    expect(agentToolsToSchemas({ verify })[0]?.messages).toEqual({
+    expect(agentToolsToSchemas([toolset("files", { verify })])[0]?.messages).toEqual({
       start: [{ content: "Checking your policy." }],
       failed: [{ role: "system", content: "Explain what has to happen first." }],
     });

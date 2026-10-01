@@ -420,7 +420,7 @@ describe("guard-invariants gate", () => {
     // Some rules are scoped to an explicit file list rather than to a directory
     // pathspec, because what they scan is not derivable from a path — rule 16's
     // "declares the SESSION's callback surface" holds for `transports/types.ts`
-    // and not for its neighbour `transports/pipeline-llm-stream.ts`. The price
+    // and not for its neighbour `transports/pipeline/llm/stream.ts`. The price
     // of that is a list a rename empties silently: a `git grep` pathspec
     // matching nothing reports `now=0 ✓`, which reads exactly like the rule
     // being upheld.

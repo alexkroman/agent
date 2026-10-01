@@ -31,7 +31,7 @@
  *
  * ## The budget is mechanism, not prompt
  *
- * Each researcher is a `subagent()` whose `maxSteps` is
+ * Each researcher is a `speaker()` whose `maxSteps` is
  * {@link DeepResearchBudget.researcherSteps}: past it the researcher is asked
  * for its answer with its tools WITHHELD, so a capped angle still returns
  * findings. The pass as a whole is bounded by construction — at most

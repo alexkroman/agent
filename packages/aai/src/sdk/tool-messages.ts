@@ -3,7 +3,7 @@
  * What a tool SAYS while it runs, and what it says instead of the model when it
  * lands — the declaration half. The pure selection over these (conditions,
  * variants, the delay ladder) is `tool-messages-select.ts`, and the runtime
- * that speaks them is `aai-runtime`'s `tool-messages-runner.ts`.
+ * that speaks them is `aai-runtime`'s `aai-runtime/src/tools/messages-runner.ts`.
  *
  * A port of Vapi's tool `messages` design (`ToolMessageStart` /
  * `ToolMessageDelayed` / `ToolMessageComplete` / `ToolMessageFailed`), which is
@@ -55,7 +55,7 @@ export const DEFAULT_TOOL_START_PHRASES = [
  * A `blocking: true` start is the one place a message may hold a tool call up,
  * so the hold is bounded at the CALL SITE rather than by whatever the speech
  * channel does — see `awaitStartSpoken` in `aai-runtime`'s
- * `tool-messages-runner.ts`. Eight seconds is well past any phrase an author
+ * `aai-runtime/src/tools/messages-runner.ts`. Eight seconds is well past any phrase an author
  * would put here (the default pool reads in under two) and well under the tool
  * timeout, so a channel that never settles costs one slow call rather than a
  * wedged turn.

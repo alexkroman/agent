@@ -87,7 +87,7 @@ export function isTextAssetPath(assetPath: string): boolean {
  *
  * **Every entry must be a single UTF-16 code unit mapping to a single code
  * unit.** The heard cursor indexes a reply's TTS text by `text.length`
- * (`spans.push({ len: text.length })` in `host/transports/pipeline-heard.ts`),
+ * (`spans.push({ len: text.length })` in `host/transports/pipeline/heard/tracker.ts`),
  * and that index is what decides which words history records as heard and
  * where a false-interruption resume picks up. A substitution that changed
  * length would silently shift both. That rules out the tempting additions —
@@ -128,7 +128,7 @@ const SPEECH_CHARS = /[‘’‚‛ʼ′“”„″‟]/g;
  *
  * **Length-preserving by construction, and that is load-bearing.** The heard
  * cursor indexes a reply's TTS text by `text.length`
- * (`host/transports/pipeline-heard.ts`), and that index decides which words
+ * (`host/transports/pipeline/heard/tracker.ts`), and that index decides which words
  * history records as heard and where a false-interruption resume picks up, so
  * a substitution that changed length would silently shift both. Scoped to the
  * quote/apostrophe family for the same reason: `—` and `…` would break the

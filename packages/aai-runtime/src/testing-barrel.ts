@@ -43,7 +43,7 @@
  * import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
  *
  * const run = await runTextAgent(
- *   agent({ name: "Desk", text: true, systemPrompt: "Be brief." }),
+ *   agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }),
  *   "where is order 7?",
  *   { script: [{ text: "It shipped yesterday." }] },
  * );
@@ -102,7 +102,7 @@ export {
 // subpath published neither the extension nor the thing extended. Same
 // declaration `@alexkroman1/aai-runtime` exports, re-exported so a spec that
 // builds turn options up in a helper can name what it is building.
-export type { TextAgentOptions, TextTurnOptions } from "./text-agent.ts";
+export type { TextAgentOptions, TextTurnOptions } from "./text-agent/index.ts";
 // The six records a journal holds. `JournalStore` is a dozen methods over
 // exactly these, so publishing the store and not the records published a shape
 // nobody could read: `getRun` answered a `RunRecord` no `import type` named.

@@ -29,17 +29,19 @@
  * tools and read as a model that refuses to act.
  */
 import agentDef from "virtual:aai/agent";
-import { dialogRefusalPattern, eventsOf, isEvent } from "@alexkroman1/aai/testing";
 import {
+  describeEval,
   describeTurn,
+  dialogRefusalPattern,
   type EvalSession,
   type EvalToolCall,
+  isEvent,
   lastStateIn,
+  statesIn,
   toolCallsInTurns,
   toolNames,
   turnCalling,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 
@@ -69,22 +71,22 @@ const ProjectedTrip = z.object({
  * booking untouched — and `tripProjection` rides out on `state.updated` after
  * every tool call, so the stream carries one per step.
  */
-function framesBeforeConfirm(session: EvalSession): z.infer<typeof ProjectedTrip>[] {
+function framesBeforeConfirm(session: EvalSession): readonly z.infer<typeof ProjectedTrip>[] {
   const events = [...session.events()];
-  // `isEvent`/`eventsOf` pick members BY NAME, so neither this nor the filter
-  // below restates the event union — a misspelled name is a compile error.
+  // `isEvent` picks members BY NAME, so this does not restate the event union —
+  // a misspelled name is a compile error; `statesIn` reads the `trip` slot.
   const confirmAt = events.findIndex(
     (e) => isEvent(e, "tool.called") && e.toolName === "confirm_action",
   );
   const before = confirmAt < 0 ? events : events.slice(0, confirmAt);
-  return eventsOf(before, "state.updated").map((e) => ProjectedTrip.parse(e.state));
+  return statesIn(before, "trip", ProjectedTrip);
 }
 
 /**
  * The latest frame — what the browser would be rendering now. `lastStateIn` is
  * the SDK's reader for exactly this; the schema is why it is worth passing one.
  */
-const tripState = (session: EvalSession) => lastStateIn(session.events(), ProjectedTrip);
+const tripState = (session: EvalSession) => lastStateIn(session.events(), "trip", ProjectedTrip);
 
 /**
  * A call that really STAGED — it answered with the read-back rather than with a

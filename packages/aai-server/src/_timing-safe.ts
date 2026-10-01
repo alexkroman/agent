@@ -5,19 +5,12 @@
  * `node:crypto`'s `timingSafeEqual` THROWS on a length mismatch, so every caller
  * has to guard the lengths first — and every caller had written that guard
  * itself: `phone-signature.ts` as a private `equals`, `aai-guest`'s
- * `harness/auth.ts` as its own copy across a package boundary it cannot import
- * across. This is the aai-server half, spelled once.
+ * `harness/auth.ts` as its own copy, `aai-runtime`'s ticket and bearer checks as
+ * two more. The one copy is now the SDK's (`@alexkroman1/aai/host-internal`,
+ * `host/bearer.ts`); this module keeps aai-server's importers on one local path.
  *
  * Comparing lengths first leaks the length of a value the CALLER already chose,
  * never anything about the expected one.
  */
 
-import { timingSafeEqual } from "node:crypto";
-
-/** True when `a` and `b` are equal, without a data-dependent early exit. */
-export function constantTimeEquals(a: string, b: string): boolean {
-  const left = Buffer.from(a, "utf-8");
-  const right = Buffer.from(b, "utf-8");
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
+export { constantTimeEquals } from "@alexkroman1/aai/host-internal";

@@ -277,39 +277,42 @@ from a project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
 ## Running the SDK's own server (`aai dev` and host mode)
 
 `createRuntimeServer` (`packages/aai/src/host/server.ts`) is `aai dev`'s
-backend and has no request authentication, so both defaults are fail-closed.
+backend; with no `AAI_SESSION_SECRET` it authenticates no one, so both
+defaults fail closed.
 This package owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`;
 `packages/aai/CLAUDE.md`, "Self-hosted server defaults" has the summary.
 
 - **Binds loopback.** `listen(port, host = DEFAULT_LISTEN_HOST)` is
   `127.0.0.1`; pass `"0.0.0.0"` deliberately. `aai dev` exposes `AAI_DEV_HOST`
   for containers.
+- **`AAI_SESSION_SECRET` gates `aai dev`, which mints its own client's ticket
+  into `GET /client-config`** (`_dev-session-ticket.ts`, which says why resume
+  ownership is waived); a self-hosted server never does.
 - **Host mode is opt-in.** A `?host=1` WebSocket lets the client supply the
   agent definition while spending the operator's credentials, so
   `isHostAllowed` requires `AAI_ALLOW_HOST` of `1`/`true`/`yes`/`on`.
-  `resolveServerEnv` surfaces only keys declared in `.env`, so `aai dev` passes
-  the shell value through explicitly (`hostModeEnv`).
+  `aai dev` passes the shell value through (`hostModeEnv`), since
+  `resolveServerEnv` surfaces only `.env` keys.
 - **A host client may bring its own provider credentials.** The handshake's
   `credentials` record is merged over the server env for that connection and
   WINS, so a server holding only `AAI_ALLOW_HOST` spends only callers' keys.
-  `createHostServer` (`host/host-server.ts`, whose module doc has the
-  argument) is that server in one call; `defaults` excludes the four
+  `createHostServer` (`host/host-server.ts`; its module doc argues it) is
+  that server in one call; `defaults` excludes the four
   handshake-owned fields; `examples/host-server` is the runnable shape.
 - **The credential allowlist is a security boundary.** Names are screened
   against `ALL_PROVIDER_ENV_VARS`, checked against the SERVER's env before the
   merge. Unbounded, a client could set `DATABASE_URL` (workflow world, upload
   store, session-state backend on its own Postgres) or `AAI_ALLOW_HOST`.
-  Unknown names are REJECTED by name, never silently dropped.
+  Unknown names are REJECTED by name, never dropped.
 - **A host session with no base agent runs the DEFAULT PIPELINE, not S2S**:
   with no `hostBaseAgent`, one `ASSEMBLYAI_API_KEY` covers STT, LLM gateway and
-  TTS. A placeholder `agent()` is not needed.
+  TTS.
 - **Host-mode audio pacing is the client's declaration and defaults to
   paced** (`HostConfig.audioLeadMs`: omitted = `CLIENT_AUDIO_LEAD_MS`, number
-  = that lead, `null` = unpaced). Unpaced lets an S2S reply burst into the
-  client's buffer, which a barge-in then discards unheard; paced keeps the
-  backlog server-side where `PacedAudioSink.clear()` drops it. tau2 runs at or
-  below real time, so it stays paced. Use `null` only for a harness that steps
-  faster than real time.
+  = that lead, `null` = unpaced). Unpaced, an S2S reply bursts into the
+  client's buffer and a barge-in discards it unheard; paced,
+  `PacedAudioSink.clear()` drops the server-side backlog. `null` is only for a
+  harness faster than real time (tau2 is not).
 
 ## Bundling rules
 
@@ -583,7 +586,7 @@ connections, to test session resume. Choose correctly:
   preserves durable slot state (`aai/host/session-state-store.ts`) but not the
   call; a socket drop is the only disconnect a session survives.
 - **It severs (`destroy()`), never closes** — a clean close is "user hung up",
-  which aai-ui does not reconnect from; `session-resume.scenario.test.ts`
+  which aai-ui does not reconnect from; `aai-runtime/src/server/session-resume.scenario.test.ts`
   asserts **1006**.
 - **It is a proxy** so no fault injector lives in production code.
 

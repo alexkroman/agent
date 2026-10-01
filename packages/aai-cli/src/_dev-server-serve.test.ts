@@ -68,13 +68,17 @@ describe("agentEnvWarnings", () => {
     // whether to reach for the logged-in key, so on that path the same omission
     // is a `missing_assemblyai_key` that stops `aai dev` from starting at all —
     // demanding a credential of an app that dials no provider.
-    expect(agentEnvWarnings({ page: "static" }, {}, {})).toEqual([]);
+    expect(agentEnvWarnings({ mode: "workflow-app" }, {}, {})).toEqual([]);
   });
 
   test("a workflow app is still told about its own requiredEnv keys", () => {
     // Suppressing the PROVIDER credential must not suppress the agent's own —
     // a workflow app reads `ctx.env` like any other.
-    const warnings = agentEnvWarnings({ page: "static", requiredEnv: ["STRIPE_KEY"] }, {}, {});
+    const warnings = agentEnvWarnings(
+      { mode: "workflow-app", requiredEnv: ["STRIPE_KEY"] },
+      {},
+      {},
+    );
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("STRIPE_KEY");
   });
@@ -141,7 +145,7 @@ describe("viteDevConfig", () => {
   test("proxies the workflow API, the whole front door of a static app", () => {
     const config = viteDevConfig("/proj", 3000, 3001);
     const proxy = config.server?.proxy as Record<string, unknown>;
-    // A `page: "static"` agent has no socket: `mountPage()` renders a form and
+    // A `mode: "workflow-app"` agent has no socket: `mountPage()` renders a form and
     // every call it makes is a same-origin fetch under this prefix. Unproxied, Vite
     // answers its own 404 and submitting the form fails with `Workflow API 404`
     // while the backend serves the API correctly one port over.

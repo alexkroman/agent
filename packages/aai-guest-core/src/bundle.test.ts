@@ -10,6 +10,7 @@
 
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { GUEST_HOST, GUEST_HOST_VERSION } from "@alexkroman1/aai-runtime/internal";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   ensureRuntime,
@@ -17,6 +18,7 @@ import {
   harnessBundleDir,
   lazyRuntime,
   loadBundle,
+  SUPPORTED_GUEST_HOST_VERSION,
 } from "./bundle.ts";
 import { rejectAllPendingHostRequests, setHostSend } from "./rpc.ts";
 import {
@@ -27,7 +29,11 @@ import {
   makeState,
 } from "./test-utils.ts";
 import { executeTool } from "./trial.ts";
-import type { AgentDef } from "./types.ts";
+import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./types.ts";
+
+/** A factory carrying the real host surface, as the worker wrapper builds one. */
+const factory = (build: () => GuestRuntime): CreateGuestRuntime =>
+  Object.assign(build, { host: GUEST_HOST });
 
 beforeEach(() => {
   installFakeHostChannel();
@@ -170,6 +176,27 @@ describe("loadBundle", () => {
     // Nothing was installed — the next session cannot run stale state.
     expect(state.agent).toBeNull();
   });
+
+  test("a factory with no readable host surface is rejected, naming the versions", async () => {
+    // The harness carries no runtime, so a bundle whose runtime offers no host
+    // surface (built by a CLI before it existed) cannot be served at all.
+    const state = makeState();
+    await expect(
+      loadBundle(state, {
+        code:
+          "export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };\n" +
+          "export const __aaiCreateRuntime = () => ({});",
+        env: {},
+      }),
+    ).rejects.toThrow(/host surface is version undefined/);
+    expect(state.agent).toBeNull();
+  });
+
+  test("this harness reads the version the runtime's host surface declares", () => {
+    // A literal in the harness (importing the value would put a runtime copy in
+    // it), pinned to the runtime's here, where a test may import it.
+    expect(SUPPORTED_GUEST_HOST_VERSION).toBe(GUEST_HOST_VERSION);
+  });
 });
 
 describe("lazyRuntime", () => {
@@ -202,13 +229,13 @@ describe("lazyRuntime", () => {
     let builds = 0;
     const state = makeState({
       agent: makeAgent(),
-      createRuntime: () => {
+      createRuntime: factory(() => {
         builds++;
         return {
           startSession: (ws) => started.push(ws),
           shutdown: () => Promise.resolve(),
         };
-      },
+      }),
     });
     const runtime = lazyRuntime(state);
     const first = fakeSocket();
@@ -247,7 +274,10 @@ describe("ensureRuntime", () => {
   test("is created once and reused across sessions", () => {
     const state = makeState({
       agent: makeAgent(),
-      createRuntime: () => ({ startSession: () => undefined, shutdown: () => Promise.resolve() }),
+      createRuntime: factory(() => ({
+        startSession: () => undefined,
+        shutdown: () => Promise.resolve(),
+      })),
     });
     const first = ensureRuntime(state);
     expect(state.runtime).toBe(first);

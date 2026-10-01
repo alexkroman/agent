@@ -99,7 +99,9 @@ test("runTool handed the TOOL is typed end to end; by name it answers unknown", 
 });
 
 test("expectDeployable's config names only what the specs read — not the config schema", () => {
-  expectTypeOf<DeployedConfig["mode"]>().toEqualTypeOf<"pipeline" | "s2s" | "text">();
+  expectTypeOf<DeployedConfig["mode"]>().toEqualTypeOf<
+    "pipeline" | "s2s" | "text" | "workflow-app"
+  >();
   expectTypeOf<DeployedConfig["name"]>().toEqualTypeOf<string>();
   expectTypeOf<DeployedConfig["systemPrompt"]>().toEqualTypeOf<string>();
 });

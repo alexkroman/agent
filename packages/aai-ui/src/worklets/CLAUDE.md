@@ -32,17 +32,18 @@ read on demand. Tune against a REAL recorded reply (`../fixtures/tts-reply-24k.p
   `silentConcealmentEvents`) → `VoiceIOOptions.onPlaybackStats`. It is the only
   underrun signal (the session still reads `"speaking"`), so it is the only
   honest basis for retuning. A high silent share means bandwidth, not tuning.
-- **`stop` echoes the turn id its `done` named**, and `audio.ts` settles only the
-  matching wait: a real drain-stop in flight when a barge-in flushes belongs to
-  a turn the host has moved past. The host-side half (turn epoch on `ConnState`)
-  is in `../CLAUDE.md`, "Drain completion outlives the turn".
+- **`stop` echoes the turn id its `done` named**, and `audio/voice-io.ts`
+  settles only the matching wait: a real drain-stop in flight when a barge-in
+  flushes belongs to a turn the host has moved past. The host-side half (turn
+  epoch on `ConnState`) is in `../session/CLAUDE.md`, "Drain completion
+  outlives the turn".
 
 ## Capture (`capture-processor.ts`)
 
 - **Its own AudioContext at the STT rate; the worklet converts no rates.** The
   browser's resampler is band-limited; linear interpolation aliases. Playback
   has a separate context at the TTS rate (one context when rates match). There
-  is deliberately **no fallback resampler**: `audio.ts` asserts the browser
+  is deliberately **no fallback resampler**: `audio/voice-io.ts` asserts the browser
   honoured both rates and fails init otherwise.
 - **Flush a `slice()` copy and keep its own buffer** — re-reading a
   just-transferred view is how a mic goes permanently deaf. Start/stop gating,

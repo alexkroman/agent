@@ -17,7 +17,7 @@
  */
 
 import type { FakeSttProvider, FakeTtsProvider } from "../_pipeline-test-fakes.ts";
-import type { createPipelineTransport } from "../transports/pipeline-transport.ts";
+import type { createPipelineTransport } from "../transports/pipeline/index.ts";
 import type { ActionKind } from "./_pipeline-fuzz-input.ts";
 import type { Monitor } from "./_pipeline-fuzz-model.ts";
 

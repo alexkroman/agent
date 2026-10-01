@@ -17,9 +17,20 @@
 
 import { omitUndefined } from "../../omit-undefined.ts";
 import type { ProviderCredentialOptions, SttProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
+
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const LOCAL_STT_PROVIDER = defineProvider({
+  kind: "local",
+  stage: "stt",
+  envVar: "",
+  label: "Local model",
+  factory: "localStt",
+  subpath: "experimental",
+});
 
 /** Kind tag recognised by the host-side resolver. */
-export const LOCAL_STT_KIND = "local" as const;
+export const LOCAL_STT_KIND = LOCAL_STT_PROVIDER.kind;
 
 /** Where the host looks for the model server when the descriptor names none. */
 export const LOCAL_STT_DEFAULT_URL = "ws://127.0.0.1:8765";
@@ -99,7 +110,7 @@ export interface LocalSttOptions extends ProviderCredentialOptions {
  * ```
  */
 export function localStt(options: LocalSttOptions = {}): SttProvider {
-  return { kind: LOCAL_STT_KIND, options: { ...options } };
+  return describeProvider(LOCAL_STT_PROVIDER, options);
 }
 
 /**

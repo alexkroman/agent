@@ -11,11 +11,11 @@
  *
  * @example Post a run's result to Slack
  * ```ts
- * import { slackChannel } from "@alexkroman1/aai/channels";
- * import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+ * import { sendToChannel, slackChannel } from "@alexkroman1/aai/channels";
+ * import { orFail } from "@alexkroman1/aai/step-errors";
  *
  * export async function postSummary(webhookUrl: string, points: string[]): Promise<string> {
- *   return await sendToChannelOrFail(slackChannel({ webhookUrl }), {
+ *   return await orFail(sendToChannel)(slackChannel({ webhookUrl }), {
  *     text: `Weekly summary: ${points.length} items`,
  *     heading: "Weekly summary",
  *     sections: [{ title: "Highlights", bullets: points }],
@@ -43,8 +43,8 @@
  * - {@link textbeltChannel} — an SMS to one number fixed at construction;
  *   {@link allowedSmsRecipient} decides which number a "text me" may reach.
  * - {@link sendToChannel} — post, and throw a {@link ChannelDeliveryError}
- *   carrying the retry verdict. `sendToChannelOrFail`
- *   (`@alexkroman1/aai/step-errors`) is the same call with the fatal/retryable
+ *   carrying the retry verdict. `orFail(sendToChannel)` (`orFail` is on
+ *   `@alexkroman1/aai/step-errors`) is the same call with the fatal/retryable
  *   mapping already applied.
  * - {@link renderChannelPayload} — the request that WOULD be sent, pure, so a
  *   spec can assert the body without a network.

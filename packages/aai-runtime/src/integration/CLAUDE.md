@@ -33,10 +33,12 @@ carry the design: the SOCKET is the only fake, and no TIMER is used.
 ## History rollback oracle
 
 `pipeline-history-rollback.integration.test.ts` is a fast-check property over
-generated fill scripts, driving both `pipeline-history.ts`'s own door and the
-real one (`persistBargeIn` with a `syntheticPrompt`), against a snapshot of
-both views taken before the push. The rule it holds is in
-[`../transports/CLAUDE.md`](../transports/CLAUDE.md), "A rollback must undo the
-eviction its push caused". `session-history-replay-equivalence.test.ts`
-compares TAILS for an unrelated reason (the two sides trim different sequences),
-and its `liveTrims` floor stands.
+generated fill scripts, driving both
+`../transports/pipeline/history/history.ts`'s own door and the real one
+(`persistBargeIn` with a `syntheticPrompt`), against a snapshot of both views
+taken before the push. The rule it holds is in
+[`../transports/pipeline/history/CLAUDE.md`](../transports/pipeline/history/CLAUDE.md),
+"A rollback must undo the eviction its push caused".
+`../session/history-replay-equivalence.test.ts` compares TAILS for an unrelated
+reason (the two sides trim different sequences), and its `liveTrims` floor
+stands.

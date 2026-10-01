@@ -30,16 +30,12 @@
  *     the schema list would silently not exist in one of the three transports.
  *
  * So a {@link Dialog.tool} refuses at EXECUTION: out of state it runs nothing and
- * returns a {@link ToolFailure} naming where the conversation actually is and
- * what has to happen first. Every transport routes execution through the same
- * `executeTool`, so the gate holds identically on all three — and a refusal the
- * model can read is the recovery path the model needs anyway. A schema gate
- * would have hidden the tool and left it guessing.
- *
- * That is a real guarantee rather than a stronger prompt: the body does not run.
- * What it is NOT is a claim that the model will stop ASKING; it will sometimes
- * call a gated tool early, get refused, and be told what to do. That is the
- * intended loop, and it is why the refusal carries the instruction.
+ * the call answers a `ToolRefusal` (`reason: "dialog"`) naming where the
+ * conversation is and what has to happen first. The check is inside the minted
+ * def's own `execute`, so it travels with the def and holds identically on all
+ * three transports, in a subagent and in a spec. A schema gate would have hidden the tool and left the model
+ * guessing. The body does not run; the model may still call early, be refused,
+ * and be told what to do — the intended loop.
  *
  * ## The state IS the readout
  *
@@ -89,7 +85,7 @@ import type { SessionEvent } from "./session-event-map.ts";
 import { type SessionSlot, sessionSlot } from "./session-slot.ts";
 import type { SlotHolder, StateProjection } from "./session-state.ts";
 import type { ToolDef } from "./types.ts";
-import { isToolFailure, type ToolFailure, toolFailure } from "./utils.ts";
+import { isToolFailure, type ToolFailure, type ToolRefusal, toolRefusal } from "./utils.ts";
 
 // The authoring vocabulary lives in its own two modules (this file was at the
 // 500-line cap, and `dialog-types.ts` reached it in turn), and every name is
@@ -103,7 +99,6 @@ export type {
   DialogOptions,
 } from "./dialog-handle.ts";
 export type {
-  DialogBargeIn,
   DialogEvent,
   DialogEventNames,
   DialogGate,
@@ -436,7 +431,18 @@ export function dialog(
         );
       }
       const { execute, when: _when, send: fixed, sendFrom, ...rest } = def;
-      return {
+      // ONE actor for the position and every `when`; the refusal says where the
+      // conversation IS and what it expects there — what the model recovers from.
+      const refusal = (ctx: SlotHolder): ToolRefusal | undefined => {
+        const { at, here } = withActor(readState(slot.get(ctx)), (a) => ({
+          at: positionOf(a),
+          here: allowed.some((state) => a.getSnapshot().matches(state)),
+        }));
+        if (here) return undefined;
+        const expectation = at.instruction ?? `reach ${allowed.join(" or ")} first`;
+        return toolRefusal("dialog", dialogRefusalMessage(at.state, expectation));
+      };
+      const minted: ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>> = {
         // Spread rather than restating `inputSchema`, for the reason
         // `SessionSlot.tool` gives: rebuilding it field by field cannot preserve
         // its optionality against a still-generic `P`. `onError` and `messages` ride it too,
@@ -451,23 +457,10 @@ export function dialog(
         // so an async tool that failed advanced the dialog anyway — the one bug
         // this primitive most needs not to have.
         execute: async (args, ctx): Promise<DialogToolResult<R> | ToolFailure> => {
-          // The gate is read BEFORE the body runs, which is the moment that
-          // matters: it is what the caller's turn is allowed to do.
-          // ONE actor for the position and every `when`: this read used to call
-          // `position` and then `matches` per allowed state, so a three-state
-          // gate built four actors and read the slot four times for one
-          // unchanged snapshot.
-          const { at, here } = withActor(readState(slot.get(ctx)), (a) => ({
-            at: positionOf(a),
-            here: allowed.some((state) => a.getSnapshot().matches(state)),
-          }));
-          if (!here) {
-            // The refusal is what the model recovers from, so it says where the
-            // conversation IS and what the dialog expects there — not merely that
-            // this was not allowed.
-            const expectation = at.instruction ?? `reach ${allowed.join(" or ")} first`;
-            return toolFailure(dialogRefusalMessage(at.state, expectation));
-          }
+          // Read BEFORE the body runs — what the caller's turn is allowed to do.
+          // The ONE gate: every path (the runtime, a subagent, a spec) runs it.
+          const refused = refusal(ctx);
+          if (refused) return refused;
           // ANNOTATED rather than inferred: `await` on `R | ToolFailure |
           // Promise<R | ToolFailure>` yields `Awaited<R> | ToolFailure`, and
           // `Awaited<R>` is not the `Exclude<R, ToolFailure>` that `sendFrom`
@@ -495,6 +488,7 @@ export function dialog(
           return { ...moved, result };
         },
       };
+      return minted;
     },
   };
 }

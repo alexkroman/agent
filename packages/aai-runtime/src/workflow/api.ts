@@ -5,7 +5,7 @@
  *
  * `ctx.workflows.start()` covers the case where a voice turn starts a run. This
  * covers the other two, which had no surface at all: a PAGE (a form, a
- * dashboard — see `AgentDef.page: "static"`) and a PROGRAMMATIC caller (a
+ * dashboard — see `AgentDef.mode: "workflow-app"`) and a PROGRAMMATIC caller (a
  * script, a cron job, another service, `aai workflow`). Both want the same
  * things, so they get one surface rather than a page-only one plus an
  * integration story:

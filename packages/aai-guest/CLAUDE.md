@@ -56,10 +56,11 @@ never a security boundary**; capability is whatever the host delivers.
   control socket — "One studio sandbox per project, fleet-wide" in
   `packages/aai-studio-server/src/CLAUDE.md`).
 
-The harness embeds NO agent runtime (see "User-shipped runtime"). tsdown
-bundles the server shell and the studio agent into `dist/harness.mjs`, keeping
-the build toolchain (`@alexkroman1/aai-cli`, client-build plugins) EXTERNAL —
-resolved at runtime from the `node_modules` beside the harness.
+The harness embeds NO copy of the runtime (see "User-shipped runtime"). tsdown
+bundles the server glue and the studio agent into `dist/harness.mjs`, keeping
+`@alexkroman1/aai-runtime` and the build toolchain (`@alexkroman1/aai-cli`,
+client-build plugins) EXTERNAL — resolved at runtime from the `node_modules`
+beside the harness.
 
 **Error text comes from the SDK's `errorMessage`, never a local copy** — it
 unwraps a non-`Error` object with a string `message`, which is what a value
@@ -96,6 +97,19 @@ session through it. **Never import `createRuntime` in the harness** —
 konsistent `guest-embeds-no-runtime`; platform SDK drift must never break a
 deployed agent.
 
+- **The harness carries no runtime; it drives the agent through the bundle's.**
+  `__aaiCreateRuntime.host` is the typed `GuestHost` surface
+  (`aai-runtime/guest-host.ts`): agent mode builds its server, delivery door,
+  tracing and session gate from it. Studio mode serves its own routes (`/ws`,
+  session-init, `/studio/*`) on a plain `node:http` server
+  (`harness/studio-server.ts`) and hands every other request to a server the
+  LOADED bundle's host builds (`harness/studio-preview.ts`), so a preview is one
+  runtime copy too. The studio coding agent alone uses the
+  image's runtime, by DYNAMIC import (`chat.ts`) so agent mode never loads it.
+  Host-side helpers the harness calls itself (`parseBearer`, `createLogBuffer`,
+  `publishStepEnv`, `safeFetch`) come from `@alexkroman1/aai/host-internal`.
+  `harness/externals.test.ts` is the artifact gate; `warnOnSecondRuntime` the
+  runtime one.
 - **The contract stays tiny** (`CreateGuestRuntime`,
   `aai-guest-core/types.ts`): `{ env, runCode?, publicUrl? }` in,
   `{ startSession, shutdown }` out. Membership rule: **a capability or fact only
@@ -290,7 +304,7 @@ different runtimes. **Known split: `.node-version` says 24 against
 `node:26-slim`.** Every package declares `engines.node >=24`, so **code may use
 only APIs on Node 24** — `tsc` cannot enforce it (`lib: ["ESNext"]`), so
 `Map.prototype.getOrInsert*`, `Iterator.concat`, `Temporal` typecheck and then
-throw on the floor (`runtime-tools.ts` is the worked example). Safe:
+throw on the floor (`aai-runtime/src/runtime/tools.ts` is the worked example). Safe:
 `crypto.hash()`, `module.enableCompileCache()`, `await using` +
 `Symbol.asyncDispose`. `DisposableStack`/`AsyncDisposableStack` are unverified
 (note in `studio-session-broker.ts`).

@@ -93,6 +93,7 @@
  * @module
  */
 
+import { readBrand, setBrand } from "./_boundary.ts";
 import { isRecord } from "./is-record.ts";
 import type { SessionSpeech } from "./session-speech.ts";
 import type { ClientTranscript, StepClientTranscriptOptions } from "./step-client-transcript.ts";
@@ -231,9 +232,6 @@ function isRouteStatus(status: unknown): status is number {
   return (status >= 200 && status <= 299) || (status >= 400 && status <= 599);
 }
 
-/** The brand {@link routeResponse} sets. `Symbol.for`, so every copy of this module agrees. */
-const ROUTE_RESPONSE_BRAND: unique symbol = Symbol.for("@alexkroman1/aai.routeResponse");
-
 /**
  * A route's answer with a status of its own — what {@link routeResponse} makes.
  *
@@ -262,8 +260,9 @@ export function routeResponse(status: number, body?: unknown): RouteResponse {
     throw new RangeError(`routeResponse: status must be a 2xx, 4xx or 5xx code, got ${status}`);
   }
   const response = { status, body };
-  // Non-enumerable, so the brand never reaches a JSON body or a log line.
-  Object.defineProperty(response, ROUTE_RESPONSE_BRAND, { value: true, enumerable: false });
+  // The registered `routeResponse` brand, so every copy of this module reads
+  // it; non-enumerable, so it never reaches a JSON body or a log line.
+  setBrand(response, "routeResponse", true);
   return response;
 }
 
@@ -271,13 +270,13 @@ export function routeResponse(status: number, body?: unknown): RouteResponse {
  * `value` as a {@link RouteResponse} when {@link routeResponse} made it — in
  * any copy of this module — else `undefined`, meaning "a plain 200 body".
  *
- * The status is re-checked rather than trusted: `Symbol.for` is a registry
+ * The status is re-checked rather than trusted: a registry symbol is something
  * anyone can mint the brand from.
  *
  * @internal
  */
 export function readRouteResponse(value: unknown): RouteResponse | undefined {
-  if (!isRecord(value) || Reflect.get(value, ROUTE_RESPONSE_BRAND) !== true) return undefined;
+  if (!isRecord(value) || readBrand(value, "routeResponse") !== true) return undefined;
   const { status } = value;
   return isRouteStatus(status) ? { status, body: value.body } : undefined;
 }

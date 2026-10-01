@@ -28,8 +28,11 @@ of the RUN" are gone — the accounts they pointed at are below.
 
 ## A run's journal has THREE homes, and the order between them is a decision
 
-`selectJournal` (`workflow-runtime.ts`) picks the replay engine's journal:
-**platform, then postgres, then memory**, and the boot line names whichever won.
+`resolveStorageHome` (`workflow/storage-home.ts`) makes the decision once —
+**platform, then postgres, then local** — and `selectJournal`
+(`workflow/runtime.ts`) maps the `StorageHome` it returns to a backend; the key
+index, the upload record and the owed DDL are mapped from the same value, so
+none of them carries a copy of the order. The boot line names whichever won.
 
 - **platform** — `createPlatformJournal`, one `POST /:slug/workflow-journal` per
   operation, beside the queue, session state and upload records that already work

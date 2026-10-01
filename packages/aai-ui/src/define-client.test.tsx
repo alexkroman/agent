@@ -6,8 +6,10 @@
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock createBrowserSession to avoid real WebSocket connections.
-vi.mock("./session-core.ts", () => {
+// Mock createBrowserSession to avoid real WebSocket connections. PARTIAL: the
+// mock session in `_react-test-utils.ts` reads `CLEARED_SESSION_STATE` from the
+// same module.
+vi.mock("./session/index.ts", async (importOriginal) => {
   const snapshot = {
     state: "disconnected" as const,
     messages: [],
@@ -19,6 +21,7 @@ vi.mock("./session-core.ts", () => {
     running: false,
   };
   return {
+    ...(await importOriginal<object>()),
     createBrowserSession: vi.fn(() => ({
       getSnapshot: () => snapshot,
       subscribe: () => () => undefined,
@@ -38,7 +41,7 @@ vi.mock("./session-core.ts", () => {
 import { createMockSessionCore, flushEffects } from "./_react-test-utils.ts";
 import { type ToolDisplayConfig, useToolConfig } from "./components/tool-config-context.ts";
 import { mountClient } from "./define-client.tsx";
-import { createBrowserSession } from "./session-core.ts";
+import { createBrowserSession } from "./session/index.ts";
 
 /** A core the default shell will render its children under. */
 function startedCore() {

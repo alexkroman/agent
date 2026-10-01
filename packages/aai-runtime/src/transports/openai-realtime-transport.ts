@@ -18,8 +18,9 @@ import {
 } from "../_ws.ts";
 import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
+import { OPENAI_REALTIME_CAPABILITIES } from "./capabilities.ts";
+import { createEmitError } from "./emit-error.ts";
 import { createOpenaiRealtimeLifecycle } from "./openai-realtime-lifecycle.ts";
-import { createEmitError } from "./pipeline-error.ts";
 import {
   resolveGreeting,
   resolveSystemPrompt,
@@ -280,7 +281,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   function handleUserTranscript(obj: Record<string, unknown>): void {
     if (typeof obj.transcript === "string") {
-      opts.callbacks.report({ type: "user-transcript.committed", text: obj.transcript });
+      opts.callbacks.report({ type: "userTranscript.committed", text: obj.transcript });
     }
   }
 
@@ -299,7 +300,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const id = asString(obj.item_id);
     const text = agentTranscriptBuffers.get(id) ?? "";
     agentTranscriptBuffers.delete(id);
-    if (text) opts.callbacks.report({ type: "agent-transcript.committed", text });
+    if (text) opts.callbacks.report({ type: "agentTranscript.committed", text });
   }
 
   function handleResponseDone(): void {
@@ -450,6 +451,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   }
 
   return {
+    capabilities: OPENAI_REALTIME_CAPABILITIES,
     start,
     stop,
     refreshSystemPrompt,

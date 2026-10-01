@@ -58,6 +58,10 @@ import {
 } from "./_ratchet.mjs";
 import { scanChangesetPackageNames } from "./guard-invariants-changesets.mjs";
 import { SELF_REFERENTIAL_ENTRIES } from "./guard-invariants-exemptions.mjs";
+import {
+  scanDeepModuleImports,
+  scanWrongWayStageImports,
+} from "./guard-invariants-module-dirs.mjs";
 import { LINE_RULES, NODE_RULES, SCAN_CORPORA } from "./guard-invariants-rules.mjs";
 import {
   scanSymlinks,
@@ -196,6 +200,39 @@ const ABSOLUTE_RULES = [
       "relative path resolves: those five broke `aai test`, `aai build` and\n" +
       "`npm start` for their own users while `check:template-types`,\n" +
       "`templates.test.ts` and each template's own spec stayed green.",
+  },
+  {
+    id: 37,
+    label: "import past a module directory's index",
+    scan: scanDeepModuleImports,
+    remedy:
+      "Import from the directory's `index.ts`, and re-export the name there if\n" +
+      "the rest of the package genuinely needs it. A directory under aai-ui's\n" +
+      "or aai-runtime's `src/` that holds an `index.ts` (`session/`, `audio/`,\n" +
+      "`runtime/`, `transports/pipeline/` and its stages, …) is a module: its\n" +
+      "index is the only import surface, and a sibling of the index\n" +
+      "is PRIVATE because nothing re-exports it. A spec that needs a private\n" +
+      "module moves into the directory beside it.\n\n" +
+      "These were prefix families (`session-core-*.ts`, `pipeline-*.ts`,\n" +
+      "`_upload-*.ts`) split out to stay under the 500-line cap, and a prefix\n" +
+      "is a directory with no boundary — any module could reach any member.\n" +
+      "The specifier is RESOLVED, so `../session/dial.ts` from `components/`\n" +
+      "and `./session/dial.ts` from `src/` are the same violation.",
+  },
+  {
+    id: 38,
+    label: "pipeline stage importing the wrong way",
+    scan: scanWrongWayStageImports,
+    remedy:
+      "A stage under `aai-runtime/src/transports/pipeline/` imports only the\n" +
+      "stages `PIPELINE_STAGES` (scripts/guard-invariants-module-dirs.mjs) lets\n" +
+      "it, through their `index.ts`, and never the assembly beside\n" +
+      "`pipeline/index.ts` (`transport.ts`, `commands.ts`, …), which imports\n" +
+      "every stage. Move the shared piece DOWN into a stage both sides may\n" +
+      "import, or pass it in from the assembly.\n\n" +
+      "The directions are one DAG, and Biome's `noImportCycles` sees a cycle\n" +
+      "only once it closes; a wrong-way edge through an index is legal until\n" +
+      "the far side imports back. The map is `transports/pipeline/CLAUDE.md`.",
   },
 ];
 

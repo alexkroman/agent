@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 16,
   "rule": 2,
-  "sha256": "9618e4eb13d84d716fd6b6a732729246a7c0b2255f7063d4688bd4ca95dc9b69",
+  "sha256": "d67679c9e63f715b3250e5e8ddca9c6de7bed8f13ae7c37a404bea5ff029a74c",
   "exports": [
     "AgentClientInbox",
     "AgentDef",
@@ -81,7 +81,7 @@
     "workflowApp"
   ],
   "rollup": "da3083e321c551652c9da18a8c0b4f8b69cf0f15df75716efb7fc198964b39dd",
-  "revision": 2,
+  "revision": 3,
   "revisions": [
     {
       "revision": 0,
@@ -99,6 +99,12 @@
       "revision": 2,
       "rule": 2,
       "sha256": "9618e4eb13d84d716fd6b6a732729246a7c0b2255f7063d4688bd4ca95dc9b69",
+      "reason": "additive (checked): +ClientRun, +ClientRunStatus, +ClientRunsResponse, +ClientRunsRoutesOptions, +SayOptions, +SessionSpeech, +SpeechHandle, +SpeechOutcome, +clientRunsRoutes"
+    },
+    {
+      "revision": 3,
+      "rule": 2,
+      "sha256": "d67679c9e63f715b3250e5e8ddca9c6de7bed8f13ae7c37a404bea5ff029a74c",
       "reason": "additive (checked): +ClientRun, +ClientRunStatus, +ClientRunsResponse, +ClientRunsRoutesOptions, +SayOptions, +SessionSpeech, +SpeechHandle, +SpeechOutcome, +clientRunsRoutes"
     }
   ]

@@ -15,9 +15,12 @@ rules are in the root `AGENTS.md`.
 
 ## Directory guides
 
-- [`src/CLAUDE.md`](src/CLAUDE.md) — session core (statecharts, fatal latch,
-  handshake guard, client-config lookup), public hooks, fuzz harnesses, and the
-  workflow-app hooks and HTTP API.
+- [`src/CLAUDE.md`](src/CLAUDE.md) — the module directories and their edges,
+  client-config lookup, client identity and the inbox, public hooks, fuzz
+  harnesses, and the workflow-app hooks and HTTP API.
+- [`src/session/CLAUDE.md`](src/session/CLAUDE.md) — the session core:
+  statecharts, fatal latch, pre-connect audio, drain across turns, handshake
+  guard, and what its `index.ts` exports.
 - [`src/components/CLAUDE.md`](src/components/CLAUDE.md) — memoized-props and
   TypeDoc rules, conversation/chrome components, `AutoScroll`, forms and
   `<WorkflowFields>`, workflow-page components.
@@ -72,14 +75,17 @@ contract (`src/contracts/CLAUDE.md`); `pnpm check:api-contracts` fails otherwise
 ## Key files
 
 - `index.ts` — the root barrel; `internal.ts` — the `/internal` subpath.
-- `session-core.ts` — `createBrowserSession`, WebSocket session + reactive
-  snapshot; split across `session-core-*.ts` (messages, state machine, audio
-  state/effects/setup, handshake, reconnect, user turn, types).
+- `session/` — `createBrowserSession` (`browser-session.ts`), WebSocket
+  session + reactive snapshot, split across the directory (dial, reconnect,
+  ticket, messages, state machine, audio state/effects/setup, pre-connect,
+  handshake, mic, user turn, types). Entered through `session/index.ts` only.
 - `context.ts` — `SessionProvider`, `useSession`, `useSessionCore`,
   `useSessionSelector`, `ThemeProvider`, `useTheme`.
-- `hooks.ts` — `useAgentState`, `useToolResult`, `useToolCallStart`, `useEvent`.
-- `audio.ts` — PCM encode/decode, AudioWorklet management; `audio-capture.ts`
-  holds the capture primitives and `audio-preconnect.ts` the pre-connect capture.
+- `hooks.ts` — `useToolResult`, `useToolCallStart`, `useEvent`, re-exporting
+  `useAgentState`/`selectAgentState` from `agent-state.ts`.
+- `audio/` — `voice-io.ts` (PCM encode/decode, AudioWorklet management),
+  `capture.ts` (the capture primitives) and `preconnect.ts` (the pre-connect
+  capture); a lazy chunk, entered through `audio/index.ts` only.
 - `client-config.ts` — the `GET /client-config` lookups.
 - `client-identity.ts` — `client: "auto"`, the per-tab inbox holder,
   `session.identity`; `inbox*.ts` + `notice-player.ts` + `use-inbox.ts` — the
@@ -96,8 +102,8 @@ contract (`src/contracts/CLAUDE.md`); `pnpm check:api-contracts` fails otherwise
   `stored-value.ts`, `linked-client.ts`, `phone.ts` — a device twin page's
   plumbing.
 - `_workflow-api-ref.ts` / `_repeat-until.ts` — the client-in-a-ref preamble and
-  the bounded-read loop the workflow hooks share; `_upload-*.ts` — upload
-  session, recall, report, file claiming.
+  the bounded-read loop the workflow hooks share; `upload/` — upload gate,
+  pause, recall, report, file claiming, entered through `upload/index.ts`.
 - `workflow-client.ts` — `createWorkflowApi`, the re-exported workflow types.
 - `types.ts` — UI types, `VOICE_CAPTURE_CONSTRAINTS`.
 - `components/`, `worklets/`, `contracts/` — see the directory guides.

@@ -5,7 +5,7 @@ import { notebookSlot } from "../shared.ts";
  * Write one note. `updateTool`, because it writes: the body gets a mutable
  * draft of the notebook and whatever it leaves is stored when it returns.
  *
- * The note is the caller's WHOLE held turn. Under `turnDetection: "manual"`
+ * The note is the caller's WHOLE held turn. Under `turnTaking: { detection: "manual" }`
  * the transcript the model is handed spans every pause inside one press, so a
  * note dictated as "Unit four… (pause) …the window seal is cracked… (pause)
  * …needs replacing before winter" arrives as one sentence rather than three

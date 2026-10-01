@@ -22,11 +22,12 @@ on a 500 and a load balancer cannot shed on it.
   socket operations).
 - `UND_ERR_RESPONSE_STATUS_CODE` is internal: a response arrived, nothing
   transient to wait for.
-- **Known gap, deliberately not guessed at**: `isCallerGone` reads a TOP-level
-  `ECONNRESET`, so a wrapped reset (how `fetch` delivers it) is a 503 while a
-  bare one is read as the caller hanging up (500). Whether anything OUTBOUND
-  throws a bare top-level `ECONNRESET` (a `postgres` driver error might) is
-  open; `syscall` is the candidate discriminator.
+- **`ECONNRESET` is classified by DIRECTION, never by wrapping depth.**
+  `isCallerGone` (`http.ts`) reads the innermost cause (`innermostCause`): an
+  `ECONNRESET` with no `syscall` is Node's inbound `aborted` (the caller hung
+  up: dropped, logged at debug), one naming a `syscall` is an outbound libuv
+  reset (`fetch`'s cause, a `postgres` socket error: 503). Measured on Node 24;
+  `error-classification.test.ts` pins both at every depth.
 
 ### A transport failure is a 503
 
@@ -39,7 +40,7 @@ the thrown value) against a closed vocabulary and answers 503 with
 - **It is checked LAST of the 5xx entries** — a full disk (507) and an
   exhausted pool (503) surface transport-shaped codes and have better advice.
 - **It is not `isCallerGone`**, which is checked first: an inbound socket that
-  closed must not get a 503 written to it.
+  closed must not get a 503 written to it. Both read through the `cause` chain.
 
 ## An upload ID is checked at the ROUTER, for every `/uploads/:id` route
 

@@ -20,8 +20,8 @@
  */
 
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
+import { safeFetch } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
-import { safeFetch } from "@alexkroman1/aai-runtime/internal";
 import { MAX_STUDIO_FILE_BYTES } from "aai-guest-core/limits";
 import { z } from "zod";
 import { WORKSPACE_DEPENDENCIES } from "./project-shape.ts";

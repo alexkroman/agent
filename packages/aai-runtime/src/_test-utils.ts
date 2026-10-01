@@ -20,16 +20,17 @@ import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { type Mock, vi } from "vitest";
-import { createRuntimeWithSeams } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime/index.ts";
 import { type LogFn, type Logger, type LogLevel, silentLogger } from "./runtime-config.ts";
-import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s.ts";
-import type { ServerSession } from "./session-core.ts";
+import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s/index.ts";
+import type { ServerSession } from "./session/index.ts";
 import {
   createSessionEmitter,
+  createSessionEventStream,
   type SessionEmitter,
   type SessionEventHookDeps,
-} from "./session-emitter.ts";
-import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
+  type SessionEventStream,
+} from "./session/index.ts";
 import { createMemoryStateBackend } from "./session-state/store.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 import { createUsageMeter, type UsageMeter, type UsageSnapshot } from "./usage-meter.ts";
@@ -139,8 +140,8 @@ export function makeTool(overrides?: Partial<ToolDef>): ToolDef {
  *
  * ONE widening, in the package's test-helper module, rather than a cast per
  * assertion in each spec — the typed seam this repo asks for wherever a
- * suppression concentrates. Two specs reach it (`tool-error-policy.test.ts`
- * over the policy directly, `tool-executor.test.ts` over the whole call), and a
+ * suppression concentrates. Two specs reach it (`tools/error-policy.test.ts`
+ * over the policy directly, `tools/executor.test.ts` over the whole call), and a
  * third malformed shape goes through here too.
  */
 export function malformedOnError(handler: (err: unknown, ctx: never) => unknown): ToolErrorHandler {
@@ -154,13 +155,15 @@ export function malformedOnError(handler: (err: unknown, ctx: never) => unknown)
 export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
   // Most host suites exercise the S2S transport through a mocked WebSocket,
   // and pre-dated the pipeline-by-default flip. Keep them on S2S explicitly
-  // (the descriptor the flip requires) unless the caller declares providers.
+  // (the mode and the descriptor it requires) unless the caller declares
+  // providers or a mode of its own.
   const declaresProviders =
     overrides != null &&
     (overrides.stt != null ||
       overrides.llm != null ||
       overrides.tts != null ||
-      overrides.s2s != null);
+      overrides.s2s != null ||
+      overrides.mode !== undefined);
   const base: AgentDef = {
     name: "test-agent",
     systemPrompt: "Be helpful.",
@@ -168,7 +171,7 @@ export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
     maxSteps: 5,
     tools: {},
   };
-  if (!declaresProviders) base.s2s = assemblyAIS2s();
+  if (!declaresProviders) Object.assign(base, { mode: "s2s", s2s: assemblyAIS2s() });
   return { ...base, ...overrides };
 }
 
@@ -187,7 +190,7 @@ export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
  * Create a ServerSession-shaped mock with all methods as vi.fn() spies.
  *
  * Nine spies, where there were twenty-four. The session's inbound surface is two
- * vocabularies plus two audio paths now (see `session-core.ts`), so this stub
+ * vocabularies plus two audio paths now (see `session/core.ts`), so this stub
  * cannot go stale against an added command or event the way a per-name one did —
  * which is the whole reason a double cast to `ServerSession` was tempting here, and
  * a cast is exactly what stops reporting when a field is ADDED.
@@ -443,11 +446,11 @@ export function makeTrackingClient(): TrackingClientSink {
         // Both: an interim snapshot and the reply's committed text. They are
         // separate events now (only the second enters history), and a recorder
         // that took one would have stopped seeing whole replies.
-        case "agent-transcript.updated":
-        case "agent-transcript.committed":
+        case "agentTranscript.updated":
+        case "agentTranscript.committed":
           agentTranscripts.push(e.text);
           break;
-        case "user-transcript.committed":
+        case "userTranscript.committed":
           userTranscripts.push(e.text);
           break;
         case "tool.called":
@@ -550,7 +553,7 @@ export function createFixtureSession(agent: AgentDef, options?: { env?: Record<s
     agent:
       agent.stt != null || agent.llm != null || agent.tts != null || agent.s2s != null
         ? agent
-        : { ...agent, s2s: assemblyAIS2s() },
+        : { ...agent, mode: "s2s", s2s: assemblyAIS2s() },
     env: options?.env ?? {},
     logger: silentLogger,
   });

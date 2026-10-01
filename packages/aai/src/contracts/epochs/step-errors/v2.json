@@ -1,0 +1,18 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "step-errors",
+  "epoch": 2,
+  "rule": 2,
+  "sha256": "6333333c23d6b00f7f16b67b90a16e9b5a8a4b34817239baa663aab1586877e9",
+  "exports": [
+    "DEFAULT_RETRY_DELAY_MS",
+    "FatalError",
+    "RetryableError",
+    "RetryableErrorOptions",
+    "throwFatalStepError",
+    "throwFfmpegStepError",
+    "throwStepError",
+    "toStepError"
+  ],
+  "rollup": "d7cc8fae053f7c4f68bb71a783efad38ff7f1cc5e056fde46beaec3ed7181a01"
+}

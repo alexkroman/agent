@@ -3,7 +3,7 @@
  * The guest→platform socket, both ends, over a real port.
  *
  * SCENARIO tier because it opens one: the claim under test is that a frame
- * written by `aai-runtime/platform-socket.ts` is answered by the same Hono app
+ * written by `aai-runtime/platform/socket.ts` is answered by the same Hono app
  * that answers the HTTP route, and neither end can be faked without giving that
  * up. Both unit suites either side of this wire pass against a fake peer — which
  * is exactly why one of them cannot tell you the handshake path, the bearer

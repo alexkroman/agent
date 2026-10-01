@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ToolDef } from "@alexkroman1/aai";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
+import { toolset } from "@alexkroman1/aai/manifest";
 import type { SessionWebSocket } from "@alexkroman1/aai-runtime";
 import { executeToolCall } from "@alexkroman1/aai-runtime/internal";
 import { afterEach, beforeEach } from "vitest";
@@ -46,10 +47,9 @@ export async function runTool(
   args: Record<string, unknown> = {},
   overrides: Partial<Parameters<typeof executeToolCall>[2]> = {},
 ): Promise<string> {
-  const tool = tools[name];
-  if (!tool) throw new Error(`no such tool: ${name}`);
+  if (!tools[name]) throw new Error(`no such tool: ${name}`);
   return await executeToolCall(name, args, {
-    tool,
+    toolset: toolset("files", tools),
     env: {},
     sessionId: "test-session",
     ...overrides,
@@ -214,8 +214,10 @@ export function makeState(overrides?: Partial<HarnessState>): HarnessState {
 }
 
 /** The factory export every real bundle carries; the fixture is inert. */
-export const FAKE_RUNTIME_EXPORT = `export const __aaiCreateRuntime = () =>
-  ({ startSession: () => undefined, shutdown: () => Promise.resolve() });`;
+export const FAKE_RUNTIME_EXPORT = `export const __aaiCreateRuntime = Object.assign(
+  () => ({ startSession: () => undefined, shutdown: () => Promise.resolve() }),
+  { host: { version: 1, publishWorkflowWebhookUrl: () => undefined } },
+);`;
 
 /** A one-shot trial's options: no env at all. */
 export const TRIAL_OPTS = { env: Object.freeze({}) };

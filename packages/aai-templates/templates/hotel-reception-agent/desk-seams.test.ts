@@ -44,7 +44,7 @@ import type recordCard from "./tools/record_card.ts";
 const run = toolRunner(agentDef);
 
 /** The event the runtime delivers when the caller is gone. */
-const CALLER_GONE: SessionEvent = { type: "session.timed-out", meta: { id: "evt_1", at: 0 } };
+const CALLER_GONE: SessionEvent = { type: "session.timedOut", meta: { id: "evt_1", at: 0 } };
 
 /**
  * The card fixture, typed by the TOOL rather than restated.
@@ -140,8 +140,8 @@ describe("a hang-up mid-booking leaves a lead behind", () => {
   });
 
   test("the agent declares the handler, and it is the one the runtime will call", async () => {
-    const handler = agentDef.events?.["session.timed-out"];
-    expect(handler).toBe(DESK_EVENTS["session.timed-out"]);
+    const handler = agentDef.events?.["session.timedOut"];
+    expect(handler).toBe(DESK_EVENTS["session.timedOut"]);
 
     const ctx = createToolContext();
     await bookUpToCard(ctx);
@@ -170,7 +170,7 @@ describe("the two owed-speech states forbid every tool, not just the gated one",
     // The caller answers; the obligation is discharged and the tools come back.
     expect(
       deskFlow.receive(ctx, {
-        type: "user-transcript.committed",
+        type: "userTranscript.committed",
         text: "yes, that's right",
         meta: { id: "evt_2", at: 0 },
       }).state,

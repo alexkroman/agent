@@ -57,12 +57,13 @@ reloads when you save.
 ```ts
 // agent.ts
 import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Quickstart Assistant",
   description: "Looks up the current weather for any city",
   greeting: "Hi — I can look up the weather anywhere. Which city?",
-  voice: "jane",
+  tts: assemblyAITts({ voice: "jane" }),
 });
 ```
 

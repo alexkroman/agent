@@ -55,8 +55,8 @@ import {
   type DelegateFn,
   type DelegateResult,
   type GenerateFn,
-  type SubagentGuardrail,
-  subagent,
+  type SpeakerGuardrail,
+  speaker,
 } from "@alexkroman1/aai";
 import { mapSettled, type Settled } from "@alexkroman1/aai/step";
 import { z } from "zod";
@@ -294,7 +294,7 @@ export const EMAIL_EXPECTED_OUTPUT =
  * guardrail did; the check is two lines and the retry is one more run of a
  * one-step subagent.
  */
-export const emailGuardrail: SubagentGuardrail = ({ text }) => {
+export const emailGuardrail: SpeakerGuardrail = ({ text }) => {
   if (!/^\s*Subject:\s*\S/m.test(text)) {
     return (
       "Start the email with one line reading `Subject: …` — the desk reads the subject " +
@@ -332,7 +332,7 @@ export const EMAIL_GUARDRAIL_REVISIONS = DEFAULT_GUARDRAIL_MAX_REVISIONS;
  * (`allow_delegation=False`, no `tools=`): a writing pass. One step, because
  * there is nothing to look up — the whole brief rides in the task.
  */
-export const emailWriter = subagent({
+export const emailWriter = speaker({
   name: "hr-coordinator",
   systemPrompt: crewAgentPrompt(EMAIL_FOLLOWUP_AGENT),
   expectedOutput: EMAIL_EXPECTED_OUTPUT,

@@ -11,8 +11,8 @@
 import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
 import { tick } from "../_test-utils.ts";
-import type { UploadBackend } from "../_upload-blobs.ts";
 import { body, digest, memoryStore, ramp } from "../_upload-store-test-utils.ts";
+import type { UploadBackend } from "../uploads/index.ts";
 import {
   createUploadStore,
   UnknownUploadError,
@@ -501,7 +501,10 @@ describe("what a batched claim costs", () => {
         }
       },
     };
-    const store2 = createUploadStore({ db: memoryStore().db, blobs: counting });
+    const store2 = createUploadStore({
+      home: { kind: "postgres", db: memoryStore().db },
+      blobs: counting,
+    });
     await store2.beginParts("abc", {}, TOTAL);
     await store2.recordParts("abc", offsets);
     expect(peak).toBe(offsets.length);

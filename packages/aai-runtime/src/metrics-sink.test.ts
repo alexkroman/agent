@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The process-wide metrics sinks: a registry keyed on `globalThis` (a deployed
-// guest has two copies of this package), a sink that cannot hurt a session,
+// The process-wide metrics sinks: a registered cross-copy slot (an agent's own
+// code may register from its bundle's copy), a sink that cannot hurt a session,
 // and the OTel sink's instrument mapping — asserted against a recording meter,
 // so the claims are about names, units and attributes rather than an SDK.
 
@@ -69,8 +69,9 @@ describe("registerMetricsSink", () => {
   });
 
   test("the registry is shared by a SECOND copy of this module", async () => {
-    // What a deployed guest is: the harness's copy registers, the bundle's
-    // copy records. `vi.resetModules()` is how one process holds two.
+    // What a self-hosted host is when the agent's own code registers a sink: the
+    // bundle's inlined copy registers, the host's copy records (or the reverse).
+    // `vi.resetModules()` is how one process holds two.
     const record = vi.fn();
     const remove = registerMetricsSink({ record });
     onTestFinished(remove);

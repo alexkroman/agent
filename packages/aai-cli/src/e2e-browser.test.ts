@@ -137,12 +137,12 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     // session when asked; aai-ui's fuzz harnesses drive its reconnect against a
     // fake socket. Neither shows the real browser client redialling after a real
     // drop and carrying the id forward — partysocket's backoff, the
-    // `serverIsBroker` latch and the handshake guard all sit in that path.
+    // `configPerAttempt` latch and the handshake guard all sit in that path.
     //
     // Severed by DESTROYING the socket server-side, so the client sees 1006. A
     // clean close is the "user hung up" case aai-ui deliberately does not
     // reconnect from, so a test built on `close()` would prove the opposite of
-    // what it looks like. (The `_fault-socket.ts` proxy does this properly for
+    // what it looks like. (The `aai-runtime/src/server/_fault-socket.ts` proxy does this properly for
     // in-package tests; it is `_`-internal to `aai`, which this package may not
     // import — hence the fake server severing its own socket.)
     const page = await browser.newPage();
@@ -263,7 +263,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     // test used to claim: `setupEventInjector` does not return until the session
     // reaches `data-state="error"`, and the `initAudioCapture` failure that puts
     // it there (no microphone in headless chromium) clears `running` in the same
-    // update — see session-core-audio-setup.ts. Only `start`/`toggle` set
+    // update — see session/audio-setup.ts. Only `start`/`toggle` set
     // `running` back, so no injected fixture frame can move it.
     const toggleBtn = page.getByRole("button", { name: "Resume", exact: true });
     await toggleBtn.waitFor({ timeout: 30_000 });
@@ -328,7 +328,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   test.concurrent("thinking state: user message appears after user_transcript", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user-transcript.committed", text: "What is the meaning of life?" });
+    await inject({ type: "userTranscript.committed", text: "What is the meaning of life?" });
     await expect(page.getByText("What is the meaning of life?").waitFor()).resolves.toBeUndefined();
 
     // State indicator should show "thinking"
@@ -336,7 +336,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
       page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 }),
     ).resolves.toBeUndefined();
 
-    await inject({ type: "agent-transcript.updated", text: "42." });
+    await inject({ type: "agentTranscript.updated", text: "42." });
     await expect(page.getByText("42.").waitFor()).resolves.toBeUndefined();
 
     await page.close();
@@ -345,12 +345,12 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   test.concurrent("state transitions: thinking → listening after reply_done", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user-transcript.committed", text: "Hello" });
+    await inject({ type: "userTranscript.committed", text: "Hello" });
     await expect(
       page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 }),
     ).resolves.toBeUndefined();
 
-    await inject({ type: "agent-transcript.updated", text: "Hi there!" });
+    await inject({ type: "agentTranscript.updated", text: "Hi there!" });
     await inject({ type: "reply.completed" });
     await expect(
       page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 }),
@@ -388,7 +388,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
  * the stack a user runs: delete `viteDevConfig`'s `"/websocket": { ws: true }`
  * proxy entry and all fifteen still pass. This one fails.
  *
- * `session.configured` is the assertion because `ws-handler.ts` sends it the
+ * `session.configured` is the assertion because `aai-runtime/src/session/ws-handler.ts` sends it the
  * moment the socket opens, before any provider is dialled, and it cannot
  * arrive unless the upgrade really crossed Vite into the backend.
  */

@@ -114,7 +114,7 @@ const VERDICT_SCHEMA = {
  * A list of turns used to render the agent's side alone — tool calls and
  * replies — so a criterion about what the USER said ("only 9 PM was offered")
  * had no evidence, and the judge is told to fail exactly that. Each turn's
- * utterance is its own `user-transcript.committed` event (the anchor `say()`
+ * utterance is its own `userTranscript.committed` event (the anchor `say()`
  * waits from), so it is read from there.
  */
 export function judgeTranscript(input: JudgeInput): string {
@@ -133,7 +133,7 @@ function turnsTranscript(turns: readonly EvalTurn[]): string {
   return turns
     .map((turn, i) => {
       const said = turn.events.flatMap((e) =>
-        e.type === "user-transcript.committed" ? [`User: ${e.text}`] : [],
+        e.type === "userTranscript.committed" ? [`User: ${e.text}`] : [],
       );
       const tools = turn.toolCalls.map(
         (call) =>
@@ -208,7 +208,7 @@ function verdictOf(
  *
  * ```ts
  * import { llm } from "@alexkroman1/aai/llm";
- * import { judgeCall, type SimulatedCall } from "@alexkroman1/aai-runtime/eval/simulate";
+ * import { judgeCall, type SimulatedCall } from "@alexkroman1/aai-runtime/eval";
  *
  * export async function grade(call: SimulatedCall): Promise<void> {
  *   const verdict = await judgeCall(call, {

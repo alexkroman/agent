@@ -3,8 +3,11 @@
 // Shared type definitions for the Node guest harness.
 //
 // Split out of `harness.ts` to keep that entrypoint focused on the
-// dispatch loop. Like the harness, this file has ZERO workspace imports —
-// it is bundled into the self-contained guest artifact.
+// dispatch loop. Like the harness, this file has ZERO workspace VALUE imports —
+// it is bundled into the self-contained guest artifact. The one import below is
+// TYPE-only and erased: the bundle's host surface, declared by the runtime.
+
+import type { GuestHost } from "@alexkroman1/aai-runtime/internal";
 
 // ---- Tool / agent shapes ----------------------------------------------------
 
@@ -12,8 +15,8 @@
  * A conversation message, as `ToolContext.messages` carries them.
  *
  * A MIRROR of the SDK's `Message` (`@alexkroman1/aai`, `sdk/message.ts`), for
- * this file's stated reason: zero workspace imports, because it is bundled into
- * the self-contained guest artifact.
+ * this file's stated reason: no workspace VALUE imports, because it is bundled
+ * into the self-contained guest artifact.
  *
  * **Deliberately NARROWER than the SDK's, and the narrowing is the point.** The
  * SDK's `"tool"` arm carries `toolName` and `toolCallId`, which say WHICH call a
@@ -78,20 +81,21 @@ export type AgentDef = {
   state?: () => Record<string, unknown>;
   maxSteps?: number;
   /**
-   * `"static"` when the agent serves a page rather than voice sessions — read
-   * here so the harness can pass it to `createRuntimeServer`, which then declines the
-   * voice surfaces and reports it in `/client-config`. Optional because this is
-   * a MIRROR of the SDK's `AgentDef` and a bundle built with an older SDK simply
-   * has none; absent reads as `"voice"`, as it does everywhere else.
+   * The agent's mode — `"workflow-app"` when it serves a page rather than voice
+   * sessions. Read here so the harness can pass `page: frontDoorOf(mode)` to
+   * `createRuntimeServer`, which declines the voice surfaces for `"static"` and
+   * reports it in `/client-config`. A MIRROR of the SDK's `AgentDef.mode`,
+   * spelled as a string for this file's no-value-imports reason (`types.test.ts`
+   * pins the key set); absent reads as a voice agent, as it does everywhere else.
    */
-  page?: "voice" | "static";
+  mode?: string;
   /**
    * Which phone carriers may open a media stream on `WS /phone` — read here so
    * the harness can pass the declaration to `createRuntimeServer`, which serves
    * the route for exactly those carriers and refuses every other upgrade.
    *
    * Spelled out rather than imported for this file's stated reason (no
-   * workspace imports), and optional for `page`'s: it MIRRORS the SDK's
+   * workspace value imports), and optional for `mode`'s: it MIRRORS the SDK's
    * `AgentDef`, and a bundle built with an older SDK carries none — which reads
    * as no carrier, the same refusal an explicit `false` makes. A carrier name a
    * newer SDK adds is carried at run time regardless, the bundle's agent being
@@ -166,11 +170,22 @@ export type GuestRuntime = {
  * `publicUrl` makes `ctx.workflows.publicWebhookUrl` throw, which is the designed
  * answer). `GUEST_CONTRACT_VERSION` records each addition.
  */
-export type CreateGuestRuntime = (opts: {
+export type CreateGuestRuntime = ((opts: {
   env: Record<string, string>;
   runCode?: (code: string) => Promise<string | { error: string }>;
   publicUrl?: string;
-}) => GuestRuntime;
+}) => GuestRuntime) & {
+  /**
+   * The rest of the bundle's runtime the harness drives the agent through — the
+   * server shell, the delivery door, tracing, the session gate — because the
+   * harness carries no runtime of its own. A TYPED contract
+   * (`GuestHost`, `aai-runtime/guest-host.ts`), checked by `version` at load;
+   * the type import is erased, so it adds no runtime copy.
+   */
+  host: GuestHost;
+};
+
+export type { GuestHost } from "@alexkroman1/aai-runtime/internal";
 
 /**
  * What the studio coding agent borrows from the harness itself: the two

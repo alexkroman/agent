@@ -7,7 +7,7 @@
  * session, held in a `Map` in the runtime's own heap, and therefore gone the
  * moment the process was. A crash or a redeploy handed a reconnecting caller an
  * agent that remembered the whole conversation and had forgotten its cart,
- * because the client replays history (`aai-ui/session-core.ts`) and there is
+ * because the client replays history (`aai-ui/session/browser-session.ts`) and there is
  * nothing on the client to replay state from.
  *
  * So a slot writes to a STORE instead, and the store has two backends chosen by

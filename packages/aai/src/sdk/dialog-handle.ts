@@ -86,14 +86,14 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
    * const claim = dialog("claim", {
    *   initial: "verifying",
    *   states: {
-   *     verifying: { on: { "@session.timed-out": "abandoned" } },
+   *     verifying: { on: { "@session.timedOut": "abandoned" } },
    *     abandoned: { final: true },
    *   },
    * });
    *
    * export default agent({
    *   name: "Support",
-   *   events: { "session.timed-out": (event, ctx) => void claim.receive(ctx, event) },
+   *   events: { "session.timedOut": (event, ctx) => void claim.receive(ctx, event) },
    * });
    * ```
    */

@@ -38,9 +38,8 @@ import {
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { closeEgressFetch } from "../_egress-fetch.ts";
 import { openAppDb } from "../app-db.ts";
-import { installChannelOutbox } from "../channel-outbox.ts";
-import { type ClientInbox, installClientInbox } from "../client-inbox.ts";
-import { closePlatformSockets, ensurePlatformSocket } from "../platform-socket-registry.ts";
+import { type ClientInbox, installChannelOutbox, installClientInbox } from "../inbox/index.ts";
+import { closePlatformSockets, ensurePlatformSocket } from "../platform/index.ts";
 import type { CloseableDb } from "../postgres-db.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createStepDelegate } from "../step-delegate.ts";
@@ -48,8 +47,8 @@ import { createStepFetch } from "../step-fetch.ts";
 import { createStepMcp } from "../step-mcp.ts";
 import { speakOverWebSocket } from "../step-speak.ts";
 import { isPerProcessDataDir, localWorkflowDataDir } from "./data-dir.ts";
-import { platformGuestOptions } from "./platform-world.ts";
 import { createStepInfoReader, createStepReporter } from "./report.ts";
+import { resolveStorageHome } from "./storage-home.ts";
 import {
   createUploadStore,
   resolveUploadBlobs,
@@ -101,16 +100,14 @@ type WorkflowSupport = {
 /**
  * Build the upload store for one server and publish every step slot.
  *
- * **The store's home follows the RUNS', off the same input.** `selectJournal`
- * (`workflow/runtime.ts`) reads `DATABASE_URL` to choose between a Postgres
- * journal and an in-memory one; this reads it to choose where an upload lives, so
- * the two can only ever agree — which is the invariant `workflow/uploads.ts`
- * states and the one
- * the deleted file backend broke. With a database the record goes in it and the
- * bytes need a bucket (no bucket, no store: a refusal naming it). Without one, both
- * live in the local world's own data directory, so a databaseless agent has working
- * uploads that are exactly as durable as its runs — which is what a workflow app in
- * the studio is, where a database is opt-in.
+ * **The store's home IS the runs' home.** `resolveStorageHome` (`storage-home.ts`)
+ * is the one decision between platform, Postgres and local, and both this and
+ * `buildWorkflowClient` (`workflow/runtime.ts`) build their stores off it, so an
+ * upload's record and a run's journal can only ever agree — the invariant
+ * `workflow/uploads.ts` states and the one the deleted file backend broke. A durable
+ * home needs a bucket for the bytes (no bucket, no store: a refusal naming it); a
+ * local one keeps both halves in the local world's own data directory, so a
+ * databaseless agent has working uploads exactly as durable as its runs.
  *
  * @internal
  */
@@ -143,7 +140,7 @@ export function installWorkflowSupport(options: {
   // Sharing the app pool's connections would have been WRONG before the bytes left
   // the database: a part was a `bytea` row held for a megabyte, and it was
   // measured slowing every non-upload query on the guest to p50 1.34s against
-  // 0.43s (`_upload-blobs.ts`, "The pool"). What is left here is one small
+  // 0.43s (`../uploads/blobs.ts`, "The pool"). What is left here is one small
   // `update` naming a window that landed — a round trip, like every other
   // statement on this pool.
   const databaseUrl = options.env?.DATABASE_URL;
@@ -154,32 +151,31 @@ export function installWorkflowSupport(options: {
   // may take, and only they know that.
   const maxBytes = positiveBytes(options.env?.[MAX_UPLOAD_BYTES_ENV]);
   // The local directory is resolved WHETHER OR NOT it is used, because asking for it
-  // is free and the alternative is a conditional whose two arms drift. `db` is what
-  // decides: `createUploadStore` ignores `localDir` when there is a database, and a
-  // bucket when there is not (its own doc carries why each is right).
+  // is free and the alternative is a conditional whose two arms drift. The HOME is
+  // what decides: `createUploadStore` ignores `localDir` for a durable one, and a
+  // bucket for a local one (its own doc carries why each is right).
   const localDir = localWorkflowDataDir();
   const blobs = resolveUploadBlobs(
     omitUndefined({ env: options.env, broker: options.uploadBroker }),
   );
-  // The PLATFORM's record home, when there is one. Resolved from the same two env
-  // keys the workflow world uses, so an upload's record and a run's queue can never
-  // disagree about whether this guest is deployed — which they DID, because this
-  // read `options.env` (the agent's own) where those keys never appear, so a deployed
-  // guest announced "workflow uploads are LOCAL … no platform" one line after the
-  // harness announced the platform world. See `platformGuestOptions`.
-  const platform = platformGuestOptions();
+  // The same resolution the run journal is built from, so an upload's record and a
+  // run's queue can never disagree about whether this guest is deployed — which they
+  // DID, when this read the agent's own env for the platform pair and announced
+  // "workflow uploads are LOCAL … no platform" one line after the harness announced
+  // the platform world. See `storage-home.ts`.
+  const home = resolveStorageHome(db);
   // ONE socket per process, opened here because this is the one composition root
   // that runs once per `AgentServer` and already owns the egress pools' lifetime
   // (see `close()` below). Every platform client prefers it and falls back to
   // HTTP until it is open, so this is a latency decision rather than a
-  // durability one — `platform-socket.ts` carries the argument.
-  if (platform) ensurePlatformSocket(platform, { logger: options.logger });
+  // durability one — `../platform/socket.ts` carries the argument.
+  if (home.kind === "platform") ensurePlatformSocket(home.platform, { logger: options.logger });
   const store = createUploadStore({
-    db,
+    home,
     localDir,
-    ...omitUndefined({ blobs, maxBytes, platform }),
+    ...omitUndefined({ blobs, maxBytes }),
   });
-  if (!(db || platform)) {
+  if (home.kind === "local") {
     // ANNOUNCED, once, at construction. A store that quietly loses an upload with
     // its container is the shape this repo keeps paying for; a store that says which
     // directory it is using is a documented tradeoff. `buildWorkflowClient`'s
@@ -260,7 +256,7 @@ export function installWorkflowSupport(options: {
     // The BROKER is still required — a self-hosted agent with its own bucket holds
     // the credential itself, and no platform route serves its windows — but it is no
     // longer sufficient: the store has to be the arm that reads that bucket.
-    directParts: Boolean(options.uploadBroker?.trim()) && uploadBytesAreRemote({ db, blobs }),
+    directParts: Boolean(options.uploadBroker?.trim()) && uploadBytesAreRemote(home, blobs),
     async close(): Promise<void> {
       // Settled rather than awaited in sequence, and never rejecting: this runs
       // inside `AgentServer.close()`, where one pool refusing to drain must not

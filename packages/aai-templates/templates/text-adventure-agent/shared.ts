@@ -199,7 +199,7 @@ export const gameStatus: StateProjection<StatusLine> = gameSlot.projection(statu
  * Log a player command and count the turn. The slot holds {@link MAX_HISTORY}.
  *
  * **Nothing the MODEL can call runs this** — `agent.ts` declares it as a
- * `user-transcript.committed` hook, so it runs once per thing the player says,
+ * `userTranscript.committed` hook, so it runs once per thing the player says,
  * whether or not the narrator cooperates. It replaced a `game_state_history`
  * TOOL whose `value` argument was the player's own command: the framework
  * already had the transcript, and the tool existed to hand it back. That cost a

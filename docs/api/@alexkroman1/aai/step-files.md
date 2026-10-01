@@ -34,11 +34,11 @@ in one file at one offset each, so concurrency buys nothing and costs exactly
 the memory the windows are here to bound"* — which is true of the WRITE and
 says nothing about the read. On a deployed guest every window is a brokered
 `302` + `Range` GET against object storage
-(`aai-runtime/_upload-blobs-brokered.ts`), measured at 1.9-4.3 MB/s per
+(`aai-runtime/uploads/blobs-brokered.ts`), measured at 1.9-4.3 MB/s per
 request under `UPLOAD_PART_BYTES`, so window N+1's request did not start until
 window N's bytes had fully landed and the whole leg was latency-bound. The
 other half of the same round trip has always fanned out — `putWindows`
-(`aai-runtime/_upload-store-blobs.ts`) runs `UPLOAD_WINDOW_CONCURRENCY` wide —
+(`aai-runtime/uploads/store-blobs.ts`) runs `UPLOAD_WINDOW_CONCURRENCY` wide —
 so a step normalizing a recording pulled it in one window at a time and pushed
 it back out four at a time. See [STEP\_FILE\_READ\_CONCURRENCY](#step_file_read_concurrency), which is
 that same 4 and the same 32 MiB held.
@@ -319,7 +319,7 @@ What it costs is memory, and exactly this much: the width times
 [STEP\_FILE\_WINDOW\_BYTES](#step_file_window_bytes), i.e. **32 MiB** held while a copy is in flight,
 because a window is buffered before its write starts. That is the same budget
 the WRITE half of this round trip already accepts — `UPLOAD_WINDOW_CONCURRENCY`
-(`aai-runtime/_upload-store.ts`) is 4 over the same 8 MiB window, and its doc
+(`aai-runtime/uploads/store.ts`) is 4 over the same 8 MiB window, and its doc
 calls that "the number that decides whether the uplink and the bucket work at
 the same time or take turns". Matching it is the whole argument for this value:
 a step that pulls a recording in and pushes it back out should not hold two
@@ -330,7 +330,7 @@ in a table** — the write width was swept against a bucket and an uplink, and
 nothing here has been swept against the brokered read path. What is known is
 the shape of the cost it attacks: on a deployed guest each window is a brokered
 `302` + `Range` GET against object storage
-(`aai-runtime/_upload-blobs-brokered.ts`), which `UPLOAD_PART_BYTES`
+(`aai-runtime/uploads/blobs-brokered.ts`), which `UPLOAD_PART_BYTES`
 (`sdk/upload-constants.ts`) measures at 1.9-4.3 MB/s per request, so a serial
 walk cannot start window N+1 until window N has fully landed. Re-measure before
 moving it; a wider default costs a guest's resident set linearly, and a metered

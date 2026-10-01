@@ -1,13 +1,13 @@
 {
-  "_description": "Per-report budget of types referenced by a published surface but exported by no subpath of their own package. Only ever lowered \u2014 see scripts/check-api-nameable.mjs.",
+  "_description": "Per-report budget of types referenced by a published surface but exported by no subpath of their own package. Only ever lowered — see scripts/check-api-nameable.mjs.",
   "unnameable": {
     "packages/aai-runtime/etc/internal.api.md": 12,
     "packages/aai/etc/coding-tools.api.md": 1,
     "packages/aai/etc/experimental.api.md": 1,
     "packages/aai/etc/host-internal.api.md": 4,
-    "packages/aai/etc/index.api.md": 20,
+    "packages/aai/etc/index.api.md": 11,
     "packages/aai/etc/internal.api.md": 1,
-    "packages/aai/etc/manifest.api.md": 2,
+    "packages/aai/etc/manifest.api.md": 1,
     "packages/aai/etc/step.api.md": 1,
     "packages/aai/etc/testing-vitest.api.md": 1,
     "packages/aai/etc/testing.api.md": 1,

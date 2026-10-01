@@ -18,7 +18,7 @@ import {
 } from "./_session-core-test-utils.ts";
 import { browserClientId } from "./client-identity.ts";
 import { SessionProvider } from "./context.ts";
-import { createBrowserSession } from "./session-core.ts";
+import { createBrowserSession } from "./session/index.ts";
 import type { VoiceSessionOptions } from "./types.ts";
 import { useClientId, useSessionId } from "./use-session-id.ts";
 

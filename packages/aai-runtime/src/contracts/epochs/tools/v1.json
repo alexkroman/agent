@@ -3,7 +3,7 @@
   "capability": "tools",
   "epoch": 1,
   "rule": 2,
-  "sha256": "c32fa245afd32f7a4bfe87d5f39fe121685803e307f4afff3b8a0d7184d387c0",
+  "sha256": "e522dbd30aac1e305a1ed6909421612f7e09309b49e4c94089ed8ffedd330c32",
   "exports": [
     "MCP_CONNECT_TIMEOUT_MS",
     "McpCallResult",
@@ -21,7 +21,7 @@
     "withToolsDir"
   ],
   "rollup": "ae5b5a3bd5450a3d2af9ae18bd22ae9fc13936f247159ec18e37e348b2a4209c",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -33,6 +33,12 @@
       "revision": 1,
       "rule": 2,
       "sha256": "c32fa245afd32f7a4bfe87d5f39fe121685803e307f4afff3b8a0d7184d387c0",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "e522dbd30aac1e305a1ed6909421612f7e09309b49e4c94089ed8ffedd330c32",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
     }
   ]

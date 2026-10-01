@@ -84,10 +84,10 @@ platform replica. `bundle-source.ts` is the guest half.
 ## Why the buffer lives in the guest
 
 `logs.ts` tees both process streams into a bounded cursor-indexed ring
-(`createLogBuffer`, `@alexkroman1/aai-runtime`), served at `GET /manage/logs` —
-the source for the studio Logs pane and `aai logs`. It lives in the GUEST
-because a sandbox is resident on one replica and replicas never proxy for each
-other; the guest's own URL is reachable from all of them.
+(`createLogBuffer`, `@alexkroman1/aai/host-internal`), served at
+`GET /manage/logs` — the source for the studio Logs pane and `aai logs`. It
+lives in the GUEST because a sandbox is resident on one replica and replicas
+never proxy for each other; the guest's own URL is reachable from all of them.
 
 - The ring dies with the sandbox — recent output only. A bundle that throws at
   LOAD exits before binding, so its stderr is only in the host log (the studio
@@ -122,6 +122,17 @@ replica can compute it and `/manage/*` is not replica-local. Preserved:
 unguessable without the platform secret, distinct per sandbox, rotated on
 redeploy. Given up: rotation on respawn of the same version. Unset
 `AAI_GUEST_TOKEN_SECRET` falls back to a per-process key, announced at boot.
+
+## A session opens only for a ticket
+
+`agent-mode.ts` passes `auth: guestSessionAuth(host, token, boot.env)`
+(`session-tickets.ts`): `WS /websocket` and `/inbox` need a ticket signed with
+`platformSessionSecret(AAI_GUEST_TOKEN)` — what the platform's `client-config`
+broker mints (`packages/aai-server/CLAUDE.md`, "A deployed agent's session opens
+only for a broker-minted ticket") — or with the agent env's
+`AAI_SESSION_SECRET` when the author set one. The key is derived from the bearer
+the guest already holds, so no new credential is delivered. `/phone` is not
+gated (a carrier holds no ticket; its webhook verification is the route's).
 
 ## A phone call is an ordinary session
 

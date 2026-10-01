@@ -23,6 +23,9 @@ type AgentCustomEvent = {
 // @public
 type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
+// @public
+type AgentStateFrame = Readonly<Record<string, unknown>>;
+
 // @internal
 export function ApiUrlChip(input: {
     className?: string | undefined;
@@ -82,7 +85,7 @@ export const DEFAULT_PROGRESS_POLL_MS = 5000;
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
 // @internal
-export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
+export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch, presentedTicket?: string): Promise<ClientConfigResponse | null>;
 
 // @public
 export const MAX_MISSING_READS = 3;
@@ -105,6 +108,7 @@ type SessionIdentity = {
     clientId(): string | undefined;
     holderId(): string;
     sessionId(): string | undefined;
+    ticket(): string | undefined | Promise<string | undefined>;
 };
 
 // @internal
@@ -123,7 +127,7 @@ type SessionSnapshot = {
     readonly messages: ChatMessage[];
     readonly toolCalls: ToolCallInfo[];
     readonly customEvents: AgentCustomEvent[];
-    readonly agentState: unknown;
+    readonly agentState: AgentStateFrame | null;
     readonly userTranscript: string | null;
     readonly agentTranscript: string | null;
     readonly error: SessionError | null;

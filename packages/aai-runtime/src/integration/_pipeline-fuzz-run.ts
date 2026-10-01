@@ -24,7 +24,7 @@ import {
 } from "../_pipeline-test-fakes.ts";
 import { sleep } from "../_test-utils.ts";
 import { silentLogger } from "../runtime-config.ts";
-import { createPipelineTransport } from "../transports/pipeline-transport.ts";
+import { createPipelineTransport } from "../transports/pipeline/index.ts";
 import { buildActions } from "./_pipeline-fuzz-actions.ts";
 import {
   buildScript,
@@ -42,9 +42,10 @@ const STOP_DEADLINE_MS = 5000;
 /** Runs of the short session property (structural + integrity invariants). */
 export const SHORT_RUNS = 120;
 /**
- * Runs long enough to push the LLM history past DEFAULT_MAX_HISTORY.
+ * Runs long enough to push a request past 200 messages (the depth the retired
+ * message cap trimmed at).
  *
- * Raised from 3 after `llmRequestAtHistoryCap` (this property's only floor,
+ * Raised from 3 after `llmRequestDeepHistory` (this property's only floor,
  * `> 10`) was seen to MISS on a clean tree. Three runs is too few for a
  * counter this variable: measured over four fresh runs at 3 it came in at
  * 34 / 50 / 108 / 56 — a 3x spread — so the floor sat nominally 3x below the
@@ -61,7 +62,7 @@ export const SHORT_RUNS = 120;
  *
  * **That last sentence has one documented exception, and it already fired.**
  * Raising this answers a LEFT-TAIL draw on one instrument. It does not answer a
- * shifted DISTRIBUTION across instruments, which is what `llmRequestAtHistoryCap`
+ * shifted DISTRIBUTION across instruments, which is what `llmRequestDeepHistory`
  * turned out to have: 199-425 locally against 44-68 in CI, because the config
  * this file installs is tuned to "a run lasts ~250 ms" of REAL time and a
  * 2-core runner does not honour that. Covering a 4x shift needs ~3x the runs on
@@ -72,7 +73,7 @@ export const SHORT_RUNS = 120;
  * expensive way to not fix it.
  */
 export const LONG_RUNS = 6;
-/** Steps per long run — enough turns to trim at the cap. */
+/** Steps per long run — enough turns to send a request past 200 messages. */
 export const LONG_STEPS = 200;
 
 type Coverage = Record<string, number>;
@@ -245,7 +246,7 @@ export async function runOne(
           // `speechIdleTimeoutMs` the utterance ends — restoring the budget —
           // long before a third could fire. So the concurrency bound above does
           // not enforce the budget and neither does this. The rule is pinned
-          // deterministically in `transports/pipeline-speculation.test.ts`
+          // deterministically in `../transports/pipeline/speech/speculation.test.ts`
           // ("bounded per utterance however the confidence sawtooths"); this
           // stays as a cheap net for an interleaving that does reach it.
           const spent = (meta as { spent?: number } | undefined)?.spent ?? 0;
@@ -264,7 +265,7 @@ export async function runOne(
     // reply is the heard-nothing case. PARTIAL truncation is deliberately NOT
     // covered here for the same reason (the heard position is always near
     // zero, so a floor on it would flake) —
-    // `pipeline-transport-barge-in.test.ts` owns that case.
+    // `../transports/pipeline/transport-barge-in.test.ts` owns that case.
     heardLagMs: 0,
     resumeFalseInterruption: true,
     // The resume deadline. It has to be set: the resume fires when the
@@ -312,7 +313,7 @@ export async function runOne(
   // concurrent request is legal in that arm rather than a serialization break.
   // The per-utterance BUDGET is not what this checks, and neither is the `spent`
   // oracle on the logger below — both stay green with the budget check deleted
-  // (measured). `transports/pipeline-speculation.test.ts` owns that rule.
+  // (measured). `../transports/pipeline/speech/speculation.test.ts` owns that rule.
   const maxConcurrentStreams = input.preemptiveGeneration
     ? 1 + MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE
     : 1;

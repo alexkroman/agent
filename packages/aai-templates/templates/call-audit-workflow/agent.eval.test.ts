@@ -52,9 +52,12 @@
 // the tier that really resumes a run.
 import { spawnSync } from "node:child_process";
 import { encodeWav } from "@alexkroman1/aai/step";
-import { stubGatewayRoute } from "@alexkroman1/aai/testing";
-import { installStubTranscribe, installStubUploads } from "@alexkroman1/aai/testing/vitest";
-import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeWorkflowEval,
+  installStubTranscribe,
+  installStubUploads,
+  stubGatewayRoute,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { describe, expect, test } from "vitest";
 import agentDef, { audit } from "./agent.ts";
 import { ANALYSIS_FORMAT, BYTES_PER_SECOND, MAX_SEGMENT_SECONDS } from "./workflows/media.ts";

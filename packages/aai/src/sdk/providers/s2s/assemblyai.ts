@@ -10,16 +10,27 @@
  *
  * ```ts
  * import { agent, assemblyAIS2s } from "@alexkroman1/aai";
- * export default agent({ name: "Ivy", s2s: assemblyAIS2s() });
+ * export default agent({ name: "Ivy", mode: "s2s", s2s: assemblyAIS2s() });
  * ```
  *
  * Bills to `ASSEMBLYAI_API_KEY`, same as the pipeline preset.
  */
 
 import type { ProviderCredentialOptions, S2sProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
+
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const ASSEMBLYAI_S2S_PROVIDER = defineProvider({
+  kind: "assemblyai",
+  stage: "s2s",
+  envVar: "ASSEMBLYAI_API_KEY",
+  label: "AssemblyAI",
+  factory: "assemblyAIS2s",
+  subpath: "s2s",
+});
 
 /** Kind tag recognised by the host-side resolver. */
-export const ASSEMBLYAI_S2S_KIND = "assemblyai" as const;
+export const ASSEMBLYAI_S2S_KIND = ASSEMBLYAI_S2S_PROVIDER.kind;
 
 /**
  * Env var holding this stage's credential.
@@ -29,7 +40,7 @@ export const ASSEMBLYAI_S2S_KIND = "assemblyai" as const;
  * account without moving the others (see `descriptorEnvVar` in
  * the host-side resolver).
  */
-export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_S2S_API_KEY_ENV: string = ASSEMBLYAI_S2S_PROVIDER.envVar;
 
 /**
  * Options for {@link assemblyAIS2s}.
@@ -90,16 +101,16 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
+ *   mode: "s2s",
  *   s2s: assemblyAIS2s({ voice: "jane", languages: ["en"] }),
  * });
  * ```
  *
- * Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline, and the
- * top-level `voice` convenience is a compile error alongside it — an S2S
- * voice rides on the descriptor, because the service synthesizes.
+ * Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline. An S2S voice
+ * rides on this descriptor, because the service synthesizes.
  *
  * @public
  */
 export function assemblyAIS2s(options: AssemblyAIS2sOptions = {}): S2sProvider {
-  return { kind: ASSEMBLYAI_S2S_KIND, options: { ...options } };
+  return describeProvider(ASSEMBLYAI_S2S_PROVIDER, options);
 }

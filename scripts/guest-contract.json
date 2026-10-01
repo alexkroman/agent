@@ -1,7 +1,7 @@
 {
   "_description": "The deployed-guest contract GUEST_CONTRACT_VERSION versions: the exec-env keys agentBootEnv writes, the /manage/* surface, and the harness<->bundle handshake types. Written by `node scripts/check-guest-contract.mjs --record|--revise \"<reason>\"`; history is append-only. See the header of scripts/check-guest-contract.mjs.",
-  "version": 4,
-  "sha256": "26c0ac5d1f2e9528d8877529dd35bff751a2cbc9c2ca5e91266abd74a91fd035",
+  "version": 5,
+  "sha256": "8727ebe8d174831457bb1742991872007d48ec6b046436b429b33cf5e0e579fb",
   "surface": {
     "bootEnv": [
       "AAI_AGENT_ENV_PATH",
@@ -32,7 +32,7 @@
     },
     "types": {
       "GuestRuntime": "type GuestRuntime={startSession(ws:unknown,opts:unknown):void;shutdown():Promise<void>;workflows?:unknown;deliverWorkflow?:unknown;serveRoute?:unknown;};",
-      "CreateGuestRuntime": "type CreateGuestRuntime=(opts:{env:Record<string,string>;runCode?:(code:string)=>Promise<string|{error:string}>;publicUrl?:string;})=>GuestRuntime;"
+      "CreateGuestRuntime": "type CreateGuestRuntime=((opts:{env:Record<string,string>;runCode?:(code:string)=>Promise<string|{error:string}>;publicUrl?:string;})=>GuestRuntime)&{host:GuestHost;};"
     }
   },
   "history": [
@@ -47,6 +47,12 @@
       "revision": 1,
       "sha256": "26c0ac5d1f2e9528d8877529dd35bff751a2cbc9c2ca5e91266abd74a91fd035",
       "reason": "GuestRuntime gains an OPTIONAL serveRoute (agent({ routes }) for /api), read only by the harness from the bundle's runtime. A pinned harness never reads it, so a new bundle under it simply serves no /api; a new harness under an old bundle reads undefined and leaves /api to static serving. Neither end can fail, and the platform, which exposes no /:slug/api, cannot observe it."
+    },
+    {
+      "version": 5,
+      "revision": 0,
+      "sha256": "8727ebe8d174831457bb1742991872007d48ec6b046436b429b33cf5e0e579fb",
+      "reason": "v5: __aaiCreateRuntime.host (GuestHost) is required — the harness carries no runtime and drives the agent through the bundle's; an older pinned guest ignores the field, and a v5 harness refuses a bundle without it, naming the rebuild"
     }
   ]
 }

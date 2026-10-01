@@ -25,7 +25,7 @@
  *
  * This module deliberately imports no OpenTelemetry and no `ai`. Everything
  * that does is behind the `import()` in {@link startTracing}, for the reason
- * `mcp-connect.ts` spells out about `@ai-sdk/mcp`: a plain import would put
+ * `mcp/connect.ts` spells out about `@ai-sdk/mcp`: a plain import would put
  * five OTel packages in the tree of every consumer of
  * `@alexkroman1/aai-runtime`, which `artifact-size-report.mjs` fails a new
  * runtime dependency over regardless of bytes. Tracing is opt-in, so the cost
@@ -218,7 +218,7 @@ async function startSpanExport(serviceName: string): Promise<RuntimeTracing> {
  * Either half of the lazy OTel load, answered with the INSTALL LINE when it
  * fails — the module (a hashed chunk once bundled), and the peers themselves.
  *
- * Same shape and same reason as `mcp-connect.ts`'s `loadCreateMcpClient`: the
+ * Same shape and same reason as `mcp/connect.ts`'s `loadCreateMcpClient`: the
  * packages are optional peers, so "configured a collector but never installed
  * the exporter" is a real path a self-hoster takes, not a theoretical one. Left
  * bare it surfaces as `ERR_MODULE_NOT_FOUND` naming `_tracing-otel.ts` — an

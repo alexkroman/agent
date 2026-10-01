@@ -103,7 +103,7 @@ const UNDOCUMENTED_CAPABILITIES = {
     "`evalSimulation`). Each adds a SECOND and THIRD live model to a case, so a keyless " +
     "`pnpm eval` can only script them, and a judge is a noisy instrument read as a spread " +
     "under `AAI_EVAL_REPEAT` — a technique past the scripted-and-live cases the guide teaches, " +
-    "not a step every author takes. Its worked example is the `/eval/simulate` module doc, " +
+    "not a step every author takes. Its worked example is `evalSimulation`'s own doc, " +
     "which `check:doc-examples` compiles, and `packages/aai-runtime/CLAUDE.md` covers the rest.",
   "aai-runtime:logging":
     "the HOST logging surface — the buffer/page/line constants a deployment tunes and " +
