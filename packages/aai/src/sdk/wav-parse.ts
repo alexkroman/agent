@@ -160,6 +160,15 @@ function assertCuttableFormat(fmt: PcmFields | undefined): asserts fmt is PcmFie
   if (fmt === undefined) {
     throw new UnsupportedRecordingError("That WAV has no `fmt ` chunk before its data.");
   }
+  // `wav.ts`'s writer refuses the same depths. A 12-bit or 4-bit header makes
+  // a frame 1.5 or 0.5 bytes, and every offset computed from it lands
+  // mid-sample — a cut on garbage rather than an error.
+  if (fmt.bitsPerSample === 0 || fmt.bitsPerSample % 8 !== 0) {
+    throw new UnsupportedRecordingError(
+      `That WAV declares ${fmt.bitsPerSample}-bit samples; only whole-byte depths (8, 16, 24, 32) ` +
+        "can be cut by byte offset — re-encode it with `-c:a pcm_s16le`.",
+    );
+  }
   if (blockAlign(fmt) <= 0) {
     throw new UnsupportedRecordingError(
       `That WAV declares ${fmt.channels} channels at ${fmt.bitsPerSample} bits — nothing to cut.`,
@@ -190,7 +199,8 @@ function chunkId(bytes: Uint8Array, at: number): string {
  *   it — see this module's doc.
  *
  * @throws {UnsupportedRecordingError} for anything that is not linear-PCM WAV,
- *   for a format nothing can be cut on (a zero rate, or zero bytes per frame),
+ *   for a format nothing can be cut on (a zero rate, zero bytes per frame, or
+ *   a bit depth that is not a whole number of bytes),
  *   and for a header longer than `head`.
  *
  * @example

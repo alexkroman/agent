@@ -484,7 +484,8 @@ The size of the whole file, from `Content-Range` or
 #### Throws
 
 for anything that is not linear-PCM WAV,
-  for a format nothing can be cut on (a zero rate, or zero bytes per frame),
+  for a format nothing can be cut on (a zero rate, zero bytes per frame, or
+  a bit depth that is not a whole number of bytes),
   and for a header longer than `head`.
 
 #### Example
