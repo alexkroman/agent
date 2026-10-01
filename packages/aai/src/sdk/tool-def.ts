@@ -264,7 +264,8 @@ export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<Return
  * 3. **The dialog state** — a `dialog()` state may carry `toolChoice`, read
  *    deepest-active-state-first, so a state that must not act overrides the
  *    two above for exactly as long as the conversation is in it, one step at a
- *    time.
+ *    time. A DEMANDING state value lets go for the rest of the reply once a
+ *    step sent with it has made the call it demanded.
  * 4. **The step** — the runtime forces `"none"` on the reply's LAST step
  *    (`forceFinalAnswer`), so a reply that ran out of tool-calling budget still
  *    ends in an answer instead of silence. That override wins over all three,
@@ -289,8 +290,10 @@ export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<Return
  *   is how an agent that really does want a tool call on every step says so,
  *   and it is the only way to get that behaviour. The reset applies to the
  *   demand resolved from scope 1 or 2; a dialog state's `toolChoice` (scope 3)
- *   is re-read on every step and holds for as long as the conversation is in
- *   that state, and scope 4 still wins over both.
+ *   is re-read on every step and holds, in each reply, until a step sent with
+ *   it makes the call it demands — then the agent's own setting applies for the
+ *   rest of that reply (a step that answered in text under a standing demand
+ *   would fail). Scope 4 still wins over both.
  * - `"none"` — the model may not call a tool on this request. It is not a
  *   session-wide switch, and cannot be one: a later request in the same session
  *   is resolved again from whatever scope applies to it.

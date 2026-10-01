@@ -9,7 +9,7 @@
  * | Knob | Where it takes effect | Per state? |
  * | --- | --- | --- |
  * | `interruption` | the two interim gates in `../speech/user-speech.ts`, read at the moment a partial is classified | yes |
- * | `toolChoice` | the `streamText` request | yes, per STEP |
+ * | `toolChoice` | the `streamText` request | yes, per STEP, until a step obeys a demand |
  * | `temperature` | the `streamText` request | yes, per STEP |
  * | `voice` | `TtsOpenOptions` — the voice is baked into the DESCRIPTOR that produced the opener, and the open happens once per session | **no** |
  *
@@ -45,6 +45,7 @@
 import type { InterruptionTuning, ToolChoice } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { PrepareStepFunction, ToolSet } from "ai";
+import { createPinRelease } from "../../../_prepare-step.ts";
 
 /**
  * What the active dialog state asks of THIS turn, in the transport's own units.
@@ -226,6 +227,7 @@ function readKnobs(
     resumeFalseInterruption: read((k) => k.resumeFalseInterruption, base.resumeFalseInterruption),
   };
   if (source === undefined) return { ...knobs, dialogStep: undefined };
+  const release = createPinRelease();
   return {
     ...knobs,
     // `undefined` rather than `{}` when the active state declares neither, so a
@@ -233,10 +235,12 @@ function readKnobs(
     // preparers that shipped before this existed. `composePreparers` treats an
     // empty result as "no keys", so both are correct — but only one of them says
     // so at the call site.
-    dialogStep: () => {
+    // A demanding pin is released once a step has obeyed it — see
+    // `createPinRelease` for why holding it every step fails the reply.
+    dialogStep: (options) => {
       const turn = source();
       const step = omitUndefined({
-        toolChoice: turn?.toolChoice,
+        toolChoice: release(turn?.toolChoice, options),
         temperature: turn?.temperature,
       });
       return Object.keys(step).length === 0 ? undefined : step;

@@ -116,26 +116,35 @@ describe("a state's toolChoice and temperature", () => {
     await t.stop();
   });
 
-  test("beat an agent-level `required` on EVERY step, not just the first", async () => {
+  test("beat an agent-level `required` until a step obeys them, then let go", async () => {
     // Three scopes on one key, and the middle one is the state's. An agent-level
     // demanding `toolChoice` is put back to `"auto"` after step 0
     // (`resetToolChoiceAfterFirstStep`), which shares the key this preparer
     // writes — so composed in the wrong order the reset wins from step 1 on and
-    // a state that pins a tool silently stops meaning it after the first step
-    // of every turn. `ToolChoice`'s scope list is what says the state wins:
-    // agent → turn → dialog state → forced final step.
+    // a state entered MID-turn would never get its pin applied at all.
+    // `ToolChoice`'s scope list is what says the state wins: agent → turn →
+    // dialog state → forced final step.
+    //
+    // And the pin lets go once a step has obeyed it (`createPinRelease`): held,
+    // it would leave a compliant model no move but to call `lookup` again every
+    // step, and the AI SDK fails a pinned step that answers in text.
+    let pinned = false;
     const { opts, stt } = makeOpts({
       llm: createFakeLanguageModel({
         steps: [
-          [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
+          [{ type: "tool-call", toolCallId: "tc-1", toolName: "advance", input: "{}" }],
           [{ type: "tool-call", toolCallId: "tc-2", toolName: "lookup", input: "{}" }],
           [{ type: "text", text: "all set" }],
         ],
       }),
       toolChoice: "required",
-      toolSchemas: [noopToolSchema],
-      executeTool: async () => "ok",
-      dialogTurn: () => ({ toolChoice: { type: "tool", toolName: "lookup" } }),
+      toolSchemas: [noopToolSchema, { ...noopToolSchema, name: "advance" }],
+      // `advance` is the gated tool that moves the dialog into the pinning state.
+      executeTool: async (name) => {
+        if (name === "advance") pinned = true;
+        return "ok";
+      },
+      dialogTurn: () => (pinned ? { toolChoice: { type: "tool", toolName: "lookup" } } : {}),
     });
     const t = createPipelineTransport(opts);
     await t.start();
@@ -145,12 +154,11 @@ describe("a state's toolChoice and temperature", () => {
       expect(llmCalls(opts).calls).toHaveLength(3);
     });
 
-    // maxSteps defaults to 10, so `forceFinalAnswer` fires on none of these —
-    // every step here is the state's to pin.
-    const pinned = { type: "tool", toolName: "lookup" };
-    expect(llmCalls(opts).calls[0]?.toolChoice).toEqual(pinned);
-    expect(llmCalls(opts).calls[1]?.toolChoice).toEqual(pinned);
-    expect(llmCalls(opts).calls[2]?.toolChoice).toEqual(pinned);
+    // maxSteps defaults to 10, so `forceFinalAnswer` fires on none of these.
+    const calls = llmCalls(opts).calls;
+    expect(calls[0]?.toolChoice).toEqual({ type: "required" });
+    expect(calls[1]?.toolChoice).toEqual({ type: "tool", toolName: "lookup" });
+    expect(calls[2]?.toolChoice).toEqual({ type: "auto" });
     await t.stop();
   });
 });
