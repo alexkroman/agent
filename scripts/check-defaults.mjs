@@ -38,21 +38,25 @@
  * stopped matching would compare an empty set with an empty set.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseScriptArgs } from "./_args.mjs";
 import { repoRoot } from "./_fs.mjs";
+import { assertScanCorpus, git } from "./_ratchet.mjs";
 
 parseScriptArgs({ script: import.meta.url, options: {} });
 
 const ROOT = repoRoot(import.meta.url);
-const SDK_DIR = join(ROOT, "packages/aai/src/sdk");
+const SDK_PATHSPEC = "packages/aai/src/sdk";
+const SDK_DIR = join(ROOT, SDK_PATHSPEC);
 const DOCS_TABLE_PATH = join(ROOT, "docs/src/content/docs/more/voices-and-models.md");
 const DOCS_TABLE_HEADING = "## Tuning the conversation";
 const GUIDE_PATH = join(ROOT, "packages/aai-templates/scaffold/CLAUDE.md");
 
+/** Measured 2026-10: 494 files under the SDK directory, 281 of them non-test `.ts`. */
+const MIN_SDK_FILES = 400;
 /** Measured 2026-10: 25 literal `@defaultValue` tags, 19 of them tied to a constant. */
 const MIN_LITERAL_TAGS = 15;
 const MIN_CONSTANT_TAGS = 10;
@@ -63,15 +67,42 @@ const MIN_GUIDE_STATEMENTS = 8;
 
 const rel = (path) => relative(ROOT, path);
 
-/** @param {string} dir @returns {string[]} */
-function sourceFiles(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...sourceFiles(path));
-    else if (/\.ts$/.test(entry.name) && !/\.test(-d)?\.ts$/.test(entry.name)) out.push(path);
-  }
-  return out.sort();
+/**
+ * The SDK's non-test `.ts` sources, absolute, each read ONCE for both passes.
+ * Listed from git (the index plus new, unignored files) under a corpus floor.
+ *
+ * @returns {Map<string, string>} absolute path -> source
+ */
+function sdkSources() {
+  assertScanCorpus({
+    gate: "check-defaults",
+    what: SDK_PATHSPEC,
+    pathspecs: [SDK_PATHSPEC],
+    minFiles: MIN_SDK_FILES,
+  });
+  const listed = git(["ls-files", "--cached", "--others", "--exclude-standard", "--", SDK_PATHSPEC])
+    .split("\n")
+    .filter((file) => /\.ts$/.test(file) && !/\.test(-d)?\.ts$/.test(file))
+    .map((file) => join(ROOT, file));
+  return new Map([...new Set(listed)].sort().map((path) => [path, readFileSync(path, "utf8")]));
+}
+
+/**
+ * Line numbers for offsets into `source`, asked in NON-DECREASING order: each
+ * call counts only the newlines since the previous one.
+ *
+ * @param {string} source
+ */
+function lineCounter(source) {
+  let line = 1;
+  let next = source.indexOf("\n");
+  return (to) => {
+    while (next !== -1 && next < to) {
+      line += 1;
+      next = source.indexOf("\n", next + 1);
+    }
+    return line;
+  };
 }
 
 /**
@@ -88,14 +119,11 @@ function parseLiteral(text) {
   const quoted = /^"([\s\S]*)"$/.exec(raw);
   if (quoted) return { value: quoted[1] };
   if (!raw.startsWith("[")) return;
-  /** @type {{ value: unknown } | undefined} */
-  let value;
   try {
-    value = { value: JSON.parse(raw) };
+    return { value: JSON.parse(raw) };
   } catch {
     // Not JSON (an expression or a type), so not a literal this gate reads.
   }
-  return value;
 }
 
 /** Strings compare whitespace-normalized, since a doc comment wraps them. */
@@ -110,11 +138,11 @@ const problems = [];
 // The constants, by value
 // ---------------------------------------------------------------------------
 
-const files = sourceFiles(SDK_DIR);
+const sources = sdkSources();
 /** @type {Map<string, string>} constant name -> declaring file */
 const declaredIn = new Map();
-for (const file of files) {
-  for (const match of readFileSync(file, "utf8").matchAll(/^export const ([A-Z][A-Z0-9_]+)\b/gm)) {
+for (const [file, source] of sources) {
+  for (const match of source.matchAll(/^export const ([A-Z][A-Z0-9_]+)\b/gm)) {
     declaredIn.set(match[1] ?? "", file);
   }
 }
@@ -139,13 +167,13 @@ const fieldDefaults = new Map();
 let literalTags = 0;
 let constantTags = 0;
 
-for (const file of files) {
-  const source = readFileSync(file, "utf8");
+for (const [file, source] of sources) {
+  const lineAt = lineCounter(source);
   for (const block of source.matchAll(/\/\*\*([\s\S]*?)\*\/\s*([^\n]*)/g)) {
     const body = block[1] ?? "";
     const tagAt = body.indexOf("@defaultValue");
     if (tagAt === -1) continue;
-    const line = source.slice(0, block.index + 3 + tagAt).split("\n").length;
+    const line = lineAt(block.index + 3 + tagAt);
     const where = `${rel(file)}:${line}`;
     // The tag's paragraph: up to the next tag or blank comment line, with the
     // ` * ` gutters stripped so a wrapped literal reads as one string.
@@ -302,7 +330,7 @@ for (let i = 0; i < guideLines.length; i += 1) {
 }
 // Prose: "`field` is how many words interrupt a reply (default 2, ...".
 const flat = guide.replace(/\n/g, " ");
-const lineOf = (offset) => guide.slice(0, offset).split("\n").length;
+const lineOf = lineCounter(guide);
 for (const match of flat.matchAll(
   new RegExp(String.raw`\`([a-zA-Z_$][\w$]*)\`[^\`(]{0,120}?${DEFAULT_TEXT}`, "g"),
 )) {
