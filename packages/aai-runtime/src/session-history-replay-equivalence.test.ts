@@ -124,7 +124,7 @@ import {
   REPLAY_ONLY_KINDS,
   SHARED_KINDS,
   START_FAILURE_PHRASE,
-} from "./_replay-equivalence-kinds.ts";
+} from "./_replay-equivalence-test-utils.ts";
 import type { TtsSession } from "./providers/openers.ts";
 import { messagesFromEvents } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";

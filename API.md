@@ -16223,7 +16223,7 @@ export type SessionDirectory = {
 };
 
 // @public
-type SessionEmitter = {
+export type SessionEmitter = {
     emit(body: SessionEventBody): SessionEvent;
 };
 
@@ -16312,7 +16312,7 @@ type SessionWebSocket = {
 };
 
 // @internal
-type SessionWiring = {
+export type SessionWiring = {
     sink: ClientSink;
     emitter: SessionEmitter;
     meter: UsageMeter;
@@ -16332,7 +16332,7 @@ type SleepRecord = {
 };
 
 // @internal
-type SpeechDirectory = {
+export type SpeechDirectory = {
     of(sessionId: string): SessionSpeech;
     live(sessionId: string): SessionSpeech | undefined;
     announce(sessionId: string, instruction: string): boolean;

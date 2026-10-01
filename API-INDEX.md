@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 181 names
 - [Testing and evals](#testing-and-evals) — 254 names
 - [Hosting and tooling](#hosting-and-tooling) — 238 names
-- [Framework internals](#framework-internals) — 409 names
+- [Framework internals](#framework-internals) — 412 names
 
 ## Agent authoring
 
@@ -1408,15 +1408,18 @@ trace or a type error can be traced back to something.
 | `ServerRouteMatch` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ServerSession` | type | `@alexkroman1/aai-runtime/internal` |  | One live server-side session: the runtime's bridge between a transport (S2S, pipeline, or OpenAI Realtime) and the connected client. |
 | `SessionDirectory` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `SessionEmitter` | type | `@alexkroman1/aai-runtime/internal` |  | The one way to publish a session event. |
 | `SessionEnder` | type | `@alexkroman1/aai/host-internal` |  | What the runtime registers for a session — see `claimSessionEnder`. |
 | `SessionProvider` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `SessionStateBackend` | type | `@alexkroman1/aai-runtime/internal` |  | Where a session's durable things are kept between processes — its slot values AND its event log. |
 | `SessionStateConformanceSuite` | type | `@alexkroman1/aai-runtime/internal` |  | The `SessionStateBackend` CONFORMANCE suite, loaded on demand. |
 | `SessionStateStore` | type | `@alexkroman1/aai-runtime/internal` |  | The runtime's view of the store. |
 | `SessionUrlChips` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `SessionWiring` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `SleepTimerOptions` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `SlotName` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `SpawnCappedResult` | type | `@alexkroman1/aai/host-internal` |  | One child-process runner for every tool that shells out. |
+| `SpeechDirectory` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `SpeechSynthesizer` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StateSyncSession` | type | `@alexkroman1/aai-runtime/internal` |  | The per-session state this decision reads and writes. |
 | `StepDelegateFn` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

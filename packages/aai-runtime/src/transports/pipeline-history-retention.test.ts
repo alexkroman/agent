@@ -11,7 +11,7 @@ import {
   RETAIN,
   toolCallMsg,
   toolResultMsg,
-} from "./_pipeline-history-test-fakes.ts";
+} from "./_pipeline-history-test-utils.ts";
 import { estimateMessageTokens } from "./pipeline-context-budget.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 

@@ -12,7 +12,7 @@ import {
   textTokens,
   toolCallMsg,
   toolResultMsg,
-} from "./_pipeline-history-test-fakes.ts";
+} from "./_pipeline-history-test-utils.ts";
 import { estimateMessageTokens, trimToTokenBudget } from "./pipeline-context-budget.ts";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
 

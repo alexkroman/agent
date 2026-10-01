@@ -210,11 +210,17 @@ export type { AttachSessionOptions } from "./session-attach.ts";
 export type { ServerSession } from "./session-core.ts";
 // The live-session directory `wireSessionSocket` claims into — a host wiring
 // its own socket server builds one per runtime (`session-directory.ts`).
-export { createSessionDirectory, type SessionDirectory } from "./session-directory.ts";
+export {
+  createSessionDirectory,
+  type SessionDirectory,
+  type SessionWiring,
+} from "./session-directory.ts";
+export type { SessionEmitter } from "./session-emitter.ts";
 // Reading a session's events back, and stamping one on the way in. The two
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
 // contracted, on the root barrel.
 export { createSessionEventStream, stampSessionEvent } from "./session-event-stream.ts";
+export type { SpeechDirectory } from "./session-speech.ts";
 // Session state's PLATFORM backend — the HTTP client `aai-server` serves on
 // `POST /:slug/session-state`. Here for the same reason `createPlatformJournal`
 // below is, and it is the same arm: `session-state-conformance-platform.scenario.test.ts`
