@@ -134,8 +134,9 @@ discriminate.
 The keyless LLM fakes (`_fake-llm.ts`, `AAI_EVAL_STUB`, `scriptedTextModel`)
 replace the `LanguageModel`, so the `@ai-sdk/*` client, serialization, SSE
 parsing and `repairOpenAiStream` never run under them.
-`aai-runtime/src/text-agent/llm-provider-http.scenario.test.ts` points a real text agent at
-an aimock server via `llm({ baseUrl })` and asserts what went over the wire.
+`aai-runtime/src/text-agent/llm-provider-http.scenario.test.ts` points a real
+text agent at an aimock server via `llm({ baseUrl })` and asserts what went over
+the wire.
 
 - Use it when a change touches a provider factory, a fetch wrapper or stream
   parsing; keep scripted models for everything above the `LanguageModel` seam.
