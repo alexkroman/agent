@@ -7,18 +7,11 @@
  *
  * A session has exactly two things talking to it, and the protocol already names
  * everything either of them can say. So it takes a {@link ServerSession.command} —
- * one `SessionCommand`, what the CLIENT asks for — and a {@link ServerSession.report}
- * — one `TransportEventBody`, what the TRANSPORT observed. That is the whole
- * inbound surface, plus the two audio paths, which are binary and in neither
- * vocabulary.
- *
- * It used to be nineteen `on*` methods: five mirroring the five command names,
- * thirteen mirroring the event names, and `onAudio`. `ws-handler.ts` held a switch
- * to pick among the first five and `../runtime/session-callbacks.ts` a flat forward
- * for the other thirteen, so every name existed three times over — here, at the
- * transport boundary, and in whichever harness stood in for the thing that fired
- * it. None of that duplication decided anything; see `transports/types.ts` for the
- * argument in full.
+ * one `SessionCommand`, what the CLIENT asks for (`commands.ts`) — and a
+ * {@link ServerSession.report} — one `TransportEventBody`, what the TRANSPORT
+ * observed (`report.ts`). That is the whole inbound surface, plus the two audio
+ * paths, which are binary and in neither vocabulary. See `transports/types.ts`
+ * for the argument in full.
  */
 
 import type { Message } from "@alexkroman1/aai";
@@ -40,26 +33,9 @@ import type { ServerSession, ServerSessionOptions } from "./core-types.ts";
 import { clientHistoryFrame, historyMessageOf, modelHistoryOf } from "./event-history.ts";
 import { stampSessionEvent } from "./event-stream.ts";
 import { createIdleWatchdog } from "./idle.ts";
-import { dispatchReplyDone } from "./reply-done.ts";
+import { createReplyTracker } from "./reply-tracker.ts";
+import { createReportDispatcher } from "./report.ts";
 import { createSpeechVerbs } from "./speech.ts";
-import { type ReplyToolState, runToolStep } from "./tool-steps.ts";
-
-/**
- * This session's view of one reply's tool state.
- *
- * The shape is `tool-steps.ts`'s — that module mutates it — with the two
- * fields whose meaning belongs to the TURN documented here:
- *
- * - `abort` cancels this reply's in-flight tool executions on
- *   barge-in/reset/stop.
- * - `flushedAwaitingContinuation` is true after a `reply.done` flushed this
- *   reply's tool results to the transport and the turn is waiting on the
- *   provider's continuation. Cleared by any sign of continuation progress (tool
- *   call, transcript, audio). While set, a `reply.done` with no new pending tools
- *   is a duplicate frame — flushing it would emit a premature client
- *   `reply.completed`/`audio.completed` mid-turn.
- */
-type ReplyState = ReplyToolState;
 
 export type {
   ServerSession,
@@ -75,17 +51,8 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
   const log = opts.logger ?? consoleLogger;
   const rawIdleMs = opts.agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
 
-  function emptyReply(): ReplyState {
-    return {
-      currentReplyId: null,
-      pendingTools: [],
-      toolCallCount: 0,
-      abort: new AbortController(),
-      flushedAwaitingContinuation: false,
-    };
-  }
-
-  let reply: ReplyState = emptyReply();
+  // The current reply and the tool work chained onto it — see `reply-tracker.ts`.
+  const replies = createReplyTracker();
   let history: Message[] = [];
   // A MEMORY bound in tokens, never a message count — see
   // `transports/pipeline/history/retention.ts`. A running total, so a push that
@@ -95,7 +62,6 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     HISTORY_RETAIN_TOKENS,
     estimateConversationTokens,
   );
-  let turnPromise: Promise<void> | null = null;
   let stopped = false;
   /** For {@link ServerSession.faultCode} — see there for the log it exists to fix. */
   let faultCode: string | undefined;
@@ -111,54 +77,10 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     close: () => opts.client.close?.("idle timeout"),
   });
 
-  // Built once: everything here is fixed for the session's lifetime, and
-  // `history` is a thunk precisely because the array is not.
-  const toolStepDeps = {
-    sessionId: opts.id,
-    agentConfig: opts.agentConfig,
-    executeTool: opts.executeTool,
-    emit,
-    log,
-    history: () => history,
-    // Straight into the same window the transcripts land in, so a tool reads
-    // an earlier tool's result on the next call of the reply — see
-    // `ToolStepDeps.recordToolResult`.
-    recordToolResult: (message: Message) => pushMessages(message),
-    relayed: Boolean(opts.onToolResult),
-  };
-
-  // The `reply.done` dispatcher's view of the session. Thunks, not values:
-  // `reply` and `turnPromise` are both reassigned by a barge-in mid-dispatch, and
-  // reading them late is the whole of that module's staleness handling.
-  const replyDoneDeps = {
-    sessionId: opts.id,
-    agent: opts.agent,
-    emit,
-    log,
-    currentReply: () => reply,
-    turnPromise: () => turnPromise,
-    sendToolResult: (callId: string, result: string) =>
-      opts.transport.sendToolResult(callId, result),
-  };
-
   /** Re-arm the idle deadline. Transport-observed conversation only. */
   function resetIdle(): void {
     if (stopped) return;
     idle.reset();
-  }
-
-  /**
-   * Append whatever conversation message a reported event contributes.
-   *
-   * `historyMessageOf` rather than a `{ role, content }` per case: this dispatch
-   * was the THIRD copy of that rule (`event-history.ts` holds the other
-   * two, and the argument), and the copy that put a failure phrase into
-   * `ctx.messages` on the same call the caller heard it — against the "history /
-   * `ctx.messages`: never" its own emitter documents.
-   */
-  function pushConversation(event: TransportEventBody): void {
-    const message = historyMessageOf(event);
-    if (message) pushMessages(message);
   }
 
   function pushMessages(...msgs: Message[]): void {
@@ -166,17 +88,13 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     retained.push(msgs);
   }
 
-  function beginReply(replyId: string): void {
-    // Tools still in flight belong to the reply being replaced — they're
-    // orphaned either way, so cancel them instead of letting them run on.
-    reply.abort.abort();
-    reply = { ...emptyReply(), currentReplyId: replyId };
-    turnPromise = null;
-  }
-
-  function cancelReply(): void {
-    reply.abort.abort();
-    reply = emptyReply();
+  /**
+   * Append whatever conversation message a reported event contributes —
+   * `historyMessageOf` is the one home of that rule (`event-history.ts`).
+   */
+  function pushConversation(event: TransportEventBody): void {
+    const message = historyMessageOf(event);
+    if (message) pushMessages(message);
   }
 
   // The client half of the inbound surface — see `commands.ts`, which
@@ -189,14 +107,58 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     emit,
     log,
     transport: opts.transport,
-    abortReplyTools: () => reply.abort.abort(),
-    cancelReply,
+    abortReplyTools: () => replies.abortTools(),
+    cancelReply: () => replies.cancel(),
     clearHistory: () => {
       history = [];
       retained.recount();
     },
     // A relay owns every `tool_result`; otherwise they answer `clientTool` calls.
     ...omitUndefined({ onToolResult: opts.onToolResult ?? answerClientTool }),
+  });
+
+  // The transport half — see `report.ts`.
+  const handleReport = createReportDispatcher({
+    sessionId: opts.id,
+    emit,
+    log,
+    isStopped: () => stopped,
+    resetIdle,
+    replies,
+    // Built once: everything here is fixed for the session's lifetime, and
+    // `history` is a thunk precisely because the array is not.
+    toolStepDeps: {
+      sessionId: opts.id,
+      agentConfig: opts.agentConfig,
+      executeTool: opts.executeTool,
+      emit,
+      log,
+      history: () => history,
+      // Straight into the same window the transcripts land in, so a tool reads
+      // an earlier tool's result on the next call of the reply — see
+      // `ToolStepDeps.recordToolResult`.
+      recordToolResult: (message: Message) => pushMessages(message),
+      relayed: Boolean(opts.onToolResult),
+    },
+    // The `reply.done` dispatcher's view of the session. Thunks, not values:
+    // the reply and its turn promise are both reassigned by a barge-in
+    // mid-dispatch, and reading them late is that module's staleness handling.
+    replyDoneDeps: {
+      sessionId: opts.id,
+      agent: opts.agent,
+      emit,
+      log,
+      currentReply: () => replies.current(),
+      turnPromise: () => replies.turnPromise(),
+      sendToolResult: (callId: string, result: string) =>
+        opts.transport.sendToolResult(callId, result),
+    },
+    pushConversation,
+    // FIRST one wins: the earliest fatal is the cause, and everything after
+    // it is likely downstream of the same failure.
+    recordFault: (code) => {
+      faultCode ??= code;
+    },
   });
 
   // `say`/`interrupt` for code that is not the model's turn — see
@@ -206,114 +168,6 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     stopped: () => stopped,
     cancel: () => handleCommand({ type: "cancel" }),
   });
-
-  /** One tool call the transport reported. See {@link ServerSession.report}. */
-  function handleToolCalled(event: TransportEventBody<"tool.called">): void {
-    resetIdle();
-    // See onReplyStarted: a trailing tool.called during stop()'s transport
-    // drain must not start tool work (guest RPC, ctx.generate)
-    // against a session already torn down.
-    if (stopped) return;
-    // Bound to the reply that issued the call, by identity — a barge-in or
-    // reset swaps in a fresh reply object and the result must land in the
-    // orphaned one. See `tool-steps.ts`, which owns the budget, the
-    // execution, and the `tool.called` emit itself.
-    const p = runToolStep(
-      reply,
-      { callId: event.toolCallId, name: event.toolName, args: event.args },
-      toolStepDeps,
-    );
-    // `!== undefined`, not truthiness: a promise is always truthy, and the
-    // absence of one is the signal (the step budget refused the call).
-    if (p !== undefined) turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
-  }
-
-  /** One transport report. See {@link ServerSession.report}. */
-  function handleReport(event: TransportEventBody): void {
-    switch (event.type) {
-      case "reply.completed":
-        // The PROVIDER's claim, not the turn's end — and so the one report whose
-        // name and whose emitted event can come apart. `reply-done.ts` is
-        // entirely about the three ways a `reply.done` is not the end, and it
-        // emits `audio.completed` + `reply.completed` itself when it is.
-        dispatchReplyDone(replyDoneDeps);
-        return;
-      case "reply.cancelled":
-        cancelReply();
-        break;
-      case "tool.called":
-        handleToolCalled(event);
-        return;
-      case "userTranscript.committed":
-        resetIdle();
-        emit(event);
-        pushConversation(event);
-        return;
-      case "userTranscript.updated":
-        // Partials too, not just the committed turn: one long utterance would
-        // otherwise only count at its `speech.started`, and could be reaped
-        // mid-sentence.
-        resetIdle();
-        break;
-      case "agentTranscript.committed":
-        resetIdle();
-        reply.flushedAwaitingContinuation = false;
-        emit(event);
-        // The COMMITTED event only, which is what makes the stream's assistant
-        // turns the session's own rather than a re-derivation. An INTERRUPTED
-        // reply is reported as `.updated` and enters no history — see the event's
-        // own doc, and "History records what was HEARD" in `transports/pipeline/CLAUDE.md`. A
-        // committed RECOVERY phrase is the third case and the one this used to
-        // get wrong: emitted, because the caller heard it, and never recorded.
-        pushConversation(event);
-        return;
-      case "agentTranscript.updated":
-        resetIdle();
-        reply.flushedAwaitingContinuation = false;
-        break;
-      case "speech.started":
-        resetIdle();
-        break;
-      case "error.reported": {
-        // This used to emit to the client and nowhere else, so a session killed
-        // by an upstream provider — an STT socket hitting a session cap or idle
-        // cutoff, a provider deploy — left the server log showing only the
-        // subsequent close, with the cause reachable solely by whatever the
-        // client chose to do with the frame. `fatal` defaults to true: only an
-        // explicit `fatal: false` is non-terminal, and a terminal error is
-        // exactly the case that has to be answerable from the server's logs.
-        const entry = { sid: opts.id, code: event.code, message: event.message };
-        if (event.fatal === false) log.debug("session error", entry);
-        else {
-          log.warn("session error (fatal)", entry);
-          // FIRST one wins: the earliest fatal is the cause, and everything after
-          // it is likely downstream of the same failure.
-          faultCode ??= event.code;
-        }
-        break;
-      }
-      // FORWARDED: nothing for the session to do but publish them. Listed by
-      // name rather than left to a `default`, so that an event added to the
-      // vocabulary is a compile error below until somebody decides whether the
-      // session has to act on it — a `default` that published everything was
-      // how a new report got forwarded without anyone classifying it.
-      case "audio.completed":
-      case "metrics.collected":
-      case "provider.failedOver":
-      case "speech.stopped":
-      case "tool.completed":
-      case "userTurn.exceeded":
-        break;
-      default: {
-        // Unreachable by type; at runtime an untyped transport's unknown report
-        // is still published, as it always was.
-        const unclassified: never = event;
-        emit(unclassified);
-        return;
-      }
-    }
-    emit(event);
-  }
 
   return {
     id: opts.id,
@@ -346,7 +200,8 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       // Cancel in-flight tools so the drain below settles promptly instead
       // of holding the session (and provider sockets) open for up to the
       // full tool timeout after a disconnect.
-      reply.abort.abort();
+      replies.abortTools();
+      const turnPromise = replies.turnPromise();
       if (turnPromise !== null) await turnPromise;
       await opts.transport.stop();
     },
@@ -376,12 +231,9 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       // rather than losing it, or showing it as text the model then imitates —
       // see `modelHistoryOf`.
       opts.transport.seedHistory?.(messages, modelHistoryOf(messages, toolCalls));
-      // And to the CLIENT, which is the half that was missing: everything above
-      // restores the conversation for the MODEL, and a reconnecting browser
-      // stopped replaying its own on the grounds that the server had taken this
-      // over. It had not — the transcript came back empty next to an agent that
-      // remembered every word, with the greeting suppressed because the resume
-      // was genuine. See `history.restored` in `sdk/protocol-events.ts`.
+      // And to the CLIENT: everything above restores the conversation for the
+      // MODEL, and a reconnecting browser replays nothing of its own — see
+      // `history.restored` in `sdk/protocol-events.ts`.
       //
       // Through the SINK with its own stamp, never `emit`: the emitter RECORDS
       // first, so emitting the history just read out of the log would append it
@@ -407,17 +259,17 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       resetIdle();
       // stop() aborts the current reply and then awaits transport.stop() — an
       // async drain during which the transport can still report a trailing
-      // reply start. Unguarded, beginReply would mint a fresh, un-aborted
+      // reply start. Unguarded, a new reply would mint a fresh, un-aborted
       // controller for post-teardown tool calls to run on.
       if (stopped) return;
-      beginReply(replyId);
+      replies.begin(replyId);
     },
 
     onAudioChunk(bytes) {
       if (stopped) return;
       // The agent is speaking — a long reply must not be reaped mid-sentence.
       resetIdle();
-      reply.flushedAwaitingContinuation = false;
+      replies.current().flushedAwaitingContinuation = false;
       opts.client.playAudioChunk(bytes);
     },
   };
