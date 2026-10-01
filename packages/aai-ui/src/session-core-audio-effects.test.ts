@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 import { tick } from "./_react-test-utils.ts";
 import type { VoiceIO } from "./audio.ts";
 import { createAudioEffects } from "./session-core-audio-effects.ts";
+import { createPreConnectAudio } from "./session-core-preconnect.ts";
 import { createSessionStateMachine } from "./session-core-state.ts";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
 
@@ -28,7 +29,8 @@ function harness() {
     updateState: (partial) => writes.push(partial),
     agentState,
     sendJson: (msg) => sent.push(msg),
-    sendAudio: vi.fn(),
+    mic: { sendAudio: vi.fn(), sendBuffered: vi.fn() },
+    preConnect: createPreConnectAudio(false),
   });
   return { conn, agentState, effects, writes, sent };
 }
@@ -75,13 +77,20 @@ describe("createAudioEffects", () => {
       sendJson: () => {
         throw new Error("socket closed");
       },
-      sendAudio: () => {
-        throw new Error("socket closed");
+      mic: {
+        sendAudio: () => {
+          throw new Error("socket closed");
+        },
+        sendBuffered: () => {
+          throw new Error("socket closed");
+        },
       },
+      preConnect: createPreConnectAudio(false),
     });
     const debug = vi.spyOn(console, "debug").mockImplementation(() => undefined);
     expect(() => closed.reportProgress(120)).not.toThrow();
     expect(() => closed.sendMicAudio(new ArrayBuffer(4))).not.toThrow();
+    expect(() => closed.sendPreConnectAudio([new ArrayBuffer(4)])).not.toThrow();
     debug.mockRestore();
   });
 
