@@ -3,12 +3,13 @@ import agentDef from "virtual:aai/agent";
 import { createSeededRandom, type InferToolInput } from "@alexkroman1/aai";
 import {
   createToolContext,
+  expectToolOk,
   parseToolInput,
   runTool,
   toolInputIssues,
   toolRunner,
 } from "@alexkroman1/aai/testing";
-import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import {
   calculateTotal,
@@ -31,19 +32,6 @@ import placeOrder from "./tools/place_order.ts";
 import removePizza from "./tools/remove_pizza.ts";
 import updatePizza from "./tools/update_pizza.ts";
 import viewOrder from "./tools/view_order.ts";
-
-/**
- * What a tool answered, or a throw quoting the refusal — at the CALL, rather
- * than as an `undefined` read off a `ToolFailure` several assertions later.
- * Typed by what it is handed: `runTool(theTool, …)` answers the tool's own
- * return type, so this only subtracts the failure arm and restates no shape.
- */
-function ok<T>(result: T): Exclude<T, ToolFailure> {
-  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  // Negating a type predicate does not subtract from a generic; the guard above
-  // is what makes this true.
-  return result as Exclude<T, ToolFailure>;
-}
 
 // ─── Test doubles ────────────────────────────────────────────────────────────
 
@@ -243,7 +231,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
     expect(await run("view_order", secondCall)).toEqual({ message: "The order is empty." });
 
     await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, secondCall);
-    const placedB = ok(await runTool(placeOrder, secondCall));
+    const placedB = expectToolOk(await runTool(placeOrder, secondCall));
     // The second context never sees the first's customer name or pizzas.
     expect(placedB.customerName).toBe("Guest");
     expect(placedB.pizzas).toBe(1);

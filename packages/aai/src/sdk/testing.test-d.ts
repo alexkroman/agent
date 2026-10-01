@@ -14,13 +14,16 @@ import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import type { ToolContextOverrides } from "./_testing-context.ts";
 import { createToolContext } from "./_testing-context.ts";
+import { expectToolOk } from "./_testing-tool-results.ts";
 import { tool } from "./define.ts";
+import type { DialogToolResult } from "./dialog-types.ts";
 import type { StubDelegateScript } from "./testing-delegate.ts";
 import type { DeployedConfig } from "./testing-deployable.ts";
 import type { StubGenerateScript } from "./testing-generate.ts";
 import type { ScriptedToolContextOptions } from "./testing-scripted.ts";
 import { runTool } from "./testing-tools.ts";
 import type { ToolContext } from "./types.ts";
+import { type ToolFailure, toolFailure } from "./utils.ts";
 
 test("a script names its shape: one `reply`, or a table of `routes`", () => {
   expectTypeOf<{ reply: string }>().toExtend<StubGenerateScript>();
@@ -96,6 +99,27 @@ test("runTool handed the TOOL is typed end to end; by name it answers unknown", 
   expectTypeOf(await runTool(bare, { n: 2 })).toEqualTypeOf<number>();
   // The name form is unchanged.
   expectTypeOf(runTool({ tools: { add_item: addItem } }, "add_item", ctx)).resolves.toBeUnknown();
+});
+
+test("expectToolOk infers: a plain result loses its failure arm, an envelope is unwrapped", async () => {
+  const lookUp = tool({
+    description: "Look an order up",
+    inputSchema: z.object({ id: z.string() }),
+    execute: async ({ id }) => (id ? { id, total: 3 } : toolFailure("Which order?")),
+  });
+  expectTypeOf(expectToolOk(await runTool(lookUp, { id: "o1" }))).toEqualTypeOf<{
+    id: string;
+    total: number;
+  }>();
+  const gated = (envelope: DialogToolResult<{ quoted: number }> | ToolFailure) =>
+    expectToolOk(envelope);
+  expectTypeOf(gated).returns.toEqualTypeOf<{ quoted: number }>();
+  // The name form answers `unknown`, so the type argument still says what it is…
+  const named = (answered: unknown) => expectToolOk<{ id: string }>(answered);
+  expectTypeOf(named).returns.toEqualTypeOf<{ id: string }>();
+  // …and without one, it stays `unknown` rather than inventing a shape.
+  const bare = (answered: unknown) => expectToolOk(answered);
+  expectTypeOf(bare).returns.toBeUnknown();
 });
 
 test("expectDeployable's config names only what the specs read — not the config schema", () => {
