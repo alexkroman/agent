@@ -1,4 +1,10 @@
 {
+  // Rule settings. cli2 also reads a `.markdownlint.yaml`; keep them here so
+  // the tool has one config file.
+  "config": {
+    "MD013": { "tables": false, "code_blocks": false },
+    "MD033": { "allowed_elements": ["Card", "CardGrid"] }
+  },
   "ignores": [
     ".changeset/**",
     "**/CHANGELOG.md",

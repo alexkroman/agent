@@ -473,7 +473,7 @@
       ]
     },
     "//#check:markdown": {
-      "inputs": ["**/*.md", "**/*.mdx", ".markdownlint.yaml", ".markdownlint-cli2.jsonc"]
+      "inputs": ["**/*.md", "**/*.mdx", ".markdownlint-cli2.jsonc"]
     },
     // The formatter for Markdown, MDX, YAML, shell scripts and Dockerfiles,
     // which Biome does not read.
