@@ -65,9 +65,8 @@ const voiceFocusInput = () => ({
 
 /**
  * Documented cap on `input.transcription_prompt`. Trimmed here rather than left
- * to the service, for the same reason `agent_context` is trimmed in the STT
- * opener: an over-long value is a rejected `session.update` field on a session
- * that otherwise looks healthy, and the failure would surface as unbiased
+ * to the service: an over-long value is a rejected `session.update` field on a
+ * session that otherwise looks healthy, and the failure would surface as unbiased
  * transcription rather than as a config error.
  */
 const TRANSCRIPTION_PROMPT_MAX_CHARS = 1750;
@@ -75,11 +74,9 @@ const TRANSCRIPTION_PROMPT_MAX_CHARS = 1750;
 /**
  * `input.transcription_prompt` block, or nothing when there is no prompt.
  *
- * Keeps the HEAD, unlike `agent_context`'s tail-keeping trim: this is a
- * standing description of the call's vocabulary written by the agent author, so
- * its opening sentences are the substantive part. `agent_context` keeps the tail
- * because it carries the agent's last reply, whose trailing question is the
- * whole point.
+ * Keeps the HEAD: this is a standing description of the call's vocabulary
+ * written by the agent author, so its opening sentences are the substantive
+ * part.
  */
 const transcriptionPromptInput = (sttPrompt: string | undefined) => {
   if (sttPrompt === undefined || sttPrompt.trim().length === 0) return {};
