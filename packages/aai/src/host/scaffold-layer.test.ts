@@ -28,6 +28,7 @@ const SCAFFOLD: Record<string, string> = {
   ".env.example": "ASSEMBLYAI_API_KEY=\n",
   "tsconfig.json": '{"compilerOptions":{"strict":true}}',
   "CLAUDE.md": "# Writing an aai agent\n\nThe whole SDK reference.\n",
+  "agent-guide/TOOLS.md": "# Tools\n",
 };
 
 describe("layerScaffoldFiles", () => {
@@ -74,6 +75,13 @@ describe("layerScaffoldFiles", () => {
     expect(fresh["CLAUDE.md"]).toBe(PROJECT_GUIDE_POINTER);
     expect(fresh["CLAUDE.md"]).not.toContain("The whole SDK reference.");
     expect(layerScaffoldFiles({ "CLAUDE.md": "# mine\n" }, SCAFFOLD)["CLAUDE.md"]).toBeUndefined();
+  });
+
+  test("the guide's topic files are not copied either", () => {
+    // They ship beside AGENT_GUIDE.md in the SDK; a copy here would freeze.
+    expect(
+      Object.keys(layerScaffoldFiles({}, SCAFFOLD)).filter((rel) => rel.includes("/")),
+    ).toEqual([]);
   });
 
   test("the pointer names the SDK copy in a fence, so it is mentioned rather than imported", () => {

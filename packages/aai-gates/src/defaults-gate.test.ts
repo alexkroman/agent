@@ -39,14 +39,23 @@ const docsPage: string =
     }),
   ) ?? "";
 
-const guide: string =
+/** The whole authoring guide: the core and its `agent-guide/` topic files. */
+const guide: string = [
   sole(
     import.meta.glob<string>("../../aai-templates/scaffold/CLAUDE.md", {
       query: "?raw",
       import: "default",
       eager: true,
     }),
-  ) ?? "";
+  ) ?? "",
+  ...Object.values(
+    import.meta.glob<string>("../../aai-templates/scaffold/agent-guide/*.md", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+  ),
+].join("\n");
 
 const sdkSources: Record<string, string> = import.meta.glob<string>(
   [

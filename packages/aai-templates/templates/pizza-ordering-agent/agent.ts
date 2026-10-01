@@ -12,9 +12,6 @@ export default agent({
   // What the shop DOES, for a reader of a list of agents — not for the model,
   // which gets `system-prompt.md` and the generated menu below.
   description: "Takes pizza orders over the phone, from first topping to checkout",
-  // `orderSlot.state` IS the `() => ({ [slot.key]: slot.create() })` factory,
-  // so the session's cart exists before the first tool call — which is what a
-  // resumed connection needs to have something to project.
   // The cart, pushed to the client after every tool call. Replaces a
   // `ctx.send("order", ...)` in each of the five order tools, and the
   // event-diffing the client had to do to rebuild the cart from them.

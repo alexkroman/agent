@@ -77,15 +77,16 @@ export function mergeScaffoldManifest(
  * The project-root `CLAUDE.md` a project gets — a POINTER at the guide inside
  * the resolved SDK, not a copy of it.
  *
- * `scaffold/CLAUDE.md` is the authoring guide itself (~120k characters). It
- * has three consumers and only one wanted the bytes in a project, and that one
- * could not be right: a copy is frozen at scaffold time while
+ * `scaffold/CLAUDE.md` is the core of the authoring guide, with topic files in
+ * `scaffold/agent-guide/`. It has three consumers and only one wanted the
+ * bytes in a project, and that one could not be right: a copy is frozen at
+ * scaffold time while
  * `pnpm update @alexkroman1/aai` moves the SDK beside it, and Claude Code loads
  * a project-root `CLAUDE.md` in FULL on every session. The guide already ships
  * in the SDK tarball as `AGENT_GUIDE.md`, version-matched by construction, so
  * a project gets a pointer at that. The path is named inside a FENCE, the
  * documented spelling for "mention, do not import" — an `@path` outside
- * backticks would be expanded into context at launch and put the 120KB back.
+ * backticks would be expanded into context at launch and put the guide back.
  */
 export const PROJECT_GUIDE_POINTER = `# Agent instructions
 
@@ -129,6 +130,16 @@ on \`PATH\`: reach it through these scripts or with \`npx aai <command>\`.
 <!-- Add conventions, gotchas and decisions for THIS agent below. -->
 `;
 
+/**
+ * The scaffold's authoring guide: the core `CLAUDE.md` and its topic files in
+ * `agent-guide/`. Both ship in the SDK tarball (`AGENT_GUIDE.md` and its
+ * `agent-guide/` neighbours), so a project gets the pointer and no frozen copy
+ * of either.
+ */
+function isScaffoldGuideFile(rel: string): boolean {
+  return rel === "CLAUDE.md" || rel.startsWith("agent-guide/");
+}
+
 /** Parse a manifest, or null when it is not a JSON object. */
 function parseManifest(text: string): PackageManifest | null {
   try {
@@ -151,8 +162,9 @@ function parseManifest(text: string): PackageManifest | null {
  *   because a studio manifest's gap is exactly the scaffold's toolchain and
  *   scripts. An existing manifest that does not parse is left for the package
  *   manager to report, never overwritten.
- * - The scaffold's `CLAUDE.md` is the authoring guide and is never copied; a
- *   project without its own gets {@link PROJECT_GUIDE_POINTER} instead.
+ * - The scaffold's `CLAUDE.md` and `agent-guide/` are the authoring guide and
+ *   are never copied; a project without its own `CLAUDE.md` gets
+ *   {@link PROJECT_GUIDE_POINTER} instead.
  *
  * An empty `scaffold` adds nothing at all: with no scaffold to layer there is
  * no project shape to complete, and a lone `CLAUDE.md` would not be one.
@@ -164,7 +176,7 @@ export function layerScaffoldFiles(
   const out: Record<string, string> = {};
   if (Object.keys(scaffold).length === 0) return out;
   for (const [rel, content] of Object.entries(scaffold)) {
-    if (rel === "CLAUDE.md") continue;
+    if (isScaffoldGuideFile(rel)) continue;
     const mine = files[rel];
     if (mine === undefined) {
       out[rel] = content;

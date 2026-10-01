@@ -107,6 +107,11 @@ const proseDocs: Record<string, string> = {
     import: "default",
     eager: true,
   }),
+  ...import.meta.glob<string>("../../aai-templates/scaffold/agent-guide/*.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
 };
 
 /**

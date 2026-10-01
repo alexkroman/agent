@@ -30,10 +30,25 @@ import { describe, expect, test } from "vitest";
 import biomeConfig from "../../../biome.json?raw";
 // `?raw` rather than node:fs — this package's tsconfig has no node types, and
 // the raw-import shape is the one the CLI bundler supports anyway.
-import scaffoldGuide from "../scaffold/CLAUDE.md?raw";
+import scaffoldGuideCore from "../scaffold/CLAUDE.md?raw";
 import scaffoldWorkspaceYaml from "../scaffold/pnpm-workspace.yaml?raw";
 import { templatePromptFiles, withTemplatePrompt, withTemplateTools } from "./_discovery.ts";
 import { byCodeUnit } from "./_template-support.ts";
+
+/**
+ * The whole authoring guide — the core plus its `agent-guide/` topic files —
+ * since a restated default or voice may live in either.
+ */
+const scaffoldGuide = [
+  scaffoldGuideCore,
+  ...Object.values(
+    import.meta.glob<string>("../scaffold/agent-guide/*.md", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+  ),
+].join("\n");
 
 /** What a template's default export must satisfy — derived from the exact
  * functions the CLI bundler feeds it to. */

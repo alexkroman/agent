@@ -15,6 +15,7 @@
   "files": [
     "dist",
     "AGENT_GUIDE.md",
+    "agent-guide",
     "skills",
     "presets"
   ],

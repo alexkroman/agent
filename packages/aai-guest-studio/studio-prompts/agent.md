@@ -536,295 +536,98 @@ it in the UI pane."
 # aai framework reference (scaffold CLAUDE.md)
 # AssemblyAI Agent SDK
 
-You are helping build a voice agent with the **AssemblyAI Agent SDK**.
+You are helping build a voice agent with the **AssemblyAI Agent SDK**. This is
+the CORE guide: read all of it first. It covers the loop, the project layout,
+`agent()` and `tool()` basics, the prompt, secrets and the gotchas. Everything
+else is a topic file beside it — read one when the task needs it.
+
+## Read X when Y
+
+The topic files sit in `agent-guide/` next to this file (in an installed
+project: `node_modules/@alexkroman1/aai/agent-guide/`).
+
+| Read                             | When the task involves                                                     |
+| -------------------------------- | -------------------------------------------------------------------------- |
+| `agent-guide/AGENT-API.md`       | any `agent()` field not shown below (guardrails, MCP, routes, lifecycle)   |
+| `agent-guide/TOOLS.md`           | a tool body: `ctx`, `sessionSlot`, `dialog()`, speakers, `clientTool()`    |
+| `agent-guide/WORKFLOWS.md`       | work that outlives the call: `workflow()`, `workflowApp()`, steps, uploads |
+| `agent-guide/PIPELINE-TUNING.md` | pipeline vs S2S vs text, turn-taking knobs, phone calls, `ctx.speech`      |
+| `agent-guide/PROVIDERS.md`       | an STT, LLM or TTS vendor or model; the voice catalog                      |
+| `agent-guide/UI.md`              | `client.tsx`: `mountClient()`, hooks, components, styling                  |
+| `agent-guide/TESTING-EVALS.md`   | `agent.test.ts`, `runTool`, `agent.eval.test.ts`                           |
+| `agent-guide/HOSTING.md`         | `npm start`, OpenTelemetry tracing, `aai build --target`                   |
 
 ## Workflow
 
-The fast loop: edit → `pnpm dev` (browser, talk to it) →
-`pnpm test` (logic) → `pnpm build` (validate bundle).
+The fast loop: edit → `pnpm dev` (browser, talk to it) → `pnpm test` (logic) →
+`pnpm build` (validate bundle).
 
-1. **Iterate in `pnpm dev`** — browser UI, and it rebuilds and restarts on
-   every save when you are at a terminal. Speak to the agent to verify behavior
-   end-to-end. This is the primary feedback loop. Watching is on at a terminal
-   and off otherwise, since a restart ends in-flight sessions: `AAI_DEV_WATCH=0`
-   turns it off at a terminal, `AAI_DEV_WATCH=1` on for a process supervisor.
-2. **Run `pnpm test` after logic changes** — vitest. Co-locate tests as
-   `agent.test.ts` (see `custom-pipeline-agent` template for a reference).
-   **When the project has an `agent.test.ts` (the default `quickstart-agent`
-   template and several others ship one), it is yours to maintain.** It
-   asserts the agent's shape — name, providers, tool names —
-   so rewriting the agent without updating it leaves a test asserting an
-   agent that no longer exists. When a test fails after your change, decide
-   which side is stale: updating the test to match the new agent is a normal
-   fix, not a workaround. Do not delete a test to make it pass.
-
-   **A spec that needs the agent as DEPLOYED imports one module:**
-
-   ```ts
-   import agentDef from "virtual:aai/agent";
-   ```
-
-   That is `agent.ts` with its `tools/` directory discovered and its
-   `system-prompt.md` applied — the same lowering `aai build` does, so a spec
-   measures the agent that ships rather than the raw default export (which has
-   no tools and the framework's default prompt). `vitest.config.ts` registers
-   the plugin that serves it; a scaffolded project already has it. For a runner
-   that is not vitest, `deployedAgent` on `@alexkroman1/aai/testing` is the same
-   thing written out.
-
-   **Call a tool with `runTool(tool, args, ctx)`** (`/testing`): passed the tool
-   itself, the result is typed by its `execute` — no `as` cast (the
-   `runTool(agent, "name", …)` form answers `unknown`). `expectDeployable(agentDef)`
-   runs the build's checks and returns a `DeployedConfig` (`name`,
-   `systemPrompt`, `mode`, `builtinTools`, …) to assert on.
-
-3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts
-   the agent's shape; an eval drives a real session and asserts what it did.
-   Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one),
-   and EVERYTHING an eval needs — `describeEval`, the readers and claims,
-   `evalSimulation`, and stubs like `stubGatewayRoute` — is one import,
-   `@alexkroman1/aai-runtime/eval/vitest`:
-
-   ```ts no-check
-   import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/eval/vitest";
-   import { expect } from "vitest";
-   import agentDef from "./agent.ts";
-
-   describeEval(agentDef, (test) => {
-     test(
-       "looks the order up before answering",
-       async ({ session }) => {
-         // `say()` returns THAT turn — the reply, its tool calls, its events.
-         const turn = await session.say("where is order W1234?");
-         expectCalled(turn, "look_up");
-         expect(turn.text).toMatch(/shipped/i);
-       },
-       // What a SCRIPTED model answers with when there is no key (below).
-       { stubReply: "Order W1234 shipped yesterday." },
-     );
-   });
-   ```
-
-   Everything is real except the microphone and the speaker: your tools, your
-   prompt, the session's own event stream. Before trusting a green run:
-
-   - **With a provider key it uses a LIVE model** — it spends tokens, and it is
-     a noisy instrument. One failure is a question, not a verdict; re-run before
-     believing either answer.
-   - **Without one it uses a SCRIPTED model** answering each case's `stubReply`,
-     and says so. That still proves the agent boots, the tools resolve and the
-     session reaches a reply — it proves nothing about what the agent SAYS. Give
-     a case `{ live: true }` instead when no script could honestly stand in
-     (a tool the model has to choose for itself, a refusal, a judgement).
-
-   **Who is calling** is a suite or case option (a case's `null` clears it):
-   `clientId`, `phone` and `call` are what `sessionClientId`,
-   `sessionClientPhone`, `sessionCall` and `sessionContext` see; a refused call
-   reads as `session.refused`. A tool's `endSession(ctx)` really hangs up
-   (`turn.endedSession`, `session.ended`); that turn awaits `onSessionEnd`.
-   `network: evalNetwork({ state, routes })` answers every tool, builtin and
-   step `fetch`, refusing the rest: `ctx.network`. `workflows` takes a client
-   or per-case factory: `ctx.workflowClient`. A failure prints the
-   conversation.
-
-   No eval can see anything below the audio boundary — when the agent decides
-   you stopped talking, barge-in, two sentences merging into one turn. Those
-   need `pnpm dev` and your own voice.
-
+1. **Iterate in `pnpm dev`** — browser UI; it restarts on every save at a
+   terminal (`AAI_DEV_WATCH=0`/`1` forces it off/on). Speak to the agent to
+   verify behavior end-to-end. This is the primary feedback loop.
+2. **Run `pnpm test` after logic changes** — vitest, co-located as
+   `agent.test.ts`. **When the project has one, it is yours to maintain**: a
+   test asserting the old agent's shape is stale after a rewrite, and updating
+   it is a normal fix. Do not delete a test to make it pass.
+   `agent-guide/TESTING-EVALS.md` has `virtual:aai/agent` and `runTool`.
+3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts the
+   shape; an eval (`agent.eval.test.ts`, everything imported from
+   `@alexkroman1/aai-runtime/eval/vitest`) drives a real session and asserts
+   what it did. With a provider key it uses a LIVE model (spends tokens, noisy);
+   without one a SCRIPTED model, which proves wiring and nothing about what the
+   agent says.
 4. **Run `pnpm build` before declaring done** — bundles `agent.ts`,
    type-checks, validates the manifest, and runs the WHOLE spec suite first.
    Catches issues `dev` won't.
-5. **Make small, focused changes** — verify each one before stacking the
-   next.
+5. **Make small, focused changes** — verify each one before stacking the next.
 6. **Look at templates before writing custom code** — the CLI ships working
    examples inside its own package, at
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
    `aai init --template <name>` scaffolds a fresh project from one. Closest:
    `quickstart-agent`, `custom-pipeline-agent`, `web-research-agent`,
-   `tabletop-rpg-agent`, `pizza-ordering-agent`, `retail-orders-agent` (the most
-   complex: 15 tools, a relational store, a `syncState` UI). Four are
-   LangChain/LangGraph ports, each saying in its source what had to change:
-   `travel-concierge-agent` (specialist desks, every booking confirmed aloud
-   first), `technical-support-agent` (self-RAG: retrieve, grade, rewrite, never
-   speak an ungrounded answer), `research-planner-agent` (plan, then one step
-   per tool call so the caller can redirect) and `document-redline-workflow`
-   (write, critique, revise: a PAGE over a durable run, too slow for a phone).
-   When reading SDK types under
-   `node_modules/@alexkroman1/aai*/dist/`, note the built entry points
-   re-export with source specifiers (`"./sdk/constants.ts"`,
-   `"./components/button.tsx"`) — rewrite `.ts`/`.tsx` to `.d.ts` to find
-   the shipped file.
+   `pizza-ordering-agent`, `retail-orders-agent` (the most complex). Built
+   entry points under `node_modules/@alexkroman1/aai*/dist/` re-export with
+   source specifiers — rewrite `.ts`/`.tsx` to `.d.ts` to find the file.
 
 ## CLI
 
-Install the CLI once, globally:
+The scaffold's `package.json` runs the project's own CLI as `pnpm dev`,
+`build`, `test`, `eval`, `start` and `publish:agent`; anywhere else it is
+`npx aai <command>` (or `npm i -g @alexkroman1/aai-cli` once).
 
 ```sh
-npm i -g @alexkroman1/aai-cli
-```
-
-Then:
-
-```sh
-aai init             # Scaffold a new agent
-aai templates        # List available templates
-aai dev              # Start local dev server
-aai dev --tunnel     # ...on a public URL (sets PUBLIC_URL)
-aai test             # Run the project's specs via vitest
-aai test --only      # ...or agent.test.ts alone
-aai eval             # Run agent.eval.test.ts against a model
-aai build            # Bundle and validate
-aai publish          # Publish to production
-aai delete           # Remove deployed agent
-aai secret put NAME  # Set a secret
+aai init [dir]           # Scaffold a new agent (--template <name>)
+aai templates            # List available templates
+aai dev                  # Start the local dev server
+aai dev --tunnel         # ...on a public URL (sets PUBLIC_URL)
+aai console              # Talk to the agent through your mic and speakers
+aai test                 # Run the project's specs via vitest
+aai test --only          # ...or agent.test.ts alone
+aai eval                 # Run agent.eval.test.ts against a model
+aai build                # Bundle and validate (--target node|vercel|deno)
+aai start                # Serve the built agent yourself (production)
+aai login                # Link your account and save your API key
+aai list                 # List your studio projects
+aai pull <project> [dir] # Pull a studio project into a directory
+aai push                 # Sync this project's source to its studio workspace
+aai publish              # Push to the studio AND deploy to production
+aai delete               # Delete the studio project and its deployed agents
+aai logs [-f]            # Show what the deployed agent has printed
+aai secret put NAME      # Set a secret (value from stdin or a masked prompt)
 aai secret put --local NAME  # ...in .env
 aai secret delete NAME
 aai secret list
+aai workflow list        # The workflows this agent declares
+aai workflow runs <name> # Recent runs of one, newest first
+aai workflow show <id>   # One run, including its output
+aai workflow cancel <id> # Stop a running run
 ```
 
-The scaffold's `package.json` runs the project's own CLI as `pnpm dev`,
-`build`, `test`, `eval`, `start` and `publish:agent`.
-
-**`aai test` runs every non-eval spec in the project**, which `--only` narrows
-to `agent.test.ts` for the fast inner loop. A narrowed run does not report
-itself as a pass: it names the spec files it did not cover and answers
-`complete: false`. `pnpm test` (the scaffold's own script) is `aai test`, and so
-is the gate in front of `aai build`.
-
-## Running it yourself (`npm start`)
-
-`aai start` serves this agent from a plain Node process — no platform account,
-nothing managed. It is the deployment counterpart of `aai dev`:
-
-```sh
-npm start                          # http://127.0.0.1:3000
-PORT=8080 HOST=0.0.0.0 npm start   # bind every interface, e.g. in a container
-```
-
-`npm start` **builds first** (that is the `prestart` script) and then serves
-the result: `aai start` boots `.aai/worker.mjs`, the same artifact
-`aai publish` uploads. It serves your own `client.tsx` build when there is one
-and falls back to the prebuilt default UI shipped inside `@alexkroman1/aai-ui`.
-
-There is no server file in your project, and that is deliberate — the boot
-belongs to the framework, so it improves when you update rather than being
-frozen at the moment you scaffolded. When you need to own it, import
-`createProjectServer` from `@alexkroman1/aai-cli/start`: it builds the server
-and binds nothing, so you decide how it is served. Building one from scratch
-instead, `defaultClientDir()` (`@alexkroman1/aai-ui/client-dir`) is where that
-prebuilt UI lives — the only export of `aai-ui` that runs on Node rather than
-in the browser.
-
-The build is what makes `tools/` work — a tool is registered by existing, and
-the enumeration happens where the bundle is assembled, so a server that loaded
-`agent.ts` directly would run an agent with none of its tools. The same build
-produces your `client.tsx`, so a custom UI is served with no extra step.
-
-Secrets work the same as everywhere else: `ctx.env` holds the keys declared
-in `.env` (or `.env.example`), and a real environment variable of that name
-wins — so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
-
-One thing to know: it binds **loopback by default**, because this server has
-no request authentication of its own; set `HOST=0.0.0.0` only behind your own
-proxy or auth.
-
-`run_code` is the one feature that does not follow — it needs a sandbox
-(the platform's, or `AAI_RUN_CODE=deno`) and refuses outside one.
-
-## Tracing (OpenTelemetry)
-
-Point the runtime at any OTLP collector and it exports spans for the model
-calls your agent makes — one per generation, with a child per step, per model
-call and per tool call, carrying model id, token counts and finish reason.
-
-**It is off unless you configure a collector, and that is the whole switch:**
-
-```sh
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 npm start
-OTEL_SERVICE_NAME=my-agent npm start          # names the spans; defaults to "aai-agent"
-OTEL_EXPORTER_OTLP_HEADERS="x-api-key=…" npm start   # if your collector wants one
-```
-
-With none of those set, nothing is built — no exporter, no provider, no timer,
-no import. That matters on a voice agent: a background flush is a timer on a
-process whose latency budget is a person waiting for an answer.
-
-**Install the exporter first.** The OpenTelemetry packages are optional peers,
-so they are not in your `node_modules` until you ask for them:
-
-```sh
-npm i @opentelemetry/api @opentelemetry/sdk-trace-base \
-      @opentelemetry/exporter-trace-otlp-proto @opentelemetry/resources \
-      @opentelemetry/context-async-hooks
-```
-
-`aai dev` and `aai start` arm it for you. Embedding the server in a process of
-your own means calling it yourself, from
-`@alexkroman1/aai-runtime/tracing`:
-
-```ts
-import { startTracing, tracingEndpoint } from "@alexkroman1/aai-runtime/tracing";
-
-// Returns undefined when no collector is configured. `RuntimeTracing` is the
-// handle: `forceFlush()` before a scheduled shutdown, `shutdown()` to release.
-const tracing = await startTracing();
-if (tracingEndpoint()) console.log("exporting spans");
-process.on("SIGTERM", () => void tracing?.shutdown());
-```
-
-`startTracingDetached()` is the same thing without the await, for a boot path
-that must not wait — constructing the exporter costs a few hundred ms.
-`OTEL_ENDPOINT_ENVS` and `OTEL_SERVICE_NAME_ENV` name the variables read, and
-`DEFAULT_SERVICE_NAME` the fallback, if you would rather read them than
-hard-code the strings.
-
-**Spans carry no conversation content.** Not a default you can change — there
-is no code path that reads a prompt, a completion, a transcript, a tool
-argument or a tool result, so none of it can reach your collector. Attributes
-are built from an allow-list of metadata names following OpenTelemetry's
-`gen_ai.*` conventions, so existing dashboards find them.
-
-### Deploying to a host that wants its own entry file
-
-`aai build --target <host>` writes the deployment that host expects into the
-build output. Nothing host-specific lives in your project: the files are
-generated, gitignored, and rewritten by the host's own build.
-
-```sh
-aai build --target vercel   # writes .vercel/output/ (Build Output API v3)
-aai build --target deno     # writes .aai/deno/ — `cd` there and `deno deploy`
-```
-
-On Vercel you rarely type it: the target is detected from that host's own build
-environment, so a git push picks it up with nothing configured. Deno is the
-other shape — `deno deploy` uploads a directory built on YOUR machine, so you
-pass the flag and then deploy what it wrote:
-
-```sh
-aai build --target deno
-cd .aai/deno && deno deploy --entrypoint server.mjs
-```
-
-That directory is self-contained on purpose. It holds the bundled server, the
-built worker, your client and `.env.example`, and it needs no install step —
-which is also why it is a directory rather than files in your project root:
-`deno deploy` uploads the working directory, so emitting in place would ship
-your `node_modules` and your `.env` along with it. Set secrets with
-`deno deploy env add --secret ASSEMBLYAI_API_KEY <key>`; `.env` is deliberately
-not copied.
-
-`--target node`, the default everywhere else, emits nothing extra and is what
-`npm start` runs.
-
-One thing to know before deploying a VOICE agent to a serverless host: the
-session is a WebSocket, so the host has to support one. Vercel does — it hands
-the function the raw upgrade, and the emitted entry passes it to the same
-server `aai dev` runs. Deno Deploy does too, and more simply: it runs a
-long-lived process, so the emitted entry just calls `listen()` and the session
-reaches the same server unchanged. A host that serves only request/response
-still runs the HTTP surface — `/health`, `/client-config`,
-`/workflows/*` and your static assets — which is everything a workflow app
-needs and none of what a voice agent needs.
+**A bare `aai` in an agent directory PUBLISHES** (it asks first at a terminal).
+**`aai test` runs every non-eval spec**, which `--only` narrows to
+`agent.test.ts`; a narrowed run names the files it skipped and answers
+`complete: false`. `pnpm test` is `aai test`, and so is the gate in front of
+`aai build`.
 
 ## Project structure
 
@@ -837,7 +640,7 @@ my-agent/
   shared.ts           # Types shared between agent.ts and client.tsx
   system-prompt.md    # The system prompt — discovered, not imported
   tools/              # One file per tool — this is how a tool is declared
-  workflows/          # Durable workflow bodies (optional — see "Workflow apps")
+  workflows/          # Durable workflow bodies (optional — see agent-guide/WORKFLOWS.md)
   package.json
   tsconfig.json
   .env                # Local dev secrets (gitignored)
@@ -845,37 +648,358 @@ my-agent/
 
 `client.tsx` needs no `vite.config.ts` (React + Tailwind by default).
 
+### A file in `tools/` IS a tool — there is no registration step
+
+**`tools/` is not a convention, it is the mechanism.** A file there is named for
+the tool the model calls, default-exports it, and is picked up by the build. It
+is not imported by `agent.ts` and not listed anywhere — `agent()` has no
+`tools` field at all:
+
+```ts
+// tools/roll_dice.ts  →  the model calls this "roll_dice"
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Roll dice",
+  inputSchema: z.object({ sides: z.number() }),
+  execute({ sides }) {
+    return Math.floor(Math.random() * sides) + 1;
+  },
+});
+```
+
+Three rules come with it, each a build error naming the file:
+
+- **The file name is the tool name**, so it must be lowercase, start with a
+  letter, and join words with `_` — `tools/incident_create.ts`, never
+  `incident-create.ts`. Renaming the file renames the tool.
+- **The export is the DEFAULT export**, and it must be a `tool()` (or a
+  `slot.tool()` / `slot.updateTool()`). A file exporting something else is
+  named at build time rather than becoming a tool that fails per turn.
+- **`tools/` is flat.** A nested file — a nested HELPER too — is rejected, so
+  put shared helpers beside `agent.ts` rather than under `tools/`.
+
+## `agent()` basics
+
+The minimal agent — a cascaded pipeline, what to build unless the user asks
+for speech-to-speech:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "My Agent",
+});
+```
+
+No provider fields means the default all-AssemblyAI pipeline (STT → LLM → TTS)
+on the one key a published agent is guaranteed to have. Swap one stage by
+declaring just that field — a voice is the TTS descriptor's, and `llm` takes a
+model id:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "My Agent",
+  tts: assemblyAITts({ voice: "paul" }),
+  llm: "claude-sonnet-4-6",
+  greeting: "Hi, how can I help?",
+  builtinTools: ["think", "web_search"],
+  maxSteps: 6,
+  requiredEnv: ["WEATHER_KEY"],
+});
+```
+
+The fields almost every agent sets: `name` (required), `greeting` (default:
+"Hey there..."; `""` starts silent), `tts` (voice `jane` unless set), `llm`,
+`builtinTools` (omitted = `["think"]` only; setting it REPLACES the default),
+`maxSteps` (default 10 tool-calling steps per reply) and `requiredEnv` (every
+env var a tool or step reads; **publishing checks it**, so a missing key fails
+at `aai publish` instead of mid-call). `agent-guide/AGENT-API.md` lists every
+field.
+
+**Four modes, one field: `mode`.** Omit it for PIPELINE — the default, and the
+mode this guide assumes. `mode: "s2s"` beside an `s2s: assemblyAIS2s()`
+descriptor selects speech-to-speech; `mode: "text"` a text-only agent;
+`workflowApp()` (`mode: "workflow-app"`) a form with no session at all
+(`agent-guide/WORKFLOWS.md`). A field the chosen mode does not have is a
+compile error naming the mode. `assemblyAIPipeline()` is the explicit spelling
+of the default pipeline (spread it for `region: "eu"`). Pipeline knobs and S2S
+are in `agent-guide/PIPELINE-TUNING.md`; vendors in `agent-guide/PROVIDERS.md`.
+
+## `tool()` basics
+
+```ts
+// tools/get_weather.ts  →  the model calls this "get_weather"
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Get current weather for a city", // shown to the model — decides when to call
+  inputSchema: z.object({
+    city: z.string().describe("City name"),
+  }),
+  async execute({ city }, ctx) {
+    const resp = await fetch(
+      `https://api.example.com/weather?q=${city}&key=${ctx.env.WEATHER_KEY}`,
+      { signal: ctx.signal },
+    );
+    return resp.json();
+  },
+});
+```
+
+- **`execute` must return a value** (sync or async); it goes to the model.
+  `fetch` works directly, identically in `aai dev` and deployed.
+- **`inputSchema` is a `z.object(...)` or absent.** Make a FIELD optional,
+  never the object; omit the schema for a no-argument tool.
+- **Do not annotate `execute`'s return type** — it breaks the moment the tool
+  also returns an error shape. Let it infer.
+- **`ctx`** carries `env` (secrets; every read is `string | undefined` —
+  `requireEnv(ctx, "KEY")` fails by name), `signal` (pass it to anything slow),
+  `messages`, `sessionId`, `send(event, data)` to the browser,
+  `generate(...)` for a one-shot model call, `delegate(...)` for a speaker,
+  `speech` to say something later and `workflows` to start a durable run.
+- **State across tool calls lives in a `sessionSlot`** — `slot.tool` reads,
+  `slot.updateTool` writes. Never keep it in a module variable: every session
+  shares the module.
+
+`agent-guide/TOOLS.md` has the rest: `ctx` in full, session state, `dialog()`
+and `procedure()`, speakers and the roster, `clientTool()` (a tool the
+browser runs), the built-in tool table, `/utils`,
+`/html`, persistence and the speech helpers.
+
+## `system-prompt.md` IS the system prompt
+
+**Write the prompt in `system-prompt.md` beside `agent.ts`, and declare
+nothing.** The build discovers the file, so there is no import line and no
+field — the same rule `tools/` follows, applied to the one part of an agent
+that is a DOCUMENT rather than a value.
+
+```markdown
+<!-- system-prompt.md -->
+
+You are a concise, friendly assistant.
+
+- Keep replies to one or two sentences.
+- Never read a URL aloud.
+```
+
+**Your prompt is ADDED to the framework's voice sections, never a
+replacement** — yours comes last and wins on conflict. Never interpolate
+`DEFAULT_SYSTEM_PROMPT` (exported to be READ).
+
+Three rules, each a build error naming the file:
+
+- **A file nothing reads is an error.** If `system-prompt.md` exists and
+  `agent.ts` declares a DIFFERENT `systemPrompt`, the build fails rather than
+  ignoring the file.
+- **An empty file is an error**, not a silent fall-through to the framework
+  default. Delete the file if that is what you want.
+- **A `system-prompt/` directory is rejected.** One file, no concatenation
+  order to guess.
+
+Composing a prompt from the file plus computed text, and a per-request prompt
+resolver, are in `agent-guide/AGENT-API.md`. `greeting` stays a field: a
+document goes in a file, a value stays in the call.
+
+## Voice rules for systemPrompt
+
+**Don't restate the voice rules — the framework always emits them.** Write only
+what the defaults cannot say: "use run_code for ANY math", "you ARE the game".
+Opt-in presets (`voicePresets`) are in `agent-guide/AGENT-API.md`.
+
+## Secrets
+
+Never hardcode secrets in agent code.
+
+- **Local dev:** `.env` in project root. Only declared keys are available via
+  `ctx.env`.
+- **Production:** `aai secret put NAME`, and list the name in `requiredEnv`.
+- **Access:** `ctx.env.MY_KEY` in a tool; `stepEnv("MY_KEY")` in a step.
+- **AssemblyAI key:** `aai login` links your account and stores the key
+  globally — the only way the CLI authenticates. No `.env` entry needed. For
+  CI, point `AAI_CONFIG_DIR` at a config dir holding a logged-in key (an
+  exported `ASSEMBLYAI_API_KEY` does not authenticate).
+
+## Subpath exports
+
+Most of the API is not on the root entry. Import each name from the subpath
+that owns it:
+
+<!-- BEGIN GENERATED aai subpaths: pnpm sync:agent-guide -->
+
+- `@alexkroman1/aai` — declaring the agent: `agent`, `tool`, `clientTool`,
+  `sessionSlot`, `dialog`, `procedure`, `workflow`, `workflowApp`, `speaker`,
+  `roster`, the speech helpers, and their types
+- `@alexkroman1/aai/utils` — zero-dependency helpers for a tool body, a step or
+  a client — `isToolFailure`, `createKeyedLock`, `pushCapped`, `errorMessage`,
+  `omitUndefined`
+- `@alexkroman1/aai/step` — step code in `workflows/*.ts` — `stepEnv`,
+  `stepFetch`, `stepGenerate`, transcription, `stepSpeak`, uploads,
+  `mapConcurrent`, `stepPlaceCall`
+- `@alexkroman1/aai/testing` — specs — `runTool`, `createToolContext`,
+  `deployedAgent`, `expectDeployable`, and the step stubs
+- `@alexkroman1/aai/testing/vitest` — the vitest-only half of `/testing`:
+  anything that installs or restores a stub
+- `@alexkroman1/aai/testing/vite` — the plugin `vitest.config.ts` registers to
+  serve `virtual:aai/agent`
+- `@alexkroman1/aai/channels` — posting a run's result to Slack or SMS
+- `@alexkroman1/aai/step-errors` — `orFail` around a step call, and
+  `FatalError`/`RetryableError` classification
+- `@alexkroman1/aai/workflow-api` — a page, script or cron job calling a
+  deployed agent's workflow API
+- `@alexkroman1/aai/stt` — an STT provider for a pipeline stage
+  (`assemblyAIStt`, `deepgramStt`, …)
+- `@alexkroman1/aai/tts` — a TTS provider for a pipeline stage (`assemblyAITts`,
+  `cartesiaTts`, `rimeTts`)
+- `@alexkroman1/aai/llm` — an LLM provider for a pipeline stage
+  (`llm({ provider, model })`)
+- `@alexkroman1/aai/s2s` — a speech-to-speech provider (`assemblyAIS2s`,
+  `openAIS2s`)
+- `@alexkroman1/aai/ffmpeg` — running ffmpeg or probing media from a step
+- `@alexkroman1/aai/html` — reading a fetched page or RSS/Atom feed (Node-only)
+- `@alexkroman1/aai/step-files` — streaming an upload too big for memory to disk
+  inside a step
+- `@alexkroman1/aai/tools` — calling `webSearch`, `visitWebpage` or `fetchJson`
+  from your own tool code
+- `@alexkroman1/aai/experimental` — unstable integrations (Composio,
+  deep-research helpers) — may change in any release
+- `@alexkroman1/aai/tsconfig` — the tsconfig preset a project's `tsconfig.json`
+  extends
+
+Framework-internal, never imported by an `agent.ts`: `/protocol`,
+`/coding-tools`, `/workspace-files`, `/slugify`, `/manifest`, `/internal`,
+`/host-internal`.
+
+<!-- END GENERATED aai subpaths -->
+
+`@alexkroman1/aai-ui` is the browser client (`agent-guide/UI.md`) and
+`@alexkroman1/aai-runtime` the host runtime (`/eval` and `/testing` for evals
+and durable workflow tests).
+
+## Gotchas
+
+- **Tool execute must return a value.** A missing return = `undefined` in LLM
+  context = the model thinks the tool failed.
+- **`verbatimModuleSyntax` is on**: `import type { ToolContext }`, or
+  `import { agent, type ToolContext }`.
+- **There is no global `JSX` namespace** (React 19): type a component's return
+  as `ReactNode`.
+- **Always import `"@alexkroman1/aai-ui/styles.css"` first** in `client.tsx`,
+  and don't create `tailwind.config.js` — Tailwind v4 is configured via CSS.
+- **Derive client state with `useAgentState`/`useToolResult`, not `useEffect` +
+  `toolCalls`** — the effect re-fires every render and duplicates.
+- **Never await `ctx.speech.say(...).done` inside a tool's `execute`** — the
+  line waits behind the reply that tool is part of.
+- **Never call `Math.random()` in a tool** — use `ctx.random`, which a spec can
+  substitute. A workflow body uses its journaled `ctx.random()`.
+- **The LLM loop runs one step's tool calls CONCURRENTLY**: serialize a
+  read-modify-write over anything outside a slot with `createKeyedLock`
+  (`/utils`).
+- **The network builtins refuse private IPs** (SSRF). Use public URLs.
+- **`run_code` refuses under `aai dev`/`aai start`** unless the shell sets
+  `AAI_RUN_CODE=deno`: each call then runs in its own Deno 2 with no network,
+  file or env access. Deployed, it runs in the platform's sandbox. Or use the
+  `calculate` builtin for simple arithmetic.
+- **There is no `ctx.db`.** A tool that persists brings its own client — see
+  "Persisting data" in `agent-guide/TOOLS.md`. A secret is read when the
+  sandbox is BUILT, so a newly set `DATABASE_URL` arrives on the next deploy.
+- **A wrong TTS voice id is silent**: it is refused after the socket opens.
+  Pick from the catalog in `agent-guide/PROVIDERS.md`. **Rime language codes
+  are ISO 639-3** (`"eng"`), not ISO 639-1 (`"en"`).
+
+## Constraints
+
+- Tool `execute` return values go into LLM context, capped at 4000 chars
+  (a truncation marker replaces the tail) — filter large API responses
+- Agent code runs in a sandboxed worker with open egress for your own `fetch`
+- Tool execution timeout: 30 seconds
+- `maxSteps` caps tool calls per turn (default 10) — lower it for latency. At
+  the cap one more step runs with tools off, so the agent answers with what it
+  has instead of going silent mid-chain
+
+
+<!-- agent-guide/AGENT-API.md — inlined; where the guide says to read `agent-guide/AGENT-API.md`, this section is that file. -->
+
+# `agent()` — every field
+
+Part of the aai authoring guide (start with the core guide, which has the
+minimal agent and the fields almost every agent sets). This file lists EVERY
+field `agent()` takes, grouped by what it governs. The declarations are the
+final word: `AgentDef` documents each field's meaning and default, and
+`AgentParams` — a union with one member per `mode` — which fields each mode
+has. Both are in `node_modules/@alexkroman1/aai/dist/`.
+
 ## `agent()` API
+
+A field the chosen `mode` does not have is simply ABSENT from that member of
+the parameter type, so setting one (a pipeline knob on `mode: "s2s"`, `stt` on
+`mode: "text"`) is a compile error naming the member; a raw config that skips
+`agent()` is checked at parse time.
 
 ```ts no-check
 import { agent } from "@alexkroman1/aai";
 
 export default agent({
+  // ── Identity and prompt ────────────────────────────────────────────────
   name: string;                              // required — display name
-  systemPrompt?: string;                     // usually ABSENT — write system-prompt.md
-                                             // instead; declare it only to COMPOSE one.
+  description?: string;                      // one line for humans choosing the agent (a
+                                             // registry, `aai list`) — never sent to the model
+  systemPrompt?: string | ((ctx) => string); // usually ABSENT — write system-prompt.md
+                                             // instead; declare it only to COMPOSE one, or as
+                                             // a per-request resolver over session state.
                                              // There is no `system` alias — one name.
-  greeting?: string;                         // default: "Hey there..."
-  stt?: SttProvider;                         // pipeline stage overrides — set any subset;
-  llm?: LlmProvider | string;                // unset stages default to AssemblyAI
-  tts?: TtsProvider;                         // (llm also takes a model-id string)
-  s2s?: S2sProvider;                         // explicit opt-in to speech-to-speech mode
-                                             // all four types are on "@alexkroman1/aai",
-                                             // and on their own stage subpath
-  sttPrompt?: string;                        // STT guidance for jargon/acronyms
+  greeting?: string;                         // default: "Hey there..."; "" starts silent
+  sttPrompt?: string;                        // STT guidance for jargon/acronyms (both voice modes)
   voicePresets?: VoicePresetName[];          // opt-in prompt presets — see below; each one
                                              // costs tokens on EVERY model request
-  builtinTools?: BuiltinTool[];              // see built-in tools table
+
+  // ── Mode and providers (PIPELINE-TUNING.md, PROVIDERS.md) ──────────────
+  mode?: "pipeline" | "s2s" | "text" | "workflow-app"; // default "pipeline"; "text": `llm` is the one stage
+  stt?: SttProvider;                         // pipeline stage overrides — set any subset;
+  llm?: LlmProvider | string;                // unset stages default to AssemblyAI
+  tts?: TtsProvider;                         // (llm also takes a model-id string; a voice is
+                                             // the TTS descriptor's: assemblyAITts({ voice }))
+  s2s?: S2sProvider;                         // the descriptor `mode: "s2s"` requires
+  telephony?: true | ("twilio" | "telnyx")[];// carriers that may open WS /phone; omitted = not served
+  idleTimeoutMs?: number;                    // close after this much inbound silence: 5 minutes; 0 disables
+  // (`mode: "workflow-app"` is what workflowApp() sets for you — see WORKFLOWS.md)
+
+  // ── Tools and the model loop ───────────────────────────────────────────
                                              // (there is no `tools` field — a tool is a FILE;
-                                             //  see "A file in tools/ IS a tool")
+                                             //  see "A file in tools/ IS a tool" in the core guide)
+  builtinTools?: BuiltinTool[];              // default ["think"]; setting it REPLACES the default
+                                             // (table in TOOLS.md)
   maxSteps?: number;                         // default: 10 — max tool calls per turn
-  temperature?: number;                      // sampling temperature for the agent's OWN model calls
-                                             // (pipeline and text). Unset = the model's default; some
-                                             // models ignore it and warn. S2S REFUSES it — the model
-                                             // runs in the provider's service and never sees this.
   toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
                                              // | { type: "tool", toolName }
-  idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
+  roster?: Roster;                           // speakers: mints `handoff` and `delegate`
+                                             // (TOOLS.md, "Speakers")
+  dialogs?: AnyDialog[];                     // wires a dialog() to the SESSION: @-events, timeouts,
+                                             // per-state instruction (TOOLS.md, "dialog()")
+  workflows?: Record<string, WorkflowDef>;   // durable workflows a tool may start (WORKFLOWS.md)
+  mcpServers?: McpServers;                   // remote MCP servers' tools, prefixed mcp_<key>_…;
+                                             // a host connects them with `withMcpTools`
+  requiredEnv?: string[];                    // env vars this agent reads. Publishing CHECKS them,
+                                             // so a missing key fails at `aai publish` (the
+                                             // deploy) instead of mid-call. Declare every key
+                                             // any tool or step reads; provider keys are derived.
+
+  // ── Model tuning (pipeline and text; S2S runs the model service-side) ──
+  temperature?: number;                      // sampling temperature for the agent's OWN model calls.
+                                             // Unset = the model's default; some models ignore it
+                                             // and warn.
+  maxOutputTokens?: number;                  // per-STEP output cap, passed to the provider
+  maxRetries?: number;                       // provider retries of a FAILED request (AI SDK's own
+                                             // 2 unless set; 0 lets errorPhrase arrive promptly)
+  resetToolChoice?: boolean;                 // default true — a demanding toolChoice applies to the
+                                             // FIRST step of a reply only; false = every step
+  usageLimits?: { totalTokens?: number };    // end the session once it has spent this many tokens
+
   // ── pipeline only: three groups (`PipelineTuning`), refused on s2s / text ──
   turnTaking?: {
     minSilenceMs?: number;                   // pause (ms) that ENDS a turn once the text reads
@@ -897,114 +1021,92 @@ export default agent({
     deadAirCoverMs?: number;                 // filler after this much silence IN a turn (default 2400; 0 off)
     nudge?: { afterMs: number; prompt?: string }; // speak up after this much USER silence
   };
+  errorPhrase?: string;                      // spoken when a turn's LLM stream fails ("" disables)
+  startFailurePhrase?: string;               // spoken when a provider fails to open ("" disables)
+  inputGuardrails?: AgentGuardrail[];        // judge each committed caller utterance; a returned
+                                             // string is spoken INSTEAD and the model is not asked
+  outputGuardrails?: AgentGuardrail[];       // judge the reply before any of it is spoken
+                                             // (costs streaming: nothing plays until it passes)
+
+  // ── Observing the session ──────────────────────────────────────────────
   syncState?: Record<string, StateProjection>; // show slots to the client, keyed by slot
                                              // name: { cart: cartSlot.projected } (read it
-                                             // with useAgentState; see UI hooks)
-  requiredEnv?: string[];                    // env vars this agent reads. A deploy CHECKS them, so a
-                                             // missing key fails at `aai push` instead of mid-call.
-                                             // Declare every key any tool or step reads.
-  mode?: "pipeline" | "s2s" | "text" | "workflow-app"; // default "pipeline"; "text": `llm` is the one stage
+                                             // with useAgentState; see UI.md)
   events?: SessionEventHandlers;             // observe the session; "metrics.collected" is each
                                              // reply's latency/tokens: createMetricsCollector()
-  roster?: Roster;                           // see "Speakers"
+  sessionContext?: (args) => SessionContext; // fetched once per connect, before the first model
+                                             // call: extra instructions, history cut-off, refusal
+  onSessionEnd?: (ctx) => unknown;           // after every hang-up / disconnect / idle close
+
+  // ── Surfaces outside a session ─────────────────────────────────────────
+  routes?: Record<string, RouteHandler>;     // JSON endpoints under /api, keyed "GET /path/:id"
+  clientInbox?: { sampleRate?: number };     // what a run pushes to a device over WS /inbox
 });
 ```
 
-> Unless `s2s` is set, the agent runs in **Pipeline mode** — see the section
-> below. Declare any subset of `stt`/`llm`/`tts`; unset stages default to
-> AssemblyAI. `llm` also accepts a model-id string: `"creator/model"` routes
-> through the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), a bare id through
+> Unless `mode` says otherwise, the agent runs in **Pipeline mode** — see
+> `PIPELINE-TUNING.md`. Declare any subset of `stt`/`llm`/`tts`; unset stages
+> default to AssemblyAI. `llm` also accepts a model-id string: `"creator/model"`
+> routes through the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), a bare id through
 > the AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`).
 
-Minimal agent — a cascaded pipeline, what to build unless the user asks
-for speech-to-speech:
+### A few fields, shown
+
+A guardrail answers `true` to pass, or the sentence to speak instead:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
 
 export default agent({
-  name: "My Agent",
+  name: "Pharmacy Line",
+  outputGuardrails: [
+    (text) =>
+      /\b\d+\s?(mg|ml|mcg)\b/i.test(text)
+        ? "I can't give dosage information over the phone. Please check with your pharmacist."
+        : true,
+  ],
 });
 ```
 
-No provider fields means the default all-AssemblyAI pipeline: all three
-stages bill to the one key a published agent is guaranteed to have. Pick
-its voice on the TTS descriptor, which replaces only that stage:
+A prompt RESOLVER reads session state once per model request:
 
 ```ts
-import { agent } from "@alexkroman1/aai";
-import { assemblyAITts } from "@alexkroman1/aai/tts";
+import { agent, sessionSlot } from "@alexkroman1/aai";
+
+const caller = sessionSlot("caller", () => ({ verified: false }));
 
 export default agent({
-  name: "My Agent",
-  tts: assemblyAITts({ voice: "paul" }),
+  name: "Bank Line",
+  systemPrompt: (ctx) =>
+    caller.get(ctx).verified
+      ? "The caller is verified. You may discuss balances."
+      : "The caller is NOT verified. Verify them before discussing anything.",
 });
 ```
 
-Swap one stage by declaring just that field; the rest stay default.
-`llm` accepts the gateway model id as a plain string:
+MCP servers are declared here and CONNECTED by the host (`withMcpTools` from
+`@alexkroman1/aai-runtime`), because discovery is a network round trip. A
+server that is down costs its own tools and nothing else:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
 
 export default agent({
-  name: "My Agent",
-  llm: "claude-sonnet-4-6",
+  name: "Support",
+  mcpServers: {
+    docs: { url: "https://mcp.example.com/mcp", tokenEnv: "DOCS_MCP_TOKEN" },
+  },
+  requiredEnv: ["DOCS_MCP_TOKEN"],
 });
 ```
 
-`assemblyAIPipeline()` (from `@alexkroman1/aai`) is the explicit spelling of
-the same default — spread it (`...assemblyAIPipeline({ region: "eu" })`) when
-you want the three stages visible in the config or EU data residency across
-STT and the LLM gateway. Speech-to-speech (S2S) mode is an explicit opt-in
-via the `s2s` field — see below.
+`sessionContext` is bounded (1.5 s) and a throw, a timeout or `undefined` starts
+the session without it; `onSessionEnd` is fire-and-forget and at-least-once, so
+key any run it starts. A `routes` handler's return value is the JSON body;
+`routeResponse(status, body)` picks another status and a thrown
+`routeError(status, message)` answers `{ error: message }`.
 
-### `system-prompt.md` IS the system prompt
-
-**Write the prompt in `system-prompt.md` beside `agent.ts`, and declare
-nothing.** The build discovers the file, so there is no import line and no
-field — the same rule `tools/` follows, applied to the one part of an agent
-that is a DOCUMENT rather than a value:
-
-```ts
-// agent.ts — nothing about the prompt appears here
-import { agent } from "@alexkroman1/aai";
-
-export default agent({ name: "My Agent" });
-```
-
-**Your prompt is ADDED to the defaults, never a replacement** — the framework
-emits its voice sections and appends yours last, yours winning on conflict.
-Write ONLY your own domain rules; never interpolate `DEFAULT_SYSTEM_PROMPT`
-(exported to be READ). Nothing is replaced, so composing sends ~10,000
-characters twice a turn; a leading copy is dropped with a warning, one
-elsewhere is sent.
-
-```markdown
-<!-- system-prompt.md -->
-You are a concise, friendly assistant.
-
-- Keep replies to one or two sentences.
-- Never read a URL aloud.
-```
-
-Why the file rather than a string: a prompt is markdown — paragraphs, headings,
-bulleted lists — and inline it becomes that document spelled as `\n\n` and `\n-`
-escapes inside one string literal, with no wrapping, no preview, and a diff that
-is one line no matter which bullet changed. Editing the prompt is the main loop
-of building an agent, so it should land in the most reviewable place available,
-not the least.
-
-Three rules, each a build error naming the file:
-
-- **A file nothing reads is an error.** If `system-prompt.md` exists and
-  `agent.ts` declares a DIFFERENT `systemPrompt`, the build fails rather than
-  ignoring the file — "I edited the prompt and nothing changed" is the failure
-  this mechanism exists to prevent.
-- **An empty file is an error**, not a silent fall-through to the framework
-  default. Delete the file if that is what you want.
-- **A `system-prompt/` directory is rejected.** One file, no concatenation
-  order to guess.
+## Composing a system prompt
 
 **Composing a prompt is still legal, and it is the one case you write the import
 for.** When part of the prompt is computed — a menu, a catalogue, today's date —
@@ -1031,6 +1133,662 @@ document goes in a file, a value stays in the call.**
 `assert { type: "json" }` — import assertions were replaced by import
 attributes and TypeScript rejects them (`TS2880`). If you want to be
 explicit the modern spelling is `with { type: "json" }`, but plain is fine.
+
+### Opt-in prompt presets
+
+`agent({ voicePresets: ["echoVerification", "natoAlphabet"] })` switches on
+named behaviours instead of writing them. They compose, each is removable on
+its own, and each is paid for on EVERY model request: `echoVerification`
+(~190 tokens — read critical values back and get a yes), `speechNormalization`
+(~920 — money, dates, phone numbers and emails as spoken words, `"$758.08"`
+as "seven fifty-eight dollars and eight cents") and `natoAlphabet` (~190 —
+"That's B as in Bravo, 7, K as in Kilo, 2 — correct?"). `VOICE_PRESETS` holds
+the exact text. The two spelling presets override the default "don't spell
+things back", so use them where a wrong value costs more than a slow call;
+`speechNormalization` is the PROMPT layer only, and for the agent's OWN data
+the speech renderers (`spokenMoney`, `spokenDate`, … — "Speech goes both ways"
+in `TOOLS.md`) do it in code for free.
+
+
+<!-- agent-guide/TOOLS.md — inlined; where the guide says to read `agent-guide/TOOLS.md`, this section is that file. -->
+
+# Tools, session state and conversation flow
+
+Part of the aai authoring guide (start with the core guide, which has the
+`tools/` directory rule and the minimal `tool()`). This file is the reference
+for what a tool body can do: `ctx`, session state, `dialog()`/`procedure()`,
+speakers and the roster, browser-run tools, the built-in tools, the helper
+subpaths, persistence, and the speech helpers.
+
+## `tool()` API
+
+```ts no-check
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const myTool = tool({
+  description: string;           // shown to LLM — decides when to call
+  inputSchema?: z.ZodObject;     // Zod schema (omit for no-arg tools)
+  execute(args, ctx): unknown;   // sync or async
+});
+```
+
+`execute` may call `fetch` directly — tool code reaches external APIs the
+same way in `aai dev` and deployed.
+
+### `ctx` (ToolContext)
+
+```ts no-check
+ctx.env: Readonly<Partial<Record<string, string>>> // secrets from .env / aai secret put.
+                                               // Partial: every read is `string | undefined`.
+                                               // Use requireEnv(ctx, "KEY") to fail by NAME
+                                               // instead of throwing a TypeError at the model.
+ctx.workflows: WorkflowClient                  // start / signal / wake / find / stream a durable run
+                                               // from a tool (see WORKFLOWS.md)
+ctx.slots: SlotStore                           // where sessionSlot() keeps this session's state —
+                                               // reach for the slot, never this (see "Session state")
+ctx.messages: readonly Message[]               // conversation history [{role, content}]
+ctx.sessionId: string                          // unique session ID
+ctx.send(event, data): void                    // push custom event to browser client (dropped over 64 KB JSON);
+                                               // typed per event by ClientEventMap (below), else `unknown`
+ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
+                                               // with a `schema`, `object` is REQUIRED and typed by it
+ctx.delegate(sub, opts): Promise<DelegateResult> // run a subagent — a whole tool loop with its own
+                                               // context window (see "Speakers")
+ctx.signal: AbortSignal                        // aborts on barge-in, reset, session stop, or this call's timeout
+ctx.speech: SessionSpeech                      // say(text) verbatim LATER, or interrupt() — see "Saying
+                                               // something from outside a turn" in PIPELINE-TUNING.md;
+                                               // never await it in execute
+```
+
+**Declare an event's payload once** and every `ctx.send` of it is checked:
+
+```ts
+declare module "@alexkroman1/aai" {
+  interface ClientEventMap { "order.progress": { done: number; total: number } }
+}
+```
+
+**Pass `ctx.signal` to anything slow.** It is always present — no `?.`
+needed — and forwarding it is what makes a tool stop work the caller has
+already interrupted:
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const lookup = tool({
+  description: "Look up an order",
+  inputSchema: z.object({ id: z.string() }),
+  execute: async ({ id }, ctx) => {
+    const res = await fetch(`https://api.example.com/orders/${id}`, {
+      signal: ctx.signal,
+    });
+    return await res.json();
+  },
+});
+```
+
+**Write the code first; let inference do the work.** The project runs `strict`,
+so a variable declared empty and filled in the same scope widens from what you
+put in it — `const items = []` followed by `items.push(pick)` infers `Pick[]`
+with no annotation. Do NOT add type annotations defensively.
+
+**Annotate the DECLARATION when the first write is somewhere the compiler
+cannot follow** — inside a callback, or after the value has already been read.
+The widening only tracks straight-line code in one scope, so in those cases the
+declaration keeps its starting type:
+
+```ts no-check
+const items = [];                      // stays never[] if the only push is in a callback
+let best = null;                       // stays null if the only assignment is in a callback
+const [picks, set] = useState([]);     // never[] — useState's argument is read immediately
+
+const items: Pick[] = [];              // ✅ annotate the DECLARATION
+let best: Pick | null = null;          // ✅
+const [picks, set] = useState<Pick[]>([]);  // ✅
+```
+
+Annotating the _use_ instead does not help — the declaration is still wrong,
+so the next push just reports the next line.
+
+### Session state
+
+**A `sessionSlot` is the only way to keep state across a session's tool calls**,
+and it is one declaration in a shared module:
+
+```ts
+// shared.ts — the one place the shape is written down.
+import { sessionSlot } from "@alexkroman1/aai";
+
+export type Incident = { id: string; status: "open" | "closed" };
+
+export const incidentSlot = sessionSlot("incidents", () => ({ items: [] as Incident[] }));
+```
+
+```ts no-check
+// tools/list_open.ts — `slot.tool` READS: the body is handed the value, typed.
+import { incidentSlot } from "../shared.ts";
+
+export default incidentSlot.tool({
+  description: "List open incidents",
+  // `i` infers as Incident, and `i.staus` would now be an error.
+  execute: (_args, incidents) => incidents.items.filter((i) => i.status === "open"),
+});
+```
+
+```ts no-check
+// tools/open_incident.ts — `slot.updateTool` WRITES: mutate what you are handed.
+import { incidentSlot } from "../shared.ts";
+import { z } from "zod";
+
+export default incidentSlot.updateTool({
+  description: "Open an incident",
+  inputSchema: z.object({ id: z.string() }),
+  execute: ({ id }, incidents) => {
+    incidents.items.push({ id, status: "open" });
+    return { open: incidents.items.length };
+  },
+});
+```
+
+Four rules, and each is an error rather than advice if you get it wrong:
+
+- **`tool` reads, `updateTool` writes.** What a read is handed is FROZEN, so
+  mutating it throws instead of quietly going nowhere.
+- **A write is SYNCHRONOUS.** The value you mutate is stored the moment your body
+  returns, so an `updateTool` body may not `await`. When you need a model call or
+  a fetch first, do it in an ordinary `tool()` and then mutate:
+
+  ```ts no-check
+  execute: async (args, ctx) => {
+    const priced = await ctx.generate({ prompt: `price ${args.sku}` });
+    return cartSlot.update(ctx, (cart) => {
+      cart.total = Number(priced.text);
+      return { total: cart.total };
+    });
+  }
+  ```
+
+- **Hold plain data.** Objects, arrays, strings, numbers, booleans and null. A
+  `Map`, a `Set`, a `Date` or a class instance is refused with the field named,
+  because none of them survives being stored.
+- **State is STORED on the platform**, so a crash or a redeploy no longer loses
+  it — the platform keeps a session's slots on its own database and there is
+  nothing to enable. Under `aai dev` it lives in memory for the life of the
+  process unless you set a `DATABASE_URL` in `.env`. You write the same code
+  either way; that is the reason for the rules above.
+
+There is nothing to declare on `agent()` — the slot owns its own default. Use
+`syncState: { [slotName]: slot.projected }` to show state to a custom client.
+`slot.snapshot(ctx)` returns a mutable deep copy of the value — what a spec
+hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
+
+**`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
+`ToolDef`, `Message`, provider types. A plain
+`import { ToolContext }` fails; use `import type { ToolContext }`, or
+`import { agent, type ToolContext }` to combine with value imports.
+
+`ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
+runs one LLM generation on the host. It defaults to the agent's pipeline
+`llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) or a model-id
+string to use another provider whose API key is in the agent's secrets —
+that's also how S2S agents use it. Pass a Zod schema as `schema` for typed
+structured output (`generateObject`-style): the result's `object` carries
+the parsed, typed value. A plain JSON Schema object also works.
+
+The option bag is `GenerateOptions` and the answer is `GenerateResult`
+(`GenerateObjectResult<T>` with a `schema`), both exported from
+`@alexkroman1/aai` — annotate a helper that wraps the call rather than
+re-describing the shape. `GenerateFn` is the type of `ctx.generate` itself,
+which is what a spec passes to `createToolContext({ generate })`.
+
+### When the NEXT step is the hard part — `dialog()` and `procedure()`
+
+Two declarations for flows, and the difference is who is driving.
+
+**`dialog()` gates what the MODEL may do next.** A prompt asking the agent to
+collect an address before taking payment is a suggestion; a dialog is a rule.
+`dialog(key, spec)` takes `{ initial, states }`, each state carrying an
+`instruction` the agent is given while it is there and an `on` map of the events
+that leave it. It is a slot underneath, so the position is persisted with the
+rest of the session and survives a reconnect.
+
+```ts
+import { dialog } from "@alexkroman1/aai";
+
+export const checkout = dialog("checkout", {
+  initial: "collecting",
+  states: {
+    collecting: {
+      instruction: "Take the order. Confirm it back before charging anything.",
+      on: { CONFIRMED: "paying" },
+    },
+    paying: {
+      instruction: "Take payment with charge_card. Do not add items now.",
+      on: { PAID: "done" },
+    },
+    done: { instruction: "Read back the order number and say goodbye." },
+  },
+});
+```
+
+A tool declared with `checkout.tool({...})` is REFUSED unless the dialog is in a
+state that allows it, and the refusal reaches the model as a `ToolFailure` it
+can recover from — the gate is enforced at EXECUTION rather than hoped for in a
+prompt. The states and events are inferred from the spec, so a misspelled `send`
+is a compile error. `emergency-dispatch-agent` and `tabletop-rpg-agent` are the
+worked examples.
+
+**`procedure()` runs a flow YOU drive, with no model in the loop.** Where a
+dialog constrains a conversation, a procedure is an algorithm with branches,
+retries and a bounded budget — a grading loop, a retrieval-and-check cycle —
+expressed as a statechart rather than as a `while` with four early returns:
+
+```ts no-check
+import { procedure } from "@alexkroman1/aai";
+
+const answer = procedure(ragMachine);
+const result = await answer.run({ question }, { signal: ctx.signal });
+```
+
+`run` resolves with the machine's output, or throws `ProcedureNotFinishedError`
+if it stops without reaching a final state — which makes "we ran out of
+attempts" a state you declare and handle rather than an error. Options are
+`ProcedureRunOptions`; the machine is an XState machine, and `xstate` is already
+an SDK dependency. `technical-support-agent` is the worked example.
+
+### Speakers (`speaker()`, `ctx.delegate`, `roster()`)
+
+`ctx.generate` is ONE prompt. When answering takes an unknown number of tool
+calls the conversation has no reason to carry, delegate to a **speaker** off
+the line: a second tool loop with its own prompt, model, tools and — the whole
+point — its own context window.
+
+```ts
+import { speaker, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const researcher = speaker({
+  name: "researcher",
+  systemPrompt: "Research the task with the tools you have.",
+  expectedOutput: "A self-contained summary — the only thing the caller sees.",
+  builtinTools: ["web_search", "visit_webpage"],
+  maxSteps: 6,
+});
+
+export default tool({
+  description: "Research a question in depth",
+  inputSchema: z.object({ question: z.string() }),
+  execute: async ({ question }, ctx) => {
+    const { text, toolCalls } = await ctx.delegate(researcher, { task: question });
+    return { answer: text, lookups: toolCalls.length };
+  },
+});
+```
+
+Four rules, each the way a delegation disappoints when skipped: you receive its
+FINAL message, so declare `expectedOutput`; its context is isolated, so `task`
+must be a complete brief; `maxSteps` bounds the loop, and a capped run is asked
+for its answer with tools withheld; and say you are looking it up before you
+call. It may name its own `llm` and `tools` map; **delegation is one level
+deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it by name.
+
+When the SPEAKER has to change — triage verifies the caller, billing takes over
+with its own instructions and tools, one history — mark them `speaks: true` on
+a `roster()`; the first speaking entry answers the call.
+
+```ts
+import { agent, speaker, roster } from "@alexkroman1/aai";
+
+const triage = speaker({
+  name: "triage",
+  speaks: true,
+  description: "Answers the phone and picks the desk",
+  systemPrompt: "Bill or fault? Find out, then hand off.",
+});
+const billing = speaker({
+  name: "billing",
+  speaks: true,
+  description: "Invoices, payments and refunds",
+  systemPrompt: "You are the billing desk.",
+});
+export const desk = roster([triage, billing]);
+
+export default agent({ name: "Front Desk", roster: desk });
+```
+
+One roster mints `handoff` over its speaking entries and `delegate` over the
+rest, each described by the entries' `description`. A tool body hands off with
+`desk.handoff(ctx, billing, { note })` and returns the result; the turn goes on
+as the new speaker. Names are INFERRED: `desk.handoff(ctx, "biling")` does not
+compile. A speaking entry's `tools` refuse while another speaks, naming who is
+and how to hand off. `tools/` and `system-prompt.md` hold under every speaker; a
+dialog state pins one with `persona`. Examples: `front-desk-agent`,
+`topic-briefing-agent`.
+
+### A tool that calls an API
+
+```ts
+// tools/get_weather.ts  →  the model calls this "get_weather"
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Get current weather for a city",
+  inputSchema: z.object({
+    city: z.string().describe("City name"),
+  }),
+  async execute({ city }, ctx) {
+    const resp = await fetch(
+      `https://api.example.com/weather?q=${city}&key=${ctx.env.WEATHER_KEY}`,
+    );
+    return resp.json();
+  },
+});
+```
+
+Nothing else. `agent.ts` does not import it, does not list it, and takes no
+`tools` field at all — see "A file in `tools/` IS a tool" in the core guide.
+
+**Calling the network builtins from your own tool code.** `web_search`,
+`visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls
+them, and they are not on `ctx`. When your own `execute` needs one, import
+it:
+
+```ts no-check
+import { fetchJson, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
+
+execute: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
+// Reading fields off the result needs no cast. Pass a shape when you want
+// it checked: `await fetchJson<Forecast>(url)`.
+```
+
+Same implementations the builtins use, so you get URL screening, credential-
+header stripping, size caps and timeouts rather than a bare `fetch`. Plain
+`fetch` still works when you want none of that. There is no callable
+`run_code`: it exists to run code the model wrote, and tool code that wants
+to compute something can just compute it.
+
+**But prefer the BUILTIN when the model should decide.** These two are not
+interchangeable:
+
+- If the agent's job is to search or browse — a research assistant, anything
+  that follows a link the user mentions — declare
+  `builtinTools: ["web_search", "visit_webpage"]` and let the model call
+  them. It can then search several times with different queries, or read one
+  specific page, as the conversation needs.
+- Import from `/tools` when YOUR tool's own logic needs a fetch: a currency
+  tool hitting one known API, a price checker with a fixed endpoint.
+
+Wrapping `webSearch` in a single custom tool is the mistake to avoid — it
+replaces "the model searches as needed" with one fixed query-and-summarize
+pipeline, and no amount of prompting gets the flexibility back.
+
+**`inputSchema` is a Zod object, or absent.** The field itself is
+optional, but its VALUE must be a plain `z.object(...)` — so all of these
+are type errors:
+
+```ts no-check
+inputSchema: z.undefined(),                // ✗ ZodUndefined
+inputSchema: z.void(),                     // ✗
+inputSchema: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
+```
+
+For a tool with no arguments write `tool({ description, execute })`, or
+`inputSchema: z.object({})` if you prefer it explicit. To make an individual
+argument optional, put `.optional()` on the FIELD, never on the object:
+`z.object({ notes: z.string().optional() })`.
+
+**Do not annotate `execute`'s return type.** Nothing needs it — the result
+is serialized to the model either way — and it reliably breaks the moment
+the tool also returns an error, because `Promise<DrugInfo>` does not accept
+`{ error: "not found" }`. Every such annotation eventually costs a build
+round to widen into a union. Let it infer.
+
+### A tool the BROWSER runs — `clientTool()`
+
+`ctx.send` is fire-and-forget: a tool cannot wait for the page. When the answer
+only the browser has (its location, what is on screen, a click on "Confirm", a
+picked file) IS the tool's result, declare it a `clientTool`. It has no
+`execute`: the page's `useClientTool(name, handler)` runs it, and whatever the
+handler returns is the result the model reads. A throw in the handler is a
+failed call the model is told about.
+
+```ts
+// tools/get_location.ts
+import { clientTool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default clientTool({
+  description: "Get the caller's location from their browser",
+  inputSchema: z.object({}),
+  // Waits on a PERSON (the permission prompt), so longer than the 30 s default.
+  timeoutMs: 60_000,
+});
+```
+
+```tsx
+// client.tsx — render <LocationTool /> anywhere inside the mounted tree
+import { useClientTool } from "@alexkroman1/aai-ui";
+
+export function LocationTool() {
+  useClientTool(
+    "get_location",
+    () =>
+      new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(
+          (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+          (err) => reject(new Error(err.message)),
+        ),
+      ),
+  );
+  return null;
+}
+```
+
+- **Only a browser session can answer it.** On a phone call, in a text agent
+  or a subagent the call fails naming why — give such an agent a server path.
+- **No page answer within `timeoutMs` fails the call**, as does a barge-in.
+- **Never send a secret the model should not see through one** — the result
+  goes into the conversation like any other tool result. Return the token, the
+  last four digits, the decision — not the card number.
+
+### A tool built by a factory still gets its own file
+
+The `tools/` rules (file name = tool name, default export, flat directory)
+are in the core guide. A tool that closes over module-local state, or one
+built by your own wrapper, still gets its own file — the file names the
+instance and the factory lives beside it:
+
+```ts no-check
+// tools/to_hotel_assistant.ts
+import { delegationTool } from "../routing.ts";
+
+export default delegationTool("hotel");
+```
+
+Why discovery rather than a map: the map was 62 lines across the shipped
+templates whose entire content was `snake_case_name: camelCaseImport`, and
+forgetting one line was **silent** — the file compiled, every check passed, and
+the tool simply never reached the model.
+
+## Built-in tools
+
+Enable via `builtinTools` in `agent()`. **Omitted, only `think` is on**; the
+rest are opt-in. Setting the field REPLACES the default: list `"think"` to keep
+it, `[]` for none.
+
+| Tool              | Description                                                                                                                 | Params                                |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `web_search`      | Search the web (DuckDuckGo), no key                                                                                         | `query`, `max_results?` (default 5)   |
+| `visit_webpage`   | Fetch URL to plain text                                                                                                     | `url`                                 |
+| `get_page_design` | Fetch URL's raw HTML + CSS to study/mimic a site's design                                                                   | `url`                                 |
+| `fetch_json`      | HTTP GET a JSON API                                                                                                         | `url`, `headers?`                     |
+| `run_code`        | Execute JS in the agent's sandbox — same authority as the agent's own tool code, output is what it logs (5s timeout)        | `code`                                |
+| `think`           | Private reasoning scratchpad, no side effects                                                                               | `thought`                             |
+| `remember`        | Save a confirmed fact to session notes                                                                                      | `key`, `value`                        |
+| `recall`          | Read session notes saved with `remember`                                                                                    | `key?`                                |
+| `calculate`       | Safe arithmetic evaluator, no code execution                                                                                | `expression`                          |
+| `open_meteo`      | Weather + forecast (Open-Meteo), no key                                                                                     | `location`, `days?`, `units?`         |
+| `brave_search`    | Brave Search API — `BRAVE_API_KEY`                                                                                          | `query`, `max_results?`, `freshness?` |
+| `google_places`   | Google Places: address, phone, hours, rating — `GOOGLE_PLACES_API_KEY`                                                      | `query`, `max_results?`, `open_now?`  |
+| `text_me`         | Text the owner (Textbelt) — `TEXTBELT_KEY`, `SMS_TO_PHONE`; a client's `?phone=` only if in `SMS_ALLOWED_PHONES` (`*`: any) | `message`, `url?`                     |
+
+A keyed builtin reads its key from the agent env; list it in `requiredEnv`.
+
+**Every builtin here is a tool the MODEL calls, not a function your code
+can call** — there is no `fetch_json()` for a tool's `execute`. So:
+
+- **Declare the builtin** (`builtinTools: ["fetch_json"]`) when the MODEL
+  should decide the URL and read the JSON — lookups you cannot enumerate.
+- **Write your own tool** whose `execute` calls `fetch` when YOU own the
+  URL and the shape — a specific endpoint, auth, or a reshaped response.
+
+Network builtins are SSRF-screened outside a container (private/loopback
+blocked). Your own tool code has open egress either way.
+
+## Calling an external API from your own tool code
+
+`fetch` inside a tool's `execute` works directly — no declaration needed,
+identical under `aai dev` and deployed. Right when your code owns the URL.
+
+## Small helpers — `@alexkroman1/aai/utils`
+
+Zero-dependency helpers a tool body, a step or a client may reach for, so the
+same three lines are not rewritten per template. Import from `/utils`, which is
+safe from a `workflows/*.ts` module and from a browser bundle:
+
+| Helper                                                  | For                                                                                                                                                                                                            |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `errorMessage(err)`, `errorDetail(err)`                 | Turning an unknown `catch` value into a sentence for the model or the log                                                                                                                                      |
+| `responseErrorMessage(res, label)`                      | The same for a non-2xx `Response`, preferring a JSON `error` field over the bare status                                                                                                                        |
+| `safeJsonParse(text)`                                   | A parse that answers `undefined` instead of throwing                                                                                                                                                           |
+| `formatBytes`, `formatDuration`, `countWords`, `plural` | Narration. Each returns ONE fixed shape, so a step's progress line and the page rendering the same run cannot disagree — they did, one template printing `1:04:09` from its workflow and `64:09` from its page |
+| `pushCapped(list, item, max)`                           | An append that keeps the last N, for a log a session accumulates                                                                                                                                               |
+| `isRecord(x)`, `omitUndefined(obj)`                     | The object guard and the spread-free way to drop undefined fields                                                                                                                                              |
+| `decodeHtmlEntities(text)`                              | Six entities, no dependency. Enough for a `client.tsx`; for a page or a feed see `/html` below                                                                                                                 |
+| `createKeyedLock()` / `withLock(lock, key, work)`       | Serializing async work per key                                                                                                                                                                                 |
+
+**`createKeyedLock` is the one an agent most needs and least expects to.** The
+LLM loop runs a step's tool calls CONCURRENTLY, so two tools mutating the same
+external resource interleave at every `await`. A session-state mutation is NOT
+that case — `slot.update`'s window is synchronous — so reach for the lock when
+the thing being mutated is outside the session. `withLock` takes an optional
+acquire deadline and throws `KeyedLockTimeoutError` when it runs out.
+
+## Reading a page or a feed — `@alexkroman1/aai/html`
+
+A step that fetches somebody else's markup gets a real parse rather than a
+regex. Node-only (it pulls two parsers), so import it from `workflows/*.ts` or a
+tool, never from `client.tsx`:
+
+```ts
+import { htmlToText, pageMetadata, parseFeed } from "@alexkroman1/aai/html";
+
+declare const html: string;
+declare const xml: string;
+
+// A page, reduced to the prose worth putting in a prompt. `<script>` and
+// `<style>` bodies never survive, and `maxChars` caps what crosses the wire.
+const article = htmlToText(html, { maxChars: 20_000 });
+
+// `og:title` when the page declares one, else its `<title>` element.
+const { title, description, feedUrls } = pageMetadata(html);
+
+// RSS, Atom and RDF alike. `published` is ISO whatever the feed wrote, and
+// titles come back as TEXT — feeds wrap HTML in CDATA as a matter of course.
+const feed = parseFeed(xml);
+const episodes = feed?.items.filter((item) => item.enclosureUrl !== undefined) ?? [];
+```
+
+**Reach for this rather than writing the patterns.** Both are cheap to get
+wrong in ways that only show up on real pages: `<[^>]+>` cuts a tag whose
+attribute contains a `>`, `<script[^>]*>[\s\S]*?<\/script>` leaves the whole
+script in your prompt when the page was truncated mid-tag, and
+`indexOf("<title>")` finds an entry's title rather than a channel's. The
+`link-digest-workflow` and `podcast-digest-workflow` templates each shipped one
+before this subpath existed.
+
+## Persisting data — bring your own client
+
+**There is no `ctx.db`.** The platform provisions no database and hands tool
+code none.
+
+So a tool that needs to persist anything uses a client of its own:
+
+```ts no-check
+// tools/save_note.ts — a driver you added, a credential you set.
+import { tool } from "@alexkroman1/aai";
+import postgres from "postgres";
+import { z } from "zod";
+
+// Module scope, so one pool serves every call in this sandbox.
+const sql = postgres(process.env.DATABASE_URL ?? "");
+
+export default tool({
+  description: "Save a note.",
+  inputSchema: z.object({ body: z.string() }),
+  execute: async ({ body }) => {
+    await sql`insert into notes (body) values (${body})`;
+    return "saved";
+  },
+});
+```
+
+Add the driver to your project's `package.json` and the URL with `aai secret put
+DATABASE_URL …` (or in `.env` under `aai dev`). Nothing here is privileged — an
+HTTP API, a provider SDK or a hosted KV works the same way.
+
+**What the platform DOES persist for you**, with no setup:
+
+- **`sessionSlot`** — this session's state, durable across a crash or a
+  redeploy. Reach for it before reaching for a database; most agents need
+  nothing else.
+- **Durable workflow runs** — a run survives the sandbox recycling, every
+  redeploy, and a multi-day `sleep()`.
+- **Workflow uploads** — a file a form submitted, record and bytes both, so a
+  resumed run reads the same recording the browser sent.
+
+Those three cover almost everything an agent wants. A database is for data that
+must outlive a session AND be queryable: a ledger, filed records, cross-session
+saves.
+
+## Speech goes both ways — `spokenMoney`, `resolveOne`, `isoDate`
+
+**Speech goes both ways, and `@alexkroman1/aai` publishes both conversions.**
+Inbound: `spokenDigits("four one five")` is `"415"`, `spokenOrdinal("the third
+one")` is `3`, and `resolveOne(candidates, spoken, opts)` picks the one item a
+phrase meant — answering a `ToolFailure` when nothing matches or several do, the
+case a hand-written `.find()` gets wrong.
+
+Outbound: an engine handed `$240.50` may read "dollar sign two hundred forty
+point five zero" — right text, wrong call.
+Render the words first: `spokenMoney(240.5)` is `"240 dollars and 50 cents"`,
+`spokenDate("2026-06-08")` is `"Monday, June 8"`, `spokenTime("18:30")` is
+`"6:30 PM"`. `mintCode("HTL")` mints a reference with no `0`/`O`, `1`/`I` or
+`L` in it — what comes back wrong read aloud.
+
+**Declare a date or a time on the SCHEMA.** `isoDate("the arrival date")` and
+`clockTime("the pickup time")` are zod fields, so the rule reaches the model
+before it calls rather than as a refusal after. `isIsoDate` refuses
+`2026-02-30`; `addDays`/`daysBetween` compute in UTC — never turn a
+`YYYY-MM-DD` into a `Date` in local time.
+
+**Never call `Math.random()` in a tool** — use `ctx.random`, which a test can
+substitute, so a dice roll or a minted code is something a spec can assert.
+`randomInt`, `pickOne` and `shuffled` take it last. A WORKFLOW body wants its
+own journaled `ctx.random()` instead.
+
+
+<!-- agent-guide/WORKFLOWS.md — inlined; where the guide says to read `agent-guide/WORKFLOWS.md`, this section is that file. -->
+
+# Workflows — durable runs, steps and workflow apps
+
+Part of the aai authoring guide. Start with the core guide (`AGENT_GUIDE.md`
+in the SDK, `CLAUDE.md` in the scaffold); this file is the reference for
+`workflow()`, `workflowApp()`, step code in `workflows/*.ts` and the page that
+drives a run. Session tools that START a run are in `TOOLS.md`.
 
 ## Workflow apps — `workflowApp()`
 
@@ -1086,7 +1844,7 @@ hooks outlive the sandbox exactly as the runs reading them do — a deployed app
 needs no database of its own for either half. Under `aai dev` they are as
 temporary as the runs above: the bytes go to a per-process temporary directory
 that a restart abandons. There is no `ctx.db` at all — see "Persisting data"
-below.
+in `TOOLS.md`.
 
 ### Workflow bodies live in `workflows/`
 
@@ -1827,6 +2585,17 @@ DELETE /workflows/runs/:id        → cancel
 GET    /workflows/runs/:id/events → SSE
 ```
 
+
+<!-- agent-guide/PIPELINE-TUNING.md — inlined; where the guide says to read `agent-guide/PIPELINE-TUNING.md`, this section is that file. -->
+
+# Pipeline mode, speech-to-speech, telephony and voice tuning
+
+Part of the aai authoring guide (start with the core guide). This file covers
+the session's MODES — the default pipeline, S2S, text — answering and placing
+phone calls, speaking from outside a turn, and the pipeline's turn-taking
+knobs. Which vendor runs each stage is `PROVIDERS.md`; the full `agent()` field
+list is `AGENT-API.md`.
+
 ## Pipeline mode
 
 Pipeline mode is the default: omitting `stt`/`llm`/`tts` (and `s2s`) gives
@@ -2055,6 +2824,15 @@ speaking on every one never stops. Speak from an event your line cannot produce
 is not authorization**: verify a webhook first. Specs: `createToolContext()`
 records into `ctx.said`.
 
+
+<!-- agent-guide/PROVIDERS.md — inlined; where the guide says to read `agent-guide/PROVIDERS.md`, this section is that file. -->
+
+# Providers — STT, LLM and TTS
+
+Part of the aai authoring guide (start with the core guide). Declare only the
+stages you are changing; every unset stage runs on the AssemblyAI default.
+Choosing between pipeline and S2S is `PIPELINE-TUNING.md`.
+
 ## Providers
 
 Provider SDKs are **optional peer dependencies**. Install only the SDKs
@@ -2193,636 +2971,15 @@ not `"en"`).
 Set provider keys the same way as any secret: `.env` for local dev,
 `aai secret put` for production.
 
-## `tool()` API
 
-```ts no-check
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
+<!-- agent-guide/UI.md — inlined; where the guide says to read `agent-guide/UI.md`, this section is that file. -->
 
-const myTool = tool({
-  description: string;           // shown to LLM — decides when to call
-  inputSchema?: z.ZodObject;     // Zod schema (omit for no-arg tools)
-  execute(args, ctx): unknown;   // sync or async
-});
-```
+# The browser client — `client.tsx`
 
-`execute` may call `fetch` directly — tool code reaches external APIs the
-same way in `aai dev` and deployed.
-
-### `ctx` (ToolContext)
-
-```ts no-check
-ctx.env: Readonly<Partial<Record<string, string>>> // secrets from .env / aai secret put.
-                                               // Partial: every read is `string | undefined`.
-                                               // Use requireEnv(ctx, "KEY") to fail by NAME
-                                               // instead of throwing a TypeError at the model.
-ctx.workflows: WorkflowClient                  // start / signal / wake / find / stream a durable run
-                                               // from a tool (see "Workflows")
-ctx.slots: SlotStore                           // where sessionSlot() keeps this session's state —
-                                               // reach for the slot, never this (see "Session state")
-ctx.messages: readonly Message[]               // conversation history [{role, content}]
-ctx.sessionId: string                          // unique session ID
-ctx.send(event, data): void                    // push custom event to browser client (dropped over 64 KB JSON);
-                                               // typed per event by ClientEventMap (below), else `unknown`
-ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
-                                               // with a `schema`, `object` is REQUIRED and typed by it
-ctx.delegate(sub, opts): Promise<DelegateResult> // run a subagent — a whole tool loop with its own
-                                               // context window (see "Speakers")
-ctx.signal: AbortSignal                        // aborts on barge-in, reset, session stop, or this call's timeout
-ctx.speech: SessionSpeech                      // say(text) verbatim LATER, or interrupt() — see "Saying
-                                               // something from outside a turn"; never await it in execute
-```
-
-**Declare an event's payload once** and every `ctx.send` of it is checked:
-
-```ts
-declare module "@alexkroman1/aai" {
-  interface ClientEventMap { "order.progress": { done: number; total: number } }
-}
-```
-
-**Pass `ctx.signal` to anything slow.** It is always present — no `?.`
-needed — and forwarding it is what makes a tool stop work the caller has
-already interrupted:
-
-```ts
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export const lookup = tool({
-  description: "Look up an order",
-  inputSchema: z.object({ id: z.string() }),
-  execute: async ({ id }, ctx) => {
-    const res = await fetch(`https://api.example.com/orders/${id}`, {
-      signal: ctx.signal,
-    });
-    return await res.json();
-  },
-});
-```
-
-**Write the code first; let inference do the work.** The project runs `strict`,
-so a variable declared empty and filled in the same scope widens from what you
-put in it — `const items = []` followed by `items.push(pick)` infers `Pick[]`
-with no annotation. Do NOT add type annotations defensively.
-
-**Annotate the DECLARATION when the first write is somewhere the compiler
-cannot follow** — inside a callback, or after the value has already been read.
-The widening only tracks straight-line code in one scope, so in those cases the
-declaration keeps its starting type:
-
-```ts no-check
-const items = [];                      // stays never[] if the only push is in a callback
-let best = null;                       // stays null if the only assignment is in a callback
-const [picks, set] = useState([]);     // never[] — useState's argument is read immediately
-
-const items: Pick[] = [];              // ✅ annotate the DECLARATION
-let best: Pick | null = null;          // ✅
-const [picks, set] = useState<Pick[]>([]);  // ✅
-```
-
-Annotating the _use_ instead does not help — the declaration is still wrong,
-so the next push just reports the next line.
-
-### Session state
-
-**A `sessionSlot` is the only way to keep state across a session's tool calls**,
-and it is one declaration in a shared module:
-
-```ts
-// shared.ts — the one place the shape is written down.
-import { sessionSlot } from "@alexkroman1/aai";
-
-export type Incident = { id: string; status: "open" | "closed" };
-
-export const incidentSlot = sessionSlot("incidents", () => ({ items: [] as Incident[] }));
-```
-
-```ts no-check
-// tools/list_open.ts — `slot.tool` READS: the body is handed the value, typed.
-import { incidentSlot } from "../shared.ts";
-
-export default incidentSlot.tool({
-  description: "List open incidents",
-  // `i` infers as Incident, and `i.staus` would now be an error.
-  execute: (_args, incidents) => incidents.items.filter((i) => i.status === "open"),
-});
-```
-
-```ts no-check
-// tools/open_incident.ts — `slot.updateTool` WRITES: mutate what you are handed.
-import { incidentSlot } from "../shared.ts";
-import { z } from "zod";
-
-export default incidentSlot.updateTool({
-  description: "Open an incident",
-  inputSchema: z.object({ id: z.string() }),
-  execute: ({ id }, incidents) => {
-    incidents.items.push({ id, status: "open" });
-    return { open: incidents.items.length };
-  },
-});
-```
-
-Four rules, and each is an error rather than advice if you get it wrong:
-
-- **`tool` reads, `updateTool` writes.** What a read is handed is FROZEN, so
-  mutating it throws instead of quietly going nowhere.
-- **A write is SYNCHRONOUS.** The value you mutate is stored the moment your body
-  returns, so an `updateTool` body may not `await`. When you need a model call or
-  a fetch first, do it in an ordinary `tool()` and then mutate:
-
-  ```ts no-check
-  execute: async (args, ctx) => {
-    const priced = await ctx.generate({ prompt: `price ${args.sku}` });
-    return cartSlot.update(ctx, (cart) => {
-      cart.total = Number(priced.text);
-      return { total: cart.total };
-    });
-  }
-  ```
-
-- **Hold plain data.** Objects, arrays, strings, numbers, booleans and null. A
-  `Map`, a `Set`, a `Date` or a class instance is refused with the field named,
-  because none of them survives being stored.
-- **State is STORED on the platform**, so a crash or a redeploy no longer loses
-  it — the platform keeps a session's slots on its own database and there is
-  nothing to enable. Under `aai dev` it lives in memory for the life of the
-  process unless you set a `DATABASE_URL` in `.env`. You write the same code
-  either way; that is the reason for the rules above.
-
-There is nothing to declare on `agent()` — the slot owns its own default. Use
-`syncState: { [slotName]: slot.projected }` to show state to a custom client.
-`slot.snapshot(ctx)` returns a mutable deep copy of the value — what a spec
-hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
-
-**`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
-`ToolDef`, `Message`, provider types. A plain
-`import { ToolContext }` fails; use `import type { ToolContext }`, or
-`import { agent, type ToolContext }` to combine with value imports.
-
-`ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
-runs one LLM generation on the host. It defaults to the agent's pipeline
-`llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) or a model-id
-string to use another provider whose API key is in the agent's secrets —
-that's also how S2S agents use it. Pass a Zod schema as `schema` for typed
-structured output (`generateObject`-style): the result's `object` carries
-the parsed, typed value. A plain JSON Schema object also works.
-
-The option bag is `GenerateOptions` and the answer is `GenerateResult`
-(`GenerateObjectResult<T>` with a `schema`), both exported from
-`@alexkroman1/aai` — annotate a helper that wraps the call rather than
-re-describing the shape. `GenerateFn` is the type of `ctx.generate` itself,
-which is what a spec passes to `createToolContext({ generate })`.
-
-### When the NEXT step is the hard part — `dialog()` and `procedure()`
-
-Two declarations for flows, and the difference is who is driving.
-
-**`dialog()` gates what the MODEL may do next.** A prompt asking the agent to
-collect an address before taking payment is a suggestion; a dialog is a rule.
-`dialog(key, spec)` takes `{ initial, states }`, each state carrying an
-`instruction` the agent is given while it is there and an `on` map of the events
-that leave it. It is a slot underneath, so the position is persisted with the
-rest of the session and survives a reconnect.
-
-```ts
-import { dialog } from "@alexkroman1/aai";
-
-export const checkout = dialog("checkout", {
-  initial: "collecting",
-  states: {
-    collecting: {
-      instruction: "Take the order. Confirm it back before charging anything.",
-      on: { CONFIRMED: "paying" },
-    },
-    paying: {
-      instruction: "Take payment with charge_card. Do not add items now.",
-      on: { PAID: "done" },
-    },
-    done: { instruction: "Read back the order number and say goodbye." },
-  },
-});
-```
-
-A tool declared with `checkout.tool({...})` is REFUSED unless the dialog is in a
-state that allows it, and the refusal reaches the model as a `ToolFailure` it
-can recover from — the gate is enforced at EXECUTION rather than hoped for in a
-prompt. The states and events are inferred from the spec, so a misspelled `send`
-is a compile error. `emergency-dispatch-agent` and `tabletop-rpg-agent` are the
-worked examples.
-
-**`procedure()` runs a flow YOU drive, with no model in the loop.** Where a
-dialog constrains a conversation, a procedure is an algorithm with branches,
-retries and a bounded budget — a grading loop, a retrieval-and-check cycle —
-expressed as a statechart rather than as a `while` with four early returns:
-
-```ts no-check
-import { procedure } from "@alexkroman1/aai";
-
-const answer = procedure(ragMachine);
-const result = await answer.run({ question }, { signal: ctx.signal });
-```
-
-`run` resolves with the machine's output, or throws `ProcedureNotFinishedError`
-if it stops without reaching a final state — which makes "we ran out of
-attempts" a state you declare and handle rather than an error. Options are
-`ProcedureRunOptions`; the machine is an XState machine, and `xstate` is already
-an SDK dependency. `technical-support-agent` is the worked example.
-
-### Speakers (`speaker()`, `ctx.delegate`, `roster()`)
-
-`ctx.generate` is ONE prompt. When answering takes an unknown number of tool
-calls the conversation has no reason to carry, delegate to a **speaker** off
-the line: a second tool loop with its own prompt, model, tools and — the whole
-point — its own context window.
-
-```ts
-import { speaker, tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-const researcher = speaker({
-  name: "researcher",
-  systemPrompt: "Research the task with the tools you have.",
-  expectedOutput: "A self-contained summary — the only thing the caller sees.",
-  builtinTools: ["web_search", "visit_webpage"],
-  maxSteps: 6,
-});
-
-export default tool({
-  description: "Research a question in depth",
-  inputSchema: z.object({ question: z.string() }),
-  execute: async ({ question }, ctx) => {
-    const { text, toolCalls } = await ctx.delegate(researcher, { task: question });
-    return { answer: text, lookups: toolCalls.length };
-  },
-});
-```
-
-Four rules, each the way a delegation disappoints when skipped: you receive its
-FINAL message, so declare `expectedOutput`; its context is isolated, so `task`
-must be a complete brief; `maxSteps` bounds the loop, and a capped run is asked
-for its answer with tools withheld; and say you are looking it up before you
-call. It may name its own `llm` and `tools` map; **delegation is one level
-deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it by name.
-
-When the SPEAKER has to change — triage verifies the caller, billing takes over
-with its own instructions and tools, one history — mark them `speaks: true` on
-a `roster()`; the first speaking entry answers the call.
-
-```ts
-import { agent, speaker, roster } from "@alexkroman1/aai";
-
-const triage = speaker({
-  name: "triage",
-  speaks: true,
-  description: "Answers the phone and picks the desk",
-  systemPrompt: "Bill or fault? Find out, then hand off.",
-});
-const billing = speaker({
-  name: "billing",
-  speaks: true,
-  description: "Invoices, payments and refunds",
-  systemPrompt: "You are the billing desk.",
-});
-export const desk = roster([triage, billing]);
-
-export default agent({ name: "Front Desk", roster: desk });
-```
-
-One roster mints `handoff` over its speaking entries and `delegate` over the
-rest, each described by the entries' `description`. A tool body hands off with
-`desk.handoff(ctx, billing, { note })` and returns the result; the turn goes on
-as the new speaker. Names are INFERRED: `desk.handoff(ctx, "biling")` does not
-compile. A speaking entry's `tools` refuse while another speaks, naming who is
-and how to hand off. `tools/` and `system-prompt.md` hold under every speaker; a
-dialog state pins one with `persona`. Examples: `front-desk-agent`,
-`topic-briefing-agent`.
-
-### A tool that calls an API
-
-```ts
-// tools/get_weather.ts  →  the model calls this "get_weather"
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export default tool({
-  description: "Get current weather for a city",
-  inputSchema: z.object({
-    city: z.string().describe("City name"),
-  }),
-  async execute({ city }, ctx) {
-    const resp = await fetch(
-      `https://api.example.com/weather?q=${city}&key=${ctx.env.WEATHER_KEY}`,
-    );
-    return resp.json();
-  },
-});
-```
-
-Nothing else. `agent.ts` does not import it, does not list it, and takes no
-`tools` field at all — see "A file in `tools/` IS a tool" below.
-
-**Calling the network builtins from your own tool code.** `web_search`,
-`visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls
-them, and they are not on `ctx`. When your own `execute` needs one, import
-it:
-
-```ts no-check
-import { fetchJson, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
-
-execute: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
-// Reading fields off the result needs no cast. Pass a shape when you want
-// it checked: `await fetchJson<Forecast>(url)`.
-```
-
-Same implementations the builtins use, so you get URL screening, credential-
-header stripping, size caps and timeouts rather than a bare `fetch`. Plain
-`fetch` still works when you want none of that. There is no callable
-`run_code`: it exists to run code the model wrote, and tool code that wants
-to compute something can just compute it.
-
-**But prefer the BUILTIN when the model should decide.** These two are not
-interchangeable:
-
-- If the agent's job is to search or browse — a research assistant, anything
-  that follows a link the user mentions — declare
-  `builtinTools: ["web_search", "visit_webpage"]` and let the model call
-  them. It can then search several times with different queries, or read one
-  specific page, as the conversation needs.
-- Import from `/tools` when YOUR tool's own logic needs a fetch: a currency
-  tool hitting one known API, a price checker with a fixed endpoint.
-
-Wrapping `webSearch` in a single custom tool is the mistake to avoid — it
-replaces "the model searches as needed" with one fixed query-and-summarize
-pipeline, and no amount of prompting gets the flexibility back.
-
-**`inputSchema` is a Zod object, or absent.** The field itself is
-optional, but its VALUE must be a plain `z.object(...)` — so all of these
-are type errors:
-
-```ts no-check
-inputSchema: z.undefined(),                // ✗ ZodUndefined
-inputSchema: z.void(),                     // ✗
-inputSchema: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
-```
-
-For a tool with no arguments write `tool({ description, execute })`, or
-`inputSchema: z.object({})` if you prefer it explicit. To make an individual
-argument optional, put `.optional()` on the FIELD, never on the object:
-`z.object({ notes: z.string().optional() })`.
-
-**Do not annotate `execute`'s return type.** Nothing needs it — the result
-is serialized to the model either way — and it reliably breaks the moment
-the tool also returns an error, because `Promise<DrugInfo>` does not accept
-`{ error: "not found" }`. Every such annotation eventually costs a build
-round to widen into a union. Let it infer.
-
-### A tool the BROWSER runs — `clientTool()`
-
-`ctx.send` is fire-and-forget: a tool cannot wait for the page. When the answer
-only the browser has (its location, what is on screen, a click on "Confirm", a
-picked file) IS the tool's result, declare it a `clientTool`. It has no
-`execute`: the page's `useClientTool(name, handler)` runs it, and whatever the
-handler returns is the result the model reads. A throw in the handler is a
-failed call the model is told about.
-
-```ts
-// tools/get_location.ts
-import { clientTool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export default clientTool({
-  description: "Get the caller's location from their browser",
-  inputSchema: z.object({}),
-  // Waits on a PERSON (the permission prompt), so longer than the 30 s default.
-  timeoutMs: 60_000,
-});
-```
-
-```tsx
-// client.tsx — render <LocationTool /> anywhere inside the mounted tree
-import { useClientTool } from "@alexkroman1/aai-ui";
-
-export function LocationTool() {
-  useClientTool(
-    "get_location",
-    () =>
-      new Promise((resolve, reject) =>
-        navigator.geolocation.getCurrentPosition(
-          (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
-          (err) => reject(new Error(err.message)),
-        ),
-      ),
-  );
-  return null;
-}
-```
-
-- **Only a browser session can answer it.** On a phone call, in a text agent
-  or a subagent the call fails naming why — give such an agent a server path.
-- **No page answer within `timeoutMs` fails the call**, as does a barge-in.
-- **Never send a secret the model should not see through one** — the result
-  goes into the conversation like any other tool result. Return the token, the
-  last four digits, the decision — not the card number.
-
-### A file in `tools/` IS a tool — there is no registration step
-
-**`tools/` is not a convention, it is the mechanism.** A file there is named for
-the tool the model calls, default-exports it, and is picked up by the build. It
-is not imported by `agent.ts` and not listed anywhere:
-
-```ts
-// tools/roll_dice.ts  →  the model calls this "roll_dice"
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export default tool({
-  description: "Roll dice",
-  inputSchema: z.object({ sides: z.number() }),
-  execute({ sides }) {
-    return Math.floor(Math.random() * sides) + 1;
-  },
-});
-```
-
-```ts
-// agent.ts — nothing about tools appears here
-import { agent } from "@alexkroman1/aai";
-
-export default agent({ name: "Dice Agent" });
-```
-
-Three rules come with it, each a build error naming the file:
-
-- **The file name is the tool name**, so it must be lowercase, start with a
-  letter, and join words with `_` — `tools/incident_create.ts`, never
-  `incident-create.ts`. Renaming the file renames the tool.
-- **The export is the DEFAULT export**, and it must be a `tool()` (or a
-  `slot.tool()` / `slot.updateTool()`). A file exporting something else is
-  named at build time rather than becoming a tool that fails per turn.
-- **`tools/` is flat.** A nested file is rejected, because a provider will not
-  accept a tool name with a `/` in it and inventing a flattening rule would
-  freeze a guess. This applies to a nested HELPER too, not just a nested tool —
-  the build cannot tell them apart, so put shared helpers beside `agent.ts`
-  rather than under `tools/`. The error names the file and both ways out.
-
-A tool that closes over module-local state, or one built by your own wrapper,
-still gets its own file — the file names the instance and the factory lives
-beside it:
-
-```ts no-check
-// tools/to_hotel_assistant.ts
-import { delegationTool } from "../routing.ts";
-
-export default delegationTool("hotel");
-```
-
-Why discovery rather than a map: the map was 62 lines across the shipped
-templates whose entire content was `snake_case_name: camelCaseImport`, and
-forgetting one line was **silent** — the file compiled, every check passed, and
-the tool simply never reached the model.
-
-## Built-in tools
-
-Enable via `builtinTools` in `agent()`. **Omitted, only `think` is on**; the
-rest are opt-in. Setting the field REPLACES the default: list `"think"` to keep
-it, `[]` for none.
-
-| Tool              | Description                                                                                                                 | Params                                |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `web_search`      | Search the web (DuckDuckGo), no key                                                                                         | `query`, `max_results?` (default 5)   |
-| `visit_webpage`   | Fetch URL to plain text                                                                                                     | `url`                                 |
-| `get_page_design` | Fetch URL's raw HTML + CSS to study/mimic a site's design                                                                   | `url`                                 |
-| `fetch_json`      | HTTP GET a JSON API                                                                                                         | `url`, `headers?`                     |
-| `run_code`        | Execute JS in the agent's sandbox — same authority as the agent's own tool code, output is what it logs (5s timeout)        | `code`                                |
-| `think`           | Private reasoning scratchpad, no side effects                                                                               | `thought`                             |
-| `remember`        | Save a confirmed fact to session notes                                                                                      | `key`, `value`                        |
-| `recall`          | Read session notes saved with `remember`                                                                                    | `key?`                                |
-| `calculate`       | Safe arithmetic evaluator, no code execution                                                                                | `expression`                          |
-| `open_meteo`      | Weather + forecast (Open-Meteo), no key                                                                                     | `location`, `days?`, `units?`         |
-| `brave_search`    | Brave Search API — `BRAVE_API_KEY`                                                                                          | `query`, `max_results?`, `freshness?` |
-| `google_places`   | Google Places: address, phone, hours, rating — `GOOGLE_PLACES_API_KEY`                                                      | `query`, `max_results?`, `open_now?`  |
-| `text_me`         | Text the owner (Textbelt) — `TEXTBELT_KEY`, `SMS_TO_PHONE`; a client's `?phone=` only if in `SMS_ALLOWED_PHONES` (`*`: any) | `message`, `url?`                     |
-
-A keyed builtin reads its key from the agent env; list it in `requiredEnv`.
-
-**Every builtin here is a tool the MODEL calls, not a function your code
-can call** — there is no `fetch_json()` for a tool's `execute`. So:
-
-- **Declare the builtin** (`builtinTools: ["fetch_json"]`) when the MODEL
-  should decide the URL and read the JSON — lookups you cannot enumerate.
-- **Write your own tool** whose `execute` calls `fetch` when YOU own the
-  URL and the shape — a specific endpoint, auth, or a reshaped response.
-
-Network builtins are SSRF-screened outside a container (private/loopback
-blocked). Your own tool code has open egress either way.
-
-## Calling an external API from your own tool code
-
-`fetch` inside a tool's `execute` works directly — no declaration needed,
-identical under `aai dev` and deployed. Right when your code owns the URL.
-
-## Small helpers — `@alexkroman1/aai/utils`
-
-Zero-dependency helpers a tool body, a step or a client may reach for, so the
-same three lines are not rewritten per template. Import from `/utils`, which is
-safe from a `workflows/*.ts` module and from a browser bundle:
-
-| Helper                                                  | For                                                                                                                                                                                                            |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `errorMessage(err)`, `errorDetail(err)`                 | Turning an unknown `catch` value into a sentence for the model or the log                                                                                                                                      |
-| `responseErrorMessage(res, label)`                      | The same for a non-2xx `Response`, preferring a JSON `error` field over the bare status                                                                                                                        |
-| `safeJsonParse(text)`                                   | A parse that answers `undefined` instead of throwing                                                                                                                                                           |
-| `formatBytes`, `formatDuration`, `countWords`, `plural` | Narration. Each returns ONE fixed shape, so a step's progress line and the page rendering the same run cannot disagree — they did, one template printing `1:04:09` from its workflow and `64:09` from its page |
-| `pushCapped(list, item, max)`                           | An append that keeps the last N, for a log a session accumulates                                                                                                                                               |
-| `isRecord(x)`, `omitUndefined(obj)`                     | The object guard and the spread-free way to drop undefined fields                                                                                                                                              |
-| `decodeHtmlEntities(text)`                              | Six entities, no dependency. Enough for a `client.tsx`; for a page or a feed see `/html` below                                                                                                                 |
-| `createKeyedLock()` / `withLock(lock, key, work)`       | Serializing async work per key                                                                                                                                                                                 |
-
-**`createKeyedLock` is the one an agent most needs and least expects to.** The
-LLM loop runs a step's tool calls CONCURRENTLY, so two tools mutating the same
-external resource interleave at every `await`. A session-state mutation is NOT
-that case — `slot.update`'s window is synchronous — so reach for the lock when
-the thing being mutated is outside the session. `withLock` takes an optional
-acquire deadline and throws `KeyedLockTimeoutError` when it runs out.
-
-## Reading a page or a feed — `@alexkroman1/aai/html`
-
-A step that fetches somebody else's markup gets a real parse rather than a
-regex. Node-only (it pulls two parsers), so import it from `workflows/*.ts` or a
-tool, never from `client.tsx`:
-
-```ts
-import { htmlToText, pageMetadata, parseFeed } from "@alexkroman1/aai/html";
-
-declare const html: string;
-declare const xml: string;
-
-// A page, reduced to the prose worth putting in a prompt. `<script>` and
-// `<style>` bodies never survive, and `maxChars` caps what crosses the wire.
-const article = htmlToText(html, { maxChars: 20_000 });
-
-// `og:title` when the page declares one, else its `<title>` element.
-const { title, description, feedUrls } = pageMetadata(html);
-
-// RSS, Atom and RDF alike. `published` is ISO whatever the feed wrote, and
-// titles come back as TEXT — feeds wrap HTML in CDATA as a matter of course.
-const feed = parseFeed(xml);
-const episodes = feed?.items.filter((item) => item.enclosureUrl !== undefined) ?? [];
-```
-
-**Reach for this rather than writing the patterns.** Both are cheap to get
-wrong in ways that only show up on real pages: `<[^>]+>` cuts a tag whose
-attribute contains a `>`, `<script[^>]*>[\s\S]*?<\/script>` leaves the whole
-script in your prompt when the page was truncated mid-tag, and
-`indexOf("<title>")` finds an entry's title rather than a channel's. The
-`link-digest-workflow` and `podcast-digest-workflow` templates each shipped one
-before this subpath existed.
-
-## Persisting data — bring your own client
-
-**There is no `ctx.db`.** The platform provisions no database and hands tool
-code none.
-
-So a tool that needs to persist anything uses a client of its own:
-
-```ts no-check
-// tools/save_note.ts — a driver you added, a credential you set.
-import { tool } from "@alexkroman1/aai";
-import postgres from "postgres";
-import { z } from "zod";
-
-// Module scope, so one pool serves every call in this sandbox.
-const sql = postgres(process.env.DATABASE_URL ?? "");
-
-export default tool({
-  description: "Save a note.",
-  inputSchema: z.object({ body: z.string() }),
-  execute: async ({ body }) => {
-    await sql`insert into notes (body) values (${body})`;
-    return "saved";
-  },
-});
-```
-
-Add the driver to your project's `package.json` and the URL with `aai secret put
-DATABASE_URL …` (or in `.env` under `aai dev`). Nothing here is privileged — an
-HTTP API, a provider SDK or a hosted KV works the same way.
-
-**What the platform DOES persist for you**, with no setup:
-
-- **`sessionSlot`** — this session's state, durable across a crash or a
-  redeploy. Reach for it before reaching for a database; most agents need
-  nothing else.
-- **Durable workflow runs** — a run survives the sandbox recycling, every
-  redeploy, and a multi-day `sleep()`.
-- **Workflow uploads** — a file a form submitted, record and bytes both, so a
-  resumed run reads the same recording the browser sent.
-
-Those three cover almost everything an agent wants. A database is for data that
-must outlive a session AND be queryable: a ledger, filed records, cross-session
-saves.
+Part of the aai authoring guide (start with the core guide). A voice agent's
+page mounts with `mountClient()`; a workflow app's mounts with `mountPage()`
+(see "The page" in `WORKFLOWS.md`). Both are React 19 + Tailwind v4, bundled
+by the CLI with no `vite.config.ts`.
 
 ## Custom UI — `mountClient()`
 
@@ -3004,7 +3161,7 @@ Client: `useEvent("order", (data) => ...)`.
 **`useToolCallStart`** — fires when a tool call begins (status `"pending"`).
 
 **`useClientTool`** — runs a server `clientTool` in the page and answers the
-model with the handler's return value (see "A tool the BROWSER runs"):
+model with the handler's return value (see "A tool the BROWSER runs" in `TOOLS.md`):
 
 ```tsx
 import { useClientTool } from "@alexkroman1/aai-ui";
@@ -3108,102 +3265,246 @@ restyling a `client.tsx`:
 - **No filler:** no emojis as icons, no decorative gradient blobs or
   abstract placeholder shapes, no lorem-ipsum-looking content.
 
-## Secrets
 
-Never hardcode secrets in agent code.
+<!-- agent-guide/TESTING-EVALS.md — inlined; where the guide says to read `agent-guide/TESTING-EVALS.md`, this section is that file. -->
 
-- **Local dev:** `.env` in project root. Only declared keys available via
-  `ctx.env`.
-- **Production:** `aai secret put NAME`
-- **Access:** `ctx.env.MY_KEY` in tool execute functions.
-- **AssemblyAI key:** `aai login` links your account and stores the key
-  globally — the only way the CLI authenticates. No `.env` entry needed. For
-  CI, point `AAI_CONFIG_DIR` at a config dir holding a logged-in key (an
-  exported `ASSEMBLYAI_API_KEY` does not authenticate).
+# Testing and evals
 
-## Voice rules for systemPrompt
+Part of the aai authoring guide (start with the core guide). A TEST asserts
+the agent's shape and its tools' logic (`pnpm test`); an EVAL drives a real
+session and asserts what the agent did (`pnpm eval`). Testing a workflow BODY
+— the replay engine, crashes, signals — is "Testing a workflow body" in
+`WORKFLOWS.md`.
 
-**Don't restate the voice rules — the framework always emits them** (read
-`DEFAULT_SYSTEM_PROMPT`; your own prompt is APPENDED to it). Write only what
-the defaults cannot say: "use run_code for ANY math", "you ARE the game".
-"Search first" and "don't guess" they already say.
+## Specs: `agent.test.ts`
 
-### Opt-in prompt presets
+Co-locate tests as `agent.test.ts` (the `custom-pipeline-agent` template is a
+reference). **When the project has one, it is yours to maintain**: it asserts
+the agent's shape — name, providers, tool names — so rewriting the agent
+without updating it leaves a test asserting an agent that no longer exists.
+When a test fails after your change, decide which side is stale: updating the
+test to match the new agent is a normal fix, not a workaround. Do not delete a
+test to make it pass.
 
-`agent({ voicePresets: ["echoVerification", "natoAlphabet"] })` switches on
-named behaviours instead of writing them. They compose, each is removable on
-its own, and each is paid for on EVERY model request: `echoVerification`
-(~190 tokens — read critical values back and get a yes), `speechNormalization`
-(~920 — money, dates, phone numbers and emails as spoken words, `"$758.08"`
-as "seven fifty-eight dollars and eight cents") and `natoAlphabet` (~190 —
-"That's B as in Bravo, 7, K as in Kilo, 2 — correct?"). `VOICE_PRESETS` holds
-the exact text. The two spelling presets override the default "don't spell
-things back", so use them where a wrong value costs more than a slow call;
-`speechNormalization` is the PROMPT layer only, and for the agent's OWN data
-the renderers below do it in code for free.
+**A spec that needs the agent as DEPLOYED imports one module:**
 
-**Speech goes both ways, and `@alexkroman1/aai` publishes both conversions.**
-Inbound: `spokenDigits("four one five")` is `"415"`, `spokenOrdinal("the third
-one")` is `3`, and `resolveOne(candidates, spoken, opts)` picks the one item a
-phrase meant — answering a `ToolFailure` when nothing matches or several do, the
-case a hand-written `.find()` gets wrong.
+```ts
+import agentDef from "virtual:aai/agent";
+```
 
-Outbound: an engine handed `$240.50` may read "dollar sign two hundred forty
-point five zero" — right text, wrong call.
-Render the words first: `spokenMoney(240.5)` is `"240 dollars and 50 cents"`,
-`spokenDate("2026-06-08")` is `"Monday, June 8"`, `spokenTime("18:30")` is
-`"6:30 PM"`. `mintCode("HTL")` mints a reference with no `0`/`O`, `1`/`I` or
-`L` in it — what comes back wrong read aloud.
+That is `agent.ts` with its `tools/` directory discovered and its
+`system-prompt.md` applied — the same lowering `aai build` does, so a spec
+measures the agent that ships rather than the raw default export (which has no
+tools and the framework's default prompt). `vitest.config.ts` registers the
+plugin that serves it; a scaffolded project already has it. For a runner that
+is not vitest, `deployedAgent` on `@alexkroman1/aai/testing` is the same thing
+written out.
 
-**Declare a date or a time on the SCHEMA.** `isoDate("the arrival date")` and
-`clockTime("the pickup time")` are zod fields, so the rule reaches the model
-before it calls rather than as a refusal after. `isIsoDate` refuses
-`2026-02-30`; `addDays`/`daysBetween` compute in UTC — never turn a
-`YYYY-MM-DD` into a `Date` in local time.
+**Call a tool with `runTool(tool, args, ctx)`** (`/testing`): passed the tool
+itself, the result is typed by its `execute` — no `as` cast (the
+`runTool(agent, "name", …)` form answers `unknown`). `expectDeployable(agentDef)`
+runs the build's checks and returns a `DeployedConfig` (`name`,
+`systemPrompt`, `mode`, `builtinTools`, …) to assert on.
 
-**Never call `Math.random()` in a tool** — use `ctx.random`, which a test can
-substitute, so a dice roll or a minted code is something a spec can assert.
-`randomInt`, `pickOne` and `shuffled` take it last. A WORKFLOW body wants its
-own journaled `ctx.random()` instead.
+The test doubles a tool body needs are on `@alexkroman1/aai/testing` too —
+`createToolContext()` for a hand-built `ctx`, `stubDelegate` for a subagent,
+`endSessionCalls(ctx)` for a hang-up, `stubStepFetch`/`stubSpeech`/
+`stubUploads`/`stubPlaceCall` for step I/O — and each topic file names the one
+its feature needs.
 
-## Gotchas
+## Evals: `agent.eval.test.ts`
 
-- **Tool execute must return a value.** A missing return = `undefined` in
-  LLM context = the model thinks the tool failed.
-- **Declare only the pipeline stages you're changing.** Unset stages of `stt` /
-  `llm` / `tts` default to AssemblyAI (omit all three for the full default
-  pipeline; `tts: assemblyAITts({ voice })` picks a voice). S2S needs an
-  explicit `mode: "s2s"` and `s2s: assemblyAIS2s()`, and takes no pipeline
-  fields.
-- **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
-  `aai secret put` for production.
-- **Derive state with `useToolResult`, not `useEffect` + `toolCalls`** — it
-  dedupes by callId; the effect re-fires every render and duplicates.
-- **Always import `"@alexkroman1/aai-ui/styles.css"` first** in
-  `client.tsx`. Missing this = unstyled UI.
-- **Don't create `tailwind.config.js`.** Tailwind v4 is configured via
-  CSS; the config file is ignored.
-- **`fetch` to private IPs is blocked** (SSRF protection). Use public URLs.
-- **`run_code` refuses under `aai dev`/`aai start`** unless the shell sets
-  `AAI_RUN_CODE=deno`: each call then runs in its own Deno 2 with no
-  network, file or env access. Deployed, it runs in the platform's sandbox. Or
-  use the `calculate` builtin for simple arithmetic.
-- **There is no `ctx.db`.** A tool that persists brings its own client — see
-  "Persisting data". A secret is read when the sandbox is BUILT, so a newly set
-  `DATABASE_URL` arrives on the next deploy rather than immediately, and the
-  database is shared by every session, so key rows yourself.
-- **Rime language codes are ISO 639-3** (3-letter, e.g. `"eng"`), not
-  ISO 639-1 (`"en"`).
+Run `pnpm eval` when you change what the agent DOES. Cases live in
+`agent.eval.test.ts` (the `quickstart-agent` template ships one), and
+EVERYTHING an eval needs — `describeEval`, the readers and claims,
+`evalSimulation`, and stubs like `stubGatewayRoute` — is one import,
+`@alexkroman1/aai-runtime/eval/vitest`:
 
-## Constraints
+```ts no-check
+import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/eval/vitest";
+import { expect } from "vitest";
+import agentDef from "./agent.ts";
 
-- Tool `execute` return values go into LLM context, capped at 4000 chars
-  (a truncation marker replaces the tail) — filter large API responses
-- Tool code uses plain `fetch` with open egress; the keyless web builtins
-  screen private/internal IPs (SSRF) when running outside a sandbox
-- Agent code runs in a sandboxed worker — use `fetch` for HTTP, `ctx.env`
-  for secrets
-- Tool execution timeout: 30 seconds
-- `maxSteps` caps tool calls per turn (default 10) — lower it for latency. At
-  the cap one more step runs with tools off, so the agent answers with what it
-  has instead of going silent mid-chain
+describeEval(agentDef, (test) => {
+  test(
+    "looks the order up before answering",
+    async ({ session }) => {
+      // `say()` returns THAT turn — the reply, its tool calls, its events.
+      const turn = await session.say("where is order W1234?");
+      expectCalled(turn, "look_up");
+      expect(turn.text).toMatch(/shipped/i);
+    },
+    // What a SCRIPTED model answers with when there is no key (below).
+    { stubReply: "Order W1234 shipped yesterday." },
+  );
+});
+```
+
+Everything is real except the microphone and the speaker: your tools, your
+prompt, the session's own event stream. Before trusting a green run:
+
+- **With a provider key it uses a LIVE model** — it spends tokens, and it is a
+  noisy instrument. One failure is a question, not a verdict; re-run before
+  believing either answer.
+- **Without one it uses a SCRIPTED model** answering each case's `stubReply`,
+  and says so. That still proves the agent boots, the tools resolve and the
+  session reaches a reply — it proves nothing about what the agent SAYS. Give a
+  case `{ live: true }` instead when no script could honestly stand in (a tool
+  the model has to choose for itself, a refusal, a judgement).
+
+**Who is calling** is a suite or case option (a case's `null` clears it):
+`clientId`, `phone` and `call` are what `sessionClientId`,
+`sessionClientPhone`, `sessionCall` and `sessionContext` see; a refused call
+reads as `session.refused`. A tool's `endSession(ctx)` really hangs up
+(`turn.endedSession`, `session.ended`); that turn awaits `onSessionEnd`.
+`network: evalNetwork({ state, routes })` answers every tool, builtin and step
+`fetch`, refusing the rest: `ctx.network`. `workflows` takes a client or
+per-case factory: `ctx.workflowClient`. A failure prints the conversation.
+
+No eval can see anything below the audio boundary — when the agent decides you
+stopped talking, barge-in, two sentences merging into one turn. Those need
+`pnpm dev` and your own voice.
+
+
+<!-- agent-guide/HOSTING.md — inlined; where the guide says to read `agent-guide/HOSTING.md`, this section is that file. -->
+
+# Self-hosting, tracing and deploy targets
+
+Part of the aai authoring guide (start with the core guide). The managed
+platform is `aai publish`; this file is everything that runs the agent
+somewhere else — `npm start`, OpenTelemetry tracing, and `aai build --target`.
+
+## Running it yourself (`npm start`)
+
+`aai start` serves this agent from a plain Node process — no platform account,
+nothing managed. It is the deployment counterpart of `aai dev`:
+
+```sh
+npm start                          # http://127.0.0.1:3000
+PORT=8080 HOST=0.0.0.0 npm start   # bind every interface, e.g. in a container
+```
+
+`npm start` **builds first** (that is the `prestart` script) and then serves
+the result: `aai start` boots `.aai/worker.mjs`, the same artifact
+`aai publish` uploads. It serves your own `client.tsx` build when there is one
+and falls back to the prebuilt default UI shipped inside `@alexkroman1/aai-ui`.
+
+There is no server file in your project, and that is deliberate — the boot
+belongs to the framework, so it improves when you update rather than being
+frozen at the moment you scaffolded. When you need to own it, import
+`createProjectServer` from `@alexkroman1/aai-cli/start`: it builds the server
+and binds nothing, so you decide how it is served. Building one from scratch
+instead, `defaultClientDir()` (`@alexkroman1/aai-ui/client-dir`) is where that
+prebuilt UI lives — the only export of `aai-ui` that runs on Node rather than
+in the browser.
+
+The build is what makes `tools/` work — a tool is registered by existing, and
+the enumeration happens where the bundle is assembled, so a server that loaded
+`agent.ts` directly would run an agent with none of its tools. The same build
+produces your `client.tsx`, so a custom UI is served with no extra step.
+
+Secrets work the same as everywhere else: `ctx.env` holds the keys declared
+in `.env` (or `.env.example`), and a real environment variable of that name
+wins — so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
+
+One thing to know: it binds **loopback by default**, because this server has
+no request authentication of its own; set `HOST=0.0.0.0` only behind your own
+proxy or auth.
+
+`run_code` is the one feature that does not follow — it needs a sandbox
+(the platform's, or `AAI_RUN_CODE=deno`) and refuses outside one.
+
+## Tracing (OpenTelemetry)
+
+Point the runtime at any OTLP collector and it exports spans for the model
+calls your agent makes — one per generation, with a child per step, per model
+call and per tool call, carrying model id, token counts and finish reason.
+
+**It is off unless you configure a collector, and that is the whole switch:**
+
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 npm start
+OTEL_SERVICE_NAME=my-agent npm start          # names the spans; defaults to "aai-agent"
+OTEL_EXPORTER_OTLP_HEADERS="x-api-key=…" npm start   # if your collector wants one
+```
+
+With none of those set, nothing is built — no exporter, no provider, no timer,
+no import. That matters on a voice agent: a background flush is a timer on a
+process whose latency budget is a person waiting for an answer.
+
+**Install the exporter first.** The OpenTelemetry packages are optional peers,
+so they are not in your `node_modules` until you ask for them:
+
+```sh
+npm i @opentelemetry/api @opentelemetry/sdk-trace-base \
+      @opentelemetry/exporter-trace-otlp-proto @opentelemetry/resources \
+      @opentelemetry/context-async-hooks
+```
+
+`aai dev` and `aai start` arm it for you. Embedding the server in a process of
+your own means calling it yourself, from
+`@alexkroman1/aai-runtime/tracing`:
+
+```ts
+import { startTracing, tracingEndpoint } from "@alexkroman1/aai-runtime/tracing";
+
+// Returns undefined when no collector is configured. `RuntimeTracing` is the
+// handle: `forceFlush()` before a scheduled shutdown, `shutdown()` to release.
+const tracing = await startTracing();
+if (tracingEndpoint()) console.log("exporting spans");
+process.on("SIGTERM", () => void tracing?.shutdown());
+```
+
+`startTracingDetached()` is the same thing without the await, for a boot path
+that must not wait — constructing the exporter costs a few hundred ms.
+`OTEL_ENDPOINT_ENVS` and `OTEL_SERVICE_NAME_ENV` name the variables read, and
+`DEFAULT_SERVICE_NAME` the fallback, if you would rather read them than
+hard-code the strings.
+
+**Spans carry no conversation content.** Not a default you can change — there
+is no code path that reads a prompt, a completion, a transcript, a tool
+argument or a tool result, so none of it can reach your collector. Attributes
+are built from an allow-list of metadata names following OpenTelemetry's
+`gen_ai.*` conventions, so existing dashboards find them.
+
+### Deploying to a host that wants its own entry file
+
+`aai build --target <host>` writes the deployment that host expects into the
+build output. Nothing host-specific lives in your project: the files are
+generated, gitignored, and rewritten by the host's own build.
+
+```sh
+aai build --target vercel   # writes .vercel/output/ (Build Output API v3)
+aai build --target deno     # writes .aai/deno/ — `cd` there and `deno deploy`
+```
+
+On Vercel you rarely type it: the target is detected from that host's own build
+environment, so a git push picks it up with nothing configured. Deno is the
+other shape — `deno deploy` uploads a directory built on YOUR machine, so you
+pass the flag and then deploy what it wrote:
+
+```sh
+aai build --target deno
+cd .aai/deno && deno deploy --entrypoint server.mjs
+```
+
+That directory is self-contained on purpose. It holds the bundled server, the
+built worker, your client and `.env.example`, and it needs no install step —
+which is also why it is a directory rather than files in your project root:
+`deno deploy` uploads the working directory, so emitting in place would ship
+your `node_modules` and your `.env` along with it. Set secrets with
+`deno deploy env add --secret ASSEMBLYAI_API_KEY <key>`; `.env` is deliberately
+not copied.
+
+`--target node`, the default everywhere else, emits nothing extra and is what
+`npm start` runs.
+
+One thing to know before deploying a VOICE agent to a serverless host: the
+session is a WebSocket, so the host has to support one. Vercel does — it hands
+the function the raw upgrade, and the emitted entry passes it to the same
+server `aai dev` runs. Deno Deploy does too, and more simply: it runs a
+long-lived process, so the emitted entry just calls `listen()` and the session
+reaches the same server unchanged. A host that serves only request/response
+still runs the HTTP surface — `/health`, `/client-config`,
+`/workflows/*` and your static assets — which is everything a workflow app
+needs and none of what a voice agent needs.
