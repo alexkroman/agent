@@ -93,7 +93,9 @@ export type AgentParams =
  */
 export type SharedAgentParams = Omit<
   AgentDef,
-  DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField
+  // `toolsets` is RESOLVED — `agent()` and host steps (`withMcpTools`) attach
+  // it — so it is no parameter at all.
+  DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField | "toolsets"
 > &
   Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     /**

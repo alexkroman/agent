@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { roster } from "./shared.ts";
+import { desk } from "./shared.ts";
 
 /**
  * A briefing desk you can phone: you name a subject, it puts several
@@ -19,7 +19,7 @@ import { roster } from "./shared.ts";
  * the slowest rather than the sum. `tools/research_topic.ts` is where both of
  * those actually happen.
  *
- * **`subagents` is the OTHER way to reach one, and both are here on purpose.**
+ * **`roster` is the OTHER way to reach one, and both are here on purpose.**
  * The two tools above name their subagent in code, because the tool IS the
  * choice: one fans a single researcher over several angles, the other reads the
  * board to work out which sentence the caller meant. The roster declared below
@@ -41,5 +41,5 @@ export default agent({
   greeting:
     "Briefing desk. Tell me a subject and I'll put a few researchers on it — " +
     "try something like, what's going on with home battery prices.",
-  subagents: roster,
+  roster: desk,
 });

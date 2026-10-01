@@ -9,7 +9,7 @@
  * step asks for it by config and client:
  *
  * ```ts
- * import { type McpServers, subagent } from "@alexkroman1/aai";
+ * import { type McpServers, speaker } from "@alexkroman1/aai";
  * import { stepMcp } from "@alexkroman1/aai/experimental";
  * import { stepDelegate } from "@alexkroman1/aai/step";
  *
@@ -24,7 +24,7 @@
  * export async function work(task: string, clientId: string): Promise<string> {
  *   const mcp = await stepMcp(apps, { clientId });
  *   try {
- *     const worker = subagent({
+ *     const worker = speaker({
  *       name: "worker",
  *       systemPrompt: "Do the task with the app tools.",
  *       tools: { ...mcp.tools },
@@ -37,7 +37,7 @@
  * ```
  *
  * What comes back is ordinary `ToolDef`s, named `mcp_<key>_<tool>` exactly as
- * the host-start path names them, so they spread into a `subagent({ tools })`
+ * the host-start path names them, so they spread into a `speaker({ tools })`
  * beside the step's own and run on the same executor — deadline, validation,
  * abort signal — as every other tool.
  *
@@ -77,7 +77,7 @@
  */
 
 import type { McpServers } from "./mcp-config.ts";
-import type { ToolSet } from "./tool-def.ts";
+import type { ToolMap } from "./tool-def.ts";
 
 /** Options for {@link stepMcp}. */
 export type StepMcpOptions = {
@@ -101,9 +101,9 @@ export type StepMcpServer = {
 export type StepMcp = {
   /**
    * Every connected server's tools as `ToolDef`s, by the name the model calls
-   * them — spread into `subagent({ tools })`.
+   * them — spread into `speaker({ tools })`.
    */
-  readonly tools: ToolSet;
+  readonly tools: ToolMap;
   /** One entry per server in the record, in sorted key order. */
   readonly servers: readonly StepMcpServer[];
   /** Close every connection. Never rejects. Call it in the step's `finally`. */
@@ -167,7 +167,7 @@ export function stepMcp(servers: McpServers, options: StepMcpOptions = {}): Prom
  *
  * @public
  */
-export function stubStepMcp(tools: ToolSet = {}): {
+export function stubStepMcp(tools: ToolMap = {}): {
   /** Each call's server keys and options, in order. */
   readonly calls: readonly { readonly keys: readonly string[]; readonly options: StepMcpOptions }[];
   /** Unpublish the fake. */

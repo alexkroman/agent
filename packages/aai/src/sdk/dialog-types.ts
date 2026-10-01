@@ -376,7 +376,7 @@ export interface DialogStateSpec {
   temperature?: number;
   /**
    * The persona that speaks while the conversation is in this state, by name —
-   * one of the agent's `personas`. It PINS: `Personas.handoff` to anyone else
+   * one of the agent's `personas`. It PINS: `Roster.handoff` to anyone else
    * is refused until the dialog moves on, and the pin is a property of the
    * position rather than a write, so a resumed session is pinned the same way.
    * Checked against the roster by `agent()`.

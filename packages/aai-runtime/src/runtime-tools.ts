@@ -12,12 +12,11 @@ import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
 import {
   clientEventDropMessage,
-  clientToolBrand,
   decideClientEvent,
   type OwnedMap,
 } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest";
+import { agentToolsets, agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "./_state-sync.ts";
@@ -201,7 +200,7 @@ function setupSandboxTools(
     },
     logger,
   );
-  const builtinDefs = resolved.defs;
+  const builtins = resolved.toolset;
   const toolSchemas = resolved.schemas;
   const frozenEnv = Object.freeze({ ...env });
 
@@ -211,10 +210,9 @@ function setupSandboxTools(
     // untrusted JS and must run inside the guest sandbox (Modal/Deno),
     // never on the host. They are delegated via RPC like custom tools;
     // the guest harness runs them directly.
-    if (builtinDefs[name] && !SANDBOX_ONLY_BUILTINS.has(name)) {
-      const tool = builtinDefs[name];
+    if (builtins.list()[name] && !SANDBOX_ONLY_BUILTINS.has(name)) {
       return executeToolCall(name, args, {
-        tool,
+        toolset: builtins,
         env: frozenEnv,
         sessionId: sessionId ?? "",
         workflows: withNotify(workflows, notifier, sessionId),
@@ -253,12 +251,13 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
     // Deno one under AAI_RUN_CODE=deno; without one the builtin refuses.
     ...omitUndefined({ runCode: options.runCode }),
   };
-  const customSchemas = agentToolsToSchemas(agent.tools ?? {});
+  // Every source as a toolset, in precedence order: the agent's files, what
+  // `agent()` and host steps attached (roster, MCP), then builtins LAST — so a
+  // file shadows a builtin (`mergeBuiltinSurface` drops and logs it).
+  const agentSets = agentToolsets(agent);
+  const customSchemas = agentToolsToSchemas(agentSets);
   const builtins = mergeBuiltinSurface(agent, builtinOpts, { schemas: customSchemas }, logger);
-  const allTools: Record<string, AgentDef["tools"][string]> = {
-    ...builtins.defs,
-    ...agent.tools,
-  };
+  const toolsets = [...agentSets, builtins.toolset];
   const toolSchemas = builtins.schemas;
 
   const frozenEnv = Object.freeze({ ...env });
@@ -323,7 +322,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
     }
   };
 
-  const executeTool = createToolDispatcher(allTools, async (tool, call) => {
+  const executeTool = createToolDispatcher(toolsets, async (toolset, call) => {
     const { name, args, messages } = call;
     const sid = call.sessionId;
     /**
@@ -339,14 +338,13 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
      * reconnected client stays stale with no further push coming.
      */
     const liveEmitter = (): SessionEmitter | undefined => emitters.get(sid);
-    // A `clientTool` is answered by the page. The wait for this call's
-    // `tool_result` rides the CONTEXT, so a wrapper that gates the tool (a
-    // persona, a dialog) still runs before it; the brand only sets the deadline.
-    const brand = clientToolBrand(tool);
+    // A `"client"` entry is answered by the page: this is the wait for its
+    // `tool_result`, which the executor binds only for such an entry, after the
+    // toolset's gate. Its deadline is the entry's own.
     const callId = call.options?.toolCallId;
     const run = () =>
       executeToolCall(name, args, {
-        tool,
+        toolset,
         ...omitUndefined({
           clientCall:
             callId === undefined
@@ -369,7 +367,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
         // there means the SESSION is over, which neither of its two arms is.
         onUncaught: (message) =>
           liveEmitter()?.emit({ type: "error.reported", code: "tool", message, fatal: false }),
-        timeoutMs: brand?.timeoutMs ?? options.toolTimeoutMs,
+        timeoutMs: options.toolTimeoutMs,
         // Always defined: `ctx.send` is a no-op when no socket holds the id
         // (the same shape a missing sink produced before), and binding it
         // late is what lets a resumed client receive it.

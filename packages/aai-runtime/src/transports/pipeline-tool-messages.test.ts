@@ -11,7 +11,7 @@
 import { dialog, sessionSlot, type ToolDef, type ToolMessages } from "@alexkroman1/aai";
 import { DEAD_AIR_OPENING_PHRASE, DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
-import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest";
+import { agentToolsToSchemas, type ToolSchema, toolset } from "@alexkroman1/aai/manifest";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
 import { silentLogger } from "../_test-utils.ts";
@@ -145,10 +145,14 @@ describe("slot and dialog tools speak through the same path as `tool()`", () => 
   const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }));
 
   async function runBuilt(name: string, def: ToolDef) {
-    const [schema] = agentToolsToSchemas({ [name]: def });
+    const [schema] = agentToolsToSchemas([toolset("files", { [name]: def })]);
     if (schema === undefined) throw new Error("no schema");
     return await runTurnWith({ ...schema, name: "lookup" }, () =>
-      executeToolCall(name, {}, { tool: def, env: {}, sessionId: "s" }),
+      executeToolCall(
+        name,
+        {},
+        { toolset: toolset("files", { [name]: def }), env: {}, sessionId: "s" },
+      ),
     );
   }
 

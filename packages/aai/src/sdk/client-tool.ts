@@ -12,14 +12,16 @@
  *
  * A BRAND on an ordinary {@link ToolDef}, not a second kind of tool, so every
  * surface that reads a tool — `tools/<name>.ts` discovery, schemas, `messages`,
- * `onError`, `when`-gated dialogs, the API report — takes it unchanged.
+ * `onError`, `when`-gated dialogs, the API report — takes it unchanged. The
+ * brand is read in ONE place, `toolEntry` (`sdk/toolset.ts`), which makes the
+ * entry's executor `"client"`; nothing else inspects a def's identity.
  *
- * The WAIT rides the call's context, not the def: the runtime that owns a
- * browser session binds it to the `ToolContext` it builds, and this `execute`
- * calls it. So a wrapper that gates a tool by calling `def.execute(args, ctx)`
- * — a persona's owner check, a dialog's `when` — still runs its gate first.
- * Anything with no session to bind one (a text agent, a subagent,
- * `createToolContext` in a spec) runs the same `execute`, which fails naming why.
+ * The WAIT rides the call's context, not the def: the executor binds it to the
+ * `ToolContext` for a `"client"` entry, after the toolset's gate, and this
+ * `execute` calls it — so a `dialog.tool` wrapping one still runs its own gate
+ * and transition around it. Anything with no session to bind one (a text
+ * agent, a subagent, `createToolContext` in a spec) runs the same `execute`,
+ * which fails naming why.
  *
  * `Symbol.for`, not `Symbol()`: an agent bundle and the runtime executing it
  * can each carry their own copy of this module, and the brand must survive that.

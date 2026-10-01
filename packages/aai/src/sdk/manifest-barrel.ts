@@ -56,3 +56,16 @@ export {
   withTools,
 } from "./tool-registry.ts";
 export { type ToolSchema, ToolSchemaSchema } from "./tool-schema.ts";
+// The ONE shape every tool source hands the runtime — see `sdk/toolset.ts`.
+export {
+  agentToolsets,
+  composeToolsets,
+  type DialogToolGate,
+  gateToolset,
+  type ResolvedTool,
+  type ToolBearingDef,
+  type ToolGate,
+  type ToolTable,
+  toolEntry,
+  toolset,
+} from "./toolset.ts";

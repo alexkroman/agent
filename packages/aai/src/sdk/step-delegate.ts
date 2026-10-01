@@ -13,10 +13,10 @@
  * `subagent()` implementation that does all four and is tested.
  *
  * ```ts
- * import { subagent } from "@alexkroman1/aai";
+ * import { speaker } from "@alexkroman1/aai";
  * import { stepDelegate } from "@alexkroman1/aai/step";
  *
- * const researcher = subagent({
+ * const researcher = speaker({
  *   name: "researcher",
  *   systemPrompt: "Research one angle. Search, then read the best pages.",
  *   expectedOutput: "A paragraph of what you found, naming your sources.",
@@ -73,7 +73,7 @@
  * be mistaken for a real run.
  */
 
-import type { DelegateOptions, DelegateResult, SubagentDef } from "./subagent.ts";
+import type { DelegateOptions, DelegateResult, SpeakerDef } from "./speaker.ts";
 
 /**
  * The registry-wide slot. Prefixed with the package name so a second copy of
@@ -88,12 +88,12 @@ const STEP_DELEGATE_SLOT = Symbol.for("@alexkroman1/aai.stepDelegate");
  *
  * Identical in shape to `DelegateFn`, deliberately — the host fills this slot
  * with `createSubagentRunner` bound to a sessionless parent bag, so the same
- * `SubagentDef` behaves the same way whether a tool or a step reached it.
+ * `SpeakerDef` behaves the same way whether a tool or a step reached it.
  *
  * @internal
  */
 export type StepDelegateFn = (
-  subagent: SubagentDef,
+  subagent: SpeakerDef,
   options: DelegateOptions,
 ) => Promise<DelegateResult>;
 
@@ -128,7 +128,7 @@ export function publishStepDelegate(runner: StepDelegateFn | undefined): void {
  * @public
  */
 export function stepDelegate(
-  subagent: SubagentDef,
+  subagent: SpeakerDef,
   options: DelegateOptions,
 ): Promise<DelegateResult> {
   const runner = (globalThis as StepDelegateSlot)[STEP_DELEGATE_SLOT];

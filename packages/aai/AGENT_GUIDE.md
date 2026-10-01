@@ -378,7 +378,7 @@ export default agent({
   text?: true;                               // text-only agent: no STT, no TTS, `llm` is the one stage
   events?: SessionEventHandlers;             // observe the session; "metrics.collected" is each
                                              // reply's latency/tokens: createMetricsCollector()
-  personas?: Personas;                       // see "Personas"
+  roster?: Roster;                           // see "Speakers"
 });
 ```
 
@@ -1690,7 +1690,7 @@ ctx.send(event, data): void                    // push custom event to browser c
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
                                                // with a `schema`, `object` is REQUIRED and typed by it
 ctx.delegate(sub, opts): Promise<DelegateResult> // run a subagent — a whole tool loop with its own
-                                               // context window (see "Subagents")
+                                               // context window (see "Speakers")
 ctx.signal: AbortSignal                        // aborts on barge-in, reset, session stop, or this call's timeout
 ctx.speech: SessionSpeech                      // say(text) verbatim LATER, or interrupt() — see "Saying
                                                // something from outside a turn"; never await it in execute
@@ -1893,18 +1893,18 @@ attempts" a state you declare and handle rather than an error. Options are
 `ProcedureRunOptions`; the machine is an XState machine, and `xstate` is already
 an SDK dependency. `technical-support-agent` is the worked example.
 
-### Subagents (`ctx.delegate`)
+### Speakers (`speaker()`, `ctx.delegate`, `roster()`)
 
 `ctx.generate` is ONE prompt. When answering takes an unknown number of tool
-calls whose intermediate results the conversation has no reason to carry,
-delegate to a **subagent**: a second tool loop with its own system
-prompt, model, tools and — the whole point — its own context window.
+calls the conversation has no reason to carry, delegate to a **speaker** off
+the line: a second tool loop with its own prompt, model, tools and — the whole
+point — its own context window.
 
 ```ts
-import { subagent, tool } from "@alexkroman1/aai";
+import { speaker, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-const researcher = subagent({
+const researcher = speaker({
   name: "researcher",
   systemPrompt: "Research the task with the tools you have.",
   expectedOutput: "A self-contained summary — the only thing the caller sees.",
@@ -1922,46 +1922,45 @@ export default tool({
 });
 ```
 
-Four rules, each the way a subagent disappoints when skipped: you receive its
+Four rules, each the way a delegation disappoints when skipped: you receive its
 FINAL message, so declare `expectedOutput`; its context is isolated, so `task`
 must be a complete brief; `maxSteps` bounds the loop, and a capped run is asked
 for its answer with tools withheld; and say you are looking it up before you
-call. A subagent may name its own `llm` and its own `tools` map; **delegation is
-one level deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it
-by subagent name.
-
-### Personas and `handoff` (`personas()`)
+call. It may name its own `llm` and `tools` map; **delegation is one level
+deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it by name.
 
 When the SPEAKER has to change — triage verifies the caller, billing takes over
-with its own instructions and tools, one history — declare a roster of
-**personas**; the first entry answers the call.
+with its own instructions and tools, one history — mark them `speaks: true` on
+a `roster()`; the first speaking entry answers the call.
 
 ```ts
-import { agent, persona, personas } from "@alexkroman1/aai";
+import { agent, speaker, roster } from "@alexkroman1/aai";
 
-const triage = persona({
+const triage = speaker({
   name: "triage",
+  speaks: true,
   description: "Answers the phone and picks the desk",
   systemPrompt: "Bill or fault? Find out, then hand off.",
 });
-const billing = persona({
+const billing = speaker({
   name: "billing",
+  speaks: true,
   description: "Invoices, payments and refunds",
   systemPrompt: "You are the billing desk.",
 });
-export const desk = personas([triage, billing]);
+export const desk = roster([triage, billing]);
 
-export default agent({ name: "Front Desk", personas: desk });
+export default agent({ name: "Front Desk", roster: desk });
 ```
 
-The roster mints one `handoff` tool the model routes with, described by each
-persona's `description`. A tool body hands off in code with `desk.handoff(ctx,
-billing, { note })` and returns the result; the same turn continues as the new
-persona. The target may be a name, and names are INFERRED: `desk.handoff(ctx,
-"biling")` does not compile. A persona's `tools` (a map) refuse at execution
-while another persona speaks, naming who is and how to hand off. `tools/` and
-`system-prompt.md` hold under every persona; a dialog state pins one with
-`persona`. Example: `front-desk-agent`.
+One roster mints `handoff` over its speaking entries and `delegate` over the
+rest, each described by the entries' `description`. A tool body hands off with
+`desk.handoff(ctx, billing, { note })` and returns the result; the turn goes on
+as the new speaker. Names are INFERRED: `desk.handoff(ctx, "biling")` does not
+compile. A speaking entry's `tools` refuse while another speaks, naming who is
+and how to hand off. `tools/` and `system-prompt.md` hold under every speaker; a
+dialog state pins one with `persona`. Examples: `front-desk-agent`,
+`topic-briefing-agent`.
 
 ### A tool that calls an API
 

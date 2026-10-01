@@ -10,7 +10,11 @@ import {
 } from "./_internal-types.ts";
 import { rawConfig } from "./_test-utils.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
+import { type Toolset, toolset } from "./toolset.ts";
 import type { AgentDef, ToolDef } from "./types.ts";
+
+/** One `"files"` toolset over a map — what `agentToolsToSchemas` reads. */
+const files = (tools: Record<string, ToolDef>): Toolset[] => [toolset("files", tools)];
 
 // The single subtraction the config-mapping design rests on: every AgentDef
 // field must be either serializable (present in AgentConfigSchema) or named
@@ -40,7 +44,7 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
       execute: noop,
     },
   };
-  const schemas = agentToolsToSchemas(tools);
+  const schemas = agentToolsToSchemas([toolset("files", tools)]);
   expect(schemas.length).toBe(2);
   // `name`/`description` are copied verbatim; `parameters` is the CONVERSION
   // this function is named for, so it is the field worth pinning — including
@@ -74,17 +78,19 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
 // `required` changes what the model emits — and it is the only one of the three
 // conversion surfaces where the mis-description is a prompt.
 test("agentToolsToSchemas - a defaulted field is NOT advertised as required", () => {
-  const schemas = agentToolsToSchemas({
-    search: {
-      description: "Search",
-      inputSchema: z.object({
-        query: z.string(),
-        limit: z.number().default(10),
-        page: z.number().optional(),
-      }),
-      execute: async () => undefined,
-    },
-  });
+  const schemas = agentToolsToSchemas(
+    files({
+      search: {
+        description: "Search",
+        inputSchema: z.object({
+          query: z.string(),
+          limit: z.number().default(10),
+          page: z.number().optional(),
+        }),
+        execute: async () => undefined,
+      },
+    }),
+  );
   expect(schemas[0]?.parameters).toMatchObject({ required: ["query"] });
   // The default is still published: the model is told what it gets for free.
   expect(schemas[0]?.parameters).toMatchObject({
@@ -99,9 +105,11 @@ test("agentToolsToSchemas - a tool with no inputSchema gets the empty object sch
   // `EMPTY_PARAMS` stays a plain `z.object({})` rather than a strict one: a
   // model that decorates a no-arg call with a stray field has that field
   // dropped, where refusing it would fail the turn.
-  const schemas = agentToolsToSchemas({
-    ping: { description: "Ping", execute: async () => undefined },
-  });
+  const schemas = agentToolsToSchemas(
+    files({
+      ping: { description: "Ping", execute: async () => undefined },
+    }),
+  );
   expect(schemas[0]?.parameters).toEqual({
     type: "object",
     properties: {},
@@ -119,7 +127,7 @@ test("agentToolsToSchemas - names the removed `parameters` field rather than shi
     parameters: z.object({ city: z.string() }),
     execute: async () => undefined,
   };
-  expect(() => agentToolsToSchemas({ get_weather: withOldField })).toThrow(
+  expect(() => agentToolsToSchemas(files({ get_weather: withOldField }))).toThrow(
     /Tool "get_weather" uses the removed `parameters` field — rename it to `inputSchema`\./,
   );
 });

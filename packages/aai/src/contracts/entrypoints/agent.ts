@@ -62,13 +62,13 @@
  * is a change to what declaring an agent looks like. `UsageLimits` rides with
  * `AgentModelTuning` because it is the type of one of its fields and has no
  * reader anywhere else. `ModelTuning` — the per-request half `AgentModelTuning`
- * extends — is here with it rather than on `subagent`, though `SubagentDef`
+ * extends — is here with it rather than on `subagent`, though `SpeakerDef`
  * extends it too: it is declared beside `AgentModelTuning`, and one capability
  * owning it is the whole point of it being one declaration.
  *
  * `AgentGuardrails` is worth one more sentence, because `subagent` also
  * contracts a guardrail: `GuardrailVerdict` is one vocabulary shared by both and
- * is contracted THERE, where `SubagentGuardrail` declares it. What is here is
+ * is contracted THERE, where `SpeakerGuardrail` declares it. What is here is
  * the AGENT-level pair of fields, the same way `subagent`'s own contract note
  * puts the `AgentDef.subagents` field's signature on this capability rather than
  * on its own.

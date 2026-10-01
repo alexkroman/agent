@@ -162,8 +162,8 @@ the dialog actually is instead of firing a transition the conversation has left.
 
 ### A state may PIN a persona
 
-`DialogStateSpec.persona` names one of `agent({ personas })`' roster, and
-`Personas.position` answers it for as long as the conversation is in that
+`DialogStateSpec.persona` names a `speaks: true` entry of `agent({ roster })`, and
+`Roster.position` answers it for as long as the conversation is in that
 state — a property of the POSITION rather than a write, so a resumed session is
 pinned the same way and `handoff` to anyone else is refused until the dialog
 moves. `agent()` checks the name against the roster at declaration. The bridge

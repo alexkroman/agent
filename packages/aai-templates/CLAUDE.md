@@ -154,8 +154,8 @@ Rules the table carries that apply to any template:
   projection overload, or the seed ships to the browser.
 - Do not call `spokenOrdinal` beside `resolveOne`; it consults it internally.
 - Name a subagent in code when the tool IS the choice; put it on
-  `agent({ subagents })` when the caller's words are. Give every subagent an
-  `expectedOutput`. Reach for `SubagentDef.guardrail` only when a `schema`
+  `agent({ roster })` when the caller's words are. Give every speaker an
+  `expectedOutput`. Reach for `SpeakerDef.guardrail` only when a `schema`
   cannot express the check; an unaccepted result stays a field on the tool
   result, not a `ToolFailure`.
 - `ToolDef.onError` is a classifier: re-throw to make a failure fatal instead
@@ -365,7 +365,7 @@ prose to READ, a `workflowApp()` page, or a voice agent that hands off to a run.
 `applicant-screening-agent` is `lead-score-flow` (`crews.ts` has attribution).
 A crew task's OUTPUT decides its primitive: `output_pydantic` →
 `ctx.generate({ schema })` through `mapConcurrent`; prose with rules →
-`subagent()` with `expectedOutput` and `guardrail`. The feedback loop is
+`speaker()` with `expectedOutput` and `guardrail`. The feedback loop is
 bounded (`MAX_FEEDBACK_ROUNDS`), and a score is stored under the id the desk
 asked about, not the id the model echoed.
 

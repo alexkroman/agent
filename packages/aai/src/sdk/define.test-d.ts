@@ -17,8 +17,8 @@ import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./provi
 import type { SessionEventType } from "./session-event-map.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
+import { type SpeakerDef, speaker } from "./speaker.ts";
 import type { StandardSchemaV1 } from "./standard-schema.ts";
-import { type SubagentDef, subagent } from "./subagent.ts";
 import type { TELEPHONY_CARRIERS, TelephonyCarrier } from "./telephony-config.ts";
 import { withTools } from "./tool-registry.ts";
 import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
@@ -37,10 +37,13 @@ import type { VoicePresetName } from "./voice-presets.ts";
  * is present as a KEY typed as a message rather than absent — which is what makes
  * `agent({ tools })` fail with the file to create instead of with a bare excess
  * property. The test below pins that it really is the message.
+ *
+ * `toolsets` is the one field that is NOT a parameter: it is RESOLVED —
+ * `agent()` mints the roster's, `withMcpTools` appends an MCP server's.
  */
-test("agent() accepts every AgentDef field", () => {
+test("agent() accepts every AgentDef field but the resolved `toolsets`", () => {
   type MissingFromParam = Exclude<keyof AgentDef, keyof Parameters<typeof agent>[0]>;
-  expectTypeOf<MissingFromParam>().toEqualTypeOf<never>();
+  expectTypeOf<MissingFromParam>().toEqualTypeOf<"toolsets">();
 });
 
 test("agent() takes no state factory, and AgentDef holds none", () => {
@@ -593,28 +596,28 @@ test("telephony is declarable on a voice agent and refused where there is no cal
 });
 
 /**
- * `SubagentDef` REFUSES `maxRetries`. That name was the guardrail's revision
+ * `SpeakerDef` REFUSES `maxRetries`. That name was the guardrail's revision
  * budget before the knobs were unified, and on `ModelTuning` it means provider
- * retries — so accepting it would keep `subagent({ guardrail, maxRetries: 3 })`
+ * retries — so accepting it would keep `speaker({ guardrail, maxRetries: 3 })`
  * compiling while silently changing what the 3 bounds. The error is the point:
  * the field is typed as a message naming `maxRevisions`, so it says the fix.
  */
 test("subagent() rejects maxRetries and takes maxRevisions", () => {
   const guardrail = () => true as const;
-  subagent({ name: "r", systemPrompt: "S.", guardrail, maxRevisions: 3 });
+  speaker({ name: "r", systemPrompt: "S.", guardrail, maxRevisions: 3 });
   // Structural, not only excess-property: `maxRetries` is typed as the rename
-  // message, so a def carrying a NUMBER there is not a `SubagentDef` at all —
+  // message, so a def carrying a NUMBER there is not a `SpeakerDef` at all —
   // whether written inline or built elsewhere and passed in.
   type OldSpelling = { name: string; systemPrompt: string; guardrail: () => true; maxRetries: 3 };
-  expectTypeOf<OldSpelling>().not.toExtend<Parameters<typeof subagent>[0]>();
-  expectTypeOf<OldSpelling>().not.toExtend<SubagentDef>();
+  expectTypeOf<OldSpelling>().not.toExtend<Parameters<typeof speaker>[0]>();
+  expectTypeOf<OldSpelling>().not.toExtend<SpeakerDef>();
   // The schema overload refuses it too.
   expectTypeOf<
     Omit<OldSpelling, "guardrail"> & { schema: StandardSchemaV1<unknown, { a: string }> }
-  >().not.toExtend<SubagentDef & { schema: StandardSchemaV1 }>();
+  >().not.toExtend<SpeakerDef & { schema: StandardSchemaV1 }>();
   // The tuning knobs a subagent does take are still there.
-  expectTypeOf<SubagentDef>().toHaveProperty("temperature");
-  expectTypeOf<SubagentDef>().toHaveProperty("maxOutputTokens");
+  expectTypeOf<SpeakerDef>().toHaveProperty("temperature");
+  expectTypeOf<SpeakerDef>().toHaveProperty("maxOutputTokens");
 });
 
 /**

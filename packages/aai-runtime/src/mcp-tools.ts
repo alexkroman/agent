@@ -4,10 +4,9 @@
  *
  * {@link withMcpTools} is the whole surface: hand it an agent definition and it
  * hands back the definition to SERVE, with every reachable server's tools
- * attached as ordinary `ToolDef`s. Same shape as `withToolsDir` one module
- * over, and for the same reason — a registry assembled somewhere other than a
- * bundler still goes on through `withTools`, so the name grammar, the collision
- * message and the attach have one implementation whoever did the discovery.
+ * attached as one `"mcp"` {@link Toolset} on `toolsets` — after the agent's own,
+ * so composition (first wins) can never let a remote tool shadow one an author
+ * wrote.
  *
  * ## An MCP tool is an ORDINARY tool, deliberately
  *
@@ -72,9 +71,9 @@
  * same way — the provided tool wins and the drop is logged.
  */
 
-import type { McpServerConfig, McpServers, ToolDef } from "@alexkroman1/aai";
+import type { McpServerConfig, McpServers, ToolDef, Toolset } from "@alexkroman1/aai";
 import { mcpToolName } from "@alexkroman1/aai";
-import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
+import { agentToolsets, type ToolBearingDef, toolset } from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { type DiscoveredTool, discover, mcpTool } from "./mcp-adapt.ts";
@@ -302,32 +301,27 @@ function acceptServer(
  * screen, or missing its `tokenEnv` costs its own tools and nothing else.
  *
  * **A name a server cannot have does not fail the call either.** `taken` is
- * seeded from `def.tools` before any server is registered, so a remote tool
- * whose prefixed name the agent already declares — which after the prefix means
- * the author wrote a `tools/mcp_<server>_<tool>.ts` file of their own — is
- * dropped by `registerTools` with a warning naming both, and the agent's own
- * tool wins. `withTools` therefore never sees a colliding key, and its throw is
- * unreachable from here; this doc used to promise that throw, which was the one
- * claim about this function a manual test could falsify.
+ * seeded from every toolset the agent already carries (its files, its roster)
+ * before any server is registered, so a remote tool whose prefixed name the
+ * agent already declares is dropped by `registerTools` with a warning naming
+ * both, and the agent's own tool wins.
  *
  * @public
  */
 export async function withMcpTools<
-  D extends { readonly tools: ToolRegistry; readonly mcpServers?: McpServers | undefined },
+  D extends ToolBearingDef & { readonly mcpServers?: McpServers | undefined },
 >(def: D, options: McpToolsOptions = {}): Promise<McpToolSurface<D>> {
   const declared = def.mcpServers ?? {};
   if (Object.keys(declared).length === 0) {
     return { agent: def, servers: [], close: async () => undefined };
   }
+  const taken = new Set(agentToolsets(def).flatMap((set) => Object.keys(set.list())));
   // No `clientId`: nobody is calling yet. A server whose resolvers need one
   // throws, and costs its own tools here and nothing else.
-  const connected = await connectMcpServers(declared, {
-    ...options,
-    taken: new Set(Object.keys(def.tools)),
-  });
-
+  const connected = await connectMcpServers(declared, { ...options, taken });
+  const mcp: Toolset = toolset("mcp", connected.tools);
   return {
-    agent: withTools(def, connected.tools),
+    agent: { ...def, toolsets: [...(def.toolsets ?? []), mcp] },
     servers: connected.servers,
     close: connected.close,
   };

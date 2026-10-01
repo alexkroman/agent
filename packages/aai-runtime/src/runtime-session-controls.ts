@@ -99,7 +99,7 @@ export function openSessionWiring(deps: {
   // The roster, on the SAME per-session prompt the dialogs installed into: its
   // section is a second keyed suffix, sorted ahead of theirs. Inert for an
   // agent that declares none — see `runtime-personas.ts`.
-  const personas = openSessionPersonas(agent.personas, sessionId, {
+  const personas = openSessionPersonas(agent.roster, sessionId, {
     prompt: dialogs.prompt,
     slots,
     transport: deps.transport,

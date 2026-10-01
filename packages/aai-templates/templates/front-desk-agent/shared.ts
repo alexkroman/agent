@@ -25,11 +25,11 @@
  */
 import {
   type DeepReadonly,
-  type PersonaDef,
-  type Personas,
-  persona,
-  personas,
+  type Roster,
+  roster,
+  type SpeakerDef,
   sessionSlot,
+  speaker,
   tool,
 } from "@alexkroman1/aai";
 import { type ToolFailure, toolFailure } from "@alexkroman1/aai/utils";
@@ -111,8 +111,9 @@ export function verifiedAccount(desk: DeepReadonly<Desk>): Account | ToolFailure
 // ─── The personas ────────────────────────────────────────────────────────────
 
 /** Who answers the phone. No tools of its own: `tools/verify_account.ts` is everyone's. */
-export const triage: PersonaDef<"triage"> = persona({
+export const triage: SpeakerDef<"triage"> = speaker({
   name: "triage",
+  speaks: true,
   description: "Answers the phone, verifies the caller and works out which desk they need",
   systemPrompt: [
     "You are the front desk. Find out whether the caller has a BILLING question",
@@ -124,8 +125,9 @@ export const triage: PersonaDef<"triage"> = persona({
   ].join(" "),
 });
 
-export const billing = persona({
+export const billing = speaker({
   name: "billing",
+  speaks: true,
   description: "Invoices, payments and refunds for a verified caller",
   systemPrompt: [
     "You are the billing desk. Speak about invoices, payments and refunds only.",
@@ -174,8 +176,9 @@ export const billing = persona({
   },
 });
 
-export const support = persona({
+export const support = speaker({
   name: "support",
+  speaks: true,
   description: "Line and equipment faults: diagnostics and technician visits",
   systemPrompt: [
     "You are technical support. Diagnose the line before proposing anything, and",
@@ -221,16 +224,12 @@ export const support = persona({
  * the caller to, and each other. `agent.ts` declares it, every tool that hands
  * off imports it, and `agent.test.ts` reads who is speaking through it.
  *
- * `personas()` infers the three names from the literals `persona()` kept, so
+ * `roster()` infers the three names from the literals `speaker()` kept, so
  * `desk.handoff(ctx, "biling")` in a tool body is a compile error rather than a
  * throw on a live call. The annotation spells them out for the reader; a bare
- * `Personas` would widen them back to `string` and lose that check.
+ * `Roster` would widen them back to `string` and lose that check.
  */
-export const desk: Personas<"triage" | "billing" | "support"> = personas([
-  triage,
-  billing,
-  support,
-]);
+export const desk: Roster<"triage" | "billing" | "support"> = roster([triage, billing, support]);
 
 /** A tool the front desk itself carries, for a spec to reach `tool()` beside the slot forms. */
 export const whichDesk = tool({

@@ -93,20 +93,20 @@ export interface UsageLimits {
 
 /**
  * The per-REQUEST knobs every model loop this runtime runs takes — the agent's
- * own conversational loop and a {@link SubagentDef}'s delegated one alike.
+ * own conversational loop and a {@link SpeakerDef}'s delegated one alike.
  *
  * **One declaration, extended by both, rather than a list each restates.**
- * `SubagentDef` used to carry its own `temperature` and `maxOutputTokens` beside
+ * `SpeakerDef` used to carry its own `temperature` and `maxOutputTokens` beside
  * `AgentModelTuning`'s, with one-line docs of their own, and a `maxRetries` that
  * meant something else entirely (the guardrail's revision budget, now
- * {@link SubagentDef.maxRevisions}). A knob added here reaches both loops, and
+ * {@link SpeakerDef.maxRevisions}). A knob added here reaches both loops, and
  * the name means one thing wherever it is written.
  *
  * Every field is passed straight through to the provider request, so each is
  * refused in S2S mode on the AGENT — there the provider runs the loop; see this
  * module's header. A subagent always runs on this runtime, whatever the parent's
  * mode, so it may set `temperature` and `maxOutputTokens` — but not
- * `maxRetries`, which {@link SubagentDef} omits so the old guardrail-budget
+ * `maxRetries`, which {@link SpeakerDef} omits so the old guardrail-budget
  * spelling fails to compile.
  *
  * @public
@@ -143,7 +143,7 @@ export interface ModelTuning {
    * Transport-level retries of a request that never produced an answer at all
    * (a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
    * a subagent's requests retry on the AI SDK default, and its guardrail
-   * sending an answer back is {@link SubagentDef.maxRevisions}.
+   * sending an answer back is {@link SpeakerDef.maxRevisions}.
    *
    * `0` is the value to reach for on a live call, and the reason is the clock:
    * the default backoff can spend several seconds before the turn is declared

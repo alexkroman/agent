@@ -2,8 +2,8 @@
 summary: >-
   The SDK's authoring primitives: `AgentDef` field groups, the `/testing`
   helpers, concurrency primitives, session slots, dialogs, `procedure()`,
-  `ctx.generate`/`messages`/`delegate`, personas, tool `messages`, voice
-  presets, persistence, workflow apps and the upload client
+  `ctx.generate`/`messages`/`delegate`, `speaker()`/`roster()`, `Toolset`, tool
+  `messages`, voice presets, persistence, workflow apps and the upload client
 read_when: >-
   editing anything under `packages/aai/src/sdk/` — an authoring type, a
   testing helper, a slot/dialog/workflow/upload module
@@ -33,9 +33,9 @@ so a new field cannot skip it.
   compile. `resetToolChoice` defaults **true** and is inert unless `toolChoice`
   demands a call.
 - **`AgentModelTuning` extends `ModelTuning`** (`temperature`,
-  `maxOutputTokens`, `maxRetries`), which `SubagentDef` extends minus
-  `maxRetries`. A subagent's guardrail budget is `maxRevisions`; `SubagentDef`
-  re-types `maxRetries` as a message naming the rename.
+  `maxOutputTokens`, `maxRetries`), which `SpeakerDef` extends minus
+  `maxRetries`. A delegated run's guardrail budget is `maxRevisions`;
+  `SpeakerDef` re-types `maxRetries` as a message naming it.
 - **`SlotToolDef` and `DialogToolDef` are BUILT from `ToolDef`**
   (`Omit<ToolDef, "execute">` + their own `execute`), so a new `ToolDef` field
   reaches both.
@@ -92,8 +92,9 @@ Each helper's doc carries the detail; the rules:
   `ToolBearingAgent & { systemPrompt }` so `AgentDef` stays off this contract;
   `expectDeployable` returns the narrow `DeployedConfig`.
 - **`runTool(tool, args?, ctx?)`** is typed end to end; the name form answers
-  `unknown` (import the tool file instead of casting). Args and ctx are told
-  apart by SHAPE; an omitted context is a distinct session.
+  `unknown` (import the tool file instead of casting) and runs through the
+  toolset's GATE. Args and ctx are told apart by SHAPE; an omitted context is a
+  distinct session.
 - **`expectToolOk`/`expectDialogOk`** fail AT the call quoting the refusal;
   `expectDialogRefused`/`dialogRefusalPattern` mirror them (`_dialog-refusal.ts`
   owns the sentence); `dialogResultSchema` is the envelope as zod.
@@ -309,10 +310,10 @@ stays for non-file registries (the studio's coding agent).
   reaches the MODEL** — an orphan `tool` message is rejected by providers.
   `aai-runtime`'s `_tool-result-message.ts` is the one statement of the shape;
   more in `packages/aai-runtime/TOOL-OUTCOMES-CLAUDE.md`.
-- **`ctx.delegate`** runs a whole tool loop (`ToolLoopAgent`) with its own
-  instructions, model, tools and context window; `subagent()` (`subagent.ts`)
-  declares one, including `expectedOutput`, `guardrail`/`maxRevisions` and
-  `agent({ subagents })`. Host half: "Subagents" in
+- **`ctx.delegate`** runs a `SpeakerDef` OFF the line — a whole tool loop
+  (`ToolLoopAgent`) with its own instructions, model, tools and context window;
+  `speaker()` (`speaker.ts`) declares one, including `expectedOutput`,
+  `guardrail`/`maxRevisions` and `schema`. Host half: "Subagents" in
   `packages/aai-runtime/src/CLAUDE.md`.
 
 ## MCP servers: declared here, connected in `aai-runtime`
@@ -372,15 +373,35 @@ and `ensureComposioWebhook` (a setup script's, not an agent's).
 It rides on `ToolSchema` (via `agentToolsToSchemas`), so it means the same in
 `aai dev`, a deployed guest and host mode.
 
-## Personas and `handoff` (`persona.ts`)
+## One `speaker()`, one `roster()` (`speaker.ts`, `roster.ts`)
 
-`personas([...])` declares a roster (first entry answers); `agent({ personas })`
-lowers it into `tools` — each persona's tools wrapped in a GATE plus a minted
-`handoff` tool. The active persona is the `aai.persona` slot; a dialog state may
-PIN one (`DialogStateSpec.persona`). A persona is not an `AgentDef` nor a dialog
-state, and **the gate is at EXECUTION with tools still advertised** (hiding them
-replaces the named refusal with a generic error). Runtime half: "Personas are
-wired to a SESSION here" in `packages/aai-runtime/src/CLAUDE.md`.
+**A subagent and a persona are one `SpeakerDef`**; where it runs decides what it
+is. `roster([...])` is ONE list: a `speaks: true` entry is handed the CALL by the
+minted `handoff` (first speaking entry answers), the rest a TASK by the minted
+`delegate` (`ctx.delegate`). `agent({ roster })` lowers it into a `"roster"`
+toolset (`roster-tools.ts`). Every entry needs a `description` (the only thing
+either router reads); a speaking entry's tools have one owner and never a minted
+name. The speaker on the line is the `aai.speaker` slot; a dialog state may PIN
+a speaking entry (`DialogStateSpec.persona`). **The gate is at EXECUTION with
+tools still advertised** (hiding them replaces the named refusal with a generic
+error). Runtime half: "A roster's speakers are wired to a SESSION here" in
+`packages/aai-runtime/src/CLAUDE.md`.
+
+## Every tool source is a `Toolset` (`toolset.ts`)
+
+Files, builtins, MCP, a roster, a subagent's map: each is a `Toolset` —
+`list()` (entries: def + executor + deadline), `gate(name, ctx)`,
+`execute(name, args, ctx)` — and `agentToolsToSchemas`/`executeToolCall` read
+nothing else. **Composition is first-wins** (`composeToolsets`): files, then
+`AgentDef.toolsets` (resolved, never authored — `agent()`'s roster set,
+`withMcpTools`' MCP set), then builtins. **`toolEntry` is the only place a def's
+identity is read** (the `clientTool` brand → `executor: "client"`). A dialog's
+`gate(def, ctx)` is layered over every set by `agentToolsets`. **A refusal is a
+`ToolRefusal`** — a `ToolFailure` plus `reason` (`unknown_tool`,
+`invalid_arguments`, `cancelled`, `persona`, `dialog`, `roster`); `reason` is NOT
+on `ToolFailure` itself, so an author's `{ error }` literal still narrows.
+`toolOf` is the lookup (the author's def); `runTool(agent, name)` is the CALL
+(gated).
 
 ## Speech boundary and voice presets
 

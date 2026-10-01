@@ -5,6 +5,7 @@ import { agentToolsToSchemas } from "./_internal-types.ts";
 import { clientTool, clientToolBrand } from "./client-tool.ts";
 import { tool } from "./define.ts";
 import { createToolContext } from "./testing.ts";
+import { toolset } from "./toolset.ts";
 
 describe("clientTool", () => {
   const getLocation = clientTool({
@@ -28,7 +29,7 @@ describe("clientTool", () => {
   });
 
   test("its schema is an ordinary tool's", () => {
-    const [schema] = agentToolsToSchemas({ get_location: getLocation });
+    const [schema] = agentToolsToSchemas([toolset("files", { get_location: getLocation })]);
     expect(schema).toMatchObject({ name: "get_location", description: "the caller's location" });
     expect(schema?.parameters).toMatchObject({ properties: { precise: { type: "boolean" } } });
   });

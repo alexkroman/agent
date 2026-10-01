@@ -4,7 +4,7 @@ import systemPrompt from "./system-prompt.md?raw";
 
 /**
  * A front desk that hands the caller between three personas — the worked
- * example for `agent({ personas })`. `shared.ts` declares the roster and each
+ * example for a SPEAKING roster (`agent({ roster })`). `shared.ts` declares it and each
  * desk's tools; `tools/verify_account.ts` is the one tool every desk carries.
  *
  * `systemPrompt` here is what holds at EVERY desk. The active persona's own
@@ -17,6 +17,6 @@ export default agent({
     "Answers the phone for an internet provider and hands the caller between triage, billing and support",
   systemPrompt,
   greeting: "Northwind Internet, front desk. Is this about your bill, or about your service?",
-  personas: desk,
+  roster: desk,
   syncState: deskSlot.projected,
 });

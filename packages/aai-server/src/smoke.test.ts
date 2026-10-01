@@ -8,7 +8,7 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
-import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
+import { agentToolsets, agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { resolveAllBuiltins } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
@@ -19,7 +19,7 @@ import { authHeaders, createTestOrchestrator } from "./test-utils.ts";
  */
 function buildDeployBodyFromAgent(slug: string, agent: AgentDef): string {
   const config = toAgentConfig(agent);
-  const toolSchemas = agentToolsToSchemas(agent.tools);
+  const toolSchemas = agentToolsToSchemas(agentToolsets(agent));
 
   const agentConfig = {
     ...config,
@@ -173,7 +173,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
       },
     };
 
-    const schemas = agentToolsToSchemas(agent.tools);
+    const schemas = agentToolsToSchemas(agentToolsets(agent));
 
     // greet tool should have proper schema
     const greetSchema = schemas.find((s) => s.name === "greet");

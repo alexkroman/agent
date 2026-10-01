@@ -18,10 +18,13 @@
 import { createToolContext } from "./_testing-context.ts";
 import { isRecord } from "./is-record.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import { agentToolsets, composeToolsets, type DialogToolGate, type Toolset } from "./toolset.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
 /**
- * The slice of an agent these helpers read: its tool table.
+ * The slice of an agent these helpers read: its tool table — the `tools/`
+ * files plus every toolset `agent()` attached (a roster's `handoff`, `delegate`
+ * and gated tools), gated by its dialogs.
  *
  * Structural rather than `AgentDef`, so a spec may pass the agent's default
  * export, a bare `{ tools }` literal, or anything else carrying one.
@@ -30,6 +33,8 @@ import type { ToolContext, ToolDef } from "./types.ts";
  */
 export type ToolBearingAgent = {
   readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+  readonly toolsets?: readonly Toolset[] | undefined;
+  readonly dialogs?: readonly DialogToolGate[] | undefined;
 };
 
 /**
@@ -54,6 +59,18 @@ export type ToolBearingAgent = {
  * @public
  */
 export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema> {
+  return resolveTool(agent, name).def;
+}
+
+/**
+ * The tool `name` resolves to across the agent's toolsets, and how a CALL runs
+ * it: its toolset's gate first (a roster entry not on the line, a dialog out of
+ * state — the refusal comes back as the result), then the toolset's execute.
+ */
+function resolveTool(
+  agent: ToolBearingAgent,
+  name: string,
+): { def: ToolDef<ToolInputSchema>; call: ToolDef["execute"] } {
   // Before the lookup, because the value in this position is routinely not an
   // agent at all: a tool def (the thing under test), or the `undefined` a
   // mistyped import answers with. Both used to die on `agent.tools[name]` with
@@ -70,16 +87,21 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
         : `toolOf(agent, "${name}") was handed ${describe(given)} rather than an agent definition. Import the agent as DEPLOYED: \`import agentDef from "virtual:aai/agent"\` under vitest, or \`deployedAgent\` from @alexkroman1/aai/testing under any other runner.`,
     );
   }
-  const def = agent.tools[name];
-  if (!def) {
-    const declared = Object.keys(agent.tools);
+  const table = composeToolsets(agentToolsets(agent));
+  const found = table.resolve(name);
+  if (!found) {
+    const declared = table.tools.map((one) => one.name);
     throw new Error(
       declared.length > 0
         ? `The agent declares no tool named ${name}. It declares: ${declared.join(", ")}.`
         : `The agent declares no tool named ${name}. It declares: (none). ${AUTHORED_DEF_HINT}`,
     );
   }
-  return def;
+  const { toolset } = found;
+  return {
+    def: found.entry.def,
+    call: (args, ctx) => toolset.gate(name, ctx) ?? toolset.execute(name, args, ctx),
+  };
 }
 
 /**
@@ -212,7 +234,9 @@ export async function runTool(
   // including a tool def handed where the agent belongs.
   if (typeof nameOrArgs === "string") {
     const agent: unknown = target;
-    return await execute(toolOf(agent as ToolBearingAgent, nameOrArgs), argsOrCtx, ctx);
+    // The CALL, not the bare def: gated by its toolset exactly as the runtime gates it.
+    const { call } = resolveTool(agent as ToolBearingAgent, nameOrArgs);
+    return await execute({ execute: call }, argsOrCtx, ctx);
   }
   return await execute(target, nameOrArgs, argsOrCtx);
 }
@@ -328,7 +352,11 @@ export function toolRunner(agent: ToolBearingAgent): ToolRunner {
   const given: unknown = agent;
   // Not an agent at ALL is left to the first call: `toolOf` already has a
   // sentence for each way that happens, and both need the tool NAME to say it.
-  if (isRecord(given) && isRecord(given.tools) && Object.keys(given.tools).length === 0) {
+  if (
+    isRecord(given) &&
+    isRecord(given.tools) &&
+    composeToolsets(agentToolsets(agent)).tools.length === 0
+  ) {
     throw new Error(
       "toolRunner(agent) was handed an agent that declares no tools, so every run(…) " +
         `would fail the same way. ${AUTHORED_DEF_HINT}`,

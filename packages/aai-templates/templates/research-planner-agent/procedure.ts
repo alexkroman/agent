@@ -31,15 +31,15 @@
  */
 
 import type {
+  DelegateAnswer,
   DelegateFn,
   GenerateFn,
   GuardrailVerdict,
-  SubagentAnswer,
-  ToolSet,
+  ToolMap,
   TypedDelegateResult,
-  TypedSubagentDef,
+  TypedSpeakerDef,
 } from "@alexkroman1/aai";
-import { type DeepReadonly, isRecord, safeJsonParse, subagent } from "@alexkroman1/aai";
+import { type DeepReadonly, isRecord, safeJsonParse, speaker } from "@alexkroman1/aai";
 import {
   actSchema,
   EXECUTOR_OUTPUT,
@@ -85,7 +85,7 @@ export const MAX_STEP_TURNS = 3;
  * A model asked to work a step it cannot settle has two honest moves — look, or
  * say it could not — and one dishonest one that is cheaper than both: report
  * `settled: false` from memory, having searched for nothing. That is the shape a
- * `SubagentGuardrail` is for. It sees the {@link SubagentAnswer} the run
+ * `SpeakerGuardrail` is for. It sees the {@link DelegateAnswer} the run
  * produced, including the TOOL CALLS it made, which is the fact no wording of
  * the prompt could establish.
  *
@@ -100,7 +100,7 @@ export const MAX_STEP_TURNS = 3;
  * JSON that already validated, and re-parsing it is cheaper than a second
  * channel for the same value.
  */
-export function executorGuardrail(answer: SubagentAnswer): GuardrailVerdict {
+export function executorGuardrail(answer: DelegateAnswer): GuardrailVerdict {
   const parsed = stepAnswerSchema.safeParse(safeJsonParse(answer.text));
   if (!parsed.success || parsed.data.settled) return true;
   if (answer.toolCalls.length > 0) return true;
@@ -113,11 +113,11 @@ export function executorGuardrail(answer: SubagentAnswer): GuardrailVerdict {
 
 /**
  * The executor's tool set, by the name the model calls each one — a
- * {@link ToolSet}, the same map shape `agent({ tools })` and a persona's
+ * {@link ToolMap}, the same map shape `agent({ tools })` and a persona's
  * `tools` take. Named so a spec (or a second subagent) can see exactly what
  * one delegated step can reach.
  */
-export const EXECUTOR_TOOLS: ToolSet = { search: searchTool, read: readTool };
+export const EXECUTOR_TOOLS: ToolMap = { search: searchTool, read: readTool };
 
 /**
  * Their `execute_step` — a ReAct agent with a search tool.
@@ -142,13 +142,13 @@ export const EXECUTOR_TOOLS: ToolSet = { search: searchTool, read: readTool };
  * the prompt said "search once, read what comes back" while the only actions
  * were search and answer, so the executor answered from lists of titles.
  *
- * **Annotated as a {@link TypedSubagentDef}, because that is what the desk
+ * **Annotated as a {@link TypedSpeakerDef}, because that is what the desk
  * depends on**: `subagent()` with a `schema` answers one, and that is the
  * overload of `ctx.delegate` that hands back a parsed `object` rather than a
  * string for {@link executeStep} to interpret. The `guardrail` beside it is
  * {@link executorGuardrail}.
  */
-export const executor: TypedSubagentDef<StepAnswer> = subagent({
+export const executor: TypedSpeakerDef<StepAnswer> = speaker({
   name: "executor",
   systemPrompt: EXECUTOR_SYSTEM,
   expectedOutput: EXECUTOR_OUTPUT,

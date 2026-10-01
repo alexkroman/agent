@@ -54,7 +54,7 @@
  * `text-agent-events.ts` carries the vocabulary and its argument.
  */
 
-import type { AgentDef, AgentSessionContext, Message } from "@alexkroman1/aai";
+import type { AgentSessionContext, Message } from "@alexkroman1/aai";
 import {
   createDetachedSlotStore,
   staticSystemPrompt,
@@ -63,7 +63,7 @@ import {
 import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
-import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
+import { agentToolsets, agentToolsToSchemas } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type LanguageModel, stepCountIs, streamText, type ToolSet } from "ai";
 import {
@@ -161,21 +161,18 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
   const sessionId = options.sessionId ?? crypto.randomUUID();
   const env = Object.freeze({ ...(options.env ?? {}) });
 
+  const agentSets = agentToolsets(agent);
   const builtins = mergeBuiltinSurface(
     agent,
     {
       ...omitUndefined({ fetch: options.fetch }),
       ...omitUndefined({ runCode: options.runCode }),
     },
-    { schemas: agentToolsToSchemas(agent.tools ?? {}) },
+    { schemas: agentToolsToSchemas(agentSets) },
   );
-  // The agent's own tools win a name collision, exactly as in a session — the
-  // merge above has already dropped the shadowed builtin from the schemas, so
-  // the model never sees a duplicate name either.
-  const allTools: Record<string, AgentDef["tools"][string]> = {
-    ...builtins.defs,
-    ...agent.tools,
-  };
+  // The agent's own toolsets win a name collision, exactly as in a session —
+  // builtins go LAST, and the merge above already dropped a shadowed one.
+  const toolsets = [...agentSets, builtins.toolset];
 
   // Derived ONCE and shared by both, rather than the same two expressions
   // written out three times across this factory (`resolveModel` is the third).
@@ -247,9 +244,9 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
   const sessionContext: AgentSessionContext = { sessionId, env, slots };
   const instructions = systemPromptResolver(agent.systemPrompt);
 
-  const executeTool = createToolDispatcher(allTools, (tool, call) =>
+  const executeTool = createToolDispatcher(toolsets, (toolset, call) =>
     executeToolCall(call.name, call.args, {
-      tool,
+      toolset,
       env,
       slots,
       // The agent's own id when the caller named none: one text agent is one

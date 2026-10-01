@@ -19,22 +19,22 @@
 
 import { omitUndefined } from "./omit-undefined.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
-import { formatSchemaIssues } from "./standard-schema.ts";
-import { publishStepDelegate } from "./step-delegate.ts";
-import { stripJsonFence } from "./step-generate-json.ts";
 import type {
   DelegateFn,
   DelegateOptions,
   DelegateResult,
-  SubagentDef,
-  SubagentToolCall,
-} from "./subagent.ts";
+  DelegateToolCall,
+  SpeakerDef,
+} from "./speaker.ts";
+import { formatSchemaIssues } from "./standard-schema.ts";
+import { publishStepDelegate } from "./step-delegate.ts";
+import { stripJsonFence } from "./step-generate-json.ts";
 import { isRecord } from "./utils.ts";
 
 /** One `ctx.delegate` call, as recorded by {@link stubDelegate}. */
 export interface StubDelegateCall {
   /** The subagent that was asked. */
-  subagent: SubagentDef;
+  subagent: SpeakerDef;
   /** The task it was given. */
   task: string;
   /** The whole options object, for asserting `context` and `maxSteps`. */
@@ -55,7 +55,7 @@ export type StubDelegateReply =
   | {
       text: string;
       steps?: number;
-      toolCalls?: readonly SubagentToolCall[];
+      toolCalls?: readonly DelegateToolCall[];
       /** How many times a guardrail sent an answer back. Defaults to `0`. */
       revisions?: number;
       /**
@@ -156,7 +156,7 @@ export function stubDelegate(script: StubDelegateScript): StubDelegate {
   // declaring a `schema` answers with `object` — and TypeScript cannot check an
   // overloaded type against a single implementation. `envelope` is what really
   // delivers the narrowing, by parsing the scripted text against that schema.
-  const run = async (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult> => {
+  const run = async (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult> => {
     const call: StubDelegateCall = { subagent, task: options.task, options };
     calls.push(call);
     const route = routes ? routes[subagent.name] : single;
@@ -247,7 +247,7 @@ function routeTable(
  * `undefined`. The failure names the subagent, because a route table's
  * scripted reply is several lines from where it is read.
  */
-async function typedObject(sub: SubagentDef, text: string): Promise<{ object: unknown } | object> {
+async function typedObject(sub: SpeakerDef, text: string): Promise<{ object: unknown } | object> {
   if (!sub.schema) return {};
   const parsed = safeJsonParse(stripJsonFence(text));
   const result = await sub.schema["~standard"].validate(parsed);
@@ -259,7 +259,7 @@ async function typedObject(sub: SubagentDef, text: string): Promise<{ object: un
   return { object: result.value };
 }
 
-async function envelope(sub: SubagentDef, reply: StubDelegateReply): Promise<DelegateResult> {
+async function envelope(sub: SpeakerDef, reply: StubDelegateReply): Promise<DelegateResult> {
   if (typeof reply === "string") {
     return {
       text: reply,

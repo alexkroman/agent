@@ -2,12 +2,12 @@
 /**
  * Calling a subagent's guardrail the way the runtime does — from a spec.
  *
- * A `SubagentDef.guardrail` is the one piece of a subagent a spec can test
+ * A `SpeakerDef.guardrail` is the one piece of a subagent a spec can test
  * without a model: it is a pure function of an answer. What two templates each
- * wrote to call it was the same seven lines — build a `SubagentAnswer` around
+ * wrote to call it was the same seven lines — build a `DelegateAnswer` around
  * a text with a zero cost report, reach `def.guardrail`, throw if the def has
  * none, throw if the verdict came back as a promise — and the last of those is
- * the reason this is a helper rather than a one-liner: `SubagentGuardrail` may
+ * the reason this is a helper rather than a one-liner: `SpeakerGuardrail` may
  * return a `Promise<GuardrailVerdict>`, so a spec that read the verdict
  * directly compiled against `true | string | Promise<…>` and could not assert
  * on it without a cast or a check it had to remember.
@@ -15,7 +15,7 @@
  * @module testing-guardrail
  */
 
-import type { GuardrailVerdict, SubagentAnswer, SubagentDef } from "./subagent.ts";
+import type { DelegateAnswer, GuardrailVerdict, SpeakerDef } from "./speaker.ts";
 
 /**
  * Run `def`'s guardrail over one answer and return its verdict.
@@ -35,10 +35,10 @@ import type { GuardrailVerdict, SubagentAnswer, SubagentDef } from "./subagent.t
  *
  * @example
  * ```ts
- * import { subagent } from "@alexkroman1/aai";
+ * import { speaker } from "@alexkroman1/aai";
  * import { runGuardrail } from "@alexkroman1/aai/testing";
  *
- * const checker = subagent({
+ * const checker = speaker({
  *   name: "fact-checker",
  *   systemPrompt: "Open with Confirmed:, Contradicted: or Unclear:.",
  *   guardrail: ({ text }) => /^(Confirmed|Contradicted|Unclear):/.test(text) || "Open with a verdict word.",
@@ -51,9 +51,9 @@ import type { GuardrailVerdict, SubagentAnswer, SubagentDef } from "./subagent.t
  * @public
  */
 export function runGuardrail(
-  def: SubagentDef,
+  def: SpeakerDef,
   text: string,
-  answer: Partial<SubagentAnswer> = {},
+  answer: Partial<DelegateAnswer> = {},
 ): GuardrailVerdict {
   const guardrail = def.guardrail;
   if (guardrail === undefined) {

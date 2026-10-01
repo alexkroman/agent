@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { ToolDef } from "@alexkroman1/aai";
+import { toolset } from "@alexkroman1/aai/manifest";
 import { toolFailure } from "@alexkroman1/aai/utils";
 import { TimeoutError } from "p-timeout";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -16,7 +17,11 @@ function run(
   tool: ToolDef,
   extra?: Record<string, unknown>,
 ) {
-  return executeToolCall(name, args, { tool, env: {}, ...extra });
+  return executeToolCall(name, args, {
+    toolset: toolset("files", { [name]: tool }),
+    env: {},
+    ...extra,
+  });
 }
 
 describe("executeToolCall", () => {

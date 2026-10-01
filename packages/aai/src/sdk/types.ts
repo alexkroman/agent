@@ -17,13 +17,13 @@ import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import type { BuiltinTool } from "./builtin-tools.ts";
 import type { AnyDialog } from "./dialog-handle.ts";
 import type { McpServers } from "./mcp-config.ts";
-import type { Personas } from "./persona.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
-import type { SubagentRoster } from "./subagent-roster.ts";
+import type { Roster } from "./roster.ts";
 import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
-// into this module's scope, and `AgentDef.tools` needs `ToolSet`.
-import type { ToolChoice, ToolSet } from "./tool-def.ts";
+// into this module's scope, and `AgentDef.tools` needs `ToolMap`.
+import type { ToolChoice, ToolMap } from "./tool-def.ts";
+import type { Toolset } from "./toolset.ts";
 // Imported as well as re-exported below: `AgentDef` extends it.
 import type { AgentVoicePresets } from "./voice-presets.ts";
 import type { WorkflowDef } from "./workflow.ts";
@@ -115,10 +115,10 @@ export type {
   ToolDef,
   ToolDelayedMessage,
   ToolErrorHandler,
+  ToolMap,
   ToolMessageCondition,
   ToolMessages,
   ToolMessagesInput,
-  ToolSet,
   ToolStartMessage,
 } from "./tool-def.ts";
 /**
@@ -183,7 +183,7 @@ export interface AgentDef
    * of a stored config could not act on a function, but a description is
    * exactly what such a consumer wants and could not get. Every peer SDK puts
    * one on the agent (Anthropic's `AgentDefinition.description` is required);
-   * this SDK had one on {@link SubagentDef}, {@link WorkflowDef} and
+   * this SDK had one on {@link SpeakerDef}, {@link WorkflowDef} and
    * {@link ToolDef} and none on the agent itself.
    */
   description?: string;
@@ -285,20 +285,20 @@ export interface AgentDef
    * existed to keep a single un-annotated tool from dragging the agent's whole
    * state shape back to `unknown`, which is a problem a slot does not have.
    */
-  tools: ToolSet;
+  tools: ToolMap;
   /**
-   * Subagents the MODEL may hand a task to, published as one `delegate` tool.
-   *
-   * The other half of `ctx.delegate`: a tool body naming a subagent is the
-   * AUTHOR routing in code, a roster is the MODEL routing per turn. Every entry
-   * needs a {@link SubagentDef.description} — the only thing the router reads —
-   * and `agent()` refuses one without it. The one field whose declaration MINTS
-   * A TOOL, so a `tools/delegate.ts` beside a roster is a collision; host-only,
-   * like `tools`. Worked example and argument: `sdk/subagent-roster.ts`.
+   * The {@link SpeakerDef}s the MODEL routes to: `handoff` puts a `speaks: true`
+   * entry on the line, `delegate` hands the rest a task. Mints both tools (and
+   * each speaking entry's gated tools) into `toolsets`, so a `tools/handoff.ts`
+   * or `tools/delegate.ts` beside it is a collision. Host-only. See `sdk/roster.ts`.
    */
-  subagents?: SubagentRoster;
-  /** WHO speaks: a roster handed between mid-call over one history; mints `handoff` and each persona's tools into `tools`. Host-only. See `sdk/persona.ts`. */
-  personas?: Personas;
+  roster?: Roster;
+  /**
+   * Every toolset beyond the `tools/` files — RESOLVED, never authored: `agent()`
+   * puts the roster's here and `withMcpTools` an MCP server's. Read the whole
+   * table through `agentToolsets` (`/manifest`). Host-only. See `sdk/toolset.ts`.
+   */
+  toolsets?: readonly Toolset[];
   /**
    * Durable workflows this agent may start, keyed by workflow name.
    *

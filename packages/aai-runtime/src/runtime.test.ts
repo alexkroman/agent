@@ -16,7 +16,7 @@ import {
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
-import { toAgentConfig } from "@alexkroman1/aai/manifest";
+import { toAgentConfig, toolset } from "@alexkroman1/aai/manifest";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { ASSEMBLYAI_TTS_DEFAULT_VOICE, cartesiaTts } from "@alexkroman1/aai/tts";
@@ -70,7 +70,9 @@ describe("createRuntime", () => {
   test("executeTool returns error for unknown tool", async () => {
     const exec = createRuntimeWithSeams({ agent: makeAgent(), env: {} });
     const result = await exec.executeTool("nonexistent", {}, "session-1", []);
-    expect(result).toBe(JSON.stringify({ error: "Unknown tool: nonexistent" }));
+    expect(result).toBe(
+      JSON.stringify({ error: "Unknown tool: nonexistent", reason: "unknown_tool" }),
+    );
   });
 
   test("executeTool with a real tool returns result", async () => {
@@ -307,25 +309,41 @@ function toolReturning(description: string, value: unknown): ToolDef {
 describe("executeToolCall", () => {
   test("returns 'null' when tool execute returns null", async () => {
     const tool = toolReturning("Returns null", null);
-    const result = await executeToolCall("nullTool", {}, { tool, env: {} });
+    const result = await executeToolCall(
+      "nullTool",
+      {},
+      { toolset: toolset("files", { nullTool: tool }), env: {} },
+    );
     expect(result).toBe("null");
   });
 
   test("returns 'null' when tool execute returns undefined", async () => {
     const tool = toolReturning("Returns undefined", undefined);
-    const result = await executeToolCall("undefinedTool", {}, { tool, env: {} });
+    const result = await executeToolCall(
+      "undefinedTool",
+      {},
+      { toolset: toolset("files", { undefinedTool: tool }), env: {} },
+    );
     expect(result).toBe("null");
   });
 
   test("JSON.stringifies non-string results", async () => {
     const tool = toolReturning("Returns object", { count: 42 });
-    const result = await executeToolCall("objTool", {}, { tool, env: {} });
+    const result = await executeToolCall(
+      "objTool",
+      {},
+      { toolset: toolset("files", { objTool: tool }), env: {} },
+    );
     expect(result).toBe(JSON.stringify({ count: 42 }));
   });
 
   test("JSON.stringifies numeric results", async () => {
     const tool = toolReturning("Returns number", 123);
-    const result = await executeToolCall("numTool", {}, { tool, env: {} });
+    const result = await executeToolCall(
+      "numTool",
+      {},
+      { toolset: toolset("files", { numTool: tool }), env: {} },
+    );
     expect(result).toBe("123");
   });
 
@@ -335,7 +353,11 @@ describe("executeToolCall", () => {
       inputSchema: z.object({ n: z.number() }),
       execute: ({ n }: { n: number }) => String(n),
     };
-    const result = await executeToolCall("typedTool", { n: "not-a-number" }, { tool, env: {} });
+    const result = await executeToolCall(
+      "typedTool",
+      { n: "not-a-number" },
+      { toolset: toolset("files", { typedTool: tool }), env: {} },
+    );
     expect(result).toContain("error");
     expect(result).toContain("Invalid arguments");
     expect(result).toContain("typedTool");
@@ -350,7 +372,7 @@ describe("executeToolCall", () => {
     const result = await executeToolCall(
       "nestedTool",
       { config: { port: "abc" } },
-      { tool, env: {} },
+      { toolset: toolset("files", { nestedTool: tool }), env: {} },
     );
     expect(result).toContain("config.port");
   });
@@ -363,7 +385,11 @@ describe("executeToolCall", () => {
       },
     };
     const logger = makeLogger();
-    const result = await executeToolCall("failTool", {}, { tool, env: {}, logger });
+    const result = await executeToolCall(
+      "failTool",
+      {},
+      { toolset: toolset("files", { failTool: tool }), env: {}, logger },
+    );
     expect(result).toContain("error");
     expect(result).toContain("boom");
     expect(logger.warn).toHaveBeenCalledWith(
@@ -380,7 +406,11 @@ describe("executeToolCall", () => {
       },
     };
     const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const result = await executeToolCall("failTool", {}, { tool, env: {} });
+    const result = await executeToolCall(
+      "failTool",
+      {},
+      { toolset: toolset("files", { failTool: tool }), env: {} },
+    );
     expect(result).toContain("error");
     expect(result).toContain("no-logger-boom");
     expect(spy).toHaveBeenCalledWith(
@@ -401,8 +431,16 @@ describe("executeToolCall", () => {
       description: "Bump and report",
       execute: (_args, ctx) => JSON.stringify(slot.update(ctx, (s) => ++s.n)),
     };
-    const first = await executeToolCall("stateTool", {}, { tool, env: {} });
-    const second = await executeToolCall("stateTool", {}, { tool, env: {} });
+    const first = await executeToolCall(
+      "stateTool",
+      {},
+      { toolset: toolset("files", { stateTool: tool }), env: {} },
+    );
+    const second = await executeToolCall(
+      "stateTool",
+      {},
+      { toolset: toolset("files", { stateTool: tool }), env: {} },
+    );
     expect([JSON.parse(first), JSON.parse(second)]).toEqual([1, 1]);
   });
 
@@ -411,7 +449,11 @@ describe("executeToolCall", () => {
       description: "Get messages",
       execute: (_args, ctx) => JSON.stringify(ctx.messages),
     };
-    const result = await executeToolCall("msgTool", {}, { tool, env: {} });
+    const result = await executeToolCall(
+      "msgTool",
+      {},
+      { toolset: toolset("files", { msgTool: tool }), env: {} },
+    );
     expect(JSON.parse(result)).toEqual([]);
   });
 
@@ -423,18 +465,30 @@ describe("executeToolCall", () => {
       description: "Get sessionId",
       execute: (_args, ctx) => ctx.sessionId,
     };
-    const first = await executeToolCall("sidTool", {}, { tool, env: {} });
-    const second = await executeToolCall("sidTool", {}, { tool, env: {} });
+    const first = await executeToolCall(
+      "sidTool",
+      {},
+      { toolset: toolset("files", { sidTool: tool }), env: {} },
+    );
+    const second = await executeToolCall(
+      "sidTool",
+      {},
+      { toolset: toolset("files", { sidTool: tool }), env: {} },
+    );
     expect(first).not.toBe("");
     expect(second).not.toBe(first);
   });
 
   test("tool with no parameters schema accepts any args", async () => {
-    const tool: Parameters<typeof executeToolCall>[2]["tool"] = {
+    const tool: ToolDef = {
       description: "No params",
       execute: () => "ok",
     };
-    const result = await executeToolCall("noParamsTool", { any: "thing" }, { tool, env: {} });
+    const result = await executeToolCall(
+      "noParamsTool",
+      { any: "thing" },
+      { toolset: toolset("files", { noParamsTool: tool }), env: {} },
+    );
     expect(result).toBe("ok");
   });
 });

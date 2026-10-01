@@ -9,10 +9,9 @@ import type { AgentParams, DefaultedAgentField, StaticAgentParams } from "./agen
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import { bindPersonaDialogs, type Personas } from "./persona.ts";
-import { personaTools } from "./persona-roster.ts";
+import { bindRosterDialogs, type Roster } from "./roster.ts";
+import { rosterToolset } from "./roster-tools.ts";
 import type { ToolInputSchema } from "./schema.ts";
-import { DELEGATE_TOOL_NAME, rosterTool } from "./subagent-roster.ts";
 import { type AgentDef, DEFAULT_SYSTEM_PROMPT, type ToolContext, type ToolDef } from "./types.ts";
 
 /**
@@ -159,50 +158,44 @@ function buildAgent(def: object): AgentDef {
     normalizeAgentConveniences(def) as AgentParamsCore,
   ) as AgentParamsCore;
   assertNoOrphanPins(params);
-  // The one table `agent()` fills itself: `tools` is the field it refuses an
-  // argument for, so there is nothing in `params` to overwrite. A declared
-  // roster becomes an ordinary entry here — see `sdk/subagent-roster.ts` — so it
-  // is schema'd, dispatched and executed by the same paths a `tools/` file
-  // takes, on all three transports, and the sandbox path needs nothing: the
-  // guest holds the real definition, which is the only side that can hold a
-  // `SubagentDef`'s functions anyway. A roster of PERSONAS lowers the same way —
-  // every persona's gated tools plus the minted `handoff` — see
-  // `sdk/persona-roster.ts`.
-  const tools: Record<string, ToolDef> = {};
-  if (params.subagents) tools[DELEGATE_TOOL_NAME] = rosterTool(params.subagents);
-  if (params.personas) {
-    Object.assign(tools, personaTools(bindPersonas(params.personas, params.dialogs)));
-  }
+  // The two tables `agent()` fills itself, and neither is a parameter: `tools`
+  // is filled by `withTools` from `tools/`, and a declared roster lowers into a
+  // TOOLSET (`sdk/roster-tools.ts`) — schema'd, gated and executed by the same
+  // paths a `tools/` file takes, on all three transports. The sandbox path needs
+  // nothing: the guest holds the real definition, the only side that can hold a
+  // `SpeakerDef`'s functions anyway.
+  const toolsets = params.roster ? [rosterToolset(bindRoster(params.roster, params.dialogs))] : [];
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
     maxSteps: DEFAULT_MAX_STEPS,
     ...params,
-    // AFTER the spread, and it is the one thing that may be — see above.
-    tools,
+    // AFTER the spread, and they are the only things that may be — see above.
+    tools: {},
+    toolsets,
   };
 }
 
 /**
  * Bind the dialogs to the roster, and check every `persona` a dialog state pins
- * is one the roster carries — at the declaration, where an author is standing,
+ * is a SPEAKING entry — at the declaration, where an author is standing,
  * rather than on the first turn the dialog reaches that state.
  *
  * The roster is built at module scope, before `agent()` runs, so this is the
- * first moment the two can be compared; `bindPersonaDialogs` is what lets a
- * pin be read back through `Personas.position` afterwards.
+ * first moment the two can be compared; `bindRosterDialogs` is what lets a
+ * pin be read back through `Roster.position` afterwards.
  */
-function bindPersonas(roster: Personas, dialogs: AgentDef["dialogs"]): Personas {
-  const known = new Set(roster.list.map((one) => one.name));
+function bindRoster(roster: Roster, dialogs: AgentDef["dialogs"]): Roster {
+  const known = new Set(roster.speaking.map((one) => one.name));
   for (const dialog of dialogs ?? []) {
     for (const name of declaredPersonas(dialog.machine)) {
       if (known.has(name)) continue;
       throw new Error(
-        `The "${dialog.key}" dialog pins a persona called "${name}" that is not on this agent's roster. Declared: ${[...known].join(", ")}.`,
+        `The "${dialog.key}" dialog pins a speaker called "${name}" that is not a speaking entry of this agent's roster. Speaking: ${[...known].join(", ") || "(none)"}.`,
       );
     }
   }
-  bindPersonaDialogs(roster, dialogs ?? []);
+  bindRosterDialogs(roster, dialogs ?? []);
   return roster;
 }
 
@@ -210,13 +203,13 @@ function bindPersonas(roster: Personas, dialogs: AgentDef["dialogs"]): Personas 
  * A dialog state that pins a persona on an agent with NO roster is a setting
  * that silently does nothing — refused for the same reason a stray field is.
  */
-function assertNoOrphanPins(params: { personas?: Personas; dialogs?: AgentDef["dialogs"] }): void {
-  if (params.personas) return;
+function assertNoOrphanPins(params: { roster?: Roster; dialogs?: AgentDef["dialogs"] }): void {
+  if (params.roster) return;
   for (const dialog of params.dialogs ?? []) {
     const pinned = [...declaredPersonas(dialog.machine)];
     if (pinned.length === 0) continue;
     throw new Error(
-      `The "${dialog.key}" dialog pins the persona "${pinned[0]}", but this agent declares no \`personas\`. Declare the roster, or drop the \`persona\` field from that state.`,
+      `The "${dialog.key}" dialog pins the speaker "${pinned[0]}", but this agent declares no \`roster\`. Declare the roster, or drop the \`persona\` field from that state.`,
     );
   }
 }

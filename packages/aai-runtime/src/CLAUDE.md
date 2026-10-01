@@ -196,10 +196,11 @@ refused with a warning naming the state). `runtime-dialog-knobs.ts` decides
 which; `transports/pipeline-dialog-knobs.ts` applies them. Everything else is
 in [`../DIALOG-CLAUDE.md`](../DIALOG-CLAUDE.md).
 
-## Personas are wired to a SESSION here
+## A roster's speakers are wired to a SESSION here
 
-`runtime-personas.ts` installs the active persona as the `"active-persona"`
-suffix (sorting ahead of `"dialogs"`), pushes it to a transport that holds its
+`runtime-personas.ts` installs the roster's active SPEAKING entry ("persona")
+as the `"active-persona"` suffix (sorting ahead of `"dialogs"`; a roster with
+no `speaks: true` entry installs nothing), pushes it to a transport that holds its
 prompt as session state only when it CHANGED (re-rendered on `tool.completed`
 and `state.updated`), and hands the pipeline the persona's
 `toolChoice`/`temperature` as a `prepareStep` preparer between the agent's reset
@@ -212,6 +213,25 @@ narrows the EXECUTION set too, so a call to a hidden tool becomes a
 doc carries it.
 
 ## Tools
+
+### Every tool source is a `Toolset`, and the executor reads nothing else
+
+`agentToolsToSchemas` and `executeToolCall` consume `Toolset`s
+(`aai/sdk/toolset.ts`): `agentToolsets(agent)` (files, then `agent.toolsets` —
+the roster's, MCP's — each layered with the dialogs' gates), then the
+`"builtin"` set LAST from `mergeBuiltinSurface`. `createToolDispatcher` composes
+them first-wins, the same table the schemas were drawn from.
+
+- **`executeToolCall(name, args, { toolset })`**: entry lookup
+  (`reason: "unknown_tool"`), schema (`"invalid_arguments"`), context, cancel
+  check (`"cancelled"`), then `toolset.gate` — a refusal is the result, the body
+  never runs — then `toolset.execute` under the entry's deadline.
+- **No gate lives in a wrapped `execute`** except `dialog.tool`'s own re-check
+  (for a spec calling it directly); a roster entry's tools are the author's defs.
+- **The executor is the ENTRY's** (`ToolsetEntry.executor`), set by `toolEntry`,
+  the one function that reads the `clientTool` brand.
+- MCP attaches an `"mcp"` toolset after the agent's (`withMcpTools`), so a remote
+  tool can never shadow an authored one; a subagent's map is a `"subagent"` set.
 
 ### Tool discovery off the platform
 
@@ -262,23 +282,26 @@ bug; `ToolDef.onError` says which kind. `tool-error-policy.ts` decides
 ### A `clientTool` is answered by the PAGE, over the wire host mode already speaks
 
 `clientTool()` (SDK) is an ordinary `ToolDef` carrying a brand (its
-`timeoutMs`). The self-hosted dispatcher in `runtime-tools.ts` binds each call's
-wait on `client-tool-broker.ts`, keyed by (session, `toolCallId`), onto the
-`ToolContext` as `clientCall`; the tool's own `execute` calls it. The session
+`timeoutMs`), which `toolEntry` turns into a `"client"` entry with that
+deadline. The self-hosted dispatcher in `runtime-tools.ts` hands each call its
+wait on `client-tool-broker.ts`, keyed by (session, `toolCallId`), as
+`clientCall`; `executeToolCall` binds it onto the `ToolContext` only for a
+`"client"` entry, after the gate, and the tool's own `execute` calls it. The session
 emits `tool.called` / `tool.completed` as for any tool; the page's `tool_result`
 reaches the broker through `ServerSessionOptions.clientTools`, which
 `session-core.ts` consults only when there is no relay (`onToolResult` owns
 every `tool_result` in host mode).
 
-- **The wait rides the CONTEXT, never a swapped `execute`**: a persona gate or
-  dialog `when` wraps a tool by calling `def.execute(args, ctx)`, and replacing
-  the outer `execute` would skip that gate.
+- **The wait rides the CONTEXT, never a swapped `execute`**: a `dialog.tool`
+  around a `clientTool` calls the inner `execute` itself (the gate and
+  transition bracket it), and replacing the outer `execute` would skip both.
 - **`ctx.delegate` strips `clientCall`** — a subagent's tools must not wait on
   the parent's call id.
 - **An answer may beat its wait** (neither transport orders `tool.called` after
   the executor starts), so the broker HOLDS an unmatched answer, bounded
   runtime-wide (`MAX_EARLY_ANSWERS`, oldest evicted), never swept per session.
-- **Both symbols are `Symbol.for`** for the two-copies reason (`../CLAUDE.md`).
+- **Both symbols are `Symbol.for`** for the two-copies reason (`../CLAUDE.md`);
+  `toolEntry` is the only reader of the brand, so a wire contract can replace it there.
 
 ### A tool can SPEAK, and a filler line may not open the barge-in gate
 
@@ -323,17 +346,19 @@ every `tool_result` in host mode).
 
 ## Subagents: `ctx.delegate` is a second tool loop
 
-`subagent.ts` implements `ctx.delegate` (contract: `sdk/subagent.ts` in the
-SDK) as the AI SDK's `ToolLoopAgent`-inside-a-tool pattern, with the runtime
-supplying what an author would get wrong:
+`subagent.ts` implements `ctx.delegate` (contract: `sdk/speaker.ts` in the
+SDK) — any `SpeakerDef` run OFF the line, whether named in code or chosen by a
+roster's `delegate` — as the AI SDK's `ToolLoopAgent`-inside-a-tool pattern,
+with the runtime supplying what an author would get wrong:
 
 - **The model** resolves through `resolveLlm` with the agent env — a hand-built
   agent would read `process.env`, which holds no user keys on the platform.
 - **The tools** go through `executeToolCall` (coercion, validation, deadline,
-  real `ToolContext`, failure-as-result).
+  real `ToolContext`, failure-as-result), as a `"subagent"` toolset ahead of a
+  `"builtin"` one.
 - **The step budget** spends its last step with `toolChoice: "none"`
   (`forceFinalAnswer`), so a capped subagent ANSWERS.
-- **A guardrail**: `SubagentDef.guardrail` may complain; `runUntilAccepted`
+- **A guardrail**: `SpeakerDef.guardrail` may complain; `runUntilAccepted`
   re-runs with the rejected answer and complaint appended to the SAME
   conversation. Exhausting `maxRevisions` (default 1) returns the last attempt
   with `accepted: false`, never a throw.
@@ -343,7 +368,7 @@ supplying what an author would get wrong:
 Rules:
 
 - **`SubagentRunner` takes `ToolCallDefaults`**
-  (`Omit<ExecuteToolCallOptions, "tool">`, declared in `tool-executor.ts`), so a
+  (`Omit<ExecuteToolCallOptions, "toolset">`, declared in `tool-executor.ts`), so a
   capability added to a tool context cannot be missing from a delegated one.
 - **The context is the parent's minus `ctx.messages`** — same `env`, slots,
   `db`, `sessionId`; `DelegateOptions.task` must be a complete brief.
@@ -360,9 +385,9 @@ Rules:
   sessionless). A step's subagent gets MCP tools from `stepMcp` (`step-mcp.ts`,
   the same kind of slot), which calls `connectMcpServers` — the core
   `withMcpTools` runs at host start — with the step's `clientId`, and rejects
-  instead of degrading when a server is unavailable. A `subagents` roster is
-  lowered to one ordinary `delegate` tool in `agent()`
-  (`sdk/subagent-roster.ts`) — no branch here.
+  instead of degrading when a server is unavailable. A roster's non-speaking
+  entries are lowered to one ordinary `delegate` tool in `agent()`
+  (`sdk/roster-tools.ts`) — no branch here.
 - Wired in `setupSubagents` (`runtime-tools.ts`, sandbox and self-hosted) and
   `createTextAgent`; `createSubagentRunner` memoizes models per descriptor
   object.

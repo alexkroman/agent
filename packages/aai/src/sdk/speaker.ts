@@ -1,30 +1,31 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The `ctx.delegate` capability contract — hand a bounded, context-isolated
- * task to a SUBAGENT from inside a tool's `execute`.
+ * `speaker()` — ONE definition for every second voice an agent has, whether the
+ * caller hears it or not, and the `ctx.delegate` contract that runs one OFF the
+ * line.
  *
- * A subagent is a second tool loop: its own systemPrompt, its own model, its
- * own tools, and — the whole point — its own context window. The parent's
- * conversation never sees the subagent's steps, only what it returns. That is
- * the Vercel AI SDK's subagent pattern (`ToolLoopAgent` invoked from a tool),
- * expressed as a runtime capability like {@link GenerateFn} rather than as a
- * class an author instantiates: the model, the credential and the tool
- * executor are the RUNTIME's to own, and an author who reaches for
- * `new ToolLoopAgent(...)` in a tool body has to re-derive all three — which
- * is how a tool ends up reading `process.env` on a platform where every key
- * is user-provided.
+ * A {@link SpeakerDef} is a name, a description the model routes on, a system
+ * prompt, its own tools and model knobs. What it is FOR is decided by where it
+ * runs, not by a second schema:
  *
- * **`ctx.generate` is the one-shot; this is the loop.** Reach for `generate`
- * when one prompt answers the question. Reach for `delegate` when answering it
- * takes an unknown number of tool calls whose intermediate results the parent
- * has no reason to carry — a search-read-search-read pass that spends tens of
- * thousands of tokens and is worth one paragraph to the caller.
+ * - **Off the line** — `ctx.delegate(def, { task })` runs it as a second tool
+ *   loop with its own context window; the caller never hears it, the calling
+ *   tool gets its conclusion. That is the AI SDK's subagent pattern
+ *   (`ToolLoopAgent` from a tool), with the model, the credential and the tool
+ *   executor owned by the runtime. `ctx.generate` is the one-shot; this is the
+ *   loop.
+ * - **On the line** — a {@link SpeakerDef.speaks} entry of the agent's
+ *   `roster()` is handed the CALL (`handoff`): its prompt, tools and knobs are
+ *   in force over the same history and slots. See `sdk/roster.ts`.
+ *
+ * One roster lists both, and mints the two routing tools from it: `delegate`
+ * over the entries that do not speak, `handoff` over the ones that do.
  *
  * ```ts
- * import { subagent, tool } from "@alexkroman1/aai";
+ * import { speaker, tool } from "@alexkroman1/aai";
  * import { z } from "zod";
  *
- * const researcher = subagent({
+ * const researcher = speaker({
  *   name: "researcher",
  *   description: "Researches a topic on the open web and reports what it found",
  *   systemPrompt: "Research the task with the tools you have.",
@@ -44,43 +45,19 @@
  * });
  * ```
  *
- * ## Three fields that are not prompt text
- *
- * `systemPrompt` used to carry everything, and three jobs it was carrying badly
- * are their own fields now — each one a rule the runtime can hold rather than a
- * sentence an author has to remember:
- *
- * - {@link SubagentDef.expectedOutput} — what a good final message looks like,
- *   appended as its own section. The "tell it to summarize" rule, made
- *   structural.
- * - {@link SubagentDef.guardrail} — a check on the answer that can send it BACK
- *   with a complaint, up to {@link SubagentDef.maxRevisions} times. The retry
- *   continues the run it is correcting, so the tool results the first attempt
- *   paid for are not bought twice.
- * - {@link SubagentDef.description} — what this subagent is for, read by
- *   whoever is CHOOSING one. Required of a roster entry (`agent({ subagents })`),
- *   ignored at a call site, where the choice was made in code.
- *
- * ## Two ways to choose a subagent
- *
- * `ctx.delegate(researcher, …)` names one in code: the author decided, and the
- * decision is as testable as any other branch. A ROSTER —
- * `agent({ subagents: { researcher, factChecker } })` — publishes the set as
- * one `delegate` tool and lets the MODEL choose from it per turn, which is the
- * shape a front desk with eight subagents needs and the one an eight-way
- * `if` was standing in for. See `sdk/subagent-roster.ts`; the two compose, and
- * a roster subagent is an ordinary `SubagentDef` a tool may still delegate to
- * by name.
+ * The off-line fields — `expectedOutput`, `guardrail`/`maxRevisions`, `schema`,
+ * `llm`, `builtinTools`, `maxSteps` — shape a DELEGATED run; `toolChoice` is
+ * read only on the line. A speaking entry may still be delegated to in code.
  */
 
 import type { ModelTuning } from "./agent-model-tuning.ts";
 import type { LlmSpec } from "./providers/llm/llm.ts";
 import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
-import type { BuiltinTool, ToolSet } from "./types.ts";
+import type { BuiltinTool, ToolChoice, ToolMap } from "./types.ts";
 
 /**
- * How many times a {@link SubagentDef.guardrail} may send an answer back when
- * the subagent names no {@link SubagentDef.maxRevisions} of its own.
+ * How many times a {@link SpeakerDef.guardrail} may send an answer back when
+ * the subagent names no {@link SpeakerDef.maxRevisions} of its own.
  *
  * Declared here rather than in `constants.ts` for the reason
  * `DEFAULT_STEP_MAX_ATTEMPTS` is declared beside `ctx.step`: a budget whose
@@ -91,51 +68,50 @@ import type { BuiltinTool, ToolSet } from "./types.ts";
 export const DEFAULT_GUARDRAIL_MAX_REVISIONS: number = 1;
 
 /**
- * A subagent definition — what {@link subagent} returns and
- * {@link DelegateFn} runs.
+ * A speaker definition — what {@link speaker} returns, {@link DelegateFn} runs
+ * off the line and a `roster()` hands the call to.
  *
  * Every field except `name` and `systemPrompt` is optional, and the defaults
- * are the parent agent's: the same LLM descriptor, no tools, and
- * the framework default (`DEFAULT_MAX_STEPS`) steps.
+ * are the parent agent's: the same LLM descriptor, no tools, and the framework
+ * default (`DEFAULT_MAX_STEPS`) steps.
  *
- * It takes {@link ModelTuning} WITHOUT `maxRetries`, deliberately. That name
- * was this def's guardrail budget before the knobs were unified, and on
- * `ModelTuning` it means provider retries; accepting it here would have kept
- * `subagent({ guardrail, maxRetries: 3 })` compiling while silently changing
- * what the 3 bounds. Refused instead, it is a compile error whose message
- * names {@link SubagentDef.maxRevisions}. A subagent's provider requests
- * retry on the AI SDK's default.
+ * It takes {@link ModelTuning} WITHOUT `maxRetries`: on `ModelTuning` that means
+ * provider retries, and the guardrail budget is {@link SpeakerDef.maxRevisions}.
+ *
+ * @typeParam N - The `name`, as a literal when {@link speaker} infers it — what
+ *   lets `Roster.handoff` refuse a misspelled target at compile time.
  *
  * @public
  */
-export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
+export interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRetries"> {
   /**
-   * What this subagent is called. It reaches the model only as the id on the
-   * subagent's own requests; its reader is a log line and a failure message
-   * ("subagent \"researcher\" ran out of steps"), which is why it is required
-   * and why an anonymous subagent is not expressible.
+   * What this speaker is called: the value of the `delegate`/`handoff` tool's
+   * argument, the id on its own requests, and what a log line names.
    */
-  name: string;
+  name: N;
   /**
-   * What this subagent is FOR, in one line, written for whoever is choosing
-   * between subagents rather than for the subagent itself.
-   *
-   * Ignored by call-site delegation — `ctx.delegate(researcher, …)` names the
-   * subagent in code, so the choice is already made and there is nothing to
-   * describe it to. It is REQUIRED of a subagent listed in
-   * `agent({ subagents })`, and that is the whole reason it exists: a roster is
-   * routed by the model, which reads this and nothing else. `agent()` refuses a
-   * roster entry without one rather than shipping an agent that picks a
-   * subagent off a list of bare names.
+   * What this speaker is FOR, in one line, written for whoever is choosing
+   * between them — the minted `delegate` and `handoff` tools' descriptions are
+   * these lines. REQUIRED of a roster entry (`roster()` refuses one without
+   * it); ignored by `ctx.delegate(def, …)` in code, where the choice is made.
    *
    * Write it as the job, not the mechanism: "Researches a topic on the open web
    * and reports what it found" — not "calls web_search".
    */
   description?: string;
   /**
-   * The subagent's system prompt.
+   * Whether the CALLER hears this speaker. `true` puts it on the roster's
+   * `handoff` tool — it takes the call, over the same history and slots; absent
+   * or `false` puts it on `delegate` — it runs off the line and hands back an
+   * answer. The first speaking entry of a roster answers the call.
+   */
+  speaks?: boolean;
+  /** The model's tool-choice policy while this speaker is ON THE LINE. */
+  toolChoice?: ToolChoice;
+  /**
+   * The speaker's instructions — on the line and off it.
    *
-   * **Tell it to summarize** — or, better, declare {@link SubagentDef.expectedOutput}
+   * **Tell it to summarize** — or, better, declare {@link SpeakerDef.expectedOutput}
    * and let the runtime say it. The parent gets {@link DelegateResult.text},
    * which is the subagent's FINAL message, so a subagent that ends its run by
    * saying "Done." has thrown away everything it learned and no amount of step
@@ -150,7 +126,7 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
    *
    * The runtime appends it to the instructions as its own labelled section, so
    * it lands in the same place every time rather than wherever an author
-   * happened to put it in prose. It is also what a {@link SubagentDef.guardrail}
+   * happened to put it in prose. It is also what a {@link SpeakerDef.guardrail}
    * is quoted against when it sends an answer back, so the two halves of "what
    * this run owes" stay one sentence rather than two that can disagree.
    *
@@ -161,9 +137,9 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
    * stop talking.
    *
    * ```ts
-   * import { subagent } from "@alexkroman1/aai";
+   * import { speaker } from "@alexkroman1/aai";
    *
-   * const researcher = subagent({
+   * const researcher = speaker({
    *   name: "researcher",
    *   systemPrompt: "Research the task with the tools you have.",
    *   expectedOutput:
@@ -186,13 +162,14 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
   /**
    * The tools this subagent may call, by the name the model calls them by.
    *
-   * A MAP rather than the filesystem registration `agent()` uses, and the
-   * difference is deliberate: `tools/` declares what the CALLER can reach, and
-   * this declares the strictly narrower set one delegated task can reach. A
-   * subagent with no entry here and no `builtinTools` is a pure reasoning
-   * pass — legal, and occasionally what you want.
+   * A MAP rather than the filesystem registration `agent()` uses: `tools/`
+   * declares what every turn can reach, and this the narrower set this speaker
+   * owns. Off the line, they are its delegated loop's tools; on the line, the
+   * roster gates them to the turns it is speaking (one owner per name). An
+   * off-line speaker with no tools and no `builtinTools` is a pure reasoning
+   * pass.
    */
-  tools?: ToolSet;
+  tools?: ToolMap;
   /**
    * Builtins this subagent may call, resolved exactly as `agent({
    * builtinTools })` resolves them. Independent of the parent's: a parent that
@@ -217,7 +194,7 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
    * complaint, and the runtime re-runs the subagent with its own rejected
    * answer and that complaint appended to the conversation it already has — so
    * the retry keeps every tool result the first attempt paid for and is told
-   * exactly what to fix. Bounded by {@link SubagentDef.maxRevisions}.
+   * exactly what to fix. Bounded by {@link SpeakerDef.maxRevisions}.
    *
    * **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
    * of an answer and cannot say that a citation is missing, that the sources
@@ -230,9 +207,9 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
    * delegation, so a guardrail that cannot decide should return `true`.
    *
    * ```ts
-   * import { subagent } from "@alexkroman1/aai";
+   * import { speaker } from "@alexkroman1/aai";
    *
-   * const researcher = subagent({
+   * const researcher = speaker({
    *   name: "researcher",
    *   systemPrompt: "Research the task with the tools you have.",
    *   expectedOutput: "A paragraph naming the sources you trusted.",
@@ -245,9 +222,9 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
    * });
    * ```
    */
-  guardrail?: SubagentGuardrail;
+  guardrail?: SpeakerGuardrail;
   /**
-   * How many times a {@link SubagentDef.guardrail} may send an answer back.
+   * How many times a {@link SpeakerDef.guardrail} may send an answer back.
    *
    * @defaultValue `1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
    *
@@ -271,18 +248,18 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
   maxRevisions?: number;
   /**
    * Not a field. Typed as the message that names the rename, so
-   * `subagent({ maxRetries: 3 })` fails to compile with the fix in the error
+   * `speaker({ maxRetries: 3 })` fails to compile with the fix in the error
    * rather than with a bare excess-property one — the idiom `agent({ tools })`
-   * uses. See {@link SubagentDef.maxRevisions}.
+   * uses. See {@link SpeakerDef.maxRevisions}.
    */
-  maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+  maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
   /**
    * The SHAPE the final message must have — any
    * [Standard Schema](https://standardschema.dev), zod being the documented
    * default. The runtime parses the answer as JSON and checks it, and a reply
    * that does not match is sent BACK the way a
-   * {@link SubagentDef.guardrail} rejection is, with the schema's own issues as
-   * the complaint. Declare it through {@link subagent} to get the parsed value
+   * {@link SpeakerDef.guardrail} rejection is, with the schema's own issues as
+   * the complaint. Declare it through {@link speaker} to get the parsed value
    * typed on {@link TypedDelegateResult.object}.
    *
    * **This is not the guardrail, and the two are complementary.** A schema
@@ -301,10 +278,10 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
    * only prose could describe. A schema makes that a parse.
    *
    * ```ts
-   * import { subagent } from "@alexkroman1/aai";
+   * import { speaker } from "@alexkroman1/aai";
    * import { z } from "zod";
    *
-   * const factChecker = subagent({
+   * const factChecker = speaker({
    *   name: "fact-checker",
    *   systemPrompt: "Check ONE claim against what you can find.",
    *   schema: z.object({
@@ -318,23 +295,28 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
 }
 
 /**
- * Define a subagent.
- *
- * An identity function, like {@link tool} — it exists for the type, for the
- * name to grep for, and so a subagent is declared at module scope rather than
- * rebuilt inside `execute` on every call.
+ * A {@link SpeakerDef} that declares a {@link SpeakerDef.schema} — what
+ * {@link speaker} returns for one, so `ctx.delegate` types `object`.
  *
  * @public
  */
-export interface TypedSubagentDef<T> extends SubagentDef {
+export interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
   schema: StandardSchemaV1<unknown, T>;
 }
 
-export function subagent<S extends StandardSchemaV1>(
-  def: SubagentDef & { schema: S },
-): TypedSubagentDef<InferSchemaOutput<S>>;
-export function subagent(def: SubagentDef): SubagentDef;
-export function subagent(def: SubagentDef): SubagentDef {
+/**
+ * Define a speaker. An identity function, like {@link tool}: it exists for the
+ * type (the name inferred as a LITERAL, the schema's output typed), for the name
+ * to grep for, and so a speaker is declared at module scope where both a roster
+ * and a tool that delegates or hands off to it can import it.
+ *
+ * @public
+ */
+export function speaker<const N extends string, S extends StandardSchemaV1>(
+  def: SpeakerDef<N> & { schema: S },
+): TypedSpeakerDef<InferSchemaOutput<S>, N>;
+export function speaker<const N extends string>(def: SpeakerDef<N>): SpeakerDef<N>;
+export function speaker(def: SpeakerDef): SpeakerDef {
   return def;
 }
 
@@ -360,7 +342,7 @@ export interface DelegateOptions {
 }
 
 /** One tool call a subagent made, as reported back to the caller. @public */
-export interface SubagentToolCall {
+export interface DelegateToolCall {
   /** The tool's name, as the subagent's model called it. */
   name: string;
   /** The arguments it was called with. */
@@ -368,7 +350,7 @@ export interface SubagentToolCall {
 }
 
 /**
- * ONE attempt at an answer — what a {@link SubagentGuardrail} judges.
+ * ONE attempt at an answer — what a {@link SpeakerGuardrail} judges.
  *
  * `text` is the answer; `steps` and `toolCalls` are what the attempt COST,
  * which is the half a voice agent needs in order to say something true about
@@ -383,13 +365,13 @@ export interface SubagentToolCall {
  *
  * @public
  */
-export interface SubagentAnswer {
-  /** The subagent's final message — see {@link SubagentDef.expectedOutput}. */
+export interface DelegateAnswer {
+  /** The subagent's final message — see {@link SpeakerDef.expectedOutput}. */
   text: string;
   /** How many steps this attempt took, including the final answering step. */
   steps: number;
   /** Every tool call this attempt made, in order. */
-  toolCalls: readonly SubagentToolCall[];
+  toolCalls: readonly DelegateToolCall[];
 }
 
 /**
@@ -405,12 +387,12 @@ export interface SubagentAnswer {
 export type GuardrailVerdict = true | string;
 
 /**
- * Judge one attempt — see {@link SubagentDef.guardrail}.
+ * Judge one attempt — see {@link SpeakerDef.guardrail}.
  *
  * @public
  */
-export type SubagentGuardrail = (
-  answer: SubagentAnswer,
+export type SpeakerGuardrail = (
+  answer: DelegateAnswer,
 ) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
 /**
@@ -420,7 +402,7 @@ export type SubagentGuardrail = (
  * @sealed
  * @public
  */
-export interface DelegateResult extends SubagentAnswer {
+export interface DelegateResult extends DelegateAnswer {
   /**
    * How many times the guardrail sent an answer back before this one.
    *
@@ -457,7 +439,7 @@ export interface DelegateResult extends SubagentAnswer {
  * result, exactly as it would in the parent loop, and the subagent gets to
  * recover from it.
  *
- * A {@link SubagentDef.guardrail} that never accepts does not reject either —
+ * A {@link SpeakerDef.guardrail} that never accepts does not reject either —
  * the run comes back with {@link DelegateResult.accepted} `false`. The two
  * rejections above are both "this delegation could not happen"; a rejected
  * answer is a delegation that happened and produced something, and a caller on
@@ -467,7 +449,7 @@ export interface DelegateResult extends SubagentAnswer {
  */
 export interface TypedDelegateResult<T> extends DelegateResult {
   /**
-   * The final message, PARSED against {@link SubagentDef.schema}.
+   * The final message, PARSED against {@link SpeakerDef.schema}.
    *
    * Present exactly when the subagent declares one, which is why it lives on
    * this type rather than on {@link DelegateResult}: a caller that declared no
@@ -484,16 +466,16 @@ export interface TypedDelegateResult<T> extends DelegateResult {
  * Run a subagent to completion — the signature of `ctx.delegate`.
  *
  * OVERLOADED, the way {@link GenerateFn} is and for the same reason: a subagent
- * that declares a {@link SubagentDef.schema} answers with the parsed value
+ * that declares a {@link SpeakerDef.schema} answers with the parsed value
  * typed on {@link TypedDelegateResult.object}, and one that does not should not
- * be handed the field at all. Declaring the def through {@link subagent} is
- * what picks the overload — a `SubagentRoster` entry stays a plain
- * {@link SubagentDef}, so a model-chosen delegation is untyped, which is
+ * be handed the field at all. Declaring the def through {@link speaker} is
+ * what picks the overload — a roster entry stays a plain
+ * {@link SpeakerDef}, so a model-chosen delegation is untyped, which is
  * correct: nothing at that call site knows which subagent the model picked.
  *
  * @public
  */
 export type DelegateFn = {
-  <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
-  (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+  <T>(subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+  (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };

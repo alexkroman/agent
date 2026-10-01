@@ -321,15 +321,14 @@ export const HOST_ONLY_AGENT_FIELDS = [
   "tools",
   "syncState",
   "workflows",
-  // A `SubagentDef` may carry tool FUNCTIONS, so a roster cannot be serialized —
-  // and nothing downstream of the wire needs it: the roster's whole effect on
-  // the deployed config is the `delegate` entry `agent()` already put in `tools`,
-  // whose schema travels with every other tool's.
-  "subagents",
-  // A roster of personas is the same shape: each carries tool FUNCTIONS, and
-  // its whole effect on the deployed config is the gated tools and the
-  // `handoff` entry `agent()` already put in `tools`.
-  "personas",
+  // A `SpeakerDef` may carry tool FUNCTIONS, so a roster cannot be serialized —
+  // and nothing downstream of the wire needs it: its whole effect on the
+  // deployed config is the toolset `agent()` minted, whose schemas travel with
+  // every other tool's.
+  "roster",
+  // Toolsets hold defs and gates — functions — and their schemas already ride
+  // the tool list.
+  "toolsets",
   // A dialog holds a compiled XState machine and closures over a session slot.
   // Nothing downstream of the wire could act on one, and the guest runs the
   // agent's own module — where the dialog objects already are.

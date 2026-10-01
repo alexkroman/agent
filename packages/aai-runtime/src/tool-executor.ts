@@ -24,9 +24,10 @@ import type {
   Message,
   SessionSpeech,
   SlotStore,
-  SubagentDef,
+  SpeakerDef,
   ToolContext,
   ToolDef,
+  Toolset,
 } from "@alexkroman1/aai";
 import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
 import {
@@ -43,6 +44,7 @@ import {
   TOOL_EXECUTION_TIMEOUT_MS,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
 } from "@alexkroman1/aai/internal";
+import { composeToolsets } from "@alexkroman1/aai/manifest";
 import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import pTimeout, { TimeoutError } from "p-timeout";
@@ -56,13 +58,13 @@ export type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-inte
 export { FatalToolError, isFatalToolError } from "./tool-error-policy.ts";
 
 /**
- * Everything one tool call is given EXCEPT the tool — the bag a subagent's own
- * tools are run with, derived by subtraction so a capability added to a tool
- * context cannot be silently missing from a delegated one.
+ * Everything one tool call is given EXCEPT the toolset — the bag a subagent's
+ * own tools are run with, derived by subtraction so a capability added to a
+ * tool context cannot be silently missing from a delegated one.
  *
  * @internal
  */
-export type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
+export type ToolCallDefaults = Omit<ExecuteToolCallOptions, "toolset">;
 
 /**
  * Run a subagent to completion (`ctx.delegate`) — implemented by
@@ -77,7 +79,7 @@ export type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
  * @internal
  */
 export type SubagentRunner = (
-  subagent: SubagentDef,
+  subagent: SpeakerDef,
   options: DelegateOptions,
   parent: ToolCallDefaults,
 ) => Promise<DelegateResult>;
@@ -87,7 +89,12 @@ export type SubagentRunner = (
 const yieldTick = (): Promise<void> => new Promise((r) => setImmediate(r));
 
 type ExecuteToolCallOptions = {
-  tool: ToolDef;
+  /**
+   * The {@link Toolset} that advertises the called name — the ONLY thing this
+   * reads a tool from: its entry's def (schema, `onError`), its executor and
+   * deadline, its `gate`, its `execute`.
+   */
+  toolset: Toolset;
   env: Readonly<Record<string, string>>;
   /**
    * This session's slot storage (`ctx.slots`). Absent for a sessionless caller,
@@ -109,10 +116,8 @@ type ExecuteToolCallOptions = {
   subagents?: SubagentRunner | undefined;
   /**
    * The issuing SESSION's token meter — what a model call made from inside this
-   * tool costs, and whether one may still be made. Both capabilities above
-   * spend on the session's bill, and until this was carried neither reached the
-   * meter: `usage.updated` under-reported and `usageLimits` bounded only the
-   * conversational loop. On the option bag rather than inside
+   * tool costs, and whether one may still be made (both capabilities above spend
+   * on the session's bill). On the option bag rather than inside
    * `createGenerateFn` / `createSubagentRunner` (per RUNTIME, where a meter is
    * per SESSION), and because {@link ToolCallDefaults} is a subtraction, so a
    * delegated run carries it with nothing to forget. Absent for a sessionless
@@ -141,18 +146,16 @@ type ExecuteToolCallOptions = {
    * this call is about to REJECT with a `FatalToolError` — the model is handed
    * nothing, so whoever is watching is the only one who will ever hear about
    * it. The SESSION is still alive either way, which is why neither maps to a
-   * `fatal: true` error frame (that one releases the caller's microphone).
-   *
-   * A second parameter rather than a second callback, so a reporter that does
-   * not care — `text-agent.ts`'s `toolFault`, which takes only the message —
-   * stays assignable and needed no change.
+   * `fatal: true` error frame (that one releases the caller's microphone). A
+   * reporter that ignores `info` (`text-agent.ts`'s `toolFault`) stays assignable.
    */
   onUncaught?: ((message: string, info: { readonly fatal: boolean }) => void) | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;
   /**
-   * This call's wait for the page, bound onto the context for a `clientTool`'s
-   * `execute` to find (`sdk/client-tool.ts`). Never carried into `ctx.delegate`:
-   * the answer it waits for is the PARENT call's.
+   * This call's wait for the page — bound onto the context ONLY when the entry's
+   * executor is `"client"`, for the `clientTool`'s `execute` to find (it rides
+   * the context so a wrapping `execute` still runs first). Never carried into
+   * `ctx.delegate`: the answer it waits for is the PARENT call's.
    */
   clientCall?: ClientToolCall | undefined;
   /**
@@ -189,7 +192,12 @@ type ExecuteToolCallOptions = {
 // context's signal is the per-call controller `executeToolCall` always builds,
 // which is what makes `ToolContext.signal` non-optional.
 function buildToolContext(
-  options: ExecuteToolCallOptions & { signal: AbortSignal; deadlineAt: number },
+  options: ExecuteToolCallOptions & {
+    signal: AbortSignal;
+    deadlineAt: number;
+    /** The client wait, present only for a `"client"` entry. */
+    client: ClientToolCall | undefined;
+  },
 ): ToolContext {
   const { env, slots, messages, sessionId, send, signal, generate, subagents, workflows, usage } =
     options;
@@ -239,11 +247,11 @@ function buildToolContext(
     // overloaded signature against a single implementation. The narrowing is
     // backed by `runUntilAccepted`, which attaches `object` exactly when the
     // def carries a schema.
-    delegate: ((subagent: SubagentDef, delegateOpts: DelegateOptions): Promise<DelegateResult> => {
+    delegate: ((subagent: SpeakerDef, delegateOpts: DelegateOptions): Promise<DelegateResult> => {
       if (!subagents) {
         return Promise.reject(new Error("delegate is not available in this execution context"));
       }
-      const { tool: _tool, clientCall: _parentCall, ...defaults } = options;
+      const { toolset: _toolset, clientCall: _parentCall, ...defaults } = options;
       return subagents(subagent, delegateOpts, { ...defaults, signal });
     }) as DelegateFn,
     messages: messages ?? [],
@@ -259,7 +267,7 @@ function buildToolContext(
       send?.(event, data);
     },
   };
-  if (options.clientCall) bindClientToolCall(ctx, options.clientCall);
+  if (options.client) bindClientToolCall(ctx, options.client);
   return ctx;
 }
 
@@ -343,13 +351,17 @@ export async function executeToolCall(
   args: Readonly<Record<string, unknown>>,
   options: ExecuteToolCallOptions,
 ): Promise<string> {
-  const { tool, logger, onUncaught } = options;
+  const { toolset, logger, onUncaught } = options;
+  const entry = toolset.list()[name];
+  if (entry === undefined) return serializeToolFailure(`Unknown tool: ${name}`, "unknown_tool");
+  const tool = entry.def;
   const schema = tool.inputSchema ?? EMPTY_PARAMS;
   // The spec allows a sync or async validate; await normalizes both.
   const parsed = await schema["~standard"].validate(args);
   if (parsed.issues) {
     return serializeToolFailure(
       `Invalid arguments for tool "${name}": ${formatSchemaIssues(parsed.issues)}`,
+      "invalid_arguments",
     );
   }
 
@@ -370,7 +382,7 @@ export async function executeToolCall(
   // than be cut off by it. Read here rather than at the `pTimeout` below, so
   // the instant a tool is told is a hair EARLIER than the one it is held to —
   // the safe direction for a budget.
-  const timeoutMs = options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS;
+  const timeoutMs = entry.timeoutMs ?? options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS;
   // Set by the `fallback` below, which `pTimeout` runs on the deadline and on
   // nothing else. It is what tells the catch that THIS call timed out.
   // `pTimeout` rejects a deadline without aborting anything, so the `cancelled`
@@ -401,14 +413,19 @@ export async function executeToolCall(
       ...options,
       signal: callController.signal,
       deadlineAt: Date.now() + timeoutMs,
+      client: entry.executor === "client" ? options.clientCall : undefined,
     });
     await yieldTick();
     if (callController.signal.aborted) {
-      return serializeToolFailure(`Tool "${name}" was cancelled before it ran`);
+      return serializeToolFailure(`Tool "${name}" was cancelled before it ran`, "cancelled");
     }
+    // The gate decides whether the body runs at all: a roster entry not on the
+    // line, a dialog tool out of state. Its refusal is the model's answer.
+    const refusal = toolset.gate(name, ctx);
+    if (refusal !== undefined) return stringifyResult(refusal);
     // The signal makes the await settle promptly on barge-in/reset/stop; the
     // underlying execute keeps running unless it observes ctx.signal itself.
-    const result = await pTimeout(Promise.resolve(tool.execute(parsed.value, ctx)), {
+    const result = await pTimeout(Promise.resolve(toolset.execute(name, parsed.value, ctx)), {
       milliseconds: timeoutMs,
       // Runs on the deadline and never otherwise, so the throw and the flag it
       // sets are both free on every call that answers in time.
@@ -460,31 +477,25 @@ type ToolCall = {
 };
 
 /**
- * The dispatcher shape every in-process tool path shares: look the name up, or
- * report an unknown one AS A TOOL RESULT.
+ * The dispatcher every in-process tool path shares: compose the toolsets
+ * first-wins (the precedence `agentToolsToSchemas` advertised), look the name
+ * up, or report an unknown one AS A TOOL RESULT (`reason: "unknown_tool"`) — a
+ * failure the MODEL recovers from, not a throw that fails the turn.
  *
- * The lookup is two lines and was written twice — the self-hosted runtime
- * (`runtime-tools.ts`) and the text agent (`text-agent.ts`) — but what is
- * duplicated is a POLICY rather than a line count: an unknown name is a failure
- * the MODEL sees and can recover from, not a throw that fails the turn, and the
- * sentence it reads is part of that. Two copies is two places for one of those
- * to drift into the other kind of failure.
- *
- * Everything below the lookup stays with the caller, deliberately: the two
- * paths build genuinely different contexts (one has a live emitter, a slot
- * store and a commit point; the other has a detached store and a longer
- * deadline), and folding those into an options bag here would be one function
- * with two disjoint halves.
+ * Everything below the lookup stays with the caller: the paths build genuinely
+ * different contexts (a live emitter and commit point, or a detached store).
  *
  * @internal
  */
 export function createToolDispatcher(
-  tools: Readonly<Record<string, ToolDef>>,
-  run: (tool: ToolDef, call: ToolCall) => Promise<string>,
+  toolsets: readonly Toolset[],
+  run: (toolset: Toolset, call: ToolCall) => Promise<string>,
 ): ExecuteTool {
+  const table = composeToolsets(toolsets);
   return (name, args, sessionId, messages, options) => {
-    const tool = tools[name];
-    if (!tool) return Promise.resolve(serializeToolFailure(`Unknown tool: ${name}`));
-    return run(tool, { name, args, sessionId: sessionId ?? "", messages, options });
+    const found = table.resolve(name);
+    if (!found)
+      return Promise.resolve(serializeToolFailure(`Unknown tool: ${name}`, "unknown_tool"));
+    return run(found.toolset, { name, args, sessionId: sessionId ?? "", messages, options });
   };
 }

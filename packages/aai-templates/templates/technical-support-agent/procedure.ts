@@ -79,7 +79,7 @@ export const MAX_ATTEMPTS = 2;
  * Regenerations after a "not grounded" verdict, within one attempt.
  *
  * The SDK's own number, not a coincidence: `DEFAULT_GUARDRAIL_MAX_REVISIONS` is
- * how many times `subagent({ guardrail })` re-asks after a verdict rejects an
+ * how many times `speaker({ guardrail })` re-asks after a verdict rejects an
  * answer, and that is exactly what this counter bounds — the same judge, the
  * same retry, one layer down. Taking it from the SDK is how the two stay one
  * decision instead of two constants that drift.

@@ -202,7 +202,7 @@ Directory guides govern one area of a package and load when you work in it:
 | `packages/aai-ui/src/contracts/CLAUDE.md` | This package's capability contracts: the fifteen capabilities, what each promises, qualified ids, and the `.tsx` compatibility fixtures. |
 | `packages/aai-ui/src/worklets/CLAUDE.md` | The capture and playback AudioWorklets: the jitter buffer, gap concealment, underrun stats, capture sample rate and constraints, the dead-mic probe, and the worklet stress/bench harnesses. |
 | `packages/aai/src/host/CLAUDE.md` | The SDK's Node-only modules: guest network access and `ssrf.ts`, the bounded builtin fetch, `/step-files`, `/coding-tools` |
-| `packages/aai/src/sdk/CLAUDE.md` | The SDK's authoring primitives: `AgentDef` field groups, the `/testing` helpers, concurrency primitives, session slots, dialogs, `procedure()`, `ctx.generate`/`messages`/`delegate`, personas, tool `messages`, voice presets, persistence, workflow apps and the upload client |
+| `packages/aai/src/sdk/CLAUDE.md` | The SDK's authoring primitives: `AgentDef` field groups, the `/testing` helpers, concurrency primitives, session slots, dialogs, `procedure()`, `ctx.generate`/`messages`/`delegate`, `speaker()`/`roster()`, `Toolset`, tool `messages`, voice presets, persistence, workflow apps and the upload client |
 | `packages/aai/src/sdk/providers/CLAUDE.md` | STT/LLM/TTS/S2S provider descriptors: the shipped providers and their rules, the AssemblyAI gateway default model and its measurement, voices, adding a provider, the stage registries, and the "Session mode resolved" settings log |
 <!-- /guide-index:directories -->
 <!-- prettier-ignore-end -->

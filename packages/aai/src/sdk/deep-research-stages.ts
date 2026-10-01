@@ -21,10 +21,10 @@ import { tool } from "./define.ts";
 import { plural } from "./format.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import { type DelegateToolCall, type SpeakerDef, speaker } from "./speaker.ts";
 import { stepDelegate } from "./step-delegate.ts";
 import { stepGenerateJsonOrFail, stepGenerateOrFail } from "./step-errors.ts";
 import { stepReport } from "./step-report.ts";
-import { type SubagentDef, type SubagentToolCall, subagent } from "./subagent.ts";
 import type { ToolDef } from "./types.ts";
 
 // ---- The stages ------------------------------------------------------------
@@ -93,9 +93,9 @@ function cite(cited: DeepResearchSource[]): ToolDef {
 }
 
 /** Built per angle, because `cite` closes over the list it records into. */
-function researcher(cited: DeepResearchSource[], settings: DeepResearchSettings): SubagentDef {
+function researcher(cited: DeepResearchSource[], settings: DeepResearchSettings): SpeakerDef {
   const { builtinTools, tools, llm } = settings.researcher;
-  return subagent({
+  return speaker({
     name: "researcher",
     systemPrompt: settings.prompts.research,
     expectedOutput: settings.prompts.researchOutput,
@@ -131,7 +131,7 @@ export async function investigate(
 }
 
 /** What one delegated run did, read off the calls it made. */
-function countWork(toolCalls: readonly SubagentToolCall[]): {
+function countWork(toolCalls: readonly DelegateToolCall[]): {
   searches: number;
   reads: number;
   opened: DeepResearchSource[];

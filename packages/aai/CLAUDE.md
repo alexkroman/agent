@@ -182,8 +182,8 @@ serializable schema flows CLI → server → runtime and **each boundary subtrac
 an explicit deny-list instead of copying fields**:
 
 - **`AgentConfigSchema`** (`sdk/_internal-types.ts`) is canonical.
-  `toAgentConfig` strips `HOST_ONLY_AGENT_FIELDS` (the five holding FUNCTIONS —
-  `tools`, `syncState`, `workflows`, `events`, `subagents`) and undefined
+  `toAgentConfig` strips `HOST_ONLY_AGENT_FIELDS` (the fields holding FUNCTIONS —
+  `tools`, `toolsets`, `syncState`, `workflows`, `events`, `roster`, …) and undefined
   values, then validates. `_internal-types.test.ts` pins
   `Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>` = `never`.
 - **`agent()`** derives its parameters from `AgentDef` (`AgentParams` = `Omit`

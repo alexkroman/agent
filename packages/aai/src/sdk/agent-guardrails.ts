@@ -5,7 +5,7 @@
  * `agent({ events })` is observe-only by contract: a handler's return value is
  * ignored, and that is what keeps the event stream a log rather than a second
  * control path. So until this existed there was no interception point anywhere
- * on the main agent — `SubagentDef.guardrail` could send a delegated answer
+ * on the main agent — `SpeakerDef.guardrail` could send a delegated answer
  * back, and the agent doing the talking could not be checked at all.
  *
  * Split out of `types.ts` for the reason `agent-voice-tuning.ts` and
@@ -41,7 +41,7 @@
  *
  * ## What it does NOT do
  *
- * It does not ask the model for a better answer. {@link SubagentDef.guardrail}
+ * It does not ask the model for a better answer. {@link SpeakerDef.guardrail}
  * does, and can afford to: nobody is listening to a subagent, so a full re-run
  * costs time no human is spending. The agent's own reply is different — a
  * rewrite is another whole turn while a caller sits in silence, and the honest
@@ -51,19 +51,19 @@
  */
 
 import type { AgentSessionContext } from "./agent-session-context.ts";
-import type { GuardrailVerdict } from "./subagent.ts";
+import type { GuardrailVerdict } from "./speaker.ts";
 
 /**
  * A guardrail's verdict: `true` to accept, or the sentence to use instead.
  *
- * The same vocabulary {@link SubagentGuardrail} answers in, deliberately — one
+ * The same vocabulary {@link SpeakerGuardrail} answers in, deliberately — one
  * word for one idea across the SDK. What differs is who reads the string: a
  * subagent's complaint goes back to the subagent, and an agent's goes to the
  * caller's ear.
  *
  * @public
  */
-export type { GuardrailVerdict } from "./subagent.ts";
+export type { GuardrailVerdict } from "./speaker.ts";
 
 /**
  * Judge one piece of text — see {@link AgentDef.inputGuardrails} and

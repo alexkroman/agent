@@ -140,23 +140,6 @@ export {
 export * from "./sdk/metrics-collector.ts";
 export { codeMatches, hashCode, mintDigitCode } from "./sdk/one-time-code.ts";
 /**
- * `persona()`/`personas()` and the `handoff` contract — the fourth machine, and
- * the one that changes WHO IS SPEAKING: a roster the session hands the caller
- * between over one history, where `delegate` keeps the speaker and a `dialog`
- * says where the conversation is. By NAME rather than `export *`: the module
- * also exports the slot key and the dialog binding, which are `@internal`.
- */
-export {
-  HANDOFF_TOOL_NAME,
-  type HandoffOptions,
-  type HandoffResult,
-  type PersonaDef,
-  type PersonaPosition,
-  type Personas,
-  persona,
-  personas,
-} from "./sdk/persona.ts";
-/**
  * The other machine: one unit of WORK inside a tool call, where a flow is where
  * a CONVERSATION is. On the root beside it because an author reaching for one
  * needs to see the other to pick correctly.
@@ -192,7 +175,7 @@ export * from "./sdk/providers/assemblyai-pipeline.ts";
  *
  * `@alexkroman1/aai/llm` keeps it too — that is where an explicit
  * `llm({ provider: "assemblyai", model })` stage is written. `LlmSpec` is the
- * whole type of that `llm` field (and of `subagent({ llm })` and
+ * whole type of that `llm` field (and of `speaker({ llm })` and
  * `ctx.generate({ llm })`), here for the same reason: a helper that forwards
  * one names it.
  */
@@ -317,6 +300,21 @@ export * from "./sdk/random.ts";
  */
 export { requireEnv } from "./sdk/require-env.ts";
 /**
+ * `roster()` and the `handoff`/`delegate` contract: one list of speakers, the
+ * ones that `speaks` handed the CALL, the rest handed a TASK. By NAME rather
+ * than `export *`: the module also exports the slot key and the dialog binding,
+ * which are `@internal`.
+ */
+export {
+  DELEGATE_TOOL_NAME,
+  HANDOFF_TOOL_NAME,
+  type HandoffOptions,
+  type HandoffResult,
+  type Roster,
+  roster,
+  type SpeakerPosition,
+} from "./sdk/roster.ts";
+/**
  * Standard Schema acceptance — the two an author names, and the SPEC they are
  * written in terms of.
  *
@@ -387,6 +385,12 @@ export * from "./sdk/session-speech.ts";
  * sit in an author's autocomplete beside `sessionSlot`.
  */
 export type { SlotHolder, SlotStore, StateProjection } from "./sdk/session-state.ts";
+/**
+ * `speaker()` and the `ctx.delegate` contract — one definition for a second
+ * voice, run OFF the line by `ctx.delegate` (a tool loop with its own context
+ * window) or put ON it by a roster's `handoff`.
+ */
+export * from "./sdk/speaker.ts";
 // Resolving what a caller SAID to one of the things a tool holds — the
 // never-guess contract, on the root barrel because it is written in a tool body
 // beside `toolFailure`, which it returns.
@@ -403,17 +407,6 @@ export * from "./sdk/spoken-render.ts";
  */
 export * from "./sdk/standard-webhook.ts";
 /**
- * `subagent()` and the `ctx.delegate` contract — the third machine, and the one
- * that spends a MODEL rather than a turn: a second tool loop with its own
- * context window, whose intermediate steps the caller never carries. Picking
- * between it and `generate` — one prompt, or a loop — is the whole decision.
- */
-export * from "./sdk/subagent.ts";
-// The ROSTER half — `agent({ subagents })` and the tool it mints. Its own module
-// because `subagent.ts` holds the `ctx.delegate` contract and this holds the
-// other way of choosing one; see that file's "Two ways to choose a subagent".
-export { DELEGATE_TOOL_NAME, type SubagentRoster } from "./sdk/subagent-roster.ts";
-/**
  * The `T | ToolFailure` union's control flow, beside the guard and the
  * constructor it belongs with: a tool body writes all three. Its own statement
  * because `tool-failure-flow.ts` imports `sdk/utils.ts`, so re-exporting it
@@ -425,6 +418,8 @@ export { failable, orFail } from "./sdk/tool-failure-flow.ts";
  * rather than discovered by being refused after it has already committed.
  */
 export * from "./sdk/tool-fields.ts";
+// What `AgentDef.toolsets` holds; the functions over it are on `/manifest`.
+export type { ToolExecutor, ToolSource, Toolset, ToolsetEntry } from "./sdk/toolset.ts";
 export * from "./sdk/types.ts";
 /**
  * The utilities written INSIDE a tool body — all fifteen of them, which is
@@ -461,7 +456,10 @@ export {
   responseErrorMessage,
   safeJsonParse,
   type ToolFailure,
+  type ToolRefusal,
+  type ToolRefusalReason,
   toolFailure,
+  toolRefusal,
   withLock,
 } from "./sdk/utils.ts";
 export {

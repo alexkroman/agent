@@ -18,8 +18,13 @@
  * rather than a digest somebody typed.
  */
 
-import { agent, tool } from "@alexkroman1/aai";
-import { withTools } from "@alexkroman1/aai/manifest";
+import { agent, type ToolDef, tool } from "@alexkroman1/aai";
+import {
+  agentToolsets,
+  composeToolsets,
+  type ToolBearingDef,
+  withTools,
+} from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { tool as aiTool, fingerprintTools, jsonSchema, type ToolSet } from "ai";
 import type { JSONSchema7 } from "json-schema";
@@ -29,6 +34,13 @@ import { makeLogger, silentLogger } from "./_test-utils.ts";
 import type { McpSession, ResolvedMcpServer } from "./mcp-connect.ts";
 import { withMcpTools } from "./mcp-tools.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
+
+/** Every tool a def SERVES — its files plus the toolsets attached to it, composed first-wins. */
+function served(def: ToolBearingDef): Record<string, ToolDef> {
+  return Object.fromEntries(
+    composeToolsets(agentToolsets(def)).tools.map((one) => [one.name, one.entry.def]),
+  );
+}
 
 const SEARCH_SCHEMA: JSONSchema7 = {
   type: "object",
@@ -105,7 +117,7 @@ describe("discovery", () => {
   test("a declared server's tools arrive namespaced, with the server's own JSON Schema", async () => {
     const surface = await withMcpTools(docsAgent(DOCS), { openSession: async () => fakeServer() });
 
-    expect(Object.keys(surface.agent.tools)).toEqual(["mcp_docs_search"]);
+    expect(Object.keys(served(surface.agent))).toEqual(["mcp_docs_search"]);
     expect(surface.servers[0]?.tools).toEqual(["mcp_docs_search"]);
     expect(surface.servers[0]?.unavailable).toBeUndefined();
 
@@ -136,7 +148,7 @@ describe("discovery", () => {
     const surface = await withMcpTools(docsAgent(DOCS), {
       openSession: async () => fakeServer({ ping: remoteTool({}) }),
     });
-    expect(surface.agent.tools.mcp_docs_ping?.description).toBe(
+    expect(served(surface.agent).mcp_docs_ping?.description).toBe(
       'The "ping" tool (via the "docs" MCP server)',
     );
   });
@@ -272,7 +284,7 @@ describe("collisions are resolved deterministically and out loud", () => {
     const logger = makeLogger();
     const surface = await withMcpTools(native, { openSession: async () => fakeServer(), logger });
 
-    expect(surface.agent.tools.mcp_docs_search?.description).toBe("the agent's own");
+    expect(served(surface.agent).mcp_docs_search?.description).toBe("the agent's own");
     expect(surface.servers[0]?.tools).toEqual([]);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('the name "mcp_docs_search" is already taken'),
@@ -295,9 +307,9 @@ describe("collisions are resolved deterministically and out loud", () => {
       logger,
     });
 
-    const names = Object.keys(surface.agent.tools);
+    const names = Object.keys(served(surface.agent));
     expect(names).toEqual([`mcp_docs_${stem}`.slice(0, 64)]);
-    expect(surface.agent.tools[names[0] ?? ""]?.description).toContain("the winner");
+    expect(served(surface.agent)[names[0] ?? ""]?.description).toContain("the winner");
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(`${stem}c`));
   });
 
@@ -306,7 +318,10 @@ describe("collisions are resolved deterministically and out loud", () => {
       docsAgent({ docs: { url: "https://a.example/mcp" }, wiki: { url: "https://b.example/mcp" } }),
       { openSession: async () => fakeServer() },
     );
-    expect(Object.keys(surface.agent.tools).sort()).toEqual(["mcp_docs_search", "mcp_wiki_search"]);
+    expect(Object.keys(served(surface.agent)).sort()).toEqual([
+      "mcp_docs_search",
+      "mcp_wiki_search",
+    ]);
   });
 });
 
@@ -317,7 +332,7 @@ describe("a pinned server is held to what was reviewed", () => {
       docsAgent({ docs: { url: "https://mcp.example.com/mcp", pinnedTools } }),
       { openSession: async () => fakeServer(), logger: silentLogger },
     );
-    expect(Object.keys(surface.agent.tools)).toEqual(["mcp_docs_search"]);
+    expect(Object.keys(served(surface.agent))).toEqual(["mcp_docs_search"]);
     expect(surface.servers[0]?.drift).toEqual({ added: [], removed: [], changed: [] });
   });
 
@@ -336,7 +351,7 @@ describe("a pinned server is held to what was reviewed", () => {
       { openSession: async () => fakeServer(rugPull), logger },
     );
 
-    expect(Object.keys(surface.agent.tools)).toEqual([]);
+    expect(Object.keys(served(surface.agent))).toEqual([]);
     expect(surface.servers[0]?.drift?.changed).toEqual(["search"]);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('changed the definition of "search"'),
@@ -362,7 +377,7 @@ describe("a pinned server is held to what was reviewed", () => {
       docsAgent({ docs: { url: "https://mcp.example.com/mcp", pinnedTools } }),
       { openSession: async () => fakeServer(widened), logger: silentLogger },
     );
-    expect(Object.keys(surface.agent.tools)).toEqual([]);
+    expect(Object.keys(served(surface.agent))).toEqual([]);
     expect(surface.servers[0]?.drift?.changed).toEqual(["search"]);
   });
 
@@ -374,7 +389,7 @@ describe("a pinned server is held to what was reviewed", () => {
       docsAgent({ docs: { url: "https://mcp.example.com/mcp", pinnedTools } }),
       { openSession: async () => fakeServer(grown), logger },
     );
-    expect(Object.keys(surface.agent.tools)).toEqual(["mcp_docs_search"]);
+    expect(Object.keys(served(surface.agent))).toEqual(["mcp_docs_search"]);
     expect(surface.servers[0]?.drift?.added).toEqual(["exfiltrate"]);
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('published "exfiltrate"'));
   });
@@ -396,7 +411,7 @@ describe("a pinned server is held to what was reviewed", () => {
       openSession: async () => fakeServer(),
       logger: silentLogger,
     });
-    expect(Object.keys(surface.agent.tools)).toEqual(["mcp_docs_search"]);
+    expect(Object.keys(served(surface.agent))).toEqual(["mcp_docs_search"]);
     expect(surface.servers[0]?.drift).toBeUndefined();
     // And what is reported is exactly what a pin would have to hold.
     expect(surface.servers[0]?.fingerprints).toEqual(await fingerprintTools(SEARCH));
@@ -420,7 +435,7 @@ describe("a bad server costs its own tools and nothing else", () => {
       },
     );
 
-    expect(Object.keys(surface.agent.tools)).toEqual(["mcp_up_search"]);
+    expect(Object.keys(served(surface.agent))).toEqual(["mcp_up_search"]);
     expect(surface.servers.find((s) => s.key === "down")?.unavailable).toContain("ECONNREFUSED");
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('"down" is unavailable'));
 
@@ -442,7 +457,7 @@ describe("a bad server costs its own tools and nothing else", () => {
       logger: silentLogger,
     });
 
-    expect(Object.keys(surface.agent.tools)).toEqual([]);
+    expect(Object.keys(served(surface.agent))).toEqual([]);
     expect(surface.servers[0]?.unavailable).toContain("did not answer tools/list within 20ms");
     // The half-open session is not left behind.
     expect(hung.closed).toBe(1);
@@ -521,7 +536,7 @@ describe("resolvers, headers and allowedTools", () => {
     // A resolved URL is reported by its ORIGIN: a per-user session path is not
     // a status's, or a log line's, business.
     expect(surface.servers[0]?.url).toBe("https://mcp.example.com");
-    expect(Object.keys(surface.agent.tools)).toEqual(["mcp_apps_search"]);
+    expect(Object.keys(served(surface.agent))).toEqual(["mcp_apps_search"]);
   });
 
   test("at host start a resolver gets no clientId, and one that needs it costs its own tools", async () => {
@@ -547,7 +562,7 @@ describe("resolvers, headers and allowedTools", () => {
     const apps = surface.servers.find((s) => s.key === "apps");
     expect(apps?.unavailable).toBe("apps is per user");
     expect(apps?.url).toBe("(resolved per connection)");
-    expect(Object.keys(surface.agent.tools)).toEqual(["mcp_docs_search"]);
+    expect(Object.keys(served(surface.agent))).toEqual(["mcp_docs_search"]);
   });
 
   test("a resolver answering a non-http(s) URL is refused before anything is opened", async () => {
@@ -587,7 +602,7 @@ describe("resolvers, headers and allowedTools", () => {
       }),
       { logger, openSession: async () => fakeServer(tools) },
     );
-    expect(Object.keys(surface.agent.tools).sort()).toEqual([
+    expect(Object.keys(served(surface.agent)).sort()).toEqual([
       "mcp_apps_execute",
       "mcp_apps_search",
     ]);

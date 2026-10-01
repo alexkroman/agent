@@ -12,6 +12,8 @@
  * exactly that reason.
  */
 
+import type { ToolRefusalReason } from "./utils.ts";
+
 /**
  * The PRE-SERIALIZED wire form of a {@link ToolFailure}: the JSON string
  * `'{"error":"<message>"}'`, which is what the host emits for a tool that threw
@@ -29,6 +31,6 @@
  *
  * @internal
  */
-export function serializeToolFailure(message: string): string {
-  return JSON.stringify({ error: message });
+export function serializeToolFailure(message: string, reason?: ToolRefusalReason): string {
+  return JSON.stringify(reason === undefined ? { error: message } : { error: message, reason });
 }

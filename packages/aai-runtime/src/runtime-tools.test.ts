@@ -10,12 +10,13 @@
  */
 
 import type { AgentDef, SessionEvent, ToolContext } from "@alexkroman1/aai";
-import { clientTool, sessionSlot, subagent, tool } from "@alexkroman1/aai";
+import { clientTool, sessionSlot, speaker, tool } from "@alexkroman1/aai";
 import {
   createOwnedMap,
   MAX_CLIENT_EVENT_PAYLOAD_BYTES,
   type OwnedMap,
 } from "@alexkroman1/aai/internal";
+import { toolset } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
@@ -451,11 +452,13 @@ test("ctx.delegate does not carry the parent call's clientTool wait into a subag
     {},
     {
       env: {},
-      tool: {
-        description: "delegates",
-        execute: (_args: unknown, ctx: ToolContext) =>
-          ctx.delegate(subagent({ name: "helper", systemPrompt: "Help." }), { task: "t" }),
-      },
+      toolset: toolset("files", {
+        parent: {
+          description: "delegates",
+          execute: (_args: unknown, ctx: ToolContext) =>
+            ctx.delegate(speaker({ name: "helper", systemPrompt: "Help." }), { task: "t" }),
+        },
+      }),
       clientCall: () => Promise.resolve("never"),
       subagents: (_def, _opts, defaults) => {
         forwarded = Object.keys(defaults);

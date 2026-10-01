@@ -102,12 +102,8 @@ export {
   clientEventDropMessage,
   decideClientEvent,
 } from "./sdk/client-event.ts";
-export {
-  bindClientToolCall,
-  type ClientToolBrand,
-  type ClientToolCall,
-  clientToolBrand,
-} from "./sdk/client-tool.ts";
+// The brand is read only by `toolEntry` (`sdk/toolset.ts`); the runtime binds the wait.
+export { bindClientToolCall, type ClientToolCall } from "./sdk/client-tool.ts";
 export {
   type CoalescingRunner,
   createCoalescingRunner,

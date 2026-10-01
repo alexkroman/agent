@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Host-side implementation of the `ctx.delegate` capability
- * (see `sdk/subagent.ts` in `@alexkroman1/aai` for the contract).
+ * (see `sdk/speaker.ts` in `@alexkroman1/aai` for the contract).
  *
  * A subagent is the AI SDK's own subagent pattern — a `ToolLoopAgent` invoked
  * from inside a tool's `execute` — with the three things that pattern leaves
@@ -24,7 +24,7 @@
  * in-process under `aai dev`, inside the guest sandbox on the platform — so
  * dev and prod cannot drift on what a delegated run may reach.
  *
- * **A guardrail is a fourth thing the runtime owns.** `SubagentDef.guardrail`
+ * **A guardrail is a fourth thing the runtime owns.** `SpeakerDef.guardrail`
  * judges an attempt and may send it back with a complaint, which is a loop an
  * author could write around `ctx.delegate` — and could not write CORRECTLY,
  * because the only version available outside this function starts a fresh run.
@@ -43,18 +43,17 @@
  */
 
 import type {
+  DelegateAnswer,
   DelegateResult,
-  SubagentAnswer,
-  SubagentDef,
-  SubagentToolCall,
-  ToolDef,
+  DelegateToolCall,
+  SpeakerDef,
 } from "@alexkroman1/aai";
 import { DEFAULT_GUARDRAIL_MAX_REVISIONS } from "@alexkroman1/aai";
 import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { normalizeLlm, resolveAllBuiltins } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_STEPS, formatSchemaIssues } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
+import { agentToolsToSchemas, toolset } from "@alexkroman1/aai/manifest";
 import { stripJsonFence } from "@alexkroman1/aai/step";
 import { omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { type LanguageModel, type ModelMessage, stepCountIs, ToolLoopAgent } from "ai";
@@ -73,7 +72,7 @@ import type { StepUsage, UsageMeter } from "./usage-meter.ts";
 export type CreateSubagentRunnerOptions = {
   /**
    * Default LLM descriptor — the agent's own. A subagent may name its own
-   * with `SubagentDef.llm`; when neither is present a delegation fails with a
+   * with `SpeakerDef.llm`; when neither is present a delegation fails with a
    * descriptive error, exactly as `ctx.generate` does (an S2S agent has no
    * pipeline LLM and must name one).
    */
@@ -117,7 +116,7 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
   const logger = options.logger ?? consoleLogger;
   const modelFor = createLlmModelCache(options.env);
 
-  const resolveModel = (sub: SubagentDef): LanguageModel => {
+  const resolveModel = (sub: SpeakerDef): LanguageModel => {
     const descriptor = sub.llm ? normalizeLlm(sub.llm) : options.llm;
     if (!isLlmDescriptor(descriptor)) {
       throw new Error(
@@ -139,17 +138,16 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       ...omitUndefined({ fetch: options.fetch }),
       ...omitUndefined({ runCode: options.runCode }),
     });
-    // The subagent's OWN tools win a name collision with a builtin, which is
-    // the same policy `mergeBuiltinSurface` applies one level up — and the
-    // colliding builtin is dropped from the schemas too, so the model never
-    // sees a duplicate name.
-    const allTools: Record<string, ToolDef> = { ...builtins.defs, ...sub.tools };
-    const schemas = agentToolsToSchemas(allTools);
+    // The speaker's OWN tools first, builtins LAST: composition is first-wins,
+    // the policy `mergeBuiltinSurface` applies one level up, so a colliding
+    // builtin is neither advertised nor run.
+    const toolsets = [toolset("subagent", sub.tools ?? {}), toolset("builtin", builtins.defs)];
+    const schemas = agentToolsToSchemas(toolsets);
 
-    const executeTool = createToolDispatcher(allTools, (toolDef, call) =>
+    const executeTool = createToolDispatcher(toolsets, (set, call) =>
       executeToolCall(call.name, call.args, {
         ...parent,
-        tool: toolDef,
+        toolset: set,
         // The subagent's conversation, not the session's — see the module doc.
         messages: call.messages,
         // One level. The runner is REPLACED rather than dropped so the refusal
@@ -176,7 +174,7 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       // somewhere to run — the same arithmetic as `createTextAgent`.
       stopWhen: stepCountIs(maxSteps + 1),
       prepareStep: forceFinalAnswer(maxSteps, logger, sessionId),
-      // The subagent's `ModelTuning` — `SubagentDef` omits `maxRetries`, so
+      // The subagent's `ModelTuning` — `SpeakerDef` omits `maxRetries`, so
       // its requests retry on the AI SDK default; the guardrail's budget is
       // `maxRevisions`, read above.
       ...omitUndefined({
@@ -236,7 +234,7 @@ function budgetFor(usage: UsageMeter | undefined): {
 /** What {@link runUntilAccepted} needs, which is the run and nothing about how it was built. */
 type GuardedRun = {
   agent: ToolLoopAgent;
-  sub: SubagentDef;
+  sub: SpeakerDef;
   task: string;
   /** For the log line a repaired tool pair writes. */
   sessionId: string;
@@ -248,14 +246,14 @@ type GuardedRun = {
 };
 
 /**
- * Check one attempt against {@link SubagentDef.schema}, if it declares one.
+ * Check one attempt against {@link SpeakerDef.schema}, if it declares one.
  *
  * Answers the parsed value, or the complaint to send back. A subagent with no
  * schema passes with nothing parsed — the shape check is opt-in, and a plain
  * prose subagent must not be asked for JSON it was never told to write.
  */
 async function checkShape(
-  sub: SubagentDef,
+  sub: SpeakerDef,
   text: string,
 ): Promise<{ value?: unknown; issue?: string }> {
   if (!sub.schema) return {};
@@ -303,7 +301,7 @@ async function runUntilAccepted(run: GuardedRun): Promise<DelegateResult> {
       ...omitUndefined({ abortSignal: run.signal }),
       ...omitUndefined({ onStepFinish: budget.onStepFinish }),
     });
-    const answer: SubagentAnswer = {
+    const answer: DelegateAnswer = {
       text: result.text,
       steps: result.steps.length,
       toolCalls: collectToolCalls(result.steps),
@@ -343,7 +341,7 @@ async function runUntilAccepted(run: GuardedRun): Promise<DelegateResult> {
  * The guardrail's verdict as a complaint or nothing — the same shape
  * {@link checkShape} answers in, so one retry path serves both.
  */
-async function judgeAnswer(sub: SubagentDef, answer: SubagentAnswer): Promise<string | undefined> {
+async function judgeAnswer(sub: SpeakerDef, answer: DelegateAnswer): Promise<string | undefined> {
   if (!sub.guardrail) return undefined;
   const verdict = await sub.guardrail(answer);
   return verdict === true ? undefined : verdict;
@@ -354,7 +352,7 @@ async function judgeAnswer(sub: SubagentDef, answer: SubagentAnswer): Promise<st
  * then whatever this CALL added.
  *
  * The order is the one an author would write by hand and the reason
- * {@link SubagentDef.expectedOutput} is a field at all — a standing rule about
+ * {@link SpeakerDef.expectedOutput} is a field at all — a standing rule about
  * the shape of the answer, then the per-call brief that may refine it. Reversed,
  * a `context` saying "one sentence is enough this time" would be overruled by a
  * definition it has no way to see.
@@ -364,7 +362,7 @@ async function judgeAnswer(sub: SubagentDef, answer: SubagentAnswer): Promise<st
  * read like every other prompt this SDK assembles rather than like a second
  * convention.
  */
-function buildInstructions(sub: SubagentDef, context: string | undefined): string {
+function buildInstructions(sub: SpeakerDef, context: string | undefined): string {
   const sections = [sub.systemPrompt];
   if (sub.expectedOutput) sections.push(`## EXPECTED OUTPUT\n${sub.expectedOutput}`);
   if (context) sections.push(context);
@@ -386,7 +384,7 @@ function buildInstructions(sub: SubagentDef, context: string | undefined): strin
  * {@link DelegateResult.text} — the FINAL message — so a model that answers a
  * complaint conversationally ("Good catch, I'll add the source") has replaced
  * the answer with a reply about the answer, and the delegation returns that.
- * It is the same failure {@link SubagentDef.expectedOutput} exists for, reached
+ * It is the same failure {@link SpeakerDef.expectedOutput} exists for, reached
  * one turn later.
  */
 function reviseRequest(complaint: string): string {
@@ -409,7 +407,7 @@ function reviseRequest(complaint: string): string {
  */
 function collectToolCalls(
   steps: readonly { toolCalls: readonly { toolName: string; input: unknown }[] }[],
-): readonly SubagentToolCall[] {
+): readonly DelegateToolCall[] {
   return steps.flatMap((step) =>
     step.toolCalls.map((call) => ({ name: call.toolName, input: call.input })),
   );

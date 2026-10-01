@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai";
-import { agent, dialog, persona, personas, type SlotStore, tool } from "@alexkroman1/aai";
+import { agent, dialog, roster, type SlotStore, speaker, tool } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
@@ -13,13 +13,15 @@ import type { Transport } from "./transports/types.ts";
 
 const SID = "s-persona";
 
-const triage = persona({
+const triage = speaker({
   name: "triage",
+  speaks: true,
   description: "Answers the phone",
   systemPrompt: "Find out what the caller needs.",
 });
-const billing = persona({
+const billing = speaker({
   name: "billing",
+  speaks: true,
   description: "Invoices and refunds",
   systemPrompt: "You are the billing desk.",
   tools: {
@@ -33,7 +35,7 @@ const billing = persona({
 });
 /** A roster whose personas differ in prose and TOOLS only — nothing for the request. */
 const { temperature: _billingTemperature, ...billingWithoutKnobs } = billing;
-const proseOnly = personas([
+const proseOnly = roster([
   { ...triage, name: "front" },
   { ...billingWithoutKnobs, name: "back" },
 ]);
@@ -96,7 +98,7 @@ describe("an agent that declares no roster", () => {
 
 describe("the active persona's section", () => {
   test("is the entry persona's until a handoff, under a heading naming it", () => {
-    const desk = personas([triage, billing]);
+    const desk = roster([triage, billing]);
     const { prompt, base } = setup(desk);
     const text = prompt.resolve();
     expect(text.startsWith(base)).toBe(true);
@@ -105,7 +107,7 @@ describe("the active persona's section", () => {
   });
 
   test("changes at the next resolve after a handoff, and carries who from and the note", () => {
-    const desk = personas([triage, billing]);
+    const desk = roster([triage, billing]);
     const { prompt, slots } = setup(desk);
     desk.handoff({ slots, sessionId: SID }, billing, { note: "Account 4471 is verified." });
     const text = prompt.resolve();
@@ -115,7 +117,7 @@ describe("the active persona's section", () => {
   });
 
   test("sorts AHEAD of the dialogs' suffix — who is speaking, then where in the script", () => {
-    const desk = personas([triage, billing]);
+    const desk = roster([triage, billing]);
     const script = dialog("script", {
       initial: "open",
       states: {
@@ -125,7 +127,7 @@ describe("the active persona's section", () => {
     });
     // Bound through `agent()`, as a real roster is — that is what installs the
     // pin reader; the dialog here pins nothing and only contributes a suffix.
-    agent({ name: "Scripted", personas: desk, dialogs: [script] });
+    agent({ name: "Scripted", roster: desk, dialogs: [script] });
     const slots = createDetachedSlotStore();
     const { transport } = makeTransport();
     const prompts = createSystemPromptResolver({
@@ -157,7 +159,7 @@ describe("the active persona's section", () => {
 
 describe("the push to a transport holding its prompt as session state", () => {
   test("primes on the first event and pushes only when the section CHANGED", () => {
-    const desk = personas([triage, billing]);
+    const desk = roster([triage, billing]);
     const { bound, slots, refreshes } = setup(desk);
     bound.observe(configured());
     expect(refreshes()).toBe(0);
@@ -176,11 +178,11 @@ describe("the push to a transport holding its prompt as session state", () => {
   });
 
   test("a stale slot — a persona the roster no longer has — answers as the entry persona and warns", () => {
-    const desk = personas([triage, billing]);
+    const desk = roster([triage, billing]);
     const slots = createDetachedSlotStore();
     // What a session resumed across a rename looks like: the slot names a
     // persona nobody declares any more.
-    slots.write("aai.persona", { active: "renamed", from: null, note: null }, true);
+    slots.write("aai.speaker", { active: "renamed", from: null, note: null }, true);
     const { prompt, logger } = setup(desk, slots);
     expect(prompt.resolve()).toContain("## Active persona: triage");
     expect(logger.warn).toHaveBeenCalledWith(
@@ -197,7 +199,7 @@ describe("the per-step knobs", () => {
   });
 
   test("carry the SPEAKER's knobs, re-read on every step", () => {
-    const desk = personas([triage, billing]);
+    const desk = roster([triage, billing]);
     const { bound, slots } = setup(desk);
     const knobs = bound.turnKnobs;
     if (!knobs) throw new Error("expected turn knobs");

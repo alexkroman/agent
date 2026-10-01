@@ -188,7 +188,7 @@ no equivalent, because a conversation has no invalid input; the state's
 `instruction` does the asking again. Four things are decisions:
 
 - **`evaluate_candidate` is `ctx.generate({ schema })`, and `send_followup_email`
-  is a `subagent()`.** The first declares `output_pydantic=CandidateScore`, a
+  is a `speaker()` run off the line.** The first declares `output_pydantic=CandidateScore`, a
   SHAPE, and a schema call is what `output_pydantic` is: validated on the way
   back, no loop to run, twelve of them through a `mapConcurrent` window where
   theirs issued thirty in one `asyncio.gather` and met a rate limit as thirty
