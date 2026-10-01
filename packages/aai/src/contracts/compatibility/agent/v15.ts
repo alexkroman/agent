@@ -19,7 +19,10 @@
  * `route()`'s checks, `routeError` and a Standard Webhooks route), the two
  * session-bracketing hooks, `endSession`, the phone-call and location readers,
  * `turnDetection` and `ModelTuning`. The rest of epoch 15's export list is
- * carried by the older retained examples.
+ * carried by the older retained examples — except the field-group names
+ * `AgentModelTuning`, `AgentGuardrails`, `AgentObservation` and the
+ * `systemPrompt` resolver types, which only `v3.ts` named until epoch 3 was
+ * dropped with the session-event rename; they are spread in `spreadDesk`.
  *
  * **Its specifiers are RELATIVE**, for the reason every frozen example's are.
  *
@@ -28,8 +31,15 @@
 
 import type {
   AgentDef,
+  AgentGuardrail,
+  AgentGuardrails,
+  AgentInstructions,
+  AgentModelTuning,
+  AgentObservation,
   AgentRoutes,
+  AgentSessionContext,
   AgentSessionLifecycle,
+  AgentSystemPrompt,
   EndSessionOptions,
   McpServerConfig,
   McpServers,
@@ -45,6 +55,7 @@ import type {
   SessionEndContext,
   StandardWebhookOptions,
   TurnDetectionMode,
+  UsageLimits,
   ValidatedRouteRequest,
   WebhookRouteOptions,
 } from "../../../index.ts";
@@ -133,3 +144,22 @@ export function hangUp(ctx: { sessionId: string }): string {
 export const searchTool: string = MCP_SERVER_KEY_RE.test("docs")
   ? mcpToolName("docs", "search").slice(0, MCP_TOOL_NAME_MAX)
   : `${MCP_TOOL_PREFIX}invalid`;
+
+// The field groups as SPREADS, named here since epoch 3's example was dropped.
+const limits: UsageLimits = { totalTokens: 200_000 };
+const spreadTuning: AgentModelTuning = { temperature: 0.4, usageLimits: limits };
+const noWholesale: AgentGuardrail = (text) =>
+  text.includes("wholesale") ? "I can't discuss wholesale pricing." : true;
+const spreadGuardrails: AgentGuardrails = { inputGuardrails: [noWholesale] };
+const spreadObservation: AgentObservation = { events: { "tool.called": () => undefined } };
+const perSession: AgentInstructions = (ctx: AgentSessionContext) => `Session ${ctx.sessionId}.`;
+const houseRules: AgentSystemPrompt = perSession;
+
+/** An epoch-15 agent assembled from its field groups. */
+export const spreadDesk: AgentDef = agent({
+  name: "Bike Support",
+  systemPrompt: houseRules,
+  ...spreadTuning,
+  ...spreadGuardrails,
+  ...spreadObservation,
+});
