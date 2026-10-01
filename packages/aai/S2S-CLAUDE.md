@@ -30,7 +30,7 @@ in which mode — and points here.
   **`ASSEMBLYAI_S2S_SAMPLE_RATE` (`sdk/s2s-constants.ts`) owns all of it**: the
   three-way live measurement, the tau2 scores with the pin in place, and why a
   resampler was built and reverted. `pinAssemblyS2sRates`
-  (`aai-runtime/runtime-config.ts`) is the pin; `assertHostRatesSupported`
+  (`aai-runtime/src/s2s-config.ts`) is the pin; `assertHostRatesSupported`
   (`aai-runtime/src/server/host-mode.ts`) is the counterpart it cannot reach,
   refusing a host-mode handshake that declares a rate this transport cannot
   honour.
