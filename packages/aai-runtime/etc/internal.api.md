@@ -413,7 +413,7 @@ export type ProviderEnvVarsQuery = {
     llm?: object | undefined;
     tts?: object | undefined;
     s2s?: object | undefined;
-    page?: AgentDef["page"] | undefined;
+    mode?: AgentDef["mode"] | undefined;
 };
 
 export { publishClientInboxDefaults }

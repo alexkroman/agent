@@ -23,6 +23,9 @@ type AgentCustomEvent = {
 // @public
 type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
+// @public
+type AgentStateFrame = Readonly<Record<string, unknown>>;
+
 // @internal
 export function ApiUrlChip(input: {
     className?: string | undefined;
@@ -122,7 +125,7 @@ type SessionSnapshot = {
     readonly messages: ChatMessage[];
     readonly toolCalls: ToolCallInfo[];
     readonly customEvents: AgentCustomEvent[];
-    readonly agentState: unknown;
+    readonly agentState: AgentStateFrame | null;
     readonly userTranscript: string | null;
     readonly agentTranscript: string | null;
     readonly error: SessionError | null;

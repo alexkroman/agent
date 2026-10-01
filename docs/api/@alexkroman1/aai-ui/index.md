@@ -11,7 +11,7 @@ structural decision on this surface — it follows the agent's front door:
 | The agent is | The page calls | It talks to |
 | --- | --- | --- |
 | a voice agent (the default) | [mountClient](#mountclient) | a live session: socket, microphone, playback |
-| a `workflowApp()` / `agent({ page: "static" })` | [mountPage](#mountpage) | the workflow HTTP API — no session, no socket, no mic |
+| a `workflowApp()` / `agent({ mode: "workflow-app" })` | [mountPage](#mountpage) | the workflow HTTP API — no session, no socket, no mic |
 
 There is no route to write and no glue file: the agent server already serves
 both, so a component talks to a live agent directly. [createBrowserSession](#createbrowsersession)
@@ -28,10 +28,10 @@ exists so a component re-renders on its own slice rather than on every frame:
 | who the client is | [useSessionId](#usesessionid), [useClientId](#useclientid), [browserClientId](#browserclientid), [createLinkedClient](#createlinkedclient) |
 | a run reaching the page later | [useInbox](#useinbox) (a reminder, a finished job — played when it lands) |
 | what was said | [useConversation](#useconversation), [useUserTranscript](#useusertranscript), [useConversationLog](#useconversationlog) (across sessions, persisted) |
-| the talk button | [useTapToTalk](#usetaptotalk) (tap on, tap off), [usePushToTalk](#usepushtotalk) (hold, for `turnDetection: "manual"`) |
+| the talk button | [useTapToTalk](#usetaptotalk) (tap on, tap off), [usePushToTalk](#usepushtotalk) (hold, for `turnTaking: { detection: "manual" }`) |
 | the agent's own `/api` routes | [useRoute](#useroute), [useRouteMutation](#useroutemutation), [routeFetch](#routefetch), [useClientRuns](#useclientruns) (a `clientRunsRoutes()` pair) |
 | what this browser remembers | [useStoredValue](#usestoredvalue) / [createStoredValue](#createstoredvalue), [phoneE164](#phonee164) |
-| what the agent projects | [useAgentState](#useagentstate) — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
+| what the agent projects | [useAgentState](#useagentstate) — pass the `slot.projected` the agent declared under its slot name in `syncState`, and it selects that slot, types it AND supplies the frame rendered before the first push; [selectAgentState](#selectagentstate) is the same slot as a `useSessionSelector` selector |
 | tools, as they run | [useToolCallStart](#usetoolcallstart), [useToolResult](#usetoolresult), [useEvent](#useevent) |
 | a durable run | [useWorkflowSubmit](#useworkflowsubmit) (start one), [useWorkflowRun](#useworkflowrun) (watch one), [useWorkflowRuns](#useworkflowruns) / [useWorkflows](#useworkflows) (list), [useWorkflowProgress](#useworkflowprogress) / [useWorkflowStream](#useworkflowstream) (its output as it arrives) |
 | page chrome | [useTheme](#usetheme), [useCopy](#usecopy), [useFlash](#useflash), [useDownloadUrl](#usedownloadurl), [useRunKey](#userunkey) |
@@ -1658,6 +1658,47 @@ function SaveName({ name }: { name: string }) {
 
 ***
 
+### selectAgentState()
+
+```ts
+function selectAgentState<V = any>(slot: string): (snapshot: SessionSnapshot) => V | undefined;
+```
+
+A `useSessionSelector` selector for ONE slot of the agent's projected state:
+its value, or `undefined` before the agent has pushed it.
+
+The same function for the same name on every call, which is load-bearing:
+`useSessionSelector` caches its selection on the selector's identity, and an
+inline arrow would re-run it on every snapshot.
+
+```tsx
+import { selectAgentState, useSessionSelector } from "@alexkroman1/aai-ui";
+
+function CartBadge() {
+  // Re-renders when the `cart` slot changes, and on nothing else.
+  const cart = useSessionSelector(selectAgentState<{ count: number }>("cart"));
+  return <span>{cart?.count ?? 0}</span>;
+}
+```
+
+#### Type Parameters
+
+##### V
+
+`V` = `any`
+
+#### Parameters
+
+##### slot
+
+`string`
+
+#### Returns
+
+(`snapshot`: [`SessionSnapshot`](#sessionsnapshot)) => `V` \| `undefined`
+
+***
+
 ### SelectField()
 
 ```ts
@@ -2348,39 +2389,17 @@ function TranscribeForm() {
 #### Call Signature
 
 ```ts
-function useAgentState<S = any>(): S | null;
+function useAgentState(): Readonly<Record<string, unknown>> | null;
 ```
 
-The agent's projected session state, or `null` before the first push.
-
-The counterpart to `syncState` on the agent: whatever that projection
-returns is what arrives here — no per-tool result mirroring needed.
-
-```tsx
-import { useAgentState } from "@alexkroman1/aai-ui";
-
-type Item = { sku: string; qty: number };
-
-function Cart() {
-  const state = useAgentState<{ cart: Item[] }>();
-  return <ul>{state?.cart.map((item) => <li key={item.sku}>{item.qty}</li>)}</ul>;
-}
-```
-
-Typed by the caller for the same reason `useToolResult` is: the shape is
-the author's own projection, which the framework cannot see. It is
-nullable on purpose — nothing has been pushed before the first tool call,
-and a UI has to render that moment.
-
-##### Type Parameters
-
-###### S
-
-`S` = `any`
+The agent's whole projected frame — `{ [slot]: view }` for every slot its
+`syncState` names — or `null` before the first push. Prefer naming the slot
+(the overloads below): a component reading the whole frame re-renders when
+any slot changes.
 
 ##### Returns
 
-`S` \| `null`
+`Readonly`\<`Record`\<`string`, `unknown`\>\> \| `null`
 
 #### Call Signature
 
@@ -2388,52 +2407,25 @@ and a UI has to render that moment.
 function useAgentState<V>(projection: StateProjection<V>): V;
 ```
 
-The agent's projected session state, typed and defaulted by the SAME
-projection the agent pushes — pass `slot.projected` and there is no type
-argument to restate and no empty frame to derive.
-
-This is the overload to reach for whenever `syncState` is a slot projection,
-because it closes the round-trip the other two leave open. A projection is
-callable, so the pre-first-push frame is what `projection()` returns — the
-`fallback` overload's own doc tells you to build it that way — and the
-projection's return type is the state's type, so `useAgentState<CartView>`
-was restating what `cartView` already knew. Both halves came out of the same
-declaration and both were written by hand:
+One slot's projected state, typed and defaulted by the SAME projection the
+agent pushes — pass `slot.projected` and there is no type argument to
+restate, no slot name to repeat and no empty frame to derive.
 
 ```tsx no-check
 // `no-check`: the slot lives with the agent, in another file.
-// Before — the empty frame derived by hand, the type named three times:
-const EMPTY: CartView = cartSlot.projection(cartView)(undefined);
-const cart = useAgentState<CartView>(EMPTY);
-
-// After — the slot declares its `view`, and both ends pass the one object
-// it built at declaration:
-const cart = useAgentState(cartSlot.projected);
+// agent.ts: syncState: { cart: cartSlot.projected }
+const cart = useAgentState(cartSlot.projected); // reads state.cart
 ```
 
-**`slot.projected` is the spelling to prefer, and it retires the caveat
-below.** Declare the view on the slot (`sessionSlot(key, create, { view })`)
-and the projection is built ONCE where the slot is, so `agent({ syncState })`
-and this hook are handed the same object and nothing has to arrange for that.
-`slot.projection(view)` composes a NEW projection per call, which is what
-leaves both halves below to a convention.
+The projection carries its slot key, so this selects `state[projection.key]`
+— the key `agent()` requires the agent's `syncState` to use. Before the first
+push it answers `projection()`, the slot's DEFAULT through the same view,
+memoized on the projection's identity; `slot.projected` is built once with
+the slot, so that identity is stable for the life of the component.
 
-The empty frame is memoized on the projection's identity, so a module-scope
-projection (the normal case) produces ONE frame for the life of the
-component — which the `fallback` overload can only ask you to arrange by
-hoisting, and which a `slot.projection(view)` spelled inline in the render
-body silently got wrong. A `slot.projected` cannot be spelled inline: it is
-the slot's own field.
-
-**The one case that cannot use this overload is a slot whose declaring module
-is expensive to IMPORT.** A projection is built from the slot, so the browser
-bundle gets whatever that module pulls in — and the cost is the static import
-graph rather than the `create()` call, so no option on the slot can avoid it.
-`retail-orders-agent` is the worked example: its slot lives beside a 107 KB seed, so the
-page passes a `fallback` built by running the same view over a cheap empty
-state, from a module that imports no seed. Reach for this overload
-everywhere the slot's module is cheap, which is every other stateful
-template.
+**The one case that cannot use this overload is a slot whose declaring
+module is expensive to IMPORT** (a seeded factory pulls its seed into the
+browser bundle): name the slot instead, with a fallback.
 
 ##### Type Parameters
 
@@ -2447,11 +2439,6 @@ template.
 
 [`StateProjection`](../aai/index.md#stateprojection)\<`V`\>
 
-The same projection the agent declares as `syncState`.
-  `slot.projected` is that object by construction; a `slot.projection(view)`
-  has to be exported from the module that declares the slot so the two ends
-  cannot drift.
-
 ##### Returns
 
 `V`
@@ -2459,50 +2446,65 @@ The same projection the agent declares as `syncState`.
 #### Call Signature
 
 ```ts
-function useAgentState<S = any>(fallback: S): S;
+function useAgentState<V = any>(slot: string): V | null;
 ```
 
-The agent's projected session state, falling back to `fallback` before the
-first push — so the return is never `null` and a sidebar needs no branch for
-the pre-first-tool-call moment.
+One slot's projected state by NAME, or `null` before the agent pushed it.
+Typed by the caller, as `useToolResult` is: the shape is the author's own
+projection, which this file cannot see.
 
-Build the fallback by running the SAME projection over an empty state, not
-by hand-writing an empty-looking literal: a field added to the projection
-then reaches the first render too, instead of being `undefined` only in
-that one frame.
+##### Type Parameters
+
+###### V
+
+`V` = `any`
+
+##### Parameters
+
+###### slot
+
+`string`
+
+##### Returns
+
+`V` \| `null`
+
+#### Call Signature
+
+```ts
+function useAgentState<V>(slot: string, fallback: V): V;
+```
+
+One slot's projected state by NAME, falling back to `fallback` before the
+first push — for a slot whose module the browser should not import. Build the
+fallback by running the SAME view over an empty state, and hoist it to module
+scope so it is a stable reference.
 
 ```tsx no-check
-// `no-check`: the projection lives with the agent, in another file.
-import { useAgentState } from "@alexkroman1/aai-ui";
-import { cartSlot, cartView, type CartView } from "./shared.ts";
-
-const EMPTY: CartView = cartSlot.projection(cartView)(undefined);
-
-function Cart() {
-  const cart = useAgentState<CartView>(EMPTY);
-  return <ul>{cart.items.map((item) => <li key={item.sku}>{item.qty}</li>)}</ul>;
-}
+// `no-check`: the view lives with the agent, in another file.
+const EMPTY: StoreView = storeView(createEmptyStore());
+const view = useAgentState("retail", EMPTY);
 ```
 
 ##### Type Parameters
 
-###### S
+###### V
 
-`S` = `any`
+`V`
 
 ##### Parameters
 
+###### slot
+
+`string`
+
 ###### fallback
 
-`S`
-
-Returned while the agent has pushed nothing. Not memoized
-  here — hoist it to module scope (or memoize it) so it is a stable
-  reference across renders.
+`V`
 
 ##### Returns
 
-`S`
+`V`
 
 ***
 
@@ -2948,7 +2950,7 @@ Hold-to-speak over the session's push-to-talk methods, with the four ways a
 turn gets stuck open handled — see this module's doc.
 
 Must be used inside the provider `mountClient()` installs, against an agent
-declaring `turnDetection: "manual"`; any other agent ignores the commands and
+declaring `turnTaking: { detection: "manual" }`; any other agent ignores the commands and
 its server says so once.
 
 #### Parameters
@@ -3731,7 +3733,7 @@ than a moment. Each call fires exactly once per hook instance.
 `R` = `unknown`
 
 The result shape. Defaults to `unknown`, NOT to
-  [DefaultToolResult](../aai/index.md#defaulttoolresult) (`any`): the return type is inferred perfectly
+  `DefaultToolResult` (`any`): the return type is inferred perfectly
   at `tool()` and this hook is the one place a client reads it, so an `any`
   default threw the whole inference away exactly where it was wanted —
   `useToolResult("get_order", (r) => r.a.b.c.d.e)` reported nothing. It is
@@ -3740,7 +3742,7 @@ The result shape. Defaults to `unknown`, NOT to
   `import type getOrder from "./tools/get_order.ts"` is erased, so
   `useToolResult<InferToolOutput<typeof getOrder>>(…)` pulls no host code
   into the client graph. `useToolResult<Quote>(…)` against a hand-written
-  shape is the other spelling. [DefaultToolResult](../aai/index.md#defaulttoolresult) itself stays `any`
+  shape is the other spelling. `DefaultToolResult` itself stays `any`
   — see `ToolCallInfo.args` for why a value the framework cannot see is
   typed that way at REST; the argument does not extend to a call site whose
   whole job is to name the shape.
@@ -4924,6 +4926,17 @@ The seven members, in the order a call passes through them:
 
 ***
 
+### AgentStateFrame
+
+```ts
+type AgentStateFrame = Readonly<Record<string, unknown>>;
+```
+
+The agent's projected state as the client holds it: one entry per slot the
+agent's `syncState` names, keyed by that slot's name.
+
+***
+
 ### AudioResultCaptions
 
 ```ts
@@ -5290,7 +5303,7 @@ sendText(text: string, options?: SendTextOptions): void;
 ```
 
 Send a TYPED user turn: the agent answers `text` exactly as if the caller
-had said it — aloud, with tools, under any `turnDetection`.
+had said it — aloud, with tools, under any `turnTaking.detection`.
 
 Interrupts the agent if it is speaking or thinking (its queued audio is
 discarded here at once, as `cancel()` does). The message is NOT echoed into
@@ -7956,7 +7969,7 @@ The agent's base URL the session dials — `VoiceSessionOptions.platformUrl`.
 
 ```ts
 type SessionSnapshot = {
-  agentState: unknown;
+  agentState: AgentStateFrame | null;
   agentTranscript: string | null;
   apiUrl: string;
   contentVersion: number;
@@ -7996,12 +8009,14 @@ showing a live indicator over a call that has ended:
 ##### agentState
 
 ```ts
-readonly agentState: unknown;
+readonly agentState: AgentStateFrame | null;
 ```
 
-Latest state the agent projected via `syncState`, or `null` before the
-first push. A value, not a log — a component that mounts mid-session
-reads current state rather than replaying events it missed.
+Latest state the agent projected via `syncState` — keyed by slot name,
+`{ [slot]: view }` — or `null` before the first push. A value, not a log —
+a component that mounts mid-session reads current state rather than
+replaying events it missed. A slot whose view did not change keeps its
+previous value object, so a selector over one slot is stable across pushes.
 
 ##### agentTranscript
 
@@ -9595,7 +9610,7 @@ type UserTurnControls = {
 
 Push-to-talk's three edges on a [BrowserSession](#browsersession) — `session.userTurn`.
 
-Only an agent declaring `turnDetection: "manual"` honours them; any other
+Only an agent declaring `turnTaking: { detection: "manual" }` honours them; any other
 agent logs once and ignores them, because its transcriber already ends each
 turn on a pause. `usePushToTalk` is the hook a button is built on, and the
 way a `client.tsx` reaches these: a sub-handle rather than three methods on

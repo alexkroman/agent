@@ -1,0 +1,17 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "turn-taking",
+  "epoch": 2,
+  "rule": 2,
+  "sha256": "563bf5239e0d66827e06f1bb7054e6bab206e245cae3d549df92cafcd226db68",
+  "exports": [
+    "InterruptionTuning",
+    "PipelinePhrases",
+    "PipelineTuning",
+    "SilenceNudge",
+    "SilenceTuning",
+    "TurnTakingTuning",
+    "UserTurnLimit"
+  ],
+  "rollup": "b286a29b8f2b8f1445eb4c132217c9df2448963e548fb46c685570e1f702dbc9"
+}

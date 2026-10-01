@@ -9,6 +9,9 @@ import { z } from 'zod';
 // @public
 type AgentInstructions = (ctx: AgentSessionContext) => string;
 
+// @public
+type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
+
 // @public @sealed
 interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
@@ -134,15 +137,16 @@ export interface DeployedConfig {
     readonly builtinTools?: readonly BuiltinTool[] | undefined;
     readonly llm?: DeployedStage | undefined;
     readonly mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>> | undefined;
-    readonly mode: "pipeline" | "s2s" | "text";
+    readonly mode: AgentMode;
     readonly name: string;
     readonly requiredEnv?: readonly string[] | undefined;
     readonly s2s?: DeployedStage | undefined;
     readonly stt?: DeployedStage | undefined;
     readonly systemPrompt: string;
-    readonly text?: true | undefined;
     readonly tts?: DeployedStage | undefined;
-    readonly turnDetection?: string | undefined;
+    readonly turnTaking?: {
+        readonly detection?: string | undefined;
+    } | undefined;
     readonly usageLimits?: {
         readonly totalTokens?: number | undefined;
     } | undefined;

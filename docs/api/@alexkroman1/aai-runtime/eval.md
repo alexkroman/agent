@@ -39,7 +39,7 @@ warning at the seams where it would be forgotten.
 
 [openEvalTextAgent](#openevaltextagent) is the same question asked of a TEXT agent, and it
 is a second harness rather than an option on the first because
-`createRuntime` REFUSES `text: true`: a text agent fills no pipeline stages,
+`createRuntime` REFUSES `mode: "text"`: a text agent fills no pipeline stages,
 so there is nothing for the fake speech pair to stand between. Everything
 above the model is shared — `send()` is `say()`, the turn record is the same
 [EvalTurn](#evalturn), and the readers below take a text turn unchanged, because a
@@ -548,7 +548,7 @@ Can this machine run workflow evals against `agent`?
 
 The sibling of `evalCredentials`, and it is a DIFFERENT question rather than a
 convenience wrapper: `requiredProviderEnvVars` answers `[]` for a
-`page: "static"` agent — correctly, since a workflow app dials no provider
+`mode: "workflow-app"` agent — correctly, since a workflow app dials no provider
 from a session — so asking it alone reports every workflow app ready and every
 keyless run live, and every case then fails on a 401 inside a step.
 
@@ -736,21 +736,21 @@ Register both fake stages. Call `release()` when the case is done.
 #### Call Signature
 
 ```ts
-function lastStateIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): T | undefined;
+function lastStateIn<T>(
+   events: readonly SessionEvent[], 
+   slot: string, 
+   schema: StandardSchemaV1<unknown, T>
+): T | undefined;
 ```
 
 The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page
-is showing.
+is showing — or one SLOT's value in it. The frame is keyed by slot name, so a
+case names its slot exactly as the page does (`useAgentState(slot.projected)`
+reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
 
-For a template with a projection this is the strongest assertion available:
-not "the tool returned ok" but "the customer can see it". Three separate eval
-files hand-rolled this filter plus a cast before it was published.
-
-**Pass the SCHEMA.** The frame is `unknown` on the wire, so the alternative is
-a cast, and a cast is silent exactly when the projection changed shape
-underneath the eval — which is the regression an eval exists to catch. With a
-schema, a frame that stopped matching FAILS naming the field. The overload
-without one is for a case that only asks whether anything was pushed.
+**Pass the SCHEMA.** A frame is JSON off the wire, and a cast is silent exactly
+when the projection changed shape underneath the eval; with a schema, a value
+that stopped matching FAILS naming the field. Without a slot: the whole frame.
 
 ##### Type Parameters
 
@@ -764,6 +764,10 @@ without one is for a case that only asks whether anything was pushed.
 
 readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 
+###### slot
+
+`string`
+
 ###### schema
 
 [`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
@@ -775,21 +779,46 @@ readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 #### Call Signature
 
 ```ts
-function lastStateIn(events: readonly SessionEvent[]): unknown;
+function lastStateIn(events: readonly SessionEvent[], slot: string): unknown;
 ```
 
 The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page
-is showing.
+is showing — or one SLOT's value in it. The frame is keyed by slot name, so a
+case names its slot exactly as the page does (`useAgentState(slot.projected)`
+reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
 
-For a template with a projection this is the strongest assertion available:
-not "the tool returned ok" but "the customer can see it". Three separate eval
-files hand-rolled this filter plus a cast before it was published.
+**Pass the SCHEMA.** A frame is JSON off the wire, and a cast is silent exactly
+when the projection changed shape underneath the eval; with a schema, a value
+that stopped matching FAILS naming the field. Without a slot: the whole frame.
 
-**Pass the SCHEMA.** The frame is `unknown` on the wire, so the alternative is
-a cast, and a cast is silent exactly when the projection changed shape
-underneath the eval — which is the regression an eval exists to catch. With a
-schema, a frame that stopped matching FAILS naming the field. The overload
-without one is for a case that only asks whether anything was pushed.
+##### Parameters
+
+###### events
+
+readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
+
+###### slot
+
+`string`
+
+##### Returns
+
+`unknown`
+
+#### Call Signature
+
+```ts
+function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
+```
+
+The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page
+is showing — or one SLOT's value in it. The frame is keyed by slot name, so a
+case names its slot exactly as the page does (`useAgentState(slot.projected)`
+reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
+
+**Pass the SCHEMA.** A frame is JSON off the wire, and a cast is silent exactly
+when the projection changed shape underneath the eval; with a schema, a value
+that stopped matching FAILS naming the field. Without a slot: the whole frame.
 
 ##### Parameters
 
@@ -799,7 +828,7 @@ readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 
 ##### Returns
 
-`unknown`
+`Readonly`\<`Record`\<`string`, `unknown`\>\> \| `undefined`
 
 ***
 
@@ -934,7 +963,7 @@ boilerplate.
 
 #### Throws
 
-if the agent does not declare `text: true`. That is the mirror of
+if the agent does not declare `mode: "text"`. That is the mirror of
   `createTextAgent`'s own refusal, made here so the message names the harness
   to use instead.
 
@@ -1097,25 +1126,18 @@ readonly `string`[]
 #### Call Signature
 
 ```ts
-function statesIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): readonly T[];
+function statesIn<T>(
+   events: readonly SessionEvent[], 
+   slot: string, 
+   schema: StandardSchemaV1<unknown, T>
+): readonly T[];
 ```
 
-Every state frame the agent pushed (`AgentDef.syncState`), oldest first —
-what the page showed, in order.
-
-[lastStateIn](#laststatein) answers the newest, which is the right question for "can
-the customer see it". The SEQUENCE is a different claim and a stronger one:
-"the cart was never shown as placed before the tool ran", "no frame between
-these two turns leaked the pending change". Three eval files hand-rolled it —
-`events.flatMap((e) => (e.type === "state.updated" ? [Schema.parse(e.state)] : []))`
-in three spellings, one of them a `for` loop — and every one of them reached
-for the schema, which is the tell that a frame is `unknown` on the wire and
-asserting on a cast is how a projection that changed shape stops being
-noticed.
-
-A case wanting the frames only up to some point slices `events` first: this
-reads whatever list it is given, which is why it takes events rather than a
-session.
+Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
+one SLOT's value in each. The SEQUENCE is a stronger claim than
+[lastStateIn](#laststatein)'s: "the cart was never shown as placed before the tool
+ran". Pass the schema for its reason. A case wanting the frames only up to
+some point slices `events` first, which is why this takes events.
 
 ##### Type Parameters
 
@@ -1129,6 +1151,10 @@ session.
 
 readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 
+###### slot
+
+`string`
+
 ###### schema
 
 [`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
@@ -1140,25 +1166,40 @@ readonly `T`[]
 #### Call Signature
 
 ```ts
-function statesIn(events: readonly SessionEvent[]): readonly unknown[];
+function statesIn(events: readonly SessionEvent[], slot: string): readonly unknown[];
 ```
 
-Every state frame the agent pushed (`AgentDef.syncState`), oldest first —
-what the page showed, in order.
+Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
+one SLOT's value in each. The SEQUENCE is a stronger claim than
+[lastStateIn](#laststatein)'s: "the cart was never shown as placed before the tool
+ran". Pass the schema for its reason. A case wanting the frames only up to
+some point slices `events` first, which is why this takes events.
 
-[lastStateIn](#laststatein) answers the newest, which is the right question for "can
-the customer see it". The SEQUENCE is a different claim and a stronger one:
-"the cart was never shown as placed before the tool ran", "no frame between
-these two turns leaked the pending change". Three eval files hand-rolled it —
-`events.flatMap((e) => (e.type === "state.updated" ? [Schema.parse(e.state)] : []))`
-in three spellings, one of them a `for` loop — and every one of them reached
-for the schema, which is the tell that a frame is `unknown` on the wire and
-asserting on a cast is how a projection that changed shape stops being
-noticed.
+##### Parameters
 
-A case wanting the frames only up to some point slices `events` first: this
-reads whatever list it is given, which is why it takes events rather than a
-session.
+###### events
+
+readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
+
+###### slot
+
+`string`
+
+##### Returns
+
+readonly `unknown`[]
+
+#### Call Signature
+
+```ts
+function statesIn(events: readonly SessionEvent[]): readonly Readonly<Record<string, unknown>>[];
+```
+
+Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
+one SLOT's value in each. The SEQUENCE is a stronger claim than
+[lastStateIn](#laststatein)'s: "the cart was never shown as placed before the tool
+ran". Pass the schema for its reason. A case wanting the frames only up to
+some point slices `events` first, which is why this takes events.
 
 ##### Parameters
 
@@ -1168,7 +1209,7 @@ readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 
 ##### Returns
 
-readonly `unknown`[]
+readonly `Readonly`\<`Record`\<`string`, `unknown`\>\>[]
 
 ***
 
@@ -1850,7 +1891,7 @@ transform and the real engine cannot start it.
 What [openEvalTextAgent](#openevaltextagent) takes.
 
 The fields every way of running an agent shares are [HostAgentOptions](#hostagentoptions);
-here `agent` must declare `text: true`, and the rest mean what they mean on
+here `agent` must declare `mode: "text"`, and the rest mean what they mean on
 `EvalSessionOptions`: `providerEnv` defaults to `env` with any credential it
 does not carry filled in from this machine's own environment (a value in
 `env` always wins over the shell), `runCode` absent makes the builtin refuse

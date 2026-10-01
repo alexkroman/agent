@@ -11,8 +11,11 @@
   },
   "eval": {
     "current": 8,
-    "supported": [1, 2, 3, 8],
+    "supported": [8],
     "dropped": {
+      "1": "the frozen example authors agents with the removed `text: true` / `page` flags, a bare `s2s` or a single/array `syncState`, which `mode` and the slot-keyed record replaced (unreleased SDK)",
+      "2": "the frozen example authors agents with the removed `text: true` / `page` flags, a bare `s2s` or a single/array `syncState`, which `mode` and the slot-keyed record replaced (unreleased SDK)",
+      "3": "the frozen example authors agents with the removed `text: true` / `page` flags, a bare `s2s` or a single/array `syncState`, which `mode` and the slot-keyed record replaced (unreleased SDK)",
       "4": "EvalSessionOptions (and so DescribeEvalOptions) no longer carries generate: the model seam moved to the host-only HostRuntimeOptions, so this epoch's frozen suite, which passes a metered generate double in its options, no longer compiles.",
       "5": "EvalSessionOptions (and so DescribeEvalOptions) no longer carries generate: the model seam moved to the host-only HostRuntimeOptions, so this epoch's frozen suite, which passes a metered generate double in its options, no longer compiles.",
       "6": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed. Also: The simulated caller and the judge (simulateCall, judgeCall, their types, EvalSimulation*) moved to /eval/simulate as the eval-simulate capability, and expectCalled/lastToolResultIn to the eval-assert capability; EvalTestContext/EvalTextTestContext no longer carry simulate()/judge(), EvalCaseOptions no longer carries stubCaller/stubJudge, and the suite options no longer carry callerLlm/judgeLlm. An epoch-6 case destructuring simulate/judge, or importing those names from /eval, no longer compiles.",
@@ -68,12 +71,13 @@
     }
   },
   "server": {
-    "current": 6,
-    "supported": [2, 3, 6],
+    "current": 7,
+    "supported": [2, 3, 7],
     "dropped": {
       "1": "HostCredentialEnv, requiredProviderEnvVars and withHostCredentialFallback moved off the contracted root to @alexkroman1/aai-runtime/internal, and this epoch's frozen starter imports all three from @alexkroman1/aai-runtime, so it no longer compiles.",
       "4": "Session tickets moved to the /auth subpath (auth capability): createSessionToken, verifySessionToken, the three SESSION_* constants and the ticket types are no longer on the root barrel, and the servers' auth option takes an opaque SessionAuth from createSessionAuth() instead of a SessionAuthOptions literal. An epoch-4 server passing auth: { secret } no longer compiles.",
-      "5": "HostCredentialEnv, requiredProviderEnvVars and withHostCredentialFallback moved off the contracted root to @alexkroman1/aai-runtime/internal: an epoch-5 host importing any of them from @alexkroman1/aai-runtime no longer compiles."
+      "5": "HostCredentialEnv, requiredProviderEnvVars and withHostCredentialFallback moved off the contracted root to @alexkroman1/aai-runtime/internal: an epoch-5 host importing any of them from @alexkroman1/aai-runtime no longer compiles.",
+      "6": "the server capability names `AgentDef.page`, which `mode: \"workflow-app\"` replaced"
     }
   },
   "session": {
@@ -102,15 +106,17 @@
   },
   "testing": {
     "current": 3,
-    "supported": [1, 3],
+    "supported": [3],
     "dropped": {
+      "1": "the frozen example authors agents with the removed `text: true` / `page` flags, a bare `s2s` or a single/array `syncState`, which `mode` and the slot-keyed record replaced (unreleased SDK)",
       "2": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed."
     }
   },
   "text": {
     "current": 3,
-    "supported": [1, 3],
+    "supported": [3],
     "dropped": {
+      "1": "the frozen example authors agents with the removed `text: true` / `page` flags, a bare `s2s` or a single/array `syncState`, which `mode` and the slot-keyed record replaced (unreleased SDK)",
       "2": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed."
     }
   },

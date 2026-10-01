@@ -51,6 +51,9 @@ export type AgentCustomEvent = {
 export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
 // @public
+export type AgentStateFrame = Readonly<Record<string, unknown>>;
+
+// @public
 export function AudioResult(input: AudioResultProps): ReactNode;
 
 // @public
@@ -486,6 +489,9 @@ export type RouteMutationRunOptions = {
 };
 
 // @public
+export function selectAgentState<V = DefaultToolResult>(slot: string): (snapshot: SessionSnapshot) => V | undefined;
+
+// @public
 export function SelectField(input: FieldShell & {
     options?: readonly (string | {
         value: string;
@@ -582,7 +588,7 @@ export type SessionSnapshot = {
     readonly messages: ChatMessage[];
     readonly toolCalls: ToolCallInfo[];
     readonly customEvents: AgentCustomEvent[];
-    readonly agentState: unknown;
+    readonly agentState: AgentStateFrame | null;
     readonly userTranscript: string | null;
     readonly agentTranscript: string | null;
     readonly error: SessionError | null;
@@ -706,13 +712,16 @@ export type UploadStatus = UploadProgress & {
 };
 
 // @public
-export function useAgentState<S = DefaultToolResult>(): S | null;
+export function useAgentState(): AgentStateFrame | null;
 
 // @public
 export function useAgentState<V>(projection: StateProjection<V>): V;
 
 // @public
-export function useAgentState<S = DefaultToolResult>(fallback: S): S;
+export function useAgentState<V = DefaultToolResult>(slot: string): V | null;
+
+// @public
+export function useAgentState<V>(slot: string, fallback: V): V;
 
 // @public
 export function useClientId(): string | undefined;

@@ -78,6 +78,7 @@ test("the fields a mode lacks are absent from its member", () => {
   expectTypeOf<Extract<PipelineOnlyField, keyof TextAgentParams>>().toEqualTypeOf<never>();
   expectTypeOf<Extract<WorkflowAppOnlyField, keyof StaticAgentParams>>().toEqualTypeOf<never>();
   expectTypeOf<Extract<TextOnlyExcludedField, keyof TextAgentParams>>().toEqualTypeOf<never>();
+  expectTypeOf<TextOnlyExcludedField>().toEqualTypeOf<"sttPrompt" | "telephony">();
   // S2S never has the model-request knobs: the service assembles the request.
   expectTypeOf<Extract<keyof AgentModelTuning, keyof S2sAgentParams>>().toEqualTypeOf<never>();
   expectTypeOf<"llm" extends keyof S2sAgentParams ? true : false>().toEqualTypeOf<false>();

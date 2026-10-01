@@ -346,7 +346,7 @@ export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcp
    * strips them (see `wireMcpServers`).
    */
   mcpServers?: McpServers | undefined;
-  /** See {@link AgentDef.mode}; `undefined` from a spread means the default. */
+  /** See `AgentDef.mode`; `undefined` from a spread means the default. */
   mode?: AgentMode | undefined;
 } & {
   [K in HostOnlyAgentField]?: unknown;

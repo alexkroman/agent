@@ -2490,10 +2490,10 @@ The MCP servers whose tools join the agent's own, by key.
 ##### mode
 
 ```ts
-readonly mode: "s2s" | "text" | "pipeline";
+readonly mode: AgentMode;
 ```
 
-The session mode the conversion derived.
+The agent's mode, as the deploy carries it.
 
 ##### name
 
@@ -2537,14 +2537,6 @@ The system prompt a deploy carries — the author's string, or the framework
 default when there is none. A RESOLVER is not carried (it cannot be
 serialized), so an agent with one reads the default here.
 
-##### text?
-
-```ts
-readonly optional text?: true;
-```
-
-`true` for a text agent.
-
 ##### tts?
 
 ```ts
@@ -2553,13 +2545,21 @@ readonly optional tts?: DeployedStage;
 
 The TTS stage — declared, or the injected default in pipeline mode.
 
-##### turnDetection?
+##### turnTaking?
 
 ```ts
-readonly optional turnDetection?: string;
+readonly optional turnTaking?: {
+  detection?: string;
+};
 ```
 
-Who ends the caller's turn — `"manual"` for push-to-talk.
+Pipeline turn-taking — `detection: "manual"` is push-to-talk.
+
+###### detection?
+
+```ts
+readonly optional detection?: string;
+```
 
 ##### usageLimits?
 

@@ -50,12 +50,6 @@ export type InlineToolsMisuse =
   "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
 
 /**
- * The mode selector. Subtracted from {@link SharedAgentParams} so each member
- * re-declares the value it accepts.
- */
-export type ModeSelectorField = "mode";
-
-/**
  * The four provider descriptors. Subtracted from {@link SharedAgentParams} so
  * each member re-declares exactly the ones its mode has.
  */
@@ -91,28 +85,16 @@ export type PipelineOnlyField =
 export type SharedAgentParams = Omit<
   AgentDef,
   | DefaultedAgentField
-  | ModeSelectorField
+  // The mode selector: each member re-declares the value it accepts.
+  | "mode"
   | ProviderField
   | PipelineOnlyField
   | keyof AgentModelTuning
 > &
   Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
-    /** Not a field — see {@link InlineToolsMisuse}. */
+    /** Not a field — see `InlineToolsMisuse`. */
     tools?: InlineToolsMisuse;
   };
-
-/**
- * The pipeline member's STT stage: an explicit descriptor, or the default one
- * tuned by `turnTaking.minSilenceMs`/`maxSilenceMs`. An explicit descriptor
- * owns its own end-of-turn window, so the two are `never` beside one — one
- * owner per value.
- */
-type PipelineSttStage =
-  | {
-      stt: SttProvider;
-      turnTaking?: TurnTakingTuning & { minSilenceMs?: never; maxSilenceMs?: never };
-    }
-  | { stt?: undefined };
 
 /**
  * The PIPELINE member — `mode: "pipeline"`, or no `mode` at all (the default).
@@ -149,7 +131,16 @@ export type PipelineAgentParams = SharedAgentParams &
      * speaks `ASSEMBLYAI_TTS_DEFAULT_VOICE`.
      */
     tts?: TtsProvider;
-  } & PipelineSttStage;
+  } & (
+    | {
+        // An explicit STT descriptor owns its own end-of-turn window, so the
+        // `turnTaking.minSilenceMs`/`maxSilenceMs` shorthand is `never` beside
+        // one — one owner per value.
+        stt: SttProvider;
+        turnTaking?: TurnTakingTuning & { minSilenceMs?: never; maxSilenceMs?: never };
+      }
+    | { stt?: undefined }
+  );
 
 /**
  * The S2S member — `mode: "s2s"` and the `s2s` descriptor, and nothing
@@ -166,25 +157,28 @@ export type S2sAgentParams = SharedAgentParams & {
 };
 
 /**
- * The fields a text agent drops beyond the pipeline-only ones: `sttPrompt`
- * biases a transcriber and `telephony` admits a phone call, and a text agent
- * has neither.
- */
-export type TextOnlyExcludedField = "sttPrompt" | "telephony";
-
-/**
  * The TEXT member — `mode: "text"`, optionally an `llm`, and nothing from the
  * audio half of the agent shape.
  *
  * @public
  */
-export type TextAgentParams = Omit<SharedAgentParams, TextOnlyExcludedField> &
+// The fields a text agent drops beyond the pipeline-only ones: `sttPrompt`
+// biases a transcriber and `telephony` admits a phone call, and a text agent
+// has neither.
+export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> &
   Pick<AgentDef, keyof AgentModelTuning> & {
     /** See {@link AgentDef.mode}. */
     mode: "text";
-    /** See {@link PipelineAgentParams.llm} — the one provider stage a text agent has. */
+    /** See {@link AgentDef.llm}; a model-id string works as on the pipeline member — the one provider stage a text agent has. */
     llm?: LlmSpec;
   };
+
+/**
+ * The fields a text agent drops beyond the pipeline-only ones — DERIVED from
+ * {@link TextAgentParams}, so the run-time table that `satisfies` a `Record`
+ * over it cannot drift from the member.
+ */
+export type TextOnlyExcludedField = Exclude<keyof SharedAgentParams, keyof TextAgentParams>;
 
 /**
  * The fields a WORKFLOW APP has no use for: a page over the workflow HTTP API
@@ -199,7 +193,7 @@ export type TextAgentParams = Omit<SharedAgentParams, TextOnlyExcludedField> &
 export type WorkflowAppOnlyField =
   | ProviderField
   | PipelineOnlyField
-  | TextOnlyExcludedField
+  | Exclude<keyof SharedAgentParams, keyof TextAgentParams>
   | keyof AgentModelTuning
   | "systemPrompt"
   | "voicePresets"

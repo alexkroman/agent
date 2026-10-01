@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { DefaultToolResult } from "@alexkroman1/aai";
 import { useEffect, useRef } from "react";
 import { tryParseJSON } from "./_utils.ts";
 import { useSessionSelector } from "./context.ts";
@@ -166,7 +165,7 @@ function useToolCallEffect(
  * ```
  *
  * @typeParam R - The result shape. Defaults to `unknown`, NOT to
- *   {@link DefaultToolResult} (`any`): the return type is inferred perfectly
+ *   `DefaultToolResult` (`any`): the return type is inferred perfectly
  *   at `tool()` and this hook is the one place a client reads it, so an `any`
  *   default threw the whole inference away exactly where it was wanted —
  *   `useToolResult("get_order", (r) => r.a.b.c.d.e)` reported nothing. It is
@@ -175,7 +174,7 @@ function useToolCallEffect(
  *   `import type getOrder from "./tools/get_order.ts"` is erased, so
  *   `useToolResult<InferToolOutput<typeof getOrder>>(…)` pulls no host code
  *   into the client graph. `useToolResult<Quote>(…)` against a hand-written
- *   shape is the other spelling. {@link DefaultToolResult} itself stays `any`
+ *   shape is the other spelling. `DefaultToolResult` itself stays `any`
  *   — see `ToolCallInfo.args` for why a value the framework cannot see is
  *   typed that way at REST; the argument does not extend to a call site whose
  *   whole job is to name the shape.

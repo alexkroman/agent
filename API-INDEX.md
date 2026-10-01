@@ -18,10 +18,10 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 581 names
-- [Browser client](#browser-client) — 179 names
+- [Agent authoring](#agent-authoring) — 587 names
+- [Browser client](#browser-client) — 181 names
 - [Testing and evals](#testing-and-evals) — 253 names
-- [Hosting and tooling](#hosting-and-tooling) — 236 names
+- [Hosting and tooling](#hosting-and-tooling) — 233 names
 - [Framework internals](#framework-internals) — 380 names
 
 ## Agent authoring
@@ -34,16 +34,17 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ASSEMBLYAI_STT_EU_URL` | const | `@alexkroman1/aai/stt` | `aai:stt` | EU data-residency streaming endpoint. |
 | `ASSEMBLYAI_TTS_DEFAULT_VOICE` | const | `@alexkroman1/aai/tts` | `aai:tts` | Default voice when `assemblyAITts()` is called with no `voice` — a US-accented English voice, since most agents face US callers (it was `"vera"` for a while, … |
 | `ASSEMBLYAI_TTS_LANGUAGES` | const | `@alexkroman1/aai/tts` | `aai:tts` | ISO 639-1 code → the `language` query-param value the service accepts. |
-| `ASSEMBLYAI_TTS_VOICES` | const | `@alexkroman1/aai/tts` (also `@alexkroman1/aai`) | `aai:tts` | The voice catalog — voice id → the language it speaks and its accent. |
+| `ASSEMBLYAI_TTS_VOICES` | const | `@alexkroman1/aai/tts` | `aai:tts` | The voice catalog — voice id → the language it speaks and its accent. |
 | `AgentClient` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | Everything one agent answers: every `WorkflowApi` call, plus the front door. |
 | `AgentClientInbox` | interface | `@alexkroman1/aai` | `aai:agent` | The device-inbox half of an agent declaration — see this module's header. |
-| `AgentDef` | interface | `@alexkroman1/aai` | `aai:agent` | Fully resolved agent definition. |
+| `AgentDef` | interface | `@alexkroman1/aai` | `aai:agent` | Fully resolved agent definition — and THE reference for what every field means. |
 | `AgentGuardrail` | type | `@alexkroman1/aai` | `aai:agent` | Judge one piece of text — see `AgentDef.inputGuardrails` and `AgentDef.outputGuardrails`. |
 | `AgentGuardrails` | interface | `@alexkroman1/aai` | `aai:agent` | The two guardrail fields on `AgentDef` — see this module's header for what each can actually prevent. |
 | `AgentInstructions` | type | `@alexkroman1/aai` | `aai:agent` | Compute the agent's instructions for the request about to be assembled. |
+| `AgentMode` | type | `@alexkroman1/aai` | `aai:agent` | Which kind of agent this is — the discriminant `agent()` is overloaded over, and the `mode` an `AgentDef` and its serialized config carry. |
 | `AgentModelTuning` | interface | `@alexkroman1/aai` | `aai:agent` | `ModelTuning` plus the two knobs only the agent's OWN loop has: a per-step tool-choice policy and a session token budget. |
 | `AgentObservation` | interface | `@alexkroman1/aai` | `aai:agent` | The observe-only half of an agent declaration — see this module's header. |
-| `AgentParams` | type | `@alexkroman1/aai` | `aai:agent` | The author-facing parameter shape of `agent`: every `AgentDef` field, with the defaulted ones optional. |
+| `AgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Everything `agent()` accepts: one member per `AgentMode`. |
 | `AgentRoutes` | interface | `@alexkroman1/aai` | `aai:agent` | The `routes` field of an agent declaration — see this module's header. |
 | `AgentSessionContext` | interface | `@alexkroman1/aai` | `aai:agent` | The session a per-session author function is running for. |
 | `AgentSessionLifecycle` | interface | `@alexkroman1/aai` | `aai:agent` | The session-bracketing half of an agent declaration — see this module's header. |
@@ -55,7 +56,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `AssemblyAILlmProviderOptions` | type | `@alexkroman1/aai/llm` | `aai:llm` | `providerOptions` for `provider: "assemblyai"`. |
 | `AssemblyAIReasoningEffort` | type | `@alexkroman1/aai/llm` | `aai:llm` | Reasoning effort forwarded to a gateway model — one of the levels the GPT-5 family accepts, or any other string. |
 | `AssemblyAITtsLanguage` | type | `@alexkroman1/aai/tts` | `aai:tts` | ISO 639-1 code for a language the AssemblyAI voice catalog speaks. |
-| `AssemblyAITtsVoice` | type | `@alexkroman1/aai/tts` (also `@alexkroman1/aai`) | `aai:tts` | A voice id from `ASSEMBLYAI_TTS_VOICES`. |
+| `AssemblyAITtsVoice` | type | `@alexkroman1/aai/tts` | `aai:tts` | A voice id from `ASSEMBLYAI_TTS_VOICES`. |
 | `AssemblyAITtsVoiceInfo` | interface | `@alexkroman1/aai/tts` | `aai:tts` | What the catalog records about one voice: the language it speaks and the accent it speaks with. |
 | `BASH_TIMEOUT_MAX_MS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` |  |
 | `BASH_TIMEOUT_MS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` | Default and maximum wall-clock for one `bash` command. |
@@ -133,7 +134,6 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `DelegateOptions` | interface | `@alexkroman1/aai` | `aai:subagent` | Per-call options for `DelegateFn`. |
 | `DelegateResult` | interface | `@alexkroman1/aai` | `aai:subagent` | What one delegated run returns: the accepted attempt, plus what getting there took. |
 | `Dialog`, `DialogOptions` | interface | `@alexkroman1/aai` | `aai:dialog` | A dialog statechart bound to a session, created by `dialog`. |
-| `DialogBargeIn` | type | `@alexkroman1/aai` | `aai:dialog` | How interruptible the agent is while a dialog state is active. |
 | `DialogEvent` | type | `@alexkroman1/aai` | `aai:dialog` | The event union a `DialogSpec` declares — synthesized from its `on` keys at every depth. |
 | `DialogEventNames` | type | `@alexkroman1/aai` | `aai:dialog` | Every event name the `on` maps of a `states` map declare, at every depth. |
 | `DialogGate` | interface | `@alexkroman1/aai` | `aai:dialog` | What makes a tool part of a dialog: where it may run, and what it advances. |
@@ -171,6 +171,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `InferSchemaOutput` | type | `@alexkroman1/aai` | `aai:tool` | The output (validated) type of a Standard Schema. |
 | `InferToolInput` | type | `@alexkroman1/aai` | `aai:tool` | The validated input type a tool's `execute` receives — inferred from the tool's `inputSchema`. |
 | `InferToolOutput` | type | `@alexkroman1/aai` | `aai:tool` | The result type a tool's `execute` returns (awaited, so a sync and an `async` body infer alike). |
+| `InterruptionTuning` | interface | `@alexkroman1/aai` |  | When the caller's speech may cut the agent off, and what happens after. |
 | `JsonClient`, `JsonClientOptions` | type | `@alexkroman1/aai/utils` | `aai:utils` | One call to the API a `jsonClient` describes. |
 | `JsonClientContext` | interface | `@alexkroman1/aai/utils` | `aai:utils` | The context a `JsonClient` call reads: a tool's `ctx`, a route's `ctx`, or `{ env: … }` built from `stepEnv` in a workflow step. |
 | `JsonRequestInit` | interface | `@alexkroman1/aai/utils` | `aai:utils` | Per-call extras for a `JsonClient` request. |
@@ -195,6 +196,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `MetricsCollector`, `MetricsCollectorOptions` | interface | `@alexkroman1/aai` | `aai:metrics` | A running summary of `metrics.collected` frames — see `createMetricsCollector`. |
 | `MetricsSample` | type | `@alexkroman1/aai` | `aai:metrics` | What `MetricsCollector.collect` reads off one frame — the event without its envelope, so a hook's event and a transport's body both fit. |
 | `MetricsSummary` | interface | `@alexkroman1/aai` | `aai:metrics` | Everything collected so far. |
+| `ModeAgentDef` | type | `@alexkroman1/aai` | `aai:agent` | What `agent()` returns for a declaration in mode `M`: the one definition type, with `mode` known. |
 | `ModelTuning` | interface | `@alexkroman1/aai` | `aai:agent` | The per-REQUEST knobs every model loop this runtime runs takes — the agent's own conversational loop and a `SubagentDef`'s delegated one alike. |
 | `MultipartBody` | type | `@alexkroman1/aai/step` | `aai:step` | A ready-to-send multipart body, as `multipartBody` returns it. |
 | `MultipartPart` | type | `@alexkroman1/aai/step` | `aai:step` | One file part, as `multipartBody` takes it. |
@@ -205,8 +207,9 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `PersonaDef` | interface | `@alexkroman1/aai` | `aai:persona` | One persona: a speaker the session can hand the caller to. |
 | `PersonaPosition` | interface | `@alexkroman1/aai` | `aai:persona` | Where a session is, persona-wise — the position `Personas.position` answers, the shape `DialogPosition` has for a dialog. |
 | `Personas` | interface | `@alexkroman1/aai` | `aai:persona` | The roster the agent declares and every tool reaches for — what `personas` returns. |
-| `PipelineAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Pipeline-mode params: any subset of the provider triple (unset stages run on the default all-AssemblyAI pipeline), never `s2s`. |
-| `PipelineVoiceTuning` | interface | `@alexkroman1/aai` |  | Pipeline-mode voice-UX tuning, extended by `AgentDef`. |
+| `PipelineAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | The PIPELINE member — `mode: "pipeline"`, or no `mode` at all (the default). |
+| `PipelinePhrases` | interface | `@alexkroman1/aai` |  | What the pipeline SAYS when a stage fails, so a provider outage hands the conversation back instead of going silent. |
+| `PipelineTuning` | interface | `@alexkroman1/aai` |  | The pipeline's turn-taking tuning: three optional groups, extended by `AgentDef` and present only on the pipeline member of `agent()`. |
 | `PlaceCallCredentials` | type | `@alexkroman1/aai/step` | `aai:step` | A Twilio account's credentials. |
 | `PlaceCallError` | class | `@alexkroman1/aai/step` | `aai:step` | The carrier refused, or never answered. |
 | `PlaceCallOptions` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepPlaceCall` takes. |
@@ -231,7 +234,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `RouteHandler` | type | `@alexkroman1/aai` | `aai:agent` | One `agent({ routes })` handler. |
 | `RouteRequest` | interface | `@alexkroman1/aai` | `aai:agent` | One request to an `agent({ routes })` handler, already parsed. |
 | `RouteResponse` | interface | `@alexkroman1/aai` | `aai:agent` | A route's answer with a status of its own — what `routeResponse` makes. |
-| `S2sAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | S2S-mode params: an `s2s` descriptor, no pipeline providers, and the pipeline-only tuning knobs typed as `PipelineOnlyMisuse` so setting one fails with a … |
+| `S2sAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | The S2S member — `mode: "s2s"` and the `s2s` descriptor, and nothing pipeline-shaped: the service runs STT, the model loop and TTS, so the pipeline stages, … |
 | `S2sProvider` | type | `@alexkroman1/aai/s2s` (also `@alexkroman1/aai`) | `aai:s2s` | Descriptor for an S2S provider. |
 | `SESSION_SOURCED_EVENT_TYPES` | const | `@alexkroman1/aai` | `aai:events` | The events only the SESSION itself can be the source of — never a transport. |
 | `SLACK_CHANNEL_HANDLER` | const | `@alexkroman1/aai/channels` | `aai:channels` | Slack as a `ChannelHandler` — what `sendToChannel` dispatches to for a `"slack"` descriptor. |
@@ -256,7 +259,9 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `SessionSlot`, `SessionSlotOptions` | interface | `@alexkroman1/aai` | `aai:state` | A named slot of per-session state, created by `sessionSlot`. |
 | `SessionSourcedEventType` | type | `@alexkroman1/aai` | `aai:events` | One of `SESSION_SOURCED_EVENT_TYPES`. |
 | `Settled` | type | `@alexkroman1/aai/step` | `aai:step` | What one item of a `mapSettled` came back as: its value, or the reason it failed, beside the item itself. |
-| `SharedAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Fields shared by both session modes: everything on `AgentDef` minus the providers and the pipeline-only tuning knobs, plus the authoring conveniences. |
+| `SharedAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | What every SESSION member shares — pipeline, S2S and text: everything on `AgentDef` minus the mode-owned fields, with the defaulted ones optional. |
+| `SilenceNudge` | interface | `@alexkroman1/aai` |  | The silence nudge: after this much user silence the assistant takes a turn. |
+| `SilenceTuning` | interface | `@alexkroman1/aai` |  | What the agent does about silence — its own, and the caller's. |
 | `SlackChannel`, `SlackChannelOptions` | type | `@alexkroman1/aai/channels` | `aai:channels` | A Slack channel descriptor, as returned by `slackChannel`. |
 | `SleepOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Per-sleep options. |
 | `SlotCaps` | type | `@alexkroman1/aai` | `aai:state` | Growth caps for the ARRAYS at the top level of a slot's value — the type of `SessionSlotOptions.caps`. |
@@ -272,7 +277,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `StandardWebhookOptions` | interface | `@alexkroman1/aai` | `aai:agent` | What `verifyStandardWebhook` takes beside the request and secret. |
 | `StartOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Per-run options for `WorkflowClient.start` — `ctx.workflows.start`, from a TOOL. |
 | `StateProjection` | interface | `@alexkroman1/aai` | `aai:state` | One slot's contribution to the `agent_state` frame — what `SessionSlot.projected` and `SessionSlot.projection` are, and what `agent({ syncState })` takes. |
-| `StaticAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Workflow-app params: `page: "static"`, the workflows that ARE the product, and nothing from the session half of the agent shape. |
+| `StaticAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | The WORKFLOW-APP member — `mode: "workflow-app"`, the workflows that ARE the product, and nothing from the session half of the agent shape. |
 | `StepFetchInit` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepFetch` accepts. |
 | `StepGenerateError` | class | `@alexkroman1/aai/step` | `aai:step` | A model call that failed, with the one thing a step has to decide from. |
 | `StepInfo` | type | `@alexkroman1/aai/step` | `aai:step` | Which step is running, and which attempt of it. |
@@ -305,7 +310,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `TelephonyAccess` | type | `@alexkroman1/aai` | `aai:agent` | What an agent declares about `WS /phone`. |
 | `TelephonyCarrier` | type | `@alexkroman1/aai` | `aai:agent` | A phone carrier that can open a media stream against an agent — `"twilio"` or `"telnyx"`, the two this release ships a codec for, or any other string. |
 | `TerminalWorkflowRun` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A run in a status nothing will change again. |
-| `TextAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Text-mode params: `text: true`, optionally an `llm`, and nothing else from the audio half of the agent shape. |
+| `TextAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | The TEXT member — `mode: "text"`, optionally an `llm`, and nothing from the audio half of the agent shape. |
 | `TextbeltChannel`, `TextbeltChannelOptions` | type | `@alexkroman1/aai/channels` | `aai:channels` | A Textbelt channel descriptor, as returned by `textbeltChannel`. |
 | `ToolChoice` | type | `@alexkroman1/aai` | `aai:agent` | How the LLM should select tools. |
 | `ToolCompletionMessage` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | The role switch, and the reason this feature is worth having. |
@@ -328,7 +333,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `TranscribeSyncOptions` | type | `@alexkroman1/aai/step` | `aai:transcribe` | What `stepTranscribeSync` accepts. |
 | `Transcript` | type | `@alexkroman1/aai/step` | `aai:transcribe` | A finished transcript, as `stepTranscribePoll` answers with one. |
 | `TtsProvider` | type | `@alexkroman1/aai/tts` (also `@alexkroman1/aai`) | `aai:tts` | Descriptor for a TTS provider. |
-| `TurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | A turn-detection mode — `"auto"` or `"manual"`, the two this release implements (see `PipelineVoiceTuning.turnDetection`), or any other string. |
+| `TurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | A turn-detection mode — `"auto"` or `"manual"`, the two this release implements (see `TurnTakingTuning.detection`), or any other string. |
+| `TurnTakingTuning` | interface | `@alexkroman1/aai` |  | WHEN the caller's turn ends and the agent's begins. |
 | `TypedDelegateResult` | interface | `@alexkroman1/aai` | `aai:subagent` | Run a subagent to completion — the signature of `ctx.delegate`. |
 | `TypedSubagentDef` | interface | `@alexkroman1/aai` | `aai:subagent` | Define a subagent. |
 | `UnsupportedRecordingError` | class | `@alexkroman1/aai/step` | `aai:step` | A recording `parseWav` will not read. |
@@ -344,7 +350,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `UploadRef` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A stored upload, as `WorkflowApi.upload` resolves it. |
 | `UploadSlice` | type | `@alexkroman1/aai/step` | `aai:uploads` | One window of an upload, as `stepReadUpload` resolves it. |
 | `UsageLimits` | interface | `@alexkroman1/aai` | `aai:agent` | The token budget a session may spend before the runtime stops it. |
-| `UserTurnLimit` | interface | `@alexkroman1/aai` |  | A cap on ONE user turn — see `PipelineVoiceTuning.userTurnLimit`. |
+| `UserTurnLimit` | interface | `@alexkroman1/aai` |  | A cap on ONE user turn — see `TurnTakingTuning.userTurnLimit`. |
 | `VOICE_PRESETS` | const | `@alexkroman1/aai` | `aai:agent` | The shipped text of every preset, keyed by the name `agent({ voicePresets })` takes. |
 | `ValidatedRouteRequest` | type | `@alexkroman1/aai` | `aai:agent` | The request a `route` handler receives: `body` already validated (the schema's OUTPUT), and `clientId` a `string` when `requireClient` is set. |
 | `VoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | A preset name — one of the opt-in prompt presets THIS release ships (see `VOICE_PRESETS` for what each one says and what it costs), or any other string. |
@@ -575,6 +581,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `AGENT_STATE_LABELS` | const | `@alexkroman1/aai-ui` | `aai-ui:session` | The default label per `AgentState`. |
 | `AgentCustomEvent` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | A custom event emitted by the agent via `ctx.send(event, data)` — the payload the session records in `SessionSnapshot.customEvents` (`id` is a monotonic … |
 | `AgentState` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Current state of the voice agent session — the `state` field of `SessionSnapshot`, and what a chrome paints its status indicator from. |
+| `AgentStateFrame` | type | `@alexkroman1/aai-ui` | `aai-ui:hooks` | The agent's projected state as the client holds it: one entry per slot the agent's `syncState` names, keyed by that slot's name. |
 | `AudioResult`, `AudioResultProps` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The player for a file a RUN produced: a heading, the fetch's pending line, its announced error, the `<audio>` with an optional caption track, the download … |
 | `AudioResultCaptions` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | A one-cue caption track for `AudioResult`: the words the clip speaks, spanning its whole length. |
 | `AutoScroll` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A scroll container that stays pinned to the bottom as its content grows, releases when the reader scrolls up, and re-engages once they return to the bottom. |
@@ -685,7 +692,8 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `mountPage` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Mount a page for an agent whose work happens in workflows. |
 | `phoneE164`, `PhoneE164Options` | function | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | The phone number `typed` in E.164 form (`"+15035550123"`), or `undefined` when it cannot be one — see `PhoneE164Options` for how a number without a country … |
 | `routeFetch`, `RouteFetchOptions` | function | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | Call one of the agent's own routes and return its JSON — see this module's doc for what it handles. |
-| `useAgentState` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | The agent's projected session state, or `null` before the first push. |
+| `selectAgentState` | function | `@alexkroman1/aai-ui` | `aai-ui:hooks` | A `useSessionSelector` selector for ONE slot of the agent's projected state: its value, or `undefined` before the agent has pushed it. |
+| `useAgentState` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | The agent's whole projected frame — `{ [slot]: view }` for every slot its `syncState` names — or `null` before the first push. |
 | `useClientId` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The client id this session sends as `?client=` — the id a tool reads with `sessionClientId(ctx)` and the inbox socket is held under. |
 | `useClientRuns`, `UseClientRunsOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | The runs going on for this client, from a `clientRunsRoutes()` pair — see this module's doc. |
 | `useConversation` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to the conversation: the interleaved exchange, the streaming utterance, the live transcript and the thinking rule — with no markup. |
@@ -911,7 +919,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `installStubWorkflows` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | A `ctx.workflows` whose reads answer from one fixture and whose every method is a `vi.fn`. |
 | `isEvent` | function | `@alexkroman1/aai/testing` | `aai:testing` | Whether `event` is the one named `type` — a type guard, so the branch it guards reads that member's fields without a cast. |
 | `judgeCall`, `JudgeCallOptions` | function | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | Have a model rule on `criteria` over `input`, and hand back the verdict. |
-| `lastStateIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page is showing. |
+| `lastStateIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page is showing — or one SLOT's value in it. |
 | `lastToolResultIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-assert` | The result of the LAST call to `name` in `calls`, parsed. |
 | `openEvalSession` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Open an eval session against a real runtime. |
 | `openEvalTextAgent` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Open an eval conversation against a real text agent. |
@@ -932,7 +940,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `scriptedTextModel` | function | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | A `LanguageModel` that answers one scripted step per model call. |
 | `scriptedToolContext` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a `TestToolContext` whose `generate` and `delegate` are both scripted, and hand back the fakes beside it. |
 | `simulateCall`, `SimulateCallOptions` | function | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | Run a simulated call against `target` and hand back every turn, the way it ended, and what was measured. |
-| `statesIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every state frame the agent pushed (`AgentDef.syncState`), oldest first — what the page showed, in order. |
+| `statesIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or one SLOT's value in each. |
 | `stubClientInbox` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish an inbox whose device records every notice and answers it. |
 | `stubClientTranscript` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish a reader that answers every `stepClientTranscript` with `answer` — a fixed transcript, or one computed per call (e.g. honouring the cursor). |
 | `stubDelegate` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake `ctx.delegate` from a script: one reply, or routes keyed by subagent name. |
@@ -968,7 +976,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | --- | --- | --- | --- | --- |
 | `AgentConfig` | type | `@alexkroman1/aai/manifest` |  | JSON-safe subset of the agent definition — the canonical serializable config that flows CLI → server → runtime unchanged. |
 | `AgentConfigSchema` | const · `@internal` | `@alexkroman1/aai/manifest` |  |  |
-| `AgentConfigSource` | type | `@alexkroman1/aai/manifest` |  | What `toAgentConfig` accepts: every serializable `AgentConfig` field (`mode` excepted — it is derived, never supplied) plus the host-only fields the deny-list … |
+| `AgentConfigSource` | type | `@alexkroman1/aai/manifest` |  | What `toAgentConfig` accepts: every serializable `AgentConfig` field plus the host-only fields the deny-list strips. |
 | `AgentEnv` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Tenant-owned env — the only kind allowed to become `ctx.env` (what agent tool code reads). |
 | `AgentRuntime` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Common interface for agent runtimes. |
 | `AgentServer`, `AgentServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Handle returned by `createRuntimeServer`. |
@@ -1042,7 +1050,6 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `OtelMeterLike` | interface | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The slice of an OpenTelemetry `Meter` `otelMetricsSink` uses, stated structurally so this module imports no OpenTelemetry — `@opentelemetry/api` is an optional … |
 | `PROJECT_GUIDE_POINTER` | const | `@alexkroman1/aai/workspace-files` |  | The project-root `CLAUDE.md` a project gets — a POINTER at the guide inside the resolved SDK, not a copy of it. |
 | `PackageManifest` | type | `@alexkroman1/aai/workspace-files` |  | A parsed `package.json` — open-ended, since only a few fields are merged. |
-| `PipelineTuning` | type · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `ProjectConfig` | type | `@alexkroman1/aai-cli/project-config` |  |  |
 | `ProjectServerOptions` | interface | `@alexkroman1/aai-cli/start` |  | Options for `createProjectServer` and `executeStart`. |
 | `ProviderDescriptorSchema` | const · `@internal` | `@alexkroman1/aai/manifest` |  |  |
@@ -1126,8 +1133,6 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `WorkspaceWalkOptions` | type | `@alexkroman1/aai/workspace-files` |  | Options shared by the walk and the snapshot. |
 | `agentConfigWarnings` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `agentToolsToSchemas` | function | `@alexkroman1/aai/manifest` |  |  |
-| `assertPipelineTuning` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
-| `assertSilencePolicy` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `buildClient`, `BuildClientOptions` | function · `@internal` | `@alexkroman1/aai-cli/client-bundler` |  |  |
 | `buildClientConfig` | function | `@alexkroman1/aai/protocol` | `aai:protocol` | Build the `GET /client-config` response body from an agent-shaped config. |
 | `buildReadyConfig` | function | `@alexkroman1/aai/protocol` | `aai:protocol` | Build the protocol-level session config (the `config` frame's audio fields) from the session's input/output sample rates — used by every session mode, pipeline … |

@@ -3,7 +3,30 @@
   "capability": "hooks",
   "epoch": 1,
   "rule": 2,
-  "sha256": "8da1deb2035707fd1608ee0ab982efc0eb1fe715d6b754409594a23ddf87cc6e",
-  "exports": ["ToolCallInfo", "useAgentState", "useEvent", "useToolCallStart", "useToolResult"],
-  "rollup": "9e150234676d93fedf01065e6f4977188854b70d6da5c8f2333fe84f2e15d386"
+  "sha256": "e5bd4d85f7eb745bc9ad1ad3bb2b8c116faee6879cd51dcbfbc4617cd5a5efd2",
+  "exports": [
+    "AgentStateFrame",
+    "ToolCallInfo",
+    "selectAgentState",
+    "useAgentState",
+    "useEvent",
+    "useToolCallStart",
+    "useToolResult"
+  ],
+  "rollup": "9e150234676d93fedf01065e6f4977188854b70d6da5c8f2333fe84f2e15d386",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "8da1deb2035707fd1608ee0ab982efc0eb1fe715d6b754409594a23ddf87cc6e",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "e5bd4d85f7eb745bc9ad1ad3bb2b8c116faee6879cd51dcbfbc4617cd5a5efd2",
+      "reason": "additive (checked): +AgentStateFrame, +selectAgentState"
+    }
+  ]
 }
