@@ -21,14 +21,16 @@
  * agent's config without ever evaluating tenant code on the host — the
  * `POST /deploy` route and the studio's sandbox inspection both rely on it.
  *
- * **The worker ships its own runtime.** Deploy builds also export
- * `__aaiCreateRuntime` — a factory over the *user's installed* SDK's
- * `createRuntime`, bundled in alongside the provider SDKs. The guest harness
- * builds the session runtime through it, so a deployed agent runs exactly the
- * runtime version it was built and tested against (identical to `aai dev`),
- * instead of whatever SDK the platform's harness image was baked with. The
- * harness↔bundle contract is deliberately tiny: the factory takes
- * `{ env, db?, runCode? }` and returns `{ startSession, shutdown }`.
+ * **The worker does NOT carry the runtime: `@alexkroman1/aai-runtime` stays an
+ * IMPORT** ({@link RUNTIME_EXTERNAL}), resolved where the worker is evaluated —
+ * the guest image's `node_modules` beside the harness, the project's own under
+ * `aai dev` / `aai start`, or the self-contained target's entry bundle, which
+ * imports the worker statically. So one process holds ONE copy of the runtime,
+ * shared by the server shell and the agent's sessions; an inlined copy made two
+ * (the reason for every `globalThis` rendezvous the runtime used to carry). The
+ * worker still exports `__aaiCreateRuntime`, the factory binding THIS agent to
+ * that runtime's `createRuntime`: the harness↔bundle contract takes
+ * `{ env, runCode?, publicUrl? }` and returns `{ startSession, shutdown }`.
  *
  * What the studio supplies via options, because a workspace is not a project:
  *
@@ -64,15 +66,16 @@ export type BuildWorkerOptions = {
   configFile?: false;
   /** Extra plugins (the studio's import allowlist). */
   plugins?: PluginOption[];
-  /**
-   * Bundle the SDK runtime into the worker (`__aaiCreateRuntime` — see the
-   * module doc). Default true; deploy artifacts must ship it. The dev server
-   * passes `false`: it builds its runtime in-process from the same installed
-   * SDK anyway, and inlining the runtime + provider SDKs on every file-watch
-   * rebuild would turn the watch loop from sub-second into multi-second.
-   */
-  runtime?: boolean;
 };
+
+/**
+ * The one package a worker never inlines: the host runtime, and every subpath
+ * of it. See the module doc — a second copy in the worker is a second module
+ * instance in the process that evaluates it.
+ *
+ * @internal
+ */
+export const RUNTIME_EXTERNAL = /^@alexkroman1\/aai-runtime(?:\/|$)/;
 
 /**
  * Generated wrapper entry, written under `.aai/` for the duration of the
@@ -168,11 +171,7 @@ async function hasSystemPromptFile(cwd: string): Promise<boolean> {
   }
 }
 
-function wrapperEntrySource(
-  runtime: boolean,
-  toolFiles: readonly string[],
-  systemPromptFile: boolean,
-): string {
+function wrapperEntrySource(toolFiles: readonly string[], systemPromptFile: boolean): string {
   // `import * as` rather than a default import per file: the namespace is what
   // `toolRegistry` validates, so a file exporting the wrong thing (or nothing)
   // is a named build error instead of an `undefined` in the map.
@@ -185,7 +184,7 @@ function wrapperEntrySource(
 
   return `import def from "../agent.ts";
 import { agentToolsToSchemas, toAgentConfig, toolRegistry, withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
-${runtime ? `import { createRuntime } from "@alexkroman1/aai-runtime";` : ""}
+import { createRuntime } from "@alexkroman1/aai-runtime";
 ${systemPromptFile ? `import __aaiSystemPrompt from "../${SYSTEM_PROMPT_FILE}?raw";` : ""}
 ${toolImports}
 // A tool's name is its file name. The map is built here rather than written in
@@ -207,13 +206,9 @@ export const __aaiConfig = {
   ...toAgentConfig(__aaiAgent),
   toolSchemas: agentToolsToSchemas(__aaiAgent.tools ?? {}),
 };
-${
-  runtime
-    ? `export const __aaiCreateRuntime = (options: Record<string, unknown>) =>
+export const __aaiCreateRuntime = (options: Record<string, unknown>) =>
   createRuntime({ ...options, agent: __aaiAgent });
-`
-    : ""
-}`;
+`;
 }
 
 /**
@@ -236,11 +231,7 @@ export async function buildWorker(cwd: string, options: BuildWorkerOptions = {})
     discoverToolFiles(cwd),
     hasSystemPromptFile(cwd),
   ]);
-  await fs.writeFile(
-    wrapperPath,
-    wrapperEntrySource(options.runtime !== false, toolFiles, systemPromptFile),
-    "utf-8",
-  );
+  await fs.writeFile(wrapperPath, wrapperEntrySource(toolFiles, systemPromptFile), "utf-8");
 
   // Whatever the caller supplied and nothing else — this used to merge in the
   // DevKit's client transform, which is gone. The key stays ABSENT when the
@@ -258,10 +249,10 @@ export async function buildWorker(cwd: string, options: BuildWorkerOptions = {})
           logLevel: "silent",
           ...(options.configFile === false && { configFile: false }),
           ...(plugins.length > 0 && { plugins }),
-          // Bundle everything (the guest sandbox has no node_modules) EXCEPT
-          // `node:` builtins, which the SSR build keeps external. Without the
-          // SSR switch Vite treats this as a browser build and replaces the
-          // runtime's `node:` imports with "externalized for browser
+          // Bundle everything EXCEPT `node:` builtins, which the SSR build keeps
+          // external, and the host runtime (`RUNTIME_EXTERNAL`, see the module
+          // doc). Without the SSR switch Vite treats this as a browser build and
+          // replaces `node:` imports with "externalized for browser
           // compatibility" throw-stubs.
           ssr: { noExternal: true },
           build: {
@@ -273,6 +264,7 @@ export async function buildWorker(cwd: string, options: BuildWorkerOptions = {})
             minify: options.minify ? "oxc" : false,
             write: false,
             rollupOptions: {
+              external: [RUNTIME_EXTERNAL],
               output: {
                 entryFileNames: "[name].js",
                 // The providers' lazy imports must be inlined rather than

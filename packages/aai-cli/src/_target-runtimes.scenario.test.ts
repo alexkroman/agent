@@ -202,7 +202,11 @@ async function deployed(): Promise<string> {
     await fs.mkdir(path.join(project, ".aai"), { recursive: true });
     await fs.writeFile(
       path.join(project, ".aai", "worker.mjs"),
-      `export default { name: "Runtime Probe", systemPrompt: "hi", greeting: "hi", tools: {} };\n`,
+      // A built worker IMPORTS the runtime (`RUNTIME_EXTERNAL`); the entry must bundle
+      // it into its own graph, or the emit (no `node_modules`) cannot load it.
+      `import { createRuntime } from "@alexkroman1/aai-runtime";\n` +
+        "export const __aaiCreateRuntime = createRuntime;\n" +
+        `export default { name: "Runtime Probe", systemPrompt: "hi", greeting: "hi", tools: {} };\n`,
     );
     await fs.writeFile(path.join(project, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
     await silenced(async (dir: string) => {
@@ -357,8 +361,8 @@ for (const runtime of RUNTIMES) {
     test("boots with no node_modules, serves the client, and accepts a session", async () => {
       const probes = await probe(runtime);
 
-      // The worker travelled and was LOADED: the name can only come from
-      // `.aai/worker.mjs`, which no bundler could have inlined.
+      // The worker was BUNDLED into the entry and loaded: the name can only come
+      // from `.aai/worker.mjs`, and its runtime import resolved inside the bundle.
       expect(probes.get("/health")?.status).toBe(200);
       expect(probes.get("/health")?.body).toContain("Runtime Probe");
 

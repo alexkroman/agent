@@ -168,10 +168,9 @@ export async function loadWorker(
   cwd: string,
   evaluate: (code: string) => Promise<AgentDef>,
 ): Promise<AgentDef> {
-  // `runtime: false`: the dev server builds its runtime in-process from the
-  // same installed SDK the wrapper would bundle, and inlining the runtime +
-  // provider SDKs on every file-watch rebuild would make reloads multi-second.
-  return evaluate(await buildWorker(cwd, { runtime: false }));
+  // The worker IMPORTS the runtime rather than inlining it, so a rebuild stays
+  // sub-second and the agent's code shares this process's one runtime copy.
+  return evaluate(await buildWorker(cwd));
 }
 
 // ─── Dev server ─────────────────────────────────────────────────────────────
@@ -258,7 +257,7 @@ export async function startDevServer(
 
   // One eval memo for the server's lifetime — a no-op save re-uses the
   // previously evaluated AgentDef instead of leaking another ESM module.
-  const evaluateWorker = createWorkerEvaluator();
+  const evaluateWorker = createWorkerEvaluator(cwd);
 
   const devLogger: Logger = createDevLogger(outputSilenced());
 

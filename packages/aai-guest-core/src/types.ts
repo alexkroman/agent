@@ -103,14 +103,14 @@ export type AgentDef = {
   telephony?: boolean | readonly string[];
 };
 
-// ---- Bundle-shipped runtime --------------------------------------------------
+// ---- The bundle-bound runtime ------------------------------------------------
 
 /**
- * The session runtime a worker bundle constructs for itself — the return
- * value of its `__aaiCreateRuntime` export, backed by the SDK version the
- * bundle was BUILT with (bundled in by the CLI's worker wrapper), never by
- * an SDK the harness ships. Deliberately loose: the harness only drives the
- * two-method surface, and the ws/opts shapes belong to the bundle's SDK.
+ * The session runtime a worker bundle constructs for its agent — the return
+ * value of its `__aaiCreateRuntime` export, built by the ONE
+ * `@alexkroman1/aai-runtime` in the guest (the image's, which the bundle imports
+ * rather than inlines — "One runtime per guest" in `packages/aai-guest/CLAUDE.md`).
+ * Deliberately loose: the harness only drives the two-method surface.
  */
 export type GuestRuntime = {
   startSession(ws: unknown, opts: unknown): void;

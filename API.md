@@ -13093,6 +13093,9 @@ export interface ProjectServerOptions {
     cwd: string;
     host?: string | undefined;
     port?: number | undefined;
+    worker?: {
+        default: AgentDef;
+    } | undefined;
 }
 
 // @public
@@ -13136,8 +13139,10 @@ export type BuildWorkerOptions = {
     minify?: boolean;
     configFile?: false;
     plugins?: PluginOption[];
-    runtime?: boolean;
 };
+
+// @internal
+export const RUNTIME_EXTERNAL: RegExp;
 ```
 
 ## `@alexkroman1/aai-runtime/auth`
@@ -15251,10 +15256,9 @@ export function createSessionStateStore(options: {
 
 // @internal
 export function createUploadStore(options: {
-    db?: Db | undefined;
+    home: StorageHome;
     blobs?: UploadBackend | undefined;
     localDir?: string | undefined;
-    platform?: PlatformUploadRecordsOptions | undefined;
     prefix?: string | undefined;
     maxBytes?: number | undefined;
 }): UploadStore;
@@ -15498,9 +15502,6 @@ type PlatformSocketReply = {
 
 // @public
 export function platformSocketUrl(base: string): string;
-
-// @public
-type PlatformUploadRecordsOptions = PlatformEndpoint;
 
 // @public
 export type ProviderEnvVarsQuery = {
@@ -15779,6 +15780,17 @@ interface StepUsage {
     // (undocumented)
     totalTokens?: number | undefined;
 }
+
+// @internal
+type StorageHome<D = Db> = {
+    kind: "platform";
+    platform: PlatformEndpoint;
+} | {
+    kind: "postgres";
+    db: D;
+} | {
+    kind: "local";
+};
 
 // @public
 export type StoredSessionEvent = {

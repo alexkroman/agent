@@ -11,8 +11,8 @@ read_when: >-
 The journal, the replay engine and their tests are reference in
 [`../../JOURNAL-CLAUDE.md`](../../JOURNAL-CLAUDE.md) — read it when working on
 the journal, a backend or the engine's walk. HTTP status rules are in
-[`api/CLAUDE.md`](api/CLAUDE.md). The run context is `Symbol.for`-keyed; see
-"A deployed guest has TWO copies of this package" in the package guide.
+[`api/CLAUDE.md`](api/CLAUDE.md). The run context is a module-level store; see
+"ONE copy of this package per process" in the package guide.
 
 ## A run's journal has THREE homes, and the order between them is a decision
 

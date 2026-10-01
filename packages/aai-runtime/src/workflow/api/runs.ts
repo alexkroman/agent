@@ -168,10 +168,8 @@ export async function startRun(
   // rather than 500s. Everything else is ours, and is RETHROWN to the router,
   // whose `answerHandlerFailure` logs the cause and answers an opaque 500.
   //
-  // The type test is what makes that split real — `isWorkflowRequestError`, and
-  // not `instanceof`, because a guest runs two copies of this SDK and the copy
-  // that throws is not the copy that catches (see `workflow/_request-error.ts`).
-  // This used to catch everything
+  // The type test is what makes that split real — `isWorkflowRequestError`
+  // (see `workflow/_request-error.ts`). This used to catch everything
   // and answer 400 with `errorMessage(err)` under a comment claiming the router
   // had the rest — but the `try` covers the world call, so it never did: a
   // six-second Postgres outage answered a form submission

@@ -88,30 +88,6 @@ describe("openAppDb", () => {
     expect(query).toHaveBeenCalledOnce();
   });
 
-  test("a SECOND copy of this module shares the registry, which is the whole point", async () => {
-    // A deployed agent's bundle carries its own copy of the SDK, so the runtime's
-    // `openAppDb` and the harness's are two module instances in one realm — the
-    // reason the registry is a `Symbol.for` on `globalThis` rather than a
-    // module-level `Map`. A query-suffixed import is a separate instance here for
-    // the same reason it would be there: a different module identity.
-    // The specifier goes through a variable because `tsc` resolves a literal one
-    // and there is no such FILE — the query suffix is a module-identity trick the
-    // runner understands and the type checker rightly does not.
-    const secondCopy = "./app-db.ts?second-copy";
-    const other = (await import(secondCopy)) as { openAppDb: typeof openAppDb };
-    expect(other.openAppDb).not.toBe(openAppDb);
-
-    const url = freshUrl();
-    const mine = openAppDb(url);
-    const theirs = other.openAppDb(url);
-    expect(createPostgresDb).toHaveBeenCalledOnce();
-
-    await mine.close();
-    expect(close).not.toHaveBeenCalled();
-    await theirs.close();
-    expect(close).toHaveBeenCalledOnce();
-  });
-
   test("reserve reaches the shared pool, so a reservation is charged to it", async () => {
     const lease = openAppDb(freshUrl());
     const held = await lease.reserve();

@@ -9,10 +9,12 @@
  * the server reads at runtime is present because it was copied in, and nothing
  * depends on a static tracer following a path it structurally cannot:
  *
- * - **`.aai/worker.mjs`** is loaded through `import(pathToFileURL(...))`
- *   (`start.ts`), which `@vercel/nft` cannot resolve. Under the `api/` shape
- *   the build was green and the function 500'd on its first request with
- *   "No built agent at .aai/worker.mjs".
+ * - **`.aai/worker.mjs` is NOT among them**: the entry imports it statically
+ *   (`WORKER_IMPORT_SOURCE`), so it is bundled into the function, sharing the
+ *   entry's one copy of the runtime. Loaded off disk it was invisible to
+ *   `@vercel/nft` (under the `api/` shape the function 500'd on its first
+ *   request with "No built agent at .aai/worker.mjs"), and now its runtime
+ *   import would be unresolvable too.
  * - **`.env.example`** is not documentation here. `resolveServerEnv` treats it
  *   as the DECLARATION of which variables become `ctx.env` (see
  *   `DEPLOY_ENV_FILES`), so a function without it hands every tool an empty
@@ -29,7 +31,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
-import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
+import { CLIENT_ARTIFACT_REL } from "./_artifacts.ts";
 import { bundleTargetEntry, targetPathExists } from "./_target-bundle.ts";
 import {
   VERCEL_BUILD_CONFIG_SOURCE,
@@ -53,7 +55,7 @@ import {
  * `.env` with live credentials landed in the function until this list dropped
  * it.
  */
-const RUNTIME_FILES: readonly string[] = [WORKER_ARTIFACT_REL, ".env.example"];
+const RUNTIME_FILES: readonly string[] = [".env.example"];
 
 /** Options for {@link emitVercelOutput}. */
 export interface EmitVercelOutputOptions {

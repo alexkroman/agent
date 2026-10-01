@@ -233,11 +233,11 @@ export function createWorkflowActivity(): WorkflowActivity {
  * and the obvious place to ask. Two things rule it out, and the second is not a
  * preference:
  *
- * - **It is the BUNDLE's engine, not ours.** `harness/bundle.ts` resolves
+ * - **It is the PINNED image's engine.** `harness/bundle.ts` resolves
  *   `deliverWorkflow` through `ensureRuntime`, which builds the runtime from the
- *   worker bundle's OWN `@alexkroman1/aai-runtime` (see "User-shipped runtime").
+ *   `@alexkroman1/aai-runtime` of the harness image pinned at the agent's deploy.
  *   So a new field on `AgentRuntime` is `undefined` on every already-deployed
- *   agent until it is rebuilt — the livelock would go on until each tenant
+ *   agent until it is redeployed — the livelock would go on until each tenant
  *   redeployed. The walker's PROMISE is on every bundle that has the door at all,
  *   so wrapping it fixes the whole fleet the moment the guest image ships. (It
  *   would also owe a `runtime` epoch bump, which is the cheap half of the cost.)

@@ -26,18 +26,11 @@
  * last one does, which makes each caller's existing `close()` correct as
  * written.
  *
- * ## Why the registry lives on `globalThis`
+ * ## The registry is a module-level `Map`
  *
- * The same reason the step slots do (`sdk/step-uploads.ts`): a deployed agent's
- * bundle carries its OWN copy of this SDK, so the runtime's `createRuntime` and
- * the harness's `createRuntimeServer` are two module instances in one realm. A
- * module-level `Map` would be two maps and two pools. A `Symbol.for` key is one
- * registry for the process, whichever copy asks.
- *
- * That also bounds what this can fix: a guest whose bundle predates this module
- * opens its own `ctx.db` pool, and its footprint is the old one. The degrade is
- * the failure this exists to prevent, reported by whichever consumer asks for
- * the connection that is not there — never silent.
+ * `createRuntime` and `createRuntimeServer` lease off one map because they are
+ * one module instance: agent bundles import this package rather than inlining it
+ * (see "ONE copy of this package per process" in the package guide).
  */
 
 import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
@@ -63,23 +56,11 @@ import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
  */
 export const APP_DB_POOL_MAX = 3;
 
-/** The registry-wide slot — see the module doc for why it is not a module-level `Map`. */
-const APP_DB_POOLS = Symbol.for("@alexkroman1/aai.appDbPools");
-
 /** One pool and the number of live leases on it. */
 type PoolEntry = { db: CloseableDb; leases: number };
 
-/** The shape stored in the slot. */
-type PoolRegistry = { [APP_DB_POOLS]?: Map<string, PoolEntry> };
-
-function registry(): Map<string, PoolEntry> {
-  const host = globalThis as PoolRegistry;
-  const existing = host[APP_DB_POOLS];
-  if (existing) return existing;
-  const created = new Map<string, PoolEntry>();
-  host[APP_DB_POOLS] = created;
-  return created;
-}
+/** Every open pool, by URL — see the module doc. */
+const pools = new Map<string, PoolEntry>();
 
 /**
  * Take a lease on this process's pool for `url`, opening it if this is the first.
@@ -94,7 +75,6 @@ function registry(): Map<string, PoolEntry> {
  * @internal
  */
 export function openAppDb(url: string): CloseableDb {
-  const pools = registry();
   const entry: PoolEntry = pools.get(url) ?? {
     db: createPostgresDb({ url, max: APP_DB_POOL_MAX }),
     leases: 0,

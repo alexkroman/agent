@@ -19,10 +19,9 @@
  *
  * The body is still consulted, and {@link WORKFLOW_JOURNAL_ROUTE} is still
  * registered without the segment, because the guest is deployed independently of
- * this server: an agent bundle carries its own copy of `aai-runtime` (see "A
- * deployed guest has TWO copies of this package" in that package's guide), so a
- * bundle older than the path form goes on POSTing to the bare route with the
- * method in the body. Dropping either half breaks one direction of a mixed
+ * this server: a deployed agent runs the `aai-runtime` of the harness image
+ * pinned at ITS deploy (`agents.harness_image_tag`), so a guest older than the
+ * path form goes on POSTing to the bare route with the method in the body. Dropping either half breaks one direction of a mixed
  * deployment, and a journal call that 404s is a durable run that stops.
  *
  * The PATH WINS when both are present, so a request cannot be logged as one

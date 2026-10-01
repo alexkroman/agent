@@ -109,7 +109,7 @@ export async function executeConsole(opts: {
   log.step("Bundling agent…");
   let agentDef: Awaited<ReturnType<typeof loadWorker>>;
   try {
-    agentDef = await loadWorker(opts.cwd, createWorkerEvaluator());
+    agentDef = await loadWorker(opts.cwd, createWorkerEvaluator(opts.cwd));
   } catch (err) {
     return fail("build_failed", `Could not load agent.ts: ${errorMessage(err)}`);
   }

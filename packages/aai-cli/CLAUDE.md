@@ -313,6 +313,8 @@ This package owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`;
 
 ## Bundling rules
 
+- **A worker IMPORTS `@alexkroman1/aai-runtime`** (`RUNTIME_EXTERNAL`): it is
+  evaluated under `<cwd>/.aai/`, and targets bundle it (`WORKER_IMPORT_SOURCE`).
 - **Nothing scans a workflow body for replay-unsafe calls** (`Date.now()`,
   `Math.random()`, `fetch(`…) — a known gap. A replacement must work off the
   source of `workflows/*.ts`, outside every `ctx.step(…)` callback, and stay a

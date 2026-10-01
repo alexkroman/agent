@@ -4,8 +4,9 @@
  * and the lazily-built runtime.
  *
  * Split out of harness.ts, which owns the servers and the control-channel
- * dispatch. The invariant that ties this module together is that the runtime
- * comes from the BUNDLE, never from the harness — see `HarnessState`.
+ * dispatch. The invariant that ties this module together is that a session's
+ * runtime is built by the BUNDLE's factory, never by the harness — see
+ * `HarnessState`.
  */
 
 import { rm, writeFile } from "node:fs/promises";
@@ -13,9 +14,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
+import { publishStepEnv } from "@alexkroman1/aai/host-internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { SessionRuntime } from "@alexkroman1/aai-runtime";
-import { publishStepEnv, publishWorkflowWebhookUrl } from "@alexkroman1/aai-runtime/internal";
+import { publishWorkflowWebhookUrl } from "@alexkroman1/aai-runtime/internal";
 import { runCode } from "./trial.ts";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime, StudioSession } from "./types.ts";
 
@@ -135,10 +137,9 @@ function publicBaseUrl(): string | undefined {
 export type HarnessState = {
   agent: AgentDef | null;
   /**
-   * The bundle's own runtime factory (`__aaiCreateRuntime`) — the SDK
-   * runtime SHIPS IN THE BUNDLE, pinned by the user's lockfile; the harness
-   * embeds none. Required at load: every deployable bundle is built
-   * by the CLI's wrapper, which always exports it.
+   * The bundle's runtime factory (`__aaiCreateRuntime`) — the guest's one
+   * `@alexkroman1/aai-runtime` bound to this agent. Required at load: every
+   * deployable bundle is built by the CLI's wrapper, which always exports it.
    */
   createRuntime: CreateGuestRuntime | null;
   env: Readonly<Record<string, string>>;
@@ -180,10 +181,10 @@ export function emptyHarnessState(): HarnessState {
  * for it (see "The platform stores no agent config" in
  * packages/aai-server/CLAUDE.md).
  *
- * Bundles also export `__aaiCreateRuntime` — the factory over THEIR OWN
- * bundled SDK's `createRuntime` (see the CLI's worker wrapper). The harness
- * ships no runtime of its own, so a bundle without the factory is not
- * loadable: fail here, at load, rather than as a dangling first session.
+ * Bundles also export `__aaiCreateRuntime` — the runtime's `createRuntime` bound
+ * to their agent (see the CLI's worker wrapper). The harness never builds a
+ * runtime itself, so a bundle without the factory is not loadable: fail here, at
+ * load, rather than as a dangling first session.
  */
 export async function loadBundle(
   state: HarnessState,
@@ -214,7 +215,7 @@ export async function loadBundle(
   const createRuntime = (mod as { __aaiCreateRuntime?: unknown }).__aaiCreateRuntime;
   if (typeof createRuntime !== "function") {
     throw new Error(
-      "Agent bundle does not export __aaiCreateRuntime (the bundle-shipped SDK runtime) — " +
+      "Agent bundle does not export __aaiCreateRuntime (the agent's runtime factory) — " +
         "rebuild it with a current @alexkroman1/aai-cli",
     );
   }
@@ -251,10 +252,9 @@ export async function loadBundle(
 }
 
 /**
- * The runtime for the loaded bundle, created on first use — by the BUNDLE'S
- * OWN `createRuntime` (its `__aaiCreateRuntime` export), so a deployed agent
- * runs exactly the SDK version it was built and tested against; the harness
- * embeds no runtime. This is the SDK's self-hosted path running INSIDE the
+ * The runtime for the loaded bundle, created on first use — through the
+ * bundle's `__aaiCreateRuntime` export, i.e. the guest's one
+ * `@alexkroman1/aai-runtime` bound to this agent. This is the SDK's self-hosted path running INSIDE the
  * sandbox: tools execute in-process, providers and tool-code fetch dial out
  * directly (open egress — the container is the boundary), exactly as
  * `aai dev` does. ctx.db is the runtime's own connection to the env's

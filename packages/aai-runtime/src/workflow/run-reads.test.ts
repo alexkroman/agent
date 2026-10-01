@@ -32,6 +32,7 @@ import {
   type RunReader,
   readRunOnce,
   signalRunSettled,
+  watchRun,
 } from "./run-reads.ts";
 
 beforeEach(() => {
@@ -310,53 +311,33 @@ describe("createRunReads", () => {
   });
 });
 
-describe("the registry crosses copies of this package", () => {
-  /**
-   * A fresh copy of the module, the way a second bundle gets one.
-   *
-   * A deployed guest has two: `createRuntimeServer` — hence the wait loop and the
-   * event stream — comes from the HARNESS's copy, while `createRunNotifier` is
-   * built by `createRuntime` inside the BUNDLE's. Both hold the same
-   * `WorkflowClient` object, so the registry is what has to be shared, and
-   * `vi.resetModules()` is exactly a second copy.
-   */
-  async function loadCopy() {
-    vi.resetModules();
-    return await import("./run-reads.ts");
-  }
-
-  test("a run watched through ONE copy is read once for BOTH", async () => {
-    const harness = await loadCopy();
-    const bundle = await loadCopy();
-    expect(harness).not.toBe(bundle);
-
-    // The one thing both copies hold: the client object itself.
+describe("the process-wide registry", () => {
+  test("a run watched by the server AND the notifier is read once for both", async () => {
+    // The two hold the same client object — the server's wait loop and stream,
+    // and `createRunNotifier` built by `createRuntime` — so the registry keyed by
+    // it is what joins them.
     const runs = { get: vi.fn(async () => snapshot()) };
-    const stream = harness.watchRun(runs, "wrun_1");
-    const notify = bundle.watchRun(runs, "wrun_1");
+    const stream = watchRun(runs, "wrun_1");
+    const notify = watchRun(runs, "wrun_1");
 
     const pending = [stream.next(1000), notify.next(2000)];
-    // Far enough for the LOOSER deadline too, so a registry per copy fails on
+    // Far enough for the LOOSER deadline too, so two registries would fail on
     // the count rather than on a timeout — the shared one answers both at 1000
     // and reads nothing further.
     await vi.advanceTimersByTimeAsync(2000);
     await Promise.all(pending);
-
-    // Against a module-level registry this is 2: the notifier polls on a timer
-    // of its own beside the stream it was supposed to join.
     expect(runs.get).toHaveBeenCalledTimes(1);
     stream.close();
     notify.close();
   });
 
-  test("a DIFFERENT client is a different reader, in either copy", async () => {
+  test("a DIFFERENT client is a different reader", async () => {
     // Keyed by object identity rather than by run id: `aai dev` rebuilds the
     // client on every file save, and host mode has one per agent.
-    const harness = await loadCopy();
     const first = { get: vi.fn(async () => snapshot()) };
     const second = { get: vi.fn(async () => snapshot()) };
-    const a = harness.watchRun(first, "wrun_1");
-    const b = harness.watchRun(second, "wrun_1");
+    const a = watchRun(first, "wrun_1");
+    const b = watchRun(second, "wrun_1");
     await Promise.all([a.next(0), b.next(0)]);
     expect(first.get).toHaveBeenCalledTimes(1);
     expect(second.get).toHaveBeenCalledTimes(1);
@@ -521,24 +502,16 @@ describe("signalRunSettled", () => {
     expect(runs.get).toHaveBeenCalledTimes(0);
   });
 
-  test("crosses copies of this package, which is the deployment that needs it", async () => {
-    // The process that WALKS a run is the bundle's engine; the one holding the
-    // `wait=` request is the harness's server. A module-level registry would put
-    // the signal and every listener in separate halves of one process, where
-    // this is dead code that looks wired.
-    vi.resetModules();
-    const harness = await import("./run-reads.ts");
-    vi.resetModules();
-    const bundle = await import("./run-reads.ts");
-    expect(harness).not.toBe(bundle);
-
+  test("reaches a watch held through the process-wide registry", async () => {
+    // The code that WALKS a run (the engine) is not the code holding the `wait=`
+    // request (the server); they meet in this module's one listener map.
     const runs = { get: vi.fn(async () => snapshot({ status: "completed" })) };
-    const watch = harness.watchRun(runs, "wrun_1");
+    const watch = watchRun(runs, "wrun_1");
     const pending = watch.next(10_000);
     await vi.advanceTimersByTimeAsync(50);
     expect(runs.get).toHaveBeenCalledTimes(0);
 
-    bundle.signalRunSettled("wrun_1");
+    signalRunSettled("wrun_1");
     await vi.advanceTimersByTimeAsync(0);
     expect(await pending).toEqual(snapshot({ status: "completed" }));
     watch.close();

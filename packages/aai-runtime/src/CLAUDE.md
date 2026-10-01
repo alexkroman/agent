@@ -11,8 +11,8 @@ read_when: >-
 
 # aai-runtime `src/`
 
-Package-wide rules (barrels, seams, two copies, invariants) are in the package
-guide, [`../CLAUDE.md`](../CLAUDE.md).
+Package-wide rules (barrels, seams, one copy per process, invariants) are in
+the package guide, [`../CLAUDE.md`](../CLAUDE.md).
 
 ## A session reaches its client through ONE lifecycle; the socket is an adapter
 
@@ -318,8 +318,7 @@ every `tool_result` in host mode).
 - **`?events=1`** adds `client-event-feed.ts`'s frames — committed transcripts,
   `tool.called`, reply boundaries, `session_ended`; never results or audio —
   fire-and-forget, dropped past `INBOX_EVENT_BUFFER_LIMIT_BYTES`. The feed is a
-  `Symbol.for` slot ("A deployed guest has TWO copies of this package" in
-  `../CLAUDE.md`).
+  module-level slot ("ONE copy of this package per process" in `../CLAUDE.md`).
 
 ## Subagents: `ctx.delegate` is a second tool loop
 

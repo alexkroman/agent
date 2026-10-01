@@ -336,11 +336,12 @@ stripping is relied on anywhere.
 ### Modal sandbox isolation
 
 Each agent runs in its own Modal Sandbox executing the COMPLETE agent (the
-runtime ships inside the worker bundle; `packages/aai-guest/CLAUDE.md`,
-"User-shipped runtime"). Clients connect directly to the sandbox's `/session`
-tunnel; host↔guest control is JSON-RPC over `/ws`, bearer-authenticated per
-sandbox. **This describes the `modal` backend only** — `microsandbox` is a
-different boundary and `subprocess` has none; the boot log names the backend.
+runtime is the harness image's, shared with the worker bundle;
+`packages/aai-guest/CLAUDE.md`, "One runtime per guest"). Clients connect
+directly to the sandbox's `/session` tunnel; host↔guest control is JSON-RPC
+over `/ws`, bearer-authenticated per sandbox. **This describes the `modal`
+backend only** — `microsandbox` is a different boundary and `subprocess` has
+none; the boot log names the backend.
 
 - **Remote isolation**: no shared kernel with the host, no shared state between
   agents; the guest runs plain Node.

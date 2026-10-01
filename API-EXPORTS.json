@@ -1223,6 +1223,7 @@
   ],
   "@alexkroman1/aai-cli/worker-bundler": [
     "BuildWorkerOptions",
+    "RUNTIME_EXTERNAL",
     "buildWorker"
   ],
   "@alexkroman1/aai-runtime/auth": [

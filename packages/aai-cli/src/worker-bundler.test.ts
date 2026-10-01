@@ -33,7 +33,7 @@ import { pathToFileURL } from "node:url";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
-import { buildWorker } from "./worker-bundler.ts";
+import { buildWorker, RUNTIME_EXTERNAL } from "./worker-bundler.ts";
 
 /**
  * Per-case budget for a real bundler pass. The integration tier's number, because
@@ -51,7 +51,7 @@ const toolSource = (description: string) =>
 async function loadWorker(
   dir: string,
 ): Promise<{ tools: Record<string, unknown>; systemPrompt: string }> {
-  const code = await buildWorker(dir, { runtime: false });
+  const code = await buildWorker(dir);
   const out = path.join(dir, "worker.mjs");
   await fs.writeFile(out, code, "utf-8");
   const mod = (await import(pathToFileURL(out).href)) as {
@@ -204,7 +204,7 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
       // session knows. Discovery must not apply the file a second time and must
       // not call the function a mistake — it used to THROW here, which made
       // dynamic instructions unreachable from any project with a prompt file.
-      const code = await buildWorker(dir, { runtime: false });
+      const code = await buildWorker(dir);
       const out = path.join(dir, "worker-resolver.mjs");
       await fs.writeFile(out, code, "utf-8");
       const mod = (await import(pathToFileURL(out).href)) as {
@@ -261,6 +261,34 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
       await fs.writeFile(path.join(dir, "system-prompt.md"), "   \n\n", "utf-8");
 
       await expect(loadWorker(dir)).rejects.toThrow(/is empty/);
+    });
+  });
+});
+
+describe("the host runtime is an IMPORT, never inlined", { timeout: BUILD_TIMEOUT_MS }, () => {
+  test("a worker reaching the runtime twice still carries no copy of it", async () => {
+    // The gate behind "one copy of the runtime per process": a worker that inlined
+    // `@alexkroman1/aai-runtime` would be a second module instance beside the one
+    // the host serves from, and every process-wide registry in it would split.
+    await withTempDir(async (dir) => {
+      await linkSdkNodeModules(dir);
+      await fs.writeFile(
+        path.join(dir, "agent.ts"),
+        `import { agent } from "@alexkroman1/aai";\n` +
+          `import { registerMetricsSink } from "@alexkroman1/aai-runtime/metrics";\n` +
+          "registerMetricsSink({ record: () => undefined });\n" +
+          `export default agent({ name: "T" });\n`,
+        "utf-8",
+      );
+      const code = await buildWorker(dir);
+      expect(code).toMatch(/from\s*["']@alexkroman1\/aai-runtime["']/);
+      expect(code).toMatch(/from\s*["']@alexkroman1\/aai-runtime\/metrics["']/);
+      // A function only the runtime DEFINES must not appear as a definition here.
+      expect(code).not.toMatch(/function\s+createRuntime\s*\(/);
+      expect(code).not.toMatch(/function\s+registerMetricsSink\s*\(/);
+      expect(RUNTIME_EXTERNAL.test("@alexkroman1/aai-runtime")).toBe(true);
+      expect(RUNTIME_EXTERNAL.test("@alexkroman1/aai-runtime/internal")).toBe(true);
+      expect(RUNTIME_EXTERNAL.test("@alexkroman1/aai-runtimex")).toBe(false);
     });
   });
 });

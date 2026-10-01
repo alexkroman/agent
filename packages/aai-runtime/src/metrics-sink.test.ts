@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The process-wide metrics sinks: a registry keyed on `globalThis` (a deployed
-// guest has two copies of this package), a sink that cannot hurt a session,
+// The process-wide metrics sinks: one module-level registry (a process holds one
+// copy of this package — `_instance-check.ts`), a sink that cannot hurt a session,
 // and the OTel sink's instrument mapping — asserted against a recording meter,
 // so the claims are about names, units and attributes rather than an SDK.
 
@@ -66,18 +66,6 @@ describe("registerMetricsSink", () => {
     });
     expect(() => recordSessionMetrics(EVENT, CTX)).not.toThrow();
     expect(after).toHaveBeenCalledTimes(1);
-  });
-
-  test("the registry is shared by a SECOND copy of this module", async () => {
-    // What a deployed guest is: the harness's copy registers, the bundle's
-    // copy records. `vi.resetModules()` is how one process holds two.
-    const record = vi.fn();
-    const remove = registerMetricsSink({ record });
-    onTestFinished(remove);
-    vi.resetModules();
-    const other = await import("./metrics-sink.ts");
-    other.recordSessionMetrics(EVENT, CTX);
-    expect(record).toHaveBeenCalledTimes(1);
   });
 });
 

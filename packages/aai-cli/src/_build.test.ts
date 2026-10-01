@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { rm, writeFile } from "node:fs/promises";
+import { readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -12,20 +12,26 @@ import {
   WORKER_ARTIFACT_REL,
 } from "./build.ts";
 
-/** Import a built worker and return its `__aaiConfig` self-description. */
-async function extractConfig(worker: string): Promise<Record<string, unknown>> {
-  const mod = await import(`data:text/javascript;base64,${Buffer.from(worker).toString("base64")}`);
+/**
+ * Import a built worker and return its `__aaiConfig` self-description.
+ *
+ * A FILE in the project rather than a `data:` URL: the worker imports the host
+ * runtime, and only a module with the project's `node_modules` above it can
+ * resolve that.
+ */
+async function extractConfig(dir: string, worker: string): Promise<Record<string, unknown>> {
+  const file = path.join(dir, `config-${Math.random().toString(36).slice(2)}.mjs`);
+  await writeFile(file, worker, "utf-8");
+  const mod = await import(pathToFileURL(file).href);
   return mod.__aaiConfig as Record<string, unknown>;
 }
 
 /**
- * Most cases below pass `runtime: false`: they assert config self-description
- * and bundle shape, which are orthogonal to the runtime, and inlining the
- * runtime + provider SDKs takes ~10s per build. The deploy-shaped build
- * (runtime included) is covered by the dedicated "ships its runtime" test
- * and `executeBuild`, each with an explicit timeout.
+ * A real Vite pass per case, and evaluating its worker IMPORTS the host runtime
+ * (the worker never inlines it), so a case costs a build plus a first import of
+ * `@alexkroman1/aai-runtime` — the same budget `worker-bundler.test.ts` gives.
  */
-describe("buildAgentBundle", () => {
+describe("buildAgentBundle", { timeout: 30_000 }, () => {
   test("throws when no agent.ts found", async () => {
     await withTempDir(async (dir) => {
       await linkSdkNodeModules(dir);
@@ -41,8 +47,8 @@ describe("buildAgentBundle", () => {
           path.join(dir, "agent.ts"),
           `export default { name: "build-test-agent", systemPrompt: "Test prompt", greeting: "Hello", maxSteps: 5, tools: {} };`,
         );
-        const bundle = await buildAgentBundle(dir, { runtime: false });
-        const config = await extractConfig(bundle.worker);
+        const bundle = await buildAgentBundle(dir);
+        const config = await extractConfig(dir, bundle.worker);
         expect(config.name).toBe("build-test-agent");
         expect(config.systemPrompt).toBe("Test prompt");
         expect(config.greeting).toBe("Hello");
@@ -78,8 +84,8 @@ export default {
 };
 `,
         );
-        const bundle = await buildAgentBundle(dir, { runtime: false });
-        const config = await extractConfig(bundle.worker);
+        const bundle = await buildAgentBundle(dir);
+        const config = await extractConfig(dir, bundle.worker);
         expect(config.name).toBe("tool-test-agent");
         expect(config.toolSchemas).toEqual([
           {
@@ -105,10 +111,10 @@ export default {
           `const longDescriptiveVariableName = "Test prompt";
 export default { name: "minify-test-agent", systemPrompt: longDescriptiveVariableName, greeting: "Hello", maxSteps: 5, tools: {} };`,
         );
-        const plain = await buildAgentBundle(dir, { runtime: false });
-        const minified = await buildAgentBundle(dir, { minify: true, runtime: false });
+        const plain = await buildAgentBundle(dir);
+        const minified = await buildAgentBundle(dir, { minify: true });
         // Minified bundle still evaluates to the same agent config.
-        const config = await extractConfig(minified.worker);
+        const config = await extractConfig(dir, minified.worker);
         expect(config.name).toBe("minify-test-agent");
         expect(config.systemPrompt).toBe("Test prompt");
         // And it is no larger than the unminified build.
@@ -125,7 +131,7 @@ export default { name: "minify-test-agent", systemPrompt: longDescriptiveVariabl
           path.join(dir, "agent.ts"),
           `export default { name: "vite-test", systemPrompt: "Test", greeting: "Hi", maxSteps: 5, tools: {} };`,
         );
-        const bundle = await buildAgentBundle(dir, { runtime: false });
+        const bundle = await buildAgentBundle(dir);
         // Worker must be valid ESM — check for export syntax
         expect(bundle.worker).toMatch(/export/);
         // Must be a non-trivial bundle
@@ -145,9 +151,9 @@ describe("deploy-shaped build (runtime included)", () => {
           `export default { name: "runtime-ship", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
         );
         const bundle = await buildAgentBundle(dir);
-        // Evaluate exactly as the guest harness does: a real file import
-        // (the bundled runtime's CJS interop rejects data: URLs).
-        const agentDef = await evalWorkerBundle(bundle.worker);
+        // Evaluate exactly as the guest harness does: a real file import, under
+        // a directory whose `node_modules` holds the runtime the worker imports.
+        const agentDef = await evalWorkerBundle(bundle.worker, dir);
         expect(agentDef.name).toBe("runtime-ship");
 
         const workerPath = path.join(dir, "worker-under-test.mjs");
@@ -270,13 +276,18 @@ describe("evalWorkerBundle", () => {
   // file's Vite builds are running beside it. At the default 5s it was the one
   // test in the repo that failed under load and passed on a rerun — a flake
   // that reads as a broken change to whatever happens to be in flight.
-  test("evaluates a worker bundle without touching the filesystem", {
+  test("evaluates a worker under the project, and leaves nothing behind", {
     timeout: 30_000,
   }, async () => {
-    const agent = await evalWorkerBundle(
-      `export default { name: "evaled", systemPrompt: "p", greeting: "g", tools: {} };`,
-    );
-    expect(agent.name).toBe("evaled");
+    await withTempDir(async (dir) => {
+      const agent = await evalWorkerBundle(
+        `export default { name: "evaled", systemPrompt: "p", greeting: "g", tools: {} };`,
+        dir,
+      );
+      expect(agent.name).toBe("evaled");
+      // The scratch file is an ANCHOR, not an artifact: it is gone once imported.
+      expect(await readdir(path.join(dir, ".aai"))).toEqual([]);
+    });
   });
 });
 

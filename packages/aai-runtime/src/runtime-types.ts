@@ -175,9 +175,8 @@ export type AgentRuntime = {
    * serves `/api/*` from, the request already parsed (path without the prefix,
    * first value per query key, a JSON body, a validated `?client=`).
    *
-   * PLAIN DATA both ways, because the two sides are two copies of this package
-   * in a deployed guest: the server is the harness's and the handlers are the
-   * agent bundle's. Resolves `{ status, body }` (404 for no route, 405 with an
+   * PLAIN DATA both ways, because the handlers are the AGENT's code — built
+   * against the bundle's own copy of the SDK — and the server is not. Resolves `{ status, body }` (404 for no route, 405 with an
    * `Allow` header for the wrong method, 500 `{ error }` for a throw) and never
    * rejects. Undefined for an agent that declares no routes, which leaves `/api`
    * to static serving.

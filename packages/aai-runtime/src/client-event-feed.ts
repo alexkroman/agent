@@ -23,13 +23,12 @@
  * wants a result reads the durable transcript (`ctx.clientTranscript` in a
  * route).
  *
- * ## The slot is keyed on `globalThis`
+ * ## The slot is module-level
  *
- * A deployed guest holds two copies of this package: the harness's builds the
- * server (and so the inbox), the agent bundle's runs the sessions. A
- * module-level feed would sit in one copy with the events in the other — the
- * shape `metrics-sink.ts` argues — so it is a `Symbol.for` slot both resolve.
- * The last inbox built wins, which under `aai dev` is the newest server's.
+ * The server builds the inbox and the sessions emit the events; they share this
+ * module because a process holds one copy of the package (`metrics-sink.ts`
+ * argues the same shape). The last inbox built wins, which under `aai dev` is
+ * the newest server's.
  *
  * ## It cannot hurt a session
  *
@@ -41,10 +40,10 @@
  */
 
 import { type SessionEvent, sessionClientId } from "@alexkroman1/aai";
-import { globalSlot } from "@alexkroman1/aai/internal";
 import type { InboxServerFrame } from "@alexkroman1/aai/protocol";
 
-const FEED_SLOT = globalSlot<ClientEventFeed>("@alexkroman1/aai-runtime.clientEventFeed");
+/** The published feed, or undefined before an inbox is built. */
+let feed: ClientEventFeed | undefined;
 
 /**
  * The event types a client's feed carries — see the module doc.
@@ -84,18 +83,18 @@ export type ClientEventFeed = (clientId: string, frame: ClientEventFrame) => voi
  *
  * @internal
  */
-export function publishClientEventFeed(feed: ClientEventFeed | undefined): void {
-  FEED_SLOT.set(feed);
+export function publishClientEventFeed(next: ClientEventFeed | undefined): void {
+  feed = next;
 }
 
 /** Hand `frame` to the feed for `sessionId`'s client, if it has one and a feed exists. */
 function send(sessionId: string, frame: ClientEventFrame): void {
-  const feed = FEED_SLOT.get();
-  if (!feed) return;
+  const current = feed;
+  if (!current) return;
   const clientId = sessionClientId({ sessionId });
   if (clientId === undefined) return;
   try {
-    feed(clientId, frame);
+    current(clientId, frame);
   } catch {
     // See the module doc: the second screen's failure is never the session's.
   }

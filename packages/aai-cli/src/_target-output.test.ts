@@ -84,13 +84,14 @@ describe("emitSelfContainedOutput", () => {
     });
   });
 
-  test("the worker travels, since no bundler can inline a dynamic import", async () => {
+  test("the worker does NOT travel as a file — the entry bundles it", async () => {
     await withTempDir(async (dir) => {
       await project(dir);
       await emit(dir);
-      // Nested `.aai/` on purpose: `createProjectServer` resolves the worker at
-      // `<cwd>/.aai/worker.mjs` and every entry passes its own directory as cwd.
-      expect(await read(out(dir, WORKER_ARTIFACT_REL))).toContain("name: 'a'");
+      // The entry imports it statically (`WORKER_IMPORT_SOURCE`), so it shares the
+      // entry's one runtime copy; a copy beside the entry would be a second
+      // artifact whose runtime import resolves nowhere.
+      await expect(fs.stat(out(dir, WORKER_ARTIFACT_REL))).rejects.toThrow(/ENOENT/);
     });
   });
 

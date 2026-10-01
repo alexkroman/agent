@@ -25,9 +25,17 @@ export default defineConfig({
   //   worked ANYWHERE, production included, and nothing noticed because the one
   //   prerequisite -- an agent with storage enabled -- had never been met.
   //   Enabling the database by default for studio projects is what surfaced it.
+  //
+  // - **The host runtime** (`@alexkroman1/aai-runtime`) is external for the
+  //   opposite reason: not because it cannot be bundled but because it must exist
+  //   ONCE per process. Agent bundles import it rather than inlining it
+  //   (`RUNTIME_EXTERNAL`, aai-cli's `worker-bundler.ts`) and are evaluated
+  //   beside this file, so both resolve the one copy the image installs.
+  //   `harness/externals.test.ts` fails if a copy is inlined here again.
   deps: {
     alwaysBundle: [/.*/],
     neverBundle: [
+      /^@alexkroman1\/aai-runtime(\/|$)/,
       /^@alexkroman1\/aai-cli(\/|$)/,
       /^@vitejs\/plugin-react(\/|$)/,
       /^@tailwindcss\/vite(\/|$)/,

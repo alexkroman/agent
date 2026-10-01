@@ -30,14 +30,14 @@
  * registers an OTLP sink itself, so a self-hoster, `aai dev` and a deployed
  * guest export metrics with no code at all — see `tracing.ts`.
  *
- * ## The registry is keyed on `globalThis`
+ * ## The registry is a module-level set, because there is one copy
  *
- * A deployed guest holds TWO copies of this package: the harness's, which
- * starts the exporter at boot, and the agent bundle's, which runs the sessions
- * (`packages/aai-runtime/CLAUDE.md`, "A deployed guest has TWO copies of this
- * package"). A module-level list would put the sink in one copy and the frames
- * in the other, and the collector would receive nothing with nothing failing.
- * `Symbol.for` is the one key both copies resolve to.
+ * The exporter is registered by the server shell at boot and the frames are
+ * recorded by the agent's sessions. Those are one module instance: an agent
+ * bundle IMPORTS this package rather than inlining it, so the guest harness, the
+ * bundle and every host resolve the same copy (`packages/aai-runtime/CLAUDE.md`,
+ * "ONE copy of this package per process"). `_instance-check.ts` warns when a
+ * process loads a second one.
  *
  * ## A sink cannot hurt a session
  *
@@ -49,6 +49,7 @@
  */
 
 import type { MetricsCollectedEvent } from "@alexkroman1/aai";
+import { checkRuntimeInstance } from "./_instance-check.ts";
 
 /**
  * Which session a frame came from. `agent` is the agent's `name`; a sink that
@@ -69,15 +70,10 @@ export interface MetricsSink {
   record(event: MetricsCollectedEvent, context: MetricsContext): void;
 }
 
-const REGISTRY = Symbol.for("aai.runtime.metrics-sinks");
+checkRuntimeInstance();
 
-type Registry = { sinks: Set<MetricsSink> };
-
-function registry(): Registry {
-  const g = globalThis as { [REGISTRY]?: Registry };
-  g[REGISTRY] ??= { sinks: new Set() };
-  return g[REGISTRY];
-}
+/** Every registered sink, for the process — see the module doc. */
+const sinks = new Set<MetricsSink>();
 
 /**
  * Add a sink for every session in this process. Answers the function that
@@ -85,7 +81,6 @@ function registry(): Registry {
  * @public
  */
 export function registerMetricsSink(sink: MetricsSink): () => void {
-  const { sinks } = registry();
   sinks.add(sink);
   return () => {
     sinks.delete(sink);
@@ -97,7 +92,7 @@ export function registerMetricsSink(sink: MetricsSink): () => void {
  * @internal
  */
 export function recordSessionMetrics(event: MetricsCollectedEvent, context: MetricsContext): void {
-  for (const sink of registry().sinks) {
+  for (const sink of sinks) {
     try {
       sink.record(event, context);
     } catch {

@@ -2,10 +2,11 @@
 /**
  * Node guest-side harness entrypoint — runs the COMPLETE agent.
  *
- * The harness embeds NO agent runtime: the worker bundle ships its own
- * (`__aaiCreateRuntime`, the user's installed SDK bundled in by the CLI
- * wrapper), so a deployed agent runs exactly the runtime version it was
- * built against and platform SDK drift cannot break it.
+ * The harness embeds NO copy of the runtime: `@alexkroman1/aai-runtime` is
+ * external here AND in every worker bundle, so both resolve the one the image
+ * installs beside this file, and a session is built through the bundle's
+ * `__aaiCreateRuntime` (that runtime bound to its agent). See "One runtime per
+ * guest" in this package's guide.
  *
  * TWO MODES, selected by the spawner via `AAI_GUEST_MODE` (behavior
  * selection only — never a security boundary; a hostile bundle can ignore

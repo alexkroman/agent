@@ -2,12 +2,11 @@
 /**
  * Which `@alexkroman1/aai` an agent in this guest will actually run.
  *
- * A guest holds TWO copies of the SDK, deliberately: this harness bundles one
- * (`harness.mjs` is a single tsdown artifact, `alwaysBundle: [/.*!/]`), and the
- * agent's runtime comes from the BUNDLE — "so a deployed agent runs exactly the
- * SDK version it was built and tested against; the harness embeds no runtime"
- * (`harness/bundle.ts`). That second copy is the one this reports, because it is
- * the one an agent's code runs.
+ * A guest holds more than one copy of the SDK: this harness bundles one
+ * (`harness.mjs` is a single tsdown artifact, `alwaysBundle: [/.*!/]`), and so does
+ * every agent bundle. The one beside the harness is what `@alexkroman1/aai-runtime`
+ * — external to both, installed in the image — imports, so it is the copy the
+ * agent's RUNTIME runs, and the one this reports.
  *
  * **It is here because its absence cost a whole investigation.** Production
  * answered 500 to a workflow schema failure that answers 400 in-process, and the

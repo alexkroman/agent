@@ -184,23 +184,26 @@ a workflow app is evaluated by RUNNING it, and why a keyless run gets a
 SCRIPTED model. Which subpaths a template eval may import is konsistent's
 `template-eval-runtime-subpaths` (`/eval`, `/eval/simulate`, `/eval/vitest`).
 
-## A deployed guest has TWO copies of this package
+## ONE copy of this package per process
 
-The harness bundles its own `aai-runtime` and calls `createRuntimeServer` from
-it; the agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`
-(`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both load in one
-process, so **anything used to rendezvous between them must be keyed on
-`globalThis` (`Symbol.for`), never a module-level value.** A single-value slot is
-`globalSlot(key)` from `@alexkroman1/aai/internal`, not a hand-written
-`delete (globalThis as S)[SYM]` pair.
+**A worker never inlines this package**: `buildWorker` keeps
+`@alexkroman1/aai-runtime` an import (`RUNTIME_EXTERNAL`, aai-cli's
+`worker-bundler.ts`), resolved where the worker is evaluated — beside the guest
+harness (which keeps it external too, `aai-guest/tsdown.config.ts`), in the
+project under `aai dev`/`aai start`, or inside a self-contained target's entry
+bundle (`WORKER_IMPORT_SOURCE`, `_target-entry.ts`). So the server shell and the
+agent's sessions are ONE module instance, and **process-wide state here is
+module-level** — the metrics sinks, the run context, the shared run reads, the
+client event feed and the app pool registry are plain module values. Never
+re-key one on `globalThis`; a split is a build bug, not a design.
 
-The workflow run context (`workflow/run-context.ts`) and the metrics sink
-registry (`metrics-sink.ts`) are both `Symbol.for`-keyed for this reason; a
-module-level `AsyncLocalStorage` gives one store per COPY, and the symptom is an
-empty context `{}` on narration lines plus no streamed progress. **Test it with
-`vi.resetModules()`**, which yields a second copy in one process —
-`workflow/run-context.test.ts` loads two and asserts a context entered through
-one is visible through the other.
+- **Gates**: `harness/externals.test.ts` (the harness inlines none of it) and
+  `worker-bundler.test.ts` (a worker carries none of it).
+- **`_instance-check.ts` warns at load** when a process gets a second copy from
+  another path (a nested install of another version, or an old worker that
+  inlined it), naming both. It is the ONE `globalThis` key here, as a detector.
+- The SDK (`@alexkroman1/aai`) still has several copies (a worker inlines the
+  author's), so ITS rendezvous stay `Symbol.for` slots (`globalSlot`).
 
 ## Runtime invariants
 

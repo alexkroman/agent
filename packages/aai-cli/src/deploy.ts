@@ -71,7 +71,7 @@ export async function executeDeploy(opts: {
     missingTelephonySecrets,
     telephonyWebhooks,
   } = await preflightModule;
-  const config = await evalWorkerConfig(bundle.worker);
+  const config = await evalWorkerConfig(bundle.worker, cwd);
   const missing = config ? missingCredentials(config, uploadEnv) : [];
   // The phone half of the same preflight, and a separate list because it is a
   // separate failure: a declared carrier with no signing secret DEPLOYS, serves

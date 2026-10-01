@@ -63,14 +63,4 @@ describe("the client event feed", () => {
     });
     expect(() => feedClientEvent("feed-c", event({ type: "reply.cancelled" }))).not.toThrow();
   });
-
-  test("the slot is on globalThis, so the bundle's copy of this package feeds the server's", async () => {
-    const feed = vi.fn<ClientEventFeed>();
-    publishClientEventFeed(feed);
-    vi.resetModules();
-    const other = await import("./client-event-feed.ts");
-    setSessionClient("feed-d", "porch");
-    other.feedClientSessionEnd("feed-d");
-    expect(feed).toHaveBeenCalledWith("porch", { type: "session_ended", sessionId: "feed-d" });
-  });
 });

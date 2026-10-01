@@ -30,9 +30,10 @@ export function envCount(raw: string | undefined, fallback: number): number {
 export const DEFAULT_PORT = 8080;
 
 /**
- * 30 MB. Workers ship their own SDK runtime + provider SDKs (the CLI
- * wrapper's `__aaiCreateRuntime` — see worker-bundler.ts), which is ~8 MB
- * minified before any user code; the cap bounds user code + assets on top.
+ * 30 MB. A worker carries the authoring SDK and the author's own code and
+ * dependencies; the host runtime and its provider SDKs are an IMPORT resolved in
+ * the guest image (`RUNTIME_EXTERNAL`, aai-cli's worker-bundler.ts), so the cap
+ * bounds user code + assets.
  */
 export const MAX_WORKER_SIZE = 30_000_000;
 
