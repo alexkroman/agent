@@ -96,8 +96,8 @@ export const STATE_RULES = [
   },
   {
     id: 36,
-    key: "rule35_sessionRegistryOutsideDirectory",
-    label: "a session-keyed registry outside session-directory.ts",
+    key: "rule36_sessionRegistryOutsideDirectory",
+    label: "a session-keyed registry outside session/directory.ts",
     // The TYPE of a registry keyed by session id over one of the four things a
     // live session claims. A type is what every spelling has to name — an
     // annotation, a `createOwnedMap<…>()` call, a `new Map<…>()` — where a
