@@ -42,10 +42,11 @@ need any of them to build something good.
 
 ### About the voice and `llm`
 
-A voice id and a model id both autocomplete the ids this SDK release knows about. Neither is checked by
-the compiler, so a wrong id fails when the session opens rather than when you
-build. [Voices and models](/agent/more/voices-and-models/) lists what each one
-accepts and shows what a wrong id looks like.
+A voice id and a model id both autocomplete the ids this SDK release knows
+about. Neither is checked by the compiler, so a wrong id fails when the session
+opens rather than when you build. [Voices and
+models](/agent/more/voices-and-models/) lists what each one accepts and shows
+what a wrong id looks like.
 
 ## The system prompt is a file
 

@@ -91,7 +91,7 @@ export function createPipelineCommands(deps: PipelineCommandDeps): Transport {
     if (!warnedManualOff) {
       warnedManualOff = true;
       deps.log.warn(
-        `Client sent ${verb}, but this agent does not declare turnDetection: "manual" — its transcriber ends each turn, so push-to-talk commands are ignored.`,
+        `Client sent ${verb}, but this agent does not declare turnTaking: { detection: "manual" } — its transcriber ends each turn, so push-to-talk commands are ignored.`,
         { sid: deps.sid },
       );
     }

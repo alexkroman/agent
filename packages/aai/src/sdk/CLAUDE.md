@@ -438,7 +438,8 @@ database) — a known gap.
 
 `mode: "workflow-app"` is a page over the workflow API, declared with
 `workflowApp()` (`define.ts`), whose member has none of the fields it cannot
-use; `GET /client-config` reports it as `page: "static"`. Author-facing half: "Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
+use; `GET /client-config` reports it as `page: "static"`. Author-facing half:
+"Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
 
 - **Read a run's newest line with `ctx.workflows.lastLine(runId)`, never
   `streamTail` + `stream` by hand** — a progress channel is never closed, so

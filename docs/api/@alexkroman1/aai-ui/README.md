@@ -22,10 +22,10 @@ agent with no glue file in between — a client is one `client.tsx` calling one
 mount.
 
 **Two front doors, two mounts.** A voice agent's page calls `mountClient()` and
-talks to a live session. A workflow app's page (`workflowApp()`, or
-`agent({ mode: "workflow-app" })`) calls `mountPage()` and talks to the workflow HTTP
-API — no session, no socket, no microphone. Both are still `client.tsx`,
-still React, still the same theme tokens.
+talks to a live session. A workflow app's page (`workflowApp()`, or `agent({
+mode: "workflow-app" })`) calls `mountPage()` and talks to the workflow HTTP API
+— no session, no socket, no microphone. Both are still `client.tsx`, still
+React, still the same theme tokens.
 
 ### Agent `agent.ts`
 

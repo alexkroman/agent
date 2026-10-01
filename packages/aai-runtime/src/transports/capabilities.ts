@@ -86,7 +86,7 @@ export const CAPABILITY_ROWS = {
     absent: "client command ignored, warned once per session",
   },
   manualTurn: {
-    feature: 'push-to-talk (`turnDetection: "manual"`)',
+    feature: 'push-to-talk (`turnTaking: { detection: "manual" }`)',
     verbs: ["startUserTurn", "commitUserTurn", "clearUserTurn"],
     absent: "refused by `agent()`; client commands ignored, warned once per session",
   },

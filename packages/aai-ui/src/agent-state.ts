@@ -68,10 +68,20 @@ export function useAgentState(): AgentStateFrame | null;
  * agent pushes — pass `slot.projected` and there is no type argument to
  * restate, no slot name to repeat and no empty frame to derive.
  *
- * ```tsx no-check
- * // `no-check`: the slot lives with the agent, in another file.
- * // agent.ts: syncState: { cart: cartSlot.projected }
- * const cart = useAgentState(cartSlot.projected); // reads state.cart
+ * ```tsx
+ * import { sessionSlot } from "@alexkroman1/aai";
+ * import { useAgentState } from "@alexkroman1/aai-ui";
+ *
+ * // In a real project the slot is declared beside the agent and imported here;
+ * // the agent declares `syncState: { cart: cartSlot.projected }`.
+ * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
+ *   view: (cart) => ({ count: cart.items.length }),
+ * });
+ *
+ * function CartBadge() {
+ *   const cart = useAgentState(cartSlot.projected); // reads state.cart
+ *   return <span>{cart.count}</span>;
+ * }
  * ```
  *
  * The projection carries its slot key, so this selects `state[projection.key]`
@@ -101,10 +111,17 @@ export function useAgentState<V = DefaultToolResult>(slot: string): V | null;
  * fallback by running the SAME view over an empty state, and hoist it to module
  * scope so it is a stable reference.
  *
- * ```tsx no-check
- * // `no-check`: the view lives with the agent, in another file.
- * const EMPTY: StoreView = storeView(createEmptyStore());
- * const view = useAgentState("retail", EMPTY);
+ * ```tsx
+ * import { useAgentState } from "@alexkroman1/aai-ui";
+ *
+ * type StoreView = { orders: string[] };
+ * // Hoisted, so it is one reference for the life of the component.
+ * const EMPTY: StoreView = { orders: [] };
+ *
+ * function Orders() {
+ *   const view = useAgentState("retail", EMPTY);
+ *   return <p>{view.orders.length} orders</p>;
+ * }
  * ```
  *
  * @public

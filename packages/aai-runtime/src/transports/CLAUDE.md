@@ -31,14 +31,14 @@ edit the rows there, then paste the output here:
 | `replyState`       | `speech.interrupt()` knows whether a reply is in flight                                      | yes      | no              | no             | "cannot tell" interrupts, as the client's blind `cancel` does                          |
 | `announce`         | an unprompted MODEL turn — a run's `notify`, `ServerSession.announce`                        | yes      | no              | no             | logged at session start; `announce` answers `false`                                    |
 | `typedTurn`        | a typed user turn (`user_text`)                                                              | yes      | no              | no             | client command ignored, warned once per session                                        |
-| `manualTurn`       | push-to-talk (`turnDetection: "manual"`)                                                     | yes      | no              | no             | refused by `agent()`; client commands ignored, warned once per session                 |
+| `manualTurn`       | push-to-talk (`turnTaking: { detection: "manual" }`)                                         | yes      | no              | no             | refused by `agent()`; client commands ignored, warned once per session                 |
 | `reset`            | client `reset` clears the conversation and re-greets                                         | yes      | no              | no             | ignored — the service holds the conversation (a known gap)                             |
 | `seedHistory`      | a resume re-seeds the host-held model history                                                | yes      | no              | no             | nothing to seed — the service resumes its own context                                  |
 | `playbackProgress` | client `playback_progress` corrects the heard clock                                          | yes      | no              | no             | ignored — the host keeps no playback model                                             |
 | `promptPush`       | a changed system prompt is PUSHED to the service                                             | no       | yes             | no             | pipeline: resolved per request, nothing to push                                        |
 | `perTurnPrompt`    | the system prompt is re-resolved between turns (a `dialog()` phase, a persona)               | yes      | yes             | no             | resolved ONCE at construction; a phase is learned through tool results                 |
-| `dialogKnobs`      | a dialog state's `bargeIn` / `toolChoice` / `temperature`                                    | yes      | no              | no             | warned at session start; states, deadlines and tool gates still work                   |
-| `personaKnobs`     | a persona's `toolChoice` / `temperature`                                                     | yes      | no              | no             | warned at session start; the prompt section and tool gate still hold                   |
+| `dialogKnobs`      | a dialog state's `interruption` / `toolChoice` / `temperature`                               | yes      | no              | no             | warned at session start; states, deadlines and tool gates still work                   |
+| `personaKnobs`     | a persona's `interruption` / `toolChoice` / `temperature`                                    | yes      | no              | no             | warned at session start; the prompt section and tool gate still hold                   |
 | `fatalTool`        | a tool's `onError` FATAL verdict stops the turn and speaks `errorPhrase`                     | yes      | no              | no             | warned at session start; a fatal verdict reaches the model as a failure result instead |
 | `turnMetrics`      | one `metrics.collected` frame per settled reply (`pipeline-turn-metrics.ts`)                 | yes      | no              | no             | no frame — the service reports no per-stage marks (a known gap)                        |
 | `hostedTurn`       | the HOST runs the model turn: guardrails, `usageLimits`, model tuning, pipeline voice tuning | yes      | no              | no             | refused by `agent()` (`config-rules.ts`) — never reaches a session                     |
@@ -195,8 +195,8 @@ for a manual agent.
 `Transport.sendUserText` → `commitTypedTurn` in `pipeline-user-speech.ts` cuts a
 reply in flight or playing (reporting `reply.cancelled` BEFORE the
 `user-transcript.committed`, so the stream's order is right), then commits on
-the same path a final does, under either `turnTaking.detection` (`typedTurn` in the
-table).
+the same path a final does, under either `turnTaking.detection` (`typedTurn` in
+the table).
 
 ## Every code-initiated line states `{ record, interruptible }`
 

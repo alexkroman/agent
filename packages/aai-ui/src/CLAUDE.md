@@ -270,8 +270,8 @@ INVARIANTS. Beyond "Property tests run on fast-check" (`.agents/testing.md`):
 
 ## Workflow apps
 
-A `mode: "workflow-app"` agent (declared with `workflowApp({ name, workflows })` from
-`@alexkroman1/aai`) is a web page over the workflow HTTP API: no session,
+A `mode: "workflow-app"` agent (declared with `workflowApp({ name, workflows })`
+from `@alexkroman1/aai`) is a web page over the workflow HTTP API: no session,
 WebSocket or audio. The routes are served by `aai/host/workflow-api.ts`, whose
 module doc is the authoritative table; the platform brokers them at
 `/:slug/workflows/*`.

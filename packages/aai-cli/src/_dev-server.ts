@@ -380,7 +380,6 @@ export async function startDevServer(
       // Parity matters more here than usual, because a page mounted with
       // `mountClient()` by mistake fails identically in both places instead of
       // only after a deploy.
-      //
       // `telephony` rides along for the same reason and is the sharper half of
       // it: an agent that declares a carrier serves `/phone` here, one that
       // does not serves it nowhere, and a carrier pointed at an `aai dev`

@@ -292,10 +292,10 @@ the first and third; neither is built.
 
 **A workflow app's credential gate is a different question**, hence
 `evalWorkflowCredentials`: `requiredProviderEnvVars` returns `[]` for a
-`mode: "workflow-app"` agent, so asked alone it reports every workflow app "ready" and
-a keyless run goes live and 401s three layers down inside a step. It reads
-`requiredEnv` too, which is the only place a workflow app declares what it
-needs.
+`mode: "workflow-app"` agent, so asked alone it reports every workflow app
+"ready" and a keyless run goes live and 401s three layers down inside a step.
+It reads `requiredEnv` too, which is the only place a workflow app declares
+what it needs.
 
 **And in stub mode a declared key nobody has is a PLACEHOLDER, by both doors.**
 A step reads its key with `requireStepEnv`, which throws by name, so a scripted

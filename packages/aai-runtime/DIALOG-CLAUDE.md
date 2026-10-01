@@ -106,13 +106,14 @@ the dialog actually is instead of firing a transition the conversation has left.
 
 `transports/pipeline-dialog-knobs.ts` carries the table. The short version:
 
-- **`interruption`** — live. The two interim gates in `pipeline-user-speech.ts` are
-  read at the moment a partial is classified, so they became thunks.
-  `interruption: "off"` is an infinite word threshold (`minBargeInWords: Infinity` in the transport): both gates are
-  `words >= threshold` tests, so an unreachable threshold is exactly "the agent
-  finishes its sentence". The word COUNT is still computed, so a caller talking
-  over a disclosure is still transcribed, still opens the speaking edge, and is
-  still answered once the reply ends.
+- **`interruption`** — live. The two interim gates in `pipeline-user-speech.ts`
+  are read at the moment a partial is classified, so they became thunks.
+  `interruption: "off"` is an infinite word threshold (the transport's
+  `minBargeInWords: Infinity`): both gates are `words >= threshold` tests, so an
+  unreachable threshold is exactly "the agent finishes its sentence". The word
+  COUNT is still computed, so a caller talking over a disclosure is still
+  transcribed, still opens the speaking edge, and is still answered once the
+  reply ends.
 - **`toolChoice` / `temperature`** — live, and **per STEP** rather than per turn.
   They arrive as a `prepareStep` preparer composed before `forceFinalAnswer`,
   which is the stronger place: a gated tool can move the dialog in the MIDDLE of

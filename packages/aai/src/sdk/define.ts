@@ -106,13 +106,14 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  * own default and its own storage, so there is no `state` factory to remember.
  * `syncState` takes that slot's projection, keyed by the slot's name.
  *
- * @example Default pipeline with a voice and a different LLM
+ * @example Default pipeline with another voice and a different LLM
  * ```ts
  * import { agent } from "@alexkroman1/aai";
+ * import { assemblyAITts } from "@alexkroman1/aai/tts";
  *
  * export default agent({
  *   name: "My Agent",
- *   voice: "michael",
+ *   tts: assemblyAITts({ voice: "michael" }),
  *   llm: "claude-sonnet-4-6",
  * });
  * ```

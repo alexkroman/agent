@@ -154,7 +154,7 @@ export function createForceEndOfTurn(deps: {
       if (!warned) {
         warned = true;
         deps.log.warn(
-          `This agent ends turns on demand (userTurnLimit or turnDetection: "manual"), and the "${deps.sttName}" STT provider cannot end a turn on demand: a cap is reported but cannot cut the turn, and a push-to-talk commit waits out its deadline. The default assemblyAIStt() can.`,
+          `This agent ends turns on demand (turnTaking.userTurnLimit or turnTaking.detection: "manual"), and the "${deps.sttName}" STT provider cannot end a turn on demand: a cap is reported but cannot cut the turn, and a push-to-talk commit waits out its deadline. The default assemblyAIStt() can.`,
           { sid: deps.sid },
         );
       }

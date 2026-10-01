@@ -39,11 +39,12 @@ all-AssemblyAI pipeline:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Weather Line",
   greeting: "Weather line — which city are you asking about?",
-  voice: "michael",
+  tts: assemblyAITts({ voice: "michael" }),
 });
 ```
 

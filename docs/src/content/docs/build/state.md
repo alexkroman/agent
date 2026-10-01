@@ -106,7 +106,8 @@ export default agent({ name: "Store", syncState: { cart: cartSlot.projected } })
 
 **3. Read it in the browser** with the same object:
 `useAgentState(cartSlot.projected)`, which selects the `cart` key. No type
-argument, no slot name to repeat, and no empty frame to write by hand. See [Your own UI](/agent/more/custom-ui/).
+argument, no slot name to repeat, and no empty frame to write by hand. See [Your
+own UI](/agent/more/custom-ui/).
 
 :::note[No `syncState`, nothing to receive]
 `useAgentState` only ever shows what an agent projects. An agent that declares

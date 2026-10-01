@@ -2635,10 +2635,11 @@ own journaled `ctx.random()` instead.
 
 - **Tool execute must return a value.** A missing return = `undefined` in
   LLM context = the model thinks the tool failed.
-- **Declare only the pipeline stages you're changing.** Unset stages of
-  `stt` / `llm` / `tts` default to AssemblyAI (omit all three for the full
-  default pipeline; `tts: assemblyAITts({ voice })` picks a voice). S2S needs an explicit
-  `mode: "s2s"` and `s2s: assemblyAIS2s()`, and takes no pipeline fields.
+- **Declare only the pipeline stages you're changing.** Unset stages of `stt` /
+  `llm` / `tts` default to AssemblyAI (omit all three for the full default
+  pipeline; `tts: assemblyAITts({ voice })` picks a voice). S2S needs an
+  explicit `mode: "s2s"` and `s2s: assemblyAIS2s()`, and takes no pipeline
+  fields.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Derive state with `useToolResult`, not `useEffect` + `toolCalls`** — it
