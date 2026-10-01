@@ -29,7 +29,9 @@
  * Like rule 13 this RESOLVES the specifier rather than matching its text,
  * because `./session/dial.ts` from `src/` and `../session/dial.ts` from
  * `src/components/` are the same violation, and `./dial.ts` from inside
- * `session/` is none.
+ * `session/` is none. konsistent's `*-module-dir-entered-through-index`
+ * conventions state the same boundary textually, one block per directory, and
+ * `konsistent-config.test.ts` derives those blocks from the tree.
  */
 
 import { git } from "./_ratchet.mjs";

@@ -83,7 +83,8 @@ const planDispatch = failable(
  *
  * **Idempotent on purpose, and that is what makes the state's `toolChoice` pin
  * safe.** `onCall.dispatching` pins the model to this tool, so it is called on
- * every step of every turn for the rest of the call — which is exactly the
+ * the first step of every turn for the rest of the call (the pin lets go once
+ * the step that calls it has run) — which is exactly the
  * guarantee wanted ("do not tell a stranded caller a truck is coming without
  * sending one") and would be a fleet of trucks if a second call rolled a second
  * one. So the job is written once and every later call answers with the job

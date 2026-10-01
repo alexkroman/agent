@@ -27,7 +27,7 @@
 import { agent, type SessionEvent, tool } from "@alexkroman1/aai";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { withTools } from "@alexkroman1/aai/manifest";
-import { LLMock } from "@copilotkit/aimock";
+import { isChatCompletionBody, type JournalEntry, LLMock } from "@copilotkit/aimock";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { z } from "zod";
 import { silentLogger } from "../_logger-test-utils.ts";
@@ -39,6 +39,13 @@ const REPLY = "Order 42 shipped yesterday and arrives Friday.";
 const SYSTEM_PROMPT = "You answer order questions. Always look the order up first.";
 
 let mock: LLMock;
+
+/** A journaled request's body as the chat request every one here is. */
+function chatBody(entry: JournalEntry | undefined) {
+  const body = entry?.body;
+  if (!isChatCompletionBody(body)) throw new Error(`not a chat request: ${JSON.stringify(body)}`);
+  return body;
+}
 
 beforeAll(async () => {
   mock = new LLMock({ port: 0 });
@@ -114,7 +121,7 @@ describe("an LLM turn over HTTP", () => {
     // only have come from providerEnv: nothing here sets a process.env key.
     expect(requests[0]?.headers.authorization).toBeDefined();
 
-    const first = requests[0]?.body;
+    const first = chatBody(requests[0]);
     expect(first?.stream).toBe(true);
     expect(first?.model).toBe(ASSEMBLYAI_LLM_DEFAULT_MODEL);
     const messages = first?.messages ?? [];
@@ -132,7 +139,7 @@ describe("an LLM turn over HTTP", () => {
     ).toMatchObject({ type: "object", properties: { id: { type: "string" } }, required: ["id"] });
 
     // The second request answers the call, under the id the provider assigned.
-    const second = requests[1]?.body?.messages ?? [];
+    const second = chatBody(requests[1]).messages;
     const answer = second.find((m) => m.role === "tool");
     expect(answer?.tool_call_id).toBe(TOOL_CALL_ID);
     expect(JSON.stringify(answer)).toContain("shipped");

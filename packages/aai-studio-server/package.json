@@ -37,7 +37,7 @@
     "aai-studio-client": "workspace:*",
     "hono": "catalog:",
     "mime-types": "catalog:",
-    "modal": "^0.10.0",
+    "modal": "^0.10.1",
     "p-timeout": "catalog:",
     "zod": "catalog:"
   },
@@ -50,7 +50,7 @@
     "fast-check": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
-    "undici": "^8.10.1",
+    "undici": "^8.11.2",
     "vite": "catalog:",
     "vitest": "catalog:"
   }

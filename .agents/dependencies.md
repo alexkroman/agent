@@ -68,12 +68,30 @@ script. It applies only to resolution (`--frozen-lockfile` is unaffected).
 - A deliberate same-day bump adds a `minimumReleaseAgeExclude` entry WITH a
   reason, never a lower number, and the entry is deleted once the version clears
   the window.
-- Exclude by SCOPE (`@biomejs/*`, the one root entry), because a CLI's platform
-  binary is a same-batch optionalDependency.
+- Exclude by SCOPE (`@biomejs/*`, not `@biomejs/biome`), because a CLI's
+  platform binary is a same-batch optionalDependency. The root has no entry
+  today.
 - `scaffold/pnpm-workspace.yaml` needs its own entries — see
   `packages/aai-templates/CLAUDE.md`. The e2e suite sets
   `NPM_CONFIG_MINIMUM_RELEASE_AGE=0` for the tarballs it publishes to its
   verdaccio.
+
+## Held versions
+
+An exact pin or a narrowed range below is deliberate; lift it when its
+condition clears, not in a routine `pnpm update`.
+
+- **`@microsoft/api-extractor` is exactly `7.59.1`.** 7.59.2 takes
+  `@microsoft/tsdoc` 0.17, whose emitter joins a soft line break with no
+  whitespace (`and{@link X}`), so every `API-INDEX.md` summary that wraps onto
+  an inline tag loses a space.
+- **`jsdom` is `~30.0.1`, plus a root `overrides` entry** (the comment in
+  `pnpm-workspace.yaml`): vitest <5.0.3's `URL.createObjectURL` shim cannot
+  read a jsdom 30.1 Blob.
+- **`jscpd` stays on 4.x.** 5.x is a Rust rewrite with no Node API, and its
+  counts disagree with `scripts/duplication-baseline.json` (measured by 4.x)
+  file by file — moving means re-measuring the ratchet, not a version bump.
+- **`typescript` in the `typedoc` catalog stays 6.x** — see above.
 
 ## Every GitHub Action is pinned to a SHA
 

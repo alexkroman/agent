@@ -168,13 +168,13 @@
     "htmlparser2": "^12.0.0",
     "p-timeout": "catalog:",
     "picomatch": "^4.0.7",
-    "undici": "^8.10.1",
+    "undici": "^8.11.2",
     "xstate": "catalog:"
   },
   "devDependencies": {
     "@types/html-to-text": "^9.0.4",
     "@types/node": "catalog:",
-    "@types/picomatch": "^4.0.2",
+    "@types/picomatch": "^4.0.3",
     "fast-check": "catalog:",
     "tsdown": "catalog:",
     "vitest": "catalog:",

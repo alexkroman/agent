@@ -27,7 +27,7 @@
       "description": "Each package's vitest.config.ts is `export default defineUnitProject({ ... })` from `vitest.shared.ts`. The factory owns what a hand-written `test: { ... }` kept losing: the shared options (a config writing test:{} without ...sharedConfig.test REPLACES them, which is how every package silently lost `reporters`), the unit-tier excludes (`*.integration`, `*.scenario`, `*.eval`, `e2e*`), and the array/object MERGES of `setupFiles`, `env` and the coverage `exclude` over the shared lists \u2014 so `sharedCoverageExclude`, which keeps test infrastructure out of the per-package floors, cannot be forgotten. `vitest-setup-wiring.test.ts` asserts the same from the source side.",
       "paths": "packages/{packageName}/vitest.config.ts",
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "defineUnitProject",
             "from": "../../vitest.shared.ts"
@@ -63,7 +63,33 @@
       "description": "packages/aai is the base of the dependency graph \u2014 every other package depends on it and it depends on none of them. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half \u2014 it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": ["packages/aai/src/*.ts", "packages/aai/src/**/*.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-runtime",
+          "@alexkroman1/aai-runtime/*",
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-guest",
+          "aai-guest-core",
+          "aai-guest-core/*",
+          "aai-guest-studio",
+          "aai-guest-studio/*",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-runtime",
@@ -96,7 +122,27 @@
       "description": "The CLI must never import from the server or the guest. The one edge between them runs the other way (aai-guest imports the CLI's public build-hook subpaths), and it is a hard boundary because the CLI ships to users while the server and guest are private platform code. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half \u2014 it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": ["packages/aai-cli/src/*.ts", "packages/aai-cli/src/**/*.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "aai-evals",
+          "aai-evals/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-guest",
+          "aai-guest-core",
+          "aai-guest-core/*",
+          "aai-guest-studio",
+          "aai-guest-studio/*",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "aai-evals",
           "aai-evals/*",
           "aai-gates",
@@ -123,7 +169,24 @@
       "description": "The guest never imports server code \u2014 that hard boundary is the reason the guest is its own package. aai-server depends on aai-guest only to resolve its built artifact, never to import guest source. The BARE `@alexkroman1/aai-cli` specifier is denied and its subpaths are not, which is the one asymmetric entry in this matrix: the guest may use the CLI's four public build-hook subpaths (`/worker-bundler`, `/client-bundler`, `/typecheck`, `/project-config`) and nothing else, and konsistent has no allow-list form to say so \u2014 a deny of the bare name is the strongest half of that rule it can express. Two things follow. Every real call site is a DYNAMIC `await import()`, which konsistent cannot see at all, so what this entry actually buys is keeping a new STATIC bare import out; and the four-subpath allow-list belongs in a `scripts/guard-invariants-rules-*.mjs` rule, where a pattern can say which subpaths are in. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half \u2014 it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": ["packages/aai-guest/src/*.ts", "packages/aai-guest/src/**/*.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-ui",
           "@alexkroman1/aai-ui/*",
@@ -147,7 +210,29 @@
       "description": "`aai-guest-core` is the bottom of the guest trio and may import NOTHING in it. That is the whole reason it exists: the guest was one package whose two halves pointed at each other \u2014 the entry dispatches studio mode, and studio reaches back for `rpc`/`types`/`bundle`/`auth`/`http` at twenty call sites \u2014 so two packages could not express it without a cycle, which for workspace packages is unbuildable. Splitting the shared five out is what makes the graph a DAG, and this convention is what keeps it one. An import of `aai-guest` or `aai-guest-studio` from here re-creates the cycle the split removed, and pnpm would resolve it while tsdown would not. The SDK and `@alexkroman1/aai-runtime` are the only workspace packages it may reach, exactly as the other two guest packages do. See `packages/aai-guest-core/CLAUDE.md`.",
       "paths": ["packages/aai-guest-core/src/*.ts", "packages/aai-guest-core/src/**/*.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-guest",
+          "aai-guest-studio",
+          "aai-guest-studio/*",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-ui",
@@ -176,7 +261,27 @@
       "description": "`aai-guest-studio` sits between the shared core and the harness entry: it may import `aai-guest-core` and must not import `aai-guest`, whose entry dispatches IT. The reverse edge is what the trio exists to prevent \u2014 see `guest-core-package-boundary`. `@alexkroman1/aai-cli` is denied as a BARE specifier and permitted by subpath, which is the same shape `guest-package-boundary` uses for the same reason: the studio builds a user workspace through the CLI\u2019s own Vite pipeline and typechecks it with the CLI\u2019s own gate (`/worker-bundler`, `/client-bundler`, `/typecheck`, `/project-config`), and denying the bare name while permitting subpaths is the strongest half of \u201conly those subpaths\u201d konsistent can express. See `packages/aai-guest-studio/CLAUDE.md`.",
       "paths": ["packages/aai-guest-studio/src/*.ts", "packages/aai-guest-studio/src/**/*.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-guest",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-ui",
@@ -208,7 +313,31 @@
         "packages/aai-ui/src/**/*.tsx"
       ],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-runtime",
+          "@alexkroman1/aai-runtime/*",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-guest",
+          "aai-guest-core",
+          "aai-guest-core/*",
+          "aai-guest-studio",
+          "aai-guest-studio/*",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-runtime",
@@ -239,7 +368,31 @@
       "description": "aai-runtime is the published Node host runtime. It sits one level above the core SDK and below everything else: it may import @alexkroman1/aai and nothing else in the workspace. The CLI, the guest and the platform all depend on it, so an import in this direction would close a cycle \u2014 and it ships to users, so a private-package import here would be unresolvable in a consumer's install. Those two reasons do NOT cover @alexkroman1/aai-ui, and a reviewer who checks will find they do not: aai-ui depends only on @alexkroman1/aai, so an import of it closes no cycle, and it is published rather than private. The reason that does cover it is INSTALL WEIGHT, which this description used to omit. npm installs whole packages, never subpaths \u2014 so importing `@alexkroman1/aai-ui/client-dir`, twenty lines over node:module and node:path with no React in it at all, would put React, the prebuilt browser client and styles.css into the tree of every headless consumer of this runtime: the guest harness (bundled into dist/harness.mjs, on the cold-start path of every Modal sandbox), the platform server, and every user self-hosting a `page: \"static\"` workflow app that serves no browser client. That is what artifact-size-report.mjs fails a new runtime dependency over, regardless of bytes \u2014 a 4 kB wrapper can pull 2 MB behind it. Composing a runtime with a default client belongs in an ENTRY POINT that already depends on both, which is aai-cli, where `aai start` and `aai dev` do it; client-dir.ts's own module doc says the same, recording that the copies it replaced lived in the CLI's dev server and in each self-hosted example. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half \u2014 it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": ["packages/aai-runtime/src/*.ts", "packages/aai-runtime/src/**/*.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-guest",
+          "aai-guest-core",
+          "aai-guest-core/*",
+          "aai-guest-studio",
+          "aai-guest-studio/*",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-ui",
@@ -270,7 +423,27 @@
       "description": "aai-server resolves aai-guest's BUILT ARTIFACT (aai-guest/harness, via createRequire().resolve) and must never import guest source. That is the other half of guest-package-boundary, and it was the half nothing checked: the guest is its own package precisely so the two cannot share modules, and a source import here would make the sandbox harness a library the server links against rather than an artifact it launches. The rest of the list is the same boundary from the other three sides: the CLI ships to users and reaches the platform only by calling its HTTP API, aai-studio-client is a browser bundle whose modules assume a DOM, and aai-studio-server sits ABOVE this package (158 import sites, every one of them a subpath of `aai-server`) so an import in this direction would close a cycle between the two halves of one deployment. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half \u2014 it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": ["packages/aai-server/src/*.ts", "packages/aai-server/src/**/*.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-guest",
+          "aai-guest-core",
+          "aai-guest-core/*",
+          "aai-guest-studio",
+          "aai-guest-studio/*",
+          "aai-guest/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
           "aai-evals",
@@ -302,7 +475,29 @@
         "packages/aai-studio-client/src/**/*.tsx"
       ],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-runtime",
+          "@alexkroman1/aai-runtime/*",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-guest",
+          "aai-guest-core",
+          "aai-guest-core/*",
+          "aai-guest-studio",
+          "aai-guest-studio/*",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-runtime",
@@ -331,7 +526,22 @@
       "description": "aai-studio-server had NO convention at all, which made it the largest unguarded package in the repo: it is the composition root every deployment runs, so an import it should not have is the one that reaches production. Its one legitimate workspace edge downward is aai-server \u2014 the repo's biggest, 158 import sites across all 36 of that package's subpath exports \u2014 plus the SDK, the host runtime and aai-ui. aai-evals joined that list when the studio starter eval moved into this package: the eval FRAMEWORK (the recording runner, the spread report, the key gate, the env vocabulary) stays there and is imported by subpath from this package's `studio-eval-*` / `studio-starter-*` / `studio-template-contract` modules, while everything that names the studio \u2014 its HTTP origin, its chat route, its step cap, its starter prompts' expectations \u2014 lives here. The edge is one-way and cannot close a cycle: aai-evals depends on the SDK and the host runtime and on nothing else in the workspace, which `evals-package-boundary` is what keeps true. Everything else is denied for a reason of its own: aai-guest is the sandbox harness, which this package must LAUNCH as a built artifact and never link against (the same rule server-package-boundary states from the other side, and the reason the guest is its own package); aai-studio-client is a browser bundle whose modules assume a DOM and whose `dist/` this package serves rather than imports; the CLI ships to users, and the studio reaches its build hooks through the GUEST, which is where that edge is declared; and aai-templates is shipped product source a user scaffolds, not a library \u2014 the studio materializes a template by writing files, so an import would make a user\u2019s starting point a runtime dependency of the platform. The BARE `aai-studio-client` specifier is denied while its subpaths are not, the same asymmetry guest-package-boundary carries and for the same reason: the edge is ONE subpath, `aai-studio-client/starters` \u2014 the starter list the studio itself ships, so the starter eval grades the same set the product offers rather than a copy that drifts \u2014 konsistent has no allow-list form, and denying the bare name is the strongest half of that available here. That deny used to name the subpaths too, and it moved with the eval: the exception was `evals-package-boundary`'s while the starter eval was. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half \u2014 it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-templates is on this list because of that test rather than because anyone tried the import.",
       "paths": ["packages/aai-studio-server/src/*.ts", "packages/aai-studio-server/src/**/*.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-guest",
+          "aai-guest-core",
+          "aai-guest-core/*",
+          "aai-guest-studio",
+          "aai-guest-studio/*",
+          "aai-guest/*",
+          "aai-studio-client",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
           "aai-gates",
@@ -353,7 +563,29 @@
       "description": "aai-evals is the eval FRAMEWORK and the behaviour tier built on it: it drives a real agent through the published surface and grades what comes back, which is only evidence about what a USER gets if it reaches the agent the way a user does. Its legitimate edges are the SDK and `@alexkroman1/aai-runtime/eval`, and that is now the whole list \u2014 `aai-studio-client/starters` came off it when the studio starter eval moved to aai-studio-server, taking the only thing here that had ever named a product surface with it. So the subpath exception this rule used to carry is gone and the deny is total: bare AND `aai-studio-client/*`. That is the load-bearing half of the split, not a tidy-up. A package that may import the studio's starter list is a package that can grow a second studio-shaped eval, and the reason the last one had to move \u2014 an eval framework that knows a product's HTTP origin, chat route and step cap is one whose assertions are about that product rather than about agents \u2014 reads exactly as persuasively the second time. Everything else is denied because reaching past the published surface is how an eval starts passing for the wrong reason: importing aai-server or aai-studio-server would let it assert against platform internals no agent author can see, aai-guest would have it inspect the sandbox rather than the session, and the CLI would let it drive a build instead of an agent. aai-studio-server is the one denial that now has traffic in the other direction \u2014 it imports `aai-evals/gate`, `/register`, `/runner` and `/report` \u2014 and denying it from here is what keeps that edge one-way and the workspace acyclic. The list is a DENY list because konsistent has no allow-list form, which makes it the one kind of rule here that goes stale by SILENCE: an unnamed package is importable, so workspace package #11 lands importable from everywhere and nothing reports it. `konsistent-config.test.ts` closes that half \u2014 it derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, every package a boundary must forbid actually named in it, against an explicit map of the legitimate edges. aai-evals and aai-templates are on this list because of that test rather than because anyone tried the import.",
       "paths": ["packages/aai-evals/src/*.ts", "packages/aai-evals/src/**/*.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "aai-gates",
+          "aai-gates/*",
+          "aai-guest",
+          "aai-guest-core",
+          "aai-guest-core/*",
+          "aai-guest-studio",
+          "aai-guest-studio/*",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
           "@alexkroman1/aai-ui",
@@ -382,7 +614,33 @@
       "description": "aai-gates is the repo's meta-gate suite: 28 specs that hold `scripts/check-*.mjs`, `konsistent.json`, `turbo.json`, `lefthook.yml` and the workflows to their own contracts. It may import NO workspace package, which is the strongest boundary in this file and the only one whose deny list is every sibling. A gate reads the repository as TEXT \u2014 Vite `?raw` globs \u2014 and asserts on what it finds, so resolving through the code it asserts about is how a gate starts agreeing with a regression: an SDK change would silently change what the gate sees, and a spec that imported the script it guards would be asserting a module against itself. `_gate-support.ts` carries a hand-rolled path walk and a three-line `isRecord` for exactly this reason rather than reaching for `node:path` or `@alexkroman1/aai/utils`, and both say so at the declaration. The two helpers `aai-templates` still needs (`byCodeUnit`, `sole`) are duplicated into its own `_template-support.ts` rather than exported from here, per the repo's `test-helper-modules` convention \u2014 publishing a test helper as a subpath so one sibling can reach it is the shape `aai-server`'s exports map is criticized for. Like every boundary here this is a DENY list, so it goes stale by SILENCE: workspace package #12 lands importable from these specs and nothing reports it until `konsistent-config.test.ts`, which derives the package set from `packages/*/package.json` and asserts this matrix is TOTAL, fails.",
       "paths": ["packages/aai-gates/src/*.ts", "packages/aai-gates/src/**/*.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai",
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-runtime",
+          "@alexkroman1/aai-runtime/*",
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "@alexkroman1/aai/*",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-guest",
+          "aai-guest-core",
+          "aai-guest-core/*",
+          "aai-guest-studio",
+          "aai-guest-studio/*",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai",
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
@@ -420,7 +678,14 @@
         "!packages/aai/src/sdk/**/*.test.ts"
       ],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "../host/*",
+          "../../host/*",
+          "../../../host/*",
+          "../host-internal.ts",
+          "../../host-internal.ts"
+        ],
+        "importTypesFrom": [
           "../host/*",
           "../../host/*",
           "../../../host/*",
@@ -437,7 +702,25 @@
         "packages/aai-templates/templates/**/*.tsx"
       ],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai/internal",
+          "@alexkroman1/aai/host-internal",
+          "@alexkroman1/aai-runtime/internal",
+          "@alexkroman1/aai-ui/internal",
+          "aai-evals",
+          "aai-evals/*",
+          "aai-guest",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*",
+          "aai-templates",
+          "aai-templates/*"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai/internal",
           "@alexkroman1/aai/host-internal",
           "@alexkroman1/aai-runtime/internal",
@@ -489,7 +772,7 @@
             "receiveParamsOfTypes": ["${providerId.toPascalCase()}SttOptions"]
           }
         ],
-        "importFromExternals": false,
+        "importValuesFromExternals": false,
         "useDeclarationOrder": [
           "${providerId.toConstantCase()}_KIND",
           "${providerId.toConstantCase()}_API_KEY_ENV",
@@ -531,7 +814,7 @@
             "receiveParamsOfTypes": ["${providerId.toPascalCase()}TtsOptions"]
           }
         ],
-        "importFromExternals": false,
+        "importValuesFromExternals": false,
         "useDeclarationOrder": [
           "${providerId.toConstantCase()}_KIND",
           "${providerId.toConstantCase()}_API_KEY_ENV",
@@ -566,7 +849,7 @@
             "extend": "ProviderCredentialOptions"
           }
         ],
-        "importFromExternals": false,
+        "importValuesFromExternals": false,
         "useDeclarationOrder": [
           "${providerId.toConstantCase()}_S2S_KIND",
           "${providerId.toConstantCase()}_S2S_API_KEY_ENV",
@@ -589,7 +872,7 @@
         ],
         "exportInterfaces": ["${channelId.toPascalCase()}ChannelOptions"],
         "exportFunctions": ["${channelId.toCamelCase()}Channel"],
-        "importFromExternals": false
+        "importValuesFromExternals": false
       }
     },
     {
@@ -610,7 +893,7 @@
             "files": "agent.ts"
           },
           "must": {
-            "export": ["default"]
+            "exportValues": ["default"]
           }
         },
         {
@@ -619,7 +902,7 @@
             "files": "tools/*.ts"
           },
           "must": {
-            "export": ["default"]
+            "exportValues": ["default"]
           }
         },
         {
@@ -631,7 +914,7 @@
             "files": "client.tsx"
           },
           "must": {
-            "importFrom": ["@alexkroman1/aai-ui/styles.css"]
+            "importValuesFrom": ["@alexkroman1/aai-ui/styles.css"]
           }
         }
       ]
@@ -875,7 +1158,8 @@
             "files": "testing.ts"
           },
           "mustNot": {
-            "importFrom": "vitest"
+            "importValuesFrom": "vitest",
+            "importTypesFrom": "vitest"
           }
         },
         {
@@ -884,8 +1168,8 @@
             "files": "testing-vitest.ts"
           },
           "must": {
-            "importFrom": "vitest",
-            "import": [
+            "importValuesFrom": "vitest",
+            "importValues": [
               {
                 "name": "onTestFinished",
                 "from": "vitest"
@@ -911,7 +1195,7 @@
       "description": "A *.test-d.ts file is a TYPE-level test: checked by tsc, never executed at runtime, and its assertions are expectTypeOf from vitest. Requiring that import is what makes the extension mean something - a .test-d.ts with no expectTypeOf is a file nothing runs and nothing checks, and it would look exactly like coverage. Note what actually GATES these files: not the aai-types / aai-ui-types vitest projects, which are declared only in the root vitest.config.ts that nothing in the repo or in CI evaluates, but `turbo run typecheck` - every package tsconfig includes its test files, so a mismatched expectTypeOf is a hard compile error (injecting expectTypeOf<string>().toEqualTypeOf<number>() fails tsc -p packages/aai with TS2344). A new .test-d.ts is therefore covered on creation, but only in a package whose tsconfig includes it and only if it really asserts, which is the half this convention holds. The first .test-d.ts in a package also needs a knip.json entry (\"**/*.test-d.ts\"): a type test is imported by nothing, so knip reports the file itself as unused.",
       "paths": ["packages/*/src/*.test-d.ts", "packages/*/src/**/*.test-d.ts"],
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "expectTypeOf",
             "from": "vitest"
@@ -1195,7 +1479,7 @@
             "from": "./providers/openers.ts"
           }
         ],
-        "export": [
+        "exportValues": [
           {
             "name": "registerSttKind",
             "from": "./providers/resolve.ts"
@@ -1227,7 +1511,8 @@
         "packages/aai-runtime/src/internal.ts"
       ],
       "mustNot": {
-        "importFrom": ["vitest", "vitest/*"]
+        "importValuesFrom": ["vitest", "vitest/*"],
+        "importTypesFrom": ["vitest", "vitest/*"]
       }
     },
     {
@@ -1235,7 +1520,17 @@
       "description": "A template's eval imports its HARNESS from ONE subpath, `@alexkroman1/aai-runtime/eval/vitest`, which re-exports the runner-free `/eval` half, the simulated caller and judge, and the `@alexkroman1/aai/testing` stubs a case composes with \u2014 one door because an eval file used to reach four subpaths of two packages for one harness. So `/eval`, `@alexkroman1/aai/testing` and `/testing/vitest` are refused HERE as well: `/eval` is the door for a harness that is not vitest, and the SDK's testing subpaths stay the unit-level surface a tool's or a step's own spec imports (a stub an eval needs and the one door lacks is a line in `eval-vitest-barrel.ts`, not a second import). No other subpath of the runtime package either. The root barrel is the one that bites: it reaches `agent-server.ts` \u2192 `server.ts` \u2192 `workflow/install.ts` \u2192 `step-fetch.ts`, so an eval that imports the root for one TYPE drags this runtime's node-reaching module graph into the template's own TypeScript program \u2014 three `BodyInit`/`exactOptionalPropertyTypes` errors in runtime files the eval never calls. It happened the day the surface shipped, in three template evals reaching for `RunCodeExecutor`, which is why `/eval` re-exports that type rather than letting a template reach past it. `/testing` is forbidden HERE and not in templates generally: eight template `agent.test.ts` files legitimately use `runWorkflow` from it, but an eval driving a real session has no business starting a durable run through a second door, and the two subpaths gate on different credentials. `/auth`, `/metrics` and `/tracing` are an EMBEDDER's \u2014 a server's ticket gate and its telemetry \u2014 and nothing an eval of the agent itself has reason to reach. `/internal` is already refused for every template file by `template-authoring-boundary`, so this list plus that one is TOTAL over the package's export map \u2014 an allow-list spelled as a complete deny-list, which is the only form konsistent has. It was written down before only inside a JSDoc block copied verbatim into four template evals, and deduplicating those onto `createVmRunCode` is what left it with no home \u2014 the general hazard in a dedupe being that the copies carry prose as well as code, and the prose is the half a diff does not miss.",
       "paths": ["packages/aai-templates/templates/**/*.eval.test.ts"],
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "@alexkroman1/aai-runtime",
+          "@alexkroman1/aai-runtime/auth",
+          "@alexkroman1/aai-runtime/eval",
+          "@alexkroman1/aai-runtime/metrics",
+          "@alexkroman1/aai-runtime/testing",
+          "@alexkroman1/aai-runtime/tracing",
+          "@alexkroman1/aai/testing",
+          "@alexkroman1/aai/testing/vitest"
+        ],
+        "importTypesFrom": [
           "@alexkroman1/aai-runtime",
           "@alexkroman1/aai-runtime/auth",
           "@alexkroman1/aai-runtime/eval",
@@ -1471,7 +1766,7 @@
         "!packages/aai-server/src/guest-handlers/*.test.ts"
       ],
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "PLATFORM_ROUTES",
             "from": "@alexkroman1/aai-runtime/internal"
@@ -1492,7 +1787,7 @@
       "description": "The platform's end of the guest\u2192platform WebSocket, and the three things it must not re-derive. `parsePlatformFrame` from `@alexkroman1/aai-runtime/internal` is the frame grammar: four frames declared ONCE, in `aai-runtime/platform/socket-frames.ts`, and parsed on both ends \u2014 two parsers of one wire is the bug, and a build that does not recognise a frame must DROP it rather than close, which is how a newer peer adds one without an outage on every guest. `PLATFORM_ROUTES` is a BOUNDARY rather than a validation: a frame's `route` is concatenated into a URL, so an unchecked `/../elsewhere/session-state` normalizes away from its own slug, and paths outside `/:slug` are not gated by the guest bearer at all. `guestBearerRefusal` from `./guest-bearer.ts` is the tenant gate, and importing it is the whole claim: it is the same policy every guest-called route runs, split out of `assertGuestBearer` precisely so the HANDSHAKE cannot check a credential differently from the rooms behind it. A socket that authenticated its upgrade by hand would be one credential check nobody compares against the five it stands in front of \u2014 and it holds a Modal input for the life of the guest, so getting it wrong is not one request's worth of exposure. Konsistent can say these three arrive from the modules that own them; it cannot say the frame loop dispatches under the slug the upgrade named, which is `platform/socket-handler.test.ts` against a real Hono app, or that the two ends are wired to each other at all, which only `platform/socket.scenario.test.ts` over a real port can see.",
       "paths": "packages/aai-server/src/platform/socket-handler.ts",
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "parsePlatformFrame",
             "from": "@alexkroman1/aai-runtime/internal"
@@ -1516,7 +1811,7 @@
         "packages/aai-studio-server/src/studio-app.ts"
       ],
       "must": {
-        "import": ["applyPlatformMiddleware", "addHealthRoute", "bindFetchEnv"]
+        "importValues": ["applyPlatformMiddleware", "addHealthRoute", "bindFetchEnv"]
       }
     },
     {
@@ -1524,7 +1819,7 @@
       "description": "The traceparent propagator is OURS, deliberately, and this convention is both halves of that sentence. It is built on the runtime's own `parseTraceparent` (`@alexkroman1/aai-runtime/internal`) and it may not import `W3CTraceContextPropagator`. Two parsers of one header is the bug: ours pins version `00` and rejects all-zero ids, so a header the two read differently would put a DIFFERENT trace id on the span than on the log line \u2014 and a span that silently disagrees with the log it should join is worse than no span, because the disagreement is invisible from either side. One grammar, one parse. Reaching for the OTel package's own propagator is the specific mistake worth forbidding rather than a general third-party ban: it is the obvious thing to do, it is already in the dependency tree of everything else the tracing graph imports, and it would look like deleting a wheel we reinvented. The rest of what makes tracing safe here is not structural and stays in TRACING-CLAUDE.md \u2014 that spans carry NO conversation content because attributes are built from an allow-list of NAMES (`recordInputs` / `recordOutputs` are advisory fields passed through to the integration, not filters, and every AI SDK event carries the transcript regardless), and that the whole graph is behind a dynamic `import()` inside the configured branch, which konsistent does not see at all.",
       "paths": "packages/aai-server/src/tracing-propagator.ts",
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "parseTraceparent",
             "from": "@alexkroman1/aai-runtime/internal"
@@ -1532,7 +1827,7 @@
         ]
       },
       "mustNot": {
-        "import": ["W3CTraceContextPropagator"]
+        "importValues": ["W3CTraceContextPropagator"]
       }
     },
     {
@@ -1552,7 +1847,7 @@
             "from": "@alexkroman1/aai-runtime"
           }
         ],
-        "import": [
+        "importValues": [
           {
             "name": "consoleLogger",
             "from": "@alexkroman1/aai-runtime/internal"
@@ -1566,7 +1861,7 @@
       "paths": "packages/aai-server/src/guest/routes.ts",
       "must": {
         "exportConstants": ["GUEST_ROUTES", "GUEST_ROUTE_EXPOSURE"],
-        "import": [
+        "importValues": [
           {
             "name": "SERVER_ROUTES",
             "from": "@alexkroman1/aai-runtime/internal"
@@ -1589,7 +1884,7 @@
         "!packages/aai/src/sdk/providers/**/*.test-d.ts"
       ],
       "must": {
-        "importFromExternals": false
+        "importValuesFromExternals": false
       }
     },
     {
@@ -1606,7 +1901,8 @@
         "!packages/aai/src/sdk/*-test-utils.ts"
       ],
       "mustNot": {
-        "importFrom": ["vitest", "vitest/*"]
+        "importValuesFrom": ["vitest", "vitest/*"],
+        "importTypesFrom": ["vitest", "vitest/*"]
       }
     },
     {
@@ -1621,7 +1917,7 @@
         "!packages/aai/src/sdk/*.test-d.ts"
       ],
       "must": {
-        "importFromExternals": false
+        "importValuesFromExternals": false
       }
     },
     {
@@ -1636,7 +1932,8 @@
         "!packages/aai/src/sdk/*.test-d.ts"
       ],
       "mustNot": {
-        "importFrom": ["zod", "zod/*"]
+        "importValuesFrom": ["zod", "zod/*"],
+        "importTypesFrom": ["zod", "zod/*"]
       }
     },
     {
@@ -1678,7 +1975,7 @@
       ],
       "excludeFiles": ["**/*.test.tsx"],
       "must": {
-        "export": ["${componentName.toPascalCase()}"]
+        "exportValues": ["${componentName.toPascalCase()}"]
       }
     },
     {
@@ -1707,7 +2004,7 @@
       "excludeFiles": ["**/*.test.ts"],
       "must": {
         "exportConstants": ["${worklet.toCamelCase()}ProcessorSource"],
-        "import": [
+        "importValues": [
           {
             "name": "workletModuleUrl",
             "from": "./_module-url.ts"
@@ -1721,7 +2018,7 @@
       "paths": "packages/aai-ui/src/use-{hook:matches(^(workflow|download-url))}.ts",
       "excludeFiles": ["**/*.test.ts", "**/*.test.tsx"],
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "useWorkflowApiRef",
             "from": "./_workflow-api-ref.ts"
@@ -1734,7 +2031,15 @@
       "description": "aai-ui's root barrel is a BROWSER entry point, so it may not reach the two modules in this package that import node builtins. `client-dir.ts` (`defaultClientDir()`, `node:module` + `node:path`) has its own `./client-dir` subpath for exactly this reason, and `build-default-client.ts` (`node:path` + `node:url`) is a build step. A node builtin on the root barrel is not a type error and not a lint error \u2014 it fails at bundle time in a USER's project, or worse resolves to a browser shim and fails at runtime, and the import that caused it can be four modules deep. Enumerating the specifiers rather than banning the `node:` prefix is a konsistent limitation, not a choice: `importFrom`'s wildcard needs a `/` after the prefix, so `node:*` is unreachable. A blanket prefix ban belongs in biome's `noRestrictedImports` `patterns` group, scoped to this package minus those two files.",
       "paths": "packages/aai-ui/src/index.ts",
       "mustNot": {
-        "importFrom": [
+        "importValuesFrom": [
+          "./client-dir.ts",
+          "./build-default-client.ts",
+          "node:module",
+          "node:path",
+          "node:url",
+          "node:fs"
+        ],
+        "importTypesFrom": [
           "./client-dir.ts",
           "./build-default-client.ts",
           "node:module",
@@ -1762,7 +2067,8 @@
       "paths": ["packages/aai-ui/src/audio/*.ts", "packages/aai-ui/src/audio/**/*.ts"],
       "excludeFiles": ["**/*.test.ts"],
       "mustNot": {
-        "importFrom": ["../session/*", "../upload/*"]
+        "importValuesFrom": ["../session/*", "../upload/*"],
+        "importTypesFrom": ["../session/*", "../upload/*"]
       }
     },
     {
@@ -1771,7 +2077,8 @@
       "paths": ["packages/aai-ui/src/upload/*.ts", "packages/aai-ui/src/upload/**/*.ts"],
       "excludeFiles": ["**/*.test.ts"],
       "mustNot": {
-        "importFrom": ["../session/*", "../audio/*"]
+        "importValuesFrom": ["../session/*", "../audio/*"],
+        "importTypesFrom": ["../session/*", "../audio/*"]
       }
     },
     {
@@ -1831,7 +2138,7 @@
         "packages/aai-studio-client/src/**/{suite}.test.ts"
       ],
       "mustNot": {
-        "import": [
+        "importValues": [
           {
             "name": "cleanup",
             "from": "@testing-library/react"
@@ -1857,7 +2164,7 @@
       "description": "The other half: `panes/preview.test.tsx` IMPORTS all four probe constants from `./preview.tsx` rather than mirroring their values. A mirrored constant makes the assertion agree with itself instead of with the source \u2014 halve `PROBE_RETRY_MS` in `panes/preview.tsx` and a suite carrying its own `3000` still passes, having loosened the bound it exists to hold. The bound is also EXACT rather than an upper one, because a capped-only assertion is satisfied by a poll loop that STOPS, which is the failure the module's own docblock names \u2014 and an exact bound over a mirrored number is the worst of both.",
       "paths": "packages/aai-studio-client/src/panes/preview.test.tsx",
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "PROBE_RETRY_MS",
             "from": "./preview.tsx"
@@ -1883,7 +2190,7 @@
       "paths": "packages/aai-cli/src/{kind}-bundler.ts",
       "excludeFiles": ["**/*.test.ts"],
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "build",
             "from": "vite"
@@ -1970,7 +2277,7 @@
       "description": "Every eval file registers its cases through `registerEvalCases` from `./register.ts`, and that indirection is MECHANICAL rather than stylistic. Biome's `noMisplacedAssertion` accepts an `expect` only inside a literal `test(` call, so a case reached through an alias \u2014 `const run = matches ? test : test.skip`, or `test.skipIf(\u2026)(\u2026)`, which is exactly what a tier that skips without a live key needs \u2014 is a lint error at every assertion in the file. `register.ts` holds that alias once, so a case body keeps its `expect`s. The selection logic rides along and has to: `AAI_EVAL_ONLY` is ONE variable across the whole tier, and a file it selects nothing from must WARN (naming what it could have matched) rather than fail, because each eval file sees only its own cases in its own vitest worker \u2014 so a second copy of that rule would answer the same filter differently in one file than in the next, which reads as the filter working. The module was `_register.ts` until this package became importable, and the underscore had to go with that: an internal name is the one thing a subpath export cannot honestly point at. `studio-eval-case-registration` is the same rule for the one eval file outside this package, which reaches the same module as `aai-evals/register` \u2014 a SECOND convention rather than a widened `paths`, because konsistent matches the specifier literally and the two spellings of one module are what the rule is about.",
       "paths": "packages/aai-evals/src/*.eval.test.ts",
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "registerEvalCases",
             "from": "./register.ts"
@@ -1983,7 +2290,7 @@
       "description": "`eval-case-registration` for the studio starter eval, which lives in aai-studio-server and so spells the same module `aai-evals/register`. Read that rule for the argument \u2014 Biome's `noMisplacedAssertion` is the mechanical half, and the `AAI_EVAL_ONLY` warn-rather-than-fail rule is the reason the selection logic has to ride along with the registration rather than being re-derived per file. Two conventions rather than one `paths` list because konsistent matches an import SPECIFIER literally: a relative `./register.ts` and a package `aai-evals/register` are different strings for one module, and a single rule could only require one of them, which would exempt whichever package it did not name.",
       "paths": "packages/aai-studio-server/src/*.eval.test.ts",
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "registerEvalCases",
             "from": "aai-evals/register"
@@ -1996,7 +2303,7 @@
       "description": "What ENDS a reply is declared ONCE \u2014 `TURN_ENDS` in `@alexkroman1/aai-runtime/eval` \u2014 and `assertions.ts` imports it rather than restating it, along with `saidIn` and `toolCallsInEvents`, the two event readers it partitions a run into turns with. It WAS written out in both places, and the two must agree by construction: `openEvalSession`'s `say()` waits on that set to decide a reply has ended, and these assertions use the same set to decide which turn a tool call was in. A third terminator added to one copy makes `say()` return mid-reply while the assertions still think the turn is open \u2014 which reads as the agent misbehaving rather than as a harness bug, and is the exact shape of one of the two harness bugs this tier's first live run found (`say()` settled on the PREVIOUS reply's cancel, so a case recorded \"called no tools\" against a working agent, i.e. a green harness reporting a broken agent). The declaration now crosses a package boundary, the level-1 target having been published so a template can drive its own agent from text, which is what makes an import the only honest spelling of the rule.",
       "paths": "packages/aai-evals/src/assertions.ts",
       "must": {
-        "import": [
+        "importValues": [
           {
             "name": "TURN_ENDS",
             "from": "@alexkroman1/aai-runtime/eval"
@@ -2022,7 +2329,8 @@
         "!packages/aai-evals/src/register.ts"
       ],
       "mustNot": {
-        "importFrom": "./gate.ts"
+        "importValuesFrom": "./gate.ts",
+        "importTypesFrom": "./gate.ts"
       }
     },
     {
@@ -2033,7 +2341,8 @@
         "!packages/aai-studio-server/src/*.eval.test.ts"
       ],
       "mustNot": {
-        "importFrom": "aai-evals/gate"
+        "importValuesFrom": "aai-evals/gate",
+        "importTypesFrom": "aai-evals/gate"
       }
     },
     {
@@ -2073,7 +2382,7 @@
             "files": "agent.eval.test.ts"
           },
           "must": {
-            "importFrom": "@alexkroman1/aai-runtime/eval/vitest"
+            "importValuesFrom": "@alexkroman1/aai-runtime/eval/vitest"
           }
         },
         {
@@ -2086,10 +2395,11 @@
             "files": "agent.eval.test.ts"
           },
           "must": {
-            "importFrom": "virtual:aai/agent"
+            "importValuesFrom": "virtual:aai/agent"
           },
           "mustNot": {
-            "importFrom": "./agent.ts"
+            "importValuesFrom": "./agent.ts",
+            "importTypesFrom": "./agent.ts"
           }
         },
         {
@@ -2102,7 +2412,7 @@
             "files": "agent.eval.test.ts"
           },
           "must": {
-            "importFrom": "virtual:aai/agent"
+            "importValuesFrom": "virtual:aai/agent"
           }
         }
       ]
@@ -2116,7 +2426,8 @@
         "!packages/aai-templates/templates/**/*.test.ts"
       ],
       "mustNot": {
-        "importFrom": ["./tools/*", "../tools/*"]
+        "importValuesFrom": ["./tools/*", "../tools/*"],
+        "importTypesFrom": ["./tools/*", "../tools/*"]
       }
     },
     {
@@ -2124,7 +2435,7 @@
       "description": "And a tool may not import a SIBLING tool. Module state two tools share belongs in a module of its own \u2014 `medication-safety-agent`'s `fda.ts` for the memoizing FDA-label cache its two tools read, `technical-support-agent`'s retrieval index, `text-adventure-agent`'s `REPORTED_HISTORY` \u2014 and reaching it through another tool FILE is the version that goes wrong quietly: the importing tool gets the same module instance today, so nothing breaks, while the layout now says one of the two tools owns the other's cache. It also puts a tool one edge away from being un-discoverable, since the rule that makes a `tools/` file a tool is that it is a file in that directory whose default export IS the tool, not a module that also happens to define one. Every tool in the tree reaches what it needs through `../shared.ts` or a named module beside it, which is the shape to copy. konsistent's `importFromCurrentDir` ignores TYPE-only imports, so a sibling's exported type would pass this \u2014 no tool wants one (a tool's input shape is its own zod schema), and if one ever does, that is the signal the type belongs in the module the state does.",
       "paths": "packages/aai-templates/templates/*/tools/*.ts",
       "mustNot": {
-        "importFromCurrentDir": true
+        "importValuesFromCurrentDir": true
       }
     },
     {
@@ -2132,13 +2443,673 @@
       "description": "The harness embeds NO agent runtime, so no file here may import `createRuntime`. Every worker bundle ships its own: `buildWorker`'s generated wrapper entry exports `__aaiCreateRuntime`, a factory over the USER'S installed SDK's `createRuntime` bundled in with the provider SDKs, and the harness builds every session through that. What the rule buys is that platform SDK drift can never break a deployed agent \u2014 it runs exactly the runtime version it was built and tested against, the same one `aai dev` ran \u2014 and it is why a bundle WITHOUT the factory is rejected at load (\"rebuild with a current @alexkroman1/aai-cli\") rather than falling back to an embedded copy. A static `createRuntime` here is what such a fallback would be built out of, and the failure it produces is the one no test can see: a deployed agent that boots fine on a runtime nobody deployed it against, in a sandbox whose whole contract is frozen per deploy by the harness image pin. The harness carries NO copy of the runtime at all: the HTTP/session shell (`createRuntimeServer`), the delivery door, tracing and the session gate come from the bundle too, as `__aaiCreateRuntime.host` (the typed `GuestHost`, `aai-runtime/guest-host.ts`), so the server and the sessions are one copy \u2014 the artifact half is `harness/externals.test.ts`, which this rule cannot see because konsistent reads imports, not what tsdown inlined. Nor is `createTextAgent`: the studio's in-guest coding agent is the harness's own agent rather than a user's, and running it on the platform's SDK is correct.",
       "paths": ["packages/aai-guest/src/*.ts", "packages/aai-guest/src/**/*.ts"],
       "mustNot": {
-        "import": [
+        "importValues": [
           {
             "name": "createRuntime",
             "from": "@alexkroman1/aai-runtime"
           }
         ]
       }
+    },
+    {
+      "name": "ui-module-dir-entered-through-index",
+      "description": "A directory under aai-ui's `src/` that holds an `index.ts` is a MODULE, and every file outside it imports it through that index only \u2014 `../session/index.ts`, never `../session/dial.ts`. This is the coupling the file-length cap used to stand in for: a cap only bounds how much one file says, while a deep import is what actually welds two modules together, and once any sibling may reach any private file the directory is a prefix with a slash in it. One block per module directory; its selectors are the relative spellings of that directory from every importer directory in the package, each with its index carved out. A NESTED module (the pipeline stages under `transports/pipeline/`) is checked only against importers inside its enclosing module, because outside that module the enclosing directory's own block already forbids everything below its index. Both value and type imports are forbidden: a type-only reach into a private file is the same edge to a reader and to a refactor. `konsistent-config.test.ts` derives the expected blocks from the tree and fails when a module directory or an importer depth is missing here, so a new module directory has to be added (copy the derived block it prints). guard-invariants rule 37 checks the same boundary by RESOLVING each specifier, which also catches the spellings textual matching cannot (`./x/../session/dial.ts`) and dynamic imports.",
+      "paths": "packages/aai-ui/src",
+      "must": [
+        {
+          "name": "audio",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["audio/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../audio/*",
+              "!../../../audio/index.ts",
+              "../../audio/*",
+              "!../../audio/index.ts",
+              "../audio/*",
+              "!../audio/index.ts",
+              "./audio/*",
+              "!./audio/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../audio/*",
+              "!../../../audio/index.ts",
+              "../../audio/*",
+              "!../../audio/index.ts",
+              "../audio/*",
+              "!../audio/index.ts",
+              "./audio/*",
+              "!./audio/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "session",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["session/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../session/*",
+              "!../../../session/index.ts",
+              "../../session/*",
+              "!../../session/index.ts",
+              "../session/*",
+              "!../session/index.ts",
+              "./session/*",
+              "!./session/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../session/*",
+              "!../../../session/index.ts",
+              "../../session/*",
+              "!../../session/index.ts",
+              "../session/*",
+              "!../session/index.ts",
+              "./session/*",
+              "!./session/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "upload",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["upload/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../upload/*",
+              "!../../../upload/index.ts",
+              "../../upload/*",
+              "!../../upload/index.ts",
+              "../upload/*",
+              "!../upload/index.ts",
+              "./upload/*",
+              "!./upload/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../upload/*",
+              "!../../../upload/index.ts",
+              "../../upload/*",
+              "!../../upload/index.ts",
+              "../upload/*",
+              "!../upload/index.ts",
+              "./upload/*",
+              "!./upload/index.ts"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "runtime-module-dir-entered-through-index",
+      "description": "A directory under aai-runtime's `src/` that holds an `index.ts` is a MODULE, and every file outside it imports it through that index only \u2014 `../session/index.ts`, never `../session/dial.ts`. This is the coupling the file-length cap used to stand in for: a cap only bounds how much one file says, while a deep import is what actually welds two modules together, and once any sibling may reach any private file the directory is a prefix with a slash in it. One block per module directory; its selectors are the relative spellings of that directory from every importer directory in the package, each with its index carved out. A NESTED module (the pipeline stages under `transports/pipeline/`) is checked only against importers inside its enclosing module, because outside that module the enclosing directory's own block already forbids everything below its index. Both value and type imports are forbidden: a type-only reach into a private file is the same edge to a reader and to a refactor. `konsistent-config.test.ts` derives the expected blocks from the tree and fails when a module directory or an importer depth is missing here, so a new module directory has to be added (copy the derived block it prints). guard-invariants rule 37 checks the same boundary by RESOLVING each specifier, which also catches the spellings textual matching cannot (`./x/../session/dial.ts`) and dynamic imports.",
+      "paths": "packages/aai-runtime/src",
+      "must": [
+        {
+          "name": "inbox",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["inbox/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../inbox/*",
+              "!../../../../../inbox/index.ts",
+              "../../../../inbox/*",
+              "!../../../../inbox/index.ts",
+              "../../../inbox/*",
+              "!../../../inbox/index.ts",
+              "../../inbox/*",
+              "!../../inbox/index.ts",
+              "../inbox/*",
+              "!../inbox/index.ts",
+              "./inbox/*",
+              "!./inbox/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../inbox/*",
+              "!../../../../../inbox/index.ts",
+              "../../../../inbox/*",
+              "!../../../../inbox/index.ts",
+              "../../../inbox/*",
+              "!../../../inbox/index.ts",
+              "../../inbox/*",
+              "!../../inbox/index.ts",
+              "../inbox/*",
+              "!../inbox/index.ts",
+              "./inbox/*",
+              "!./inbox/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "mcp",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["mcp/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../mcp/*",
+              "!../../../../../mcp/index.ts",
+              "../../../../mcp/*",
+              "!../../../../mcp/index.ts",
+              "../../../mcp/*",
+              "!../../../mcp/index.ts",
+              "../../mcp/*",
+              "!../../mcp/index.ts",
+              "../mcp/*",
+              "!../mcp/index.ts",
+              "./mcp/*",
+              "!./mcp/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../mcp/*",
+              "!../../../../../mcp/index.ts",
+              "../../../../mcp/*",
+              "!../../../../mcp/index.ts",
+              "../../../mcp/*",
+              "!../../../mcp/index.ts",
+              "../../mcp/*",
+              "!../../mcp/index.ts",
+              "../mcp/*",
+              "!../mcp/index.ts",
+              "./mcp/*",
+              "!./mcp/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "platform",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["platform/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../platform/*",
+              "!../../../../../platform/index.ts",
+              "../../../../platform/*",
+              "!../../../../platform/index.ts",
+              "../../../platform/*",
+              "!../../../platform/index.ts",
+              "../../platform/*",
+              "!../../platform/index.ts",
+              "../platform/*",
+              "!../platform/index.ts",
+              "./platform/*",
+              "!./platform/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../platform/*",
+              "!../../../../../platform/index.ts",
+              "../../../../platform/*",
+              "!../../../../platform/index.ts",
+              "../../../platform/*",
+              "!../../../platform/index.ts",
+              "../../platform/*",
+              "!../../platform/index.ts",
+              "../platform/*",
+              "!../platform/index.ts",
+              "./platform/*",
+              "!./platform/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "runtime",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["runtime/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../runtime/*",
+              "!../../../../../runtime/index.ts",
+              "../../../../runtime/*",
+              "!../../../../runtime/index.ts",
+              "../../../runtime/*",
+              "!../../../runtime/index.ts",
+              "../../runtime/*",
+              "!../../runtime/index.ts",
+              "../runtime/*",
+              "!../runtime/index.ts",
+              "./runtime/*",
+              "!./runtime/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../runtime/*",
+              "!../../../../../runtime/index.ts",
+              "../../../../runtime/*",
+              "!../../../../runtime/index.ts",
+              "../../../runtime/*",
+              "!../../../runtime/index.ts",
+              "../../runtime/*",
+              "!../../runtime/index.ts",
+              "../runtime/*",
+              "!../runtime/index.ts",
+              "./runtime/*",
+              "!./runtime/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "s2s",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["s2s/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../s2s/*",
+              "!../../../../../s2s/index.ts",
+              "../../../../s2s/*",
+              "!../../../../s2s/index.ts",
+              "../../../s2s/*",
+              "!../../../s2s/index.ts",
+              "../../s2s/*",
+              "!../../s2s/index.ts",
+              "../s2s/*",
+              "!../s2s/index.ts",
+              "./s2s/*",
+              "!./s2s/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../s2s/*",
+              "!../../../../../s2s/index.ts",
+              "../../../../s2s/*",
+              "!../../../../s2s/index.ts",
+              "../../../s2s/*",
+              "!../../../s2s/index.ts",
+              "../../s2s/*",
+              "!../../s2s/index.ts",
+              "../s2s/*",
+              "!../s2s/index.ts",
+              "./s2s/*",
+              "!./s2s/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "server",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["server/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../server/*",
+              "!../../../../../server/index.ts",
+              "../../../../server/*",
+              "!../../../../server/index.ts",
+              "../../../server/*",
+              "!../../../server/index.ts",
+              "../../server/*",
+              "!../../server/index.ts",
+              "../server/*",
+              "!../server/index.ts",
+              "./server/*",
+              "!./server/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../server/*",
+              "!../../../../../server/index.ts",
+              "../../../../server/*",
+              "!../../../../server/index.ts",
+              "../../../server/*",
+              "!../../../server/index.ts",
+              "../../server/*",
+              "!../../server/index.ts",
+              "../server/*",
+              "!../server/index.ts",
+              "./server/*",
+              "!./server/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "session",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["session/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../session/*",
+              "!../../../../../session/index.ts",
+              "../../../../session/*",
+              "!../../../../session/index.ts",
+              "../../../session/*",
+              "!../../../session/index.ts",
+              "../../session/*",
+              "!../../session/index.ts",
+              "../session/*",
+              "!../session/index.ts",
+              "./session/*",
+              "!./session/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../session/*",
+              "!../../../../../session/index.ts",
+              "../../../../session/*",
+              "!../../../../session/index.ts",
+              "../../../session/*",
+              "!../../../session/index.ts",
+              "../../session/*",
+              "!../../session/index.ts",
+              "../session/*",
+              "!../session/index.ts",
+              "./session/*",
+              "!./session/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "text-agent",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["text-agent/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../text-agent/*",
+              "!../../../../../text-agent/index.ts",
+              "../../../../text-agent/*",
+              "!../../../../text-agent/index.ts",
+              "../../../text-agent/*",
+              "!../../../text-agent/index.ts",
+              "../../text-agent/*",
+              "!../../text-agent/index.ts",
+              "../text-agent/*",
+              "!../text-agent/index.ts",
+              "./text-agent/*",
+              "!./text-agent/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../text-agent/*",
+              "!../../../../../text-agent/index.ts",
+              "../../../../text-agent/*",
+              "!../../../../text-agent/index.ts",
+              "../../../text-agent/*",
+              "!../../../text-agent/index.ts",
+              "../../text-agent/*",
+              "!../../text-agent/index.ts",
+              "../text-agent/*",
+              "!../text-agent/index.ts",
+              "./text-agent/*",
+              "!./text-agent/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "tools",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["tools/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../tools/*",
+              "!../../../../../tools/index.ts",
+              "../../../../tools/*",
+              "!../../../../tools/index.ts",
+              "../../../tools/*",
+              "!../../../tools/index.ts",
+              "../../tools/*",
+              "!../../tools/index.ts",
+              "../tools/*",
+              "!../tools/index.ts",
+              "./tools/*",
+              "!./tools/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../tools/*",
+              "!../../../../../tools/index.ts",
+              "../../../../tools/*",
+              "!../../../../tools/index.ts",
+              "../../../tools/*",
+              "!../../../tools/index.ts",
+              "../../tools/*",
+              "!../../tools/index.ts",
+              "../tools/*",
+              "!../tools/index.ts",
+              "./tools/*",
+              "!./tools/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "transports-pipeline",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["transports/pipeline/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../transports/pipeline/*",
+              "!../../../../../transports/pipeline/index.ts",
+              "../../../../transports/pipeline/*",
+              "!../../../../transports/pipeline/index.ts",
+              "../../../transports/pipeline/*",
+              "!../../../transports/pipeline/index.ts",
+              "../../transports/pipeline/*",
+              "!../../transports/pipeline/index.ts",
+              "../transports/pipeline/*",
+              "!../transports/pipeline/index.ts",
+              "./pipeline/*",
+              "!./pipeline/index.ts",
+              "./transports/pipeline/*",
+              "!./transports/pipeline/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../transports/pipeline/*",
+              "!../../../../../transports/pipeline/index.ts",
+              "../../../../transports/pipeline/*",
+              "!../../../../transports/pipeline/index.ts",
+              "../../../transports/pipeline/*",
+              "!../../../transports/pipeline/index.ts",
+              "../../transports/pipeline/*",
+              "!../../transports/pipeline/index.ts",
+              "../transports/pipeline/*",
+              "!../transports/pipeline/index.ts",
+              "./pipeline/*",
+              "!./pipeline/index.ts",
+              "./transports/pipeline/*",
+              "!./transports/pipeline/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "transports-pipeline-heard",
+          "for": {
+            "files": ["transports/pipeline/**/*.ts", "transports/pipeline/**/*.tsx"]
+          },
+          "excludeFiles": ["transports/pipeline/heard/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../heard/*",
+              "!../heard/index.ts",
+              "./heard/*",
+              "!./heard/index.ts"
+            ],
+            "importTypesFrom": [
+              "../heard/*",
+              "!../heard/index.ts",
+              "./heard/*",
+              "!./heard/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "transports-pipeline-history",
+          "for": {
+            "files": ["transports/pipeline/**/*.ts", "transports/pipeline/**/*.tsx"]
+          },
+          "excludeFiles": ["transports/pipeline/history/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../history/*",
+              "!../history/index.ts",
+              "./history/*",
+              "!./history/index.ts"
+            ],
+            "importTypesFrom": [
+              "../history/*",
+              "!../history/index.ts",
+              "./history/*",
+              "!./history/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "transports-pipeline-knobs",
+          "for": {
+            "files": ["transports/pipeline/**/*.ts", "transports/pipeline/**/*.tsx"]
+          },
+          "excludeFiles": ["transports/pipeline/knobs/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../knobs/*",
+              "!../knobs/index.ts",
+              "./knobs/*",
+              "!./knobs/index.ts"
+            ],
+            "importTypesFrom": [
+              "../knobs/*",
+              "!../knobs/index.ts",
+              "./knobs/*",
+              "!./knobs/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "transports-pipeline-llm",
+          "for": {
+            "files": ["transports/pipeline/**/*.ts", "transports/pipeline/**/*.tsx"]
+          },
+          "excludeFiles": ["transports/pipeline/llm/**"],
+          "mustNot": {
+            "importValuesFrom": ["../llm/*", "!../llm/index.ts", "./llm/*", "!./llm/index.ts"],
+            "importTypesFrom": ["../llm/*", "!../llm/index.ts", "./llm/*", "!./llm/index.ts"]
+          }
+        },
+        {
+          "name": "transports-pipeline-output",
+          "for": {
+            "files": ["transports/pipeline/**/*.ts", "transports/pipeline/**/*.tsx"]
+          },
+          "excludeFiles": ["transports/pipeline/output/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../output/*",
+              "!../output/index.ts",
+              "./output/*",
+              "!./output/index.ts"
+            ],
+            "importTypesFrom": [
+              "../output/*",
+              "!../output/index.ts",
+              "./output/*",
+              "!./output/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "transports-pipeline-reply",
+          "for": {
+            "files": ["transports/pipeline/**/*.ts", "transports/pipeline/**/*.tsx"]
+          },
+          "excludeFiles": ["transports/pipeline/reply/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../reply/*",
+              "!../reply/index.ts",
+              "./reply/*",
+              "!./reply/index.ts"
+            ],
+            "importTypesFrom": [
+              "../reply/*",
+              "!../reply/index.ts",
+              "./reply/*",
+              "!./reply/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "transports-pipeline-speech",
+          "for": {
+            "files": ["transports/pipeline/**/*.ts", "transports/pipeline/**/*.tsx"]
+          },
+          "excludeFiles": ["transports/pipeline/speech/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../speech/*",
+              "!../speech/index.ts",
+              "./speech/*",
+              "!./speech/index.ts"
+            ],
+            "importTypesFrom": [
+              "../speech/*",
+              "!../speech/index.ts",
+              "./speech/*",
+              "!./speech/index.ts"
+            ]
+          }
+        },
+        {
+          "name": "transports-pipeline-turn",
+          "for": {
+            "files": ["transports/pipeline/**/*.ts", "transports/pipeline/**/*.tsx"]
+          },
+          "excludeFiles": ["transports/pipeline/turn/**"],
+          "mustNot": {
+            "importValuesFrom": ["../turn/*", "!../turn/index.ts", "./turn/*", "!./turn/index.ts"],
+            "importTypesFrom": ["../turn/*", "!../turn/index.ts", "./turn/*", "!./turn/index.ts"]
+          }
+        },
+        {
+          "name": "uploads",
+          "for": {
+            "files": ["**/*.ts", "**/*.tsx"]
+          },
+          "excludeFiles": ["uploads/**"],
+          "mustNot": {
+            "importValuesFrom": [
+              "../../../../../uploads/*",
+              "!../../../../../uploads/index.ts",
+              "../../../../uploads/*",
+              "!../../../../uploads/index.ts",
+              "../../../uploads/*",
+              "!../../../uploads/index.ts",
+              "../../uploads/*",
+              "!../../uploads/index.ts",
+              "../uploads/*",
+              "!../uploads/index.ts",
+              "./uploads/*",
+              "!./uploads/index.ts"
+            ],
+            "importTypesFrom": [
+              "../../../../../uploads/*",
+              "!../../../../../uploads/index.ts",
+              "../../../../uploads/*",
+              "!../../../../uploads/index.ts",
+              "../../../uploads/*",
+              "!../../../uploads/index.ts",
+              "../../uploads/*",
+              "!../../uploads/index.ts",
+              "../uploads/*",
+              "!../uploads/index.ts",
+              "./uploads/*",
+              "!./uploads/index.ts"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

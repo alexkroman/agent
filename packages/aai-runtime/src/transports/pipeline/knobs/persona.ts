@@ -41,6 +41,7 @@
 import type { ToolChoice } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { PrepareStepFunction, ToolSet } from "ai";
+import { createPinRelease } from "../../../_prepare-step.ts";
 
 /**
  * What the active persona asks of THIS step. Every field is optional and an
@@ -82,10 +83,13 @@ export function createPersonaStep(
   source: PersonaTurnSource | undefined,
 ): PrepareStepFunction<ToolSet> | undefined {
   if (source === undefined) return undefined;
-  return () => {
+  // A demanding pin is released once a step has obeyed it — see
+  // `createPinRelease` for why holding it every step fails the reply.
+  const release = createPinRelease();
+  return (options) => {
     const knobs = source();
     const step = omitUndefined({
-      toolChoice: knobs?.toolChoice,
+      toolChoice: release(knobs?.toolChoice, options),
       temperature: knobs?.temperature,
     });
     // `undefined` rather than `{}` when the persona asks nothing of this step,

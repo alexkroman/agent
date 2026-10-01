@@ -224,7 +224,12 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   workspace's devDependency.
 
 - **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
-  source files at 500 lines and test files at 700. Files that already
+  source files at 900 lines and test files at 1200. The caps catch OUTLIERS,
+  not ordinary growth: at 500/700 they forced splits along whatever seam was
+  nearest, while the coupling they stood in for is checked directly — a module
+  directory (one holding an `index.ts`) is entered through that index only
+  (guard-invariants rule 37, and konsistent's `module-dir-entered-through-index`
+  per directory). Files that already
   exceed the cap are grandfathered in `scripts/file-length-allowlist.json`,
   which records each file's current ceiling; a grandfathered file may not
   grow past its ceiling, and ceilings should only ever be lowered as files
@@ -245,26 +250,11 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   the miss survived review. Verify any pathspec with `git ls-files "<glob>"`
   rather than reading it; `file-length-gate.test.ts` pins both shapes.
 
-  **Read the HEADROOM report before starting a feature in `transports/`, because
-  the cap is where a four-branch integration nearly broke.** The gate prints the
-  files closest to their ceiling for exactly this, and it is advisory, so nobody
-  reads it until something is already red. Measured 2026-09-11 on the
-  integration branch: **105 files sit within 10% of a cap.** Two of them were
-  already over on an unpushed branch —
-  `aai-runtime/src/transports/pipeline/transport.ts` at 530 and
-  `aai-runtime/src/transports/pipeline/speech/user-speech.ts` at 592, neither
-  allowlisted, 122 lines over between them — and the violation went unnoticed
-  only because that branch had never been pushed and so had never run a pre-push
-  `pnpm check`. Both files sat within six lines of the cap on `main` (500 and
-  494), so _any_ feature touching them owed a split before it owed anything
-  else. Two branches then extracted from the SAME file independently and
-  produced duplicate modules, which is the shape to expect when a hot file has
-  no headroom.
-
-  **And `aai-runtime/src/session/history-replay-equivalence.test.ts` is at
-  exactly 700/700**, so the next line added there forces a split. Recorded
-  rather than pre-split: the seam is not obvious and the split should belong to
-  whoever next needs the room.
+  **The gate prints a HEADROOM report** (the files closest to their ceiling,
+  `--top N`/`--all`) on every run and for staged files in pre-commit. It is
+  advisory; read it before starting a feature in a file near its cap, so the
+  split lands as its own commit rather than inside the feature. Two branches
+  extracting from the same hot file independently produce duplicate modules.
 
 - **`pnpm check:test-assertions`** (`scripts/check-test-assertions.mjs`) —
   fails on any `test()`/`it()` body containing no `expect` / `expectTypeOf` /
