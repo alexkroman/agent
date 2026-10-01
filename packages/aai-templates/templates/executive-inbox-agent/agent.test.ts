@@ -24,7 +24,6 @@ import { propose } from "./review.ts";
 import {
   AT_INBOX,
   AWAITING,
-  assistantProjection,
   assistantSlot,
   assistantView,
   DRAFTING,
@@ -640,7 +639,7 @@ describe("reflect (their multi_reflection_graph)", () => {
 
 describe("assistantView projection", () => {
   test("an untouched call projects the seeded inbox at rest", () => {
-    const view = assistantProjection();
+    const view = assistantSlot.projected();
     expect(view.phase).toBe("inbox");
     expect(view.emails).toHaveLength(INBOX.length);
     expect(view.emails.every((e) => e.status === "untriaged")).toBe(true);

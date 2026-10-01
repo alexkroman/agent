@@ -19,7 +19,6 @@ import { describe, expect, test } from "vitest";
 import {
   DEFAULT_GAME_STATE,
   gameSlot,
-  gameStatus,
   MAX_HISTORY,
   REPORTED_HISTORY,
   rankFor,
@@ -323,7 +322,7 @@ describe("the status line", () => {
     // What a client renders on a session that has not touched the slot: the
     // projection calls the slot's own `create()`, so the CRT's top bar shows
     // the cave mouth the greeting describes rather than an empty frame.
-    expect(gameStatus()).toEqual({
+    expect(gameSlot.projected()).toEqual({
       currentRoom: DEFAULT_GAME_STATE.currentRoom,
       score: 0,
       rank: "Beginner",

@@ -43,15 +43,33 @@ export type LoginDeps = {
 const LINK_POLL_INTERVAL_MS = 2000;
 const LINK_TIMEOUT_MS = 300_000;
 
-async function jsonBody<T>(res: Response, what: string): Promise<T> {
+/**
+ * Parse a login response, or fail naming the step, the server and what to do.
+ * `serverUrl` is in every message because a CLI from the monorepo targets
+ * `localhost` by default, and "which server said that" is the first question.
+ */
+async function jsonBody<T>(res: Response, what: string, serverUrl: string): Promise<T> {
   const body = (await res.json().catch(() => null)) as
     | (T & { error?: string; msg?: string })
     | null;
   if (!res.ok) {
     const detail = body?.error ?? body?.msg ?? `HTTP ${res.status}`;
-    throw new CliError("login_failed", `${what} failed: ${detail}`);
+    throw new CliError(
+      "login_failed",
+      `${what} failed at ${serverUrl}: ${detail} (HTTP ${res.status}).`,
+      res.status >= 500
+        ? "The server failed — run `aai login` again in a moment; if it persists, the platform is having trouble."
+        : "Run `aai login` again. If it fails the same way, check that `--server` names an aai platform.",
+    );
   }
-  if (body === null) throw new CliError("login_failed", `${what} returned an invalid response`);
+  if (body === null) {
+    throw new CliError(
+      "login_failed",
+      `${what} at ${serverUrl} returned a response that is not JSON (HTTP ${res.status}).`,
+      "That URL does not look like an aai platform — pass the platform's URL with `--server <url>`, " +
+        "or set AAI_NO_DEV=1 to use the hosted platform.",
+    );
+  }
   return body;
 }
 
@@ -132,7 +150,11 @@ async function pollForGrant(
     }
     // 404 is "not approved yet" — anything else settles the login.
     if (res && res.status !== 404) {
-      return await jsonBody<{ apiKey: string; email?: string }>(res, "Linking your account");
+      return await jsonBody<{ apiKey: string; email?: string }>(
+        res,
+        "Linking your account",
+        serverUrl,
+      );
     }
     if (Date.now() >= opts.deadline) {
       if (lastTransportError !== undefined) throw unreachableError(serverUrl, lastTransportError);
@@ -193,6 +215,7 @@ export async function executeLogin(
   const auth = await jsonBody<{ mode: string }>(
     await reachable(fetchFn, `${serverUrl}/studio/auth`, serverUrl),
     "Reading the server's login configuration",
+    serverUrl,
   );
   if (auth.mode === "none") {
     throw new CliError(
@@ -216,7 +239,12 @@ export async function executeLogin(
     deadline: Date.now() + (deps.timeoutMs ?? LINK_TIMEOUT_MS),
   });
   if (!granted.apiKey) {
-    throw new CliError("login_failed", "Linking your account did not return an API key.");
+    throw new CliError(
+      "login_failed",
+      `${serverUrl} approved the link but returned no API key.`,
+      "Run `aai login` again to mint a new link. If it repeats, that server's CLI-link exchange is " +
+        "misconfigured — report it with the server URL above.",
+    );
   }
 
   // Under the cross-process lock (see `updateGlobalConfig`): a plain

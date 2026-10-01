@@ -6,7 +6,7 @@ import {
   type Clock,
   type Disposition,
   GENRES,
-  gameProjection,
+  gameSlot,
   MAX_RESOURCE,
   MIN_MOMENTUM,
   type NPC,
@@ -452,12 +452,12 @@ function StoryArc({ story }: { story: DeepReadonly<StoryArcView> }) {
  * `sidebarPosition`. All four are config fields now, so the wrapper is gone and
  * the subscription lives where the data is used.
  *
- * `gameProjection` carries both halves: the campaign's readonly type — which is
+ * `gameSlot.projected` carries both halves: the campaign's readonly type — which is
  * what the four components below take — and the frame a session that has run no
  * tool renders.
  */
 function Sidebar() {
-  const game = useAgentState(gameProjection);
+  const game = useAgentState(gameSlot.projected);
   return (
     // `.aai-scroll` is the SDK's thin scrollbar; the sheet's own `.et-scroll`
     // rules were declared here for years and applied to no element at all.

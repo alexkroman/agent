@@ -135,6 +135,7 @@
 
 export {
   type AgentClientInbox,
+  type AgentDeclaration,
   type AgentDef,
   type AgentGuardrail,
   type AgentGuardrails,
@@ -195,6 +196,7 @@ export {
   type SpeechOutcome,
   type StandardWebhookOptions,
   type StaticAgentParams,
+  type SyncStateDeclaration,
   sessionCall,
   sessionClientLocation,
   type TelephonyAccess,
@@ -208,6 +210,7 @@ export {
   type VoicePresetName,
   verifyStandardWebhook,
   type WebhookRouteOptions,
+  type WorkflowAppAgentParams,
   webhookRoute,
   workflowApp,
 } from "../../index.ts";

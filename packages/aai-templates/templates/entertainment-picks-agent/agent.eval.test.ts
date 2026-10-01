@@ -62,8 +62,8 @@ const ProjectedNight = z.object({ recs: z.array(RecSchema) });
 /**
  * The night's log as the PAGE has it: the last `syncState` frame pushed.
  *
- * The frame's `night` key is `nightProjection`'s result — the same `{ recs }`
- * value `useAgentState(nightProjection)` selects in `client.tsx`. Asserting on it is asserting on what the sidebar shows.
+ * The frame's `night` key is `nightSlot.projected`'s result — the same `{ recs }`
+ * value `useAgentState(nightSlot.projected)` selects in `client.tsx`. Asserting on it is asserting on what the sidebar shows.
  */
 const pushedRecs = (events: readonly SessionEvent[]) =>
   lastStateIn(events, "night", ProjectedNight)?.recs ?? [];

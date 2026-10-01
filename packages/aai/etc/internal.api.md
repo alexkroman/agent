@@ -7,6 +7,11 @@
 // @internal
 export const AGENT_CSP: string;
 
+// @internal
+export function agentRequiredEnv(agent: DerivedEnvQuery & {
+    readonly requiredEnv?: readonly string[] | undefined;
+}): string[];
+
 // @public
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
@@ -56,6 +61,9 @@ export const BOUNDARY_KEYS: {
         readonly uploadReader: "@alexkroman1/aai.uploadReader";
     };
 };
+
+// @internal
+export const BUILTIN_TOOL_ENV: Readonly<Partial<Record<BuiltinTool, string>>>;
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
@@ -225,6 +233,17 @@ interface DelegateToolCall {
     input: unknown;
     name: string;
 }
+
+// @internal
+export type DerivedEnvQuery = {
+    readonly builtinTools?: readonly string[] | undefined;
+    readonly mcpServers?: Readonly<Record<string, {
+        readonly tokenEnv?: unknown;
+    }>> | undefined;
+};
+
+// @internal
+export function derivedRequiredEnv(agent: DerivedEnvQuery): string[];
 
 // @internal (undocumented)
 export interface Epoch {

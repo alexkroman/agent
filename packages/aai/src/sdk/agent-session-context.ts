@@ -3,8 +3,8 @@
  * What a per-session author FUNCTION is handed — the one context shared by
  * every `agent()` field that is a callback rather than a value.
  *
- * There are three of them now ({@link AgentDef.systemPrompt} as a resolver,
- * {@link AgentDef.inputGuardrails}, {@link AgentDef.outputGuardrails}) and they
+ * There are three of them now ({@link AgentDeclaration.systemPrompt} as a resolver,
+ * {@link AgentDeclaration.inputGuardrails}, {@link AgentDeclaration.outputGuardrails}) and they
  * want the same three things: which session this is, the agent's environment,
  * and the session's own slot state. Declared once here rather than three times,
  * because three copies of a context is three chances for one of them to gain a

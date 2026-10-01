@@ -39,8 +39,8 @@
  *
  * The three keyed builtins read their key from `ctx.env` on each
  * call and answer the model with an error naming the variable when it is
- * unset. Nothing adds the key to `requiredEnv` for you — list it there so a
- * deploy checks it, the same rule an MCP server's `tokenEnv` follows.
+ * unset. A deploy checks the key without it being listed in `requiredEnv`
+ * (`BUILTIN_TOOL_ENV`), the same rule an MCP server's `tokenEnv` follows.
  *
  * When `builtinTools` is not set, only `think` is enabled
  * (`DEFAULT_BUILTIN_TOOLS`); every other built-in is something an agent asks

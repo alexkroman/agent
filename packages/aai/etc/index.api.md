@@ -23,7 +23,7 @@ export function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
 export function agent(def: TextAgentParams): ModeAgentDef<"text">;
 
 // @public
-export function agent(def: StaticAgentParams): ModeAgentDef<"workflow-app">;
+export function agent(def: WorkflowAppAgentParams): ModeAgentDef<"workflow-app">;
 
 // @public
 export function agent(def: AgentParams): AgentDef;
@@ -34,7 +34,7 @@ export interface AgentClientInbox {
 }
 
 // @public
-export interface AgentDef extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
+export interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -53,10 +53,15 @@ export interface AgentDef extends PipelineTuning, PipelinePhrases, AgentModelTun
     systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
     toolChoice?: ToolChoice;
-    tools: ToolMap;
-    toolsets?: readonly Toolset[];
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
+}
+
+// @public
+export interface AgentDef extends AgentDeclaration {
+    syncState?: Readonly<Record<string, StateProjection>>;
+    tools: ToolMap;
+    toolsets?: readonly Toolset[];
 }
 
 // @public
@@ -68,8 +73,8 @@ export interface AgentGuardrails {
     outputGuardrails?: readonly AgentGuardrail[];
 }
 
-// @public
-export type AgentInstructions = (ctx: AgentSessionContext) => string;
+// @public @deprecated
+export type AgentInstructions = Exclude<AgentSystemPrompt, string>;
 
 // @public
 export type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
@@ -83,11 +88,11 @@ export interface AgentModelTuning extends ModelTuning {
 // @public
 export interface AgentObservation {
     events?: SessionEventHandlers;
-    syncState?: Readonly<Record<string, StateProjection>>;
+    syncState?: SyncStateDeclaration;
 }
 
 // @public
-export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParams;
+export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | WorkflowAppAgentParams;
 
 // @public
 export interface AgentRoutes {
@@ -108,7 +113,7 @@ export interface AgentSessionLifecycle {
 }
 
 // @public
-export type AgentSystemPrompt = string | AgentInstructions;
+export type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 // @public
 export interface AgentVoicePresets {
@@ -725,7 +730,7 @@ export function orFail<T>(value: T | ToolFailure): T;
 export function pickOne<T>(items: readonly T[], random?: RandomSource): T | undefined;
 
 // @public
-export type PipelineAgentParams = SharedAgentParams & Pick<AgentDef, keyof AgentModelTuning | keyof PipelineTuning | keyof PipelinePhrases | keyof AgentGuardrails> & {
+export type PipelineAgentParams = SharedAgentParams & Pick<AgentDeclaration, keyof AgentModelTuning | keyof PipelineTuning | keyof PipelinePhrases | keyof AgentGuardrails> & {
     mode?: "pipeline";
     llm?: LlmSpec;
     s2s?: undefined;
@@ -1296,6 +1301,7 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     get(ctx: SlotHolder): DeepReadonly<T>;
     readonly key: K;
     readonly projected: StateProjection<V>;
+    // @deprecated
     projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
     reset(ctx: SlotHolder): DeepReadonly<T>;
     set(ctx: SlotHolder, value: T): DeepReadonly<T>;
@@ -1326,7 +1332,7 @@ export interface SessionSpeech {
 }
 
 // @public
-export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | "mode" | ProviderField | PipelineOnlyField | keyof AgentModelTuning | "toolsets"> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+export type SharedAgentParams = Omit<AgentDeclaration, DefaultedAgentField | "mode" | ProviderField | PipelineOnlyField | keyof AgentModelTuning> & Partial<Pick<AgentDeclaration, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     tools?: InlineToolsMisuse;
 };
 
@@ -1494,11 +1500,8 @@ export interface StateProjection<V = unknown> {
     readonly key: string;
 }
 
-// @public
-export type StaticAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
-    mode: "workflow-app";
-    workflows: NonNullable<AgentDef["workflows"]>;
-};
+// @public @deprecated
+export type StaticAgentParams = WorkflowAppAgentParams;
 
 // @public
 type StepClientTranscriptOptions = {
@@ -1535,13 +1538,16 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
+export type SyncStateDeclaration = StateProjection | readonly StateProjection[] | Readonly<Record<string, StateProjection>>;
+
+// @public
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 
 // @public
 export type TelephonyCarrier = "twilio" | "telnyx" | (string & {});
 
 // @public
-export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDef, keyof AgentModelTuning> & {
+export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDeclaration, keyof AgentModelTuning> & {
     mode: "text";
     llm?: LlmSpec;
 };
@@ -1773,7 +1779,13 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema, O extends 
 export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
 
 // @public
-export function workflowApp(def: Omit<StaticAgentParams, "mode">): AgentDef;
+export function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef;
+
+// @public
+export type WorkflowAppAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
+    mode: "workflow-app";
+    workflows: NonNullable<AgentDeclaration["workflows"]>;
+};
 
 // @public
 type WorkflowAppOnlyField = "systemPrompt" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";

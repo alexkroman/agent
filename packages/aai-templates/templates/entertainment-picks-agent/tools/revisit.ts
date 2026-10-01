@@ -24,7 +24,7 @@ import { nightSlot } from "../shared.ts";
  * Positions are chronological, because that is what a listener means: `recs`
  * is stored oldest-first, so "the first one you gave me" is `at(0)` and "the
  * last one" is `at(-1)`. The sidebar paints the same list newest-first, which
- * is `nightProjection`'s doing and no business of this lookup.
+ * is `nightSlot.projected`'s doing and no business of this lookup.
  */
 export default nightSlot.tool({
   description:

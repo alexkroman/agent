@@ -5,10 +5,7 @@
  * A workflow's input is journaled and replayed on every resume, so a file's
  * BYTES cannot live in it: they would be re-read for the life of the run, and
  * `MAX_WORKFLOW_INPUT_BYTES` (64 KB) caps the request that carries them besides.
- * That is why a form used to have to ask for a URL — the bytes had to already be
- * somewhere, and the app had nowhere to put them.
- *
- * Uploads are that somewhere. The browser (or `curl`, or the CLI) POSTs the file
+ * Uploads are where they live instead. The browser (or `curl`, or the CLI) POSTs the file
  * to `POST /workflows/uploads`, the run input carries the returned **id**, and a
  * step reads exactly the window it needs:
  *
@@ -44,7 +41,7 @@
  * - {@link stepUploadInfo} reports `size` — what has ARRIVED — and `complete`.
  * - {@link stepReadUpload} already clamps its window to `size`, so a step asking for
  *   bytes that have not arrived yet gets what has, and says so in the `end` it
- *   returns. That was true before streaming existed and is what makes it work.
+ *   returns.
  *
  * So a body polls `stepUploadInfo` in a step and transcribes whatever windows are
  * fully present, exactly as it would over a finished file:
@@ -144,13 +141,10 @@ export type UploadInfo = {
    * contiguous prefix, which {@link UploadInfo.size} already states), and a
    * finished parts upload is covered end to end by construction.
    *
-   * **A READER may act on it, and {@link stepReadUpload} already does.** This used to
-   * say `size` was the only field a reader could trust, on the ground that a range
-   * past the prefix names bytes with a hole in front of them. The bytes are still
-   * there — the store maps a window onto the objects covering it and never
-   * consults the prefix — so what the rule really protected was a read STRADDLING
-   * a hole, and clamping to the containing run protects that exactly while making
-   * a landed window readable. Without it a parts upload publishes nothing a run
+   * **A READER may act on it, and {@link stepReadUpload} already does.** The store
+   * maps a window onto the objects covering it and never consults the prefix, so
+   * the hazard is a read STRADDLING a hole, and clamping to the containing run
+   * protects exactly that while making a landed window readable. Without it a parts upload publishes nothing a run
    * can use until its first window lands, which under a fan-out is the end of the
    * upload; `readableEnd` carries the measurement.
    *
@@ -343,6 +337,15 @@ export function requireUploadAccess(): UploadAccess {
   return reader;
 }
 
+/** The refusal for an id naming no upload — the runtime store's sentence, plus the fix. */
+function noUploadMessage(id: string): string {
+  return (
+    `No upload with id ${id} in this agent's upload store. Pass the \`id\` an upload ` +
+    "returned — `api.upload(file)` in the page, `POST`/`PUT /workflows/uploads`, or `stepWriteUpload` — " +
+    "to a workflow of the same deployment; an invented, stale or other agent's id names nothing here."
+  );
+}
+
 /**
  * Read one upload's metadata: its name, what has ARRIVED, and whether that is all
  * of it.
@@ -363,7 +366,7 @@ export function requireUploadAccess(): UploadAccess {
  */
 export async function stepUploadInfo(id: string): Promise<UploadInfo> {
   const info = await requireUploadAccess().info(id);
-  if (!info) throw new Error(`No upload with id ${id}`);
+  if (!info) throw new Error(noUploadMessage(id));
   return info;
 }
 
@@ -408,7 +411,7 @@ export async function stepReadUpload(
   // is unchanged and still runs HERE rather than in the store: it is the reader's
   // contract (a plan may end one byte past the file) and there is one copy of it.
   const held = await openUpload(id);
-  if (!held) throw new Error(`No upload with id ${id}`);
+  if (!held) throw new Error(noUploadMessage(id));
   const { info } = held;
   const ceiling = readableEnd(info, options.start ?? 0);
   const start = clamp(options.start ?? 0, 0, ceiling);

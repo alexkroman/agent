@@ -23,7 +23,6 @@ import {
   MAX_PAST_STEPS,
   MAX_REVISIONS,
   planFlow,
-  planProjection,
   planSlot,
   planView,
   readTool,
@@ -620,7 +619,7 @@ describe("planView projection", () => {
   test("an untouched call projects an empty plan, not undefined", () => {
     // Exactly the frame `client.tsx` renders before the first push — it passes
     // this same projection to `useAgentState`.
-    expect(planProjection()).toEqual({
+    expect(planSlot.projected()).toEqual({
       objective: null,
       plan: [],
       done: [],

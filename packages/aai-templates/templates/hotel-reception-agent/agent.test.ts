@@ -29,7 +29,7 @@ import {
   spokenTime,
   TODAY,
 } from "./records.ts";
-import { deskProjection, hotelSlot } from "./session.ts";
+import { hotelSlot } from "./session.ts";
 import { deskView } from "./shared.ts";
 import bookAirportCar from "./tools/book_airport_car.ts";
 import bookBusinessCenter from "./tools/book_business_center.ts";
@@ -265,7 +265,7 @@ describe("the seeded hotel", () => {
       arrivingToday: 5,
     });
     // The pre-first-tool-call frame the client renders is the same function.
-    expect(deskProjection()).toEqual(view);
+    expect(hotelSlot.projected()).toEqual(view);
   });
 });
 

@@ -18,8 +18,8 @@ import { type AgentConfig, toAgentConfig } from "./agent-config.ts";
 import type {
   PipelineAgentParams,
   S2sAgentParams,
-  StaticAgentParams,
   TextAgentParams,
+  WorkflowAppAgentParams,
 } from "./agent-params.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
@@ -86,6 +86,6 @@ export type AgentAccepts<X> = true extends
   | Accepts<PipelineAgentParams, X>
   | Accepts<S2sAgentParams, X>
   | Accepts<TextAgentParams, X>
-  | Accepts<StaticAgentParams, X>
+  | Accepts<WorkflowAppAgentParams, X>
   ? true
   : false;

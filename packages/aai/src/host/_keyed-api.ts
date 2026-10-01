@@ -7,11 +7,11 @@
  *
  * **The key comes from `ctx.env` on every call, never the host's
  * `process.env`** — the platform owns no provider credential, and a builtin is
- * no exception. It is not added to `requiredEnv` for the author either, the
- * same rule an MCP server's `tokenEnv` follows: `requiredEnv` is what a deploy
- * preflights, and deriving it silently would make an unrelated builtin a
- * deploy blocker. So an unset key is answered at call time with
- * {@link missingEnvMessage}, the sentence `requireEnv` throws.
+ * no exception. The deploy preflight checks the key without the author listing
+ * it in `requiredEnv` (`BUILTIN_TOOL_ENV`, `sdk/derived-env.ts` — the same rule
+ * an MCP server's `tokenEnv` follows); that check only WARNS, so an unset key
+ * is still answered at call time with {@link missingEnvMessage}, the sentence
+ * `requireEnv` throws.
  */
 
 import { missingEnvMessage } from "../sdk/_missing-env.ts";

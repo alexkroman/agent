@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { PRODUCT, supportProjection } from "./shared.ts";
+import { PRODUCT, supportSlot } from "./shared.ts";
 
 /**
  * A support line that grades its own retrieval before it speaks — the
@@ -26,7 +26,7 @@ export default agent({
   // something to project.
   // The projection is also the privacy boundary: a logged ticket carries the
   // caller's callback number, and only its reference crosses to the browser.
-  syncState: { support: supportProjection },
+  syncState: supportSlot.projected,
   greeting: `${PRODUCT} support, you're through to the automated line. What's happened?`,
   // A support line is a PHONE line, so this one declares the carrier its number
   // is with. Nothing serves `WS /phone` without this — the route is an

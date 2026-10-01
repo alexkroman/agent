@@ -21,14 +21,8 @@ export const MAX_NOTES = 50;
  * surviving note already has.
  */
 export const notebookSlot = sessionSlot("notebook", () => ({ notes: [] as Note[], nextId: 1 }), {
+  // What the browser sees: newest first, which is how the panel reads best.
+  // The slot itself stays chronological.
+  view: (notebook) => ({ notes: [...notebook.notes].reverse() }),
   caps: { notes: MAX_NOTES },
 });
-
-/**
- * What the browser sees — the projection BOTH ends use (`syncState` in
- * `agent.ts`, `useAgentState` in `client.tsx`), newest first because that is
- * how the panel reads best. The slot itself stays chronological.
- */
-export const notebookProjection = notebookSlot.projection((notebook) => ({
-  notes: [...notebook.notes].reverse(),
-}));

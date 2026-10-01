@@ -510,7 +510,7 @@ describe("author conveniences on raw configs (no agent())", () => {
     // the config boundary answers "text" from `mode` before asking it.
     expect(rawConfig({ name: "chat", mode: "text" }).mode).toBe("text");
     expect(() => assertProviderTriple(undefined, {}, undefined, undefined)).toThrow(
-      "stt, llm, and tts must be set together",
+      /stt, llm, and tts must be set together on a RESOLVED config — this one sets `llm` but not `stt`, `tts`\. .*may set any subset/,
     );
   });
 });

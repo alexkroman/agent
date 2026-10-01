@@ -14,7 +14,6 @@ import {
   calculateTotal,
   cartSummary,
   MENU,
-  orderProjection,
   orderSlot,
   orderView,
   type Pizza,
@@ -258,7 +257,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
 
 // ─── 3. The projection contract with client.tsx ─────────────────────────────
 //
-// `syncState: { order: orderProjection }` is the ONLY thing the sidebar reads, which makes
+// `syncState: orderSlot.projected` is the ONLY thing the sidebar reads, which makes
 // the contract a pure function of state rather than an if/else chain over
 // event shapes. What used to need six event-shape assertions is three.
 
@@ -303,7 +302,7 @@ describe("orderView projection", () => {
   test("an untouched session projects an empty cart, not undefined", () => {
     // The client renders before any tool has run, so `state.order` is absent —
     // this is exactly the frame `client.tsx` gets from the same projection.
-    expect(orderProjection()).toMatchObject({
+    expect(orderSlot.projected()).toMatchObject({
       pizzas: [],
       total: "$0.00",
       orderPlaced: false,

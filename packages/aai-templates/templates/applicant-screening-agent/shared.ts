@@ -31,7 +31,6 @@ import {
   dialog,
   type ResolveOneOptions,
   resolveOne,
-  type StateProjection,
   sessionSlot,
   type ToolContext,
   type ToolFailure,
@@ -176,6 +175,7 @@ export const MAX_FEEDBACK_ROUNDS = 3;
 export const MAX_FEEDBACK_ENTRIES = MAX_FEEDBACK_ROUNDS + 1;
 
 export const hiringSlot = sessionSlot("hiring", emptyHiring, {
+  view: hiringView,
   caps: { feedback: MAX_FEEDBACK_ENTRIES },
 });
 
@@ -426,14 +426,6 @@ export function hiringView(state: FrozenHiringState): HiringView {
     })),
   };
 }
-
-/**
- * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in
- * the client. Annotated, because it is the contract between the two halves —
- * a `hiringView` whose return type drifted should fail here, at the export the
- * browser imports, rather than inside a component.
- */
-export const hiringProjection: StateProjection<HiringView> = hiringSlot.projection(hiringView);
 
 // ─── Progress, which is a MOMENT and not state ───────────────────────────────
 

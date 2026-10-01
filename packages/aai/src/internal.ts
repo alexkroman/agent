@@ -163,6 +163,16 @@ export {
 // runtime's OWN stores; the cap is what the driver and the guest mirror
 // enforce.
 export { type Db, MAX_DB_RESULT_ROWS } from "./sdk/db.ts";
+// The env names an agent's `mcpServers` and keyed `builtinTools` imply, the
+// non-provider half of what a deploy preflight checks (`aai-cli`'s
+// `_preflight.ts`, `aai dev`'s warnings). Not authoring API: an author lists
+// only what nothing else names, in `requiredEnv`.
+export {
+  agentRequiredEnv,
+  BUILTIN_TOOL_ENV,
+  type DerivedEnvQuery,
+  derivedRequiredEnv,
+} from "./sdk/derived-env.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export {
   type InvariantDetail,

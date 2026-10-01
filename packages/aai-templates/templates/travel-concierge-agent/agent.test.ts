@@ -19,7 +19,6 @@ import {
   gateFlow,
   LOG_CAP,
   type SpecialistId,
-  tripProjection,
   tripSlot,
   tripView,
 } from "./shared.ts";
@@ -433,7 +432,7 @@ describe("tripView projection", () => {
   test("an untouched call projects the seeded booking at the concierge desk", () => {
     // Exactly the frame `client.tsx` renders before the first push — it passes
     // this same projection to `useAgentState`.
-    const view = tripProjection();
+    const view = tripSlot.projected();
     expect(view).toMatchObject({
       assistant: "primary",
       assistantTitle: "concierge",

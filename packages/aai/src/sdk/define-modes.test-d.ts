@@ -41,8 +41,8 @@ import type {
   agent,
   PipelineAgentParams,
   S2sAgentParams,
-  StaticAgentParams,
   TextAgentParams,
+  WorkflowAppAgentParams,
   workflowApp,
 } from "./define.ts";
 import type { S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
@@ -62,7 +62,7 @@ test("each mode selects exactly one member, and each overload returns its mode",
   expectTypeOf<PipelineAgentParams["mode"]>().toEqualTypeOf<"pipeline" | undefined>();
   expectTypeOf<S2sAgentParams["mode"]>().toEqualTypeOf<"s2s">();
   expectTypeOf<TextAgentParams["mode"]>().toEqualTypeOf<"text">();
-  expectTypeOf<StaticAgentParams["mode"]>().toEqualTypeOf<"workflow-app">();
+  expectTypeOf<WorkflowAppAgentParams["mode"]>().toEqualTypeOf<"workflow-app">();
   expectTypeOf<NonNullable<AgentDef["mode"]>>().toEqualTypeOf<AgentMode>();
   expectTypeOf<ModeAgentDef<"s2s">["mode"]>().toEqualTypeOf<"s2s">();
   // Still the one definition type.
@@ -76,7 +76,9 @@ test("the fields a mode lacks are absent from its member", () => {
   // `PipelineVoiceTuning` is absent from these three for free.
   expectTypeOf<Extract<PipelineOnlyField, keyof S2sAgentParams>>().toEqualTypeOf<never>();
   expectTypeOf<Extract<PipelineOnlyField, keyof TextAgentParams>>().toEqualTypeOf<never>();
-  expectTypeOf<Extract<WorkflowAppOnlyField, keyof StaticAgentParams>>().toEqualTypeOf<never>();
+  expectTypeOf<
+    Extract<WorkflowAppOnlyField, keyof WorkflowAppAgentParams>
+  >().toEqualTypeOf<never>();
   expectTypeOf<Extract<TextOnlyExcludedField, keyof TextAgentParams>>().toEqualTypeOf<never>();
   expectTypeOf<TextOnlyExcludedField>().toEqualTypeOf<"sttPrompt" | "telephony">();
   // S2S never has the model-request knobs: the service assembles the request.
@@ -90,7 +92,7 @@ test("the fields a mode lacks are absent from its member", () => {
     keyof AgentModelTuning
   >();
   // A workflow app's product is required.
-  expectTypeOf<StaticAgentParams["workflows"]>().toEqualTypeOf<Workflows>();
+  expectTypeOf<WorkflowAppAgentParams["workflows"]>().toEqualTypeOf<Workflows>();
 });
 
 type S2s = { name: string; mode: "s2s"; s2s: S2sProvider };

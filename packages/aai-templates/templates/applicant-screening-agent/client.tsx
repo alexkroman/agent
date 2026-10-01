@@ -2,7 +2,7 @@ import "@alexkroman1/aai-ui/styles.css";
 import { AutoScroll, mountClient, useAgentState, useEvent } from "@alexkroman1/aai-ui";
 import { useState } from "react";
 import {
-  hiringProjection,
+  hiringSlot,
   MAX_FEEDBACK_ROUNDS,
   SCREENING_PROGRESS,
   type ScreeningProgress,
@@ -26,7 +26,7 @@ import {
  * `useState` that a reconnect empties.
  */
 function HiringSidebar() {
-  const view = useAgentState(hiringProjection);
+  const view = useAgentState(hiringSlot.projected);
 
   if (view.leaderboard.length === 0 && view.unscored.length === 0) {
     return (

@@ -2,7 +2,7 @@ import "@alexkroman1/aai-ui/styles.css";
 import { formatMoney } from "@alexkroman1/aai/utils";
 import { AutoScroll, mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import type { TripView } from "./shared.ts";
-import { SPECIALIST_IDS, SPECIALISTS, tripProjection } from "./shared.ts";
+import { SPECIALIST_IDS, SPECIALISTS, tripSlot } from "./shared.ts";
 
 const DESKS = ["primary", ...SPECIALIST_IDS] as const;
 
@@ -36,7 +36,7 @@ function DeskStrip({ active }: { active: TripView["assistant"] }) {
 }
 
 function ItinerarySidebar() {
-  const trip = useAgentState(tripProjection);
+  const trip = useAgentState(tripSlot.projected);
 
   return (
     <div className="flex flex-col gap-4 p-4 h-full min-h-0 text-aai-text">
