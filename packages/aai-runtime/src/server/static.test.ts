@@ -19,10 +19,11 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { isPathInside } from "@alexkroman1/aai/workspace-files";
 import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
 import { makeLogger } from "../_test-utils.ts";
-import { isPathInside, serveStatic } from "./static.ts";
+import { serveStatic } from "./static.ts";
 
 let dir: string | null = null;
 let close: (() => Promise<void>) | undefined;

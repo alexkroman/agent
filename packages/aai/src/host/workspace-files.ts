@@ -137,16 +137,15 @@ export function decodeWorkspaceText(bytes: Uint8Array): string | null {
 /**
  * Is `target` the directory `dir` itself, or something under it?
  *
- * The one containment test in the repo. It was written here-and-there as
- * `abs.startsWith(dir + path.sep)`, and that spelling is only correct for an
- * absolute, normalized, trailing-slash-free root — nothing states any of the
- * three, so `isPathInside("/a/b/", "/a/b/c.ts")` answered false and every
- * caller that resolved its own root from a config was one trailing slash away
- * from refusing its whole tree. It lives in this package, the base of the
+ * The one containment test in the repo. It NORMALIZES both sides, so the
+ * verdict never depends on how the root is spelled (a trailing separator, a
+ * `.` segment, a relative root resolved against `process.cwd()`), and a `..`
+ * in the target cannot pass a raw prefix check (`/app/../etc/passwd` is not
+ * inside `/app`). The separator in the prefix keeps a sibling sharing the
+ * prefix (`<dir>-evil`) out. It lives in this package, the base of the
  * dependency graph, because every side that walks a workspace needs it:
- * `aai-runtime` re-exports it on `/internal` for the static file server, the
- * guest harness resolves its coding-agent tool paths with it, and the CLI's
- * push does the same on the other end of the round trip.
+ * `aai-runtime`'s static file server (re-exported on its `/internal`), the
+ * guest harness's coding-agent tool paths, and the CLI's push.
  */
 export function isPathInside(dir: string, target: string): boolean {
   const root = path.resolve(dir);

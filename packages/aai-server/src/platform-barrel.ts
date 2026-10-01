@@ -27,6 +27,7 @@
  * @module platform
  */
 
+export { isLogLine } from "./agent-logs.ts";
 export { deleteAgentResources } from "./delete.ts";
 export {
   constantTimeEquals,

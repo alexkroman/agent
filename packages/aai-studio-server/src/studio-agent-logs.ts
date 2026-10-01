@@ -43,6 +43,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
+import { isLogLine } from "aai-server/platform";
 import type { WorkspaceStore } from "aai-server/stores";
 import { type ProjectEnvironment, projectSlugFor } from "./studio-project-slugs.ts";
 import { getWorkspace } from "./studio-workspace.ts";
@@ -112,16 +113,6 @@ function parsePage(
     dropped: typeof body.dropped === "number" && body.dropped > 0 ? body.dropped : 0,
     running: body.running === true,
   };
-}
-
-function isLogLine(value: unknown): value is AgentLogLine {
-  return (
-    isRecord(value) &&
-    typeof value.seq === "number" &&
-    typeof value.at === "number" &&
-    typeof value.text === "string" &&
-    (value.stream === "stdout" || value.stream === "stderr")
-  );
 }
 
 /**

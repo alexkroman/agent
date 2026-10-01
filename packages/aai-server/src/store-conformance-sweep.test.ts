@@ -53,15 +53,15 @@ describe("a conformance sweep is scoped to its own process", () => {
     expect(foreign.startsWith(CONFORMANCE_PREFIX)).toBe(false);
   });
 
-  test("the studio package spells the SAME grammar, or the pids stop separating", () => {
-    // The two constants are deliberately not shared — disjointness comes from
-    // the pid rather than from an import — which means the grammar has to agree
-    // by inspection. A studio prefix of `studio-conf-<pid>-` would still be
-    // disjoint; one WITHOUT the pid would silently sweep our rows again.
+  test("the studio package takes its keys from this module, so the pids keep separating", () => {
+    // The studio's cases mint keys with this package's `uniqueKeys` (via
+    // `aai-server/test-utils`); a private prefix WITHOUT the pid would silently
+    // sweep our rows again, so it may not grow one.
     const studio = readFileSync(
       join(ROOT, "packages/aai-studio-server/src/studio-store-conformance.ts"),
       "utf8",
     );
-    expect(studio).toMatch(/CONFORMANCE_PREFIX = `conf-\$\{process\.pid\}-`/);
+    expect(studio).toMatch(/import \{[^}]*\buniqueKeys\b[^}]*\} from "aai-server\/test-utils"/);
+    expect(studio).not.toMatch(/`conf-/);
   });
 });
