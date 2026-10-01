@@ -20,6 +20,8 @@ export type ReportDispatchDeps = {
   resetIdle: () => void;
   replies: ReplyTracker;
   toolStepDeps: ToolStepDeps;
+  /** The transport's `hostedTurn` capability: does its host run the model turn? */
+  isHostedTurn: () => boolean;
   replyDoneDeps: ReplyDoneDeps;
   /** Append whatever conversation message a reported event contributes. */
   pushConversation: (event: TransportEventBody) => void;
@@ -35,6 +37,20 @@ export function createReportDispatcher(
 
   /** One tool call the transport reported. */
   function handleToolCalled(event: TransportEventBody<"tool.called">): void {
+    // WHAT a `tool.called` report means is the transport's declared fact, not a
+    // flag the runtime computes beside it. A transport whose HOST runs the model
+    // turn (`hostedTurn`: the pipeline) ran the tool already, inside its own
+    // model loop through the same call core (`../tools/run-tool-call.ts`), so
+    // the report is an OBSERVATION: publish it — unless a relay published it
+    // when it asked the client to run the tool, where a second frame is one the
+    // client runs twice — and go no further. Executing it here would run the
+    // tool a second time and then hang the turn on a result nobody asked for.
+    if (deps.isHostedTurn()) {
+      if (!deps.toolStepDeps.relayed) emit(event);
+      return;
+    }
+    // Otherwise the SERVICE runs the turn and is waiting for a `tool.result`,
+    // so this session executes the call.
     resetIdle();
     // See onReplyStarted: a trailing tool.called during stop()'s transport
     // drain must not start tool work (guest RPC, ctx.generate)
@@ -120,8 +136,13 @@ export function createReportDispatcher(
       case "audio.completed":
       case "metrics.collected":
       case "provider.failedOver":
-      case "speech.stopped":
       case "tool.completed":
+        // Only a hosted turn reports one (the session emits its own for the
+        // calls it runs, in `tool-steps.ts`); under a relay the client already
+        // has the result it computed.
+        if (deps.toolStepDeps.relayed) return;
+        break;
+      case "speech.stopped":
       case "userTurn.exceeded":
         break;
       default: {

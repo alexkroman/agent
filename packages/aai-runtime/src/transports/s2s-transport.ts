@@ -16,6 +16,7 @@ import type { S2sConfig } from "../s2s-config.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "./capabilities.ts";
 import { createEmitError } from "./emit-error.ts";
 import { createS2sLifecycle } from "./s2s-lifecycle.ts";
+import { withS2sTurnMetrics } from "./s2s-turn-metrics.ts";
 import type { Transport, TransportCallbacks } from "./types.ts";
 
 /** @internal Exposed for testing — allows spying on connectS2s in unit tests. */
@@ -60,12 +61,15 @@ const TRANSIENT_CLOSE_CODES = new Set<number>([
  * @internal
  */
 export function createS2sTransport(opts: S2sTransportOptions): Transport {
+  // Every report goes through the S2S turn-metrics adapter, which adds one
+  // `metrics.collected` frame per settled reply (`s2s-turn-metrics.ts`).
+  const callbacks = withS2sTurnMetrics(opts.callbacks);
   const log = opts.logger ?? consoleLogger;
   const createWs = opts.createWebSocket ?? defaultCreateS2sWebSocket;
   // One reporter for both arms of the decision this transport keeps making —
   // omitting `fatal` says the session is OVER, and that spelling lives in
   // exactly one place (pipeline-error.ts) for all three transports.
-  const emitError = createEmitError(opts.callbacks);
+  const emitError = createEmitError(callbacks);
   let handle: S2sHandle | null = null;
   let currentReplyId: string | null = null;
   // Set by cancelReply(): AssemblyAI S2S has no cancel RPC, so audio for the
@@ -140,7 +144,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     cancelInFlightReply(): void {
       if (currentReplyId === null) return;
       currentReplyId = null;
-      opts.callbacks.report({ type: "reply.cancelled" });
+      callbacks.report({ type: "reply.cancelled" });
     },
     flushPendingToolResults,
     currentReplyId: () => currentReplyId,
@@ -240,30 +244,30 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
           lifecycle.send({ type: "PROGRESS" });
           suppressAudioUntilReply = false;
           currentReplyId = replyId;
-          opts.callbacks.onReplyStarted(replyId);
+          callbacks.onReplyStarted(replyId);
         },
         onReplyDone: () => {
           currentReplyId = null;
-          opts.callbacks.report({ type: "reply.completed" });
+          callbacks.report({ type: "reply.completed" });
         },
         onCancelled: () => {
           currentReplyId = null;
-          opts.callbacks.report({ type: "reply.cancelled" });
+          callbacks.report({ type: "reply.cancelled" });
         },
         onAudio: (bytes: Uint8Array) => {
           if (suppressAudioUntilReply) return;
-          opts.callbacks.onAudioChunk(bytes);
+          callbacks.onAudioChunk(bytes);
         },
         onUserTranscript: (text: string) =>
-          opts.callbacks.report({ type: "userTranscript.committed", text }),
+          callbacks.report({ type: "userTranscript.committed", text }),
         onUserTranscriptPartial: (text: string) =>
-          opts.callbacks.report({ type: "userTranscript.updated", text }),
+          callbacks.report({ type: "userTranscript.updated", text }),
         // An INTERRUPTED reply is `.updated`, never `.committed`: it enters no
         // history, because history records what the caller HEARD and the service
         // trims an interrupted transcript to what was spoken. This is the one call
         // site in the repo that reports either arm — every pipeline path records.
         onAgentTranscript: (text: string, interrupted: boolean) =>
-          opts.callbacks.report({
+          callbacks.report({
             type: interrupted ? "agentTranscript.updated" : "agentTranscript.committed",
             text,
           }),
@@ -272,11 +276,11 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         // that sends no final `transcript.agent`, which is the ordinary shape of a
         // tool-preamble turn.
         onAgentTranscriptPartial: (text: string) =>
-          opts.callbacks.report({ type: "agentTranscript.updated", text }),
+          callbacks.report({ type: "agentTranscript.updated", text }),
         onToolCall: (callId: string, name: string, args: Record<string, unknown>) =>
-          opts.callbacks.report({ type: "tool.called", toolCallId: callId, toolName: name, args }),
-        onSpeechStarted: () => opts.callbacks.report({ type: "speech.started" }),
-        onSpeechStopped: () => opts.callbacks.report({ type: "speech.stopped" }),
+          callbacks.report({ type: "tool.called", toolCallId: callId, toolName: name, args }),
+        onSpeechStarted: () => callbacks.report({ type: "speech.started" }),
+        onSpeechStopped: () => callbacks.report({ type: "speech.stopped" }),
       }),
     };
   }

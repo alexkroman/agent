@@ -12,6 +12,15 @@
  * observed (`report.ts`). That is the whole inbound surface, plus the two audio
  * paths, which are binary and in neither vocabulary. See `transports/types.ts`
  * for the argument in full.
+ *
+ * ## One core for every transport
+ *
+ * Nothing here asks WHICH transport it is driving. Where the transports differ,
+ * the session reads the transport's declared `capabilities` — `hostedTurn`
+ * decides whether a `tool.called` report is an observation (the host's own
+ * model loop ran the tool) or a request (the service is waiting on a result),
+ * and every other row is read the same way (`../transports/capabilities.ts`).
+ * The runtime's callbacks are a flat forward into `report`.
  */
 
 import type { Message } from "@alexkroman1/aai";
@@ -117,6 +126,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     ...omitUndefined({ onToolResult: opts.onToolResult ?? answerClientTool }),
   });
 
+  const toolParameters = new Map((opts.toolSchemas ?? []).map((t) => [t.name, t.parameters]));
   // The transport half — see `report.ts`.
   const handleReport = createReportDispatcher({
     sessionId: opts.id,
@@ -130,16 +140,23 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     toolStepDeps: {
       sessionId: opts.id,
       agentConfig: opts.agentConfig,
-      executeTool: opts.executeTool,
+      // The shared per-call core's context (`../tools/run-tool-call.ts`) — the
+      // same coercion, snapshot and record the pipeline's tools run with.
+      toolCall: {
+        executeTool: opts.executeTool,
+        sessionId: opts.id,
+        messages: () => history,
+        parameters: (name: string) => toolParameters.get(name),
+        // Straight into the same window the transcripts land in, so a tool reads
+        // an earlier tool's result on the next call of the reply — see
+        // `ToolStepDeps.toolCall`.
+        recordToolResult: (message: Message) => pushMessages(message),
+      },
       emit,
       log,
-      history: () => history,
-      // Straight into the same window the transcripts land in, so a tool reads
-      // an earlier tool's result on the next call of the reply — see
-      // `ToolStepDeps.recordToolResult`.
-      recordToolResult: (message: Message) => pushMessages(message),
       relayed: Boolean(opts.onToolResult),
     },
+    isHostedTurn: () => opts.transport.capabilities.hostedTurn,
     // The `reply.done` dispatcher's view of the session. Thunks, not values:
     // the reply and its turn promise are both reassigned by a barge-in
     // mid-dispatch, and reading them late is that module's staleness handling.

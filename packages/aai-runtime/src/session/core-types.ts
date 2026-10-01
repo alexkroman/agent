@@ -13,7 +13,7 @@
 
 import type { Message, SayOptions, SpeechHandle } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
-import type { AgentConfig } from "@alexkroman1/aai/manifest";
+import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type {
   ClientSink,
   ReadyConfig,
@@ -43,6 +43,12 @@ export type ServerSessionOptions = {
   emitter: SessionEmitter;
   agentConfig: AgentConfig;
   executeTool: ExecuteTool;
+  /**
+   * The schemas the model was given, for coercing a reported call's arguments
+   * toward the declared types — the same step the pipeline's tools take
+   * (`../tools/run-tool-call.ts`). Absent leaves arguments as sent.
+   */
+  toolSchemas?: readonly ToolSchema[] | undefined;
   transport: Transport;
   logger?: Logger;
   /**

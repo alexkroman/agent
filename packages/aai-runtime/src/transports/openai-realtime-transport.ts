@@ -27,6 +27,7 @@ import {
   createRealtimeTurnBuffers,
 } from "./openai-realtime-events.ts";
 import { createOpenaiRealtimeLifecycle } from "./openai-realtime-lifecycle.ts";
+import { withS2sTurnMetrics } from "./s2s-turn-metrics.ts";
 import {
   resolveGreeting,
   resolveSystemPrompt,
@@ -132,10 +133,10 @@ function createResponseCreateCoalescer(
 }
 
 export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptions): Transport {
+  const callbacks = withS2sTurnMetrics(opts.callbacks); // + `metrics.collected` per reply
   const log = opts.logger ?? consoleLogger;
-  // The one place "the session is over" is spelled — omitting `fatal` is what
-  // says it, so it is worth having exactly one function that knows that.
-  const emitError = createEmitError(opts.callbacks);
+  // The one place "the session is over" is spelled (omitting `fatal` says it).
+  const emitError = createEmitError(callbacks);
   const createWs = opts.createWebSocket ?? defaultCreateHeaderWebSocket;
   const model = opts.options.model ?? DEFAULT_MODEL;
   const voice = opts.options.voice ?? DEFAULT_VOICE;
@@ -235,9 +236,9 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
    * paths that end a response — see `openai-realtime-lifecycle.ts`.
    */
   const lifecycle = createOpenaiRealtimeLifecycle({
-    replyStarted: (replyId) => opts.callbacks.onReplyStarted(replyId),
-    replyCompleted: () => opts.callbacks.report({ type: "reply.completed" }),
-    replyCancelled: () => opts.callbacks.report({ type: "reply.cancelled" }),
+    replyStarted: (replyId) => callbacks.onReplyStarted(replyId),
+    replyCompleted: () => callbacks.report({ type: "reply.completed" }),
+    replyCancelled: () => callbacks.report({ type: "reply.cancelled" }),
     cancelResponse: () => send({ type: "response.cancel" }),
     clearTurnBuffers: () => buffers.clear(),
     // No `fatal` key: the socket is gone, so the session really is over.
@@ -246,7 +247,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   });
 
   const handleMessage = createRealtimeMessageHandler({
-    callbacks: opts.callbacks,
+    callbacks,
     lifecycle,
     buffers,
     log,

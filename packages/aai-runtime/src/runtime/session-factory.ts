@@ -17,18 +17,14 @@ import {
   type SessionDirectory,
 } from "../session/index.ts";
 import type { ClientToolBroker } from "../tools/index.ts";
-import { buildSessionCallbacks } from "./session-callbacks.ts";
+import type { TransportCallbacks } from "../transports/types.ts";
 import { openSessionWiring } from "./session-controls.ts";
 import { openSessionMemory } from "./session-memory.ts";
 import { attachSessionState, type RuntimeSessionState } from "./session-state.ts";
 import { attachSessionStream } from "./session-stream.ts";
 import type { SystemPromptResolver } from "./system-prompt.ts";
 import type { setupTools } from "./tools.ts";
-import type {
-  createTransportFactory,
-  ResolvedPipelineProviders,
-  SessionBuildOpts,
-} from "./transport.ts";
+import type { createTransportFactory, SessionBuildOpts } from "./transport.ts";
 import type { HostRuntimeOptions } from "./types.ts";
 
 export type SessionFactoryDeps = {
@@ -39,12 +35,10 @@ export type SessionFactoryDeps = {
   sessionState: RuntimeSessionState;
   sessions: SessionDirectory;
   systemPrompts: SystemPromptResolver;
-  /** Per-runtime pipeline providers; `null` means this session runs S2S. */
-  pipelineProviders: () => ResolvedPipelineProviders | null;
   buildTransport: ReturnType<typeof createTransportFactory>;
   tools: Pick<
     ReturnType<typeof setupTools>,
-    "executeTool" | "pushStateSnapshot" | "commitSessionState"
+    "executeTool" | "toolSchemas" | "pushStateSnapshot" | "commitSessionState"
   >;
   clientTools: ClientToolBroker;
   /** Relay (host) mode's tool-result hook, when this runtime relays tools. */
@@ -82,14 +76,6 @@ export function createSessionFactory(
     const wiring = { sink: sessionOpts.client, emitter, meter: usage };
     const releaseWiring = sessions.claimWiring(sessionOpts.id, wiring);
 
-    // Call it — `pipelineProviders` is a thunk, so `Boolean(...)` on the
-    // function itself is always true and would route every S2S session down
-    // the pipeline branch. By here a session is being created, so resolving is
-    // exactly what a static agent's deferral was waiting for.
-    const isPipeline = deps.pipelineProviders() !== null;
-    // Relay (host) mode: the relay `executeTool` emits the client-facing
-    // `tool.called` itself (mirrors the `relayed` flag session-core passes on).
-    const isRelay = Boolean(deps.relayToolResult);
     // Late-bound: callbacks are built before the ServerSession, filled in below.
     let core: ServerSession | null = null;
     function bindCore(): ServerSession {
@@ -100,9 +86,14 @@ export function createSessionFactory(
       return core;
     }
 
-    // Everything a transport calls back into, including the one callback with
-    // three different right answers — see `session-callbacks.ts`.
-    const callbacks = buildSessionCallbacks({ bindCore, emitter, isPipeline, isRelay });
+    // A flat forward: what a report MEANS — a `tool.called` the transport
+    // already ran versus one it needs run — is the session core's decision,
+    // read off the transport's own `capabilities` (`../session/core.ts`).
+    const callbacks: TransportCallbacks = {
+      report: (event) => bindCore().report(event),
+      onAudioChunk: (bytes) => bindCore().onAudioChunk(bytes),
+      onReplyStarted: (replyId) => bindCore().onReplyStarted(replyId),
+    };
 
     // What this resume recovered; must exist BEFORE the transport, and
     // `session/resume-found.ts` owns the decision `skipGreeting` becomes.
@@ -133,6 +124,7 @@ export function createSessionFactory(
       emitter,
       agentConfig,
       executeTool: tools.executeTool,
+      toolSchemas: tools.toolSchemas,
       transport,
       logger,
       ...omitUndefined({ onToolResult: deps.relayToolResult }),
