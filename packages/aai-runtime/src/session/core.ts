@@ -27,8 +27,8 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { consoleLogger } from "../runtime-config.ts";
 import type { ClientToolAnswer } from "../tools/index.ts";
 import {
+  createRetainedView,
   estimateConversationTokens,
-  evictBeyondRetention,
   HISTORY_RETAIN_TOKENS,
 } from "../transports/pipeline/index.ts";
 import type { TransportEventBody } from "../transports/types.ts";
@@ -87,6 +87,14 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
 
   let reply: ReplyState = emptyReply();
   let history: Message[] = [];
+  // A MEMORY bound in tokens, never a message count — see
+  // `transports/pipeline/history/retention.ts`. A running total, so a push that
+  // evicts nothing does not re-sum the window.
+  const retained = createRetainedView(
+    () => history,
+    HISTORY_RETAIN_TOKENS,
+    estimateConversationTokens,
+  );
   let turnPromise: Promise<void> | null = null;
   let stopped = false;
   /** For {@link ServerSession.faultCode} — see there for the log it exists to fix. */
@@ -155,8 +163,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
 
   function pushMessages(...msgs: Message[]): void {
     history.push(...msgs);
-    // A MEMORY bound in tokens, never a message count — see `transports/pipeline/history/retention.ts`.
-    evictBeyondRetention(history, HISTORY_RETAIN_TOKENS, estimateConversationTokens);
+    retained.push(msgs);
   }
 
   function beginReply(replyId: string): void {
@@ -186,6 +193,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     cancelReply,
     clearHistory: () => {
       history = [];
+      retained.recount();
     },
     // A relay owns every `tool_result`; otherwise they answer `clientTool` calls.
     ...omitUndefined({ onToolResult: opts.onToolResult ?? answerClientTool }),
@@ -353,11 +361,11 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     announce(instruction) {
       // A stopped session's transport may still hold sockets mid-teardown, so
       // the check is the session's own flag rather than the transport's.
-      if (stopped || !opts.transport.capabilities.announce || !opts.transport.injectTurn) {
-        return false;
-      }
+      // The flag decides (`capabilities.test.ts` holds it to the verb); `?.`
+      // only narrows the optional member.
+      if (stopped || !opts.transport.capabilities.announce) return false;
       log.info("Session announcement", { sid: opts.id });
-      opts.transport.injectTurn(instruction);
+      opts.transport.injectTurn?.(instruction);
       return true;
     },
     restoreHistory(messages, toolCalls = []) {

@@ -8,14 +8,14 @@
  * a webhook, a straggling tool call or a run's `notify` can reach for the id
  * after the swap. Every such reach is answered HERE, per call, by whatever
  * holds the id at that moment — never by a session object captured earlier.
- * Four registries are kept, one per thing a session claims under its id:
+ * Two registries are kept: the session itself, and its WIRING — the client
+ * sink, event emitter and token meter, claimed as one value so they can only
+ * come off together:
  *
  * | registry | claimed by | read through |
  * | --- | --- | --- |
  * | the `ServerSession` | `attach.ts`, at resume takeover | {@link SessionDirectory.session}, {@link SessionDirectory.speech} |
- * | the client sink | `../runtime/runtime.ts`'s `createSession` | (released with the session's wiring) |
- * | the event emitter | `../runtime/runtime.ts`'s `createSession` | {@link SessionDirectory.emitter} (`ctx.send`, a hook commit) |
- * | the token meter | `../runtime/runtime.ts`'s `createSession` | {@link SessionDirectory.meter} (`ctx.generate`, `ctx.delegate`) |
+ * | its {@link SessionWiring} | `../runtime/runtime.ts`'s `createSession` | {@link SessionDirectory.emitter} (`ctx.send`, a hook commit), {@link SessionDirectory.meter} (`ctx.generate`, `ctx.delegate`) |
  *
  * Each is an `OwnedMap` (`sdk/owned-map.ts`): a claim's release deletes the
  * entry only while that claim still owns it, which is what keeps an old
@@ -55,7 +55,7 @@ export type SessionDirectory = {
    * Claim a session's sink, emitter and meter together — one session's hold
    * on one id, so they come off together: releasing only the sink would
    * leave a straggling tool call's `ctx.send` resolving an emitter whose
-   * socket is gone. The release answers whether the SINK was still owned.
+   * socket is gone. The release answers whether this wiring was still owned.
    */
   claimWiring(sessionId: string, wiring: SessionWiring): () => boolean;
   /** The emitter of whichever session holds `sessionId` now. */
@@ -77,25 +77,13 @@ export type SessionDirectory = {
 /** Build an empty {@link SessionDirectory}. @internal */
 export function createSessionDirectory(): SessionDirectory {
   const sessions = createOwnedMap<string, ServerSession>();
-  const sinks = createOwnedMap<string, ClientSink>();
-  const emitters = createOwnedMap<string, SessionEmitter>();
-  const meters = createOwnedMap<string, UsageMeter>();
+  const wirings = createOwnedMap<string, SessionWiring>();
   return {
     claim: (sessionId, session) => sessions.claim(sessionId, session),
     session: (sessionId) => sessions.get(sessionId),
-    claimWiring(sessionId, wiring) {
-      const releaseSink = sinks.claim(sessionId, wiring.sink);
-      const releaseEmitter = emitters.claim(sessionId, wiring.emitter);
-      const releaseMeter = meters.claim(sessionId, wiring.meter);
-      return () => {
-        const owned = releaseSink();
-        releaseEmitter();
-        releaseMeter();
-        return owned;
-      };
-    },
-    emitter: (sessionId) => emitters.get(sessionId),
-    meter: (sessionId) => meters.get(sessionId),
+    claimWiring: (sessionId, wiring) => wirings.claim(sessionId, wiring),
+    emitter: (sessionId) => wirings.get(sessionId)?.emitter,
+    meter: (sessionId) => wirings.get(sessionId)?.meter,
     speech: speechDirectory({ get: (sessionId) => sessions.get(sessionId) }),
     live: () => sessions.values(),
     ids: () => sessions.keys(),
@@ -104,9 +92,7 @@ export function createSessionDirectory(): SessionDirectory {
     },
     clear(): void {
       sessions.clear();
-      sinks.clear();
-      emitters.clear();
-      meters.clear();
+      wirings.clear();
     },
   };
 }

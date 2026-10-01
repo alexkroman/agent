@@ -28,6 +28,7 @@
  */
 
 import type http from "node:http";
+import { isBlankSecret } from "@alexkroman1/aai/host-internal";
 import { parseWsUpgradeParams } from "@alexkroman1/aai/internal";
 import { buildClientConfig, CLIENT_CONFIG_PATH } from "@alexkroman1/aai/protocol";
 import {
@@ -98,7 +99,7 @@ export function devSessionTicketing(
 ): DevSessionTicketing | undefined {
   const secret = env[SESSION_SECRET_ENV];
   // Blank is unset, as `resolveSessionGate` treats it (it logs that, once).
-  if (secret === undefined || secret.trim() === "") return undefined;
+  if (secret === undefined || isBlankSecret(secret)) return undefined;
 
   const clientConfigPath = `/${CLIENT_CONFIG_PATH}`;
   return {

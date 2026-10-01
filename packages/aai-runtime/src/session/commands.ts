@@ -77,12 +77,12 @@ export function createCommandDispatcher(deps: CommandDeps): CommandDispatcher {
   // Once per session too: a client with a text box sends it on every message.
   let warnedNoText = false;
   const userText = (text: string): void => {
-    if (transport.capabilities.typedTurn && transport.sendUserText !== undefined) {
+    if (transport.capabilities.typedTurn) {
       // The transport reports the cancel (if any) and the committed turn
       // itself, in that order — see `Transport.sendUserText`. The idle
       // deadline is re-armed by that `userTranscript.committed`, the same
-      // report a spoken turn re-arms it with.
-      transport.sendUserText(text);
+      // report a spoken turn re-arms it with. The flag decides; `?.` narrows.
+      transport.sendUserText?.(text);
       return;
     }
     if (!warnedNoText) {

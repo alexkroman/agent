@@ -21,7 +21,7 @@ export { asDispatcher, type PinnedRequestInit, pinnedFetch } from "./host/_undic
 // Two host-side helpers the guest harness needs BEFORE (or without) a runtime:
 // the harness holds no copy of `aai-runtime` — it drives the agent through the
 // runtime its bundle carries — so what it uses on its own lives here.
-export { isBlankSecret, parseBearer } from "./host/bearer.ts";
+export { constantTimeEquals, isBlankSecret, parseBearer } from "./host/bearer.ts";
 export { RUN_CODE_REFUSAL, type RunCodeExecutor } from "./host/builtin-run-code.ts";
 export {
   type BuiltinToolOptions,
@@ -88,6 +88,8 @@ export {
 export {
   recordSessionIdentity,
   type SessionIdentity,
+  // The write side of every bounded insertion-order map keyed by session id.
+  writeSessionEntry,
 } from "./sdk/_session-identity-store.ts";
 // A context with no live session behind it: every `say` settles `"dropped"`.
 export { DETACHED_SESSION_SPEECH } from "./sdk/_session-speech-detached.ts";

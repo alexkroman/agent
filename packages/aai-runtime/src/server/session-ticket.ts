@@ -14,7 +14,8 @@
  * @module session-ticket
  */
 
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
+import { constantTimeEquals, isBlankSecret } from "@alexkroman1/aai/host-internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 
 /** Ticket lifetime when {@link SessionTokenInput.ttlSeconds} is omitted. */
@@ -65,7 +66,7 @@ function sign(body: string, secret: string): string {
 }
 
 export function requireSecret(secret: string): void {
-  if (secret.trim() === "") throw new Error("A session ticket secret must not be blank");
+  if (isBlankSecret(secret)) throw new Error("A session ticket secret must not be blank");
 }
 
 /**
@@ -156,11 +157,7 @@ function checkTicket(
   const dot = token.indexOf(".");
   if (dot <= 0 || dot !== token.lastIndexOf(".")) return undefined;
   const body = token.slice(0, dot);
-  const presented = Buffer.from(token.slice(dot + 1));
-  const expected = Buffer.from(sign(body, secret));
-  if (presented.length !== expected.length || !timingSafeEqual(presented, expected)) {
-    return undefined;
-  }
+  if (!constantTimeEquals(token.slice(dot + 1), sign(body, secret))) return undefined;
   const payload = parsePayload(body);
   if (payload === undefined) return undefined;
   const now = Math.floor((nowMs ?? Date.now()) / 1000);
@@ -211,13 +208,19 @@ export function platformSessionSecret(guestToken: string): string {
 
 /** Input to {@link mintPlatformSessionTicket}. */
 export type PlatformTicketInput = {
-  /** The bearer of the sandbox the ticket is for. */
-  guestToken: string;
   /**
-   * Bearers a PRESENTED ticket may have been signed under besides `guestToken`'s
-   * — the previous deploy's, so a call survives a redeploy.
+   * The ticket key of the sandbox the ticket is for —
+   * {@link platformSessionSecret} of its bearer, derived by the caller so a
+   * broker can derive it once per deploy rather than once per request. It both
+   * checks a presented ticket and signs the minted one.
    */
-  previousGuestTokens?: readonly string[];
+  secret: string;
+  /**
+   * Keys a PRESENTED ticket may have been signed under besides `secret` — the
+   * previous deploy's, so a call survives a redeploy. A thunk, read only when a
+   * ticket was presented and `secret` did not prove it.
+   */
+  previousSecrets?: () => readonly string[];
   /** The ticket the browser presented (`SESSION_TICKET_HEADER`), if any. */
   presented?: string | undefined;
   /** Clock override for tests, in ms since the epoch. */
@@ -243,7 +246,7 @@ export type PlatformTicketInput = {
 export function mintPlatformSessionTicket(input: PlatformTicketInput): string {
   const sessionId = presentedSessionId(input) ?? randomUUID();
   return createSessionToken({
-    secret: platformSessionSecret(input.guestToken),
+    secret: input.secret,
     sub: `platform:${sessionId}`,
     sessionId,
     ...omitUndefined({ now: input.now }),
@@ -254,14 +257,13 @@ export function mintPlatformSessionTicket(input: PlatformTicketInput): string {
 function presentedSessionId(input: PlatformTicketInput): string | undefined {
   const presented = input.presented?.trim();
   if (!presented) return undefined;
-  for (const token of [input.guestToken, ...(input.previousGuestTokens ?? [])]) {
-    const identity = checkTicket(
-      presented,
-      platformSessionSecret(token),
-      input.now,
-      PLATFORM_TICKET_RESUME_GRACE_SECONDS,
-    );
-    if (identity?.sessionId !== undefined) return identity.sessionId;
+  const proven = (secret: string): string | undefined =>
+    checkTicket(presented, secret, input.now, PLATFORM_TICKET_RESUME_GRACE_SECONDS)?.sessionId;
+  const current = proven(input.secret);
+  if (current !== undefined) return current;
+  for (const secret of input.previousSecrets?.() ?? []) {
+    const previous = proven(secret);
+    if (previous !== undefined) return previous;
   }
   return undefined;
 }

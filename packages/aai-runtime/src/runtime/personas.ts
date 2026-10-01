@@ -170,13 +170,23 @@ export function openSessionPersonas(
   // no push at all. Keyed, and the key is chosen to sort ahead of the dialogs'.
   prompt.setSuffix(PERSONA_SUFFIX_KEY, render);
 
-  /** The section last pushed to the transport — see `observe`. */
-  let pushed: string | undefined;
+  /**
+   * The position last pushed to the transport — see `observe`. Compared rather
+   * than the rendered section: `render` reads exactly these fields, and a
+   * speaker is one roster object for the session.
+   */
+  let pushed: ReturnType<Roster["position"]> | undefined;
+  const samePosition = (at: ReturnType<Roster["position"]>): boolean =>
+    at.speaker === pushed?.speaker && at.from === pushed.from && at.note === pushed.note;
 
   return {
     observe(event) {
       if (!RERENDER_ON.has(event.type)) return;
-      const next = render();
+      // A transport that resolves the prompt per request (the pipeline) has
+      // nothing to push: the suffix thunk above already answers fresh.
+      const live = transport();
+      if (!live?.capabilities.promptPush) return;
+      const next = speaking();
       if (pushed === undefined) {
         // The first look primes rather than pushes: the transport's own open
         // already sent this section, and a resume hydrates the slot before the
@@ -184,9 +194,9 @@ export function openSessionPersonas(
         pushed = next;
         return;
       }
-      if (next === pushed) return;
+      if (samePosition(next)) return;
       pushed = next;
-      transport()?.refreshSystemPrompt?.();
+      live.refreshSystemPrompt?.();
     },
     turnKnobs: varies
       ? () => {

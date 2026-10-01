@@ -53,6 +53,7 @@
 
 import type http from "node:http";
 import type { Duplex } from "node:stream";
+import { writeSessionEntry } from "@alexkroman1/aai/host-internal";
 import { requestQuery } from "@alexkroman1/aai/internal";
 import { SESSION_AUTH_PROTOCOL_PREFIX as WIRE_AUTH_PREFIX } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -275,9 +276,7 @@ export function resolveSessionGate(
     return "this ticket may not resume that session";
   }
 
-  async function identify(req: http.IncomingMessage, check: SessionVerifier) {
-    const token = presentedSessionToken(req);
-    if (token === "") return;
+  async function identify(token: string, req: http.IncomingMessage, check: SessionVerifier) {
     try {
       return (await check(token, req)) ?? undefined;
     } catch (err) {
@@ -292,10 +291,9 @@ export function resolveSessionGate(
         return { ok: false, reason: `origin ${origin} is not allowed to open a session` };
       }
       if (verify === undefined) return { ok: true, identity: undefined };
-      if (presentedSessionToken(req) === "") {
-        return { ok: false, reason: "a session ticket is required" };
-      }
-      const identity = await identify(req, verify);
+      const token = presentedSessionToken(req);
+      if (token === "") return { ok: false, reason: "a session ticket is required" };
+      const identity = await identify(token, req, verify);
       if (identity === undefined)
         return { ok: false, reason: "the session ticket was not accepted" };
       const refusal = resumeRefusal(identity, resumeFrom);
@@ -303,12 +301,7 @@ export function resolveSessionGate(
     },
     recordOwner(sessionId, identity) {
       if (identity === undefined) return;
-      owners.delete(sessionId);
-      owners.set(sessionId, identity.sub);
-      if (owners.size > MAX_TRACKED_SESSIONS) {
-        const oldest = owners.keys().next().value;
-        if (oldest !== undefined) owners.delete(oldest);
-      }
+      writeSessionEntry(owners, sessionId, identity.sub, MAX_TRACKED_SESSIONS);
     },
     ownership(identity) {
       if (identity === undefined) return {};

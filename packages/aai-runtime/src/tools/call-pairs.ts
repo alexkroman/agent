@@ -223,13 +223,16 @@ const NO_WARN: Pick<Logger, "warn"> = { warn: () => undefined };
 /**
  * {@link pairToolCallsLogged} over a history the caller OWNS, rewritten in
  * place — the pipeline's LLM view, which the rest of the transport holds by
- * reference. Touches nothing when nothing needs pairing.
+ * reference. Touches nothing when nothing needs pairing, and answers whether it
+ * rewrote `messages`.
  */
 export function pairToolCallsInPlace(
   messages: ModelMessage[],
   log: Pick<Logger, "warn"> | undefined,
   sid: string | undefined,
-): void {
+): boolean {
   const paired = pairToolCallsLogged(messages, log ?? NO_WARN, sid ?? "");
-  if (paired !== messages) messages.splice(0, messages.length, ...paired);
+  if (paired === messages) return false;
+  messages.splice(0, messages.length, ...paired);
+  return true;
 }

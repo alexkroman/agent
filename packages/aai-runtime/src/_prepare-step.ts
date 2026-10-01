@@ -74,6 +74,11 @@ export const PREPARER_ORDER = [
 /** One of the {@link PREPARER_ORDER} stages. */
 export type PreparerStage = (typeof PREPARER_ORDER)[number];
 
+/** Each stage's index in {@link PREPARER_ORDER}, so composing never re-scans it. */
+const STAGE_RANK: ReadonlyMap<PreparerStage, number> = new Map(
+  PREPARER_ORDER.map((stage, rank) => [stage, rank]),
+);
+
 /**
  * A per-step concern, registered by STAGE.
  *
@@ -105,19 +110,22 @@ export interface Preparer {
  *   gets wrong.
  */
 export function composePreparers(preparers: readonly Preparer[]): PrepareStepFunction<ToolSet> {
-  const seen = new Set<PreparerStage>();
-  for (const { stage } of preparers) {
-    if (seen.has(stage)) throw new Error(`prepareStep stage "${stage}" registered twice`);
-    seen.add(stage);
+  // One slot per stage, in rank order: placing a registration IS the sort.
+  const byRank: (Preparer | undefined)[] = new Array(PREPARER_ORDER.length);
+  for (const preparer of preparers) {
+    const rank = STAGE_RANK.get(preparer.stage);
+    if (rank === undefined) throw new Error(`prepareStep stage "${preparer.stage}" is unknown`);
+    if (byRank[rank] !== undefined) {
+      throw new Error(`prepareStep stage "${preparer.stage}" registered twice`);
+    }
+    byRank[rank] = preparer;
   }
-  const ordered = [...preparers]
-    .sort((a, b) => PREPARER_ORDER.indexOf(a.stage) - PREPARER_ORDER.indexOf(b.stage))
-    .flatMap(({ prepare }) => (prepare === undefined ? [] : [prepare]));
+  const ordered = byRank.flatMap((p) => (p?.prepare === undefined ? [] : [p.prepare]));
   return async (options) => {
-    let merged: NonNullable<PrepareStepResult<ToolSet>> = {};
+    const merged: NonNullable<PrepareStepResult<ToolSet>> = {};
     for (const prepare of ordered) {
       const result = await prepare(options);
-      if (result) merged = { ...merged, ...result };
+      if (result) Object.assign(merged, result);
     }
     return merged;
   };

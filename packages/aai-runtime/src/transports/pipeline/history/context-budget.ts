@@ -97,7 +97,8 @@ export const CONTEXT_WINDOW_RESERVE = 0.25;
 export const MESSAGE_TOKEN_OVERHEAD = 4;
 
 /**
- * Per-message estimates, keyed by the message OBJECT.
+ * Per-message estimates, keyed by the message OBJECT — one table for both the
+ * request's `ModelMessage`s and the record's conversation `Message`s.
  *
  * A message is measured on every step of every turn for the rest of the call,
  * so without this the trim is quadratic in the number of messages and linear in
@@ -107,7 +108,26 @@ export const MESSAGE_TOKEN_OVERHEAD = 4;
  * (`withoutReasoning`) is a different object and must not be answered from the
  * original's entry.
  */
-const estimates = new WeakMap<ModelMessage, number>();
+const estimates = new WeakMap<object, number>();
+
+/**
+ * The one estimator both budgets charge with: `tokenx` over the role plus the
+ * message's `text`, plus the per-message framing, memoized on the message.
+ *
+ * The request budget (here) and the record's retention (`./retention.ts`) both
+ * measure through this, so the two can never drift apart. `text` is called only
+ * on a miss.
+ */
+export function estimateFramedTokens<M extends { readonly role: string }>(
+  message: M,
+  text: (message: M) => string,
+): number {
+  const cached = estimates.get(message);
+  if (cached !== undefined) return cached;
+  const estimate = estimateTokenCount(message.role + text(message)) + MESSAGE_TOKEN_OVERHEAD;
+  estimates.set(message, estimate);
+  return estimate;
+}
 
 /** The text a message contributes — its content, framed as the provider sends it. */
 function messageText(message: ModelMessage): string {
@@ -128,11 +148,7 @@ function messageText(message: ModelMessage): string {
  * charged. Nothing here is reported to anybody as a token count.
  */
 export function estimateMessageTokens(message: ModelMessage): number {
-  const cached = estimates.get(message);
-  if (cached !== undefined) return cached;
-  const estimate = estimateTokenCount(message.role + messageText(message)) + MESSAGE_TOKEN_OVERHEAD;
-  estimates.set(message, estimate);
-  return estimate;
+  return estimateFramedTokens(message, messageText);
 }
 
 /** Model id → advertised context window, for the ids this repo knows one for. */

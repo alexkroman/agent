@@ -249,15 +249,24 @@ describe("resolveSessionGate", () => {
     };
 
     test("a fresh ticket opens a NEW session under the id it names", async () => {
-      const a = await sessionOf(mintPlatformSessionTicket({ guestToken: BEARER }));
-      const b = await sessionOf(mintPlatformSessionTicket({ guestToken: BEARER }));
+      const a = await sessionOf(
+        mintPlatformSessionTicket({ secret: platformSessionSecret(BEARER) }),
+      );
+      const b = await sessionOf(
+        mintPlatformSessionTicket({ secret: platformSessionSecret(BEARER) }),
+      );
       expect(a).toEqual(expect.any(String));
       expect(b).not.toBe(a);
     });
 
     test("knowing a session id without its ticket opens a different session", async () => {
-      const victim = await sessionOf(mintPlatformSessionTicket({ guestToken: BEARER }));
-      const attacker = await sessionOf(mintPlatformSessionTicket({ guestToken: BEARER }), victim);
+      const victim = await sessionOf(
+        mintPlatformSessionTicket({ secret: platformSessionSecret(BEARER) }),
+      );
+      const attacker = await sessionOf(
+        mintPlatformSessionTicket({ secret: platformSessionSecret(BEARER) }),
+        victim,
+      );
       expect(attacker).not.toBe(victim);
     });
   });
@@ -414,7 +423,7 @@ describe("createRuntimeServer with auth", () => {
       auth: createSessionAuth({ verify: (t) => verifySessionToken(t, { secret }) }),
     });
     await server.listen(0);
-    const ticket = mintPlatformSessionTicket({ guestToken: "bearer" });
+    const ticket = mintPlatformSessionTicket({ secret: platformSessionSecret("bearer") });
     const sid = verifySessionToken(ticket, { secret })?.sessionId;
     const offer = [SESSION_PROTOCOL, `${SESSION_AUTH_PROTOCOL_PREFIX}${ticket}`];
 

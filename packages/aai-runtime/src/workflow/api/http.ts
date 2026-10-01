@@ -14,9 +14,8 @@
  * @internal
  */
 
-import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
-import { isBlankSecret, parseBearer } from "@alexkroman1/aai/host-internal";
+import { constantTimeEquals, isBlankSecret, parseBearer } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 
 /**
@@ -182,11 +181,7 @@ export function answerHandlerFailure(
 }
 
 /**
- * Constant-time bearer check.
- *
- * Length is compared first because `timingSafeEqual` THROWS on a length mismatch
- * rather than returning false — and comparing lengths leaks only the length,
- * which the caller supplied anyway.
+ * Constant-time bearer check — the SDK's one `constantTimeEquals` (`bearer.ts`).
  *
  * The PARSE is `parseBearer` (`bearer.ts`) rather than a `startsWith("Bearer ")`
  * of its own, which is what this was: RFC 7235 makes `auth-scheme`
@@ -215,10 +210,7 @@ export function answerHandlerFailure(
  */
 export function bearerMatches(header: string | undefined, token: string): boolean {
   if (isBlankSecret(token)) return false;
-  const presented = parseBearer(header);
-  const a = Buffer.from(presented);
-  const b = Buffer.from(token);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return constantTimeEquals(parseBearer(header), token);
 }
 
 /**

@@ -284,6 +284,7 @@
     "assertUploadToken",
     "buildSystemPrompt",
     "claimSessionEnder",
+    "constantTimeEquals",
     "createDetachedSlotStore",
     "createLogBuffer",
     "defaultProviders",
@@ -358,7 +359,8 @@
     "stageMembers",
     "staticSystemPrompt",
     "systemPromptResolver",
-    "toToolJsonSchema"
+    "toToolJsonSchema",
+    "writeSessionEntry"
   ],
   "@alexkroman1/aai/html": [
     "FeedItem",

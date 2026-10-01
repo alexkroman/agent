@@ -1,6 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { createSessionToken } from "@alexkroman1/aai-runtime/auth";
-import { GUEST_HOST, mintPlatformSessionTicket } from "@alexkroman1/aai-runtime/internal";
+import {
+  GUEST_HOST,
+  mintPlatformSessionTicket,
+  platformSessionSecret,
+} from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import { guestTicketVerifier } from "./session-tickets.ts";
 
@@ -9,13 +13,15 @@ const BEARER = "this-sandbox-bearer";
 describe("guestTicketVerifier", () => {
   test("accepts the broker's ticket for THIS sandbox, bound to its session", () => {
     const verify = guestTicketVerifier(GUEST_HOST, BEARER, {});
-    const identity = verify(mintPlatformSessionTicket({ guestToken: BEARER }));
+    const identity = verify(mintPlatformSessionTicket({ secret: platformSessionSecret(BEARER) }));
     expect(identity?.sessionId).toEqual(expect.any(String));
   });
 
   test("refuses a ticket minted for another sandbox", () => {
     const verify = guestTicketVerifier(GUEST_HOST, BEARER, {});
-    expect(verify(mintPlatformSessionTicket({ guestToken: "another-sandbox" }))).toBeUndefined();
+    expect(
+      verify(mintPlatformSessionTicket({ secret: platformSessionSecret("another-sandbox") })),
+    ).toBeUndefined();
   });
 
   test("refuses a ticket signed with the bearer itself — the key is derived, not the bearer", () => {

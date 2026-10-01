@@ -15,6 +15,7 @@
 export type { PipelineHistory } from "./history/index.ts";
 export {
   createPipelineHistory,
+  createRetainedView,
   estimateConversationTokens,
   evictBeyondRetention,
   HISTORY_RETAIN_TOKENS,

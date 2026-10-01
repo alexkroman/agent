@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 254 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
-- [Framework internals](#framework-internals) — 427 names
+- [Framework internals](#framework-internals) — 430 names
 
 ## Agent authoring
 
@@ -1511,6 +1511,7 @@ trace or a type error can be traced back to something.
 | `clientEventDropMessage` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `clientToolBrand` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `consoleLogger` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `constantTimeEquals` | function | `@alexkroman1/aai/host-internal` |  | True when `a` and `b` are equal, without a data-dependent early exit — the one constant-time string comparison every host-side gate shares. |
 | `createCoalescingRunner` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `createDetachedSlotStore` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `createEpoch` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1630,6 +1631,7 @@ trace or a type error can be traced back to something.
 | `setSessionPhone` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `sleep` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `ssrfSafeFetch` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `stageMembers` | function | `@alexkroman1/aai/host-internal` |  | A stage field as the descriptors it dials: a fallback's members, else itself, and nothing for an unset stage. |
 | `stampSessionEvent` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `staticSystemPrompt` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `systemPromptResolver` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1639,3 +1641,4 @@ trace or a type error can be traced back to something.
 | `wireSessionSocket` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `withHostCredentialFallback` | function | `@alexkroman1/aai-runtime/internal` |  | Return `env` with any missing provider credential filled in from `hostEnv` (defaults to `process.env`). |
 | `workflowJournalDdl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `writeSessionEntry` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

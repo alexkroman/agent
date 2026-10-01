@@ -31,14 +31,17 @@ import {
   SESSION_TICKET_HEADER,
 } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { mintPlatformSessionTicket } from "@alexkroman1/aai-runtime/internal";
+import {
+  mintPlatformSessionTicket,
+  platformSessionSecret,
+} from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AppContext } from "./context.ts";
 import { forwardToGuest } from "./guest/forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
 import { guestTokenFor } from "./guest/token.ts";
-import { brokerSessionUrlOrThrow } from "./sandbox/broker.ts";
+import { brokerSessionUrlOrThrow, notFoundMessage } from "./sandbox/broker.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
 import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 
@@ -92,6 +95,39 @@ export function createAgentClientConfigHandler(
   fetchFn: typeof fetch = fetch,
 ): (c: AppContext, broker: ResolveSandboxOpts) => Promise<Response> {
   const memo = new TtlCache<GuestClientConfig>(GUEST_CONFIG_CACHE_TTL_MS);
+  /** Each deploy's ticket key — two HMACs to derive, fixed for the deploy's life. */
+  const ticketKeys = new TtlCache<string>(GUEST_CONFIG_CACHE_TTL_MS);
+
+  function ticketKey(slug: string, version: number): string {
+    const key = `${slug}\u0000${version}`;
+    const cached = ticketKeys.get(key);
+    if (cached !== undefined) return cached;
+    const secret = platformSessionSecret(guestTokenFor(agentSandboxName(slug, version)));
+    ticketKeys.set(key, secret);
+    return secret;
+  }
+
+  /**
+   * The session ticket this lookup hands the browser — see
+   * `mintPlatformSessionTicket` (aai-runtime) for what it proves and how a
+   * presented ticket resumes its session.
+   *
+   * Keyed off the sandbox's own bearer (`guestTokenFor(agentSandboxName(...))`,
+   * which the guest holds as `AAI_GUEST_TOKEN`), so the guest verifies it with a
+   * key derived from what it already has and nothing new is delivered. The
+   * previous deploy's key is accepted for a PRESENTED ticket only (and derived
+   * only then), so a call survives a redeploy; what is minted is always for the
+   * current deploy.
+   */
+  function sessionTicketFor(slug: string, version: number, presented: string | undefined): string {
+    return mintPlatformSessionTicket({
+      secret: ticketKey(slug, version),
+      ...omitUndefined({
+        previousSecrets: version > 1 ? () => [ticketKey(slug, version - 1)] : undefined,
+        presented,
+      }),
+    });
+  }
 
   /**
    * The guest's own `/client-config` (public, same posture as the session
@@ -136,7 +172,7 @@ export function createAgentClientConfigHandler(
     // The broker above answered for a resident whose row a delete already
     // removed (the same window `workflow-handler.ts`'s `gone` covers): there is
     // no deploy left to mint a ticket for.
-    if (version === null) throw new HTTPException(404, { message: `Not found: ${slug}` });
+    if (version === null) throw new HTTPException(404, { message: notFoundMessage(slug) });
 
     const guestConfig = await fetchGuestClientConfig(
       memoKey(slug, version, brokered.guestOrigin),
@@ -152,23 +188,4 @@ export function createAgentClientConfigHandler(
       }),
     );
   };
-}
-
-/**
- * The session ticket this lookup hands the browser — see
- * `mintPlatformSessionTicket` (aai-runtime) for what it proves and how a
- * presented ticket resumes its session.
- *
- * Keyed off the sandbox's own bearer (`guestTokenFor(agentSandboxName(...))`,
- * which the guest holds as `AAI_GUEST_TOKEN`), so the guest verifies it with a
- * key derived from what it already has and nothing new is delivered. The
- * previous deploy's bearer is accepted for a PRESENTED ticket only, so a call
- * survives a redeploy; what is minted is always for the current deploy.
- */
-function sessionTicketFor(slug: string, version: number, presented: string | undefined): string {
-  return mintPlatformSessionTicket({
-    guestToken: guestTokenFor(agentSandboxName(slug, version)),
-    previousGuestTokens: version > 1 ? [guestTokenFor(agentSandboxName(slug, version - 1))] : [],
-    ...omitUndefined({ presented }),
-  });
 }

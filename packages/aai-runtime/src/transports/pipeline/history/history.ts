@@ -17,7 +17,7 @@
  * cross from the first to the second by way of a real step message.** In the
  * LLM view a `tool` message is one half of a PAIR — the assistant message
  * carrying the `tool-call` part is the other — and both providers reject a
- * result with no call to answer (which is why {@link evictLlm} cuts only at a
+ * result with no call to answer (which is why {@link canLeadLlm} cuts only at a
  * message that can lead). The conversation view has no pairs, so {@link PipelineHistory.seed} never maps a
  * resume's `tool` messages across; it takes pairs built from both halves.
  *
@@ -44,8 +44,8 @@ import { pairToolCallsInPlace } from "../../../tools/index.ts";
 import { toModelMessage } from "../output/index.ts";
 import { estimateMessageTokens } from "./context-budget.ts";
 import {
+  createRetainedView,
   estimateConversationTokens,
-  evictBeyondRetention,
   HISTORY_RETAIN_TOKENS,
 } from "./retention.ts";
 
@@ -66,7 +66,7 @@ export interface PipelineHistory {
    * - **It never touches `llm`.** A `tool` message there needs the assistant
    *   `tool-call` message that answers it, and the turn pushes both together
    *   as step messages; a second copy from here would be an orphan result of
-   *   exactly the kind {@link evictLlm} refuses to leave at the front.
+   *   exactly the kind {@link canLeadLlm} refuses to leave at the front.
    * - **It does not bump {@link revision}.** That epoch gates adopting a
    *   preemptive speculation, and what a speculation's request is assembled
    *   from is `llm` — untouched here, so the request in flight is still the
@@ -195,8 +195,8 @@ function isLlmSeedable(m: Message): boolean {
 }
 
 /**
- * Retain the LLM view to `retain` tokens, never cutting between a tool-call
- * and its result, ANSWERING what came off the front.
+ * Where the LLM view's retention may cut: never between a tool-call and its
+ * result. Retention ANSWERS what came off the front.
  *
  * The answer is what makes {@link PipelineHistory.dropTrailingUser} an inverse
  * ({@link PushUndo}): `splice`'s own, so the operation that evicts records it.
@@ -208,9 +208,7 @@ function isLlmSeedable(m: Message): boolean {
  * Turn sizes vary, so cuts drift off turn boundaries on their own. Only the
  * FRONT is cut, so a cut point is simply never a `tool` message.
  */
-function evictLlm(arr: ModelMessage[], retain: number): ModelMessage[] {
-  return evictBeyondRetention(arr, retain, estimateMessageTokens, (m) => m.role !== "tool");
-}
+const canLeadLlm = (m: ModelMessage): boolean => m.role !== "tool";
 
 /**
  * A `reasoning` part is worth replaying only if it carries provider metadata
@@ -306,7 +304,6 @@ export function persistInterruptedTurn(args: {
   persistedLen: number;
   /** Response messages of the turn's completed steps. */
   stepMessages: readonly ModelMessage[];
-  /** Seed the STT provider with the agent's side of the dialog. */
 }): void {
   const { history, heard, stepMessages } = args;
   // Pushed unconditionally, BEFORE the empty-heard return: a turn whose tools
@@ -327,10 +324,6 @@ export function persistInterruptedTurn(args: {
   if (tail.length > 0) {
     history.pushLlm({ role: "assistant", content: markInterrupted(tail) });
   }
-  // Seeded with the HEARD text, not the generated text: the STT bias is
-  // fighting the agent's own voice echoing back, so what was in the air is the
-  // right hint. (Judgement call — the fuller text might bias vocabulary
-  // better; no measurement either way.)
 }
 
 /**
@@ -378,19 +371,26 @@ export function createPipelineHistory(
   opts: PipelineHistoryOptions = {},
 ): PipelineHistory {
   const retain = opts.retainTokens ?? HISTORY_RETAIN_TOKENS;
-  const retainText = (arr: Message[]): Message[] =>
-    evictBeyondRetention(arr, retain, estimateConversationTokens);
-  const retainLlm = (arr: ModelMessage[]): ModelMessage[] => evictLlm(arr, retain);
   const conversation: Message[] = seed ? [...seed] : [];
   // Same subtraction `seed()` below makes, for the same reason — a `tool`
   // message has no half to pair with here.
   const llm: ModelMessage[] = conversation.filter(isLlmSeedable).map(toModelMessage);
+  // Running totals (`./retention.ts`): every write below that is not an append recounts.
+  const textView = createRetainedView(() => conversation, retain, estimateConversationTokens);
+  const llmView = createRetainedView(() => llm, retain, estimateMessageTokens, canLeadLlm);
   // The existing primitive rather than a hand-rolled counter — see
   // `PipelineHistory.revision`.
   const revision = createEpoch();
   let conversationUndo: PushUndo<Message> = null;
   let llmUndo: PushUndo<ModelMessage> = null;
-  const pairLlm = (): void => pairToolCallsInPlace(llm, opts.log, opts.sid);
+  const pairLlm = (): boolean => pairToolCallsInPlace(llm, opts.log, opts.sid);
+  // Paired before retention, which never splits a pair; a repair is not an append.
+  const retainLlm = (added: readonly ModelMessage[]): ModelMessage[] =>
+    llmView.push(pairLlm() ? null : added);
+  const recountViews = (): void => {
+    textView.recount();
+    llmView.recount();
+  };
 
   /**
    * Pop `content` off the back of `arr` if it is a trailing user message, and
@@ -411,7 +411,7 @@ export function createPipelineHistory(
     if (last === undefined || last.role !== "user" || last.content !== content) return;
     arr.pop();
     // The front of the restored list is whatever sat at index 0 before the push,
-    // which `evictLlm`'s invariant says is never a `tool` message — so restoring
+    // which `canLeadLlm`'s invariant says is never a `tool` message — so restoring
     // a healed pair half cannot re-expose an orphan result.
     if (undo?.pushed === last) arr.unshift(...undo.evicted);
   };
@@ -422,14 +422,14 @@ export function createPipelineHistory(
     revision: { current: revision.current, isCurrent: revision.isCurrent },
     pushConversation(...msgs: Message[]): void {
       conversation.push(...msgs);
-      const evicted = retainText(conversation);
+      const evicted = textView.push(msgs);
       const pushed = msgs.length === 1 ? msgs[0] : undefined;
       conversationUndo = pushed ? { pushed, evicted } : null;
       revision.bump();
     },
     pushToolResult(msg: Message): void {
       conversation.push(msg);
-      retainText(conversation);
+      textView.push([msg]);
       // Spent, not recorded — see the member's doc for all three halves.
       conversationUndo = null;
     },
@@ -445,8 +445,7 @@ export function createPipelineHistory(
           pushed.push(cleaned);
         }
       }
-      pairLlm();
-      const evicted = retainLlm(llm);
+      const evicted = retainLlm(pushed);
       const only = pushed.length === 1 ? pushed[0] : undefined;
       llmUndo = only ? { pushed: only, evicted } : null;
       revision.bump();
@@ -458,6 +457,7 @@ export function createPipelineHistory(
       if (!(inConversation || inLlm)) return false;
       // An edit that removed an assistant message must not strand its results.
       pairLlm();
+      recountViews();
       // Spent, like any intervening mutation: a removal shifted the window, so
       // restoring an eviction under a later pop could reorder it.
       conversationUndo = null;
@@ -470,16 +470,16 @@ export function createPipelineHistory(
       conversationUndo = null;
       undoPush(llm, llmUndo, content);
       llmUndo = null;
+      recountViews();
       revision.bump();
     },
     seed(msgs: readonly Message[], llmMsgs?: readonly ModelMessage[]): void {
       if (msgs.length === 0 && !llmMsgs?.length) return;
       conversation.push(...msgs);
-      retainText(conversation);
-      llm.push(...(llmMsgs ?? msgs.filter(isLlmSeedable).map(toModelMessage)));
-      // Paired before retention, as `pushLlm` does: `evictLlm` never splits a pair.
-      pairLlm();
-      retainLlm(llm);
+      textView.push(msgs);
+      const added = llmMsgs ?? msgs.filter(isLlmSeedable).map(toModelMessage);
+      llm.push(...added);
+      retainLlm(added);
       // A reconnect seed is never rolled back — nothing pushes a synthetic
       // prompt through this door — and its eviction is therefore not owed back
       // to anybody. Cleared rather than recorded so a stale slot cannot outlive
@@ -491,6 +491,7 @@ export function createPipelineHistory(
     reset(): void {
       conversation.length = 0;
       llm.length = 0;
+      recountViews();
       conversationUndo = null;
       llmUndo = null;
       revision.bump();

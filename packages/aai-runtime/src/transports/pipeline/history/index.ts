@@ -13,6 +13,7 @@ export { createHeardHistory } from "./heard-history.ts";
 export type { PipelineHistory } from "./history.ts";
 export { createPipelineHistory, persistInterruptedTurn } from "./history.ts";
 export {
+  createRetainedView,
   estimateConversationTokens,
   evictBeyondRetention,
   HISTORY_RETAIN_TOKENS,
