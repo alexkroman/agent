@@ -22,11 +22,13 @@ function buildClientConfig(source: {
   greeting?: string;
   name?: string;
   page?: "voice" | "static";
+  sessionToken?: string;
   sessionUrl?: string;
 }): {
   greeting?: string;
   name?: string;
   page: "voice" | "static";
+  sessionToken?: string;
   sessionUrl?: string;
 };
 ```
@@ -53,6 +55,10 @@ surface rule can't drift between them.
 
 `"voice"` \| `"static"`
 
+###### sessionToken?
+
+`string`
+
 ###### sessionUrl?
 
 `string`
@@ -64,6 +70,7 @@ surface rule can't drift between them.
   greeting?: string;
   name?: string;
   page: "voice" | "static";
+  sessionToken?: string;
   sessionUrl?: string;
 }
 ```
@@ -84,6 +91,12 @@ optional name?: string;
 
 ```ts
 page: "voice" | "static";
+```
+
+##### sessionToken?
+
+```ts
+optional sessionToken?: string;
 ```
 
 ##### sessionUrl?
@@ -636,6 +649,16 @@ restore sends is their settled JOIN.
 
 ***
 
+### SESSION\_AUTH\_PROTOCOL\_PREFIX
+
+```ts
+const SESSION_AUTH_PROTOCOL_PREFIX: "aai.auth." = "aai.auth.";
+```
+
+`Sec-WebSocket-Protocol` entry prefix a session ticket travels under.
+
+***
+
 ### SESSION\_COMMAND\_TYPES
 
 ```ts
@@ -655,6 +678,18 @@ const SESSION_EVENT_TYPES: ReadonlySet<string>;
 ```
 
 Every event name, as a set — for `lenientParse`'s known-types argument.
+
+***
+
+### SESSION\_PROTOCOL
+
+```ts
+const SESSION_PROTOCOL: "aai.session" = "aai.session";
+```
+
+The plain session subprotocol a client offers beside its ticket, and the one
+a server selects. A server older than tickets picks the first offer, which is
+this, so offering a ticket never fails a handshake against one.
 
 ***
 

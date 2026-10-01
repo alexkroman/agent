@@ -21,7 +21,7 @@ of it — and want the import.
 - [Agent authoring](#agent-authoring) — 581 names
 - [Browser client](#browser-client) — 179 names
 - [Testing and evals](#testing-and-evals) — 253 names
-- [Hosting and tooling](#hosting-and-tooling) — 236 names
+- [Hosting and tooling](#hosting-and-tooling) — 237 names
 - [Framework internals](#framework-internals) — 380 names
 
 ## Agent authoring
@@ -1058,10 +1058,11 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `RuntimeServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Configuration for `createRuntimeServer`. |
 | `RuntimeTracing` | type | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | A started tracer. |
 | `S2sConfig` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Speech-to-Speech (S2S) endpoint configuration. |
-| `SESSION_AUTH_PROTOCOL_PREFIX` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | `Sec-WebSocket-Protocol` entry prefix a ticket travels under. |
+| `SESSION_AUTH_PROTOCOL_PREFIX` | const | `@alexkroman1/aai/protocol` (also `@alexkroman1/aai-runtime/auth`) | `aai:protocol` | `Sec-WebSocket-Protocol` entry prefix a session ticket travels under. |
 | `SESSION_COMMAND_TYPES` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The set of recognised client→server command `type` values — pass to `lenientParse` so a known-but-invalid message warns instead of being silently dropped as an … |
 | `SESSION_EVENTS_TOKEN_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:session` | Env var holding the bearer this route requires. |
 | `SESSION_EVENT_TYPES` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Every event name, as a set — for `lenientParse`'s known-types argument. |
+| `SESSION_PROTOCOL` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The plain session subprotocol a client offers beside its ticket, and the one a server selects. |
 | `SESSION_SECRET_ENV` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The env variable that turns the built-in ticket check on. |
 | `SESSION_UNAUTHORIZED_CLOSE_CODE` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The close code a refused session ends with — HTTP 401 in the 4000-4999 application range, so a client can tell "not allowed" from a dropped network. |
 | `ServerRequestHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every HTTP request (after `/health`). |

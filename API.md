@@ -7653,6 +7653,7 @@ export function buildClientConfig(source: {
     greeting?: string | undefined;
     sessionUrl?: string | undefined;
     page?: "voice" | "static" | undefined;
+    sessionToken?: string | undefined;
 }): ClientConfigResponse;
 
 // @public
@@ -7679,6 +7680,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>;
+    sessionToken: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
 // @public
@@ -7956,10 +7958,16 @@ export const RestoredToolCallSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+
+// @public
 export const SESSION_COMMAND_TYPES: ReadonlySet<string>;
 
 // @public
 export const SESSION_EVENT_TYPES: ReadonlySet<string>;
+
+// @public
+export const SESSION_PROTOCOL = "aai.session";
 
 // @public
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
@@ -12061,6 +12069,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>;
+    sessionToken: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
 // @public
@@ -15950,7 +15959,7 @@ export function ChatView(input: {
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "WebSocket"> & {
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "token" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
     theme?: ClientTheme;
@@ -16885,6 +16894,9 @@ export type VoiceSessionOptions = {
     location?: string | (() => string | undefined) | undefined;
     phone?: string | (() => string | undefined) | undefined;
     client?: string | (() => string | undefined) | undefined;
+    token?: string | ((attempt: {
+        readonly sessionId: string | undefined;
+    }) => string | undefined | Promise<string | undefined>) | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
 

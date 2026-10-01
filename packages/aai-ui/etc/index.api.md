@@ -156,7 +156,7 @@ export function ChatView(input: {
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "WebSocket"> & {
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "token" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
     theme?: ClientTheme;
@@ -1091,6 +1091,9 @@ export type VoiceSessionOptions = {
     location?: string | (() => string | undefined) | undefined;
     phone?: string | (() => string | undefined) | undefined;
     client?: string | (() => string | undefined) | undefined;
+    token?: string | ((attempt: {
+        readonly sessionId: string | undefined;
+    }) => string | undefined | Promise<string | undefined>) | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
 

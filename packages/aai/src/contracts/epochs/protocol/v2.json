@@ -3,7 +3,7 @@
   "capability": "protocol",
   "epoch": 2,
   "rule": 2,
-  "sha256": "d4f462f521fa40e7ee15389c65948f5e10bbc65dc064438499ae681f3b090faa",
+  "sha256": "7975e513ab29d6834b5208fedf5483b53b8313498816beb78cb9313cc0bdbb45",
   "exports": [
     "CLIENT_CONFIG_METHODS",
     "CLIENT_CONFIG_PATH",
@@ -20,8 +20,10 @@
     "ReadyConfigSchema",
     "RestoredToolCall",
     "RestoredToolCallSchema",
+    "SESSION_AUTH_PROTOCOL_PREFIX",
     "SESSION_COMMAND_TYPES",
     "SESSION_EVENT_TYPES",
+    "SESSION_PROTOCOL",
     "SessionCommand",
     "SessionCommandSchema",
     "SessionErrorCode",
@@ -33,7 +35,7 @@
     "lenientParse"
   ],
   "rollup": "b5970fdd5674ecda6769c8a1fc01df76be29a1b0e3999ab2185fd46d6efa6fd3",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -46,6 +48,12 @@
       "rule": 2,
       "sha256": "d4f462f521fa40e7ee15389c65948f5e10bbc65dc064438499ae681f3b090faa",
       "reason": "additive (checked): +InboxClientFrame, +InboxClientFrameSchema, +InboxServerFrame, +InboxServerFrameSchema"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "7975e513ab29d6834b5208fedf5483b53b8313498816beb78cb9313cc0bdbb45",
+      "reason": "additive (checked): +InboxClientFrame, +InboxClientFrameSchema, +InboxServerFrame, +InboxServerFrameSchema, +SESSION_AUTH_PROTOCOL_PREFIX, +SESSION_PROTOCOL"
     }
   ]
 }
