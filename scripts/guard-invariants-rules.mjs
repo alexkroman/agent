@@ -42,7 +42,7 @@
  * | `guard-invariants-rules-timing.mjs` | rules 3, 4, 19, 21, 31 — how code waits (NODE rules) |
  * | `guard-invariants-rules-workflow.mjs` | rules 26 and 30, the two over a shipped `workflows/` body |
  * | `guard-invariants-rules-shape.mjs`  | rules 2, 17, 18, 22, 28 — a value's shape, re-derived |
- * | `guard-invariants-rules-state.mjs`  | rules 5, 8, 9, 11, 16, 24, 25, 27, 29 — state someone else owns |
+ * | `guard-invariants-rules-state.mjs`  | rules 5, 8, 9, 11, 16, 24, 25, 27, 29, 36 — state someone else owns |
  * | `guard-invariants-rules-testing.mjs` | rules 33, 34 — the repo's own test files (NODE rules) |
  * | `guard-invariants-rules-runtime.mjs` | rule 35 — `aai-runtime`'s `prepareStep` slot (NODE rule) |
  *

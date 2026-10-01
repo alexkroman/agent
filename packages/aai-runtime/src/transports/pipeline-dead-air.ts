@@ -14,7 +14,8 @@
  * predicates say when a gap is already filled by somebody else. Nothing here
  * touches the turn beyond its own timer — it cancels no TTS, flushes nothing,
  * and aborts nothing. The invariant that a filler may not open the barge-in
- * gate belongs to the CALLER, which emits these with `record: false`.
+ * gate belongs to the CALLER, which speaks each through `speakInReply`
+ * (`pipeline-lines.ts`) with `{ record: false, interruptible: true }`.
  */
 
 import {

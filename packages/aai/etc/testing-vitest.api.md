@@ -271,7 +271,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 interface StandardSchemaIssue {

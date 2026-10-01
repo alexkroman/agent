@@ -8,9 +8,8 @@
  */
 
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS, systemPromptResolver } from "@alexkroman1/aai/host-internal";
-import { createOwnedMap, invariant } from "@alexkroman1/aai/internal";
+import { invariant } from "@alexkroman1/aai/internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
-import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { compileAgentRoutes } from "./agent-routes.ts";
@@ -41,10 +40,8 @@ import type {
   SessionStartOptions,
 } from "./runtime-types.ts";
 import { createSessionCore, type ServerSession } from "./session-core.ts";
-import type { SessionEmitter } from "./session-emitter.ts";
+import { createSessionDirectory } from "./session-directory.ts";
 import { composeSessionGreeting, createResumeFindings } from "./session-resume-found.ts";
-import { speechDirectory } from "./session-speech.ts";
-import type { UsageMeter } from "./usage-meter.ts";
 import { platformGuestOptions } from "./workflow/platform-world.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow/runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
@@ -168,18 +165,11 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
 
   // What this runtime resolved, once, at boot — including the WORKFLOW APP case,
   // whose line is deliberately not the pipeline one. See `runtime-providers.ts`.
-  // Owned maps because teardown is async on both: a reconnect resuming the
-  // same session id re-claims the key while the old session's stop() drains,
-  // and release-by-claim is what keeps that drain from evicting the
-  // successor's entry (see sdk/owned-map.ts).
-  const sessions = createOwnedMap<string, ServerSession>();
-  const speech = speechDirectory(sessions);
-  const sinkMap = createOwnedMap<string, ClientSink>();
-  // What `ctx.send` and a `syncState` push resolve through, for the same resume
-  // reason as the sink map beside it — see `liveEmitter` in `runtime-tools.ts`.
-  const emitters = createOwnedMap<string, SessionEmitter>();
-  // And the token meter: a per-RUNTIME executor spends on a per-SESSION budget.
-  const meters = createOwnedMap<string, UsageMeter>();
+  // Every live session by id — the session, its sink, emitter and meter, and
+  // `say`/`announce` — resolved per call, so a resume's takeover is honoured by
+  // every reach for the id. `session-directory.ts` is the one place it lives.
+  const sessions = createSessionDirectory();
+  const { speech } = sessions;
   // Where a `clientTool` call waits for the page's `tool_result`.
   const clientTools = createClientToolBroker();
   // The Voice Agent API accepts exactly one sample rate and honours no declaration
@@ -220,9 +210,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       providerEnv,
       workflows,
       logger,
-      emitters,
-      meters,
-      speech,
+      sessions,
       clientTools,
       stateStore: sessionState.store,
     });
@@ -277,8 +265,6 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     // A resume under this id (same key, new socket) reclaims its tool state —
     // cancel the sweep the previous session's stop() scheduled.
     sessionState.sweeps.cancel(sessionOpts.id);
-    const releaseSink = sinkMap.claim(sessionOpts.id, sessionOpts.client);
-
     // Everything one session is wired with before its transport exists — the
     // event emitter and its hooks, the dialogs that address the prompt, the
     // token meter and the guardrails. See `runtime-session-controls.ts`.
@@ -295,8 +281,8 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       speech: speech.of(sessionOpts.id),
       ...omitUndefined({ commitSessionState }),
     });
-    const releaseEmitter = emitters.claim(sessionOpts.id, emitter);
-    const releaseMeter = meters.claim(sessionOpts.id, usage);
+    const wiring = { sink: sessionOpts.client, emitter, meter: usage };
+    const releaseWiring = sessions.claimWiring(sessionOpts.id, wiring);
 
     // Call it — `pipelineProviders` is a thunk (see above), so `Boolean(...)` on
     // the function itself is always true and would route every S2S session down
@@ -368,10 +354,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
         // The dialog deadlines come off here too: a pending timer keeps the
         // event loop alive and would fire into a session already swept.
         dialogs.stop();
-        const owned = releaseSink();
-        releaseEmitter();
-        releaseMeter();
-        return owned;
+        return releaseWiring();
       },
       pushStateSnapshot,
       findings,
@@ -427,9 +410,6 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
 
   function releaseResources(): void {
     sessions.clear();
-    sinkMap.clear();
-    emitters.clear();
-    meters.clear();
     // Watches outlive nothing: every session they could announce to is gone,
     // and a poll loop left running would hold the process past shutdown.
     notifier?.stop();

@@ -14,7 +14,6 @@ import {
   clientEventDropMessage,
   clientToolBrand,
   decideClientEvent,
-  type OwnedMap,
 } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest";
@@ -25,6 +24,7 @@ import type { ClientToolBroker } from "./client-tool-broker.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import { mergeBuiltinSurface } from "./runtime-builtin-surface.ts";
 import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
+import type { SessionDirectory } from "./session-directory.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import type { SpeechDirectory } from "./session-speech.ts";
 import type { SessionStateStore } from "./session-state/store.ts";
@@ -35,7 +35,6 @@ import {
   executeToolCall,
   type SubagentRunner,
 } from "./tool-executor.ts";
-import type { UsageMeter } from "./usage-meter.ts";
 import { type RunNotifier, withNotify } from "./workflow/notify.ts";
 
 /**
@@ -114,31 +113,24 @@ type ToolSetupDeps = {
   notifier?: RunNotifier | undefined;
   logger: NonNullable<RuntimeOptions["logger"]>;
   /**
-   * Live EMITTER per session, so `ctx.send` and a `syncState` push are recorded
-   * in the session's event stream and seen by its hooks like any other event —
-   * they used to write straight to a `ClientSink`, which made them the two events
-   * no log could contain and no hook could observe.
+   * The runtime's live sessions by id (`session-directory.ts`), read per CALL:
    *
-   * Still a map rather than one emitter, and still resolved per send, for the
-   * resume reason spelled out at `liveEmitter`.
+   * - the EMITTER, so `ctx.send` and a `syncState` push are recorded in the
+   *   session's event stream and seen by its hooks like any other event — they
+   *   used to write straight to a `ClientSink`, which made them the two events
+   *   no log could contain and no hook could observe. Resolved per send for the
+   *   resume reason spelled out at `liveEmitter`.
+   * - the token METER, the same way and for the same reason: `ctx.generate` and
+   *   `ctx.delegate` spend on the session that called them, and the meter
+   *   belongs to a session while this dispatcher belongs to the runtime. A tool
+   *   call that finds no entry is uncounted rather than refused — see
+   *   `usage-meter.ts`.
+   * - `ctx.speech`, resolved at each `say` — a tool that arms a timer speaks
+   *   after a resume swapped the session in.
    */
-  emitters: OwnedMap<string, SessionEmitter>;
-  /**
-   * Live token METER per session, resolved the same way and for the same reason
-   * as `emitters` above: `ctx.generate` and `ctx.delegate` spend on the session
-   * that called them, and the meter belongs to a session while this dispatcher
-   * belongs to the runtime. A tool call that finds no entry is uncounted rather
-   * than refused — see `usage-meter.ts`.
-   */
-  meters: OwnedMap<string, UsageMeter>;
+  sessions: Pick<SessionDirectory, "emitter" | "meter"> & { speech: Pick<SpeechDirectory, "of"> };
   /** Where a `clientTool` call waits for the page's answer (self-hosted mode only). */
   clientTools: ClientToolBroker;
-  /**
-   * `ctx.speech` per session, resolved through the runtime's session map at
-   * each `say` — a tool that arms a timer speaks after a resume swapped the
-   * session in, for the reason `emitters` is resolved per send.
-   */
-  speech: Pick<SpeechDirectory, "of">;
   /**
    * Per-session slot state (self-hosted mode only), over the memory or Postgres
    * backend — see `host/session-state-store.ts`. Reclaimed after the resume
@@ -221,8 +213,8 @@ function setupSandboxTools(
         messages,
         generate,
         subagents,
-        usage: deps.meters.get(sessionId ?? ""),
-        ...omitUndefined({ speech: sessionId ? deps.speech.of(sessionId) : undefined }),
+        usage: deps.sessions.meter(sessionId ?? ""),
+        ...omitUndefined({ speech: sessionId ? deps.sessions.speech.of(sessionId) : undefined }),
         logger,
         signal: callOptions?.signal,
         timeoutMs: options.toolTimeoutMs,
@@ -243,8 +235,7 @@ function setupSandboxTools(
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
-  const { agent, options, env, workflows, notifier, logger, emitters, meters, speech, stateStore } =
-    deps;
+  const { agent, options, env, workflows, notifier, logger, sessions, stateStore } = deps;
   const { clientTools } = deps;
   const builtinOpts = {
     ...omitUndefined({ fetch: options.fetch }),
@@ -338,7 +329,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
      * shares), so the next unchanged projection is skipped and the
      * reconnected client stays stale with no further push coming.
      */
-    const liveEmitter = (): SessionEmitter | undefined => emitters.get(sid);
+    const liveEmitter = (): SessionEmitter | undefined => sessions.emitter(sid);
     // A `clientTool` is answered by the page. The wait for this call's
     // `tool_result` rides the CONTEXT, so a wrapper that gates the tool (a
     // persona, a dialog) still runs before it; the brand only sets the deadline.
@@ -362,8 +353,8 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
         subagents,
         // Resolved when the call STARTS rather than captured at setup: the
         // meter belongs to the session, and a resume mints a new one.
-        usage: meters.get(sid),
-        speech: speech.of(sid),
+        usage: sessions.meter(sid),
+        speech: sessions.speech.of(sid),
         logger,
         // The frame exists so a throw is VISIBLE — see `onUncaught`. `fatal`
         // there means the SESSION is over, which neither of its two arms is.
@@ -408,7 +399,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
   };
 
   /**
-   * The hook commit. `emitters.get` is read AT CALL TIME for the reason
+   * The hook commit. The emitter is read AT CALL TIME for the reason
    * `liveEmitter` is inside a tool call: a session survives a disconnect through
    * the resume grace window, so the emitter under this id may be the resumed
    * connection's by now.
@@ -417,7 +408,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
    * emitter can call it fire-and-forget.
    */
   const commitSessionState = async (sessionId: string): Promise<void> => {
-    syncStateToClient(emitters.get(sessionId), sessionId);
+    syncStateToClient(sessions.emitter(sessionId), sessionId);
     await stateStore.flush(sessionId);
   };
 

@@ -9,6 +9,7 @@ import { makeConfig, makeLogger, makeSessionContext } from "./_test-utils.ts";
 import { openSessionDialogs } from "./runtime-dialogs.ts";
 import { openSessionPersonas, PERSONA_SUFFIX_KEY } from "./runtime-personas.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
+import { OPENAI_REALTIME_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
 
 const SID = "s-persona";
@@ -41,6 +42,7 @@ const proseOnly = personas([
 function makeTransport(): { transport: Transport; refreshes: () => number } {
   const refreshSystemPrompt = vi.fn();
   const transport: Transport = {
+    capabilities: OPENAI_REALTIME_CAPABILITIES,
     start: async () => undefined,
     stop: async () => undefined,
     sendUserAudio: () => undefined,

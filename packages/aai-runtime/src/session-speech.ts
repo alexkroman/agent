@@ -21,7 +21,6 @@
  */
 
 import type { SayOptions, SessionSpeech, SpeechHandle, SpeechOutcome } from "@alexkroman1/aai";
-import type { Logger } from "./runtime-config.ts";
 import type { SpokenLineOutcome, Transport } from "./transports/types.ts";
 
 /** A handle whose line never reached the transport. */
@@ -34,9 +33,7 @@ function settledHandle(outcome: SpeechOutcome): SpeechHandle {
 
 /** What {@link createSpeechVerbs} needs from the session around it. @internal */
 export type SpeechVerbDeps = {
-  sid: string;
   transport: Transport;
-  log: Logger;
   /** Has the session stopped? Read per call. */
   stopped: () => boolean;
   /** The client `cancel` command, exactly: abort tools, cancel, report. */
@@ -55,34 +52,23 @@ export type SpeechVerbs = {
  * @internal
  */
 export function createSpeechVerbs(deps: SpeechVerbDeps): SpeechVerbs {
-  const { transport, log, sid } = deps;
-  // Once per session: an S2S agent that says on every event would otherwise
-  // log the same sentence per event.
-  let warnedUnsupported = false;
+  const { transport } = deps;
 
   function interrupt(): boolean {
     if (deps.stopped()) return false;
-    // `undefined` (S2S) is "cannot tell", which interrupts: the client's
-    // cancel has always been sent blind on those transports too.
-    if (transport.isReplying?.() === false) return false;
+    // Without `replyState` (S2S) the answer is "cannot tell", which
+    // interrupts: the client's cancel has always been sent blind there too.
+    if (transport.capabilities.replyState && transport.isReplying?.() === false) return false;
     deps.cancel();
     return true;
   }
 
   function say(text: string, options: SayOptions = {}): SpeechHandle {
     const line = text.trim();
-    if (deps.stopped() || line === "") return settledHandle("dropped");
-    const speakLine = transport.speakLine?.bind(transport);
-    if (!speakLine) {
-      if (!warnedUnsupported) {
-        warnedUnsupported = true;
-        log.warn(
-          "speech.say() needs a pipeline agent: an S2S service cannot speak host text verbatim, so this line and every later one settle `unsupported`.",
-          { sid },
-        );
-      }
-      return settledHandle("unsupported");
-    }
+    // A transport without `say` was said at SESSION START, once, from its
+    // capability row (`transports/capabilities.ts`) — not here per line.
+    const speakLine = transport.capabilities.say ? transport.speakLine?.bind(transport) : undefined;
+    if (deps.stopped() || line === "" || !speakLine) return settledHandle("dropped");
     // Cut BEFORE queueing, so the line is chained after the epoch bump that
     // strands the queue: it survives the interrupt it asked for.
     if (options.interrupt === true) interrupt();

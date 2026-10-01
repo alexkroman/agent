@@ -9,16 +9,27 @@ import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeCore } from "./_session-core-harness.ts";
 import { flush, makeLogger } from "./_test-utils.ts";
+import type { Transport } from "./transports/types.ts";
 
 /** A transport that has the three verbs, as the pipeline transport does. */
-function withTurnVerbs(transport: object, interrupted: boolean) {
+function withTurnVerbs(transport: Transport, interrupted: boolean) {
   const verbs = {
     startUserTurn: vi.fn(() => interrupted),
     commitUserTurn: vi.fn(),
     clearUserTurn: vi.fn(),
   };
-  Object.assign(transport, verbs);
+  Object.assign(transport, verbs, {
+    capabilities: { ...transport.capabilities, manualTurn: true },
+  });
   return verbs;
+}
+
+/** A transport that takes a typed turn, as the pipeline transport does. */
+function withTypedTurn(transport: Transport, sendUserText: (text: string) => void): void {
+  Object.assign(transport, {
+    sendUserText,
+    capabilities: { ...transport.capabilities, typedTurn: true },
+  });
 }
 
 describe("session commands — push-to-talk", () => {
@@ -88,7 +99,7 @@ describe("session commands — a typed turn", () => {
     const sendUserText = vi.fn((text: string) => {
       core.report({ type: "user-transcript.committed", text });
     });
-    Object.assign(transport, { sendUserText });
+    withTypedTurn(transport, sendUserText);
     await core.start();
 
     core.command({ type: "user_text", text: "what's on today" });
@@ -103,7 +114,7 @@ describe("session commands — a typed turn", () => {
     // A second `reply.cancelled` from the dispatcher would land AFTER the new
     // turn's transcript, in the wrong order and once too often.
     const { core, transport, sink } = makeCore();
-    Object.assign(transport, { sendUserText: vi.fn() });
+    withTypedTurn(transport, vi.fn());
     await core.start();
     core.onReplyStarted("r1");
     core.command({ type: "user_text", text: "stop" });

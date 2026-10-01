@@ -224,11 +224,11 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
           }
           // Held for exactly this line: from before it takes the floor until it
           // settles, played or cut, so a caller is never left unable to barge in.
-          const holds = line.interruptible === false;
+          const holds = !line.interruptible;
           if (holds) deps.holdFloor(true);
           const result = await lineReply("pipeline-say", text, {
             onStart: line.onStart,
-            record: line.record !== false,
+            record: line.record,
           })
             .catch((err: unknown): SpokenLineOutcome => {
               logTurnCrash("Pipeline say failed")(err);

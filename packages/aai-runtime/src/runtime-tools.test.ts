@@ -84,9 +84,11 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>, logger: Logger = c
     providerEnv: {},
     workflows: undefined,
     logger,
-    emitters,
-    meters: createOwnedMap<string, UsageMeter>(),
-    speech: { of: () => makeSpeech() },
+    sessions: {
+      emitter: (id) => emitters.get(id),
+      meter: () => undefined,
+      speech: { of: () => makeSpeech() },
+    },
     clientTools: createClientToolBroker(),
     stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
   });
@@ -340,9 +342,11 @@ describe("self-hosted tool surface: a tool's model call finds its session's mete
       providerEnv: fakes.env,
       workflows: undefined,
       logger: consoleLogger,
-      emitters: createOwnedMap<string, SessionEmitter>(),
-      meters,
-      speech: { of: () => makeSpeech() },
+      sessions: {
+        emitter: () => undefined,
+        meter: (id) => meters.get(id),
+        speech: { of: () => makeSpeech() },
+      },
       clientTools: createClientToolBroker(),
       stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
     });
@@ -377,9 +381,11 @@ describe("self-hosted tool surface: a clientTool waits for the page", () => {
       providerEnv: {},
       workflows: undefined,
       logger: consoleLogger,
-      emitters: createOwnedMap<string, SessionEmitter>(),
-      meters: createOwnedMap<string, UsageMeter>(),
-      speech: { of: () => makeSpeech() },
+      sessions: {
+        emitter: () => undefined,
+        meter: () => undefined,
+        speech: { of: () => makeSpeech() },
+      },
       clientTools,
       stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
     });

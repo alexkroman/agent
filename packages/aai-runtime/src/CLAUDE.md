@@ -91,13 +91,17 @@ state there): a hook's write still lands in the store, without the commit.
 command (so a cut from code and one from the client report the same
 `reply.cancelled`), and answers `false` only when `Transport.isReplying` says
 the agent is silent. `say` goes to `Transport.speakLine`, or settles
-`"unsupported"` with one warning per session when the transport has none.
+`"dropped"` when the transport lacks the `say` capability (said once at session
+start — `transports/CLAUDE.md`, "What works on which transport").
 
-- **Every author-facing handle resolves the session per CALL**, through
-  `speechDirectory(sessions)` built once in `runtime.ts`: `of(sid)` for a tool
-  or handler context (a timer can fire after a resume swapped the session),
-  `live(sid)` for `RouteContext.speech`, and `announce` for a run's `notify`.
-  Never capture a `ServerSession` in a context.
+- **Every reach for a live session goes through ONE `SessionDirectory`**
+  (`session-directory.ts`, built once in `runtime.ts`), resolved per CALL: the
+  session (`session-attach.ts`'s resume takeover claims it), its emitter and
+  meter (`ctx.send`, a hook commit, `ctx.generate`), and `speech` — `of(sid)`
+  for a tool or handler context (a timer can fire after a resume swapped the
+  session), `live(sid)` for `RouteContext.speech`, `announce` for a run's
+  `notify`. Never capture a `ServerSession` in a context; `guard-invariants`
+  rule 36 refuses a session-keyed map anywhere else in the package.
 - A sessionless context (a step's `stepDelegate`, an unwired double) holds
   `DETACHED_SESSION_SPEECH` from `/host-internal`: every line `"dropped"`.
 
@@ -253,7 +257,9 @@ bug; `ToolDef.onError` says which kind. `tool-error-policy.ts` decides
 - A fatal verdict stops the turn in pipeline and text mode through
   `FatalToolLatch` (the AI SDK swallows the rejection). `withFatalSignal` folds
   it into the REQUEST signal, never the turn's, or it reads as a barge-in.
-- **S2S cannot abort** and degrades to a serialized failure.
+- **S2S cannot abort** and degrades to a serialized failure — the `fatalTool`
+  capability, warned once at session start for an agent whose tools declare
+  `onError`.
 - **The wire's `fatal` stays `false` for both arms**: `fatal: true` means the
   SESSION is over and `aai-ui` ends the call.
 - The four guard rules are in
@@ -295,12 +301,14 @@ every `tool_result` in host mode).
   `consumeLlmStream` APPENDS it to the turn's messages; the latch is per TURN
   (`beginTurn()` clears it).
 - **Filler goes out `record: false`, and nothing here may abort anything.**
-  START/DELAYED lines use the dead-air flag that
-  `HeardTracker.spokeRecordable()` reads, so filler alone never makes a turn
-  interruptible. The runner owns no signal, cancels no TTS, flushes nothing; a
-  `blocking` wait is an ESTIMATE of spoken length bounded by `pTimeout`, never
-  a TTS acknowledgement (touching the reply's lifecycle is what once muted an
-  agent for 20+ s).
+  Every line goes through `ToolSpeechChannel.speak` → `speakInReply`
+  (`transports/pipeline-lines.ts`), the dead-air cover's placement, so it is
+  separated from the words around it. START/DELAYED lines use the dead-air
+  flag that `HeardTracker.spokeRecordable()` reads, so filler alone never
+  makes a turn interruptible. The runner owns no signal, cancels no TTS,
+  flushes nothing; a `blocking` wait is an ESTIMATE of spoken length bounded
+  by `pTimeout`, never a TTS acknowledgement (touching the reply's lifecycle
+  is what once muted an agent for 20+ s).
 - The generic dead-air cover stands down while a tool covers its own gap
   (`toolCovering` in `transports/pipeline-stream-parts.ts`).
 
@@ -441,4 +449,5 @@ producers already take (`pipeline-llm-trace.ts`, `pipeline-audio-out.ts`).
   `metrics-sink.ts` (`registerMetricsSink`, `/metrics`), `Symbol.for`-keyed for
   the two-copies reason. `startTracing` registers `otelMetricsSink`
   (`_metrics-otel.ts`); a missing metrics peer is a warning, never a throw.
-- S2S and text mode emit no frame yet.
+- S2S and text mode emit no frame yet (the `turnMetrics` capability row in
+  `transports/CLAUDE.md`).

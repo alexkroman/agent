@@ -1,11 +1,12 @@
 /**
- * The OWNERSHIP and HYGIENE line rules — 5, 8, 9, 11, 16 and 27.
+ * The OWNERSHIP and HYGIENE line rules — 5, 8, 9, 11, 16, 27 and 36.
  *
  * What they have in common is that each one is about state somebody else owns:
  * the process environment (5), a map entry another async continuation may have
  * replaced (8, 9), a filesystem path that belongs to a different machine (11),
- * the session's observable surface (16), and a resource whose lifetime belongs
- * to a scope rather than to whoever remembered to release it (27).
+ * the session's observable surface (16), a resource whose lifetime belongs
+ * to a scope rather than to whoever remembered to release it (27), and the
+ * runtime's live sessions by id, which only one directory may hold (36).
  *
  * Rule 6 is RETIRED and rule 15 is RESERVED; both numbers stay unused. Rule IDs
  * are STABLE across the split from `guard-invariants-rules.mjs`.
@@ -28,6 +29,9 @@ import {
   SOURCE_PATHSPECS,
   TOOL_CONTEXT_PATHS,
 } from "./guard-invariants-scopes.mjs";
+
+/** The four things a live session claims under its id — rule 36. */
+const SESSION_KEYED_VALUES = ["ServerSession", "SessionEmitter", "UsageMeter", "ClientSink"];
 
 /** @type {import("./guard-invariants-rules.mjs").LineRule[]} */
 export const STATE_RULES = [
@@ -89,6 +93,46 @@ export const STATE_RULES = [
       "returns the only release for that claim, so an async teardown settling\n" +
       "after the key was re-claimed (reconnect resume, redeploy) cannot evict\n" +
       "the successor's entry.",
+  },
+  {
+    id: 36,
+    key: "rule35_sessionRegistryOutsideDirectory",
+    label: "a session-keyed registry outside session-directory.ts",
+    // The TYPE of a registry keyed by session id over one of the four things a
+    // live session claims. A type is what every spelling has to name — an
+    // annotation, a `createOwnedMap<…>()` call, a `new Map<…>()` — where a
+    // `.get(` scan would collide with the many unrelated `sessions` maps
+    // (slot state, the event stream) that are keyed by id too.
+    re: `(OwnedMap|Map)<string, *(${SESSION_KEYED_VALUES.join("|")})>`,
+    paths: [...RUNTIME_EGRESS_PATHSPECS, ":!packages/aai-runtime/src/session-directory.ts"],
+    skipComments: true,
+    samples: {
+      matches: [
+        "  const sessions = createOwnedMap<string, ServerSession>();",
+        "  emitters: OwnedMap<string, SessionEmitter>;",
+        "const meters = new Map<string, UsageMeter>();",
+      ],
+      ignores: [
+        '  sessions: Pick<SessionDirectory, "claim" | "session">;',
+        "const sinkBySession = new WeakMap<ServerSession, ClientSink>();",
+        "  const sessions = new Map<string, SlotEntry>();",
+      ],
+    },
+    remedy:
+      "Reach a live session through the runtime's `SessionDirectory`\n" +
+      "(`packages/aai-runtime/src/session-directory.ts`): `session(id)`,\n" +
+      "`emitter(id)`, `meter(id)`, `speech.of/live/announce`, and `claim` /\n" +
+      "`claimWiring` to register one. Take the narrowest `Pick<SessionDirectory,\n" +
+      "…>` your module needs.\n" +
+      "\n" +
+      "A session id outlives the `ServerSession` holding it — a reconnect\n" +
+      "resuming the id claims it while the old session's `stop()` drains, and a\n" +
+      "timer, a webhook, a straggling tool call or a run's `notify` can reach for\n" +
+      "the id after the swap. Every such reach must be answered per call by\n" +
+      "whatever holds the id NOW, and every release must be by claim. A second\n" +
+      "map is a second copy of that rule: it is how `ctx.send` once resolved a\n" +
+      "captured emitter and sent a resumed client's `syncState` push to the dead\n" +
+      "socket, recording it delivered so the next push was skipped.",
   },
   {
     id: 9,

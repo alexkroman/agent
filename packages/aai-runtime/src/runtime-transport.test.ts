@@ -21,6 +21,7 @@ import { makeAgent, makeClientSink, makeLogger, silentLogger } from "./_test-uti
 import { createFallbackSttOpener } from "./providers/fallback.ts";
 import { DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { createTransportFactory, type TransportFactoryDeps } from "./runtime-transport.ts";
+import { PIPELINE_CAPABILITIES } from "./transports/capabilities.ts";
 import * as pipelineTransport from "./transports/pipeline-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
 import type { Transport, TransportCallbacks } from "./transports/types.ts";
@@ -72,6 +73,7 @@ function buildArgs(): Parameters<ReturnType<typeof createTransportFactory>>[0] {
 /** A `Transport` double for the pipeline builder's return. */
 function fakeTransport(): Transport {
   return {
+    capabilities: PIPELINE_CAPABILITIES,
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     sendUserAudio: vi.fn(),

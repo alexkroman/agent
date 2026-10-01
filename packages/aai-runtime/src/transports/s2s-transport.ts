@@ -12,6 +12,7 @@ import {
   type S2sHandle,
   type S2sSessionConfig,
 } from "../s2s.ts";
+import { ASSEMBLYAI_S2S_CAPABILITIES } from "./capabilities.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import { createS2sLifecycle } from "./s2s-lifecycle.ts";
 import type { Transport, TransportCallbacks } from "./types.ts";
@@ -360,6 +361,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   return {
+    capabilities: ASSEMBLYAI_S2S_CAPABILITIES,
     start,
     stop,
     sendUserAudio(bytes) {

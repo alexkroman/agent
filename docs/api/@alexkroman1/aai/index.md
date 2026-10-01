@@ -14610,7 +14610,7 @@ virtual one is neither, because the things a virtual slot exists to hold
 ### SpeechOutcome
 
 ```ts
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 ```
 
 How one [SessionSpeech.say](#say) ended.
@@ -14619,11 +14619,11 @@ How one [SessionSpeech.say](#say) ended.
 - `"interrupted"`: it started and was cut off: a barge-in, an
   `interrupt()`, or the session ending mid-line. History holds the heard
   prefix.
-- `"dropped"`: it never started. The session ended, the line was empty, or an
+- `"dropped"`: it never started. The session ended, the line was empty, an
   interrupt stranded it in the queue (an interrupt, from the client or from
-  code, discards EVERY queued reply, queued `say`s included).
-- `"unsupported"`: the session's transport cannot speak verbatim text, which
-  means an S2S agent. See this module's header.
+  code, discards EVERY queued reply, queued `say`s included), or the
+  session's transport cannot speak verbatim text — an S2S agent, said once
+  at session start. See this module's header.
 
 ***
 

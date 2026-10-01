@@ -29,9 +29,11 @@ function harness(
   const log = overrides.log ?? makeLogger();
   const controller = createToolSpeechController({ log, sid: "s", random: () => 0 });
   const channel: ToolSpeechChannel = {
-    send: (text, opts) => sent.push({ text, record: opts.record }),
-    boundary: () => undefined,
-    record: (text) => recorded.push(text),
+    speak: (text, line) => {
+      sent.push({ text, record: line.record });
+      // What `speakInReply` does with a recordable line: the turn's transcript.
+      if (line.record) recorded.push(text);
+    },
     callerSpeaking: () => false,
     awaitSpoken: (text) => sleep(estimateSpokenMs(text)),
     ...overrides,
@@ -389,9 +391,7 @@ describe("binding", () => {
     const call = controller.begin({ complete: [{ content: "Done." }] }, "t", {}, undefined);
     // What `consumeLlmStream` does in its `finally`.
     controller.bind({
-      send: () => undefined,
-      boundary: () => undefined,
-      record: () => undefined,
+      speak: () => undefined,
       callerSpeaking: () => false,
       awaitSpoken: () => Promise.resolve(),
     })();

@@ -20,6 +20,7 @@ import type { Message } from "@alexkroman1/aai";
 import type { ModelMessage } from "ai";
 import { bytesToPcm16 } from "../_pcm.ts";
 import type { Logger } from "../runtime-config.ts";
+import { PIPELINE_CAPABILITIES } from "./capabilities.ts";
 import type { HeardTracker } from "./pipeline-heard.ts";
 import type { PipelineHistory } from "./pipeline-history.ts";
 import type { ManualTurn } from "./pipeline-manual-turn.ts";
@@ -102,6 +103,7 @@ export function createPipelineCommands(deps: PipelineCommandDeps): Transport {
   const silenced = (pcm: Int16Array): Int16Array =>
     manualTurn.isOpen() ? pcm : new Int16Array(pcm.length);
   return {
+    capabilities: PIPELINE_CAPABILITIES,
     start: () => lifecycle.start(),
 
     stop: () => {
