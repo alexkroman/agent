@@ -91,7 +91,6 @@ const NOT_SOURCE = new Set([
   "npmignore",
   "gitkeep",
   "node-version",
-  "nvmrc",
   "example",
   "prettierignore",
   // sqlfluff's INI config.

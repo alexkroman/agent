@@ -281,17 +281,8 @@ describe("two deliveries of one run, overlapping inside the journal", () => {
     // Exactly one refusal per scenario, by construction, so there is no range to
     // record and nothing for a floor above zero to be measured against.
     expect(reached.startsRefused, "no colliding start was ever refused").toBeGreaterThan(0);
-    // Small by construction NOW, and it was not always: the floor was `> 8`
-    // against a measured 12-23, and the range fell to **3-9 over 20 runs** when
-    // `execute` stopped opening with a sequential record read. A cancel issued
-    // in the same burst as its deliveries used to land while they were still
-    // two round trips from running anything; against a one-round-trip opening
-    // it lands later in the body, and the scenarios where it lands after the
-    // last step no longer qualify — `noteScenario` counts one only while
-    // `run.total < oracle.total`. So this is `> 0`, the floor a state this
-    // narrow can carry: what it catches is a cancel that stopped being able to
-    // land mid-walk at all.
-    expect(reached.cancelsMidWalk, "no cancel landed with work still ahead").toBeGreaterThan(0); // 3-9 over 20 runs
+    // `cancelsMidWalk` is floored in its own property below: this corpus
+    // reached it 0 times in 1 run of 30, so a floor here failed at that rate.
     expect(reached.fanOuts, "no program fanned steps out").toBeGreaterThan(6); // 13-28
   }, 120_000);
 });
@@ -356,6 +347,55 @@ describe("a timeout window and a signal, racing for one wait", () => {
     // signal always won never exercises the close.
     expect(raced.closeWon, "no timeout window ever closed").toBeGreaterThan(35); // 71-111
     expect(raced.closeRefused, "a signal never once beat a timeout close").toBeGreaterThan(12); // 22-41
+  }, 120_000);
+});
+
+/** What the mid-walk cancel property reached. */
+const cancelled: Stats = zeroStats();
+
+/**
+ * A `cancel` landing while the walk still has work ahead, targeted.
+ *
+ * Its own property for the reason the `closeHook` race above has one. The walk
+ * property issues a cancel only when `cancelRound` is drawn, and a cancel
+ * counts only while `run.total < oracle.total`, so with the cancel landing
+ * one round trip into the body, that corpus reached the state **0 times in 1
+ * run of 30** (2-9 in the rest) and a `> 0` floor there failed at that rate.
+ * Here every scenario cancels in round 1, against a body of at least two nodes
+ * so there is work left for the cancel to stop. `failing` is off: a `boom`
+ * ends the run terminally before the cancel can win.
+ */
+describe("a cancel issued alongside a run's first deliveries", () => {
+  test("stops the run with work still ahead, and every law holds", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.scheduler(),
+        fc.array(nodeArb(false), { minLength: 2, maxLength: 4 }),
+        fc.integer({ min: 2, max: 3 }),
+        fc.integer({ min: 1, max: 3 }),
+        fc.constantFrom<Arm>("direct", "roundTrip"),
+        async (s, rawProgram, deliveries, stepConcurrency, arm) => {
+          const program = label(rawProgram);
+          const oracle = await runScenario(program, { stepConcurrency });
+          const run = await runConcurrentScenario(program, {
+            scheduler: s,
+            deliveries,
+            stepConcurrency,
+            arm,
+            cancelRound: 1,
+          });
+          noteScenario(cancelled, run, oracle);
+          expect([
+            ...checkLaws(program, run, oracle),
+            ...checkJournalInvariants(run.writes),
+          ]).toEqual([]);
+        },
+      ),
+      { numRuns: 40 },
+    );
+
+    // Range over 20 runs.
+    expect(cancelled.cancelsMidWalk, "no cancel landed with work still ahead").toBeGreaterThan(5); // 11-21
   }, 120_000);
 });
 
