@@ -16499,6 +16499,7 @@ import type { GenerateResult } from '@alexkroman1/aai';
 import type { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
 import type { IncomingMessage } from 'node:http';
+import { isPathInside } from '@alexkroman1/aai/workspace-files';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
 import { parseBearer } from '@alexkroman1/aai/host-internal';
@@ -16800,8 +16801,7 @@ export type HttpUploadBackendOptions = {
     fetch?: typeof globalThis.fetch | undefined;
 };
 
-// @internal
-export function isPathInside(dir: string, target: string): boolean;
+export { isPathInside }
 
 // @public
 type JournalArm = {
