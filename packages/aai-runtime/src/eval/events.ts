@@ -298,13 +298,8 @@ function requireCallsTo(calls: readonly EvalToolCall[], name: string): readonly 
  * refusal is right for a single TURN: two calls there is usually the finding.
  * Across turns it is ordinary — a caller nudges, the agent re-reads the state,
  * and a case reading `toolCallsInTurns(turns)` meets a duplicate through no
- * fault of the agent's.
- *
- * That left the reader pushing cases back onto single-turn scopes, which is
- * exactly the wrong direction: a live model calls a median of one tool per reply
- * (`DEFAULT_MAX_STEPS`), so the claims that survive it are the ones read across
- * turns. One eval was restructured to give a tool its own turn purely to dodge
- * the refusal.
+ * fault of the agent's — and a live model calls a median of one tool per reply
+ * (`DEFAULT_MAX_STEPS`), so the claims that survive it are read across turns.
  *
  * The LAST rather than the first, because a repeated call is the agent settling
  * on an answer and the settled one is what the caller was told.
@@ -324,9 +319,6 @@ function requireCallsTo(calls: readonly EvalToolCall[], name: string): readonly 
  *   return scored.score;
  * }
  * ```
- *
- * Use {@link toolResultIn} when "exactly once" is part of the claim. This is for
- * when it is not.
  */
 export function lastToolResultIn<T = unknown>(
   calls: readonly EvalToolCall[],
