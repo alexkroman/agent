@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Inject a failure into the GUEST→SERVER hop and assert what the caller is
- * told — the same gate as `error-injection.test.ts`, one layer down.
+ * told — the same gate as `../error-injection.test.ts`, one layer down.
  *
  * ## Why this needs its own sweep
  *
@@ -9,7 +9,7 @@
  * CODES against `workflowApiErrorStatus`, and it is a pure-function test: it
  * mints an error carrying a code and asks what status that code maps to. What
  * it cannot see is whether anything ever ATTACHES that code — and on this hop
- * exactly one thing does. `platform-rpc.ts`'s `statusError` puts
+ * exactly one thing does. `rpc.ts`'s `statusError` puts
  * `PLATFORM_UNAVAILABLE_CODE` on a reply whose status is in `RETRYABLE_STATUS`
  * and on no other, so the entire "the platform said come back" branch of the
  * classification table is reachable only through that one `Set` membership
@@ -39,9 +39,9 @@
 
 import { RETRYABLE_STATUS } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
-import { PLATFORM_ROUTES, type PlatformEndpoint } from "./platform-endpoint.ts";
-import { type PlatformCall, platformPost } from "./platform-rpc.ts";
-import { workflowApiErrorStatus } from "./workflow/api/error-status.ts";
+import { workflowApiErrorStatus } from "../workflow/api/error-status.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint } from "./endpoint.ts";
+import { type PlatformCall, platformPost } from "./rpc.ts";
 
 /** What the CALLER should be told when the platform answers this status. */
 type Verdict =
@@ -215,7 +215,7 @@ describe("every platform status the guest can meet is classified", () => {
 describe("a failed hop out of the guest", () => {
   /**
    * The other half of this seam. A platform call that never gets an answer is
-   * the case `_egress-fetch.ts` exists for — a reset taken by one request
+   * the case `../_egress-fetch.ts` exists for — a reset taken by one request
    * failing every sibling on the same HTTP/2 connection — and the production
    * symptom was six consecutive `500 Internal server error`s, each ~40s, each
    * making the browser re-send windows it had already stored, into the fault.

@@ -2,29 +2,29 @@
 /**
  * WHICH platform socket a call should use, and who owns its lifetime.
  *
- * Split from `platform-socket.ts` because they answer different questions and
+ * Split from `socket.ts` because they answer different questions and
  * the file was two lines under the 500-line cap. That module is the MECHANISM —
  * frames, correlation, the heartbeat, the reconnect, the refusal taxonomy — and
  * this one is the POLICY: one socket per process per base, opened by the one
  * composition root that has a lifetime to hang it on, consulted by
- * `platform-rpc.ts` on every call.
+ * `rpc.ts` on every call.
  *
  * @module platform-socket-registry
  */
 
-import type { PlatformEndpoint } from "./platform-endpoint.ts";
+import type { Logger } from "../runtime-config.ts";
+import type { PlatformEndpoint } from "./endpoint.ts";
 import {
   type CreatePlatformWebSocket,
   createPlatformSocket,
   type PlatformSocket,
-} from "./platform-socket.ts";
-import type { Logger } from "./runtime-config.ts";
+} from "./socket.ts";
 
 /**
  * Every socket this process has opened, keyed by the base it dials.
  *
  * A registry rather than a value threaded through five clients, and for the
- * reason `_egress-fetch.ts` gives for its pools: the clients are handed
+ * reason `../_egress-fetch.ts` gives for its pools: the clients are handed
  * `{base, token}` by four different composition sites, none of which owns a
  * lifetime, and the socket has to be ONE for the process or the Modal input
  * accounting above is wrong. Keyed by base so a spec — or a host serving two
@@ -52,10 +52,10 @@ export function ensurePlatformSocket(
      * An already-built socket, for a spec testing what CONSULTS this registry
      * rather than what a socket does.
      *
-     * `platform-rpc.test.ts` is the caller: its subject is the transport CHOICE —
+     * `rpc.test.ts` is the caller: its subject is the transport CHOICE —
      * prefer a socket, fall back on a refusal, never retry a written call — and
      * driving a fake peer through a handshake to state that would be asserting on
-     * this module twice. `platform-socket.test.ts` is where the socket itself is
+     * this module twice. `socket.test.ts` is where the socket itself is
      * driven, through `create`.
      */
     socket?: PlatformSocket | undefined;

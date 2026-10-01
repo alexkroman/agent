@@ -138,31 +138,27 @@ export { parseBearer } from "./bearer.ts";
 // client here takes. Declared on this side because the dependency runs one way —
 // `aai-server` imports this package and never the reverse — so the five handlers
 // take their route from the table rather than restating the literal.
-export {
-  MAX_PLATFORM_SOCKET_FRAME_BYTES,
-  PLATFORM_ROUTES,
-  PLATFORM_SOCKET_PATH,
-  type PlatformEndpoint,
-  type PlatformRoute,
-} from "./platform-endpoint.ts";
 // The guest's own socket CLIENT. Its importer is `aai-server`'s
 // `platform/socket.scenario.test.ts`, which drives the real client against the
 // real platform over a real port — the one spec that can say the two ends are
 // wired to each other, and one neither package can write alone.
-export {
-  createPlatformSocket,
-  type PlatformSocket,
-  platformSocketUrl,
-} from "./platform-socket.ts";
 // The frames that same guest sends when it carries those five routes down ONE
 // socket instead of five POSTs. Declared beside the table and for the same
 // reason: `aai-server/platform-socket-handler.ts` is the other end of this wire,
 // and a schema per side is a frame one of them silently drops.
 export {
+  createPlatformSocket,
+  MAX_PLATFORM_SOCKET_FRAME_BYTES,
+  PLATFORM_ROUTES,
+  PLATFORM_SOCKET_PATH,
+  type PlatformEndpoint,
   PlatformInboundFrameSchema,
   type PlatformReplyFrame,
+  type PlatformRoute,
+  type PlatformSocket,
   parsePlatformFrame,
-} from "./platform-socket-frames.ts";
+  platformSocketUrl,
+} from "./platform/index.ts";
 export type { ProviderEnvVarsQuery } from "./providers/_provider-env-var.ts";
 // The CLI's two credential helpers. `withHostCredentialFallback` fills a
 // provider key from the host shell for `aai dev`/`aai console`/`npm start`;

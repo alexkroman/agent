@@ -10,8 +10,8 @@
  */
 
 import { afterEach, describe, expect, test } from "vitest";
-import { PLATFORM_ROUTES } from "../../platform-endpoint.ts";
-import { platformPost } from "../../platform-rpc.ts";
+import { PLATFORM_ROUTES } from "../../platform/endpoint.ts";
+import { platformPost } from "../../platform/rpc.ts";
 import {
   isDiskFull,
   isInsufficientResources,

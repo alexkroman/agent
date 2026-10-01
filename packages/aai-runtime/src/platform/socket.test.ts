@@ -3,7 +3,7 @@
  * The guest's end of the platform socket.
  *
  * What is worth pinning here is the FAILURE taxonomy, because it is the whole
- * safety argument for preferring a socket at all (`platform-socket.ts`'s module
+ * safety argument for preferring a socket at all (`socket.ts`'s module
  * doc): a call that was never written may be re-sent over HTTP, and a call that
  * WAS written may not — re-sending one would run an `appendEvents` twice. Those
  * two cases are one `if` apart in the implementation and indistinguishable from
@@ -16,21 +16,21 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { HeaderWebSocket } from "./_ws.ts";
-import { PLATFORM_ROUTES } from "./platform-endpoint.ts";
+import type { HeaderWebSocket } from "../_ws.ts";
+import { PLATFORM_UNAVAILABLE_CODE } from "../workflow/api/error-status.ts";
+import { PLATFORM_ROUTES } from "./endpoint.ts";
 import {
   createPlatformSocket,
   HEARTBEAT_MS,
   isPlatformSocketUnavailable,
   PONG_DEADLINE_MS,
   platformSocketUrl,
-} from "./platform-socket.ts";
+} from "./socket.ts";
 import {
   closePlatformSockets,
   ensurePlatformSocket,
   platformSocketFor,
-} from "./platform-socket-registry.ts";
-import { PLATFORM_UNAVAILABLE_CODE } from "./workflow/api/error-status.ts";
+} from "./socket-registry.ts";
 
 const BASE = "https://api.test/my-agent";
 const TOKEN = "sandbox-bearer";

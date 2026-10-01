@@ -22,11 +22,11 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { PLATFORM_ROUTES } from "./platform-endpoint.ts";
-import { platformBearer, platformPost, platformResult } from "./platform-rpc.ts";
-import { PLATFORM_SOCKET_UNAVAILABLE_CODE } from "./platform-socket.ts";
-import { closePlatformSockets, ensurePlatformSocket } from "./platform-socket-registry.ts";
-import { PLATFORM_UNAVAILABLE_CODE } from "./workflow/api/error-status.ts";
+import { PLATFORM_UNAVAILABLE_CODE } from "../workflow/api/error-status.ts";
+import { PLATFORM_ROUTES } from "./endpoint.ts";
+import { platformBearer, platformPost, platformResult } from "./rpc.ts";
+import { PLATFORM_SOCKET_UNAVAILABLE_CODE } from "./socket.ts";
+import { closePlatformSockets, ensurePlatformSocket } from "./socket-registry.ts";
 
 const BASE = "https://api.test/my-agent";
 const TOKEN = "sandbox-bearer";
@@ -302,7 +302,7 @@ describe("the `{result}` envelope", () => {
 /**
  * The transport choice, which is the ONE thing the socket changed above this
  * module. Everything else in this file runs on HTTP and still passes unchanged,
- * which is the claim `platform-socket.ts` makes for the swap.
+ * which is the claim `socket.ts` makes for the swap.
  */
 describe("socket first, HTTP as the fallback", () => {
   test("prefers a registered open socket and never touches fetch", async () => {

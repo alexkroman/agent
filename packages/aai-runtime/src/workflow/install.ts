@@ -39,7 +39,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { closeEgressFetch } from "../_egress-fetch.ts";
 import { openAppDb } from "../app-db.ts";
 import { type ClientInbox, installChannelOutbox, installClientInbox } from "../inbox/index.ts";
-import { closePlatformSockets, ensurePlatformSocket } from "../platform-socket-registry.ts";
+import { closePlatformSockets, ensurePlatformSocket } from "../platform/index.ts";
 import type { CloseableDb } from "../postgres-db.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createStepDelegate } from "../step-delegate.ts";
@@ -171,7 +171,7 @@ export function installWorkflowSupport(options: {
   // that runs once per `AgentServer` and already owns the egress pools' lifetime
   // (see `close()` below). Every platform client prefers it and falls back to
   // HTTP until it is open, so this is a latency decision rather than a
-  // durability one — `platform-socket.ts` carries the argument.
+  // durability one — `../platform/socket.ts` carries the argument.
   if (platform) ensurePlatformSocket(platform, { logger: options.logger });
   const store = createUploadStore({
     db,

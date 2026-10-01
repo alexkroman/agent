@@ -165,11 +165,11 @@ export function isResourceExhausted(err: unknown): boolean {
 }
 
 /**
- * The code `platform-rpc.ts` puts on a platform reply this guest should COME
+ * The code `../../platform/rpc.ts` puts on a platform reply this guest should COME
  * BACK for — a {@link RETRYABLE_STATUS} from one of the four platform routes.
  *
  * Declared here rather than beside the throw because it is a classification,
- * and this file is the classification table; `platform-rpc.ts` imports it, the
+ * and this file is the classification table; `../../platform/rpc.ts` imports it, the
  * same direction `BodyTooLargeError` already travels.
  *
  * ## The condition it names had no code, and so no status
@@ -209,7 +209,7 @@ export function isPlatformUnavailable(err: unknown): boolean {
  *
  * **The failure this exists for reached a client as `500 Internal server
  * error`.** A deployed guest's every byte operation and every platform call is a
- * request out of a sandbox (`_upload-blobs-brokered.ts`, `platform-rpc.ts`), and
+ * request out of a sandbox (`_upload-blobs-brokered.ts`, `../../platform/rpc.ts`), and
  * `fetch` rejecting with `TypeError: fetch failed` — no status, the real code two
  * `cause` hops down — arrived at the router as an unnamed rejection. Observed in
  * production on a part claim: six consecutive

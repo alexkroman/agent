@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { PLATFORM_ROUTES } from "../platform-endpoint.ts";
+import { PLATFORM_ROUTES } from "../platform/endpoint.ts";
 import { createPlatformKeyStore } from "./keys-platform.ts";
 
 /** One captured request. */

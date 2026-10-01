@@ -3,9 +3,9 @@
  * One request to the platform: the POST, the deadline, and the status check that
  * every guest-side client was making for itself.
  *
- * `platform-endpoint.ts` collapsed the credential pair and the five paths. What it
+ * `endpoint.ts` collapsed the credential pair and the five paths. What it
  * left behind was four `call()` bodies — `session-state-platform.ts`,
- * `uploads-platform.ts`, `workflow-platform-storage.ts` and
+ * `../uploads-platform.ts`, `workflow-platform-storage.ts` and
  * `workflow/platform-queue.ts` — each spelling out the same seven steps: resolve
  * the fetch seam, build the URL, set `authorization` and `content-type`, wrap the
  * whole thing in `pTimeout`, read the body, throw on non-2xx with the status and a
@@ -47,14 +47,14 @@
  * `pTimeout`'s message is read by whoever is looking at a step that failed for no
  * other stated reason, and the actionable fact is WHICH of the four deadlines
  * elapsed — they are 10s, 15s, 15s and 20s, set for four different reasons. So it
- * is `<label> timed out after <ms>ms`, matching `_upload-blobs-brokered.ts`, which
+ * is `<label> timed out after <ms>ms`, matching `../_upload-blobs-brokered.ts`, which
  * already had it right. The enqueue client's message used to interpolate the URL
  * instead; that was an artifact of the URL having once been built twice per call,
  * and the base is one operator-set value the label does not need to repeat.
  *
  * ## The transport is a SOCKET first, and HTTP is the fallback
  *
- * `platform-socket.ts` is preferred and `rpcFetch` answers whenever there is not
+ * `socket.ts` is preferred and `rpcFetch` answers whenever there is not
  * an open one. Everything above {@link platformPost} reads a status and a body
  * and cannot tell which carried it, which is what let the five clients keep their
  * error handling unchanged; `aai-server/PLATFORM-SOCKET-CLAUDE.md` is the wire.
@@ -65,13 +65,13 @@
 import { RETRYABLE_STATUS } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
-import { rpcFetch } from "./_egress-fetch.ts";
-import { newTraceparent, traceIdOf } from "./_trace-context.ts";
-import { type PlatformEndpoint, type PlatformRoute, platformUrl } from "./platform-endpoint.ts";
-import { isPlatformSocketUnavailable } from "./platform-socket.ts";
-import { platformSocketFor } from "./platform-socket-registry.ts";
-import { consoleLogger } from "./runtime-config.ts";
-import { PLATFORM_UNAVAILABLE_CODE } from "./workflow/api/error-status.ts";
+import { rpcFetch } from "../_egress-fetch.ts";
+import { newTraceparent, traceIdOf } from "../_trace-context.ts";
+import { consoleLogger } from "../runtime-config.ts";
+import { PLATFORM_UNAVAILABLE_CODE } from "../workflow/api/error-status.ts";
+import { type PlatformEndpoint, type PlatformRoute, platformUrl } from "./endpoint.ts";
+import { isPlatformSocketUnavailable } from "./socket.ts";
+import { platformSocketFor } from "./socket-registry.ts";
 
 /** One POST to the platform, as its caller declares it. */
 export type PlatformCall = {
@@ -151,7 +151,7 @@ export function platformBearer(token: string): { authorization: string } {
  */
 export async function platformPost(opts: PlatformEndpoint, call: PlatformCall): Promise<string> {
   // A W3C trace context per call, so this side's wall clock and the handler's
-  // own breakdown can be put beside each other — see `_trace-context.ts`, which
+  // own breakdown can be put beside each other — see `../_trace-context.ts`, which
   // carries the ~840 ms this exists to decompose. Minted here rather than passed
   // in: every one of the four clients goes through this function, so a caller
   // that forgot would be a call with no correlation at all.
@@ -182,7 +182,7 @@ export async function platformPost(opts: PlatformEndpoint, call: PlatformCall): 
   // an instrument rather than an event. The `traceId` is the join key and the
   // status is what says whether the elapsed time bought anything. `transport`
   // was added with the socket, and is the only way to tell from a guest's log
-  // that it is running on the fallback — see `platform-socket.ts`.
+  // that it is running on the fallback — see `socket.ts`.
   consoleLogger.debug("platform call", {
     label: call.label,
     route: call.route,
@@ -216,7 +216,7 @@ type PlatformReply = {
 /**
  * The transport choice, and the ONE place it is made.
  *
- * The socket is preferred and HTTP is the fallback — see `platform-socket.ts` for
+ * The socket is preferred and HTTP is the fallback — see `socket.ts` for
  * why that direction, and for why a refusal is only ever raised BEFORE the frame
  * is written. Everything above this function reads a status and a body and cannot
  * tell the two apart, which is the property that let five clients keep their
@@ -247,7 +247,7 @@ async function send(
       if (!isPlatformSocketUnavailable(err)) throw err;
     }
   }
-  // `rpcFetch`, never the global — see `_egress-fetch.ts`. These calls share an
+  // `rpcFetch`, never the global — see `../_egress-fetch.ts`. These calls share an
   // origin with the upload broker's, so on HTTP/2 they shared its connection too:
   // a reset taken by a claim's bucket probes failed the run-event reads in the same
   // instant, which is what made one transport fault read as three unrelated bugs.
@@ -276,7 +276,7 @@ async function send(
  * for why that is the one answer this condition must not get.
  *
  * `RETRYABLE_STATUS` is the SDK's own set rather than a list written here, for
- * the reason `_upload-blobs-brokered.ts` gives for taking it: the two ends of a
+ * the reason `../_upload-blobs-brokered.ts` gives for taking it: the two ends of a
  * platform call cannot be allowed to disagree about which statuses mean "later".
  * A status outside it stays code-less on purpose — a 400, 401, 404 or 501 will
  * be the same answer next time, and a 503 telling a page to retry one forever is

@@ -21,7 +21,7 @@
  * agent does not own, a 501 is a deployment without the feature, and
  * `RETRYABLE_STATUS` decides whether a step comes back. Mapping that onto
  * `error.code` and back would be a lossy translation in the middle of the one
- * path where the status IS the contract (`platform-rpc.ts`'s `statusError`).
+ * path where the status IS the contract (`rpc.ts`'s `statusError`).
  *
  * So the reply frame carries a status and a body, and the transport stays a
  * transport.

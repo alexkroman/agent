@@ -34,6 +34,7 @@ const SRC = path.dirname(fileURLToPath(import.meta.url));
 const BOUNDED_DIRS = [
   "inbox",
   "mcp",
+  "platform",
   "s2s",
   "transports/pipeline",
   "transports/pipeline/heard",

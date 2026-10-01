@@ -4,7 +4,7 @@
  * the five paths declared once.
  *
  * Five modules reach the platform over HTTP — `session-state-platform.ts`,
- * `uploads-platform.ts`, `workflow/journal/platform.ts`,
+ * `../uploads-platform.ts`, `workflow/journal/platform.ts`,
  * `workflow/keys-platform.ts` and
  * `workflow/platform-queue.ts` — and each had grown its own `{base, token, fetch?}`
  * options type, its own `` `${base.replace(/\/+$/, "")}/…` ``, and its own copy of
@@ -20,15 +20,15 @@
  * `/internal` (the typed-json codec, the route tables), and `aai-runtime` may not
  * import the server. So the shared declaration has to sit on this side, and the
  * handlers take their `*_ROUTE` from {@link PLATFORM_ROUTES} rather than spelling a
- * literal. That is the same move `server-routes.ts` makes for the OPPOSITE
+ * literal. That is the same move `../server-routes.ts` makes for the OPPOSITE
  * direction, for the same reason its doc gives.
  *
- * This is a source of truth, not a collection point — unlike `server-routes.ts`,
+ * This is a source of truth, not a collection point — unlike `../server-routes.ts`,
  * whose entries are imported from the modules that serve them. Here the callers are
  * in this package and the servers are in another, so the strings are declared once,
  * here, and both ends read them.
  *
- * ## The REQUEST is `platform-rpc.ts`, and it is a separate file
+ * ## The REQUEST is `rpc.ts`, and it is a separate file
  *
  * This module is the declaration both packages read; the POST, the deadline and the
  * status check are the guest's alone. Keeping them apart is what stops `aai-server`
@@ -73,7 +73,7 @@ export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTE
  * five above are what a CALL names, and this is the pipe every one of them can be
  * carried down. A frame on this socket names one of those five and is dispatched
  * to the very same handler, so nothing here is a second copy of a route — see
- * `platform-socket.ts` (the guest's end) and
+ * `socket.ts` (the guest's end) and
  * `aai-server/platform-socket-handler.ts` (the platform's).
  *
  * It sits beside them rather than in `aai-server` for the reason the table does:
@@ -109,7 +109,7 @@ export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16_777_216;
  *
  * ONE type, aliased by each client's own name rather than restated: the four were
  * structurally identical, which is why `resolvePlatformQueue()`'s single result is
- * already handed to three of them (`runtime.ts`, `workflow/install.ts`) under three
+ * already handed to three of them (`../runtime.ts`, `workflow/install.ts`) under three
  * different names.
  *
  * @internal
@@ -118,7 +118,7 @@ export type PlatformEndpoint = {
   /**
    * Where the platform is dialable, slug included — `AAI_PLATFORM_BASE_URL`.
    *
-   * The same value `_upload-blobs-brokered.ts` takes, and for the same reason: the
+   * The same value `../_upload-blobs-brokered.ts` takes, and for the same reason: the
    * guest does not COMPOSE this URL, so it cannot name another app's slug even in
    * principle. The platform derives the tenant from the slug in the path and
    * verifies this sandbox's bearer against it.
@@ -141,7 +141,7 @@ export type PlatformEndpoint = {
   token: string;
   /**
    * Test seam — production takes the pooled HTTP/1.1 `rpcFetch`, NEVER
-   * `globalThis.fetch`: see `_egress-fetch.ts`.
+   * `globalThis.fetch`: see `../_egress-fetch.ts`.
    */
   fetch?: typeof globalThis.fetch | undefined;
 };

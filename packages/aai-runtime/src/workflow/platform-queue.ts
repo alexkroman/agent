@@ -39,8 +39,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import { PLATFORM_ROUTES, type PlatformEndpoint } from "../platform-endpoint.ts";
-import { platformPost } from "../platform-rpc.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint, platformPost } from "../platform/index.ts";
 import { encodeTypedJson } from "./typed-json.ts";
 
 /**

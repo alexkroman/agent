@@ -4,17 +4,17 @@
  *
  * Every guest→platform call — session state, upload records, the replay
  * engine's journal, its correlation-key index, and an enqueue — used to be its
- * own `POST` on a pooled HTTP/1.1 connection (`_egress-fetch.ts`'s `rpcFetch`).
+ * own `POST` on a pooled HTTP/1.1 connection (`../_egress-fetch.ts`'s `rpcFetch`).
  * They now ride one socket per process, opened once by `installWorkflowSupport`
  * and shared by all five clients, with the frames declared in
- * `platform-socket-frames.ts`.
+ * `socket-frames.ts`.
  *
  * ## What does NOT change, and it is nearly everything
  *
  * The socket is a TRANSPORT swap and nothing else. A frame names one of
  * `PLATFORM_ROUTES` and carries the same already-encoded body the `POST` carried;
  * the platform runs it through the same Hono app and answers with the status that
- * route would have answered. So `platform-rpc.ts`'s error taxonomy, every
+ * route would have answered. So `rpc.ts`'s error taxonomy, every
  * `errorFor`, `RETRYABLE_STATUS`, the `{result}` envelope and each caller's own
  * deadline all keep working unread — which is the property that made this safe to
  * do at all, and the reason the swap lives under `platformPost` rather than in
@@ -46,7 +46,7 @@
  * the guest pings every {@link HEARTBEAT_MS} and tears the socket down when a
  * pong does not come back within {@link PONG_DEADLINE_MS} — an APPLICATION ping,
  * answered by the same loop that answers requests, for the reason
- * `platform-socket-frames.ts` gives.
+ * `socket-frames.ts` gives.
  *
  * ## One socket per process, and one Modal input for its life
  *
@@ -63,20 +63,20 @@
 
 import { jitteredBackoff } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import { createRestartableTimer } from "./_timer.ts";
-import { type HeaderWebSocket, openHeaderWebSocket } from "./_ws.ts";
+import { createRestartableTimer } from "../_timer.ts";
+import { type HeaderWebSocket, openHeaderWebSocket } from "../_ws.ts";
+import { consoleLogger, type Logger } from "../runtime-config.ts";
+import { PLATFORM_UNAVAILABLE_CODE } from "../workflow/api/error-status.ts";
 import {
   MAX_PLATFORM_SOCKET_FRAME_BYTES,
   PLATFORM_SOCKET_PATH,
   type PlatformRoute,
-} from "./platform-endpoint.ts";
+} from "./endpoint.ts";
 import {
   PlatformOutboundFrameSchema,
   type PlatformRequestFrame,
   parsePlatformFrame,
-} from "./platform-socket-frames.ts";
-import { consoleLogger, type Logger } from "./runtime-config.ts";
-import { PLATFORM_UNAVAILABLE_CODE } from "./workflow/api/error-status.ts";
+} from "./socket-frames.ts";
 
 /** `ws`'s `OPEN`, spelled rather than imported — {@link HeaderWebSocket} is structural. */
 const WS_OPEN = 1;
@@ -146,7 +146,7 @@ const MAX_INFLIGHT = 64;
 /**
  * The code on a refusal that means "this call was never sent".
  *
- * A property rather than a subclass, for the reason `platform-rpc.ts` gives about
+ * A property rather than a subclass, for the reason `rpc.ts` gives about
  * `PLATFORM_UNAVAILABLE_CODE`: a deployed guest holds two copies of this package
  * (the harness's and the worker bundle's), so a class declared here would have
  * two identities and the wrong copy could not recognise it.
@@ -234,7 +234,7 @@ export function platformSocketUrl(base: string): string {
  * The token rides an `authorization` HEADER and never the URL, for the reason
  * every other credential here does — a query string is logged by proxies, and
  * Modal's is in front of this one. Node's native `WebSocket` cannot set headers,
- * which is why this goes through `_ws.ts`'s `openHeaderWebSocket`: that module
+ * which is why this goes through `../_ws.ts`'s `openHeaderWebSocket`: that module
  * owns the one narrowing into {@link HeaderWebSocket}, and opening a second `ws`
  * client here would mean writing it again. The CAP is why it is that function
  * rather than `defaultCreateHeaderWebSocket` — see its doc for why the cap is not
@@ -242,7 +242,7 @@ export function platformSocketUrl(base: string): string {
  *
  * `perMessageDeflate` stays off, matching every other socket this package opens
  * (`PROVIDER_WS_OPTIONS`, applied by that factory). These bodies WOULD compress,
- * unlike the PCM `_ws.ts` measured — but the cost it measured (a zlib context
+ * unlike the PCM `../_ws.ts` measured — but the cost it measured (a zlib context
  * pair per socket) is paid whether or not a frame benefits, and nothing has
  * measured the trade on this path. Turning it on is a one-line, one-measurement
  * change; leaving it on by inheritance is not.

@@ -64,8 +64,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { partsOf } from "./_upload-blobs.ts";
 import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
 import { UploadIdTakenError, UploadsUnavailableError } from "./_upload-store.ts";
-import { PLATFORM_ROUTES, type PlatformEndpoint } from "./platform-endpoint.ts";
-import { platformResult } from "./platform-rpc.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint, platformResult } from "./platform/index.ts";
 
 /**
  * How long one record call may take.

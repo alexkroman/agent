@@ -8,7 +8,7 @@ read_when: >-
 # The guest→platform socket
 
 Reference for ONE wire, whose two ends live in two packages:
-`packages/aai-runtime/src/platform-socket.ts` (the guest dials) and
+`packages/aai-runtime/src/platform/socket.ts` (the guest dials) and
 `packages/aai-server/src/platform-socket-handler.ts` (the platform answers).
 
 A SIBLING of this package's guide rather than a section in it, for the reason
@@ -40,7 +40,7 @@ using.
 
 ## The wire
 
-Four frames, declared once in `aai-runtime/platform-socket-frames.ts` and parsed
+Four frames, declared once in `aai-runtime/platform/socket-frames.ts` and parsed
 on both ends. One JSON object per text frame.
 
 | Direction        | Frame                                      |
@@ -156,8 +156,8 @@ availability.
 
 | Tier     | File                                          | Sees                                                                                                                                   |
 | -------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| unit     | `aai-runtime/platform-socket.test.ts`         | the guest end against a fake peer: correlation, the refusal taxonomy, the heartbeat on virtual time, reconnect                         |
-| unit     | `aai-runtime/platform-rpc.test.ts`            | the transport CHOICE — prefer, fall back on a refusal, never retry a written call                                                      |
+| unit     | `aai-runtime/platform/socket.test.ts`         | the guest end against a fake peer: correlation, the refusal taxonomy, the heartbeat on virtual time, reconnect                         |
+| unit     | `aai-runtime/platform/rpc.test.ts`            | the transport CHOICE — prefer, fall back on a refusal, never retry a written call                                                      |
 | unit     | `aai-server/platform-socket-handler.test.ts`  | the frame loop against a real Hono app: dispatch, the route allowlist, ping, the in-flight cap, the handshake refusals                 |
 | scenario | `aai-server/platform-socket.scenario.test.ts` | both REAL ends over a real port: the handshake, the bearer, and a socket answer compared byte for byte against the same call over HTTP |
 
