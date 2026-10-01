@@ -8,9 +8,9 @@
  * log, the socket, the agent's hooks). This is a reader that belongs to a
  * CLIENT: every session bound to it by `?client=` (`sessionClientId`), whichever
  * socket opened it. The session side calls {@link feedClientEvent} from the
- * emitter's `observe` step (`runtime-session-controls.ts`, beside the metrics
+ * emitter's `observe` step (`../runtime-session-controls.ts`, beside the metrics
  * sinks) and {@link feedClientSessionEnd} once a session's log is flushed
- * (`runtime-session-memory.ts`); the inbox (`client-inbox.ts`) publishes where
+ * (`../runtime-session-memory.ts`); the inbox (`inbox.ts`) publishes where
  * the frames go.
  *
  * ## What is forwarded, and what never is
@@ -28,7 +28,7 @@
  * A deployed guest holds two copies of this package: the harness's builds the
  * server (and so the inbox), the agent bundle's runs the sessions. A
  * module-level feed would sit in one copy with the events in the other — the
- * shape `metrics-sink.ts` argues — so it is a `Symbol.for` slot both resolve.
+ * shape `../metrics-sink.ts` argues — so it is a `Symbol.for` slot both resolve.
  * The last inbox built wins, which under `aai dev` is the newest server's.
  *
  * ## It cannot hurt a session

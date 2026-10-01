@@ -32,6 +32,7 @@ const SRC = path.dirname(fileURLToPath(import.meta.url));
 
 /** Directories whose `index.ts` is their whole surface, relative to `src/`. */
 const BOUNDED_DIRS = [
+  "inbox",
   "s2s",
   "transports/pipeline",
   "transports/pipeline/heard",

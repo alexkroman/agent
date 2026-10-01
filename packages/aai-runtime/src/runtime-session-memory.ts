@@ -42,7 +42,7 @@ import { recordSessionIdentity } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/internal";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
-import { feedClientSessionEnd } from "./client-event-feed.ts";
+import { feedClientSessionEnd } from "./inbox/index.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionSystemPrompt } from "./runtime-system-prompt.ts";
 import {

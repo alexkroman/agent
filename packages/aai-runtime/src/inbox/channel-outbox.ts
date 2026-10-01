@@ -32,7 +32,7 @@ import {
   type ChannelOutboxEntry,
   publishChannelOutbox,
 } from "@alexkroman1/aai/host-internal";
-import type { Logger } from "./runtime-config.ts";
+import type { Logger } from "../runtime-config.ts";
 
 /** The process-env variable naming the outbox file. @internal */
 export const CHANNEL_OUTBOX_ENV = "AAI_CHANNEL_OUTBOX";

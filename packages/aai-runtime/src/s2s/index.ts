@@ -7,5 +7,6 @@
  * (`module-boundaries.test.ts`).
  */
 
-export type { CreateS2sWebSocket, S2sCallbacks, S2sHandle, S2sSessionConfig } from "./client.ts";
+export type { CreateS2sWebSocket, S2sHandle, S2sSessionConfig } from "./client.ts";
 export { connectS2s, defaultCreateS2sWebSocket } from "./client.ts";
+export type { S2sCallbacks } from "./dispatch.ts";

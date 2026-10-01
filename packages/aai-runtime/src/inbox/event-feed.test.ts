@@ -3,13 +3,13 @@
 import type { SessionEvent } from "@alexkroman1/aai";
 import { setSessionClient } from "@alexkroman1/aai/host-internal";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { stampSessionEvent } from "../session-event-stream.ts";
 import {
   type ClientEventFeed,
   feedClientEvent,
   feedClientSessionEnd,
   publishClientEventFeed,
-} from "./client-event-feed.ts";
-import { stampSessionEvent } from "./session-event-stream.ts";
+} from "./event-feed.ts";
 
 afterEach(() => publishClientEventFeed(undefined));
 
@@ -68,7 +68,7 @@ describe("the client event feed", () => {
     const feed = vi.fn<ClientEventFeed>();
     publishClientEventFeed(feed);
     vi.resetModules();
-    const other = await import("./client-event-feed.ts");
+    const other = await import("./event-feed.ts");
     setSessionClient("feed-d", "porch");
     other.feedClientSessionEnd("feed-d");
     expect(feed).toHaveBeenCalledWith("porch", { type: "session_ended", sessionId: "feed-d" });

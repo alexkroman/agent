@@ -222,7 +222,7 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
 ## Client identity and the inbox
 
 A run reaches the page after the call through `WS /inbox?client=` (server half:
-`aai-runtime/src/client-inbox.ts`; wire: `stepNotifyClient`'s module doc).
+`aai-runtime/src/inbox/inbox.ts`; wire: `stepNotifyClient`'s module doc).
 
 - **`client: "auto"` is resolved in `client-identity.ts`**, never in a caller:
   `browserClientId(platformUrl)` is `browser-<32 hex>` in `localStorage` keyed

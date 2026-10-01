@@ -6,9 +6,9 @@
 import path from "node:path";
 import { publishChannelOutbox } from "@alexkroman1/aai/host-internal";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { silentLogger } from "./_test-utils.ts";
+import { silentLogger } from "../_test-utils.ts";
+import type { LogFn, Logger } from "../runtime-config.ts";
 import { CHANNEL_OUTBOX_ENV, createChannelOutbox, installChannelOutbox } from "./channel-outbox.ts";
-import type { LogFn, Logger } from "./runtime-config.ts";
 
 afterEach(() => publishChannelOutbox(undefined));
 

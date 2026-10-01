@@ -38,8 +38,7 @@ import {
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { closeEgressFetch } from "../_egress-fetch.ts";
 import { openAppDb } from "../app-db.ts";
-import { installChannelOutbox } from "../channel-outbox.ts";
-import { type ClientInbox, installClientInbox } from "../client-inbox.ts";
+import { type ClientInbox, installChannelOutbox, installClientInbox } from "../inbox/index.ts";
 import { closePlatformSockets, ensurePlatformSocket } from "../platform-socket-registry.ts";
 import type { CloseableDb } from "../postgres-db.ts";
 import type { Logger } from "../runtime-config.ts";

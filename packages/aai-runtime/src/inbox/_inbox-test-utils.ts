@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * `WS /inbox` against a real loopback socket, for the inbox's two specs: the
- * wire and its outcomes (`client-inbox.test.ts`), and several holders plus the
- * live event feed (`client-inbox-holders.test.ts`).
+ * wire and its outcomes (`inbox.test.ts`), and several holders plus the
+ * live event feed (`holders.test.ts`).
  */
 
 import http from "node:http";
@@ -10,8 +10,8 @@ import type { AddressInfo } from "node:net";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { vi } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
-import { silentLogger } from "./_test-utils.ts";
-import { type ClientInbox, createClientInbox } from "./client-inbox.ts";
+import { silentLogger } from "../_test-utils.ts";
+import { type ClientInbox, createClientInbox } from "./inbox.ts";
 
 /** One device (or browser) on the far end of the inbox. */
 export type InboxDevice = {

@@ -12,8 +12,8 @@ import {
   connectDevice,
   type InboxCleanups,
   startInbox as startOn,
-} from "./_client-inbox-test-utils.ts";
-import { type ClientInbox, INBOX_FRAME_BYTES } from "./client-inbox.ts";
+} from "./_inbox-test-utils.ts";
+import { type ClientInbox, INBOX_FRAME_BYTES } from "./inbox.ts";
 
 const cleanups: InboxCleanups = [];
 afterEach(async () => {

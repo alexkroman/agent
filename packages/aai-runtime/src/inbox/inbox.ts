@@ -46,7 +46,7 @@
  * ## The live conversation, for a holder that asks (`?events=1`)
  *
  * A browser twin wants to SEE the speaker's conversation as it happens. A holder
- * that opens with `?events=1` is also sent `client-event-feed.ts`'s frames —
+ * that opens with `?events=1` is also sent `event-feed.ts`'s frames —
  * `{ type: "session_event", sessionId, event }` for the committed transcripts,
  * `tool.called`, the reply boundaries and the handshake, and
  * `{ type: "session_ended", sessionId }` — for every session bound to its
@@ -71,8 +71,8 @@ import { createOwnedMap, requestQuery } from "@alexkroman1/aai/internal";
 import { InboxClientFrameSchema, type InboxServerFrame } from "@alexkroman1/aai/protocol";
 import { createKeyedLock, omitUndefined, safeJsonParse, withLock } from "@alexkroman1/aai/utils";
 import type { RawData, WebSocket } from "ws";
-import { type ClientEventFrame, publishClientEventFeed } from "./client-event-feed.ts";
-import type { Logger } from "./runtime-config.ts";
+import type { Logger } from "../runtime-config.ts";
+import { type ClientEventFrame, publishClientEventFeed } from "./event-feed.ts";
 
 /** @internal */
 export const CLIENT_INBOX_PATH = "/inbox";

@@ -33,7 +33,7 @@ import type { AgentDef, AgentSessionContext, SessionSpeech } from "@alexkroman1/
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout, { TimeoutError } from "p-timeout";
-import { feedClientEvent } from "./client-event-feed.ts";
+import { feedClientEvent } from "./inbox/index.ts";
 import { recordSessionMetrics } from "./metrics-sink.ts";
 import type { Logger } from "./runtime-config.ts";
 import { openSessionDialogs, type SessionDialogs } from "./runtime-dialogs.ts";
@@ -126,7 +126,7 @@ export function openSessionWiring(deps: {
         recordSessionMetrics(event, { agent: agent.name, sessionId });
       }
       // The CLIENT's reader: an `/inbox?events=1` holder of this session's
-      // `?client=` sees its conversation live. See `client-event-feed.ts`.
+      // `?client=` sees its conversation live. See `inbox/event-feed.ts`.
       feedClientEvent(sessionId, event);
     },
     logger,

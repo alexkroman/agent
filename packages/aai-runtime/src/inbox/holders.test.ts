@@ -9,15 +9,15 @@ import { setSessionClient } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";
+import { stampSessionEvent } from "../session-event-stream.ts";
 import {
   answerNotice as answer,
   connectDevice,
   type InboxCleanups,
   startInbox,
-} from "./_client-inbox-test-utils.ts";
-import { feedClientEvent, publishClientEventFeed } from "./client-event-feed.ts";
-import { type ClientInbox, INBOX_EVENT_BUFFER_LIMIT_BYTES } from "./client-inbox.ts";
-import { stampSessionEvent } from "./session-event-stream.ts";
+} from "./_inbox-test-utils.ts";
+import { feedClientEvent, publishClientEventFeed } from "./event-feed.ts";
+import { type ClientInbox, INBOX_EVENT_BUFFER_LIMIT_BYTES } from "./inbox.ts";
 
 const cleanups: InboxCleanups = [];
 afterEach(async () => {

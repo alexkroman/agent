@@ -36,7 +36,7 @@
 import { CLIENT_CONFIG_METHODS, CLIENT_CONFIG_PATH } from "@alexkroman1/aai/protocol";
 import { ROUTE_METHODS } from "./agent-routes.ts";
 import { AGENT_ROUTES_PREFIX } from "./agent-routes-http.ts";
-import { CLIENT_INBOX_PATH } from "./client-inbox.ts";
+import { CLIENT_INBOX_PATH } from "./inbox/index.ts";
 import { SESSION_EVENTS_PATH } from "./session-events-api.ts";
 import { TELEPHONY_PATH } from "./telephony/telephony-server.ts";
 import { WORKFLOW_API_METHODS, WORKFLOW_API_PREFIX } from "./workflow/api.ts";

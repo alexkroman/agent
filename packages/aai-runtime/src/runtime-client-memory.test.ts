@@ -23,7 +23,7 @@ import {
   registerFakeProviders,
 } from "./_pipeline-test-fakes.ts";
 import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
-import { type ClientEventFeed, publishClientEventFeed } from "./client-event-feed.ts";
+import { type ClientEventFeed, publishClientEventFeed } from "./inbox/event-feed.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
 
 let unregister: (() => void) | undefined;
