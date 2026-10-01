@@ -48,7 +48,7 @@
  * - **Namespacing**, here: a tool name is `mcp_<server>_<tool>`
  *   ({@link mcpToolName}), so a third party's `transfer_funds` cannot land
  *   where the agent's own tool of that name stood.
- * - **Fingerprinting**, in `mcp-drift.ts`: a server cannot change what its OWN
+ * - **Fingerprinting**, in `drift.ts`: a server cannot change what its OWN
  *   tool means after an author reviewed it.
  *
  * Neither substitutes for the other, and the module doc there argues its half.
@@ -76,17 +76,17 @@ import { mcpToolName } from "@alexkroman1/aai";
 import { agentToolsets, type ToolBearingDef, toolset } from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
-import { type DiscoveredTool, discover, mcpTool } from "./mcp-adapt.ts";
+import type { Logger } from "../runtime-config.ts";
+import { type DiscoveredTool, discover, mcpTool } from "./adapt.ts";
 import {
   MCP_CONNECT_TIMEOUT_MS,
   type McpConnectOptions,
   type McpSession,
   type McpSessionOpener,
   openMcpSession,
-} from "./mcp-connect.ts";
-import { assessTools, driftMessages, type McpDrift, type McpTrust } from "./mcp-drift.ts";
-import { allowTools, displayUrl, resolveServer } from "./mcp-resolve.ts";
-import type { Logger } from "./runtime-config.ts";
+} from "./connect.ts";
+import { assessTools, driftMessages, type McpDrift, type McpTrust } from "./drift.ts";
+import { allowTools, displayUrl, resolveServer } from "./resolve.ts";
 
 /** What one declared server ended up contributing, and why when the answer is nothing. */
 export type McpServerStatus = {
@@ -148,7 +148,7 @@ export type McpToolsOptions = McpConnectOptions & {
   /**
    * How a session is opened. The test seam — pass one and no socket is opened.
    * Leave it unset in production: the default is the SSRF-screened HTTP client
-   * in `mcp-connect.ts`.
+   * in `connect.ts`.
    */
   openSession?: McpSessionOpener | undefined;
 };

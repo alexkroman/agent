@@ -14,7 +14,7 @@ import { createToolContext } from "@alexkroman1/aai/testing";
 import { tool as aiTool, jsonSchema } from "ai";
 import { afterEach, describe, expect, test } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
-import type { McpSession, ResolvedMcpServer } from "./mcp-connect.ts";
+import type { McpSession, ResolvedMcpServer } from "./mcp/connect.ts";
 import { createStepMcp } from "./step-mcp.ts";
 
 function fakeSession(): McpSession & { closed: number } {

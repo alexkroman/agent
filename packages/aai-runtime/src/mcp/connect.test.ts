@@ -2,7 +2,7 @@
 /**
  * The real `@ai-sdk/mcp` client, over a fake `fetch`.
  *
- * `mcp-tools.test.ts` drives the `openSession` SEAM, which says nothing about
+ * `tools.test.ts` drives the `openSession` SEAM, which says nothing about
  * whether the transport underneath it works. This file goes the other way: the
  * client and its streamable-HTTP transport here are the shipped ones, speaking
  * real JSON-RPC, and the only substitution is the `fetch` they are handed —
@@ -15,8 +15,8 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { fakeFetch } from "./_test-utils.ts";
-import { openMcpSession, toCallResult } from "./mcp-connect.ts";
+import { fakeFetch } from "../_test-utils.ts";
+import { openMcpSession, toCallResult } from "./connect.ts";
 
 const ENDPOINT = "https://mcp.example.com/mcp";
 

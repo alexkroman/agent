@@ -1,14 +1,14 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * A `tools/call` reply into the value the model sees, and a discovered tool
- * into a `ToolDef`. The whole-surface cases are in `mcp-tools.test.ts`.
+ * into a `ToolDef`. The whole-surface cases are in `tools.test.ts`.
  */
 
 import { createToolContext } from "@alexkroman1/aai/testing";
 import { isToolFailure } from "@alexkroman1/aai/utils";
 import { tool as aiTool, jsonSchema } from "ai";
 import { describe, expect, test } from "vitest";
-import { discover, mcpTool, toToolResult } from "./mcp-adapt.ts";
+import { discover, mcpTool, toToolResult } from "./adapt.ts";
 
 describe("toToolResult", () => {
   test("the server's isError wins, as a ToolFailure", () => {

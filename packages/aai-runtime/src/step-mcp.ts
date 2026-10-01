@@ -4,7 +4,7 @@
  * holds the contract, the slot and the argument for rejecting where the host
  * path degrades.
  *
- * It is `connectMcpServers` (`mcp-tools.ts`) with the step's `clientId` and the
+ * It is `connectMcpServers` (`mcp/tools.ts`) with the step's `clientId` and the
  * agent env, which is the whole design: a server reached from a step is
  * resolved, SSRF-screened, namespaced, pinned and adapted by the same code
  * `withMcpTools` runs at host start, so the only differences are the ones the
@@ -17,7 +17,7 @@
  */
 
 import type { StepMcp, StepMcpFn } from "@alexkroman1/aai/host-internal";
-import { connectMcpServers, type McpToolsOptions } from "./mcp-tools.ts";
+import { connectMcpServers, type McpToolsOptions } from "./mcp/index.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /**

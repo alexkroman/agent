@@ -6,7 +6,7 @@
  * test here is the SURFACE — namespacing, collision policy, drift refusal,
  * degradation — and a network would only add a way for these to fail for a
  * reason that is not the one being asserted. The transport itself is covered by
- * `mcp-connect.test.ts`, which drives the real vendor client over a fake
+ * `connect.test.ts`, which drives the real vendor client over a fake
  * `fetch`.
  *
  * The round-trip case goes through `createRuntime(...).executeTool`, not
@@ -30,10 +30,10 @@ import { tool as aiTool, fingerprintTools, jsonSchema, type ToolSet } from "ai";
 import type { JSONSchema7 } from "json-schema";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { makeLogger, silentLogger } from "./_test-utils.ts";
-import type { McpSession, ResolvedMcpServer } from "./mcp-connect.ts";
-import { withMcpTools } from "./mcp-tools.ts";
-import { createRuntimeWithSeams } from "./runtime.ts";
+import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { createRuntimeWithSeams } from "../runtime.ts";
+import type { McpSession, ResolvedMcpServer } from "./connect.ts";
+import { withMcpTools } from "./tools.ts";
 
 /** Every tool a def SERVES — its files plus the toolsets attached to it, composed first-wins. */
 function served(def: ToolBearingDef): Record<string, ToolDef> {

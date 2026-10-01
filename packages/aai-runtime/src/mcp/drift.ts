@@ -5,7 +5,7 @@
  *
  * ## The attack namespacing does not touch
  *
- * `mcp-tools.ts` prefixes every discovered tool with `mcp_<server>_`, so a
+ * `tools.ts` prefixes every discovered tool with `mcp_<server>_`, so a
  * third party cannot publish `transfer_funds` and stand where the agent's own
  * tool of that name stood. That is one attack. The other is the server
  * changing what its OWN tool means after you have trusted it: `search` keeps

@@ -4,7 +4,7 @@
  * the vendor client.
  *
  * {@link McpSession} is two methods — list, close — and it is what
- * `mcp-tools.ts` depends on. `@ai-sdk/mcp`'s `createMCPClient` sits behind
+ * `tools.ts` depends on. `@ai-sdk/mcp`'s `createMCPClient` sits behind
  * {@link openMcpSession} and nowhere else, which buys two things: a spec drives
  * a session with no network and no vendor client, and the day this repo's
  * transport requirements outgrow it the change is one module.
@@ -15,12 +15,12 @@
  * Three things decided it, and the middle one is the substantive one:
  *
  * - **The tools arrive in AI SDK shape.** `client.tools()` answers a `ToolSet`,
- *   the same type `streamText` and `to-vercel-tools.ts` already speak, so the
+ *   the same type `streamText` and `../to-vercel-tools.ts` already speak, so the
  *   listing → declaration path is the SDK's own rather than ~80 lines of
  *   hand-written mapping over a zod-inferred vendor type that is assignable to
  *   no JSON Schema type in either direction.
  * - **`fingerprintTools`/`detectToolDrift` (from `ai`) take that shape**, which
- *   is what makes the rug-pull defence in `mcp-tools.ts` a call rather than a
+ *   is what makes the rug-pull defence in `tools.ts` a call rather than a
  *   hash function somebody here would have had to define, and get right, and
  *   keep in step with what a server can change.
  * - **It is already in the tree.** `ai` pulls it transitively, so declaring it
@@ -126,7 +126,7 @@ export type ResolvedMcpServer = {
  * `isError` flag; a tool result in this SDK is one JSON-serializable value. So
  * the flattening happens HERE, once, rather than in each tool body: text parts
  * are joined, `structuredContent` is preferred when the server sent it, and
- * `isError` is kept separate so `mcp-tools.ts` can decide it is a
+ * `isError` is kept separate so `tools.ts` can decide it is a
  * `ToolFailure` rather than an answer.
  */
 export type McpCallResult = {
@@ -141,7 +141,7 @@ export type McpCallResult = {
    *
    * Kept because dropping them silently is the failure worth avoiding: a server
    * answering with an image only would otherwise look like a tool that returned
-   * nothing. `mcp-tools.ts` names them in the value the model sees.
+   * nothing. `tools.ts` names them in the value the model sees.
    */
   otherParts: readonly string[];
 };
@@ -233,7 +233,7 @@ async function discardLateConnect(pending: Promise<{ close(): Promise<void> }>):
  *
  * Rejects — bounded by {@link MCP_CONNECT_TIMEOUT_MS} — when the server is
  * unreachable, refuses the handshake, or is simply slow. The caller
- * (`mcp-tools.ts`) is what turns that into a degraded surface rather than a
+ * (`tools.ts`) is what turns that into a degraded surface rather than a
  * failed session, which is why this one throws instead of returning a status.
  */
 /**

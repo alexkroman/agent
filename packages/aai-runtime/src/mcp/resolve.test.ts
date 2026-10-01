@@ -2,15 +2,15 @@
 /**
  * Resolving one declared server for one connection, and the `allowedTools`
  * scope. Pure: no opener, no socket. The end-to-end paths through
- * `withMcpTools` and `stepMcp` are in `mcp-tools.test.ts` and
- * `step-mcp.test.ts`.
+ * `withMcpTools` and `stepMcp` are in `tools.test.ts` and
+ * `../step-mcp.test.ts`.
  */
 
 import type { McpServerConfig } from "@alexkroman1/aai";
 import { tool as aiTool, jsonSchema } from "ai";
 import { describe, expect, test } from "vitest";
-import { makeLogger } from "./_test-utils.ts";
-import { allowTools, displayUrl, resolveServer } from "./mcp-resolve.ts";
+import { makeLogger } from "../_test-utils.ts";
+import { allowTools, displayUrl, resolveServer } from "./resolve.ts";
 
 const signal = new AbortController().signal;
 

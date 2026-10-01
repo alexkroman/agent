@@ -51,7 +51,7 @@
     "packages/aai-runtime/src/integration/_s2s-fuzz-plans.ts": 1,
     "packages/aai-runtime/src/integration/_s2s-fuzz-service.ts": 1,
     "packages/aai-runtime/src/internal.ts": 1,
-    "packages/aai-runtime/src/mcp-drift.ts": 1,
+    "packages/aai-runtime/src/mcp/drift.ts": 1,
     "packages/aai-runtime/src/platform-endpoint.ts": 1,
     "packages/aai-runtime/src/platform-socket-frames.ts": 1,
     "packages/aai-runtime/src/platform-socket-registry.ts": 1,

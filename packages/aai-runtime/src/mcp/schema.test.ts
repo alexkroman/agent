@@ -11,7 +11,7 @@
 import { tool as aiTool, jsonSchema } from "ai";
 import type { JSONSchema7 } from "json-schema";
 import { describe, expect, test } from "vitest";
-import { MCP_SCHEMA_VENDOR, mcpInputSchema, toolInputJsonSchema } from "./mcp-schema.ts";
+import { MCP_SCHEMA_VENDOR, mcpInputSchema, toolInputJsonSchema } from "./schema.ts";
 
 const DOC: JSONSchema7 = {
   type: "object",

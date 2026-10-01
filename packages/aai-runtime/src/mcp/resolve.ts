@@ -3,17 +3,17 @@
  * One declared MCP server's `url`, `headers` and token, RESOLVED for one
  * connection — and the `allowedTools` scope applied to what it lists.
  *
- * Split from `mcp-tools.ts` so the resolution rules (a resolver's context, the
+ * Split from `tools.ts` so the resolution rules (a resolver's context, the
  * http(s) re-check of a computed URL, what a status may say the endpoint is)
  * have one home that both `withMcpTools` and `stepMcp`'s connector go through.
  * The SSRF screen itself is not here: it runs on every request, resolved URL
- * or literal, in `mcp-connect.ts`.
+ * or literal, in `connect.ts`.
  */
 
 import type { McpResolvable, McpResolveContext, McpServerConfig } from "@alexkroman1/aai";
 import type { ToolSet } from "ai";
-import type { ResolvedMcpServer } from "./mcp-connect.ts";
-import type { Logger } from "./runtime-config.ts";
+import type { Logger } from "../runtime-config.ts";
+import type { ResolvedMcpServer } from "./connect.ts";
 
 /**
  * What the status and every log line say the server's endpoint is.
@@ -49,7 +49,7 @@ async function resolveValue<T>(value: McpResolvable<T>, context: McpResolveConte
  * A resolved URL is re-checked as `http(s)` here, because the config schema
  * only ever saw the literal spelling: a resolver answering `file:` or
  * `stdio:` must meet the same refusal a literal would. (The SSRF screen then
- * runs on every request, resolved or not, in `mcp-connect.ts`.)
+ * runs on every request, resolved or not, in `connect.ts`.)
  */
 export async function resolveServer(
   key: string,

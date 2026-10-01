@@ -17,7 +17,7 @@
  * ## Why the tools go through `ExecuteTool` at all
  *
  * The AI SDK tools `createMCPClient` returns would drop straight into
- * `streamText`, and that is exactly what this does NOT do. `to-vercel-tools.ts`
+ * `streamText`, and that is exactly what this does NOT do. `../to-vercel-tools.ts`
  * exists so that validation, the tool context, the per-call deadline, the
  * abort signal, the state commit and the relay observer have ONE
  * implementation; a tool set handed to `streamText` beside it would have none
@@ -45,7 +45,7 @@
  * the process — a silent capability loss whose only symptom is an agent that
  * will not do the thing. And it is not needed: the MCP server validates its own
  * arguments, because it is a remote API and has to, and its complaint comes
- * back as an `isError` result that `mcp-tools.ts` turns into a `ToolFailure`
+ * back as an `isError` result that `tools.ts` turns into a `ToolFailure`
  * the model can act on. Validating twice against two different readings of one
  * document buys a worse error, not a safer call.
  *
@@ -67,7 +67,7 @@ import { asSchema, type Tool } from "ai";
 import type { JSONSchema7 } from "json-schema";
 
 /**
- * What `mcp-tools.ts` puts in a `ToolDef.inputSchema`.
+ * What `tools.ts` puts in a `ToolDef.inputSchema`.
  *
  * Both halves are named in the type because both are load-bearing:
  * `~standard` is what `executeToolCall` validates through, and `toJsonSchema`

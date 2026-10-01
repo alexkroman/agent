@@ -3,7 +3,7 @@
  * A discovered MCP tool, adapted into an ordinary `ToolDef` — and a
  * `tools/call` reply into the value the model sees.
  *
- * Split from `mcp-tools.ts`, whose module doc argues why an MCP tool is an
+ * Split from `tools.ts`, whose module doc argues why an MCP tool is an
  * ordinary tool rather than an AI SDK tool handed to `streamText`.
  */
 
@@ -11,8 +11,8 @@ import type { ToolDef } from "@alexkroman1/aai";
 import { errorMessage, toolFailure } from "@alexkroman1/aai/utils";
 import type { Tool, ToolSet } from "ai";
 import type { JSONSchema7 } from "json-schema";
-import { type McpCallResult, toCallResult } from "./mcp-connect.ts";
-import { mcpInputSchema, toolInputJsonSchema } from "./mcp-schema.ts";
+import { type McpCallResult, toCallResult } from "./connect.ts";
+import { mcpInputSchema, toolInputJsonSchema } from "./schema.ts";
 
 /**
  * Turn one `tools/call` reply into the value the model sees.
@@ -35,7 +35,7 @@ export function toToolResult(call: McpCallResult, toolName: string): unknown {
   return call.text;
 }
 
-/** One discovered tool, as `mcp-tools.ts`'s `registerTools` reads it. */
+/** One discovered tool, as `tools.ts`'s `registerTools` reads it. */
 export type DiscoveredTool = {
   /** The name the SERVER published — the key of the `ToolSet`. */
   remote: string;

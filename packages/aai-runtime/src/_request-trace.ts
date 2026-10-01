@@ -20,7 +20,7 @@
  * caught it: six specs, including `npm start` on a scaffolded project.
  *
  * **That fix was necessary and not sufficient, and this paragraph used to say
- * the opposite.** It argued that reaching OTel the way `mcp-connect.ts` reaches
+ * the opposite.** It argued that reaching OTel the way `mcp/connect.ts` reaches
  * `@ai-sdk/mcp` — off a namespace the dynamic import hands back, so there are no
  * named bindings for rolldown to check — would "hide the failure rather than
  * remove it". It removes it. The named bindings were the failure: keeping this
