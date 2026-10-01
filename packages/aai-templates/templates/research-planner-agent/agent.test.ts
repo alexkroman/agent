@@ -1,6 +1,7 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
+import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import {
   createToolContext,
   expectDialogOk,
@@ -11,8 +12,7 @@ import {
   type StubGenerateRoute,
   stubDelegate,
   toolRunner,
-} from "@alexkroman1/aai/testing";
-import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test, vi } from "vitest";
 import { executeStep, executor, MAX_STEP_TURNS, normalizeAct, planNode } from "./procedure.ts";
 import { PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM, type StepAnswer } from "./prompts.ts";
@@ -104,7 +104,7 @@ function scriptedDesk(script: Script = {}) {
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup,
  *  its "no such tool" message and the args-or-context shape are all
- *  `toolRunner`'s (`@alexkroman1/aai/testing`); what is local is only which
+ *  `toolRunner`'s (`@alexkroman1/aai-runtime/testing`); what is local is only which
  *  agent it runs against. */
 const run = toolRunner(agentDef);
 

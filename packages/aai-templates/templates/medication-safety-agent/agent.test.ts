@@ -6,7 +6,7 @@ import {
   expectToolOk,
   runTool,
   toolInputIssues,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { excerptAround, type FdaLabel, toDrugInfo } from "./fda.ts";
 import CheckDrugInteraction from "./tools/check_drug_interaction.ts";

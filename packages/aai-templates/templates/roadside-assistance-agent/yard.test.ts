@@ -1,6 +1,6 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext, expectDialogOk } from "@alexkroman1/aai/testing";
+import { createToolContext, expectDialogOk } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { roadsideSlot, type Truck } from "./shared.ts";
 import acknowledgeDisclosure from "./tools/acknowledge_disclosure.ts";

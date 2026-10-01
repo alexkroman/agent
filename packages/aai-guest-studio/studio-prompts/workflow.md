@@ -619,8 +619,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) → `pnpm test` (logic)
    it is a normal fix. Do not delete a test to make it pass.
    `agent-guide/TESTING-EVALS.md` has `virtual:aai/agent` and `runTool`.
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts the
-   shape; an eval (`agent.eval.test.ts`, everything imported from
-   `@alexkroman1/aai-runtime/eval/vitest`) drives a real session and asserts
+   shape; an eval (`agent.eval.test.ts`, harness imported from
+   `@alexkroman1/aai-runtime/testing/vitest`) drives a real session and asserts
    what it did. With a provider key it uses a LIVE model (spends tokens, noisy);
    without one a SCRIPTED model, which proves wiring and nothing about what the
    agent says.
@@ -889,10 +889,11 @@ that owns it:
 - `@alexkroman1/aai/step` — step code in `workflows/*.ts` — `stepEnv`,
   `stepFetch`, `stepGenerate`, transcription, `stepSpeak`, uploads,
   `mapConcurrent`, `stepPlaceCall`
-- `@alexkroman1/aai/testing` — specs — `runTool`, `createToolContext`,
-  `deployedAgent`, `expectDeployable`, and the step stubs
-- `@alexkroman1/aai/testing/vitest` — the vitest-only half of `/testing`:
-  anything that installs or restores a stub
+- `@alexkroman1/aai/testing` — where the spec helpers (`runTool`,
+  `createToolContext`, `deployedAgent`, the step stubs) are declared — a test
+  file imports them through `@alexkroman1/aai-runtime/testing`
+- `@alexkroman1/aai/testing/vitest` — where the installers are declared — a test
+  file imports them through `@alexkroman1/aai-runtime/testing/vitest`
 - `@alexkroman1/aai/testing/vite` — the plugin `vitest.config.ts` registers to
   serve `virtual:aai/agent`
 - `@alexkroman1/aai/channels` — posting a run's result to Slack or SMS
@@ -926,8 +927,10 @@ Framework-internal, never imported by an `agent.ts`: `/protocol`,
 <!-- END GENERATED aai subpaths -->
 
 `@alexkroman1/aai-ui` is the browser client (`agent-guide/UI.md`) and
-`@alexkroman1/aai-runtime` the host runtime (`/eval` and `/testing` for evals
-and durable workflow tests).
+`@alexkroman1/aai-runtime` the host runtime. **A test file imports testing
+names from its two doors only**: `@alexkroman1/aai-runtime/testing` (every
+fake and reader, plus `runWorkflow`) and `/testing/vitest` (every `install*`,
+plus the eval suites) — `agent-guide/TESTING-EVALS.md`.
 
 ## Gotchas
 
@@ -1480,7 +1483,8 @@ FINAL message, so declare `expectedOutput`; its context is isolated, so `task`
 must be a complete brief; `maxSteps` bounds the loop, and a capped run is asked
 for its answer with tools withheld; and say you are looking it up before you
 call. It may name its own `llm` and `tools` map; **delegation is one level
-deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it by name.
+deep**. In tests, `stubDelegate` (`@alexkroman1/aai-runtime/testing`) fakes
+it by name.
 
 When the SPEAKER has to change — triage verifies the caller, billing takes over
 with its own instructions and tools, one history — mark them `speaks: true` on
@@ -2042,8 +2046,8 @@ export async function summarize(url: string) {
 Read `isLastAttempt` rather than comparing `attempt` against a number you have
 written down: the ceiling lives at the `ctx.step` call site, and a body that
 restates it degrades early on every run once the two disagree — silently, since
-it still returns an answer. `stubStepInfo` from `@alexkroman1/aai/testing` is how
-a test reaches the retry branch.
+it still returns an answer. `stubStepInfo` from
+`@alexkroman1/aai-runtime/testing` is how a test reaches the retry branch.
 
 ### A clock, a random number and a uuid: `ctx.now`, `ctx.random`, `ctx.uuid`
 
@@ -2195,12 +2199,12 @@ Steps are ordinary exported functions, so a spec imports and calls them. The
 BODY needs an engine, and there are two, for two different questions.
 
 **"What did the body ask for?"** — `createWorkflowContext` from
-`@alexkroman1/aai/testing`. It runs the steps and records the names, the retry
-policies and the sleeps, over one walk with no journal. Nothing replays, so a
-spec built on it must not claim to test durability.
+`@alexkroman1/aai-runtime/testing`. It runs the steps and records the names,
+the retry policies and the sleeps, over one walk with no journal. Nothing
+replays, so a spec built on it must not claim to test durability.
 
 ```ts no-check
-import { createWorkflowContext } from "@alexkroman1/aai/testing";
+import { createWorkflowContext } from "@alexkroman1/aai-runtime/testing";
 
 const ctx = createWorkflowContext({ runSteps: false });
 await digestFlow({ url: "https://example.com/a" }, ctx);
@@ -2251,8 +2255,8 @@ through the published `stepFetch` slot, so a model call and a page fetch are BOT
 answered there. `stubGatewayRoute` composes the two:
 
 ```ts no-check
-import { stubGatewayRoute } from "@alexkroman1/aai/testing";
-import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+import { stubGatewayRoute } from "@alexkroman1/aai-runtime/testing";
+import { installStubStepFetch } from "@alexkroman1/aai-runtime/testing/vitest";
 
 const model = stubGatewayRoute('{"headline":"H","points":["a"]}');
 installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
@@ -2483,7 +2487,7 @@ Three rules come with it:
   with a bad status because only the first is unclassifiable. It names its whole
   `cause` chain, and `err.codes` is what to branch on (`ECONNRESET`,
   `ETIMEDOUT`, …).
-- **Test it with `stubStepFetch`** (`@alexkroman1/aai/testing`), not
+- **Test it with `stubStepFetch`** (`@alexkroman1/aai-runtime/testing`), not
   `vi.stubGlobal("fetch", …)`. The global stub passes — an unpublished slot falls
   back to it — while asserting a path production does not take, and it cannot see
   the request body as bytes.
@@ -2547,9 +2551,9 @@ once the agent has a token. `URL.createObjectURL(blob)` is what those elements
 take; revoke it when the id changes.
 
 Test both with `stubSpeech()` and `stubUploads(files, { writable: true })`
-(`@alexkroman1/aai/testing`). The write half is opt-in on purpose: a store that
-silently accepted writes could not fail a spec whose step stored a file nobody
-meant it to.
+(`@alexkroman1/aai-runtime/testing`). The write half is opt-in on purpose: a
+store that silently accepted writes could not fail a spec whose step stored a
+file nobody meant it to.
 
 ### A builtin's failure is its RESULT, so narrow it
 
@@ -3324,6 +3328,18 @@ session and asserts what the agent did (`pnpm eval`). Testing a workflow BODY
 — the replay engine, crashes, signals — is "Testing a workflow body" in
 `WORKFLOWS.md`.
 
+**A test file imports testing names from two doors, and only those two:**
+
+| Import from                               | For                                                                                                         |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `@alexkroman1/aai-runtime/testing`        | everything that installs nothing — `runTool`, `createToolContext`, `expectToolOk`, the stubs, `runWorkflow` |
+| `@alexkroman1/aai-runtime/testing/vitest` | everything that installs or restores (`installStubGateway`, `installStubStepFetch`, …) and the eval suites  |
+
+`vitest.config.ts` is the one exception: it imports `defineAgentTestConfig`
+from `@alexkroman1/aai/testing/vite`. (The helpers are declared in
+`@alexkroman1/aai/testing` and `/testing/vitest`, which still work; the two
+runtime doors re-export them as the same declarations beside the runtime's own.)
+
 ## Specs: `agent.test.ts`
 
 Co-locate tests as `agent.test.ts` (the `custom-pipeline-agent` template is a
@@ -3345,31 +3361,82 @@ That is `agent.ts` with its `tools/` directory discovered and its
 measures the agent that ships rather than the raw default export (which has no
 tools and the framework's default prompt). `vitest.config.ts` registers the
 plugin that serves it; a scaffolded project already has it. For a runner that
-is not vitest, `deployedAgent` on `@alexkroman1/aai/testing` is the same thing
-written out.
+is not vitest, `deployedAgent` on `@alexkroman1/aai-runtime/testing` is the
+same thing written out.
 
-**Call a tool with `runTool(tool, args, ctx)`** (`/testing`): passed the tool
-itself, the result is typed by its `execute` — no `as` cast (the
-`runTool(agent, "name", …)` form answers `unknown`). `expectDeployable(agentDef)`
-runs the build's checks and returns a `DeployedConfig` (`name`,
-`systemPrompt`, `mode`, `builtinTools`, …) to assert on.
+**Call a tool with `runTool(tool, args, ctx)`**: passed the tool itself, the
+result is typed by its `execute` — no `as` cast (the `runTool(agent, "name", …)`
+form answers `unknown`). **Unwrap it with `expectToolOk(result)`**, which
+INFERS the type: it subtracts the `ToolFailure` arm of a plain `tool()`'s
+result (and unwraps a gated dialog tool's envelope), throwing with the refusal
+quoted when the tool refused. Do not copy an `ok<T>()` helper into a spec; pass
+a type argument only for a result that arrives as `unknown`.
 
-The test doubles a tool body needs are on `@alexkroman1/aai/testing` too —
-`createToolContext()` for a hand-built `ctx`, `stubDelegate` for a subagent,
-`endSessionCalls(ctx)` for a hang-up, `stubStepFetch`/`stubSpeech`/
+```ts
+import { tool, toolFailure } from "@alexkroman1/aai";
+import { expectToolOk, runTool } from "@alexkroman1/aai-runtime/testing";
+import { expect, test } from "vitest";
+import { z } from "zod";
+
+// In a spec this is `import placeOrder from "./tools/place_order.ts"`.
+const placeOrder = tool({
+  description: "Place the order",
+  inputSchema: z.object({ item: z.string() }),
+  execute: async ({ item }) => (item ? { id: "ord_1" } : toolFailure("Name an item.")),
+});
+
+test("places the order", async () => {
+  const order = expectToolOk(await runTool(placeOrder, { item: "pizza" }));
+  expect(order.id).toBe("ord_1");
+});
+```
+
+`expectDeployable(agentDef)` runs the build's checks and returns a
+`DeployedConfig` (`name`, `systemPrompt`, `mode`, `builtinTools`, …) to assert
+on.
+
+**A hand-built `ctx` is `createToolContext()`** — every field inert, `send`
+recorded on `ctx.sent`, a real slot store, a fresh `sessionId` per call. Its
+`generate` and `delegate` take a SCRIPT (`{ reply }` for every call, `{ routes }`
+keyed by system prompt or subagent name) and hand the fake back on `ctx.model`
+and `ctx.desk`, whose `calls` a spec asserts on. It replaces the deprecated
+`scriptedToolContext`.
+
+```ts
+import { createToolContext } from "@alexkroman1/aai-runtime/testing";
+import { expect, test } from "vitest";
+
+test("the tool asks the model once", async () => {
+  const ctx = createToolContext({
+    generate: { reply: "A short summary." },
+    delegate: { reply: "The researcher's answer." },
+  });
+  await ctx.generate({ prompt: "Summarize the call." });
+  expect(ctx.model.calls).toHaveLength(1);
+  expect(ctx.desk.calls).toHaveLength(0);
+});
+```
+
+The other doubles a tool body needs are on the same door — `stubDelegate` for
+a subagent, `endSessionCalls(ctx)` for a hang-up, `stubStepFetch`/`stubSpeech`/
 `stubUploads`/`stubPlaceCall` for step I/O — and each topic file names the one
-its feature needs.
+its feature needs. **A fake that fills a process-wide slot is INSTALLED** from
+`@alexkroman1/aai-runtime/testing/vitest`, which arms it for one test and
+restores it afterwards: `installStubGateway(replies)` answers a step's model
+calls (`stepGenerate`, `stepGenerateJson`) and returns the calls it saw. Call it
+by its own name — do not alias it to `stubGateway`, which is the
+non-installing builder it wraps.
 
 ## Evals: `agent.eval.test.ts`
 
 Run `pnpm eval` when you change what the agent DOES. Cases live in
 `agent.eval.test.ts` (the `quickstart-agent` template ships one), and
-EVERYTHING an eval needs — `describeEval`, the readers and claims,
-`evalSimulation`, and stubs like `stubGatewayRoute` — is one import,
-`@alexkroman1/aai-runtime/eval/vitest`:
+everything an eval's harness needs — `describeEval`, the readers and claims,
+`evalSimulation`, and stubs like `stubGatewayRoute` — is on
+`@alexkroman1/aai-runtime/testing/vitest`:
 
 ```ts no-check
-import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import agentDef from "./agent.ts";
 

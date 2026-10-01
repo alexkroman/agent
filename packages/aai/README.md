@@ -524,7 +524,7 @@ no network:
 
 ```ts no-check
 // `no-check`: `./agent.ts` and `./tools/` are files in YOUR project, not here.
-import { createToolContext, deployedAgent, runTool } from "@alexkroman1/aai/testing";
+import { createToolContext, deployedAgent, runTool } from "@alexkroman1/aai-runtime/testing";
 import { expect, test } from "vitest";
 import authored from "./agent.ts";
 
@@ -548,13 +548,13 @@ suite and type-checks the project before it bundles.
 
 A prompt tweak that improves tone can quietly degrade tool discipline, and
 nobody hand-tests forty scenarios per edit. `describeEval` (from
-`@alexkroman1/aai-runtime/eval/vitest`, run by `aai eval`) drives a real
+`@alexkroman1/aai-runtime/testing/vitest`, run by `aai eval`) drives a real
 session and asserts what the agent DID — which tools it called, in what order,
 and what it said:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 
 const agentDef = agent({ name: "Support", systemPrompt: "Look orders up before answering." });
@@ -582,18 +582,18 @@ scripted, so it is free and deterministic in CI.
 Each subpath is named by WHO READS IT — reach for one when the right-hand
 column describes what you are doing.
 
-| Subpath                                                               | Reach for it when                                                                                              |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `/testing`, `/testing/vitest`                                         | testing your own tools — `createToolContext`, `deployedAgent`, `runTool`                                       |
-| `/stt`, `/llm`, `/tts`, `/s2s`                                        | picking a provider for a pipeline stage (the table above)                                                      |
-| `/step`, `/step-errors`, `/step-files`                                | writing a step inside a workflow — `stepFetch`, `stepEnv`, `mapConcurrent`, `stepGenerate`, `readUploadToFile` |
-| `/workflow-api`                                                       | calling a deployed agent from a page, a script or a cron job — `createAgentClient`                             |
-| `/tools`                                                              | calling `fetchJson`, `visitWebpage` or `webSearch` from your own tool code                                     |
-| `/channels`                                                           | posting a result somewhere — `slackChannel`, `sendToChannel`                                                   |
-| `/html`                                                               | reading a page or a feed — `htmlToText`, `pageMetadata`, `parseFeed`                                           |
-| `/utils`                                                              | small helpers written inside a tool body — `toolFailure`, `errorMessage`, `pushCapped`, `withLock`             |
-| `/ffmpeg`                                                             | running ffmpeg from a step — `runFfmpeg`, `probeMedia`, `transcodeToWav`                                       |
-| `/protocol`, `/manifest`, `/slugify`, `/workspace-files`, `/internal` | framework internals used by the CLI and the platform; not a public API and not covered by semver               |
+| Subpath                                                               | Reach for it when                                                                                                               |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `/testing`, `/testing/vitest`                                         | where the test helpers are declared — a test file imports them through `@alexkroman1/aai-runtime/testing` and `/testing/vitest` |
+| `/stt`, `/llm`, `/tts`, `/s2s`                                        | picking a provider for a pipeline stage (the table above)                                                                       |
+| `/step`, `/step-errors`, `/step-files`                                | writing a step inside a workflow — `stepFetch`, `stepEnv`, `mapConcurrent`, `stepGenerate`, `readUploadToFile`                  |
+| `/workflow-api`                                                       | calling a deployed agent from a page, a script or a cron job — `createAgentClient`                                              |
+| `/tools`                                                              | calling `fetchJson`, `visitWebpage` or `webSearch` from your own tool code                                                      |
+| `/channels`                                                           | posting a result somewhere — `slackChannel`, `sendToChannel`                                                                    |
+| `/html`                                                               | reading a page or a feed — `htmlToText`, `pageMetadata`, `parseFeed`                                                            |
+| `/utils`                                                              | small helpers written inside a tool body — `toolFailure`, `errorMessage`, `pushCapped`, `withLock`                              |
+| `/ffmpeg`                                                             | running ffmpeg from a step — `runFfmpeg`, `probeMedia`, `transcodeToWav`                                                        |
+| `/protocol`, `/manifest`, `/slugify`, `/workspace-files`, `/internal` | framework internals used by the CLI and the platform; not a public API and not covered by semver                                |
 
 ## Documentation
 

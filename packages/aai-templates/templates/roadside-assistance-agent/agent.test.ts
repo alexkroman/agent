@@ -20,7 +20,7 @@ import {
   expectDialogRefused,
   runTool,
   toolOf,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test } from "vitest";
 import { CALL_SPEC, roadsideCall } from "./call.ts";
 import { DESK_EVENTS, LOGGED_EVENTS } from "./events.ts";

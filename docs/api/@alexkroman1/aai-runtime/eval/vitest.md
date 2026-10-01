@@ -1,6 +1,12 @@
 # eval/vitest
 
-`@alexkroman1/aai-runtime/eval/vitest` — THE import for an eval file.
+`@alexkroman1/aai-runtime/eval/vitest` — the eval harness's vitest door.
+
+An agent project reaches every name here through
+`@alexkroman1/aai-runtime/testing/vitest`, which re-exports them all beside
+the SDK's installers, so a test file imports from the two testing doors
+(`/testing`, `/testing/vitest`) whether it is a unit spec or an eval. This
+subpath keeps working, and it is where a stub an eval needs is added first.
 
 One `*.eval.test.ts` used to reach four subpaths of two packages: the suite
 from here, the readers and the session from `/eval`, the simulated caller from
@@ -12,7 +18,7 @@ harness:
 
 ```ts
 import type { AgentDef } from "@alexkroman1/aai";
-import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
 
 declare const agentDef: AgentDef;
 
@@ -303,7 +309,7 @@ function dialogResultSchema<T extends ZodType<unknown, unknown, $ZodTypeInternal
 
 The envelope a gated tool answers with, as a schema around the tool's own.
 
-[expectDialogOk](../../aai/testing.md#expectdialogok) unwraps a value a spec HOLDS. An eval holds the
+[expectDialogOk](../testing.md#expectdialogok) unwraps a value a spec HOLDS. An eval holds the
 serialized copy the model was handed and reads it back through a schema —
 `toolResultIn(turn.toolCalls, "set_stay", schema)` — so it needs the same
 envelope as a schema rather than as a function, and three shipped evals had
@@ -453,7 +459,7 @@ deliberately, because there is no degraded version of running a model loop.
 
 ##### script
 
-[`StubDelegateScript`](../../aai/testing.md#stubdelegatescript)
+[`StubDelegateScript`](../testing.md#stubdelegatescript)
 
 #### Returns
 
@@ -479,9 +485,9 @@ request carries.
 
 ##### answer?
 
-(`request`: [`StubStepRequest`](../../aai/testing.md#stubsteprequest)) => 
-  \| [`StubStepAnswer`](../../aai/testing.md#stubstepanswer)
-  \| `Promise`\<[`StubStepAnswer`](../../aai/testing.md#stubstepanswer)\>
+(`request`: [`StubStepRequest`](../testing.md#stubsteprequest)) => 
+  \| [`StubStepAnswer`](../testing.md#stubstepanswer)
+  \| `Promise`\<[`StubStepAnswer`](../testing.md#stubstepanswer)\>
 
 Called per request. Defaults to an empty `200`.
 
@@ -531,7 +537,7 @@ serves, why writes are opt-in, and why the minted ids count up.
 
 ##### files
 
-`Readonly`\<`Record`\<`string`, [`StubUpload`](../../aai/testing.md#stubupload)\>\>
+`Readonly`\<`Record`\<`string`, [`StubUpload`](../testing.md#stubupload)\>\>
 
 ##### options?
 
@@ -768,7 +774,7 @@ readonly [`StepRoute`](#steproute)[]
 
 #### Returns
 
-(`request`: [`StubStepRequest`](../../aai/testing.md#stubsteprequest)) => [`StubStepAnswer`](../../aai/testing.md#stubstepanswer)
+(`request`: [`StubStepRequest`](../testing.md#stubsteprequest)) => [`StubStepAnswer`](../testing.md#stubstepanswer)
 
 #### Example
 
@@ -792,9 +798,9 @@ function stubGatewayRoute(replies: string | readonly string[], options?: StubGat
 
 A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot
 rather than the global `fetch` — a ROUTE to compose, not a fake to install.
-[stubGateway](../../aai/testing.md#stubgateway-1) says which of the three gateway fakes fits which seam.
+[stubGateway](../testing.md#stubgateway-1) says which of the three gateway fakes fits which seam.
 
-[stubGateway](../../aai/testing.md#stubgateway-1) answers over `globalThis.fetch`, which is the wrong seam
+[stubGateway](../testing.md#stubgateway-1) answers over `globalThis.fetch`, which is the wrong seam
 whenever anything has published a `stepFetch`: publishing REPLACES, so a flow
 that transcribes AND calls a model — or fetches a page and calls a model — can
 install only one fake and has to route by URL inside it. Seven eval files did
@@ -809,7 +815,7 @@ exactly that, and each hand-typed the same two things:
    re-derived twice, because a model call inside a LOOP cannot know how many
    calls it will make: a script that repeats one line can only drive the loop
    into its budget, and one that runs out mid-loop fails on the script. The
-   last reply repeats, which is [stubGateway](../../aai/testing.md#stubgateway-1)'s convention and now
+   last reply repeats, which is [stubGateway](../testing.md#stubgateway-1)'s convention and now
    literally the same code.
 
 And it hands back DECODED calls — `prompt`, `system`, `body`, `headers` — which
@@ -840,7 +846,7 @@ Completion contents, in order; the last repeats. A bare
 
 ##### options?
 
-[`StubGatewayOptions`](../../aai/testing.md#stubgatewayoptions)
+[`StubGatewayOptions`](../testing.md#stubgatewayoptions)
 
 #### Returns
 
@@ -877,11 +883,11 @@ straight into `stubTranscribe`'s `otherwise`.
 
 ###### request
 
-[`StubStepRequest`](../../aai/testing.md#stubsteprequest)
+[`StubStepRequest`](../testing.md#stubsteprequest)
 
 ###### Returns
 
-[`StubStepAnswer`](../../aai/testing.md#stubstepanswer) \| `undefined`
+[`StubStepAnswer`](../testing.md#stubstepanswer) \| `undefined`
 
 ***
 
@@ -915,7 +921,7 @@ cross-file leak that presents as a passing test somewhere else.
 calls: StubDelegateCall[];
 ```
 
-Every call, in order — the same log [stubDelegate](../../aai/testing.md#stubdelegate-1) keeps.
+Every call, in order — the same log [stubDelegate](../testing.md#stubdelegate-1) keeps.
 
 ## Type Aliases
 
@@ -1569,7 +1575,7 @@ The starts of one workflow — by declared name or by def — or all of them.
 
 ###### Returns
 
-[`RecordedStart`](../../aai/testing.md#recordedstart)[]
+[`RecordedStart`](../testing.md#recordedstart)[]
 
 ***
 
@@ -1634,11 +1640,11 @@ own leg (a page fetch, a provider's job API) writes the same thing.
 
 ##### request
 
-[`StubStepRequest`](../../aai/testing.md#stubsteprequest)
+[`StubStepRequest`](../testing.md#stubsteprequest)
 
 #### Returns
 
-[`StubStepAnswer`](../../aai/testing.md#stubstepanswer) \| `undefined`
+[`StubStepAnswer`](../testing.md#stubstepanswer) \| `undefined`
 
 ***
 
@@ -1667,7 +1673,7 @@ type StubSpeech = {
 };
 ```
 
-What [stubSpeech](../../aai/testing.md#stubspeech-1) returns: the call log, and how to put the slot back.
+What [stubSpeech](../testing.md#stubspeech) returns: the call log, and how to put the slot back.
 
 #### Methods
 
@@ -1709,7 +1715,7 @@ type StubSpeechOptions = {
 };
 ```
 
-What [stubSpeech](../../aai/testing.md#stubspeech-1) may be told.
+What [stubSpeech](../testing.md#stubspeech) may be told.
 
 #### Properties
 
@@ -1733,7 +1739,7 @@ optional pcmBytes?: number;
 
 Bytes of PCM to answer with, per call.
 
-Defaults to [STUB\_SPEECH\_PCM\_BYTES](../../aai/testing.md#stub_speech_pcm_bytes), which is enough that the WAV
+Defaults to [STUB\_SPEECH\_PCM\_BYTES](../testing.md#stub_speech_pcm_bytes), which is enough that the WAV
 `stepSpeak` frames has a plausible duration and a spec asserting on one
 gets a number rather than zero. A caller that cares about the exact
 duration sets this: at the default 24 kHz mono 16-bit, one second is
@@ -1762,7 +1768,7 @@ type StubStepFetch = {
 };
 ```
 
-What [stubStepFetch](../../aai/testing.md#stubstepfetch-1) returns.
+What [stubStepFetch](../testing.md#stubstepfetch) returns.
 
 #### Properties
 
@@ -1780,7 +1786,7 @@ Every request the step made, in order.
 restore: () => void;
 ```
 
-Unpublish. Call it in an `afterEach` — see [stubStepFetch](../../aai/testing.md#stubstepfetch-1).
+Unpublish. Call it in an `afterEach` — see [stubStepFetch](../testing.md#stubstepfetch).
 
 ###### Returns
 
@@ -1797,7 +1803,7 @@ type StubTranscribe = {
 };
 ```
 
-What [stubTranscribe](../../aai/testing.md#stubtranscribe-1) returns.
+What [stubTranscribe](../testing.md#stubtranscribe) returns.
 
 #### Methods
 
@@ -1847,7 +1853,7 @@ type StubTranscribeOptions = {
 };
 ```
 
-What [stubTranscribe](../../aai/testing.md#stubtranscribe-1) may be told.
+What [stubTranscribe](../testing.md#stubtranscribe) may be told.
 
 #### Properties
 
@@ -1873,7 +1879,7 @@ The provider's own duration measurement, in seconds. Defaults to `60`.
 optional failure?: StubTranscribeFailure;
 ```
 
-Refuse at the HTTP level. See [StubTranscribeFailure](../../aai/testing.md#stubtranscribefailure).
+Refuse at the HTTP level. See [StubTranscribeFailure](../testing.md#stubtranscribefailure).
 
 ##### jobError?
 
@@ -1923,13 +1929,13 @@ try to parse.
 
 ###### request
 
-[`StubStepRequest`](../../aai/testing.md#stubsteprequest)
+[`StubStepRequest`](../testing.md#stubsteprequest)
 
 ###### Returns
 
-  \| [`StubStepAnswer`](../../aai/testing.md#stubstepanswer)
+  \| [`StubStepAnswer`](../testing.md#stubstepanswer)
   \| `undefined`
-  \| `Promise`\<[`StubStepAnswer`](../../aai/testing.md#stubstepanswer) \| `undefined`\>
+  \| `Promise`\<[`StubStepAnswer`](../testing.md#stubstepanswer) \| `undefined`\>
 
 ##### pendingPolls?
 
@@ -1975,7 +1981,7 @@ type StubUploads = {
 };
 ```
 
-What [stubUploads](../../aai/testing.md#stubuploads-1) returns.
+What [stubUploads](../testing.md#stubuploads) returns.
 
 An OBJECT, like every other fake here (`stubSpeech`, `stubReporter`,
 `stubStepFetch`) — this one used to be the bare `restore` function, which made
@@ -2005,7 +2011,7 @@ does not have to `await stepReadUpload` through the very seam it is testing.
 
 ###### Returns
 
-[`StubUploadWrite`](../../aai/testing.md#stubuploadwrite) \| `undefined`
+[`StubUploadWrite`](../testing.md#stubuploadwrite) \| `undefined`
 
 ##### restore()
 
@@ -2050,7 +2056,7 @@ type StubUploadsOptions = {
 };
 ```
 
-What [stubUploads](../../aai/testing.md#stubuploads-1) may be told beyond the files themselves.
+What [stubUploads](../testing.md#stubuploads) may be told beyond the files themselves.
 
 #### Properties
 

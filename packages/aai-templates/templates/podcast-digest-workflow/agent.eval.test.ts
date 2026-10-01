@@ -39,7 +39,10 @@
 // waiting a week. `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that
 // really suspends and resumes a run.
 import { TRANSCRIBE_API } from "@alexkroman1/aai/step";
-import { describeWorkflowEval, installStubStepFetch } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeWorkflowEval,
+  installStubStepFetch,
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
 import { MAX_POLL_ATTEMPTS, POLL_DELAY_MS, scheduleIntervalMs } from "./workflows/digest.ts";

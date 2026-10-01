@@ -1,6 +1,10 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 import type { InferToolInput } from "@alexkroman1/aai";
+// The failure vocabulary from the subpath that DECLARES it — `/utils` is the
+// zero-dependency half a tool body (and a page) reaches for, and `client.tsx`
+// takes the same guard from the same place.
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import {
   createToolContext,
   expectDeployable,
@@ -10,11 +14,7 @@ import {
   runTool,
   toolInputIssues,
   toolRunner,
-} from "@alexkroman1/aai/testing";
-// The failure vocabulary from the subpath that DECLARES it — `/utils` is the
-// zero-dependency half a tool body (and a page) reaches for, and `client.tsx`
-// takes the same guard from the same place.
-import { isToolFailure } from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import { CATEGORIES, MAX_RECS, MOODS, nightSlot } from "./shared.ts";
 import recommend from "./tools/recommend.ts";

@@ -1,7 +1,7 @@
 /** The def a DEPLOYED agent runs: authored, plus what `system-prompt.md` says. */
 import agentDef from "virtual:aai/agent";
 import { MCP_TOOL_NAME_MAX, MCP_TOOL_PREFIX, mcpToolName } from "@alexkroman1/aai";
-import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
+import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai-runtime/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ARCHIVE_KEY, ARCHIVE_TOKEN_ENV, ARCHIVE_URL_ENV } from "./agent.ts";
 import promptFile from "./system-prompt.md?raw";

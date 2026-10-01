@@ -24,8 +24,8 @@ try {
 }
 ```
 
-**An eval FILE imports `@alexkroman1/aai-runtime/eval/vitest`, not this.**
-That subpath is the one author-facing entry point: it re-exports every name
+**An eval FILE imports `@alexkroman1/aai-runtime/testing/vitest`, not this.**
+That subpath (through `/eval/vitest`, which it re-exports) re-exports every name
 here, plus `describeEval` (the credential gate, the scripted-model fallback
 and the per-case session, so a case is its assertions and nothing else) and
 the `@alexkroman1/aai/testing` stubs a case composes with. This subpath is the

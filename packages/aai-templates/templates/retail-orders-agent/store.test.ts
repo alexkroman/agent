@@ -1,11 +1,11 @@
 import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
+import { formatMoney } from "@alexkroman1/aai/utils";
 import {
   createToolContext,
   expectDialogOk,
   expectDialogRefused,
   expectToolOk,
-} from "@alexkroman1/aai/testing";
-import { formatMoney } from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import {

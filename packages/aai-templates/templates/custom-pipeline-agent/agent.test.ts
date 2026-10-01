@@ -1,4 +1,4 @@
-import { expectDeployable } from "@alexkroman1/aai/testing";
+import { expectDeployable } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 

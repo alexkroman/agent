@@ -141,11 +141,11 @@ export const SUBPATHS = {
   },
   "./testing": {
     audience: "author",
-    use: "specs — `runTool`, `createToolContext`, `deployedAgent`, `expectDeployable`, and the step stubs",
+    use: "where the spec helpers (`runTool`, `createToolContext`, `deployedAgent`, the step stubs) are declared — a test file imports them through `@alexkroman1/aai-runtime/testing`",
   },
   "./testing/vitest": {
     audience: "author",
-    use: "the vitest-only half of `/testing`: anything that installs or restores a stub",
+    use: "where the installers are declared — a test file imports them through `@alexkroman1/aai-runtime/testing/vitest`",
   },
   "./testing/vite": {
     audience: "author",

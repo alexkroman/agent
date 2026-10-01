@@ -1,6 +1,6 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import { createToolContext, expectDeployable, toolRunner } from "@alexkroman1/aai/testing";
+import { createToolContext, expectDeployable, toolRunner } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import { MAX_NOTES, notebookSlot } from "./shared.ts";
 

@@ -7,7 +7,7 @@ import {
   type TestToolContext,
   toolInputIssues,
   toolOf,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 /**
  * The def a DEPLOYED agent runs, lowered BY HAND — the one place in the
@@ -91,7 +91,7 @@ const SETTLING_TOOLS = new Set(["cancel_change", "confirm_change"]);
  * `state.pending`, and a position with nothing staged behind it is a state this
  * template cannot actually be in. Everything else only needs `serving`.
  *
- * `runTool` (`@alexkroman1/aai/testing`) does the lookup-then-execute this file
+ * `runTool` (`@alexkroman1/aai-runtime/testing`) does the lookup-then-execute this file
  * had written as a `toolNamed` helper — `agent.tools[name]`, a throw naming the
  * miss, then `.execute` — which is `toolOf` plus one call, and is what the SDK
  * publishes those two for. The throw is better than the one here was: it lists

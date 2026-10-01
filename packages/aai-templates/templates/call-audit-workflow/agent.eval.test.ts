@@ -57,7 +57,7 @@ import {
   installStubTranscribe,
   installStubUploads,
   stubGatewayRoute,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { describe, expect, test } from "vitest";
 import agentDef, { audit } from "./agent.ts";
 import { ANALYSIS_FORMAT, BYTES_PER_SECOND, MAX_SEGMENT_SECONDS } from "./workflows/media.ts";

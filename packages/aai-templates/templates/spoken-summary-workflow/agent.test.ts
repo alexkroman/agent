@@ -26,20 +26,20 @@ import {
   WAV_HEADER_BYTES,
 } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
+import { ASSEMBLYAI_TTS_DEFAULT_VOICE, ttsVoiceInfo } from "@alexkroman1/aai/tts";
 import {
   createWorkflowContext,
+  runWorkflow,
   STUB_SPEECH_PCM_BYTES,
   stubGatewayRoute,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import {
   installStubGateway,
   installStubReporter,
   installStubSpeech,
   installStubTranscribe,
   installStubUploads,
-} from "@alexkroman1/aai/testing/vitest";
-import { ASSEMBLYAI_TTS_DEFAULT_VOICE, ttsVoiceInfo } from "@alexkroman1/aai/tts";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { SUMMARY_LANGUAGE, spokenSummary, VOICES } from "./agent.ts";
 import { speak, spokenSummaryFlow, summarize } from "./workflows/summarize.ts";

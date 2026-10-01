@@ -10,7 +10,7 @@ import {
   runTool,
   toolInputIssues,
   toolRunner,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import { luhnOk, validateCard } from "./card.ts";
 import { deskFlow } from "./desk.ts";

@@ -14,13 +14,18 @@ aai test
 evals, which have their own command. A tool is a plain function, so a spec
 calls it and asserts on what comes back. No model, no session, no server.
 
+A spec imports its testing names from two doors:
+`@alexkroman1/aai-runtime/testing` for everything that installs nothing, and
+`@alexkroman1/aai-runtime/testing/vitest` for everything that installs or
+restores (the `install*` fakes) and the eval suites.
+
 ## Your first test
 
 `toolRunner` reaches a tool by the name the model calls it by:
 
 ```ts
 import agentDef from "virtual:aai/agent";
-import { toolRunner } from "@alexkroman1/aai/testing";
+import { toolRunner } from "@alexkroman1/aai-runtime/testing";
 import { expect, test } from "vitest";
 
 const run = toolRunner(agentDef);
@@ -61,7 +66,7 @@ is missing when it is not:
 
 ```ts
 import agentDef from "virtual:aai/agent";
-import { expectDeployable } from "@alexkroman1/aai/testing";
+import { expectDeployable } from "@alexkroman1/aai-runtime/testing";
 import { expect, test } from "vitest";
 
 test("is deployable", () => {
@@ -76,7 +81,7 @@ needs something from it, or when two calls are supposed to share a session:
 
 ```ts
 import agentDef from "virtual:aai/agent";
-import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
+import { createToolContext, toolRunner } from "@alexkroman1/aai-runtime/testing";
 import { expect, test } from "vitest";
 
 const run = toolRunner(agentDef);
@@ -101,7 +106,7 @@ you rather than silently passing.
 Tools that call `ctx.generate` take a stub rather than a live key:
 
 ```ts
-import { createToolContext } from "@alexkroman1/aai/testing";
+import { createToolContext } from "@alexkroman1/aai-runtime/testing";
 
 const ctx = createToolContext({ generate: { reply: "A short summary." } });
 // `ctx.model.calls` records what the model was asked.
@@ -120,13 +125,13 @@ system prompt:
 
 `delegate` takes the same two shapes, with `routes` keyed by subagent name.
 
-`scriptedToolContext({ generate, delegate })` is the same call under a name that
-says both seams are scripted. It hands back `{ ctx, model, desk }` if you would
-rather read the two fakes by name.
+`createToolContext` hands the two fakes back on `ctx.model` and `ctx.desk`.
+`scriptedToolContext({ generate, delegate })` is the deprecated spelling of the
+same call; use `createToolContext`.
 
 The full set — `stubGateway`, guardrails, workflow contexts, upload fixtures,
 run snapshots — is in the [SDK reference](/agent/reference/) under
-`@alexkroman1/aai/testing`.
+`@alexkroman1/aai-runtime/testing`.
 
 ## Running the suite
 

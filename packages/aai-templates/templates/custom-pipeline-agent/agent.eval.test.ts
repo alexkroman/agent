@@ -14,7 +14,7 @@
 // and the banner says so on every run.
 
 import { countWords } from "@alexkroman1/aai/utils";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import agentDef from "./agent.ts";
 

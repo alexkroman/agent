@@ -8,7 +8,7 @@ import {
   expectToolOk,
   stubGenerate,
   toolRunner,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import { DEFAULT_MEMORY, EXECUTIVE, INBOX } from "./inbox.ts";
 import { reflect } from "./nodes.ts";

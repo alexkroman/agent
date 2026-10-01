@@ -8,8 +8,8 @@ import {
   stubDelegate,
   toolOf,
   toolRunner,
-} from "@alexkroman1/aai/testing";
-import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+} from "@alexkroman1/aai-runtime/testing";
+import { installStubStepFetch } from "@alexkroman1/aai-runtime/testing/vitest";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
 import type { AngleWork } from "./shared.ts";

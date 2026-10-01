@@ -13,6 +13,11 @@ Named re-exports rather than `export *` for the second half of that: the
 wildcard form re-exports whatever arrives, and needs a `noReExportAll`
 suppression the escape-hatch ratchet only lets move down.
 
+An agent project's test files import these through `@alexkroman1/aai-runtime/testing`,
+which re-exports every name here as the same declaration alongside the
+runtime's own drivers — one door per kind of helper, whatever package
+declares it. This subpath keeps working; it is where the names are declared.
+
 ## Functions
 
 ### commandedBuiltins()

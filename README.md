@@ -99,17 +99,17 @@ carries the run behind it. See
 
 Each of these is one page in the docs:
 
-|                                                                                 |                                                                                 |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [Tools](https://alexkroman.github.io/agent/build/tools/)                        | Ordinary async functions, plus `resolveOne` for matching what a caller _said_   |
-| [Remembering things](https://alexkroman.github.io/agent/build/state/)           | `sessionSlot()` — session state, durable across a crash or a redeploy           |
-| [Testing](https://alexkroman.github.io/agent/build/testing/)                    | `aai test` is vitest; `@alexkroman1/aai/testing` supplies the collaborators     |
-| [Voices and models](https://alexkroman.github.io/agent/more/voices-and-models/) | Swap speech-to-text, the model, or text-to-speech — or all three for one socket |
-| [Phone calls](https://alexkroman.github.io/agent/deploy/phone/)                 | Twilio and Telnyx; nothing below the bridge knows it's a phone call             |
-| [Background jobs](https://alexkroman.github.io/agent/more/background-jobs/)     | Durable, journaled workflows for work that outlives a turn                      |
-| [Your own UI](https://alexkroman.github.io/agent/more/custom-ui/)               | React hooks and components, or a framework-agnostic session                     |
-| [Deploy anywhere](https://alexkroman.github.io/agent/deploy/anywhere/)          | `aai build --target node\|vercel\|deno\|modal`, and the commands to ship it     |
-| [Self-hosting](https://alexkroman.github.io/agent/more/self-hosting/)           | The same runtime in your own Node process                                       |
+|                                                                                 |                                                                                     |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [Tools](https://alexkroman.github.io/agent/build/tools/)                        | Ordinary async functions, plus `resolveOne` for matching what a caller _said_       |
+| [Remembering things](https://alexkroman.github.io/agent/build/state/)           | `sessionSlot()` — session state, durable across a crash or a redeploy               |
+| [Testing](https://alexkroman.github.io/agent/build/testing/)                    | `aai test` is vitest; `@alexkroman1/aai-runtime/testing` supplies the collaborators |
+| [Voices and models](https://alexkroman.github.io/agent/more/voices-and-models/) | Swap speech-to-text, the model, or text-to-speech — or all three for one socket     |
+| [Phone calls](https://alexkroman.github.io/agent/deploy/phone/)                 | Twilio and Telnyx; nothing below the bridge knows it's a phone call                 |
+| [Background jobs](https://alexkroman.github.io/agent/more/background-jobs/)     | Durable, journaled workflows for work that outlives a turn                          |
+| [Your own UI](https://alexkroman.github.io/agent/more/custom-ui/)               | React hooks and components, or a framework-agnostic session                         |
+| [Deploy anywhere](https://alexkroman.github.io/agent/deploy/anywhere/)          | `aai build --target node\|vercel\|deno\|modal`, and the commands to ship it         |
+| [Self-hosting](https://alexkroman.github.io/agent/more/self-hosting/)           | The same runtime in your own Node process                                           |
 
 ## Packages
 

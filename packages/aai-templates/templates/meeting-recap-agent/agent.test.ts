@@ -44,34 +44,32 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 import { DEFAULT_STEP_MAX_ATTEMPTS, type WorkflowClient } from "@alexkroman1/aai";
+import type { WorkflowOutputOf, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import {
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
   createWorkflowContext,
+  type JournalStore,
   parseSchemaInput,
   type RecordedStep,
+  type RunWorkflowOptions,
   runTool,
+  runWorkflow,
+  type SleepRecord,
   schemaInputIssues,
   stubGatewayRoute,
   toolRunner,
   type WorkflowContextRecorder,
-} from "@alexkroman1/aai/testing";
-import {
-  installStubGateway,
-  installStubStepFetch,
-  installStubWorkflows,
-} from "@alexkroman1/aai/testing/vitest";
-import type { WorkflowOutputOf, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
-import {
-  type JournalStore,
-  type RunWorkflowOptions,
-  runWorkflow,
-  type SleepRecord,
   type WorkflowTestHandle,
   type WorkflowTestRun,
   type WorkflowTestStep,
 } from "@alexkroman1/aai-runtime/testing";
+import {
+  installStubGateway,
+  installStubStepFetch,
+  installStubWorkflows,
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { recap } from "./shared.ts";
 import cancelRecap from "./tools/cancel_recap.ts";
@@ -103,7 +101,7 @@ const run = toolRunner(agentDef);
 /**
  * A `ctx.workflows` that records `start` and answers the lookups from a fixture.
  *
- * `installStubWorkflows` (`@alexkroman1/aai/testing/vitest`) is the whole thing — a
+ * `installStubWorkflows` (`@alexkroman1/aai-runtime/testing/vitest`) is the whole thing — a
  * `vi.fn` per method over one `runs` list, with `stream`/`streamTail` left
  * rejecting because `recap_progress` reads progress through `lastLine` and
  * composing those two by hand is the hazard `lastLine` exists to remove. What
@@ -351,7 +349,7 @@ describe("keep_transcript — the signal", () => {
   /**
    * A `ctx.workflows` where `signal` is the ONLY method that answers.
    *
-   * `createStubWorkflows` (`@alexkroman1/aai/testing`) rather than the
+   * `createStubWorkflows` (`@alexkroman1/aai-runtime/testing`) rather than the
    * `installStubWorkflows` the rest of this file uses, and the difference is the
    * assertion: every method it is not given REJECTS, so these three tests fail
    * if `keep_transcript` ever reaches for a run — a `find` to locate one, a

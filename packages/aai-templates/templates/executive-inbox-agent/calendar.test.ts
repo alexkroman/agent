@@ -8,7 +8,7 @@ import {
   parseToolInput,
   runGuardrail,
   toolRunner,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import { CALENDAR, TODAY } from "./inbox.ts";
 import { calendarTool, clashOn, meetingAssistant, statesAvailability } from "./meeting.ts";

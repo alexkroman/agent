@@ -5,7 +5,7 @@
   // The root barrel (`.`) and `./internal` stay deny-listed in
   // `scripts/docs-markdown.mjs` for the reasons written there — ~220 exports
   // aimed at somebody EMBEDDING an agent, and cross-package plumbing. Neither
-  // reason reaches these three: an eval and a workflow/text-agent spec are
+  // reason reaches these four: an eval and a workflow/text-agent spec are
   // written by the same person who writes `agent.ts`, against the same
   // vitest project, and `@alexkroman1/aai/testing` — the module they reach for
   // first — is rendered two clicks away. Splitting the package's reference this
@@ -14,7 +14,8 @@
   "entryPoints": [
     "dist/eval-barrel.d.ts",
     "dist/eval-vitest-barrel.d.ts",
-    "dist/testing-barrel.d.ts"
+    "dist/testing-barrel.d.ts",
+    "dist/testing-vitest-barrel.d.ts"
   ],
   "externalSymbolLinkMappings": {
     "ai": {
@@ -23,8 +24,8 @@
     // Two links from `/testing` into the ROOT barrel, which is deny-listed and
     // so is not a page here. The symbols are published — `createTextAgent` and
     // `TextAgent` are both on `@alexkroman1/aai-runtime` — they just have no
-    // rendered anchor to point at, which is the cost of documenting three
-    // subpaths of five and is paid here rather than by deleting the links. The
+    // rendered anchor to point at, which is the cost of documenting four
+    // subpaths of nine and is paid here rather than by deleting the links. The
     // README is where the deny-list entry says that surface's orientation
     // lives, so that is where they go.
     "@alexkroman1/aai-runtime": {

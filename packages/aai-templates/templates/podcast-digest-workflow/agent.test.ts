@@ -29,16 +29,16 @@ import {
   createWorkflowContext,
   parseSchemaInput,
   routeStepFetch,
+  runWorkflow,
   schemaInputIssues,
   stubGatewayRoute,
   type WorkflowContextRecorder,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import {
   installStubGateway,
   installStubStepFetch,
   installStubTranscribe,
-} from "@alexkroman1/aai/testing/vitest";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
 import {

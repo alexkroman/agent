@@ -2,14 +2,14 @@
 import agentDef from "virtual:aai/agent";
 import type { Message, ToolContext } from "@alexkroman1/aai";
 import { createSeededRandom } from "@alexkroman1/aai";
-import type { ToolContextOverrides } from "@alexkroman1/aai/testing";
+import type { ToolContextOverrides } from "@alexkroman1/aai-runtime/testing";
 import {
   createToolContext,
   expectDialogOk,
   expectDialogRefused,
   stubGenerate,
   toolRunner,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { endsRound, gameFlow, TIME_UP_LINE } from "./game.ts";
 import { containsWord, isCorrectGuess, normalizeWord } from "./guess.ts";

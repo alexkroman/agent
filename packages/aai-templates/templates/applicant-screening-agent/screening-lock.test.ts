@@ -7,7 +7,7 @@
  * without twelve model calls in the way.
  */
 
-import { createToolContext } from "@alexkroman1/aai/testing";
+import { createToolContext } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test, vi } from "vitest";
 import { screeningsInFlight, withScreening } from "./screening-lock.ts";
 

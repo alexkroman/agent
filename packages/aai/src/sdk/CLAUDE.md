@@ -85,25 +85,28 @@ such message with a real `tsc` run; if nothing can print it, NAME the arms
 
 ### Which testing import, by FILE
 
-One import door per kind of file, and each name is imported through the door
-of the file it is in. Two packages because `aai` may not import `aai-runtime`
-(the engine and the eval harness are runtime), so the SDK cannot re-export
-them; the runtime re-exports the SDK's stubs instead.
+**A test file imports testing names from two doors:
+`@alexkroman1/aai-runtime/testing` (everything that installs nothing) and
+`@alexkroman1/aai-runtime/testing/vitest` (everything that installs or
+restores, plus the eval suites).** Both are on the runtime because `aai` may
+not import `aai-runtime` (the engine and the eval harness are runtime); the
+runtime re-exports this package's helpers instead, as the SAME declarations.
 
-| File                                          | Import from                                 | For                                                                     |
-| --------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------- |
-| `vitest.config.ts`                            | `@alexkroman1/aai/testing/vite`             | `defineAgentTestConfig`                                                 |
-| a unit spec (tool, step, hook, workflow body) | `@alexkroman1/aai/testing`                  | every fake and reader that installs nothing                             |
-| the same spec                                 | `@alexkroman1/aai/testing/vitest`           | every `install*` (installs and restores)                                |
-| a spec on the REAL engine or text loop        | `@alexkroman1/aai-runtime/testing`          | `runWorkflow`, `runTextAgent`, `scriptedTextModel`                      |
-| an eval (`*.eval.test.ts`)                    | `@alexkroman1/aai-runtime/eval/vitest` ONLY | the suite, readers, simulation, and the SDK stubs an eval composes with |
-| a harness that is not vitest                  | `@alexkroman1/aai-runtime/eval`             | the runner-free half                                                    |
+| File                         | Import from                               | For                                                                                          |
+| ---------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `vitest.config.ts`           | `@alexkroman1/aai/testing/vite`           | `defineAgentTestConfig`                                                                      |
+| any spec or eval             | `@alexkroman1/aai-runtime/testing`        | every fake and reader of `/testing`, plus `runWorkflow`, `runTextAgent`, `scriptedTextModel` |
+| the same file                | `@alexkroman1/aai-runtime/testing/vitest` | every `install*` of `/testing/vitest`, plus all of `/eval/vitest` (`describeEval`, …)        |
+| a harness that is not vitest | `@alexkroman1/aai-runtime/eval`           | the runner-free half of the eval harness                                                     |
 
-The eval row is enforced for templates (konsistent
-`template-eval-runtime-subpaths`); `/eval/vitest`'s re-exports are the same
-declarations, so a type from either door is one type. `scriptedToolContext` is
-deprecated for `createToolContext`; `createRuntimeServer` for
-`createServerForRuntime`.
+The names stay DECLARED (and versioned as `aai:testing`) here on `/testing`
+and `/testing/vitest`, which keep working, as does `aai-runtime/eval/vitest`;
+templates are held to the two doors by konsistent `template-testing-doors`, and
+`aai-runtime`'s `testing-doors.test.ts` holds each door to the lists it carries
+— a helper added here needs a line in `aai-runtime/src/testing-barrel.ts` (or
+`testing-vitest-barrel.ts`) and in its `aai-runtime:testing-stubs` capability.
+`scriptedToolContext` is deprecated for `createToolContext`;
+`createRuntimeServer` for `createServerForRuntime`.
 
 ### The rules
 

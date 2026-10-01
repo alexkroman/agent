@@ -1430,7 +1430,7 @@
     },
     {
       "name": "runtime-runner-free-subpaths",
-      "description": "`vitest` is an OPTIONAL peer of `@alexkroman1/aai-runtime`, so exactly one published subpath may pull it \u2014 `/eval/vitest` \u2014 and the six barrels behind every other subpath may not import it at all. This is not hygiene; it is a shipped-runtime failure with a consumer behind it. `@alexkroman1/aai-cli`'s published `dist` imports a VALUE from `@alexkroman1/aai-runtime/internal` (`consoleLogger`, in `_dev-env.ts`) with every bare specifier external, so a static `vitest` clause anywhere on that barrel's own module makes `aai dev` unrunnable in any install without the test runner: `ERR_MODULE_NOT_FOUND` raised from inside a published package, in a user's project, and invisible to `publint` and to `attw` because both ask whether the declared exports RESOLVE rather than what they then require at run time. The same argument covers the other five: `/` is what an embedder installs (and `/auth` and `/metrics` are split out of it for the same reader), `/testing` is runner-agnostic by construction so it works from any harness, and `/eval` is the runner-free driving half a harness that is not vitest imports (an eval FILE takes `/eval/vitest`, which re-exports it). What this convention checks is the DIRECT clause, which is the form a refactor actually writes. It cannot see the transitive route \u2014 a static re-export of a module that itself imports the runner, which is the shape the journal conformance case list arrived in and why `loadJournalConformance()` reaches those modules through a dynamic `import()`; dynamic imports are outside what konsistent reads, so that half stays argued in `JOURNAL-CLAUDE.md` where the measurement of `dist/internal.js` lives. `eval-vitest-barrel.ts` is absent from these paths deliberately: it is the one subpath whose whole job is to pull the runner.",
+      "description": "`vitest` is an OPTIONAL peer of `@alexkroman1/aai-runtime`, so exactly two published subpaths may pull it \u2014 `/eval/vitest` and `/testing/vitest` \u2014 and the six barrels behind every other subpath may not import it at all. This is not hygiene; it is a shipped-runtime failure with a consumer behind it. `@alexkroman1/aai-cli`'s published `dist` imports a VALUE from `@alexkroman1/aai-runtime/internal` (`consoleLogger`, in `_dev-env.ts`) with every bare specifier external, so a static `vitest` clause anywhere on that barrel's own module makes `aai dev` unrunnable in any install without the test runner: `ERR_MODULE_NOT_FOUND` raised from inside a published package, in a user's project, and invisible to `publint` and to `attw` because both ask whether the declared exports RESOLVE rather than what they then require at run time. The same argument covers the other five: `/` is what an embedder installs (and `/auth` and `/metrics` are split out of it for the same reader), `/testing` is runner-agnostic by construction so it works from any harness (its installers are on `/testing/vitest`), and `/eval` is the runner-free driving half a harness that is not vitest imports (an eval FILE takes `/testing/vitest`, which re-exports `/eval/vitest`, which re-exports it). What this convention checks is the DIRECT clause, which is the form a refactor actually writes. It cannot see the transitive route \u2014 a static re-export of a module that itself imports the runner, which is the shape the journal conformance case list arrived in and why `loadJournalConformance()` reaches those modules through a dynamic `import()`; dynamic imports are outside what konsistent reads, so that half stays argued in `JOURNAL-CLAUDE.md` where the measurement of `dist/internal.js` lives. `eval-vitest-barrel.ts` and `testing-vitest-barrel.ts` are absent from these paths deliberately: they are the two subpaths whose whole job is to pull the runner.",
       "paths": [
         "packages/aai-runtime/src/runtime-barrel.ts",
         "packages/aai-runtime/src/auth-barrel.ts",
@@ -1446,26 +1446,41 @@
     },
     {
       "name": "template-eval-runtime-subpaths",
-      "description": "A template's eval imports its HARNESS from ONE subpath, `@alexkroman1/aai-runtime/eval/vitest`, which re-exports the runner-free `/eval` half, the simulated caller and judge, and the `@alexkroman1/aai/testing` stubs a case composes with \u2014 one door because an eval file used to reach four subpaths of two packages for one harness. So `/eval`, `@alexkroman1/aai/testing` and `/testing/vitest` are refused HERE as well: `/eval` is the door for a harness that is not vitest, and the SDK's testing subpaths stay the unit-level surface a tool's or a step's own spec imports (a stub an eval needs and the one door lacks is a line in `eval-vitest-barrel.ts`, not a second import). No other subpath of the runtime package either. The root barrel is the one that bites: it reaches `agent-server.ts` \u2192 `server.ts` \u2192 `workflow/install.ts` \u2192 `step-fetch.ts`, so an eval that imports the root for one TYPE drags this runtime's node-reaching module graph into the template's own TypeScript program \u2014 three `BodyInit`/`exactOptionalPropertyTypes` errors in runtime files the eval never calls. It happened the day the surface shipped, in three template evals reaching for `RunCodeExecutor`, which is why `/eval` re-exports that type rather than letting a template reach past it. `/testing` is forbidden HERE and not in templates generally: eight template `agent.test.ts` files legitimately use `runWorkflow` from it, but an eval driving a real session has no business starting a durable run through a second door, and the two subpaths gate on different credentials. `/auth`, `/metrics` and `/tracing` are an EMBEDDER's \u2014 a server's ticket gate and its telemetry \u2014 and nothing an eval of the agent itself has reason to reach. `/internal` is already refused for every template file by `template-authoring-boundary`, so this list plus that one is TOTAL over the package's export map \u2014 an allow-list spelled as a complete deny-list, which is the only form konsistent has. It was written down before only inside a JSDoc block copied verbatim into four template evals, and deduplicating those onto `createVmRunCode` is what left it with no home \u2014 the general hazard in a dedupe being that the copies carry prose as well as code, and the prose is the half a diff does not miss.",
+      "description": "A template's eval imports its HARNESS from the two testing doors only (`template-testing-doors` holds every template file to them), and this rule refuses the rest of the runtime package's export map there. The root barrel is the one that bites: it reaches `agent-server.ts` \u2192 `server.ts` \u2192 `workflow/install.ts` \u2192 `step-fetch.ts`, so an eval that imports the root for one TYPE drags this runtime's node-reaching module graph into the template's own TypeScript program \u2014 three `BodyInit`/`exactOptionalPropertyTypes` errors in runtime files the eval never calls. It happened the day the surface shipped, in three template evals reaching for `RunCodeExecutor`, which is why `/eval` (and so `/testing/vitest`) re-exports that type rather than letting a template reach past it. `/auth`, `/metrics` and `/tracing` are an EMBEDDER's \u2014 a server's ticket gate and its telemetry \u2014 and nothing an eval of the agent itself has reason to reach. `/internal` is refused for every template file by `template-authoring-boundary`, and `/eval` and `/eval/vitest` by `template-testing-doors`, so the three lists are TOTAL over the package's export map minus the two doors \u2014 an allow-list spelled as a complete deny-list, which is the only form konsistent has. A template's `agent.ts` side may still import the root barrel (`coding-agent/chat.ts` takes `createTextAgent` from it); this is about eval files.",
       "paths": ["packages/aai-templates/templates/**/*.eval.test.ts"],
       "mustNot": {
         "importValuesFrom": [
           "@alexkroman1/aai-runtime",
           "@alexkroman1/aai-runtime/auth",
-          "@alexkroman1/aai-runtime/eval",
           "@alexkroman1/aai-runtime/metrics",
-          "@alexkroman1/aai-runtime/testing",
-          "@alexkroman1/aai-runtime/tracing",
-          "@alexkroman1/aai/testing",
-          "@alexkroman1/aai/testing/vitest"
+          "@alexkroman1/aai-runtime/tracing"
         ],
         "importTypesFrom": [
           "@alexkroman1/aai-runtime",
           "@alexkroman1/aai-runtime/auth",
-          "@alexkroman1/aai-runtime/eval",
           "@alexkroman1/aai-runtime/metrics",
-          "@alexkroman1/aai-runtime/testing",
-          "@alexkroman1/aai-runtime/tracing",
+          "@alexkroman1/aai-runtime/tracing"
+        ]
+      }
+    },
+    {
+      "name": "template-testing-doors",
+      "description": "A template's tests import testing names from TWO doors: `@alexkroman1/aai-runtime/testing` (every fake and reader that installs nothing, every name of `@alexkroman1/aai/testing` re-exported as the same declaration, plus `runWorkflow` and `runTextAgent`) and `@alexkroman1/aai-runtime/testing/vitest` (every installer of `@alexkroman1/aai/testing/vitest`, plus everything `/eval/vitest` carries \u2014 the eval suites, readers, simulated caller and judge). Two because `published-testing-split` keeps whatever installs or restores on a `/vitest` subpath, so the pure door stays importable without the runner; on the RUNTIME because `@alexkroman1/aai` may not import it (the engine and the eval harness are runtime), so the re-exports run that way. So the SDK's `/testing` and `/testing/vitest` and the runtime's `/eval` and `/eval/vitest` are refused in every template file: they still work, and are where the names are DECLARED (or, for `/eval`, the runner-free door a harness that is not vitest imports), but a template is the example an author copies, and one rule \u2014 'a test imports from those two' \u2014 is what it should show. `@alexkroman1/aai/testing/vite` stays the `vitest.config.ts` import and is not refused (konsistent matches a specifier exactly). A helper a spec needs and the door lacks is a line in the door's barrel; `testing-doors.test.ts` in aai-runtime holds each door to the lists it promises to carry.",
+      "paths": [
+        "packages/aai-templates/templates/**/*.ts",
+        "packages/aai-templates/templates/**/*.tsx",
+        "packages/aai-templates/scaffold/**/*.ts"
+      ],
+      "mustNot": {
+        "importValuesFrom": [
+          "@alexkroman1/aai-runtime/eval",
+          "@alexkroman1/aai-runtime/eval/vitest",
+          "@alexkroman1/aai/testing",
+          "@alexkroman1/aai/testing/vitest"
+        ],
+        "importTypesFrom": [
+          "@alexkroman1/aai-runtime/eval",
+          "@alexkroman1/aai-runtime/eval/vitest",
           "@alexkroman1/aai/testing",
           "@alexkroman1/aai/testing/vitest"
         ]
@@ -2303,7 +2318,7 @@
         },
         {
           "name": "eval-harness",
-          "description": "The HARNESS is `@alexkroman1/aai-runtime/eval/vitest` \u2014 `describeEval`, which owns the two modes, the announce line, and the per-case `live` / `scripted` markers. It is also what makes the file PORTABLE, which is the property `aai-evals`' template contract rests on: `use_template` copies the eval verbatim into a studio workspace, `contractWorkspace` overwrites it with the canonical copy, and a plain `npx vitest` then runs it there \u2014 which resolves only because everything the file imports is a PUBLISHED package. A local harness, or a helper reached through a repo-relative path, would make that whole non-gameability argument unavailable, and would break a scaffolded project besides (`guard-invariants` rule 13 is the general form).",
+          "description": "The HARNESS is `@alexkroman1/aai-runtime/testing/vitest` (which re-exports `/eval/vitest`) \u2014 `describeEval`, which owns the two modes, the announce line, and the per-case `live` / `scripted` markers. It is also what makes the file PORTABLE, which is the property `aai-evals`' template contract rests on: `use_template` copies the eval verbatim into a studio workspace, `contractWorkspace` overwrites it with the canonical copy, and a plain `npx vitest` then runs it there \u2014 which resolves only because everything the file imports is a PUBLISHED package. A local harness, or a helper reached through a repo-relative path, would make that whole non-gameability argument unavailable, and would break a scaffolded project besides (`guard-invariants` rule 13 is the general form).",
           "if": {
             "hasFile": "agent.eval.test.ts"
           },
@@ -2311,7 +2326,7 @@
             "files": "agent.eval.test.ts"
           },
           "must": {
-            "importValuesFrom": "@alexkroman1/aai-runtime/eval/vitest"
+            "importValuesFrom": "@alexkroman1/aai-runtime/testing/vitest"
           }
         },
         {

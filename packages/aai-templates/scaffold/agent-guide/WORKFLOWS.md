@@ -209,8 +209,8 @@ export async function summarize(url: string) {
 Read `isLastAttempt` rather than comparing `attempt` against a number you have
 written down: the ceiling lives at the `ctx.step` call site, and a body that
 restates it degrades early on every run once the two disagree — silently, since
-it still returns an answer. `stubStepInfo` from `@alexkroman1/aai/testing` is how
-a test reaches the retry branch.
+it still returns an answer. `stubStepInfo` from
+`@alexkroman1/aai-runtime/testing` is how a test reaches the retry branch.
 
 ### A clock, a random number and a uuid: `ctx.now`, `ctx.random`, `ctx.uuid`
 
@@ -362,12 +362,12 @@ Steps are ordinary exported functions, so a spec imports and calls them. The
 BODY needs an engine, and there are two, for two different questions.
 
 **"What did the body ask for?"** — `createWorkflowContext` from
-`@alexkroman1/aai/testing`. It runs the steps and records the names, the retry
-policies and the sleeps, over one walk with no journal. Nothing replays, so a
-spec built on it must not claim to test durability.
+`@alexkroman1/aai-runtime/testing`. It runs the steps and records the names,
+the retry policies and the sleeps, over one walk with no journal. Nothing
+replays, so a spec built on it must not claim to test durability.
 
 ```ts no-check
-import { createWorkflowContext } from "@alexkroman1/aai/testing";
+import { createWorkflowContext } from "@alexkroman1/aai-runtime/testing";
 
 const ctx = createWorkflowContext({ runSteps: false });
 await digestFlow({ url: "https://example.com/a" }, ctx);
@@ -418,8 +418,8 @@ through the published `stepFetch` slot, so a model call and a page fetch are BOT
 answered there. `stubGatewayRoute` composes the two:
 
 ```ts no-check
-import { stubGatewayRoute } from "@alexkroman1/aai/testing";
-import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+import { stubGatewayRoute } from "@alexkroman1/aai-runtime/testing";
+import { installStubStepFetch } from "@alexkroman1/aai-runtime/testing/vitest";
 
 const model = stubGatewayRoute('{"headline":"H","points":["a"]}');
 installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
@@ -650,7 +650,7 @@ Three rules come with it:
   with a bad status because only the first is unclassifiable. It names its whole
   `cause` chain, and `err.codes` is what to branch on (`ECONNRESET`,
   `ETIMEDOUT`, …).
-- **Test it with `stubStepFetch`** (`@alexkroman1/aai/testing`), not
+- **Test it with `stubStepFetch`** (`@alexkroman1/aai-runtime/testing`), not
   `vi.stubGlobal("fetch", …)`. The global stub passes — an unpublished slot falls
   back to it — while asserting a path production does not take, and it cannot see
   the request body as bytes.
@@ -714,9 +714,9 @@ once the agent has a token. `URL.createObjectURL(blob)` is what those elements
 take; revoke it when the id changes.
 
 Test both with `stubSpeech()` and `stubUploads(files, { writable: true })`
-(`@alexkroman1/aai/testing`). The write half is opt-in on purpose: a store that
-silently accepted writes could not fail a spec whose step stored a file nobody
-meant it to.
+(`@alexkroman1/aai-runtime/testing`). The write half is opt-in on purpose: a
+store that silently accepted writes could not fail a spec whose step stored a
+file nobody meant it to.
 
 ### A builtin's failure is its RESULT, so narrow it
 

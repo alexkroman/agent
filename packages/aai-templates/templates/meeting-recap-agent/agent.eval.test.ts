@@ -73,7 +73,7 @@ import {
   stubGatewayRoute,
   toolResultIn,
   toolResultsIn,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { recap, SAMPLE_RECORDING } from "./shared.ts";

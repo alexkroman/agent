@@ -59,15 +59,18 @@ distinction is real; none is guessable from the names alone.
 | `createWorkflowApiClient()` | `@alexkroman1/aai/workflow-api` | a caller with no page: a script, a cron job, a server                         |
 | `createAgentClient()`       | `@alexkroman1/aai/workflow-api` | the same, plus `/client-config` — one object for everything one agent answers |
 
-**Testing** — five subpaths, split by what each one stands up:
+**Testing** — a test file imports from two doors, split by whether a helper
+installs anything:
 
-| Subpath                                | Drives                                | Reach for it when                                                              |
-| -------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
-| `@alexkroman1/aai/testing`             | nothing — it hands out fakes          | calling one tool in isolation: `createToolContext`, `deployedAgent`, `runTool` |
-| `@alexkroman1/aai/testing/vitest`      | the same fakes, installed             | you want `installStubGateway` to register its own cleanup                      |
-| `@alexkroman1/aai-runtime/eval`        | a real session, from text             | asserting what the agent DID — which tools, in what order, and what it said    |
-| `@alexkroman1/aai-runtime/eval/vitest` | the same, as `describeEval`           | writing those cases as vitest tests, run by `aai eval`                         |
-| `@alexkroman1/aai-runtime/testing`     | the real workflow engine / text agent | asserting a run slept, resumed, retried, or survived a dead worker             |
+| Subpath                                   | Drives                                                       | Reach for it when                                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `@alexkroman1/aai-runtime/testing`        | fakes, and the real workflow engine / text agent             | calling one tool in isolation (`createToolContext`, `runTool`); asserting a run slept or resumed       |
+| `@alexkroman1/aai-runtime/testing/vitest` | the same fakes, installed; a real session, as `describeEval` | you want `installStubGateway` to register its own cleanup; asserting what the agent DID, by `aai eval` |
+
+The helpers are declared on `@alexkroman1/aai/testing` and `/testing/vitest`,
+and the eval harness on `@alexkroman1/aai-runtime/eval` (runner-free) and
+`/eval/vitest`; all four still work, and the two doors re-export them as the
+same declarations.
 
 **Reading a live session** — one hook returns everything and the rest are
 slices of it, so a component re-renders on its own data rather than every

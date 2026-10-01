@@ -16,7 +16,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import agentDef from "virtual:aai/agent";
-import { expectDeployable, toolRunner } from "@alexkroman1/aai/testing";
+import { expectDeployable, toolRunner } from "@alexkroman1/aai-runtime/testing";
 import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { WORKSPACE_DIR } from "./shared.ts";
 
