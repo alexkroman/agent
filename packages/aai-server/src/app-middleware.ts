@@ -7,6 +7,7 @@
  * both surfaces agree on the framing policy.
  */
 
+import { SESSION_TICKET_HEADER } from "@alexkroman1/aai/protocol";
 import type { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -79,7 +80,9 @@ export function applyPlatformMiddleware<E extends HonoEnv>(
         return origins.includes(origin) ? origin : "";
       },
       allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization"],
+      // The ticket header is what a cross-origin client resumes with on
+      // `client-config`; leave it out and the preflight strands it.
+      allowHeaders: ["Content-Type", "Authorization", SESSION_TICKET_HEADER],
       credentials: false,
       maxAge: 86_400,
     }),

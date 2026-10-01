@@ -9,6 +9,7 @@
  * unable to mint a callback URL until an operator set `AAI_PUBLIC_ORIGIN`.
  */
 
+import { SESSION_TICKET_HEADER } from "@alexkroman1/aai/protocol";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { applyPlatformMiddleware, resolveAllowedOrigins } from "./app-middleware.ts";
@@ -125,6 +126,26 @@ describe("applyPlatformMiddleware", () => {
       await expect(originOf("  ")).resolves.toBeNull();
       expect(resolveAllowedOrigins({ AAI_ALLOWED_ORIGINS: " , " })).toBeUndefined();
       expect(resolveAllowedOrigins({})).toBeUndefined();
+    });
+
+    test("a cross-origin resume may send its session ticket", async () => {
+      // A resuming browser presents its last ticket in this header on
+      // `client-config`; a preflight that refuses it fails the lookup, so an
+      // embedded client never reaches its sandbox again.
+      vi.stubEnv("AAI_ALLOWED_ORIGINS", "https://app.example");
+      const res = await appWithMiddleware().request(
+        new Request("http://localhost/ok", {
+          method: "OPTIONS",
+          headers: {
+            Origin: "https://app.example",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": SESSION_TICKET_HEADER,
+          },
+        }),
+      );
+      expect(res.headers.get("access-control-allow-headers")?.toLowerCase()).toContain(
+        SESSION_TICKET_HEADER,
+      );
     });
 
     test("an explicit argument wins over the environment", async () => {
