@@ -183,20 +183,18 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony">
 export type TextOnlyExcludedField = Exclude<keyof SharedAgentParams, keyof TextAgentParams>;
 
 /**
- * The fields a WORKFLOW APP has no use for: a page over the workflow HTTP API
- * has no session and makes no model request, so nothing reads a system prompt,
+ * The fields a WORKFLOW APP drops beyond what {@link SharedAgentParams} and
+ * the text member already subtract: a page over the workflow HTTP API has no
+ * session and makes no model request, so nothing reads a system prompt,
  * executes a model-chosen tool, or opens the socket `syncState` pushes over.
  *
- * Derived from the lists above where they already say this, so a new pipeline
- * knob or provider stage is absent from the workflow-app member for free.
- * `description` is deliberately NOT here: a listing wants one whatever the
- * front door is.
+ * Only the workflow-app-specific fields: the provider stages, the pipeline
+ * knobs and the model-request knobs are already absent from
+ * {@link SharedAgentParams}, so a new one is absent from the workflow-app
+ * member for free. `description` is deliberately NOT here: a listing wants one
+ * whatever the front door is.
  */
 export type WorkflowAppOnlyField =
-  | ProviderField
-  | PipelineOnlyField
-  | Exclude<keyof SharedAgentParams, keyof TextAgentParams>
-  | keyof AgentModelTuning
   | "systemPrompt"
   | "voicePresets"
   | "maxSteps"
@@ -219,7 +217,10 @@ export type WorkflowAppOnlyField =
  *
  * @public
  */
-export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | "workflows"> & {
+export type StaticAgentParams = Omit<
+  SharedAgentParams,
+  TextOnlyExcludedField | WorkflowAppOnlyField | "workflows"
+> & {
   /** See {@link AgentDef.mode}. */
   mode: "workflow-app";
   /** See {@link AgentDef.workflows} — the whole product. */
