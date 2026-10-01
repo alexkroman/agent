@@ -11,7 +11,14 @@ import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { MockWebSocket } from "./_mock-ws.ts";
-import { makeAgent, makeConfig, makeEmitter, makeLogger, silentLogger } from "./_test-utils.ts";
+import {
+  makeAgent,
+  makeConfig,
+  makeEmitter,
+  makeLogger,
+  makeSpeech,
+  silentLogger,
+} from "./_test-utils.ts";
 import { createClientToolBroker } from "./client-tool-broker.ts";
 import { setupTools } from "./runtime-tools.ts";
 import { createSessionCore } from "./session-core.ts";
@@ -52,6 +59,7 @@ describe("clientTool over a session socket", () => {
       logger: silentLogger,
       emitters: createOwnedMap<string, SessionEmitter>(),
       meters: createOwnedMap<string, UsageMeter>(),
+      speech: { of: () => makeSpeech() },
       clientTools,
       stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
     });

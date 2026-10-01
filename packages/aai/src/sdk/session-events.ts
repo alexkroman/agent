@@ -3,9 +3,10 @@
  * The AUTHOR's side of the session event stream: what `agent({ events })`
  * declares and what a handler is handed.
  *
- * A handler OBSERVES the session and MAINTAINS the session's own state; it does
- * not drive the turn. {@link SessionEventContext} is where that line is drawn
- * and argued.
+ * A handler OBSERVES the session and MAINTAINS the session's own state. The one
+ * way it acts on the call is `ctx.speech`, which queues a verbatim reply of its
+ * own rather than reaching into the turn. {@link SessionEventContext} is where
+ * that line is drawn and argued.
  *
  * Its own module rather than part of `types.ts` for the reason `tool-context.ts`
  * is: this is a per-CALL surface an author writes against, `types.ts` holds the
@@ -19,6 +20,7 @@
  */
 
 import type { SessionEvent, SessionEventType } from "./session-event-map.ts";
+import type { SessionSpeech } from "./session-speech.ts";
 import type { SlotStore } from "./session-state.ts";
 
 /**
@@ -26,9 +28,16 @@ import type { SlotStore } from "./session-state.ts";
  *
  * Deliberately much smaller than `ToolContext`, and the omissions are still the
  * design: there is no `send`, no `generate`, no `delegate` and no `messages`. A
- * handler MAY NOT SPEAK. Giving it a way to would make the event stream a second
- * control path into the turn — which is the thing that keeps a log honest, since
- * anything a reader can change it can no longer describe.
+ * handler cannot change the turn in flight: what the model is told, which tool
+ * runs, what the reply says.
+ *
+ * **`speech` is here, and it does not cross that line.** A `say` is a reply of
+ * its OWN, queued behind the one in flight and spoken verbatim, and it appears
+ * on the stream as a reply like any other, so the log still describes
+ * everything that happened. Without it, "say something when X happens" was
+ * possible only for the handful of X the SDK had scoped a knob for (greeting,
+ * silence, filler, a run landing). `speech.interrupt()` is the client's
+ * `cancel()`, which the stream already records. See `session-speech.ts`.
  *
  * **`slots` is here, and it does not cross that line.** The rule the omissions
  * enforce is that a handler cannot change the TURN — what the agent says, which
@@ -75,6 +84,22 @@ export type SessionEventContext = {
    * slot means a crash in between loses it.
    */
   slots: SlotStore;
+  /**
+   * Say a sentence on this session's line, or stop the agent: see
+   * {@link SessionSpeech}. Usable after the handler returns, so a timer it arms
+   * can speak.
+   *
+   * A `say` queues behind the reply in flight, and many events fire DURING a
+   * reply, so a handler must not hold anything that reply waits on until the
+   * line's `done` settles.
+   *
+   * **A line a handler says emits events that reach the handlers again.** A
+   * handler that speaks on every `agent-transcript.committed` hears its own
+   * line and speaks forever. Decide from an event the line cannot produce, or
+   * check the event first: see "A handler that speaks can hear itself" in
+   * `session-speech.ts`.
+   */
+  speech: SessionSpeech;
 };
 
 /**

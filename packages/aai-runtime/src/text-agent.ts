@@ -73,8 +73,8 @@ import {
 } from "./_prepare-step.ts";
 import { createGenerateFn } from "./generate.ts";
 import { resolveLlm } from "./providers/resolve.ts";
+import { mergeBuiltinSurface } from "./runtime-builtin-surface.ts";
 import { consoleLogger } from "./runtime-config.ts";
-import { mergeBuiltinSurface } from "./runtime-tools.ts";
 import { createSubagentRunner } from "./subagent.ts";
 import { createTextAgentEvents } from "./text-agent-events.ts";
 import { toContextMessages } from "./text-agent-messages.ts";

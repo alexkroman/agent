@@ -125,6 +125,13 @@ export interface PipelineDialogKnobs {
    * caller answers the question that state exists to ask.
    */
   keyterms: () => readonly string[] | undefined;
+  /**
+   * Hold the floor for one reply: while held, {@link minBargeInWords} answers
+   * `Infinity`, exactly a dialog state's `bargeIn: "off"`, whatever the state
+   * says. A `say` with `interruptible: false` holds it for the line and lets
+   * go when the line is over.
+   */
+  holdFloor(held: boolean): void;
 }
 
 /**
@@ -142,6 +149,23 @@ export function createDialogKnobs(
   source: DialogTurnSource | undefined,
   base: { minBargeInWords: number; interruptionMinDurationMs: number },
 ): PipelineDialogKnobs {
+  const knobs = readKnobs(source, base);
+  let held = false;
+  const minBargeInWords = knobs.minBargeInWords;
+  return {
+    ...knobs,
+    minBargeInWords: () => (held ? Number.POSITIVE_INFINITY : minBargeInWords()),
+    holdFloor: (next) => {
+      held = next;
+    },
+  };
+}
+
+/** The knobs a dialog source declares, before a {@link PipelineDialogKnobs.holdFloor}. */
+function readKnobs(
+  source: DialogTurnSource | undefined,
+  base: { minBargeInWords: number; interruptionMinDurationMs: number },
+): Omit<PipelineDialogKnobs, "holdFloor"> {
   if (source === undefined) {
     return {
       minBargeInWords: () => base.minBargeInWords,

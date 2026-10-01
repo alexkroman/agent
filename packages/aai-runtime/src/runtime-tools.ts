@@ -7,13 +7,12 @@
  * and in-process self-hosted mode.
  */
 
-import type { AgentDef, StateProjection, ToolDef } from "@alexkroman1/aai";
+import type { AgentDef, StateProjection } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
-import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
+import { SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
 import {
   clientEventDropMessage,
   clientToolBrand,
-  DEFAULT_BUILTIN_TOOLS,
   decideClientEvent,
   type OwnedMap,
 } from "@alexkroman1/aai/internal";
@@ -24,9 +23,10 @@ import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "./_state-sync.ts";
 import type { ClientToolBroker } from "./client-tool-broker.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
-import type { Logger } from "./runtime-config.ts";
+import { mergeBuiltinSurface } from "./runtime-builtin-surface.ts";
 import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
+import type { SpeechDirectory } from "./session-speech.ts";
 import type { SessionStateStore } from "./session-state/store.ts";
 import { createSubagentRunner } from "./subagent.ts";
 import {
@@ -37,52 +37,6 @@ import {
 } from "./tool-executor.ts";
 import type { UsageMeter } from "./usage-meter.ts";
 import { type RunNotifier, withNotify } from "./workflow/notify.ts";
-
-/**
- * Merge the agent's builtins with the tools a mode dispatches itself — the
- * single owner of the collision policy for every tool path — sandbox/relay,
- * self-hosted, and {@link createTextAgent}. A provided tool with the same name as a builtin wins,
- * and the colliding builtin is dropped from both dispatch and schemas so the
- * host never shadows a tool the caller expects to execute and the LLM never
- * sees a duplicate name. Provided schemas/guidance come first, builtins after.
- *
- * **A dropped builtin is LOGGED**, because the author declared it. `tools/
- * web_search.ts` beside `builtinTools: ["web_search"]` is one of two things — a
- * deliberate replacement, or a file whose name collided by accident — and
- * nothing anywhere said which had happened: the entry in `builtinTools` simply
- * did nothing, and an author debugging "why is my search not the built-in one"
- * (or the reverse) had no thread to pull. The policy itself is unchanged; the
- * file still wins.
- */
-export function mergeBuiltinSurface(
-  agent: AgentDef,
-  builtinOpts: Parameters<typeof resolveAllBuiltins>[1],
-  provided: { schemas: ToolSchema[]; guidance?: string[] },
-  logger?: Logger | undefined,
-): {
-  defs: Record<string, ToolDef>;
-  schemas: ToolSchema[];
-  guidance: string[];
-} {
-  const providedNames = new Set(provided.schemas.map((s) => s.name));
-  const declared = agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS;
-  const names = declared.filter((name) => !providedNames.has(name));
-  // Only an entry the author WROTE is reported: a `tools/think.ts` beside an
-  // unset `builtinTools` is the file replacing the default, which is the
-  // policy working, not an entry that silently does nothing.
-  const shadowed = (agent.builtinTools ?? []).filter((name) => providedNames.has(name));
-  if (shadowed.length > 0) {
-    logger?.info?.(
-      `builtinTools ${shadowed.map((name) => `"${name}"`).join(", ")} ${shadowed.length === 1 ? "is" : "are"} inert: a tools/ file of the same name is what the model will call. Rename the file if that was not the intent.`,
-    );
-  }
-  const builtins = resolveAllBuiltins(names, builtinOpts);
-  return {
-    defs: builtins.defs,
-    schemas: [...provided.schemas, ...builtins.schemas],
-    guidance: [...(provided.guidance ?? []), ...builtins.guidance],
-  };
-}
 
 /**
  * `agent.syncState` as a list, since it takes one projection or several.
@@ -180,6 +134,12 @@ type ToolSetupDeps = {
   /** Where a `clientTool` call waits for the page's answer (self-hosted mode only). */
   clientTools: ClientToolBroker;
   /**
+   * `ctx.speech` per session, resolved through the runtime's session map at
+   * each `say` — a tool that arms a timer speaks after a resume swapped the
+   * session in, for the reason `emitters` is resolved per send.
+   */
+  speech: Pick<SpeechDirectory, "of">;
+  /**
    * Per-session slot state (self-hosted mode only), over the memory or Postgres
    * backend — see `host/session-state-store.ts`. Reclaimed after the resume
    * grace window by `session-state-sweeps.ts`.
@@ -262,6 +222,7 @@ function setupSandboxTools(
         generate,
         subagents,
         usage: deps.meters.get(sessionId ?? ""),
+        ...omitUndefined({ speech: sessionId ? deps.speech.of(sessionId) : undefined }),
         logger,
         signal: callOptions?.signal,
         timeoutMs: options.toolTimeoutMs,
@@ -282,7 +243,8 @@ function setupSandboxTools(
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
-  const { agent, options, env, workflows, notifier, logger, emitters, meters, stateStore } = deps;
+  const { agent, options, env, workflows, notifier, logger, emitters, meters, speech, stateStore } =
+    deps;
   const { clientTools } = deps;
   const builtinOpts = {
     ...omitUndefined({ fetch: options.fetch }),
@@ -401,6 +363,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
         // Resolved when the call STARTS rather than captured at setup: the
         // meter belongs to the session, and a resume mints a new one.
         usage: meters.get(sid),
+        speech: speech.of(sid),
         logger,
         // The frame exists so a throw is VISIBLE — see `onUncaught`. `fatal`
         // there means the SESSION is over, which neither of its two arms is.

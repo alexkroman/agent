@@ -471,6 +471,19 @@ type SayOnClientNotice = {
     maxAttempts?: number | undefined;
 };
 
+// @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
+};
+
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
 // @internal
 export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
@@ -490,6 +503,15 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 interface StandardSchemaIssue {
@@ -615,6 +637,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;

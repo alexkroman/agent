@@ -8120,6 +8120,33 @@ platform's) answers no sessions.
 
 `Promise`\<[`ClientTranscript`](step.md#clienttranscript)\>
 
+##### speech()
+
+```ts
+speech(sessionId: string): SessionSpeech | undefined;
+```
+
+The speech of the LIVE session `sessionId` on this server: say a sentence
+on that call, or stop the agent. See [SessionSpeech](#sessionspeech). `undefined`
+when no session by that id is live here: it ended, or it never existed.
+
+**A session id is not authorization.** Routes are as open as the server
+(see this module's security note), so a handler that speaks into a call
+must first establish that the request may: verify the webhook's signature
+(`webhookRoute`), and take the id from state your own code wrote (a tool
+that registered the callback recorded `ctx.sessionId`), never from the
+request alone.
+
+###### Parameters
+
+###### sessionId
+
+`string`
+
+###### Returns
+
+[`SessionSpeech`](#sessionspeech) \| `undefined`
+
 #### Properties
 
 ##### env
@@ -8463,6 +8490,7 @@ agent-transcript.committed: {
      at: number;
      id: string;
   };
+  recorded?: false;
   recovery?: "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
@@ -8476,6 +8504,12 @@ agent-transcript.committed: {
   at: number;
   id: string;
 }
+```
+
+###### recorded?
+
+```ts
+optional recorded?: false;
 ```
 
 ###### recovery?
@@ -10109,6 +10143,86 @@ export default agent({ name: "Shop", syncState: cartSlot.projected });
 
 ***
 
+### SessionSpeech
+
+**`Sealed`**
+
+A live session's speech: say a sentence on the line, or stop the agent.
+
+Reached as `ctx.speech` in an `agent({ events })` handler, and as
+`ctx.speech(sessionId)` in an `agent({ routes })` handler. It stays usable
+after the handler returns, so a timer the handler arms can speak through it.
+It follows a session across a resume, and speaking through it after the
+session has ended settles `"dropped"` rather than throwing.
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Kitchen timer",
+  events: {
+    "tool.called": (event, ctx) => {
+      if (event.toolName !== "start_timer") return;
+      setTimeout(async () => {
+        const outcome = await ctx.speech.say("Your timer is done.", { interrupt: true }).done;
+        if (outcome !== "played") console.log(`Timer line ${outcome}`);
+      }, 60_000);
+    },
+  },
+});
+```
+
+#### Methods
+
+##### interrupt()
+
+```ts
+interrupt(): boolean;
+```
+
+Stop the agent: cut off the reply in flight or still playing, abort its
+tools, and drop every reply queued behind it, exactly as the client's
+`cancel()` does. It emits `reply.cancelled`.
+
+Returns `false` when there was nothing to interrupt (the agent is silent,
+or the session has ended) and emits nothing then. S2S transports cannot
+tell whether they are replying, so there it always interrupts and returns
+`true` while the session is live.
+
+###### Returns
+
+`boolean`
+
+##### say()
+
+```ts
+say(text: string, options?: SayOptions): SpeechHandle;
+```
+
+Speak `text` exactly as written, as a reply of its own. See this module's
+header for how it queues, how it is cut, and what history records.
+
+Never throws: an ended session, blank text and an S2S transport are
+reported through `done`.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### options?
+
+[`SayOptions`](#sayoptions)
+
+###### Returns
+
+[`SpeechHandle`](#speechhandle)
+
+***
+
 ### SlotToolDef
 
 The authoring shape of a slot-backed tool: [ToolDef](#tooldef) with the slot's
@@ -10339,6 +10453,49 @@ export default tool({
 ```ts
 Omit.onError
 ```
+
+***
+
+### SpeechHandle
+
+**`Sealed`**
+
+One utterance [SessionSpeech.say](#say) queued: await `done` for when the
+caller finished hearing it, or `interrupt()` to take it back.
+
+#### Methods
+
+##### interrupt()
+
+```ts
+interrupt(): void;
+```
+
+Take this line back: still queued, it is dropped (`done` settles
+`"dropped"`); already playing, the reply is cut exactly as
+[SessionSpeech.interrupt](#interrupt) cuts one (`"interrupted"`). A no-op once
+`done` has settled.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### done
+
+```ts
+readonly done: Promise<SpeechOutcome>;
+```
+
+Settles when the line is over, never rejects. `"played"` resolves once
+PLAYBACK ends, estimated from the audio sent and corrected by the client's
+playback reports, not merely once synthesis ends (which runs faster than
+real time).
+
+**Do not await it inside the reply it would follow.** A `say` queues
+behind the reply in flight, so a caller that holds that reply open while
+waiting for `done` waits forever.
 
 ***
 
@@ -13629,6 +13786,60 @@ Voice id, as `stepSpeak` takes it.
 
 ***
 
+### SayOptions
+
+```ts
+type SayOptions = {
+  interrupt?: boolean;
+  interruptible?: boolean;
+  record?: boolean;
+};
+```
+
+Options for [SessionSpeech.say](#say).
+
+#### Properties
+
+##### interrupt?
+
+```ts
+optional interrupt?: boolean;
+```
+
+Cut off whatever the agent is saying (and drop whatever is queued) and
+speak this next, rather than waiting its turn. The cut is exactly
+[SessionSpeech.interrupt](#interrupt)'s. Default `false`.
+
+##### interruptible?
+
+```ts
+optional interruptible?: boolean;
+```
+
+`false` to keep the CALLER from cutting this line off: their speech while
+it plays is held back as if a dialog state had declared `bargeIn: "off"`,
+and answered once the line is over. For a sentence that must be heard
+whole, such as a disclosure or a final goodbye.
+
+Code can still cut it: [SessionSpeech.interrupt](#interrupt), the handle's own
+`interrupt()`, and the client's `cancel()` all work as usual, as does a
+typed turn. Default `true`.
+
+##### record?
+
+```ts
+optional record?: boolean;
+```
+
+`false` to keep this line out of the conversation: it is spoken and
+captioned (its `agent-transcript.committed` carries `recorded: false`),
+but it enters neither the model's history nor `ctx.messages`, and a
+resumed session does not remember it. For a line the model should not
+treat as something it said, such as a hold message ("one moment while I
+check"). Default `true`.
+
+***
+
 ### SessionCall
 
 ```ts
@@ -13850,6 +14061,7 @@ type SessionEventContext = {
   env: Readonly<Partial<Record<string, string>>>;
   sessionId: string;
   slots: SlotStore;
+  speech: SessionSpeech;
 };
 ```
 
@@ -13859,9 +14071,16 @@ What a session event handler is handed alongside the event.
 
 Deliberately much smaller than `ToolContext`, and the omissions are still the
 design: there is no `send`, no `generate`, no `delegate` and no `messages`. A
-handler MAY NOT SPEAK. Giving it a way to would make the event stream a second
-control path into the turn — which is the thing that keeps a log honest, since
-anything a reader can change it can no longer describe.
+handler cannot change the turn in flight: what the model is told, which tool
+runs, what the reply says.
+
+**`speech` is here, and it does not cross that line.** A `say` is a reply of
+its OWN, queued behind the one in flight and spoken verbatim, and it appears
+on the stream as a reply like any other, so the log still describes
+everything that happened. Without it, "say something when X happens" was
+possible only for the handful of X the SDK had scoped a knob for (greeting,
+silence, filler, a run landing). `speech.interrupt()` is the client's
+`cancel()`, which the stream already records. See `session-speech.ts`.
 
 **`slots` is here, and it does not cross that line.** The rule the omissions
 enforce is that a handler cannot change the TURN — what the agent says, which
@@ -13916,6 +14135,26 @@ should do so SYNCHRONOUSLY. An `await` before `slot.update` still stores the
 value, but it lands after the commit for this event and is not persisted
 until the next one (or the next tool call) commits — which for a `durable`
 slot means a crash in between loses it.
+
+##### speech
+
+```ts
+speech: SessionSpeech;
+```
+
+Say a sentence on this session's line, or stop the agent: see
+[SessionSpeech](#sessionspeech). Usable after the handler returns, so a timer it arms
+can speak.
+
+A `say` queues behind the reply in flight, and many events fire DURING a
+reply, so a handler must not hold anything that reply waits on until the
+line's `done` settles.
+
+**A line a handler says emits events that reach the handlers again.** A
+handler that speaks on every `agent-transcript.committed` hears its own
+line and speaks forever. Decide from an event the line cannot produce, or
+check the event first: see "A handler that speaks can hear itself" in
+`session-speech.ts`.
 
 ***
 
@@ -14218,6 +14457,26 @@ virtual one is neither, because the things a virtual slot exists to hold
 ###### Returns
 
 `void`
+
+***
+
+### SpeechOutcome
+
+```ts
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+```
+
+How one [SessionSpeech.say](#say) ended.
+
+- `"played"`: synthesized and played out to the end, so the caller heard it.
+- `"interrupted"`: it started and was cut off: a barge-in, an
+  `interrupt()`, or the session ending mid-line. History holds the heard
+  prefix.
+- `"dropped"`: it never started. The session ended, the line was empty, or an
+  interrupt stranded it in the queue (an interrupt, from the client or from
+  code, discards EVERY queued reply, queued `say`s included).
+- `"unsupported"`: the session's transport cannot speak verbatim text, which
+  means an S2S agent. See this module's header.
 
 ***
 
@@ -14757,6 +15016,7 @@ type ToolContext = {
   sessionId: string;
   signal: AbortSignal;
   slots: SlotStore;
+  speech: SessionSpeech;
   workflows: WorkflowClient;
 };
 ```
@@ -15047,6 +15307,39 @@ to find the session, not because a tool body should call it.
 It replaced `ctx.state`, a field typed `any` whose whole justification was
 that the bag it held was dynamic. There is no bag: a slot owns its value,
 types it, and is the only thing that writes it.
+
+##### speech
+
+```ts
+speech: SessionSpeech;
+```
+
+Say a sentence on this session's line, or stop the agent: see
+[SessionSpeech](#sessionspeech).
+
+**Not how a tool speaks in its own reply**: that is `messages` on the tool,
+which is timed to the call and costs no extra reply. `speech` is for what
+lands LATER. A tool that arms a timer, or registers a callback that fires
+after it returns, speaks through it then.
+
+A `say` from inside `execute` queues behind the reply that is waiting on
+this very call, so the tool must NOT await `done` before it returns, or it
+waits until its own timeout. A sessionless context (a workflow step's
+`stepDelegate`) holds one that settles every line `"dropped"`.
+
+###### Remarks
+
+The TWELFTH field on this type, and the one that raised `guard-invariants`
+rule 24 from eleven. It passes the rule's test: it is per-SESSION and it
+cannot be reached any other way. `ctx.sessionId` names a session but
+reaches nothing, and a process-wide lookup keyed on it would bind to
+whichever runtime last published the slot (two runtimes share a process
+under `aai dev` and in a guest), which is why `RouteContext.clientTranscript`
+is bound to the context as well. The second reason is structural: an
+`events` handler's context carries `speech`, and a `ToolContext` has always
+been a superset of that context. Authors pass a `createToolContext()` to a
+handler in a spec (eight templates did), so leaving the field off this type
+would have broken every one of those specs.
 
 ##### workflows
 
@@ -17943,6 +18236,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
+  recorded: z.ZodOptional<z.ZodLiteral<false>>;
   recovery: z.ZodOptional<z.ZodEnum<{
      session-failed: "session-failed";
      turn-failed: "turn-failed";

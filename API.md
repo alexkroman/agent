@@ -430,6 +430,19 @@ type SayOnClientNotice = {
 };
 
 // @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
+};
+
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -439,6 +452,15 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 interface StandardSchemaIssue {
@@ -549,6 +571,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -1255,6 +1278,7 @@ interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
     signal: AbortSignal;
+    speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;
 }
 
@@ -1289,6 +1313,19 @@ type SayOnClientNotice = {
 };
 
 // @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
+};
+
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -1298,6 +1335,15 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 interface StandardSchemaIssue {
@@ -1464,6 +1510,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -2481,6 +2528,9 @@ interface DelegateResult extends SubagentAnswer {
     revisions: number;
 }
 
+// @internal
+export const DETACHED_SESSION_SPEECH: SessionSpeech;
+
 // @public
 export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
 
@@ -3098,6 +3148,13 @@ type SayOnClientNotice = {
 export function sayOnClientWorkflow(host: SayOnClientHost, name: string, clientId: string, notice: SayOnClientNotice): Promise<string>;
 
 // @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
+};
+
+// @public
 export function selectToolMessage<T extends ToolMessageBase>(list: readonly T[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): T | undefined;
 
 // @internal
@@ -3131,6 +3188,12 @@ export type SessionIdentity = {
 
 // @public
 type SessionMode = "s2s" | "pipeline" | "text";
+
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
 
 // @internal
 export function setSessionCall(sessionId: string, call: SessionCall): void;
@@ -3175,6 +3238,15 @@ export type SpawnCappedResult = {
     stdout: string;
     stderr: string;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @internal
 export type SpeechSynthesizer = (request: {
@@ -3414,6 +3486,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -4640,6 +4713,7 @@ export interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
     signal: AbortSignal;
+    speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;
 }
 
@@ -4722,6 +4796,13 @@ export type SayOnClientNotice = {
 };
 
 // @public
+export type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
+};
+
+// @public
 export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
 
 // @public
@@ -4784,6 +4865,7 @@ export type SessionEventContext = {
     sessionId: string;
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
+    speech: SessionSpeech;
 };
 
 // @public
@@ -4862,6 +4944,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
+    recorded: z.ZodOptional<z.ZodLiteral<false>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -5050,6 +5133,12 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
 // @public
 export type SessionSourcedEventType = (typeof SESSION_SOURCED_EVENT_TYPES)[number];
 
+// @public @sealed
+export interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     tools?: InlineToolsMisuse;
@@ -5099,6 +5188,15 @@ export type SlotStore = {
 export interface SlotToolDef<P extends ToolInputSchema, V, R> extends Omit<ToolDef<P, R>, "execute"> {
     execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
 }
+
+// @public @sealed
+export interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+export type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 export function spokenAlphanumeric(spoken: string): string;
@@ -5316,6 +5414,7 @@ export type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -6074,6 +6173,19 @@ type SayOnClientNotice = {
     maxAttempts?: number | undefined;
 };
 
+// @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
+};
+
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
 // @internal
 export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
@@ -6093,6 +6205,15 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 interface StandardSchemaIssue {
@@ -6218,6 +6339,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -7074,6 +7196,7 @@ interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
     signal: AbortSignal;
+    speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;
 }
 
@@ -7110,6 +7233,13 @@ type SayOnClientNotice = {
     retryAfterMs?: number | undefined;
     signal?: AbortSignal | undefined;
     maxAttempts?: number | undefined;
+};
+
+// @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public
@@ -7155,6 +7285,7 @@ type SessionEventContext = {
     sessionId: string;
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
+    speech: SessionSpeech;
 };
 
 // @public
@@ -7233,6 +7364,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
+    recorded: z.ZodOptional<z.ZodLiteral<false>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -7394,6 +7526,12 @@ type SessionEventType = Extract<keyof SessionEventMap, string>;
 // @public
 export type SessionMode = "s2s" | "pipeline" | "text";
 
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
 // @public
 type SleepOptions = {
     correlationId?: string;
@@ -7410,6 +7548,15 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 interface StandardSchemaIssue {
@@ -7559,6 +7706,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -8336,6 +8484,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
+    recorded: z.ZodOptional<z.ZodLiteral<false>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -8951,6 +9100,19 @@ type SayOnClientNotice = {
 };
 
 // @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
+};
+
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
+// @public
 export type Settled<T, R> = {
     readonly item: T;
     readonly ok: true;
@@ -8980,6 +9142,15 @@ export type SpeakOptions = {
     apiKeyEnv?: string | undefined;
     signal?: AbortSignal | undefined;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 export type SpokenAudio = {
@@ -9301,6 +9472,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -10407,6 +10579,14 @@ export function runTool<T extends {
 export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
 
 // @public
+export interface SaidLine {
+    readonly interrupt: boolean;
+    readonly interruptible: boolean;
+    readonly record: boolean;
+    readonly text: string;
+}
+
+// @public
 type SayOnClientNotice = {
     id?: string | undefined;
     event: string;
@@ -10419,6 +10599,13 @@ type SayOnClientNotice = {
     retryAfterMs?: number | undefined;
     signal?: AbortSignal | undefined;
     maxAttempts?: number | undefined;
+};
+
+// @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public
@@ -10455,6 +10642,12 @@ type SessionCall = {
     readonly parameters: Readonly<Record<string, string>>;
 };
 
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
 // @public
 type SleepOptions = {
     correlationId?: string;
@@ -10465,6 +10658,15 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 interface StandardSchemaIssue {
@@ -10914,9 +11116,11 @@ interface SubagentToolCall {
     name: string;
 }
 
-// @public
+// @public @sealed
 export type TestToolContext = ToolContext & {
     readonly sent: SentEvent[];
+    readonly said: SaidLine[];
+    readonly interrupts: number;
     readonly model: StubGenerate;
     readonly desk: StubDelegate;
 };
@@ -10945,6 +11149,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -10962,6 +11167,7 @@ export type ToolContextOverrides = {
     deadlineAt?: ToolContext["deadlineAt"] | undefined;
     workflows?: ToolContext["workflows"] | undefined;
     random?: ToolContext["random"] | undefined;
+    speech?: ToolContext["speech"] | undefined;
     generate?: ToolContext["generate"] | StubGenerateScript | undefined;
     delegate?: ToolContext["delegate"] | StubDelegateScript | undefined;
     model?: StubGenerate | undefined;
@@ -11479,6 +11685,19 @@ type SayOnClientNotice = {
 };
 
 // @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
+};
+
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -11488,6 +11707,15 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 interface StandardSchemaIssue {
@@ -11799,6 +12027,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -14884,6 +15113,7 @@ import { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
+import type { SayOptions } from '@alexkroman1/aai';
 import type { ServerResponse } from 'node:http';
 import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
@@ -14891,7 +15121,9 @@ import { SessionEvent } from '@alexkroman1/aai';
 import { SessionEventBody } from '@alexkroman1/aai';
 import type { SessionEventType } from '@alexkroman1/aai';
 import type { SessionSourcedEventType } from '@alexkroman1/aai';
+import type { SessionSpeech } from '@alexkroman1/aai';
 import type { SlotStore } from '@alexkroman1/aai';
+import type { SpeechHandle } from '@alexkroman1/aai';
 import type { SubagentDef } from '@alexkroman1/aai';
 import type { ToolDef } from '@alexkroman1/aai';
 import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
@@ -15049,6 +15281,7 @@ type ExecuteToolCallOptions = {
     }) => void) | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
     clientCall?: ClientToolCall | undefined;
+    speech?: SessionSpeech | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;
     timeoutMs?: number | undefined;
@@ -15399,6 +15632,8 @@ export type ServerSession = {
     command(command: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+    interrupt(): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
     report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;

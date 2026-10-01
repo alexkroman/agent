@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, test } from "vitest";
-import { createStubWorkflows } from "./_testing-context.ts";
 import type { RouteContext, RouteRequest } from "./agent-routes.ts";
 import { readRouteResponse } from "./agent-routes.ts";
 import { COMPOSIO_BASE_URL } from "./composio-api.ts";
@@ -12,6 +11,7 @@ import {
   ensureComposioWebhook,
 } from "./composio-webhook.ts";
 import { type StubFetchRoutes, stubFetchRoutes } from "./testing-fetch-routes.ts";
+import { createStubWorkflows } from "./testing-workflows.ts";
 
 const SECRET = "composio-secret";
 
@@ -34,6 +34,7 @@ const ctx = (env: Record<string, string> = { COMPOSIO_WEBHOOK_SECRET: SECRET }):
   env,
   workflows: createStubWorkflows(),
   clientTranscript: async () => ({ sessions: [] }),
+  speech: () => undefined,
   signal: new AbortController().signal,
 });
 

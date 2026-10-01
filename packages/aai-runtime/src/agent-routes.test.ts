@@ -19,7 +19,14 @@ function compile(routes: Record<string, RouteHandler> | undefined, env = {}) {
   const logger = makeLogger();
   const history = { backend, stream, logger };
   const workflows = createStubWorkflows();
-  const serve = compileAgentRoutes({ routes, env, workflows, history, logger });
+  const serve = compileAgentRoutes({
+    routes,
+    env,
+    workflows,
+    history,
+    logger,
+    speech: { live: () => undefined },
+  });
   return { serve, logger, history, stream, workflows };
 }
 

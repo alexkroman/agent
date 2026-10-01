@@ -11,7 +11,7 @@ import {
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { endsRound, gameFlow } from "./game.ts";
+import { endsRound, gameFlow, TIME_UP_LINE } from "./game.ts";
 import { containsWord, isCorrectGuess, normalizeWord } from "./guess.ts";
 import { PLAYER_SYSTEM, playerPrompt } from "./player.ts";
 import {
@@ -21,6 +21,7 @@ import {
   gameSlot,
   gameView,
   secondsLeft,
+  WORDS_PER_GAME,
 } from "./shared.ts";
 import { allWords, pickWords, WORD_CATEGORIES } from "./words.ts";
 
@@ -428,4 +429,57 @@ describe("a round", () => {
     expect(at(b)).toBe("lobby");
     expect(gameSlot.get(b).startedAt).toBeNull();
   });
+});
+
+// ─── 4. "Time's up!", on the clock ───────────────────────────────────────────
+
+describe("the time-up line", () => {
+  /** Run `body` on fake timers, restoring the real ones whatever happens. */
+  async function onFakeTimers(body: () => Promise<void>): Promise<void> {
+    vi.useFakeTimers();
+    try {
+      await body();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  test("is said verbatim, cutting the host off, the moment the two minutes are up", () =>
+    onFakeTimers(async () => {
+      const ctx = scriptedPlayer().ctx();
+      await startRound(ctx);
+      await vi.advanceTimersByTimeAsync(GAME_SECONDS * 1000 - 1);
+      expect(ctx.said).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(ctx.said).toEqual([
+        { text: TIME_UP_LINE, interrupt: true, interruptible: false, record: true },
+      ]);
+    }));
+
+  test("stays silent when the WORDS ran out first — time was not up", () =>
+    onFakeTimers(async () => {
+      const ctx = scriptedPlayer().ctx();
+      await startRound(ctx);
+      for (let i = 0; i < WORDS_PER_GAME; i++) await run("skip_word", ctx);
+      expect(at(ctx)).toBe("over");
+      await vi.advanceTimersByTimeAsync(GAME_SECONDS * 1000);
+      expect(ctx.said).toEqual([]);
+    }));
+
+  test("a timer from an earlier round says nothing into the next one", () =>
+    onFakeTimers(async () => {
+      const ctx = scriptedPlayer().ctx();
+      await startRound(ctx);
+      for (let i = 0; i < WORDS_PER_GAME; i++) await run("skip_word", ctx);
+      expectDialogOk(await run("final_score", ctx));
+      await vi.advanceTimersByTimeAsync(1000);
+      await startRound(ctx);
+      // The first round's timer fires here, one second before the second's.
+      await vi.advanceTimersByTimeAsync(GAME_SECONDS * 1000 - 1000);
+      expect(ctx.said).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(ctx.said).toEqual([
+        { text: TIME_UP_LINE, interrupt: true, interruptible: false, record: true },
+      ]);
+    }));
 });

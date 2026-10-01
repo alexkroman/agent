@@ -6,10 +6,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createStubWorkflows } from "./_testing-context.ts";
 import type { RouteContext, RouteRequest } from "./agent-routes.ts";
 import { readRouteResponse } from "./agent-routes.ts";
 import { type ClientRunsResponse, clientRunsRoutes } from "./client-runs-routes.ts";
+import { createStubWorkflows } from "./testing-workflows.ts";
 import type { WorkflowClient } from "./workflow-client.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
@@ -29,6 +29,7 @@ function ctxWith(workflows: Partial<WorkflowClient>): RouteContext {
     env: {},
     workflows: createStubWorkflows(workflows),
     clientTranscript: async () => ({ sessions: [] }),
+    speech: () => undefined,
     signal: new AbortController().signal,
   };
 }

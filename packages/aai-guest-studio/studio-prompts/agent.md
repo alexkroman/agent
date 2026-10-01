@@ -2007,6 +2007,44 @@ Twilio codes; never the token). A lost answer can ring twice: keep the dial
 step's `maxAttempts` small. `timeLimitS` (default 600) caps the call. Specs:
 `stubPlaceCall()` (`/testing`). Twilio only.
 
+### Saying something from outside a turn — `ctx.speech`
+
+A timer, webhook or event can speak an exact sentence on a live call, or stop
+the agent. `ctx.speech` is on `events` handler and tool contexts, and
+`ctx.speech(sessionId)` on a route's (`undefined` if that call is not live).
+`say(text)` is a reply of its OWN, spoken verbatim behind the reply in flight.
+Options: `interrupt: true` cuts that reply first; `interruptible: false` stops
+the CALLER talking over it (code and `cancel()` still can); `record: false`
+keeps it out of history. `interrupt()` is the client's `cancel()`.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Timer",
+  events: {
+    "tool.called": (event, ctx) => {
+      if (event.toolName !== "start_timer") return;
+      setTimeout(async () => {
+        const outcome = await ctx.speech.say("Your timer is done.", { interrupt: true }).done;
+        if (outcome !== "played") console.log(`timer line ${outcome}`);
+      }, 60_000);
+    },
+  },
+});
+```
+
+**A handler that speaks can hear itself**: the line is an
+`agent-transcript.committed` that reaches your handlers again, so a handler
+speaking on every one never stops. Speak from an event your line cannot produce
+(`tool.called`, a timer), or check the event's `text` first.
+
+`done` never rejects: `"played"` once playback ends, `"interrupted"`,
+`"dropped"` (call ended, or taken back), `"unsupported"` on S2S. **Never await
+`done` inside the reply it waits behind** (a tool's `execute`). **A session id
+is not authorization**: verify a webhook first. Specs: `createToolContext()`
+records into `ctx.said`.
+
 ## Providers
 
 Provider SDKs are **optional peer dependencies**. Install only the SDKs
@@ -2181,6 +2219,8 @@ ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 ctx.delegate(sub, opts): Promise<DelegateResult> // run a subagent — a whole tool loop with its own
                                                // context window (see "Subagents")
 ctx.signal: AbortSignal                        // aborts on barge-in, reset, session stop, or this call's timeout
+ctx.speech: SessionSpeech                      // say(text) verbatim LATER, or interrupt() — see "Saying
+                                               // something from outside a turn"; never await it in execute
 ```
 
 **Declare an event's payload once** and every `ctx.send` of it is checked:

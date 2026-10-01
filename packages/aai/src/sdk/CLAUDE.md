@@ -176,14 +176,44 @@ hand-rolled copies. Each module doc carries the hazard. `p-timeout` and
   [`AUTHORING-HELPERS-CLAUDE.md`](../../AUTHORING-HELPERS-CLAUDE.md) owns the
   last three.
 
-## A session event hook WRITES state, and still cannot SPEAK
+## A session event hook WRITES state and may SAY, but cannot change the turn
 
 `SessionEventContext` carries no `send`, `generate`, `delegate` or `messages`,
-so nothing on the event stream decides what the agent says. It does carry
-`slots`: slot and dialog accessors take a `SlotHolder` (`{ slots, sessionId }`),
-which a `ToolContext` satisfies. **The line is "cannot change the TURN", not
-"cannot write"** — maintaining session state from `user-transcript.committed`
-or `tool.called` beats a tool the prompt begs the model to call.
+so nothing on the event stream decides what the reply in flight says. It does
+carry `slots`: slot and dialog accessors take a `SlotHolder`
+(`{ slots, sessionId }`), which a `ToolContext` satisfies. **The line is "cannot
+change the TURN", not "cannot write"** — maintaining session state from
+`user-transcript.committed` or `tool.called` beats a tool the prompt begs the
+model to call.
+
+It also carries **`speech`** (`session-speech.ts`), which stays on the right
+side of that line: `say(text)` queues a VERBATIM reply of its OWN behind the one
+in flight, and `interrupt()` is the client's `cancel()`, both recorded on the
+stream like any reply. The same `SessionSpeech` is `ToolContext.speech` (so a
+`createToolContext()` still stands in for a handler's context, recording into
+`ctx.said`) and `RouteContext.speech(sessionId)` for a webhook. Rules:
+
+- **Pipeline only.** On S2S `done` settles `"unsupported"`; neither service
+  speaks host text verbatim. `interrupt()` works in every mode.
+- **Never throws**, and every "cannot" is an outcome on `done`: `"dropped"` for
+  an ended session, blank text, a line taken back or stranded by an interrupt.
+- **Never await `done` inside the reply it queues behind** (a tool's
+  `execute`, a handler holding that reply) — it waits for itself.
+- **A speaking handler can hear itself.** A `say` emits
+  `agent-transcript.committed` and reply events AFTER the handler returned, so
+  the emitter's re-entry guard does not catch a handler that answers its own
+  line; it must key on what triggered it. LiveKit and Pipecat do not guard
+  this either. `session-speech.ts` carries the safe pattern.
+- **`interruptible: false`** holds the caller's barge-in off for that line
+  (`PipelineDialogKnobs.holdFloor`, the `bargeIn: "off"` threshold);
+  `interrupt()`, `cancel()` and a typed turn still cut it. **`record: false`**
+  tags the caption `recorded: false`, which `historyMessageOf` skips, so the
+  line is in no history, live or resumed.
+- **`AgentSessionContext` has no `speech`**: a resolver or guardrail runs INSIDE
+  the reply. That is the one deliberate difference between the twins, pinned
+  in `define-agent-groups.test-d.ts`.
+- **A session id is not authorization.** A route must verify the webhook before
+  it speaks into a call.
 
 **Write SYNCHRONOUSLY.** A hook's write is committed after the handler returns
 (an `await` first delays durability) and is not readable by the turn it

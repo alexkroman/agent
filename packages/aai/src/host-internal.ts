@@ -73,6 +73,8 @@ export {
   recordSessionIdentity,
   type SessionIdentity,
 } from "./sdk/_session-identity-store.ts";
+// A context with no live session behind it: every `say` settles `"dropped"`.
+export { DETACHED_SESSION_SPEECH } from "./sdk/_session-speech-detached.ts";
 export { serializeToolFailure } from "./sdk/_tool-failure-wire.ts";
 export { RETRYABLE_STATUS } from "./sdk/_upload-retry.ts";
 export type { ExecuteTool, ExecuteToolOptions } from "./sdk/agent-config.ts";

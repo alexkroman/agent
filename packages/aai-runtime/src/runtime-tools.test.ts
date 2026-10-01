@@ -21,7 +21,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-test-fakes.ts";
-import { makeAgent, makeUsageMeter, tick } from "./_test-utils.ts";
+import { makeAgent, makeSpeech, makeUsageMeter, tick } from "./_test-utils.ts";
 import { createClientToolBroker } from "./client-tool-broker.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
@@ -86,6 +86,7 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>, logger: Logger = c
     logger,
     emitters,
     meters: createOwnedMap<string, UsageMeter>(),
+    speech: { of: () => makeSpeech() },
     clientTools: createClientToolBroker(),
     stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
   });
@@ -341,6 +342,7 @@ describe("self-hosted tool surface: a tool's model call finds its session's mete
       logger: consoleLogger,
       emitters: createOwnedMap<string, SessionEmitter>(),
       meters,
+      speech: { of: () => makeSpeech() },
       clientTools: createClientToolBroker(),
       stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
     });
@@ -377,6 +379,7 @@ describe("self-hosted tool surface: a clientTool waits for the page", () => {
       logger: consoleLogger,
       emitters: createOwnedMap<string, SessionEmitter>(),
       meters: createOwnedMap<string, UsageMeter>(),
+      speech: { of: () => makeSpeech() },
       clientTools,
       stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
     });

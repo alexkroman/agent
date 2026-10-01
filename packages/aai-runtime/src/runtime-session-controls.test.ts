@@ -10,7 +10,7 @@
 import type { AgentGuardrail, SessionEvent, SlotStore } from "@alexkroman1/aai";
 import { eventsOf } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
-import { makeAgent, makeClientSink, makeConfig, makeLogger } from "./_test-utils.ts";
+import { makeAgent, makeClientSink, makeConfig, makeLogger, makeSpeech } from "./_test-utils.ts";
 import { openSessionWiring } from "./runtime-session-controls.ts";
 import type { RuntimeSessionState } from "./runtime-session-state.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
@@ -73,6 +73,7 @@ function wire(
     limits: undefined,
     transport: stubTransport,
     logger: makeLogger(),
+    speech: makeSpeech(),
     ...overrides,
     state,
   });

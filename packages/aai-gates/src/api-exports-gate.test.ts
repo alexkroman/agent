@@ -103,6 +103,7 @@ describe("API-EXPORTS.json", () => {
       "RecordingWorkflowsOptions",
       "RunSnapshotOverrides",
       "STUB_SPEECH_PCM_BYTES",
+      "SaidLine",
       "ScriptedToolContext",
       "ScriptedToolContextOptions",
       "SentEvent",

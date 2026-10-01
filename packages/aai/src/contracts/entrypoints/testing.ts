@@ -92,6 +92,7 @@ export {
   routeStepFetch,
   runGuardrail,
   runTool,
+  type SaidLine,
   type ScriptedToolContext,
   type ScriptedToolContextOptions,
   type SentEvent,

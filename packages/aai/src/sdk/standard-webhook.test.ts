@@ -1,10 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { createHmac } from "node:crypto";
 import { describe, expect, test } from "vitest";
-import { createStubWorkflows } from "./_testing-context.ts";
 import type { RouteContext, RouteRequest } from "./agent-routes.ts";
 import { readRouteResponse } from "./agent-routes.ts";
 import { verifyStandardWebhook, webhookRoute } from "./standard-webhook.ts";
+import { createStubWorkflows } from "./testing-workflows.ts";
 
 const NOW = 1_790_000_000;
 const RAW = '{"type":"composio.trigger.message","data":{"n":1}}';
@@ -101,6 +101,7 @@ describe("webhookRoute", () => {
     env,
     workflows: createStubWorkflows(),
     clientTranscript: async () => ({ sessions: [] }),
+    speech: () => undefined,
     signal: new AbortController().signal,
   });
 

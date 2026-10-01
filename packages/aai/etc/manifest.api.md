@@ -586,6 +586,7 @@ interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
     signal: AbortSignal;
+    speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;
 }
 
@@ -622,6 +623,13 @@ type SayOnClientNotice = {
     retryAfterMs?: number | undefined;
     signal?: AbortSignal | undefined;
     maxAttempts?: number | undefined;
+};
+
+// @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public
@@ -667,6 +675,7 @@ type SessionEventContext = {
     sessionId: string;
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
+    speech: SessionSpeech;
 };
 
 // @public
@@ -745,6 +754,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
+    recorded: z.ZodOptional<z.ZodLiteral<false>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -906,6 +916,12 @@ type SessionEventType = Extract<keyof SessionEventMap, string>;
 // @public
 export type SessionMode = "s2s" | "pipeline" | "text";
 
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
 // @public
 type SleepOptions = {
     correlationId?: string;
@@ -922,6 +938,15 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 interface StandardSchemaIssue {
@@ -1071,6 +1096,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;

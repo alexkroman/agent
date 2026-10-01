@@ -1,14 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
-import { createStubWorkflows } from "./_testing-context.ts";
 import { RouteError, readRouteError, route, routeError } from "./agent-route-helpers.ts";
 import { type RouteContext, type RouteRequest, readRouteResponse } from "./agent-routes.ts";
+import { createStubWorkflows } from "./testing-workflows.ts";
 
 const ctx: RouteContext = {
   env: {},
   workflows: createStubWorkflows(),
   clientTranscript: async () => ({ sessions: [] }),
+  speech: () => undefined,
   signal: new AbortController().signal,
 };
 

@@ -16,8 +16,8 @@
  * this one; what is here is the re-export surface and `stubReporter`. Reading
  * order, roughly by what a spec reaches for first:
  *
- * - `_testing-context.ts` — `createToolContext`, and the stub `db`/`workflows`
- *   its defaults are built from.
+ * - `_testing-context.ts` — `createToolContext`, whose `ctx.speech` records into
+ *   `ctx.said` (`_testing-session-speech.ts`).
  * - `testing-tools.ts` — `toolOf` / `runTool` / `toolRunner`, the tool under the
  *   name the model calls it by, the last of those being `runTool` with the agent
  *   bound; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
@@ -33,7 +33,8 @@
  *   `testing-client-inbox.ts`, `testing-client-transcript.ts` — the slots a step
  *   reaches through, each answered
  *   in memory.
- * - `testing-workflows.ts` — run snapshots and progress streams, for a page;
+ * - `testing-workflows.ts` — `createStubWorkflows`, and run snapshots and
+ *   progress streams, for a page;
  *   `testing-workflow-ctx.ts` — `createWorkflowContext`, the `ctx` a workflow BODY
  *   takes, which nothing else can hand it.
  *
@@ -46,7 +47,6 @@ import { DEFAULT_STEP_MAX_ATTEMPTS } from "./workflow-ctx-options.ts";
 
 export { dialogRefusalPattern } from "./_dialog-refusal.ts";
 export {
-  createStubWorkflows,
   createToolContext,
   endSessionCalls,
   type SentEvent,
@@ -59,6 +59,7 @@ export {
   schemaInputIssues,
   toolInputIssues,
 } from "./_testing-schema.ts";
+export type { SaidLine } from "./_testing-session-speech.ts";
 export {
   routeStepFetch,
   type StepRoute,
@@ -208,6 +209,7 @@ export {
 export {
   createProgressStream,
   createRunSnapshot,
+  createStubWorkflows,
   type RunSnapshotOverrides,
 } from "./testing-workflows.ts";
 

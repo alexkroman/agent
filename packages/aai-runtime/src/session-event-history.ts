@@ -86,7 +86,9 @@ import { toolResultMessage } from "./_tool-result-message.ts";
 export function historyMessageOf(event: SessionEventBody): Message | undefined {
   if (event.type === "user-transcript.committed") return { role: "user", content: event.text };
   if (event.type !== "agent-transcript.committed") return undefined;
-  if (event.recovery !== undefined) return undefined;
+  // Spoken but deliberately unrecorded: a failure phrase, or a `say` with
+  // `record: false`. See the event's own doc in `sdk/protocol-events.ts`.
+  if (event.recovery !== undefined || event.recorded === false) return undefined;
   return { role: "assistant", content: event.text };
 }
 

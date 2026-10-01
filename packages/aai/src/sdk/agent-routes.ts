@@ -47,7 +47,9 @@
  * Its context is the tool context's durable half: `env` and `workflows` (the
  * same `start`/`find`/`recent` a tool's `ctx.workflows` is), plus
  * `clientTranscript`, the durable log behind `?client=`. No `send`, no
- * `messages`, no `sessionId` — a route belongs to no session.
+ * `messages`, no `sessionId`: a route belongs to no session. It can REACH one,
+ * though: `speech(sessionId)` says a sentence on a live call, which is what a
+ * webhook announcing an external event needs (see `session-speech.ts`).
  *
  * ## Security: the routes are exactly as open as the server
  *
@@ -92,6 +94,7 @@
  */
 
 import { isRecord } from "./is-record.ts";
+import type { SessionSpeech } from "./session-speech.ts";
 import type { ClientTranscript, StepClientTranscriptOptions } from "./step-client-transcript.ts";
 import type { WorkflowClient } from "./workflow.ts";
 
@@ -172,6 +175,19 @@ export interface RouteContext {
     clientId: string,
     options?: StepClientTranscriptOptions,
   ): Promise<ClientTranscript>;
+  /**
+   * The speech of the LIVE session `sessionId` on this server: say a sentence
+   * on that call, or stop the agent. See {@link SessionSpeech}. `undefined`
+   * when no session by that id is live here: it ended, or it never existed.
+   *
+   * **A session id is not authorization.** Routes are as open as the server
+   * (see this module's security note), so a handler that speaks into a call
+   * must first establish that the request may: verify the webhook's signature
+   * (`webhookRoute`), and take the id from state your own code wrote (a tool
+   * that registered the callback recorded `ctx.sessionId`), never from the
+   * request alone.
+   */
+  speech(sessionId: string): SessionSpeech | undefined;
   /** Aborted when the caller goes away. Pass it to whatever you fetch with. */
   signal: AbortSignal;
 }
