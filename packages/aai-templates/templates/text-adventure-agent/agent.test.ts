@@ -6,6 +6,7 @@ import {
   type RandomSource,
   type SessionEventContext,
 } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import {
   createToolContext,
   expectToolOk,
@@ -13,8 +14,7 @@ import {
   runTool,
   toolOf,
   toolRunner,
-} from "@alexkroman1/aai/testing";
-import { isToolFailure } from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 
 import {

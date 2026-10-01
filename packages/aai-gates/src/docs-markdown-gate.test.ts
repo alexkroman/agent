@@ -206,9 +206,10 @@ describe("the markdown config", () => {
     // writes.
     //
     // PER PACKAGE, because one package excuses its ROOT and the others must
-    // not. `aai-runtime` is in the reference for `/eval`, `/eval/vitest` and
-    // `/testing` — the surface whoever writes the `agent.ts` imports — and its
-    // root barrel is the ~220-export embedder surface that stays out. A flat
+    // not. `aai-runtime` is in the reference for `/eval`, `/eval/vitest`,
+    // `/testing` and `/testing/vitest` — the surface whoever writes the
+    // `agent.ts` imports — and its root barrel is the ~220-export embedder
+    // surface that stays out. A flat
     // list could not say that: a bare `"."` entry would excuse `@alexkroman1/aai`
     // itself going undocumented, which is the whole reference disappearing with
     // this gate still green.

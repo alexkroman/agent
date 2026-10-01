@@ -1,9 +1,8 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 import { HANDOFF_TOOL_NAME } from "@alexkroman1/aai";
-
-import { createToolContext, toolOf, toolRunner } from "@alexkroman1/aai/testing";
 import { isToolFailure } from "@alexkroman1/aai/utils";
+import { createToolContext, toolOf, toolRunner } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import { billing, desk, deskSlot, support, triage, whichDesk } from "./shared.ts";
 

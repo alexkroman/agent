@@ -42,7 +42,7 @@ import {
   lastToolResultIn,
   toolCallsInTurns,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { DEFAULT_GAME_STATE, rankFor } from "./shared.ts";

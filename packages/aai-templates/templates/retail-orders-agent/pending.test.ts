@@ -5,7 +5,7 @@ import {
   expectDialogOk,
   expectDialogRefused,
   expectToolOk,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import type { StagedResult } from "./pending.ts";
 import { retailSlot } from "./store.ts";

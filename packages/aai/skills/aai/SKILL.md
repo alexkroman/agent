@@ -58,10 +58,11 @@ package's `exports` map:
 - `@alexkroman1/aai/step` — step code in `workflows/*.ts` — `stepEnv`,
   `stepFetch`, `stepGenerate`, transcription, `stepSpeak`, uploads,
   `mapConcurrent`, `stepPlaceCall`
-- `@alexkroman1/aai/testing` — specs — `runTool`, `createToolContext`,
-  `deployedAgent`, `expectDeployable`, and the step stubs
-- `@alexkroman1/aai/testing/vitest` — the vitest-only half of `/testing`:
-  anything that installs or restores a stub
+- `@alexkroman1/aai/testing` — where the spec helpers (`runTool`,
+  `createToolContext`, `deployedAgent`, the step stubs) are declared — a test
+  file imports them through `@alexkroman1/aai-runtime/testing`
+- `@alexkroman1/aai/testing/vitest` — where the installers are declared — a test
+  file imports them through `@alexkroman1/aai-runtime/testing/vitest`
 - `@alexkroman1/aai/testing/vite` — the plugin `vitest.config.ts` registers to
   serve `virtual:aai/agent`
 - `@alexkroman1/aai/channels` — posting a run's result to Slack or SMS
@@ -112,6 +113,6 @@ shared across tool files, `slot.update` for a serialized async mutation,
 `ToolFailure` / `isToolFailure()` for a failure the model should recover from,
 `pushCapped()` for a capped append-only list, `omitUndefined()` for the optional
 half of an object literal, and `createToolContext()` from
-`@alexkroman1/aai/testing` for testing a tool's `execute`. The guide covers each
+`@alexkroman1/aai-runtime/testing` for testing a tool's `execute`. The guide covers each
 with a worked example; the point of this list is only that you look before
 writing the pattern by hand.

@@ -16,7 +16,7 @@ import {
   schemaInputIssues,
   type TestToolContext,
   toolRunner,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import {
   COORDINATOR_NAME,

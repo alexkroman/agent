@@ -42,8 +42,7 @@ a single tool call. A [workflow](#workflow-3) runs DURABLY, outliving the sessio
 
 | Subpath | Reach for it when |
 | --- | --- |
-| `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool`; the `install*` half is `/testing/vitest` |
-| `@alexkroman1/aai-runtime/testing`, `@alexkroman1/aai-runtime/eval/vitest` | a spec on the REAL engine (`runWorkflow`); an eval file, whose one import that is |
+| `@alexkroman1/aai-runtime/testing`, `@alexkroman1/aai-runtime/testing/vitest` | any test file — the pure fakes and readers (`createToolContext`, `runTool`, `runWorkflow`) from the first, every `install*` and the eval suites from the second; they re-export this package's `/testing` and `/testing/vitest` |
 | `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
 | `@alexkroman1/aai/step`, `/step-errors` | writing a step inside a workflow |
 | `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |

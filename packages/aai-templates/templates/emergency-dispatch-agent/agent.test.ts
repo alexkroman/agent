@@ -18,7 +18,7 @@ import {
   expectToolOk,
   parseSchemaInput,
   schemaInputIssues,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test, vi } from "vitest";
 import { DISPATCH_EVENTS } from "./events.ts";
 import { claimsUnitsMoving } from "./guardrails.ts";
@@ -41,7 +41,7 @@ import resourcesUpdateStatus from "./tools/resources_update_status.ts";
  * shapes the assertions below used to restate, which were a second copy of each
  * tool's return type that could not go stale loudly.
  *
- * The unwrap itself is `expectToolOk` from `@alexkroman1/aai/testing`; the hand-rolled
+ * The unwrap itself is `expectToolOk` from `@alexkroman1/aai-runtime/testing`; the hand-rolled
  * copy that used to sit here was byte-identical to three other templates'.
  */
 type Result<T extends ToolDef<ToolInputSchema>> = Extract<

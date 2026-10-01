@@ -278,7 +278,8 @@ FINAL message, so declare `expectedOutput`; its context is isolated, so `task`
 must be a complete brief; `maxSteps` bounds the loop, and a capped run is asked
 for its answer with tools withheld; and say you are looking it up before you
 call. It may name its own `llm` and `tools` map; **delegation is one level
-deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it by name.
+deep**. In tests, `stubDelegate` (`@alexkroman1/aai-runtime/testing`) fakes
+it by name.
 
 When the SPEAKER has to change — triage verifies the caller, billing takes over
 with its own instructions and tools, one history — mark them `speaks: true` on

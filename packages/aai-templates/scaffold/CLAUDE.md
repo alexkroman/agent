@@ -35,8 +35,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) → `pnpm test` (logic)
    it is a normal fix. Do not delete a test to make it pass.
    `agent-guide/TESTING-EVALS.md` has `virtual:aai/agent` and `runTool`.
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts the
-   shape; an eval (`agent.eval.test.ts`, everything imported from
-   `@alexkroman1/aai-runtime/eval/vitest`) drives a real session and asserts
+   shape; an eval (`agent.eval.test.ts`, harness imported from
+   `@alexkroman1/aai-runtime/testing/vitest`) drives a real session and asserts
    what it did. With a provider key it uses a LIVE model (spends tokens, noisy);
    without one a SCRIPTED model, which proves wiring and nothing about what the
    agent says.
@@ -305,10 +305,11 @@ that owns it:
 - `@alexkroman1/aai/step` — step code in `workflows/*.ts` — `stepEnv`,
   `stepFetch`, `stepGenerate`, transcription, `stepSpeak`, uploads,
   `mapConcurrent`, `stepPlaceCall`
-- `@alexkroman1/aai/testing` — specs — `runTool`, `createToolContext`,
-  `deployedAgent`, `expectDeployable`, and the step stubs
-- `@alexkroman1/aai/testing/vitest` — the vitest-only half of `/testing`:
-  anything that installs or restores a stub
+- `@alexkroman1/aai/testing` — where the spec helpers (`runTool`,
+  `createToolContext`, `deployedAgent`, the step stubs) are declared — a test
+  file imports them through `@alexkroman1/aai-runtime/testing`
+- `@alexkroman1/aai/testing/vitest` — where the installers are declared — a test
+  file imports them through `@alexkroman1/aai-runtime/testing/vitest`
 - `@alexkroman1/aai/testing/vite` — the plugin `vitest.config.ts` registers to
   serve `virtual:aai/agent`
 - `@alexkroman1/aai/channels` — posting a run's result to Slack or SMS
@@ -342,8 +343,10 @@ Framework-internal, never imported by an `agent.ts`: `/protocol`,
 <!-- END GENERATED aai subpaths -->
 
 `@alexkroman1/aai-ui` is the browser client (`agent-guide/UI.md`) and
-`@alexkroman1/aai-runtime` the host runtime (`/eval` and `/testing` for evals
-and durable workflow tests).
+`@alexkroman1/aai-runtime` the host runtime. **A test file imports testing
+names from its two doors only**: `@alexkroman1/aai-runtime/testing` (every
+fake and reader, plus `runWorkflow`) and `/testing/vitest` (every `install*`,
+plus the eval suites) — `agent-guide/TESTING-EVALS.md`.
 
 ## Gotchas
 

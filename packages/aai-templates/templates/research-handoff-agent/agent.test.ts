@@ -28,25 +28,6 @@ import {
   DEFAULT_DEEP_RESEARCH_PROMPTS,
 } from "@alexkroman1/aai/experimental";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import {
-  createRunSnapshot,
-  createToolContext,
-  createWorkflowContext,
-  parseSchemaInput,
-  runTool,
-  type StubStepAnswer,
-  type StubStepFetch,
-  type StubStepRequest,
-  schemaInputIssues,
-  toolRunner,
-} from "@alexkroman1/aai/testing";
-import {
-  installStubGateway,
-  installStubReporter,
-  installStubStepDelegate,
-  installStubStepFetch,
-  installStubWorkflows,
-} from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import type {
   JournalStore,
@@ -57,7 +38,26 @@ import type {
   WorkflowTestHandle,
   WorkflowTestRun,
 } from "@alexkroman1/aai-runtime/testing";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+import {
+  createRunSnapshot,
+  createToolContext,
+  createWorkflowContext,
+  parseSchemaInput,
+  runTool,
+  runWorkflow,
+  type StubStepAnswer,
+  type StubStepFetch,
+  type StubStepRequest,
+  schemaInputIssues,
+  toolRunner,
+} from "@alexkroman1/aai-runtime/testing";
+import {
+  installStubGateway,
+  installStubReporter,
+  installStubStepDelegate,
+  installStubStepFetch,
+  installStubWorkflows,
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { research } from "./shared.ts";
 import researchStatus from "./tools/research_status.ts";
@@ -89,7 +89,7 @@ const run = toolRunner(agentDef);
  * Returned WITHOUT a cast, which is the property worth keeping: a cast would
  * also stop reporting the day `WorkflowClient` grows a method, and this stub is
  * how the template's tools reach the client at all. `installStubWorkflows`
- * (`@alexkroman1/aai/testing/vitest`) is what keeps that affordable — a `vi.fn`
+ * (`@alexkroman1/aai-runtime/testing/vitest`) is what keeps that affordable — a `vi.fn`
  * per method over one `runs` list, filling in what this desk does not drive, so
  * the day the client does grow a method only the tests using it change.
  * `stream`/`streamTail` are left rejecting on purpose: `research_progress` reads

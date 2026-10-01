@@ -170,3 +170,4 @@ host implementation were split apart. Two things came out of that:
 - [eval](eval.md)
 - [eval/vitest](eval/vitest.md)
 - [testing](testing.md)
+- [testing/vitest](testing/vitest.md)

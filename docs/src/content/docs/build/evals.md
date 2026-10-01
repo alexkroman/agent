@@ -17,7 +17,7 @@ tools, the session's own event stream — except the microphone and the speaker.
 ## Your first eval
 
 ```ts
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import agentDef from "virtual:aai/agent";
 import { expect } from "vitest";
 
@@ -54,7 +54,7 @@ The reply is half of it. The other half is what the agent _did_ before it
 spoke:
 
 ```ts
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import agentDef from "virtual:aai/agent";
 import { expect } from "vitest";
 
@@ -133,7 +133,7 @@ against measures nothing.
 | `{ scripted: true }` | live         | a competent model will not take the path — usually watching a guard refuse, since something has to call the gated tool before you can see it say no |
 
 ```ts
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import agentDef from "virtual:aai/agent";
 import { expect } from "vitest";
 
@@ -185,7 +185,7 @@ A realistic case using three of them:
 
 ```ts
 import { errorsIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import agentDef from "virtual:aai/agent";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -228,7 +228,7 @@ recorded tool order is the agent's and not the harness's:
 
 ```ts
 import { toolResultIn, turnCalling } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import agentDef from "virtual:aai/agent";
 import { expect } from "vitest";
 import { z } from "zod";

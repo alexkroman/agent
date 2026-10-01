@@ -15,7 +15,7 @@ import {
   runTool,
   toolInputIssues,
   toolRunner,
-} from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import {
   applyConsequences,
@@ -63,7 +63,7 @@ function arm<T extends object, K extends string>(
  * A tool by the NAME the model calls it by, bound to this agent.
  *
  * The lookup, its "no such tool" message and the args-or-context shape are all
- * `toolRunner`'s (`@alexkroman1/aai/testing`); what is local is only which agent
+ * `toolRunner`'s (`@alexkroman1/aai-runtime/testing`); what is local is only which agent
  * it runs against. It replaces both the direct `tools/*.ts` imports and a local
  * `callNoArgs<R>(def, ctx)` that cast its way past `ToolDef["execute"]`'s first
  * parameter — a tool declaring no `inputSchema` types that as a shape no object
@@ -729,7 +729,7 @@ describe("update_state", () => {
   });
 
   test("the input schema rejects out-of-range and malformed values", async () => {
-    // `toolInputIssues` / `parseToolInput` (`@alexkroman1/aai/testing`) rather
+    // `toolInputIssues` / `parseToolInput` (`@alexkroman1/aai-runtime/testing`) rather
     // than reaching for `inputSchema!["~standard"]` — the reach eighteen sites
     // across ten templates had re-derived. They also take the tool by NAME, so
     // this asks the agent's own registry the same question the runner above

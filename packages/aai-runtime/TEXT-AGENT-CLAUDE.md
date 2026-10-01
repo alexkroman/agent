@@ -176,7 +176,7 @@ client through the options, and the automatic open is missing because nothing
 has needed it rather than for a reason.
 
 `templates/coding-agent` is the worked example, and it is what forced this: a
-template's eval must import `@alexkroman1/aai-runtime/eval/vitest`
+template's eval must import `@alexkroman1/aai-runtime/testing/vitest`
 (konsistent's `template-eval-spec`), and before this the only thing there for a
 text agent was a voice suite that would refuse it.
 
@@ -229,14 +229,16 @@ ordering has no value to hand back, and the two `findIndex`-and-`toBeLessThan`
 copies it replaced failed as "expected 4 to be less than 2", naming neither the
 sentence spoken too early nor the tool.
 
-### A template eval imports from `/eval` and `/eval/vitest`, and NOWHERE else
+### A template eval imports from `/testing` and `/testing/vitest`, and NOWHERE else
 
-**That is konsistent's `template-eval-runtime-subpaths`** — the root barrel and
-`/testing` refused for `templates/**/*.eval.test.ts`, `/internal` already
-refused for every template file by `template-authoring-boundary`, which is a
-complete deny-list over this package's export map. Its description carries the
-argument, including why `/eval` re-exports `RunCodeExecutor` rather than letting
-a template reach past it for a type.
+**That is konsistent's `template-testing-doors`** (the SDK's `/testing`
+subpaths, `/eval` and `/eval/vitest` refused in every template file) **plus
+`template-eval-runtime-subpaths`** (the root barrel, `/auth`, `/metrics` and
+`/tracing` refused for `templates/**/*.eval.test.ts`), with `/internal` already
+refused by `template-authoring-boundary` — together a complete deny-list over
+this package's export map minus the two doors. The descriptions carry the
+argument, including why `/eval` re-exports `RunCodeExecutor` rather than
+letting a template reach past it for a type.
 
 ### A workflow app is evaluated by RUNNING it
 
@@ -479,7 +481,8 @@ play the user — a `persona` and a `goal` — against an `EvalSession` or an
 `EvalTextAgent`, until it calls `end_call` or `maxTurns` runs out.
 `judgeCall(input, { criteria, llm })` (`eval/judge.ts`) has a model rule on each
 criterion over the result. Both are their own `eval-simulate` capability, on
-`@alexkroman1/aai-runtime/eval/vitest` (the one eval import) and the runner-free
+`@alexkroman1/aai-runtime/eval/vitest` (re-exported by `/testing/vitest`, the
+eval file's door) and the runner-free
 `/eval` — they once had a subpath of their own — and a
 `describeEval`/`describeTextEval` case builds the pair with
 `evalSimulation({ agent, mode, target: session })`

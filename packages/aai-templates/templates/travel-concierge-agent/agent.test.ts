@@ -1,6 +1,7 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 import type { SessionEvent, SessionEventHandler, ToolContext } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import {
   createToolContext,
   expectDialogOk,
@@ -8,8 +9,7 @@ import {
   expectToolOk,
   runTool,
   toolRunner,
-} from "@alexkroman1/aai/testing";
-import { isToolFailure } from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 import {
   activeAssistant,
@@ -37,7 +37,7 @@ import updateTicket from "./tools/update_ticket.ts";
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup,
  *  its "no such tool" message and the args-or-context shape are all
- *  `toolRunner`'s (`@alexkroman1/aai/testing`); what is local is only which
+ *  `toolRunner`'s (`@alexkroman1/aai-runtime/testing`); what is local is only which
  *  agent it runs against. */
 const run = toolRunner(agentDef);
 

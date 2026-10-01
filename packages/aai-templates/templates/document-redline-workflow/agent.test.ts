@@ -18,10 +18,9 @@
  */
 
 import { FatalError } from "@alexkroman1/aai/step-errors";
-import { parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
-import { installStubGateway } from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowTestStep } from "@alexkroman1/aai-runtime/testing";
-import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+import { parseSchemaInput, runWorkflow, schemaInputIssues } from "@alexkroman1/aai-runtime/testing";
+import { installStubGateway } from "@alexkroman1/aai-runtime/testing/vitest";
 import { fieldKindFor } from "@alexkroman1/aai-ui";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
