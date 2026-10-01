@@ -24,3 +24,13 @@ export const SESSION_PROTOCOL = "aai.session";
 
 /** `Sec-WebSocket-Protocol` entry prefix a session ticket travels under. */
 export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+
+/**
+ * The request header a browser presents its LAST session ticket in, on
+ * `GET client-config`, to resume that ticket's session. A broker minting
+ * tickets bound to a session (the managed platform) re-mints for the same
+ * session only for a ticket it can verify; a request without one gets a ticket
+ * for a new session. A header rather than a query parameter, so the ticket
+ * stays out of access logs.
+ */
+export const SESSION_TICKET_HEADER = "aai-session-ticket";

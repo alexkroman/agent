@@ -21,8 +21,8 @@
  *   `aai.auth.<token>` — out of the URL, so out of access logs and `Referer` — and
  *   `?token=` is the fallback. `aai-ui` offers it after `aai.session`, which
  *   {@link selectSessionProtocol} selects.
- * - **Resume ownership.** A `?sessionId=` resume is only honoured for the
- *   identity that OPENED that session. See {@link SessionGate.admits}.
+ * - **Resume ownership.** A ticket bound to a session opens only that session;
+ *   an unbound one resumes only what its `sub` opened. See {@link SessionGate.admits}.
  *
  * ## It runs BEFORE the handshake, and the refusal still says why
  *
@@ -51,16 +51,26 @@
  * @module session-auth
  */
 
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import type { Duplex } from "node:stream";
 import { requestQuery } from "@alexkroman1/aai/internal";
 import { SESSION_AUTH_PROTOCOL_PREFIX as WIRE_AUTH_PREFIX } from "@alexkroman1/aai/protocol";
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "./runtime-config.ts";
 import { agentGateToken } from "./server-env.ts";
 import { declineSocket } from "./session-decline.ts";
+import { requireSecret, type SessionIdentity, verifySessionToken } from "./session-ticket.ts";
+
+// The ticket's format lives in `session-ticket.ts`; these were declared here
+// first, and every importer still reaches them through this module.
+export {
+  createSessionToken,
+  type SessionIdentity,
+  type SessionTokenInput,
+  type VerifySessionTokenOptions,
+  verifySessionToken,
+} from "./session-ticket.ts";
 
 /** The env variable that turns the built-in ticket check on. */
 export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
@@ -74,147 +84,8 @@ export const SESSION_AUTH_PROTOCOL_PREFIX = WIRE_AUTH_PREFIX;
  */
 export const SESSION_UNAUTHORIZED_CLOSE_CODE = 4401;
 
-/** Ticket lifetime when {@link SessionTokenInput.ttlSeconds} is omitted. */
-const DEFAULT_TTL_SECONDS = 60;
-
-/** Forward clock skew tolerated on a ticket's `iat`, in seconds. */
-const CLOCK_SKEW_SECONDS = 30;
-
-/** Longest ticket read — an HMAC ticket is ~150 bytes; this bounds the parse. */
-const MAX_TOKEN_LENGTH = 4096;
-
 /** Session owners remembered for the resume check, oldest evicted first. */
 const MAX_TRACKED_SESSIONS = 10_000;
-
-/** Who a verified ticket says the caller is. */
-export type SessionIdentity = {
-  /** The caller's stable id — a user id, an account id. */
-  sub: string;
-  /**
-   * The one session this identity may resume. Set it when the ticket is minted
-   * for a reconnect; see {@link SessionGate.admits} for when it is required.
-   */
-  sessionId?: string;
-  /** Application claims carried through verification untouched. */
-  claims?: Record<string, unknown>;
-};
-
-/** Input to {@link createSessionToken}. */
-export type SessionTokenInput = SessionIdentity & {
-  /** The same secret the server verifies with — `AAI_SESSION_SECRET`. */
-  secret: string;
-  /** Seconds until the ticket expires. Defaults to 60: it opens a socket, nothing more. */
-  ttlSeconds?: number;
-  /** Clock override for tests, in ms since the epoch. */
-  now?: number;
-};
-
-type TicketPayload = {
-  v: 1;
-  sub: string;
-  iat: number;
-  exp: number;
-  jti: string;
-  sid?: string;
-  claims?: Record<string, unknown>;
-};
-
-function sign(body: string, secret: string): string {
-  return createHmac("sha256", secret).update(body).digest("base64url");
-}
-
-function requireSecret(secret: string): void {
-  if (secret.trim() === "") throw new Error("A session ticket secret must not be blank");
-}
-
-/**
- * Mint a session ticket — call this from your own backend, after your own login
- * check, and hand the result to the browser.
- *
- * ```ts
- * import { createSessionToken } from "@alexkroman1/aai-runtime/auth";
- *
- * const token = createSessionToken({
- *   secret: process.env.AAI_SESSION_SECRET ?? "",
- *   sub: "user-123", // your signed-in user's id
- * });
- * ```
- *
- * The format is `base64url(payload).base64url(HMAC-SHA256(payload))` — no JWT
- * library, and nothing a server holding the secret cannot check in one call.
- */
-export function createSessionToken(input: SessionTokenInput): string {
-  requireSecret(input.secret);
-  if (input.sub === "") throw new Error("A session ticket needs a non-empty `sub`");
-  const iat = Math.floor((input.now ?? Date.now()) / 1000);
-  const payload: TicketPayload = {
-    v: 1,
-    sub: input.sub,
-    iat,
-    exp: iat + (input.ttlSeconds ?? DEFAULT_TTL_SECONDS),
-    jti: randomUUID(),
-    ...omitUndefined({ sid: input.sessionId, claims: input.claims }),
-  };
-  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  return `${body}.${sign(body, input.secret)}`;
-}
-
-/** Options for {@link verifySessionToken}. */
-export type VerifySessionTokenOptions = {
-  secret: string;
-  /** Clock override for tests, in ms since the epoch. */
-  now?: number;
-};
-
-function parsePayload(body: string): TicketPayload | undefined {
-  try {
-    const p: unknown = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (!isRecord(p)) return undefined;
-    if (p.v !== 1 || typeof p.sub !== "string" || p.sub === "") return undefined;
-    if (typeof p.iat !== "number" || typeof p.exp !== "number") return undefined;
-    if (p.sid !== undefined && typeof p.sid !== "string") return undefined;
-    if (p.claims !== undefined && !isRecord(p.claims)) return undefined;
-    return {
-      v: 1,
-      sub: p.sub,
-      iat: p.iat,
-      exp: p.exp,
-      jti: typeof p.jti === "string" ? p.jti : "",
-      ...omitUndefined({ sid: p.sid, claims: p.claims }),
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Check a ticket minted by {@link createSessionToken}: the signature, then the
- * expiry. Returns the identity it carries, or `undefined` for anything else —
- * one answer for forged, expired and malformed, so a caller cannot probe which.
- */
-export function verifySessionToken(
-  token: string,
-  options: VerifySessionTokenOptions,
-): SessionIdentity | undefined {
-  requireSecret(options.secret);
-  if (token.length === 0 || token.length > MAX_TOKEN_LENGTH) return undefined;
-  const dot = token.indexOf(".");
-  if (dot <= 0 || dot !== token.lastIndexOf(".")) return undefined;
-  const body = token.slice(0, dot);
-  const presented = Buffer.from(token.slice(dot + 1));
-  const expected = Buffer.from(sign(body, options.secret));
-  if (presented.length !== expected.length || !timingSafeEqual(presented, expected)) {
-    return undefined;
-  }
-  const payload = parsePayload(body);
-  if (payload === undefined) return undefined;
-  const now = Math.floor((options.now ?? Date.now()) / 1000);
-  if (payload.exp <= now || payload.iat > now + CLOCK_SKEW_SECONDS) return undefined;
-  return {
-    sub: payload.sub,
-    ...omitUndefined({ sessionId: payload.sid, claims: payload.claims }),
-  };
-}
 
 /** A caller's own ticket check — a JWT from your IdP, an API key lookup. */
 export type SessionVerifier = (
@@ -315,19 +186,28 @@ export type SessionGate = {
   /**
    * Decide one upgrade. `resumeFrom` is the session the URL asks to resume.
    *
-   * A resume is admitted when the ticket names that session (`sessionId`), or
-   * when this process saw the same `sub` open it. Neither — a restarted server
-   * that never saw the session open, or a different caller — is refused: failing
-   * closed is the point, since a session id reaching the wrong hands is exactly
-   * what this check exists for. A client that must resume across a server
-   * restart gets a ticket minted with `sessionId`.
+   * A ticket BOUND to a session (`sessionId`) opens exactly that session — it
+   * resumes it, or starts it under that id when nothing is there — whatever the
+   * URL names: the binding is the authority, and {@link SessionGate.ownership}
+   * makes it the session's id. That is how the managed platform's tickets work
+   * (a new session's ticket names a fresh id), and how a client resumes across
+   * a server restart.
+   *
+   * An UNBOUND ticket resumes only a session this process saw the same `sub`
+   * open. A restarted server that never saw it, or a different caller, is
+   * refused: failing closed is the point, since a session id reaching the wrong
+   * hands is exactly what this check exists for.
    */
   admits(req: http.IncomingMessage, resumeFrom: string | undefined): Promise<SessionAdmission>;
   /** Record that `identity` opened `sessionId`, for a later resume. */
   recordOwner(sessionId: string, identity: SessionIdentity | undefined): void;
-  /** The `startSession` option that records the owner of the session it opens. */
+  /**
+   * The `startSession` options for an admitted identity: record the owner of
+   * the session it opens, and — for a bound ticket — open THAT session.
+   */
   ownership(identity: SessionIdentity | undefined): {
     onSinkCreated?: (sessionId: string) => void;
+    resumeFrom?: string;
   };
 };
 
@@ -389,12 +269,9 @@ export function resolveSessionGate(
   const owners = new Map<string, string>();
 
   function resumeRefusal(identity: SessionIdentity, resumeFrom: string | undefined) {
-    if (resumeFrom === undefined) {
-      // A reconnect ticket is for ONE session; spending it on a fresh one is
-      // almost certainly a client bug, and refusing says so.
-      return identity.sessionId === undefined ? undefined : "this ticket is for resuming a session";
-    }
-    if (identity.sessionId === resumeFrom || owners.get(resumeFrom) === identity.sub) return;
+    // A bound ticket opens its own session, never another (see `ownership`).
+    if (resumeFrom === undefined || identity.sessionId !== undefined) return;
+    if (owners.get(resumeFrom) === identity.sub) return;
     return "this ticket may not resume that session";
   }
 
@@ -435,7 +312,10 @@ export function resolveSessionGate(
     },
     ownership(identity) {
       if (identity === undefined) return {};
-      return { onSinkCreated: (sessionId) => gate.recordOwner(sessionId, identity) };
+      return {
+        onSinkCreated: (sessionId) => gate.recordOwner(sessionId, identity),
+        ...omitUndefined({ resumeFrom: identity.sessionId }),
+      };
     },
   };
   return gate;

@@ -16,6 +16,7 @@ import {
   selectSessionProtocol,
   verifySessionToken,
 } from "./session-auth.ts";
+import { mintPlatformSessionTicket, platformSessionSecret } from "./session-ticket.ts";
 
 /**
  * `startHostSession` stubbed to what matters here: it opens a session and
@@ -219,9 +220,45 @@ describe("resolveSessionGate", () => {
       expect((await gate?.admits(withTicket(named), "sess-restarted"))?.ok).toBe(true);
     });
 
-    test("a resume ticket cannot open a fresh session", async () => {
+    test("a bound ticket opens ITS session — fresh, or whatever the URL named", async () => {
       const named = createSessionToken({ secret: SECRET, sub: "bob", sessionId: "sess-x" });
-      expect((await gate?.admits(withTicket(named), undefined))?.ok).toBe(false);
+      const fresh = await gate?.admits(withTicket(named), undefined);
+      expect(fresh?.ok).toBe(true);
+      // Naming another session is not a way in: the session opened is the ticket's.
+      const other = await gate?.admits(withTicket(named), "sess-alice");
+      expect(other?.ok).toBe(true);
+      const identity = other?.ok ? other.identity : undefined;
+      expect(gate?.ownership(identity).resumeFrom).toBe("sess-x");
+    });
+
+    test("an unbound ticket leaves the session's id to the server", () => {
+      expect(gate?.ownership({ sub: "alice" })).not.toHaveProperty("resumeFrom");
+    });
+  });
+
+  describe("the managed platform's tickets", () => {
+    const BEARER = "per-sandbox-bearer";
+    const platformSecret = platformSessionSecret(BEARER);
+    const verify = (token: string) => verifySessionToken(token, { secret: platformSecret });
+    const gate = resolveSessionGate(createSessionAuth({ verify }), undefined, silentLogger);
+    const withTicket = (ticket: string, url = "/websocket") =>
+      fakeRequest({ url, protocol: `${SESSION_AUTH_PROTOCOL_PREFIX}${ticket}` });
+    const sessionOf = async (ticket: string, resumeFrom?: string) => {
+      const admission = await gate?.admits(withTicket(ticket), resumeFrom);
+      return admission?.ok ? gate?.ownership(admission.identity).resumeFrom : undefined;
+    };
+
+    test("a fresh ticket opens a NEW session under the id it names", async () => {
+      const a = await sessionOf(mintPlatformSessionTicket({ guestToken: BEARER }));
+      const b = await sessionOf(mintPlatformSessionTicket({ guestToken: BEARER }));
+      expect(a).toEqual(expect.any(String));
+      expect(b).not.toBe(a);
+    });
+
+    test("knowing a session id without its ticket opens a different session", async () => {
+      const victim = await sessionOf(mintPlatformSessionTicket({ guestToken: BEARER }));
+      const attacker = await sessionOf(mintPlatformSessionTicket({ guestToken: BEARER }), victim);
+      expect(attacker).not.toBe(victim);
     });
   });
 });
@@ -366,5 +403,24 @@ describe("createRuntimeServer with auth", () => {
     const alice = await dial(`/websocket?host=1&sessionId=host-1&${as("alice")}`);
     expect(alice.frames).toContain(JSON.stringify({ type: "hello" }));
     expect(hostStarts).toEqual(["fresh", "host-1"]);
+  });
+
+  test("a bound platform ticket opens the session it names, whatever the URL asked", async () => {
+    const { runtime, started } = recordingRuntime();
+    const secret = platformSessionSecret("bearer");
+    server = createRuntimeServer({
+      runtime,
+      logger: silentLogger,
+      auth: createSessionAuth({ verify: (t) => verifySessionToken(t, { secret }) }),
+    });
+    await server.listen(0);
+    const ticket = mintPlatformSessionTicket({ guestToken: "bearer" });
+    const sid = verifySessionToken(ticket, { secret })?.sessionId;
+    const offer = [SESSION_PROTOCOL, `${SESSION_AUTH_PROTOCOL_PREFIX}${ticket}`];
+
+    const fresh = await dial("/websocket", offer);
+    expect(fresh.protocol).toBe(SESSION_PROTOCOL);
+    await dial("/websocket?sessionId=someone-else", offer);
+    expect(started).toEqual([sid, sid]);
   });
 });

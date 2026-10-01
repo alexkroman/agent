@@ -56,10 +56,14 @@ export const ClientConfigResponseSchema = z.object({
    * subprotocol) when its own `token` option gave none. Re-fetched with this
    * config on every attempt, so a short-lived ticket is always fresh.
    *
-   * Only a server that is already its client's credential holder sends one:
-   * `aai dev` with `AAI_SESSION_SECRET` set, for the client it serves itself.
-   * A self-hosted `createRuntimeServer` never does — this endpoint is
-   * unauthenticated, so a ticket here would be one anyone could fetch.
+   * Two servers send one. The managed platform's broker ALWAYS does: a deployed
+   * agent's session opens only for it, and it is bound to one session — a
+   * lookup presenting the previous ticket (`SESSION_TICKET_HEADER`) gets one
+   * for the same session, any other lookup one for a new session. And `aai dev`
+   * with `AAI_SESSION_SECRET` set, for the client it serves itself. A
+   * self-hosted `createRuntimeServer` never does: this endpoint is
+   * unauthenticated, and there the ticket is meant to prove the operator's own
+   * login, which a ticket anyone could fetch here would not.
    */
   sessionToken: z.string().optional(),
 });

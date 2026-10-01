@@ -53,6 +53,7 @@ export {
   SESSION_COMMAND_TYPES,
   SESSION_EVENT_TYPES,
   SESSION_PROTOCOL,
+  SESSION_TICKET_HEADER,
   type SessionCommand,
   SessionCommandSchema,
   type SessionErrorCode,
