@@ -71,7 +71,7 @@ async function drain(result: { textStream: AsyncIterable<string> }): Promise<str
 function orderAgent(provider: Parameters<typeof llm>[0]) {
   const calls: unknown[] = [];
   const def = withTools(
-    agent({ name: "Orders", text: true, systemPrompt: SYSTEM_PROMPT, llm: llm(provider) }),
+    agent({ name: "Orders", mode: "text", systemPrompt: SYSTEM_PROMPT, llm: llm(provider) }),
     {
       lookup_order: tool({
         description: "Look up an order by id",

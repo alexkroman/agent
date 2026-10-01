@@ -4,18 +4,19 @@
 
 import { sessionClientPhone } from "@alexkroman1/aai";
 import { getSessionLocation } from "@alexkroman1/aai/host-internal";
-import { createOwnedMap } from "@alexkroman1/aai/internal";
+
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { makeMockCore, silentLogger } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
+import { createSessionDirectory } from "./session-directory.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 describe("wireSessionSocket client location", () => {
   test("is recorded under the session id before the session is created", () => {
     let seenAtCreate: string | undefined;
     wireSessionSocket(openSocket(), {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: (sid) => {
         seenAtCreate = getSessionLocation({ sessionId: sid });
         return makeMockCore();
@@ -31,7 +32,7 @@ describe("wireSessionSocket client location", () => {
   test("a resume without a location keeps the one reported before", () => {
     const open = (clientLocation?: string) =>
       wireSessionSocket(openSocket(), {
-        sessions: createOwnedMap(),
+        sessions: createSessionDirectory(),
         createSession: () => makeMockCore(),
         readyConfig: defaultConfig,
         logger: silentLogger,
@@ -49,7 +50,7 @@ describe("wireSessionSocket client location", () => {
 describe("wireSessionSocket client phone", () => {
   const open = (sessionId: string, clientPhone?: string, seen?: (sid: string) => void) =>
     wireSessionSocket(openSocket(), {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: (sid) => {
         seen?.(sid);
         return makeMockCore();

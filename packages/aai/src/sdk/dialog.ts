@@ -99,7 +99,6 @@ export type {
   DialogOptions,
 } from "./dialog-handle.ts";
 export type {
-  DialogBargeIn,
   DialogEvent,
   DialogEventNames,
   DialogGate,

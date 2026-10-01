@@ -20,13 +20,14 @@ Providers have their own guide in `providers/CLAUDE.md`.
 interface that `AgentDef` extends; each rule is DERIVED from the declaration,
 so a new field cannot skip it.
 
-| Interface             | Module                  | The rule                                                        |
-| --------------------- | ----------------------- | --------------------------------------------------------------- |
-| `PipelineVoiceTuning` | `agent-voice-tuning.ts` | pipeline transport or nothing                                   |
-| `AgentModelTuning`    | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five** |
-| `AgentGuardrails`     | `agent-guardrails.ts`   | the only declarations that may STOP a turn                      |
-| `AgentObservation`    | `agent-observation.ts`  | the two that deliberately may not                               |
-| `AgentRoutes`         | `agent-routes.ts`       | no session: `/api` handlers, data both ways across the bundle   |
+| Interface          | Module                  | The rule                                                                                                                        |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `PipelineTuning`   | `agent-tuning.ts`       | pipeline transport or nothing; `turnTaking`/`interruption`/`silence` groups, `interruption` reused per dialog state and persona |
+| `AgentMode`        | `agent-mode.ts`         | `mode` picks the `agent()` member, and the wire carries it                                                                      |
+| `AgentModelTuning` | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five**                                                                 |
+| `AgentGuardrails`  | `agent-guardrails.ts`   | the only declarations that may STOP a turn                                                                                      |
+| `AgentObservation` | `agent-observation.ts`  | the two that deliberately may not                                                                                               |
+| `AgentRoutes`      | `agent-routes.ts`       | no session: `/api` handlers, data both ways across the bundle                                                                   |
 
 - `assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
   total over `AgentModelTuning` — a knob missing from the table fails to
@@ -44,15 +45,27 @@ so a new field cannot skip it.
 - **`systemPrompt` takes a RESOLVER** `(ctx: AgentSessionContext) => string`,
   called per model request — `agent-instructions.ts` owns it.
 
-## A misuse arm is defeated by a shape-competing SIBLING arm
+## `agent()`'s legality is a discriminated union, not message types
 
-A union arm typed as an unsatisfiable string literal (so `tsc` prints the RULE)
-works only when no sibling arm is a closer match for the offending value —
-TypeScript elaborates against the closest arm and the literal never reaches the
-output. Before adding a misuse arm, check what else in the union can absorb the
-value, and verify the message with a real `tsc` run. If nothing can print it,
-the union is the bug: NAME its arms (`{ reply }` / `{ routes }`, as the
-testing scripts now do). `PipelineOnlyMisuse` and `AgentParams`' arms print.
+**A field belongs to the members it appears in, and nowhere else.** Each member
+of `AgentParams` is cut from `AgentDef` by subtracting a field-list TYPE
+(`PipelineOnlyField`, `TextOnlyExcludedField`, `WorkflowAppOnlyField` in
+`agent-params.ts`); `_agent-modes.ts`'s refusal tables `satisfies` a `Record`
+over the same types. A new mode-specific field goes in a list — never as a
+message-typed key on a member, and never as a hand-kept run-time table. Members
+stay CLEAN — no `never` keys: an absent key gives the excess-property error
+naming the member, and autocomplete shows only what the mode has. The one
+exception is the pipeline member's `s2s?: undefined`, without which `{ s2s }`
+missing its `mode` would be absorbed by it when `agent()` resolves against the
+whole union. Prove a refusal with `AgentAccepts<X>` (`_test-utils.ts`: the
+excess-property rule over every overload), not an expect-error directive —
+those count against the escape-hatch ratchet.
+`InlineToolsMisuse` and `SyncMutationMisuse` remain: neither is a MODE rule.
+
+**A message arm is defeated by a shape-competing SIBLING arm** (still true of
+the two that remain): TypeScript elaborates against the closest arm. Verify any
+such message with a real `tsc` run; if nothing can print it, NAME the arms
+(`{ reply }` / `{ routes }`, as the testing scripts do).
 
 ## Wire-shape rules
 
@@ -194,8 +207,9 @@ stream like any reply. The same `SessionSpeech` is `ToolContext.speech` (so a
 `createToolContext()` still stands in for a handler's context, recording into
 `ctx.said`) and `RouteContext.speech(sessionId)` for a webhook. Rules:
 
-- **Pipeline only.** On S2S `done` settles `"unsupported"`; neither service
-  speaks host text verbatim. `interrupt()` works in every mode.
+- **Pipeline only.** On S2S `done` settles `"dropped"` (said once at session
+  start); neither service speaks host text verbatim. `interrupt()` works in
+  every mode.
 - **Never throws**, and every "cannot" is an outcome on `done`: `"dropped"` for
   an ended session, blank text, a line taken back or stranded by an interrupt.
 - **Never await `done` inside the reply it queues behind** (a tool's
@@ -240,8 +254,11 @@ on the member it governs**:
 - **A durable value is checked STRUCTURALLY in every backend** (`Map` → `{}`,
   `Date` → string, `NaN` → null don't throw). Running it in memory too is what
   makes memory a valid double.
-- **`syncState` takes `slot.projection(view)`**, callable and carrying key and
-  default, so a session that ran no tool still renders.
+- **`syncState` is a record keyed by SLOT NAME** of `slot.projected` /
+  `slot.projection(view)` values — callable and carrying key and default, so a
+  session that ran no tool still renders. Each key must equal its projection's
+  slot key (`assertSyncStateRecord`, `_author-conveniences.ts`), so the frame
+  is `{ [slot]: view }` and the browser selects by the same name.
 - **`caps` bounds a TOP-LEVEL array on every store, AFTER `after`**;
   `SlotCaps<T>` admits only array keys, bad caps refused at declaration
   (`_session-slot-caps.ts`). The hook sees the untrimmed draft.
@@ -271,7 +288,7 @@ module doc owns it, `packages/aai-runtime/DIALOG-CLAUDE.md` owns the knobs.
   same machine. Two type traps are argued in `dialog-types.ts`.
 - **An `on` key starting with `@` is a SESSION event**
   (`"@session.timed-out"`), kept out of the author's `send` union. A state may
-  carry `timeout: { afterMs, send }` and `voice`/`bargeIn`/`toolChoice`/
+  carry `timeout: { afterMs, send }` and `voice`/`interruption`/`toolChoice`/
   `temperature`, read deepest-first, riding in `meta`. **`after` is REFUSED**
   — the actor is stopped inside its window, so a delay never fires.
 - **`tool()`, `dialog.tool`, `slot.tool`, `slot.updateTool` all thread `R`
@@ -440,9 +457,10 @@ database) — a known gap.
 
 ## Workflow apps and the workflow HTTP API
 
-`AgentDef.page` is `"voice"` (default) or `"static"` — a page over the workflow
-API, declared with `workflowApp()` (`define.ts`), which refuses fields it cannot
-use. Author-facing half: "Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
+`mode: "workflow-app"` is a page over the workflow API, declared with
+`workflowApp()` (`define.ts`), whose member has none of the fields it cannot
+use; `GET /client-config` reports it as `page: "static"`. Author-facing half:
+"Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
 
 - **Read a run's newest line with `ctx.workflows.lastLine(runId)`, never
   `streamTail` + `stream` by hand** — a progress channel is never closed, so

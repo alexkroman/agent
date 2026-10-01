@@ -77,8 +77,8 @@ to `main`; the turbo `docs` task is a merge gate in `pnpm check` and CI.
   warning means either the generator changed (remove it) or the sidebar shape
   did (fix it).
 - **What is rendered is what somebody writing an `agent.ts` imports**: all of
-  `aai` and `aai-ui`, and `aai-runtime`'s `/eval`, `/eval/vitest`,
-  `/eval/simulate` and `/testing`. What an EMBEDDER imports (`aai-runtime`'s
+  `aai` and `aai-ui`, and `aai-runtime`'s `/eval`, `/eval/vitest` and
+  `/testing`. What an EMBEDDER imports (`aai-runtime`'s
   root barrel), the `/internal` escape hatches and `aai-cli`'s build hooks are
   excluded, each with a written reason in `UNDOCUMENTED_SUBPATHS`
   (`scripts/docs-markdown.mjs`).
@@ -372,7 +372,7 @@ and backticks there break it open onto the page.
 ## Rendering `aai-runtime` is a docs decision, and it cannot be half-made
 
 `packages/aai-runtime/typedoc.json` renders only the author-facing subpaths
-(`/eval`, `/eval/vitest`, `/eval/simulate`, `/testing`). The root barrel (~220
+(`/eval`, `/eval/vitest`, `/testing`). The root barrel (~220
 exports for EMBEDDERS) and `/internal` stay in `UNDOCUMENTED_SUBPATHS`; the root
 entry says what would change that ("revisit if embedders ask for a rendered
 page — then it gets its own, not a share of the SDK's").

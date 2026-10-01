@@ -20,11 +20,12 @@ pipeline, billed to the one key in your `.env`.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Support Line",
   greeting: "Support line — what can I help with?",
-  voice: "michael",
+  tts: assemblyAITts({ voice: "michael" }),
 });
 ```
 
@@ -32,19 +33,20 @@ export default agent({
 | ------------- | ---------------------------------------------------------------- |
 | `name`        | Display name — the only required field                           |
 | `greeting`    | The first thing the agent says                                   |
-| `voice`       | Which voice speaks, e.g. `"michael"`, `"paul"`                   |
+| `tts`         | The speaking stage; `assemblyAITts({ voice: "michael" })`        |
 | `llm`         | A model id, e.g. `"claude-sonnet-4-6"`; defaults to AssemblyAI's |
 | `requiredEnv` | Keys your tools read; a deploy checks they are all set           |
 
 Every other field is in the [SDK reference](/agent/reference/). You do not
 need any of them to build something good.
 
-### About `voice` and `llm`
+### About the voice and `llm`
 
-Both autocomplete the ids this SDK release knows about. Neither is checked by
-the compiler, so a wrong id fails when the session opens rather than when you
-build. [Voices and models](/agent/more/voices-and-models/) lists what each one
-accepts and shows what a wrong id looks like.
+A voice id and a model id both autocomplete the ids this SDK release knows
+about. Neither is checked by the compiler, so a wrong id fails when the session
+opens rather than when you build. [Voices and
+models](/agent/more/voices-and-models/) lists what each one accepts and shows
+what a wrong id looks like.
 
 ## The system prompt is a file
 

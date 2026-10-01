@@ -157,7 +157,7 @@ on the stream. **Recommendation: do not.** Revisit if a case needs to grade a
 
 `packages/aai-guest/src/studio-agent.eval.test.ts`, nine cases on
 `studio/_eval-harness.ts`. It could not be built from here or from `aai-evals`:
-`createStudioAgent(session, deps)` returns a plain `AgentDef` with `text: true`,
+`createStudioAgent(session, deps)` returns a plain `AgentDef` with `mode: "text"`,
 exactly what `openEvalTextAgent` takes — but `StudioSession` carries a real
 workspace `dir` and `StudioAgentDeps` is `HarnessBundleAccess & { typecheck }`,
 all of which live in `aai-guest`, which every boundary in this direction denies.

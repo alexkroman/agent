@@ -2,7 +2,7 @@
 /**
  * Capability contract: `page`.
  *
- * The workflow-app mount: `mountPage()`, for an `agent({ page: "static" })` front
+ * The workflow-app mount: `mountPage()`, for an `agent({ mode: "workflow-app" })` front
  * door with no session, no socket and no audio. A second mount rather than a
  * flag on `mountClient()` — see "Mounting and factories" in `packages/aai-ui/src/CLAUDE.md`.
  *

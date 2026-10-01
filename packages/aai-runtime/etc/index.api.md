@@ -80,7 +80,7 @@ export interface AgentServerOptions extends SharedServerOptions {
     db?: Db | undefined;
     env: AgentEnv;
     journal?: JournalStore | undefined;
-    page?: AgentDef["page"] | undefined;
+    page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
     runCode?: RunCodeExecutor | undefined;
@@ -516,7 +516,7 @@ export type RuntimeServerOptions = {
     uploadBroker?: string;
     upgrade?: ServerUpgradeHook | undefined;
     request?: ServerRequestHook | undefined;
-    page?: NonNullable<AgentDef["page"]>;
+    page?: "voice" | "static";
     telephony?: boolean | readonly CarrierName[];
     auth?: SessionAuth | undefined;
 };

@@ -53,7 +53,7 @@ fail turned `pnpm check` red naming a file no commit contains. The
 
 ## The coding agent is an ordinary `agent()`
 
-`agent.ts` is the definition (`text: true`, the session's system prompt, the
+`agent.ts` is the definition (`mode: "text"`, the session's system prompt, the
 gateway model, `maxSteps`, `builtinTools`, four tool families); `chat.ts` is the
 HTTP surface plus one turn's delivery. Never hand-assemble a `streamText` call
 here — every piece of that is `agent()` plus `createTextAgent`

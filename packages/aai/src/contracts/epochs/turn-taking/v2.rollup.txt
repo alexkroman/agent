@@ -1,0 +1,51 @@
+// @public
+export interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
+// @public
+export interface PipelinePhrases {
+    errorPhrase?: string;
+    startFailurePhrase?: string;
+}
+
+// @public
+export interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
+
+// @public
+export interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+export interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+export interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
+export interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
+}

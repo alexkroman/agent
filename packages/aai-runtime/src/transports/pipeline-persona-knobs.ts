@@ -34,8 +34,8 @@
  * `ToolChoice`'s documented precedence gains one rung. A persona is broader
  * than a dialog state — it is who is speaking, and the state is where in their
  * script they are — so the persona's knobs beat the agent's and lose to the
- * active dialog state's. `pipeline-llm-stream.ts` composes the preparers in
- * exactly that order.
+ * active dialog state's — the `"persona"` stage of `PREPARER_ORDER`
+ * (`../_prepare-step.ts`), between `"agent-tool-choice"` and `"dialog"`.
  */
 
 import type { ToolChoice } from "@alexkroman1/aai";
@@ -90,7 +90,7 @@ export function createPersonaStep(
     });
     // `undefined` rather than `{}` when the persona asks nothing of this step,
     // so it is prepared by exactly the preparers that shipped before this
-    // existed — `composePrepareStep` treats both as "no keys", but only one of
+    // existed — `composePreparers` treats both as "no keys", but only one of
     // them says so at the call site.
     return Object.keys(step).length === 0 ? undefined : step;
   };

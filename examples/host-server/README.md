@@ -169,5 +169,5 @@ const server = createHostServer({
 
 Callers then send the matching keys: `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY`,
 `CARTESIA_API_KEY`. Anything in `defaults` that the handshake does not own
-(`voice`, `idleTimeoutMs`, `minBargeInWords`, `builtinTools`) is operator
+(`voice`, `idleTimeoutMs`, `interruption`, `builtinTools`) is operator
 policy and stands for every tenant.

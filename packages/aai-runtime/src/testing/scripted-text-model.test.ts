@@ -28,7 +28,7 @@ import { scriptedTextModel } from "./scripted-text-model.ts";
 
 /** A text agent WITH its tools — `agent()` takes none, a tool being a FILE. */
 function textAgent(tools: ToolRegistry = {}): AgentDef {
-  return withTools(agent({ name: "Desk", text: true, systemPrompt: "Be brief." }), tools);
+  return withTools(agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }), tools);
 }
 
 /** Drain a turn, which is also what forces the tool loop to run. */

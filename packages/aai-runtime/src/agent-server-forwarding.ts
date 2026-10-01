@@ -14,7 +14,7 @@
  *   scaffold's `server.mjs` included — mounted an unauthenticated `WS /phone`
  *   with no way to switch it off.
  * - **`page`** is declared by the AGENT, and nothing carried the declaration
- *   through, so a `page: "static"` agent still got the voice surfaces and a
+ *   through, so a `mode: "workflow-app"` agent still got the voice surfaces and a
  *   voice `GET /client-config`.
  * - **`env`** was forwarded to the runtime alone, so three of the four things
  *   `createRuntimeServer` reads out of an env were dropped: `AAI_WORKFLOW_API_TOKEN`

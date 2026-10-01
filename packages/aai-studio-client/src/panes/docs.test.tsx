@@ -16,7 +16,7 @@
 // names before a first publish.
 //
 // And that each half is offered only to the agents it is TRUE for: no carrier
-// webhook for a workflow app (`page: "static"` defaults telephony off, so a
+// webhook for a workflow app (`mode: "workflow-app"` defaults telephony off, so a
 // number pointed at one answers and hangs up), and no workflow routes for an
 // agent that declares no workflow (there is no name to put in `{ workflow }`).
 // Both are read off the agent, so both are asserted through a stubbed answer
@@ -222,7 +222,7 @@ describe("DocsPane", () => {
   });
 
   test("a workflow app is not offered the carrier webhook", async () => {
-    // `page: "static"` declines `/websocket` and cannot declare a carrier, so
+    // `mode: "workflow-app"` declines `/websocket` and cannot declare a carrier, so
     // the whole phone integration is a URL that answers a call and hangs up.
     // Twilio and Telnyx are the two the platform emits documents for, so
     // neither carrier's name belongs on a workflow app's pane.

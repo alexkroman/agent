@@ -42,7 +42,7 @@ describe("step 1: there has to be a floor to take", () => {
   });
 });
 
-describe('step 2: `bargeIn: "off"` refuses everything', () => {
+describe('step 2: `interruption: "off"` refuses everything', () => {
   test("an unreachable threshold refuses however many words arrive", () => {
     const policy = makePolicy({ minBargeInWords: Number.POSITIVE_INFINITY });
     expect(policy.partialInterrupts(9)).toBe(false);

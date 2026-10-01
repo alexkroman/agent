@@ -22,7 +22,7 @@
  * The mirror image — a `tool` result with no call ahead of it — is rejected by
  * the providers themselves (OpenAI: "messages with role 'tool' must be a
  * response to a preceding message with 'tool_calls'"). The history's front trim
- * already heals the one shape of it that trimming makes (`capLlm`,
+ * never makes the one shape of it a trim could (`evictLlm`,
  * `pipeline-history.ts`); this guard covers the rest.
  *
  * **The rules match the SDK's own check, not a stricter one.** A call is

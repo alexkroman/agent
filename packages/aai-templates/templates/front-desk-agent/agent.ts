@@ -18,5 +18,5 @@ export default agent({
   systemPrompt,
   greeting: "Northwind Internet, front desk. Is this about your bill, or about your service?",
   roster: desk,
-  syncState: deskSlot.projected,
+  syncState: { desk: deskSlot.projected },
 });

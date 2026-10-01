@@ -15,10 +15,11 @@
  */
 
 import { expectTypeOf, test } from "vitest";
+import type { AgentAccepts } from "./_test-utils.ts";
 import type { AgentGuardrail, GuardrailVerdict } from "./agent-guardrails.ts";
 import type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.ts";
 import type { AgentSessionContext } from "./agent-session-context.ts";
-import { type AgentParams, agent } from "./define.ts";
+import { agent } from "./define.ts";
 import type { S2sProvider } from "./providers.ts";
 import { type Roster, roster } from "./roster.ts";
 import type { SessionEventContext } from "./session-events.ts";
@@ -39,49 +40,61 @@ import type { AgentDef, ToolContext } from "./types.ts";
  * all, and that a workflow app (which runs no model and speaks nothing) cannot.
  */
 test("the model-tuning knobs and the guardrails are session-arm fields", () => {
-  expectTypeOf<{
-    name: string;
-    description: string;
-    temperature: number;
-    maxOutputTokens: number;
-    maxRetries: number;
-    resetToolChoice: boolean;
-    usageLimits: { totalTokens: number };
-  }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      description: string;
+      temperature: number;
+      maxOutputTokens: number;
+      maxRetries: number;
+      resetToolChoice: boolean;
+      usageLimits: { totalTokens: number };
+    }>
+  >().toEqualTypeOf<true>();
 
-  expectTypeOf<{
-    name: string;
-    inputGuardrails: readonly AgentGuardrail[];
-    outputGuardrails: readonly AgentGuardrail[];
-  }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      inputGuardrails: readonly AgentGuardrail[];
+      outputGuardrails: readonly AgentGuardrail[];
+    }>
+  >().toEqualTypeOf<true>();
 
   // A text agent declares them too — none of these is voice-specific, and the
   // one rule they share is about who assembles the request.
-  expectTypeOf<{ name: string; text: true; maxOutputTokens: number }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; maxOutputTokens: number }>
+  >().toEqualTypeOf<true>();
 
   // A workflow app runs no model and opens no session, so all seven are the
   // same silent no-op the rest of `WorkflowAppOnlyField` is.
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: NonNullable<AgentDef["workflows"]>;
-    maxOutputTokens: number;
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: NonNullable<AgentDef["workflows"]>;
-    outputGuardrails: readonly AgentGuardrail[];
-  }>().not.toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "workflow-app";
+      workflows: NonNullable<AgentDef["workflows"]>;
+      maxOutputTokens: number;
+    }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "workflow-app";
+      workflows: NonNullable<AgentDef["workflows"]>;
+      outputGuardrails: readonly AgentGuardrail[];
+    }>
+  >().toEqualTypeOf<false>();
 
   // `description` is deliberately NOT refused there: a listing wants one
   // whatever the front door is.
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: NonNullable<AgentDef["workflows"]>;
-    description: string;
-  }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "workflow-app";
+      workflows: NonNullable<AgentDef["workflows"]>;
+      description: string;
+    }>
+  >().toEqualTypeOf<true>();
 });
 
 /**
@@ -104,16 +117,22 @@ test("systemPrompt accepts a per-request resolver", () => {
   expectTypeOf<() => string>().toExtend<AgentInstructions>();
   expectTypeOf<AgentInstructions>().parameter(0).toEqualTypeOf<AgentSessionContext>();
   expectTypeOf<AgentInstructions>().returns.toBeString();
-  expectTypeOf<{ name: string; systemPrompt: string }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; systemPrompt: Resolve }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; s2s: S2sProvider; systemPrompt: Resolve }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; text: true; systemPrompt: Resolve }>().toExtend<AgentParams>();
+  expectTypeOf<AgentAccepts<{ name: string; systemPrompt: string }>>().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; systemPrompt: Resolve }>>().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider; systemPrompt: Resolve }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; systemPrompt: Resolve }>
+  >().toEqualTypeOf<true>();
   // An ASYNC resolver is refused: there is nowhere to await while a request is
   // being assembled that does not put a round trip in front of every turn.
-  expectTypeOf<{
-    name: string;
-    systemPrompt: (ctx: AgentSessionContext) => Promise<string>;
-  }>().not.toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      systemPrompt: (ctx: AgentSessionContext) => Promise<string>;
+    }>
+  >().toEqualTypeOf<false>();
 });
 
 /** A guardrail's verdict vocabulary is the subagent's, deliberately. */

@@ -40,6 +40,7 @@
  * @module
  */
 
+import { globalSlot } from "./_boundary.ts";
 import { createOwnedMap, type OwnedMap } from "./owned-map.ts";
 import type { ToolContext } from "./tool-context.ts";
 
@@ -63,14 +64,15 @@ export type EndSessionOptions = {
 /** What the runtime registers for a session — see {@link claimSessionEnder}. */
 export type SessionEnder = (options: { afterReply: boolean }) => void;
 
-const SESSION_ENDERS_SLOT = Symbol.for("@alexkroman1/aai.sessionEnders");
-
-type Slot = { [SESSION_ENDERS_SLOT]?: OwnedMap<string, SessionEnder> };
+const SESSION_ENDERS_SLOT = globalSlot<OwnedMap<string, SessionEnder>>("sessionEnders");
 
 function enders(): OwnedMap<string, SessionEnder> {
-  const slot = globalThis as Slot;
-  slot[SESSION_ENDERS_SLOT] ??= createOwnedMap();
-  return slot[SESSION_ENDERS_SLOT];
+  let map = SESSION_ENDERS_SLOT.get();
+  if (map === undefined) {
+    map = createOwnedMap();
+    SESSION_ENDERS_SLOT.set(map);
+  }
+  return map;
 }
 
 /**

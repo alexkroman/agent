@@ -31,16 +31,17 @@ import type { SessionEvent } from "@alexkroman1/aai";
 // What no eval here can see: anything below the audio boundary. Whether a
 // caller reading an order number in bursts lands as one turn is a property of
 // endpointing, and these fake speech stages remove it.
-import { dialogRefusalPattern, dialogResultSchema } from "@alexkroman1/aai/testing";
 import {
+  describeEval,
   describeTurn,
+  dialogRefusalPattern,
+  dialogResultSchema,
   expectToolBeforeSpeech,
   lastStateIn,
   toolNames,
   toolResultIn,
   turnCalling,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 
@@ -82,7 +83,8 @@ const ProjectedStore = z.object({
  * `lastStateIn` is the SDK's reader; the schema is what is worth passing to it,
  * for the reason above — a frame that stopped matching fails naming the field.
  */
-const projection = (events: readonly SessionEvent[]) => lastStateIn(events, ProjectedStore);
+const projection = (events: readonly SessionEvent[]) =>
+  lastStateIn(events, "retail", ProjectedStore);
 
 /** The status the projection carries for `orderId` — the one fact "did anything
  *  change?" turns on. `undefined` covers both "no projection yet" and "not this

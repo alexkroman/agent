@@ -58,7 +58,7 @@ import { stripJsonFence } from "@alexkroman1/aai/step";
 import { omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { type LanguageModel, type ModelMessage, stepCountIs, ToolLoopAgent } from "ai";
 import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
-import { forceFinalAnswer } from "./_prepare-step.ts";
+import { composePreparers, forceFinalAnswer } from "./_prepare-step.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 import { pairToolCallsLogged } from "./tool-call-pairs.ts";
@@ -173,7 +173,9 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       // One more than the tool-calling budget, so the forced answering step has
       // somewhere to run — the same arithmetic as `createTextAgent`.
       stopWhen: stepCountIs(maxSteps + 1),
-      prepareStep: forceFinalAnswer(maxSteps, logger, sessionId),
+      prepareStep: composePreparers([
+        { stage: "force-final-answer", prepare: forceFinalAnswer(maxSteps, logger, sessionId) },
+      ]),
       // The subagent's `ModelTuning` — `SpeakerDef` omits `maxRetries`, so
       // its requests retry on the AI SDK default; the guardrail's budget is
       // `maxRevisions`, read above.

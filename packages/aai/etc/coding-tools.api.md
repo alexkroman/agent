@@ -136,6 +136,14 @@ type GuardrailVerdict = true | string;
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
@@ -168,6 +176,13 @@ interface ModelTuning {
     maxOutputTokens?: number;
     maxRetries?: number;
     temperature?: number;
+}
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
 }
 
 // @public
@@ -228,6 +243,18 @@ interface SessionSpeech {
 }
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -244,6 +271,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -266,7 +294,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 interface StandardSchemaIssue {
@@ -411,6 +439,19 @@ type ToolStartMessage = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -419,6 +460,12 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public

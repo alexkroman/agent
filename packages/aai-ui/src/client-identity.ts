@@ -142,6 +142,15 @@ export type SessionIdentity = {
    * `VoiceSessionOptions.onSessionId`.
    */
   sessionId(): string | undefined;
+  /**
+   * A session ticket for ANOTHER socket on the same server — what `useInbox()`
+   * presents on `WS /inbox`, which a gated server checks exactly like
+   * `/websocket`. The session's own `token` option when it has one; otherwise a
+   * fresh one from the server's `client-config` (`aai dev` with
+   * `AAI_SESSION_SECRET`), until a lookup shows the server issues none.
+   * `undefined` means "present none". Fresh on every call: tickets are short-lived.
+   */
+  ticket(): string | undefined | Promise<string | undefined>;
 };
 
 /** The client option as the dialer reads it: `"auto"` resolved, everything else as given. */
@@ -160,20 +169,25 @@ export function resolveReported(
   return trimmed === "" ? undefined : trimmed;
 }
 
+/** What the identity reads from the session's dialer. */
+type IdentitySource = Pick<SessionIdentity, "sessionId" | "ticket">;
+
 /**
- * Build a session's {@link SessionIdentity}. `sessionId` reads the dialer's
- * confirmed id — the dialer owns it because it is the one that sees every
- * `config` frame, `end()` and `resume()`.
+ * Build a session's {@link SessionIdentity}. `sessionId` and `ticket` are the
+ * dialer's (read through `source`, which may answer nothing): it owns the id
+ * because it sees every `config` frame, `end()` and `resume()`, and the ticket
+ * because it holds the `token` option and the server's `client-config` latch.
  */
 export function createSessionIdentity(
   options: { platformUrl: string; client?: string | (() => string | undefined) | undefined },
-  sessionId: () => string | undefined,
+  source: () => IdentitySource | undefined,
 ): SessionIdentity {
   const client = resolveClientOption(options.client, options.platformUrl);
   return Object.freeze({
     platformUrl: options.platformUrl,
     clientId: () => resolveReported(client),
     holderId: () => inboxHolderId(options.platformUrl),
-    sessionId,
+    sessionId: () => source()?.sessionId(),
+    ticket: () => source()?.ticket(),
   });
 }

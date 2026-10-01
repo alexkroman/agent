@@ -11,6 +11,9 @@ import { z } from 'zod';
 // @public
 type AgentInstructions = (ctx: AgentSessionContext) => string;
 
+// @public
+type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
+
 // @public @sealed
 interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
@@ -152,15 +155,16 @@ export interface DeployedConfig {
     readonly builtinTools?: readonly BuiltinTool[] | undefined;
     readonly llm?: DeployedStage | undefined;
     readonly mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>> | undefined;
-    readonly mode: "pipeline" | "s2s" | "text";
+    readonly mode: AgentMode;
     readonly name: string;
     readonly requiredEnv?: readonly string[] | undefined;
     readonly s2s?: DeployedStage | undefined;
     readonly stt?: DeployedStage | undefined;
     readonly systemPrompt: string;
-    readonly text?: true | undefined;
     readonly tts?: DeployedStage | undefined;
-    readonly turnDetection?: string | undefined;
+    readonly turnTaking?: {
+        readonly detection?: string | undefined;
+    } | undefined;
     readonly usageLimits?: {
         readonly totalTokens?: number | undefined;
     } | undefined;
@@ -187,12 +191,6 @@ interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
-
-// @public
-type DialogBargeIn = "default" | "off" | {
-    minWords?: number;
-    minDurationMs?: number;
-};
 
 // @public
 interface DialogGate<R, E> {
@@ -240,7 +238,7 @@ interface DialogToolResult<R> extends DialogPosition {
 
 // @public
 interface DialogVoiceConfig {
-    readonly bargeIn?: DialogBargeIn;
+    readonly interruption?: PipelineTuning["interruption"];
     readonly temperature?: number;
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
@@ -368,6 +366,14 @@ type GuardrailVerdict = true | string;
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
+// @public
 export function isEvent<E extends {
     type: string;
 }, K extends E["type"]>(event: E, type: K): event is Extract<E, {
@@ -413,6 +419,13 @@ export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSc
 
 // @public
 export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
 
 // @public
 type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
@@ -722,7 +735,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
-    state: z.ZodUnknown;
+    state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"usage.updated">;
     meta: z.ZodObject<{
@@ -756,6 +769,20 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failed-over">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
@@ -814,6 +841,18 @@ interface SessionSpeech {
 }
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -836,6 +875,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -858,7 +898,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 interface StandardSchemaIssue {
@@ -1452,6 +1492,19 @@ type ToolStartMessage = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -1460,6 +1513,12 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public

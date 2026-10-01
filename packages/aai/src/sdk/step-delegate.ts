@@ -73,6 +73,7 @@
  * be mistaken for a real run.
  */
 
+import { globalSlot } from "./_boundary.ts";
 import type { DelegateOptions, DelegateResult, SpeakerDef } from "./speaker.ts";
 
 /**
@@ -81,7 +82,7 @@ import type { DelegateOptions, DelegateResult, SpeakerDef } from "./speaker.ts";
  * bundle carries its own copy of this module and the host publishes from its
  * own graph, which is the whole reason this is a `Symbol.for`.
  */
-const STEP_DELEGATE_SLOT = Symbol.for("@alexkroman1/aai.stepDelegate");
+const STEP_DELEGATE_SLOT = globalSlot<StepDelegateFn>("stepDelegate");
 
 /**
  * What a published runner does: run one subagent to completion.
@@ -97,8 +98,6 @@ export type StepDelegateFn = (
   options: DelegateOptions,
 ) => Promise<DelegateResult>;
 
-type StepDelegateSlot = { [STEP_DELEGATE_SLOT]?: StepDelegateFn };
-
 /**
  * Publish the runner this process's steps delegate through.
  *
@@ -109,9 +108,7 @@ type StepDelegateSlot = { [STEP_DELEGATE_SLOT]?: StepDelegateFn };
  * @internal
  */
 export function publishStepDelegate(runner: StepDelegateFn | undefined): void {
-  const slot = globalThis as StepDelegateSlot;
-  if (runner === undefined) delete slot[STEP_DELEGATE_SLOT];
-  else slot[STEP_DELEGATE_SLOT] = runner;
+  STEP_DELEGATE_SLOT.set(runner);
 }
 
 /**
@@ -131,7 +128,7 @@ export function stepDelegate(
   subagent: SpeakerDef,
   options: DelegateOptions,
 ): Promise<DelegateResult> {
-  const runner = (globalThis as StepDelegateSlot)[STEP_DELEGATE_SLOT];
+  const runner = STEP_DELEGATE_SLOT.get();
   if (!runner) {
     return Promise.reject(
       new Error(

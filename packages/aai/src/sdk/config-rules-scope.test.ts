@@ -46,18 +46,18 @@ describe("guardrail scope", () => {
     // accepted and quietly does nothing costs exactly the thing it was
     // declared to prevent.
     expect(() =>
-      rawConfig({ name: "Line", s2s: assemblyAIS2s(), outputGuardrails: [guardrail] }),
+      rawConfig({ name: "Line", mode: "s2s", s2s: assemblyAIS2s(), outputGuardrails: [guardrail] }),
     ).toThrow(/outputGuardrails requires pipeline mode/);
     expect(() =>
-      rawConfig({ name: "Line", s2s: assemblyAIS2s(), outputGuardrails: [guardrail] }),
+      rawConfig({ name: "Line", mode: "s2s", s2s: assemblyAIS2s(), outputGuardrails: [guardrail] }),
     ).toThrow(/the caller has already heard it/);
   });
 
   test("a TEXT agent is refused too, for a structural reason rather than a physical one", () => {
-    expect(() => rawConfig({ name: "Docs", text: true, inputGuardrails: [guardrail] })).toThrow(
+    expect(() => rawConfig({ name: "Docs", mode: "text", inputGuardrails: [guardrail] })).toThrow(
       /inputGuardrails requires pipeline mode/,
     );
-    expect(() => rawConfig({ name: "Docs", text: true, inputGuardrails: [guardrail] })).toThrow(
+    expect(() => rawConfig({ name: "Docs", mode: "text", inputGuardrails: [guardrail] })).toThrow(
       /returns the AI SDK's own result/,
     );
   });

@@ -110,8 +110,9 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   `CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS` (10 s) makes a hang degrade like a failure.
 - **The session's per-attempt lookup uses `loadClientConfig`** (`null` = no
   answer), never `fetchClientConfig` (`{}`). Only an ANSWERED lookup with no
-  `sessionUrl` may latch `serverIsBroker = false`; latching on a failure pins
-  the client to `/:slug/websocket`, whose redirect browsers do not follow.
+  `sessionUrl` and no `sessionToken` may latch `configPerAttempt = false`;
+  latching on a failure pins the client to `/:slug/websocket`, whose redirect
+  browsers do not follow.
 - **The session lookup re-brokers per ATTEMPT** so a reconnect reaches a
   replacement sandbox — never memoize it across the render-time lookup.
   `mountClient()`'s render lookup is skipped when `mountClient({ name })` is set
@@ -119,6 +120,21 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   `component` ignores it.
 - **`apiUrl` (shown by `ApiUrlChip`) is the long-lived platform endpoint**
   (`wss://host/:slug/websocket`), never the sandbox tunnel URL, which rots.
+- **A session ticket is asked for per ATTEMPT** (`session-core-ticket.ts`):
+  `VoiceSessionOptions.token` (told the session the attempt resumes), else the
+  attempt's `client-config` `sessionToken`. It rides `Sec-WebSocket-Protocol`
+  as `aai.auth.<ticket>` AFTER the plain `aai.session` (both from
+  `@alexkroman1/aai/protocol`) — a browser fails a handshake that selects none
+  of its offers, and the server selects the plain one so the ticket is never
+  echoed. The URL provider STARTS an attempt and the protocol provider reads
+  the same one. A getter that throws dials without a ticket (a provider that
+  rejects leaves partysocket with no `close`, so "connecting" forever); an
+  injected `WebSocket` needs a synchronous one.
+- **The last server-issued ticket is the resume credential** on the platform:
+  stored beside the session id (`session-resume-store.ts`), presented in
+  `SESSION_TICKET_HEADER` on a lookup that resumes, dropped by `forget()`. A
+  bound ticket opens its own session, so a failed re-mint is a new session the
+  `config` frame names, never a refusal.
 - There is no text-only mode; `ChatView` always renders voice `Controls`. The
   endpoint itself is the SDK's ("Pre-connection client config" in
   `packages/aai/src/sdk/CLAUDE.md`).
@@ -139,13 +155,18 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   `useSessionError()` — never whole `useSession()` in a chrome.
 - **`useUserTranscript()`**: `null` is silence, `""` is speech with no words
   yet. Render on `speaking`; `text` carries the placeholder; `partial` is raw.
-- **`useAgentState(projection)`** is the overload to use: typed and defaulted by
-  the projection, memoized on its identity. Export the projection once from the
+- **The `agent_state` frame is keyed by slot name** (`{ [slot]: view }`, the
+  agent's `syncState` keys), so every reader selects ONE slot
+  (`agent-state.ts`). **`useAgentState(projection)`** is the overload to
+  use: it selects `state[projection.key]`, typed and defaulted by the
+  projection, memoized on its identity. Export the projection once from the
   module declaring the slot and import it in both `agent.ts` and `client.tsx`.
-  The projection overload is declared FIRST (else `fallback: S` swallows it) and
-  discriminated by `typeof === "function"` (wire JSON cannot be a function);
-  `hooks.test-d.ts` pins all three signatures. Prefer the `fallback` overload
-  only when the slot's `create()` is expensive to ship to the browser.
+  `useAgentState("slot", fallback)` is only for a slot whose `create()` is
+  expensive to ship to the browser; `useAgentState()` is the whole frame.
+  `hooks.test-d.ts` pins all four signatures. **Per-slot re-renders hold
+  because of two things together**: `selectAgentState(slot)` is ONE stable
+  selector per name, and the session core keeps an unchanged slot's value
+  object across pushes (`shareUnchangedSlots`, `session-core-messages.ts`).
 - **State or moment:** if re-rendering after a reload would be RIGHT, it is
   state → a `sessionSlot` read by `useAgentState`. If it would be a lie or a
   nuisance, it is a moment → `useEvent` / `useToolCallStart` (which never
@@ -169,7 +190,7 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   hand, and never into `localStorage` (a stale id suppresses the greeting and
   rejoins a dead context).
 - **`usePushToTalk`** drives `session.userTurn` (`start`/`commit`/`clear`) for a
-  `turnDetection: "manual"` agent; its module doc lists the ways a hand-written
+  `turnTaking: { detection: "manual" }` agent; its module doc lists the ways a hand-written
   button leaves a turn open.
 - **`useTapToTalk`** is the toggle for an automatic-turn agent. Its decisions
   are a statechart (`_tap-to-talk-state.ts`: a `live` region and a `session`
@@ -221,6 +242,12 @@ A run reaches the page after the call through `WS /inbox?client=` (server half:
   the redelivery after a lost ack comes on the next socket, so a per-socket
   repeat memory replays it; only the half-received notice is dropped with the
   socket. A repeat is acked even while busy; a header mid-notice goes unacked.
+- **The inbox presents a ticket like the session** (a gated server checks
+  `/inbox` like `/websocket`): `createInbox({ token })`, same type and per-attempt
+  rule as `VoiceSessionOptions.token`; `useInbox` passes
+  `session.identity.ticket()` — the session's `token`, else a FRESH
+  `client-config` ticket until a lookup shows the server issues none. A
+  synchronous answer dials at once, so an ungated inbox is unchanged.
 - **`useInbox` plays through its own `AudioContext`** (`notice-player.ts`, 16
   kHz), unlocked by the first `pointerdown`/`keydown` — the session's context
   exists only mid-call, and a notice arrives when none is. Default `busy` is
@@ -243,8 +270,8 @@ INVARIANTS. Beyond "Property tests run on fast-check" (`.agents/testing.md`):
 
 ## Workflow apps
 
-A `page: "static"` agent (declared with `workflowApp({ name, workflows })` from
-`@alexkroman1/aai`) is a web page over the workflow HTTP API: no session,
+A `mode: "workflow-app"` agent (declared with `workflowApp({ name, workflows })`
+from `@alexkroman1/aai`) is a web page over the workflow HTTP API: no session,
 WebSocket or audio. The routes are served by `aai/host/workflow-api.ts`, whose
 module doc is the authoritative table; the platform brokers them at
 `/:slug/workflows/*`.
@@ -261,9 +288,8 @@ module doc is the authoritative table; the platform brokers them at
   telephony defaults off; it needs NO provider credential
   (`requiredProviderEnvVars` returns `[]`, keyed off `page` because provider
   injection has already happened by preflight; `createRuntime` DEFERS provider
-  resolution). `StaticAgentParams` types every non-static field as
-  `WorkflowAppMisuse`; voice arms refuse `page: "static"` via
-  `StaticFrontDoorMisuse`.
+  resolution). `StaticAgentParams` (`mode: "workflow-app"`) has none of the
+  session fields — they are absent, not message-typed.
 - **Three factories**: `createAgentClient` (`@alexkroman1/aai/workflow-api`, the
   one to reach for), `createWorkflowApiClient` (the narrow SDK client it wraps),
   `createWorkflowApi` (ours: adds only the base URL from `location`).

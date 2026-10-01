@@ -3,9 +3,11 @@
   "capability": "hooks",
   "epoch": 1,
   "rule": 2,
-  "sha256": "2385b688ff54fd81f2ebd1aa6d0b45358bbeff9e20c97c6178516243f1dc2ebd",
+  "sha256": "3073548bdd16ca2b3e75e6e6046fa835719e893dbdc39c0ab5cf2b3d264fa2a8",
   "exports": [
+    "AgentStateFrame",
     "ToolCallInfo",
+    "selectAgentState",
     "useAgentState",
     "useClientTool",
     "useEvent",
@@ -24,8 +26,8 @@
     {
       "revision": 1,
       "rule": 2,
-      "sha256": "2385b688ff54fd81f2ebd1aa6d0b45358bbeff9e20c97c6178516243f1dc2ebd",
-      "reason": "additive (checked): +useClientTool"
+      "sha256": "3073548bdd16ca2b3e75e6e6046fa835719e893dbdc39c0ab5cf2b3d264fa2a8",
+      "reason": "additive (checked): +AgentStateFrame, +selectAgentState, +useClientTool"
     }
   ]
 }

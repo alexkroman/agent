@@ -3,7 +3,7 @@
   "capability": "subagent",
   "epoch": 5,
   "rule": 2,
-  "sha256": "5b6afe89e57e8453b156748c820373dcd4266a574ceabbe674ad3d06e75ad4b4",
+  "sha256": "bf28fe05bd46c21de4313d8623441e4d452afdc40f863bf6fff2952aacfc01f0",
   "exports": [
     "DEFAULT_GUARDRAIL_MAX_REVISIONS",
     "DelegateAnswer",
@@ -18,5 +18,5 @@
     "TypedSpeakerDef",
     "speaker"
   ],
-  "rollup": "0abbe3ef1cf108d62b7a75698cbf13bd99896b433a6648c38c2e5450d296d39f"
+  "rollup": "d7d30c0e47bb0b688f03e277a5a8a884e9d2c99ab06bdc9f8b5c510bc0fe1d5d"
 }

@@ -139,8 +139,10 @@ describe("AgentConfigSchema", () => {
     expect(AgentConfigSchema.safeParse({ ...base, minBargeInWords: 5 }).success).toBe(true);
   });
 
-  test("rejects minBargeInWords below 1", () => {
-    expect(AgentConfigSchema.safeParse({ ...base, minBargeInWords: 0 }).success).toBe(false);
+  test("rejects interruption.minWords below 1", () => {
+    expect(AgentConfigSchema.safeParse({ ...base, interruption: { minWords: 0 } }).success).toBe(
+      false,
+    );
   });
 
   test.each(["s2s", "pipeline"] as const)("accepts mode: %s", (mode) => {
@@ -159,7 +161,7 @@ describe("toAgentConfig", () => {
   test("omits every optional field that is unset (no undefined-valued keys)", () => {
     // A source with no providers gets the default AssemblyAI pipeline
     // injected; pin to S2S so this test stays about unset-field omission.
-    const config = toAgentConfig({ ...base, s2s: desc("assemblyai") });
+    const config = toAgentConfig({ ...base, mode: "s2s", s2s: desc("assemblyai") });
     expect(config).toEqual({ ...base, s2s: desc("assemblyai"), mode: "s2s" });
     // `toEqual` treats a present-but-undefined key as absent, so check key
     // presence explicitly — the config crosses a structured-clone/JSON
@@ -216,12 +218,9 @@ describe("toAgentConfig", () => {
       toolChoice: "required" as const,
       builtinTools: ["think"] as const,
       idleTimeoutMs: 1000,
-      silenceTimeoutMs: 9000,
-      silencePrompt: "nudge",
-      minBargeInWords: 3,
-      interruptionMinDurationMs: 250,
-      deadAirCoverMs: 2500,
-      resumeFalseInterruption: true,
+      silence: { deadAirCoverMs: 2500, nudge: { afterMs: 9000, prompt: "nudge" } },
+      interruption: { minWords: 3, minDurationMs: 250, resumeFalseInterruption: true },
+      turnTaking: { detection: "manual", preemptiveGeneration: false },
       stt: desc("assemblyai"),
       llm: desc("anthropic"),
       tts: desc("cartesia"),
@@ -230,7 +229,7 @@ describe("toAgentConfig", () => {
   });
 
   test("propagates the s2s descriptor and keeps the pipeline triple absent", () => {
-    const config = toAgentConfig({ ...base, s2s: desc("assemblyai") });
+    const config = toAgentConfig({ ...base, mode: "s2s", s2s: desc("assemblyai") });
     expect(config.mode).toBe("s2s");
     expect(config.s2s).toEqual(desc("assemblyai"));
     expect("stt" in config).toBe(false);
@@ -238,19 +237,24 @@ describe("toAgentConfig", () => {
     expect("tts" in config).toBe(false);
   });
 
-  test("a `mode` on the SOURCE cannot overwrite the derived one", () => {
-    // `AgentConfigSource` omits `mode` precisely so a typed caller cannot
-    // supply one — but the copy is a deny-list over `Object.entries`, so a raw
-    // `export default {...}` or a config round-tripped through the wire reaches
-    // it anyway. The derived value is the authority; `IsolateConfigSchema`'s
-    // `superRefine` would otherwise reject the disagreement at deploy time,
-    // which reads as a confusing deploy failure rather than as this.
-    const config = rawConfig({ ...base, s2s: desc("assemblyai"), mode: "pipeline" });
-    expect(config.mode).toBe("s2s");
+  test("an authored `mode` the providers contradict is REFUSED, not overwritten", () => {
+    // The source's `mode` is the AUTHORED one now, so a disagreement is a
+    // declaration that says two things — refused by name rather than resolved
+    // in favour of whichever field the copy happened to read last.
+    expect(() => rawConfig({ ...base, s2s: desc("assemblyai"), mode: "pipeline" })).toThrow(
+      /`s2s` is the speech-to-speech descriptor — it has no effect on a "pipeline" agent/,
+    );
   });
 
-  test("…in the other direction too", () => {
-    const config = rawConfig({ ...base, mode: "s2s" });
-    expect(config.mode).toBe("pipeline");
+  test('…and `mode: "s2s"` with no descriptor never falls back to a pipeline', () => {
+    expect(() => rawConfig({ ...base, mode: "s2s" })).toThrow(
+      /needs the `s2s` descriptor it selects/,
+    );
+  });
+
+  test("the wire carries the authored mode unchanged, a workflow app's included", () => {
+    expect(rawConfig({ ...base, mode: "workflow-app" }).mode).toBe("workflow-app");
+    expect(rawConfig({ ...base, mode: "text" }).mode).toBe("text");
+    expect(rawConfig(base).mode).toBe("pipeline");
   });
 });

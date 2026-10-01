@@ -5,13 +5,16 @@
  *
  * Split out of `resolve.ts` so that file stays under the repo's line cap.
  *
- * **This table is where each provider's key variable and base URL LIVE.** The
- * SDK's `llm({ provider, model, baseUrl?, apiKeyEnv?, providerOptions? })` is
- * one descriptor for every vendor, and publishes neither: an author never
- * types one, and a second copy of an endpoint in the SDK is a second place for
- * it to go stale. The one exception is the AssemblyAI gateway, whose endpoints
- * are on `@alexkroman1/aai/host-internal` because `stepGenerate` dials it from
- * inside a workflow step, with no resolver in reach.
+ * **This table is where each provider's base URL and client LIVE**; its key
+ * variable and label are the SDK catalog's (`LLM_PROVIDERS` on
+ * `@alexkroman1/aai/host-internal`), one `defineProvider` record per vendor
+ * that the docs table is generated from too. The SDK's `llm({ provider, model,
+ * baseUrl?, apiKeyEnv?, providerOptions? })` is one descriptor for every
+ * vendor and publishes none of it: an author never types one, and a second
+ * copy of an endpoint in the SDK is a second place for it to go stale. The one
+ * exception is the AssemblyAI gateway, whose endpoints are on `host-internal`
+ * because `stepGenerate` dials it from inside a workflow step, with no
+ * resolver in reach.
  *
  * Every `@ai-sdk/*` package here loads on FIRST USE, not at module load —
  * `lazyModel` (see `_lazy-model.ts`) is the LLM counterpart of `resolve.ts`'s
@@ -31,11 +34,11 @@
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai";
 import {
-  ASSEMBLYAI_LLM_API_KEY_ENV,
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
   ASSEMBLYAI_LLM_KIND,
   type KnownLlmProvider,
+  LLM_PROVIDERS,
   readAssemblyAILlmProviderOptions,
 } from "@alexkroman1/aai/host-internal";
 import {
@@ -166,15 +169,8 @@ const PROVIDER_IDS = {
  * SDK-built body wins a collision) rather than passed as the AI SDK's
  * `providerOptions.openai`, whose schema strips every key it does not know.
  */
-function openAiCompatible(
-  name: string,
-  envVar: string,
-  label: string,
-  defaultBaseUrl: string | undefined,
-): LlmRegistryEntry {
+function openAiCompatible(name: string, defaultBaseUrl: string | undefined): LlmClient {
   return {
-    envVar,
-    label,
     create: (apiKey, d) => {
       const { baseUrl, providerOptions } = opts(d);
       const baseURL = baseUrl ?? defaultBaseUrl;
@@ -188,10 +184,16 @@ function openAiCompatible(
   };
 }
 
-export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
+/** The `@ai-sdk/*` half of an entry: everything but what the catalog owns. */
+type LlmClient = Pick<LlmRegistryEntry, "create">;
+
+/**
+ * The client for each catalog LLM kind — total over `KnownLlmProvider`. The
+ * key variable and label are NOT here: they are the catalog's
+ * (`LLM_PROVIDERS` on `@alexkroman1/aai/host-internal`), joined in below.
+ */
+const LLM_CLIENTS = {
   anthropic: {
-    envVar: "ANTHROPIC_API_KEY",
-    label: "Anthropic",
     create: (apiKey, d) =>
       withProviderOptions(
         lazyModel(PROVIDER_IDS.anthropic, model(d), async () => {
@@ -209,8 +211,6 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
       ),
   },
   openai: {
-    envVar: "OPENAI_API_KEY",
-    label: "OpenAI",
     create: (apiKey, d) => {
       const baseURL = opts(d).baseUrl;
       return withProviderOptions(
@@ -223,8 +223,6 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
     },
   },
   google: {
-    envVar: "GOOGLE_GENERATIVE_AI_API_KEY",
-    label: "Google",
     create: (apiKey, d) => {
       const baseURL = opts(d).baseUrl;
       return withProviderOptions(
@@ -240,8 +238,6 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
     },
   },
   mistral: {
-    envVar: "MISTRAL_API_KEY",
-    label: "Mistral",
     create: (apiKey, d) => {
       const baseURL = opts(d).baseUrl;
       return withProviderOptions(
@@ -257,8 +253,6 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
     },
   },
   xai: {
-    envVar: "XAI_API_KEY",
-    label: "xAI",
     create: (apiKey, d) => {
       const baseURL = opts(d).baseUrl;
       return withProviderOptions(
@@ -272,8 +266,6 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
     },
   },
   groq: {
-    envVar: "GROQ_API_KEY",
-    label: "Groq",
     create: (apiKey, d) => {
       const baseURL = opts(d).baseUrl;
       return withProviderOptions(
@@ -290,21 +282,9 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
   // both reuse @ai-sdk/openai's chat client pointed at their base URL — no
   // extra @ai-sdk/* install. OpenRouter ids are "creator/model"; Cerebras ids
   // are bare names.
-  openrouter: openAiCompatible(
-    "openrouter",
-    "OPENROUTER_API_KEY",
-    "OpenRouter",
-    "https://openrouter.ai/api/v1",
-  ),
-  cerebras: openAiCompatible(
-    "cerebras",
-    "CEREBRAS_API_KEY",
-    "Cerebras",
-    "https://api.cerebras.ai/v1",
-  ),
+  openrouter: openAiCompatible("openrouter", "https://openrouter.ai/api/v1"),
+  cerebras: openAiCompatible("cerebras", "https://api.cerebras.ai/v1"),
   gateway: {
-    envVar: "AI_GATEWAY_API_KEY",
-    label: "Vercel AI Gateway",
     // `createGateway` ships inside the `ai` package (a regular dependency),
     // so gateway models need no extra @ai-sdk/* install — and no deferral
     // either: `ai` is on the runtime's import path regardless, so wrapping
@@ -319,8 +299,6 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
     },
   },
   [ASSEMBLYAI_LLM_KIND]: {
-    envVar: ASSEMBLYAI_LLM_API_KEY_ENV,
-    label: "AssemblyAI",
     create: (apiKey, d) => {
       const { baseUrl } = opts(d);
       const own = readAssemblyAILlmProviderOptions(opts(d).providerOptions);
@@ -365,7 +343,18 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
       return wrapLanguageModel({ model: chat, middleware });
     },
   },
-} satisfies Record<KnownLlmProvider, LlmRegistryEntry>;
+} satisfies Record<KnownLlmProvider, LlmClient>;
+
+/**
+ * The LLM registry: each catalog definition's credential variable and label,
+ * joined to its client. Mutable, because `registerLlmKind` writes it.
+ */
+export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = Object.fromEntries(
+  Object.values(LLM_PROVIDERS).map((definition) => [
+    definition.kind,
+    { envVar: definition.envVar, label: definition.label, ...LLM_CLIENTS[definition.kind] },
+  ]),
+);
 
 /**
  * The env var an unregistered provider's key is read from when its descriptor
@@ -392,5 +381,9 @@ export function llmEntryFor(descriptor: object): LlmRegistryEntry | undefined {
   if (registered !== undefined) return registered;
   const baseUrl = isRecord(descriptor.options) ? descriptor.options.baseUrl : undefined;
   if (typeof baseUrl !== "string" || baseUrl === "") return undefined;
-  return openAiCompatible(kind, compatibleEnvVar(kind), `${kind} (OpenAI-compatible)`, baseUrl);
+  return {
+    envVar: compatibleEnvVar(kind),
+    label: `${kind} (OpenAI-compatible)`,
+    ...openAiCompatible(kind, baseUrl),
+  };
 }

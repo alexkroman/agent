@@ -208,10 +208,19 @@ export type { AttachSessionOptions } from "./session-attach.ts";
 // that returned one (`Runtime.createSession`) was a testing seam. The two
 // `TransportEvent*` types are what its `report` takes, so they travel with it.
 export type { ServerSession } from "./session-core.ts";
+// The live-session directory `wireSessionSocket` claims into — a host wiring
+// its own socket server builds one per runtime (`session-directory.ts`).
+export {
+  createSessionDirectory,
+  type SessionDirectory,
+  type SessionWiring,
+} from "./session-directory.ts";
+export type { SessionEmitter } from "./session-emitter.ts";
 // Reading a session's events back, and stamping one on the way in. The two
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
 // contracted, on the root barrel.
 export { createSessionEventStream, stampSessionEvent } from "./session-event-stream.ts";
+export type { SpeechDirectory } from "./session-speech.ts";
 // Session state's PLATFORM backend — the HTTP client `aai-server` serves on
 // `POST /:slug/session-state`. Here for the same reason `createPlatformJournal`
 // below is, and it is the same arm: `session-state-conformance-platform.scenario.test.ts`
@@ -244,6 +253,15 @@ export {
   type SessionStateStore,
   type StoredSessionEvent,
 } from "./session-state/store.ts";
+// The managed platform's session tickets: the broker (`aai-server`'s
+// `client-config` handler) mints with these, and the guest derives the same key
+// from its bearer to verify. Here, not on `/auth`, because only those two do.
+export {
+  mintPlatformSessionTicket,
+  PLATFORM_TICKET_RESUME_GRACE_SECONDS,
+  type PlatformTicketInput,
+  platformSessionSecret,
+} from "./session-ticket.ts";
 // The route `createRuntimeServer` serves carriers on and the query key naming
 // one, for the CLI's preflight, which prints the webhook a carrier is pointed at.
 // An embedder bridging a call itself chooses its own path, so neither is part of

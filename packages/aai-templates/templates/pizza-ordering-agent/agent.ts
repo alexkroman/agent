@@ -18,7 +18,7 @@ export default agent({
   // The cart, pushed to the client after every tool call. Replaces a
   // `ctx.send("order", ...)` in each of the five order tools, and the
   // event-diffing the client had to do to rebuild the cart from them.
-  syncState: orderProjection,
+  syncState: { order: orderProjection },
   // The menu section is generated from MENU so the prompt can never quote a
   // price the pricing code doesn't charge.
   systemPrompt: `${systemPrompt}\n${menuText()}`,

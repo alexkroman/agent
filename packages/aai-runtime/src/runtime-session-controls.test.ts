@@ -17,6 +17,7 @@ import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "./session-state/store.ts";
 import { createStateSweeps } from "./session-state/sweeps.ts";
+import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
 
 const SID = "s-1";
@@ -31,6 +32,7 @@ const SID = "s-1";
  */
 function stubTransport(): Transport {
   return {
+    capabilities: ASSEMBLYAI_S2S_CAPABILITIES,
     start: () => Promise.resolve(),
     stop: () => Promise.resolve(),
     sendUserAudio: vi.fn(),

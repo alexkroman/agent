@@ -35,13 +35,16 @@ describe("createStateSync", () => {
     const sync = createStateSync([cartOnly]);
     const session = fakeSession({ cart: { cart: ["margherita"], pin: "1234" } });
 
-    expect(sync(session)).toEqual({ push: true, state: { cart: ["margherita"] } });
+    expect(sync(session)).toEqual({ push: true, state: { cart: { cart: ["margherita"] } } });
     // A tool ran but touched nothing the projection covers. Most turns are
     // this one, and this socket also carries 384 kbps of PCM.
     expect(sync(session)).toEqual({ push: false, reason: "unchanged" });
 
     session.set("cart", { cart: ["margherita", "pepperoni"], pin: "1234" });
-    expect(sync(session)).toEqual({ push: true, state: { cart: ["margherita", "pepperoni"] } });
+    expect(sync(session)).toEqual({
+      push: true,
+      state: { cart: { cart: ["margherita", "pepperoni"] } },
+    });
   });
 
   test("a field outside the projection never moves the wire", () => {
@@ -59,40 +62,43 @@ describe("createStateSync", () => {
     // so a resumed connection has something to render before the first tool call
     // without the agent having declared a state factory to build it.
     const sync = createStateSync([cartOnly]);
-    expect(sync(fakeSession())).toEqual({ push: true, state: { cart: [] } });
+    expect(sync(fakeSession())).toEqual({ push: true, state: { cart: { cart: [] } } });
   });
 
-  test("merges every projection into one frame", () => {
+  test("keys every projection by its slot, in one frame", () => {
     const flagSlot = sessionSlot("flags", () => ({ seen: false }));
     const sync = createStateSync([cartOnly, flagSlot.projection((f) => ({ seen: f.seen }))]);
     const session = fakeSession({
       cart: { cart: ["a"], pin: "" },
       flags: { seen: true },
     });
-    expect(sync(session)).toEqual({ push: true, state: { cart: ["a"], seen: true } });
+    expect(sync(session)).toEqual({
+      push: true,
+      state: { cart: { cart: ["a"] }, flags: { seen: true } },
+    });
   });
 
-  test("one slot changing pushes the whole merged frame", () => {
+  test("one slot changing pushes the whole keyed frame", () => {
     const flagSlot = sessionSlot("flags", () => ({ seen: false }));
     const sync = createStateSync([cartOnly, flagSlot.projection((f) => ({ seen: f.seen }))]);
     const session = fakeSession({ cart: { cart: [], pin: "" }, flags: { seen: false } });
     expect(sync(session).push).toBe(true);
     session.set("flags", { seen: true });
-    expect(sync(session)).toEqual({ push: true, state: { cart: [], seen: true } });
+    expect(sync(session)).toEqual({
+      push: true,
+      state: { cart: { cart: [] }, flags: { seen: true } },
+    });
   });
 
-  test("a non-object projection is fine ALONE and refused in a merge", () => {
-    // Alone, the projection IS the frame, so any JSON value is legal — which is
-    // what lets a single-slot agent project a number or a list. In a merge there
-    // is nothing to merge a number INTO, and a projection returning one is the
-    // author's mistake, reported like a throwing one.
+  test("a non-object projection is a value under its key, alone or beside others", () => {
+    // The frame is keyed, so there is nothing to merge a number INTO and no
+    // reason to refuse one: any JSON value is legal for any slot.
     const count = cartSlot.projection((s) => s.cart.length);
-    expect(createStateSync([count])(fakeSession())).toEqual({ push: true, state: 0 });
+    expect(createStateSync([count])(fakeSession())).toEqual({ push: true, state: { cart: 0 } });
 
     const flagSlot = sessionSlot("flags", () => ({ seen: false }));
-    const merged = createStateSync([count, flagSlot.projection((f) => ({ seen: f.seen }))]);
-    expect(merged(fakeSession())).toMatchObject({ push: false, reason: "failed" });
-    expect(merged(fakeSession())).toMatchObject({ detail: expect.stringContaining("cart") });
+    const both = createStateSync([count, flagSlot.projection((f) => f.seen)]);
+    expect(both(fakeSession())).toEqual({ push: true, state: { cart: 0, flags: false } });
   });
 
   test("a throwing projection reports rather than escaping", () => {
@@ -134,7 +140,7 @@ describe("createStateSync", () => {
     const session = fakeSession();
     expect(sync(session).push).toBe(false);
     big = false;
-    expect(sync(session)).toEqual({ push: true, state: "ok" });
+    expect(sync(session)).toEqual({ push: true, state: { cart: "ok" } });
   });
 
   test("tracks each session independently", () => {
@@ -150,12 +156,12 @@ describe("createStateSync", () => {
   });
 
   test("a projection returning undefined is a value, not a skip", () => {
-    // `JSON.stringify(undefined)` is undefined, which would compare equal to
-    // "never sent" forever; it is normalized to null so the client learns the
-    // state is empty and the second call correctly says nothing changed.
+    // `JSON.stringify` drops an undefined property, so the key would vanish;
+    // it is normalized to null so the client learns the slot is empty and the
+    // second call correctly says nothing changed.
     const sync = createStateSync([cartSlot.projection(() => undefined)]);
     const session = fakeSession();
-    expect(sync(session)).toEqual({ push: true, state: null });
+    expect(sync(session)).toEqual({ push: true, state: { cart: null } });
     expect(sync(session)).toEqual({ push: false, reason: "unchanged" });
   });
 
@@ -165,9 +171,12 @@ describe("createStateSync", () => {
     // Staleness is a property of the client, not of the state.
     const sync = createStateSync([cartOnly]);
     const session = fakeSession({ cart: { cart: ["a"], pin: "" } });
-    expect(sync(session)).toEqual({ push: true, state: { cart: ["a"] } });
+    expect(sync(session)).toEqual({ push: true, state: { cart: { cart: ["a"] } } });
     expect(sync(session)).toEqual({ push: false, reason: "unchanged" });
-    expect(sync(session, { force: true })).toEqual({ push: true, state: { cart: ["a"] } });
+    expect(sync(session, { force: true })).toEqual({
+      push: true,
+      state: { cart: { cart: ["a"] } },
+    });
     // And the forced send still updates the record, so the next ordinary
     // call is quiet again rather than re-sending.
     expect(sync(session)).toEqual({ push: false, reason: "unchanged" });

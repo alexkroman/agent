@@ -4,10 +4,16 @@ import { describe, expect, test } from "vitest";
 import {
   createDialogKnobs,
   type DialogTurnKnobs,
+  interruptionKnobs,
   type PipelineDialogKnobs,
 } from "./pipeline-dialog-knobs.ts";
 
-const BASE = { minBargeInWords: 2, interruptionMinDurationMs: 120 };
+const BASE = {
+  minBargeInWords: 2,
+  interruptionMinDurationMs: 120,
+  interruptionBackoffMs: 0,
+  resumeFalseInterruption: true,
+};
 
 /**
  * A step as `prepareStep` is handed one, spelled out in FULL rather than cast.
@@ -85,11 +91,49 @@ describe("with a dialog source", () => {
   });
 });
 
+describe("the interruption group resolves dialog state, then persona, then agent", () => {
+  test("a persona overrides the agent, and a dialog state overrides the persona, per key", () => {
+    let state: DialogTurnKnobs | undefined;
+    let persona: DialogTurnKnobs | undefined = { interruptionBackoffMs: 300, minBargeInWords: 4 };
+    const knobs = createDialogKnobs(
+      () => state,
+      BASE,
+      () => persona,
+    );
+
+    expect(knobs.interruptionBackoffMs()).toBe(300);
+    expect(knobs.minBargeInWords()).toBe(4);
+    expect(knobs.resumeFalseInterruption()).toBe(true);
+
+    state = { minBargeInWords: Number.POSITIVE_INFINITY };
+    expect(knobs.minBargeInWords()).toBe(Number.POSITIVE_INFINITY);
+    // A state that names one key leaves the persona's other key standing.
+    expect(knobs.interruptionBackoffMs()).toBe(300);
+
+    persona = undefined;
+    expect(knobs.interruptionBackoffMs()).toBe(0);
+  });
+
+  test("a persona alone still yields no step preparer", () => {
+    const knobs = createDialogKnobs(undefined, BASE, () => ({ resumeFalseInterruption: false }));
+    expect(knobs.resumeFalseInterruption()).toBe(false);
+    expect(knobs.dialogStep).toBeUndefined();
+  });
+});
+
+describe("interruptionKnobs", () => {
+  test('"off" is an unreachable threshold; absent is nothing; the group maps by key', () => {
+    expect(interruptionKnobs(undefined)).toEqual({});
+    expect(interruptionKnobs("off")).toEqual({ minBargeInWords: Number.POSITIVE_INFINITY });
+    expect(interruptionKnobs({ backoffMs: 250 })).toEqual({ interruptionBackoffMs: 250 });
+  });
+});
+
 describe("holdFloor", () => {
   test("holds barge-in off for one reply, over whatever a dialog state declares", () => {
     const knobs = createDialogKnobs(() => ({ minBargeInWords: 3 }), {
+      ...BASE,
       minBargeInWords: 2,
-      interruptionMinDurationMs: 0,
     });
     knobs.holdFloor(true);
     expect(knobs.minBargeInWords()).toBe(Number.POSITIVE_INFINITY);
@@ -98,10 +142,7 @@ describe("holdFloor", () => {
   });
 
   test("works with no dialog source too", () => {
-    const knobs = createDialogKnobs(undefined, {
-      minBargeInWords: 2,
-      interruptionMinDurationMs: 0,
-    });
+    const knobs = createDialogKnobs(undefined, { ...BASE, minBargeInWords: 2 });
     knobs.holdFloor(true);
     expect(knobs.minBargeInWords()).toBe(Number.POSITIVE_INFINITY);
     knobs.holdFloor(false);

@@ -14,9 +14,11 @@ import {
   contextTokenBudget,
   createContextBudget,
   estimateMessageTokens,
+  LARGEST_CONTEXT_TOKEN_BUDGET,
   MESSAGE_TOKEN_OVERHEAD,
   modelContextTokens,
   trimToTokenBudget,
+  UNKNOWN_MODEL_CONTEXT_TOKENS,
 } from "./pipeline-context-budget.ts";
 
 /** A gateway id whose window the catalog really carries, read from the catalog. */
@@ -70,8 +72,8 @@ describe("modelContextTokens", () => {
   });
 
   test("answers undefined for a model the catalog does not carry", () => {
-    // An author-supplied provider or a custom `registerLlmKind` — see the
-    // module doc: unknown is answered as unknown, never as a guessed default.
+    // An author-supplied provider or a custom `registerLlmKind`. This answers
+    // only what is KNOWN; `contextTokenBudget` decides what unknown costs.
     expect(modelContextTokens("some-self-hosted-model")).toBeUndefined();
     expect(modelContextTokens(modelWithId("some-self-hosted-model"))).toBeUndefined();
   });
@@ -87,8 +89,21 @@ describe("contextTokenBudget", () => {
     expect(budget).toBeGreaterThan(0);
   });
 
-  test("answers undefined for an unknown model", () => {
-    expect(contextTokenBudget("some-self-hosted-model")).toBeUndefined();
+  test("budgets an unknown model against the SMALLEST window the catalog carries", () => {
+    // There is no other bound on a request: a model whose window is unknown
+    // would otherwise be sent the whole conversation. See the module doc.
+    const windows = Object.values(ASSEMBLYAI_GATEWAY_MODELS).map((m) => m.context);
+    expect(UNKNOWN_MODEL_CONTEXT_TOKENS).toBe(Math.min(...windows));
+    expect(contextTokenBudget("some-self-hosted-model")).toBe(
+      Math.floor(UNKNOWN_MODEL_CONTEXT_TOKENS * (1 - CONTEXT_WINDOW_RESERVE)),
+    );
+  });
+
+  test("no model is budgeted above LARGEST_CONTEXT_TOKEN_BUDGET", () => {
+    // What the history's memory retention is sized against
+    // (`_history-retention.ts`): a budget above it could reach evicted messages.
+    const budgets = Object.keys(ASSEMBLYAI_GATEWAY_MODELS).map((id) => contextTokenBudget(id));
+    expect(Math.max(...budgets)).toBe(LARGEST_CONTEXT_TOKEN_BUDGET);
   });
 
   test("every advertised gateway model resolves to a positive budget", () => {
@@ -200,15 +215,21 @@ describe("createContextBudget", () => {
   const budgetFor = (llm: LanguageModel) =>
     createContextBudget({ llm, log: silentLogger, sid: "sid-1" });
 
-  test("an unknown context window yields NO preparer, so nothing is trimmed", () => {
-    // The fallback the module doc promises: the session is then bounded by
-    // DEFAULT_MAX_HISTORY alone, exactly as it was before this existed.
-    expect(budgetFor(modelWithId("some-self-hosted-model"))).toBeUndefined();
+  test("an unknown context window is still trimmed, against the smallest known one", () => {
+    // The message cap that used to bound an unknown model is gone, so the
+    // budget is the only thing between it and the whole conversation.
+    const prepare = budgetFor(modelWithId("some-self-hosted-model"));
+    const limit = Math.floor(UNKNOWN_MODEL_CONTEXT_TOKENS * (1 - CONTEXT_WINDOW_RESERVE));
+    const messages: ModelMessage[] = [];
+    while (cost(messages) <= limit) messages.push(bulky(messages.length));
+    const result = prepare(step({ messages }));
+    expect(result?.messages.length).toBeLessThan(messages.length);
+    expect(cost(result?.messages ?? [])).toBeLessThanOrEqual(limit);
   });
 
   test("a list that fits produces no override at all", () => {
     const prepare = budgetFor(KNOWN_MODEL);
-    expect(prepare?.(step({ messages: [bulky(0), bulky(1)] }))).toBeUndefined();
+    expect(prepare(step({ messages: [bulky(0), bulky(1)] }))).toBeUndefined();
   });
 
   test("a list that overflows is overridden with a trimmed one", () => {
@@ -216,7 +237,7 @@ describe("createContextBudget", () => {
     // one message of ~120k tokens against a 300k budget, three times over.
     const huge = (i: number): ModelMessage => text(`m${i} ${"payload ".repeat(120_000)}`);
     const messages = [huge(0), huge(1), huge(2), huge(3)];
-    const result = budgetFor(KNOWN_MODEL)?.(step({ messages }));
+    const result = budgetFor(KNOWN_MODEL)(step({ messages }));
     expect(result?.messages.length).toBeLessThan(messages.length);
     expect(result?.messages.at(-1)).toBe(messages.at(-1));
     // And the caller's own array is untouched: this bounds the REQUEST, never
@@ -241,9 +262,9 @@ describe("createContextBudget", () => {
     // would put the list at a few hundred tokens.
     const prepare = budgetFor(KNOWN_MODEL);
     const first = Array.from({ length: 6 }, (_, i) => bulky(i));
-    expect(prepare?.(step({ messages: first }))).toBeUndefined();
+    expect(prepare(step({ messages: first }))).toBeUndefined();
     const next = [...first, text("assistant reply")];
-    const trimmed = prepare?.({ stepNumber: 1, steps: [reported(WHOLE_BUDGET)], messages: next });
+    const trimmed = prepare({ stepNumber: 1, steps: [reported(WHOLE_BUDGET)], messages: next });
     expect(trimmed?.messages.length).toBeLessThan(next.length);
   });
 
@@ -254,10 +275,10 @@ describe("createContextBudget", () => {
     // which trims — the measurement is the only difference.
     const prepare = budgetFor(KNOWN_MODEL);
     const first = Array.from({ length: 6 }, (_, i) => bulky(i));
-    expect(prepare?.(step({ messages: first }))).toBeUndefined();
+    expect(prepare(step({ messages: first }))).toBeUndefined();
     const next = [...first, text("assistant reply")];
     expect(
-      prepare?.({ stepNumber: 1, steps: [reported(undefined)], messages: next }),
+      prepare({ stepNumber: 1, steps: [reported(undefined)], messages: next }),
     ).toBeUndefined();
   });
 
@@ -267,11 +288,11 @@ describe("createContextBudget", () => {
     // turns are the whole of — starts calibrated instead of blind.
     const prepare = budgetFor(KNOWN_MODEL);
     const first = Array.from({ length: 6 }, (_, i) => bulky(i));
-    prepare?.(step({ messages: first }));
-    prepare?.({ stepNumber: 1, steps: [reported(WHOLE_BUDGET)], messages: first });
+    prepare(step({ messages: first }));
+    prepare({ stepNumber: 1, steps: [reported(WHOLE_BUDGET)], messages: first });
     // A NEW `streamText` call (stepNumber 0 again), no steps behind it.
     const second = [...first, bulky(99)];
-    expect(prepare?.(step({ messages: second }))?.messages.length).toBeLessThan(second.length);
+    expect(prepare(step({ messages: second }))?.messages.length).toBeLessThan(second.length);
   });
 
   test("a message list that does not extend the recorded prefix is not calibrated", () => {
@@ -280,10 +301,10 @@ describe("createContextBudget", () => {
     // module's model of the loop is wrong and estimating everything is the safe
     // move — never trusting a measurement against a list it did not describe.
     const prepare = budgetFor(KNOWN_MODEL);
-    prepare?.(step({ messages: Array.from({ length: 6 }, (_, i) => bulky(i)) }));
+    prepare(step({ messages: Array.from({ length: 6 }, (_, i) => bulky(i)) }));
     const unrelated = [text("something else entirely"), text("and another")];
     expect(
-      prepare?.({ stepNumber: 1, steps: [reported(WHOLE_BUDGET)], messages: unrelated }),
+      prepare({ stepNumber: 1, steps: [reported(WHOLE_BUDGET)], messages: unrelated }),
     ).toBeUndefined();
   });
 
@@ -295,11 +316,11 @@ describe("createContextBudget", () => {
     const prepare = budgetFor(KNOWN_MODEL);
     const huge = (i: number): ModelMessage => text(`m${i} ${"payload ".repeat(120_000)}`);
     const messages = [huge(0), huge(1), huge(2), huge(3)];
-    const sent = prepare?.(step({ messages }));
+    const sent = prepare(step({ messages }));
     expect(sent?.messages.length).toBeLessThan(messages.length);
     // The next step's list is what was sent plus the step's response messages.
     const next = [...(sent?.messages ?? []), text("assistant reply")];
-    const trimmed = prepare?.({
+    const trimmed = prepare({
       stepNumber: 1,
       steps: [reported(WHOLE_BUDGET)],
       messages: next,

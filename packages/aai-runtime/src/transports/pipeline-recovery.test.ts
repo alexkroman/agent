@@ -17,7 +17,7 @@ describe("createFalseInterruptionRecovery", () => {
   function makeRecovery(over: Partial<Parameters<typeof createFalseInterruptionRecovery>[0]> = {}) {
     const onResume = vi.fn();
     const recovery = createFalseInterruptionRecovery({
-      enabled: true,
+      enabled: () => true,
       maxConsecutive: 3,
       isActive: () => true,
       isBusy: () => false,
@@ -53,7 +53,7 @@ describe("createFalseInterruptionRecovery", () => {
   });
 
   test("enabled false arms nothing", () => {
-    const { recovery, onResume } = makeRecovery({ enabled: false });
+    const { recovery, onResume } = makeRecovery({ enabled: () => false });
     recovery.arm(PROMPT);
     recovery.onUtteranceEnded();
     expect(onResume).not.toHaveBeenCalled();

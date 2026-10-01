@@ -199,6 +199,14 @@ type GuardrailVerdict = true | string;
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
+// @public
 export function isCallOver(status: string): boolean;
 
 // @public
@@ -288,6 +296,13 @@ export type PcmFormat = {
     channels?: number | undefined;
     bitsPerSample?: number | undefined;
 };
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
 
 // @public
 export type PlaceCallCredentials = {
@@ -442,6 +457,18 @@ export type Settled<T, R> = {
 };
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -458,6 +485,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -489,7 +517,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 export type SpokenAudio = {
@@ -919,6 +947,19 @@ export type Transcript = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 export const TWILIO_ACCOUNT_SID_ENV = "TWILIO_ACCOUNT_SID";
 
 // @public
@@ -970,6 +1011,12 @@ export type UploadSlice = {
     start: number;
     end: number;
 };
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
+}
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

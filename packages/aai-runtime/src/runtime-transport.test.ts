@@ -10,6 +10,7 @@ import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
 import { describe, expect, test, vi } from "vitest";
 import {
+  createFailingSttProvider,
   createFakeLanguageModel,
   createFakeSttProvider,
   createFakeTtsProvider,
@@ -17,8 +18,10 @@ import {
   FAKE_TTS_API_KEY_ENV,
 } from "./_pipeline-test-fakes.ts";
 import { makeAgent, makeClientSink, makeLogger, silentLogger } from "./_test-utils.ts";
+import { createFallbackSttOpener } from "./providers/fallback.ts";
 import { DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { createTransportFactory, type TransportFactoryDeps } from "./runtime-transport.ts";
+import { PIPELINE_CAPABILITIES } from "./transports/capabilities.ts";
 import * as pipelineTransport from "./transports/pipeline-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
 import type { Transport, TransportCallbacks } from "./transports/types.ts";
@@ -70,6 +73,7 @@ function buildArgs(): Parameters<ReturnType<typeof createTransportFactory>>[0] {
 /** A `Transport` double for the pipeline builder's return. */
 function fakeTransport(): Transport {
   return {
+    capabilities: PIPELINE_CAPABILITIES,
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     sendUserAudio: vi.fn(),
@@ -87,7 +91,7 @@ async function buildS2sSessionConfig(agentOverrides: Record<string, unknown>) {
     close: vi.fn(),
   };
   vi.spyOn(_internals, "connectS2s").mockResolvedValue(handle);
-  const agent = makeAgent({ s2s: assemblyAIS2s(), ...agentOverrides });
+  const agent = makeAgent({ mode: "s2s", s2s: assemblyAIS2s(), ...agentOverrides });
   const build = createTransportFactory(transportDeps({ agent }));
   const transport = build(buildArgs());
   // The connect is async — `updateSession` runs once it resolves, not at build.
@@ -122,7 +126,7 @@ describe("createTransportFactory (S2S)", () => {
       resumeSession: vi.fn(),
       close: vi.fn(),
     });
-    const agent = makeAgent({ s2s: assemblyAIS2s() });
+    const agent = makeAgent({ mode: "s2s", s2s: assemblyAIS2s() });
     const build = createTransportFactory(transportDeps({ agent, logger }));
 
     build({ ...buildArgs(), dialogTurn: () => ({ temperature: 0.3 }) });
@@ -140,7 +144,7 @@ describe("createTransportFactory (S2S)", () => {
       close: vi.fn(),
     });
     const build = createTransportFactory(
-      transportDeps({ agent: makeAgent({ s2s: assemblyAIS2s() }), logger }),
+      transportDeps({ agent: makeAgent({ mode: "s2s", s2s: assemblyAIS2s() }), logger }),
     );
 
     build(buildArgs());
@@ -176,7 +180,10 @@ describe("createTransportFactory (S2S)", () => {
   });
 
   test("omits each descriptor option the author did not set", async () => {
-    const handle = await buildS2sSessionConfig({ s2s: assemblyAIS2s({ voice: "michael" }) });
+    const handle = await buildS2sSessionConfig({
+      mode: "s2s",
+      s2s: assemblyAIS2s({ voice: "michael" }),
+    });
     const sent = handle.updateSession.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(sent).toHaveProperty("voice", "michael");
     // An unset `languages` means "detect per turn" service-side — forwarding a
@@ -214,12 +221,31 @@ describe("createTransportFactory (S2S)", () => {
  * field needs an assertion at this exact seam.
  */
 describe("createTransportFactory (pipeline)", () => {
-  test.each([
-    ["preemptiveGeneration", true],
-    ["errorPhrase", ""],
-    ["resumeFalseInterruption", false],
-    ["userTurnLimit", { maxWords: 60, maxDurationMs: 20_000 }],
-  ])("forwards %s into createPipelineTransport", async (field, value) => {
+  // [transport option, the agent fields that set it, the value it must arrive as]
+  // — the GROUPS are the author's surface, the flat names the transport's.
+  test.each<[string, Record<string, unknown>, unknown]>([
+    ["preemptiveGeneration", { turnTaking: { preemptiveGeneration: true } }, true],
+    ["errorPhrase", { errorPhrase: "" }, ""],
+    ["resumeFalseInterruption", { interruption: { resumeFalseInterruption: false } }, false],
+    ["minBargeInWords", { interruption: { minWords: 3 } }, 3],
+    ["minBargeInWords", { interruption: "off" }, Number.POSITIVE_INFINITY],
+    ["interruptionMinDurationMs", { interruption: { minDurationMs: 200 } }, 200],
+    ["interruptionBackoffMs", { interruption: { backoffMs: 300 } }, 300],
+    ["turnDetection", { turnTaking: { detection: "manual" } }, "manual"],
+    ["startSpeakingFloorMs", { turnTaking: { startSpeakingFloorMs: 400 } }, 400],
+    ["deadAirCoverMs", { silence: { deadAirCoverMs: 2500 } }, 2500],
+    ["silenceTimeoutMs", { silence: { nudge: { afterMs: 8000 } } }, 8000],
+    [
+      "silencePrompt",
+      { silence: { nudge: { afterMs: 8000, prompt: "Still there?" } } },
+      "Still there?",
+    ],
+    [
+      "userTurnLimit",
+      { turnTaking: { userTurnLimit: { maxWords: 60, maxDurationMs: 20_000 } } },
+      { maxWords: 60, maxDurationMs: 20_000 },
+    ],
+  ])("forwards %s into createPipelineTransport (%j)", async (field, fields, value) => {
     const build = vi
       .spyOn(pipelineTransport, "createPipelineTransport")
       .mockReturnValue(fakeTransport());
@@ -233,7 +259,7 @@ describe("createTransportFactory (pipeline)", () => {
           stt: assemblyAIStt(),
           llm: llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL }),
           tts: assemblyAITts(),
-          [field]: value,
+          ...fields,
         }),
         env: {
           ASSEMBLYAI_API_KEY: "k",
@@ -256,14 +282,14 @@ describe("createTransportFactory (pipeline)", () => {
 
   test("a pipelineProviders thunk that throws reports ITS error, not 'no transport'", () => {
     // Why the dep is a thunk at all: `createRuntime` defers this resolution for
-    // a `page: "static"` agent, whose injected default providers must not be
+    // a `mode: "workflow-app"` agent, whose injected default providers must not be
     // dialled — and a static agent given a voice surface by an embedder
     // (`createRuntimeServer({ telephony: true })`) then resolves here. Passing a plain
     // `null` for that case would answer "no transport for session" and bury the
     // real cause.
     const factory = createTransportFactory(
       transportDeps({
-        agent: makeAgent({ page: "static" }),
+        agent: makeAgent({ mode: "workflow-app" }),
         env: {},
         pipelineProviders: () => {
           throw new Error(
@@ -315,8 +341,57 @@ describe("createTransportFactory (pipeline)", () => {
     // its HTTP API, and never resolves a provider credential.
     const pipelineProviders = vi.fn(() => null);
     createTransportFactory(
-      transportDeps({ agent: makeAgent({ page: "static" }), env: {}, pipelineProviders }),
+      transportDeps({ agent: makeAgent({ mode: "workflow-app" }), env: {}, pipelineProviders }),
     );
     expect(pipelineProviders).not.toHaveBeenCalled();
+  });
+
+  test("routes a fallback stage's switch into THIS session as provider.failed-over", async () => {
+    const build = vi
+      .spyOn(pipelineTransport, "createPipelineTransport")
+      .mockReturnValue(fakeTransport());
+    const secondary = createFakeSttProvider();
+    const stt = createFallbackSttOpener(
+      [
+        {
+          opener: createFailingSttProvider("stt_connect_failed", "refused"),
+          envVar: "A",
+          kind: "a",
+        },
+        { opener: secondary, envVar: "B", kind: "b" },
+      ],
+      {},
+    );
+    const factory = createTransportFactory(
+      transportDeps({
+        agent: makeAgent({
+          stt: assemblyAIStt(),
+          llm: llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL }),
+          tts: assemblyAITts(),
+        }),
+        pipelineProviders: () => ({
+          stt: { opener: stt, envVar: "A" },
+          tts: { opener: createFakeTtsProvider(), envVar: FAKE_TTS_API_KEY_ENV },
+          llm: createFakeLanguageModel({ script: [] }),
+        }),
+      }),
+    );
+    const report = vi.fn();
+    const callbacks: TransportCallbacks = {
+      report,
+      onAudioChunk: vi.fn(),
+      onReplyStarted: vi.fn(),
+    };
+    factory({ ...buildArgs(), callbacks });
+    const opener = build.mock.calls[0]?.[0].stt;
+    await opener?.open({ sampleRate: 16_000, apiKey: "", signal: new AbortController().signal });
+    expect(report).toHaveBeenCalledWith({
+      type: "provider.failed-over",
+      stage: "stt",
+      from: "a",
+      to: "b",
+      reason: "refused",
+    });
+    expect(secondary.sessions).toHaveLength(1);
   });
 });

@@ -80,7 +80,7 @@ export type SettledDigest = TerminalWorkflowRun<WorkflowOutputOf<typeof digest>>
  * Point a client at a deployed Link Digest, and refuse anything that is not one.
  *
  * `config()` is the one read that works on every agent whatever shape it is, and
- * `page: "static"` is the discriminant `workflowApp()` sets — so this catches
+ * `mode: "workflow-app"` is the discriminant `workflowApp()` sets — so this catches
  * the mistake a script actually makes, which is a base URL copied from the wrong
  * agent. Unauthenticated on a deployed agent, like the page it describes, so it
  * works before any `token` is involved.

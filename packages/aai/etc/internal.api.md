@@ -22,6 +22,39 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 // @internal
 export function bindClientToolCall(ctx: ToolContext, call: ClientToolCall): void;
 
+// @internal
+export const BOUNDARY_KEYS: {
+    readonly brands: {
+        readonly clientTool: "@alexkroman1/aai.clientTool";
+        readonly clientToolCall: "@alexkroman1/aai.clientTool.call";
+        readonly routeResponse: "@alexkroman1/aai.routeResponse";
+        readonly routeError: "@alexkroman1/aai.routeError";
+        readonly stepError: "@alexkroman1/aai.stepError";
+        readonly keylessSynthesizer: "@alexkroman1/aai.speechSynthesizer.keyless";
+    };
+    readonly slots: {
+        readonly channelOutbox: "@alexkroman1/aai.channelOutbox";
+        readonly clientEventFeed: "@alexkroman1/aai-runtime.clientEventFeed";
+        readonly clientInboxDefaults: "@alexkroman1/aai.clientInboxDefaults";
+        readonly clientTranscriptReader: "@alexkroman1/aai.clientTranscriptReader";
+        readonly sessionCalls: "@alexkroman1/aai.sessionCalls";
+        readonly sessionClients: "@alexkroman1/aai.sessionClients";
+        readonly sessionEnders: "@alexkroman1/aai.sessionEnders";
+        readonly sessionLocations: "@alexkroman1/aai.sessionLocations";
+        readonly sessionPhones: "@alexkroman1/aai.sessionPhones";
+        readonly speechSynthesizer: "@alexkroman1/aai.speechSynthesizer";
+        readonly stepDelegate: "@alexkroman1/aai.stepDelegate";
+        readonly stepEnv: "@alexkroman1/aai.stepEnv";
+        readonly stepFetch: "@alexkroman1/aai.stepFetch";
+        readonly stepInfoReader: "@alexkroman1/aai.stepInfoReader";
+        readonly stepMcp: "@alexkroman1/aai.stepMcp";
+        readonly stepNotifyClient: "@alexkroman1/aai.stepNotifyClient";
+        readonly stepReporter: "@alexkroman1/aai.stepReporter";
+        readonly stepWebhookUrl: "@alexkroman1/aai.stepWebhookUrl";
+        readonly uploadReader: "@alexkroman1/aai.uploadReader";
+    };
+};
+
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
@@ -81,6 +114,14 @@ interface ClientEventMap {
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @internal
+export type ClientToolBrand = {
+    timeoutMs: number | undefined;
+};
+
+// @internal
+export function clientToolBrand(tool: ToolDef): ClientToolBrand | undefined;
+
+// @internal
 export type ClientToolCall = (signal: AbortSignal) => Promise<unknown>;
 
 // @internal
@@ -122,9 +163,6 @@ export const DEFAULT_INTERRUPTION_BACKOFF_MS = 0;
 
 // @public (undocumented)
 export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
-
-// @public
-export const DEFAULT_MAX_HISTORY = 200;
 
 // @public
 export const DEFAULT_MAX_STEPS = 10;
@@ -246,7 +284,7 @@ export type GlobalSlot<T> = {
 };
 
 // @internal
-export function globalSlot<T>(key: string): GlobalSlot<T>;
+export function globalSlot<T>(name: SlotName): GlobalSlot<T>;
 
 // @public
 type GuardrailVerdict = true | string;
@@ -256,6 +294,14 @@ export const HEARD_AUDIO_LAG_MS = 150;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
 
 // @public
 export function invariant(condition: boolean, name: string, detail?: InvariantDetail): asserts condition;
@@ -311,6 +357,9 @@ export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
 
 // @public
 export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65536;
+
+// @internal
+export const MAX_CLIENT_MESSAGES = 200;
 
 // @public
 export const MAX_DB_RESULT_ROWS = 1000;
@@ -395,6 +444,13 @@ export function parseWsUpgradeParams(rawUrl: string, log?: {
 
 // @internal
 export const PIPELINE_PLAYBACK_GRACE_MS = 750;
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
 
 // @internal
 export const PLAYBACK_BUFFER_SECONDS = 60;
@@ -489,6 +545,18 @@ interface SessionSpeech {
     say(text: string, options?: SayOptions): SpeechHandle;
 }
 
+// @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
 // @internal
 export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
@@ -503,6 +571,9 @@ export type SleepTimerOptions = {
     unref?: boolean;
 };
 
+// @internal
+export type SlotName = keyof typeof BOUNDARY_KEYS.slots;
+
 // @public
 type SlotStore = {
     read(key: string): unknown;
@@ -515,6 +586,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -537,7 +609,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 interface StandardSchemaIssue {
@@ -697,6 +769,19 @@ type ToolStartMessage = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -705,6 +790,12 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public

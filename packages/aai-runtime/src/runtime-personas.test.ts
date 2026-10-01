@@ -9,6 +9,7 @@ import { makeConfig, makeLogger, makeSessionContext } from "./_test-utils.ts";
 import { openSessionDialogs } from "./runtime-dialogs.ts";
 import { openSessionPersonas, PERSONA_SUFFIX_KEY } from "./runtime-personas.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
+import { OPENAI_REALTIME_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
 
 const SID = "s-persona";
@@ -43,6 +44,7 @@ const proseOnly = roster([
 function makeTransport(): { transport: Transport; refreshes: () => number } {
   const refreshSystemPrompt = vi.fn();
   const transport: Transport = {
+    capabilities: OPENAI_REALTIME_CAPABILITIES,
     start: async () => undefined,
     stop: async () => undefined,
     sendUserAudio: () => undefined,
@@ -206,5 +208,29 @@ describe("the per-step knobs", () => {
     expect(knobs()).toEqual({});
     desk.handoff({ slots, sessionId: SID }, billing);
     expect(knobs()).toEqual({ temperature: 0.1 });
+  });
+});
+
+describe("the persona's interruption group", () => {
+  test("is absent when no persona declares one", () => {
+    const { bound } = setup(roster([triage, billing]));
+    expect(bound.interruption).toBeUndefined();
+  });
+
+  test("answers the SPEAKER's group in transport units, re-read after a handoff", () => {
+    const disclosure = speaker({
+      name: "disclosure",
+      speaks: true,
+      description: "Reads the terms",
+      systemPrompt: "Read the terms in full.",
+      interruption: "off",
+    });
+    const desk = roster([triage, disclosure]);
+    const { bound, slots } = setup(desk);
+    const read = bound.interruption;
+    if (!read) throw new Error("expected an interruption source");
+    expect(read()).toEqual({});
+    desk.handoff({ slots, sessionId: SID }, disclosure);
+    expect(read()).toEqual({ minBargeInWords: Number.POSITIVE_INFINITY });
   });
 });

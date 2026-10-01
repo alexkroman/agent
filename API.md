@@ -47,7 +47,6 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-cli/worker-bundler` — `packages/aai-cli/etc/worker-bundler.api.md`
 - `@alexkroman1/aai-runtime/auth` — `packages/aai-runtime/etc/auth.api.md`
 - `@alexkroman1/aai-runtime/eval` — `packages/aai-runtime/etc/eval.api.md`
-- `@alexkroman1/aai-runtime/eval/simulate` — `packages/aai-runtime/etc/eval-simulate.api.md`
 - `@alexkroman1/aai-runtime/eval/vitest` — `packages/aai-runtime/etc/eval-vitest.api.md`
 - `@alexkroman1/aai-runtime` — `packages/aai-runtime/etc/index.api.md`
 - `@alexkroman1/aai-runtime/internal` — `packages/aai-runtime/etc/internal.api.md`
@@ -364,6 +363,14 @@ type GuardrailVerdict = true | string;
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
@@ -396,6 +403,13 @@ interface ModelTuning {
     maxOutputTokens?: number;
     maxRetries?: number;
     temperature?: number;
+}
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
 }
 
 // @public
@@ -456,6 +470,18 @@ interface SessionSpeech {
 }
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -472,6 +498,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -494,7 +521,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 interface StandardSchemaIssue {
@@ -639,6 +666,19 @@ type ToolStartMessage = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -647,6 +687,12 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public
@@ -1171,6 +1217,14 @@ type GuardrailVerdict = true | string;
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
+// @public
 type JsonClient = <T = unknown>(ctx: JsonClientContext, method: string, path: string, body?: unknown, init?: JsonRequestInit) => Promise<T>;
 
 // @public
@@ -1264,6 +1318,13 @@ export interface OpenAICompatibleLlmOptions {
 }
 
 // @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
+
+// @public
 type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
@@ -1347,6 +1408,18 @@ interface SessionSpeech {
 }
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -1363,6 +1436,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -1385,7 +1459,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 interface StandardSchemaIssue {
@@ -1586,6 +1660,19 @@ type ToolStartMessage = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -1594,6 +1681,12 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public
@@ -1885,22 +1978,32 @@ const AgentConfigSchema: z.ZodObject<{
     builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silencePrompt: z.ZodOptional<z.ZodString>;
-    minBargeInWords: z.ZodOptional<z.ZodNumber>;
-    interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
-    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
-    deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+    turnTaking: z.ZodOptional<z.ZodObject<{
+        minSilenceMs: z.ZodOptional<z.ZodNumber>;
+        maxSilenceMs: z.ZodOptional<z.ZodNumber>;
+        detection: z.ZodOptional<z.ZodString>;
+        userTurnLimit: z.ZodOptional<z.ZodObject<{
+            maxWords: z.ZodOptional<z.ZodNumber>;
+            maxDurationMs: z.ZodOptional<z.ZodNumber>;
+        }, z.core.$strip>>;
+        preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+        startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strict>>;
+    interruption: z.ZodOptional<z.ZodUnion<readonly [z.ZodLiteral<"off">, z.ZodObject<{
+        minWords: z.ZodOptional<z.ZodNumber>;
+        minDurationMs: z.ZodOptional<z.ZodNumber>;
+        backoffMs: z.ZodOptional<z.ZodNumber>;
+        resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
+    }, z.core.$strict>]>>;
+    silence: z.ZodOptional<z.ZodObject<{
+        deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+        nudge: z.ZodOptional<z.ZodObject<{
+            afterMs: z.ZodNumber;
+            prompt: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>>;
     errorPhrase: z.ZodOptional<z.ZodString>;
     startFailurePhrase: z.ZodOptional<z.ZodString>;
-    resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
-    preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    userTurnLimit: z.ZodOptional<z.ZodObject<{
-        maxWords: z.ZodOptional<z.ZodNumber>;
-        maxDurationMs: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -1917,11 +2020,11 @@ const AgentConfigSchema: z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
     }, z.core.$strip>>;
-    text: z.ZodOptional<z.ZodLiteral<true>>;
     mode: z.ZodOptional<z.ZodEnum<{
         pipeline: "pipeline";
         s2s: "s2s";
         text: "text";
+        "workflow-app": "workflow-app";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
@@ -1933,10 +2036,6 @@ const AgentConfigSchema: z.ZodObject<{
     clientInbox: z.ZodOptional<z.ZodObject<{
         sampleRate: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    page: z.ZodOptional<z.ZodEnum<{
-        static: "static";
-        voice: "voice";
-    }>>;
     telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodString>>]>>;
 }, z.core.$strip>;
 
@@ -2238,10 +2337,10 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL: string;
 export const ASSEMBLYAI_LLM_GATEWAY_URL: string;
 
 // @public
-export const ASSEMBLYAI_LLM_KIND = "assemblyai";
+export const ASSEMBLYAI_LLM_KIND: "assemblyai";
 
 // @public
-export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_S2S_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_S2S_KIND: "assemblyai";
@@ -2250,7 +2349,7 @@ export const ASSEMBLYAI_S2S_KIND: "assemblyai";
 export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24000;
 
 // @public
-export const ASSEMBLYAI_STT_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_STT_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
@@ -2259,7 +2358,7 @@ export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 export const ASSEMBLYAI_STT_KIND: "assemblyai";
 
 // @public
-export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_TTS_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_TTS_DEPRECATED_VOICES: readonly ["arjun", "bella", "david", "diego", "dmitri", "eleanor", "emma", "giulia", "helen", "ivy", "james", "kyle", "luca", "lucia", "martha", "mateo", "pierre", "river", "tyler", "victor", "winter"];
@@ -2349,7 +2448,7 @@ export type BuiltinToolOptions = {
 };
 
 // @public
-export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
+export const CARTESIA_API_KEY_ENV: string;
 
 // @public
 export const CARTESIA_KIND: "cartesia";
@@ -2463,7 +2562,7 @@ export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
 export const DEAD_AIR_TOOL_COVER_MS = 1200;
 
 // @public
-export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
+export const DEEPGRAM_API_KEY_ENV: string;
 
 // @public
 export const DEEPGRAM_KIND: "deepgram";
@@ -2518,6 +2617,9 @@ export function defaultProviders(config: ProviderFields): {
     tts?: TtsProvider;
 } | null;
 
+// @internal
+export function defineProvider<const Kind extends string, const Stage extends ProviderStage>(definition: ProviderDefinition<Kind, Stage>): ProviderDefinition<Kind, Stage>;
+
 // @public
 export type DelayedRung = {
     afterMs: number;
@@ -2558,10 +2660,13 @@ interface DelegateToolCall {
 }
 
 // @internal
+export function describeProvider<Kind extends string>(definition: ProviderDefinition<Kind>, options: object): ProviderDescriptor<Kind, Record<string, unknown>>;
+
+// @internal
 export const DETACHED_SESSION_SPEECH: SessionSpeech;
 
 // @public
-export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
+export const ELEVENLABS_API_KEY_ENV: string;
 
 // @public
 export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
@@ -2591,6 +2696,15 @@ export interface ExecuteToolOptions {
     // (undocumented)
     toolCallId?: string;
 }
+
+// @public
+export const FALLBACK_KIND: "fallback";
+
+// @public
+export function fallbackMembers(descriptor: unknown): {
+    kind: string;
+    options: Record<string, unknown>;
+}[];
 
 // @internal
 type FetchDispatcher = RequestInit extends {
@@ -2680,7 +2794,18 @@ const hostCredentialsMarker: unique symbol;
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
+// @public
 export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
+
+// @public
+export function isFallbackDescriptor(descriptor: unknown): boolean;
 
 // @internal
 export function isUniversal35Pro(model: string): boolean;
@@ -2699,6 +2824,20 @@ export type KnownLlmProvider = KnownLiterals<LlmProviderName>;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
+
+// @public
+export const LLM_PROVIDERS: {
+    readonly anthropic: ProviderDefinition<"anthropic", "llm">;
+    readonly openai: ProviderDefinition<"openai", "llm">;
+    readonly google: ProviderDefinition<"google", "llm">;
+    readonly mistral: ProviderDefinition<"mistral", "llm">;
+    readonly xai: ProviderDefinition<"xai", "llm">;
+    readonly groq: ProviderDefinition<"groq", "llm">;
+    readonly openrouter: ProviderDefinition<"openrouter", "llm">;
+    readonly cerebras: ProviderDefinition<"cerebras", "llm">;
+    readonly gateway: ProviderDefinition<"gateway", "llm">;
+    readonly assemblyai: ProviderDefinition<"assemblyai", "llm">;
+};
 
 // @public
 type LlmDescriptorOptions = {
@@ -2747,6 +2886,9 @@ export const MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES = 3;
 
 // @internal
 export const MAX_CONSECUTIVE_SILENCE_NUDGES = 3;
+
+// @public
+export const MAX_FAILOVER_REASON_CHARS = 500;
 
 // @internal (undocumented)
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
@@ -2816,7 +2958,7 @@ export function normalizeE164(raw: string): string | undefined;
 export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined;
 
 // @public
-export const OPENAI_S2S_API_KEY_ENV = "OPENAI_API_KEY";
+export const OPENAI_S2S_API_KEY_ENV: string;
 
 // @public
 export const OPENAI_S2S_KIND: "openai-realtime";
@@ -2850,6 +2992,13 @@ export type PinnedRequestInit = RequestInit & {
 export const PIPELINE_FLUSH_TIMEOUT_MS = 10000;
 
 // @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
+
+// @public
 export function planDelayedLadder(list: readonly ToolDelayedMessage[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): DelayedRung[];
 
 // @internal
@@ -2879,9 +3028,22 @@ export function pollWorkflow<T>(host: PollHost, name: string, check: () => Promi
 // @internal
 export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
 
+// @internal
+export const PROVIDER_CATALOG: readonly ProviderDefinition[];
+
 // @public
 interface ProviderCredentialOptions {
     apiKeyEnv?: string;
+}
+
+// @internal
+export interface ProviderDefinition<Kind extends string = string, Stage extends ProviderStage = ProviderStage> {
+    readonly envVar: string;
+    readonly factory: string;
+    readonly kind: Kind;
+    readonly label: string;
+    readonly stage: Stage;
+    readonly subpath: "stt" | "llm" | "tts" | "s2s" | "experimental";
 }
 
 // @public
@@ -2903,8 +3065,11 @@ type ProviderFields = {
     llm?: unknown;
     tts?: unknown;
     s2s?: unknown;
-    text?: unknown;
+    mode?: unknown;
 };
+
+// @public
+export type ProviderStage = "stt" | "llm" | "tts" | "s2s";
 
 // @internal
 export const PUBLIC_URL_UNCONFIGURED_MESSAGE: string;
@@ -3068,7 +3233,7 @@ export function resolveSonioxSttSettings(options: SonioxSttOptions): {
 export const RETRYABLE_STATUS: Set<number>;
 
 // @public
-export const RIME_API_KEY_ENV = "RIME_API_KEY";
+export const RIME_API_KEY_ENV: string;
 
 // @public
 export const RIME_DEFAULT_LANGUAGE = "eng";
@@ -3145,6 +3310,12 @@ export type RunCodeExecutor = (code: string) => Promise<string | {
 
 // @internal
 export const S2S_MAX_RESUME_ATTEMPTS = 5;
+
+// @public
+export const S2S_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "s2s">, ProviderDefinition<"openai-realtime", "s2s">];
+
+// @public (undocumented)
+export type S2sKind = (typeof S2S_PROVIDERS)[number]["kind"];
 
 // @public
 export const safeFetch: typeof globalThis.fetch;
@@ -3237,6 +3408,18 @@ export function setSessionLocation(sessionId: string, location: string): void;
 export function setSessionPhone(sessionId: string, phone: string): void;
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -3248,7 +3431,7 @@ type SlotStore = {
 };
 
 // @public
-export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
+export const SONIOX_API_KEY_ENV: string;
 
 // @public
 export const SONIOX_KIND: "soniox";
@@ -3274,6 +3457,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -3296,7 +3480,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @internal
 export type SpeechSynthesizer = (request: {
@@ -3472,6 +3656,12 @@ export const STT_FRAME_MAX_MS = 1000;
 export const STT_FRAME_TARGET_MS = 100;
 
 // @public
+export const STT_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "stt">, ProviderDefinition<"deepgram", "stt">, ProviderDefinition<"elevenlabs", "stt">, ProviderDefinition<"soniox", "stt">, ProviderDefinition<"local", "stt">];
+
+// @public
+export type SttKind = (typeof STT_PROVIDERS)[number]["kind"];
+
+// @public
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
@@ -3604,13 +3794,32 @@ export function toToolJsonSchema(schema: StandardSchemaV1, io?: "input" | "outpu
 // @internal
 export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
 
+// @public
+export const TTS_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "tts">, ProviderDefinition<"cartesia", "tts">, ProviderDefinition<"rime", "tts">];
+
 // @internal
 export const TTS_RECONNECT_TIMEOUT_MS = 8000;
+
+// @public (undocumented)
+export type TtsKind = (typeof TTS_PROVIDERS)[number]["kind"];
 
 // @public
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
+
+// @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
 
 // @public
 interface TypedDelegateResult<T> extends DelegateResult {
@@ -3677,6 +3886,12 @@ export type UploadWriteMeta = {
 export type UploadWriter = {
     create(meta: UploadWriteMeta, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
 };
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
+}
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -3861,6 +4076,18 @@ import { z } from 'zod';
 export function addDays(iso: string, days: number): string;
 
 // @public
+export function agent(def: PipelineAgentParams): ModeAgentDef<"pipeline">;
+
+// @public
+export function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
+
+// @public
+export function agent(def: TextAgentParams): ModeAgentDef<"text">;
+
+// @public
+export function agent(def: StaticAgentParams): ModeAgentDef<"workflow-app">;
+
+// @public
 export function agent(def: AgentParams): AgentDef;
 
 // @public
@@ -3869,7 +4096,7 @@ export interface AgentClientInbox {
 }
 
 // @public
-export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
+export interface AgentDef extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -3878,18 +4105,15 @@ export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGu
     llm?: LlmProvider;
     maxSteps: number;
     mcpServers?: McpServers;
+    mode?: AgentMode;
     name: string;
-    page?: "voice" | "static";
     requiredEnv?: readonly string[];
     roster?: Roster;
     s2s?: S2sProvider;
-    silencePrompt?: string;
-    silenceTimeoutMs?: number;
     stt?: SttProvider;
     sttPrompt?: string;
     systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
-    text?: true;
     toolChoice?: ToolChoice;
     tools: ToolMap;
     toolsets?: readonly Toolset[];
@@ -3910,6 +4134,9 @@ export interface AgentGuardrails {
 export type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
+export type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
+
+// @public
 export interface AgentModelTuning extends ModelTuning {
     resetToolChoice?: boolean;
     usageLimits?: UsageLimits;
@@ -3918,11 +4145,11 @@ export interface AgentModelTuning extends ModelTuning {
 // @public
 export interface AgentObservation {
     events?: SessionEventHandlers;
-    syncState?: StateProjection | readonly StateProjection[];
+    syncState?: Readonly<Record<string, StateProjection>>;
 }
 
 // @public
-export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
+export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParams;
 
 // @public
 export interface AgentRoutes {
@@ -3963,19 +4190,6 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-const ASSEMBLYAI_TTS_LANGUAGES: {
-    readonly en: "english";
-    readonly fr: "french";
-    readonly de: "german";
-    readonly it: "italian";
-    readonly pt: "portuguese";
-    readonly es: "spanish";
-};
-
-// @public
-export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<"alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle", AssemblyAITtsVoiceInfo>>;
-
-// @public
 export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
@@ -4004,16 +4218,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 }
 
 // @public
-type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
-
-// @public
-export type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
-
-// @public
-interface AssemblyAITtsVoiceInfo {
-    readonly accent: string;
-    readonly language: AssemblyAITtsLanguage;
-}
+type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
@@ -4195,12 +4400,6 @@ export function dialog<M extends AnyStateMachine>(key: string, machine: M, optio
 export function dialog<const S extends DialogSpec>(key: string, spec: S, options?: DialogOptions): Dialog<AnyStateMachine, DialogEvent<S>>;
 
 // @public
-export type DialogBargeIn = "default" | "off" | {
-    minWords?: number;
-    minDurationMs?: number;
-};
-
-// @public
 export type DialogEvent<S extends DialogSpec> = Exclude<DialogEventNames<S["states"]>, `@${string}`> extends infer N ? N extends string ? {
     type: N;
 } : never : never;
@@ -4243,10 +4442,10 @@ export interface DialogSpec {
 
 // @public
 export interface DialogStateSpec {
-    bargeIn?: DialogBargeIn;
     final?: true;
     initial?: string;
     instruction?: string;
+    interruption?: PipelineTuning["interruption"];
     on?: Record<string, string>;
     persona?: string;
     states?: Record<string, DialogStateSpec>;
@@ -4282,14 +4481,11 @@ export interface DialogToolResult<R> extends DialogPosition {
 
 // @public
 export interface DialogVoiceConfig {
-    readonly bargeIn?: DialogBargeIn;
+    readonly interruption?: PipelineTuning["interruption"];
     readonly temperature?: number;
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
 }
-
-// @public
-type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
 
 // @public
 export function endSession(ctx: Pick<ToolContext, "sessionId">, options?: EndSessionOptions): boolean;
@@ -4330,9 +4526,6 @@ type FindByKeyOptions = {
 type FindOptions = {
     limit?: number;
 };
-
-// @public
-type FrontDoorField = "page";
 
 // @public
 export type GenerateFn = {
@@ -4401,6 +4594,14 @@ type InlineToolsField = "tools";
 
 // @public
 type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
+
+// @public
+export interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
 
 // @public
 type IsAny<T> = 0 extends 1 & T ? true : false;
@@ -4561,6 +4762,11 @@ export interface MintCodeOptions {
 export function mintDigitCode(digits?: number): string;
 
 // @public
+export type ModeAgentDef<M extends AgentMode> = AgentDef & {
+    readonly mode: M;
+};
+
+// @public
 export interface ModelTuning {
     maxOutputTokens?: number;
     maxRetries?: number;
@@ -4573,52 +4779,44 @@ export function omitUndefined<T extends object>(obj: T): {
 };
 
 // @public
+export function orFail<A extends readonly unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R>;
+
+// @public
 export function orFail<T>(value: T | ToolFailure): T;
 
 // @public
 export function pickOne<T>(items: readonly T[], random?: RandomSource): T | undefined;
 
 // @public
-export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
+export type PipelineAgentParams = SharedAgentParams & Pick<AgentDef, keyof AgentModelTuning | keyof PipelineTuning | keyof PipelinePhrases | keyof AgentGuardrails> & {
+    mode?: "pipeline";
     llm?: LlmSpec;
     s2s?: undefined;
-    text?: undefined;
-    page?: "voice" | StaticFrontDoorMisuse;
+    tts?: TtsProvider;
 } & ({
     stt: SttProvider;
-    minTurnSilenceMs?: EndpointingOnDescriptorMisuse<"minTurnSilenceMs">;
-    maxTurnSilenceMs?: EndpointingOnDescriptorMisuse<"maxTurnSilenceMs">;
+    turnTaking?: TurnTakingTuning & {
+        minSilenceMs?: never;
+        maxSilenceMs?: never;
+    };
 } | {
     stt?: undefined;
-    minTurnSilenceMs?: number;
-    maxTurnSilenceMs?: number;
-}) & ({
-    tts: TtsProvider;
-    voice?: "`voice` picks the default pipeline's TTS voice — an explicit `tts` descriptor owns its own voice (e.g. `assemblyAITts({ voice })`); set it there or remove `tts`";
-} | {
-    tts?: undefined;
-    voice?: AssemblyAITtsVoice;
 });
 
 // @public
-type PipelineOnlyField = keyof PipelineVoiceTuning | "silenceTimeoutMs" | "silencePrompt";
+type PipelineOnlyField = keyof PipelineTuning | keyof PipelinePhrases | keyof AgentGuardrails | "stt" | "tts";
 
 // @public
-type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = "s2s"> = `\`${K}\` is pipeline-mode only — it has no effect on a ${M} agent; remove it or remove \`${M}\``;
-
-// @public
-export interface PipelineVoiceTuning {
-    deadAirCoverMs?: number;
+export interface PipelinePhrases {
     errorPhrase?: string;
-    interruptionBackoffMs?: number;
-    interruptionMinDurationMs?: number;
-    minBargeInWords?: number;
-    preemptiveGeneration?: boolean;
-    resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
-    startSpeakingFloorMs?: number;
-    turnDetection?: TurnDetectionMode;
-    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
+export interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
 }
 
 // @public
@@ -4671,7 +4869,7 @@ export interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
+type ProviderField = "stt" | "llm" | "tts" | "s2s";
 
 // @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
@@ -4778,17 +4976,8 @@ export function routeResponse(status: number, body?: unknown): RouteResponse;
 
 // @public
 export type S2sAgentParams = SharedAgentParams & {
+    mode: "s2s";
     s2s: S2sProvider;
-    stt?: "`stt` cannot be combined with `s2s` — S2S runs STT service-side";
-    llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
-    tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
-    voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
-    minTurnSilenceMs?: "`minTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
-    maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
-    text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
-    page?: "voice" | StaticFrontDoorMisuse;
-} & {
-    [K in PipelineOnlyField]?: PipelineOnlyMisuse<K>;
 };
 
 // @public
@@ -5037,7 +5226,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
-    state: z.ZodUnknown;
+    state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"usage.updated">;
     meta: z.ZodObject<{
@@ -5071,6 +5260,20 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failed-over">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
@@ -5159,7 +5362,7 @@ export interface SessionSpeech {
 }
 
 // @public
-export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField | "toolsets"> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | "mode" | ProviderField | PipelineOnlyField | keyof AgentModelTuning | "toolsets"> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     tools?: InlineToolsMisuse;
 };
 
@@ -5167,19 +5370,16 @@ export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnl
 export function shuffled<T>(items: readonly T[], random?: RandomSource): T[];
 
 // @public
-type SilenceNudgeField = "silenceTimeoutMs" | "silencePrompt";
+export interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
 
 // @public
-type SilenceNudgeParams = {
-    silenceTimeoutMs: number;
-    silencePrompt?: string;
-} | {
-    silenceTimeoutMs?: undefined;
-    silencePrompt?: SilencePromptWithoutTimeoutMisuse;
-};
-
-// @public
-type SilencePromptWithoutTimeoutMisuse = "`silencePrompt` is the instruction injected when `silenceTimeoutMs` elapses — with no timeout nothing ever injects it; set `silenceTimeoutMs`, or remove `silencePrompt`";
+export interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
 
 // @public
 export type SleepOptions = {
@@ -5222,6 +5422,7 @@ export interface SpeakerDef<N extends string = string> extends Omit<ModelTuning,
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -5255,7 +5456,7 @@ export interface SpeechHandle {
 }
 
 // @public
-export type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+export type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 export function spokenAlphanumeric(spoken: string): string;
@@ -5330,20 +5531,10 @@ export interface StateProjection<V = unknown> {
 }
 
 // @public
-export type StaticAgentParams = Omit<StaticAgentParamsCore, WorkflowAppOnlyField> & {
-    [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
-};
-
-// @public
-type StaticAgentParamsCore = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
-    page: "static";
+export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | "workflows"> & {
+    mode: "workflow-app";
     workflows: NonNullable<AgentDef["workflows"]>;
-} & {
-    [K in WorkflowAppOnlyField]?: never;
 };
-
-// @public
-type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
 
 // @public
 type StepClientTranscriptOptions = {
@@ -5386,20 +5577,9 @@ export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 export type TelephonyCarrier = "twilio" | "telnyx" | (string & {});
 
 // @public
-export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
-    text: true;
+export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDef, keyof AgentModelTuning> & {
+    mode: "text";
     llm?: LlmSpec;
-    stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
-    tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
-    s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
-    voice?: "`voice` is pipeline-mode only — a text agent never speaks";
-    minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
-    maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
-    sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
-    telephony?: "`telephony` admits a phone call, which is audio — a text agent has no audio path; remove it or remove `text`";
-    page?: "voice" | StaticFrontDoorMisuse;
-} & {
-    [K in PipelineOnlyField]?: PipelineOnlyMisuse<K, "text">;
 };
 
 // @public
@@ -5543,6 +5723,16 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 export type TurnDetectionMode = "auto" | "manual" | (string & {});
 
 // @public
+export interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 export interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -5619,13 +5809,10 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema, O extends 
 export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
 
 // @public
-export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
+export function workflowApp(def: Omit<StaticAgentParams, "mode">): AgentDef;
 
 // @public
-type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
-
-// @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | keyof AgentModelTuning | keyof AgentGuardrails | "system" | "systemPrompt" | "voicePresets" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs" | "telephony" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | Exclude<keyof SharedAgentParams, keyof TextAgentParams> | keyof AgentModelTuning | "systemPrompt" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
@@ -5774,6 +5961,39 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 // @internal
 export function bindClientToolCall(ctx: ToolContext, call: ClientToolCall): void;
 
+// @internal
+export const BOUNDARY_KEYS: {
+    readonly brands: {
+        readonly clientTool: "@alexkroman1/aai.clientTool";
+        readonly clientToolCall: "@alexkroman1/aai.clientTool.call";
+        readonly routeResponse: "@alexkroman1/aai.routeResponse";
+        readonly routeError: "@alexkroman1/aai.routeError";
+        readonly stepError: "@alexkroman1/aai.stepError";
+        readonly keylessSynthesizer: "@alexkroman1/aai.speechSynthesizer.keyless";
+    };
+    readonly slots: {
+        readonly channelOutbox: "@alexkroman1/aai.channelOutbox";
+        readonly clientEventFeed: "@alexkroman1/aai-runtime.clientEventFeed";
+        readonly clientInboxDefaults: "@alexkroman1/aai.clientInboxDefaults";
+        readonly clientTranscriptReader: "@alexkroman1/aai.clientTranscriptReader";
+        readonly sessionCalls: "@alexkroman1/aai.sessionCalls";
+        readonly sessionClients: "@alexkroman1/aai.sessionClients";
+        readonly sessionEnders: "@alexkroman1/aai.sessionEnders";
+        readonly sessionLocations: "@alexkroman1/aai.sessionLocations";
+        readonly sessionPhones: "@alexkroman1/aai.sessionPhones";
+        readonly speechSynthesizer: "@alexkroman1/aai.speechSynthesizer";
+        readonly stepDelegate: "@alexkroman1/aai.stepDelegate";
+        readonly stepEnv: "@alexkroman1/aai.stepEnv";
+        readonly stepFetch: "@alexkroman1/aai.stepFetch";
+        readonly stepInfoReader: "@alexkroman1/aai.stepInfoReader";
+        readonly stepMcp: "@alexkroman1/aai.stepMcp";
+        readonly stepNotifyClient: "@alexkroman1/aai.stepNotifyClient";
+        readonly stepReporter: "@alexkroman1/aai.stepReporter";
+        readonly stepWebhookUrl: "@alexkroman1/aai.stepWebhookUrl";
+        readonly uploadReader: "@alexkroman1/aai.uploadReader";
+    };
+};
+
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
@@ -5833,6 +6053,14 @@ interface ClientEventMap {
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @internal
+export type ClientToolBrand = {
+    timeoutMs: number | undefined;
+};
+
+// @internal
+export function clientToolBrand(tool: ToolDef): ClientToolBrand | undefined;
+
+// @internal
 export type ClientToolCall = (signal: AbortSignal) => Promise<unknown>;
 
 // @internal
@@ -5874,9 +6102,6 @@ export const DEFAULT_INTERRUPTION_BACKOFF_MS = 0;
 
 // @public (undocumented)
 export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
-
-// @public
-export const DEFAULT_MAX_HISTORY = 200;
 
 // @public
 export const DEFAULT_MAX_STEPS = 10;
@@ -5998,7 +6223,7 @@ export type GlobalSlot<T> = {
 };
 
 // @internal
-export function globalSlot<T>(key: string): GlobalSlot<T>;
+export function globalSlot<T>(name: SlotName): GlobalSlot<T>;
 
 // @public
 type GuardrailVerdict = true | string;
@@ -6008,6 +6233,14 @@ export const HEARD_AUDIO_LAG_MS = 150;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
 
 // @public
 export function invariant(condition: boolean, name: string, detail?: InvariantDetail): asserts condition;
@@ -6063,6 +6296,9 @@ export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
 
 // @public
 export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65536;
+
+// @internal
+export const MAX_CLIENT_MESSAGES = 200;
 
 // @public
 export const MAX_DB_RESULT_ROWS = 1000;
@@ -6147,6 +6383,13 @@ export function parseWsUpgradeParams(rawUrl: string, log?: {
 
 // @internal
 export const PIPELINE_PLAYBACK_GRACE_MS = 750;
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
 
 // @internal
 export const PLAYBACK_BUFFER_SECONDS = 60;
@@ -6241,6 +6484,18 @@ interface SessionSpeech {
     say(text: string, options?: SayOptions): SpeechHandle;
 }
 
+// @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
 // @internal
 export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
@@ -6255,6 +6510,9 @@ export type SleepTimerOptions = {
     unref?: boolean;
 };
 
+// @internal
+export type SlotName = keyof typeof BOUNDARY_KEYS.slots;
+
 // @public
 type SlotStore = {
     read(key: string): unknown;
@@ -6267,6 +6525,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -6289,7 +6548,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 interface StandardSchemaIssue {
@@ -6449,6 +6708,19 @@ type ToolStartMessage = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -6457,6 +6729,12 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public
@@ -6618,6 +6896,15 @@ export type AssemblyAILlmProviderOptions = {
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | (string & {});
 
 // @public
+export function fallback(providers: readonly [SttProvider, SttProvider, ...SttProvider[]]): SttProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [LlmProvider, LlmProvider, ...LlmProvider[]]): LlmProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [TtsProvider, TtsProvider, ...TtsProvider[]]): TtsProvider;
+
+// @public
 export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): LlmProvider;
 
 // @public
@@ -6659,6 +6946,16 @@ interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly options: Options;
 }
+
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};
+
+// @public
+type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "tts";
+};
 ```
 
 ## `@alexkroman1/aai/manifest`
@@ -6703,22 +7000,32 @@ export const AgentConfigSchema: z.ZodObject<{
     builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silencePrompt: z.ZodOptional<z.ZodString>;
-    minBargeInWords: z.ZodOptional<z.ZodNumber>;
-    interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
-    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
-    deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+    turnTaking: z.ZodOptional<z.ZodObject<{
+        minSilenceMs: z.ZodOptional<z.ZodNumber>;
+        maxSilenceMs: z.ZodOptional<z.ZodNumber>;
+        detection: z.ZodOptional<z.ZodString>;
+        userTurnLimit: z.ZodOptional<z.ZodObject<{
+            maxWords: z.ZodOptional<z.ZodNumber>;
+            maxDurationMs: z.ZodOptional<z.ZodNumber>;
+        }, z.core.$strip>>;
+        preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+        startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strict>>;
+    interruption: z.ZodOptional<z.ZodUnion<readonly [z.ZodLiteral<"off">, z.ZodObject<{
+        minWords: z.ZodOptional<z.ZodNumber>;
+        minDurationMs: z.ZodOptional<z.ZodNumber>;
+        backoffMs: z.ZodOptional<z.ZodNumber>;
+        resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
+    }, z.core.$strict>]>>;
+    silence: z.ZodOptional<z.ZodObject<{
+        deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+        nudge: z.ZodOptional<z.ZodObject<{
+            afterMs: z.ZodNumber;
+            prompt: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>>;
     errorPhrase: z.ZodOptional<z.ZodString>;
     startFailurePhrase: z.ZodOptional<z.ZodString>;
-    resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
-    preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    userTurnLimit: z.ZodOptional<z.ZodObject<{
-        maxWords: z.ZodOptional<z.ZodNumber>;
-        maxDurationMs: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -6735,11 +7042,11 @@ export const AgentConfigSchema: z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
     }, z.core.$strip>>;
-    text: z.ZodOptional<z.ZodLiteral<true>>;
     mode: z.ZodOptional<z.ZodEnum<{
         pipeline: "pipeline";
         s2s: "s2s";
         text: "text";
+        "workflow-app": "workflow-app";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
@@ -6751,10 +7058,6 @@ export const AgentConfigSchema: z.ZodObject<{
     clientInbox: z.ZodOptional<z.ZodObject<{
         sampleRate: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    page: z.ZodOptional<z.ZodEnum<{
-        static: "static";
-        voice: "voice";
-    }>>;
     telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodString>>]>>;
 }, z.core.$strip>;
 
@@ -6762,6 +7065,7 @@ export const AgentConfigSchema: z.ZodObject<{
 export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcpServers"> & {
     systemPrompt?: AgentSystemPrompt;
     mcpServers?: McpServers | undefined;
+    mode?: AgentMode | undefined;
 } & {
     [K in HostOnlyAgentField]?: unknown;
 };
@@ -6773,13 +7077,13 @@ export function agentConfigWarnings(config: {
     stt?: unknown;
     llm?: unknown;
     voicePresets?: unknown;
-    turnDetection?: unknown;
+    turnTaking?: unknown;
     builtinTools?: unknown;
     telephony?: unknown;
 }): string[];
 
 // @public
-interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
+interface AgentDef extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -6788,18 +7092,15 @@ interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrail
     llm?: LlmProvider;
     maxSteps: number;
     mcpServers?: McpServers;
+    mode?: AgentMode;
     name: string;
-    page?: "voice" | "static";
     requiredEnv?: readonly string[];
     roster?: Roster;
     s2s?: S2sProvider;
-    silencePrompt?: string;
-    silenceTimeoutMs?: number;
     stt?: SttProvider;
     sttPrompt?: string;
     systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
-    text?: true;
     toolChoice?: ToolChoice;
     tools: ToolMap;
     toolsets?: readonly Toolset[];
@@ -6820,6 +7121,9 @@ interface AgentGuardrails {
 type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
+type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
+
+// @public
 interface AgentModelTuning extends ModelTuning {
     resetToolChoice?: boolean;
     usageLimits?: UsageLimits;
@@ -6828,7 +7132,7 @@ interface AgentModelTuning extends ModelTuning {
 // @public
 interface AgentObservation {
     events?: SessionEventHandlers;
-    syncState?: StateProjection | readonly StateProjection[];
+    syncState?: Readonly<Record<string, StateProjection>>;
 }
 
 // @public
@@ -6877,12 +7181,6 @@ type AnyWorkflowDef<R = unknown> = {
 
 // @public
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
-
-// @internal
-export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
-
-// @internal
-export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
@@ -6981,12 +7279,6 @@ interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
 }
 
 // @public
-type DialogBargeIn = "default" | "off" | {
-    minWords?: number;
-    minDurationMs?: number;
-};
-
-// @public
 interface DialogGate<R, E> {
     send?: E;
     sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
@@ -7027,7 +7319,7 @@ interface DialogToolResult<R> extends DialogPosition {
 
 // @public
 interface DialogVoiceConfig {
-    readonly bargeIn?: DialogBargeIn;
+    readonly interruption?: PipelineTuning["interruption"];
     readonly temperature?: number;
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
@@ -7112,6 +7404,14 @@ export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
@@ -7172,41 +7472,16 @@ interface ModelTuning {
 export function normalizeToolMessages(input: ToolMessagesInput | undefined): ToolMessages | undefined;
 
 // @public
-const PIPELINE_ONLY_TUNING: {
-    readonly minBargeInWords: "number";
-    readonly interruptionMinDurationMs: "number";
-    readonly startSpeakingFloorMs: "number";
-    readonly interruptionBackoffMs: "number";
-    readonly deadAirCoverMs: "number";
-    readonly errorPhrase: "string";
-    readonly startFailurePhrase: "string";
-    readonly resumeFalseInterruption: "boolean";
-    readonly preemptiveGeneration: "boolean";
-    readonly userTurnLimit: "user-turn-limit";
-    readonly turnDetection: "turn-detection";
-};
-
-// @internal
-export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit" ? UserTurnLimit : (typeof PIPELINE_ONLY_TUNING)[K] extends "turn-detection" ? TurnDetectionMode : readonly string[]) | undefined;
-};
-
-// @public (undocumented)
-type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
+interface PipelinePhrases {
+    errorPhrase?: string;
+    startFailurePhrase?: string;
+}
 
 // @public
-interface PipelineVoiceTuning {
-    deadAirCoverMs?: number;
-    errorPhrase?: string;
-    interruptionBackoffMs?: number;
-    interruptionMinDurationMs?: number;
-    minBargeInWords?: number;
-    preemptiveGeneration?: boolean;
-    resumeFalseInterruption?: boolean;
-    startFailurePhrase?: string;
-    startSpeakingFloorMs?: number;
-    turnDetection?: TurnDetectionMode;
-    userTurnLimit?: UserTurnLimit;
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
 }
 
 // @public
@@ -7508,7 +7783,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
-    state: z.ZodUnknown;
+    state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"usage.updated">;
     meta: z.ZodObject<{
@@ -7542,6 +7817,20 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failed-over">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
@@ -7603,6 +7892,18 @@ interface SessionSpeech {
 }
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -7625,6 +7926,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -7658,7 +7960,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 interface StandardSchemaIssue {
@@ -8004,6 +8306,16 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 type TurnDetectionMode = "auto" | "manual" | (string & {});
 
 // @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -8177,6 +8489,7 @@ export function buildClientConfig(source: {
     greeting?: string | undefined;
     sessionUrl?: string | undefined;
     page?: "voice" | "static" | undefined;
+    sessionToken?: string | undefined;
 }): ClientConfigResponse;
 
 // @public
@@ -8203,6 +8516,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>;
+    sessionToken: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
 // @public
@@ -8480,10 +8794,19 @@ export const RestoredToolCallSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+
+// @public
 export const SESSION_COMMAND_TYPES: ReadonlySet<string>;
 
 // @public
 export const SESSION_EVENT_TYPES: ReadonlySet<string>;
+
+// @public
+export const SESSION_PROTOCOL = "aai.session";
+
+// @public
+export const SESSION_TICKET_HEADER = "aai-session-ticket";
 
 // @public
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
@@ -8681,7 +9004,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
-    state: z.ZodUnknown;
+    state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"usage.updated">;
     meta: z.ZodObject<{
@@ -8715,6 +9038,20 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failed-over">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
@@ -9017,6 +9354,14 @@ type GuardrailVerdict = true | string;
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
+// @public
 export function isCallOver(status: string): boolean;
 
 // @public
@@ -9106,6 +9451,13 @@ export type PcmFormat = {
     channels?: number | undefined;
     bitsPerSample?: number | undefined;
 };
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
 
 // @public
 export type PlaceCallCredentials = {
@@ -9260,6 +9612,18 @@ export type Settled<T, R> = {
 };
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -9276,6 +9640,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -9307,7 +9672,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 export type SpokenAudio = {
@@ -9737,6 +10102,19 @@ export type Transcript = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 export const TWILIO_ACCOUNT_SID_ENV = "TWILIO_ACCOUNT_SID";
 
 // @public
@@ -9788,6 +10166,12 @@ export type UploadSlice = {
     start: number;
     end: number;
 };
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
+}
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -9942,36 +10326,6 @@ export type WriteUploadOptions = {
 
 ```ts
 // @public
-type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
-    readonly __surface?: "channel";
-};
-
-// @public
-interface ChannelDescriptor<Kind extends string, Options> {
-    // (undocumented)
-    readonly kind: Kind;
-    // (undocumented)
-    readonly options: Options;
-}
-
-// @public
-interface ChannelMessage {
-    readonly heading?: string;
-    readonly sections?: readonly ChannelSection[];
-    readonly subtitle?: string;
-    readonly text: string;
-}
-
-// @public
-interface ChannelSection {
-    readonly body?: string;
-    readonly bullets?: readonly string[];
-    readonly subtitle?: string;
-    readonly title?: string;
-    readonly url?: string;
-}
-
-// @public
 export const DEFAULT_RETRY_DELAY_MS: number;
 
 // @public
@@ -9984,7 +10338,10 @@ export class FatalError extends Error {
 }
 
 // @public
-type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+export function orFail<A extends readonly unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R>;
+
+// @public
+export function orFail<T>(value: T | ToolFailure): T;
 
 // @public
 export class RetryableError extends Error {
@@ -10000,94 +10357,6 @@ export type RetryableErrorOptions = {
 };
 
 // @public
-export function sendToChannelOrFail(channel: Channel, message: ChannelMessage): Promise<string>;
-
-// @public
-interface StandardSchemaIssue {
-    readonly errors?: unknown;
-    readonly issues?: unknown;
-    // (undocumented)
-    readonly message: string;
-    // (undocumented)
-    readonly path?: readonly (PropertyKey | {
-        readonly key: PropertyKey;
-    })[] | undefined;
-}
-
-// @public
-type StandardSchemaResult<Output> = {
-    readonly value: Output;
-    readonly issues?: undefined;
-} | {
-    readonly issues: readonly StandardSchemaIssue[];
-};
-
-// @public
-interface StandardSchemaV1<Input = unknown, Output = Input> {
-    readonly "~standard": {
-        readonly version: 1;
-        readonly vendor: string;
-        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
-        readonly types?: {
-            readonly input: Input;
-            readonly output: Output;
-        } | undefined;
-    };
-}
-
-// @public
-type StepFetchInit = {
-    method?: string | undefined;
-    headers?: Record<string, string> | undefined;
-    body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
-    signal?: AbortSignal | undefined;
-};
-
-// @public
-export function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response>;
-
-// @public
-type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
-    schema: S;
-};
-
-// @public
-export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
-
-// @public
-type StepGenerateOptions = {
-    system?: string;
-    model?: string;
-    apiKeyEnv?: string;
-    gatewayUrl?: string;
-    timeoutMs?: number;
-    temperature?: number;
-    maxTokens?: number;
-    responseSchema?: Record<string, unknown>;
-};
-
-// @public
-export function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions): Promise<string>;
-
-// @public
-export function stepTranscribePollOrFail(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
-
-// @public
-export function stepTranscribeSubmitOrFail(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
-    id: string;
-}>;
-
-// @public
-export function stepTranscribeSyncOrFail(bytes: Uint8Array | readonly Uint8Array[], options?: TranscribeSyncOptions): Promise<{
-    text: string;
-}>;
-
-// @public
-export function stepTranscribeUploadOrFail(uploadId: string, options?: TranscribeRequestOptions): Promise<{
-    audioUrl: string;
-}>;
-
-// @public
 export function throwFatalStepError(cause: unknown, message?: string): never;
 
 // @public
@@ -10097,45 +10366,12 @@ export function throwFfmpegStepError(cause: unknown, message?: string): never;
 export function throwStepError(cause: unknown, message?: string): never;
 
 // @public
+type ToolFailure = {
+    error: string;
+};
+
+// @public
 export function toStepError(cause: unknown, message?: string): Error;
-
-// @public
-type TranscribeProgress = {
-    done: false;
-    status: "queued" | "processing" | (string & {});
-} | {
-    done: true;
-    status: "completed" | (string & {});
-    transcript: Transcript;
-};
-
-// @public
-type TranscribeRequestOptions = {
-    apiKeyEnv?: string | undefined;
-    timeoutMs?: number | undefined;
-    signal?: AbortSignal | undefined;
-};
-
-// @public
-type TranscribeSubmitOptions = TranscribeRequestOptions & {
-    models?: readonly string[] | undefined;
-    params?: Record<string, unknown> | undefined;
-};
-
-// @public
-type TranscribeSyncOptions = TranscribeRequestOptions & {
-    model?: string | undefined;
-    filename?: string | undefined;
-    type?: string | undefined;
-    label?: string | undefined;
-};
-
-// @public @sealed
-type Transcript = {
-    id: string;
-    text: string;
-    durationMs: number;
-};
 ```
 
 ## `@alexkroman1/aai/step-files`
@@ -10243,6 +10479,28 @@ export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
 }
 
 // @public
+export function fallback(providers: readonly [SttProvider, SttProvider, ...SttProvider[]]): SttProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [LlmProvider, LlmProvider, ...LlmProvider[]]): LlmProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [TtsProvider, TtsProvider, ...TtsProvider[]]): TtsProvider;
+
+// @public
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
+    readonly __stage?: "llm";
+};
+
+// @public
 export interface ProviderCredentialOptions {
     apiKeyEnv?: string;
 }
@@ -10268,6 +10526,11 @@ export interface SonioxSttOptions extends ProviderCredentialOptions {
 export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
+
+// @public
+type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "tts";
+};
 ```
 
 ## `@alexkroman1/aai/testing`
@@ -10279,6 +10542,9 @@ import { z } from 'zod';
 
 // @public
 type AgentInstructions = (ctx: AgentSessionContext) => string;
+
+// @public
+type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
 
 // @public @sealed
 interface AgentSessionContext {
@@ -10421,15 +10687,16 @@ export interface DeployedConfig {
     readonly builtinTools?: readonly BuiltinTool[] | undefined;
     readonly llm?: DeployedStage | undefined;
     readonly mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>> | undefined;
-    readonly mode: "pipeline" | "s2s" | "text";
+    readonly mode: AgentMode;
     readonly name: string;
     readonly requiredEnv?: readonly string[] | undefined;
     readonly s2s?: DeployedStage | undefined;
     readonly stt?: DeployedStage | undefined;
     readonly systemPrompt: string;
-    readonly text?: true | undefined;
     readonly tts?: DeployedStage | undefined;
-    readonly turnDetection?: string | undefined;
+    readonly turnTaking?: {
+        readonly detection?: string | undefined;
+    } | undefined;
     readonly usageLimits?: {
         readonly totalTokens?: number | undefined;
     } | undefined;
@@ -10456,12 +10723,6 @@ interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
-
-// @public
-type DialogBargeIn = "default" | "off" | {
-    minWords?: number;
-    minDurationMs?: number;
-};
 
 // @public
 interface DialogGate<R, E> {
@@ -10509,7 +10770,7 @@ interface DialogToolResult<R> extends DialogPosition {
 
 // @public
 interface DialogVoiceConfig {
-    readonly bargeIn?: DialogBargeIn;
+    readonly interruption?: PipelineTuning["interruption"];
     readonly temperature?: number;
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
@@ -10637,6 +10898,14 @@ type GuardrailVerdict = true | string;
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
+// @public
 export function isEvent<E extends {
     type: string;
 }, K extends E["type"]>(event: E, type: K): event is Extract<E, {
@@ -10682,6 +10951,13 @@ export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSc
 
 // @public
 export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
 
 // @public
 type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
@@ -10991,7 +11267,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
-    state: z.ZodUnknown;
+    state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"usage.updated">;
     meta: z.ZodObject<{
@@ -11025,6 +11301,20 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failed-over">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
@@ -11083,6 +11373,18 @@ interface SessionSpeech {
 }
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -11105,6 +11407,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -11127,7 +11430,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 interface StandardSchemaIssue {
@@ -11721,6 +12024,19 @@ type ToolStartMessage = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -11729,6 +12045,12 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public
@@ -12097,6 +12419,14 @@ export function installStubUploads(files: Readonly<Record<string, StubUpload>>, 
 // @public
 export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
 
+// @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
@@ -12129,6 +12459,13 @@ interface ModelTuning {
     maxOutputTokens?: number;
     maxRetries?: number;
     temperature?: number;
+}
+
+// @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
 }
 
 // @public
@@ -12186,6 +12523,18 @@ interface SessionSpeech {
 }
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -12202,6 +12551,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -12224,7 +12574,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 interface StandardSchemaIssue {
@@ -12570,6 +12920,19 @@ type ToolStartMessage = {
 };
 
 // @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -12578,6 +12941,12 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public
@@ -12807,6 +13176,28 @@ export interface CartesiaTtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
+export function fallback(providers: readonly [SttProvider, SttProvider, ...SttProvider[]]): SttProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [LlmProvider, LlmProvider, ...LlmProvider[]]): LlmProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [TtsProvider, TtsProvider, ...TtsProvider[]]): TtsProvider;
+
+// @public
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
+    readonly __stage?: "llm";
+};
+
+// @public
 export interface ProviderCredentialOptions {
     apiKeyEnv?: string;
 }
@@ -12831,6 +13222,11 @@ export interface RimeTtsOptions extends ProviderCredentialOptions {
     model?: string;
     voice?: string;
 }
+
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};
 
 // @public
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -12957,6 +13353,9 @@ export function omitUndefined<T extends object>(obj: T): {
 };
 
 // @public
+export function orFail<A extends readonly unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R>;
+
+// @public
 export function orFail<T>(value: T | ToolFailure): T;
 
 // @public
@@ -13037,6 +13436,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>;
+    sessionToken: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
 // @public
@@ -13704,7 +14104,7 @@ import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
-import type { LlmProvider } from '@alexkroman1/aai/llm';
+import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionCall } from '@alexkroman1/aai';
@@ -13720,6 +14120,15 @@ import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+
+// @public
+export type CallVerdict = {
+    readonly pass: boolean;
+    readonly criteria: readonly CriterionVerdict[];
+    readonly summary: string;
+    readonly scripted: boolean;
+    explain(): string;
+};
 
 // @public
 export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
@@ -13738,10 +14147,20 @@ export function createStubTtsOpener(name: string): TtsOpener & {
 export function createVmRunCode(options?: VmRunCodeOptions): RunCodeExecutor;
 
 // @public
+export type CriterionVerdict = {
+    readonly criterion: string;
+    readonly pass: boolean;
+    readonly reason: string;
+};
+
+// @public
 export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
     readonly event: string;
     readonly data: unknown;
 }[];
+
+// @public
+export const DEFAULT_MAX_TURNS = 12;
 
 // @public
 export const DEFAULT_RUN_TIMEOUT_MS = 300000;
@@ -13751,6 +14170,9 @@ export function describeToolCalls(calls: readonly EvalToolCall[]): string;
 
 // @public
 export function describeTurn(turn: EvalTurn): string;
+
+// @public
+export const END_CALL_TOOL = "end_call";
 
 // @public
 export function errorsIn(events: readonly SessionEvent[]): readonly SessionEvent<"error.reported">[];
@@ -13771,6 +14193,9 @@ export type EvalEmitted = {
     readonly namespace: string;
     readonly chunk: unknown;
 };
+
+// @public
+type EvalMode = "live" | "stub";
 
 // @public @sealed
 export type EvalNetwork<State = unknown> = {
@@ -13842,6 +14267,33 @@ export interface EvalSessionOptions extends HostAgentOptions {
     // (undocumented)
     readonly turnTimeoutMs?: number;
 }
+
+// @public
+export function evalSimulation(settings: EvalSimulationOptions): EvalSimulationContext;
+
+// @public
+export type EvalSimulationContext = {
+    simulate(caller: SimulatedCaller, options?: {
+        readonly maxTurns?: number;
+    }): Promise<SimulatedCall>;
+    judge(input: JudgeInput, criteria: readonly string[], options?: {
+        readonly context?: string;
+    }): Promise<CallVerdict>;
+};
+
+// @public
+export type EvalSimulationOptions = {
+    readonly agent: AgentDef;
+    readonly mode: EvalMode;
+    readonly target: SimulationTarget;
+    readonly callerLlm?: LlmProvider;
+    readonly judgeLlm?: LlmProvider;
+    readonly llm?: LlmProvider;
+    readonly env?: Record<string, string>;
+    readonly providerEnv?: ProviderEnv;
+    readonly stubCaller?: StubScript;
+    readonly stubJudge?: readonly boolean[];
+};
 
 // @public
 export type EvalSleep = {
@@ -13977,10 +14429,27 @@ export function installStubLlm(script: StubScript): StubLlm;
 export function installStubSpeechProviders(): StubSpeechProviders;
 
 // @public
-export function lastStateIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): T | undefined;
+export function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVerdict>;
+
+// @public
+export type JudgeCallOptions = {
+    readonly criteria: readonly string[];
+    readonly llm: LlmProvider;
+    readonly providerEnv?: ProviderEnv;
+    readonly context?: string;
+};
+
+// @public
+export type JudgeInput = SimulatedCall | readonly EvalTurn[] | Pick<EvalSession, "events"> | string;
+
+// @public
+export function lastStateIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): T | undefined;
 
 // @public (undocumented)
-export function lastStateIn(events: readonly SessionEvent[]): unknown;
+export function lastStateIn(events: readonly SessionEvent[], slot: string): unknown;
+
+// @public (undocumented)
+export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
 
 // @public
 export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
@@ -14027,10 +14496,71 @@ export function runCodeOutput(calls: readonly EvalToolCall[]): string;
 export function saidIn(events: readonly SessionEvent[]): readonly string[];
 
 // @public
-export function statesIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): readonly T[];
+export function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;
+
+// @public
+export type SimulateCallOptions = {
+    readonly caller: SimulatedCaller;
+    readonly llm: LlmProvider;
+    readonly providerEnv?: ProviderEnv;
+    readonly maxTurns?: number;
+};
+
+// @public
+export type SimulatedCall = {
+    readonly caller: SimulatedCaller;
+    readonly greeting: readonly string[];
+    readonly turns: readonly SimulatedTurn[];
+    readonly endedBy: "caller" | "agent" | "max-turns";
+    readonly endReason: string | undefined;
+    readonly metrics: SimulationMetrics;
+    transcript(): string;
+};
+
+// @public
+export type SimulatedCaller = {
+    readonly persona: string;
+    readonly goal: string;
+    readonly opening?: string;
+};
+
+// @public
+export type SimulatedTurn = {
+    readonly caller: string;
+    readonly turn: EvalTurn;
+    readonly latencyMs: number | undefined;
+};
+
+// @public
+export type SimulationMetrics = {
+    readonly turns: number;
+    readonly durationMs: number;
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly toolCallCounts: Readonly<Record<string, number>>;
+    readonly latencyMs: {
+        readonly mean: number | undefined;
+        readonly p50: number | undefined;
+        readonly max: number | undefined;
+    };
+};
+
+// @public
+export type SimulationTarget = {
+    say(text: string): Promise<EvalTurn>;
+    said(): readonly string[];
+} | {
+    send(text: string): Promise<EvalTurn>;
+    said(): readonly string[];
+};
+
+// @public
+export function statesIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
 
 // @public (undocumented)
-export function statesIn(events: readonly SessionEvent[]): readonly unknown[];
+export function statesIn(events: readonly SessionEvent[], slot: string): readonly unknown[];
+
+// @public (undocumented)
+export function statesIn(events: readonly SessionEvent[]): readonly Readonly<Record<string, unknown>>[];
 
 export { StepFetch }
 
@@ -14224,13 +14754,55 @@ export type VmRunCodeOptions = {
 };
 ```
 
-## `@alexkroman1/aai-runtime/eval/simulate`
+## `@alexkroman1/aai-runtime/eval/vitest`
 
 ```ts
 import type { AgentDef } from '@alexkroman1/aai';
+import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
+import { dialogRefusalPattern } from '@alexkroman1/aai/testing';
+import { dialogResultSchema } from '@alexkroman1/aai/testing';
+import { eventsOf } from '@alexkroman1/aai/testing';
+import type { GenerateOptions } from '@alexkroman1/aai';
+import type { GenerateResult } from '@alexkroman1/aai';
+import type { InferSchemaOutput } from '@alexkroman1/aai';
+import { installStubSpeech } from '@alexkroman1/aai/testing/vitest';
+import { installStubStepDelegate } from '@alexkroman1/aai/testing/vitest';
+import { installStubStepFetch } from '@alexkroman1/aai/testing/vitest';
+import { installStubTranscribe } from '@alexkroman1/aai/testing/vitest';
+import { installStubUploads } from '@alexkroman1/aai/testing/vitest';
+import { isEvent } from '@alexkroman1/aai/testing';
 import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { RecordingWorkflows } from '@alexkroman1/aai/testing';
+import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
+import { routeStepFetch } from '@alexkroman1/aai/testing';
+import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
+import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
+import type { StartOptions } from '@alexkroman1/aai/workflow-api';
+import { StepFetch } from '@alexkroman1/aai/host-internal';
+import { StepRoute } from '@alexkroman1/aai/testing';
+import { StepUnmatched } from '@alexkroman1/aai/testing';
+import type { SttProvider } from '@alexkroman1/aai/stt';
+import { StubGatewayRoute } from '@alexkroman1/aai/testing';
+import { stubGatewayRoute } from '@alexkroman1/aai/testing';
+import { StubSpeech } from '@alexkroman1/aai/testing';
+import { StubSpeechOptions } from '@alexkroman1/aai/testing';
+import { StubStepDelegate } from '@alexkroman1/aai/testing';
+import { StubStepFetch } from '@alexkroman1/aai/testing';
+import { StubTranscribe } from '@alexkroman1/aai/testing';
+import { StubTranscribeOptions } from '@alexkroman1/aai/testing';
+import { StubUploads } from '@alexkroman1/aai/testing';
+import { StubUploadsOptions } from '@alexkroman1/aai/testing';
+import type { ToolInputSchema } from '@alexkroman1/aai';
+import type { TtsProvider } from '@alexkroman1/aai/tts';
+import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
 export type CallVerdict = {
@@ -14242,6 +14814,24 @@ export type CallVerdict = {
 };
 
 // @public
+export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
+
+export { createRecordingWorkflows }
+
+// @public
+export function createStubSttOpener(name: string): SttOpener & {
+    last(): StubSttSession | undefined;
+};
+
+// @public
+export function createStubTtsOpener(name: string): TtsOpener & {
+    last(): StubTtsSession | undefined;
+};
+
+// @public
+export function createVmRunCode(options?: VmRunCodeOptions): RunCodeExecutor;
+
+// @public
 export type CriterionVerdict = {
     readonly criterion: string;
     readonly pass: boolean;
@@ -14249,16 +14839,135 @@ export type CriterionVerdict = {
 };
 
 // @public
+export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
+    readonly event: string;
+    readonly data: unknown;
+}[];
+
+// @public
 export const DEFAULT_MAX_TURNS = 12;
+
+// @public
+export const DEFAULT_RUN_TIMEOUT_MS = 300000;
+
+// @public
+export function describeEval<Network extends EvalNetwork = never, Client extends WorkflowClient = never>(agent: AgentDef, define: (test: EvalTest<Network, Client>) => void, options?: Omit<DescribeEvalOptions, "network" | "workflows"> & {
+    readonly network?: Network | (() => Network);
+    readonly workflows?: Client | (() => Client) | undefined;
+}): void;
+
+// @public
+export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
+    readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
+    readonly network?: EvalNetwork | (() => EvalNetwork);
+};
+
+// @public
+export function describeTextEval(agent: AgentDef, define: (test: EvalTextTest) => void, options?: DescribeTextEvalOptions): void;
+
+// @public
+export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
+
+// @public
+export function describeToolCalls(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function describeTurn(turn: EvalTurn): string;
+
+// @public
+export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent">): void;
+
+export { dialogRefusalPattern }
+
+export { dialogResultSchema }
 
 // @public
 export const END_CALL_TOOL = "end_call";
 
 // @public
-type EvalMode = "live" | "stub";
+export function errorsIn(events: readonly SessionEvent[]): readonly SessionEvent<"error.reported">[];
+
+// @public
+export type EvalCaseOptions = {
+    readonly stubReply?: StubScript;
+    readonly stubGenerate?: StubScript;
+    readonly live?: boolean;
+    readonly scripted?: boolean;
+    readonly clientId?: string | null;
+    readonly phone?: string | null;
+    readonly call?: SessionCall | null;
+    readonly network?: EvalNetwork | (() => EvalNetwork);
+};
+
+// @public
+export type EvalCredentials = {
+    readonly env: ProviderEnv;
+    readonly missing: readonly string[];
+    readonly ready: boolean;
+    readonly reason: string | undefined;
+};
+
+// @public
+export function evalCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+
+// @public
+export type EvalEmitted = {
+    readonly namespace: string;
+    readonly chunk: unknown;
+};
+
+// @public
+export type EvalMode = "live" | "stub";
 
 // @public @sealed
-type EvalSession = {
+export type EvalNetwork<State = unknown> = {
+    readonly fetch: typeof globalThis.fetch;
+    readonly state: State;
+    requests(filter?: EvalRequestFilter): readonly EvalRequest[];
+    calls(host: string | RegExp): readonly EvalRequest[];
+    refused(): readonly EvalRequest[];
+    expectNoOutbound(filter: EvalRequestFilter): void;
+    expectNothingRefused(): void;
+    reset(): void;
+};
+
+// @public
+export function evalNetwork<State = undefined>(options?: EvalNetworkOptions<State>): EvalNetwork<State>;
+
+// @public
+export type EvalNetworkOptions<State = undefined> = {
+    readonly state?: () => State;
+    readonly routes?: Readonly<Record<string, EvalRoute<State>>>;
+    readonly passthrough?: readonly string[];
+    readonly refuse?: "throw" | "403";
+};
+
+// @public @sealed
+export type EvalRequest = {
+    readonly method: string;
+    readonly url: URL;
+    readonly host: string;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly text: string;
+    readonly body: unknown;
+    readonly outcome: "routed" | "passthrough" | "refused";
+    readonly route?: string;
+    readonly status?: number;
+};
+
+// @public
+export type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boolean);
+
+// @public
+export type EvalRoute<State = undefined> = (request: Request, info: EvalRequest, state: State) => unknown;
+
+// @public
+export type EvalRunOptions = StartOptions & {
+    readonly timeoutMs?: number | undefined;
+};
+
+// @public @sealed
+export type EvalSession = {
     readonly id: string;
     readonly refused: string | undefined;
     readonly ended: boolean;
@@ -14269,6 +14978,17 @@ type EvalSession = {
     toolCalls(): readonly EvalToolCall[];
     close(): Promise<void>;
 };
+
+// @public
+export interface EvalSessionOptions extends HostAgentOptions {
+    readonly call?: SessionCall;
+    readonly clientId?: string;
+    readonly env?: Record<string, string>;
+    readonly llm?: LlmProvider;
+    readonly phone?: string;
+    // (undocumented)
+    readonly turnTimeoutMs?: number;
+}
 
 // @public
 export function evalSimulation(settings: EvalSimulationOptions): EvalSimulationContext;
@@ -14298,7 +15018,61 @@ export type EvalSimulationOptions = {
 };
 
 // @public
-type EvalToolCall = {
+export type EvalSleep = {
+    readonly label: string;
+    readonly duration: string | number | Date;
+};
+
+// @public
+export type EvalTest<Network extends EvalNetwork = never, Client extends WorkflowClient = never> = (name: string, body: (ctx: EvalTestContext & ([Network] extends [never] ? unknown : {
+    readonly network: Network;
+}) & ([Client] extends [never] ? unknown : {
+    readonly workflowClient: Client;
+})) => Promise<void>, options?: [Network] extends [never] ? EvalCaseOptions : Omit<EvalCaseOptions, "network"> & {
+    readonly network?: Network | (() => Network);
+}) => void;
+
+// @public @sealed
+export type EvalTestContext = {
+    readonly session: EvalSession;
+    readonly mode: EvalMode;
+    readonly workflows: EvalWorkflows | undefined;
+    readonly workflowClient: WorkflowClient | undefined;
+    readonly network: EvalNetwork | undefined;
+};
+
+// @public @sealed
+export type EvalTextAgent = {
+    readonly id: string;
+    send(text: string): Promise<EvalTurn>;
+    sendAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
+    events(): readonly SessionEvent[];
+    said(): readonly string[];
+    toolCalls(): readonly EvalToolCall[];
+    close(): Promise<void>;
+};
+
+// @public
+export interface EvalTextAgentOptions extends HostAgentOptions {
+    readonly env?: Record<string, string>;
+    readonly llm?: LlmProvider;
+    readonly turnTimeoutMs?: number;
+}
+
+// @public
+export function evalTextCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+
+// @public
+export type EvalTextTest = (name: string, body: (ctx: EvalTextTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
+
+// @public @sealed
+export type EvalTextTestContext = {
+    readonly agent: EvalTextAgent;
+    readonly mode: EvalMode;
+};
+
+// @public
+export type EvalToolCall = {
     readonly toolCallId: string;
     readonly name: string;
     readonly args: Record<string, unknown>;
@@ -14306,7 +15080,7 @@ type EvalToolCall = {
 };
 
 // @public
-type EvalTurn = {
+export type EvalTurn = {
     readonly text: string;
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
@@ -14314,6 +15088,122 @@ type EvalTurn = {
     readonly errors: readonly SessionEvent<"error.reported">[];
     readonly endedSession?: boolean;
 };
+
+// @public
+export type EvalWorkflowCaseOptions = {
+    readonly live?: boolean;
+};
+
+// @public
+export function evalWorkflowCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+
+// @public
+export type EvalWorkflowEngineOptions = {
+    readonly workflows: Readonly<Record<string, WorkflowDef>>;
+    readonly env: Readonly<Record<string, string>>;
+    readonly stepFetch?: StepFetch | undefined;
+    readonly stepAttempt?: {
+        readonly attempt: number;
+        readonly maxAttempts: number;
+    } | undefined;
+    readonly speech?: SpeechSynthesizer | undefined;
+};
+
+// @public @sealed
+export type EvalWorkflowRun<R = unknown> = {
+    readonly runId: string;
+    readonly workflow: string;
+    readonly key: string | undefined;
+    readonly status: WorkflowRunStatus;
+    readonly output: R | undefined;
+    readonly error: string | undefined;
+    readonly completed: boolean;
+    readonly reported: readonly string[];
+    readonly emitted: readonly EvalEmitted[];
+    readonly slept: readonly EvalSleep[];
+    readonly elapsedMs: number | undefined;
+    readonly snapshot: WorkflowRunSnapshot<R>;
+};
+
+// @public @sealed
+export type EvalWorkflows = {
+    readonly client: WorkflowClient;
+    run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
+    run(workflow: string, input?: unknown, options?: EvalRunOptions): Promise<EvalWorkflowRun>;
+    settle<R>(runId: string, workflow: AnyWorkflowDef<R>, options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<EvalWorkflowRun<R>>;
+    settle(runId: string, workflow?: undefined, options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<EvalWorkflowRun>;
+    runs(): Promise<readonly EvalWorkflowRun[]>;
+    settleAll(options?: {
+        timeoutMs?: number | undefined;
+    }): Promise<readonly EvalWorkflowRun[]>;
+    close(): Promise<void>;
+};
+
+// @public
+export type EvalWorkflowsOptions = {
+    readonly agent: AgentDef;
+    readonly env?: Record<string, string> | undefined;
+    readonly stepFetch?: EvalWorkflowEngineOptions["stepFetch"];
+    readonly speech?: EvalWorkflowEngineOptions["speech"];
+    readonly timeoutMs?: number | undefined;
+    readonly logger?: Logger | undefined;
+};
+
+// @public
+export type EvalWorkflowTest = (name: string, body: (ctx: EvalWorkflowTestContext) => Promise<void>, options?: EvalWorkflowCaseOptions) => void;
+
+// @public @sealed
+export type EvalWorkflowTestContext = {
+    readonly app: EvalWorkflows;
+    readonly mode: EvalMode;
+};
+
+export { eventsOf }
+
+// @public
+export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+
+// @public
+export function expectToolBeforeSpeech(turn: EvalTurn): void;
+
+// @public
+export interface HostAgentOptions {
+    agent: AgentDef;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
+
+// @public
+export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
+    signal?: AbortSignal | undefined;
+    onUsage?: ((usage: StepUsage) => void) | undefined;
+}) => Promise<GenerateResult>;
+
+// @public
+export function installStubLlm(script: StubScript): StubLlm;
+
+export { installStubSpeech }
+
+// @public
+export function installStubSpeechProviders(): StubSpeechProviders;
+
+export { installStubStepDelegate }
+
+export { installStubStepFetch }
+
+export { installStubTranscribe }
+
+export { installStubUploads }
+
+export { isEvent }
 
 // @public
 export function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVerdict>;
@@ -14328,6 +15218,80 @@ export type JudgeCallOptions = {
 
 // @public
 export type JudgeInput = SimulatedCall | readonly EvalTurn[] | Pick<EvalSession, "events"> | string;
+
+// @public
+export function lastStateIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): T | undefined;
+
+// @public (undocumented)
+export function lastStateIn(events: readonly SessionEvent[], slot: string): unknown;
+
+// @public (undocumented)
+export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
+
+// @public
+export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
+
+// @public
+export type LogContext = Record<string, unknown>;
+
+// @public
+export type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public
+export interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
+
+// @public
+export type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export function openEvalSession(options: EvalSessionOptions): Promise<EvalSession>;
+
+// @public
+export function openEvalTextAgent(options: EvalTextAgentOptions): Promise<EvalTextAgent>;
+
+// @public
+export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows;
+
+export { RecordingWorkflows }
+
+export { RecordingWorkflowsOptions }
+
+// @public
+export function resolveEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>,
+overrides?: {
+    readonly llm?: LlmProvider;
+}): {
+    mode: EvalMode;
+    reason: string;
+};
+
+// @public
+export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>): {
+    mode: EvalMode;
+    reason: string;
+};
+
+export { routeStepFetch }
+
+export { RunCodeExecutor }
+
+// @public
+export function runCodeIn(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function runCodeOutput(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function saidIn(events: readonly SessionEvent[]): readonly string[];
 
 // @public
 export function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;
@@ -14388,328 +15352,227 @@ export type SimulationTarget = {
 };
 
 // @public
-type StubScript = string | readonly (string | StubStep)[];
+export function statesIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public (undocumented)
+export function statesIn(events: readonly SessionEvent[], slot: string): readonly unknown[];
+
+// @public (undocumented)
+export function statesIn(events: readonly SessionEvent[]): readonly Readonly<Record<string, unknown>>[];
+
+export { StepFetch }
+
+export { StepRoute }
+
+export { StepUnmatched }
 
 // @public
-type StubStep = {
-    readonly text: string;
-} | {
-    readonly tool: string;
-    readonly args?: Record<string, unknown>;
-};
-```
-
-## `@alexkroman1/aai-runtime/eval/vitest`
-
-```ts
-import type { AgentDef } from '@alexkroman1/aai';
-import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
-import type { InferSchemaOutput } from '@alexkroman1/aai';
-import type { LlmProvider } from '@alexkroman1/aai/llm';
-import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
-import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionCall } from '@alexkroman1/aai';
-import type { SessionEvent } from '@alexkroman1/aai';
-import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
-import type { StartOptions } from '@alexkroman1/aai/workflow-api';
-import type { StepFetch } from '@alexkroman1/aai/host-internal';
-import type { ToolInputSchema } from '@alexkroman1/aai';
-import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
-import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
-import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
-import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
-
-// @public
-export function describeEval<Network extends EvalNetwork = never, Client extends WorkflowClient = never>(agent: AgentDef, define: (test: EvalTest<Network, Client>) => void, options?: Omit<DescribeEvalOptions, "network" | "workflows"> & {
-    readonly network?: Network | (() => Network);
-    readonly workflows?: Client | (() => Client) | undefined;
-}): void;
-
-// @public
-export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
-    readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
-    readonly network?: EvalNetwork | (() => EvalNetwork);
-};
-
-// @public
-export function describeTextEval(agent: AgentDef, define: (test: EvalTextTest) => void, options?: DescribeTextEvalOptions): void;
-
-// @public
-export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
-
-// @public
-export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent">): void;
-
-// @public
-export type EvalCaseOptions = {
-    readonly stubReply?: StubScript;
-    readonly stubGenerate?: StubScript;
-    readonly live?: boolean;
-    readonly scripted?: boolean;
-    readonly clientId?: string | null;
-    readonly phone?: string | null;
-    readonly call?: SessionCall | null;
-    readonly network?: EvalNetwork | (() => EvalNetwork);
-};
-
-// @public
-type EvalEmitted = {
-    readonly namespace: string;
-    readonly chunk: unknown;
-};
-
-// @public
-export type EvalMode = "live" | "stub";
-
-// @public @sealed
-type EvalNetwork<State = unknown> = {
-    readonly fetch: typeof globalThis.fetch;
-    readonly state: State;
-    requests(filter?: EvalRequestFilter): readonly EvalRequest[];
-    calls(host: string | RegExp): readonly EvalRequest[];
-    refused(): readonly EvalRequest[];
-    expectNoOutbound(filter: EvalRequestFilter): void;
-    expectNothingRefused(): void;
-    reset(): void;
-};
-
-// @public @sealed
-type EvalRequest = {
-    readonly method: string;
-    readonly url: URL;
-    readonly host: string;
-    readonly headers: Readonly<Record<string, string>>;
-    readonly text: string;
-    readonly body: unknown;
-    readonly outcome: "routed" | "passthrough" | "refused";
-    readonly route?: string;
-    readonly status?: number;
-};
-
-// @public
-type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boolean);
-
-// @public
-type EvalRunOptions = StartOptions & {
-    readonly timeoutMs?: number | undefined;
-};
-
-// @public @sealed
-type EvalSession = {
-    readonly id: string;
-    readonly refused: string | undefined;
-    readonly ended: boolean;
-    say(text: string): Promise<EvalTurn>;
-    sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
-    events(): readonly SessionEvent[];
-    said(): readonly string[];
-    toolCalls(): readonly EvalToolCall[];
-    close(): Promise<void>;
-};
-
-// @public
-interface EvalSessionOptions extends HostAgentOptions {
-    readonly call?: SessionCall;
-    readonly clientId?: string;
-    readonly env?: Record<string, string>;
-    readonly llm?: LlmProvider;
-    readonly phone?: string;
+export interface StepUsage {
     // (undocumented)
-    readonly turnTimeoutMs?: number;
+    inputTokens?: number | undefined;
+    // (undocumented)
+    outputTokens?: number | undefined;
+    // (undocumented)
+    totalTokens?: number | undefined;
 }
 
 // @public
-type EvalSleep = {
-    readonly label: string;
-    readonly duration: string | number | Date;
-};
-
-// @public
-export type EvalTest<Network extends EvalNetwork = never, Client extends WorkflowClient = never> = (name: string, body: (ctx: EvalTestContext & ([Network] extends [never] ? unknown : {
-    readonly network: Network;
-}) & ([Client] extends [never] ? unknown : {
-    readonly workflowClient: Client;
-})) => Promise<void>, options?: [Network] extends [never] ? EvalCaseOptions : Omit<EvalCaseOptions, "network"> & {
-    readonly network?: Network | (() => Network);
-}) => void;
-
-// @public @sealed
-export type EvalTestContext = {
-    readonly session: EvalSession;
-    readonly mode: EvalMode;
-    readonly workflows: EvalWorkflows | undefined;
-    readonly workflowClient: WorkflowClient | undefined;
-    readonly network: EvalNetwork | undefined;
-};
-
-// @public @sealed
-type EvalTextAgent = {
-    readonly id: string;
-    send(text: string): Promise<EvalTurn>;
-    sendAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
-    events(): readonly SessionEvent[];
-    said(): readonly string[];
-    toolCalls(): readonly EvalToolCall[];
-    close(): Promise<void>;
-};
-
-// @public
-interface EvalTextAgentOptions extends HostAgentOptions {
-    readonly env?: Record<string, string>;
-    readonly llm?: LlmProvider;
-    readonly turnTimeoutMs?: number;
+export interface SttError extends Error {
+    // (undocumented)
+    readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
 }
 
-// @public
-export type EvalTextTest = (name: string, body: (ctx: EvalTextTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
-
-// @public @sealed
-export type EvalTextTestContext = {
-    readonly agent: EvalTextAgent;
-    readonly mode: EvalMode;
+// @public (undocumented)
+export type SttEvents = {
+    partial: (text: string, meta?: SttTurnMeta) => void;
+    final: (text: string, meta?: SttTurnMeta) => void;
+    error: (err: SttError) => void;
 };
 
 // @public
-type EvalToolCall = {
-    readonly toolCallId: string;
+export interface SttOpener {
+    // (undocumented)
     readonly name: string;
-    readonly args: Record<string, unknown>;
-    readonly result?: string;
-};
+    // (undocumented)
+    open(options: SttOpenOptions): Promise<SttSession>;
+}
 
 // @public
-type EvalTurn = {
-    readonly text: string;
-    readonly events: readonly SessionEvent[];
-    readonly toolCalls: readonly EvalToolCall[];
-    readonly completed: boolean;
-    readonly errors: readonly SessionEvent<"error.reported">[];
-    readonly endedSession?: boolean;
-};
+export interface SttOpenOptions {
+    apiKey: string;
+    sampleRate: number;
+    // (undocumented)
+    signal: AbortSignal;
+    // (undocumented)
+    sttPrompt?: string | undefined;
+}
 
 // @public
-export type EvalWorkflowCaseOptions = {
-    readonly live?: boolean;
-};
-
-// @public
-type EvalWorkflowEngineOptions = {
-    readonly workflows: Readonly<Record<string, WorkflowDef>>;
-    readonly env: Readonly<Record<string, string>>;
-    readonly stepFetch?: StepFetch | undefined;
-    readonly stepAttempt?: {
-        readonly attempt: number;
-        readonly maxAttempts: number;
-    } | undefined;
-    readonly speech?: SpeechSynthesizer | undefined;
-};
-
-// @public @sealed
-type EvalWorkflowRun<R = unknown> = {
-    readonly runId: string;
-    readonly workflow: string;
-    readonly key: string | undefined;
-    readonly status: WorkflowRunStatus;
-    readonly output: R | undefined;
-    readonly error: string | undefined;
-    readonly completed: boolean;
-    readonly reported: readonly string[];
-    readonly emitted: readonly EvalEmitted[];
-    readonly slept: readonly EvalSleep[];
-    readonly elapsedMs: number | undefined;
-    readonly snapshot: WorkflowRunSnapshot<R>;
-};
-
-// @public @sealed
-type EvalWorkflows = {
-    readonly client: WorkflowClient;
-    run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
-    run(workflow: string, input?: unknown, options?: EvalRunOptions): Promise<EvalWorkflowRun>;
-    settle<R>(runId: string, workflow: AnyWorkflowDef<R>, options?: {
-        timeoutMs?: number | undefined;
-    }): Promise<EvalWorkflowRun<R>>;
-    settle(runId: string, workflow?: undefined, options?: {
-        timeoutMs?: number | undefined;
-    }): Promise<EvalWorkflowRun>;
-    runs(): Promise<readonly EvalWorkflowRun[]>;
-    settleAll(options?: {
-        timeoutMs?: number | undefined;
-    }): Promise<readonly EvalWorkflowRun[]>;
+export interface SttSession {
+    // (undocumented)
     close(): Promise<void>;
-};
-
-// @public
-type EvalWorkflowsOptions = {
-    readonly agent: AgentDef;
-    readonly env?: Record<string, string> | undefined;
-    readonly stepFetch?: EvalWorkflowEngineOptions["stepFetch"];
-    readonly speech?: EvalWorkflowEngineOptions["speech"];
-    readonly timeoutMs?: number | undefined;
-    readonly logger?: Logger | undefined;
-};
-
-// @public
-export type EvalWorkflowTest = (name: string, body: (ctx: EvalWorkflowTestContext) => Promise<void>, options?: EvalWorkflowCaseOptions) => void;
-
-// @public @sealed
-export type EvalWorkflowTestContext = {
-    readonly app: EvalWorkflows;
-    readonly mode: EvalMode;
-};
-
-// @public
-interface HostAgentOptions {
-    agent: AgentDef;
-    fetch?: typeof globalThis.fetch;
-    logger?: Logger;
-    providerEnv?: ProviderEnv;
-    runCode?: RunCodeExecutor;
-    toolTimeoutMs?: number;
-    workflows?: WorkflowClient | undefined;
+    forceEndOfTurn?(): void;
+    // (undocumented)
+    on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
+    sendAudio(pcm: Int16Array): void;
+    updateEndpointing?(minTurnSilenceMs: number): void;
 }
 
 // @public
-type LogContext = Record<string, unknown>;
-
-// @public
-type LogFn = (message: string, ctx?: LogContext) => void;
-
-// @public
-interface Logger {
-    // (undocumented)
-    debug: LogFn;
-    // (undocumented)
-    error: LogFn;
-    // (undocumented)
-    info: LogFn;
-    // (undocumented)
-    warn: LogFn;
-}
-
-// @public
-export function resolveEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>,
-overrides?: {
-    readonly llm?: LlmProvider;
-}): {
-    mode: EvalMode;
-    reason: string;
+export type SttTurnMeta = {
+    endOfTurnConfidence?: number;
+    inputPeakDbfs?: number;
 };
 
 // @public
-export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>): {
-    mode: EvalMode;
-    reason: string;
+export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
+
+// @public
+export const STUB_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
+
+export { StubGatewayRoute }
+
+export { stubGatewayRoute }
+
+// @public
+export type StubLlm = {
+    readonly llm: LlmProvider;
+    readonly env: Record<string, string>;
+    release(): void;
 };
 
 // @public
-type StubScript = string | readonly (string | StubStep)[];
+export type StubScript = string | readonly (string | StubStep)[];
+
+export { StubSpeech }
+
+export { StubSpeechOptions }
 
 // @public
-type StubStep = {
+export type StubSpeechProviders = {
+    readonly stt: SttProvider;
+    readonly tts: TtsProvider;
+    readonly env: Record<string, string>;
+    sttSession(): StubSttSession | undefined;
+    ttsSession(): StubTtsSession | undefined;
+    release(): void;
+};
+
+// @public
+export type StubStep = {
     readonly text: string;
 } | {
     readonly tool: string;
     readonly args?: Record<string, unknown>;
+};
+
+export { StubStepDelegate }
+
+export { StubStepFetch }
+
+// @public
+export type StubSttSession = SttSession & {
+    partial(text: string): void;
+    commit(text: string): void;
+};
+
+export { StubTranscribe }
+
+export { StubTranscribeOptions }
+
+// @public
+export type StubTtsSession = TtsSession & {
+    readonly spoken: readonly string[];
+};
+
+export { StubUploads }
+
+export { StubUploadsOptions }
+
+// @public
+export function toolArgsIn<T>(calls: readonly EvalToolCall[], name: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public (undocumented)
+export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readonly Record<string, unknown>[];
+
+// @public
+export function toolCallsInEvents(events: readonly SessionEvent[]): readonly EvalToolCall[];
+
+// @public
+export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolCall[];
+
+// @public
+export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
+
+// @public
+export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
+
+// @public
+export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public
+export function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string;
+
+// @public
+export interface TtsError extends Error {
+    // (undocumented)
+    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+}
+
+// @public
+export type TtsEvents = {
+    audio: (pcm: Int16Array) => void;
+    words: (words: readonly TtsWordTiming[]) => void;
+    done: () => void;
+    error: (err: TtsError) => void;
+};
+
+// @public
+export interface TtsOpener {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    open(options: TtsOpenOptions): Promise<TtsSession>;
+}
+
+// @public
+export interface TtsOpenOptions {
+    apiKey: string;
+    sampleRate: number;
+    signal: AbortSignal;
+}
+
+// @public
+export interface TtsSession {
+    cancel(): void;
+    // (undocumented)
+    close(): Promise<void>;
+    flush(): void;
+    // (undocumented)
+    on<E extends keyof TtsEvents>(event: E, fn: TtsEvents[E]): Unsubscribe;
+    sendText(text: string): void;
+}
+
+// @public
+export interface TtsWordTiming {
+    readonly endMs: number;
+    readonly startMs: number;
+    readonly text: string;
+}
+
+// @public
+export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
+
+// @public
+export function turnCalling(turns: readonly EvalTurn[], name: string, where?: (call: EvalToolCall) => boolean): EvalTurn;
+
+// @public
+export type Unsubscribe = () => void;
+
+// @public
+export type VmRunCodeOptions = {
+    readonly timeoutMs?: number;
+    readonly globals?: Record<string, unknown>;
 };
 ```
 
@@ -14792,7 +15655,7 @@ export interface AgentServerOptions extends SharedServerOptions {
     db?: Db | undefined;
     env: AgentEnv;
     journal?: JournalStore | undefined;
-    page?: AgentDef["page"] | undefined;
+    page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
     runCode?: RunCodeExecutor | undefined;
@@ -15228,7 +16091,7 @@ export type RuntimeServerOptions = {
     uploadBroker?: string;
     upgrade?: ServerUpgradeHook | undefined;
     request?: ServerRequestHook | undefined;
-    page?: NonNullable<AgentDef["page"]>;
+    page?: "voice" | "static";
     telephony?: boolean | readonly CarrierName[];
     auth?: SessionAuth | undefined;
 };
@@ -15600,7 +16463,6 @@ import type { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
-import type { OwnedMap } from '@alexkroman1/aai/internal';
 import { publishClientInboxDefaults } from '@alexkroman1/aai/host-internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
@@ -15640,7 +16502,7 @@ export function applyWorkflowJournalDdl(options: {
 
 // @public
 export type AttachSessionOptions = {
-    sessions: OwnedMap<string, ServerSession>;
+    sessions: Pick<SessionDirectory, "claim" | "session">;
     createSession: (sessionId: string, client: ClientSink) => ServerSession;
     readyConfig: ReadyConfig;
     logContext?: Record<string, string>;
@@ -15730,6 +16592,9 @@ export function createPostgresJournal(options: {
 export function createPostgresStateBackend(options: {
     db: Db;
 }): SessionStateBackend;
+
+// @internal
+export function createSessionDirectory(): SessionDirectory;
 
 // @internal
 export function createSessionEventStream(options: {
@@ -15904,6 +16769,9 @@ export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
 // @public
 export const MAX_WORKFLOW_RUN_LABEL_CHARS = 200;
 
+// @internal
+export function mintPlatformSessionTicket(input: PlatformTicketInput): string;
+
 // @public
 export function normalizeRunLabel(value: unknown): string | undefined;
 
@@ -15933,6 +16801,9 @@ export const PLATFORM_ROUTES: {
 
 // @internal
 export const PLATFORM_SOCKET_PATH = "/platform-socket";
+
+// @internal
+export const PLATFORM_TICKET_RESUME_GRACE_SECONDS: number;
 
 // @internal
 export type PlatformEndpoint = {
@@ -15970,6 +16841,9 @@ const PlatformReplyFrameSchema: z.ZodObject<{
 // @public
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
+// @internal
+export function platformSessionSecret(guestToken: string): string;
+
 // @public
 type PlatformSessionStateOptions = PlatformEndpoint;
 
@@ -15994,6 +16868,14 @@ type PlatformSocketReply = {
 export function platformSocketUrl(base: string): string;
 
 // @public
+export type PlatformTicketInput = {
+    guestToken: string;
+    previousGuestTokens?: readonly string[];
+    presented?: string | undefined;
+    now?: number;
+};
+
+// @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
 
 // @public
@@ -16002,7 +16884,7 @@ export type ProviderEnvVarsQuery = {
     llm?: object | undefined;
     tts?: object | undefined;
     s2s?: object | undefined;
-    page?: AgentDef["page"] | undefined;
+    mode?: AgentDef["mode"] | undefined;
 };
 
 export { publishClientInboxDefaults }
@@ -16143,6 +17025,25 @@ export const SESSION_EVENT_TABLE = "aai_session_events";
 // @internal
 export const SESSION_STATE_TABLE = "aai_session_state";
 
+// @internal
+export type SessionDirectory = {
+    claim(sessionId: string, session: ServerSession): () => boolean;
+    session(sessionId: string): ServerSession | undefined;
+    claimWiring(sessionId: string, wiring: SessionWiring): () => boolean;
+    emitter(sessionId: string): SessionEmitter | undefined;
+    meter(sessionId: string): UsageMeter | undefined;
+    readonly speech: SpeechDirectory;
+    live(): IterableIterator<ServerSession>;
+    ids(): IterableIterator<string>;
+    readonly size: number;
+    clear(): void;
+};
+
+// @public
+export type SessionEmitter = {
+    emit(body: SessionEventBody): SessionEvent;
+};
+
 // @public
 type SessionEventPage = {
     events: readonly SessionEvent[];
@@ -16227,6 +17128,13 @@ type SessionWebSocket = {
     }) => void): void;
 };
 
+// @internal
+export type SessionWiring = {
+    sink: ClientSink;
+    emitter: SessionEmitter;
+    meter: UsageMeter;
+};
+
 // @public
 type SleepEntry = SleepRecord & {
     key: string;
@@ -16238,6 +17146,13 @@ type SleepRecord = {
     woken: boolean;
     correlationId?: string | undefined;
     kind: "sleep" | "hookTimeout";
+};
+
+// @internal
+export type SpeechDirectory = {
+    of(sessionId: string): SessionSpeech;
+    live(sessionId: string): SessionSpeech | undefined;
+    announce(sessionId: string, instruction: string): boolean;
 };
 
 // @internal
@@ -16829,6 +17744,9 @@ export type AgentCustomEvent = {
 export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
 // @public
+export type AgentStateFrame = Readonly<Record<string, unknown>>;
+
+// @public
 export function AudioResult(input: AudioResultProps): ReactNode;
 
 // @public
@@ -16935,7 +17853,7 @@ export function ChatView(input: {
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "WebSocket"> & {
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "token" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
     theme?: ClientTheme;
@@ -17065,6 +17983,7 @@ export type CreateInboxOptions = {
     onNotice?: ((notice: InboxNotice) => void) | undefined;
     onEvent?: ((event: InboxEvent) => void) | undefined;
     events?: boolean | undefined;
+    token?: VoiceSessionOptions["token"];
     WebSocket?: WebSocketConstructor | undefined;
 };
 
@@ -17265,6 +18184,9 @@ export type RouteMutationRunOptions = {
 };
 
 // @public
+export function selectAgentState<V = DefaultToolResult>(slot: string): (snapshot: SessionSnapshot) => V | undefined;
+
+// @public
 export function SelectField(input: FieldShell & {
     options?: readonly (string | {
         value: string;
@@ -17349,6 +18271,7 @@ export type SessionIdentity = {
     clientId(): string | undefined;
     holderId(): string;
     sessionId(): string | undefined;
+    ticket(): string | undefined | Promise<string | undefined>;
 };
 
 // @public
@@ -17361,7 +18284,7 @@ export type SessionSnapshot = {
     readonly messages: ChatMessage[];
     readonly toolCalls: ToolCallInfo[];
     readonly customEvents: AgentCustomEvent[];
-    readonly agentState: unknown;
+    readonly agentState: AgentStateFrame | null;
     readonly userTranscript: string | null;
     readonly agentTranscript: string | null;
     readonly error: SessionError | null;
@@ -17492,13 +18415,16 @@ export type UploadStatus = UploadProgress & {
 };
 
 // @public
-export function useAgentState<S = DefaultToolResult>(): S | null;
+export function useAgentState(): AgentStateFrame | null;
 
 // @public
 export function useAgentState<V>(projection: StateProjection<V>): V;
 
 // @public
-export function useAgentState<S = DefaultToolResult>(fallback: S): S;
+export function useAgentState<V = DefaultToolResult>(slot: string): V | null;
+
+// @public
+export function useAgentState<V>(slot: string, fallback: V): V;
 
 // @public
 export function useClientId(): string | undefined;
@@ -17881,6 +18807,9 @@ export type VoiceSessionOptions = {
     phone?: string | (() => string | undefined) | undefined;
     client?: string | (() => string | undefined) | undefined;
     preConnectAudio?: boolean | undefined;
+    token?: string | ((attempt: {
+        readonly sessionId: string | undefined;
+    }) => string | undefined | Promise<string | undefined>) | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
 
@@ -18009,6 +18938,9 @@ type AgentCustomEvent = {
 // @public
 type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
+// @public
+type AgentStateFrame = Readonly<Record<string, unknown>>;
+
 // @internal
 export function ApiUrlChip(input: {
     className?: string | undefined;
@@ -18068,7 +19000,7 @@ export const DEFAULT_PROGRESS_POLL_MS = 5000;
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
 // @internal
-export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
+export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch, presentedTicket?: string): Promise<ClientConfigResponse | null>;
 
 // @public
 export const MAX_MISSING_READS = 3;
@@ -18091,6 +19023,7 @@ type SessionIdentity = {
     clientId(): string | undefined;
     holderId(): string;
     sessionId(): string | undefined;
+    ticket(): string | undefined | Promise<string | undefined>;
 };
 
 // @internal
@@ -18109,7 +19042,7 @@ type SessionSnapshot = {
     readonly messages: ChatMessage[];
     readonly toolCalls: ToolCallInfo[];
     readonly customEvents: AgentCustomEvent[];
-    readonly agentState: unknown;
+    readonly agentState: AgentStateFrame | null;
     readonly userTranscript: string | null;
     readonly agentTranscript: string | null;
     readonly error: SessionError | null;

@@ -81,10 +81,27 @@ describe("stray agent fields", () => {
   });
 
   test("the author conveniences pass — normalization consumes them before the check", () => {
-    // `voice` desugars to a TTS descriptor and is gone by the time the check
-    // runs. `system` used to be in this list; it is a stray now.
-    const config = configOf({ name: "A", voice: "jane" });
-    expect(config.tts?.kind).toBe("assemblyai");
+    // A string `llm` becomes a descriptor and the endpointing pair lowers onto
+    // the STT stage, so neither is a stray by the time the check runs.
+    const config = configOf({
+      name: "A",
+      llm: "claude-sonnet-4-6",
+      turnTaking: { maxSilenceMs: 4000 },
+    });
+    expect(config.llm?.kind).toBeDefined();
+    expect(config.stt?.kind).toBe("assemblyai");
+  });
+
+  test.each([
+    ["voice", "tts: assemblyAITts({ voice })"],
+    ["minBargeInWords", "interruption.minWords"],
+    ["turnDetection", "turnTaking.detection"],
+    ["silenceTimeoutMs", "silence.nudge.afterMs"],
+    ["deadAirCoverMs", "silence.deadAirCoverMs"],
+  ])("the removed flat field `%s` names the group field that replaced it", (field, replacement) => {
+    expect(() => configOf({ name: "A", [field]: 1 })).toThrow(
+      `\`${field}\` (renamed to \`${replacement}\`)`,
+    );
   });
 
   test("a REMOVED field is named as renamed, which edit distance cannot reach", () => {
@@ -97,8 +114,8 @@ describe("stray agent fields", () => {
     );
   });
 
-  test("endpointing shorthand passes — `takeNumber` deletes it before the check sees it", () => {
-    expect(() => configOf({ name: "A", maxTurnSilenceMs: 4000 })).not.toThrow();
+  test("the end-of-turn window passes — it is lowered onto `stt` before the check sees it", () => {
+    expect(() => configOf({ name: "A", turnTaking: { maxSilenceMs: 4000 } })).not.toThrow();
   });
 
   test("a well-formed agent is untouched", () => {

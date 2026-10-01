@@ -92,20 +92,6 @@ function transcriberBufferedAmount(transcriber: StreamingTranscriber): number | 
 }
 
 /**
- * AssemblyAI's documented `agent_context` cap ("your agent's most recent
- * spoken reply, up to about 1,500 characters"); the service clips anything
- * longer, in an unspecified direction.
- *
- * That direction is the whole reason to trim host-side at exactly this value
- * rather than above it. This constant was 1750, which left a 250-character
- * band where our own tail-preserving trim passed the value through and the
- * SERVICE decided what to drop — and if it clips the tail, it drops the
- * trailing question, which is the one part worth sending (see
- * {@link normalizeAgentContext}). Trimming at the documented cap keeps the
- * decision here.
- */
-
-/**
  * The streaming endpoint to dial, or `undefined` to leave the SDK's own.
  *
  * An explicit `streamingUrl` wins over `region` — the rule {@link pickEndpoint}
@@ -138,10 +124,6 @@ function buildTranscriberParams(
   // startup are the ones dialled here, not a second copy of the same `??`
   // chains. This function only maps them onto the SDK's parameter names.
   const settings = resolveAssemblyAISttSettings(opts);
-  // The DESCRIPTOR's context wins over the host's seed. They are two different
-  // about this call, `openOpts.agentContext` is the greeting the runtime is
-  // about to speak — and the author's own is the more specific of the two.
-  // Either way the first spoken reply replaces it (see `updateAgentContext`).
   const params: Record<string, unknown> = {
     sampleRate: openOpts.sampleRate,
     speechModel: settings.model,
@@ -345,7 +327,8 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
           );
           if (bounded === currentMinTurnSilenceMs) return;
           currentMinTurnSilenceMs = bounded;
-          // NOTE: snake_case on the wire, like `agent_context` above.
+          // NOTE: snake_case — `updateConfiguration` takes the service's own
+          // wire names, unlike the camelCase connect params.
           transcriber.updateConfiguration({ min_turn_silence: bounded });
         },
         forceEndOfTurn() {

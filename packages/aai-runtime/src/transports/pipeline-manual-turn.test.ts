@@ -247,7 +247,7 @@ describe("push-to-talk through the pipeline transport", () => {
     t.commitUserTurn?.();
     t.clearUserTurn?.();
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]?.[0]).toMatch(/turnDetection: "manual"/);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/detection: "manual"/);
 
     // And the transcriber still owns the turn: a final is answered as always.
     stt.last()?.fireFinal("hello");

@@ -2,7 +2,7 @@
 /**
  * What the AssemblyAI STT adapter does with a LIVE stream — turn events and
  * their confidence, fixture replay, the `AAI_DEBUG` turn trace, mid-stream
- * `agent_context` updates, and outbound frame coalescing.
+ * endpointing updates, and outbound frame coalescing.
  *
  * Everything that lands on the connect URL lives in
  * `assemblyai-connect-params.test.ts`; the two share

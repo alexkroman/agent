@@ -330,7 +330,7 @@ export function lazyRuntime(
      *
      * A GETTER, and that is the whole point of it being here rather than a
      * captured value. The runtime is built on first use, and for a
-     * `page: "static"` app the first use is a REQUEST TO THIS API rather than a
+     * `mode: "workflow-app"` app the first use is a REQUEST TO THIS API rather than a
      * session — there may never be one. Reading the property is therefore what
      * builds the runtime, and a value captured when the facade was constructed
      * would be `undefined` for the life of the server.

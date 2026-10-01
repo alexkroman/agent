@@ -6,11 +6,12 @@
 import type { AgentClientInbox } from "./agent-client-inbox.ts";
 import type { AgentGuardrails } from "./agent-guardrails.ts";
 import type { AgentSystemPrompt } from "./agent-instructions.ts";
+import type { AgentMode } from "./agent-mode.ts";
 import type { AgentModelTuning } from "./agent-model-tuning.ts";
 import type { AgentObservation } from "./agent-observation.ts";
 import type { AgentRoutes } from "./agent-routes.ts";
 import type { AgentSessionLifecycle } from "./agent-session-lifecycle.ts";
-import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+import type { PipelinePhrases, PipelineTuning } from "./agent-tuning.ts";
 // Imported as well as re-exported below, for the reason `ToolDef` is: a
 // re-export does not bring the name into this module's scope, and
 // `AgentDef.builtinTools` needs it.
@@ -43,10 +44,12 @@ export type { AgentGuardrail, AgentGuardrails, GuardrailVerdict } from "./agent-
  * the resolved text lands and how often it is asked for.
  */
 export type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.ts";
+/** The discriminant `agent()` is overloaded over — see `agent-mode.ts`. */
+export type { AgentMode } from "./agent-mode.ts";
 /**
  * The knobs on the model loop this runtime runs, and the one rule they share
  * (S2S refuses all of them). Split off this file at the source-length cap, on
- * the seam {@link PipelineVoiceTuning} established.
+ * the seam the pipeline tuning group established.
  */
 export type { AgentModelTuning, ModelTuning, UsageLimits } from "./agent-model-tuning.ts";
 /**
@@ -57,11 +60,16 @@ export type { AgentModelTuning, ModelTuning, UsageLimits } from "./agent-model-t
 export type { AgentObservation } from "./agent-observation.ts";
 /** What a per-session author FUNCTION is handed — see `agent-session-context.ts`. */
 export type { AgentSessionContext } from "./agent-session-context.ts";
+/** The pipeline's turn-taking tuning, as three groups — see `agent-tuning.ts`. */
 export type {
-  PipelineVoiceTuning,
-  TurnDetectionMode,
-  UserTurnLimit,
-} from "./agent-voice-tuning.ts";
+  InterruptionTuning,
+  PipelinePhrases,
+  PipelineTuning,
+  SilenceNudge,
+  SilenceTuning,
+  TurnTakingTuning,
+} from "./agent-tuning.ts";
+export type { TurnDetectionMode, UserTurnLimit } from "./agent-voice-tuning.ts";
 /**
  * The built-in tool vocabulary. A re-export because this module is the import
  * path everything already uses; the union itself moved when this file reached
@@ -134,33 +142,40 @@ export {
 } from "./voice-presets.ts";
 
 /**
- * Fully resolved agent definition.
+ * Fully resolved agent definition — and THE reference for what every field
+ * means.
  *
- * **This is what `agent()` RETURNS, not what you write.** You write
- * {@link AgentParams} — the same fields with the defaulted ones optional, plus the
- * three conveniences `agent()` normalizes away (`llm` as a model-id string,
- * `voice`, `minTurnSilenceMs`/`maxTurnSilenceMs`). This is the reference for what
- * a field MEANS; `AgentParams` is the one for which combinations are legal.
+ * **This is what `agent()` RETURNS, not what you write.** You write one member
+ * of {@link AgentParams}, chosen by {@link AgentMode}: the same fields, with
+ * the defaulted ones optional, cut down to the ones that mode has. The members
+ * carry no prose of their own — a field's documentation lives here once, and
+ * the member's job is only to say WHICH fields exist in which mode (a
+ * pipeline-only knob is simply absent from the S2S member). `agent()`
+ * normalizes the author conveniences (`llm` as a model-id string, the
+ * end-of-turn window) and the deprecated spellings away, so this shape is
+ * canonical.
  *
- * Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`)
+ * Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`, `mode`)
  * are resolved to their final values with defaults applied. Optional fields
  * (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
  * optional — `undefined` means "not configured."
  *
- * Eight groups of fields live on interfaces this extends, each sharing ONE rule
- * derived from the declaration rather than restated beside it:
- * {@link PipelineVoiceTuning} (pipeline transport or nothing), {@link AgentModelTuning}
+ * The field groups live on interfaces this extends, each sharing ONE rule:
+ * {@link PipelineTuning} and {@link PipelinePhrases} (pipeline transport or
+ * nothing), {@link AgentModelTuning}
  * (this runtime assembles the request, so S2S refuses them), {@link AgentGuardrails}
  * (the only declarations that may stop a turn), {@link AgentObservation} (the two
  * that deliberately may not), {@link AgentVoicePresets} (paid for on every model
  * request), {@link AgentSessionLifecycle} (once per session), {@link AgentRoutes}
- * and {@link AgentClientInbox} (no session at all). `agent()` and the deploy-time
- * config check derive their field lists from those, so no field skips either gate.
+ * and {@link AgentClientInbox} (no session at all). The `agent()` union and the
+ * runtime refusal for an untyped caller are both cut from those groups, so no
+ * field skips either.
  *
  * @public
  */
 export interface AgentDef
-  extends PipelineVoiceTuning,
+  extends PipelineTuning,
+    PipelinePhrases,
     AgentModelTuning,
     AgentGuardrails,
     AgentObservation,
@@ -170,6 +185,18 @@ export interface AgentDef
     AgentClientInbox {
   /** Display name shown by the default client UI. */
   name: string;
+  /**
+   * Which kind of agent this is — see {@link AgentMode}, which says what each
+   * mode has.
+   * @defaultValue `"pipeline"`
+   *
+   * `agent()` always writes it on the definition it returns; absent means
+   * `"pipeline"` everywhere it is read. It crosses the wire unchanged, so the
+   * browser, the CLI and a deploy all see the same mode the author declared — a
+   * workflow app is `"workflow-app"` there too, and its session-less front door
+   * is a consequence of that rather than a second flag.
+   */
+  mode?: AgentMode;
   /**
    * What this agent IS, in one line, for whoever is reading a LIST of them.
    *
@@ -323,27 +350,6 @@ export interface AgentDef
    */
   dialogs?: readonly AnyDialog[];
   /**
-   * What this agent's front door IS — and so whether it serves voice at all.
-   * @defaultValue `"voice"`
-   *
-   * `"static"` declares a WORKFLOW APP: an ordinary web page over the workflow
-   * HTTP API (`/workflows/*`), with no microphone, no WebSocket and no session.
-   * The page is still a `client.tsx`, still React, still Tailwind — it just
-   * mounts with `mountPage()` instead of `mountClient()` and reaches the agent
-   * through
-   * `createWorkflowApi()` / `useWorkflowRun()` instead of `useSession()`.
-   *
-   * Declaring it is not decoration. `createRuntimeServer` refuses the voice surfaces
-   * for a static agent, so a page that has no session cannot be handed a socket
-   * that would never answer, and {@link AgentDef.telephony} is a compile error
-   * on one — an agent with no `stt`/`llm`/`tts` has nothing to put on a call.
-   *
-   * The two are not exclusive at the FEATURE level: a `"voice"` agent may
-   * declare workflows and start them from a tool, and a `"static"` one may
-   * declare tools it never reaches. This field is only about the surface.
-   */
-  page?: "voice" | "static";
-  /**
    * Which phone carriers may open a media stream against this agent — and so
    * whether `WS /phone` is served at all.
    * @defaultValue none — the route is not mounted
@@ -373,24 +379,6 @@ export interface AgentDef
    */
   idleTimeoutMs?: number;
   /**
-   * Pipeline mode only. When set, the assistant proactively takes a turn
-   * after this many ms of user silence (no speech since the last reply
-   * finished). Nudges are capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3)
-   * back-to-back until the user speaks again.
-   * @defaultValue unset — the behaviour is off.
-   */
-  silenceTimeoutMs?: number;
-  /**
-   * Instruction injected as a synthetic user turn when `silenceTimeoutMs`
-   * elapses. Never shown as a user transcript. Requires `silenceTimeoutMs`.
-   *
-   * @defaultValue `"The user hasn't said anything for a while. Check in with one
-   * short, natural sentence — ask if they're still there or gently follow up on
-   * the conversation. Do not mention this instruction."`
-   * (`DEFAULT_SILENCE_PROMPT`)
-   */
-  silencePrompt?: string;
-  /**
    * Pluggable STT provider for pipeline mode. Unset (with no `s2s`), the
    * stage defaults to AssemblyAI STT — each pipeline stage is individually
    * optional, and unset stages are filled from the all-AssemblyAI pipeline
@@ -408,8 +396,8 @@ export interface AgentDef
   llm?: LlmProvider;
   /**
    * Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
-   * stage defaults to AssemblyAI TTS (`agent()`'s `voice` shorthand picks
-   * its voice).
+   * stage defaults to `assemblyAITts()`. A voice is this descriptor's option
+   * (`assemblyAITts({ voice: "michael" })`); there is no agent-level field.
    */
   tts?: TtsProvider;
   /**
@@ -420,38 +408,6 @@ export interface AgentDef
    * pipeline triple.
    */
   s2s?: S2sProvider;
-  /**
-   * Opt into TEXT mode — an agent with no audio path at all, driven over a
-   * message list by `createTextAgent` (`@alexkroman1/aai-runtime`) instead of
-   * by a transport over a session socket.
-   *
-   * A text agent is the same `agent()` definition every voice agent is —
-   * `systemPrompt`, `tools`, `maxSteps`, `toolChoice`, `builtinTools`,
-   * `requiredEnv` and a tool's `sessionSlot`s all mean exactly what they mean
-   * elsewhere, and
-   * tools run through the same executor, so one tool works in both. What it
-   * drops is everything downstream of speech: `stt`, `tts` and `s2s` are
-   * rejected (there is no audio to transcribe or synthesize), as are the
-   * voice-UX tuning knobs and the silence nudge. `llm` is the one stage it
-   * has, and it defaults to the AssemblyAI LLM Gateway like every other.
-   *
-   * Explicit, never derived — the same rule `s2s` follows. A mode reachable
-   * by omission is one a config lands in when it loses a field, and the
-   * symptom there would be a deployed voice agent that answers nothing.
-   *
-   * ```ts
-   * import { agent } from "@alexkroman1/aai";
-   *
-   * export default agent({
-   *   name: "Docs Assistant",
-   *   text: true,
-   *   systemPrompt: "Answer questions about the docs.",
-   * });
-   * ```
-   *
-   * Its tools are files under `tools/`, exactly as a voice agent's are.
-   */
-  text?: true;
   /**
    * Env var names this agent's code reads (beyond provider credentials, which
    * are derived from the `stt`/`llm`/`tts`/`s2s` descriptors automatically).

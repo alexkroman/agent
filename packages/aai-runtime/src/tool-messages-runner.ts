@@ -18,8 +18,8 @@
  * dead-air filler from opening the barge-in gate"). The four properties that
  * keep this feature out of that family:
  *
- * 1. **START and DELAYED are sent `record: false`.** That is the same flag the
- *    dead-air cover rides, and it is what `HeardTracker.spokeRecordable()`
+ * 1. **START and DELAYED are spoken `record: false`.** That is the same flag,
+ *    through the same `speakInReply` placement, the dead-air cover rides, and it is what `HeardTracker.spokeRecordable()`
  *    reads — so a turn that has played only tool filler still cannot be spoken
  *    over, and the filler never reaches history, `ctx.messages` or a committed
  *    transcript. Nothing in this module is allowed to send one with
@@ -55,6 +55,12 @@ import { isToolFailure, omitUndefined, safeJsonParse } from "@alexkroman1/aai/ut
 import pTimeout from "p-timeout";
 import { createRestartableTimer } from "./_timer.ts";
 import type { Logger } from "./runtime-config.ts";
+import type { InReplyLineFlags } from "./transports/pipeline-lines.ts";
+
+/** START and DELAYED lines: filler, never on the record — rule 1 above. */
+const FILLER: InReplyLineFlags = { record: false, interruptible: true };
+/** An `assistant` completion IS the reply, so it is on the record. */
+const COMPLETION: InReplyLineFlags = { record: true, interruptible: true };
 
 /**
  * How the runner reaches the caller. Bound per TURN by `consumeLlmStream`,
@@ -62,28 +68,20 @@ import type { Logger } from "./runtime-config.ts";
  * {@link ToolSpeechController.bind}.
  */
 export type ToolSpeechChannel = {
-  /** Forward text to the turn's TTS funnel, carrying `record` unchanged. */
-  send(text: string, opts: { record: boolean }): void;
   /**
-   * Release whatever the coalescer is holding.
-   *
-   * Called before AND after every send here. Before, because a tool call is
-   * not guaranteed to have been preceded by the `text-end` that usually
-   * releases the buffer — the AI SDK may start `execute` before the consumer
-   * has read the `tool-call` part, so the boundary `pipeline-stream-parts.ts`
-   * draws on that part may not have happened yet, and a line sent past a
-   * buffered fragment would be spoken in the wrong order. After, because
-   * nothing else is coming to flush it: the whole point is that the turn has
-   * gone quiet.
+   * Speak one line inside the turn's reply — `speakInReply`
+   * (`transports/pipeline-lines.ts`), the placement the dead-air cover shares:
+   * TTS boundaries on both sides, the segment separator, and the turn's
+   * transcript when `record` is set. The two flag values this module passes
+   * are {@link FILLER} and {@link COMPLETION}; nothing here spells a send of
+   * its own.
    */
-  boundary(): void;
-  /** Accumulate into the turn's TRANSCRIPT. Only a verbatim completion does. */
-  record(text: string): void;
+  speak(text: string, line: InReplyLineFlags): void;
   /**
    * Is the caller mid-utterance? Filler declines rather than talking across.
    *
-   * **This is the ONLY suppressor, and a `bargeIn` one must not be added
-   * beside it.** The two are orthogonal: `bargeIn: "off"` governs whether
+   * **This is the ONLY suppressor, and a `interruption` one must not be added
+   * beside it.** The two are orthogonal: `interruption: "off"` governs whether
    * CALLER speech takes the floor from the agent, where filler governs whether
    * the agent covers its own latency. Suppressing filler inside a no-barge-in
    * state would play dead air during exactly the phase in which the author has
@@ -246,7 +244,7 @@ export function createToolSpeechController(deps: ToolSpeechDeps): ToolSpeechCont
   let verbatim: string | undefined;
 
   /**
-   * The one send filler takes. `record: false` is not a parameter here, which
+   * The one send filler takes. `FILLER` is not a parameter here, which
    * is the point: no argument can turn a hold line into something the barge-in
    * gate or history will see.
    *
@@ -260,9 +258,7 @@ export function createToolSpeechController(deps: ToolSpeechDeps): ToolSpeechCont
    */
   function emitFiller(kind: string, toolName: string, text: string): boolean {
     if (channel === undefined || channel.callerSpeaking()) return false;
-    channel.boundary();
-    channel.send(text, { record: false });
-    channel.boundary();
+    channel.speak(text, FILLER);
     // LOGGED for the reason the dead-air cover's line is: these never reach a
     // transcript, so without it a harness trajectory shows a covered gap and an
     // uncovered one identically.
@@ -355,10 +351,7 @@ export function createToolSpeechController(deps: ToolSpeechDeps): ToolSpeechCont
             return result;
           }
           verbatim = chosen.content;
-          channel.boundary();
-          channel.record(chosen.content);
-          channel.send(chosen.content, { record: true });
-          channel.boundary();
+          channel.speak(chosen.content, COMPLETION);
           log.info("Tool message", {
             sid,
             kind: "verbatim",

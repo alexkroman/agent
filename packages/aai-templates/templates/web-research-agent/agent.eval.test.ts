@@ -14,8 +14,11 @@
 // `../code-interpreter-agent/agent.eval.test.ts`.
 
 import agentDef from "virtual:aai/agent";
-import { describeTurn, expectToolBeforeSpeech } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeEval,
+  describeTurn,
+  expectToolBeforeSpeech,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 
 /**

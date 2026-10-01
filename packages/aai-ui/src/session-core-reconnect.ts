@@ -23,13 +23,16 @@ const RECONNECT_OPTIONS = {
 } as const;
 
 /**
- * Open partysocket's reconnecting WebSocket. The URL is a *provider*,
- * re-evaluated on every attempt (async supported), so each retry picks up
- * the current broker-named endpoint and resume URL rather than the ones the
- * session started with.
+ * Open partysocket's reconnecting WebSocket. The URL and the subprotocols are
+ * *providers*, re-evaluated on every attempt (async supported), so each retry
+ * picks up the current broker-named endpoint, resume URL and session ticket
+ * rather than the ones the session started with. partysocket calls the URL
+ * provider first and the protocols provider straight after it, in the same
+ * tick, for each attempt.
  */
 export function openReconnectingSocket(
   urlProvider: () => Promise<string>,
+  protocolsProvider?: () => Promise<string[] | null>,
 ): InstanceType<WebSocketConstructor> {
   // The ONE structural bridge between partysocket and the socket shape the
   // session speaks, and it lives here because adapting partysocket is this
@@ -41,7 +44,7 @@ export function openReconnectingSocket(
   // narrowing can express.
   return new ReconnectingWebSocket(
     urlProvider,
-    undefined,
+    protocolsProvider,
     RECONNECT_OPTIONS,
   ) as unknown as InstanceType<WebSocketConstructor>;
 }

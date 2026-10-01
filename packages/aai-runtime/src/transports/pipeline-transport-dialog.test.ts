@@ -19,10 +19,10 @@ import { createPipelineTransport } from "./pipeline-transport.ts";
 
 useVirtualTime();
 
-describe("a state's bargeIn", () => {
+describe("a state's interruption", () => {
   test('"off" lets the agent FINISH: no partial and no final interrupts it', async () => {
     // The disclosure case. `minBargeInWords: Infinity` is what
-    // `bargeIn: "off"` translates to, and both gates are `words >= threshold`.
+    // `interruption: "off"` translates to, and both gates are `words >= threshold`.
     const { opts, stt, tts, callbacks } = makeOpts({
       llm: createFakeLanguageModel({ script: inFlightReplyScript(), delayMs: 20 }),
       minBargeInWords: 1,

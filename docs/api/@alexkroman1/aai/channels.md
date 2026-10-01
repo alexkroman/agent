@@ -14,11 +14,11 @@ a provider's is not.
 **Post a run's result to Slack**
 
 ```ts
-import { slackChannel } from "@alexkroman1/aai/channels";
-import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+import { sendToChannel, slackChannel } from "@alexkroman1/aai/channels";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 export async function postSummary(webhookUrl: string, points: string[]): Promise<string> {
-  return await sendToChannelOrFail(slackChannel({ webhookUrl }), {
+  return await orFail(sendToChannel)(slackChannel({ webhookUrl }), {
     text: `Weekly summary: ${points.length} items`,
     heading: "Weekly summary",
     sections: [{ title: "Highlights", bullets: points }],
@@ -46,8 +46,8 @@ so what was left to write is the render-and-classify half.
 - [textbeltChannel](#textbeltchannel-1) — an SMS to one number fixed at construction;
   [allowedSmsRecipient](#allowedsmsrecipient) decides which number a "text me" may reach.
 - [sendToChannel](#sendtochannel) — post, and throw a [ChannelDeliveryError](#channeldeliveryerror)
-  carrying the retry verdict. `sendToChannelOrFail`
-  (`@alexkroman1/aai/step-errors`) is the same call with the fatal/retryable
+  carrying the retry verdict. `orFail(sendToChannel)` (`orFail` is on
+  `@alexkroman1/aai/step-errors`) is the same call with the fatal/retryable
   mapping already applied.
 - [renderChannelPayload](#renderchannelpayload) — the request that WOULD be sent, pure, so a
   spec can assert the body without a network.
@@ -495,8 +495,8 @@ and any `Retry-After` it named is carried on the error.
 
 The `ChannelDeliveryError` it throws is what `toStepError` reads, so a step
 body hands it straight on and the engine gives up or waits the right amount
-— see [ChannelDeliveryError](#channeldeliveryerror), or reach for `sendToChannelOrFail`
-(`@alexkroman1/aai/step-errors`) to skip the `.catch`.
+— see [ChannelDeliveryError](#channeldeliveryerror), or reach for `orFail(sendToChannel)`
+(`orFail` is on `@alexkroman1/aai/step-errors`) to skip the `.catch`.
 
 #### Parameters
 
@@ -558,11 +558,11 @@ Declare a Slack destination.
 **Post a digest to Slack from a step**
 
 ```ts
-import { slackChannel } from "@alexkroman1/aai/channels";
-import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+import { sendToChannel, slackChannel } from "@alexkroman1/aai/channels";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 export async function postDigest(webhookUrl: string, summary: string): Promise<string> {
-  return await sendToChannelOrFail(slackChannel({ webhookUrl }), {
+  return await orFail(sendToChannel)(slackChannel({ webhookUrl }), {
     text: `Daily digest: ${summary}`,
     heading: "Daily digest",
     sections: [{ body: summary }],
@@ -595,16 +595,16 @@ Declare an SMS destination: one number, texted through Textbelt.
 **Text the owner from a step**
 
 ```ts
-import { textbeltChannel } from "@alexkroman1/aai/channels";
+import { sendToChannel, textbeltChannel } from "@alexkroman1/aai/channels";
 import { requireStepEnv } from "@alexkroman1/aai/step";
-import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 export async function textOwner(summary: string): Promise<string> {
   const channel = textbeltChannel({
     key: requireStepEnv("TEXTBELT_KEY"),
     to: requireStepEnv("SMS_TO_PHONE"),
   });
-  return await sendToChannelOrFail(channel, { text: summary });
+  return await orFail(sendToChannel)(channel, { text: summary });
 }
 ```
 

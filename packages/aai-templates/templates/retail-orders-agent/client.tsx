@@ -56,8 +56,9 @@ const statusColors: Record<string, string> = {
 // The sidebar before the first tool call, derived from the projection itself so
 // a new StoreView field can't miss the pre-first-call render.
 //
-// **This is the one template that does NOT pass its projection to
-// `useAgentState`**, and the reason is the browser bundle rather than style:
+// **This is one of two templates that do NOT pass the projection to
+// `useAgentState`** — they name the slot (`"retail"`) and pass this fallback —
+// and the reason is the browser bundle rather than style:
 // that overload derives the empty frame by calling the projection, which calls
 // the slot's `create()` — and this slot's factory lives in `store.ts` and pulls
 // the 107 KB seed, so importing it here would ship the whole catalog to the
@@ -419,7 +420,7 @@ function App() {
   // the only subscription at this level now. The session reads that used to sit
   // beside it moved into the four components above, so a partial transcript no
   // longer re-renders the customer file.
-  const view = useAgentState<StoreView>(EMPTY_VIEW);
+  const view = useAgentState<StoreView>("retail", EMPTY_VIEW);
 
   const lastAction = view.activity.at(-1);
 

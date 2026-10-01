@@ -21,7 +21,7 @@
 
 import type { StateProjection } from "@alexkroman1/aai";
 import { MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "@alexkroman1/aai/internal";
-import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
+import { errorMessage } from "@alexkroman1/aai/utils";
 
 /** Why nothing was pushed, when nothing was. */
 export type StateSyncSkip =
@@ -29,7 +29,7 @@ export type StateSyncSkip =
   | { push: false; reason: "failed"; detail: string }
   | { push: false; reason: "too-large"; bytes: number };
 
-export type StateSyncResult = { push: true; state: unknown } | StateSyncSkip;
+export type StateSyncResult = { push: true; state: Record<string, unknown> } | StateSyncSkip;
 
 export type StateSyncOptions = {
   /**
@@ -59,12 +59,10 @@ export type StateSync = (session: StateSyncSession, options?: StateSyncOptions) 
 /**
  * Build the per-runtime sync decision for an agent's `syncState` projections.
  *
- * One projection's result IS the frame — the common case, and the reason a
- * single-slot agent may project any JSON value it likes. Several are MERGED, so
- * a client reads one flat object however many slots the agent keeps, and each
- * must then project an object: merging a number into a string has no meaning,
- * and a projection returning one is the author's mistake reported the same way a
- * throwing projection is.
+ * The frame is KEYED by slot name — `{ [slot]: view }` — however many slots
+ * the agent projects, so a projection may return any JSON value and the client
+ * selects its slot by the same name (`useAgentState(slot.projected)`). There
+ * is no single-projection special case and no merge: one shape on the wire.
  *
  * Comparison is on the SERIALIZED frame, which is the same string the frame
  * would carry — the point is to avoid writing bytes that are already on the
@@ -74,10 +72,7 @@ export function createStateSync(projections: readonly StateProjection[]): StateS
   return (session, options) => {
     let serialized: string;
     try {
-      const frame = project(projections, session);
-      // `?? null` so a projection returning undefined is a valid, comparable
-      // value rather than `JSON.stringify` handing back undefined.
-      serialized = JSON.stringify(frame ?? null);
+      serialized = JSON.stringify(project(projections, session));
     } catch (err) {
       // A projection that throws, or returns a cycle or a BigInt, is the
       // author's bug — but it must not take the tool call down with it.
@@ -92,27 +87,22 @@ export function createStateSync(projections: readonly StateProjection[]): StateS
     // Re-parsed rather than passing the projection's return value: the frame
     // must carry exactly what was measured and compared, with anything
     // JSON drops (undefined fields, functions) already dropped.
-    return { push: true, state: JSON.parse(serialized) };
+    return { push: true, state: JSON.parse(serialized) as Record<string, unknown> };
   };
 }
 
-/** Read each slot, project it, and merge. Throws like any projection. */
-function project(projections: readonly StateProjection[], session: StateSyncSession): unknown {
-  if (projections.length === 1) {
-    const only = projections[0] as StateProjection;
-    return only(session.read(only.key));
-  }
-  const merged: Record<string, unknown> = {};
+/**
+ * Read each slot and project it under its own name. Throws like any projection.
+ * `?? null` so a projection returning undefined is still a key the client sees,
+ * rather than one `JSON.stringify` silently drops.
+ */
+function project(
+  projections: readonly StateProjection[],
+  session: StateSyncSession,
+): Record<string, unknown> {
+  const frame: Record<string, unknown> = {};
   for (const projection of projections) {
-    const value = projection(session.read(projection.key));
-    if (!isRecord(value)) {
-      throw new Error(
-        `the projection for the "${projection.key}" slot returned ${
-          value === null ? "null" : typeof value
-        }; an agent that projects more than one slot needs each projection to return an object, because the frame is their merge`,
-      );
-    }
-    Object.assign(merged, value);
+    frame[projection.key] = projection(session.read(projection.key)) ?? null;
   }
-  return merged;
+  return frame;
 }

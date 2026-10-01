@@ -5,7 +5,7 @@
  * > Replaying the frames this decision pushed must equal the projection.
  *
  * The client holds whatever the last `push: true` frame said — a frame is the
- * WHOLE projection, so replaying them is taking the last one — and every skip is
+ * WHOLE keyed projection, so replaying them is taking the last one — and every skip is
  * a claim that it does not need another. So the invariant has one interesting
  * half and one obvious one: `unchanged` must mean the client already holds the
  * current projection, and the record `recordPush` writes must name a frame the
@@ -180,22 +180,19 @@ function fakeSession(): StateSyncSession & { set(key: string, value: unknown): v
 }
 
 /**
- * The frame the projections MUST produce, computed without the module — the same
- * merge order, spelled out.
+ * The frame the projections MUST produce, computed without the module — each
+ * slot's view under its own key, in declaration order.
  *
- * `"throws"` stands for a world where some projection cannot run at all; a
- * single-slot world takes the same shape because each projection here returns an
- * object, so one arm covers both the lone-projection and the merged case.
+ * `"throws"` stands for a world where some projection cannot run at all.
  */
 function frameOf(keys: readonly string[], cells: readonly Cell[]): string {
-  const merged: Record<string, unknown> = {};
+  const frame: Record<string, unknown> = {};
   for (const [index, key] of keys.entries()) {
     const cell = cells[index] as Cell;
     if (cell.boom) return "throws";
-    merged[`${key}_tag`] = cell.tag;
-    merged[`${key}_blob`] = "x".repeat(cell.fill);
+    frame[key] = { tag: cell.tag, blob: "x".repeat(cell.fill) };
   }
-  return JSON.stringify(merged);
+  return JSON.stringify(frame);
 }
 
 /**
@@ -224,7 +221,7 @@ function syncFor(keys: readonly string[]): StateSync {
     slots.map((slot) =>
       slot.projection((cell) => {
         if (cell.boom) throw new Error(`the ${slot.key} projection failed`);
-        return { [`${slot.key}_tag`]: cell.tag, [`${slot.key}_blob`]: "x".repeat(cell.fill) };
+        return { tag: cell.tag, blob: "x".repeat(cell.fill) };
       }),
     ),
   );

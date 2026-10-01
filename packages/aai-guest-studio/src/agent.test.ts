@@ -70,9 +70,9 @@ function declaredBuiltins(): readonly string[] {
 describe("the studio coding agent's definition", () => {
   test("declares the text mode, the session's prompt, model and step budget", () => {
     const def = makeAgent();
-    // `text: true` is what makes `createTextAgent` accept the definition and
+    // `mode: "text"` is what makes `createTextAgent` accept the definition and
     // `createRuntime` refuse it — the coding agent has no audio path at all.
-    expect(def.text).toBe(true);
+    expect(def.mode).toBe("text");
     expect(def.systemPrompt).toBe("You are a coding agent.");
     expect(def.maxSteps).toBe(8);
     // Unset would mean the PROVIDER's default, whose truncation silently

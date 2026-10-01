@@ -101,7 +101,7 @@
  * platform a round trip through the broker for bytes that are already local.
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot } from "./_boundary.ts";
 import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
 
 /** What a stored upload is, minus its bytes. */
@@ -299,7 +299,7 @@ export type UploadWriter = {
 export type UploadAccess = UploadReader & Partial<UploadWriter>;
 
 /** The registry-wide slot — see the module doc for why it is not a module-level `let`. */
-const UPLOAD_READER_SLOT = globalSlot<UploadAccess>("@alexkroman1/aai.uploadReader");
+const UPLOAD_READER_SLOT = globalSlot<UploadAccess>("uploadReader");
 
 /**
  * Publish the upload store for this process's steps.

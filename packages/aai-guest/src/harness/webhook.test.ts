@@ -53,7 +53,7 @@ describe("loadBundle publishes the webhook minter", () => {
   });
 
   test("published BEFORE the surface is built, so a boot-time delivery cannot race it", async () => {
-    // `ensureRuntime` is too late: it is lazy, and for a `page: "static"` app
+    // `ensureRuntime` is too late: it is lazy, and for a `mode: "workflow-app"` app
     // the first thing that needs it may be a run the platform's queue delivers
     // the moment this process boots. So the load publishes, and no runtime has
     // been built at that point.

@@ -59,7 +59,7 @@ export default agent({
   usageLimits: { totalTokens: 750_000 },
   // The ranking, the feedback trail and the drafts' subject lines, pushed after
   // every tool call — a leaderboard is the one thing here nobody can hold by ear.
-  syncState: hiringProjection,
+  syncState: { hiring: hiringProjection },
   greeting:
     "Hiring desk. I've got the applicants for the Junior React Developer contract in front " +
     "of me — want me to screen them, or are you hiring for something else?",

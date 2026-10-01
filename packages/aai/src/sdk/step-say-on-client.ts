@@ -24,7 +24,7 @@
  * {@link DEFAULT_CLIENT_DELIVERY_ATTEMPTS} rides out an hour's outage.
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot } from "./_boundary.ts";
 import { writeSessionEntry } from "./_session-identity-store.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import {
@@ -89,7 +89,7 @@ export type StepSayOnClientOptions = {
  */
 export type ClientInboxDefaults = { sampleRate?: number | undefined };
 
-const CLIENT_INBOX_SLOT = globalSlot<ClientInboxDefaults>("@alexkroman1/aai.clientInboxDefaults");
+const CLIENT_INBOX_SLOT = globalSlot<ClientInboxDefaults>("clientInboxDefaults");
 
 /**
  * Publish the agent's `clientInbox` defaults for this process's steps.

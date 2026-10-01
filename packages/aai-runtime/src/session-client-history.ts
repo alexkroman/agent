@@ -23,8 +23,8 @@
  * whose job is "bounded", not "exact"; chars/4 is the usual English estimate
  * and errs a little high for speech. The budget is spent newest-first and the session it
  * runs out in contributes its most recent events, so what is dropped is always
- * the oldest. The existing 200-message cap (`DEFAULT_MAX_HISTORY`, applied by
- * `historyFromEvents`) still bounds the result independently.
+ * the oldest. The record's own memory bound (`HISTORY_RETAIN_TOKENS`, applied
+ * by `historyFromEvents`) is far larger and only ever applies after this one.
  *
  * The APP narrows further with `sessionContext`'s `historySince`: a session
  * whose last event is older is not read at all, and older events of one that

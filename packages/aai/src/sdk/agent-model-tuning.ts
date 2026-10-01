@@ -4,7 +4,7 @@
  * share.
  *
  * Split out of `types.ts` when that file reached the 500-line cap, on the seam
- * {@link PipelineVoiceTuning} already established: a group of `AgentDef` fields
+ * the pipeline tuning group already established: a group of `AgentDef` fields
  * that share ONE validation rule, declared once so the rule can be derived from
  * the declaration rather than restated beside it. Here the rule is
  * **S2S refuses every one of them** — there the model runs inside the

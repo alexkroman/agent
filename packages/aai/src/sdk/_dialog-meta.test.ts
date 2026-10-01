@@ -110,11 +110,11 @@ describe("voiceConfig", () => {
       disclosure: {
         instruction: "Read the disclosure in full.",
         voice: "michael",
-        bargeIn: "off",
+        interruption: "off",
         on: { READ: "collecting" },
       },
       collecting: {
-        bargeIn: { minWords: 1, minDurationMs: 100 },
+        interruption: { minWords: 1, minDurationMs: 100 },
         toolChoice: "required",
         temperature: 0.2,
         on: { GOT: "done" },
@@ -126,7 +126,7 @@ describe("voiceConfig", () => {
   test("answers the active state's declared knobs, and only those", () => {
     expect(dialog("call", callSpec).voiceConfig(createToolContext())).toEqual({
       voice: "michael",
-      bargeIn: "off",
+      interruption: "off",
     });
   });
 
@@ -135,7 +135,7 @@ describe("voiceConfig", () => {
     const ctx = createToolContext();
     call.send(ctx, { type: "READ" });
     expect(call.voiceConfig(ctx)).toEqual({
-      bargeIn: { minWords: 1, minDurationMs: 100 },
+      interruption: { minWords: 1, minDurationMs: 100 },
       toolChoice: "required",
       temperature: 0.2,
     });
@@ -151,7 +151,7 @@ describe("voiceConfig", () => {
 
   test("the DEEPEST declaring state wins WHOLE — a parent's knobs are not merged in", () => {
     // Per declaration rather than per field: a phase that pins `voice` and
-    // `bargeIn` together means them together, and a merge would hand a
+    // `interruption` together means them together, and a merge would hand a
     // disclosure state its parent's interruptible barge-in while honouring its
     // own voice.
     const call = dialog("call", {
@@ -163,7 +163,7 @@ describe("voiceConfig", () => {
           initial: "disclosing",
           on: { BAIL: "done" },
           states: {
-            disclosing: { bargeIn: "off", on: { READ: "chatting" } },
+            disclosing: { interruption: "off", on: { READ: "chatting" } },
             chatting: {},
           },
         },
@@ -171,7 +171,7 @@ describe("voiceConfig", () => {
       },
     });
     const ctx = createToolContext();
-    expect(call.voiceConfig(ctx)).toEqual({ bargeIn: "off" });
+    expect(call.voiceConfig(ctx)).toEqual({ interruption: "off" });
     // The parent's is what applies once the child declares nothing.
     call.send(ctx, { type: "READ" });
     expect(call.voiceConfig(ctx)).toEqual({ voice: "amy", temperature: 0.9 });
@@ -185,13 +185,15 @@ describe("voiceConfig", () => {
       initial: "greeting",
       states: {
         greeting: {
-          meta: { voice: 42, keyterms: ["policy", 7], bargeIn: "off" },
+          meta: { voice: 42, keyterms: ["policy", 7], interruption: "off" },
           on: { GO: "done" },
         },
         done: { type: "final" },
       },
     });
-    expect(dialog("call", machine).voiceConfig(createToolContext())).toEqual({ bargeIn: "off" });
+    expect(dialog("call", machine).voiceConfig(createToolContext())).toEqual({
+      interruption: "off",
+    });
   });
 });
 
@@ -236,7 +238,7 @@ describe("backward compatibility", () => {
           timeout: { afterMs: 30_000, send: "VERIFIED" },
           on: { VERIFIED: "quoting" },
         },
-        quoting: { instruction: "Quote it.", bargeIn: "off", on: { QUOTED: "done" } },
+        quoting: { instruction: "Quote it.", interruption: "off", on: { QUOTED: "done" } },
         done: { final: true },
       },
     }).send(richCtx, { type: "VERIFIED" });

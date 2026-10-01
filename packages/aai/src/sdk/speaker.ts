@@ -51,6 +51,7 @@
  */
 
 import type { ModelTuning } from "./agent-model-tuning.ts";
+import type { PipelineTuning } from "./agent-tuning.ts";
 import type { LlmSpec } from "./providers/llm/llm.ts";
 import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
 import type { BuiltinTool, ToolChoice, ToolMap } from "./types.ts";
@@ -108,6 +109,13 @@ export interface SpeakerDef<N extends string = string> extends Omit<ModelTuning,
   speaks?: boolean;
   /** The model's tool-choice policy while this speaker is ON THE LINE. */
   toolChoice?: ToolChoice;
+  /**
+   * How interruptible the agent is while this speaker is ON THE LINE — the
+   * agent's own `interruption` group, overriding it field by field (a dialog
+   * state's own `interruption` overrides this in turn: dialog → speaker →
+   * agent). Read only for a `speaks: true` entry. Pipeline only.
+   */
+  interruption?: PipelineTuning["interruption"];
   /**
    * The speaker's instructions — on the line and off it.
    *

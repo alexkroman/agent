@@ -35,8 +35,8 @@
 import { stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runFfmpeg } from "@alexkroman1/aai/ffmpeg";
-import { stepReport, stepSpeak } from "@alexkroman1/aai/step";
-import { stepGenerateJsonOrFail, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
+import { stepGenerateJson, stepReport, stepSpeak } from "@alexkroman1/aai/step";
+import { orFail, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration, omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
@@ -106,7 +106,7 @@ export async function summarize(
   durationMs: number,
 ): Promise<CallSummary> {
   await stepReport("Reading the transcript.");
-  const reply = await stepGenerateJsonOrFail(
+  const reply = await orFail(stepGenerateJson)(
     `Audit this transcript of a recorded call (${source}, ${formatDuration(durationMs)}).\n\n` +
       "Answer with JSON only, in this shape:\n" +
       `{"headline": "...", "risks": ["..."], "actions": ["..."], "spoken": "..."}\n\n` +

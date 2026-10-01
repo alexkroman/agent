@@ -3,13 +3,14 @@
   "capability": "agent",
   "epoch": 17,
   "rule": 2,
-  "sha256": "a3ec9806acbbd2e18d1572aaa09c628707ee5c84a22cffb263895d3169d6851d",
+  "sha256": "f1becd780092a25c4fe636c9c5f58d12d929a00371f03f65928f8b0bd892a30b",
   "exports": [
     "AgentClientInbox",
     "AgentDef",
     "AgentGuardrail",
     "AgentGuardrails",
     "AgentInstructions",
+    "AgentMode",
     "AgentModelTuning",
     "AgentObservation",
     "AgentParams",
@@ -33,6 +34,7 @@
     "McpResolveContext",
     "McpServerConfig",
     "McpServers",
+    "ModeAgentDef",
     "ModelTuning",
     "PipelineAgentParams",
     "ProviderCredentialOptions",
@@ -80,5 +82,5 @@
     "webhookRoute",
     "workflowApp"
   ],
-  "rollup": "7da2be06e4e61ee83d980794bde46e180a4a60a483b435b4d9acf3b7f50d8dbf"
+  "rollup": "963d3387f9d485527baa55d6fc0795646759e9f36daf3947e9d2e4d61be545f8"
 }

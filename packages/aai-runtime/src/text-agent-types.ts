@@ -40,7 +40,7 @@ export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
  * Session-fixed configuration for `createTextAgent`.
  *
  * The fields every way of running an agent shares are {@link HostAgentOptions}.
- * Here: `agent` must declare `text: true`; `providerEnv` defaults to `env`, split
+ * Here: `agent` must declare `mode: "text"`; `providerEnv` defaults to `env`, split
  * for the reason `RuntimeOptions` splits them (a host-fallback env may resolve a
  * model and must never become `ctx.env`); an absent `workflows` substitutes a
  * client that rejects with the reason; `fetch` is for tests (see

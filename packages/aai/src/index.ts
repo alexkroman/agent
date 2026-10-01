@@ -25,8 +25,7 @@
  * export default agent({
  *   name: "Storefront",
  *   systemPrompt: "You help callers order from the catalog.",
- *   voice: "michael",
- *   syncState: cart.projected,
+ *   syncState: { cart: cart.projected },
  * });
  * ```
  *
@@ -192,20 +191,6 @@ export type { AssemblyAIGatewayModel, LlmSpec } from "./sdk/providers/llm/llm.ts
  * the `resolve*Settings` helpers that read them.
  */
 export { type AssemblyAIS2sOptions, assemblyAIS2s } from "./sdk/providers/s2s/assemblyai.ts";
-/**
- * The voice catalog and the type `agent({ voice })` is written against.
- *
- * Both were FORGOTTEN exports here — `AgentParams.voice` is typed
- * `AssemblyAITtsVoice`, and the catalog is the only place the ids are
- * checkable — so an author reaching for the field this barrel documents had to
- * import from `@alexkroman1/aai/tts` to name either. The TTS subpath keeps
- * them too: it is where an explicit `assemblyAITts({ voice })` stage is
- * written.
- */
-export {
-  ASSEMBLYAI_TTS_VOICES,
-  type AssemblyAITtsVoice,
-} from "./sdk/providers/tts/assemblyai.ts";
 /**
  * The four stage descriptor types and the base they narrow.
  *

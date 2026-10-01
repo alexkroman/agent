@@ -54,10 +54,10 @@ describe("the two knobs nothing applies", () => {
 
 describe("whether any state declares a knob the pipeline CAN apply", () => {
   // `satisfies` rather than a bare literal: `test.each` widens a table's
-  // members to their union, and `bargeIn: string` is not `DialogBargeIn` — the
+  // members to their union, and `interruption: string` is not `PipelineTuning["interruption"]` — the
   // annotation is what keeps each row checked against the spec it stands for.
   const LIVE = [
-    ["bargeIn", { bargeIn: "off" }],
+    ["interruption", { interruption: "off" }],
     ["toolChoice", { toolChoice: "required" }],
     ["temperature", { temperature: 0.2 }],
   ] satisfies readonly (readonly [string, Partial<DialogStateSpec>])[];
@@ -84,14 +84,14 @@ describe("whether any state declares a knob the pipeline CAN apply", () => {
 });
 
 describe("what the active states ask of the turn", () => {
-  test('`bargeIn: "off"` becomes an UNREACHABLE word threshold', () => {
-    const knobs = mergeTurnKnobs([knobbed("off", { bargeIn: "off" })], ctx());
+  test('`interruption: "off"` becomes an UNREACHABLE word threshold', () => {
+    const knobs = mergeTurnKnobs([knobbed("off", { interruption: "off" })], ctx());
 
     expect(knobs).toEqual({ minBargeInWords: Number.POSITIVE_INFINITY });
   });
 
   test("the two-number form passes through, and an omitted half stays omitted", () => {
-    const knobs = mergeTurnKnobs([knobbed("some", { bargeIn: { minWords: 5 } })], ctx());
+    const knobs = mergeTurnKnobs([knobbed("some", { interruption: { minWords: 5 } })], ctx());
 
     // ABSENT, not undefined: the transport falls back to the agent's own value,
     // and a present `undefined` would have overwritten it with nothing.
@@ -99,8 +99,26 @@ describe("what the active states ask of the turn", () => {
     expect(knobs && "interruptionMinDurationMs" in knobs).toBe(false);
   });
 
-  test('`bargeIn: "default"` contributes nothing', () => {
-    expect(mergeTurnKnobs([knobbed("dflt", { bargeIn: "default" })], ctx())).toEqual({});
+  test("the full group maps all four numbers, key by key", () => {
+    const knobs = mergeTurnKnobs(
+      [
+        knobbed("all", {
+          interruption: {
+            minWords: 3,
+            minDurationMs: 200,
+            backoffMs: 400,
+            resumeFalseInterruption: false,
+          },
+        }),
+      ],
+      ctx(),
+    );
+    expect(knobs).toEqual({
+      minBargeInWords: 3,
+      interruptionMinDurationMs: 200,
+      interruptionBackoffMs: 400,
+      resumeFalseInterruption: false,
+    });
   });
 
   test("two dialogs merge per KEY, last declaration winning", () => {

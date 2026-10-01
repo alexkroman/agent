@@ -29,9 +29,12 @@
 // journal, no replay, and no per-step retry, so a rate-limited live run FAILS
 // where a deployed one would have ridden it out. The tier that really resumes a
 // run is `aai-cli`'s `dev-workflow.scenario.test.ts`.
-import { routeStepFetch, stubGatewayRoute } from "@alexkroman1/aai/testing";
-import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
-import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeWorkflowEval,
+  installStubStepFetch,
+  routeStepFetch,
+  stubGatewayRoute,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import agentDef, { MAX_ROUNDS, redline } from "./agent.ts";
 

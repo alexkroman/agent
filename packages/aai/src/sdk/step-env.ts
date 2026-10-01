@@ -43,7 +43,7 @@
  * `process.env`, which is what such a caller already controls.
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot } from "./_boundary.ts";
 import { missingEnvMessage } from "./_missing-env.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { stepInfo } from "./step-attempt.ts";
@@ -53,7 +53,7 @@ import { stepInfo } from "./step-attempt.ts";
  * this SDK in the same process (a linked workspace, a mismatched install) shares
  * it rather than shadowing it.
  */
-const STEP_ENV_SLOT = globalSlot<Readonly<Record<string, string>>>("@alexkroman1/aai.stepEnv");
+const STEP_ENV_SLOT = globalSlot<Readonly<Record<string, string>>>("stepEnv");
 
 /**
  * `process.env` where there is a process, an empty record otherwise.

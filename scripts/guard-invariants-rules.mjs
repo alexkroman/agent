@@ -42,7 +42,9 @@
  * | `guard-invariants-rules-timing.mjs` | rules 3, 4, 19, 21, 31 — how code waits (NODE rules) |
  * | `guard-invariants-rules-workflow.mjs` | rules 26 and 30, the two over a shipped `workflows/` body |
  * | `guard-invariants-rules-shape.mjs`  | rules 2, 17, 18, 22, 28 — a value's shape, re-derived |
- * | `guard-invariants-rules-state.mjs`  | rules 5, 8, 9, 11, 16, 24, 25, 27, 29 — state someone else owns |
+ * | `guard-invariants-rules-state.mjs`  | rules 5, 8, 9, 11, 16, 24, 25, 27, 29, 36 — state someone else owns |
+ * | `guard-invariants-rules-testing.mjs` | rules 33, 34 — the repo's own test files (NODE rules) |
+ * | `guard-invariants-rules-runtime.mjs` | rule 35 — `aai-runtime`'s `prepareStep` slot (NODE rule) |
  *
  * Everything downstream imports from HERE and nothing changed for it:
  * `LINE_RULES` and the scope constants are re-exported.
@@ -65,6 +67,7 @@
  * exact — which is half of why the timing family moved.
  */
 
+import { RUNTIME_RULES } from "./guard-invariants-rules-runtime.mjs";
 import { SHAPE_RULES } from "./guard-invariants-rules-shape.mjs";
 import { STATE_RULES } from "./guard-invariants-rules-state.mjs";
 import { TESTING_RULES } from "./guard-invariants-rules-testing.mjs";
@@ -155,7 +158,8 @@ export const LINE_RULES = [...SHAPE_RULES, ...STATE_RULES, ...WORKFLOW_BODY_RULE
 );
 
 /**
- * Every node rule, SORTED BY ID — the timing family, and the testing one.
+ * Every node rule, SORTED BY ID — the timing family, the testing one, and the
+ * runtime one.
  *
  * Separate from {@link LINE_RULES} because the two are SCANNED differently and
  * by nothing else: they share the baseline file, the per-file budgets, the
@@ -171,4 +175,6 @@ export const LINE_RULES = [...SHAPE_RULES, ...STATE_RULES, ...WORKFLOW_BODY_RULE
  *
  * @type {NodeRule[]}
  */
-export const NODE_RULES = [...TIMING_RULES, ...TESTING_RULES].sort((a, b) => a.id - b.id);
+export const NODE_RULES = [...TIMING_RULES, ...TESTING_RULES, ...RUNTIME_RULES].sort(
+  (a, b) => a.id - b.id,
+);

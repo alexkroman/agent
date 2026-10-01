@@ -54,8 +54,9 @@ const KIND_LABELS: Record<DeskView["ledger"][number]["kind"], string> = {
 // The desk before the first tool call, derived from the projection itself so a
 // new DeskView field can't miss the pre-first-call render.
 //
-// **This template does NOT pass its projection to `useAgentState`**, and the
-// reason is the browser bundle rather than style: that overload derives the
+// **This template does NOT pass its projection to `useAgentState`** — it names
+// the slot (`"hotel"`) and passes this fallback — and the reason is the browser
+// bundle rather than style: that overload derives the
 // empty frame by calling the projection, which calls the slot's `create()` —
 // and this slot's factory lives in `session.ts` and pulls `seed.ts`, so
 // importing it here would ship every seeded booking to the browser.
@@ -64,7 +65,7 @@ const KIND_LABELS: Record<DeskView["ledger"][number]["kind"], string> = {
 const EMPTY_VIEW: DeskView = deskView(emptyHotelState());
 
 function DeskSidebar() {
-  const desk = useAgentState<DeskView>(EMPTY_VIEW);
+  const desk = useAgentState<DeskView>("hotel", EMPTY_VIEW);
   return (
     <div className="flex flex-col gap-6 p-4 text-aai-text">
       <Section title="Tonight">

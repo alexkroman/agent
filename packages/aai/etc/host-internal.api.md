@@ -40,22 +40,32 @@ const AgentConfigSchema: z.ZodObject<{
     builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silencePrompt: z.ZodOptional<z.ZodString>;
-    minBargeInWords: z.ZodOptional<z.ZodNumber>;
-    interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
-    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
-    deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+    turnTaking: z.ZodOptional<z.ZodObject<{
+        minSilenceMs: z.ZodOptional<z.ZodNumber>;
+        maxSilenceMs: z.ZodOptional<z.ZodNumber>;
+        detection: z.ZodOptional<z.ZodString>;
+        userTurnLimit: z.ZodOptional<z.ZodObject<{
+            maxWords: z.ZodOptional<z.ZodNumber>;
+            maxDurationMs: z.ZodOptional<z.ZodNumber>;
+        }, z.core.$strip>>;
+        preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+        startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strict>>;
+    interruption: z.ZodOptional<z.ZodUnion<readonly [z.ZodLiteral<"off">, z.ZodObject<{
+        minWords: z.ZodOptional<z.ZodNumber>;
+        minDurationMs: z.ZodOptional<z.ZodNumber>;
+        backoffMs: z.ZodOptional<z.ZodNumber>;
+        resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
+    }, z.core.$strict>]>>;
+    silence: z.ZodOptional<z.ZodObject<{
+        deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+        nudge: z.ZodOptional<z.ZodObject<{
+            afterMs: z.ZodNumber;
+            prompt: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>>;
     errorPhrase: z.ZodOptional<z.ZodString>;
     startFailurePhrase: z.ZodOptional<z.ZodString>;
-    resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
-    preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    userTurnLimit: z.ZodOptional<z.ZodObject<{
-        maxWords: z.ZodOptional<z.ZodNumber>;
-        maxDurationMs: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -72,11 +82,11 @@ const AgentConfigSchema: z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
     }, z.core.$strip>>;
-    text: z.ZodOptional<z.ZodLiteral<true>>;
     mode: z.ZodOptional<z.ZodEnum<{
         pipeline: "pipeline";
         s2s: "s2s";
         text: "text";
+        "workflow-app": "workflow-app";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
@@ -88,10 +98,6 @@ const AgentConfigSchema: z.ZodObject<{
     clientInbox: z.ZodOptional<z.ZodObject<{
         sampleRate: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    page: z.ZodOptional<z.ZodEnum<{
-        static: "static";
-        voice: "voice";
-    }>>;
     telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodString>>]>>;
 }, z.core.$strip>;
 
@@ -393,10 +399,10 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL: string;
 export const ASSEMBLYAI_LLM_GATEWAY_URL: string;
 
 // @public
-export const ASSEMBLYAI_LLM_KIND = "assemblyai";
+export const ASSEMBLYAI_LLM_KIND: "assemblyai";
 
 // @public
-export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_S2S_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_S2S_KIND: "assemblyai";
@@ -405,7 +411,7 @@ export const ASSEMBLYAI_S2S_KIND: "assemblyai";
 export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24000;
 
 // @public
-export const ASSEMBLYAI_STT_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_STT_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
@@ -414,7 +420,7 @@ export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 export const ASSEMBLYAI_STT_KIND: "assemblyai";
 
 // @public
-export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_TTS_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_TTS_DEPRECATED_VOICES: readonly ["arjun", "bella", "david", "diego", "dmitri", "eleanor", "emma", "giulia", "helen", "ivy", "james", "kyle", "luca", "lucia", "martha", "mateo", "pierre", "river", "tyler", "victor", "winter"];
@@ -504,7 +510,7 @@ export type BuiltinToolOptions = {
 };
 
 // @public
-export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
+export const CARTESIA_API_KEY_ENV: string;
 
 // @public
 export const CARTESIA_KIND: "cartesia";
@@ -618,7 +624,7 @@ export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
 export const DEAD_AIR_TOOL_COVER_MS = 1200;
 
 // @public
-export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
+export const DEEPGRAM_API_KEY_ENV: string;
 
 // @public
 export const DEEPGRAM_KIND: "deepgram";
@@ -673,6 +679,9 @@ export function defaultProviders(config: ProviderFields): {
     tts?: TtsProvider;
 } | null;
 
+// @internal
+export function defineProvider<const Kind extends string, const Stage extends ProviderStage>(definition: ProviderDefinition<Kind, Stage>): ProviderDefinition<Kind, Stage>;
+
 // @public
 export type DelayedRung = {
     afterMs: number;
@@ -713,10 +722,13 @@ interface DelegateToolCall {
 }
 
 // @internal
+export function describeProvider<Kind extends string>(definition: ProviderDefinition<Kind>, options: object): ProviderDescriptor<Kind, Record<string, unknown>>;
+
+// @internal
 export const DETACHED_SESSION_SPEECH: SessionSpeech;
 
 // @public
-export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
+export const ELEVENLABS_API_KEY_ENV: string;
 
 // @public
 export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
@@ -746,6 +758,15 @@ export interface ExecuteToolOptions {
     // (undocumented)
     toolCallId?: string;
 }
+
+// @public
+export const FALLBACK_KIND: "fallback";
+
+// @public
+export function fallbackMembers(descriptor: unknown): {
+    kind: string;
+    options: Record<string, unknown>;
+}[];
 
 // @internal
 type FetchDispatcher = RequestInit extends {
@@ -835,7 +856,18 @@ const hostCredentialsMarker: unique symbol;
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
+    resumeFalseInterruption?: boolean;
+}
+
+// @public
 export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
+
+// @public
+export function isFallbackDescriptor(descriptor: unknown): boolean;
 
 // @internal
 export function isUniversal35Pro(model: string): boolean;
@@ -854,6 +886,20 @@ export type KnownLlmProvider = KnownLiterals<LlmProviderName>;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
+
+// @public
+export const LLM_PROVIDERS: {
+    readonly anthropic: ProviderDefinition<"anthropic", "llm">;
+    readonly openai: ProviderDefinition<"openai", "llm">;
+    readonly google: ProviderDefinition<"google", "llm">;
+    readonly mistral: ProviderDefinition<"mistral", "llm">;
+    readonly xai: ProviderDefinition<"xai", "llm">;
+    readonly groq: ProviderDefinition<"groq", "llm">;
+    readonly openrouter: ProviderDefinition<"openrouter", "llm">;
+    readonly cerebras: ProviderDefinition<"cerebras", "llm">;
+    readonly gateway: ProviderDefinition<"gateway", "llm">;
+    readonly assemblyai: ProviderDefinition<"assemblyai", "llm">;
+};
 
 // @public
 type LlmDescriptorOptions = {
@@ -902,6 +948,9 @@ export const MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES = 3;
 
 // @internal
 export const MAX_CONSECUTIVE_SILENCE_NUDGES = 3;
+
+// @public
+export const MAX_FAILOVER_REASON_CHARS = 500;
 
 // @internal (undocumented)
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
@@ -971,7 +1020,7 @@ export function normalizeE164(raw: string): string | undefined;
 export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined;
 
 // @public
-export const OPENAI_S2S_API_KEY_ENV = "OPENAI_API_KEY";
+export const OPENAI_S2S_API_KEY_ENV: string;
 
 // @public
 export const OPENAI_S2S_KIND: "openai-realtime";
@@ -1005,6 +1054,13 @@ export type PinnedRequestInit = RequestInit & {
 export const PIPELINE_FLUSH_TIMEOUT_MS = 10000;
 
 // @public
+interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
+
+// @public
 export function planDelayedLadder(list: readonly ToolDelayedMessage[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): DelayedRung[];
 
 // @internal
@@ -1034,9 +1090,22 @@ export function pollWorkflow<T>(host: PollHost, name: string, check: () => Promi
 // @internal
 export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
 
+// @internal
+export const PROVIDER_CATALOG: readonly ProviderDefinition[];
+
 // @public
 interface ProviderCredentialOptions {
     apiKeyEnv?: string;
+}
+
+// @internal
+export interface ProviderDefinition<Kind extends string = string, Stage extends ProviderStage = ProviderStage> {
+    readonly envVar: string;
+    readonly factory: string;
+    readonly kind: Kind;
+    readonly label: string;
+    readonly stage: Stage;
+    readonly subpath: "stt" | "llm" | "tts" | "s2s" | "experimental";
 }
 
 // @public
@@ -1058,8 +1127,11 @@ type ProviderFields = {
     llm?: unknown;
     tts?: unknown;
     s2s?: unknown;
-    text?: unknown;
+    mode?: unknown;
 };
+
+// @public
+export type ProviderStage = "stt" | "llm" | "tts" | "s2s";
 
 // @internal
 export const PUBLIC_URL_UNCONFIGURED_MESSAGE: string;
@@ -1223,7 +1295,7 @@ export function resolveSonioxSttSettings(options: SonioxSttOptions): {
 export const RETRYABLE_STATUS: Set<number>;
 
 // @public
-export const RIME_API_KEY_ENV = "RIME_API_KEY";
+export const RIME_API_KEY_ENV: string;
 
 // @public
 export const RIME_DEFAULT_LANGUAGE = "eng";
@@ -1300,6 +1372,12 @@ export type RunCodeExecutor = (code: string) => Promise<string | {
 
 // @internal
 export const S2S_MAX_RESUME_ATTEMPTS = 5;
+
+// @public
+export const S2S_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "s2s">, ProviderDefinition<"openai-realtime", "s2s">];
+
+// @public (undocumented)
+export type S2sKind = (typeof S2S_PROVIDERS)[number]["kind"];
 
 // @public
 export const safeFetch: typeof globalThis.fetch;
@@ -1392,6 +1470,18 @@ export function setSessionLocation(sessionId: string, location: string): void;
 export function setSessionPhone(sessionId: string, phone: string): void;
 
 // @public
+interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -1403,7 +1493,7 @@ type SlotStore = {
 };
 
 // @public
-export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
+export const SONIOX_API_KEY_ENV: string;
 
 // @public
 export const SONIOX_KIND: "soniox";
@@ -1429,6 +1519,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
     description?: string;
     expectedOutput?: string;
     guardrail?: SpeakerGuardrail;
+    interruption?: PipelineTuning["interruption"];
     llm?: LlmSpec;
     maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
     maxRevisions?: number;
@@ -1451,7 +1542,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @internal
 export type SpeechSynthesizer = (request: {
@@ -1627,6 +1718,12 @@ export const STT_FRAME_MAX_MS = 1000;
 export const STT_FRAME_TARGET_MS = 100;
 
 // @public
+export const STT_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "stt">, ProviderDefinition<"deepgram", "stt">, ProviderDefinition<"elevenlabs", "stt">, ProviderDefinition<"soniox", "stt">, ProviderDefinition<"local", "stt">];
+
+// @public
+export type SttKind = (typeof STT_PROVIDERS)[number]["kind"];
+
+// @public
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
@@ -1759,13 +1856,32 @@ export function toToolJsonSchema(schema: StandardSchemaV1, io?: "input" | "outpu
 // @internal
 export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
 
+// @public
+export const TTS_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "tts">, ProviderDefinition<"cartesia", "tts">, ProviderDefinition<"rime", "tts">];
+
 // @internal
 export const TTS_RECONNECT_TIMEOUT_MS = 8000;
+
+// @public (undocumented)
+export type TtsKind = (typeof TTS_PROVIDERS)[number]["kind"];
 
 // @public
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
+
+// @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
 
 // @public
 interface TypedDelegateResult<T> extends DelegateResult {
@@ -1832,6 +1948,12 @@ export type UploadWriteMeta = {
 export type UploadWriter = {
     create(meta: UploadWriteMeta, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
 };
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
+}
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

@@ -85,9 +85,11 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>, logger: Logger = c
     providerEnv: {},
     workflows: undefined,
     logger,
-    emitters,
-    meters: createOwnedMap<string, UsageMeter>(),
-    speech: { of: () => makeSpeech() },
+    sessions: {
+      emitter: (id) => emitters.get(id),
+      meter: () => undefined,
+      speech: { of: () => makeSpeech() },
+    },
     clientTools: createClientToolBroker(),
     stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
   });
@@ -113,7 +115,7 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
     const supersededEvents: SessionEvent[] = [];
     const resumedEvents: SessionEvent[] = [];
     const { executeTool, emitters, release, parked } = parkedToolRuntime({
-      syncState: countSlot.projection((s) => ({ count: s.count })),
+      syncState: { count: countSlot.projection((s) => ({ count: s.count })) },
       tools: {
         bump: {
           description: "bump the counter",
@@ -136,7 +138,9 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
     release();
     await call;
 
-    expect(stateEvents(resumedEvents)).toEqual([{ type: "state.updated", state: { count: 1 } }]);
+    expect(stateEvents(resumedEvents)).toEqual([
+      { type: "state.updated", state: { count: { count: 1 } } },
+    ]);
     // The superseded socket is gone; a push to it is silently lost AND marks
     // the projection as delivered, so the resumed client would never see it.
     expect(stateEvents(supersededEvents)).toEqual([]);
@@ -174,7 +178,7 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
   test("without a reconnect the session's own sink still receives both", async () => {
     const events: SessionEvent[] = [];
     const { executeTool, emitters, release } = parkedToolRuntime({
-      syncState: countSlot.projection((s) => ({ count: s.count })),
+      syncState: { count: countSlot.projection((s) => ({ count: s.count })) },
       tools: {
         bump: {
           description: "bump the counter",
@@ -194,7 +198,7 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
     // BOTH, in order: `ctx.send` fires inside the tool, the state push after it.
     expect(events.map(({ meta: _meta, ...body }) => body)).toEqual([
       { type: "custom.emitted", event: "progress", data: 1 },
-      { type: "state.updated", state: { count: 1 } },
+      { type: "state.updated", state: { count: { count: 1 } } },
     ]);
   });
 });
@@ -341,9 +345,11 @@ describe("self-hosted tool surface: a tool's model call finds its session's mete
       providerEnv: fakes.env,
       workflows: undefined,
       logger: consoleLogger,
-      emitters: createOwnedMap<string, SessionEmitter>(),
-      meters,
-      speech: { of: () => makeSpeech() },
+      sessions: {
+        emitter: () => undefined,
+        meter: (id) => meters.get(id),
+        speech: { of: () => makeSpeech() },
+      },
       clientTools: createClientToolBroker(),
       stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
     });
@@ -378,9 +384,11 @@ describe("self-hosted tool surface: a clientTool waits for the page", () => {
       providerEnv: {},
       workflows: undefined,
       logger: consoleLogger,
-      emitters: createOwnedMap<string, SessionEmitter>(),
-      meters: createOwnedMap<string, UsageMeter>(),
-      speech: { of: () => makeSpeech() },
+      sessions: {
+        emitter: () => undefined,
+        meter: () => undefined,
+        speech: { of: () => makeSpeech() },
+      },
       clientTools,
       stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
     });

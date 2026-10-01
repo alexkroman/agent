@@ -435,6 +435,12 @@ Re-exports [AssemblyAIGatewayModel](index.md#assemblyaigatewaymodel)
 
 ***
 
+### fallback
+
+Re-exports [fallback](stt.md#fallback)
+
+***
+
 ### LlmProvider
 
 Re-exports [LlmProvider](index.md#llmprovider)

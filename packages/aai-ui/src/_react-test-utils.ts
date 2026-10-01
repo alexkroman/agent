@@ -72,6 +72,7 @@ export function createMockSessionCore(
       clientId: () => undefined,
       holderId: () => "holder-test",
       sessionId: () => undefined,
+      ticket: () => undefined,
       ...identity,
     },
     userTurn: {

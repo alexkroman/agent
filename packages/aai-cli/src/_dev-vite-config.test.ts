@@ -122,7 +122,7 @@ describe("the workflow prefix's bypass", () => {
     ["an uploads part", "/uploads/up_1/parts"],
     ["a path with no file behind it", "/never-written.ts"],
   ])("leaves %s to the API", async (_label, suffix) => {
-    // The half a naive "let Vite win" would break: a `page: "static"` app's
+    // The half a naive "let Vite win" would break: a `mode: "workflow-app"` app's
     // entire front door is these routes. The last case is why the filesystem is
     // the discriminator rather than an extension or a query — an unknown path
     // belongs to the API, which is the end that can say what is wrong with it.

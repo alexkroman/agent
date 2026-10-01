@@ -261,7 +261,7 @@ describe("agent()", () => {
   });
 
   test("agent with s2s descriptor resolves to mode 's2s'", () => {
-    const def = agent({ name: "t", systemPrompt: "p", s2s: assemblyAIS2s() });
+    const def = agent({ name: "t", systemPrompt: "p", mode: "s2s", s2s: assemblyAIS2s() });
     const parsed = toAgentConfig(def);
     expect(parsed.mode).toBe("s2s");
     expect(parsed.stt).toBeUndefined();
@@ -278,35 +278,27 @@ describe("agent()", () => {
     expect(parsed.tts).toEqual(assemblyAIPipeline().tts);
   });
 
-  test("`voice` desugars to the default pipeline's TTS descriptor", () => {
-    const def = agent({ name: "t", voice: "michael" });
-    expect("voice" in def).toBe(false);
-    expect(def.tts).toEqual(assemblyAITts({ voice: "michael" }));
-    // stt/llm stay undeclared on the def; toAgentConfig fills them.
-    expect(def.stt).toBeUndefined();
-    expect(def.llm).toBeUndefined();
-    const parsed = toAgentConfig(def);
-    expect(parsed.mode).toBe("pipeline");
-    expect(parsed.tts).toEqual(assemblyAITts({ voice: "michael" }));
-  });
-
-  test("`voice` combined with an explicit tts descriptor throws", () => {
-    expect(() =>
-      agentMisuse({ name: "t", voice: "michael", tts: cartesiaTts({ voice: "v" }) }),
-    ).toThrow(/`voice` picks the default pipeline's TTS voice/);
-  });
-
-  test("`voice` combined with s2s throws", () => {
-    expect(() => agentMisuse({ name: "t", voice: "michael", s2s: assemblyAIS2s() })).toThrow(
-      /`voice` is pipeline-mode only/,
+  test("`voice` is not an agent field: the stray-field check names its replacement", () => {
+    // One owner per value — the voice is the TTS descriptor's option.
+    expect(() => agentMisuse({ name: "t", voice: "michael" })).toThrow(
+      /`voice` \(renamed to `tts: assemblyAITts\(\{ voice \}\)`\)/,
     );
+    expect(() =>
+      agentMisuse({ name: "t", voice: "michael", mode: "s2s", s2s: assemblyAIS2s() }),
+    ).toThrow(/`voice` \(renamed to/);
   });
 
-  test("endpointing shorthand desugars to the default pipeline's STT descriptor", () => {
+  test("the voice lives on the descriptor, and the default stage carries the default", () => {
+    const def = agent({ name: "t", tts: assemblyAITts({ voice: "michael" }) });
+    expect(toAgentConfig(def).tts).toEqual(assemblyAITts({ voice: "michael" }));
+    expect(toAgentConfig(agent({ name: "u" })).tts).toEqual(assemblyAITts());
+  });
+
+  test("the end-of-turn window lowers onto the default pipeline's STT descriptor", () => {
     // The point of the shorthand: one number, no descriptor, and the stage is
     // still the default AssemblyAI one with every other setting intact.
-    const def = agent({ name: "t", maxTurnSilenceMs: 4500 });
-    expect("maxTurnSilenceMs" in def).toBe(false);
+    const def = agent({ name: "t", turnTaking: { maxSilenceMs: 4500 } });
+    expect("turnTaking" in def).toBe(false);
     expect(def.stt).toEqual(assemblyAIStt({ maxTurnSilenceMs: 4500 }));
     expect(toAgentConfig(def).mode).toBe("pipeline");
     const settings = resolveAssemblyAISttSettings({ maxTurnSilenceMs: 4500 });
@@ -315,27 +307,41 @@ describe("agent()", () => {
     expect(settings.minTurnSilenceMs).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
   });
 
+  test("both end-of-turn knobs lower together, and the rest of the group stays", () => {
+    const def = agent({ name: "t", turnTaking: { maxSilenceMs: 4500, detection: "manual" } });
+    expect(def.turnTaking).toEqual({ detection: "manual" });
+  });
+
   test("both endpointing knobs desugar together", () => {
-    const def = agent({ name: "t", minTurnSilenceMs: 1800, maxTurnSilenceMs: 4500 });
+    const def = agent({ name: "t", turnTaking: { minSilenceMs: 1800, maxSilenceMs: 4500 } });
     expect(def.stt).toEqual(assemblyAIStt({ minTurnSilenceMs: 1800, maxTurnSilenceMs: 4500 }));
   });
 
   test("endpointing shorthand beside an explicit stt descriptor throws", () => {
     expect(() =>
-      agentMisuse({ name: "t", maxTurnSilenceMs: 4500, stt: assemblyAIStt({ region: "eu" }) }),
+      agentMisuse({
+        name: "t",
+        turnTaking: { maxSilenceMs: 4500 },
+        stt: assemblyAIStt({ region: "eu" }),
+      }),
     ).toThrow(/an explicit `stt` descriptor owns its own end-of-turn window/);
   });
 
   test("endpointing shorthand combined with s2s throws", () => {
-    expect(() => agentMisuse({ name: "t", maxTurnSilenceMs: 4500, s2s: assemblyAIS2s() })).toThrow(
-      /S2S runs STT service-side/,
-    );
+    expect(() =>
+      agentMisuse({
+        name: "t",
+        turnTaking: { maxSilenceMs: 4500 },
+        mode: "s2s",
+        s2s: assemblyAIS2s(),
+      }),
+    ).toThrow(/`turnTaking` is .* no effect on a "s2s" agent/);
   });
 
   test("endpointing shorthand combined with text throws", () => {
-    expect(() => agentMisuse({ name: "t", maxTurnSilenceMs: 4500, text: true })).toThrow(
-      /a text agent has none/,
-    );
+    expect(() =>
+      agentMisuse({ name: "t", turnTaking: { maxSilenceMs: 4500 }, mode: "text" }),
+    ).toThrow(/`turnTaking` is .* no effect on a "text" agent/);
   });
 
   test("assemblyAIPipeline carries the endpointing options onto its STT stage", () => {
@@ -357,13 +363,13 @@ describe("workflowApp()", () => {
 
   test("declares the front door, so the field is the call rather than a thing to remember", () => {
     const def = workflowApp({ name: "Link Digest", workflows: { digest } });
-    expect(def.page).toBe("static");
+    expect(def.mode).toBe("workflow-app");
     expect(def.workflows).toEqual({ digest });
   });
 
   test("is `agent()` underneath — same definition, so nothing downstream sees a second shape", () => {
     const viaHelper = workflowApp({ name: "Link Digest", workflows: { digest } });
-    const viaAgent = agent({ name: "Link Digest", workflows: { digest }, page: "static" });
+    const viaAgent = agent({ name: "Link Digest", workflows: { digest }, mode: "workflow-app" });
     expect(viaHelper).toEqual(viaAgent);
   });
 

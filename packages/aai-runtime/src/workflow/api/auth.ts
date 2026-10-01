@@ -11,7 +11,7 @@
  *
  * A page carries no credential — it is served to anyone who has the URL, exactly
  * like the voice client — so requiring one by default would mean no static page
- * (`AgentDef.page: "static"`) could ever work. Anyone who knows a slug can
+ * (`AgentDef.mode: "workflow-app"`) could ever work. Anyone who knows a slug can
  * already open a voice session and spend the tenant's provider budget. Fail-OPEN
  * when unset is the documented default, not an oversight.
  *

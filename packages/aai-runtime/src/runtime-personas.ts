@@ -51,6 +51,10 @@ import type { Roster, SessionEvent, SlotHolder, SlotStore, SpeakerDef } from "@a
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionSystemPrompt } from "./runtime-system-prompt.ts";
+import {
+  interruptionKnobs,
+  type PersonaInterruptionSource,
+} from "./transports/pipeline-dialog-knobs.ts";
 import type { PersonaTurnSource } from "./transports/pipeline-persona-knobs.ts";
 import type { Transport } from "./transports/types.ts";
 
@@ -80,9 +84,19 @@ export interface SessionPersonas {
    * changes the prompt and the gate's answer, and nothing about the request.
    */
   readonly turnKnobs: PersonaTurnSource | undefined;
+  /**
+   * The active persona's `interruption` group in the pipeline's units, or
+   * `undefined` when no persona declares one — so a roster that never mentions
+   * barge-in leaves the transport's interruption reads constant.
+   */
+  readonly interruption: PersonaInterruptionSource | undefined;
 }
 
-const NO_PERSONAS: SessionPersonas = { observe: () => undefined, turnKnobs: undefined };
+const NO_PERSONAS: SessionPersonas = {
+  observe: () => undefined,
+  turnKnobs: undefined,
+  interruption: undefined,
+};
 
 /**
  * Bind an agent's roster to one session.
@@ -120,6 +134,7 @@ export function openSessionPersonas(
   const varies = roster.speaking.some(
     (one) => one.toolChoice !== undefined || one.temperature !== undefined,
   );
+  const interrupts = roster.speaking.some((one) => one.interruption !== undefined);
 
   /**
    * Who is speaking, with a stale slot contained.
@@ -185,5 +200,6 @@ export function openSessionPersonas(
           });
         }
       : undefined,
+    interruption: interrupts ? () => interruptionKnobs(speaking().speaker.interruption) : undefined,
   };
 }

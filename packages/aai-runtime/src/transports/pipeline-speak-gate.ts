@@ -79,13 +79,21 @@ export function createSpeakGate(opts: {
   startSpeakingFloorMs: number;
   /** Ms of silence after a real interruption — 0 disables. */
   interruptionBackoffMs: number;
+  /**
+   * A `hold()` may arrive although both windows above are 0 — a dialog state or
+   * a persona can raise the backoff for its own phase — so the gate must be
+   * real rather than the inline passthrough.
+   */
+  mayHold?: boolean | undefined;
   /** Clock source; injectable so a spec need not sleep out a real window. */
   now?: (() => number) | undefined;
   log: Logger;
   sid: string;
 }): SpeakGate {
   const { startSpeakingFloorMs, interruptionBackoffMs } = opts;
-  if (!(startSpeakingFloorMs > 0 || interruptionBackoffMs > 0)) return passthroughGate();
+  if (!(opts.mayHold || startSpeakingFloorMs > 0 || interruptionBackoffMs > 0)) {
+    return passthroughGate();
+  }
 
   const now = opts.now ?? Date.now;
   let deadlineMs = 0;

@@ -68,7 +68,7 @@ describe("createTextAgent event stream", () => {
   test("a plain reply is a user turn, a committed reply, and one terminator", async () => {
     const events: SessionEvent[] = [];
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", text: true }),
+      agent: textAgent({ name: "Helper", mode: "text" }),
       model: createFakeLanguageModel({ script: [{ type: "text", text: "hello there" }] }),
       logger: silentLogger,
       onEvent: (event) => events.push(event),
@@ -90,7 +90,7 @@ describe("createTextAgent event stream", () => {
     const events: SessionEvent[] = [];
     const chat = createTextAgent({
       agent: textAgent(
-        { name: "Desk", text: true },
+        { name: "Desk", mode: "text" },
         { look_up: tool({ description: "Look up", execute: () => "shipped" }) },
       ),
       model: createFakeLanguageModel({
@@ -127,7 +127,7 @@ describe("createTextAgent event stream", () => {
     const events: SessionEvent[] = [];
     const chat = createTextAgent({
       agent: textAgent(
-        { name: "Desk", text: true },
+        { name: "Desk", mode: "text" },
         {
           look_up: tool({
             description: "Look up an order",
@@ -167,7 +167,7 @@ describe("createTextAgent event stream", () => {
     const events: SessionEvent[] = [];
     const chat = createTextAgent({
       agent: textAgent(
-        { name: "Desk", text: true },
+        { name: "Desk", mode: "text" },
         {
           boom: tool({
             description: "Throws",
@@ -204,7 +204,7 @@ describe("createTextAgent event stream", () => {
     const events: SessionEvent[] = [];
     const abort = new AbortController();
     const chat = createTextAgent({
-      agent: textAgent({ name: "Stoppable", text: true }),
+      agent: textAgent({ name: "Stoppable", mode: "text" }),
       model: createFakeLanguageModel({
         script: [
           { type: "text", text: "start" },
@@ -231,7 +231,7 @@ describe("createTextAgent event stream", () => {
   test("a failed model stream reports an llm error and cancels once", async () => {
     const events: SessionEvent[] = [];
     const chat = createTextAgent({
-      agent: textAgent({ name: "Flaky", text: true }),
+      agent: textAgent({ name: "Flaky", mode: "text" }),
       model: createFakeLanguageModel({
         script: [{ type: "error", error: new Error("provider exploded") }],
       }),
@@ -253,7 +253,7 @@ describe("createTextAgent event stream", () => {
     const events: SessionEvent[] = [];
     const chat = createTextAgent({
       agent: textAgent(
-        { name: "Notifier", text: true },
+        { name: "Notifier", mode: "text" },
         {
           nudge: tool({
             description: "Send an event",
@@ -291,7 +291,7 @@ describe("createTextAgent event stream", () => {
     const logger = makeLogger();
     const chat = createTextAgent({
       agent: textAgent(
-        { name: "Notifier", text: true },
+        { name: "Notifier", mode: "text" },
         {
           nudge: tool({
             description: "Send an unserializable event",
@@ -322,7 +322,7 @@ describe("createTextAgent event stream", () => {
     const events: SessionEvent[] = [];
     const chat = createTextAgent({
       agent: textAgent(
-        { name: "Desk", text: true },
+        { name: "Desk", mode: "text" },
         { look_up: tool({ description: "Look up", execute: () => "shipped" }) },
       ),
       model: createFakeLanguageModel({
@@ -356,7 +356,7 @@ describe("createTextAgent event stream", () => {
   test("a conversation that does not end in a user message commits no user turn", async () => {
     const events: SessionEvent[] = [];
     const chat = createTextAgent({
-      agent: textAgent({ name: "Continuer", text: true }),
+      agent: textAgent({ name: "Continuer", mode: "text" }),
       model: createFakeLanguageModel({ script: [{ type: "text", text: "carrying on" }] }),
       logger: silentLogger,
       onEvent: (event) => events.push(event),
@@ -381,7 +381,7 @@ describe("createTextAgent event stream", () => {
   test("an image-only user message commits no user turn", async () => {
     const events: SessionEvent[] = [];
     const chat = createTextAgent({
-      agent: textAgent({ name: "Looker", text: true }),
+      agent: textAgent({ name: "Looker", mode: "text" }),
       model: createFakeLanguageModel({ script: [{ type: "text", text: "a cat" }] }),
       logger: silentLogger,
       onEvent: (event) => events.push(event),

@@ -131,13 +131,17 @@ function toAgentConfig(source: AgentConfigSource): {
   clientInbox?: {
      sampleRate?: number;
   };
-  deadAirCoverMs?: number;
   description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
-  interruptionBackoffMs?: number;
-  interruptionMinDurationMs?: number;
+  interruption?:   | "off"
+     | {
+     backoffMs?: number;
+     minDurationMs?: number;
+     minWords?: number;
+     resumeFalseInterruption?: boolean;
+   };
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -151,22 +155,22 @@ function toAgentConfig(source: AgentConfigSource): {
      tokenEnv?: string;
      url?: string;
   }>;
-  minBargeInWords?: number;
-  mode?: "s2s" | "text" | "pipeline";
+  mode?: "s2s" | "pipeline" | "text" | "workflow-app";
   name: string;
-  page?: "voice" | "static";
-  preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
   resetToolChoice?: boolean;
-  resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  silencePrompt?: string;
-  silenceTimeoutMs?: number;
+  silence?: {
+     deadAirCoverMs?: number;
+     nudge?: {
+        afterMs: number;
+        prompt?: string;
+     };
+  };
   startFailurePhrase?: string;
-  startSpeakingFloorMs?: number;
   stt?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -175,7 +179,6 @@ function toAgentConfig(source: AgentConfigSource): {
   systemPrompt: string;
   telephony?: boolean | readonly string[];
   temperature?: number;
-  text?: true;
   toolChoice?:   | "auto"
      | "required"
      | "none"
@@ -187,13 +190,19 @@ function toAgentConfig(source: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  turnDetection?: string;
+  turnTaking?: {
+     detection?: string;
+     maxSilenceMs?: number;
+     minSilenceMs?: number;
+     preemptiveGeneration?: boolean;
+     startSpeakingFloorMs?: number;
+     userTurnLimit?: {
+        maxDurationMs?: number;
+        maxWords?: number;
+     };
+  };
   usageLimits?: {
      totalTokens?: number;
-  };
-  userTurnLimit?: {
-     maxDurationMs?: number;
-     maxWords?: number;
   };
   voicePresets?: readonly string[];
 };
@@ -218,13 +227,17 @@ the runtime.
   clientInbox?: {
      sampleRate?: number;
   };
-  deadAirCoverMs?: number;
   description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
-  interruptionBackoffMs?: number;
-  interruptionMinDurationMs?: number;
+  interruption?:   | "off"
+     | {
+     backoffMs?: number;
+     minDurationMs?: number;
+     minWords?: number;
+     resumeFalseInterruption?: boolean;
+   };
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -238,22 +251,22 @@ the runtime.
      tokenEnv?: string;
      url?: string;
   }>;
-  minBargeInWords?: number;
-  mode?: "s2s" | "text" | "pipeline";
+  mode?: "s2s" | "pipeline" | "text" | "workflow-app";
   name: string;
-  page?: "voice" | "static";
-  preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
   resetToolChoice?: boolean;
-  resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  silencePrompt?: string;
-  silenceTimeoutMs?: number;
+  silence?: {
+     deadAirCoverMs?: number;
+     nudge?: {
+        afterMs: number;
+        prompt?: string;
+     };
+  };
   startFailurePhrase?: string;
-  startSpeakingFloorMs?: number;
   stt?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -262,7 +275,6 @@ the runtime.
   systemPrompt: string;
   telephony?: boolean | readonly string[];
   temperature?: number;
-  text?: true;
   toolChoice?:   | "auto"
      | "required"
      | "none"
@@ -274,13 +286,19 @@ the runtime.
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  turnDetection?: string;
+  turnTaking?: {
+     detection?: string;
+     maxSilenceMs?: number;
+     minSilenceMs?: number;
+     preemptiveGeneration?: boolean;
+     startSpeakingFloorMs?: number;
+     userTurnLimit?: {
+        maxDurationMs?: number;
+        maxWords?: number;
+     };
+  };
   usageLimits?: {
      totalTokens?: number;
-  };
-  userTurnLimit?: {
-     maxDurationMs?: number;
-     maxWords?: number;
   };
   voicePresets?: readonly string[];
 }
@@ -298,12 +316,6 @@ optional builtinTools?: readonly string[];
 {
   sampleRate?: number;
 }
-```
-
-##### deadAirCoverMs?
-
-```ts
-optional deadAirCoverMs?: number;
 ```
 
 ##### description?
@@ -330,16 +342,17 @@ greeting: string;
 optional idleTimeoutMs?: number;
 ```
 
-##### interruptionBackoffMs?
+##### interruption?
 
 ```ts
-optional interruptionBackoffMs?: number;
-```
-
-##### interruptionMinDurationMs?
-
-```ts
-optional interruptionMinDurationMs?: number;
+optional interruption?: 
+  | "off"
+  | {
+  backoffMs?: number;
+  minDurationMs?: number;
+  minWords?: number;
+  resumeFalseInterruption?: boolean;
+};
 ```
 
 ##### llm?
@@ -380,34 +393,16 @@ optional mcpServers?: Record<string, {
 }>;
 ```
 
-##### minBargeInWords?
-
-```ts
-optional minBargeInWords?: number;
-```
-
 ##### mode?
 
 ```ts
-optional mode?: "s2s" | "text" | "pipeline";
+optional mode?: "s2s" | "pipeline" | "text" | "workflow-app";
 ```
 
 ##### name
 
 ```ts
 name: string;
-```
-
-##### page?
-
-```ts
-optional page?: "voice" | "static";
-```
-
-##### preemptiveGeneration?
-
-```ts
-optional preemptiveGeneration?: boolean;
 ```
 
 ##### requiredEnv?
@@ -422,12 +417,6 @@ optional requiredEnv?: readonly string[];
 optional resetToolChoice?: boolean;
 ```
 
-##### resumeFalseInterruption?
-
-```ts
-optional resumeFalseInterruption?: boolean;
-```
-
 ##### s2s?
 
 ```ts
@@ -437,28 +426,22 @@ optional resumeFalseInterruption?: boolean;
 }
 ```
 
-##### silencePrompt?
+##### silence?
 
 ```ts
-optional silencePrompt?: string;
-```
-
-##### silenceTimeoutMs?
-
-```ts
-optional silenceTimeoutMs?: number;
+{
+  deadAirCoverMs?: number;
+  nudge?: {
+     afterMs: number;
+     prompt?: string;
+  };
+}
 ```
 
 ##### startFailurePhrase?
 
 ```ts
 optional startFailurePhrase?: string;
-```
-
-##### startSpeakingFloorMs?
-
-```ts
-optional startSpeakingFloorMs?: number;
 ```
 
 ##### stt?
@@ -494,12 +477,6 @@ optional telephony?: boolean | readonly string[];
 optional temperature?: number;
 ```
 
-##### text?
-
-```ts
-optional text?: true;
-```
-
 ##### toolChoice?
 
 ```ts
@@ -522,10 +499,20 @@ optional toolChoice?:
 }
 ```
 
-##### turnDetection?
+##### turnTaking?
 
 ```ts
-optional turnDetection?: string;
+{
+  detection?: string;
+  maxSilenceMs?: number;
+  minSilenceMs?: number;
+  preemptiveGeneration?: boolean;
+  startSpeakingFloorMs?: number;
+  userTurnLimit?: {
+     maxDurationMs?: number;
+     maxWords?: number;
+  };
+}
 ```
 
 ##### usageLimits?
@@ -533,15 +520,6 @@ optional turnDetection?: string;
 ```ts
 {
   totalTokens?: number;
-}
-```
-
-##### userTurnLimit?
-
-```ts
-{
-  maxDurationMs?: number;
-  maxWords?: number;
 }
 ```
 
@@ -842,13 +820,13 @@ config that flows CLI → server → runtime unchanged.
 ```ts
 type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcpServers"> & {
   mcpServers?: McpServers;
+  mode?: AgentMode;
   systemPrompt?: AgentSystemPrompt;
 } & { [K in HostOnlyAgentField]?: unknown };
 ```
 
 What [toAgentConfig](#toagentconfig) accepts: every serializable [AgentConfig](#agentconfig)
-field (`mode` excepted — it is derived, never supplied) plus the host-only
-fields the deny-list strips. `AgentDef` is assignable to this by
+field plus the host-only fields the deny-list strips. `AgentDef` is assignable to this by
 construction; the explicit `| undefined` on the host-only members keeps
 spread call sites (`{...agent, stt: maybeUndefined}`) legal under
 `exactOptionalPropertyTypes`.
@@ -864,6 +842,14 @@ optional mcpServers?: McpServers;
 Wider than the wire's record for the same reason: an `McpServerConfig` may
 carry a `url` RESOLVER and `headers`, both host-only. `toAgentConfig`
 strips them (see `wireMcpServers`).
+
+##### mode?
+
+```ts
+optional mode?: AgentMode;
+```
+
+See `AgentDef.mode`; `undefined` from a spread means the default.
 
 ##### systemPrompt?
 

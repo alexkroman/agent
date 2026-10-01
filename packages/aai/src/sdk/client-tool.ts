@@ -23,20 +23,17 @@
  * agent, a subagent, `createToolContext` in a spec) runs the same `execute`,
  * which fails naming why.
  *
- * `Symbol.for`, not `Symbol()`: an agent bundle and the runtime executing it
- * can each carry their own copy of this module, and the brand must survive that.
+ * The brand and the per-call wait are registered boundary keys
+ * (`_boundary.ts`): an agent bundle and the runtime executing it can each carry
+ * their own copy of this module — by design, see that module — so both are
+ * registry symbols, and the brand's value is plain data the reader re-checks.
  */
 
+import { readBrand, setBrand } from "./_boundary.ts";
 import { isRecord } from "./is-record.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { ToolContext } from "./tool-context.ts";
 import type { ToolDef } from "./tool-def.ts";
-
-/** The brand's key. @internal */
-const CLIENT_TOOL = Symbol.for("aai.clientTool");
-
-/** Where a call's wait is bound on its `ToolContext`. @internal */
-const CLIENT_TOOL_CALL = Symbol.for("aai.clientTool.call");
 
 /**
  * Wait for the page's answer to THIS call — bound per call by the runtime,
@@ -121,7 +118,7 @@ export function clientTool<P extends ToolInputSchema = ToolInputSchema>(
   const tool: ToolDef<P> = {
     ...rest,
     execute(_args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> {
-      const call: unknown = Reflect.get(ctx, CLIENT_TOOL_CALL);
+      const call = readBrand(ctx, "clientToolCall");
       if (typeof call !== "function") {
         throw new Error(
           "This is a clientTool: the connected browser page runs it (useClientTool), and this call has no browser session to answer it.",
@@ -130,7 +127,8 @@ export function clientTool<P extends ToolInputSchema = ToolInputSchema>(
       return (call as ClientToolCall)(ctx.signal);
     },
   };
-  Object.defineProperty(tool, CLIENT_TOOL, { value: brand, enumerable: true });
+  // Enumerable, so a spread of the def (a persona or dialog wrapper) keeps it.
+  setBrand(tool, "clientTool", brand, { enumerable: true });
   return tool;
 }
 
@@ -141,7 +139,7 @@ export function clientTool<P extends ToolInputSchema = ToolInputSchema>(
  * @internal
  */
 export function bindClientToolCall(ctx: ToolContext, call: ClientToolCall): void {
-  Object.defineProperty(ctx, CLIENT_TOOL_CALL, { value: call });
+  setBrand(ctx, "clientToolCall", call);
 }
 
 /**
@@ -150,7 +148,7 @@ export function bindClientToolCall(ctx: ToolContext, call: ClientToolCall): void
  * @internal
  */
 export function clientToolBrand(tool: ToolDef): ClientToolBrand | undefined {
-  const brand: unknown = Reflect.get(tool, CLIENT_TOOL);
+  const brand = readBrand(tool, "clientTool");
   if (!isRecord(brand)) return undefined;
   return { timeoutMs: typeof brand.timeoutMs === "number" ? brand.timeoutMs : undefined };
 }

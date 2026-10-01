@@ -5,19 +5,21 @@ import { FfmpegError, type FfmpegFailureKind } from "../host/ffmpeg.ts";
 import { TranscribeError } from "./_transcribe-shared.ts";
 import { FatalError, RetryableError } from "./step-error-classes.ts";
 import {
-  stepFetchOrFail,
-  stepGenerateJsonOrFail,
-  stepGenerateOrFail,
-  stepTranscribePollOrFail,
-  stepTranscribeSubmitOrFail,
-  stepTranscribeSyncOrFail,
-  stepTranscribeUploadOrFail,
+  orFail,
   throwFatalStepError,
   throwFfmpegStepError,
   throwStepError,
   toStepError,
 } from "./step-errors.ts";
-import { StepGenerateError } from "./step-generate.ts";
+import { stepFetch } from "./step-fetch.ts";
+import { StepGenerateError, stepGenerate } from "./step-generate.ts";
+import { stepGenerateJson } from "./step-generate-json.ts";
+import {
+  stepTranscribePoll,
+  stepTranscribeSubmit,
+  stepTranscribeUpload,
+} from "./step-transcribe.ts";
+import { stepTranscribeSync } from "./step-transcribe-sync.ts";
 import { publishUploadReader } from "./step-uploads.ts";
 import { stubGateway } from "./testing-gateway.ts";
 
@@ -94,7 +96,7 @@ describe("toStepError, given a Response", () => {
   test("keeps the response itself as the cause, headers and status included", () => {
     // A sentence is what the journal keeps, and it is not what the process that
     // threw this has to debug with: the status and the headers the verdict was
-    // DERIVED from are on the response, and `stepFetchOrFail` has already read the
+    // DERIVED from are on the response, and `orFail(stepFetch)` has already read the
     // body by the time it hands one over.
     const refused = new Response("nope", { status: 403 });
     expect(toStepError(refused, "GET /orders: HTTP 403").cause).toBe(refused);
@@ -331,11 +333,11 @@ describe("throwFatalStepError", () => {
 });
 
 /**
- * `stepFetchOrFail` reaches the network through `stepFetch`, whose slot is
+ * `orFail(stepFetch)` reaches the network through `stepFetch`, whose slot is
  * UNPUBLISHED in a spec — so it falls back to `globalThis.fetch`, which is
  * exactly the seam these cases stub. See `step-fetch.ts`'s module doc.
  */
-describe("stepFetchOrFail", () => {
+describe("orFail(stepFetch)", () => {
   const stubFetch = (response: Response) => {
     const fetch = vi.fn(async () => response);
     vi.stubGlobal("fetch", fetch);
@@ -345,7 +347,7 @@ describe("stepFetchOrFail", () => {
   test("returns the response untouched on 2xx, body unread", async () => {
     stubFetch(new Response("the body", { status: 200 }));
 
-    const response = await stepFetchOrFail("https://api.test/thing");
+    const response = await orFail(stepFetch)("https://api.test/thing");
 
     expect(response.status).toBe(200);
     // The success path must not consume the body — the caller chooses.
@@ -356,7 +358,7 @@ describe("stepFetchOrFail", () => {
   test("makes a 4xx FATAL, so the engine stops rather than asking three more times", async () => {
     stubFetch(new Response("nope", { status: 404 }));
 
-    const err = await stepFetchOrFail("https://api.test/gone").catch((e: unknown) => e);
+    const err = await orFail(stepFetch)("https://api.test/gone").catch((e: unknown) => e);
 
     expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
   });
@@ -368,7 +370,7 @@ describe("stepFetchOrFail", () => {
     const at = new Date(Math.floor(Date.now() / 1000) * 1000 + 120_000);
     stubFetch(new Response("busy", { status: 503, headers: { "Retry-After": at.toUTCString() } }));
 
-    const err = await stepFetchOrFail("https://api.test/busy").catch((e: unknown) => e);
+    const err = await orFail(stepFetch)("https://api.test/busy").catch((e: unknown) => e);
 
     expect(stepVerdict(err)).toMatchObject({ fatal: false, retryable: true });
     expect((err as RetryableError).retryAfter.getTime()).toBe(at.getTime());
@@ -380,7 +382,7 @@ describe("stepFetchOrFail", () => {
       new Response(JSON.stringify({ error: "podcast feed is not public" }), { status: 403 }),
     );
 
-    const err = await stepFetchOrFail("https://api.test/feed").catch((e: unknown) => e);
+    const err = await orFail(stepFetch)("https://api.test/feed").catch((e: unknown) => e);
 
     expect((err as Error).message).toBe("podcast feed is not public");
   });
@@ -388,7 +390,7 @@ describe("stepFetchOrFail", () => {
   test("falls back to the request, the status and a body preview", async () => {
     stubFetch(new Response("<html>gateway timeout</html>", { status: 504 }));
 
-    const err = await stepFetchOrFail("https://api.test/slow", { method: "POST" }).catch(
+    const err = await orFail(stepFetch)("https://api.test/slow", { method: "POST" }).catch(
       (e: unknown) => e,
     );
 
@@ -401,7 +403,7 @@ describe("stepFetchOrFail", () => {
   test("labels a request with no explicit method as GET", async () => {
     stubFetch(new Response("", { status: 500 }));
 
-    const err = await stepFetchOrFail("https://api.test/x").catch((e: unknown) => e);
+    const err = await orFail(stepFetch)("https://api.test/x").catch((e: unknown) => e);
 
     expect((err as Error).message).toContain("GET https://api.test/x");
   });
@@ -409,7 +411,7 @@ describe("stepFetchOrFail", () => {
   test("passes method, headers and body straight through to stepFetch", async () => {
     const fetch = stubFetch(new Response("ok", { status: 200 }));
 
-    await stepFetchOrFail("https://api.test/post", {
+    await orFail(stepFetch)("https://api.test/post", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: '{"a":1}',
@@ -513,11 +515,11 @@ describe("the pre-classified callers", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
-  test("stepGenerateOrFail is the /step call and nothing else on the happy path", async () => {
+  test("orFail(stepGenerate) is the /step call and nothing else on the happy path", async () => {
     const gateway = stubGateway("Otters use tools.");
     vi.stubGlobal("fetch", gateway.fetch);
 
-    expect(await stepGenerateOrFail("Summarize.", { system: "Be terse." })).toBe(
+    expect(await orFail(stepGenerate)("Summarize.", { system: "Be terse." })).toBe(
       "Otters use tools.",
     );
     expect(gateway.calls[0]?.prompt).toBe("Summarize.");
@@ -527,7 +529,7 @@ describe("the pre-classified callers", () => {
   test("a terminal gateway refusal stops the engine rather than burning attempts", async () => {
     vi.stubGlobal("fetch", stubGateway("", { status: 401 }).fetch);
 
-    await expect(stepGenerateOrFail("Summarize.")).rejects.toSatisfy(FatalError.is);
+    await expect(orFail(stepGenerate)("Summarize.")).rejects.toSatisfy(FatalError.is);
   });
 
   test("a rate limit waits the delay the gateway named, not the default one second", async () => {
@@ -536,15 +538,15 @@ describe("the pre-classified callers", () => {
       vi.fn(async () => new Response("{}", { status: 429, headers: { "Retry-After": "30" } })),
     );
 
-    const err = await stepGenerateOrFail("Summarize.").catch((e: unknown) => e);
+    const err = await orFail(stepGenerate)("Summarize.").catch((e: unknown) => e);
     expect(RetryableError.is(err)).toBe(true);
     expect((err as RetryableError).retryAfter.getTime()).toBeGreaterThan(Date.now() + 20_000);
   });
 
-  test("stepGenerateJsonOrFail returns the validated reply, typed by the schema", async () => {
+  test("orFail(stepGenerateJson) returns the validated reply, typed by the schema", async () => {
     vi.stubGlobal("fetch", stubGateway('{"headline":"Otters use tools"}').fetch);
 
-    expect(await stepGenerateJsonOrFail("Summarize.", { schema: Reply })).toEqual({
+    expect(await orFail(stepGenerateJson)("Summarize.", { schema: Reply })).toEqual({
       headline: "Otters use tools",
     });
   });
@@ -552,61 +554,63 @@ describe("the pre-classified callers", () => {
   test("a reply that missed the SHAPE stays plainly retryable — a model may obey next", async () => {
     vi.stubGlobal("fetch", stubGateway("not json at all").fetch);
 
-    const err = await stepGenerateJsonOrFail("Summarize.", { schema: Reply }).catch(
+    const err = await orFail(stepGenerateJson)("Summarize.", { schema: Reply }).catch(
       (e: unknown) => e,
     );
     expect(FatalError.is(err)).toBe(false);
     expect(RetryableError.is(err)).toBe(false);
   });
 
-  test("stepTranscribeSyncOrFail: a request the provider refused is FATAL", async () => {
+  test("orFail(stepTranscribeSync): a request the provider refused is FATAL", async () => {
     stubTranscribe(400, { message: "unsupported container" });
 
-    await expect(stepTranscribeSyncOrFail(new Uint8Array([1, 2, 3]))).rejects.toSatisfy(
+    await expect(orFail(stepTranscribeSync)(new Uint8Array([1, 2, 3]))).rejects.toSatisfy(
       FatalError.is,
     );
   });
 
-  test("stepTranscribeSyncOrFail passes the audio and its options straight down", async () => {
+  test("orFail(stepTranscribeSync) passes the audio and its options straight down", async () => {
     stubTranscribe(200, { text: "  Otters use tools.  " });
 
-    expect(await stepTranscribeSyncOrFail(new Uint8Array([1]), { filename: "call.wav" })).toEqual({
-      text: "Otters use tools.",
-    });
+    expect(await orFail(stepTranscribeSync)(new Uint8Array([1]), { filename: "call.wav" })).toEqual(
+      {
+        text: "Otters use tools.",
+      },
+    );
   });
 
-  test("stepTranscribeSubmitOrFail: a 503 is retryable, so the job is created later", async () => {
+  test("orFail(stepTranscribeSubmit): a 503 is retryable, so the job is created later", async () => {
     stubTranscribe(503, { error: "upstream unavailable" });
 
-    const err = await stepTranscribeSubmitOrFail("https://x/a.wav").catch((e: unknown) => e);
+    const err = await orFail(stepTranscribeSubmit)("https://x/a.wav").catch((e: unknown) => e);
     expect(RetryableError.is(err)).toBe(true);
   });
 
-  test("stepTranscribeSubmitOrFail returns the id on the happy path", async () => {
+  test("orFail(stepTranscribeSubmit) returns the id on the happy path", async () => {
     stubTranscribe(200, { id: "t_1" });
 
-    expect(await stepTranscribeSubmitOrFail("https://x/a.wav")).toEqual({ id: "t_1" });
+    expect(await orFail(stepTranscribeSubmit)("https://x/a.wav")).toEqual({ id: "t_1" });
   });
 
-  test("stepTranscribePollOrFail: a job the PROVIDER failed never retries", async () => {
+  test("orFail(stepTranscribePoll): a job the PROVIDER failed never retries", async () => {
     // A 2xx carrying `status: "error"` — no HTTP status says this, which is why
     // `TranscribeError` carries the verdict and why classifying it is worth an
     // export rather than a `.catch` the eighth template forgets.
     stubTranscribe(200, { status: "error", error: "corrupt audio" });
 
-    await expect(stepTranscribePollOrFail("t_1")).rejects.toSatisfy(FatalError.is);
+    await expect(orFail(stepTranscribePoll)("t_1")).rejects.toSatisfy(FatalError.is);
   });
 
-  test("stepTranscribePollOrFail answers an unfinished job without classifying it", async () => {
+  test("orFail(stepTranscribePoll) answers an unfinished job without classifying it", async () => {
     stubTranscribe(200, { status: "processing" });
 
-    expect(await stepTranscribePollOrFail("t_1")).toEqual({
+    expect(await orFail(stepTranscribePoll)("t_1")).toEqual({
       done: false,
       status: "processing",
     });
   });
 
-  describe("stepTranscribeUploadOrFail", () => {
+  describe("orFail(stepTranscribeUpload)", () => {
     afterEach(() => {
       // A registry-wide `Symbol.for` slot, which neither `restoreMocks` nor
       // `unstubEnvs` can undo — so this teardown is real rather than dead.
@@ -626,14 +630,14 @@ describe("the pre-classified callers", () => {
       });
       stubTranscribe(401, { error: "bad key" });
 
-      await expect(stepTranscribeUploadOrFail("u1")).rejects.toSatisfy(FatalError.is);
+      await expect(orFail(stepTranscribeUpload)("u1")).rejects.toSatisfy(FatalError.is);
     });
 
     test("a failure BEFORE the request is classified too, and stays retryable", async () => {
       // Nothing published: `stepUploadInfo` throws a plain `Error`, which
       // `toStepError` refuses to invent a verdict for — so it passes through and
       // the engine's own default retries it.
-      const err = await stepTranscribeUploadOrFail("u1").catch((e: unknown) => e);
+      const err = await orFail(stepTranscribeUpload)("u1").catch((e: unknown) => e);
 
       expect(FatalError.is(err)).toBe(false);
       expect((err as Error).message).toMatch(/upload store/i);

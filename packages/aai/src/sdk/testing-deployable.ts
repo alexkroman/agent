@@ -34,6 +34,7 @@
  */
 
 import { type AgentConfig, type AgentConfigSource, toAgentConfig } from "./agent-config.ts";
+import type { AgentMode } from "./agent-mode.ts";
 import type { BuiltinTool } from "./builtin-tools.ts";
 import { isRecord } from "./is-record.ts";
 import { errorMessage } from "./utils.ts";
@@ -79,10 +80,8 @@ export interface DeployedConfig {
    * serialized), so an agent with one reads the default here.
    */
   readonly systemPrompt: string;
-  /** The session mode the conversion derived. */
-  readonly mode: "pipeline" | "s2s" | "text";
-  /** `true` for a text agent. */
-  readonly text?: true | undefined;
+  /** The agent's mode, as the deploy carries it. */
+  readonly mode: AgentMode;
   /** The STT stage — declared, or the injected default in pipeline mode. */
   readonly stt?: DeployedStage | undefined;
   /** The LLM stage — declared, or the injected default in pipeline mode. */
@@ -93,8 +92,8 @@ export interface DeployedConfig {
   readonly s2s?: DeployedStage | undefined;
   /** The builtins the agent declares (absent: the default surface). */
   readonly builtinTools?: readonly BuiltinTool[] | undefined;
-  /** Who ends the caller's turn — `"manual"` for push-to-talk. */
-  readonly turnDetection?: string | undefined;
+  /** Pipeline turn-taking — `detection: "manual"` is push-to-talk. */
+  readonly turnTaking?: { readonly detection?: string | undefined } | undefined;
   /** The session's token budget, when it declares one. */
   readonly usageLimits?: { readonly totalTokens?: number | undefined } | undefined;
   /** The MCP servers whose tools join the agent's own, by key. */
@@ -214,6 +213,10 @@ function assertStagesFilled(
       return config.mode;
     case "pipeline":
       assertPipelineFilled(def, config);
+      return config.mode;
+    case "workflow-app":
+      // A page over the workflow API: the stages the default fills are never
+      // dialled, so there is nothing to require of them.
       return config.mode;
     default:
       throw new Error(

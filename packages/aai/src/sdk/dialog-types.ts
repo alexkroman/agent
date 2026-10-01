@@ -19,6 +19,7 @@
  * @module dialog-types
  */
 
+import type { PipelineTuning } from "./agent-tuning.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { SessionEventType } from "./session-event-map.ts";
 import type { ToolChoice } from "./tool-def.ts";
@@ -247,27 +248,6 @@ export interface DialogTimeout {
 }
 
 /**
- * How interruptible the agent is while a dialog state is active.
- *
- * `"default"` leaves the agent's own `minBargeInWords` /
- * `interruptionMinDurationMs` in place; `"off"` means the agent finishes what it
- * is saying, which is what a disclosure or a legally-required read needs; the
- * object form tightens or loosens the same two gates for this phase only — a
- * menu wants `{ minWords: 1 }` so a caller can cut in on the first word.
- *
- * @public
- */
-export type DialogBargeIn =
-  | "default"
-  | "off"
-  | {
-      /** Words in an interim transcript before a barge-in counts. */
-      minWords?: number;
-      /** Sustained speech before an interim-triggered barge-in counts, in ms. */
-      minDurationMs?: number;
-    };
-
-/**
  * The per-state voice settings a dialog declares — what {@link Dialog.voiceConfig}
  * answers with, from the deepest active state that declares any of them.
  *
@@ -280,8 +260,12 @@ export type DialogBargeIn =
 export interface DialogVoiceConfig {
   /** The TTS voice for this phase of the call. */
   readonly voice?: string;
-  /** How interruptible the agent is here. See {@link DialogBargeIn}. */
-  readonly bargeIn?: DialogBargeIn;
+  /**
+   * How interruptible the agent is here — the agent's own
+   * `PipelineTuning["interruption"]`, verbatim, overriding it field by field
+   * while this state is active (`"off"`: nothing cuts the agent off).
+   */
+  readonly interruption?: PipelineTuning["interruption"];
   /** The model's tool-choice policy while this state is active. */
   readonly toolChoice?: ToolChoice;
   /** The model's sampling temperature while this state is active. */
@@ -301,7 +285,7 @@ export interface DialogVoiceConfig {
  *
  * The six became eleven when a dialog had to be able to describe a CALL rather
  * than a form: a deadline (`timeout`) and the five per-phase voice knobs
- * (`voice`, `bargeIn`, `toolChoice`, `temperature`). Every one of
+ * (`voice`, `interruption`, `toolChoice`, `temperature`). Every one of
  * them is plain JSON and rides in the same `meta` the instruction does, so the
  * constraint above is untouched and a `durable: true` dialog written before any
  * of this resumes byte-identically — a state declaring none of them compiles to
@@ -366,10 +350,13 @@ export interface DialogStateSpec {
    */
   voice?: string;
   /**
-   * How interruptible the agent is here. A disclosure state may need to FINISH;
-   * a menu state wants to be maximally interruptible. See {@link DialogBargeIn}.
+   * How interruptible the agent is here — the same
+   * `PipelineTuning["interruption"]` the agent declares, overriding it field by
+   * field while this state is active. A disclosure state may need to FINISH
+   * (`"off"`); a menu state wants `{ minWords: 1 }` so a caller can cut in on
+   * the first word. See {@link InterruptionTuning}.
    */
-  bargeIn?: DialogBargeIn;
+  interruption?: PipelineTuning["interruption"];
   /** The model's tool-choice policy while this state is active. */
   toolChoice?: ToolChoice;
   /** The model's sampling temperature while this state is active. */

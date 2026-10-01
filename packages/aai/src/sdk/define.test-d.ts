@@ -1,17 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
+import type { AgentAccepts } from "./_test-utils.ts";
 // `InlineToolsMisuse` is off the public barrel (it is the implementation of a
 // compile error, not authoring API), so this spec names it at its own module.
 import type { InlineToolsMisuse } from "./agent-params.ts";
 import type { TurnDetectionMode } from "./agent-voice-tuning.ts";
-import {
-  type AgentParams,
-  agent,
-  type SharedAgentParams,
-  tool,
-  type workflowApp,
-} from "./define.ts";
+import { type AgentParams, agent, type SharedAgentParams, tool } from "./define.ts";
 import type { AssemblyAIGatewayModel } from "./providers/llm/llm.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { SessionEventType } from "./session-event-map.ts";
@@ -24,14 +19,18 @@ import { withTools } from "./tool-registry.ts";
 import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
 import type { VoicePresetName } from "./voice-presets.ts";
 
+/** Every key ANY member of a union has — `keyof` of a union is only the shared ones. */
+type KeysOf<T> = T extends unknown ? keyof T : never;
+
 /**
- * Every `AgentDef` field must be declarable through `agent()`.
+ * Every `AgentDef` field must be declarable through `agent()` — on SOME member.
  *
- * `AgentParams` is now *derived* from `AgentDef` (Omit + Partial<Pick>), so
- * this holds by construction — the test stays as a regression lock against
- * anyone reintroducing an inline re-declaration, which is how `state` once
- * shipped as a runtime-working but excess-property-error field (the CLI and
- * studio bundlers don't typecheck user code, so nothing caught it).
+ * Each member of `AgentParams` is *cut* from `AgentDef` (Omit + Pick), so this
+ * holds by construction — the test stays as a regression lock against anyone
+ * reintroducing an inline re-declaration, which is how `state` once shipped as
+ * a runtime-working but excess-property-error field (the CLI and studio
+ * bundlers don't typecheck user code, so nothing caught it). Over the union,
+ * because a pipeline knob is a key of the pipeline member alone.
  *
  * `tools` is the one deliberate exception and still satisfies this, because it
  * is present as a KEY typed as a message rather than absent — which is what makes
@@ -42,7 +41,7 @@ import type { VoicePresetName } from "./voice-presets.ts";
  * `agent()` mints the roster's, `withMcpTools` appends an MCP server's.
  */
 test("agent() accepts every AgentDef field but the resolved `toolsets`", () => {
-  type MissingFromParam = Exclude<keyof AgentDef, keyof Parameters<typeof agent>[0]>;
+  type MissingFromParam = Exclude<keyof AgentDef, KeysOf<AgentParams>>;
   expectTypeOf<MissingFromParam>().toEqualTypeOf<"toolsets">();
 });
 
@@ -52,9 +51,7 @@ test("agent() takes no state factory, and AgentDef holds none", () => {
   // types its own value in the module that declares it, so the factory, the
   // generic and the bag all went together.
   expectTypeOf<"state" extends keyof AgentDef ? true : false>().toEqualTypeOf<false>();
-  expectTypeOf<
-    "state" extends keyof Parameters<typeof agent>[0] ? true : false
-  >().toEqualTypeOf<false>();
+  expectTypeOf<"state" extends KeysOf<AgentParams> ? true : false>().toEqualTypeOf<false>();
 });
 
 test("a tool context carries a slot store, not a state bag", () => {
@@ -175,26 +172,33 @@ test("a discovered registry composes onto a slot-backed agent", () => {
   expectTypeOf(def.tools.ping).toExtend<ToolDef | undefined>();
 });
 
-test("a slot's projection is what syncState takes", () => {
+test("syncState is a record of slot projections keyed by slot name", () => {
   const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
   const def = agent({
     name: "t",
-    syncState: cartSlot.projection((cart) => ({ count: cart.items.length })),
+    syncState: { cart: cartSlot.projection((cart) => ({ count: cart.items.length })) },
   });
-  expectTypeOf(def.syncState).toExtend<StateProjection | readonly StateProjection[] | undefined>();
+  expectTypeOf(def.syncState).toEqualTypeOf<
+    Readonly<Record<string, StateProjection>> | undefined
+  >();
   // And it is callable with nothing, which is how a client derives its
   // pre-first-tool-call frame from the same function the server pushes.
   expectTypeOf(cartSlot.projection((cart) => cart.items.length)()).toEqualTypeOf<number>();
 });
 
-test("an agent may project more than one slot", () => {
+test("an agent projects more than one slot as more than one key", () => {
   const a = sessionSlot("a", () => ({ x: 1 }));
   const b = sessionSlot("b", () => ({ y: 2 }));
-  const def = agent({
-    name: "t",
-    syncState: [a.projection((v) => ({ x: v.x })), b.projection((v) => ({ y: v.y }))],
-  });
-  expectTypeOf(def.syncState).toExtend<StateProjection | readonly StateProjection[] | undefined>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; syncState: { a: typeof a.projected; b: typeof b.projected } }>
+  >().toEqualTypeOf<true>();
+  // The two forms the record replaced: a bare projection and an array.
+  expectTypeOf<
+    AgentAccepts<{ name: string; syncState: typeof a.projected }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; syncState: readonly StateProjection[] }>
+  >().toEqualTypeOf<false>();
 });
 
 test("`tools` on the authoring params is the message, not a map", () => {
@@ -225,18 +229,22 @@ test("agent() without stt/llm/tts is still legal (s2s mode)", () => {
 test("any subset of the provider triple is an accepted AgentParams", () => {
   // Unset stages are filled from the default all-AssemblyAI pipeline at
   // parse time, so a partial triple is a valid declaration, not an error.
-  expectTypeOf<{ name: string; stt: SttProvider }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; stt: SttProvider; llm: LlmProvider }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; tts: TtsProvider }>().toExtend<AgentParams>();
+  expectTypeOf<AgentAccepts<{ name: string; stt: SttProvider }>>().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; stt: SttProvider; llm: LlmProvider }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; tts: TtsProvider }>>().toEqualTypeOf<true>();
   // A bare model-id string is accepted for `llm`.
-  expectTypeOf<{ name: string; llm: string }>().toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    stt: SttProvider;
-    llm: LlmProvider;
-    tts: TtsProvider;
-  }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string }>().toExtend<AgentParams>();
+  expectTypeOf<AgentAccepts<{ name: string; llm: string }>>().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      stt: SttProvider;
+      llm: LlmProvider;
+      tts: TtsProvider;
+    }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string }>>().toEqualTypeOf<true>();
 });
 
 /**
@@ -251,79 +259,115 @@ test("any subset of the provider triple is an accepted AgentParams", () => {
  */
 test("llm accepts a generated gateway id, an aggregator id, and any other string", () => {
   // The union is visible, which is the point — this is what autocompletes.
-  expectTypeOf<{ name: string; llm: "claude-sonnet-4-6" }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; llm: AssemblyAIGatewayModel }>().toExtend<AgentParams>();
+  expectTypeOf<AgentAccepts<{ name: string; llm: "claude-sonnet-4-6" }>>().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; llm: AssemblyAIGatewayModel }>>().toEqualTypeOf<true>();
   // `"creator/model"` routes through the Vercel AI Gateway.
-  expectTypeOf<{ name: string; llm: "anthropic/claude-sonnet-4-5" }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; llm: "anthropic/claude-sonnet-4-5" }>
+  >().toEqualTypeOf<true>();
   // And it stays a widening: a model shipped after this release, and a bare
   // `string` from a computed value, both still compile.
-  expectTypeOf<{ name: string; llm: "model-shipped-last-week" }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; llm: string }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; llm: "model-shipped-last-week" }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; llm: string }>>().toEqualTypeOf<true>();
   // Text mode is the same field and must not diverge.
-  expectTypeOf<{ name: string; text: true; llm: "gpt-5.5" }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; text: true; llm: string }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; llm: "gpt-5.5" }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; mode: "text"; llm: string }>>().toEqualTypeOf<true>();
   // A descriptor is still accepted, and a non-string is still refused.
-  expectTypeOf<{ name: string; llm: LlmProvider }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; llm: 7 }>().not.toExtend<AgentParams>();
+  expectTypeOf<AgentAccepts<{ name: string; llm: LlmProvider }>>().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; llm: 7 }>>().toEqualTypeOf<false>();
 });
 
-test("voice picks the default pipeline's TTS voice, never a descriptor's or S2S's", () => {
-  // The shorthand for the golden path…
-  expectTypeOf<{ name: string; voice: "michael" }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; voice: string; llm: LlmProvider }>().toExtend<AgentParams>();
-  // …is rejected when an explicit `tts` descriptor owns the voice…
-  expectTypeOf<{ name: string; tts: TtsProvider; voice: "michael" }>().not.toExtend<AgentParams>();
-  // …and in S2S mode, where the `s2s` descriptor owns it.
-  expectTypeOf<{ name: string; s2s: S2sProvider; voice: "michael" }>().not.toExtend<AgentParams>();
+test("a voice is the TTS descriptor's option — there is no agent-level `voice`", () => {
+  expectTypeOf<AgentAccepts<{ name: string; tts: TtsProvider }>>().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; voice: "michael" }>>().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; tts: TtsProvider; voice: "michael" }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider; voice: "michael" }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; voice: "michael" }>
+  >().toEqualTypeOf<false>();
 });
 
 test("s2s cannot be combined with pipeline providers or pipeline-only tuning", () => {
-  expectTypeOf<{ name: string; s2s: S2sProvider }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; s2s: S2sProvider; tts: TtsProvider }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    s2s: S2sProvider;
-    deadAirCoverMs: number;
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    s2s: S2sProvider;
-    silenceTimeoutMs: number;
-  }>().not.toExtend<AgentParams>();
-  // `PipelineOnlyField` derives its voice-UX half from `PipelineVoiceTuning`,
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider; tts: TtsProvider }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "s2s";
+      s2s: S2sProvider;
+      silence: { deadAirCoverMs: number };
+    }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "s2s";
+      s2s: S2sProvider;
+      silence: { nudge: { afterMs: number } };
+    }>
+  >().toEqualTypeOf<false>();
+  // `PipelineOnlyField` derives its voice-UX half from `PipelineTuning`,
   // so this holds for a field added to that interface without touching
   // define.ts — which is the point of deriving it.
-  expectTypeOf<{
-    name: string;
-    s2s: S2sProvider;
-    preemptiveGeneration: boolean;
-  }>().not.toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "s2s";
+      s2s: S2sProvider;
+      turnTaking: { preemptiveGeneration: boolean };
+    }>
+  >().toEqualTypeOf<false>();
   // Shared fields stay declarable on an s2s agent.
-  expectTypeOf<{ name: string; s2s: S2sProvider; idleTimeoutMs: number }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider; idleTimeoutMs: number }>
+  >().toEqualTypeOf<true>();
 });
 
 test("the endpointing shorthand is pipeline-only and refuses an explicit stt", () => {
   // The whole point: one number on a default-pipeline agent, no descriptor.
-  expectTypeOf<{ name: string; maxTurnSilenceMs: number }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; minTurnSilenceMs: number }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; turnTaking: { maxSilenceMs: number } }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; turnTaking: { minSilenceMs: number } }>
+  >().toEqualTypeOf<true>();
   // An explicit stt descriptor owns its own window, so the shorthand is typed
   // as the message naming where to set it.
-  expectTypeOf<{
-    name: string;
-    stt: SttProvider;
-    maxTurnSilenceMs: number;
-  }>().not.toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      stt: SttProvider;
+      turnTaking: { maxSilenceMs: number };
+    }>
+  >().toEqualTypeOf<false>();
   // And it means nothing on the two modes with no pipeline STT stage.
-  expectTypeOf<{
-    name: string;
-    s2s: S2sProvider;
-    maxTurnSilenceMs: number;
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    text: true;
-    maxTurnSilenceMs: number;
-  }>().not.toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "s2s";
+      s2s: S2sProvider;
+      turnTaking: { maxSilenceMs: number };
+    }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "text";
+      turnTaking: { maxSilenceMs: number };
+    }>
+  >().toEqualTypeOf<false>();
 });
 
 test("sttPrompt is declarable in BOTH modes", () => {
@@ -333,8 +377,10 @@ test("sttPrompt is declarable in BOTH modes", () => {
   // anyway — so `agent()` rejected a field the runtime honoured, and the only
   // way to reach the measured win (a spelled first name going from 1 of 6
   // attempts correct to 6 of 6) was to skip `agent()` for a raw config object.
-  expectTypeOf<{ name: string; s2s: S2sProvider; sttPrompt: string }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; sttPrompt: string }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider; sttPrompt: string }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; sttPrompt: string }>>().toEqualTypeOf<true>();
 });
 
 /**
@@ -370,193 +416,70 @@ test("ToolContext.signal and a schema generate's object are non-optional", () =>
  * the rule ("a text agent has no audio to synthesize") and the remedy.
  */
 test("text mode accepts only the fields a text agent has", () => {
-  expectTypeOf<{ name: string; text: true }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; text: true; systemPrompt: string }>().toExtend<AgentParams>();
+  expectTypeOf<AgentAccepts<{ name: string; mode: "text" }>>().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; systemPrompt: string }>
+  >().toEqualTypeOf<true>();
   // The one provider stage it has, in both spellings.
-  expectTypeOf<{ name: string; text: true; llm: LlmProvider }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; text: true; llm: string }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; llm: LlmProvider }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; mode: "text"; llm: string }>>().toEqualTypeOf<true>();
   // Shared, mode-agnostic fields stay declarable.
-  expectTypeOf<{ name: string; text: true; maxSteps: number }>().toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    text: true;
-    builtinTools: readonly ["web_search"];
-  }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; maxSteps: number }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "text";
+      builtinTools: readonly ["web_search"];
+    }>
+  >().toEqualTypeOf<true>();
 
   // Everything downstream of speech is refused.
-  expectTypeOf<{ name: string; text: true; stt: SttProvider }>().not.toExtend<AgentParams>();
-  expectTypeOf<{ name: string; text: true; tts: TtsProvider }>().not.toExtend<AgentParams>();
-  expectTypeOf<{ name: string; text: true; s2s: S2sProvider }>().not.toExtend<AgentParams>();
-  expectTypeOf<{ name: string; text: true; voice: "jane" }>().not.toExtend<AgentParams>();
-  expectTypeOf<{ name: string; text: true; sttPrompt: string }>().not.toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; stt: SttProvider }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; tts: TtsProvider }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; s2s: S2sProvider }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; voice: "jane" }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; sttPrompt: string }>
+  >().toEqualTypeOf<false>();
   // Derived from PipelineVoiceTuning, so a knob added there is refused here
   // without anyone remembering to list it.
-  expectTypeOf<{ name: string; text: true; deadAirCoverMs: number }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    text: true;
-    userTurnLimit: { maxWords: number };
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    text: true;
-    silenceTimeoutMs: number;
-  }>().not.toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; silence: { deadAirCoverMs: number } }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "text";
+      turnTaking: { userTurnLimit: { maxWords: number } };
+    }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "text";
+      silence: { nudge: { afterMs: number } };
+    }>
+  >().toEqualTypeOf<false>();
 
   // And the two voice modes refuse `text` from their side.
-  expectTypeOf<{ name: string; s2s: S2sProvider; text: true }>().not.toExtend<AgentParams>();
-  expectTypeOf<{ name: string; stt: SttProvider; text: true }>().not.toExtend<AgentParams>();
-});
-
-/**
- * The workflow-app arm — the fourth, and the only one keyed on the FRONT DOOR
- * rather than on a session mode.
- *
- * It exists because every field it refuses used to be accepted and inert: a
- * `page: "static"` agent has no session and no LLM loop, so a `systemPrompt`
- * on one addresses a model that never runs. The `link-digest-workflow` template shipped
- * exactly that, under a comment claiming `GET /client-config` served it.
- */
-test("a workflow app accepts only the fields a workflow app has", () => {
-  type Workflows = NonNullable<AgentDef["workflows"]>;
-
-  // The whole legal surface: what a page renders, what it starts, what a step
-  // reads.
-  expectTypeOf<{ name: string; page: "static"; workflows: Workflows }>().toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: Workflows;
-    greeting: string;
-    requiredEnv: readonly string[];
-  }>().toExtend<AgentParams>();
-
-  // `workflows` is the product, so an app declaring none is refused — the page
-  // would serve a form whose every submit is a 400.
-  expectTypeOf<{ name: string; page: "static" }>().not.toExtend<AgentParams>();
-
-  // And nothing answers a phone: a carrier's media stream needs the session a
-  // workflow app does not have.
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: Workflows;
-    telephony: true;
-  }>().not.toExtend<AgentParams>();
-
-  // Nothing runs a model.
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: Workflows;
-    systemPrompt: string;
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: Workflows;
-    tools: Record<string, never>;
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: Workflows;
-    llm: LlmProvider;
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: Workflows;
-    maxSteps: number;
-  }>().not.toExtend<AgentParams>();
-
-  // Nothing opens a session, so the state projection is out.
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: Workflows;
-    syncState: StateProjection;
-  }>().not.toExtend<AgentParams>();
-
-  // Derived from the two existing lists, so a new provider stage or voice knob
-  // is refused here without anyone remembering to list it.
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: Workflows;
-    s2s: S2sProvider;
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: Workflows;
-    deadAirCoverMs: number;
-  }>().not.toExtend<AgentParams>();
-
-  // And the voice arms refuse the front door from their side: without this the
-  // arm never bites, because a pipeline agent would match `page: "static"` too
-  // and go on accepting every field above.
-  expectTypeOf<{ name: string; voice: "jane"; page: "static" }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    s2s: S2sProvider;
-    page: "static";
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{ name: string; text: true; page: "static" }>().not.toExtend<AgentParams>();
-  // A voice agent may still say so explicitly, and may still declare workflows
-  // — `page` is about the front door, not about what the agent may own.
-  expectTypeOf<{ name: string; page: "voice"; workflows: Workflows }>().toExtend<AgentParams>();
-});
-
-/**
- * `workflowApp()` is `agent()` with the discriminant set — same definition
- * type out, so nothing downstream (config, deploy, the guest harness) learns a
- * second shape.
- */
-test("workflowApp() returns an AgentDef and takes no page field", () => {
-  expectTypeOf<ReturnType<typeof workflowApp>>().toEqualTypeOf<AgentDef>();
-  expectTypeOf<Parameters<typeof workflowApp>[0]>().not.toHaveProperty("page");
-  expectTypeOf<Parameters<typeof workflowApp>[0]>().toHaveProperty("workflows");
-});
-
-/**
- * The workflow-app diagnostics belong to `workflowApp()`, not to every
- * `agent()` call site.
- *
- * tsc prints the WHOLE union at every call site, so a message on the static arm
- * is a message on every diagnostic. Before the split, `agent({ maxSteps: "12"
- * })` — a plain voice agent, an ordinary one-character mistake — reported
- * `Type 'string' is not assignable to type 'number | "\`maxSteps\` has no effect
- * on a workflow app — \`page: "static"\` …"'`, telling an author about a front
- * door they had never heard of and burying `number`. It reports
- * `not assignable to type 'number'` now.
- *
- * The two halves below are what make that true AND keep the field rejected;
- * losing either one is a regression this file exists to catch.
- */
-test("the static arm of AgentParams carries no message, and still rejects the field", () => {
-  type StaticArm = Extract<AgentParams, { page: "static" }>;
-  // `never`, so it is ABSORBED in the union tsc prints — this is the half that
-  // cleans up the voice agent's diagnostic.
-  expectTypeOf<StaticArm["maxSteps"]>().toEqualTypeOf<undefined>();
-  expectTypeOf<StaticArm["systemPrompt"]>().toEqualTypeOf<undefined>();
-  // …and the KEY is still present and un-satisfiable, which is the half that
-  // keeps a workflow app from declaring a field it has no use for. An absent
-  // field would be structurally fine and this object would extend the arm.
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: NonNullable<AgentDef["workflows"]>;
-    maxSteps: number;
-  }>().not.toExtend<AgentParams>();
-});
-
-test('workflowApp() keeps the sentence — it is where `page: "static"` is not a surprise', () => {
-  type AppParams = Parameters<typeof workflowApp>[0];
-  expectTypeOf<AppParams["maxSteps"]>().toEqualTypeOf<
-    | `\`maxSteps\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`
-    | undefined
-  >();
+  expectTypeOf<
+    AgentAccepts<{ name: string; s2s: S2sProvider; mode: "text" }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; stt: SttProvider; mode: "text" }>
+  >().toEqualTypeOf<false>();
 });
 
 /**
@@ -567,16 +490,22 @@ test('workflowApp() keeps the sentence — it is where `page: "static"` is not a
  * agents with no audio path to put on a call.
  */
 test("telephony is declarable on a voice agent and refused where there is no call", () => {
-  expectTypeOf<{ name: string; telephony: true }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; telephony: false }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; telephony: readonly ["twilio"] }>().toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    telephony: readonly ["twilio", "telnyx"];
-  }>().toExtend<AgentParams>();
+  expectTypeOf<AgentAccepts<{ name: string; telephony: true }>>().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; telephony: false }>>().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; telephony: readonly ["twilio"] }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      telephony: readonly ["twilio", "telnyx"];
+    }>
+  >().toEqualTypeOf<true>();
   // An S2S agent takes calls like any other voice agent — the bridge is below
   // the session, so the mode it runs in never reaches it.
-  expectTypeOf<{ name: string; s2s: S2sProvider; telephony: true }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider; telephony: true }>
+  >().toEqualTypeOf<true>();
 
   // The known half written inline in the OPEN vocabulary and the list the
   // runtime resolves a declaration through are the same set. `TELEPHONY_CARRIERS`
@@ -590,9 +519,13 @@ test("telephony is declarable on a voice agent and refused where there is no cal
   // A carrier this build ships no codec for COMPILES — the vocabulary is open,
   // so a declaration written for a newer SDK builds on this one; the runtime
   // drops it and `agentConfigWarnings` says so.
-  expectTypeOf<{ name: string; telephony: readonly ["vonage"] }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; telephony: readonly ["vonage"] }>
+  >().toEqualTypeOf<true>();
   // A text agent has no audio path, so a phone call has nothing to reach.
-  expectTypeOf<{ name: string; text: true; telephony: true }>().not.toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; telephony: true }>
+  >().toEqualTypeOf<false>();
 });
 
 /**

@@ -17,7 +17,6 @@ import type { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
-import type { OwnedMap } from '@alexkroman1/aai/internal';
 import { publishClientInboxDefaults } from '@alexkroman1/aai/host-internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
@@ -57,7 +56,7 @@ export function applyWorkflowJournalDdl(options: {
 
 // @public
 export type AttachSessionOptions = {
-    sessions: OwnedMap<string, ServerSession>;
+    sessions: Pick<SessionDirectory, "claim" | "session">;
     createSession: (sessionId: string, client: ClientSink) => ServerSession;
     readyConfig: ReadyConfig;
     logContext?: Record<string, string>;
@@ -147,6 +146,9 @@ export function createPostgresJournal(options: {
 export function createPostgresStateBackend(options: {
     db: Db;
 }): SessionStateBackend;
+
+// @internal
+export function createSessionDirectory(): SessionDirectory;
 
 // @internal
 export function createSessionEventStream(options: {
@@ -321,6 +323,9 @@ export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
 // @public
 export const MAX_WORKFLOW_RUN_LABEL_CHARS = 200;
 
+// @internal
+export function mintPlatformSessionTicket(input: PlatformTicketInput): string;
+
 // @public
 export function normalizeRunLabel(value: unknown): string | undefined;
 
@@ -350,6 +355,9 @@ export const PLATFORM_ROUTES: {
 
 // @internal
 export const PLATFORM_SOCKET_PATH = "/platform-socket";
+
+// @internal
+export const PLATFORM_TICKET_RESUME_GRACE_SECONDS: number;
 
 // @internal
 export type PlatformEndpoint = {
@@ -387,6 +395,9 @@ const PlatformReplyFrameSchema: z.ZodObject<{
 // @public
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
+// @internal
+export function platformSessionSecret(guestToken: string): string;
+
 // @public
 type PlatformSessionStateOptions = PlatformEndpoint;
 
@@ -411,6 +422,14 @@ type PlatformSocketReply = {
 export function platformSocketUrl(base: string): string;
 
 // @public
+export type PlatformTicketInput = {
+    guestToken: string;
+    previousGuestTokens?: readonly string[];
+    presented?: string | undefined;
+    now?: number;
+};
+
+// @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
 
 // @public
@@ -419,7 +438,7 @@ export type ProviderEnvVarsQuery = {
     llm?: object | undefined;
     tts?: object | undefined;
     s2s?: object | undefined;
-    page?: AgentDef["page"] | undefined;
+    mode?: AgentDef["mode"] | undefined;
 };
 
 export { publishClientInboxDefaults }
@@ -560,6 +579,25 @@ export const SESSION_EVENT_TABLE = "aai_session_events";
 // @internal
 export const SESSION_STATE_TABLE = "aai_session_state";
 
+// @internal
+export type SessionDirectory = {
+    claim(sessionId: string, session: ServerSession): () => boolean;
+    session(sessionId: string): ServerSession | undefined;
+    claimWiring(sessionId: string, wiring: SessionWiring): () => boolean;
+    emitter(sessionId: string): SessionEmitter | undefined;
+    meter(sessionId: string): UsageMeter | undefined;
+    readonly speech: SpeechDirectory;
+    live(): IterableIterator<ServerSession>;
+    ids(): IterableIterator<string>;
+    readonly size: number;
+    clear(): void;
+};
+
+// @public
+export type SessionEmitter = {
+    emit(body: SessionEventBody): SessionEvent;
+};
+
 // @public
 type SessionEventPage = {
     events: readonly SessionEvent[];
@@ -644,6 +682,13 @@ type SessionWebSocket = {
     }) => void): void;
 };
 
+// @internal
+export type SessionWiring = {
+    sink: ClientSink;
+    emitter: SessionEmitter;
+    meter: UsageMeter;
+};
+
 // @public
 type SleepEntry = SleepRecord & {
     key: string;
@@ -655,6 +700,13 @@ type SleepRecord = {
     woken: boolean;
     correlationId?: string | undefined;
     kind: "sleep" | "hookTimeout";
+};
+
+// @internal
+export type SpeechDirectory = {
+    of(sessionId: string): SessionSpeech;
+    live(sessionId: string): SessionSpeech | undefined;
+    announce(sessionId: string, instruction: string): boolean;
 };
 
 // @internal

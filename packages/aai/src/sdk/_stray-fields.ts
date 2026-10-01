@@ -27,11 +27,13 @@
  * boundary, not API.
  */
 
+import { nearestNames } from "./_nearest-names.ts";
+
 /**
  * Throw when `src` carries a key that is neither a serializable config field
  * nor a host-only one. The message names every stray key and, for each, the
  * nearest known name within edit distance 3 — which is what makes a
- * transposition or a case slip (`maxTurnSilenceMS`) self-correcting.
+ * transposition or a case slip (`maxsteps`) self-correcting.
  */
 export function assertNoStrayFields(
   src: Readonly<Record<string, unknown>>,
@@ -42,7 +44,10 @@ export function assertNoStrayFields(
   const named = stray.map((key) => {
     const renamed = RENAMED_FIELDS[key];
     if (renamed !== undefined) return `\`${key}\` (renamed to \`${renamed}\`)`;
-    const near = nearestName(key, known);
+    // Distance 3, one name: a field is longer than a voice id, and a refusal
+    // offers one correction. Uncapped, the nearest name to an invented field is
+    // whichever short field is least unlike it — a confident wrong answer.
+    const [near] = nearestNames(key, known, { maxDistance: 3, maxNames: 1 });
     return near === undefined ? `\`${key}\`` : `\`${key}\` (did you mean \`${near}\`?)`;
   });
   const subject = stray.length === 1 ? "a field" : `${stray.length} fields`;
@@ -52,6 +57,26 @@ export function assertNoStrayFields(
       "yours to keep, hold it in a module constant rather than on the agent.",
   );
 }
+
+/** `group.field` — a field that moved into one of the `PipelineTuning` groups. */
+const inGroup = (group: string, field: string): string => `${group}.${field}`;
+
+/**
+ * The flat pipeline knobs that kept their NAME and moved into a group, keyed
+ * group → field. Written as keys rather than strings so each is an identifier
+ * the compiler and the editor see, and so the table cannot drift from itself.
+ */
+const MOVED_UNRENAMED = {
+  turnTaking: { userTurnLimit: 0, preemptiveGeneration: 0, startSpeakingFloorMs: 0 },
+  interruption: { resumeFalseInterruption: 0 },
+  silence: { deadAirCoverMs: 0 },
+} as const;
+
+const movedUnrenamed: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(MOVED_UNRENAMED).flatMap(([group, fields]) =>
+    Object.keys(fields).map((field) => [field, inGroup(group, field)]),
+  ),
+);
 
 /**
  * Fields this SDK has REMOVED, and what replaced them.
@@ -65,52 +90,19 @@ export function assertNoStrayFields(
 const RENAMED_FIELDS: Readonly<Record<string, string>> = {
   system: "systemPrompt",
   instructions: "systemPrompt",
+  // The mode flags `mode` replaced.
+  text: 'mode: "text"',
+  page: 'mode: "workflow-app"',
+  // The TTS voice shorthand: the voice is the descriptor's option.
+  voice: "tts: assemblyAITts({ voice })",
+  // The flat pipeline knobs the three `PipelineTuning` groups replaced.
+  ...movedUnrenamed,
+  turnDetection: inGroup("turnTaking", "detection"),
+  minTurnSilenceMs: inGroup("turnTaking", "minSilenceMs"),
+  maxTurnSilenceMs: inGroup("turnTaking", "maxSilenceMs"),
+  minBargeInWords: inGroup("interruption", "minWords"),
+  interruptionMinDurationMs: inGroup("interruption", "minDurationMs"),
+  interruptionBackoffMs: inGroup("interruption", "backoffMs"),
+  silenceTimeoutMs: inGroup("silence", "nudge.afterMs"),
+  silencePrompt: inGroup("silence", "nudge.prompt"),
 };
-
-/**
- * The closest name in `known` within edit distance 3, or `undefined` when
- * nothing is that close.
- *
- * The cap matters more than the algorithm: with no cap, the nearest name to a
- * genuinely invented field is whichever short field happens to be least
- * unlike it, and a confidently wrong suggestion reads as the SDK having
- * misunderstood rather than the author having invented a field.
- */
-function nearestName(key: string, known: ReadonlySet<string>): string | undefined {
-  const lower = key.toLowerCase();
-  let best: string | undefined;
-  let bestDistance = 4;
-  for (const candidate of known) {
-    // A pure case difference is distance 0 here and the likeliest slip of all
-    // (`maxTurnSilenceMS`), so it wins outright rather than competing.
-    if (candidate.toLowerCase() === lower) return candidate;
-    const distance = editDistance(key, candidate, bestDistance);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = candidate;
-    }
-  }
-  return best;
-}
-
-/**
- * Levenshtein distance, abandoning once every cell of a row is at or past
- * `limit` — the answer is only ever compared against a small bound, so the
- * full matrix is work nobody reads.
- */
-function editDistance(a: string, b: string, limit: number): number {
-  if (Math.abs(a.length - b.length) >= limit) return limit;
-  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const current = [i];
-    for (let j = 1; j <= b.length; j++) {
-      const substitution = (previous[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1);
-      const deletion = (previous[j] ?? 0) + 1;
-      const insertion = (current[j - 1] ?? 0) + 1;
-      current.push(Math.min(substitution, deletion, insertion));
-    }
-    if (Math.min(...current) >= limit) return limit;
-    previous = current;
-  }
-  return previous[b.length] ?? limit;
-}

@@ -1,4 +1,5 @@
 import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 // The whole agent. Three files make it up and none of them imports another:
 // this one, `system-prompt.md` beside it, and `tools/get_weather.ts` — each
@@ -17,8 +18,8 @@ export default agent({
   // The first thing a caller hears. Without one the agent waits for them to
   // speak, which on a phone call reads as a dead line.
   greeting: "Hi — I can look up the weather anywhere. Which city?",
-  // Any name from `ASSEMBLYAI_TTS_VOICES`. It is sugar for a `tts` descriptor,
-  // so declaring `tts: assemblyAITts({ voice })` yourself is the same thing
-  // spelled out — and either one replaces only the speaking stage.
-  voice: "jane",
+  // Any name from `ASSEMBLYAI_TTS_VOICES`. The voice is the speaking stage's
+  // own option, so this replaces only that stage; the other two stay on the
+  // default pipeline.
+  tts: assemblyAITts({ voice: "jane" }),
 });

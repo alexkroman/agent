@@ -436,7 +436,7 @@ describe("cancel_recap", () => {
  *
  * Published into `stepFetch`'s OWN slot, not over `globalThis.fetch`. Every
  * request in this file goes through `stepFetch` — `request()` and
- * `discardTranscript` reach it directly, `stepTranscribeSubmitOrFail`
+ * `discardTranscript` reach it directly, `orFail(stepTranscribeSubmit)`
  * through the SDK — and `step-fetch.ts` falls back to `globalThis.fetch` only
  * when nothing is published. A global stub therefore passed while exercising a
  * path production never takes; every sibling template already stubs the slot,

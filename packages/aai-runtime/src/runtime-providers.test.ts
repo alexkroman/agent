@@ -27,13 +27,17 @@ describe("createRuntime provider resolution", () => {
   }
 
   test("a workflow app with no credential anywhere still builds", () => {
-    // `page: "static"` declines /websocket and defaults telephony off, so the
+    // `mode: "workflow-app"` declines /websocket and defaults telephony off, so the
     // injected default pipeline is never dialled — but resolving it eagerly
     // threw "AssemblyAI LLM: missing API key" and took the whole runtime with
     // it. Under `aai dev` that is a workflow app that cannot start; deployed,
     // it is a 500 on the workflow API of an app whose workflows are fine.
     expect(() =>
-      createRuntime({ agent: providerless({ page: "static" }), env: {}, logger: makeLogger() }),
+      createRuntime({
+        agent: providerless({ mode: "workflow-app" }),
+        env: {},
+        logger: makeLogger(),
+      }),
     ).not.toThrow();
   });
 
@@ -54,7 +58,7 @@ describe("createRuntime provider resolution", () => {
     // still throws when finally called is
     // `runtime-transport.test.ts`'s "a pipelineProviders thunk that throws".
     const logger = makeLogger();
-    createRuntime({ agent: providerless({ page: "static" }), env: {}, logger });
+    createRuntime({ agent: providerless({ mode: "workflow-app" }), env: {}, logger });
     // The runtime was built and reported ITSELF; only the credential-bearing
     // resolution was left undone. A workflow app's line is its own, and says
     // only what resolved — printing `mode: pipeline` plus three stages' settings

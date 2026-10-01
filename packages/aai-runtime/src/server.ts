@@ -345,7 +345,7 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
       // bare socket drop leaves the client reconnecting against a server that
       // will never answer, with nothing in the frame log explaining why — and
       // "this agent serves a static page" is exactly the sentence whoever wired
-      // `mountClient()` into a `page: "static"` app needs to read.
+      // `mountClient()` into a `mode: "workflow-app"` app needs to read.
       logger.warn(`WS upgrade ${url} rejected: this agent serves a static page`);
       wss.handleUpgrade(req, socket, head, (ws) => {
         declineSocket(

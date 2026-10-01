@@ -99,7 +99,7 @@
  * Everything the desk claims to do. `submitRecording`, `checkTranscript` and
  * `discardTranscript` are AssemblyAI's pre-recorded API (`POST`, `GET` and
  * `DELETE` on `/v2/transcript`), and `summarize` is a real model call through
- * `stepGenerateJsonOrFail`. The BATCH API is what makes the polling port honest: it
+ * `orFail(stepGenerateJson)`. The BATCH API is what makes the polling port honest: it
  * answers with a job id in milliseconds and finishes minutes later, so the wait
  * is the provider's, not a `setTimeout` this template chose. (Its sibling
  * `transcription-workflow` takes the other endpoint — the sync one, which answers in
@@ -116,16 +116,12 @@ import {
   requireStepEnv,
   type StepFetchInit,
   stepFetch,
+  stepGenerateJson,
   stepReport,
+  stepTranscribeSubmit,
   stepWebhookUrl,
 } from "@alexkroman1/aai/step";
-import {
-  FatalError,
-  stepFetchOrFail,
-  stepGenerateJsonOrFail,
-  stepTranscribeSubmitOrFail,
-  toStepError,
-} from "@alexkroman1/aai/step-errors";
+import { FatalError, orFail, toStepError } from "@alexkroman1/aai/step-errors";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { retentionToken, transcriptToken } from "./tokens.ts";
@@ -245,7 +241,7 @@ const POINTS = 3;
 /**
  * The shape the model must answer in.
  *
- * `stepGenerateJsonOrFail` validates against this and throws PLAINLY when the reply
+ * `orFail(stepGenerateJson)` validates against this and throws PLAINLY when the reply
  * misses, which is the retry policy in one distinction: a model that answered in
  * prose may answer correctly next time, where a 401 will not. `spoken` is the
  * field this template exists for — without it the announced turn has nothing to
@@ -615,7 +611,7 @@ export async function submitRecording(
 ): Promise<{ id: string; callback: boolean }> {
   await stepReport(`Submitting ${new URL(url).hostname} for transcription…`);
 
-  // `stepTranscribeSubmitOrFail` owns the endpoint, the raw-key auth, the
+  // `orFail(stepTranscribeSubmit)` owns the endpoint, the raw-key auth, the
   // PLURAL `speech_models` field and the failure classification — the
   // `Classified` suffix being that last part: it is `stepTranscribeSubmit` with
   // `throwStepError` already applied, so a provider refusal stays terminal and a
@@ -631,7 +627,7 @@ export async function submitRecording(
   // What must not creep in is a `?? null` or a `?? ""` to "be explicit": either
   // one puts the key back, and a provider handed a null for a URL is entitled to
   // refuse the whole submission.
-  const job = await stepTranscribeSubmitOrFail(url, {
+  const job = await orFail(stepTranscribeSubmit)(url, {
     params: { speaker_labels: true, webhook_url: webhookUrl },
   });
   return { id: job.id, callback: webhookUrl !== undefined };
@@ -768,13 +764,13 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
     throw new FatalError("That recording came back with no speech in it.");
   }
 
-  // `stepGenerateJsonOrFail` unwraps the fence a model puts around JSON
+  // `orFail(stepGenerateJson)` unwraps the fence a model puts around JSON
   // however firmly it is told not to, parses it, and validates it — all four
   // things this step used to re-derive. The `Classified` half is what makes a
   // terminal gateway failure (a bad key, a rejected request) stop rather than
   // burn the remaining attempts, where a reply that missed the SHAPE throws
   // plainly and retries.
-  const parsed = await stepGenerateJsonOrFail(text, {
+  const parsed = await orFail(stepGenerateJson)(text, {
     schema: RecapReply,
     system:
       "You write up recordings for someone who will hear the result on a phone call. " +
@@ -805,7 +801,7 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
  * step that needs it.
  *
  * **`StepFetchInit` is what makes one builder serve both**, and that is the
- * reason it is worth naming: `stepFetch` and `stepFetchOrFail` take the same
+ * reason it is worth naming: `stepFetch` and `orFail(stepFetch)` take the same
  * init, so the two calls differ only in how they CLASSIFY the answer — a 404 is
  * a success for one and a failure for the other — and nothing about the request
  * itself. Spreading `extra` first is what keeps that true: a caller may add a
@@ -832,11 +828,11 @@ async function request(url: string): Promise<Response> {
   // `TypeError: fetch failed`, which for a template whose whole subject is
   // durability is the difference between a diagnosable resume and a mystery.
   // `sdk/step-fetch.ts` carries the measurements.
-  // `stepFetchOrFail` makes the three-way retry decision: a 401 or a 400 answers the
+  // `orFail(stepFetch)` makes the three-way retry decision: a 401 or a 400 answers the
   // same way on the fourth attempt and burns the step, a 429 or a 5xx is what
   // retries are for, and a `Retry-After` the provider named is waited out rather
   // than replaced by the DevKit's one-second default — which matters here more
   // than usual, because a fan-out of segments hits a rate limit together. The
   // DELETE below stays on plain `stepFetch`, because there a 404 is a SUCCESS.
-  return await stepFetchOrFail(url, apiInit({ headers: { "content-type": "application/json" } }));
+  return await orFail(stepFetch)(url, apiInit({ headers: { "content-type": "application/json" } }));
 }

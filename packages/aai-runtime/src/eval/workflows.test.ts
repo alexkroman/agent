@@ -57,7 +57,7 @@ const failing = workflow({
 
 const app = agent({
   name: "Digest App",
-  page: "static",
+  mode: "workflow-app",
   workflows: { digest, failing },
   requiredEnv: ["ASSEMBLYAI_API_KEY"],
 });
@@ -78,7 +78,7 @@ function openApp(def: AgentDef = app): EvalWorkflows {
 describe("evalWorkflowCredentials", () => {
   test("reads requiredEnv, which is the only thing a workflow app names a key in", () => {
     // The bug this exists to prevent: `requiredProviderEnvVars` answers `[]` for
-    // a `page: "static"` agent, so the provider gate alone reports every workflow
+    // a `mode: "workflow-app"` agent, so the provider gate alone reports every workflow
     // app ready.
     const missing = evalWorkflowCredentials(app, {});
     expect(missing.ready).toBe(false);
@@ -95,7 +95,7 @@ describe("evalWorkflowCredentials", () => {
   test("copies DECLARED keys only, so no unrelated shell variable reaches a step", () => {
     const declared = agent({
       name: "Slack App",
-      page: "static",
+      mode: "workflow-app",
       workflows: { digest },
       requiredEnv: ["SLACK_WEBHOOK_URL"],
     });
@@ -184,7 +184,7 @@ describe("openEvalWorkflows", () => {
       },
     });
     const active = openEvalWorkflows({
-      agent: agent({ name: "Stuck", page: "static", workflows: { stuck } }),
+      agent: agent({ name: "Stuck", mode: "workflow-app", workflows: { stuck } }),
       env: {},
       timeoutMs: 30,
     });
@@ -214,7 +214,7 @@ describe("draining a run that is still in flight", () => {
       },
     });
     const active = openEvalWorkflows({
-      agent: agent({ name: "Held", page: "static", workflows: { held } }),
+      agent: agent({ name: "Held", mode: "workflow-app", workflows: { held } }),
       env: {},
     });
     open = active;
@@ -244,7 +244,7 @@ describe("draining a run that is still in flight", () => {
       },
     });
     const active = openEvalWorkflows({
-      agent: agent({ name: "Spawner", page: "static", workflows: { parent, child } }),
+      agent: agent({ name: "Spawner", mode: "workflow-app", workflows: { parent, child } }),
       env: {},
     });
     open = active;
@@ -278,7 +278,7 @@ describe("draining a run that is still in flight", () => {
       },
     });
     const active = openEvalWorkflows({
-      agent: agent({ name: "Narrating", page: "static", workflows: { narrating } }),
+      agent: agent({ name: "Narrating", mode: "workflow-app", workflows: { narrating } }),
       env: {},
     });
     const runId = await active.client.start("narrating", {});
@@ -379,7 +379,7 @@ describeWorkflowEval(
 describeWorkflowEval(
   agent({
     name: "Keyless App",
-    page: "static",
+    mode: "workflow-app",
     workflows: { keyReader },
     requiredEnv: ["A_KEY_NOBODY_HAS"],
   }),

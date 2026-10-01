@@ -40,6 +40,7 @@ import type {
 } from "@alexkroman1/aai";
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 import type { ModelMessage } from "ai";
+import type { TransportCapabilities } from "./capabilities.ts";
 
 /**
  * What a transport may report: everything in the session event vocabulary except
@@ -212,24 +213,38 @@ export type TransportSessionConfig = {
 };
 
 /**
+ * The two decisions every code-initiated line states — the SDK's `SayOptions`
+ * minus `interrupt` (which acts on the reply before the line, not on the line).
+ *
+ * Every code-initiated line in pipeline mode states both — the table in
+ * `pipeline-lines.ts` lists each line and its values.
+ *
+ * @internal
+ */
+export type LineFlags = {
+  /** On the record: history, `ctx.messages`, a committed transcript. */
+  readonly record: boolean;
+  /** A caller's barge-in may cut it. */
+  readonly interruptible: boolean;
+};
+
+/**
  * One {@link Transport.speakLine} call's controls: `signal` takes a still-queued
  * line back, and `onStart` fires as the line takes the floor, which is what
  * tells the session a later take-back must cut a reply rather than skip one.
  * `interruptible: false` holds the caller's barge-in off while the line plays;
- * `record: false` keeps it out of history. Both are the SDK's `SayOptions`.
+ * `record: false` keeps it out of history — the {@link LineFlags} every
+ * code-initiated line states.
  *
  * @internal
  */
-export type SpokenLine = {
+export type SpokenLine = LineFlags & {
   readonly signal: AbortSignal;
   readonly onStart: () => void;
-  readonly interruptible?: boolean | undefined;
-  readonly record?: boolean | undefined;
 };
 
 /**
- * How a {@link Transport.speakLine} line ended. The SDK's `SpeechOutcome` minus
- * `"unsupported"`, which the session answers for a transport with no such verb.
+ * How a {@link Transport.speakLine} line ended — the SDK's `SpeechOutcome`.
  *
  * @internal
  */
@@ -268,6 +283,12 @@ export function resolveGreeting(greeting: GreetingOption | undefined): string | 
  * @internal
  */
 export interface Transport {
+  /**
+   * What this transport can do — read this, never a verb's presence. Each
+   * optional verb below is implemented iff its capability is `true`
+   * (`capabilities.ts`, which also renders the guide's table).
+   */
+  readonly capabilities: TransportCapabilities;
   /** Open any underlying connections and send initial session config. */
   start(): Promise<void>;
   /** Tear down, flush, close. Idempotent. */
@@ -334,8 +355,8 @@ export interface Transport {
    * OPTIONAL for a sharper reason than `injectTurn`: an S2S service has no
    * verb that speaks host text as written. OpenAI Realtime's greeting is a
    * `response.create` INSTRUCTION ("Say exactly: …") the model may paraphrase,
-   * which is fine for a greeting and is not what "verbatim" promises. The
-   * session reports `"unsupported"` instead.
+   * which is fine for a greeting and is not what "verbatim" promises —
+   * `capabilities.say` is `false` there.
    */
   speakLine?(text: string, line: SpokenLine): Promise<SpokenLineOutcome>;
   /**

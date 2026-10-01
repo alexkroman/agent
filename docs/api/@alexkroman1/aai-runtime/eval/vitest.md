@@ -1,16 +1,90 @@
 # eval/vitest
 
-`@alexkroman1/aai-runtime/eval/vitest` — the eval suite, as vitest sees it.
+`@alexkroman1/aai-runtime/eval/vitest` — THE import for an eval file.
 
-Everything here either INSTALLS something or OWNS a lifetime, which is the
-repo's rule for what belongs on a runner-flavoured subpath: `describeEval`
-registers a suite, opens a session per case and closes it afterwards, and
-decides whether this run has a live model or a scripted one. `vitest` is an
-OPTIONAL peer dependency, so importing this module is what pulls it in — the
-driving half (`@alexkroman1/aai-runtime/eval`) stays runner-agnostic and can
-be used from any harness.
+One `*.eval.test.ts` used to reach four subpaths of two packages: the suite
+from here, the readers and the session from `/eval`, the simulated caller from
+`/eval/simulate`, and the stubs a case composes with from
+`@alexkroman1/aai/testing` and `/testing/vitest`. Every one of those names is
+re-exported here — the SAME declarations, so a type from one door is the type
+from another — and an eval needs no other import from either package for its
+harness:
+
+```ts
+import type { AgentDef } from "@alexkroman1/aai";
+import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/eval/vitest";
+
+declare const agentDef: AgentDef;
+
+describeEval(agentDef, (test) => {
+  test(
+    "looks the order up before answering",
+    async ({ session }) => {
+      expectCalled(await session.say("where is order W1234?"), "look_up");
+    },
+    { stubReply: "Order W1234 shipped yesterday." },
+  );
+});
+```
+
+Why HERE rather than on `/eval`, and why not in the SDK:
+
+- **`/eval` must stay importable without vitest.** `vitest` is an OPTIONAL
+  peer dependency and this module imports it (`describeEval` registers a
+  suite, opens a session per case and closes it afterwards — everything
+  defined here either INSTALLS something or OWNS a lifetime, the repo's rule
+  for a runner-flavoured subpath). A harness that is not vitest — a load-test
+  stub, a recording runner — imports `/eval`, the runner-free half this is
+  built on. An eval FILE is always vitest (`*.eval.test.ts` is a vitest tier),
+  so the one author-facing door is the vitest one.
+- **The SDK cannot host it.** `@alexkroman1/aai` never imports this package
+  (the dependency runs one way), and the harness is host runtime. So the
+  re-export runs the other way: this subpath re-exports the SDK's unit-level
+  stubs, which stay DECLARED on `@alexkroman1/aai/testing` for a tool's or a
+  step's own spec.
+- **Capabilities are unchanged.** A re-export does not move ownership: the
+  readers stay `eval`'s, `evalNetwork` `eval-network`'s, the claims
+  `eval-assert`'s, the simulation `eval-simulate`'s, and the SDK stubs
+  `aai:testing`'s, each on its own epoch.
+
+`/eval/simulate` was removed for this reason (its names are here and on
+`/eval`); `/eval` stays — it is the runner-free door, not a second
+author-facing one.
 
 ## Functions
+
+### createRecordingWorkflows()
+
+```ts
+function createRecordingWorkflows(options?: RecordingWorkflowsOptions): RecordingWorkflows;
+```
+
+Build a [RecordingWorkflows](#recordingworkflows).
+
+#### Parameters
+
+##### options?
+
+[`RecordingWorkflowsOptions`](#recordingworkflowsoptions)
+
+#### Returns
+
+[`RecordingWorkflows`](#recordingworkflows)
+
+#### Example
+
+```ts
+import { createRecordingWorkflows, createRunSnapshot } from "@alexkroman1/aai/testing";
+
+const workflows = createRecordingWorkflows({
+  runs: [createRunSnapshot({ workflow: "remind", key: "kitchen", runId: "wrun_pending" })],
+});
+await workflows.start("remind", { text: "flip the laundry" }, { key: "kitchen" });
+console.log(workflows.started("remind").length); // 1
+console.log((await workflows.find("remind", "kitchen")).length); // 2
+```
+
+***
 
 ### describeEval()
 
@@ -96,7 +170,7 @@ import { toolNames } from "@alexkroman1/aai-runtime/eval";
 import { describeTextEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 
-const agentDef = agent({ name: "Coder", text: true });
+const agentDef = agent({ name: "Coder", mode: "text" });
 
 describeTextEval(agentDef, (test) => {
   test(
@@ -165,6 +239,367 @@ callback as jest's `done`). Do not tidy either.
 #### Returns
 
 `void`
+
+***
+
+### dialogRefusalPattern()
+
+```ts
+function dialogRefusalPattern(state?: string): RegExp;
+```
+
+A pattern matching the sentence a `dialog()` gate refuses with — optionally
+pinned to the state it names.
+
+For a SPEC. A gated tool called out of state answers a `ToolFailure` whose
+`error` is this sentence, and every template spec that asserts a gate held
+used to spell a regex for it by hand. Two kinds of spec read it, and the
+pattern serves both: a unit test holds the `ToolFailure` itself (prefer
+`expectDialogRefused` there, which also throws on a success), while an eval
+reads a tool result off the event stream as a SERIALIZED string, where the
+state's quotes arrive escaped (`\"identifying\"`). The pattern admits the
+escaping, so one matcher reads both.
+
+With no `state`, it matches any refusal — for a spec that pins the state a
+line later, or whose subject is that the body did not run rather than where
+the conversation was.
+
+#### Parameters
+
+##### state?
+
+`string`
+
+The state the refusal must name, as `DialogPosition.state`
+  spells it (`"identifying"`, `"onCall.inbox"`). Matched literally.
+
+#### Returns
+
+`RegExp`
+
+#### Example
+
+```ts
+import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
+
+const refused = 'Not available yet: this conversation is at "identifying". Verify the caller first.';
+dialogRefusalPattern("identifying").test(refused); // true
+dialogRefusalPattern("transferred").test(refused); // false
+dialogRefusalPattern().test(refused); // true
+```
+
+***
+
+### dialogResultSchema()
+
+```ts
+function dialogResultSchema<T extends ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>(result: T): ZodObject<{
+  done: ZodBoolean;
+  instruction: ZodOptional<ZodString>;
+  result: T;
+  state: ZodString;
+}, $strip>;
+```
+
+The envelope a gated tool answers with, as a schema around the tool's own.
+
+[expectDialogOk](../../aai/testing.md#expectdialogok) unwraps a value a spec HOLDS. An eval holds the
+serialized copy the model was handed and reads it back through a schema —
+`toolResultIn(turn.toolCalls, "set_stay", schema)` — so it needs the same
+envelope as a schema rather than as a function, and three shipped evals had
+each written it out: `z.object({ result, state: z.string(), done:
+z.boolean() })`, under a comment saying the shape was the SDK's. It is, and
+this is where it lives: `result` is whatever the author's `execute` returned,
+`state` is where the call landed, `done` whether that state is final, and
+`instruction` is the state's own brief when it declares one — the fields of
+[DialogToolResult](../../aai/index.md#dialogtoolresult), which a `dialog.tool` writes and no tool file does.
+
+Parsing rather than casting is what makes a template that stopped carrying its
+position fail naming the field, instead of a later `expect` reading
+`undefined.state`.
+
+#### Type Parameters
+
+##### T
+
+`T` *extends* `ZodType`\<`unknown`, `unknown`, `$ZodTypeInternals`\<`unknown`, `unknown`\>\>
+
+The schema of the tool's OWN result, under `result`.
+
+#### Parameters
+
+##### result
+
+`T`
+
+What the tool's `execute` answers with.
+
+#### Returns
+
+`ZodObject`\<\{
+  `done`: `ZodBoolean`;
+  `instruction`: `ZodOptional`\<`ZodString`\>;
+  `result`: `T`;
+  `state`: `ZodString`;
+\}, `$strip`\>
+
+#### Example
+
+```ts
+import { dialogResultSchema } from "@alexkroman1/aai/testing";
+import { z } from "zod";
+
+// In an eval: `toolResultIn(turn.toolCalls, "set_stay", Stay)`. Holding the
+// serialized result yourself, it is the same parse:
+const Stay = dialogResultSchema(z.object({ options: z.string() }));
+const stay = Stay.parse(
+  JSON.parse('{"result":{"options":"garden view"},"state":"booking.room","done":false}'),
+);
+stay.state; // "booking.room"
+stay.result.options; // "garden view"
+```
+
+***
+
+### eventsOf()
+
+```ts
+function eventsOf<E extends {
+  type: string;
+}, K extends string>(events: Iterable<E>, type: K): Extract<E, {
+  type: K;
+}>[];
+```
+
+Every event in `events` named `type`, in order, typed as that member.
+
+```ts
+import type { SessionEvent } from "@alexkroman1/aai";
+import { eventsOf } from "@alexkroman1/aai/testing";
+
+declare const recorded: SessionEvent[];
+const calls = eventsOf(recorded, "tool.called");
+console.log(calls.map((e) => e.toolName));
+```
+
+#### Type Parameters
+
+##### E
+
+`E` *extends* \{
+  `type`: `string`;
+\}
+
+##### K
+
+`K` *extends* `string`
+
+#### Parameters
+
+##### events
+
+`Iterable`\<`E`\>
+
+##### type
+
+`K`
+
+#### Returns
+
+`Extract`\<`E`, \{
+  `type`: `K`;
+\}\>[]
+
+***
+
+### installStubSpeech()
+
+```ts
+function installStubSpeech(options?: StubSpeechOptions): StubSpeech;
+```
+
+Publish a synthesizer that records what it was asked to say, restored when
+this test finishes.
+
+`stubSpeech` with the bookkeeping done — see it for the call log's
+shape, the silence it answers with, and how to make it fail instead.
+
+#### Parameters
+
+##### options?
+
+[`StubSpeechOptions`](#stubspeechoptions)
+
+#### Returns
+
+[`StubSpeech`](#stubspeech)
+
+***
+
+### installStubStepDelegate()
+
+```ts
+function installStubStepDelegate(script: StubDelegateScript): StubStepDelegate;
+```
+
+Publish a fake subagent runner for `stepDelegate`, restored when this test
+finishes.
+
+`stubStepDelegate` with the bookkeeping done. It is the only way to drive an
+exported step that delegates — the real slot THROWS when nothing has published,
+deliberately, because there is no degraded version of running a model loop.
+
+#### Parameters
+
+##### script
+
+[`StubDelegateScript`](../../aai/testing.md#stubdelegatescript)
+
+#### Returns
+
+[`StubStepDelegate`](#stubstepdelegate)
+
+***
+
+### installStubStepFetch()
+
+```ts
+function installStubStepFetch(answer?: (request: StubStepRequest) => 
+  | StubStepAnswer
+  | Promise<StubStepAnswer>): StubStepFetch;
+```
+
+Publish a fake `stepFetch`, restored when this test finishes.
+
+`stubStepFetch` with the bookkeeping done — see it for why a step's HTTP
+goes through a published slot rather than the global, and what the recorded
+request carries.
+
+#### Parameters
+
+##### answer?
+
+(`request`: [`StubStepRequest`](../../aai/testing.md#stubsteprequest)) => 
+  \| [`StubStepAnswer`](../../aai/testing.md#stubstepanswer)
+  \| `Promise`\<[`StubStepAnswer`](../../aai/testing.md#stubstepanswer)\>
+
+Called per request. Defaults to an empty `200`.
+
+#### Returns
+
+[`StubStepFetch`](#stubstepfetch)
+
+***
+
+### installStubTranscribe()
+
+```ts
+function installStubTranscribe(options?: StubTranscribeOptions): StubTranscribe;
+```
+
+Answer AssemblyAI's transcription endpoints in memory, restored when this test
+finishes.
+
+`stubTranscribe` with the bookkeeping done — see it for the four legs it
+routes, why a refusal is staged as an HTTP status rather than as a
+`TranscribeError`, and why it takes an `otherwise` handler.
+
+#### Parameters
+
+##### options?
+
+[`StubTranscribeOptions`](#stubtranscribeoptions)
+
+#### Returns
+
+[`StubTranscribe`](#stubtranscribe)
+
+***
+
+### installStubUploads()
+
+```ts
+function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
+```
+
+Publish an in-memory upload store, restored when this test finishes.
+
+`stubUploads` with the bookkeeping done — see it for what the store
+serves, why writes are opt-in, and why the minted ids count up.
+
+#### Parameters
+
+##### files
+
+`Readonly`\<`Record`\<`string`, [`StubUpload`](../../aai/testing.md#stubupload)\>\>
+
+##### options?
+
+[`StubUploadsOptions`](#stubuploadsoptions)
+
+#### Returns
+
+[`StubUploads`](#stubuploads)
+
+#### Example
+
+```ts no-check
+import { installStubUploads } from "@alexkroman1/aai/testing/vitest";
+
+test("the step reads the recording it was given", async () => {
+  const uploads = installStubUploads({ upl_1: new Uint8Array(5000) }, { writable: true });
+  await ingest("upl_1");
+  expect(uploads.writes).toHaveLength(1);
+});
+```
+
+***
+
+### isEvent()
+
+```ts
+function isEvent<E extends {
+  type: string;
+}, K extends string>(event: E, type: K): event is Extract<E, { type: K }>;
+```
+
+Whether `event` is the one named `type` — a type guard, so the branch it
+guards reads that member's fields without a cast.
+
+```ts
+import type { SessionEvent } from "@alexkroman1/aai";
+import { isEvent } from "@alexkroman1/aai/testing";
+
+declare const recorded: SessionEvent[];
+const last = recorded.at(-1);
+if (last && isEvent(last, "tool.called")) console.log(last.toolName);
+```
+
+#### Type Parameters
+
+##### E
+
+`E` *extends* \{
+  `type`: `string`;
+\}
+
+##### K
+
+`K` *extends* `string`
+
+#### Parameters
+
+##### event
+
+`E`
+
+##### type
+
+`K`
+
+#### Returns
+
+`event is Extract<E, { type: K }>`
 
 ***
 
@@ -253,7 +688,7 @@ function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string, strin
 question.
 
 Split rather than folded in because the two gates read different fields and the
-wrong one is silent: a `page: "static"` agent needs no provider credential, so
+wrong one is silent: a `mode: "workflow-app"` agent needs no provider credential, so
 `evalCredentials` reports every workflow app ready and a keyless run goes LIVE
 — then every case fails on a 401 three layers down. `evalWorkflowCredentials`
 reads `requiredEnv`, which is the only thing a workflow app declares its
@@ -289,6 +724,197 @@ mode: EvalMode;
 ```ts
 reason: string;
 ```
+
+***
+
+### routeStepFetch()
+
+```ts
+function routeStepFetch(routes: readonly StepRoute[], options?: {
+  unmatched?: StepUnmatched;
+}): (request: StubStepRequest) => StubStepAnswer;
+```
+
+Compose several [StepRoute](#steproute)s into the one handler `stubStepFetch`
+takes.
+
+Publishing a `stepFetch` REPLACES, so a flow that calls a model AND fetches a
+page AND transcribes can install exactly one fake and has to route inside it.
+Thirteen sites across seven templates wrote that composition by hand, and
+they did not agree on the part that matters — the unmatched case. Three threw
+(with a byte-identical message), two answered 404, and six fell through to a
+second fake.
+
+**The default is `"throw"` because the alternatives HIDE a finding.** A 404
+for a request nobody set up reads to the run as a provider that refused, so
+the flow takes its own error path and the spec passes green having tested the
+wrong branch. A spec that really is about a 404 says so.
+
+Order matters: the first route to answer wins, so put the most specific leg
+first. A route that throws is left alone — this only decides what happens
+when every leg answers `undefined`.
+
+#### Parameters
+
+##### routes
+
+readonly [`StepRoute`](#steproute)[]
+
+##### options?
+
+###### unmatched?
+
+[`StepUnmatched`](#stepunmatched)
+
+#### Returns
+
+(`request`: [`StubStepRequest`](../../aai/testing.md#stubsteprequest)) => [`StubStepAnswer`](../../aai/testing.md#stubstepanswer)
+
+#### Example
+
+```ts
+import { routeStepFetch, stubGatewayRoute } from "@alexkroman1/aai/testing";
+
+const model = stubGatewayRoute(['{"summary":"ok"}']);
+// Model first, then the page; anything else is a finding.
+const handler = routeStepFetch([model.route, (req) =>
+  req.url.startsWith("https://example.test") ? { body: "<p>hi</p>" } : undefined,
+]);
+```
+
+***
+
+### stubGatewayRoute()
+
+```ts
+function stubGatewayRoute(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayRoute;
+```
+
+A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot
+rather than the global `fetch`.
+
+[stubGateway](../../aai/testing.md#stubgateway-1) answers over `globalThis.fetch`, which is the wrong seam
+whenever anything has published a `stepFetch`: publishing REPLACES, so a flow
+that transcribes AND calls a model — or fetches a page and calls a model — can
+install only one fake and has to route by URL inside it. Seven eval files did
+exactly that, and each hand-typed the same two things:
+
+1. **The envelope.** `{ body: { choices: [{ message: { content } }] } }`,
+   written out six times in six spellings. It is a WIRE shape, so a typo in
+   it does not fail — `stepGenerate` reads no content and reports an empty
+   completion, i.e. the fake and the code under test disagree and the case
+   blames the code.
+2. **The cursor.** `contents.at(Math.min(next, contents.length - 1))`,
+   re-derived twice, because a model call inside a LOOP cannot know how many
+   calls it will make: a script that repeats one line can only drive the loop
+   into its budget, and one that runs out mid-loop fails on the script. The
+   last reply repeats, which is [stubGateway](../../aai/testing.md#stubgateway-1)'s convention and now
+   literally the same code.
+
+And it hands back DECODED calls — `prompt`, `system`, `body`, `headers` — which
+is the half no hand-rolled version had. Reading what the model was ASKED off a
+`StubStepRequest` means `String(call.body)`, i.e. the raw JSON of the whole
+request; one eval asserted its prompts that way and was really asserting
+against the serialized `model` and `temperature` too.
+
+```ts no-check
+// `no-check`: the step under test is in another file, which is the point.
+import { stubGatewayRoute } from "@alexkroman1/aai/testing";
+import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+
+const model = stubGatewayRoute(['{"verdict":"ship"}']);
+installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
+// … run the workflow …
+expect(model.calls[0]?.prompt).toContain("the brief");
+```
+
+#### Parameters
+
+##### replies
+
+`string` \| readonly `string`[]
+
+Completion contents, in order; the last repeats. A bare
+  string is one reply.
+
+##### options?
+
+[`StubGatewayOptions`](../../aai/testing.md#stubgatewayoptions)
+
+#### Returns
+
+[`StubGatewayRoute`](#stubgatewayroute)
+
+## Interfaces
+
+### StubGatewayRoute
+
+A gateway answer for a `stepFetch`-published slot, plus what it was asked.
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubGatewayCall[];
+```
+
+Every completion request this route answered, DECODED, in call order.
+
+##### route
+
+```ts
+route: (request: StubStepRequest) => StubStepAnswer | undefined;
+```
+
+Answers a completion request and `undefined` for anything else, so the
+caller composes it: `?? { body: html }` for a flow that also fetches a
+page, `?? someThrow()` for one where an unexpected request is a finding, or
+straight into `stubTranscribe`'s `otherwise`.
+
+###### Parameters
+
+###### request
+
+[`StubStepRequest`](../../aai/testing.md#stubsteprequest)
+
+###### Returns
+
+[`StubStepAnswer`](../../aai/testing.md#stubstepanswer) \| `undefined`
+
+***
+
+### StubStepDelegate
+
+A fake `stepDelegate`: the calls it recorded, and the slot to give back.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish the runner.
+
+Calling it in an `afterEach` is not optional — a stub left published makes
+the next file's steps delegate into this one's log, which is the kind of
+cross-file leak that presents as a passing test somewhere else.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubDelegateCall[];
+```
+
+Every call, in order — the same log [stubDelegate](../../aai/testing.md#stubdelegate-1) keeps.
 
 ## Type Aliases
 
@@ -596,8 +1222,8 @@ What a case body is handed: its own session, which model it is on, and the
 workflow app behind it.
 
 A simulated caller and a model-graded judge are NOT on it: a case that wants
-them builds the pair from `session` and `mode` with `evalSimulation` on
-`@alexkroman1/aai-runtime/eval/simulate`, a surface versioned on its own.
+them builds the pair from `session` and `mode` with `evalSimulation` (on this
+same `@alexkroman1/aai-runtime/eval/vitest`), a surface versioned on its own.
 
 #### Properties
 
@@ -752,8 +1378,8 @@ type EvalTextTestContext = {
 **`Sealed`**
 
 What a text case body is handed: its own conversation and the mode. A
-simulated caller is `evalSimulation({ target: agent, … })` on
-`@alexkroman1/aai-runtime/eval/simulate`, as for a voice case.
+simulated caller is `evalSimulation({ target: agent, … })` (on this same
+`@alexkroman1/aai-runtime/eval/vitest`), as for a voice case.
 
 #### Properties
 
@@ -865,3 +1491,1194 @@ Which mode this run got.
 Unlike a voice case, a workflow case is EXPECTED to branch on it: it is what
 decides whether to install a fake for a provider a step would otherwise
 really dial.
+
+***
+
+### RecordingWorkflows
+
+```ts
+type RecordingWorkflows = WorkflowClient & {
+  cancelled: string[];
+  starts: RecordedStart[];
+  seed: void;
+  started: RecordedStart[];
+};
+```
+
+A `WorkflowClient` that records, plus its log.
+
+`start` records and resolves a fresh run id, and the run it "started" is
+visible to `get`/`find`/`recent` as `running` — so a tool that checks for a
+pending run before starting a second one sees its own first start. `cancel`
+marks a known, unfinished run `cancelled` and resolves `true` (else
+`false`); `wakeUp` resolves `0`; `lastLine` resolves `undefined`. The
+progress-channel reads (`stream`, `streamTail`, `signal`,
+`publicWebhookUrl`) REJECT, as `createStubWorkflows`' do — spread over it to
+answer one.
+
+#### Type Declaration
+
+##### cancelled
+
+```ts
+readonly cancelled: string[];
+```
+
+Every run id `cancel` was called with, in order, whatever it resolved.
+
+##### starts
+
+```ts
+readonly starts: RecordedStart[];
+```
+
+Every start, in order.
+
+##### seed()
+
+```ts
+seed(...runs: WorkflowRunSnapshot[]): void;
+```
+
+Add runs for the reads to answer from, e.g. inside a case before `say()`.
+
+###### Parameters
+
+###### runs
+
+...[`WorkflowRunSnapshot`](../../aai/workflow-api.md#workflowrunsnapshot)[]
+
+###### Returns
+
+`void`
+
+##### started()
+
+```ts
+started(workflow?: string | AnyWorkflowDef): RecordedStart[];
+```
+
+The starts of one workflow — by declared name or by def — or all of them.
+
+###### Parameters
+
+###### workflow?
+
+`string` \| [`AnyWorkflowDef`](../../aai/workflow-api.md#anyworkflowdef)
+
+###### Returns
+
+[`RecordedStart`](../../aai/testing.md#recordedstart)[]
+
+***
+
+### RecordingWorkflowsOptions
+
+```ts
+type RecordingWorkflowsOptions = {
+  runIdPrefix?: string;
+  runs?: readonly WorkflowRunSnapshot[];
+  workflows?: Readonly<Record<string, AnyWorkflowDef>>;
+};
+```
+
+What [createRecordingWorkflows](#createrecordingworkflows) takes.
+
+#### Properties
+
+##### runIdPrefix?
+
+```ts
+optional runIdPrefix?: string;
+```
+
+Prefix of the minted run ids, numbered from 1. Defaults to `"wrun_rec_"`.
+
+##### runs?
+
+```ts
+optional runs?: readonly WorkflowRunSnapshot[];
+```
+
+Runs the reads answer from before anything starts — a reminder already
+pending, a job that failed. Build them with `createRunSnapshot`; more can
+be added later with `seed`.
+
+##### workflows?
+
+```ts
+optional workflows?: Readonly<Record<string, AnyWorkflowDef>>;
+```
+
+The agent's declared workflows — pass `agentDef.workflows` — so a start
+by DEF is recorded under its declared name, and `listing()` reports them.
+A def not in it is refused, as the real client refuses it. Without it, a
+def is recorded under its `description` and matched by identity.
+
+***
+
+### StepRoute
+
+```ts
+type StepRoute = (request: StubStepRequest) => StubStepAnswer | undefined;
+```
+
+One leg of a step's outside world: answers the requests it recognises and
+`undefined` for everything else, so legs compose.
+
+The shape `stubGatewayRoute` already hands back, named so a spec writing its
+own leg (a page fetch, a provider's job API) writes the same thing.
+
+#### Parameters
+
+##### request
+
+[`StubStepRequest`](../../aai/testing.md#stubsteprequest)
+
+#### Returns
+
+[`StubStepAnswer`](../../aai/testing.md#stubstepanswer) \| `undefined`
+
+***
+
+### StepUnmatched
+
+```ts
+type StepUnmatched = "throw" | "notFound" | StepRoute;
+```
+
+What an unrecognised request means.
+
+- `"throw"` (the default) — a finding. A step asked for something the spec
+  did not set up, and the test should say so at the call.
+- `"notFound"` — a real 404, for a spec whose subject IS how a flow handles
+  one.
+- a [StepRoute](#steproute) — the fallback leg, for "anything else is this page".
+
+***
+
+### StubSpeech
+
+```ts
+type StubSpeech = {
+  calls: StubSpeechCall[];
+  restore: void;
+};
+```
+
+What [stubSpeech](../../aai/testing.md#stubspeech-1) returns: the call log, and how to put the slot back.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish the synthesizer.
+
+Calling it in an `afterEach` is not optional — a stub left published makes
+the next file's steps speak into this one's log, which is the kind of
+cross-file leak that presents as a passing test somewhere else.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubSpeechCall[];
+```
+
+Every call, in order.
+
+***
+
+### StubSpeechOptions
+
+```ts
+type StubSpeechOptions = {
+  error?: Error;
+  pcmBytes?: number;
+  requireApiKey?: boolean;
+};
+```
+
+What [stubSpeech](../../aai/testing.md#stubspeech-1) may be told.
+
+#### Properties
+
+##### error?
+
+```ts
+optional error?: Error;
+```
+
+Fail instead of speaking, with this error.
+
+The half a spec cannot write by leaving the slot empty: an unpublished
+slot is "no synthesizer here", which is a different sentence and a
+different branch from a provider that answered and refused.
+
+##### pcmBytes?
+
+```ts
+optional pcmBytes?: number;
+```
+
+Bytes of PCM to answer with, per call.
+
+Defaults to [STUB\_SPEECH\_PCM\_BYTES](../../aai/testing.md#stub_speech_pcm_bytes), which is enough that the WAV
+`stepSpeak` frames has a plausible duration and a spec asserting on one
+gets a number rather than zero. A caller that cares about the exact
+duration sets this: at the default 24 kHz mono 16-bit, one second is
+48,000 bytes.
+
+##### requireApiKey?
+
+```ts
+optional requireApiKey?: boolean;
+```
+
+Refuse, as the real synthesizer does, when the step env holds no
+credential. Defaults to `false`: the stub presents the key to nobody, so a
+spec should not have to `vi.stubEnv("ASSEMBLYAI_API_KEY", …)` just to get
+past a check that guards a socket it never opens. Set it for the one spec
+whose subject IS the missing-key sentence.
+
+***
+
+### StubStepFetch
+
+```ts
+type StubStepFetch = {
+  calls: StubStepRequest[];
+  restore: () => void;
+};
+```
+
+What [stubStepFetch](../../aai/testing.md#stubstepfetch-1) returns.
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubStepRequest[];
+```
+
+Every request the step made, in order.
+
+##### restore
+
+```ts
+restore: () => void;
+```
+
+Unpublish. Call it in an `afterEach` — see [stubStepFetch](../../aai/testing.md#stubstepfetch-1).
+
+###### Returns
+
+`void`
+
+***
+
+### StubTranscribe
+
+```ts
+type StubTranscribe = {
+  calls: StubTranscribeCall[];
+  restore: void;
+};
+```
+
+What [stubTranscribe](../../aai/testing.md#stubtranscribe-1) returns.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish.
+
+Not optional — a `stepFetch` left published answers the next file's steps.
+`installStubTranscribe` (`@alexkroman1/aai/testing/vitest`) is this with the
+registration already done.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubTranscribeCall[];
+```
+
+Every request that reached the fake, in order, each tagged with its leg.
+
+***
+
+### StubTranscribeOptions
+
+```ts
+type StubTranscribeOptions = {
+  audioUrl?: string;
+  durationSec?: number;
+  failure?: StubTranscribeFailure;
+  jobError?: string;
+  jobIdPrefix?: string;
+  otherwise?: (request: StubStepRequest) => 
+     | StubStepAnswer
+     | undefined
+    | Promise<StubStepAnswer | undefined>;
+  pendingPolls?: number;
+  text?: string | readonly string[];
+};
+```
+
+What [stubTranscribe](../../aai/testing.md#stubtranscribe-1) may be told.
+
+#### Properties
+
+##### audioUrl?
+
+```ts
+optional audioUrl?: string;
+```
+
+What the upload leg answers with. Defaults to a fixed fake CDN URL.
+
+##### durationSec?
+
+```ts
+optional durationSec?: number;
+```
+
+The provider's own duration measurement, in seconds. Defaults to `60`.
+
+##### failure?
+
+```ts
+optional failure?: StubTranscribeFailure;
+```
+
+Refuse at the HTTP level. See [StubTranscribeFailure](../../aai/testing.md#stubtranscribefailure).
+
+##### jobError?
+
+```ts
+optional jobError?: string;
+```
+
+Fail the JOB rather than the request: the poll answers `200` with
+`status: "error"` and this reason.
+
+A different branch from [StubTranscribeOptions.failure](#failure) and the one
+most likely to be got wrong in production code — the provider succeeded at
+answering and the answer is "no". It is TERMINAL, and a flow that retried
+it would poll a dead job until its budget ran out.
+
+##### jobIdPrefix?
+
+```ts
+optional jobIdPrefix?: string;
+```
+
+Prefix for the job ids the submit leg mints. Defaults to
+`"stub_transcript_"`, with a 1-based counter after it.
+
+Minted rather than random for the reason `stubUploads`'s ids are: a spec
+asserting that a run journaled the job it later polled needs the id to be a
+value it can write down.
+
+##### otherwise?
+
+```ts
+optional otherwise?: (request: StubStepRequest) => 
+  | StubStepAnswer
+  | undefined
+| Promise<StubStepAnswer | undefined>;
+```
+
+Answer everything that is not a transcription call.
+
+Publishing a `stepFetch` REPLACES, so a flow that transcribes AND calls a
+model cannot have two fakes installed — this is the seam for the second
+one. Returning `undefined` (or passing no handler) answers `404` with a body
+naming the URL, which is a better failure than an empty `200` a step would
+try to parse.
+
+###### Parameters
+
+###### request
+
+[`StubStepRequest`](../../aai/testing.md#stubsteprequest)
+
+###### Returns
+
+  \| [`StubStepAnswer`](../../aai/testing.md#stubstepanswer)
+  \| `undefined`
+  \| `Promise`\<[`StubStepAnswer`](../../aai/testing.md#stubstepanswer) \| `undefined`\>
+
+##### pendingPolls?
+
+```ts
+optional pendingPolls?: number;
+```
+
+How many polls answer "still working" before the job completes. Defaults to
+`0` — the first poll finds it done.
+
+Counted PER JOB ID, so a flow that submits two jobs sees each of them take
+the same number of polls. Keep it small: a caller's polling loop usually
+`sleep`s between polls, and outside a real run that wait is not one a spec
+should be taking.
+
+##### text?
+
+```ts
+optional text?: string | readonly string[];
+```
+
+The words a completed job or a sync request comes back with.
+
+A list is consumed one per COMPLETED answer and the last repeats, matching
+`stubGateway`'s convention and for the same reason: a fan-out over segments
+wants a different line per segment, and a stub that ran out mid-fan-out
+would fail on the stub rather than on the code.
+
+An EMPTY string is meaningful rather than a lazy default: the async API's
+poll refuses it (`"There is no speech in that recording"`, terminal), and
+the sync endpoint accepts it — a silent segment in a fan-out is ordinary.
+That asymmetry is real, and this is how a spec drives it.
+
+***
+
+### StubUploads
+
+```ts
+type StubUploads = {
+  writes: StubUploadWrite[];
+  read: StubUploadWrite | undefined;
+  restore: void;
+};
+```
+
+What [stubUploads](../../aai/testing.md#stubuploads-1) returns.
+
+An OBJECT, like every other fake here (`stubSpeech`, `stubReporter`,
+`stubStepFetch`) — this one used to be the bare `restore` function, which made
+it the only stub in the family a spec had to remember was different, and left
+a spec asserting on a WRITE to round-trip through `stepUploadInfo`/`stepReadUpload`:
+the published slot, read back through the same seam the step wrote it through,
+to answer "did it write anything at all".
+
+#### Methods
+
+##### read()
+
+```ts
+read(id: string): StubUploadWrite | undefined;
+```
+
+What is stored under `id` right now — a seeded file or one a step wrote.
+
+Synchronous and outside the published slot, so a spec asserting on bytes
+does not have to `await stepReadUpload` through the very seam it is testing.
+
+###### Parameters
+
+###### id
+
+`string`
+
+###### Returns
+
+[`StubUploadWrite`](../../aai/testing.md#stubuploadwrite) \| `undefined`
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish.
+
+Not optional — a store left published makes the next file's steps read this
+one's bytes, which is the kind of cross-file leak that presents as a passing
+test somewhere else. `installStubUploads`
+(`@alexkroman1/aai/testing/vitest`) is this store with the registration
+already done.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### writes
+
+```ts
+writes: StubUploadWrite[];
+```
+
+Every file a step wrote, in write order.
+
+Empty unless the store was opened `{ writable: true }`, which is what makes
+the pair readable as an assertion: a read-only store cannot accept a write,
+so `writes` staying empty is the same fact as the step never having tried.
+
+***
+
+### StubUploadsOptions
+
+```ts
+type StubUploadsOptions = {
+  idPrefix?: string;
+  writable?: boolean;
+};
+```
+
+What [stubUploads](../../aai/testing.md#stubuploads-1) may be told beyond the files themselves.
+
+#### Properties
+
+##### idPrefix?
+
+```ts
+optional idPrefix?: string;
+```
+
+Prefix for the ids writes are given. Defaults to `"upl_stub_"`, with a
+1-based counter after it — `upl_stub_1`, `upl_stub_2` — so the id a step
+returned is a value a spec can assert on rather than a fresh UUID.
+
+##### writable?
+
+```ts
+optional writable?: boolean;
+```
+
+Accept WRITES, so a step calling `stepWriteUpload` can be tested.
+
+Off by default, and deliberately: a store that silently accepts writes it
+was not asked for cannot fail a spec whose step wrote a file nobody meant
+it to, and `stepWriteUpload` naming a read-only store is a better failure than
+an upload appearing from nowhere. What a step writes is readable through
+`stepReadUpload`/`stepUploadInfo` on the id it was given, like any other upload.
+
+## References
+
+### CallVerdict
+
+Re-exports [CallVerdict](../eval.md#callverdict)
+
+***
+
+### completedOutput
+
+Re-exports [completedOutput](../eval.md#completedoutput)
+
+***
+
+### createStubSttOpener
+
+Re-exports [createStubSttOpener](../eval.md#createstubsttopener)
+
+***
+
+### createStubTtsOpener
+
+Re-exports [createStubTtsOpener](../eval.md#createstubttsopener)
+
+***
+
+### createVmRunCode
+
+Re-exports [createVmRunCode](../eval.md#createvmruncode)
+
+***
+
+### CriterionVerdict
+
+Re-exports [CriterionVerdict](../eval.md#criterionverdict)
+
+***
+
+### customEventsIn
+
+Re-exports [customEventsIn](../eval.md#customeventsin)
+
+***
+
+### DEFAULT\_MAX\_TURNS
+
+Re-exports [DEFAULT_MAX_TURNS](../eval.md#default_max_turns)
+
+***
+
+### DEFAULT\_RUN\_TIMEOUT\_MS
+
+Re-exports [DEFAULT_RUN_TIMEOUT_MS](../eval.md#default_run_timeout_ms)
+
+***
+
+### describeToolCalls
+
+Re-exports [describeToolCalls](../eval.md#describetoolcalls)
+
+***
+
+### describeTurn
+
+Re-exports [describeTurn](../eval.md#describeturn)
+
+***
+
+### END\_CALL\_TOOL
+
+Re-exports [END_CALL_TOOL](../eval.md#end_call_tool)
+
+***
+
+### errorsIn
+
+Re-exports [errorsIn](../eval.md#errorsin)
+
+***
+
+### evalCredentials
+
+Re-exports [evalCredentials](../eval.md#evalcredentials-1)
+
+***
+
+### EvalCredentials
+
+Re-exports [EvalCredentials](../eval.md#evalcredentials)
+
+***
+
+### EvalEmitted
+
+Re-exports [EvalEmitted](../eval.md#evalemitted)
+
+***
+
+### evalNetwork
+
+Re-exports [evalNetwork](../eval.md#evalnetwork-1)
+
+***
+
+### EvalNetwork
+
+Re-exports [EvalNetwork](../eval.md#evalnetwork)
+
+***
+
+### EvalNetworkOptions
+
+Re-exports [EvalNetworkOptions](../eval.md#evalnetworkoptions)
+
+***
+
+### EvalRequest
+
+Re-exports [EvalRequest](../eval.md#evalrequest)
+
+***
+
+### EvalRequestFilter
+
+Re-exports [EvalRequestFilter](../eval.md#evalrequestfilter)
+
+***
+
+### EvalRoute
+
+Re-exports [EvalRoute](../eval.md#evalroute)
+
+***
+
+### EvalRunOptions
+
+Re-exports [EvalRunOptions](../eval.md#evalrunoptions)
+
+***
+
+### EvalSession
+
+Re-exports [EvalSession](../eval.md#evalsession)
+
+***
+
+### EvalSessionOptions
+
+Re-exports [EvalSessionOptions](../eval.md#evalsessionoptions)
+
+***
+
+### evalSimulation
+
+Re-exports [evalSimulation](../eval.md#evalsimulation)
+
+***
+
+### EvalSimulationContext
+
+Re-exports [EvalSimulationContext](../eval.md#evalsimulationcontext)
+
+***
+
+### EvalSimulationOptions
+
+Re-exports [EvalSimulationOptions](../eval.md#evalsimulationoptions)
+
+***
+
+### EvalSleep
+
+Re-exports [EvalSleep](../eval.md#evalsleep)
+
+***
+
+### EvalTextAgent
+
+Re-exports [EvalTextAgent](../eval.md#evaltextagent)
+
+***
+
+### EvalTextAgentOptions
+
+Re-exports [EvalTextAgentOptions](../eval.md#evaltextagentoptions)
+
+***
+
+### evalTextCredentials
+
+Re-exports [evalTextCredentials](../eval.md#evaltextcredentials)
+
+***
+
+### EvalToolCall
+
+Re-exports [EvalToolCall](../eval.md#evaltoolcall)
+
+***
+
+### EvalTurn
+
+Re-exports [EvalTurn](../eval.md#evalturn)
+
+***
+
+### evalWorkflowCredentials
+
+Re-exports [evalWorkflowCredentials](../eval.md#evalworkflowcredentials)
+
+***
+
+### EvalWorkflowEngineOptions
+
+Re-exports [EvalWorkflowEngineOptions](../eval.md#evalworkflowengineoptions)
+
+***
+
+### EvalWorkflowRun
+
+Re-exports [EvalWorkflowRun](../eval.md#evalworkflowrun)
+
+***
+
+### EvalWorkflows
+
+Re-exports [EvalWorkflows](../eval.md#evalworkflows)
+
+***
+
+### EvalWorkflowsOptions
+
+Re-exports [EvalWorkflowsOptions](../eval.md#evalworkflowsoptions)
+
+***
+
+### expectCalled
+
+Re-exports [expectCalled](../eval.md#expectcalled)
+
+***
+
+### expectToolBeforeSpeech
+
+Re-exports [expectToolBeforeSpeech](../eval.md#expecttoolbeforespeech)
+
+***
+
+### HostAgentOptions
+
+Re-exports [HostAgentOptions](../eval.md#hostagentoptions)
+
+***
+
+### HostGenerateFn
+
+Re-exports [HostGenerateFn](../eval.md#hostgeneratefn)
+
+***
+
+### installStubLlm
+
+Re-exports [installStubLlm](../eval.md#installstubllm)
+
+***
+
+### installStubSpeechProviders
+
+Re-exports [installStubSpeechProviders](../eval.md#installstubspeechproviders)
+
+***
+
+### judgeCall
+
+Re-exports [judgeCall](../eval.md#judgecall)
+
+***
+
+### JudgeCallOptions
+
+Re-exports [JudgeCallOptions](../eval.md#judgecalloptions)
+
+***
+
+### JudgeInput
+
+Re-exports [JudgeInput](../eval.md#judgeinput)
+
+***
+
+### lastStateIn
+
+Re-exports [lastStateIn](../eval.md#laststatein)
+
+***
+
+### lastToolResultIn
+
+Re-exports [lastToolResultIn](../eval.md#lasttoolresultin)
+
+***
+
+### LogContext
+
+Re-exports [LogContext](../eval.md#logcontext)
+
+***
+
+### LogFn
+
+Re-exports [LogFn](../eval.md#logfn)
+
+***
+
+### Logger
+
+Re-exports [Logger](../eval.md#logger-3)
+
+***
+
+### LogLevel
+
+Re-exports [LogLevel](../eval.md#loglevel)
+
+***
+
+### openEvalSession
+
+Re-exports [openEvalSession](../eval.md#openevalsession)
+
+***
+
+### openEvalTextAgent
+
+Re-exports [openEvalTextAgent](../eval.md#openevaltextagent)
+
+***
+
+### openEvalWorkflows
+
+Re-exports [openEvalWorkflows](../eval.md#openevalworkflows)
+
+***
+
+### RunCodeExecutor
+
+Re-exports [RunCodeExecutor](../eval.md#runcodeexecutor)
+
+***
+
+### runCodeIn
+
+Re-exports [runCodeIn](../eval.md#runcodein)
+
+***
+
+### runCodeOutput
+
+Re-exports [runCodeOutput](../eval.md#runcodeoutput)
+
+***
+
+### saidIn
+
+Re-exports [saidIn](../eval.md#saidin)
+
+***
+
+### simulateCall
+
+Re-exports [simulateCall](../eval.md#simulatecall)
+
+***
+
+### SimulateCallOptions
+
+Re-exports [SimulateCallOptions](../eval.md#simulatecalloptions)
+
+***
+
+### SimulatedCall
+
+Re-exports [SimulatedCall](../eval.md#simulatedcall)
+
+***
+
+### SimulatedCaller
+
+Re-exports [SimulatedCaller](../eval.md#simulatedcaller)
+
+***
+
+### SimulatedTurn
+
+Re-exports [SimulatedTurn](../eval.md#simulatedturn)
+
+***
+
+### SimulationMetrics
+
+Re-exports [SimulationMetrics](../eval.md#simulationmetrics)
+
+***
+
+### SimulationTarget
+
+Re-exports [SimulationTarget](../eval.md#simulationtarget)
+
+***
+
+### statesIn
+
+Re-exports [statesIn](../eval.md#statesin)
+
+***
+
+### StepUsage
+
+Re-exports [StepUsage](../eval.md#stepusage)
+
+***
+
+### SttError
+
+Re-exports [SttError](../eval.md#stterror)
+
+***
+
+### SttEvents
+
+Re-exports [SttEvents](../eval.md#sttevents)
+
+***
+
+### SttOpener
+
+Re-exports [SttOpener](../eval.md#sttopener)
+
+***
+
+### SttOpenOptions
+
+Re-exports [SttOpenOptions](../eval.md#sttopenoptions)
+
+***
+
+### SttSession
+
+Re-exports [SttSession](../eval.md#sttsession)
+
+***
+
+### SttTurnMeta
+
+Re-exports [SttTurnMeta](../eval.md#sttturnmeta)
+
+***
+
+### STUB\_LLM\_API\_KEY\_ENV
+
+Re-exports [STUB_LLM_API_KEY_ENV](../eval.md#stub_llm_api_key_env)
+
+***
+
+### STUB\_SPEECH\_API\_KEY\_ENV
+
+Re-exports [STUB_SPEECH_API_KEY_ENV](../eval.md#stub_speech_api_key_env)
+
+***
+
+### StubLlm
+
+Re-exports [StubLlm](../eval.md#stubllm)
+
+***
+
+### StubScript
+
+Re-exports [StubScript](../eval.md#stubscript)
+
+***
+
+### StubSpeechProviders
+
+Re-exports [StubSpeechProviders](../eval.md#stubspeechproviders)
+
+***
+
+### StubStep
+
+Re-exports [StubStep](../eval.md#stubstep)
+
+***
+
+### StubSttSession
+
+Re-exports [StubSttSession](../eval.md#stubsttsession)
+
+***
+
+### StubTtsSession
+
+Re-exports [StubTtsSession](../eval.md#stubttssession)
+
+***
+
+### toolArgsIn
+
+Re-exports [toolArgsIn](../eval.md#toolargsin)
+
+***
+
+### toolCallsInEvents
+
+Re-exports [toolCallsInEvents](../eval.md#toolcallsinevents)
+
+***
+
+### toolCallsInTurns
+
+Re-exports [toolCallsInTurns](../eval.md#toolcallsinturns)
+
+***
+
+### toolNames
+
+Re-exports [toolNames](../eval.md#toolnames)
+
+***
+
+### toolResultIn
+
+Re-exports [toolResultIn](../eval.md#toolresultin)
+
+***
+
+### toolResultsIn
+
+Re-exports [toolResultsIn](../eval.md#toolresultsin)
+
+***
+
+### transcriptOf
+
+Re-exports [transcriptOf](../eval.md#transcriptof)
+
+***
+
+### TtsError
+
+Re-exports [TtsError](../eval.md#ttserror)
+
+***
+
+### TtsEvents
+
+Re-exports [TtsEvents](../eval.md#ttsevents)
+
+***
+
+### TtsOpener
+
+Re-exports [TtsOpener](../eval.md#ttsopener)
+
+***
+
+### TtsOpenOptions
+
+Re-exports [TtsOpenOptions](../eval.md#ttsopenoptions)
+
+***
+
+### TtsSession
+
+Re-exports [TtsSession](../eval.md#ttssession)
+
+***
+
+### TtsWordTiming
+
+Re-exports [TtsWordTiming](../eval.md#ttswordtiming)
+
+***
+
+### TURN\_ENDS
+
+Re-exports [TURN_ENDS](../eval.md#turn_ends)
+
+***
+
+### turnCalling
+
+Re-exports [turnCalling](../eval.md#turncalling)
+
+***
+
+### Unsubscribe
+
+Re-exports [Unsubscribe](../eval.md#unsubscribe)
+
+***
+
+### VmRunCodeOptions
+
+Re-exports [VmRunCodeOptions](../eval.md#vmruncodeoptions)

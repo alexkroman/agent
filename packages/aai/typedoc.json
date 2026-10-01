@@ -47,31 +47,16 @@
     // `StandardSchemaV1` and `StandardSchemaIssue` used to be listed here. They
     // are exported from the root now, owned by the `standard-schema` capability,
     // because eight contracts hashed their bodies while none owned them.
-    // The field-list and message types behind `AgentParams`' four arms, plus
-    // the endpointing pair and the silence-nudge one. They are the implementation of a compile error — an
-    // author reads them in the message tsc prints, never by name — so they are
-    // off the root barrel and out of the docs, while still appearing inline in
-    // the arms' rendered signatures. See the re-export comment at the foot of
-    // `sdk/define.ts`.
-    //
-    // `StaticAgentParamsCore` is one of the arms rather than a field list, and
-    // it is here for the same reason: it exists so the twenty misuse MESSAGES
-    // stay off the union tsc prints at every `agent()` call site, and the shape
-    // it names is documented as `StaticAgentParams` — which a reader does click,
-    // and which `Omit`s this one rather than sharing a third base.
+    // The field-list types behind `AgentParams`' four members, and the one
+    // message type that is not a mode rule. They are the implementation of a
+    // compile error — an author reads them in the message tsc prints, never by
+    // name — so they are off the root barrel and out of the docs, while still
+    // appearing inline in the members' rendered signatures.
     "DefaultedAgentField",
-    "EndpointingOnDescriptorMisuse",
-    "FrontDoorField",
     "InlineToolsField",
     "InlineToolsMisuse",
     "PipelineOnlyField",
-    "PipelineOnlyMisuse",
     "ProviderField",
-    "SilenceNudgeField",
-    "SilenceNudgeParams",
-    "StaticAgentParamsCore",
-    "StaticFrontDoorMisuse",
-    "WorkflowAppMisuse",
     "WorkflowAppOnlyField"
     // `DistributiveOmit`, `EventOf` and `NamesInMap` used to be listed here.
     // `SessionEventBody` is a lookup into the exported `SessionEventMap` now, and
