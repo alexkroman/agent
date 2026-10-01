@@ -116,6 +116,24 @@ describe("useInbox", () => {
     expect(last()?.close).toHaveBeenCalled();
   });
 
+  test("presents the session's ticket, so a gated server admits the inbox too", () => {
+    const core = createMockSessionCore(
+      {},
+      {
+        platformUrl: "http://speaker.local/",
+        clientId: () => "kitchen",
+        holderId: () => "kitchen-tab1",
+        ticket: () => "session-ticket",
+      },
+    );
+    const hook = renderHook(() => useInbox(), {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        createElement(SessionProvider, { value: core }, children),
+    });
+    expect(last()?.protocols).toEqual(["aai.session", "aai.auth.session-ticket"]);
+    hook.unmount();
+  });
+
   test("is busy while the session runs, so a reminder never talks over a reply", () => {
     const onNotice = vi.fn();
     mount({ onNotice }, true);

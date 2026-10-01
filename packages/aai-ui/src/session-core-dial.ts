@@ -69,6 +69,8 @@ export type Dialer = {
    * connection has been established, so every later attempt resumes.
    */
   configured(sid: string | undefined): void;
+  /** A ticket for another socket on this server — `SessionIdentity.ticket`. */
+  ticket(): string | undefined | Promise<string | undefined>;
   /** Drop the resume identity, so the next connect is a NEW session. */
   forget(): void;
   /**
@@ -269,5 +271,18 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
       confirm(undefined);
     },
     sessionId: () => confirmed,
+    ticket: () => {
+      if (options.token !== undefined) {
+        return typeof options.token === "function"
+          ? resolveSessionToken(options.token, { sessionId: undefined })
+          : resolveSessionTokenSync(options.token, { sessionId: undefined });
+      }
+      // A server already known to issue none is not asked again.
+      if (configPerAttempt === false) return;
+      return loadClientConfig(options.platformUrl).then((cfg) => {
+        if (cfg) configPerAttempt = cfg.sessionUrl !== undefined || cfg.sessionToken !== undefined;
+        return cfg?.sessionToken;
+      });
+    },
   };
 }

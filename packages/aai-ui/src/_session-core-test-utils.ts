@@ -161,8 +161,8 @@ export function recordingWebSocketClass(
   onSocket: (socket: MockWebSocket) => void,
 ): ConstructorType {
   return class extends MockWebSocket {
-    constructor(url: string) {
-      super(url);
+    constructor(url: string, protocols?: string | string[]) {
+      super(url, protocols);
       onSocket(this);
     }
   } as unknown as ConstructorType;

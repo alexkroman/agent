@@ -158,7 +158,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   // session id, its storage across a RELOAD, handshake flag, broker latch). Who
   // the client IS (`client: "auto"`, the tab's inbox holder) is
   // `client-identity.ts`; the dialer sends the id the identity reports.
-  const identity = createSessionIdentity(options, () => dialer.sessionId());
+  const identity = createSessionIdentity(options, () => dialer);
   const dialer = createDialer({ ...options, client: identity.clientId }, notify);
 
   function resetState(): void {

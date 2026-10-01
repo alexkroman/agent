@@ -228,6 +228,32 @@ describe("createDialer over partysocket", () => {
       ws.close();
     }
   });
+  describe("ticket() — the ticket another socket (the inbox) presents", () => {
+    test("is the token option when there is one", async () => {
+      expect(createDialer({ platformUrl: "http://test.local", token: " t " }).ticket()).toBe("t");
+      const getter = createDialer({ platformUrl: "http://test.local", token: async () => "g" });
+      expect(await getter.ticket()).toBe("g");
+      expect(lookups).toBe(0);
+    });
+
+    test("else a FRESH one from client-config on every call", async () => {
+      configs = [
+        { page: "voice", sessionToken: "c1" },
+        { page: "voice", sessionToken: "c2" },
+      ];
+      const dialer = createDialer({ platformUrl: "http://test.local" });
+      expect(await dialer.ticket()).toBe("c1");
+      expect(await dialer.ticket()).toBe("c2");
+    });
+
+    test("and none, without asking again, once the server is seen to issue none", async () => {
+      const dialer = createDialer({ platformUrl: "http://test.local" });
+      expect(await dialer.ticket()).toBeUndefined();
+      expect(dialer.ticket()).toBeUndefined();
+      expect(lookups).toBe(1);
+    });
+  });
+
   describe("a server-issued ticket is the resume credential (the managed platform)", () => {
     const broker = (n: number) => ({
       page: "voice",

@@ -217,6 +217,12 @@ A run reaches the page after the call through `WS /inbox?client=` (server half:
   the redelivery after a lost ack comes on the next socket, so a per-socket
   repeat memory replays it; only the half-received notice is dropped with the
   socket. A repeat is acked even while busy; a header mid-notice goes unacked.
+- **The inbox presents a ticket like the session** (a gated server checks
+  `/inbox` like `/websocket`): `createInbox({ token })`, same type and per-attempt
+  rule as `VoiceSessionOptions.token`; `useInbox` passes
+  `session.identity.ticket()` — the session's `token`, else a FRESH
+  `client-config` ticket until a lookup shows the server issues none. A
+  synchronous answer dials at once, so an ungated inbox is unchanged.
 - **`useInbox` plays through its own `AudioContext`** (`notice-player.ts`, 16
   kHz), unlocked by the first `pointerdown`/`keydown` — the session's context
   exists only mid-call, and a notice arrives when none is. Default `busy` is
