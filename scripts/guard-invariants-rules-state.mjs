@@ -30,6 +30,9 @@ import {
   TOOL_CONTEXT_PATHS,
 } from "./guard-invariants-scopes.mjs";
 
+/** The four things a live session claims under its id — rule 35. */
+const SESSION_KEYED_VALUES = ["ServerSession", "SessionEmitter", "UsageMeter", "ClientSink"];
+
 /** @type {import("./guard-invariants-rules.mjs").LineRule[]} */
 export const STATE_RULES = [
   {
@@ -100,7 +103,7 @@ export const STATE_RULES = [
     // annotation, a `createOwnedMap<…>()` call, a `new Map<…>()` — where a
     // `.get(` scan would collide with the many unrelated `sessions` maps
     // (slot state, the event stream) that are keyed by id too.
-    re: "(OwnedMap|Map)<string, *(ServerSession|SessionEmitter|UsageMeter|ClientSink)>",
+    re: `(OwnedMap|Map)<string, *(${SESSION_KEYED_VALUES.join("|")})>`,
     paths: [...RUNTIME_EGRESS_PATHSPECS, ":!packages/aai-runtime/src/session-directory.ts"],
     skipComments: true,
     samples: {
@@ -110,7 +113,7 @@ export const STATE_RULES = [
         "const meters = new Map<string, UsageMeter>();",
       ],
       ignores: [
-        "  sessions: Pick<SessionDirectory, \"claim\" | \"session\">;",
+        '  sessions: Pick<SessionDirectory, "claim" | "session">;',
         "const sinkBySession = new WeakMap<ServerSession, ClientSink>();",
         "  const sessions = new Map<string, SlotEntry>();",
       ],
