@@ -56,8 +56,8 @@ frozen per deploy by the harness image pin and versioned by
   `SANDBOX_TIMEOUT_SECS` (deliberate — bound a step with its own deadline). A
   drain's deadline still wins. Details in `createWorkflowActivity`'s doc.
 - **Wake hint.** A workflow guest with a database publishes the earliest time
-  its queue could next have work (`aai/host/workflow-wake-hint.ts`) at boot and
-  after every queue callback, for the platform's wake sweep.
+  its queue could next have work (the wake hint in `aai-runtime/app-db.ts`) at
+  boot and after every queue callback, for the platform's wake sweep.
 - **Redeploys hand over blue-green** (`handoverSlot`, `sandbox/resolve.ts`): the
   new sandbox must be ready before the old one detaches; a replacement that
   fails to boot still retires the old resident (fail visibly, never serve
@@ -117,7 +117,7 @@ Read output from the host log or `aai logs`.
 ## The manage token is derived, not random
 
 `AAI_GUEST_TOKEN` is an HMAC over the sandbox's fleet-wide name
-(`aai-server/guest-token.ts`, over `agentSandboxName(slug, version)`), so every
+(`aai-server/guest/token.ts`, over `agentSandboxName(slug, version)`), so every
 replica can compute it and `/manage/*` is not replica-local. Preserved:
 unguessable without the platform secret, distinct per sandbox, rotated on
 redeploy. Given up: rotation on respawn of the same version. Unset
@@ -136,7 +136,7 @@ gated (a carrier holds no ticket; its webhook verification is the route's).
 
 ## A phone call is an ordinary session
 
-`WS /phone` (SDK `aai/host/telephony/`, served by `createRuntimeServer` here and
+`WS /phone` (`aai-runtime/telephony/`, served by `createRuntimeServer` here and
 under `aai dev`) runs a carrier media stream (Twilio, Telnyx) as an ordinary
 session — **only for carriers the agent declares** (`agent({ telephony:
 ["twilio"] })`), identically everywhere. The TwiML webhook route is "Telephony"

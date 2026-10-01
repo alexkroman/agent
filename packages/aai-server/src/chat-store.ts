@@ -24,7 +24,7 @@
  */
 
 import { projectKey } from "./platform/events.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 /**
  * Byte budget for one stored conversation, measured on the serialized

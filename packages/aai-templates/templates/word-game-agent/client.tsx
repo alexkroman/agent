@@ -9,7 +9,7 @@ import {
 } from "@alexkroman1/aai-ui";
 import { useEffect, useState } from "react";
 import { containsWord } from "./guess.ts";
-import { type GameView, gameProjection } from "./shared.ts";
+import { type GameView, gameSlot } from "./shared.ts";
 
 /**
  * The describer's screen — their web game's `Card`, `Game` and timer components
@@ -122,7 +122,7 @@ function Listening({ word }: { word: string | null }) {
 }
 
 function Scoreboard() {
-  const view = useAgentState(gameProjection);
+  const view = useAgentState(gameSlot.projected);
   const now = useNow();
   return (
     <div className="flex flex-col gap-5 p-4 text-aai-text">

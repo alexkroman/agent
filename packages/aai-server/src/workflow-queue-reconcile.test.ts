@@ -17,7 +17,7 @@
 import { describe, expect, test } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { ABANDONED_RUN_ERROR, RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import { findStalledRuns, reconcileStalledRuns } from "./workflow-queue-reconcile.ts";
 
 /** One statement the pass issued. */

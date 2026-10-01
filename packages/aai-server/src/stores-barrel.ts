@@ -37,15 +37,12 @@ export {
   type SecretEnv,
   setSlugSecrets,
 } from "./secret-handler.ts";
-export {
-  createMemorySecretStore,
-  type SecretStore,
-  type SqlExec,
-} from "./secret-store.ts";
+export { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 export {
   hashApiKey,
   verifySlugOwner,
 } from "./secrets.ts";
+export type { SqlExec } from "./sql-exec.ts";
 export type { BundleStore } from "./store-types.ts";
 export {
   createMemoryWorkspaceStore,

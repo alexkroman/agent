@@ -2,7 +2,6 @@
 
 import path from "node:path";
 import { styleText } from "node:util";
-import * as p from "@clack/prompts";
 import { execa } from "execa";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import {
@@ -13,7 +12,7 @@ import {
 } from "./_init.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { listTemplates } from "./_templates.ts";
-import { log, unwrapCancel } from "./_ui.ts";
+import { defaultUi, type Ui, unwrapCancel } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, fileExists, readJson, resolveCwd } from "./_utils.ts";
 
 type InitData = {
@@ -33,6 +32,27 @@ type InitData = {
 };
 
 /**
+ * The subprocess call `init` makes (a version probe, the install), in execa's
+ * shape — the seam a spec scripts instead of `vi.mock("execa")`.
+ */
+export type InitExec = (
+  cmd: string,
+  args: string[],
+  opts?: { cwd?: string; reject?: boolean },
+) => Promise<{ failed?: boolean; stdout?: unknown }>;
+
+/** What `executeInit` reaches outside itself for. */
+export type InitDeps = {
+  /** No spinner, intro or prompt: the caller has nobody to answer (JSON mode). */
+  silent?: boolean | undefined;
+  ui?: Ui | undefined;
+  exec?: InitExec | undefined;
+};
+
+/** Everything below `executeInit` is handed, resolved. */
+type InitIo = { ui: Ui; exec: InitExec; silent: boolean };
+
+/**
  * Run `fn` behind a clack spinner, stopping it in EVERY outcome.
  *
  * The naked form (`s?.start(); await work(); s?.stop()`) leaks the spinner on a
@@ -41,11 +61,11 @@ type InitData = {
  * `catch` label is what the terminal is left showing, so it names the step.
  */
 async function withSpinner<T>(
-  silent: boolean | undefined,
+  io: InitIo,
   labels: { start: string; done: string; failed: string },
   fn: () => Promise<T>,
 ): Promise<T> {
-  const s = silent ? undefined : p.spinner();
+  const s = io.silent ? undefined : io.ui.prompts.spinner();
   s?.start(labels.start);
   // Not named `ok` — that is the result constructor this module imports.
   let succeeded = false;
@@ -61,10 +81,11 @@ async function withSpinner<T>(
 const DEFAULT_PROJECT_NAME = "my-voice-agent";
 
 /** Prompt for project name or return default when --yes is set. */
-async function promptProjectName(yes?: boolean): Promise<string> {
+async function promptProjectName(ui: Ui, yes?: boolean): Promise<string> {
   if (yes) return DEFAULT_PROJECT_NAME;
   const result = unwrapCancel(
-    await p.text({
+    ui,
+    await ui.prompts.text({
       message: "What is your project named?",
       placeholder: DEFAULT_PROJECT_NAME,
       defaultValue: DEFAULT_PROJECT_NAME,
@@ -95,6 +116,7 @@ const DEFAULT_TEMPLATE = "quickstart-agent";
  */
 export async function promptTemplate(
   list: () => Promise<string[]> = listTemplates,
+  ui: Ui = defaultUi,
 ): Promise<string> {
   const [first, ...rest] = await list();
   // An empty list means a broken install, whose error belongs to
@@ -107,7 +129,8 @@ export async function promptTemplate(
     ? [DEFAULT_TEMPLATE, ...names.filter((name) => name !== DEFAULT_TEMPLATE)]
     : names;
   return unwrapCancel(
-    await p.select({
+    ui,
+    await ui.prompts.select({
       message: "Which template?",
       // `maxItems` scrolls rather than printing all of them: the list is over
       // two dozen entries and a full dump pushes the intro off the screen.
@@ -182,12 +205,12 @@ export function packageManagerFromUserAgent(
  * which manager RUNS and the second only decides whether the manifest gets a
  * `packageManager` pin.
  */
-async function binVersion(cmd: string): Promise<string | undefined> {
+async function binVersion(cmd: string, exec: InitExec = execa): Promise<string | undefined> {
   // `reject: false` covers a non-zero exit and a missing binary, and the
   // `catch` covers everything left — this probe runs BEFORE the scaffold, so a
   // throw here would fail `aai init` outright rather than fall back to the next
   // manager, which is a worse outcome than any answer it could give.
-  const result = await execa(cmd, ["--version"], { reject: false }).catch(() => undefined);
+  const result = await exec(cmd, ["--version"], { reject: false }).catch(() => undefined);
   const { failed, stdout } = result ?? { failed: true, stdout: "" };
   if (failed) return undefined;
   const first = String(stdout ?? "")
@@ -234,8 +257,8 @@ export async function detectPackageManager(
 }
 
 /** Check whether the safe-chain binary is on PATH. */
-async function hasSafeChain(): Promise<boolean> {
-  const { failed } = await execa("safe-chain", ["--version"], { reject: false });
+async function hasSafeChain(exec: InitExec = execa): Promise<boolean> {
+  const { failed } = await exec("safe-chain", ["--version"], { reject: false });
   return !failed;
 }
 
@@ -260,8 +283,8 @@ export async function resolveInstallCommand(
 }
 
 /** Run the install and warn on failure. */
-async function runInstall(cwd: string, pm: PackageManager): Promise<void> {
-  const { cmd, args } = await resolveInstallCommand(pm);
+async function runInstall(cwd: string, pm: PackageManager, exec: InitExec): Promise<void> {
+  const { cmd, args } = await resolveInstallCommand(pm, () => hasSafeChain(exec));
   // `--ignore-workspace` is pnpm's, and only outside dev mode: in dev mode
   // workspace resolution is what links the SDK to local source, and for every
   // other manager the scaffold's `pnpm-workspace.yaml` means nothing anyway —
@@ -269,7 +292,7 @@ async function runInstall(cwd: string, pm: PackageManager): Promise<void> {
   const workspaceArgs = pm === "pnpm" && !isDevMode() ? ["--ignore-workspace"] : [];
   // execa errors already include stderr + stdout in their message, so the
   // user sees what actually went wrong (pnpm writes failures to stdout).
-  await execa(cmd, [...args, "install", ...workspaceArgs], { cwd });
+  await exec(cmd, [...args, "install", ...workspaceArgs], { cwd });
 }
 
 /**
@@ -278,23 +301,18 @@ async function runInstall(cwd: string, pm: PackageManager): Promise<void> {
  * to finish the install by hand. Nothing downstream branches on the outcome —
  * `init` stops here — so it returns nothing.
  */
-async function installDeps(
-  cwd: string,
-  pm: PackageManager,
-  warn: Warn,
-  silent?: boolean,
-): Promise<void> {
+async function installDeps(cwd: string, pm: PackageManager, warn: Warn, io: InitIo): Promise<void> {
   if (!(await hasDeps(cwd))) return;
 
   try {
     await withSpinner(
-      silent,
+      io,
       {
         start: `Installing dependencies with ${pm}`,
         done: "Dependencies installed",
         failed: "Dependency install failed",
       },
-      () => runInstall(cwd, pm),
+      () => runInstall(cwd, pm, io.exec),
     );
   } catch (err: unknown) {
     warn(`${pm} install failed: ${errorMessage(err)}`);
@@ -319,13 +337,13 @@ function resolveTargetDir(dir: string): string {
  */
 type Warn = (message: string) => void;
 
-function collectWarnings(): { warn: Warn; warnings: string[] } {
+function collectWarnings(ui: Ui): { warn: Warn; warnings: string[] } {
   const warnings: string[] = [];
   return {
     warnings,
     warn: (message) => {
       warnings.push(message);
-      log.warn(message);
+      ui.log.warn(message);
     },
   };
 }
@@ -343,20 +361,20 @@ async function scaffoldProject(
   cwd: string,
   template: string,
   pm: PackageManagerInfo,
-  silent?: boolean,
+  io: InitIo,
 ): Promise<void> {
   await withSpinner(
-    silent,
+    io,
     { start: `Creating ${dir}`, done: "Project created", failed: `Could not create ${dir}` },
     () => runInit({ targetDir: cwd, template, packageManager: pm }),
   );
 }
 
 /** Print post-init instructions. */
-function printPostInitInfo(cwd: string, monorepoRoot: string | null): void {
-  log.success(`Created ${cwd}`);
-  if (monorepoRoot) log.info("Dev mode: project linked to workspace packages");
-  log.info(`Next: cd ${cwd} && aai dev`);
+function printPostInitInfo(ui: Ui, cwd: string, monorepoRoot: string | null): void {
+  ui.log.success(`Created ${cwd}`);
+  if (monorepoRoot) ui.log.info("Dev mode: project linked to workspace packages");
+  ui.log.info(`Next: cd ${cwd} && aai dev`);
 }
 
 export async function executeInit(
@@ -366,14 +384,20 @@ export async function executeInit(
     template?: string | undefined;
     yes?: boolean | undefined;
   },
-  extra?: { silent?: boolean | undefined },
+  deps: InitDeps = {},
 ): Promise<CommandResult<InitData>> {
-  const suppressUi = extra?.silent;
+  const io: InitIo = {
+    ui: deps.ui ?? defaultUi,
+    exec: deps.exec ?? execa,
+    silent: deps.silent === true,
+  };
+  const { ui } = io;
+  const suppressUi = io.silent;
   if (!suppressUi) {
-    p.intro(styleText("cyanBright", "Create a new voice agent"));
+    ui.prompts.intro(styleText("cyanBright", "Create a new voice agent"));
   }
 
-  const dir = opts.dir ?? (await promptProjectName(opts.yes));
+  const dir = opts.dir ?? (await promptProjectName(ui, opts.yes));
   const monorepoRoot = getMonorepoRoot();
   const cwd = resolveTargetDir(dir);
 
@@ -387,22 +411,23 @@ export async function executeInit(
   // mean "take the default" (JSON mode is auto-detected on a pipe, and passes
   // `yes` through from the CLI), and `silent` is a caller saying the same.
   const template =
-    opts.template ?? (opts.yes || suppressUi ? DEFAULT_TEMPLATE : await promptTemplate());
-  const { warn, warnings } = collectWarnings();
+    opts.template ??
+    (opts.yes || suppressUi ? DEFAULT_TEMPLATE : await promptTemplate(listTemplates, ui));
+  const { warn, warnings } = collectWarnings(ui);
 
   // Detected BEFORE the scaffold, because the README and the manifest it writes
   // both name the manager — see `scaffoldProject`.
-  const pm = await detectPackageManager();
-  await scaffoldProject(dir, cwd, template, pm, suppressUi);
+  const pm = await detectPackageManager(undefined, (name) => binVersion(name, io.exec));
+  await scaffoldProject(dir, cwd, template, pm, io);
   // `init` SCAFFOLDS: it deliberately does not publish. Deploying to
   // production is an outward-facing act, and doing it as a side effect of
   // creating a directory means a fresh `aai init` reached for credentials the
   // author may not have yet, and shipped a template agent nobody had run.
   // `aai publish` is the explicit step, once `aai dev` says the agent works.
-  await installDeps(cwd, pm.name, warn, suppressUi);
+  await installDeps(cwd, pm.name, warn, io);
 
   if (!suppressUi) {
-    printPostInitInfo(cwd, monorepoRoot);
+    printPostInitInfo(ui, cwd, monorepoRoot);
   }
 
   const data: InitData = { dir: cwd, template };

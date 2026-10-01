@@ -26,7 +26,7 @@ import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { invariant } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
-import { silentLogger } from "../runtime-config.ts";
+import { silentLogger } from "../logger.ts";
 import {
   createSessionCore,
   createSessionEmitter,

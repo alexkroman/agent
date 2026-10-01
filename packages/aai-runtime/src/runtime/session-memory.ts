@@ -43,7 +43,7 @@ import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { feedClientSessionEnd } from "../inbox/index.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import {
   bindClientSession,
   type ClientHistoryDeps,

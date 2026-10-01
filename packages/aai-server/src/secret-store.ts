@@ -16,6 +16,7 @@
  */
 
 import { sqlState } from "./platform/db-errors.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 /**
  * The per-slug secret-name prefix.
@@ -50,9 +51,6 @@ export function agentEnvSecretName(slug: string): string {
  * sensitive material. Storage has no narrower credential to use instead.
  */
 export const PLATFORM_STORAGE_KEY_SECRET = "platform:storage-key";
-
-/** Minimal SQL executor: one parameterized statement, resolves with rows. */
-export type SqlExec = (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
 
 export type SecretStore = {
   get(name: string): Promise<string | null>;

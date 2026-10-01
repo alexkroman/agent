@@ -29,11 +29,10 @@
  * still only what a stored config may hold. A resolved URL is screened exactly
  * as a literal one is.
  *
- * List each `tokenEnv` in `requiredEnv` as well. Nothing derives one from the
- * other on purpose: `requiredEnv` is what a DEPLOY preflights, and silently
- * extending it from another field would make a deploy check a name the author
- * never wrote. A missing token fails that one server at connect time, by name,
- * and the session keeps every other tool it has.
+ * Do not repeat a `tokenEnv` in `requiredEnv`: the deploy preflight derives it
+ * (`derivedRequiredEnv`, `derived-env.ts`) the way it derives provider
+ * credentials. A missing token still fails only that one server at connect
+ * time, by name, and the session keeps every other tool it has.
  *
  * ## HTTP only
  *

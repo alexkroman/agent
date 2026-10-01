@@ -37,10 +37,11 @@
  *
  * ## Which modes emit it
  *
- * PIPELINE mode, where this runtime owns each stage and can time it. An S2S
- * provider runs STT, the model and TTS inside one service and reports none of
- * the boundaries between them, and text mode has no audio stage to time; both
- * are future work rather than frames of zeroes.
+ * PIPELINE mode fills in every stage, because this runtime owns each one and
+ * can time it. S2S mode emits the frame with only `interrupted` and
+ * `latencyMs`: the provider runs STT, the model and TTS inside one service and
+ * reports none of the boundaries between them, so those stages are ABSENT, not
+ * zero. Text mode has no audio stage to time and emits none yet.
  *
  * @module
  */
@@ -71,6 +72,9 @@ export const MetricsCollectedEventSchema = z.object({
    * started (a greeting, a silence nudge) and for one that never spoke.
    *
    * Add `stt.endpointingMs` for the latency from the caller's last heard word.
+   * In S2S mode the start is the service's own end-of-speech instead, since it
+   * reports no transcriber boundary. The reply it is credited to is the first
+   * one that speaks, so a turn's silent tool-call reply never takes it.
    */
   latencyMs: ms.optional(),
   /** The caller's turn that started this reply. Absent when none did. */

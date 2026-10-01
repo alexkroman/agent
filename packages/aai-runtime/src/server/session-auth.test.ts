@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import { silentLogger } from "../_logger-test-utils.ts";
 import { makeClientSink } from "../_session-test-utils.ts";
-import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
+import { type AgentServer, createServerForRuntime, type SessionRuntime } from "./server.ts";
 import {
   createSessionAuth,
   createSessionToken,
@@ -273,7 +273,7 @@ describe("resolveSessionGate", () => {
   });
 });
 
-describe("createRuntimeServer with auth", () => {
+describe("createServerForRuntime with auth", () => {
   let server: AgentServer | null = null;
   afterEach(async () => {
     await server?.close();
@@ -319,7 +319,7 @@ describe("createRuntimeServer with auth", () => {
 
   test("a session with no ticket is declined with a reason and the 4401 close code", async () => {
     const { runtime, started } = recordingRuntime();
-    server = createRuntimeServer({
+    server = createServerForRuntime({
       runtime,
       logger: silentLogger,
       auth: createSessionAuth({ secret: SECRET }),
@@ -335,7 +335,7 @@ describe("createRuntimeServer with auth", () => {
 
   test("a ticket in the subprotocol is admitted, and the ticket is not echoed back", async () => {
     const { runtime, started } = recordingRuntime();
-    server = createRuntimeServer({
+    server = createServerForRuntime({
       runtime,
       logger: silentLogger,
       auth: createSessionAuth({ secret: SECRET }),
@@ -354,7 +354,7 @@ describe("createRuntimeServer with auth", () => {
 
   test("AAI_SESSION_SECRET in env gates the server without an auth option", async () => {
     const { runtime, started } = recordingRuntime();
-    server = createRuntimeServer({
+    server = createServerForRuntime({
       runtime,
       logger: silentLogger,
       env: { AAI_SESSION_SECRET: SECRET },
@@ -371,7 +371,7 @@ describe("createRuntimeServer with auth", () => {
 
   test("with no auth configured, sessions open exactly as before", async () => {
     const { runtime, started } = recordingRuntime();
-    server = createRuntimeServer({ runtime, logger: silentLogger });
+    server = createServerForRuntime({ runtime, logger: silentLogger });
     await server.listen(0);
 
     expect((await dial("/websocket")).frames).toContain(JSON.stringify({ type: "hello" }));
@@ -380,7 +380,7 @@ describe("createRuntimeServer with auth", () => {
 
   test("only the identity that opened a session may resume it through the server", async () => {
     const { runtime, started } = recordingRuntime();
-    server = createRuntimeServer({
+    server = createServerForRuntime({
       runtime,
       logger: silentLogger,
       auth: createSessionAuth({ secret: SECRET }),
@@ -399,7 +399,7 @@ describe("createRuntimeServer with auth", () => {
   test("a host-mode session is resumable by the identity that opened it", async () => {
     hostStarts.length = 0;
     const { runtime } = recordingRuntime();
-    server = createRuntimeServer({
+    server = createServerForRuntime({
       runtime,
       logger: silentLogger,
       env: { AAI_ALLOW_HOST: "1", AAI_SESSION_SECRET: SECRET },
@@ -418,7 +418,7 @@ describe("createRuntimeServer with auth", () => {
   test("a bound platform ticket opens the session it names, whatever the URL asked", async () => {
     const { runtime, started } = recordingRuntime();
     const secret = platformSessionSecret("bearer");
-    server = createRuntimeServer({
+    server = createServerForRuntime({
       runtime,
       logger: silentLogger,
       auth: createSessionAuth({ verify: (t) => verifySessionToken(t, { secret }) }),

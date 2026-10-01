@@ -24,7 +24,7 @@ import type {
   ToolCallRepairFunction,
   ToolSet,
 } from "ai";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 import type { FatalToolLatch, ToolSpeechController } from "../../../tools/index.ts";
 import type {
   EmitError,

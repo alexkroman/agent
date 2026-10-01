@@ -19,40 +19,22 @@
 
 import { createRateLimiter } from "aai-server/http";
 import { authFetch } from "aai-server/test-utils";
-import { describe, expect, test, vi } from "vitest";
-import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
-import { createProject, lastWake, wakePreviewMock } from "./_studio-routes-test-utils.ts";
-import { createTestCombined } from "./_test-combined.ts";
+import { describe, expect, test } from "vitest";
+import { devToken, onboardKey } from "./_studio-auth-test-utils.ts";
+import {
+  createFakedCombined,
+  createProject,
+  lastWake,
+  wakePreviewMock,
+  withFakedDevAuth,
+} from "./_studio-routes-test-utils.ts";
 import { CHAT_RATE_LIMIT, PROJECT_CREATE_RATE_LIMIT } from "./studio-rate-limit.ts";
 import { studioScope } from "./studio-workspace.ts";
-
-// The orchestrator constructs its studio routes internally; intercept the
-// session broker and the preview wake at the module boundary so no sandbox
-// runs here. The fakes are reached through an `await import()` because a
-// vi.mock factory is hoisted above the imports.
-vi.mock("./studio-session-broker.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-session-broker.ts")>();
-  const { brokerMock } = await import("./_studio-routes-test-utils.ts");
-  return {
-    ...original,
-    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) =>
-      brokerMock(...args),
-  };
-});
-
-vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-preview-wake.ts")>();
-  const { wakePreviewMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return {
-    ...original,
-    wakeProjectPreview: (...args: Parameters<typeof original.wakeProjectPreview>) => mock(...args),
-  };
-});
 
 describe("opening a project wakes its preview", () => {
   test("a successful session broker call wakes the project's preview", async () => {
     wakePreviewMock.mockClear();
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     await createProject(fetch);
     const res = await authFetch(fetch, "/studio/projects/proj/session", { body: {} });
     expect(res.status).toBe(200);
@@ -84,7 +66,7 @@ describe("opening a project wakes its preview", () => {
    * into building their own origin and losing the field.
    */
   test("session arms both preview triggers with one origin, naming the caller", async () => {
-    const { fetch: authed } = await withDevAuth();
+    const { fetch: authed } = await withFakedDevAuth();
     const { ensureSessionMock } = await import("./_studio-routes-test-utils.ts");
     const bearer = devToken("a@b.c");
     await onboardKey(authed, bearer);
@@ -112,7 +94,7 @@ describe("the Preview pane can wake the preview", () => {
   const wakeUrl = "/studio/projects/proj/preview/wake";
 
   test("a report from the pane reaches the same wake the session call does", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     await createProject(fetch);
     wakePreviewMock.mockClear();
     const res = await authFetch(fetch, wakeUrl, { body: {} });
@@ -130,7 +112,7 @@ describe("the Preview pane can wake the preview", () => {
   });
 
   test("names the caller, so a redelivered job can still deploy", async () => {
-    const { fetch: authed } = await withDevAuth();
+    const { fetch: authed } = await withFakedDevAuth();
     const bearer = devToken("a@b.c");
     await onboardKey(authed, bearer);
     await createProject(authed, "proj", bearer);
@@ -145,7 +127,7 @@ describe("the Preview pane can wake the preview", () => {
   });
 
   test("throttled per project — a wake costs a broker call that can spawn", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     await createProject(fetch);
     wakePreviewMock.mockClear();
     for (let i = 0; i < 5; i += 1) {
@@ -158,7 +140,7 @@ describe("the Preview pane can wake the preview", () => {
   });
 
   test("another scope is not throttled by the first — the key is the project", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     await createProject(fetch);
     await createProject(fetch, "proj", "key2");
     wakePreviewMock.mockClear();
@@ -177,7 +159,7 @@ describe("the Preview pane can wake the preview", () => {
    * being unmetered by "the throttle below".
    */
   test("rate limited per scope, with a Retry-After", async () => {
-    const { fetch } = await createTestCombined({
+    const { fetch } = await createFakedCombined({
       studioRateLimiters: {
         chat: createRateLimiter(CHAT_RATE_LIMIT),
         projectCreate: createRateLimiter(PROJECT_CREATE_RATE_LIMIT),
@@ -196,7 +178,7 @@ describe("the Preview pane can wake the preview", () => {
   });
 
   test("requires a bearer key", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     expect((await fetch(wakeUrl, { method: "POST" })).status).toBe(401);
   });
 });

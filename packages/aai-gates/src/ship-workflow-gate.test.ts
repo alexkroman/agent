@@ -426,9 +426,9 @@ describe("a released version names its commit", () => {
   });
 
   /**
-   * `git push` runs the lefthook pre-push hook, and in this job that is the
-   * ENTIRE `pnpm check`. Measured on run 33772177324: the tag-push step ran
-   * `changeset-status`, `✔️ check (683.15 seconds)` — build, api-report,
+   * `git push` runs the lefthook pre-push hook, and in this job that was the
+   * ENTIRE `pnpm check` (it is `check:local` now). Measured on run
+   * 33772177324: the tag-push step ran `changeset-status`, `✔️ check (683.15 seconds)` — build, api-report,
    * docs:md, typedoc and the e2e suite — `no-conflicts-with-main`,
    * `no-push-main` and `up-to-date-with-main`, then printed `Everything
    * up-to-date`. 11m26s to push nothing, on the critical path: `guest-image`

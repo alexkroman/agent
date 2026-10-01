@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { type DevBackend, type DevServerSeams, startDevServer } from "./_dev-server.ts";
 import { writeAgentTs } from "./_dev-server-test-utils.ts";
 import type { DevWatchFn } from "./_dev-watch.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { createFakeUi, withTempDir } from "./_test-utils.ts";
 
 // 30s, not the 5s default: sibling suites run multi-second runtime-inlining
 // builds now, and CPU starvation under full-repo parallel runs was flaking
@@ -52,7 +52,7 @@ function makeSeams() {
   const close = vi.fn<DevBackend["close"]>(async () => undefined);
   const serve = vi.fn<DevServerSeams["serve"]>(() => ({ listen, close }));
   return {
-    seams: { watch, serve } satisfies DevServerSeams,
+    seams: { watch, serve, ui: createFakeUi() } satisfies Partial<DevServerSeams>,
     /** Fire a synthetic watcher change event, as chokidar's "all" does. */
     fireChange: () => listeners.get("all")?.(),
     /** Whether the watcher is up with its change listener attached. */

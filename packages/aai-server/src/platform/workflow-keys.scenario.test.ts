@@ -49,7 +49,7 @@ import { beforeEach, expect, test } from "vitest";
 import { describeWithPg } from "../_pg-test-utils.ts";
 import { useThrowawayPlatformDb } from "../_workflow-queue-test-utils.ts";
 import { platformCronJobs } from "../pg-cron.ts";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 import * as keys from "./workflow-keys.ts";
 
 /** Two tenants, so every read can be asked whether it crosses. */

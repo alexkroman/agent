@@ -51,7 +51,7 @@ import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithStack, pgUrl } from "../_pg-test-utils.ts";
 import { createPgChatStore } from "../chat-store.ts";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 import { createPgWorkspaceStore } from "../workspace-store.ts";
 import { platformMigrationSql } from "./_schema-test-utils.ts";
 

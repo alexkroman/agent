@@ -57,7 +57,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { queueNameKind } from "@alexkroman1/aai-runtime/internal";
 import { envMs } from "./constants.ts";
 import { createLogger } from "./logger.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 const log = createLogger("workflow.queue");
 

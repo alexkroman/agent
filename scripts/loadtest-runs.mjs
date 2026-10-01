@@ -2,9 +2,9 @@
 // Durable RUNS under load: start N of them at a fixed concurrency and time each
 // one to a terminal status.
 //
-//   pnpm loadtest:runs --port=4960 --workflow=chain  --input='{"steps":10}'
-//   pnpm loadtest:runs --port=4960 --workflow=fanout --input='{"url":"http://127.0.0.1:4950","items":32,"width":8}'
-//   pnpm loadtest:runs --port=4960 --workflow=nap    --input='{"ms":500}' --runs=20
+//   pnpm loadtest runs --port=4960 --workflow=chain  --input='{"steps":10}'
+//   pnpm loadtest runs --port=4960 --workflow=fanout --input='{"url":"http://127.0.0.1:4950","items":32,"width":8}'
+//   pnpm loadtest runs --port=4960 --workflow=nap    --input='{"ms":500}' --runs=20
 //
 // `scripts/loadtest.mjs --scenario=workflow` measures the API — POST a run, read
 // it back — and deliberately stops there: its runs are expected to die at a step

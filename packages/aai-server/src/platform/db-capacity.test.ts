@@ -9,7 +9,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { captureLogs } from "../_logger-test-utils.ts";
 import { MAX_PLATFORM_DB_CONNECTIONS } from "../constants.ts";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 import {
   announcePlatformDbCapacity,
   capacityLine,

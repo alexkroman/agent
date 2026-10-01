@@ -58,7 +58,7 @@
  */
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 
 /**
  * One window: the byte it starts at, and how many bytes it holds.

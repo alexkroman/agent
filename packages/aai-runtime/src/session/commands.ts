@@ -19,7 +19,7 @@
 
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { Transport } from "../transports/types.ts";
 import type { SessionEmitter } from "./emitter.ts";
 

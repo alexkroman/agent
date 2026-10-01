@@ -55,6 +55,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { sleep } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { waitForExit, waitForHealth } from "./_e2e-test-utils.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 
 /** How long to wait for a restarted server to answer `/health` before giving up. */
 const HEALTH_TIMEOUT_MS = 60_000;
@@ -307,6 +308,8 @@ export type SupervisedDevServerOptions = {
    * both families, and holds on a runner that binds the v4 address instead.
    */
   host?: string | undefined;
+  /** Where the supervisor's own warnings go (raw stderr lines). Defaults to the process's. */
+  ui?: Pick<Ui, "writeErr"> | undefined;
 };
 
 /**
@@ -320,6 +323,7 @@ export async function startSupervisedDevServer(
   opts: SupervisedDevServerOptions,
 ): Promise<SupervisedServer> {
   const profile = opts.profile ?? resolveFaultProfile();
+  const ui = opts.ui ?? defaultUi;
   const points = profile?.points ?? [];
   const url = `http://${opts.host ?? "127.0.0.1"}:${opts.port}`;
   const lines: string[] = [];
@@ -474,7 +478,7 @@ export async function startSupervisedDevServer(
       // that is finishing did nothing wrong, and its failure would name the
       // wrong thing.
       if (points.length > 0 && tracker.firedCount() === 0)
-        console.warn(`aai fault mode: ${shortfall()}`);
+        ui.writeErr(`aai fault mode: ${shortfall()}`);
       // A restart that failed — a replacement that never answered `/health` —
       // must not stop teardown, since the process still has to be reaped. It is
       // REPORTED rather than swallowed: it means the server did not survive a
@@ -483,7 +487,7 @@ export async function startSupervisedDevServer(
       // was taken off `cycle` when it happened — see `fire`.
       await cycle;
       if (restartFailure !== undefined) {
-        console.warn(
+        ui.writeErr(
           `aai fault mode: a restart never became healthy: ${errorMessage(restartFailure)}`,
         );
       }

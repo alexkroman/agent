@@ -3,13 +3,14 @@ import agentDef from "virtual:aai/agent";
 import type { InferToolInput, TelephonyAccess, TelephonyCarrier } from "@alexkroman1/aai";
 import {
   createToolContext,
+  expectToolOk,
   runTool,
   type StubGenerateRoute,
   stubGenerate,
   type TestToolContext,
   toolRunner,
 } from "@alexkroman1/aai/testing";
-import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { retrieve } from "./knowledge.ts";
 import { MAX_ATTEMPTS, runCorrectiveRag } from "./procedure.ts";
@@ -20,7 +21,7 @@ import {
   GROUNDED_SYSTEM,
   REWRITE_SYSTEM,
 } from "./prompts.ts";
-import { ASKED_CAP, supportProjection, supportSlot, supportView } from "./shared.ts";
+import { ASKED_CAP, supportSlot, supportView } from "./shared.ts";
 /** The tool FILES themselves: a file's default export is the very object
  *  `agentDef` registers under its name, and handing it to `runTool` is what
  *  types the call's arguments and its result. */
@@ -126,27 +127,6 @@ const run = toolRunner(agentDef);
  */
 function supportContext(script: Script): TestToolContext {
   return createToolContext({ generate: scriptedModel(script).generate });
-}
-
-/**
- * The value a tool answered, or a failure at the CALL.
- *
- * A plain tool answers its own value or a `ToolFailure`, so a bare cast hands a
- * refusal's `{ error }` to the assertions and dies a few lines later reading
- * `undefined` off it. `isToolFailure` is the SDK's own predicate for that
- * envelope; what is local is only the sentence.
- *
- * TYPED by what it is handed: `runTool(theTool, …)` answers the tool's OWN
- * return type, so renaming `answersTheQuestion` reddens here instead of quietly
- * comparing `undefined`, and this only subtracts the failure arm. The SDK's
- * `expectToolOk` is deliberately not used: it unwraps a `dialog()` envelope and
- * throws for a plain `tool()`, which all three of these are.
- */
-function answered<T>(result: T): Exclude<T, ToolFailure> {
-  if (isToolFailure(result)) throw new Error(`the tool refused: ${result.error}`);
-  // Negating a type predicate does not subtract from a generic; the guard above
-  // is what makes this true.
-  return result as Exclude<T, ToolFailure>;
 }
 
 /** Node names without the per-call suffix, for sequence assertions. */
@@ -308,7 +288,7 @@ describe("answer_question", () => {
       relevant: (id) => id === "D8",
       answers: ["Area outages are on the status page, and rebooting will not help."],
     });
-    const result = answered(await runTool(AnswerQuestion, asks("is there an outage"), ctx));
+    const result = expectToolOk(await runTool(AnswerQuestion, asks("is there an outage"), ctx));
     // `answer_question` has two legal outcomes past a refusal; this case is
     // about the graded one, and the null check is what narrows to it.
     if (result.answer === null) throw new Error(`expected a graded answer, got ${result.guidance}`);
@@ -326,7 +306,7 @@ describe("answer_question", () => {
 
   test("with nothing grounded it returns no answer and points at the ticket", async () => {
     const ctx = supportContext({ relevant: () => false });
-    const result = answered(await runTool(AnswerQuestion, asks("do you sell phones"), ctx));
+    const result = expectToolOk(await runTool(AnswerQuestion, asks("do you sell phones"), ctx));
     expect(result.answer).toBeNull();
     expect(result.guidance).toContain("log_ticket");
   });
@@ -386,7 +366,7 @@ describe("log_ticket", () => {
       question: "landline install",
       callback: "07700 900123",
     };
-    const logged = answered(await runTool(LogTicket, args, ctx));
+    const logged = expectToolOk(await runTool(LogTicket, args, ctx));
     expect(logged.reference).toBe("TCK4001");
 
     const state = supportSlot.get(ctx);
@@ -434,7 +414,7 @@ describe("supportView projection", () => {
   test("an untouched call projects an empty trace, not undefined", () => {
     // Exactly the frame `client.tsx` renders before the first push — it passes
     // this same projection to `useAgentState`.
-    expect(supportProjection()).toMatchObject({
+    expect(supportSlot.projected()).toMatchObject({
       product: "Meridian Fibre",
       trace: null,
       asked: [],

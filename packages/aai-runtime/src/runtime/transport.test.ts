@@ -21,7 +21,7 @@ import {
 } from "../_pipeline-test-fakes.ts";
 import { makeClientSink } from "../_session-test-utils.ts";
 import { createFallbackSttOpener } from "../providers/fallback.ts";
-import { DEFAULT_S2S_CONFIG } from "../runtime-config.ts";
+import { DEFAULT_S2S_CONFIG } from "../s2s-config.ts";
 import { PIPELINE_CAPABILITIES } from "../transports/capabilities.ts";
 import * as pipelineTransport from "../transports/pipeline/index.ts";
 import { _internals } from "../transports/s2s-transport.ts";
@@ -286,7 +286,7 @@ describe("createTransportFactory (pipeline)", () => {
     // Why the dep is a thunk at all: `createRuntime` defers this resolution for
     // a `mode: "workflow-app"` agent, whose injected default providers must not be
     // dialled — and a static agent given a voice surface by an embedder
-    // (`createRuntimeServer({ telephony: true })`) then resolves here. Passing a plain
+    // (`createServerForRuntime({ telephony: true })`) then resolves here. Passing a plain
     // `null` for that case would answer "no transport for session" and bury the
     // real cause.
     const factory = createTransportFactory(

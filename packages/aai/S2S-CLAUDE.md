@@ -8,19 +8,13 @@ read_when: >-
 
 # packages/aai — S2S mode
 
-A SIBLING of `CLAUDE.md`, read on demand. That guide was AT its 120,000-char
-cap with `## Session modes` holding 20% of it, and almost all of that 20% was
-this: wire-level findings about AssemblyAI's Voice Agent API and OpenAI
-Realtime, which an agent needs once it is already working on S2S and never
-before. `CLAUDE.md` keeps the three modes' SELECTION rules — which fields put an
-agent in which mode — and points here.
-
-Everything below is verbatim from that section, plus the sample-rate rule that
-was stated alongside it.
+Wire-level findings about AssemblyAI's Voice Agent API and OpenAI Realtime.
+`CLAUDE.md` keeps the three modes' SELECTION rules — which fields put an agent
+in which mode — and points here.
 
 - **S2S mode** (explicit opt-in — `s2s: assemblyAIS2s()` from the main
   export, or `openAIS2s()` from `@alexkroman1/aai/s2s`) uses
-  `createS2sTransport()` in `packages/aai/src/host/transports/s2s-transport.ts`.
+  `createS2sTransport()` in `packages/aai-runtime/src/transports/s2s-transport.ts`.
   The host opens a single WebSocket to AssemblyAI's speech-to-speech
   service; STT, the LLM loop, and TTS all run service-side and audio/events
   relay through that one socket. There is no way to reach S2S by omission —
@@ -36,7 +30,7 @@ was stated alongside it.
   **`ASSEMBLYAI_S2S_SAMPLE_RATE` (`sdk/s2s-constants.ts`) owns all of it**: the
   three-way live measurement, the tau2 scores with the pin in place, and why a
   resampler was built and reverted. `pinAssemblyS2sRates`
-  (`host/runtime-config.ts`) is the pin; `assertHostRatesSupported`
+  (`aai-runtime/src/s2s-config.ts`) is the pin; `assertHostRatesSupported`
   (`aai-runtime/src/server/host-mode.ts`) is the counterpart it cannot reach,
   refusing a host-mode handshake that declares a rate this transport cannot
   honour.
@@ -49,7 +43,7 @@ was stated alongside it.
   (511 frames over one 215s session; this guide asserted the opposite for a
   while), and `s2s.ts` forwards them as a partial and commits them on a
   COMPLETED reply that sent no final — never on an interrupted one, which would
-  put words in history the caller never heard. **Read `host/_s2s-reply.ts`'s
+  put words in history the caller never heard. **Read `aai-runtime/s2s/reply.ts`'s
   module doc** for both measurements, the two properties that decide how the
   deltas are consumed, and the anomaly log; this guide is at its cap and that
   module owns the finding.

@@ -10,13 +10,16 @@
 
 <!-- Steps for reviewers to verify the change -->
 
-- [ ] `pnpm test` passes
-- [ ] `pnpm typecheck` passes
-- [ ] `pnpm lint` passes
+- [ ] `pnpm check:local` passes
+- [ ] Tests added or updated in the tightest tier that can express them (see
+      "Test tiers" in `AGENTS.md`)
 
 ## Changeset
 
-<!-- Run `pnpm changeset` if this affects aai, aai-ui, or aai-cli -->
+<!-- Needed for any change under packages/ — see .github/CONTRIBUTING.md -->
 
-- [ ] Not needed (docs, CI, internal-only changes)
-- [ ] Included
+- [ ] Added with
+      `pnpm changeset:create --pkg <name> --bump <patch|minor|major> --summary "…"`
+- [ ] Empty (`pnpm changeset add --empty`) — nothing under `packages/` ships, or
+      the change is internal-only
+- [ ] Not needed — nothing under `packages/` or `supabase/migrations/` changed

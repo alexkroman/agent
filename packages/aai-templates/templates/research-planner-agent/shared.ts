@@ -21,7 +21,6 @@ import {
   failable,
   orFail,
   type SlotCaps,
-  type StateProjection,
   sessionSlot,
   type ToolFailure,
   tool,
@@ -89,7 +88,7 @@ export function emptyPlan(): PlanState {
  */
 const planCaps: SlotCaps<PlanState> = { pastSteps: MAX_PAST_STEPS, revisions: MAX_REVISIONS };
 
-export const planSlot = sessionSlot("plan", emptyPlan, { caps: planCaps });
+export const planSlot = sessionSlot("plan", emptyPlan, { view: planView, caps: planCaps });
 
 /**
  * The plan's LIFECYCLE, as a declared machine rather than a guard per tool.
@@ -326,14 +325,3 @@ export function planView(state: FrozenPlanState): PlanView {
     progress: total === 0 ? 0 : done / total,
   };
 }
-
-/**
- * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the
- * client.
- *
- * Annotated rather than inferred, because the annotation is the CONTRACT: a
- * `StateProjection<PlanView>` is what `agent({ syncState })` accepts and what
- * `useAgentState` reads a `PlanView` back out of, and naming it here is what
- * stops the two ends from being written against a shape neither one states.
- */
-export const planProjection: StateProjection<PlanView> = planSlot.projection(planView);

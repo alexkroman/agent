@@ -55,8 +55,15 @@ plus the two audio paths is the whole inbound surface. `guard-invariants` rule
   Handlers run synchronously off `emit` and async ones are never awaited, so a
   subscriber cannot add turn latency.
 
-`../transports/types.ts` holds the boundary and argument; `core.ts` and
-`commands.ts` own the two dispatchers.
+- **The core never asks WHICH transport it drives** — it reads the transport's
+  `capabilities`. `hostedTurn` decides what `tool.called` means: an observation
+  the host's own model loop already ran (publish it, unless a relay did), or a
+  request the session executes through `tool-steps.ts`. Both run the one call
+  core, `../tools/run-tool-call.ts`. The runtime's callbacks are a flat forward.
+
+`../transports/types.ts` holds the boundary and argument; `report.ts` and
+`commands.ts` own the two dispatchers, which `core.ts` composes over the
+current reply (`reply-tracker.ts`).
 
 ## A hook's write needs a commit, and a guard
 

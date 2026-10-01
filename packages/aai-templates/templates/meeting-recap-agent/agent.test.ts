@@ -58,9 +58,9 @@ import {
   type WorkflowContextRecorder,
 } from "@alexkroman1/aai/testing";
 import {
+  installStubGateway,
   installStubStepFetch,
   installStubWorkflows,
-  installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowOutputOf, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import {
@@ -687,7 +687,9 @@ describe("summarize", () => {
   });
 
   test("returns the recap the model produced, with the recording's length in minutes", async () => {
-    stubGateway('{"headline":"Smoke","points":["a","b","c"],"spoken":"Smoke drifted east."}');
+    installStubGateway(
+      '{"headline":"Smoke","points":["a","b","c"],"spoken":"Smoke drifted east."}',
+    );
     expect(await summarize("https://example.com/a.mp3", transcript())).toEqual({
       url: "https://example.com/a.mp3",
       headline: "Smoke",
@@ -700,14 +702,14 @@ describe("summarize", () => {
   });
 
   test("unwraps a fenced reply rather than failing on it", async () => {
-    stubGateway('```json\n{"headline":"H","points":["a"],"spoken":"S."}\n```');
+    installStubGateway('```json\n{"headline":"H","points":["a"],"spoken":"S."}\n```');
     expect((await summarize("https://x/a.mp3", transcript())).headline).toBe("H");
   });
 
   test("throws PLAINLY when the model answered with prose, so the step retries", async () => {
     // The distinction that is the whole retry policy: a model that ignored the
     // format may well obey on the next attempt, where a 401 will not.
-    stubGateway("Here is a recap of the recording.");
+    installStubGateway("Here is a recap of the recording.");
     // The SDK's message, not this template's: `stepGenerateJson` owns the
     // unwrap/parse/validate chain now, and a plain throw is what the DevKit
     // retries.
@@ -717,14 +719,14 @@ describe("summarize", () => {
   test("rejects a reply missing the spoken sentence as firmly as no JSON at all", async () => {
     // Without it the announced turn has nothing to read, which is the one field
     // this template's output exists for.
-    stubGateway('{"headline":"H","points":["a"]}');
+    installStubGateway('{"headline":"H","points":["a"]}');
     await expect(summarize("https://x/a.mp3", transcript())).rejects.toThrow(/did not match/);
   });
 
   test("fails FATALLY on a transcript with no speech in it", async () => {
     // A completed transcript holds the same nothing on every attempt — silence,
     // or a file with no speech. Retrying it five times buys nothing.
-    stubGateway('{"headline":"H","points":["a"],"spoken":"S."}');
+    installStubGateway('{"headline":"H","points":["a"],"spoken":"S."}');
     await expect(summarize("https://x/a.mp3", transcript({ text: "   " }))).rejects.toThrow(
       /no speech/,
     );
@@ -732,7 +734,7 @@ describe("summarize", () => {
 
   test("fails FATALLY with no API key rather than retrying five times", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    stubGateway('{"headline":"H","points":["a"],"spoken":"S."}');
+    installStubGateway('{"headline":"H","points":["a"],"spoken":"S."}');
     await expect(summarize("https://x/a.mp3", transcript())).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
   });
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // The HTTP service a step calls when there is no vendor to call.
 //
-//   pnpm loadtest:endpoint                                  # 127.0.0.1:4950
-//   pnpm loadtest:endpoint --delay=120 --jitter=80          # a slow, uneven far side
-//   pnpm loadtest:endpoint --fail-rate=0.2 --retry-after=1  # exercise the retry path
+//   pnpm loadtest endpoint                                  # 127.0.0.1:4950
+//   pnpm loadtest endpoint --delay=120 --jitter=80          # a slow, uneven far side
+//   pnpm loadtest endpoint --fail-rate=0.2 --retry-after=1  # exercise the retry path
 //
 // It exists so a fan-out's number is the ENGINE's. A run against a real provider
 // measures the provider: `transcription-workflow`'s own concurrency curve came

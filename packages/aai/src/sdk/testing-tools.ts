@@ -41,6 +41,11 @@ export type ToolBearingAgent = {
 /**
  * The tool `name` is declared under, or a throw naming the ones that are.
  *
+ * Three names for three jobs: `toolOf` hands back the DEF, to assert on what
+ * the agent declares (its description, its schema); {@link runTool} CALLS a
+ * tool, gated as the runtime gates it; {@link toolRunner} is `runTool` with the
+ * agent bound, the `run(name, …)` a spec calls throughout.
+ *
  * A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
  * import the agent as DEPLOYED, exactly as this example does and as every
  * shipped template's spec does: `virtual:aai/agent` under vitest, or

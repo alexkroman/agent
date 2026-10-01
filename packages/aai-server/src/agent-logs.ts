@@ -122,7 +122,11 @@ export function parseLogPage(body: unknown, after: number): LogPage {
 
 const STREAMS = new Set<string>(["stdout", "stderr"] satisfies LogStream[]);
 
-function isLogLine(value: unknown): value is LogLine {
+/**
+ * One guest-asserted log line, checked field by field. Shared with the studio's
+ * `read_logs` drain, which parses the same lines off `GET /:slug/logs`.
+ */
+export function isLogLine(value: unknown): value is LogLine {
   return (
     isRecord(value) &&
     typeof value.seq === "number" &&

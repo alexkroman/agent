@@ -25,8 +25,8 @@
  * and `ttsSampleRate`, so the bridge reads them off the wire and builds its
  * converters then. That is what lets one adapter serve a 16 kHz pipeline
  * agent and a 24 kHz S2S agent with no per-agent configuration and no plumbing
- * through `createRuntimeServer` — which matters because the guest harness hands
- * `createRuntimeServer` a LAZY runtime facade that cannot answer a rate question
+ * through `createServerForRuntime` — which matters because the guest harness hands
+ * `createServerForRuntime` a LAZY runtime facade that cannot answer a rate question
  * until the first session has already begun.
  *
  * **Pacing stays ON, deliberately.** A carrier accepts audio far faster than
@@ -42,8 +42,8 @@ import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
-import type { Logger } from "../runtime-config.ts";
-import { consoleLogger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
+import { consoleLogger } from "../logger.ts";
 import type { SessionWebSocket } from "../session/index.ts";
 import { type CarrierCodec, type CarrierInbound, isMulawFormat } from "./carriers.ts";
 import { mulawToPcm16, pcm16ToMulaw, TELEPHONY_SAMPLE_RATE } from "./mulaw.ts";

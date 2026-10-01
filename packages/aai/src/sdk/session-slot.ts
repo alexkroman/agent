@@ -217,13 +217,8 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
   const privateCopy = (value: T): T => (durable ? structuredClone(value) : value);
 
   /**
-   * One projection over this slot, for both {@link SessionSlot.projection} and
-   * the declared `projected` below.
-   *
-   * A named function rather than the method body, so `projected` can be built
-   * from the SAME code path at declaration time. That is the whole point of the
-   * field: one object, handed to `syncState` and to `useAgentState`, rather than
-   * an expression composed once per end.
+   * One projection over this slot, for the declared `projected` below and the
+   * deprecated {@link SessionSlot.projection} — one code path for both.
    */
   const project = <P>(view: (value: DeepReadonly<T>) => P): StateProjection<P> => {
     // `applyCaps` on the default too: a stored value never exceeds its caps,

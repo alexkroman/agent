@@ -109,7 +109,7 @@ import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { bearerFor, deploy } from "./_request-test-utils.ts";
 import { fakeAdminDbOver } from "./_sql-test-utils.ts";
 import { ensurePlatformTables } from "./platform/_schema-test-utils.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 /**
  * Awaited at the TOP, so the cases can be declared synchronously inside the

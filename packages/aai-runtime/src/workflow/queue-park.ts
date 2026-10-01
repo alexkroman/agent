@@ -21,7 +21,7 @@
 
 // Type-only, so this module stays a leaf: it REPORTS a park and never resolves a
 // logger of its own.
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 
 /**
  * The FLOOR of the park delay — see {@link queueDeliveryBusySeconds}.

@@ -3,7 +3,7 @@
  * `createHostServer` — the multi-tenant host server.
  *
  * These drive a real listening server over a real WebSocket rather than
- * asserting on the options handed to `createRuntimeServer`: every property worth
+ * asserting on the options handed to `createServerForRuntime`: every property worth
  * having here is a property of the wire, and an options-shape assertion would
  * pass just as happily against a server that never worked.
  *
@@ -77,7 +77,7 @@ const GATE_SHUT = "host mode is not enabled";
 
 describe("createHostServer", () => {
   test("host mode is on without the caller setting AAI_ALLOW_HOST", async () => {
-    // The whole point of the wrapper: the same call to `createRuntimeServer` needs an
+    // The whole point of the wrapper: the same call to `createServerForRuntime` needs an
     // explicit env flag, and forgetting it rejects every connection.
     const frames = await connect(await startServer(), { frame: handshake() });
 

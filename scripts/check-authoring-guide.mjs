@@ -5,10 +5,14 @@
  *
  *   pnpm check:authoring-guide
  *
- * `packages/aai-templates/scaffold/CLAUDE.md` is the one source of truth for
- * how to write an aai agent. `sync-agent-guide.mjs` materializes it as
- * `packages/aai/AGENT_GUIDE.md` so it ships inside the SDK tarball, which is
- * where a scaffolded project's `CLAUDE.md` points and where an agent reads it. `check:agent-guide` already asserts
+ * The scaffold guide — `packages/aai-templates/scaffold/CLAUDE.md` plus its
+ * topic files in `scaffold/agent-guide/` (`scripts/_agent-guide.mjs`) — is the
+ * one source of truth for how to write an aai agent. `sync-agent-guide.mjs`
+ * materializes it as `packages/aai/AGENT_GUIDE.md` and its `agent-guide/`
+ * neighbours so it ships inside the SDK tarball, which is where a scaffolded
+ * project's `CLAUDE.md` points and where an agent reads it. This gate reads
+ * the WHOLE set: a capability documented in a topic file is documented.
+ * `check:agent-guide` already asserts
  * those two copies agree — that the guide is CURRENT. Nothing asserted it was
  * COMPLETE, and it was not: eleven of `aai`'s twenty-six capabilities and two
  * of `aai-ui`'s nine appeared in it nowhere, including `/step-errors` (twelve
@@ -53,6 +57,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { SOURCE_DIR, wholeGuide } from "./_agent-guide.mjs";
 import {
   capabilities,
   capabilityId,
@@ -64,8 +69,8 @@ import {
   rel,
 } from "./_api-contracts-tree.mjs";
 
-/** The guide this gate is about — the one `aai init` puts in a user's project. */
-const GUIDE_PATH = join(ROOT, "packages/aai-templates/scaffold/CLAUDE.md");
+/** The guide this gate is about: the core file and every topic file beside it. */
+const GUIDE_PATH = join(SOURCE_DIR, "{CLAUDE.md,agent-guide/*.md}");
 
 /** The committed export surface, keyed by module specifier. */
 const EXPORTS_PATH = join(ROOT, "API-EXPORTS.json");
@@ -219,7 +224,7 @@ function inScopeCapabilities(exportsByPath) {
 }
 
 const exportsByPath = JSON.parse(readFileSync(EXPORTS_PATH, "utf8"));
-const guide = readFileSync(GUIDE_PATH, "utf8");
+const guide = wholeGuide();
 const { spans, text } = codeSpans(guide);
 const scoped = inScopeCapabilities(exportsByPath);
 

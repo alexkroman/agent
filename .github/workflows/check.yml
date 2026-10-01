@@ -140,7 +140,6 @@ jobs:
           restore-keys: |
             tsbuildinfo-typecheck-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig*.json', 'pnpm-lock.yaml') }}-
             tsbuildinfo-typecheck-${{ runner.os }}-
-      - run: pnpm exec turbo run lint typecheck typecheck:tools typecheck:scripts typecheck:browser
       - name: Check for changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main
@@ -159,67 +158,54 @@ jobs:
           pipx install ruff==0.16.9
           pipx install sqlfluff==4.3.0
           pipx install hadolint-bin==2.15.1
-      # The tasks that are NOT rows of the gate table: the turbo tasks, plus
-      # the root-level scripts turbo cannot own.
-      - run: |
-          pnpm exec turbo run check:publint check:attw docs
-          pnpm run check:knip
-          # `turbo run lint` above is per-PACKAGE, and scripts/ is not a
-          # package — so until this line it was the one source directory in
-          # the repo that no lint job touched.
-          pnpm run lint:root
-          # The type-aware promise rules Biome cannot evaluate — see
-          # `//#lint:promises` in turbo.json.
-          pnpm run lint:promises
-          pnpm run check:syncpack
-          # Manifest SHAPE, the other half of syncpack. See `//#check:format`
-          # in turbo.json for why `sortExports` has to name `@dev/source`.
-          pnpm run check:format
-          # Duplicate versions resolved side by side in the lockfile. Here
-          # rather than in `check:local` because it resolves against the
-          # registry, which is a flake a pre-commit gate should not own.
-          pnpm run check:dedupe
-          pnpm run check:sherif
-          pnpm run check:markdown
-          # YAML, shell and Dockerfile formatting — the files Biome does not read.
-          pnpm run check:prettier
-          # yamllint, ruff, sqlfluff, hadolint, taplo, and the check that every
-          # tracked extension has a linter and a formatter.
-          AAI_REQUIRE_POLYGLOT=1 pnpm run check:polyglot
-          # ubuntu-latest ships shellcheck; the flag makes its absence a failure.
-          AAI_REQUIRE_SHELLCHECK=1 pnpm run check:shell
-          # actionlint + zizmor, with zizmor's policy read from the BASE so a PR
-          # cannot relax it and be audited under the relaxed copy.
-          AAI_REQUIRE_WORKFLOW_LINT=1 pnpm run check:workflows --base origin/main
+      # Every TURBO task this job owns, DERIVED: full mode's first turbo call
+      # (`TURBO_TASKS.full` in scripts/_check-turbo-tasks.mjs) minus the tasks
+      # another job runs (`CI_ELSEWHERE` there) — lint, the four typecheck
+      # programs, publint, attw, the docs site, knip, lint:root, lint:promises,
+      # syncpack, format, dedupe, sherif, markdownlint, prettier, polyglot and
+      # shellcheck, in one `turbo run --continue`, so every failure is reported
+      # rather than the first `bash -e` stopped on. A task added to full mode
+      # reaches this step with no edit here.
+      #
+      # The two flags turn a missing binary into a FAILURE in the one job meant
+      # to fail on it; both are declared in turbo.json's `env`, which is what
+      # lets them through strict env mode.
+      - name: Turbo tasks (derived from scripts/_check-turbo-tasks.mjs)
+        run: node scripts/check.mjs --turbo ci
+        env:
+          AAI_REQUIRE_POLYGLOT: "1"
+          AAI_REQUIRE_SHELLCHECK: "1"
+      # actionlint + zizmor, with zizmor's policy read from the BASE so a PR
+      # cannot relax it and be audited under the relaxed copy. Its own step
+      # (and in `CI_ELSEWHERE`) because `--base` is an argument turbo cannot
+      # pass to one task. `!cancelled()` on this and the next step so a failed
+      # turbo task does not hide a failed gate.
+      - name: Workflow lint
+        if: ${{ !cancelled() }}
+        run: pnpm run check:workflows --base origin/main
+        env:
+          AAI_REQUIRE_WORKFLOW_LINT: "1"
       # EVERY quality gate, DERIVED — the ratchets and the after-build gates,
       # in the table's own order, read out of scripts/check.mjs rather than
-      # restated here.
-      #
-      # This block used to be ~20 hand-copied `pnpm run check:*` lines, and the
-      # copy drifted the only way it could: a PR deleted a gate's script, its
-      # row and its spec, and left the line here. `pnpm run <missing>` exits
-      # non-zero under `bash -e`, and this job is in the required `ci` job's
-      # `needs` — so every push on that branch, and every push to main after
-      # it merged, would have failed CI while `pnpm check` stayed green
-      # locally. There is one list now, in one file, and a gate added or
-      # removed there needs no edit to this one.
+      # restated here. A restated copy drifted once: a deleted gate left its
+      # `pnpm run` line behind, failing every push while `pnpm check` stayed
+      # green locally.
       #
       # `--gates ci` names the PHASES this job owns (`GATE_SELECTIONS` there):
-      # the pure git/fs ratchets, and the after-build gates that read the
-      # `dist` restored above. The third phase, `after-tests`, belongs to the
-      # coverage matrix below. The runner keeps each row's `fatal` field rather
-      # than flattening it into `bash -e`: a fatal gate stops the run, and the
-      # ratchets are all reported together, so a branch tripping three learns
-      # about three. A failing gate also emits a `::error` annotation naming
-      # itself, and `check:konsistent` still emits its own inline ones because
-      # GITHUB_ACTIONS reaches it unchanged.
+      # the pure git/fs ratchets (run in parallel), and the after-build gates
+      # that read the `dist` restored above. The third phase, `after-tests`,
+      # belongs to the coverage matrix below. The runner keeps each row's
+      # `fatal` field: a fatal gate stops the run, and the ratchets are all
+      # reported together. A failing gate emits a `::error` annotation naming
+      # itself and the `pnpm` script that fixes it, when there is one.
       #
-      # `packages/aai-templates/gate-wiring.test.ts` is the guard: it parses
+      # `packages/aai-gates/src/gate-wiring.test.ts` is the guard: it parses
       # the table and this file independently and fails if either goes empty,
       # if a gate is enforced by neither this step nor a named command, or if
       # any `pnpm run …` here names a script the root manifest does not
-      # declare — which is the exact break above.
+      # declare.
       - name: Quality gates (derived from scripts/check.mjs)
+        if: ${{ !cancelled() }}
         run: node scripts/check.mjs --gates ci
 
   # Unit tests sharded by package — run in parallel

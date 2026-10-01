@@ -52,3 +52,17 @@ export function boundTurboConcurrency() {
   process.env.TURBO_CONCURRENCY ??= String(defaultTurboConcurrency());
   return process.env.TURBO_CONCURRENCY;
 }
+
+/**
+ * How many `check.mjs` gate PROCESSES may run at once in a parallel phase.
+ *
+ * The same budget from the other side: a ratchet gate is one single-threaded
+ * node (or tsc) process with no worker pool of its own, so the machine's
+ * parallelism is the bound — the product the pair above holds at the core
+ * count. They run before the first turbo call, so nothing else shares it.
+ *
+ * @returns {number}
+ */
+export function gateConcurrency() {
+  return Math.max(1, availableParallelism());
+}

@@ -7,7 +7,7 @@
  * two failures a caller has to tell apart.
  *
  * The store, its two blob backends, the part addressing and the table name are
- * `@alexkroman1/aai-runtime/internal`'s: `createRuntimeServer` builds the store
+ * `@alexkroman1/aai-runtime/internal`'s: `createServerForRuntime` builds the store
  * and no public signature takes or returns one.
  *
  * Re-exported from `@alexkroman1/aai-runtime`. This file is not shipped and

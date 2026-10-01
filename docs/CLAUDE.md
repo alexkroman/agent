@@ -41,10 +41,10 @@ means for that package.
 to `main`; the turbo `docs` task is a merge gate in `pnpm check` and CI.
 
 - **TypeDoc extracts; `starlight-typedoc` only replaces its HTML theme**,
-  writing reference pages into the content collection at
-  `docs/src/content/docs/reference/` inside Starlight's `config:setup` hook.
-  That puts them under `starlight-links-validator`, so a broken internal link
-  fails the build — fix it at the source, never exclude it.
+  writing reference pages into a generated reference collection under
+  `docs/src/content/docs/` inside Starlight's `config:setup` hook. That puts
+  them under `starlight-links-validator`, so a broken internal link fails the
+  build — fix it at the source, never exclude it.
 - **`astro.config.mjs` reads `docs/typedoc.json` by ABSOLUTE path**, so the
   render does not depend on the working directory. The plugin's programmatic
   defaults beat the config file for two options: `readme` (passed explicitly as

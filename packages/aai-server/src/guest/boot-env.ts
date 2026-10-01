@@ -44,7 +44,7 @@ import { agentPlatformBaseUrl, agentPublicBaseUrl } from "../public-origin.ts";
  * the parse (an unusable value falls back to its default).
  *
  * `AAI_DEBUG` is forwarded the same way, for a sharper version of the same
- * reason: `debugLoggingEnabled` (aai-runtime/runtime-config.ts) is a module-level
+ * reason: `debugLoggingEnabled` (aai-runtime/logger.ts) is a module-level
  * `const` read from `process.env` at IMPORT time, while a deployed agent's own env
  * arrives as the boot FILE at `AAI_AGENT_ENV_PATH`, parsed into an object that is
  * never merged into `process.env`. So there was NO WAY AT ALL to switch the guest's

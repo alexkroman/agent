@@ -26,8 +26,9 @@ Transport-wide rules (the capability table, prompt resolution) are in
 
 The files beside this guide are the ASSEMBLY — `transport.ts`
 (`createPipelineTransport`), `commands.ts` (its client verbs), `lifecycle.ts`
-(once per call), `options.ts`, `providers.ts`, `session-signal.ts`,
-`turn-body.ts` and `turn-outcome.ts` — and import every stage.
+(once per call), `options.ts`, `providers.ts`, `reply-runner.ts` (the reply
+scaffold), `session-signal.ts`, `turn-body.ts` and `turn-outcome.ts` — and
+import every stage.
 
 - **Outside a directory, import its `index.ts` and nothing else**; a name not
   re-exported there is private, so there is no `_` prefix inside these

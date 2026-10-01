@@ -40,7 +40,7 @@
  */
 
 import { createLogger } from "./logger.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import { ack } from "./workflow-queue-store.ts";
 
 const log = createLogger("workflow.queue.failure");

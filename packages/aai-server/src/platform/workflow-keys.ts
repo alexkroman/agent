@@ -65,7 +65,7 @@
  * @internal
  */
 
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 
 /**
  * Where the index lives. Spelled once.

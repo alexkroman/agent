@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import { agentRowsConformance } from "./store-conformance-cases.ts";
 
 const RECORD = {

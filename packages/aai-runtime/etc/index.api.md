@@ -178,8 +178,11 @@ export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 // @public
 export function createRuntime(options: RuntimeOptions): Runtime;
 
-// @public
+// @public @deprecated
 export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
+
+// @public
+export function createServerForRuntime(options: RuntimeServerOptions): AgentServer;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: TelephonyBridgeOptions): SessionWebSocket;

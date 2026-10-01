@@ -131,7 +131,7 @@ target. The tempting conclusion — derive the ear-lag from the lead — is ALSO
 wrong, and was briefly shipped.
 
 **Why: the playback clock already subtracts the buffer.** `heardMs()` in
-`aai/host/transports/pipeline-heard.ts` is
+`aai-runtime/transports/pipeline/heard/tracker.ts` is
 `audioMs - clock.remainingMs() - lagMs`, and `endsAtMs` inside that clock
 accumulates from `max(endsAtMs, now())` — so it runs ahead by whatever the lead
 is, and `remainingMs()` already reports the client's unplayed backlog. Anything

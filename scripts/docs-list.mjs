@@ -6,7 +6,7 @@
  * Usage:
  *   node scripts/docs-list.mjs           # every guide: path, summary, when to read it
  *   node scripts/docs-list.mjs --json    # the same, for a program
- *   node scripts/docs-list.mjs --write   # regenerate AGENTS.md's four guide tables
+ *   node scripts/docs-list.mjs --write   # regenerate the four generated guide tables
  *   node scripts/docs-list.mjs --check   # fail on a missing/malformed header or a stale table
  *
  * `pnpm docs:list` is the cheap way for an agent to find the guide that owns a
@@ -25,16 +25,19 @@
  *     The situation in which an agent should open it.
  *   ---
  *
- * and the rows between each `<!-- guide-index:<group> -->` marker pair in
- * AGENTS.md are written by `--write`. `--check` (a `pnpm check` ratchet) fails
- * when a guide has no header, carries a key other than these two, or when a
- * table no longer matches what `--write` would produce — so a new sibling is
- * indexed by adding its header and running one command.
+ * and the rows between each `<!-- guide-index:<group> -->` marker pair are
+ * written by `--write`: the references table in AGENTS.md, and the package,
+ * directory and sibling tables in `.agents/index.md` — kept out of AGENTS.md so
+ * the auto-loaded root guide does not grow with every new guide. `--check` (a
+ * `pnpm check` ratchet) fails when a guide has no header, carries a key other
+ * than these two, or when a table no longer matches what `--write` would
+ * produce — so a new sibling is indexed by adding its header and running one
+ * command.
  *
  * ## What counts as a guide
  *
  * The shapes `claude-md-limit.test.ts` measures, minus two: the root
- * AGENTS.md (it IS the index) and `scaffold/CLAUDE.md`, which is a product
+ * AGENTS.md (it holds the index's entry point) and `scaffold/CLAUDE.md`, which is a product
  * artifact shipped to users as the SDK's `AGENT_GUIDE.md`, not repo docs.
  * Directory guides (`packages/<pkg>/src/**\/CLAUDE.md`) are matched under
  * `src/` only, which keeps the scaffold and template trees (package root, not
@@ -58,18 +61,21 @@ import { repoRoot } from "./_fs.mjs";
 
 const GATE = "check:guide-index";
 const ROOT = repoRoot(import.meta.url);
-const INDEX = "AGENTS.md";
+/** The two files holding generated tables, in the order they are written. */
+const ROOT_GUIDE = "AGENTS.md";
+const GUIDE_INDEX = ".agents/index.md";
 const KEYS = ["summary", "read_when"];
 
 /**
- * The four tables, in the order AGENTS.md shows them. `docs/CLAUDE.md` is a
- * guide the lister reports but no table holds: AGENTS.md introduces it in prose,
- * because it owns three artifacts rather than one package.
+ * The four tables, each with the file that holds it. `docs/CLAUDE.md` is a
+ * guide the lister reports but no table holds: `.agents/index.md` introduces it
+ * in prose, because it owns three artifacts rather than one package.
  */
 const GROUPS = [
   {
     id: "references",
     title: "Detailed references",
+    file: ROOT_GUIDE,
     header: "| Reference | Covers |",
     match: /^\.agents\/[^/]+\.md$/,
     cell: (path) => `[\`${path}\`](${path})`,
@@ -77,6 +83,7 @@ const GROUPS = [
   {
     id: "packages",
     title: "Package guides",
+    file: GUIDE_INDEX,
     header: "| Guide | Covers |",
     match: /^packages\/[^/]+\/CLAUDE\.md$/,
     cell: (path) => `\`${path}\``,
@@ -84,6 +91,7 @@ const GROUPS = [
   {
     id: "siblings",
     title: "Sibling guides",
+    file: GUIDE_INDEX,
     header: "| Sibling | Covers |",
     match: /^packages\/[^/]+\/[A-Z0-9-]+-CLAUDE\.md$/,
     cell: (path) => `\`${path}\``,
@@ -91,6 +99,7 @@ const GROUPS = [
   {
     id: "directories",
     title: "Directory guides",
+    file: GUIDE_INDEX,
     header: "| Guide | Covers |",
     match: /^packages\/[^/]+\/src\/(?:.+\/)?CLAUDE\.md$/,
     cell: (path) => `\`${path}\``,
@@ -181,11 +190,11 @@ function renderTable(group) {
   return [group.header, "| --- | --- |", ...rows].join("\n");
 }
 
-/** AGENTS.md with every marked table regenerated, or a list of missing markers. */
-function regenerate(index) {
+/** `file` with every table it holds regenerated, or a list of missing markers. */
+function regenerate(file, index) {
   let out = index;
   const missing = [];
-  for (const group of GROUPS.filter((g) => g.header !== undefined)) {
+  for (const group of GROUPS.filter((g) => g.file === file)) {
     const open = `<!-- guide-index:${group.id} -->`;
     const close = `<!-- /guide-index:${group.id} -->`;
     const start = out.indexOf(open);
@@ -215,27 +224,32 @@ if (FLAGS.check === true || FLAGS.write === true) {
     );
     process.exit(1);
   }
-  const index = readFileSync(join(ROOT, INDEX), "utf8");
-  const { out, missing } = regenerate(index);
-  if (missing.length > 0) {
-    console.error(`${GATE}: ${INDEX} is missing marker pair(s): ${missing.join("; ")}`);
-    process.exit(1);
+  const stale = [];
+  for (const file of [ROOT_GUIDE, GUIDE_INDEX]) {
+    const index = readFileSync(join(ROOT, file), "utf8");
+    const { out, missing } = regenerate(file, index);
+    if (missing.length > 0) {
+      console.error(`${GATE}: ${file} is missing marker pair(s): ${missing.join("; ")}`);
+      process.exit(1);
+    }
+    if (FLAGS.write === true) {
+      if (out !== index) writeFileSync(join(ROOT, file), out);
+      console.log(`${GATE}: ${file} ${out === index ? "already current" : "regenerated"}`);
+    } else if (out !== index) {
+      stale.push(file);
+    }
   }
-  if (FLAGS.write === true) {
-    if (out !== index) writeFileSync(join(ROOT, INDEX), out);
-    console.log(
-      `${GATE}: ${INDEX} ${out === index ? "already current" : "regenerated"} — ${guides.length} guide(s)`,
-    );
-    process.exit(0);
-  }
-  if (out !== index) {
+  if (stale.length > 0) {
     console.error(
-      `${GATE}: ${INDEX}'s guide tables are stale against the guides' frontmatter. ` +
-        "Run `pnpm sync:guide-index` and commit the result.",
+      `${GATE}: the guide tables in ${stale.join(" and ")} are stale against the guides' ` +
+        "frontmatter. Run `pnpm sync:guide-index` and commit the result.",
     );
     process.exit(1);
   }
-  console.log(`${GATE}: ${guides.length} guide(s) carry a header, and ${INDEX}'s tables match ✓`);
+  console.log(
+    `${GATE}: ${guides.length} guide(s) carry a header` +
+      (FLAGS.write === true ? "" : `, and the tables in ${ROOT_GUIDE} and ${GUIDE_INDEX} match ✓`),
+  );
   process.exit(0);
 }
 

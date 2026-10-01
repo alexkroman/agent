@@ -14,7 +14,7 @@
  * re-exports it, so existing `from "./client.ts"` imports are unaffected.
  */
 
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { S2sServerMessage } from "./messages.ts";
 import {
   appendReplyDelta,

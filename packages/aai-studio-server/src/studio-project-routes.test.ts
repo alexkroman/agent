@@ -13,40 +13,21 @@
  */
 
 import { authFetch, deployAgent, type TestFetch } from "aai-server/test-utils";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import {
+  createFakedCombined,
   createProject,
   refreshSessionMock,
   schedulePreviewMock,
 } from "./_studio-routes-test-utils.ts";
-import { createTestCombined } from "./_test-combined.ts";
 import { mutateWorkspace, studioScope } from "./studio-workspace.ts";
 
-// Same module-boundary fakes as studio-routes.test.ts: no bundler, no sandbox,
-// no preview deploy runs here.
-vi.mock("./studio-session-broker.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-session-broker.ts")>();
-  const { brokerMock } = await import("./_studio-routes-test-utils.ts");
-  return {
-    ...original,
-    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) =>
-      brokerMock(...args),
-  };
-});
-
-vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-preview-wake.ts")>();
-  const { wakePreviewMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return {
-    ...original,
-    wakeProjectPreview: (...args: Parameters<typeof original.wakeProjectPreview>) => mock(...args),
-  };
-});
-
+// `createFakedCombined` injects the same fakes as studio-routes.test.ts: no
+// bundler, no sandbox, no preview deploy runs here.
 describe("project CRUD", () => {
   let fetch: TestFetch;
   beforeEach(async () => {
-    ({ fetch } = await createTestCombined());
+    ({ fetch } = await createFakedCombined());
   });
 
   test("create starts an EMPTY project and duplicate returns 409", async () => {
@@ -285,7 +266,7 @@ describe("project CRUD", () => {
   });
 
   test("delete project cascades to BOTH of its deployed agents", async () => {
-    const combined = await createTestCombined();
+    const combined = await createFakedCombined();
     // The two agents Publish and the preview auto-deploy would have created.
     // Neither is named `*-preview` here: `POST /deploy` REFUSES that suffix
     // (only the studio's own preview deployer may claim it), so deploying one
@@ -311,7 +292,7 @@ describe("project CRUD", () => {
   });
 
   test("delete project spares a slug the caller does not own", async () => {
-    const combined = await createTestCombined();
+    const combined = await createFakedCombined();
     // A workspace naming someone else's slug — however it got there — must not
     // become a deletion oracle. Ownership is the agents row's credential
     // hash, never project scope alone.

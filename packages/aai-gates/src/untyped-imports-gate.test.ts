@@ -149,7 +149,7 @@ describe("check:untyped-imports", () => {
     expect(manifest).toContain('"check:untyped-imports"');
     expect(manifest).toContain("scripts/check-untyped-imports.mjs");
     expect(runner).toContain('script: "check:untyped-imports"');
-    expect(runner).toMatch(/check:untyped-imports[^\n]*\n\s*phase: "ratchets"/);
+    expect(runner).toMatch(/script: "check:untyped-imports",\s*phase: "ratchets"/);
   });
 
   test("numericConstant still reads the floors it would be asked for", () => {

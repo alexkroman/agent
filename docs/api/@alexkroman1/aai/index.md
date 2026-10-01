@@ -12,7 +12,7 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 | conversation order | [dialog](#dialog-1) — a tool declared `when` simply does not run outside those states |
 | work that outlives the call | [workflow](#workflow-3) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
 | a second tool loop | [speaker](#speaker-1), reached with `ctx.delegate` |
-| who is speaking | [roster](#roster-2) — `speaks: true` entries the session hands the caller between, with `handoff` |
+| who is speaking | [roster](#roster-3) — `speaks: true` entries the session hands the caller between, with `handoff` |
 | the default pipeline, spelled out | [assemblyAIPipeline](#assemblyaipipeline); [assemblyAIS2s](#assemblyais2s) opts into speech-to-speech instead |
 
 ```ts
@@ -25,7 +25,7 @@ export const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
 export default agent({
   name: "Storefront",
   systemPrompt: "You help callers order from the catalog.",
-  syncState: { cart: cart.projected },
+  syncState: cart.projected,
 });
 ```
 
@@ -42,7 +42,8 @@ a single tool call. A [workflow](#workflow-3) runs DURABLY, outliving the sessio
 
 | Subpath | Reach for it when |
 | --- | --- |
-| `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool` |
+| `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool`; the `install*` half is `/testing/vitest` |
+| `@alexkroman1/aai-runtime/testing`, `@alexkroman1/aai-runtime/eval/vitest` | a spec on the REAL engine (`runWorkflow`); an eval file, whose one import that is |
 | `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
 | `@alexkroman1/aai/step`, `/step-errors` | writing a step inside a workflow |
 | `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |
@@ -55,6 +56,28 @@ a single tool call. A [workflow](#workflow-3) runs DURABLY, outliving the sessio
 A `workflows/*.ts` body is the one file that reads from two of these: the
 declaration and its `…Of<typeof def>` readings are here, the step vocabulary
 is `/step`.
+
+## The membership rule
+
+A name is on the root when an `agent.ts`, a tool module or a `workflow()`
+body NAMES it. A name that a narrower subpath OWNS is re-exported here only
+when it is one of:
+
+1. **A type (or catalog) a root signature is spelled in** — the stage types
+   `AgentDef` names, `LlmSpec`, `AssemblyAIGatewayModel`, the voice catalog,
+   the three `…Of<typeof def>` readings, `ToolFailure` and the helpers a tool
+   body calls beside it — so an author never needs a second import to write
+   down what `agent()`, `tool()` or `workflow()` asked for.
+2. **A MODE preset** — `assemblyAIPipeline` and `assemblyAIS2s`, the two
+   configurations that pick a session mode. A factory that swaps ONE stage
+   (`assemblyAITts`, `assemblyAIStt`, `llm`, every vendor's) stays on its
+   stage subpath; `agent({ voice, llm: "<model id>" })` covers the
+   AssemblyAI stages without one.
+
+Nothing else crosses: `/utils`' formatters are read by a page or a step,
+`/step` by a step, `/workflow-api` by a caller outside the agent. The
+narrower subpath keeps every name it re-exports here and keeps owning its
+capability.
 
 ## Functions
 
@@ -120,7 +143,8 @@ Overloaded over [AgentMode](#agentmode), one signature per member of
 [AgentParams](#agentparams): `mode` picks the member, and a field that member does
 not have is a compile error naming it — `silence` is a pipeline group,
 so it does not exist on [S2sAgentParams](#s2sagentparams) at all. With no `mode` the
-agent is a pipeline agent. [AgentDef](#agentdef) documents what every field means.
+agent is a pipeline agent. [AgentDeclaration](#agentdeclaration) documents what every
+field means; the returned [AgentDef](#agentdef) is the resolved shape.
 
 **Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
 default-exports `tool({ … })` is the tool `echo`, registered by existing, and
@@ -150,7 +174,7 @@ export default agent({
 
 **Session state is not declared here either** — a [sessionSlot](#sessionslot-1) owns its
 own default and its own storage, so there is no `state` factory to remember.
-`syncState` takes that slot's projection, keyed by the slot's name.
+`syncState` takes that slot's projection, or a list of them.
 
 **Default pipeline with another voice and a different LLM**
 
@@ -226,17 +250,17 @@ export default agent({
 #### Call Signature
 
 ```ts
-function agent(def: StaticAgentParams): ModeAgentDef<"workflow-app">;
+function agent(def: WorkflowAppAgentParams): ModeAgentDef<"workflow-app">;
 ```
 
 Define a workflow app: `mode: "workflow-app"`. [workflowApp](#workflowapp) is the
-same member with the mode already set. See [StaticAgentParams](#staticagentparams).
+same member with the mode already set. See [WorkflowAppAgentParams](#workflowappagentparams).
 
 ##### Parameters
 
 ###### def
 
-[`StaticAgentParams`](#staticagentparams)
+[`WorkflowAppAgentParams`](#workflowappagentparams)
 
 ##### Returns
 
@@ -2106,7 +2130,7 @@ readonly [`SpeakerDef`](#speakerdef)\<`N`\>[]
 
 #### Returns
 
-[`Roster`](#roster-1)\<`N`\>
+[`Roster`](#roster-2)\<`N`\>
 
 ***
 
@@ -3337,7 +3361,7 @@ export default tool({
 ### workflowApp()
 
 ```ts
-function workflowApp(def: Omit<StaticAgentParams, "mode">): AgentDef;
+function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef;
 ```
 
 Define a WORKFLOW APP — an agent whose front door is a form rather than a
@@ -3357,7 +3381,7 @@ one.
 
 ##### def
 
-`Omit`\<[`StaticAgentParams`](#staticagentparams), `"mode"`\>
+`Omit`\<[`WorkflowAppAgentParams`](#workflowappagentparams), `"mode"`\>
 
 #### Returns
 
@@ -3554,7 +3578,7 @@ The device-inbox half of an agent declaration — see this module's header.
 
 #### Extended by
 
-- [`AgentDef`](#agentdef)
+- [`AgentDeclaration`](#agentdeclaration)
 
 #### Properties
 
@@ -3576,40 +3600,38 @@ export default agent({ name: "Speaker", clientInbox: { sampleRate: 16_000 } });
 
 ***
 
-### AgentDef
+### AgentDeclaration
 
-Fully resolved agent definition — and THE reference for what every field
-means.
+What an author may WRITE in `agent({ … })` — and THE reference for what every
+field means.
 
-**This is what `agent()` RETURNS, not what you write.** You write one member
-of [AgentParams](#agentparams), chosen by [AgentMode](#agentmode): the same fields, with
-the defaulted ones optional, cut down to the ones that mode has. The members
-carry no prose of their own — a field's documentation lives here once, and
-the member's job is only to say WHICH fields exist in which mode (a
-pipeline-only knob is simply absent from the S2S member). `agent()`
-normalizes the author conveniences (`llm` as a model-id string, the
-end-of-turn window) and the deprecated spellings away, so this shape is
-canonical.
+You write one member of [AgentParams](#agentparams), chosen by [AgentMode](#agentmode): these
+fields with the defaulted ones optional, cut down to the ones that mode has
+(a pipeline-only knob is simply absent from the S2S member). The members carry
+no prose of their own; a field's documentation lives here once.
 
-Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`, `mode`)
-are resolved to their final values with defaults applied. Optional fields
-(`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
-optional — `undefined` means "not configured."
+`agent()` returns the RESOLVED shape, [AgentDef](#agentdef): these fields with the
+defaults applied and the conveniences normalized away, plus the two tables
+no author writes (`tools`, `toolsets`).
 
 The field groups live on interfaces this extends, each sharing ONE rule:
 [PipelineTuning](#pipelinetuning) and [PipelinePhrases](#pipelinephrases) (pipeline transport or
-nothing), [AgentModelTuning](#agentmodeltuning)
-(this runtime assembles the request, so S2S refuses them), [AgentGuardrails](#agentguardrails)
-(the only declarations that may stop a turn), [AgentObservation](#agentobservation) (the two
-that deliberately may not), [AgentVoicePresets](#agentvoicepresets) (paid for on every model
-request), [AgentSessionLifecycle](#agentsessionlifecycle) (once per session), [AgentRoutes](#agentroutes)
-and [AgentClientInbox](#agentclientinbox) (no session at all). The `agent()` union and the
+nothing), [AgentModelTuning](#agentmodeltuning) (this runtime assembles the request, so
+S2S refuses them), [AgentGuardrails](#agentguardrails) (the only declarations that may
+stop a turn), [AgentObservation](#agentobservation) (the two that deliberately may not),
+[AgentVoicePresets](#agentvoicepresets) (paid for on every model request),
+[AgentSessionLifecycle](#agentsessionlifecycle) (once per session), [AgentRoutes](#agentroutes) and
+[AgentClientInbox](#agentclientinbox) (no session at all). The `agent()` union and the
 runtime refusal for an untyped caller are both cut from those groups, so no
 field skips either.
 
 #### Extends
 
 - [`PipelineTuning`](#pipelinetuning).[`PipelinePhrases`](#pipelinephrases).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets).[`AgentSessionLifecycle`](#agentsessionlifecycle).[`AgentRoutes`](#agentroutes).[`AgentClientInbox`](#agentclientinbox)
+
+#### Extended by
+
+- [`AgentDef`](#agentdef)
 
 #### Properties
 
@@ -3660,7 +3682,7 @@ What this agent IS, in one line, for whoever is reading a LIST of them.
 Its audience is never the model — a registry page, an A2A card, the
 studio's agent picker, the CLI's `aai list`. Write it as the job the agent
 does ("Books and reschedules dental appointments"), not as instructions;
-the instructions are [AgentDef.systemPrompt](#systemprompt).
+the instructions are [AgentDeclaration.systemPrompt](#systemprompt).
 
 Serializable, unlike most of what an author declares, and that is the whole
 point: `tools`, `events` and `workflows` are host-only because a consumer
@@ -3699,7 +3721,7 @@ again?"` (`DEFAULT_ERROR_PHRASE`)
 
 ###### Inherited from
 
-[`PipelinePhrases`](#pipelinephrases).[`errorPhrase`](#errorphrase-1)
+[`PipelinePhrases`](#pipelinephrases).[`errorPhrase`](#errorphrase-2)
 
 ##### events?
 
@@ -3752,7 +3774,7 @@ of them was reachable from `agent.ts`.
 
 ###### Inherited from
 
-[`AgentObservation`](#agentobservation).[`events`](#events-1)
+[`AgentObservation`](#agentobservation).[`events`](#events-2)
 
 ##### greeting
 
@@ -3816,7 +3838,7 @@ check so both failures are survivable.
 
 ###### Inherited from
 
-[`AgentGuardrails`](#agentguardrails).[`inputGuardrails`](#inputguardrails-1)
+[`AgentGuardrails`](#agentguardrails).[`inputGuardrails`](#inputguardrails-2)
 
 ##### interruption?
 
@@ -3829,7 +3851,7 @@ When the caller may cut the agent off — see [InterruptionTuning](#interruption
 
 ###### Inherited from
 
-[`PipelineTuning`](#pipelinetuning).[`interruption`](#interruption-3)
+[`PipelineTuning`](#pipelinetuning).[`interruption`](#interruption-4)
 
 ##### llm?
 
@@ -3852,7 +3874,7 @@ optional maxOutputTokens?: number;
 
 Cap on generated tokens per step, passed straight through to the provider.
 
-The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-6) has for a one-shot
 call. Per STEP, not per turn: a reply that calls three tools has four
 generations in it, and the cap bounds each.
 
@@ -3863,7 +3885,7 @@ provider stops emitting rather than wrapping up.
 
 ###### Inherited from
 
-[`AgentModelTuning`](#agentmodeltuning).[`maxOutputTokens`](#maxoutputtokens-1)
+[`AgentModelTuning`](#agentmodeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
 
 ##### maxRetries?
 
@@ -3891,7 +3913,7 @@ line do the work.
 
 ###### Inherited from
 
-[`AgentModelTuning`](#agentmodeltuning).[`maxRetries`](#maxretries-1)
+[`AgentModelTuning`](#agentmodeltuning).[`maxRetries`](#maxretries-2)
 
 ##### maxSteps
 
@@ -3927,7 +3949,6 @@ export default agent({
   mcpServers: {
     docs: { url: "https://mcp.example.com/mcp", tokenEnv: "DOCS_MCP_TOKEN" },
   },
-  requiredEnv: ["DOCS_MCP_TOKEN"],
 });
 ```
 
@@ -3935,7 +3956,8 @@ Declaring servers is not enough on its own: a host connects them with
 `withMcpTools` from `@alexkroman1/aai-runtime` before building the runtime,
 because discovery is a network round trip and `createRuntime` is
 synchronous. A server that is down, slow, or missing its token costs its
-own tools and nothing else — never the session.
+own tools and nothing else — never the session. Each `tokenEnv` is added
+to the deploy's env check (see [AgentDeclaration.requiredEnv](#requiredenv)).
 
 ##### mode?
 
@@ -3977,7 +3999,7 @@ after its events are written, so a run it starts can read them back with
 Fire-and-forget: its return value is discarded, an async one is not
 awaited by anything the caller waits on, and a throw is logged. Delivery is
 at-least-once across a restart, so key the work it starts (see
-[SessionEndContext.workflows](#workflows-2)).
+[SessionEndContext.workflows](#workflows-3)).
 
 ###### Parameters
 
@@ -3991,7 +4013,7 @@ at-least-once across a restart, so key the work it starts (see
 
 ###### Inherited from
 
-[`AgentSessionLifecycle`](#agentsessionlifecycle).[`onSessionEnd`](#onsessionend-1)
+[`AgentSessionLifecycle`](#agentsessionlifecycle).[`onSessionEnd`](#onsessionend-2)
 
 ##### outputGuardrails?
 
@@ -4030,7 +4052,7 @@ agent opts into rather than a hook every agent pays for.
 
 ###### Inherited from
 
-[`AgentGuardrails`](#agentguardrails).[`outputGuardrails`](#outputguardrails-1)
+[`AgentGuardrails`](#agentguardrails).[`outputGuardrails`](#outputguardrails-2)
 
 ##### requiredEnv?
 
@@ -4038,11 +4060,16 @@ agent opts into rather than a hook every agent pays for.
 optional requiredEnv?: readonly string[];
 ```
 
-Env var names this agent's code reads (beyond provider credentials, which
-are derived from the `stt`/`llm`/`tts`/`s2s` descriptors automatically).
-Deploys check that every listed name is present in the agent's stored env,
+Env var names this agent's code reads that nothing else declares. Deploys
+(and `aai dev`) check that every listed name is present in the agent's env,
 so a missing key surfaces at deploy time instead of as a runtime failure on
 the first tool call.
+
+**Derived names do not belong here**: provider credentials (from the
+`stt`/`llm`/`tts`/`s2s` descriptors), each MCP server's `tokenEnv`, and the
+keys of the keyed [BuiltinTool](#builtintool)s (`brave_search`, `google_places`,
+`text_me`) are added to the check automatically. List what your own tools
+and steps read.
 
 A tool reads them from [ToolContext.env](#env-6); a step has no
 tool context and reads them with `stepEnv` / `requireStepEnv` from
@@ -4081,7 +4108,7 @@ contributes no keys at all.
 
 ###### Inherited from
 
-[`AgentModelTuning`](#agentmodeltuning).[`resetToolChoice`](#resettoolchoice-1)
+[`AgentModelTuning`](#agentmodeltuning).[`resetToolChoice`](#resettoolchoice-2)
 
 ##### roster?
 
@@ -4114,7 +4141,7 @@ As open as the server itself — see this module's security note.
 
 ###### Inherited from
 
-[`AgentRoutes`](#agentroutes).[`routes`](#routes-1)
+[`AgentRoutes`](#agentroutes).[`routes`](#routes-2)
 
 ##### s2s?
 
@@ -4167,13 +4194,13 @@ answering.
 
 ###### Returns
 
-  \| [`SessionContext`](#sessioncontext-2)
-  \| `Promise`\<[`SessionContext`](#sessioncontext-2) \| `undefined`\>
+  \| [`SessionContext`](#sessioncontext-3)
+  \| `Promise`\<[`SessionContext`](#sessioncontext-3) \| `undefined`\>
   \| `undefined`
 
 ###### Inherited from
 
-[`AgentSessionLifecycle`](#agentsessionlifecycle).[`sessionContext`](#sessioncontext-1)
+[`AgentSessionLifecycle`](#agentsessionlifecycle).[`sessionContext`](#sessioncontext-2)
 
 ##### silence?
 
@@ -4185,7 +4212,7 @@ Dead air and the silence nudge — see [SilenceTuning](#silencetuning).
 
 ###### Inherited from
 
-[`PipelineTuning`](#pipelinetuning).[`silence`](#silence-1)
+[`PipelineTuning`](#pipelinetuning).[`silence`](#silence-2)
 
 ##### startFailurePhrase?
 
@@ -4205,7 +4232,7 @@ cannot hear you. Please hang up and call back."`
 
 ###### Inherited from
 
-[`PipelinePhrases`](#pipelinephrases).[`startFailurePhrase`](#startfailurephrase-1)
+[`PipelinePhrases`](#pipelinephrases).[`startFailurePhrase`](#startfailurephrase-2)
 
 ##### stt?
 
@@ -4242,53 +4269,50 @@ was ignoring the field without a warning.
 ##### syncState?
 
 ```ts
-optional syncState?: Readonly<Record<string, StateProjection<unknown>>>;
+optional syncState?: SyncStateDeclaration;
 ```
 
 Project per-session state to the browser client, so a custom UI can
 render it without the agent hand-rolling a sync channel.
 
-A RECORD keyed by SLOT NAME, one projection per slot the client should
-see: `{ cart: cartSlot.projected }`. The key must be the projection's own
-slot key — `agent()` refuses a mismatch by name — so the `agent_state`
-frame is `{ [slot]: view }` and the browser selects by the same name
-(`useAgentState(cartSlot.projected)` reads `state.cart`). A slot the agent
-does not project never leaves the server, which is the point: session
-state routinely holds things a browser should not have, so the author
-decides what leaves, and whatever a projection returns is exactly what the
-page receives under that key. Pushed after every tool call, and only when
-a projection actually changed: most turns touch no state, and this shares
-a socket with 384 kbps of PCM.
+**A slot's projection, or a list of them**: `syncState: cartSlot.projected`,
+or `syncState: [cartSlot.projected, prefsSlot.projected]`. Each projection
+names its own slot, so the `agent_state` frame is `{ [slot]: view }` and the
+browser selects by the same name (`useAgentState(cartSlot.projected)` reads
+`state.cart`). Two projections of one slot are refused by name.
 
-**Declare the view on the slot and pass [SessionSlot.projected](#projected).**
-One object the agent pushes with and the page renders with, so the frame
-shown before the first tool call cannot describe a different view from the
-ones after it. One view per slot: a page that needs a second shape derives
-it from the first.
+A slot the agent does not project never leaves the server: session state
+routinely holds things a browser should not have, so the author decides
+what leaves, and whatever a projection returns is exactly what the page
+receives under that key. Pushed after every tool call, and only when a
+projection changed (this shares a socket with 384 kbps of PCM).
+
+**Declare the view on the slot** (`sessionSlot(key, create, { view })`) and
+pass [SessionSlot.projected](#projected) at both ends, so the frame rendered
+before the first push cannot describe a different view from the ones after
+it. A page that needs a second shape of a slot derives it from the first.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 type Item = { sku: string; qty: number };
-// `staffPin` has no view, so it stays server-side.
+// `staffPin` is not in the view, so it stays server-side.
 const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
   view: (s) => ({ items: s.items }),
 });
 const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
-agent({ name: "Cart", syncState: { cart: cartSlot.projected } });
+agent({ name: "Cart", syncState: cartSlot.projected });
 // Two slots, one frame: { cart: { items }, prefs: { units } }.
-agent({ name: "Cart", syncState: { cart: cartSlot.projected, prefs: prefsSlot.projected } });
+agent({ name: "Cart", syncState: [cartSlot.projected, prefsSlot.projected] });
 ```
 
-###### Remarks
-
-A projection names its own slot, so the runtime can render a session that
-has run no tool yet — which is what let `AgentDef.state` be deleted rather
-than remembered. Without it, agents hand-roll a snapshot returned from every
-tool and mirrored into `useState`; 58% of generated agents built one.
+The record form `{ cart: cartSlot.projected }` still compiles and is
+normalized to the same thing, but is deprecated: its key must repeat the
+slot's own name. `agent()` returns the record keyed by slot name (see
+[AgentDef.syncState](#syncstate-1)).
 
 ###### Inherited from
 
-[`AgentObservation`](#agentobservation).[`syncState`](#syncstate-1)
+[`AgentObservation`](#agentobservation).[`syncState`](#syncstate-2)
 
 ##### systemPrompt
 
@@ -4371,7 +4395,7 @@ researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
-[`AgentModelTuning`](#agentmodeltuning).[`temperature`](#temperature-1)
+[`AgentModelTuning`](#agentmodeltuning).[`temperature`](#temperature-2)
 
 ##### toolChoice?
 
@@ -4388,42 +4412,6 @@ How the LLM selects tools each step.
 Honored in pipeline mode and by the OpenAI Realtime transport; the
 AssemblyAI S2S service runs the tool loop service-side and does not
 take a tool-choice parameter.
-
-##### tools
-
-```ts
-tools: ToolMap;
-```
-
-The tools the agent may invoke, keyed by the name the model calls.
-
-**Not authored — RESOLVED.** `agent()` returns this empty and rejects a
-`tools` argument outright (`InlineToolsMisuse`); the table is filled by
-`withTools`, over a registry built from a `tools/` directory. The build is
-what enumerates that directory — a deployed agent is handed one ESM string
-and has no filesystem to scan — and a spec imports the same lowering
-ready-made: `import agentDef from "virtual:aai/agent"` under vitest, or
-`deployedAgent(def, { tools, systemPrompt })` from
-`@alexkroman1/aai/testing` under any other runner.
-So a tool's name is its FILE name and nothing else records it.
-
-###### Remarks
-
-This record carries no state type, and there is none to carry: a tool reads
-and writes session state through [sessionSlot](#sessionslot-1), which types the value
-in the module that declares the slot. The `NoInfer<S>` this used to hold
-existed to keep a single un-annotated tool from dragging the agent's whole
-state shape back to `unknown`, which is a problem a slot does not have.
-
-##### toolsets?
-
-```ts
-optional toolsets?: readonly Toolset[];
-```
-
-Every toolset beyond the `tools/` files — RESOLVED, never authored: `agent()`
-puts the roster's here and `withMcpTools` an MCP server's. Read the whole
-table through `agentToolsets` (`/manifest`). Host-only. See `sdk/toolset.ts`.
 
 ##### tts?
 
@@ -4445,7 +4433,7 @@ When the caller's turn ends — see [TurnTakingTuning](#turntakingtuning).
 
 ###### Inherited from
 
-[`PipelineTuning`](#pipelinetuning).[`turnTaking`](#turntaking-1)
+[`PipelineTuning`](#pipelinetuning).[`turnTaking`](#turntaking-2)
 
 ##### usageLimits?
 
@@ -4453,7 +4441,7 @@ When the caller's turn ends — see [TurnTakingTuning](#turntakingtuning).
 optional usageLimits?: UsageLimits;
 ```
 
-Bound what one session may spend — see [UsageLimits](#usagelimits-2).
+Bound what one session may spend — see [UsageLimits](#usagelimits-3).
 
 ###### Default Value
 
@@ -4465,7 +4453,7 @@ session emits nothing rather than spending a durable event per model step.
 
 ###### Inherited from
 
-[`AgentModelTuning`](#agentmodeltuning).[`usageLimits`](#usagelimits-1)
+[`AgentModelTuning`](#agentmodeltuning).[`usageLimits`](#usagelimits-2)
 
 ##### voicePresets?
 
@@ -4501,7 +4489,7 @@ prompt's shape.
 
 ###### Inherited from
 
-[`AgentVoicePresets`](#agentvoicepresets).[`voicePresets`](#voicepresets-1)
+[`AgentVoicePresets`](#agentvoicepresets).[`voicePresets`](#voicepresets-2)
 
 ##### workflows?
 
@@ -4524,6 +4512,975 @@ served by the GUEST from its own live agent definition, the same way
 
 ***
 
+### AgentDef
+
+The RESOLVED agent definition — what `agent()` returns and what a host runs.
+
+Every [AgentDeclaration](#agentdeclaration) field, with the core ones (`systemPrompt`,
+`greeting`, `maxSteps`, `mode`) resolved to their final values, the author
+conveniences (`llm` as a model-id string, the end-of-turn window, `syncState`
+as a projection or a list) normalized to one canonical spelling, and the two
+tables nobody authors. Optional fields remain optional — `undefined` means
+"not configured". Write an [AgentParams](#agentparams) member; read this.
+
+#### Extends
+
+- [`AgentDeclaration`](#agentdeclaration)
+
+#### Properties
+
+##### builtinTools?
+
+```ts
+optional builtinTools?: readonly BuiltinTool[];
+```
+
+Built-in server-side tools enabled for this agent. Unset enables only
+`think` (`DEFAULT_BUILTIN_TOOLS`), a silent reasoning scratchpad the model
+uses between tool calls; every other built-in is opt-in by name. Setting
+the field REPLACES the default — include `"think"` to keep it, and pass
+`[]` for no built-ins at all. See [BuiltinTool](#builtintool) for the catalog.
+
+###### Default Value
+
+`["think"]` (`DEFAULT_BUILTIN_TOOLS`)
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`builtinTools`](#builtintools)
+
+##### clientInbox?
+
+```ts
+optional clientInbox?: ClientInboxOptions;
+```
+
+Defaults for what a workflow pushes to a device over `WS /inbox`: today the
+`sampleRate` `stepSayOnClient` speaks at. Serializable, and read by the
+host that serves the inbox, so it holds for every run in the deployment.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "Speaker", clientInbox: { sampleRate: 16_000 } });
+```
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`clientInbox`](#clientinbox-1)
+
+##### description?
+
+```ts
+optional description?: string;
+```
+
+What this agent IS, in one line, for whoever is reading a LIST of them.
+
+Its audience is never the model — a registry page, an A2A card, the
+studio's agent picker, the CLI's `aai list`. Write it as the job the agent
+does ("Books and reschedules dental appointments"), not as instructions;
+the instructions are [AgentDeclaration.systemPrompt](#systemprompt).
+
+Serializable, unlike most of what an author declares, and that is the whole
+point: `tools`, `events` and `workflows` are host-only because a consumer
+of a stored config could not act on a function, but a description is
+exactly what such a consumer wants and could not get. Every peer SDK puts
+one on the agent (Anthropic's `AgentDefinition.description` is required);
+this SDK had one on [SpeakerDef](#speakerdef), [WorkflowDef](#workflowdef) and
+[ToolDef](#tooldef) and none on the agent itself.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`description`](#description)
+
+##### dialogs?
+
+```ts
+optional dialogs?: readonly AnyDialog[];
+```
+
+The dialogs this agent runs — see [dialog](#dialog-1). **Declaring one here is
+what wires it to the SESSION**: its `@`-prefixed transitions fire (see
+[DialogSessionEventName](#dialogsessioneventname)), its states' `timeout` deadlines are armed,
+and its [DialogVoiceConfig](#dialogvoiceconfig) is applied per state — none of which a
+dialog can reach from inside a tool, because all three happen when no tool
+is running. An UNDECLARED dialog is unchanged. Host-only, like `tools`.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`dialogs`](#dialogs)
+
+##### errorPhrase?
+
+```ts
+optional errorPhrase?: string;
+```
+
+Phrase spoken when the turn's LLM stream fails — a failed turn produces no
+text, so nothing would otherwise reach TTS. Set `""` to disable.
+
+###### Default Value
+
+`"Sorry, I had a problem just then. Could you say that
+again?"` (`DEFAULT_ERROR_PHRASE`)
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`errorPhrase`](#errorphrase)
+
+##### events?
+
+```ts
+optional events?: SessionEventHandlers;
+```
+
+Observe the session's own event stream — an audit log, per-turn metrics, or
+"write every call to my own database".
+
+Keyed by event type, with `"*"` matching every event. Typed handlers run
+first, then `"*"`, and both run AFTER the event has been recorded in the
+session's retained stream and sent to the client:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "Audited",
+  events: {
+    "tool.called": (e, ctx) => {
+      // A hook gets `ctx.env` and `ctx.slots`, never a database — persist
+      // through a client of your own if you need to.
+      void fetch(`${ctx.env.AUDIT_URL}`, {
+        method: "POST",
+        body: JSON.stringify({ id: e.meta.id, tool: e.toolName }),
+      });
+    },
+    "*": (e) => console.log(e.meta.at, e.type),
+  },
+});
+```
+
+Three properties are load-bearing, and each is a rule rather than a detail:
+
+- **Observe-only.** A handler cannot inject model context, change a reply, or
+  cancel anything. That is what keeps the stream a LOG rather than a second
+  control path, and it is why a handler receives no way to reply.
+- **A throw is NON-FATAL.** It is logged against the event and the session
+  continues — a failing audit hook must not end a phone call. An async
+  handler is not awaited either, for the same reason: the caller is mid-turn.
+- **Delivery is at-least-once, and `meta.id` is the key.** The id is stable
+  across replays, so a handler storing content keys on it; a handler doing a
+  non-idempotent side effect keys on the work's own coordinates instead,
+  because retried work re-emits under fresh ids.
+
+Before this there was no way for an agent author to observe their own agent
+at all: the framework carried 51 internal `on*` callback options and not one
+of them was reachable from `agent.ts`.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`events`](#events)
+
+##### greeting
+
+```ts
+greeting: string;
+```
+
+Sentence spoken when a session starts. Set `""` to start silent.
+
+###### Default Value
+
+`"Hey there! I'm an AI voice assistant. What can I help you
+with?"` (`DEFAULT_GREETING`)
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`greeting`](#greeting)
+
+##### idleTimeoutMs?
+
+```ts
+optional idleTimeoutMs?: number;
+```
+
+How long the session may go with no inbound audio before it is closed
+(ms). Measures silence, not call length — re-armed on every audio frame.
+`0` or a non-finite value disables the timer entirely.
+
+###### Default Value
+
+`300_000` (5 minutes, `DEFAULT_IDLE_TIMEOUT_MS`)
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`idleTimeoutMs`](#idletimeoutms)
+
+##### inputGuardrails?
+
+```ts
+optional inputGuardrails?: readonly AgentGuardrail[];
+```
+
+Check what the CALLER said, before the turn is sent to the model.
+
+Pipeline mode only — see this module's header. Run in order on each
+committed user utterance; the first one to return a string wins and the model is never asked. The agent says that string
+instead, the turn is recorded as having happened (so a caller who keeps
+asking is not talking to an agent with amnesia), and the refused utterance
+stays in the conversation exactly as it was said.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Support",
+  inputGuardrails: [
+    (text) =>
+      /\b\d{3}-\d{2}-\d{4}\b/.test(text)
+        ? "Please don't read out your social security number — I don't need it."
+        : true,
+  ],
+});
+```
+
+It runs on what the transcriber HEARD, which is the only thing this
+runtime has: a caller who says a forbidden thing and is misheard is not
+caught, and one who is misheard INTO saying it is caught wrongly. Write the
+check so both failures are survivable.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`inputGuardrails`](#inputguardrails)
+
+##### interruption?
+
+```ts
+optional interruption?: InterruptionTuning | "off";
+```
+
+When the caller may cut the agent off — see [InterruptionTuning](#interruptiontuning);
+`"off"` means never.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`interruption`](#interruption)
+
+##### llm?
+
+```ts
+optional llm?: LlmProvider;
+```
+
+Pluggable LLM provider descriptor from `@alexkroman1/aai/llm` (e.g.
+`llm({ provider: "anthropic", model })`) for pipeline mode. Unset (with no `s2s`), the
+stage defaults to the AssemblyAI LLM Gateway. Note this is pure
+serializable data, not a Vercel AI SDK `LanguageModel` instance — the
+host resolves the descriptor into a `LanguageModel` at session start,
+using credentials from the agent's env.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`llm`](#llm)
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-6) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`maxOutputTokens`](#maxoutputtokens)
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: number;
+```
+
+How many times a FAILED provider call is retried before the step is given
+up on.
+
+###### Default Value
+
+the AI SDK's own (2 retries, exponential backoff)
+
+Transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
+a subagent's requests retry on the AI SDK default, and its guardrail
+sending an answer back is [SpeakerDef.maxRevisions](#maxrevisions).
+
+`0` is the value to reach for on a live call, and the reason is the clock:
+the default backoff can spend several seconds before the turn is declared
+failed, and the caller hears every one of them as silence. An agent whose
+`errorPhrase` should arrive promptly sets this to `0` and lets the recovery
+line do the work.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`maxRetries`](#maxretries)
+
+##### maxSteps
+
+```ts
+maxSteps: number;
+```
+
+Max TOOL-CALLING steps per reply — bounds runaway tool loops. On reaching
+the cap the pipeline spends one more step with `toolChoice: "none"`, so a
+capped turn still answers rather than stopping mid-chain in silence.
+
+###### Default Value
+
+`10` (`DEFAULT_MAX_STEPS`)
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`maxSteps`](#maxsteps)
+
+##### mcpServers?
+
+```ts
+optional mcpServers?: Readonly<Record<string, McpServerConfig>>;
+```
+
+MCP servers whose tools the model may call alongside this agent's own.
+
+Each key names one server and prefixes every tool it contributes, so a
+`docs` server's `search` arrives as `mcp_docs_search` — a third party's
+tool can never stand where one of yours stood. HTTP(S) only.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Support",
+  mcpServers: {
+    docs: { url: "https://mcp.example.com/mcp", tokenEnv: "DOCS_MCP_TOKEN" },
+  },
+});
+```
+
+Declaring servers is not enough on its own: a host connects them with
+`withMcpTools` from `@alexkroman1/aai-runtime` before building the runtime,
+because discovery is a network round trip and `createRuntime` is
+synchronous. A server that is down, slow, or missing its token costs its
+own tools and nothing else — never the session. Each `tokenEnv` is added
+to the deploy's env check (see [AgentDeclaration.requiredEnv](#requiredenv)).
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`mcpServers`](#mcpservers)
+
+##### mode?
+
+```ts
+optional mode?: AgentMode;
+```
+
+Which kind of agent this is — see [AgentMode](#agentmode), which says what each
+mode has.
+
+###### Default Value
+
+`"pipeline"`
+
+`agent()` always writes it on the definition it returns; absent means
+`"pipeline"` everywhere it is read. It crosses the wire unchanged, so the
+browser, the CLI and a deploy all see the same mode the author declared — a
+workflow app is `"workflow-app"` there too, and its session-less front door
+is a consequence of that rather than a second flag.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`mode`](#mode)
+
+##### name
+
+```ts
+name: string;
+```
+
+Display name shown by the default client UI.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`name`](#name)
+
+##### onSessionEnd?
+
+```ts
+optional onSessionEnd?: (ctx: SessionEndContext) => unknown;
+```
+
+Called each time a session stops — hang-up, disconnect or idle timeout —
+after its events are written, so a run it starts can read them back with
+`stepClientTranscript`.
+
+Fire-and-forget: its return value is discarded, an async one is not
+awaited by anything the caller waits on, and a throw is logged. Delivery is
+at-least-once across a restart, so key the work it starts (see
+[SessionEndContext.workflows](#workflows-3)).
+
+###### Parameters
+
+###### ctx
+
+[`SessionEndContext`](#sessionendcontext)
+
+###### Returns
+
+`unknown`
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`onSessionEnd`](#onsessionend)
+
+##### outputGuardrails?
+
+```ts
+optional outputGuardrails?: readonly AgentGuardrail[];
+```
+
+Check what the AGENT is about to say, before any of it is spoken.
+
+Pipeline mode only — see this module's header for why S2S and text refuse
+it. Run in order on the reply's full text once the model has finished and
+before a single word reaches the synthesizer; the first one to return a
+string wins and that sentence is spoken in place of the reply. The blocked
+text is never synthesized and never enters the conversation history.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Pharmacy Line",
+  outputGuardrails: [
+    (text) =>
+      /\b\d+\s?(mg|ml|mcg)\b/i.test(text)
+        ? "I can't give dosage information over the phone. Please check with your pharmacist."
+        : true,
+  ],
+});
+```
+
+**It costs the streaming.** A reply that must be judged whole cannot be
+spoken as it arrives, so declaring one trades time-to-first-word for the
+check: the caller hears nothing until the model has finished, with the
+dead-air cover filling the gap exactly as it does during a tool chain.
+That is the price of a block that is real, and it is why this is a field an
+agent opts into rather than a hook every agent pays for.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`outputGuardrails`](#outputguardrails)
+
+##### requiredEnv?
+
+```ts
+optional requiredEnv?: readonly string[];
+```
+
+Env var names this agent's code reads that nothing else declares. Deploys
+(and `aai dev`) check that every listed name is present in the agent's env,
+so a missing key surfaces at deploy time instead of as a runtime failure on
+the first tool call.
+
+**Derived names do not belong here**: provider credentials (from the
+`stt`/`llm`/`tts`/`s2s` descriptors), each MCP server's `tokenEnv`, and the
+keys of the keyed [BuiltinTool](#builtintool)s (`brave_search`, `google_places`,
+`text_me`) are added to the check automatically. List what your own tools
+and steps read.
+
+A tool reads them from [ToolContext.env](#env-6); a step has no
+tool context and reads them with `stepEnv` / `requireStepEnv` from
+`@alexkroman1/aai/step`, which resolve the same record.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`requiredEnv`](#requiredenv)
+
+##### resetToolChoice?
+
+```ts
+optional resetToolChoice?: boolean;
+```
+
+Put `toolChoice` back to `"auto"` after the FIRST step of a reply.
+
+###### Default Value
+
+`true`
+
+Only ever observable alongside a `toolChoice` that DEMANDS a call
+(`"required"`, or a named tool). Left on every step, such a policy is
+re-applied to each one — so the model is obliged to call a tool again after
+it already has, and again after that, until the whole `maxSteps` budget is
+spent and `forceFinalAnswer` rescues the turn on the reserved step.
+The turn still answers (it is bounded, not a loop), but it answers after
+`maxSteps` round trips it had no use for, and the caller waits through all
+of them.
+
+What `toolChoice: "required"` almost always means is "start by calling
+something", which is exactly one step. So the reset is ON by default, the
+same default OpenAI's Agents SDK ships (`reset_tool_choice`), and
+`resetToolChoice: false` is how an agent that really does want a tool call
+on every step says so.
+
+**It changes nothing for an agent that sets no `toolChoice`**, or one that
+sets `"auto"` or `"none"`: there is no demand to reset, and the preparer
+contributes no keys at all.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`resetToolChoice`](#resettoolchoice)
+
+##### roster?
+
+```ts
+optional roster?: Roster<string>;
+```
+
+The [SpeakerDef](#speakerdef)s the MODEL routes to: `handoff` puts a `speaks: true`
+entry on the line, `delegate` hands the rest a task. Mints both tools (and
+each speaking entry's gated tools) into `toolsets`, so a `tools/handoff.ts`
+or `tools/delegate.ts` beside it is a collision. Host-only. See `sdk/roster.ts`.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`roster`](#roster)
+
+##### routes?
+
+```ts
+optional routes?: Record<string, RouteHandler>;
+```
+
+JSON endpoints served under `/api`, keyed `"<METHOD> <path>"`:
+`"GET /memories"`, `"POST /memories/:id"`. A `:name` segment matches one
+path segment and is handed to the handler as `req.params.name`. The method
+is one of `GET`, `POST`, `PUT`, `PATCH`, `DELETE`; a key that is not that
+shape fails the runtime's start rather than never matching.
+
+An unknown path is a JSON 404; a known path with the wrong method is a 405
+naming the methods it has. Bodies are capped (`MAX_ROUTE_BODY_BYTES` on
+`aai-runtime`, 64 KiB) and must be JSON.
+
+As open as the server itself — see this module's security note.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`routes`](#routes)
+
+##### s2s?
+
+```ts
+optional s2s?: S2sProvider;
+```
+
+Pluggable S2S provider descriptor — the explicit opt-in to
+speech-to-speech mode (e.g. `assemblyAIS2s()` for AssemblyAI's Voice
+Agent API, or `openAIS2s()`). Unset, the agent runs the default
+cascaded pipeline. Mutually exclusive with the `stt`/`llm`/`tts`
+pipeline triple.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`s2s`](#s2s)
+
+##### sessionContext?
+
+```ts
+optional sessionContext?: (ctx: SessionContextArgs) => 
+  | SessionContext
+  | Promise<SessionContext | undefined>
+  | undefined;
+```
+
+Context for a session, fetched once when it connects and before its first
+model call.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "Kitchen speaker",
+  async sessionContext({ clientId, env, signal }) {
+    if (!clientId) return undefined;
+    const res = await fetch(`${env.MEMORY_URL}/profile/${clientId}`, { signal });
+    const { summary, summarizedUntil } = await res.json();
+    return { instructions: summary, historySince: summarizedUntil };
+  },
+});
+```
+
+Bounded by `SESSION_CONTEXT_TIMEOUT_MS` (1.5 s): the caller is waiting to
+be heard. A throw, a timeout or `undefined` is logged and the session starts
+without it — a memory service that is down must not stop the speaker
+answering.
+
+###### Parameters
+
+###### ctx
+
+[`SessionContextArgs`](#sessioncontextargs)
+
+###### Returns
+
+  \| [`SessionContext`](#sessioncontext-3)
+  \| `Promise`\<[`SessionContext`](#sessioncontext-3) \| `undefined`\>
+  \| `undefined`
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`sessionContext`](#sessioncontext)
+
+##### silence?
+
+```ts
+optional silence?: SilenceTuning;
+```
+
+Dead air and the silence nudge — see [SilenceTuning](#silencetuning).
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`silence`](#silence)
+
+##### startFailurePhrase?
+
+```ts
+optional startFailurePhrase?: string;
+```
+
+Phrase spoken when a provider fails to open, so a session that cannot
+start says so instead of holding an open line in silence. Only reachable
+when TTS itself came up. Set `""` to disable.
+
+###### Default Value
+
+`"I am sorry, I am having trouble with my connection and
+cannot hear you. Please hang up and call back."`
+(`DEFAULT_START_FAILURE_PHRASE`)
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`startFailurePhrase`](#startfailurephrase)
+
+##### stt?
+
+```ts
+optional stt?: SttProvider;
+```
+
+Pluggable STT provider for pipeline mode. Unset (with no `s2s`), the
+stage defaults to AssemblyAI STT — each pipeline stage is individually
+optional, and unset stages are filled from the all-AssemblyAI pipeline
+(`assemblyAIPipeline()`).
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`stt`](#stt)
+
+##### sttPrompt?
+
+```ts
+optional sttPrompt?: string;
+```
+
+Bias prompt for transcription — use it to teach the transcriber the agent's
+own vocabulary (product names, spelled-out identifiers).
+
+###### Default Value
+
+`""` (`DEFAULT_STT_PROMPT`) — unbiased transcription;
+that constant's doc shows what an effective prompt looks like.
+
+Honoured in both session modes: the pipeline passes it to its STT stage,
+S2S sends it as `input.transcription_prompt` (trimmed to that field's
+1750-char cap). It was pipeline-only until measurement showed what it costs
+to drop — on tau2-bench retail a transcription prompt took the caller's
+spelled first name from 1 of 6 attempts correct to 6 of 6, and the S2S path
+was ignoring the field without a warning.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`sttPrompt`](#sttprompt)
+
+##### syncState?
+
+```ts
+optional syncState?: Readonly<Record<string, StateProjection<unknown>>>;
+```
+
+The `syncState` projections, keyed by each one's slot name — the canonical
+form `agent()` normalizes a projection or a list into. See
+[AgentObservation.syncState](#syncstate) for what to write.
+
+###### Overrides
+
+[`AgentDeclaration`](#agentdeclaration).[`syncState`](#syncstate)
+
+##### systemPrompt
+
+```ts
+systemPrompt: AgentSystemPrompt;
+```
+
+System prompt driving the LLM — the text, or a function that computes it
+per request from [AgentSessionContext](#agentsessioncontext).
+
+A resolver is how a prompt reads the session's own state: which phase the
+dialog is in, whether the caller is authenticated, what is in the cart.
+It is called once per model request (so once per STEP of a tool-calling
+reply), synchronously, and its answer lands exactly where a string's does —
+appended under the agent-specific-instructions header, after the
+framework's voice sections. See `agent-instructions.ts`, which owns the
+rest, including what an S2S agent gets (per-CONNECTION, not per-turn).
+
+```ts
+import { agent, sessionSlot } from "@alexkroman1/aai";
+
+const caller = sessionSlot("caller", () => ({ verified: false }));
+
+export default agent({
+  name: "Bank Line",
+  systemPrompt: (ctx) =>
+    caller.get(ctx).verified
+      ? "The caller is verified. You may discuss balances."
+      : "The caller is NOT verified. Verify them before discussing anything.",
+});
+```
+
+###### Default Value
+
+[DEFAULT\_SYSTEM\_PROMPT](#default_system_prompt) — the framework's own voice-agent
+prompt. It is assembled from parts, so it is the one default here whose
+VALUE cannot usefully be inlined; read the constant.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`systemPrompt`](#systemprompt)
+
+##### telephony?
+
+```ts
+optional telephony?: TelephonyAccess;
+```
+
+Which phone carriers may open a media stream against this agent — and so
+whether `WS /phone` is served at all.
+
+###### Default Value
+
+none — the route is not mounted
+
+`true` admits every carrier the runtime ships a codec for; a list admits
+exactly those (`telephony: ["twilio"]` refuses a Telnyx stream); `false`
+and an absent field are the same refusal. See [TelephonyAccess](#telephonyaccess).
+
+Declaring it is what MOUNTS the route. It is the one surface an agent gets
+that is dialled from OUTSIDE the deployment — a carrier reaches it by a URL
+a phone number points at, not through the page this server hands a browser
+— so an agent with no phone number has no use for it, and used to serve
+both carriers' framing anyway from the moment it booted.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "Support", telephony: ["twilio"] });
+```
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`telephony`](#telephony)
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+Sampling temperature.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`temperature`](#temperature)
+
+##### toolChoice?
+
+```ts
+optional toolChoice?: ToolChoice;
+```
+
+How the LLM selects tools each step.
+
+###### Default Value
+
+`"auto"` (`DEFAULT_TOOL_CHOICE`) — the model decides.
+
+Honored in pipeline mode and by the OpenAI Realtime transport; the
+AssemblyAI S2S service runs the tool loop service-side and does not
+take a tool-choice parameter.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`toolChoice`](#toolchoice)
+
+##### tools
+
+```ts
+tools: ToolMap;
+```
+
+The tools the agent may invoke, keyed by the name the model calls.
+
+**Not authored.** `agent()` returns this empty and rejects a
+`tools` argument outright (`InlineToolsMisuse`); the table is filled by
+`withTools`, over a registry built from a `tools/` directory. The build is
+what enumerates that directory — a deployed agent is handed one ESM string
+and has no filesystem to scan — and a spec imports the same lowering
+ready-made: `import agentDef from "virtual:aai/agent"` under vitest, or
+`deployedAgent(def, { tools, systemPrompt })` from
+`@alexkroman1/aai/testing` under any other runner.
+So a tool's name is its FILE name and nothing else records it. It carries
+no state type: a tool reaches session state through [sessionSlot](#sessionslot-1).
+
+##### toolsets?
+
+```ts
+optional toolsets?: readonly Toolset[];
+```
+
+Every toolset beyond the `tools/` files — RESOLVED, never authored: `agent()`
+puts the roster's here and `withMcpTools` an MCP server's. Read the whole
+table through `agentToolsets` (`/manifest`). Host-only. See `sdk/toolset.ts`.
+
+##### tts?
+
+```ts
+optional tts?: TtsProvider;
+```
+
+Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
+stage defaults to `assemblyAITts()`. A voice is this descriptor's option
+(`assemblyAITts({ voice: "michael" })`); there is no agent-level field.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`tts`](#tts)
+
+##### turnTaking?
+
+```ts
+optional turnTaking?: TurnTakingTuning;
+```
+
+When the caller's turn ends — see [TurnTakingTuning](#turntakingtuning).
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`turnTaking`](#turntaking)
+
+##### usageLimits?
+
+```ts
+optional usageLimits?: UsageLimits;
+```
+
+Bound what one session may spend — see [UsageLimits](#usagelimits-3).
+
+###### Default Value
+
+unset — no cap. Usage is still MEASURED either way; whether it
+is also reported on the session event stream depends on whether anything
+reads it. Declaring a limit turns `usage.updated` on, and so does an
+`agent({ events })` handler for `usage.updated` or `"*"` — an unobserved
+session emits nothing rather than spending a durable event per model step.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`usageLimits`](#usagelimits)
+
+##### voicePresets?
+
+```ts
+optional voicePresets?: readonly VoicePresetName[];
+```
+
+Opt-in prompt presets — named reliability behaviours, composed into the
+system prompt above your own instructions.
+
+###### Default Value
+
+none — an agent that declares nothing here sends exactly the
+prompt it sent before the field existed.
+
+Each name costs tokens on EVERY model request: `echoVerification` ~190,
+`speechNormalization` ~920, `natoAlphabet` ~190. Turn
+on what the desk needs and nothing else — see [VOICE\_PRESETS](#voice_presets) for the
+exact text of each and for what it overrides.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Claims Intake",
+  voicePresets: ["echoVerification", "natoAlphabet"],
+});
+```
+
+Order is ignored (the framework emits them in a fixed order) and a repeat
+is emitted once, so a list assembled from a config cannot change the
+prompt's shape.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`voicePresets`](#voicepresets)
+
+##### workflows?
+
+```ts
+optional workflows?: Readonly<Record<string, WorkflowDef>>;
+```
+
+Durable workflows this agent may start, keyed by workflow name.
+
+###### Remarks
+
+The key is the NAME — nothing else records it, which is what makes a rename
+a one-place change and what `ctx.workflows.start(def, …)` resolves a
+definition against by identity.
+
+Host-only, like `tools`, because a definition holds a function. The platform
+therefore never reads this record: a page's `GET /workflows` listing is
+served by the GUEST from its own live agent definition, the same way
+`name`/`greeting` are proxied rather than read from the stored config.
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`workflows`](#workflows)
+
+***
+
 ### AgentGuardrails
 
 The two guardrail fields on [AgentDef](#agentdef) — see this module's header for
@@ -4531,7 +5488,7 @@ what each can actually prevent.
 
 #### Extended by
 
-- [`AgentDef`](#agentdef)
+- [`AgentDeclaration`](#agentdeclaration)
 
 #### Properties
 
@@ -4620,7 +5577,7 @@ and it spends on its PARENT's budget, which is where `usageLimits` lives.
 
 #### Extended by
 
-- [`AgentDef`](#agentdef)
+- [`AgentDeclaration`](#agentdeclaration)
 
 #### Properties
 
@@ -4632,7 +5589,7 @@ optional maxOutputTokens?: number;
 
 Cap on generated tokens per step, passed straight through to the provider.
 
-The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-6) has for a one-shot
 call. Per STEP, not per turn: a reply that calls three tools has four
 generations in it, and the cap bounds each.
 
@@ -4643,7 +5600,7 @@ provider stops emitting rather than wrapping up.
 
 ###### Inherited from
 
-[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-3)
 
 ##### maxRetries?
 
@@ -4671,7 +5628,7 @@ line do the work.
 
 ###### Inherited from
 
-[`ModelTuning`](#modeltuning).[`maxRetries`](#maxretries-2)
+[`ModelTuning`](#modeltuning).[`maxRetries`](#maxretries-3)
 
 ##### resetToolChoice?
 
@@ -4719,7 +5676,7 @@ researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
-[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-5)
 
 ##### usageLimits?
 
@@ -4727,7 +5684,7 @@ researcher subagent and the voice that relays what it found.
 optional usageLimits?: UsageLimits;
 ```
 
-Bound what one session may spend — see [UsageLimits](#usagelimits-2).
+Bound what one session may spend — see [UsageLimits](#usagelimits-3).
 
 ###### Default Value
 
@@ -4745,7 +5702,7 @@ The observe-only half of an agent declaration — see this module's header.
 
 #### Extended by
 
-- [`AgentDef`](#agentdef)
+- [`AgentDeclaration`](#agentdeclaration)
 
 #### Properties
 
@@ -4801,49 +5758,46 @@ of them was reachable from `agent.ts`.
 ##### syncState?
 
 ```ts
-optional syncState?: Readonly<Record<string, StateProjection<unknown>>>;
+optional syncState?: SyncStateDeclaration;
 ```
 
 Project per-session state to the browser client, so a custom UI can
 render it without the agent hand-rolling a sync channel.
 
-A RECORD keyed by SLOT NAME, one projection per slot the client should
-see: `{ cart: cartSlot.projected }`. The key must be the projection's own
-slot key — `agent()` refuses a mismatch by name — so the `agent_state`
-frame is `{ [slot]: view }` and the browser selects by the same name
-(`useAgentState(cartSlot.projected)` reads `state.cart`). A slot the agent
-does not project never leaves the server, which is the point: session
-state routinely holds things a browser should not have, so the author
-decides what leaves, and whatever a projection returns is exactly what the
-page receives under that key. Pushed after every tool call, and only when
-a projection actually changed: most turns touch no state, and this shares
-a socket with 384 kbps of PCM.
+**A slot's projection, or a list of them**: `syncState: cartSlot.projected`,
+or `syncState: [cartSlot.projected, prefsSlot.projected]`. Each projection
+names its own slot, so the `agent_state` frame is `{ [slot]: view }` and the
+browser selects by the same name (`useAgentState(cartSlot.projected)` reads
+`state.cart`). Two projections of one slot are refused by name.
 
-**Declare the view on the slot and pass [SessionSlot.projected](#projected).**
-One object the agent pushes with and the page renders with, so the frame
-shown before the first tool call cannot describe a different view from the
-ones after it. One view per slot: a page that needs a second shape derives
-it from the first.
+A slot the agent does not project never leaves the server: session state
+routinely holds things a browser should not have, so the author decides
+what leaves, and whatever a projection returns is exactly what the page
+receives under that key. Pushed after every tool call, and only when a
+projection changed (this shares a socket with 384 kbps of PCM).
+
+**Declare the view on the slot** (`sessionSlot(key, create, { view })`) and
+pass [SessionSlot.projected](#projected) at both ends, so the frame rendered
+before the first push cannot describe a different view from the ones after
+it. A page that needs a second shape of a slot derives it from the first.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 type Item = { sku: string; qty: number };
-// `staffPin` has no view, so it stays server-side.
+// `staffPin` is not in the view, so it stays server-side.
 const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
   view: (s) => ({ items: s.items }),
 });
 const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
-agent({ name: "Cart", syncState: { cart: cartSlot.projected } });
+agent({ name: "Cart", syncState: cartSlot.projected });
 // Two slots, one frame: { cart: { items }, prefs: { units } }.
-agent({ name: "Cart", syncState: { cart: cartSlot.projected, prefs: prefsSlot.projected } });
+agent({ name: "Cart", syncState: [cartSlot.projected, prefsSlot.projected] });
 ```
 
-###### Remarks
-
-A projection names its own slot, so the runtime can render a session that
-has run no tool yet — which is what let `AgentDef.state` be deleted rather
-than remembered. Without it, agents hand-roll a snapshot returned from every
-tool and mirrored into `useState`; 58% of generated agents built one.
+The record form `{ cart: cartSlot.projected }` still compiles and is
+normalized to the same thing, but is deprecated: its key must repeat the
+slot's own name. `agent()` returns the record keyed by slot name (see
+[AgentDef.syncState](#syncstate-1)).
 
 ***
 
@@ -4853,7 +5807,7 @@ The `routes` field of an agent declaration — see this module's header.
 
 #### Extended by
 
-- [`AgentDef`](#agentdef)
+- [`AgentDeclaration`](#agentdeclaration)
 
 #### Properties
 
@@ -4928,7 +5882,7 @@ header.
 
 #### Extended by
 
-- [`AgentDef`](#agentdef)
+- [`AgentDeclaration`](#agentdeclaration)
 
 #### Properties
 
@@ -4945,7 +5899,7 @@ after its events are written, so a run it starts can read them back with
 Fire-and-forget: its return value is discarded, an async one is not
 awaited by anything the caller waits on, and a throw is logged. Delivery is
 at-least-once across a restart, so key the work it starts (see
-[SessionEndContext.workflows](#workflows-2)).
+[SessionEndContext.workflows](#workflows-3)).
 
 ###### Parameters
 
@@ -4996,8 +5950,8 @@ answering.
 
 ###### Returns
 
-  \| [`SessionContext`](#sessioncontext-2)
-  \| `Promise`\<[`SessionContext`](#sessioncontext-2) \| `undefined`\>
+  \| [`SessionContext`](#sessioncontext-3)
+  \| `Promise`\<[`SessionContext`](#sessioncontext-3) \| `undefined`\>
   \| `undefined`
 
 ***
@@ -5014,7 +5968,7 @@ cost: **every name in the list is paid for on every model request**, and
 
 #### Extended by
 
-- [`AgentDef`](#agentdef)
+- [`AgentDeclaration`](#agentdeclaration)
 
 #### Properties
 
@@ -5672,10 +6626,10 @@ projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
 A `syncState` projection of this dialog's position, so a client can render
 the step the caller is on without the agent hand-rolling a sync channel.
 
-The projector is REQUIRED, exactly as [SessionSlot.projection](#projection-1)'s is,
-and for the same reason: an optional one cannot be typed without asserting
-that the un-projected [DialogPosition](#dialogposition) is the caller's `V`. Project the
-identity — `dialog.projection((at) => at)` — to push the whole position.
+The projector is REQUIRED: an optional one cannot be typed without
+asserting that the un-projected [DialogPosition](#dialogposition) is the caller's `V`.
+Project the identity — `dialog.projection((at) => at)` — to push the whole
+position.
 
 ###### Type Parameters
 
@@ -5712,7 +6666,7 @@ watching, write nothing. A send stores the snapshot whether or not the
 machine moved, so on a `durable` dialog that would be a store round-trip per
 transcript frame.
 
-The runtime calls this for a dialog listed in [AgentDef.dialogs](#dialogs). It
+The runtime calls this for a dialog listed in [AgentDeclaration.dialogs](#dialogs). It
 takes a [SlotHolder](#slotholder), which is what a `SessionEventContext` already
 is — both carry `slots` and `sessionId` — so an author can drive a dialog
 from an `events` handler today, with no declaration at all:
@@ -6870,10 +7824,10 @@ When the caller's speech may cut the agent off, and what happens after.
 As `PipelineTuning["interruption"]` it may also be `"off"`: no interim and no
 final ever cuts the agent off (both barge-in gates become unreachable), while
 the caller's words are still transcribed and answered once the agent
-finishes. That spelling is for a dialog state ([DialogStateSpec.interruption](#interruption-1))
+finishes. That spelling is for a dialog state ([DialogStateSpec.interruption](#interruption-2))
 that must be heard in full — a disclosure — more than for a whole agent.
 
-The one group a dialog state and a persona ([SpeakerDef.interruption](#interruption-4))
+The one group a dialog state and a persona ([SpeakerDef.interruption](#interruption-5))
 may override, field by field, while they are active.
 
 #### Properties
@@ -7228,7 +8182,7 @@ optional maxOutputTokens?: number;
 
 Cap on generated tokens per step, passed straight through to the provider.
 
-The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-6) has for a one-shot
 call. Per STEP, not per turn: a reply that calls three tools has four
 generations in it, and the cap bounds each.
 
@@ -7284,7 +8238,7 @@ conversation back instead of going silent. Pipeline-only, like
 
 #### Extended by
 
-- [`AgentDef`](#agentdef)
+- [`AgentDeclaration`](#agentdeclaration)
 
 #### Properties
 
@@ -7338,7 +8292,7 @@ export default agent({
 
 #### Extended by
 
-- [`AgentDef`](#agentdef)
+- [`AgentDeclaration`](#agentdeclaration)
 
 #### Properties
 
@@ -7688,7 +8642,7 @@ callers wrote this by hand to get.
 **`Sealed`**
 
 The roster the agent declares and every tool reaches for — what
-[roster](#roster-2) returns. A HANDLE, like [Dialog](#dialog): a handoff has to know
+[roster](#roster-3) returns. A HANDLE, like [Dialog](#dialog): a handoff has to know
 the whole roster to name who it came FROM and refuse a target not on it.
 
 #### Type Parameters
@@ -8072,7 +9026,7 @@ The HTTP status: 2xx, 4xx or 5xx.
 
 **`Sealed`**
 
-What [AgentSessionLifecycle.sessionContext](#sessioncontext) is called with.
+What [AgentSessionLifecycle.sessionContext](#sessioncontext-2) is called with.
 
 #### Properties
 
@@ -8130,7 +9084,7 @@ it fired is dropped.
 
 **`Sealed`**
 
-What [AgentSessionLifecycle.onSessionEnd](#onsessionend) is called with.
+What [AgentSessionLifecycle.onSessionEnd](#onsessionend-2) is called with.
 
 #### Properties
 
@@ -9381,28 +10335,15 @@ Every write goes through [SessionSlot.update](#update). See
 
 [`DeepReadonly`](#deepreadonly)\<`T`\>
 
-##### projection()
+##### ~~projection()~~
 
 ```ts
 projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
 ```
 
-A `syncState` projection over this slot: read the value (defaulting when
-the session has not touched it), then project.
-
-**Reach for [SessionSlot.projected](#projected) first** — one view, declared with
-the slot, passed by both ends. This is the spelling for a view composed
-where it is used rather than declared on the slot; `syncState` still takes
-ONE projection per slot, keyed by the slot's name.
-
-The result is CALLABLE as well as declarable, which is what lets a client
-derive its own empty state from the same function the server pushes —
-`slot.projection(view)()` is the pre-first-tool-call frame. Declaring it is
-`agent({ syncState: { [name]: slot.projection(view) } })`, one entry per
-slot; the frame is keyed the same way.
-
-`project` receives a REAL value, so a projection needs no optional chaining
-for the moment before the first tool call.
+A `syncState` projection over this slot through a view composed at the
+call: read the value (defaulting when the session has not touched it),
+then project.
 
 ###### Type Parameters
 
@@ -9420,18 +10361,12 @@ for the moment before the first tool call.
 
 [`StateProjection`](#stateprojection)\<`P`\>
 
-###### Example
+###### Deprecated
 
-```ts
-import { agent, sessionSlot } from "@alexkroman1/aai";
-
-const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-
-export default agent({
-  name: "Shop",
-  syncState: { cart: cartSlot.projection((cart) => ({ count: cart.items.length })) },
-});
-```
+Declare the view on the slot —
+`sessionSlot(key, create, { view })` — and pass [SessionSlot.projected](#projected).
+A projection composed here is a value both ends must name, export and
+import, and an inline one is a fresh object per render. Still works.
 
 ##### reset()
 
@@ -9722,22 +10657,19 @@ The store key this slot occupies. Two slots must not share one.
 readonly projected: StateProjection<V>;
 ```
 
-This slot's declared view as a `syncState` projection — built ONCE, here,
-so both ends can pass the same object.
+This slot's view as a `syncState` projection — THE way to project a slot.
+Built once, at declaration, so both ends pass the same object.
 
-`agent({ syncState: { cart: cartSlot.projected } })` on the server and
+`agent({ syncState: cartSlot.projected })` on the server and
 `useAgentState(cartSlot.projected)` in the browser are then the SAME
-projection by construction, and the frame rendered before the first push
-cannot describe a different view than the frames pushed after it. Composing
-`slot.projection(view)` at each end is what could: the two expressions have
-to name the same view and nothing checks that they do.
+projection by construction, so the frame rendered before the first push
+cannot describe a different view than the frames pushed after it. Being
+built at declaration also makes it identity-stable, which `useAgentState`
+memoizes its empty frame on.
 
-Being built at declaration also makes it identity-stable, which
-`useAgentState` memoizes its empty frame on — so this spelling cannot
-produce the fresh-object-per-render an inline `slot.projection(view)` does.
-
-With no [SessionSlotOptions.view](#view), this projects the whole value.
-Declare one to narrow it.
+Callable with nothing — `cartSlot.projected()` is the pre-first-tool-call
+frame. With no [SessionSlotOptions.view](#view), it projects the whole
+value; declare one to narrow it to what the page renders.
 
 ###### Example
 
@@ -9748,7 +10680,7 @@ const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
   view: (cart) => ({ count: cart.items.length }),
 });
 
-export default agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
+export default agent({ name: "Shop", syncState: cartSlot.projected });
 ```
 
 ***
@@ -9878,27 +10810,17 @@ optional view?: (value: DeepReadonly<T>) => V;
 What this slot shows the BROWSER — declared here so it is written once and
 read from both ends as [SessionSlot.projected](#projected).
 
-`agent({ syncState: { cart: cartSlot.projected } })` and
+`agent({ syncState: cartSlot.projected })` and
 `useAgentState(cartSlot.projected)` are then the same object, so the frame
 the server pushes and the frame the page renders before the first push
-cannot disagree. That drift is what this field exists to remove:
-[SessionSlot.projection](#projection-1) is a METHOD, so the projection is a value
-somebody has to name, export and import at both ends — and every shipped
-example that got it right did so by exporting
-`export const cartProjection = cartSlot.projection(cartView)` from a
-`shared.ts`, eight of them also hand-writing the `StateProjection<V>`
-annotation that follows from the view.
-
-It also makes the memoization caveat on `useAgentState` evaporate for this
-path: `projected` is built ONCE, at declaration, so it is identity-stable
-for the life of the module and a projection spelled inline in a render body
-is not something this spelling can express.
+cannot disagree, and the projection is identity-stable for the life of
+the module.
 
 **Absent, the WHOLE value is projected.** Declare a view to narrow it — to
 what the page renders, rather than to whatever the slot happens to hold.
 
-`syncState` takes ONE projection per slot, keyed by the slot's name; a
-page that needs a second shape of the same slot derives it from this one.
+`syncState` takes ONE projection per slot; a page that needs a second
+shape of the same slot derives it from this one.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -9908,7 +10830,7 @@ export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [], nextId: 1 
   view: (cart) => ({ count: cart.items.length }),
 });
 
-export default agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
+export default agent({ name: "Shop", syncState: cartSlot.projected });
 ```
 
 ###### Parameters
@@ -10460,7 +11382,7 @@ optional llm?: LlmSpec;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-4). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -10474,7 +11396,7 @@ optional maxOutputTokens?: number;
 
 Cap on generated tokens per step, passed straight through to the provider.
 
-The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-6) has for a one-shot
 call. Per STEP, not per turn: a reply that calls three tools has four
 generations in it, and the cap bounds each.
 
@@ -10485,7 +11407,7 @@ provider stops emitting rather than wrapping up.
 
 ###### Inherited from
 
-[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-3)
 
 ##### maxRetries?
 
@@ -10510,7 +11432,7 @@ How many times a [SpeakerDef.guardrail](#guardrail) may send an answer back.
 
 `1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
 
-**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-2) retries
+**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-3) retries
 a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
 delegation that SUCCEEDED and was judged not good enough. A subagent does
 not accept `maxRetries` at all, so code written against the old name fails
@@ -10635,7 +11557,7 @@ researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
-[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-5)
 
 ##### toolChoice?
 
@@ -10938,8 +11860,7 @@ delivery is refused as a replay. Default 300 (five minutes), the spec's.
 ### StateProjection()
 
 One slot's contribution to the `agent_state` frame — what
-[SessionSlot.projected](#projected) and [SessionSlot.projection](#projection-1) are, and what
-`agent({ syncState })` takes.
+[SessionSlot.projected](#projected) is, and what `agent({ syncState })` takes.
 
 It is a FUNCTION carrying the two facts the runtime needs, rather than a
 plain record, and the callable half is load-bearing at both ends. The server
@@ -11377,7 +12298,7 @@ enables none can still delegate to a subagent that searches the web.
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`builtinTools`](#builtintools-1)
+[`SpeakerDef`](#speakerdef).[`builtinTools`](#builtintools-2)
 
 ##### description?
 
@@ -11395,7 +12316,7 @@ and reports what it found" — not "calls web_search".
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`description`](#description-3)
+[`SpeakerDef`](#speakerdef).[`description`](#description-4)
 
 ##### expectedOutput?
 
@@ -11492,7 +12413,7 @@ agent). Read only for a `speaks: true` entry. Pipeline only.
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`interruption`](#interruption-4)
+[`SpeakerDef`](#speakerdef).[`interruption`](#interruption-5)
 
 ##### llm?
 
@@ -11502,7 +12423,7 @@ optional llm?: LlmSpec;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-4). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -11510,7 +12431,7 @@ reasoning.
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`llm`](#llm-1)
+[`SpeakerDef`](#speakerdef).[`llm`](#llm-2)
 
 ##### maxOutputTokens?
 
@@ -11520,7 +12441,7 @@ optional maxOutputTokens?: number;
 
 Cap on generated tokens per step, passed straight through to the provider.
 
-The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-6) has for a one-shot
 call. Per STEP, not per turn: a reply that calls three tools has four
 generations in it, and the cap bounds each.
 
@@ -11531,7 +12452,7 @@ provider stops emitting rather than wrapping up.
 
 ###### Inherited from
 
-[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-3)
 
 ##### maxRetries?
 
@@ -11546,7 +12467,7 @@ uses. See [SpeakerDef.maxRevisions](#maxrevisions).
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`maxRetries`](#maxretries-3)
+[`SpeakerDef`](#speakerdef).[`maxRetries`](#maxretries-4)
 
 ##### maxRevisions?
 
@@ -11560,7 +12481,7 @@ How many times a [SpeakerDef.guardrail](#guardrail) may send an answer back.
 
 `1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
 
-**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-2) retries
+**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-3) retries
 a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
 delegation that SUCCEEDED and was judged not good enough. A subagent does
 not accept `maxRetries` at all, so code written against the old name fails
@@ -11597,7 +12518,7 @@ than stopping mid-chain.
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`maxSteps`](#maxsteps-2)
+[`SpeakerDef`](#speakerdef).[`maxSteps`](#maxsteps-3)
 
 ##### name
 
@@ -11610,7 +12531,7 @@ argument, the id on its own requests, and what a log line names.
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`name`](#name-2)
+[`SpeakerDef`](#speakerdef).[`name`](#name-3)
 
 ##### schema
 
@@ -11692,7 +12613,7 @@ here; `expectedOutput` is the field that remembers it for them.
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`systemPrompt`](#systemprompt-1)
+[`SpeakerDef`](#speakerdef).[`systemPrompt`](#systemprompt-2)
 
 ##### temperature?
 
@@ -11709,7 +12630,7 @@ researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
-[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-5)
 
 ##### toolChoice?
 
@@ -11721,7 +12642,7 @@ The model's tool-choice policy while this speaker is ON THE LINE.
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`toolChoice`](#toolchoice-3)
+[`SpeakerDef`](#speakerdef).[`toolChoice`](#toolchoice-4)
 
 ##### tools?
 
@@ -11897,8 +12818,8 @@ type AgentGuardrail = (text: string, ctx: AgentSessionContext) =>
 | Promise<GuardrailVerdict>;
 ```
 
-Judge one piece of text — see [AgentDef.inputGuardrails](#inputguardrails) and
-[AgentDef.outputGuardrails](#outputguardrails).
+Judge one piece of text — see [AgentDeclaration.inputGuardrails](#inputguardrails) and
+[AgentDeclaration.outputGuardrails](#outputguardrails).
 
 May be async: an input guardrail runs before the model request is assembled
 and an output guardrail runs before anything is synthesized, so both have a
@@ -11928,28 +12849,19 @@ that wants the other trade returns a verdict from its own `catch`.
 
 ***
 
-### AgentInstructions
+### ~~AgentInstructions~~
 
 ```ts
-type AgentInstructions = (ctx: AgentSessionContext) => string;
+type AgentInstructions = Exclude<AgentSystemPrompt, string>;
 ```
 
-Compute the agent's instructions for the request about to be assembled.
+A system-prompt resolver — the function half of [AgentSystemPrompt](#agentsystemprompt).
 
-Synchronous: the request is being built, and there is no point at which a
-promise could be awaited without putting a round trip in front of every turn.
-Work that needs awaiting belongs in a tool, whose result the next request
-carries.
+#### Deprecated
 
-#### Parameters
-
-##### ctx
-
-[`AgentSessionContext`](#agentsessioncontext)
-
-#### Returns
-
-`string`
+Name [AgentSystemPrompt](#agentsystemprompt) (what `agent({ systemPrompt })`
+takes); for the function alone, `Exclude<AgentSystemPrompt, string>`.
+Identical type.
 
 ***
 
@@ -11986,7 +12898,7 @@ type AgentParams =
   | PipelineAgentParams
   | S2sAgentParams
   | TextAgentParams
-  | StaticAgentParams;
+  | WorkflowAppAgentParams;
 ```
 
 Everything `agent()` accepts: one member per [AgentMode](#agentmode).
@@ -11996,15 +12908,21 @@ Everything `agent()` accepts: one member per [AgentMode](#agentmode).
 ### AgentSystemPrompt
 
 ```ts
-type AgentSystemPrompt = string | AgentInstructions;
+type AgentSystemPrompt = 
+  | string
+  | ((ctx: AgentSessionContext) => string);
 ```
 
 What `agent({ systemPrompt })` accepts: the text, or a function that answers
-it per request.
+it per request from the live [AgentSessionContext](#agentsessioncontext).
 
-A plain string is byte-identical to what shipped before resolvers existed —
-it is not called, not wrapped, and reaches `buildSystemPrompt` as it always
-did.
+The function is SYNCHRONOUS: the request is being built, and there is no
+point at which a promise could be awaited without putting a round trip in
+front of every turn. Work that needs awaiting belongs in a tool, whose result
+the next request carries.
+
+A plain string is not called or wrapped; it reaches `buildSystemPrompt`
+as written.
 
 ## With a `system-prompt.md`
 
@@ -12038,7 +12956,7 @@ type AnyDialog = Dialog<AnyStateMachine, unknown>;
 ```
 
 Any dialog, whatever its machine and event union — what
-[AgentDef.dialogs](#dialogs) holds.
+[AgentDeclaration.dialogs](#dialogs) holds.
 
 The erasure is on `E` and it is what makes the array possible at all: two
 dialogs in one agent have different event unions by construction (the names
@@ -12158,8 +13076,8 @@ and provide capabilities like web search, code execution, and API access.
 
 The three keyed builtins read their key from `ctx.env` on each
 call and answer the model with an error naming the variable when it is
-unset. Nothing adds the key to `requiredEnv` for you — list it there so a
-deploy checks it, the same rule an MCP server's `tokenEnv` follows.
+unset. A deploy checks the key without it being listed in `requiredEnv`
+(`BUILTIN_TOOL_ENV`), the same rule an MCP server's `tokenEnv` follows.
 
 When `builtinTools` is not set, only `think` is enabled
 (`DEFAULT_BUILTIN_TOOLS`); every other built-in is something an agent asks
@@ -12503,7 +13421,7 @@ its own purposes would otherwise start firing on every reply the agent made.
 Declaring one is what lets a dialog move on something the model did not do —
 the caller went quiet, barged in, hung up, or said something that called no
 tool. The runtime sends them through [Dialog.receive](#receive), which is wired up
-by listing the dialog in [AgentDef.dialogs](#dialogs).
+by listing the dialog in [AgentDeclaration.dialogs](#dialogs).
 
 ***
 
@@ -13316,7 +14234,7 @@ readonly mode: M;
 ### PipelineAgentParams
 
 ```ts
-type PipelineAgentParams = SharedAgentParams & Pick<AgentDef, 
+type PipelineAgentParams = SharedAgentParams & Pick<AgentDeclaration, 
   | keyof AgentModelTuning
   | keyof PipelineTuning
   | keyof PipelinePhrases
@@ -13352,7 +14270,7 @@ default all-AssemblyAI pipeline. The only member with the
 optional llm?: LlmSpec;
 ```
 
-See [AgentDef.llm](#llm); a string is gateway model-id shorthand — a bare
+See [AgentDeclaration.llm](#llm); a string is gateway model-id shorthand — a bare
 id for the AssemblyAI LLM Gateway, `"creator/model"` for the Vercel AI
 Gateway. Typed against the generated catalog so a typo is caught where
 it is written, and widened by `string & {}` so a newer model compiles.
@@ -13363,7 +14281,7 @@ it is written, and widened by `string & {}` so a newer model compiles.
 optional mode?: "pipeline";
 ```
 
-See [AgentDef.mode](#mode). Absent means `"pipeline"`.
+See [AgentDeclaration.mode](#mode). Absent means `"pipeline"`.
 
 ##### s2s?
 
@@ -13377,7 +14295,7 @@ optional s2s?: undefined;
 optional tts?: TtsProvider;
 ```
 
-See [AgentDef.tts](#tts). The voice is the descriptor's own option
+See [AgentDeclaration.tts](#tts). The voice is the descriptor's own option
 (`assemblyAITts({ voice: "michael" })`); unset, the default stage
 speaks `ASSEMBLYAI_TTS_DEFAULT_VOICE`.
 
@@ -13593,7 +14511,7 @@ pipeline stages, their tuning and the model-request knobs are all absent.
 mode: "s2s";
 ```
 
-See [AgentDef.mode](#mode).
+See [AgentDeclaration.mode](#mode).
 
 ##### s2s
 
@@ -13601,7 +14519,7 @@ See [AgentDef.mode](#mode).
 s2s: S2sProvider;
 ```
 
-See [AgentDef.s2s](#s2s).
+See [AgentDeclaration.s2s](#s2s).
 
 ***
 
@@ -13860,7 +14778,7 @@ type SessionContext = {
 };
 ```
 
-What [AgentSessionLifecycle.sessionContext](#sessioncontext) may answer.
+What [AgentSessionLifecycle.sessionContext](#sessioncontext-2) may answer.
 
 #### Properties
 
@@ -14239,20 +15157,19 @@ One of [SESSION\_SOURCED\_EVENT\_TYPES](#session_sourced_event_types).
 ### SharedAgentParams
 
 ```ts
-type SharedAgentParams = Omit<AgentDef, 
+type SharedAgentParams = Omit<AgentDeclaration, 
   | DefaultedAgentField
   | "mode"
   | ProviderField
   | PipelineOnlyField
-  | keyof AgentModelTuning
-  | "toolsets"> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+  | keyof AgentModelTuning> & Partial<Pick<AgentDeclaration, Exclude<DefaultedAgentField, InlineToolsField>>> & {
   tools?: InlineToolsMisuse;
 };
 ```
 
 What every SESSION member shares — pipeline, S2S and text: everything on
-[AgentDef](#agentdef) minus the mode-owned fields, with the defaulted ones
-optional.
+[AgentDeclaration](#agentdeclaration) minus the mode-owned fields, with the defaulted
+ones optional.
 
 The model-loop knobs ([AgentModelTuning](#agentmodeltuning)) are subtracted here and
 re-added by the two members whose runtime assembles the model request; S2S
@@ -14510,39 +15427,18 @@ A successful or failed Standard Schema validation.
 
 ***
 
-### StaticAgentParams
+### ~~StaticAgentParams~~
 
 ```ts
-type StaticAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
-  mode: "workflow-app";
-  workflows: NonNullable<AgentDef["workflows"]>;
-};
+type StaticAgentParams = WorkflowAppAgentParams;
 ```
 
-The WORKFLOW-APP member — `mode: "workflow-app"`, the workflows that ARE the
-product, and nothing from the session half of the agent shape.
-`workflowApp()` is this member with `mode` already set.
+The workflow-app member under its old name.
 
-`workflows` is REQUIRED here, unlike on [AgentDef](#agentdef): a workflow app that
-declares none serves a form whose every submit is a 400.
+#### Deprecated
 
-#### Type Declaration
-
-##### mode
-
-```ts
-mode: "workflow-app";
-```
-
-See [AgentDef.mode](#mode).
-
-##### workflows
-
-```ts
-workflows: NonNullable<AgentDef["workflows"]>;
-```
-
-See [AgentDef.workflows](#workflows) — the whole product.
+Use [WorkflowAppAgentParams](#workflowappagentparams), named after the
+`mode: "workflow-app"` it selects. Identical type.
 
 ***
 
@@ -14674,6 +15570,23 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### SyncStateDeclaration
+
+```ts
+type SyncStateDeclaration = 
+  | StateProjection
+  | readonly StateProjection[]
+| Readonly<Record<string, StateProjection>>;
+```
+
+What `agent({ syncState })` accepts: one slot projection, or a list of them.
+
+The third member, a record keyed by slot name, is the DEPRECATED spelling —
+the key has to repeat the projection's own slot key. It is still accepted
+and normalized; write the projection or the list instead.
+
+***
+
 ### TelephonyAccess
 
 ```ts
@@ -14722,7 +15635,7 @@ carriers keys off `TELEPHONY_CARRIERS` (`@alexkroman1/aai/internal`) instead.
 ### TextAgentParams
 
 ```ts
-type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDef, keyof AgentModelTuning> & {
+type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDeclaration, keyof AgentModelTuning> & {
   llm?: LlmSpec;
   mode: "text";
 };
@@ -14739,7 +15652,7 @@ audio half of the agent shape.
 optional llm?: LlmSpec;
 ```
 
-See [AgentDef.llm](#llm); a model-id string works as on the pipeline member — the one provider stage a text agent has.
+See [AgentDeclaration.llm](#llm); a model-id string works as on the pipeline member — the one provider stage a text agent has.
 
 ##### mode
 
@@ -14747,7 +15660,7 @@ See [AgentDef.llm](#llm); a model-id string works as on the pipeline member — 
 mode: "text";
 ```
 
-See [AgentDef.mode](#mode).
+See [AgentDeclaration.mode](#mode).
 
 ***
 
@@ -15058,7 +15971,7 @@ env: Readonly<Partial<Record<string, string>>>;
 
 Environment variables available to this agent's tools (from `.env` under
 `aai dev`, `aai secret` in production). Custom keys a tool depends on
-should be declared in [AgentDef.requiredEnv](#requiredenv) so a missing value
+should be declared in [AgentDeclaration.requiredEnv](#requiredenv) so a missing value
 fails at deploy time.
 
 **`Partial`, so every read is `string | undefined`.** A variable that was
@@ -16174,6 +17087,42 @@ schema: S;
 ```
 
 The shape the payload must have — see [WaitForOptions.schema](#schema-4).
+
+***
+
+### WorkflowAppAgentParams
+
+```ts
+type WorkflowAppAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
+  mode: "workflow-app";
+  workflows: NonNullable<AgentDeclaration["workflows"]>;
+};
+```
+
+The WORKFLOW-APP member — `mode: "workflow-app"`, the workflows that ARE the
+product, and nothing from the session half of the agent shape.
+`workflowApp()` is this member with `mode` already set.
+
+`workflows` is REQUIRED here, unlike on [AgentDeclaration](#agentdeclaration): a workflow
+app that declares none serves a form whose every submit is a 400.
+
+#### Type Declaration
+
+##### mode
+
+```ts
+mode: "workflow-app";
+```
+
+See [AgentDeclaration.mode](#mode).
+
+##### workflows
+
+```ts
+workflows: NonNullable<AgentDeclaration["workflows"]>;
+```
+
+See [AgentDeclaration.workflows](#workflows) — the whole product.
 
 ***
 
@@ -17800,7 +18749,7 @@ and the two numbers disagree with nothing to report it.
 
 It reads the parameter `WorkflowDef.run` declares, which IS the schema's
 output (`InferSchemaOutput<P>`), by matching `run`'s shape — see
-[WorkflowOutputOf](workflow-api.md#workflowoutputof) for why a reading matches a shape.
+[WorkflowOutputOf](#workflowoutputof) for why a reading matches a shape.
 
 Two details a restated shape gets wrong by hand, both of which this gets
 right for free. A zod `.optional()` infers a property that may be PRESENT AND
@@ -17810,7 +18759,7 @@ that, which is a comment `z.infer` makes unnecessary. And a `.default()` makes
 the OUTPUT property required while the input stays optional, so a body reading
 it needs no fallback at all.
 
-Like [WorkflowOutputOf](workflow-api.md#workflowoutputof), it needs no build step: `import type` is
+Like [WorkflowOutputOf](#workflowoutputof), it needs no build step: `import type` is
 erased, so a body in `workflows/` naming `WorkflowInputOf<typeof theDef>`
 through a type-only import of `../agent.ts` drags no runtime cycle behind it.
 
@@ -17845,6 +18794,93 @@ The root is the one an author wants: this annotation lives in a
 
 ***
 
+### WorkflowOutputOf
+
+```ts
+type WorkflowOutputOf<D> = D extends {
+  output?: StandardSchemaV1<unknown, infer O>;
+  run: (input: never, ctx: never) => infer R;
+} ? Awaited<unknown extends O ? R : O> : never;
+```
+
+A workflow's OUTPUT type, for a page that polls its runs.
+
+This is the end-to-end typing a static page would otherwise be missing.
+`useWorkflowRun<R>` makes `run.status === "completed"` narrow to a typed
+`run.output`, and without this the page has to name `R` by hand — restating a
+shape the agent module already declares, with nothing checking the two agree.
+
+It needs no build step and no generated `.d.ts`, because the reason a page
+"cannot import the agent" does not survive contact with `import type`: a
+type-only import is ERASED, so it drags no server graph into the browser
+bundle.
+
+#### Type Parameters
+
+##### D
+
+`D`
+
+#### Example
+
+```ts no-check
+// agent.ts
+export const transcribe = workflow({ input: …, output: transcriptSchema, run: transcribeFlow });
+
+// client.tsx — `import type` is erased, so nothing server-side is bundled.
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+import type { transcribe } from "./agent.ts";
+
+const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
+if (run?.status === "completed") console.log(run.output.text); // typed
+```
+
+## It reads the declared SCHEMA first, and that is what breaks a cycle
+
+The DECLARATION is the better source of this type, and the worse one used to
+be the only one. Deriving `R` from the body means `typeof theDef` needs the
+body's signature — while a body annotated `WorkflowInputOf<typeof theDef>`
+needs `typeof theDef`, which is `TS7022` reported against `agent.ts`. The
+documented way out is to ANNOTATE the declaration, and an annotation whose
+`R` comes from a schema (`WorkflowDef<typeof digestInput, z.infer<typeof
+digestOutput>>`) states the output type once, in the schema, rather than
+naming it a second time by hand.
+
+That annotated shape is also what the second reading gets WRONG, which is
+the other half of this rewrite. `D extends WorkflowDef<ToolInputSchema, infer
+R>` is an assignability test over the whole def, and `run`'s input is a
+function PARAMETER — so a def carrying an input schema is not assignable to
+one taking the open `Record<string, unknown>`, and the conditional silently
+fell to `never`. It is the same contravariance `AnyWorkflowDef` was
+written for, reached by the other route, and it is why the test below matches
+`run` as `(input: never, ctx: never) => infer R` — `never` is assignable to
+every parameter type.
+
+## It matches a SHAPE, not a named declaration
+
+Both readings test `run`'s signature structurally rather than naming
+`WorkflowDef`, `WorkflowBody` or `WorkflowContext`. A reading answers the
+same type either way — `WorkflowDef.run` IS `(input: InferSchemaOutput<P>,
+ctx: WorkflowContext) => …` — but a reading that names the declaration
+carries it (and everything `WorkflowContext` reaches) into the contract of
+every capability that publishes the reading, so a new member on the context
+a body receives moved a PAGE's type.
+
+`unknown extends O` is how "declared nothing" is told from "declared a
+schema": a def with no output schema still HAS the optional property in its
+type, carrying `R` — so the two readings agree, and the fallback only ever
+fires for a def-shaped object that names no output at all.
+
+`Awaited` because a body may be sync or async and the snapshot always holds
+the settled value.
+
+On `@alexkroman1/aai/workflow-api` only, unlike its two siblings: its reader
+is a page. Both templates that name it are a `client.tsx` parameterizing
+`useWorkflowRun<…>`, and a `*_status` tool wants `WorkflowRunOf`, which
+composes this in already.
+
+***
+
 ### WorkflowRunOf
 
 ```ts
@@ -17852,7 +18888,7 @@ type WorkflowRunOf<D> = WorkflowRunSnapshot<WorkflowOutputOf<D>>;
 ```
 
 A run of `D`, with its output already typed — `WorkflowRunSnapshot` and
-[WorkflowOutputOf](workflow-api.md#workflowoutputof) composed.
+[WorkflowOutputOf](#workflowoutputof) composed.
 
 The composition is what a tool reporting on a run actually holds, and writing
 it out costs a three-name import (`WorkflowRunSnapshot`, `WorkflowOutputOf`,

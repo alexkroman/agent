@@ -83,6 +83,30 @@ such message with a real `tsc` run; if nothing can print it, NAME the arms
 
 ## `/testing` helpers
 
+### Which testing import, by FILE
+
+One import door per kind of file, and each name is imported through the door
+of the file it is in. Two packages because `aai` may not import `aai-runtime`
+(the engine and the eval harness are runtime), so the SDK cannot re-export
+them; the runtime re-exports the SDK's stubs instead.
+
+| File                                          | Import from                                 | For                                                                     |
+| --------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------- |
+| `vitest.config.ts`                            | `@alexkroman1/aai/testing/vite`             | `defineAgentTestConfig`                                                 |
+| a unit spec (tool, step, hook, workflow body) | `@alexkroman1/aai/testing`                  | every fake and reader that installs nothing                             |
+| the same spec                                 | `@alexkroman1/aai/testing/vitest`           | every `install*` (installs and restores)                                |
+| a spec on the REAL engine or text loop        | `@alexkroman1/aai-runtime/testing`          | `runWorkflow`, `runTextAgent`, `scriptedTextModel`                      |
+| an eval (`*.eval.test.ts`)                    | `@alexkroman1/aai-runtime/eval/vitest` ONLY | the suite, readers, simulation, and the SDK stubs an eval composes with |
+| a harness that is not vitest                  | `@alexkroman1/aai-runtime/eval`             | the runner-free half                                                    |
+
+The eval row is enforced for templates (konsistent
+`template-eval-runtime-subpaths`); `/eval/vitest`'s re-exports are the same
+declarations, so a type from either door is one type. `scriptedToolContext` is
+deprecated for `createToolContext`; `createRuntimeServer` for
+`createServerForRuntime`.
+
+### The rules
+
 `testing.ts` is published for an author's own project. **It may not import
 `vitest`**; anything that installs or returns a `restore` is on
 `/testing/vitest` (konsistent `published-testing-split` and
@@ -95,7 +119,7 @@ Each helper's doc carries the detail; the rules:
   `omitUndefined`; `testing.test-d.ts` pins its key set to `ToolContext`'s).
   Its `generate`/`delegate` take a SCRIPT or a function; a FUNCTION is always
   the seam itself. `ctx.model`/`ctx.desk` are always present (empty `calls`
-  when unwired). `scriptedToolContext` predates this.
+  when unwired). `scriptedToolContext` predates this and is deprecated.
 - **A script NAMES its shape — `{ reply }` or `{ routes }`** — everywhere one
   is taken; a computed route is `{ reply: (call) => … }`; a bare shape reaching
   the runtime untyped throws at bind.
@@ -108,6 +132,13 @@ Each helper's doc carries the detail; the rules:
   `unknown` (import the tool file instead of casting) and runs through the
   toolset's GATE. Args and ctx are told apart by SHAPE; an omitted context is a
   distinct session.
+- **`expectToolOk`** takes ANY tool's result — a dialog envelope unwrapped, a
+  plain value passed through — and INFERS: a typed result loses its failure
+  arm, `expectToolOk<T>(unknown)` is the claimed form for the name lookup.
+  Never copy an `ok<T>()` helper into a spec.
+- **`stubGateway`** (global `fetch`, you install) / **`installStubGateway`**
+  (global `fetch`, installed) / **`stubGatewayRoute`** (a `stepFetch` route to
+  compose); never import the second under the first's name.
 - **`expectToolOk`/`expectDialogOk`** fail AT the call quoting the refusal;
   `expectDialogRefused`/`dialogRefusalPattern` mirror them (`_dialog-refusal.ts`
   owns the sentence); `dialogResultSchema` is the envelope as zod.
@@ -254,11 +285,13 @@ on the member it governs**:
 - **A durable value is checked STRUCTURALLY in every backend** (`Map` → `{}`,
   `Date` → string, `NaN` → null don't throw). Running it in memory too is what
   makes memory a valid double.
-- **`syncState` is a record keyed by SLOT NAME** of `slot.projected` /
-  `slot.projection(view)` values — callable and carrying key and default, so a
-  session that ran no tool still renders. Each key must equal its projection's
-  slot key (`assertSyncStateRecord`, `_author-conveniences.ts`), so the frame
-  is `{ [slot]: view }` and the browser selects by the same name.
+- **`syncState` takes `slot.projected`, or a list of them** — callable and
+  carrying key and default, so a session that ran no tool still renders.
+  `normalizeSyncState` (`_author-conveniences.ts`) resolves it to the record
+  keyed by SLOT NAME that `AgentDef.syncState` holds, so the frame is
+  `{ [slot]: view }` and the browser selects by the same name; one slot twice
+  is refused. The record form and `slot.projection(view)` are `@deprecated`
+  (each key repeated its slot's; a composed view is a value both ends name).
 - **`caps` bounds a TOP-LEVEL array on every store, AFTER `after`**;
   `SlotCaps<T>` admits only array keys, bad caps refused at declaration
   (`_session-slot-caps.ts`). The hook sees the untrimmed draft.

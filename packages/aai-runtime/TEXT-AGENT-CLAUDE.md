@@ -7,11 +7,8 @@ read_when: >-
 
 # TEXT-AGENT-CLAUDE.md — driving an agent from text, and the eval surface
 
-A sibling of `CLAUDE.md` rather than a section in it, for the reason that guide
-already gives for [`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md): this is REFERENCE —
-which subpath an eval imports, what a keyless run gets — rather than a rule that
-has to be resident in every agent's context. It moved when the guide crossed the
-120,000-char cap; nothing in it changed.
+Reference: which subpath an eval imports, what a keyless run gets, and how
+text mode drives an agent.
 
 ## Driving an agent from text is a published surface
 
@@ -22,16 +19,12 @@ and its slots, history trimming, the step budget, the event stream — with the
 two speech stages replaced by fakes, and hands back a `say()` that returns the
 TURN it provoked.
 
-**It was `aai-evals/session-target.ts` + `stub-speech.ts`, and publishing it is
-what the templates forced.** That harness could answer the one question nothing
-else in the repo could ("given this utterance, did the agent do the right
-thing"), and it could only ever answer it about agents living in this repo. A
-user's project — and every template, which IS a user's project — had no way to
-ask it at all, and the alternative was each project reimplementing the two
-documented harness bugs `eval/stub-speech.ts` and `eval/session.ts` record in
-place (a fake TTS that forwards silence turns every case after the greeting into
-a barge-in; a `say()` that waits for "a reply" settles on the PREVIOUS one).
-`aai-evals` now imports it, so there is one copy of both.
+**It is published so a user's project (and every template, which IS one) can
+ask "given this utterance, did the agent do the right thing".** `aai-evals`
+imports the same surface, so there is one copy of the two harness rules
+`eval/stub-speech.ts` and `eval/session.ts` record in place: a fake TTS that
+forwards silence turns every case after the greeting into a barge-in, and a
+`say()` that waits for "a reply" settles on the PREVIOUS one.
 
 Four decisions worth not relitigating:
 
@@ -149,7 +142,7 @@ harness:
   close; its answer-an-empty-step-past-the-end rule is also wrong for a harness
   that cannot know how many model calls a turn will make. The MODE decision and
   the announce stay with whoever owns the policy (`describeEval`, or
-  `aai-evals`' `_gate.ts`), as they do for `openEvalSession` — with no
+  `aai-evals`' `gate.ts`), as they do for `openEvalSession` — with no
   credential and no `llm` this throws from `resolveLlm` at open time naming the
   env var.
 - **`evalCredentials` over-asks for a text agent, so there is a second gate.**
@@ -278,8 +271,8 @@ tier that does.
 
 **Three things a workflow eval CANNOT reach, each costing a real case.**
 `createHook()` throws untransformed and — unlike `sleep()`, whose slot the
-engine publishes into — offers no seam to fill (`@workflow/core`'s
-`create-hook.js` throws unconditionally), so `meeting-recap-agent`'s retention
+engine publishes into — offers no seam to fill (`@workflow/core`'s hook
+creation throws unconditionally), so `meeting-recap-agent`'s retention
 gate, its headline port of Temporal's `expense`, is unevaluable and its eval
 says so rather than asserting around it. `wakeUp` answers `0`, so a "send it
 now" tool can only ever report that nothing was waiting. And because `sleep` is
@@ -574,12 +567,11 @@ the pieces to make it for free.
   stack and an assertion's `expected`/`actual` (the diff) survive. The same
   view is public as `transcriptOf(session, network?)` on `/eval`.
 
-  Two bugs the filter had on its first draft, both fixed and both worth not
-  reintroducing: a filtered case was counted as a MODE skip, so the coverage
-  line said "2 skipped as live-only" about cases carrying no marker; and a
-  filter matching nothing tripped `registerEmptySuiteFailure`, which would fail
-  27 suites for a filter aimed at the 28th. `aai-evals/_register.ts` had already
-  reached that second conclusion for the same reason, and warns.
+  Two rules for the filter: a filtered case is NOT a mode skip (the coverage
+  line must not call an unmarked case "live-only"), and a filter matching
+  nothing WARNS rather than tripping `registerEmptySuiteFailure`, which would
+  fail every other suite for a filter aimed at one (`aai-evals/register.ts`
+  warns for the same reason).
 
 - **`expectCalled(turn, ...names)`** names the tier's most common finding. A
   live model calls a median of ONE tool per reply (`DEFAULT_MAX_STEPS`) and then

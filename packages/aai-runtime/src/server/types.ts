@@ -10,13 +10,13 @@
 
 import type http from "node:http";
 import type { AgentDef } from "@alexkroman1/aai";
+import type { Logger } from "../logger.ts";
 import type { AgentRuntime } from "../runtime/index.ts";
-import type { Logger } from "../runtime-config.ts";
 import type { CarrierName } from "../telephony/carriers.ts";
 import type { SessionAuth } from "./session-auth.ts";
 
 /**
- * The session-facing slice of a runtime — all {@link createRuntimeServer} needs.
+ * The session-facing slice of a runtime — all {@link createServerForRuntime} needs.
  * A runtime built with `createRuntime` satisfies it directly.
  *
  * Narrowed to these members (rather than demanding a full `AgentRuntime`) so an
@@ -62,7 +62,7 @@ export type ServerRequestHook = (
 ) => boolean;
 
 /**
- * The options every front door over {@link createRuntimeServer} passes straight
+ * The options every front door over {@link createServerForRuntime} passes straight
  * through — a logger and the two request hooks.
  *
  * Shared rather than restated because {@link createAgentServer} and
@@ -99,7 +99,7 @@ export type SharedServerOptions = {
   auth?: SessionAuth | undefined;
 };
 
-/** Configuration for {@link createRuntimeServer}. */
+/** Configuration for {@link createServerForRuntime}. */
 export type RuntimeServerOptions = {
   /** The runtime sessions are started on — see `createRuntime`. */
   runtime: SessionRuntime;
@@ -197,7 +197,7 @@ export type RuntimeServerOptions = {
 };
 
 /**
- * Handle returned by {@link createRuntimeServer}.
+ * Handle returned by {@link createServerForRuntime}.
  *
  * @sealed
  */

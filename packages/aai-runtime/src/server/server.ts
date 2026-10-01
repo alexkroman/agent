@@ -2,15 +2,9 @@
 import type { AgentServer, RuntimeServerOptions } from "./types.ts";
 
 /**
- * Self-hosted agent HTTP + WebSocket server.
- *
- * {@link createRuntimeServer} wraps a runtime from `createRuntime` with an
- * HTTP + WebSocket server using only `node:http` and `ws` (no framework
- * dependencies) — the same server `aai dev` runs. Use it to host an agent on
- * your own infrastructure instead of the managed platform: see
- * `examples/self-hosted-server` for a runnable setup.
- *
- * Import via `@alexkroman1/aai-runtime`.
+ * The HTTP + WebSocket server around a runtime you already have, over
+ * `node:http` and `ws` alone — the layer `createAgentServer` and
+ * `createHostServer` are built on. Import via `@alexkroman1/aai-runtime`.
  */
 
 import http from "node:http";
@@ -21,7 +15,7 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import escapeHtml from "escape-html";
 import { WebSocketServer } from "ws";
 import { adoptRequestTrace } from "../_request-trace.ts";
-import { consoleLogger } from "../runtime-config.ts";
+import { consoleLogger } from "../logger.ts";
 import { asSessionWebSocket } from "../session/index.ts";
 import { enabledCarriers, handleTelephonyUpgrade } from "../telephony/telephony-server.ts";
 import { answerHandlerFailure, sendJson } from "../workflow/api/http.ts";
@@ -50,10 +44,7 @@ export type {
 /**
  * Default bind address. Loopback, not every interface: this server
  * authenticates no one unless `auth` or `AAI_SESSION_SECRET` is set, so
- * binding `0.0.0.0` by default put a
- * developer's agent — and the provider credentials backing it — in reach of
- * anyone on the same network (a shared office or cafe LAN). Exposing it is now
- * an explicit choice by the caller.
+ * exposing it — and the credentials behind it — is the caller's choice.
  */
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
@@ -93,32 +84,39 @@ const SERVER_HEADERS_TIMEOUT_MS = 20_000;
 const SERVER_KEEPALIVE_TIMEOUT_MS = 10_000;
 
 /**
- * Create an HTTP + WebSocket server for an agent — the self-hosting entry
- * point, and the same server `aai dev` runs.
+ * Serve a RUNTIME YOU ALREADY HAVE over HTTP + WebSocket — a `createRuntime`
+ * result, or any `SessionRuntime`. The layer both front doors are built on, and
+ * the server `aai dev` runs.
  *
- * Serves `GET /health`, `GET /client-config` (name/greeting for the browser
- * client), static client assets when `clientDir` is set, and voice sessions
- * on `WS /websocket`. {@link AgentServer.listen} binds loopback by default;
- * pass `"0.0.0.0"` to expose it deliberately (sessions are open unless `auth`
- * or `AAI_SESSION_SECRET` is set — see `SessionAuthOptions`).
+ * | You have | Call |
+ * | --- | --- |
+ * | an agent definition | `createAgentServer` — builds the runtime and derives `name`, `greeting`, `page`, `telephony` and the schemas off the agent |
+ * | no agent: callers bring theirs (host mode) | `createHostServer` |
+ * | a runtime built elsewhere, or built later | `createServerForRuntime` — this; you restate `name`/`greeting` |
+ *
+ * Serves `GET /health`, `GET /client-config`, static client assets when
+ * `clientDir` is set, and voice sessions on `WS /websocket`.
+ * {@link AgentServer.listen} binds loopback by default; pass `"0.0.0.0"` to
+ * expose it deliberately (sessions are open unless `auth` or
+ * `AAI_SESSION_SECRET` is set — see `SessionAuthOptions`).
  *
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { createRuntime, createRuntimeServer } from "@alexkroman1/aai-runtime";
+ * import { createRuntime, createServerForRuntime } from "@alexkroman1/aai-runtime";
  *
  * const myAgent = agent({ name: "Support", systemPrompt: "…" });
  * const runtime = createRuntime({
  *   agent: myAgent,
  *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
  * });
- * const server = createRuntimeServer({ runtime, name: myAgent.name });
+ * const server = createServerForRuntime({ runtime, name: myAgent.name });
  * await server.listen(3000);
  * ```
  *
  * @public
  */
-export function createRuntimeServer(options: RuntimeServerOptions): AgentServer {
+export function createServerForRuntime(options: RuntimeServerOptions): AgentServer {
   const { runtime, clientDir, logger = consoleLogger, env, hostBaseAgent } = options;
   const name = options.name ?? "agent";
   const isStatic = options.page === "static";
@@ -141,7 +139,7 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
    * The durable-workflow API (`/workflows/*`).
    *
    * Mounted here rather than left to the `request` hook so every front door
-   * serves it identically — `aai dev`, a self-hosted `createRuntimeServer`, and every
+   * serves it identically — `aai dev`, a self-hosted `createServerForRuntime`, and every
    * deployed guest — for the same reason `/phone` is mounted here. The client is
    * read through a GETTER because the guest harness builds its runtime lazily,
    * on the first thing that needs it: for a static app that first thing is a
@@ -166,7 +164,7 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
    * third party.
    *
    * Mounted HERE, beside the workflow API and on the same lazy getter, because
-   * every front door goes through `createRuntimeServer` — `aai dev`, a self-hosted
+   * every front door goes through `createServerForRuntime` — `aai dev`, a self-hosted
    * `server.mjs`, a deployed guest — and this route must answer identically on
    * all three. It used to be mounted by `createWorkflowSurface` instead, which
    * is gated on the DevKit's `workflowCode`/`stepCode` pair; those strings no
@@ -178,7 +176,7 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
   /**
    * The session event stream's read surface (`/session-events/:id`), beside the
    * workflow API for its reason: every front door — `aai dev`, a self-hosted
-   * `createRuntimeServer`, a deployed guest — serves it identically, so a feature
+   * `createServerForRuntime`, a deployed guest — serves it identically, so a feature
    * developed locally cannot 404 once deployed. Same lazy getter, same reason.
    */
   const sessionEventsApi = createSessionEventsApi({

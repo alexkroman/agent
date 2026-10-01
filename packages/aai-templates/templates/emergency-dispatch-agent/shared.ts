@@ -206,14 +206,12 @@ function pruneState(state: DispatchState): void {
  * the point: a new mutating tool gets both for free.
  */
 export const dispatchSlot = sessionSlot("dispatch", createDefaultState, {
+  view: dashboardView,
   after: (state) => {
     pruneState(state);
     recalculateAlertLevel(state);
   },
 });
-
-/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
-export const dashboardProjection = dispatchSlot.projection(dashboardView);
 
 // ─── The call in hand ────────────────────────────────────────────────────────
 

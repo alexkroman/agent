@@ -2,7 +2,7 @@
  * Three kinds of thing arrive from the agent, and this page keeps them apart.
  *
  * The recommendation LOG is state: the agent owns it in a `sessionSlot`,
- * `syncState` projects it, and `useAgentState(nightProjection)` reads it. The
+ * `syncState` projects it, and `useAgentState(nightSlot.projected)` reads it. The
  * page stores no copy, so a reload resumes with every pick still there. That is
  * the pattern to reach for by default — see `pizza-ordering-agent` for the same shape
  * over a shopping cart.
@@ -35,7 +35,7 @@ import {
   useToolResult,
 } from "@alexkroman1/aai-ui";
 import { useState } from "react";
-import { MOODS, nightProjection, type Rec } from "./shared.ts";
+import { MOODS, nightSlot, type Rec } from "./shared.ts";
 
 const MOOD_EMOJI: Record<string, string> = {
   chill: "\u{1F60C}",
@@ -52,7 +52,7 @@ const CAT_EMOJI: Record<string, string> = {
 
 function RecSidebar() {
   // State: the agent's own log. No `useState` mirror, no event diffing.
-  const { recs } = useAgentState(nightProjection);
+  const { recs } = useAgentState(nightSlot.projected);
   // Page-local view state — which mood chip is pressed. Nothing to sync.
   const [activeMood, setActiveMood] = useState<string | null>(null);
   // Moments. Both are cleared by this page, never re-delivered by the session.

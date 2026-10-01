@@ -11,8 +11,8 @@ import type { AgentDef } from "@alexkroman1/aai";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { vi } from "vitest";
 import { makeTrackingClient } from "./_session-test-utils.ts";
+import { silentLogger } from "./logger.ts";
 import { createRuntimeWithSeams } from "./runtime/index.ts";
-import { silentLogger } from "./runtime-config.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s/index.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 

@@ -7,57 +7,25 @@
 
 import { authFetch, captureLogs, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
+import { devToken, onboardKey } from "./_studio-auth-test-utils.ts";
 import { clientDistFile, clientShellHtml } from "./_studio-client-dist-test-utils.ts";
 import {
+  createFakedCombined,
   createProject,
   deployMock,
   ensureSessionMock,
   lastWake,
   listedProjects,
   wakePreviewMock,
+  withFakedDevAuth,
 } from "./_studio-routes-test-utils.ts";
-import { createTestCombined } from "./_test-combined.ts";
 import { requestPublicOrigin } from "./studio-context.ts";
 import { STUDIO_LLM_MODELS } from "./studio-llm.ts";
 import { studioScope } from "./studio-workspace.ts";
 
-// The orchestrator constructs its studio routes internally; intercept the
-// deploy pipeline, the session broker, and the preview wake at the module
-// boundary so no bundler or sandbox runs here. The fakes are reached through
-// an `await import()` because a vi.mock factory is hoisted above the imports.
-vi.mock("./studio-deploy.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-deploy.ts")>();
-  const { deployMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return {
-    ...original,
-    deployStudioProject: (...args: Parameters<typeof original.deployStudioProject>) =>
-      mock(...args),
-  };
-});
-
-vi.mock("./studio-session-broker.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-session-broker.ts")>();
-  const { brokerMock } = await import("./_studio-routes-test-utils.ts");
-  return {
-    ...original,
-    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) =>
-      brokerMock(...args),
-  };
-});
-
-vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-preview-wake.ts")>();
-  const { wakePreviewMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return {
-    ...original,
-    wakeProjectPreview: (...args: Parameters<typeof original.wakeProjectPreview>) => mock(...args),
-  };
-});
-
 describe("studio page + routing", () => {
   test("GET / serves the studio shell with a strict CSP", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     const res = await fetch("/");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/html");
@@ -73,7 +41,7 @@ describe("studio page + routing", () => {
   });
 
   test("GET /favicon.ico serves the studio icon when built, else the handler's own 404", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     const icon = clientDistFile("favicon.ico");
     const res = await fetch("/favicon.ico");
     // Not "200 or 404" — that accepts everything. The expected outcome is
@@ -91,7 +59,7 @@ describe("studio page + routing", () => {
   });
 
   test("GET /studio/chat/<project> serves the shell (v0-style project URLs)", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     const res = await fetch("/studio/chat/contact-form-x7k2mq");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/html");
@@ -110,7 +78,7 @@ describe("studio page + routing", () => {
     // studio account. Exercised through the full orchestrator because the
     // routing ORDER is the risk: `/studio/*` hangs auth middleware on its own
     // subtrees, and `/:slug` sits beside it.
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     const res = await fetch("/studio/api/contact-form-x7k2mq");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/html");
@@ -122,24 +90,24 @@ describe("studio page + routing", () => {
     // slug pattern, so `/studio/api/<junk>` falls through rather than serving
     // a shell that would document nothing. Without this the assertion above
     // passes for a route matching anything at all.
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     expect((await fetch("/studio/api/Not A Slug")).status).toBe(404);
   });
 
   test("GET /studio and /studio/ redirect to the page", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     expect((await fetch("/studio")).status).toBe(302);
     expect((await fetch("/studio/")).status).toBe(302);
   });
 
   test("studio assets 404 when unknown and 400 on traversal", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     expect((await fetch("/studio-assets/assets/nope.js")).status).toBe(404);
     expect((await fetch("/studio-assets/..%2f..%2fpackage.json")).status).toBe(400);
   });
 
   test("GET /studio/status is public and reports the caller-keyed LLM", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     const res = await fetch("/studio/status");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -158,7 +126,7 @@ describe("studio page + routing", () => {
   test("an explicit STUDIO_LLM_MODEL is what status reports", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
     vi.stubEnv("STUDIO_LLM_MODEL", "claude-sonnet-4-6");
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     expect(await (await fetch("/studio/status")).json()).toEqual({
       provider: "assemblyai",
       model: "claude-sonnet-4-6",
@@ -171,14 +139,14 @@ describe("studio page + routing", () => {
     // status body (and a gateway request) naming the empty string.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
     vi.stubEnv("STUDIO_LLM_MODEL", "");
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     const body = (await (await fetch("/studio/status")).json()) as { model: string };
     expect(body.model).not.toBe("");
     expect(body.model).toBe(STUDIO_LLM_MODELS[0]);
   });
 
   test("studio slugs are reserved: agent routes 404 and deploys reject them", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     expect((await fetch("/studio/websocket")).status).toBe(404);
     for (const slug of ["studio", "studio-assets"]) {
       const res = await authFetch(fetch, "/deploy", {
@@ -196,13 +164,13 @@ describe("studio page + routing", () => {
 
 describe("studio auth", () => {
   test("project routes require a bearer key", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     expect((await fetch("/studio/projects")).status).toBe(401);
     expect((await fetch("/studio/projects/x", { method: "DELETE" })).status).toBe(401);
   });
 
   test("workspaces are namespaced per key", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     await createProject(fetch, "mine", "key1");
     expect(await listedProjects(fetch)).toEqual(["mine"]);
     expect(await listedProjects(fetch, "key2")).toEqual([]);
@@ -216,7 +184,7 @@ describe("chat history routes", () => {
   ];
 
   test("GET chat is bearer-auth'd and 404s for a missing project", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     expect((await fetch("/studio/projects/proj/chat")).status).toBe(401);
     expect((await authFetch(fetch, "/studio/projects/ghost/chat", { method: "GET" })).status).toBe(
       404,
@@ -224,7 +192,7 @@ describe("chat history routes", () => {
   });
 
   test("a project with no chat yet returns an empty message list", async () => {
-    const { fetch } = await createTestCombined();
+    const { fetch } = await createFakedCombined();
     await createProject(fetch);
     const res = await authFetch(fetch, "/studio/projects/proj/chat", { method: "GET" });
     expect(res.status).toBe(200);
@@ -232,7 +200,7 @@ describe("chat history routes", () => {
   });
 
   test("a persisted conversation round-trips through the route", async () => {
-    const { fetch, chats } = await createTestCombined();
+    const { fetch, chats } = await createFakedCombined();
     await createProject(fetch);
     await chats.putChat(studioScope("key1"), "proj", HISTORY);
     const res = await authFetch(fetch, "/studio/projects/proj/chat", { method: "GET" });
@@ -240,7 +208,7 @@ describe("chat history routes", () => {
   });
 
   test("chats are namespaced per key — another key's project 404s", async () => {
-    const { fetch, chats } = await createTestCombined();
+    const { fetch, chats } = await createFakedCombined();
     await createProject(fetch);
     await chats.putChat(studioScope("key1"), "proj", HISTORY);
     expect(
@@ -249,7 +217,7 @@ describe("chat history routes", () => {
   });
 
   test("deleting the project deletes its chat row too", async () => {
-    const { fetch, chats } = await createTestCombined();
+    const { fetch, chats } = await createFakedCombined();
     await createProject(fetch);
     const scope = studioScope("key1");
     await chats.putChat(scope, "proj", HISTORY);
@@ -264,7 +232,7 @@ describe("deploy + chat endpoints", () => {
   beforeEach(async () => {
     deployMock.mockClear();
     ensureSessionMock.mockClear();
-    ({ fetch } = await createTestCombined());
+    ({ fetch } = await createFakedCombined());
   });
 
   test("deploy route runs the pipeline and returns the URL + CLI output", async () => {
@@ -346,7 +314,7 @@ describe("deploy + chat endpoints", () => {
    * into building their own origin and losing the field.
    */
   test("session arms both preview triggers with one origin, naming the caller", async () => {
-    const { fetch: authed } = await withDevAuth();
+    const { fetch: authed } = await withFakedDevAuth();
     const bearer = devToken("a@b.c");
     await onboardKey(authed, bearer);
     await createProject(authed, "proj", bearer);

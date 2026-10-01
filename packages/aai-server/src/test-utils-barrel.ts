@@ -22,3 +22,4 @@ export { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 export { authFetch, authHeaders, deployAgent } from "./_request-test-utils.ts";
 export { createRecordingSql } from "./_sql-test-utils.ts";
 export { ensurePlatformTables } from "./platform/_schema-test-utils.ts";
+export { conformanceLike, noParent, uniqueKeys } from "./store-conformance.ts";

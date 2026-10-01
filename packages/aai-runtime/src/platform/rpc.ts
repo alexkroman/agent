@@ -67,7 +67,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { rpcFetch } from "../_egress-fetch.ts";
 import { newTraceparent, traceIdOf } from "../_trace-context.ts";
-import { consoleLogger } from "../runtime-config.ts";
+import { consoleLogger } from "../logger.ts";
 import { PLATFORM_UNAVAILABLE_CODE } from "../workflow/api/error-status.ts";
 import { type PlatformEndpoint, type PlatformRoute, platformUrl } from "./endpoint.ts";
 import { isPlatformSocketUnavailable } from "./socket.ts";

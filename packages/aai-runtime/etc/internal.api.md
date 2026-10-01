@@ -17,6 +17,7 @@ import type { GenerateResult } from '@alexkroman1/aai';
 import type { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
 import type { IncomingMessage } from 'node:http';
+import { isPathInside } from '@alexkroman1/aai/workspace-files';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
 import { parseBearer } from '@alexkroman1/aai/host-internal';
@@ -186,7 +187,7 @@ export function createPostgresStateBackend(options: {
 }): SessionStateBackend;
 
 // @public
-function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
+function createServerForRuntime(options: RuntimeServerOptions): AgentServer;
 
 // @public
 function createSessionAuth(options: SessionAuthOptions): SessionAuth;
@@ -255,7 +256,7 @@ export const GUEST_HOST_VERSION = 1;
 // @internal
 export interface GuestHost {
     readonly agentServerEnv: typeof agentServerEnv;
-    readonly createRuntimeServer: typeof createRuntimeServer;
+    readonly createRuntimeServer: typeof createServerForRuntime;
     readonly createSessionAuth: typeof createSessionAuth;
     readonly handleWorkflowRequest: typeof handleWorkflowRequest;
     // (undocumented)
@@ -318,8 +319,7 @@ export type HttpUploadBackendOptions = {
     fetch?: typeof globalThis.fetch | undefined;
 };
 
-// @internal
-export function isPathInside(dir: string, target: string): boolean;
+export { isPathInside }
 
 // @public
 type JournalArm = {

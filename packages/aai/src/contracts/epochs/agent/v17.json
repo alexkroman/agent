@@ -3,9 +3,10 @@
   "capability": "agent",
   "epoch": 17,
   "rule": 2,
-  "sha256": "49644d9a5a23def6f1555a2e8d3500a80f927a112762b81e3cb96fb233710a95",
+  "sha256": "dee344f5e866b30774ce6ea5be501543aef8025ec00cee3cb5d36a3009532584",
   "exports": [
     "AgentClientInbox",
+    "AgentDeclaration",
     "AgentDef",
     "AgentGuardrail",
     "AgentGuardrails",
@@ -58,6 +59,7 @@
     "SpeechOutcome",
     "StandardWebhookOptions",
     "StaticAgentParams",
+    "SyncStateDeclaration",
     "TelephonyAccess",
     "TelephonyCarrier",
     "TextAgentParams",
@@ -68,6 +70,7 @@
     "ValidatedRouteRequest",
     "VoicePresetName",
     "WebhookRouteOptions",
+    "WorkflowAppAgentParams",
     "agent",
     "assemblyAIPipeline",
     "clientRunsRoutes",
@@ -82,5 +85,5 @@
     "webhookRoute",
     "workflowApp"
   ],
-  "rollup": "e6d93a87d83bedfbe1b8df1ba13c199813497a156cdfb005a25d55a2bbd2be11"
+  "rollup": "e235345c8195c2dd92bf789785b3a7bb18ccd2739ce73fb6d92158e8fee5c187"
 }

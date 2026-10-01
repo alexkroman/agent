@@ -44,13 +44,7 @@ export function createHotelState(): HotelState {
  * The call log is the one append-only list, and its bound is declared on the
  * slot so it holds whatever path writes it.
  */
-export const hotelSlot = sessionSlot("hotel", createHotelState, { caps: { log: 40 } });
-
-/**
- * The projection `syncState` pushes.
- *
- * `client.tsx` deliberately does NOT import this — see the note there. It
- * derives its own empty frame from `deskView` instead, because taking the
- * projection would take the slot, and the slot takes the seed.
- */
-export const deskProjection = hotelSlot.projection(deskView);
+export const hotelSlot = sessionSlot("hotel", createHotelState, {
+  view: deskView,
+  caps: { log: 40 },
+});

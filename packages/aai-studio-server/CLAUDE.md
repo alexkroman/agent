@@ -74,7 +74,7 @@ raised function timeout (`SSE-CLAUDE.md`).
 
 - **aai-server is COMPILED IN, and the pattern must match its SUBPATHS.**
   `tsdown.config.ts` lists it under `deps.alwaysBundle`, which matches the
-  SPECIFIER, and every import is a subpath (`aai-server/orchestrator`, …). An
+  SPECIFIER, and every import is a subpath (`aai-server/stores`, …). An
   externalized entry still builds and runs, but every cold start then compiles
   ~72 TypeScript modules. `bundled-deps.test.ts` holds the pattern to the
   specifiers the entry imports.

@@ -13,7 +13,7 @@ import type {
   User,
   Variant,
 } from "./shared.ts";
-import { emptyRetailState, MAX_ACTIVITY } from "./shared.ts";
+import { emptyRetailState, MAX_ACTIVITY, storeView } from "./shared.ts";
 
 /**
  * The JSON import's inferred type has `status: string` where `Order` wants a
@@ -75,6 +75,8 @@ export function seedStore(): Store {
  * for `record` below and for `agent.ts`'s hook alike.
  */
 export const retailSlot = sessionSlot("retail", createDefaultState, {
+  // What the browser sees: only the authenticated customer of the six seeded.
+  view: storeView,
   caps: { activity: MAX_ACTIVITY },
 });
 

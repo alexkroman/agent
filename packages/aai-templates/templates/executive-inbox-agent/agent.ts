@@ -1,7 +1,7 @@
 import { agent } from "@alexkroman1/aai";
 import { EXECUTIVE } from "./inbox.ts";
 import { principalBrief } from "./prompts.ts";
-import { assistantProjection, reviewFlow } from "./shared.ts";
+import { assistantSlot, reviewFlow } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 
 /**
@@ -43,7 +43,7 @@ export default agent({
   systemPrompt: `${systemPrompt}\n\n${principalBrief(EXECUTIVE)}`,
   // The inbox, the memory and the proposal exist before the first tool call, so
   // a resumed connection has something to project.
-  syncState: { assistant: assistantProjection },
+  syncState: assistantSlot.projected,
   // Declared so the CALL can move the gate: a caller who hangs up with a draft
   // waiting leaves `accept` legal for the rest of the session otherwise.
   dialogs: [reviewFlow],

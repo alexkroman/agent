@@ -66,8 +66,8 @@ import type { GuardrailVerdict } from "./speaker.ts";
 export type { GuardrailVerdict } from "./speaker.ts";
 
 /**
- * Judge one piece of text — see {@link AgentDef.inputGuardrails} and
- * {@link AgentDef.outputGuardrails}.
+ * Judge one piece of text — see {@link AgentDeclaration.inputGuardrails} and
+ * {@link AgentDeclaration.outputGuardrails}.
  *
  * May be async: an input guardrail runs before the model request is assembled
  * and an output guardrail runs before anything is synthesized, so both have a

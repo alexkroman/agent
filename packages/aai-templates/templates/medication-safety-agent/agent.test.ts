@@ -1,8 +1,9 @@
-import { type InferToolInput, isToolFailure, type ToolFailure } from "@alexkroman1/aai";
+import { type InferToolInput, isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDeployable,
   expectPromptBuiltinsDeclared,
+  expectToolOk,
   runTool,
   toolInputIssues,
 } from "@alexkroman1/aai/testing";
@@ -54,22 +55,6 @@ import agentDef from "virtual:aai/agent";
 const lookUp = (args: InferToolInput<typeof MedicationLookup>) => runTool(MedicationLookup, args);
 const check = (args: InferToolInput<typeof CheckDrugInteraction>) =>
   runTool(CheckDrugInteraction, args);
-
-/**
- * What a tool answered when it did NOT refuse, or a throw quoting the refusal.
- *
- * Typed by what it is handed — the tool's OWN return type, through `runTool` —
- * so renaming `interactions_found` reddens here instead of quietly comparing
- * `undefined`, and this only subtracts the failure arm. The SDK's
- * `expectToolOk` is deliberately not used: it unwraps a `dialog()` envelope and
- * throws for a plain `tool()`, which both of these are.
- */
-function ok<T>(result: T): Exclude<T, ToolFailure> {
-  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  // Negating a type predicate does not subtract from a generic; the guard above
-  // is what makes this true.
-  return result as Exclude<T, ToolFailure>;
-}
 
 const IBUPROFEN: FdaLabel = {
   openfda: { generic_name: ["IBUPROFEN"], brand_name: ["Advil"], manufacturer_name: ["Acme"] },
@@ -203,7 +188,7 @@ describe("check_drug_interaction", () => {
     label.mockImplementation(async (name: string) =>
       name.includes("ibuprofen") ? IBUPROFEN : WARFARIN,
     );
-    const result = ok(await check({ drugs: ["ibuprofen", "warfarin"] }));
+    const result = expectToolOk(await check({ drugs: ["ibuprofen", "warfarin"] }));
     expect(result.interactions_found).toBe(1);
     expect(result.interactions[0]).toMatchObject({ drug: "ibuprofen", mentions: "warfarin" });
   });
@@ -234,7 +219,7 @@ describe("check_drug_interaction", () => {
 
   test("two drugs with no cross-mention are reported as such, with the caveat", async () => {
     label.mockResolvedValue(WARFARIN);
-    const result = ok(await check({ drugs: ["warfarin", "aspirin"] }));
+    const result = expectToolOk(await check({ drugs: ["warfarin", "aspirin"] }));
     expect(result.interactions_found).toBe(0);
     // The caveat is the point of the zero case: "no cross-mention" is not
     // "safe", and this tool must never be read as saying it was.

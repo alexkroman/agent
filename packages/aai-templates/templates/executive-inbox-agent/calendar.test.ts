@@ -7,7 +7,6 @@ import {
   expectToolOk,
   parseToolInput,
   runGuardrail,
-  scriptedToolContext,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
@@ -33,7 +32,7 @@ const run = toolRunner(agentDef);
  * `agent.test.ts`'s subject rather than this one's).
  */
 const desk = () =>
-  scriptedToolContext({
+  createToolContext({
     generate: {
       routes: {
         [TRIAGE_SYSTEM]: { object: { logic: "scripted", response: "email" } },
@@ -44,7 +43,7 @@ const desk = () =>
   });
 
 const openM4 = async () => {
-  const { ctx } = desk();
+  const ctx = desk();
   await run("open_email", { which: "m4" }, ctx);
   return ctx;
 };
@@ -110,7 +109,7 @@ describe("the meeting assistant's calendar tool", () => {
   });
 
   test("a report the guardrail never accepted comes back marked unusable", async () => {
-    const { ctx } = scriptedToolContext({
+    const ctx = createToolContext({
       generate: {
         routes: { [TRIAGE_SYSTEM]: { object: { logic: "scripted", response: "email" } } },
       },

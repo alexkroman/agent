@@ -5,6 +5,7 @@ import {
   createToolContext,
   expectDeployable,
   expectPromptBuiltinsDeclared,
+  expectToolOk,
   parseToolInput,
   runTool,
   toolInputIssues,
@@ -13,24 +14,11 @@ import {
 // The failure vocabulary from the subpath that DECLARES it — `/utils` is the
 // zero-dependency half a tool body (and a page) reaches for, and `client.tsx`
 // takes the same guard from the same place.
-import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
-import { CATEGORIES, MAX_RECS, MOODS, nightProjection, nightSlot } from "./shared.ts";
+import { CATEGORIES, MAX_RECS, MOODS, nightSlot } from "./shared.ts";
 import recommend from "./tools/recommend.ts";
 import revisit from "./tools/revisit.ts";
-
-/**
- * What a tool answered, or a throw quoting the refusal — at the CALL, rather
- * than as an `undefined` read off a `ToolFailure` several assertions later.
- * Typed by what it is handed: `runTool(theTool, …)` answers the tool's own
- * return type, so this only subtracts the failure arm and restates no shape.
- */
-function ok<T>(result: T): Exclude<T, ToolFailure> {
-  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  // Negating a type predicate does not subtract from a generic; the guard above
-  // is what makes this true.
-  return result as Exclude<T, ToolFailure>;
-}
 
 /**
  * What `recommend` takes, read off the tool itself — and what it answers,
@@ -95,9 +83,9 @@ describe("entertainment-picks-agent template", () => {
   });
 
   test("the projection an untouched session pushes is an empty log", () => {
-    // What `useAgentState(nightProjection)` reads before the first tool call —
+    // What `useAgentState(nightSlot.projected)` reads before the first tool call —
     // derived from the slot's own default rather than guessed at in the page.
-    expect(nightProjection()).toEqual({ recs: [] });
+    expect(nightSlot.projected()).toEqual({ recs: [] });
   });
 });
 
@@ -115,7 +103,7 @@ describe("recommend", () => {
     const ctx = createToolContext();
     const first = await run("recommend", { category: "book", mood: "spooky" }, ctx);
     const second = await run("recommend", { category: "music", mood: "chill" }, ctx);
-    expect(nightProjection(nightSlot.get(ctx))).toEqual({ recs: [second, first] });
+    expect(nightSlot.projected(nightSlot.get(ctx))).toEqual({ recs: [second, first] });
     // The two orders are DIFFERENT and both are deliberate: the slot keeps the
     // night in the order it happened, which is what a position word means and
     // which end `caps` trims; newest-first is the sidebar's, and the projection
@@ -212,7 +200,7 @@ describe("revisit", () => {
     // The distinction is the whole reason the two orders are separate: the
     // sidebar's top card is the newest, and a listener saying "the last one you
     // gave me" means that same pick from the other end.
-    expect(nightProjection(nightSlot.get(ctx)).recs[0]).toMatchObject({ category: "music" });
+    expect(nightSlot.projected(nightSlot.get(ctx)).recs[0]).toMatchObject({ category: "music" });
     expect(await run("revisit", { which: "the last one" }, ctx)).toMatchObject({
       category: "music",
       mood: "chill",
@@ -226,7 +214,7 @@ describe("revisit", () => {
   test("the listener's own words pick one out when they name no position", async () => {
     const ctx = createToolContext();
     await threePicks(ctx);
-    const found = ok(await runTool(revisit, { which: "those spooky books" }, ctx));
+    const found = expectToolOk(await runTool(revisit, { which: "those spooky books" }, ctx));
     expect(found).toMatchObject({ category: "book", mood: "spooky" });
     // It answers with the shelf's own picks, which is what makes this a lookup
     // rather than the model recalling three titles from a trimmed transcript.
@@ -264,9 +252,9 @@ describe("revisit", () => {
     // because the guarantee is the reason to declare a read tool as one.
     const ctx = createToolContext();
     await threePicks(ctx);
-    const before = nightProjection(nightSlot.get(ctx));
+    const before = nightSlot.projected(nightSlot.get(ctx));
     await run("revisit", { which: "the first one" }, ctx);
     await run("revisit", { which: "nothing like this" }, ctx);
-    expect(nightProjection(nightSlot.get(ctx))).toEqual(before);
+    expect(nightSlot.projected(nightSlot.get(ctx))).toEqual(before);
   });
 });

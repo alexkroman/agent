@@ -15,13 +15,13 @@ agent mode are `packages/aai-guest/CLAUDE.md`; the coding agent is
 
 ## Why this package exists
 
-**It exists to make the studio/harness split a DAG.** The guest was one
-package with a `harness/` and a `studio/` directory, and the two edges between
-them point in opposite directions: the entry (`harness.ts`) dispatches studio
-mode, and studio reaches back for `rpc`, `types`, `bundle`, `auth` and `http`
-at twenty call sites. Two packages therefore cannot express it — whichever one
-holds the entry must depend on studio, so studio cannot depend on it — and a
-cycle between workspace packages is unbuildable.
+**It exists to make the studio/harness split a DAG.** The guest's harness and
+its studio half have two edges between them that point in opposite directions:
+the entry (`harness.ts`) dispatches studio mode, and studio reaches back for
+`rpc`, `types`, `bundle`, `auth` and `http` at twenty call sites. Two packages
+therefore cannot express it — whichever one holds the entry must depend on
+studio, so studio cannot depend on it — and a cycle between workspace packages
+is unbuildable.
 
 Splitting the SHARED five out is what breaks it: core depends on nothing in
 this trio, studio depends on core, and `aai-guest` depends on both. The entry

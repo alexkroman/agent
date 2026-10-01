@@ -31,7 +31,7 @@ exists so a component re-renders on its own slice rather than on every frame:
 | the talk button | [useTapToTalk](#usetaptotalk) (tap on, tap off), [usePushToTalk](#usepushtotalk) (hold, for `turnTaking: { detection: "manual" }`) |
 | the agent's own `/api` routes | [useRoute](#useroute), [useRouteMutation](#useroutemutation), [routeFetch](#routefetch), [useClientRuns](#useclientruns) (a `clientRunsRoutes()` pair) |
 | what this browser remembers | [useStoredValue](#usestoredvalue) / [createStoredValue](#createstoredvalue), [phoneE164](#phonee164) |
-| what the agent projects | [useAgentState](#useagentstate) — pass the `slot.projected` the agent declared under its slot name in `syncState`, and it selects that slot, types it AND supplies the frame rendered before the first push; [selectAgentState](#selectagentstate) is the same slot as a `useSessionSelector` selector |
+| what the agent projects | [useAgentState](#useagentstate) — pass the `slot.projected` the agent declared in `syncState`, and it selects that slot, types it AND supplies the frame rendered before the first push; [selectAgentState](#selectagentstate) is the same slot as a `useSessionSelector` selector |
 | tools, as they run | [useToolCallStart](#usetoolcallstart), [useToolResult](#usetoolresult), [useEvent](#useevent) |
 | a durable run | [useWorkflowSubmit](#useworkflowsubmit) (start one), [useWorkflowRun](#useworkflowrun) (watch one), [useWorkflowRuns](#useworkflowruns) / [useWorkflows](#useworkflows) (list), [useWorkflowProgress](#useworkflowprogress) / [useWorkflowStream](#useworkflowstream) (its output as it arrives) |
 | page chrome | [useTheme](#usetheme), [useCopy](#usecopy), [useFlash](#useflash), [useDownloadUrl](#usedownloadurl), [useRunKey](#userunkey) |
@@ -2418,7 +2418,7 @@ import { sessionSlot } from "@alexkroman1/aai";
 import { useAgentState } from "@alexkroman1/aai-ui";
 
 // In a real project the slot is declared beside the agent and imported here;
-// the agent declares `syncState: { cart: cartSlot.projected }`.
+// the agent declares `syncState: cartSlot.projected`.
 const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
   view: (cart) => ({ count: cart.items.length }),
 });
@@ -2430,7 +2430,7 @@ function CartBadge() {
 ```
 
 The projection carries its slot key, so this selects `state[projection.key]`
-— the key `agent()` requires the agent's `syncState` to use. Before the first
+— the key the agent's `syncState` frame is keyed by. Before the first
 push it answers `projection()`, the slot's DEFAULT through the same view,
 memoized on the projection's identity; `slot.projected` is built once with
 the slot, so that identity is stable for the life of the component.

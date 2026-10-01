@@ -8,9 +8,15 @@
  */
 
 import { type CommandResult, fail, ok } from "./_output.ts";
-import { log } from "./_ui.ts";
+import { defaultUi } from "./_ui.ts";
 import { formatCappedList } from "./_utils.ts";
-import { classifyVitestError, runVitest, unrunSpecFiles, WIDEN_HINT } from "./_vitest-runner.ts";
+import {
+  classifyVitestError,
+  runVitest,
+  unrunSpecFiles,
+  type VitestDeps,
+  WIDEN_HINT,
+} from "./_vitest-runner.ts";
 
 /**
  * What `aai test` measured, not merely whether it exited 0.
@@ -88,25 +94,27 @@ export type TestOptions = {
 export async function executeTest(
   cwd: string,
   opts: TestOptions = {},
+  deps: VitestDeps = {},
 ): Promise<CommandResult<TestData>> {
+  const ui = deps.ui ?? defaultUi;
   const narrowed = opts.only === true;
-  log.step(narrowed ? "Running agent tests" : "Running project tests");
+  ui.log.step(narrowed ? "Running agent tests" : "Running project tests");
   try {
     // `announceUnrun` left at its DEFAULT (on), unlike before: the complete run
     // has nothing to announce, and the narrowed one is exactly the caller that
     // notice was written for. Reporting it here as well would read as two
     // findings.
-    const ran = runVitest(cwd, { candidates: TEST_FILES, all: !narrowed });
+    const ran = runVitest(cwd, { candidates: TEST_FILES, all: !narrowed, ...deps });
     const unrun = unrunSpecFiles(cwd, ran);
     if (ran === false) {
       // Nothing to point vitest at. Unreachable for the default invocation with
       // any spec in the project at all, so a non-empty `unrun` here means
       // `--only` narrowed the run down to a file that does not exist.
       if (unrun.length > 0) return noNarrowTarget(unrun);
-      log.info("No test file found. Create agent.test.ts to add tests.");
+      ui.log.info("No test file found. Create agent.test.ts to add tests.");
       return ok({ passed: true, skipped: true, ran: [], unrun: [], complete: true });
     }
-    log.success(`Tests passed (${ran.length} spec file(s))`);
+    ui.log.success(`Tests passed (${ran.length} spec file(s))`);
     return ok({ passed: true, ran, unrun, complete: unrun.length === 0 });
   } catch (err: unknown) {
     const { code, message } = classifyVitestError(err);

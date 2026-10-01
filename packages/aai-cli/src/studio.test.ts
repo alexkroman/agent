@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { readProjectConfig, writeProjectConfig } from "./_config.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { createFakeUi, type FakeUi, withTempDir } from "./_test-utils.ts";
 
 // resolveDeployTarget is the single auth/target resolver; each test shapes
 // its `config` to model an unlinked, linked, or deployed project directory.
@@ -15,21 +15,12 @@ vi.mock("./_agent.ts", () => ({
   getMonorepoRoot: vi.fn().mockReturnValue(null),
 }));
 
-// A HOLDER rather than an inline set of `vi.fn()`s, so the roster stays
-// `makeMockLog`'s: a method added to `log` that this factory did not know about
-// would be a TypeError in whichever command called it, not a failed assertion.
-const uiLog = vi.hoisted(() => ({
-  current: undefined as ReturnType<typeof import("./_test-utils.ts").makeMockLog> | undefined,
-}));
-vi.mock("./_ui.ts", async () => {
-  const log = (await import("./_test-utils.ts")).makeMockLog();
-  uiLog.current = log;
-  return { log, fmtUrl: (url: string) => url };
-});
+/** The fake terminal each executor is handed — fresh per test. */
+let ui: FakeUi;
 
 /** Everything the command said through `log.info`, one string per call. */
 function infoLines(): string[] {
-  return (uiLog.current?.info.mock.calls ?? []).map((call) => String(call[0]));
+  return ui.said("info");
 }
 
 const mockApiRequest = vi.hoisted(() => vi.fn());
@@ -50,14 +41,12 @@ const TARGET = { config: null, serverUrl: "https://api.test", apiKey: "key1" };
 
 beforeEach(() => {
   resolveDeployTarget.mockResolvedValue(TARGET);
+  ui = createFakeUi();
 });
 
 afterEach(() => {
   mockApiRequest.mockReset();
   resolveDeployTarget.mockReset();
-  // The mock log is created once per MODULE, not per test, so its calls
-  // accumulate across them — cleared here or `infoLines()` reads a neighbour's.
-  for (const fn of Object.values(uiLog.current ?? {})) fn.mockClear();
 });
 
 /** Route apiRequest by URL suffix — the commands compose multiple calls. */
@@ -172,7 +161,7 @@ describe("collectSourceFiles", () => {
 describe("executeList", () => {
   test("lists the caller's studio projects", async () => {
     routeApi({ "GET /studio/projects": { projects: ["a", "b"] } });
-    const result = await executeList({ cwd: "/tmp" });
+    const result = await executeList({ cwd: "/tmp" }, ui);
     expect(result).toEqual({ ok: true, data: { projects: ["a", "b"] } });
   });
 
@@ -187,7 +176,7 @@ describe("executeList", () => {
     ["an HTML page", "<!doctype html>"],
   ])("%s is refused with a sentence naming the server", async (_label, body) => {
     routeApi({ "GET /studio/projects": body });
-    await expect(executeList({ cwd: "/tmp" })).rejects.toThrow(
+    await expect(executeList({ cwd: "/tmp" }, ui)).rejects.toThrow(
       /Unexpected response from the studio project list at https:\/\/api\.test/,
     );
   });
@@ -209,7 +198,7 @@ describe("executePull", () => {
         },
       });
 
-      const result = await executePull({ cwd: dir, project: "proj" });
+      const result = await executePull({ cwd: dir, project: "proj" }, ui);
       expect(result.ok).toBe(true);
       const target = path.join(dir, "proj");
       expect(await fs.readFile(path.join(target, "agent.ts"), "utf-8")).toBe("export {};");
@@ -227,16 +216,16 @@ describe("executePull", () => {
   test("404s a missing project and refuses a non-empty directory", async () => {
     await withTempDir(async (dir) => {
       routeApi({ "GET /studio/projects/ghost": null });
-      await expect(executePull({ cwd: dir, project: "ghost" })).rejects.toThrow(
+      await expect(executePull({ cwd: dir, project: "ghost" }, ui)).rejects.toThrow(
         'No studio project named "ghost"',
       );
 
       routeApi({ "GET /studio/projects/proj": { files: { "a.ts": "x" }, sourceHash: "h" } });
       await fs.mkdir(path.join(dir, "proj"));
       await fs.writeFile(path.join(dir, "proj/existing.txt"), "here");
-      await expect(executePull({ cwd: dir, project: "proj" })).rejects.toThrow("is not empty");
+      await expect(executePull({ cwd: dir, project: "proj" }, ui)).rejects.toThrow("is not empty");
       // --force overwrites in place.
-      expect((await executePull({ cwd: dir, project: "proj", force: true })).ok).toBe(true);
+      expect((await executePull({ cwd: dir, project: "proj", force: true }, ui)).ok).toBe(true);
     });
   });
 
@@ -249,20 +238,20 @@ describe("executePull", () => {
         "GET /studio/projects/ghost": null,
         "GET /studio/projects": { projects: ["pizza", "support-bot"] },
       });
-      await expect(executePull({ cwd: dir, project: "ghost" })).rejects.toMatchObject({
+      await expect(executePull({ cwd: dir, project: "ghost" }, ui)).rejects.toMatchObject({
         code: "not_found",
         hint: "Your projects: pizza, support-bot.",
       });
 
       routeApi({ "GET /studio/projects/ghost": null, "GET /studio/projects": { projects: [] } });
-      await expect(executePull({ cwd: dir, project: "ghost" })).rejects.toMatchObject({
+      await expect(executePull({ cwd: dir, project: "ghost" }, ui)).rejects.toMatchObject({
         hint: expect.stringContaining("linked to a different account"),
       });
 
       // The list is a second request on an already-failing path: its failure
       // must not replace the 404.
       routeApi({ "GET /studio/projects/ghost": null });
-      await expect(executePull({ cwd: dir, project: "ghost" })).rejects.toMatchObject({
+      await expect(executePull({ cwd: dir, project: "ghost" }, ui)).rejects.toMatchObject({
         hint: "Run `aai list` to see your projects.",
       });
     });
@@ -273,7 +262,7 @@ describe("executePull", () => {
       routeApi({
         "GET /studio/projects/proj": { files: { "../evil.ts": "x" }, sourceHash: "h" },
       });
-      await expect(executePull({ cwd: dir, project: "proj" })).rejects.toThrow(
+      await expect(executePull({ cwd: dir, project: "proj" }, ui)).rejects.toThrow(
         "escapes the project directory",
       );
     });
@@ -294,7 +283,7 @@ describe("executePush", () => {
         },
       });
 
-      const result = await executePush({ cwd });
+      const result = await executePush({ cwd }, ui);
       expect(result).toEqual({
         ok: true,
         data: {
@@ -327,7 +316,7 @@ describe("executePush", () => {
       // that files were dropped. Since a push REPLACES the whole workspace
       // file map, a silently truncated push can delete `agent.ts` from an
       // existing project.
-      const result = await executePush({ cwd });
+      const result = await executePush({ cwd }, ui);
       expect(result.ok).toBe(true);
       const data = (result as { data: { warnings?: string[] } }).data;
       expect(data.warnings?.some((w) => w.includes("huge.txt"))).toBe(true);
@@ -344,7 +333,7 @@ describe("executePush", () => {
         "PUT /studio/projects/voice-agent/source": { sourceHash: "h", created: true },
       });
 
-      const result = await executePush({ cwd });
+      const result = await executePush({ cwd }, ui);
       expect(result).toEqual({
         ok: true,
         data: {
@@ -368,7 +357,7 @@ describe("executePush", () => {
       // a tree with no entry, and the server then answered a confusing
       // "No agent.ts found in the current directory". Fail here, naming the cap.
       await fs.writeFile(path.join(cwd, "agent.ts"), `export {};\n// ${"x".repeat(256_001)}`);
-      await expect(executePush({ cwd })).rejects.toThrow(/agent\.ts is \d+ bytes .*not synced/);
+      await expect(executePush({ cwd }, ui)).rejects.toThrow(/agent\.ts is \d+ bytes .*not synced/);
     });
   });
 
@@ -380,7 +369,7 @@ describe("executePush", () => {
       routeApi({
         "GET /studio/projects/voice-agent": { files: { "agent.ts": "theirs" }, sourceHash: "h9" },
       });
-      await expect(executePush({ cwd })).rejects.toThrow("already has a project named");
+      await expect(executePush({ cwd }, ui)).rejects.toThrow("already has a project named");
     });
   });
 
@@ -403,7 +392,7 @@ describe("executePush", () => {
         },
       });
 
-      const result = await executePush({ cwd });
+      const result = await executePush({ cwd }, ui);
       expect(result.ok).toBe(true);
       expect((await readProjectConfig(cwd))?.studioSourceHash).toBe("hash-2");
     });
@@ -422,7 +411,7 @@ describe("executePush", () => {
           return { sourceHash: "h2", created: false };
         },
       });
-      expect((await executePush({ cwd, force: true })).ok).toBe(true);
+      expect((await executePush({ cwd, force: true }, ui)).ok).toBe(true);
     });
   });
 });
@@ -463,7 +452,7 @@ describe("executePublish", () => {
         },
       });
 
-      const result = await executePublish({ cwd, skipTypecheck: true });
+      const result = await executePublish({ cwd, skipTypecheck: true }, ui);
       expect(result).toEqual({
         ok: true,
         data: {
@@ -503,7 +492,7 @@ describe("executePublish", () => {
       // The client-side gate is skipped here too, but the guest re-runs `aai
       // deploy` which typechecks unconditionally — so the flag has to ride the
       // request body or `aai publish --skipTypecheck` is a silent no-op.
-      await executePublish({ cwd, skipTypecheck: true });
+      await executePublish({ cwd, skipTypecheck: true }, ui);
       expect(deployBody).toEqual({ skipTypecheck: true });
     });
   });
@@ -527,10 +516,10 @@ describe("executePublish", () => {
 
       // Thrown as a CliError; `runCommand` turns it into the one JSON result
       // line with its code and hint.
-      await expect(executePublish({ cwd, skipTypecheck: true })).rejects.toThrow(
+      await expect(executePublish({ cwd, skipTypecheck: true }, ui)).rejects.toThrow(
         /Unexpected response from the publish route/,
       );
-      await expect(executePublish({ cwd, skipTypecheck: true })).rejects.not.toThrow(/'trim'/);
+      await expect(executePublish({ cwd, skipTypecheck: true }, ui)).rejects.not.toThrow(/'trim'/);
     });
   });
 
@@ -555,7 +544,7 @@ describe("executePublish", () => {
 
       // Publish is the command that ships to production, so a silently
       // truncated tree matters even more here than on a bare push.
-      const result = await executePublish({ cwd, skipTypecheck: true });
+      const result = await executePublish({ cwd, skipTypecheck: true }, ui);
       expect(result.ok).toBe(true);
       const data = (result as { data: { warnings?: string[] } }).data;
       expect(data.warnings?.some((w) => w.includes("huge.txt"))).toBe(true);
@@ -598,7 +587,7 @@ describe("executePublish", () => {
         },
       });
 
-      const result = await executePublish({ cwd, skipTypecheck: true });
+      const result = await executePublish({ cwd, skipTypecheck: true }, ui);
       expect(result.ok).toBe(true);
       expect(order).toEqual(["secrets", "deploy"]);
     });
@@ -626,7 +615,7 @@ describe("executePublish", () => {
         },
       });
 
-      expect((await executePublish({ cwd, skipTypecheck: true })).ok).toBe(true);
+      expect((await executePublish({ cwd, skipTypecheck: true }, ui)).ok).toBe(true);
       const said = infoLines().join("\n");
       expect(said).not.toContain("next `aai publish`");
     });
@@ -650,7 +639,7 @@ describe("executePublish", () => {
         },
       });
 
-      expect((await executePublish({ cwd, skipTypecheck: true })).ok).toBe(true);
+      expect((await executePublish({ cwd, skipTypecheck: true }, ui)).ok).toBe(true);
     });
   });
 });
@@ -662,7 +651,7 @@ describe("executeDelete", () => {
       config: { serverUrl: "https://api.test", studioProject: "proj", slug: "proj" },
     });
     routeApi({ "DELETE /studio/projects/proj": { ok: true } });
-    const result = await executeDelete({ cwd: "/tmp" });
+    const result = await executeDelete({ cwd: "/tmp" }, ui);
     expect(result).toEqual({ ok: true, data: { project: "proj", slug: "proj" } });
   });
 
@@ -680,7 +669,7 @@ describe("executeDelete", () => {
       });
       routeApi({ "DELETE /studio/projects/proj": { ok: true } });
 
-      await executeDelete({ cwd });
+      await executeDelete({ cwd }, ui);
 
       // Leaving the link behind sent the next push a stale `baseHash` for a
       // project that no longer exists, which the server answers 409 —

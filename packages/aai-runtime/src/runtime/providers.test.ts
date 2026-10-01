@@ -53,7 +53,7 @@ describe("createRuntime provider resolution", () => {
   test("a workflow app resolves nothing until something asks for a transport", () => {
     // Deferred, not skipped — the difference matters for the one path that can
     // still open a session on a static agent (an embedder passing
-    // `createRuntimeServer({ telephony: true })`), which must report the real
+    // `createServerForRuntime({ telephony: true })`), which must report the real
     // credential error rather than "no transport for session". That the thunk
     // still throws when finally called is
     // `transport.test.ts`'s "a pipelineProviders thunk that throws".

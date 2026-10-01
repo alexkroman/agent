@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `?phone=` on a voice socket as `createRuntimeServer` serves it: normalized to
+ * `?phone=` on a voice socket as `createServerForRuntime` serves it: normalized to
  * E.164 and handed to the session, or dropped with one warning that does not
  * carry the number.
  */
@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import { silentLogger } from "../_logger-test-utils.ts";
-import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
+import { type AgentServer, createServerForRuntime, type SessionRuntime } from "./server.ts";
 
 let server: AgentServer | undefined;
 afterEach(async () => {
@@ -25,7 +25,7 @@ async function start() {
     },
     shutdown: async () => undefined,
   };
-  server = createRuntimeServer({ runtime, logger: { ...silentLogger, warn } });
+  server = createServerForRuntime({ runtime, logger: { ...silentLogger, warn } });
   await server.listen(0);
   return { base: `ws://127.0.0.1:${server.port}`, starts, warn };
 }
@@ -36,7 +36,7 @@ async function connect(url: string): Promise<void> {
   ws.terminate();
 }
 
-describe("?phone= on createRuntimeServer", () => {
+describe("?phone= on createServerForRuntime", () => {
   test("a formatted + number reaches the session as E.164", async () => {
     const { base, starts, warn } = await start();
     await connect(`${base}/websocket?phone=${encodeURIComponent("+1 (503) 555-0123")}`);

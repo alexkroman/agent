@@ -3,15 +3,15 @@
 /** Loggers for specs: one that discards, and one whose methods are spies. */
 
 import { type Mock, vi } from "vitest";
-import type { LogFn, Logger, LogLevel } from "./runtime-config.ts";
+import type { LogFn, Logger, LogLevel } from "./logger.ts";
 
 /**
  * A logger that discards, to keep test output quiet. Plain no-ops, so it is
  * NOT for asserting on — use {@link makeLogger}. Declared in
- * `runtime-config.ts`, which the fuzz harnesses (not declaration-portable
+ * `logger.ts`, which the fuzz harnesses (not declaration-portable
  * against vitest) can import.
  */
-export { silentLogger } from "./runtime-config.ts";
+export { silentLogger } from "./logger.ts";
 
 /**
  * A {@link Logger} whose four methods are spies. DECLARED rather than inferred:

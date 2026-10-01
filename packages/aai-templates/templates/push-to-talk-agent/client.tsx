@@ -2,7 +2,7 @@
  * A hold-to-talk page. Three things arrive from the agent and one goes back.
  *
  * The notebook is STATE: the agent owns it in a `sessionSlot`, `syncState`
- * projects it, `useAgentState(notebookProjection)` reads it — so a reload
+ * projects it, `useAgentState(notebookSlot.projected)` reads it — so a reload
  * resumes with every note on the page.
  *
  * The conversation is the stock `<MessageList>`, and the Start / Pause / End
@@ -30,7 +30,7 @@ import {
   useSessionControls,
   useUserTranscript,
 } from "@alexkroman1/aai-ui";
-import { notebookProjection } from "./shared.ts";
+import { notebookSlot } from "./shared.ts";
 
 function TalkButton() {
   const { talking, ready, buttonProps } = usePushToTalk();
@@ -66,7 +66,7 @@ function TalkButton() {
 }
 
 function Notebook() {
-  const { notes } = useAgentState(notebookProjection);
+  const { notes } = useAgentState(notebookSlot.projected);
   return (
     <div className="flex flex-col h-full text-sm bg-aai-bg text-aai-text">
       <div className="px-4 py-3 border-b border-aai-border shrink-0">

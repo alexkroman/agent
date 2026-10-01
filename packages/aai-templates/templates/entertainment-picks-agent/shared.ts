@@ -40,21 +40,11 @@ export const MAX_RECS = 12;
  * - **A position word means the order the CONVERSATION happened in.** "The
  *   last one you gave me" is the newest, and `revisit` resolves it with
  *   `at(-1)`; the sidebar's newest-first painting is a display choice, and it
- *   is the projection below that makes it.
+ *   is the view on the slot below that makes it.
  */
 export const nightSlot = sessionSlot("night", () => ({ recs: [] as Rec[] }), {
+  // What the browser sees: newest first, over a copy — the slot stays
+  // chronological, and reversing here keeps both ends agreeing which end is new.
+  view: (night) => ({ recs: [...night.recs].reverse() }),
   caps: { recs: MAX_RECS },
 });
-
-/**
- * What the browser sees. The projection BOTH ends use: `syncState` on the
- * agent, `useAgentState` in the client — so the page's empty state is derived
- * from the same function the server pushes, rather than guessed at.
- *
- * It REVERSES, over a copy: the slot's own order is chronological (see above)
- * and newest-first is what the sidebar reads best. Doing it here rather than
- * in `client.tsx` keeps the two ends from disagreeing about which end is new.
- */
-export const nightProjection = nightSlot.projection((night) => ({
-  recs: [...night.recs].reverse(),
-}));

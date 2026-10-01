@@ -9,7 +9,7 @@
  * remember — it has happened FOUR times, and each was found by somebody needing
  * the option rather than by anything checking:
  *
- * - **`telephony`** defaulted to `!isStatic` in `createRuntimeServer` and was not
+ * - **`telephony`** defaulted to `!isStatic` in `createServerForRuntime` and was not
  *   forwarded, so every server built through the documented door — the
  *   scaffold's `server.mjs` included — mounted an unauthenticated `WS /phone`
  *   with no way to switch it off.
@@ -17,7 +17,7 @@
  *   through, so a `mode: "workflow-app"` agent still got the voice surfaces and a
  *   voice `GET /client-config`.
  * - **`env`** was forwarded to the runtime alone, so three of the four things
- *   `createRuntimeServer` reads out of an env were dropped: `AAI_WORKFLOW_API_TOKEN`
+ *   `createServerForRuntime` reads out of an env were dropped: `AAI_WORKFLOW_API_TOKEN`
  *   did nothing (the workflow API and its upload write routes stayed open),
  *   `AAI_SESSION_EVENTS_TOKEN` did nothing, and `DATABASE_URL` did nothing —
  *   so an upload's record went to a temp directory and was gone before a
@@ -79,7 +79,7 @@ export type UnforwardedRuntimeOption =
    * The SANDBOX seams. Each replaces a piece of the engine wholesale — the
    * egress `fetch`, the `ctx.workflows` client — and a caller filling one is
    * embedding the runtime rather than serving an agent, which is
-   * `createRuntime` + `createRuntimeServer`. `runCode` sat here too until a
+   * `createRuntime` + `createServerForRuntime`. `runCode` sat here too until a
    * self-hosted server had an executor worth passing (`AAI_RUN_CODE=deno`),
    * and is forwarded now. (The testing and relay
    * seams that used to sit here — the tool executor and its schemas, the two

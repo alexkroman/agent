@@ -17,8 +17,8 @@
  */
 
 import { MAX_PROVIDER_WS_BUFFERED_BYTES } from "@alexkroman1/aai/host-internal";
-import type { Logger } from "./runtime-config.ts";
-import { consoleLogger } from "./runtime-config.ts";
+import type { Logger } from "./logger.ts";
+import { consoleLogger } from "./logger.ts";
 
 /** Per-connection audio backpressure gate — see {@link createAudioSendGate}. */
 export interface AudioSendGate {

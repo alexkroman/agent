@@ -6,7 +6,7 @@
  * `sdk/step-speak.ts` is the surface a step calls and carries the argument for
  * why it exists — read that first. It may not import `ws`, being on the CLI's
  * zero-dependency startup path and riding the browser bundle, so the socket
- * lives here and `createRuntimeServer` publishes it.
+ * lives here and `createServerForRuntime` publishes it.
  *
  * ## It is NOT the session opener, and the difference is the point
  *
@@ -185,7 +185,7 @@ function abortError(signal: AbortSignal): Error {
  * Synthesize one utterance and resolve its raw PCM16.
  *
  * The published implementation of {@link SpeechSynthesizer}, exported so
- * `createRuntimeServer` can publish it and a spec can drive it directly.
+ * `createServerForRuntime` can publish it and a spec can drive it directly.
  *
  * @internal
  */

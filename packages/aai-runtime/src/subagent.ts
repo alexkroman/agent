@@ -59,7 +59,7 @@ import { omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { type LanguageModel, type ModelMessage, stepCountIs, ToolLoopAgent } from "ai";
 import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
 import { composePreparers, forceFinalAnswer } from "./_prepare-step.ts";
-import { consoleLogger, type Logger } from "./runtime-config.ts";
+import { consoleLogger, type Logger } from "./logger.ts";
 import {
   createToolDispatcher,
   executeToolCall,

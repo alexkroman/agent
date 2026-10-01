@@ -23,14 +23,12 @@
  */
 
 import type { Message } from "@alexkroman1/aai";
-import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { capToolResult } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { compactRecordsForModel } from "../_compact-records.ts";
-import type { Logger } from "../runtime-config.ts";
-import { toolResultMessage } from "../tools/index.ts";
+import type { Logger } from "../logger.ts";
+import { runToolCall, type ToolCallContext, toolResultMessage } from "../tools/index.ts";
 import type { SessionEmitter } from "./emitter.ts";
 
 /** One settled tool call, awaiting the flush that hands it to the transport. */
@@ -49,22 +47,21 @@ export type ReplyToolState = {
 export type ToolStepDeps = {
   sessionId: string;
   agentConfig: AgentConfig;
-  executeTool: ExecuteTool;
-  emit: SessionEmitter["emit"];
-  log: Logger;
-  /** The live conversation, snapshotted per call. */
-  history: () => readonly Message[];
   /**
-   * Append this call's own result to that conversation, so the NEXT tool call
-   * of the reply reads what this one answered — the `"tool"` arm of
-   * {@link Message}.
+   * What the call runs against — the shared core's context
+   * (`../tools/run-tool-call.ts`). Its `recordToolResult` is required here:
+   * every settled call appends its own result to the live conversation, so the
+   * NEXT tool call of the reply reads what this one answered — the `"tool"` arm
+   * of {@link Message}.
    *
    * Called beside every `tool.completed` emit below and with the SAME string
    * the event carries, which is what makes the live view and the one a resume
    * rebuilds out of that event stream (`event-history.ts`) the same
    * history rather than two nearly-equal ones.
    */
-  recordToolResult: (message: Message) => void;
+  toolCall: ToolCallContext & { recordToolResult: (message: Message) => void };
+  emit: SessionEmitter["emit"];
+  log: Logger;
   /** True in relay/host mode, where the relay executor emits `tool.called` itself. */
   relayed: boolean;
 };
@@ -104,18 +101,21 @@ export function runToolStep(
       result: serializeToolFailure("Maximum tool steps reached. Please respond to the user now."),
     });
     emit({ type: "tool.completed", toolCallId: callId, result: "{}" });
-    deps.recordToolResult(toolResultMessage({ result: "{}", toolName: name, toolCallId: callId }));
+    deps.toolCall.recordToolResult(
+      toolResultMessage({ result: "{}", toolName: name, toolCallId: callId }),
+    );
     return undefined;
   }
   return (async () => {
     try {
-      // Snapshot history: the live array is push/spliced by transcript events
-      // while the tool runs (mirrors to-vercel-tools.ts). The reply's abort
-      // signal lets barge-in/reset/stop settle the call.
-      const result = await deps.executeTool(name, args, deps.sessionId, [...deps.history()], {
-        toolCallId: callId,
-        signal: reply.abort.signal,
-      });
+      // The call itself — coercion, the history snapshot, execution and the
+      // recorded result — is `runToolCall`'s, the core the pipeline's tools run
+      // through too. The reply's abort signal lets barge-in/reset/stop settle
+      // the call.
+      const { result, forModel } = await runToolCall(
+        { name, args, toolCallId: callId, signal: reply.abort.signal },
+        deps.toolCall,
+      );
       // Full result goes to the provider; the client `tool.completed` event is
       // capped by the wire schema (MAX_TOOL_RESULT_CHARS), so truncate it or the
       // client silently drops the whole message and the UI tool-call block stays
@@ -124,19 +124,22 @@ export function runToolStep(
       // `tools/executor.ts` says so once per tool, since a result that arrives
       // here over the cap is re-sent to the provider on every later turn.
       //
-      // The PROVIDER's copy renders record collections as rows
-      // (`../_compact-records.ts`); the event and the history keep the tool's own.
-      reply.pendingTools.push({ callId, result: compactRecordsForModel(result) });
+      // The PROVIDER's copy renders record collections as rows; the event and
+      // the history keep the tool's own.
+      reply.pendingTools.push({ callId, result: forModel });
       emit({ type: "tool.completed", toolCallId: callId, result: capToolResult(result) });
-      deps.recordToolResult(toolResultMessage({ result, toolName: name, toolCallId: callId }));
     } catch (err) {
+      // What a rejection BECOMES is this transport's half: an S2S service
+      // cannot be stopped mid-reply (the `fatalTool` capability), so a fatal
+      // verdict and an executor failure alike answer the call with a failure
+      // the model reads, and the history records it.
       const message = errorMessage(err);
       reply.pendingTools.push({ callId, result: serializeToolFailure(message) });
       emit({ type: "tool.completed", toolCallId: callId, result: capToolResult(message) });
       // The EVENT's string, not the provider's — see `recordToolResult`. The
       // two differ here (the provider gets `serializeToolFailure(message)`),
       // and it is the event a resume replays.
-      deps.recordToolResult(
+      deps.toolCall.recordToolResult(
         toolResultMessage({ result: message, toolName: name, toolCallId: callId }),
       );
     }

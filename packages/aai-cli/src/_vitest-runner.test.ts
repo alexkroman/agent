@@ -3,7 +3,8 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, type MockInstance, test, vi } from "vitest";
+import { createFakeUi, type FakeUi } from "./_test-utils.ts";
 import {
   projectSpecFiles,
   resolveVitestCommand,
@@ -12,21 +13,15 @@ import {
 } from "./_vitest-runner.ts";
 import { TEST_FILES } from "./test.ts";
 
-const execaSync = vi.hoisted(() => vi.fn());
-vi.mock("execa", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("execa")>();
-  return { ...orig, execaSync };
-});
-
+/** The spawner `runVitest` is handed in place of `execaSync`. */
+const execaSync = vi.fn();
 /**
- * `notify` is the channel the unrun-spec warning goes out on, so a spec that
- * asserts the warning has to watch it rather than the console `log` writes to.
+ * The fake terminal, and a spy on its `notify` — the channel the unrun-spec
+ * notice goes out on (not `log`, which JSON mode silences).
  */
-const notify = vi.hoisted(() => vi.fn());
-vi.mock("./_ui.ts", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("./_ui.ts")>();
-  return { ...orig, notify };
-});
+let ui: FakeUi;
+let notify: MockInstance<FakeUi["notify"]>;
+const deps = () => ({ ui, exec: execaSync });
 
 let tempDir: string;
 
@@ -35,7 +30,8 @@ beforeEach(async () => {
   // Both are factory `vi.fn()`s rather than spies, so `restoreMocks` does not
   // reach them and their call history would otherwise be cumulative.
   execaSync.mockReset();
-  notify.mockReset();
+  ui = createFakeUi();
+  notify = vi.spyOn(ui, "notify");
 });
 
 afterEach(async () => {
@@ -59,7 +55,7 @@ const candidates = TEST_FILES;
 
 describe("runVitest", () => {
   test("returns false when no test files exist", () => {
-    const result = runVitest(tempDir, { candidates });
+    const result = runVitest(tempDir, { ...deps(), candidates });
     expect(result).toBe(false);
   });
 
@@ -70,13 +66,13 @@ describe("runVitest", () => {
     await writeFile(path.join(tempDir, "agent.test.js"), "// test file");
     // The NAMES it ran, not a boolean — the caller reports them and
     // `unrunSpecFiles` reports the complement.
-    expect(runVitest(tempDir, { candidates })).toEqual(["agent.test.js"]);
+    expect(runVitest(tempDir, { ...deps(), candidates })).toEqual(["agent.test.js"]);
     expect(vitestArgs().at(-1)).toBe("agent.test.js");
   });
 
   test("runs vitest against agent.test.ts without overriding NODE_OPTIONS", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
-    expect(runVitest(tempDir, { candidates })).toEqual(["agent.test.ts"]);
+    expect(runVitest(tempDir, { ...deps(), candidates })).toEqual(["agent.test.ts"]);
     const [, args, opts] = execaSync.mock.calls[0] as [
       string,
       string[],
@@ -103,7 +99,7 @@ describe("runVitest", () => {
     await writeFile(path.join(vitestDir, "vitest.mjs"), "// fake bin");
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
 
-    expect(runVitest(tempDir, { candidates })).toEqual(["agent.test.ts"]);
+    expect(runVitest(tempDir, { ...deps(), candidates })).toEqual(["agent.test.ts"]);
     const [cmd, args] = execaSync.mock.calls[0] as [string, string[]];
     // No npx: the local bin JS runs with the current Node executable.
     expect(cmd).toBe(process.execPath);
@@ -137,7 +133,7 @@ describe("runVitest", () => {
 
   test("falls back to agent.test.js when no .ts test exists", async () => {
     await writeFile(path.join(tempDir, "agent.test.js"), "// test file");
-    expect(runVitest(tempDir, { candidates })).toEqual(["agent.test.js"]);
+    expect(runVitest(tempDir, { ...deps(), candidates })).toEqual(["agent.test.js"]);
     expect(vitestArgs()).toContain("agent.test.js");
   });
 
@@ -146,7 +142,7 @@ describe("runVitest", () => {
     // default is shorter than one live model turn, and an argument placed after
     // the positional filters would be read as another filter.
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
-    runVitest(tempDir, { candidates, extraArgs: ["--testTimeout", "300000"] });
+    runVitest(tempDir, { ...deps(), candidates, extraArgs: ["--testTimeout", "300000"] });
     expect(vitestArgs().slice(-5)).toEqual([
       "--root",
       ".",
@@ -161,7 +157,7 @@ describe("runVitest", () => {
     // provider key; losing the parent env with it would take PATH out from under
     // the runner.
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
-    runVitest(tempDir, { candidates, env: { AAI_SPEC_ONLY: "1" } });
+    runVitest(tempDir, { ...deps(), candidates, env: { AAI_SPEC_ONLY: "1" } });
     const [, , opts] = execaSync.mock.calls[0] as [
       string,
       string[],
@@ -180,7 +176,7 @@ describe("runVitest announces what it did not run", () => {
     // notice — but the DEFAULT is what closed it without a caller having to know.
     await writeFile(path.join(tempDir, "agent.test.ts"), "");
     await writeFile(path.join(tempDir, "store.test.ts"), "");
-    runVitest(tempDir, { candidates });
+    runVitest(tempDir, { ...deps(), candidates });
     const [level, message] = notify.mock.calls.at(-1) as [string, string];
     expect(level).toBe("warn");
     expect(message).toContain("store.test.ts");
@@ -192,14 +188,14 @@ describe("runVitest announces what it did not run", () => {
 
   test("a complete run says nothing", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "");
-    runVitest(tempDir, { candidates });
+    runVitest(tempDir, { ...deps(), candidates });
     expect(notify).not.toHaveBeenCalled();
   });
 
   test("announceUnrun: false silences it for a caller that reports the set itself", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "");
     await writeFile(path.join(tempDir, "store.test.ts"), "");
-    runVitest(tempDir, { candidates: ["agent.test.ts"], announceUnrun: false });
+    runVitest(tempDir, { ...deps(), candidates: ["agent.test.ts"], announceUnrun: false });
     expect(notify).not.toHaveBeenCalled();
   });
 
@@ -210,7 +206,7 @@ describe("runVitest announces what it did not run", () => {
     await writeFile(path.join(tempDir, "agent.eval.test.ts"), "");
     await mkdir(path.join(tempDir, "tools"), { recursive: true });
     await writeFile(path.join(tempDir, "tools", "swap.test.ts"), "");
-    expect(runVitest(tempDir, { candidates: ["agent.test.ts"], all: true })).toEqual([
+    expect(runVitest(tempDir, { ...deps(), candidates: ["agent.test.ts"], all: true })).toEqual([
       "agent.test.ts",
       "tools/swap.test.ts",
     ]);
@@ -218,7 +214,7 @@ describe("runVitest announces what it did not run", () => {
   });
 
   test("`all` with nothing to run does not spawn vitest", () => {
-    expect(runVitest(tempDir, { candidates: ["agent.test.ts"], all: true })).toBe(false);
+    expect(runVitest(tempDir, { ...deps(), candidates: ["agent.test.ts"], all: true })).toBe(false);
     expect(execaSync).not.toHaveBeenCalled();
   });
 });

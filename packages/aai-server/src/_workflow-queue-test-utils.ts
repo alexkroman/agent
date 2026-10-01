@@ -44,7 +44,7 @@ import { slugMw } from "./middleware.ts";
 import { ensurePlatformTables } from "./platform/_schema-test-utils.ts";
 import type { AdminDb } from "./platform/lock.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import { type EnqueueParams, WORKFLOW_QUEUE_CHANNEL } from "./workflow-queue-store.ts";
 
 /** What {@link withQueueNotifications} lends a test body. */

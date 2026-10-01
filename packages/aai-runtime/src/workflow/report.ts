@@ -6,7 +6,7 @@
  * `sdk/step-report.ts` is the surface a step calls and may not import a logger
  * (a step is handed none) — it rides the browser bundle and the CLI's
  * zero-dependency startup path. This module is where the logger lives, and
- * `createRuntimeServer` publishes it — the one front door `aai dev`, a self-hosted
+ * `createServerForRuntime` publishes it — the one front door `aai dev`, a self-hosted
  * server and every deployed guest share, so narration behaves identically in all
  * three.
  *
@@ -36,11 +36,11 @@ import type { StepInfoReader, StepReporter } from "@alexkroman1/aai/host-interna
 // step author imports rather than from the host support surface beside it.
 import type { StepInfo } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { currentRun } from "./run-context.ts";
 
 /**
- * Build the reporter `createRuntimeServer` publishes.
+ * Build the reporter `createServerForRuntime` publishes.
  *
  * @param logger - Where the line goes as well as the run's stream.
  * @internal
@@ -113,7 +113,7 @@ async function writeChunk(chunk: unknown, namespace: string | undefined): Promis
 }
 
 /**
- * Build the step-info reader `createRuntimeServer` publishes.
+ * Build the step-info reader `createServerForRuntime` publishes.
  *
  * Beside {@link createStepReporter} because both are the published half of a
  * `@alexkroman1/aai/step` slot over the same `AsyncLocalStorage`, and both

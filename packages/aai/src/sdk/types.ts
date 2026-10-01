@@ -20,6 +20,7 @@ import type { AnyDialog } from "./dialog-handle.ts";
 import type { McpServers } from "./mcp-config.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { Roster } from "./roster.ts";
+import type { StateProjection } from "./session-state.ts";
 import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
 // into this module's scope, and `AgentDef.tools` needs `ToolMap`.
@@ -57,7 +58,7 @@ export type { AgentModelTuning, ModelTuning, UsageLimits } from "./agent-model-t
  * file at the cap. `agent-observation.ts` argues why they are one group and
  * why the boundary against `agent-guardrails.ts` is worth keeping visible.
  */
-export type { AgentObservation } from "./agent-observation.ts";
+export type { AgentObservation, SyncStateDeclaration } from "./agent-observation.ts";
 /** What a per-session author FUNCTION is handed — see `agent-session-context.ts`. */
 export type { AgentSessionContext } from "./agent-session-context.ts";
 /** The pipeline's turn-taking tuning, as three groups — see `agent-tuning.ts`. */
@@ -143,38 +144,32 @@ export {
 } from "./voice-presets.ts";
 
 /**
- * Fully resolved agent definition — and THE reference for what every field
- * means.
+ * What an author may WRITE in `agent({ … })` — and THE reference for what every
+ * field means.
  *
- * **This is what `agent()` RETURNS, not what you write.** You write one member
- * of {@link AgentParams}, chosen by {@link AgentMode}: the same fields, with
- * the defaulted ones optional, cut down to the ones that mode has. The members
- * carry no prose of their own — a field's documentation lives here once, and
- * the member's job is only to say WHICH fields exist in which mode (a
- * pipeline-only knob is simply absent from the S2S member). `agent()`
- * normalizes the author conveniences (`llm` as a model-id string, the
- * end-of-turn window) and the deprecated spellings away, so this shape is
- * canonical.
+ * You write one member of {@link AgentParams}, chosen by {@link AgentMode}: these
+ * fields with the defaulted ones optional, cut down to the ones that mode has
+ * (a pipeline-only knob is simply absent from the S2S member). The members carry
+ * no prose of their own; a field's documentation lives here once.
  *
- * Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`, `mode`)
- * are resolved to their final values with defaults applied. Optional fields
- * (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
- * optional — `undefined` means "not configured."
+ * `agent()` returns the RESOLVED shape, {@link AgentDef}: these fields with the
+ * defaults applied and the conveniences normalized away, plus the two tables
+ * no author writes (`tools`, `toolsets`).
  *
  * The field groups live on interfaces this extends, each sharing ONE rule:
  * {@link PipelineTuning} and {@link PipelinePhrases} (pipeline transport or
- * nothing), {@link AgentModelTuning}
- * (this runtime assembles the request, so S2S refuses them), {@link AgentGuardrails}
- * (the only declarations that may stop a turn), {@link AgentObservation} (the two
- * that deliberately may not), {@link AgentVoicePresets} (paid for on every model
- * request), {@link AgentSessionLifecycle} (once per session), {@link AgentRoutes}
- * and {@link AgentClientInbox} (no session at all). The `agent()` union and the
+ * nothing), {@link AgentModelTuning} (this runtime assembles the request, so
+ * S2S refuses them), {@link AgentGuardrails} (the only declarations that may
+ * stop a turn), {@link AgentObservation} (the two that deliberately may not),
+ * {@link AgentVoicePresets} (paid for on every model request),
+ * {@link AgentSessionLifecycle} (once per session), {@link AgentRoutes} and
+ * {@link AgentClientInbox} (no session at all). The `agent()` union and the
  * runtime refusal for an untyped caller are both cut from those groups, so no
  * field skips either.
  *
  * @public
  */
-export interface AgentDef
+export interface AgentDeclaration
   extends PipelineTuning,
     PipelinePhrases,
     AgentModelTuning,
@@ -204,7 +199,7 @@ export interface AgentDef
    * Its audience is never the model — a registry page, an A2A card, the
    * studio's agent picker, the CLI's `aai list`. Write it as the job the agent
    * does ("Books and reschedules dental appointments"), not as instructions;
-   * the instructions are {@link AgentDef.systemPrompt}.
+   * the instructions are {@link AgentDeclaration.systemPrompt}.
    *
    * Serializable, unlike most of what an author declares, and that is the whole
    * point: `tools`, `events` and `workflows` are host-only because a consumer
@@ -294,39 +289,12 @@ export interface AgentDef
    */
   builtinTools?: readonly BuiltinTool[];
   /**
-   * The tools the agent may invoke, keyed by the name the model calls.
-   *
-   * **Not authored — RESOLVED.** `agent()` returns this empty and rejects a
-   * `tools` argument outright (`InlineToolsMisuse`); the table is filled by
-   * `withTools`, over a registry built from a `tools/` directory. The build is
-   * what enumerates that directory — a deployed agent is handed one ESM string
-   * and has no filesystem to scan — and a spec imports the same lowering
-   * ready-made: `import agentDef from "virtual:aai/agent"` under vitest, or
-   * `deployedAgent(def, { tools, systemPrompt })` from
-   * `@alexkroman1/aai/testing` under any other runner.
-   * So a tool's name is its FILE name and nothing else records it.
-   *
-   * @remarks
-   * This record carries no state type, and there is none to carry: a tool reads
-   * and writes session state through {@link sessionSlot}, which types the value
-   * in the module that declares the slot. The `NoInfer<S>` this used to hold
-   * existed to keep a single un-annotated tool from dragging the agent's whole
-   * state shape back to `unknown`, which is a problem a slot does not have.
-   */
-  tools: ToolMap;
-  /**
    * The {@link SpeakerDef}s the MODEL routes to: `handoff` puts a `speaks: true`
    * entry on the line, `delegate` hands the rest a task. Mints both tools (and
    * each speaking entry's gated tools) into `toolsets`, so a `tools/handoff.ts`
    * or `tools/delegate.ts` beside it is a collision. Host-only. See `sdk/roster.ts`.
    */
   roster?: Roster;
-  /**
-   * Every toolset beyond the `tools/` files — RESOLVED, never authored: `agent()`
-   * puts the roster's here and `withMcpTools` an MCP server's. Read the whole
-   * table through `agentToolsets` (`/manifest`). Host-only. See `sdk/toolset.ts`.
-   */
-  toolsets?: readonly Toolset[];
   /**
    * Durable workflows this agent may start, keyed by workflow name.
    *
@@ -410,11 +378,16 @@ export interface AgentDef
    */
   s2s?: S2sProvider;
   /**
-   * Env var names this agent's code reads (beyond provider credentials, which
-   * are derived from the `stt`/`llm`/`tts`/`s2s` descriptors automatically).
-   * Deploys check that every listed name is present in the agent's stored env,
+   * Env var names this agent's code reads that nothing else declares. Deploys
+   * (and `aai dev`) check that every listed name is present in the agent's env,
    * so a missing key surfaces at deploy time instead of as a runtime failure on
    * the first tool call.
+   *
+   * **Derived names do not belong here**: provider credentials (from the
+   * `stt`/`llm`/`tts`/`s2s` descriptors), each MCP server's `tokenEnv`, and the
+   * keys of the keyed {@link BuiltinTool}s (`brave_search`, `google_places`,
+   * `text_me`) are added to the check automatically. List what your own tools
+   * and steps read.
    *
    * A tool reads them from {@link ToolContext.env}; a step has no
    * tool context and reads them with `stepEnv` / `requireStepEnv` from
@@ -436,7 +409,6 @@ export interface AgentDef
    *   mcpServers: {
    *     docs: { url: "https://mcp.example.com/mcp", tokenEnv: "DOCS_MCP_TOKEN" },
    *   },
-   *   requiredEnv: ["DOCS_MCP_TOKEN"],
    * });
    * ```
    *
@@ -444,9 +416,52 @@ export interface AgentDef
    * `withMcpTools` from `@alexkroman1/aai-runtime` before building the runtime,
    * because discovery is a network round trip and `createRuntime` is
    * synchronous. A server that is down, slow, or missing its token costs its
-   * own tools and nothing else — never the session.
+   * own tools and nothing else — never the session. Each `tokenEnv` is added
+   * to the deploy's env check (see {@link AgentDeclaration.requiredEnv}).
    */
   mcpServers?: McpServers;
+}
+
+/**
+ * The RESOLVED agent definition — what `agent()` returns and what a host runs.
+ *
+ * Every {@link AgentDeclaration} field, with the core ones (`systemPrompt`,
+ * `greeting`, `maxSteps`, `mode`) resolved to their final values, the author
+ * conveniences (`llm` as a model-id string, the end-of-turn window, `syncState`
+ * as a projection or a list) normalized to one canonical spelling, and the two
+ * tables nobody authors. Optional fields remain optional — `undefined` means
+ * "not configured". Write an {@link AgentParams} member; read this.
+ *
+ * @public
+ */
+export interface AgentDef extends AgentDeclaration {
+  /**
+   * The `syncState` projections, keyed by each one's slot name — the canonical
+   * form `agent()` normalizes a projection or a list into. See
+   * {@link AgentObservation.syncState} for what to write.
+   */
+  syncState?: Readonly<Record<string, StateProjection>>;
+  /**
+   * The tools the agent may invoke, keyed by the name the model calls.
+   *
+   * **Not authored.** `agent()` returns this empty and rejects a
+   * `tools` argument outright (`InlineToolsMisuse`); the table is filled by
+   * `withTools`, over a registry built from a `tools/` directory. The build is
+   * what enumerates that directory — a deployed agent is handed one ESM string
+   * and has no filesystem to scan — and a spec imports the same lowering
+   * ready-made: `import agentDef from "virtual:aai/agent"` under vitest, or
+   * `deployedAgent(def, { tools, systemPrompt })` from
+   * `@alexkroman1/aai/testing` under any other runner.
+   * So a tool's name is its FILE name and nothing else records it. It carries
+   * no state type: a tool reaches session state through {@link sessionSlot}.
+   */
+  tools: ToolMap;
+  /**
+   * Every toolset beyond the `tools/` files — RESOLVED, never authored: `agent()`
+   * puts the roster's here and `withMcpTools` an MCP server's. Read the whole
+   * table through `agentToolsets` (`/manifest`). Host-only. See `sdk/toolset.ts`.
+   */
+  toolsets?: readonly Toolset[];
 }
 
 // The zod schemas for `BuiltinTool` and `ToolChoice` used to be re-exported

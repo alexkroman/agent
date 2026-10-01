@@ -49,7 +49,7 @@ import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import pTimeout, { TimeoutError } from "p-timeout";
 import type { HostGenerateFn } from "../generate.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { UsageMeter } from "../usage-meter.ts";
 import { resolveToolError } from "./error-policy.ts";
 import { stringifyResult, warnOversizedResult } from "./result-text.ts";

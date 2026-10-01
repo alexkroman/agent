@@ -2,7 +2,7 @@
 summary: >-
   The studio starter eval: its five modules and why they are in that package
   rather than in `aai-evals`, the five tool-output regexes and what would
-  retire them, the second in-process eval in `aai-guest`, and the opt-in
+  retire them, the second in-process eval in `aai-guest-studio`, and the opt-in
   template behaviour contract
 read_when: >-
   working on the starter eval or a template's behaviour contract
@@ -29,17 +29,13 @@ reports rather than gates — is
 | `studio-template-contract.ts`    | the opt-in BEHAVIOUR half: run the template's own eval against the generated workspace                   |
 | `studio-eval-env.ts`             | `AAI_EVAL_ORIGIN`, `AAI_EVAL_CONTRACTS`, `AAI_STEP_CAP_HINT`                                             |
 
-They were in `packages/aai-evals/src/` until they were not, and the line that
-moved them is what a module is ABOUT rather than what runs it. `aai-evals` names
-no product surface: it is a runner, a report and a vocabulary over the session
-event stream. Every one of these names the studio in every constant it declares:
-its chat route, its per-sandbox token, its step cap, the prose its own tools
-write, the eighteen starter prompts and what each asked for. What the old
-arrangement cost was legible in the manifests: `aai-evals` depended on
-`aai-studio-client` for the starter list, on `undici`, `ai` and
-`eventsource-parser` for one target's transport, and carried an
-`evals-package-boundary` exception for a subpath one file read. All four moved
-here, and that boundary is a total deny again.
+They are here, not in `aai-evals`, because the line is what a module is ABOUT
+rather than what runs it. `aai-evals` names no product surface: it is a runner,
+a report and a vocabulary over the session event stream. Every one of these
+names the studio in every constant it declares: its chat route, its per-sandbox
+token, its step cap, the prose its own tools write, the starter prompts and
+what each asked for. Keep `evals-package-boundary` a total deny so that stays
+true.
 
 The framework is imported, never re-implemented: `aai-evals/gate` for the key
 gate and the announce, `/register` for case registration, `/runner` for
@@ -47,49 +43,28 @@ gate and the announce, `/register` for case registration, `/runner` for
 Nothing goes the other way — `evals-package-boundary` denies `aai-studio-server`
 by name, which is what keeps the edge one-way and the workspace acyclic.
 
-## What the case loop replaced
+## The case loop, the grader and the corpus
 
-`studio-starter.eval.test.ts` + `studio-eval-target.ts` are
-`scripts/starter-eval/run.mjs`'s case loop, verdict and reporter (485 + 175 + 85
-= 745 lines, deleted) on the shared runner. The GRADING is a different job —
-those checks read generated source rather than behaviour — so it was kept when
-the runner was not.
+`studio-starter.eval.test.ts` + `studio-eval-target.ts` are the case loop,
+verdict and reporter on the shared runner; the GRADING (which reads generated
+source rather than behaviour) is a separate job in separate modules.
 
-**`run.mjs` could not have run, and porting it is what found that out.** The
-chat request belongs to the GUEST and is authenticated by the per-sandbox token
-the session broker returns beside the URL; `run.mjs` sent the account's API key
-and gets `401 {"error":"Unauthorized"}`. So the harness the guides cite numbers
-from had rotted, in the way a second runner nobody exercises does. Verified
-against a live studio after the fix: one starter, **100%, 15s**, driving create
-project → broker a sandbox session → stream a chat turn → read the synced
-workspace.
-
-The port also **dropped one check `run.mjs` never made**: a bare "did it write a
-`client.tsx`". That file was recorded as INFORMATION there and kept out of the
-`shippable` verdict, because most starters never ask for a UI — asserting it
-failed the math-tutor template for shipping exactly what it should. `checkUi` is
-the whole UI claim.
-
-**`regrade.mjs`'s job is not reproduced, deliberately.** It re-graded a SAVED run
-with today's expectations, because the grader had been corrected four times after
-the runs it should have applied to. The cheap version of that is
-`studio-starter-expectations.test.ts`, which was a fail-fast block at the top of
-`run.mjs` — so it ran only when somebody spent tokens — and is now a UNIT test:
-an expectation demanding a tool its prompt never asks for, and a
-`builtinDelegation` that passes on prose alone, both fail in the ordinary test
-run with no key, no studio and no model.
-
-**The grader must not sit in the eval file.** `gradeStarter` — which chooses
-which expectation functions run, under what label, and holds the failure
-taxonomy — did, and `*.eval.test.ts` is excluded by this package's
-`vitest.config.ts`, so every function it CALLED was unit-tested while the thing
-calling them was not. `studio-starter-grade.ts` is the fix, driven by a canned
-`StudioTurn`. Same shape one level down is why the corpus left `scripts/`: as
-`scripts/starter-eval/expectations.mjs` its eval-only half (`parseLoadedConfig`,
-`checkMode`, `checkWorkflowShape`, `checkUi`) was in no coverage report at all.
-`check:module-tests` is the floor now — every module under a package's `src/`
-owes a co-located spec, and its ratchet refuses to ADD an entry, so a further
-module of this eval that ships without one fails in the diff that lands it.
+- **The chat request belongs to the GUEST** and is authenticated by the
+  per-sandbox token the session broker returns beside the URL — never the
+  account's API key (that answers `401 {"error":"Unauthorized"}`).
+- **There is no bare "did it write a `client.tsx`" check.** Most starters never
+  ask for a UI, so asserting one fails a template for shipping exactly what it
+  should; `checkUi` is the whole UI claim.
+- **The expectations are sanity-checked in the UNIT tier**
+  (`studio-starter-expectations.test.ts`): an expectation demanding a tool its
+  prompt never asks for, or a `builtinDelegation` that passes on prose alone,
+  fails with no key, no studio and no model. Re-grading a SAVED run with today's
+  expectations is deliberately not offered.
+- **The grader must not sit in the eval file.** `*.eval.test.ts` is excluded by
+  this package's `vitest.config.ts`, so logic there is never unit-tested;
+  `studio-starter-grade.ts` holds `gradeStarter` and is driven by a canned
+  `StudioTurn`. `check:module-tests` holds every module here to a co-located
+  spec.
 
 ## The five regexes are about tool OUTPUT, not about missing events
 
@@ -153,39 +128,28 @@ versioned wire surface plus a second encoding of arguments and results already
 on the stream. **Recommendation: do not.** Revisit if a case needs to grade a
 `ctx.send` or an uncaught tool throw from outside the sandbox.
 
-## The SECOND, in-process studio eval is in `aai-guest`
+## The SECOND, in-process studio eval is in `aai-guest-studio`
 
-`packages/aai-guest/src/studio-agent.eval.test.ts`, nine cases on
-`studio/_eval-harness.ts`. It could not be built from here or from `aai-evals`:
-`createStudioAgent(session, deps)` returns a plain `AgentDef` with `mode: "text"`,
-exactly what `openEvalTextAgent` takes — but `StudioSession` carries a real
-workspace `dir` and `StudioAgentDeps` is `HarnessBundleAccess & { typecheck }`,
-all of which live in `aai-guest`, which every boundary in this direction denies.
+`packages/aai-guest-studio/src/agent.eval.test.ts`, on `_eval-harness.ts` beside
+it. It could not be built from here or from `aai-evals`: `createStudioAgent`
+returns a plain `AgentDef` with `mode: "text"`, exactly what `openEvalTextAgent`
+takes — but `StudioSession` carries a real workspace `dir` and `StudioAgentDeps`
+is `HarnessBundleAccess & { typecheck }`, all defined in the guest packages,
+which every boundary in this direction denies.
 
-Two predictions the argument for it made, and how they came out:
-
-- **"An in-process eval without an installed toolchain measures tool CHOICE and
-  not the verification loop."** Correct, and the reason it was built with one:
-  the cases run `initStudioSession` and hand `createStudioAgent` the real
-  `typecheckWorkspaceDir`, so the post-write diagnostics are a real compiler and
-  four cases end by asking the workspace — `typecheck()` and `runTests()`,
-  called by the CASE — rather than reading a tool result. That is the class of
-  assertion a model cannot satisfy with prose, and it is what the five regexes
-  above are a substitute for.
-- **"It would not replace the HTTP target; keep both, convert nothing."** Held.
+- **It measures the verification loop, not only tool CHOICE**: the cases run
+  `initStudioSession` with the real `typecheckWorkspaceDir`, and several end by
+  asking the workspace (`typecheck()` / `runTests()`, called by the CASE) — the
+  class of assertion the five regexes above stand in for.
+- **It does not replace the HTTP target; keep both.**
   `studio-starter.eval.test.ts` measures the DEPLOYED path — the broker, the
-  per-sandbox token, the guest chat route, the end-of-turn workspace sync —
-  which is where the harness it replaced had rotted. Nothing was converted.
-
-**One thing that argument missed, and it is the limit on everything the guest-side
-eval reports: the system prompt.** `studioSystemPrompt(kind)` is THIS package's,
-and `guest-package-boundary` denies the guest that import. So the guest-side eval
-runs on a harness prompt plus the real, guest-owned `toolchainPromptSection()`,
-and adjudicates the tool set, the tool descriptions, each tool's own result prose
-and the model. **The shipped prompt is graded by the HTTP target here and by
-nothing there** — a stronger reason to keep both than the deployed-path one, and
-the reason a prompt change still has to be measured through a live studio. See
-"The coding agent has an eval of its own" in `packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md`.
+  per-sandbox token, the guest chat route, the end-of-turn workspace sync.
+- **The system prompt is per CASE there**: by default a harness prompt, and the
+  shipped `studioSystemPrompt(kind)` text only for a case that opts in (via the
+  committed copies under `aai-guest-studio/studio-prompts/`). A prompt change is
+  still measured end to end only through a live studio, here. See "The coding
+  agent has an eval of its own" in
+  `packages/aai-guest-studio/CODING-AGENT-TESTS-CLAUDE.md`.
 
 Note which package sees both halves: only this one, over HTTP, sees prompt AND
 tools together. Nothing in the workspace can import both.

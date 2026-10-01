@@ -13,7 +13,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { createAudioSendGate } from "../../_audio-gate.ts";
-import { consoleLogger } from "../../runtime-config.ts";
+import { consoleLogger } from "../../logger.ts";
 import {
   closeAfterFlush,
   closeOnAbort,

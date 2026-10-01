@@ -52,7 +52,7 @@
  * double.
  */
 
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 
 /** One stored event, as the runtime's log records it. */
 export type PlatformSessionEvent = {

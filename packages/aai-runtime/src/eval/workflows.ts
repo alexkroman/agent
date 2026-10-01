@@ -76,9 +76,9 @@ import type {
   WorkflowRunStatus,
 } from "@alexkroman1/aai/workflow-api";
 import pTimeout from "p-timeout";
+import { type Logger, silentLogger } from "../logger.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
-import { type Logger, silentLogger } from "../runtime-config.ts";
 import { createWorkflowClient } from "../workflow/client.ts";
 import { createMemoryKeyStore } from "../workflow/keys.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
@@ -102,7 +102,8 @@ import {
 export const DEFAULT_RUN_TIMEOUT_MS = 300_000;
 
 /**
- * Can this machine run workflow evals against `agent`?
+ * Can this machine run workflow evals against `agent`? The gate for
+ * {@link openEvalWorkflows} / `describeWorkflowEval`.
  *
  * The sibling of `evalCredentials`, and it is a DIFFERENT question rather than a
  * convenience wrapper: `requiredProviderEnvVars` answers `[]` for a

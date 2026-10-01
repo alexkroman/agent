@@ -49,7 +49,7 @@
 import { formatSchemaIssues } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowDef } from "@alexkroman1/aai/workflow-api";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { ReplayOutcome } from "./replay.ts";
 
 /** The terminal status a settled walk resolves to, and what to write with it. */

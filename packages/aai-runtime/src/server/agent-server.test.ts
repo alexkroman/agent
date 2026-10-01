@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * `createAgentServer` — the one-call front door over createRuntime +
- * createRuntimeServer.
+ * createServerForRuntime.
  *
  * The case worth pinning is `/client-config`: the two-call form made callers
  * re-state `name` and `greeting` from the agent, and omitting `greeting`
@@ -11,7 +11,7 @@
  *
  * The forwarding tests below are the same class of bug one layer out: an
  * option this door does not carry is one nobody can reach, because the escape
- * hatch — dropping to `createRuntime` + `createRuntimeServer` — means restating every
+ * hatch — dropping to `createRuntime` + `createServerForRuntime` — means restating every
  * field this function derives. `telephony` and `page` were both unreachable,
  * and both are asserted over the wire for the same reason `greeting` is: what
  * failed was a value not arriving, which an options-object assertion cannot
@@ -36,7 +36,7 @@ import { WebSocket as NodeWebSocket } from "ws";
 import { z } from "zod";
 import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { withDeadline } from "../_timing-test-utils.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { AGENT_SERVER_ENV as ENV, withServer } from "./_agent-server-test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
 

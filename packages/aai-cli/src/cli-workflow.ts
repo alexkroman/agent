@@ -88,9 +88,9 @@ const workflowList = defineExec({
   meta: { name: "list", description: "List the workflows this agent declares" },
   args: workflowArgs,
   cwd: WORKFLOW_CWD,
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeWorkflowList } = await import("./workflow.ts");
-    return executeWorkflowList(cwd, workflowOpts(args));
+    return executeWorkflowList(cwd, workflowOpts(args), ui);
   },
 });
 
@@ -102,7 +102,7 @@ const workflowRuns = defineExec({
     ...workflowArgs,
   },
   cwd: WORKFLOW_CWD,
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeWorkflowRuns } = await import("./workflow.ts");
     // Parsed here rather than in the executor so a non-numeric value fails as a
     // CLI error naming the flag, not as a query the server rejects.
@@ -110,7 +110,7 @@ const workflowRuns = defineExec({
     if (limit !== undefined && !Number.isFinite(limit)) {
       throw new CliError("bad_limit", "--limit must be a number");
     }
-    return executeWorkflowRuns(cwd, args.workflow, { ...workflowOpts(args), limit });
+    return executeWorkflowRuns(cwd, args.workflow, { ...workflowOpts(args), limit }, ui);
   },
 });
 
@@ -118,9 +118,9 @@ const workflowShow = defineExec({
   meta: { name: "show", description: "Show one run, including its output" },
   args: { runId: runIdArg, ...workflowArgs },
   cwd: WORKFLOW_CWD,
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeWorkflowShow } = await import("./workflow.ts");
-    return executeWorkflowShow(cwd, args.runId, workflowOpts(args));
+    return executeWorkflowShow(cwd, args.runId, workflowOpts(args), ui);
   },
 });
 
@@ -128,9 +128,9 @@ const workflowCancel = defineExec({
   meta: { name: "cancel", description: "Stop a running workflow run" },
   args: { runId: runIdArg, ...workflowArgs },
   cwd: WORKFLOW_CWD,
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeWorkflowCancel } = await import("./workflow.ts");
-    return executeWorkflowCancel(cwd, args.runId, workflowOpts(args));
+    return executeWorkflowCancel(cwd, args.runId, workflowOpts(args), ui);
   },
 });
 

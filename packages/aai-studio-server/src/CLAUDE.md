@@ -313,7 +313,7 @@ client — `aai secret put` and `aai publish` would then reach production only.
   files copied from the baked toolchain; `AAI_CONFIG_DIR` and
   `.aai/project.json` written by `@alexkroman1/aai-cli/project-config`). Build,
   upload, credential preflight, ownership, reserved slugs and the key floor are
-  therefore the laptop path. End-to-end: `aai-server/workspace-build-integration.test.ts`.
+  therefore the laptop path. End-to-end: `aai-server/workspace-build.scenario.test.ts`.
 - CLI output goes to the Publish menu, never the transcript ("No studio action
   writes into the transcript" in `packages/aai-studio-client/CLAUDE.md`).
 - Missing credentials only WARN — a hard failure would deadlock a first publish

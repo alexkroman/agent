@@ -24,7 +24,7 @@ import { z } from "zod";
 import { makeAgent, makeSpeech, makeUsageMeter } from "../_agent-test-utils.ts";
 import { createScriptedOneShotModel, registerFakeProviders } from "../_pipeline-test-fakes.ts";
 import { tick } from "../_timing-test-utils.ts";
-import { consoleLogger, type Logger } from "../runtime-config.ts";
+import { consoleLogger, type Logger } from "../logger.ts";
 import {
   createSessionEmitter,
   createSessionEventStream,

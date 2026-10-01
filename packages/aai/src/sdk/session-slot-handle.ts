@@ -203,22 +203,19 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     def: SlotToolDef<P, T, R> & RejectThenable<R>,
   ): ToolDef<P, R>;
   /**
-   * This slot's declared view as a `syncState` projection — built ONCE, here,
-   * so both ends can pass the same object.
+   * This slot's view as a `syncState` projection — THE way to project a slot.
+   * Built once, at declaration, so both ends pass the same object.
    *
-   * `agent({ syncState: { cart: cartSlot.projected } })` on the server and
+   * `agent({ syncState: cartSlot.projected })` on the server and
    * `useAgentState(cartSlot.projected)` in the browser are then the SAME
-   * projection by construction, and the frame rendered before the first push
-   * cannot describe a different view than the frames pushed after it. Composing
-   * `slot.projection(view)` at each end is what could: the two expressions have
-   * to name the same view and nothing checks that they do.
+   * projection by construction, so the frame rendered before the first push
+   * cannot describe a different view than the frames pushed after it. Being
+   * built at declaration also makes it identity-stable, which `useAgentState`
+   * memoizes its empty frame on.
    *
-   * Being built at declaration also makes it identity-stable, which
-   * `useAgentState` memoizes its empty frame on — so this spelling cannot
-   * produce the fresh-object-per-render an inline `slot.projection(view)` does.
-   *
-   * With no {@link SessionSlotOptions.view}, this projects the whole value.
-   * Declare one to narrow it.
+   * Callable with nothing — `cartSlot.projected()` is the pre-first-tool-call
+   * frame. With no {@link SessionSlotOptions.view}, it projects the whole
+   * value; declare one to narrow it to what the page renders.
    *
    * @example
    * ```ts
@@ -228,39 +225,19 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    *   view: (cart) => ({ count: cart.items.length }),
    * });
    *
-   * export default agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
+   * export default agent({ name: "Shop", syncState: cartSlot.projected });
    * ```
    */
   readonly projected: StateProjection<V>;
   /**
-   * A `syncState` projection over this slot: read the value (defaulting when
-   * the session has not touched it), then project.
+   * A `syncState` projection over this slot through a view composed at the
+   * call: read the value (defaulting when the session has not touched it),
+   * then project.
    *
-   * **Reach for {@link SessionSlot.projected} first** — one view, declared with
-   * the slot, passed by both ends. This is the spelling for a view composed
-   * where it is used rather than declared on the slot; `syncState` still takes
-   * ONE projection per slot, keyed by the slot's name.
-   *
-   * The result is CALLABLE as well as declarable, which is what lets a client
-   * derive its own empty state from the same function the server pushes —
-   * `slot.projection(view)()` is the pre-first-tool-call frame. Declaring it is
-   * `agent({ syncState: { [name]: slot.projection(view) } })`, one entry per
-   * slot; the frame is keyed the same way.
-   *
-   * `project` receives a REAL value, so a projection needs no optional chaining
-   * for the moment before the first tool call.
-   *
-   * @example
-   * ```ts
-   * import { agent, sessionSlot } from "@alexkroman1/aai";
-   *
-   * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-   *
-   * export default agent({
-   *   name: "Shop",
-   *   syncState: { cart: cartSlot.projection((cart) => ({ count: cart.items.length })) },
-   * });
-   * ```
+   * @deprecated Declare the view on the slot —
+   * `sessionSlot(key, create, { view })` — and pass {@link SessionSlot.projected}.
+   * A projection composed here is a value both ends must name, export and
+   * import, and an inline one is a fresh object per render. Still works.
    */
   projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
 }

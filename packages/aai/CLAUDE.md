@@ -92,9 +92,9 @@ Twenty-three code subpaths, twenty mapped below, plus one CONFIG export:
 `@alexkroman1/aai/tsconfig` → `presets/tsconfig.agent.json`, the compiler
 options every agent project extends. Its `files` entry loads
 `presets/agent-env.d.ts` (the `virtual:aai/agent` declaration) and its `types`
-names `vite/client` — the scaffold's old `global.d.ts`, now versioned with the
-SDK. `presets/` is a PRODUCT tree (`_package-layout-scope.mjs`), shipped via
-`files`. Its test-side twin is `defineAgentTestConfig()` on `/testing/vite`.
+names `vite/client`, versioned with the SDK rather than scaffolded. `presets/`
+is a PRODUCT tree (`_package-layout-scope.mjs`), shipped via `files`. Its
+test-side twin is `defineAgentTestConfig()` on `/testing/vite`.
 
 ### The root barrel is CURATED, and `export *` is what broke it
 
@@ -105,6 +105,14 @@ framework already did (budgets and defaults are on `/internal`, slug/CLI
 contracts and wire helpers on `/utils`). **No root export is `@internal`** —
 preserve that. `index.ts`'s module doc holds the test in full and is the only
 thing enforcing membership; keep it accurate.
+
+**A name a narrower subpath owns crosses to the root for one of two reasons
+only**: it is a TYPE (or catalog) a root signature is spelled in — the stage
+types, `LlmSpec`, the voice catalog, all three `…Of<typeof def>` readings,
+`ToolFailure` and the tool-body helpers beside it — or it is a MODE preset
+(`assemblyAIPipeline`, `assemblyAIS2s`). A factory swapping one stage
+(`assemblyAITts`, `assemblyAIStt`, `llm`, any vendor's) stays on its stage
+subpath, and `/utils`' formatters stay on `/utils` (read by a page or a step).
 
 `DEFAULT_SYSTEM_PROMPT` is exported to be READ (printed, diffed, asserted), not
 composed against: `agent({ systemPrompt })` does NOT replace the prompt —
@@ -246,8 +254,8 @@ an explicit deny-list instead of copying fields**:
 - **The server never maps a stored config onto a runtime agent**; sessions run
   the bundle's own SDK. Provider descriptors are keyed off their own presence,
   never the optional `config.mode` (`superRefine` rejects a disagreeing
-  `mode`). `rpc-schemas.test.ts` pins
-  `Exclude<keyof AgentConfig, keyof IsolateConfig>` = `never`.
+  `mode`). `Exclude<keyof AgentConfig, keyof IsolateConfig>` must stay
+  `never`.
 
 A new serializable field needs exactly two edits — `AgentDef` (docs + type)
 and `AgentConfigSchema` — and the type guards fail if either is missing.
@@ -319,7 +327,8 @@ the rest live only here.
   client spreads `PROVIDER_WS_OPTIONS` (`_ws.ts`; pinned by `_ws.test.ts`).
   Vendor-SDK providers (assemblyai STT, Deepgram, ElevenLabs, Cartesia) cannot
   be covered.
-- **Self-hosted server defaults**: `createRuntimeServer` has no auth, so it
+- **Self-hosted server defaults**: `createServerForRuntime` (formerly
+  `createRuntimeServer`) has no auth, so it
   **binds loopback** (`AAI_DEV_HOST` to override) and **host mode is opt-in**
   (`AAI_ALLOW_HOST`). `createHostServer` is the host-only server in one call.
   The rest is in `packages/aai-cli/CLAUDE.md`, "Running the SDK's own server".
@@ -336,13 +345,13 @@ coverage floors.
 ### Specs that observe a timer
 
 **A spec that observes a TIMER runs on virtual time, never the wall clock.**
-`useVirtualTime()` (`transports/pipeline/_transport-harness.ts`) installs fake
-timers per file; drive with `vi.advanceTimersByTimeAsync(ms)`. `_fake-llm.ts`'s
-`delayMs` uses the global `setTimeout`, so no scheduler needs threading. Under
-virtual time `tick()` hangs (use `vi.advanceTimersByTimeAsync(0)`), and
-`vi.waitFor` still polls in real time — advance by the amount the work needs.
-Queue-settle yields (`s2s-transport.test.ts`'s `sleep(5)`) are not timer
-observations and stay.
+`useVirtualTime()` (`aai-runtime/transports/_pipeline-transport-harness.ts`)
+installs fake timers per file; drive with `vi.advanceTimersByTimeAsync(ms)`.
+`_fake-llm.ts`'s `delayMs` uses the global `setTimeout`, so no scheduler needs
+threading. Under virtual time `tick()` hangs (use
+`vi.advanceTimersByTimeAsync(0)`), and `vi.waitFor` still polls in real time —
+advance by the amount the work needs. Queue-settle yields
+(`s2s-transport.test.ts`'s `sleep(5)`) are not timer observations and stay.
 
 ### Fixture replay testing
 

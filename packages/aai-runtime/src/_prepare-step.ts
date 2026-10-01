@@ -29,7 +29,7 @@
 import type { ToolChoice } from "@alexkroman1/aai";
 import { isRecord, isToolFailure, safeJsonParse } from "@alexkroman1/aai/utils";
 import type { PrepareStepFunction, PrepareStepResult, ToolSet } from "ai";
-import type { Logger } from "./runtime-config.ts";
+import type { Logger } from "./logger.ts";
 
 /**
  * Every per-step concern this package has, in the ORDER they are layered.

@@ -1,28 +1,22 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const { mockCleanup, mockStartDevServer, mockNotify } = vi.hoisted(() => {
-  const mockCleanup = vi.fn();
-  return {
-    mockCleanup,
-    mockStartDevServer: vi.fn(async () => mockCleanup),
-    mockNotify: vi.fn(),
-  };
-});
-
-vi.mock("./_dev-server.ts", () => ({
-  startDevServer: mockStartDevServer,
-}));
-
-vi.mock("./_ui.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./_ui.ts")>()),
-  log: (await import("./_test-utils.ts")).makeMockLog(),
-  notify: mockNotify,
-}));
-
 import type { QuickTunnel } from "./_dev-tunnel.ts";
-import { stubProcessExit } from "./_test-utils.ts";
-import { type DevTunnelDeps, executeDev } from "./dev.ts";
+import { createFakeUi, stubProcessExit } from "./_test-utils.ts";
+import { type DevDeps, executeDev } from "./dev.ts";
+
+const mockCleanup = vi.fn();
+const mockStartDevServer = vi.fn(async () => mockCleanup);
+/** The fake terminal's `notify` — the channel `aai dev` reports through. */
+const mockNotify = vi.fn();
+
+/** What every spec hands `executeDev`: a fake dev server and a fake terminal. */
+function baseDeps(): DevDeps {
+  return {
+    startDevServer: mockStartDevServer as unknown as NonNullable<DevDeps["startDevServer"]>,
+    ui: { ...createFakeUi(), notify: mockNotify },
+  };
+}
 
 // `mockCleanup`, `mockStartDevServer` and `mockNotify` are module-level
 // `vi.fn()`s. `restoreMocks: true` registers only `vi.spyOn` mocks, so it
@@ -62,8 +56,11 @@ describe("executeDev", () => {
   test("starts the dev server and returns the url", async () => {
     await withCapturedHandlers(async () => {
       mockCleanup.mockResolvedValue(undefined);
-      const result = await executeDev({ cwd: "/tmp/agent", port: "3123" });
-      expect(mockStartDevServer).toHaveBeenCalledWith({ cwd: "/tmp/agent", port: 3123 });
+      const result = await executeDev({ cwd: "/tmp/agent", port: "3123" }, baseDeps());
+      expect(mockStartDevServer).toHaveBeenCalledWith(
+        { cwd: "/tmp/agent", port: 3123 },
+        expect.objectContaining({ ui: expect.anything() }),
+      );
       expect(result).toEqual({ ok: true, data: { url: "http://localhost:3123" } });
     });
   });
@@ -76,7 +73,7 @@ describe("executeDev", () => {
       const inFlight = Promise.withResolvers<void>();
       mockCleanup.mockReturnValue(inFlight.promise);
 
-      await executeDev({ cwd: "/tmp/agent", port: "3123" });
+      await executeDev({ cwd: "/tmp/agent", port: "3123" }, baseDeps());
       const sigint = handlers.get("SIGINT");
       const sigterm = handlers.get("SIGTERM");
       expect(sigint).toBeDefined();
@@ -103,7 +100,7 @@ describe("executeDev", () => {
   test("unhandledRejection and uncaughtException handlers report without exiting", async () => {
     await withCapturedHandlers(async (handlers) => {
       mockCleanup.mockResolvedValue(undefined);
-      await executeDev({ cwd: "/tmp/agent", port: "3123" });
+      await executeDev({ cwd: "/tmp/agent", port: "3123" }, baseDeps());
       mockNotify.mockClear();
 
       handlers.get("unhandledRejection")?.(new Error("socket died"));
@@ -147,7 +144,7 @@ function fakeTunnelDeps({
       return hookCode;
     },
   );
-  const deps: DevTunnelDeps = { startQuickTunnel, runPublicUrlHook };
+  const deps: DevDeps = { ...baseDeps(), startQuickTunnel, runPublicUrlHook };
   return { deps, tunnel, exited, events, startQuickTunnel, runPublicUrlHook };
 }
 
@@ -162,7 +159,7 @@ describe("executeDev --tunnel / --on-public-url", () => {
   test("--on-public-url with no tunnel and no PUBLIC_URL is a usage error", async () => {
     await withCapturedHandlers(async () => {
       await expect(
-        executeDev({ cwd: "/tmp/agent", port: "3123", onPublicUrl: "./publish.sh" }),
+        executeDev({ cwd: "/tmp/agent", port: "3123", onPublicUrl: "./publish.sh" }, baseDeps()),
       ).rejects.toMatchObject({ code: "usage" });
       expect(mockStartDevServer).not.toHaveBeenCalled();
     });

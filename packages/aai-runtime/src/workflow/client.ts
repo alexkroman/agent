@@ -45,7 +45,7 @@ import type {
   WorkflowRunSnapshot,
   WorkflowSummary,
 } from "@alexkroman1/aai/workflow-api";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { WorkflowRequestError } from "./_request-error.ts";
 import { cancelAllByKey, findByKeyAcross, keyedFind } from "./client-keyed.ts";
 import { resolveFindLimit, type WorkflowKeyStore } from "./keys.ts";

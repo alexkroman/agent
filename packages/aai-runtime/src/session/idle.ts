@@ -9,7 +9,7 @@
  */
 
 import { createCoalescingTimer } from "../_timer.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 
 /** What the watchdog does when the deadline passes. */
 export type IdleWatchdogOptions = {

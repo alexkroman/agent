@@ -43,7 +43,7 @@
 
 import { requestPath, requestQuery } from "@alexkroman1/aai/internal";
 import { decodePathSegment } from "../_path-decode.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { SESSION_EVENT_READ_LIMIT, type SessionEventStream } from "../session/index.ts";
 import { bearerMatches, claimUnder, type JsonResponse, sendJson } from "../workflow/api/http.ts";
 
@@ -94,7 +94,7 @@ export type SessionEventsApiOptions = {
    * `timingSafeEqual` MATCHES — so `AAI_SESSION_EVENTS_TOKEN=` served the
    * conversation to a caller with no `Authorization` header. `bearerMatches`
    * refuses a blank secret now, so a caller passing one directly gets a 401 on
-   * every request; `createRuntimeServer` reads the variable through `agentGateToken`,
+   * every request; `createServerForRuntime` reads the variable through `agentGateToken`,
    * which reports a blank one as absent and logs why, so an OPERATOR gets the
    * 404 above naming the variable rather than a silent 401 forever.
    */
@@ -156,7 +156,7 @@ async function tailToCountBackFrom(
  * Create the session-events request handler.
  *
  * Returns true when it has CLAIMED the request — same contract as
- * `createWorkflowApi`, so `createRuntimeServer` treats both the same way.
+ * `createWorkflowApi`, so `createServerForRuntime` treats both the same way.
  *
  * @internal
  */
@@ -190,7 +190,7 @@ export function createSessionEventsApi(
       sendJson(res, 405, { error: "Method not allowed" });
       return;
     }
-    // The query is stripped before the slice, not assumed absent. `createRuntimeServer`
+    // The query is stripped before the slice, not assumed absent. `createServerForRuntime`
     // hands this handler a path with the query already removed — but the id is
     // the LAST path segment, so a caller that passed the raw URL would put
     // `?startIndex=1` inside the session id and read a log that does not exist.

@@ -107,6 +107,15 @@ describe("requiredEnvNames", () => {
     expect(names).toContain("ORDERS_API_KEY");
   });
 
+  test("derives each MCP tokenEnv and keyed builtin's key, like a provider credential", () => {
+    const names = requiredEnvNames({
+      ...S2S_AGENT,
+      builtinTools: ["think", "google_places"],
+      mcpServers: { docs: { tokenEnv: "DOCS_MCP_TOKEN" } },
+    });
+    expect(names).toEqual(["ASSEMBLYAI_API_KEY", "DOCS_MCP_TOKEN", "GOOGLE_PLACES_API_KEY"]);
+  });
+
   test("names a requiredEnv key with no provider credential beside it", () => {
     // The `--target` case exactly: an agent whose only declaration is a custom
     // key its tools read, on a front door that dials no provider.

@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { gameProjection, gameSlot, liveSheet, storyFlow } from "./shared.ts";
+import { gameSlot, liveSheet, storyFlow } from "./shared.ts";
 // The rules of the game. The build discovers `system-prompt.md` on its own —
 // importing it is what lets the resolver below compose against it, and
 // `withSystemPrompt` leaves a resolver exactly as written.
@@ -45,7 +45,7 @@ export default agent({
   // reads and every unplayed act's goal and mood with them, which is the only
   // defence there is against a spoiler leak (see `shared.ts`). The slot's own
   // default is what a session that has run no tool projects.
-  syncState: { game: gameProjection },
+  syncState: gameSlot.projected,
 
   // The flow gates the tools whether or not it is declared here. What DECLARING
   // it buys is the other half the states were written for: the active state's

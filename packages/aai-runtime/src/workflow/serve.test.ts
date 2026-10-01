@@ -15,7 +15,7 @@ import { requestPath } from "@alexkroman1/aai/internal";
 import { stepWebhookUrl } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { WORKFLOW_QUEUE_PATH } from "./queue-dispatch.ts";
 import {
   handleWorkflowRequest,
@@ -168,7 +168,7 @@ describe("handleWorkflowRequest", () => {
 
   test("a resolver that THROWS answers 500 instead of killing the process", async () => {
     // `ensureRuntime` throws for a bundle that has not loaded or a missing
-    // provider credential. This runs inside `createRuntimeServer`'s request hook, which
+    // provider credential. This runs inside `createServerForRuntime`'s request hook, which
     // is called with no `try`, so an escaping throw was an `uncaughtException` —
     // and the guest's guard exits the process, taking every live voice session
     // with it. Driven through a real server because an ANSWER is the proof.

@@ -27,7 +27,7 @@ import { linkConfirmationCode, sleep } from "@alexkroman1/aai/internal";
 import { resolveApprovedServer } from "./_agent.ts";
 import { updateGlobalConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
-import { log } from "./_ui.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 
 export type LoginDeps = {
   /** Test seam — never set outside tests. */
@@ -38,20 +38,40 @@ export type LoginDeps = {
   pollIntervalMs?: number;
   /** Test seam — never set outside tests. */
   timeoutMs?: number;
+  /** The terminal; defaults to the process's. */
+  ui?: Ui;
 };
 
 const LINK_POLL_INTERVAL_MS = 2000;
 const LINK_TIMEOUT_MS = 300_000;
 
-async function jsonBody<T>(res: Response, what: string): Promise<T> {
+/**
+ * Parse a login response, or fail naming the step, the server and what to do.
+ * `serverUrl` is in every message because a CLI from the monorepo targets
+ * `localhost` by default, and "which server said that" is the first question.
+ */
+async function jsonBody<T>(res: Response, what: string, serverUrl: string): Promise<T> {
   const body = (await res.json().catch(() => null)) as
     | (T & { error?: string; msg?: string })
     | null;
   if (!res.ok) {
     const detail = body?.error ?? body?.msg ?? `HTTP ${res.status}`;
-    throw new CliError("login_failed", `${what} failed: ${detail}`);
+    throw new CliError(
+      "login_failed",
+      `${what} failed at ${serverUrl}: ${detail} (HTTP ${res.status}).`,
+      res.status >= 500
+        ? "The server failed — run `aai login` again in a moment; if it persists, the platform is having trouble."
+        : "Run `aai login` again. If it fails the same way, check that `--server` names an aai platform.",
+    );
   }
-  if (body === null) throw new CliError("login_failed", `${what} returned an invalid response`);
+  if (body === null) {
+    throw new CliError(
+      "login_failed",
+      `${what} at ${serverUrl} returned a response that is not JSON (HTTP ${res.status}).`,
+      "That URL does not look like an aai platform — pass the platform's URL with `--server <url>`, " +
+        "or set AAI_NO_DEV=1 to use the hosted platform.",
+    );
+  }
   return body;
 }
 
@@ -132,7 +152,11 @@ async function pollForGrant(
     }
     // 404 is "not approved yet" — anything else settles the login.
     if (res && res.status !== 404) {
-      return await jsonBody<{ apiKey: string; email?: string }>(res, "Linking your account");
+      return await jsonBody<{ apiKey: string; email?: string }>(
+        res,
+        "Linking your account",
+        serverUrl,
+      );
     }
     if (Date.now() >= opts.deadline) {
       if (lastTransportError !== undefined) throw unreachableError(serverUrl, lastTransportError);
@@ -162,11 +186,14 @@ function openerFor(platform: NodeJS.Platform): [string, string[]] {
   return ["xdg-open", []];
 }
 
-/** Best-effort: the link URL is always printed, so a failure is fine. */
-function defaultOpenBrowser(url: string): void {
+/**
+ * Best-effort: the link URL is always printed, so a failure is fine.
+ * `spawnFn` is the seam a spec drives the swallowed-error path through.
+ */
+export function defaultOpenBrowser(url: string, spawnFn: typeof spawn = spawn): void {
   const [cmd, args] = openerFor(process.platform);
   try {
-    const child = spawn(cmd, [...args, url], { stdio: "ignore", detached: true });
+    const child = spawnFn(cmd, [...args, url], { stdio: "ignore", detached: true });
     child.on("error", () => {
       // Swallowed: the URL is printed either way.
     });
@@ -181,6 +208,7 @@ export async function executeLogin(
   deps: LoginDeps = {},
 ): Promise<CommandResult<{ email: string; server: string }>> {
   const fetchFn = deps.fetchFn ?? globalThis.fetch;
+  const ui = deps.ui ?? defaultUi;
   requireTty();
 
   // `resolveApprovedServer`, not a second copy of the trust-and-approve
@@ -193,6 +221,7 @@ export async function executeLogin(
   const auth = await jsonBody<{ mode: string }>(
     await reachable(fetchFn, `${serverUrl}/studio/auth`, serverUrl),
     "Reading the server's login configuration",
+    serverUrl,
   );
   if (auth.mode === "none") {
     throw new CliError(
@@ -204,19 +233,24 @@ export async function executeLogin(
 
   const code = randomBytes(32).toString("base64url");
   const linkUrl = `${serverUrl}/?cli-link=${code}`;
-  log.info(`Opening the browser to link your account…\n  ${linkUrl}`);
-  log.info(`Confirmation code: ${linkConfirmationCode(code)}`);
-  log.info(
+  ui.log.info(`Opening the browser to link your account…\n  ${linkUrl}`);
+  ui.log.info(`Confirmation code: ${linkConfirmationCode(code)}`);
+  ui.log.info(
     "Approve the link in the browser (sign in there first if you need to) — the approval page shows the same code.",
   );
-  (deps.openBrowser ?? defaultOpenBrowser)(linkUrl);
+  (deps.openBrowser ?? ((url: string) => defaultOpenBrowser(url)))(linkUrl);
 
   const granted = await pollForGrant(fetchFn, serverUrl, code, {
     intervalMs: deps.pollIntervalMs ?? LINK_POLL_INTERVAL_MS,
     deadline: Date.now() + (deps.timeoutMs ?? LINK_TIMEOUT_MS),
   });
   if (!granted.apiKey) {
-    throw new CliError("login_failed", "Linking your account did not return an API key.");
+    throw new CliError(
+      "login_failed",
+      `${serverUrl} approved the link but returned no API key.`,
+      "Run `aai login` again to mint a new link. If it repeats, that server's CLI-link exchange is " +
+        "misconfigured — report it with the server URL above.",
+    );
   }
 
   // Under the cross-process lock (see `updateGlobalConfig`): a plain
@@ -225,6 +259,6 @@ export async function executeLogin(
   // their key was saved.
   await updateGlobalConfig((config) => ({ ...config, apiKey: granted.apiKey }));
   const email = granted.email ?? "your account";
-  log.success(`Linked ${email} — your API key is saved for future commands.`);
+  ui.log.success(`Linked ${email} — your API key is saved for future commands.`);
   return ok({ email, server: serverUrl });
 }

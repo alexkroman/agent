@@ -25,7 +25,7 @@ import {
   DEAD_AIR_TOOL_COVER_MS,
 } from "@alexkroman1/aai/host-internal";
 import { createRestartableTimer } from "../../../_timer.ts";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 
 /** What the cover needs from the turn it is covering. */
 export type DeadAirCoverDeps = {

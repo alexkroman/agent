@@ -149,7 +149,7 @@ import {
 } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { ModelMessage, StreamTextOnChunkCallback, TextStreamPart, ToolSet } from "ai";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { stampSessionEvent } from "../session/index.ts";
 import type { UsageSnapshot } from "../usage-meter.ts";
 

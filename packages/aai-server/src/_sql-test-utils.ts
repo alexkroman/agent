@@ -4,7 +4,7 @@
 
 import { vi } from "vitest";
 import type { AdminDb } from "./platform/lock.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 /**
  * An {@link AdminDb} whose reserved connection answers `respond` — the ONE

@@ -52,7 +52,7 @@ import type {
   WorkflowRunSnapshot,
 } from "@alexkroman1/aai/workflow-api";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { isRunWatchClosed, type RunWatch, watchRun } from "./run-reads.ts";
 
 /**

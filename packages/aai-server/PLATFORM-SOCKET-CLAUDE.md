@@ -9,7 +9,7 @@ read_when: >-
 
 Reference for ONE wire, whose two ends live in two packages:
 `packages/aai-runtime/src/platform/socket.ts` (the guest dials) and
-`packages/aai-server/src/platform-socket-handler.ts` (the platform answers).
+`packages/aai-server/src/platform/socket-handler.ts` (the platform answers).
 
 A SIBLING of this package's guide rather than a section in it, for the reason
 `AGENTS.md` gives for `MODAL-CLAUDE.md` and `SCHEMA-CLAUDE.md`: it is
@@ -158,8 +158,8 @@ availability.
 | -------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | unit     | `aai-runtime/platform/socket.test.ts`         | the guest end against a fake peer: correlation, the refusal taxonomy, the heartbeat on virtual time, reconnect                         |
 | unit     | `aai-runtime/platform/rpc.test.ts`            | the transport CHOICE — prefer, fall back on a refusal, never retry a written call                                                      |
-| unit     | `aai-server/platform-socket-handler.test.ts`  | the frame loop against a real Hono app: dispatch, the route allowlist, ping, the in-flight cap, the handshake refusals                 |
-| scenario | `aai-server/platform-socket.scenario.test.ts` | both REAL ends over a real port: the handshake, the bearer, and a socket answer compared byte for byte against the same call over HTTP |
+| unit     | `aai-server/platform/socket-handler.test.ts`  | the frame loop against a real Hono app: dispatch, the route allowlist, ping, the in-flight cap, the handshake refusals                 |
+| scenario | `aai-server/platform/socket.scenario.test.ts` | both REAL ends over a real port: the handshake, the bearer, and a socket answer compared byte for byte against the same call over HTTP |
 
 The scenario one is the only tier that can say the two ends are wired to each
 other at all — every unit suite either side passes against a fake peer.

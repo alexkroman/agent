@@ -31,7 +31,7 @@
  * | the talk button | {@link useTapToTalk} (tap on, tap off), {@link usePushToTalk} (hold, for `turnTaking: { detection: "manual" }`) |
  * | the agent's own `/api` routes | {@link useRoute}, {@link useRouteMutation}, {@link routeFetch}, {@link useClientRuns} (a `clientRunsRoutes()` pair) |
  * | what this browser remembers | {@link useStoredValue} / {@link createStoredValue}, {@link phoneE164} |
- * | what the agent projects | {@link useAgentState} — pass the `slot.projected` the agent declared under its slot name in `syncState`, and it selects that slot, types it AND supplies the frame rendered before the first push; {@link selectAgentState} is the same slot as a `useSessionSelector` selector |
+ * | what the agent projects | {@link useAgentState} — pass the `slot.projected` the agent declared in `syncState`, and it selects that slot, types it AND supplies the frame rendered before the first push; {@link selectAgentState} is the same slot as a `useSessionSelector` selector |
  * | tools, as they run | {@link useToolCallStart}, {@link useToolResult}, {@link useEvent} |
  * | a durable run | {@link useWorkflowSubmit} (start one), {@link useWorkflowRun} (watch one), {@link useWorkflowRuns} / {@link useWorkflows} (list), {@link useWorkflowProgress} / {@link useWorkflowStream} (its output as it arrives) |
  * | page chrome | {@link useTheme}, {@link useCopy}, {@link useFlash}, {@link useDownloadUrl}, {@link useRunKey} |

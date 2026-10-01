@@ -52,7 +52,6 @@ import {
   dialog,
   isClockTime,
   type SlotToolDef,
-  type StateProjection,
   sessionSlot,
   type ToolContext,
   type ToolDef,
@@ -395,6 +394,7 @@ export const LOG_CAP = 40;
  * pops one too many cannot leave the session with no assistant at all.
  */
 export const tripSlot = sessionSlot("trip", seedTrip, {
+  view: tripView,
   after: (state) => {
     if (state.dialogState.length === 0) state.dialogState.push("primary");
   },
@@ -860,16 +860,3 @@ export function tripView(state: FrozenTripState): TripView {
     log: state.log,
   };
 }
-
-/**
- * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the
- * client.
- *
- * Annotated, because the annotation is the CONTRACT rather than a restatement:
- * `agent({ syncState: { trip } })` and `useAgentState(tripProjection)` both take a
- * `StateProjection<V>`, so writing it here is what says the frame the server
- * pushes and the frame the browser renders are the same {@link TripView} — and
- * what fails at this line, rather than in `client.tsx`, if `tripView` stops
- * producing one.
- */
-export const tripProjection: StateProjection<TripView> = tripSlot.projection(tripView);

@@ -27,7 +27,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 import * as journal from "./workflow-journal.ts";
 
 const SLUG = "tenant-a";

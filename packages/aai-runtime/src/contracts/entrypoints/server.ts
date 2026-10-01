@@ -22,6 +22,7 @@ export {
   createAgentServer,
   createHostServer,
   createRuntimeServer,
+  createServerForRuntime,
   DEFAULT_LISTEN_HOST,
   type HostServerOptions,
   type HostSessionDefaults,

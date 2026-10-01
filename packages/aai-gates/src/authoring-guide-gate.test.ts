@@ -4,7 +4,8 @@
  * `check:authoring-guide` can actually fail, and is actually run.
  *
  * The gate asserts that every contracted authoring capability is named in the
- * code of `packages/aai-templates/scaffold/CLAUDE.md` — the guide that ships
+ * code of `packages/aai-templates/scaffold/CLAUDE.md` and its `agent-guide/`
+ * topic files — the guide that ships
  * inside the `@alexkroman1/aai` tarball and is embedded in the studio prompt.
  * Its whole success output is a count, which is the shape this repo keeps
  * paying for: a capability scan that stopped finding anything, or a fence
@@ -31,7 +32,7 @@ const gateSource: string =
     }),
   ) ?? "";
 
-const guide: string =
+const core: string =
   sole(
     import.meta.glob("../../aai-templates/scaffold/CLAUDE.md", {
       query: "?raw",
@@ -39,6 +40,14 @@ const guide: string =
       eager: true,
     }),
   ) ?? "";
+
+/** The topic files beside the core — the gate reads the whole set. */
+const topics: Record<string, string> = import.meta.glob(
+  "../../aai-templates/scaffold/agent-guide/*.md",
+  { query: "?raw", import: "default", eager: true },
+);
+
+const guide = [core, ...Object.values(topics)].join("\n");
 
 const epochFiles: Record<string, string> = import.meta.glob(
   "../../*/src/contracts/epochs/*/*.json",
@@ -114,6 +123,15 @@ describe("check:authoring-guide", () => {
     expect(spanFloor).toBeGreaterThan(0);
     expect(committedCapabilities().length).toBeGreaterThan(capabilityFloor);
     expect(spans.length).toBeGreaterThan(spanFloor);
+  });
+
+  test("reads the core and every topic file, not the core alone", () => {
+    // The guide is split; a gate reading only `CLAUDE.md` would report every
+    // capability documented in a topic file as missing — or, with its floors
+    // lowered to match, stop seeing most of the guide.
+    expect(core.length).toBeGreaterThan(0);
+    expect(Object.keys(topics).length).toBeGreaterThanOrEqual(5);
+    expect(gateSource).toContain("wholeGuide()");
   });
 
   test("the guide really does name capabilities in CODE, not only in prose", () => {

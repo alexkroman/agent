@@ -76,7 +76,7 @@ import { mcpToolName } from "@alexkroman1/aai";
 import { agentToolsets, type ToolBearingDef, toolset } from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { type DiscoveredTool, discover, mcpTool } from "./adapt.ts";
 import {
   MCP_CONNECT_TIMEOUT_MS,

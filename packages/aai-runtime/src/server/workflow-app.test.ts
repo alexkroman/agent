@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * What `createRuntimeServer` does for a WORKFLOW APP — `workflowApp()` —
+ * What `createServerForRuntime` does for a WORKFLOW APP — `workflowApp()` —
  * and how it mounts the workflow HTTP API for every agent.
  *
  * Its own file rather than more cases in `server.test.ts`: those are about the
@@ -22,7 +22,7 @@ import WebSocket from "ws";
 import { silentLogger } from "../_logger-test-utils.ts";
 import { withDeadline } from "../_timing-test-utils.ts";
 import { MAX_WEBHOOK_BODY_BYTES } from "../workflow/webhook.ts";
-import { createRuntimeServer, type SessionRuntime } from "./server.ts";
+import { createServerForRuntime, type SessionRuntime } from "./server.ts";
 
 /**
  * A `ctx.workflows` that declares one workflow and nothing else.
@@ -65,7 +65,7 @@ async function get(url: string): Promise<{ status: number; body: string }> {
 }
 
 describe("a workflow app's server", () => {
-  let server: ReturnType<typeof createRuntimeServer> | null = null;
+  let server: ReturnType<typeof createServerForRuntime> | null = null;
 
   afterEach(async () => {
     await server?.close();
@@ -75,7 +75,7 @@ describe("a workflow app's server", () => {
   test("declines a /websocket upgrade WITH A REASON rather than dropping it", async () => {
     // A bare socket drop leaves the client reconnecting against a server that
     // will never answer, with nothing in the frame log explaining why.
-    server = createRuntimeServer({
+    server = createServerForRuntime({
       runtime: makeRuntime(),
       page: "static",
       logger: silentLogger,
@@ -108,7 +108,7 @@ describe("a workflow app's server", () => {
 
   test("a voice agent's /websocket is untouched", async () => {
     const runtime = makeRuntime();
-    server = createRuntimeServer({ runtime, logger: silentLogger });
+    server = createServerForRuntime({ runtime, logger: silentLogger });
     await server.listen(0);
     const ws = new WebSocket(`ws://127.0.0.1:${server.port}/websocket`);
     await withDeadline(
@@ -124,7 +124,7 @@ describe("a workflow app's server", () => {
   });
 
   test("reports `page: static` in /client-config, so a browser knows before it dials", async () => {
-    server = createRuntimeServer({
+    server = createServerForRuntime({
       runtime: makeRuntime(),
       name: "Digest",
       page: "static",
@@ -137,7 +137,11 @@ describe("a workflow app's server", () => {
 
   test("states `page: voice` for a voice agent rather than leaving it absent", async () => {
     // A reader should not have to infer the front door from a missing key.
-    server = createRuntimeServer({ runtime: makeRuntime(), name: "Support", logger: silentLogger });
+    server = createServerForRuntime({
+      runtime: makeRuntime(),
+      name: "Support",
+      logger: silentLogger,
+    });
     await server.listen(0);
     const res = await get(`http://127.0.0.1:${server.port}/client-config`);
     expect(JSON.parse(res.body)).toEqual({ name: "Support", page: "voice" });
@@ -145,7 +149,7 @@ describe("a workflow app's server", () => {
 });
 
 describe("the workflow API mount", () => {
-  let server: ReturnType<typeof createRuntimeServer> | null = null;
+  let server: ReturnType<typeof createServerForRuntime> | null = null;
 
   afterEach(async () => {
     await server?.close();
@@ -153,7 +157,7 @@ describe("the workflow API mount", () => {
   });
 
   test("serves /workflows from the runtime's own client", async () => {
-    server = createRuntimeServer({ runtime: makeRuntime(fakeWorkflows), logger: silentLogger });
+    server = createServerForRuntime({ runtime: makeRuntime(fakeWorkflows), logger: silentLogger });
     await server.listen(0);
     const res = await get(`http://127.0.0.1:${server.port}/workflows`);
     expect(res.status).toBe(200);
@@ -161,7 +165,7 @@ describe("the workflow API mount", () => {
   });
 
   test("an agent with no workflows answers 404 rather than claiming a surface", async () => {
-    server = createRuntimeServer({ runtime: makeRuntime(), logger: silentLogger });
+    server = createServerForRuntime({ runtime: makeRuntime(), logger: silentLogger });
     await server.listen(0);
     const res = await get(`http://127.0.0.1:${server.port}/workflows`);
     expect(res.status).toBe(404);
@@ -172,7 +176,7 @@ describe("the workflow API mount", () => {
     // workflow app that first thing is a request to this API. A value captured
     // when the server was constructed would be `undefined` for its lifetime.
     let client: WorkflowClient | undefined;
-    server = createRuntimeServer({ runtime: makeRuntime(() => client), logger: silentLogger });
+    server = createServerForRuntime({ runtime: makeRuntime(() => client), logger: silentLogger });
     await server.listen(0);
     expect((await get(`http://127.0.0.1:${server.port}/workflows`)).status).toBe(404);
     client = fakeWorkflows();
@@ -180,7 +184,7 @@ describe("the workflow API mount", () => {
   });
 
   test("AAI_WORKFLOW_API_TOKEN in the agent env closes the surface", async () => {
-    server = createRuntimeServer({
+    server = createServerForRuntime({
       runtime: makeRuntime(fakeWorkflows),
       env: { AAI_WORKFLOW_API_TOKEN: "s3cret" },
       logger: silentLogger,
@@ -196,7 +200,7 @@ describe("the workflow API mount", () => {
 
   test("a client asset named `workflows` cannot shadow the API", async () => {
     // Mounted before static serving, deliberately.
-    server = createRuntimeServer({
+    server = createServerForRuntime({
       runtime: makeRuntime(fakeWorkflows),
       clientDir: process.cwd(),
       logger: silentLogger,
@@ -208,7 +212,7 @@ describe("the workflow API mount", () => {
   /**
    * The webhook route, which is the one workflow URL handed to a third party.
    *
-   * It is mounted HERE — by `createRuntimeServer`, off the same lazy `runtime.workflows`
+   * It is mounted HERE — by `createServerForRuntime`, off the same lazy `runtime.workflows`
    * getter the API uses — and that is the regression. It used to be mounted by
    * `createWorkflowSurface`, gated on the DevKit's `workflowCode`/`stepCode`
    * pair; once the engine replaced the DevKit those strings stopped existing, so
@@ -223,7 +227,10 @@ describe("the workflow API mount", () => {
 
     async function serveWorkflows() {
       const workflows = fakeWorkflows();
-      server = createRuntimeServer({ runtime: makeRuntime(() => workflows), logger: silentLogger });
+      server = createServerForRuntime({
+        runtime: makeRuntime(() => workflows),
+        logger: silentLogger,
+      });
       await server.listen(0);
       const { port } = server;
       // `listen` resolved, so a port is bound. A THROW rather than an
@@ -291,7 +298,7 @@ describe("the workflow API mount", () => {
     });
 
     test("an agent that declares no workflows answers 404 rather than 500", async () => {
-      server = createRuntimeServer({ runtime: makeRuntime(), logger: silentLogger });
+      server = createServerForRuntime({ runtime: makeRuntime(), logger: silentLogger });
       await server.listen(0);
       expect((await fetch(hookUrl(server.port, "live"), { method: "POST" })).status).toBe(404);
     });

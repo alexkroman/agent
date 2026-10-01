@@ -1,9 +1,4 @@
-import {
-  type DeepReadonly,
-  type SlotHolder,
-  type StateProjection,
-  sessionSlot,
-} from "@alexkroman1/aai";
+import { type DeepReadonly, type SlotHolder, sessionSlot } from "@alexkroman1/aai";
 
 export type GameState = {
   inventory: string[];
@@ -105,6 +100,7 @@ export const SCAVENGER_FLAG = "scavenger_struck";
 // the slot at all rather than reaching for `gameSlot.get(ctx)` inside a
 // `tool()`.
 export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_GAME_STATE), {
+  view: statusLine,
   caps: { history: MAX_HISTORY },
   // The one derived field, recalculated where the slot is rather than at every
   // call site that can move the score. `game_state_score` is the only writer
@@ -182,18 +178,6 @@ export function statusBlock(game: FrozenGameState): string {
     `- Carrying: ${carrying}`,
   ].join("\n");
 }
-
-/**
- * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in
- * the client.
- *
- * Annotated, unlike the pure helpers above, because this is the template's one
- * export that crosses the server/browser boundary — the payload the runtime
- * serializes and pushes on every state change. Naming {@link StatusLine} here
- * puts the wire contract in the module's signature instead of leaving it to be
- * chased through `projection`'s inference.
- */
-export const gameStatus: StateProjection<StatusLine> = gameSlot.projection(statusLine);
 
 /**
  * Log a player command and count the turn. The slot holds {@link MAX_HISTORY}.

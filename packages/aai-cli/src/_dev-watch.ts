@@ -9,7 +9,7 @@
 import path from "node:path";
 import { watch } from "chokidar";
 import pDebounce from "p-debounce";
-import { notify } from "./_ui.ts";
+import { defaultUi, type NotifyLevel } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
 
 // ─── File watching ──────────────────────────────────────────────────────────
@@ -55,6 +55,7 @@ export function watchDirectory(
   dir: string,
   onChange: () => void,
   watchFn: DevWatchFn = watch,
+  notify: (level: NotifyLevel, message: string) => void = defaultUi.notify,
 ): DevWatcher {
   const DEBOUNCE_MS = 300;
 

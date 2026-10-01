@@ -12,10 +12,11 @@ Agent templates (`templates/`, each self-contained with its own `agent.ts` and
 optional `client.tsx`) and the project scaffold (`scaffold/`, base files layered
 underneath). Private package.
 
-**`scaffold/` and `templates/` are shipped PRODUCT.** `scaffold/CLAUDE.md` is
-the user-facing authoring guide — embedded in the studio prompt, shipped in the
-SDK tarball as `AGENT_GUIDE.md`, and the one scaffold file a project gets no
-copy of (`PROJECT_GUIDE_POINTER` in `packages/aai/src/host/scaffold-layer.ts`).
+**`scaffold/` and `templates/` are shipped PRODUCT.** `scaffold/CLAUDE.md` and
+`scaffold/agent-guide/` are the user-facing authoring guide — embedded in the
+studio prompt, shipped in the SDK tarball as `AGENT_GUIDE.md` and
+`agent-guide/`, and the scaffold files a project gets no copy of
+(`PROJECT_GUIDE_POINTER` in `packages/aai/src/host/scaffold-layer.ts`).
 Never add repo-docs `CLAUDE.md` files under either tree.
 
 ## Directory guides and references
@@ -91,21 +92,30 @@ place in that manifest first, or the starter fails to build.
 
 Every project runs on its own with `npm start` (`prestart`/`start` → `aai
 start`). The mechanism is the CLI's: see "Self-hosting is the scaffold's
-default, and it runs the BUILT worker" in `packages/aai-cli/CLAUDE.md`.
+default, and it runs the BUILT worker" in `packages/aai-cli/SELF-HOSTING-CLAUDE.md`.
 
 ## The authoring guide ships inside the SDK
 
-`scaffold/CLAUDE.md` is the one source of truth for writing an agent.
-`scripts/sync-agent-guide.mjs` materializes it as `packages/aai/AGENT_GUIDE.md`
-so it ships in the `aai` tarball and matches the SDK a project resolves;
-`layerScaffold` writes a pointer to that path as a project's `CLAUDE.md`
-instead of a copy that would freeze. The generated-file banner is part of the
-compared content. `check:agent-guide` keeps the copy honest.
+The guide is a CORE (`scaffold/CLAUDE.md`, read first, with a "Read X when Y"
+routing table, under a 20,000-char budget) plus topic files in
+`scaffold/agent-guide/` (each under 50,000) — layout and budgets in
+`scripts/_agent-guide.mjs`. `scripts/sync-agent-guide.mjs` materializes them as
+`packages/aai/AGENT_GUIDE.md` and `packages/aai/agent-guide/*.md`, the same
+relative layout, so they ship in the `aai` tarball and match the SDK a project
+resolves; `layerScaffoldFiles` copies NEITHER into a project and writes a
+pointer at the SDK copy as its `CLAUDE.md` instead of a copy that would freeze.
+The generated-file banner is part of the compared content. `check:agent-guide`
+keeps the copies honest, fails a topic the core does not route to, and
+regenerates the `@alexkroman1/aai` subpath list in the core and in the skill
+from `SUBPATHS` (which must cover the `exports` map exactly).
 
+- A new topic file needs a routing-table row in the core and a literal line in
+  `check-doc-examples.mjs`'s `MARKDOWN_FILES` (both checked).
+- The studio prompt inlines every topic after the core (`loadScaffoldGuide`).
 - It is a repo-level script, not an `aai` build step, because `aai` may import
   no sibling package (`konsistent.json`).
 - `packages/aai/skills/aai/SKILL.md` carries NO API guidance — a skill has no
-  version, so it only points at the guide.
+  version, so it only points at the guide (its subpath list is generated).
 
 ## Session state
 

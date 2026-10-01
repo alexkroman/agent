@@ -13,7 +13,7 @@
  */
 
 import { MAX_TOOL_RESULT_CHARS } from "@alexkroman1/aai/internal";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 
 /**
  * Tool names already warned about by {@link warnOversizedResult}, so a chatty

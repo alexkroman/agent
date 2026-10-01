@@ -1,6 +1,6 @@
 import { agent } from "@alexkroman1/aai";
 import { callEvents } from "./call-events.ts";
-import { gateFlow, tripProjection } from "./shared.ts";
+import { gateFlow, tripSlot } from "./shared.ts";
 
 /**
  * A phone travel concierge, adapted from LangGraph's customer-support tutorial.
@@ -37,7 +37,7 @@ export default agent({
   // so a resumed connection has something to project.
   // One projection replaces a `ctx.send` in each of eleven tools — and is the
   // single place that decides the caller's record leaves the server trimmed.
-  syncState: { trip: tripProjection },
+  syncState: tripSlot.projected,
   /**
    * Declared so the CALL can move the gate, not only a tool.
    *

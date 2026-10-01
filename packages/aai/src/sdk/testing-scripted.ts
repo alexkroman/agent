@@ -42,6 +42,9 @@ import { type StubGenerate, type StubGenerateScript, stubGenerate } from "./test
  * `ToolContext`'s, whose `{@link}`s resolve on the root entry and not on this
  * one, which failed the docs build as three unresolved links.
  *
+ * @deprecated Pass these to `createToolContext` — `ToolContextOverrides`
+ * takes both scripts. See {@link scriptedToolContext}.
+ *
  * @public
  */
 export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
@@ -54,6 +57,9 @@ export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" |
 /**
  * What {@link scriptedToolContext} answers: the context to run tools against,
  * and the two fakes it was built from, for asserting what each was asked.
+ *
+ * @deprecated `createToolContext` answers a `TestToolContext`, which carries
+ * both fakes itself (`ctx.model`, `ctx.desk`). See {@link scriptedToolContext}.
  *
  * @public
  */
@@ -70,11 +76,11 @@ export interface ScriptedToolContext {
  * Build a {@link TestToolContext} whose `generate` and `delegate` are both
  * scripted, and hand back the fakes beside it.
  *
- * **`createToolContext` is the way in now.** Its `generate` and `delegate` take
- * the same scripts and expose the same fakes on the context (`ctx.model`,
- * `ctx.desk`), so one call covers scripting either seam, both, or neither. This
- * stays for the spec that reads the two fakes by name — `const { ctx, model,
- * desk } = scriptedToolContext(…)`.
+ * @deprecated Use `createToolContext({ generate, delegate })` — it takes the
+ * same two scripts and exposes the same fakes as `ctx.model` and `ctx.desk`, so
+ * `const { model, desk } = scriptedToolContext(…)` is `const ctx =
+ * createToolContext(…)` read as `ctx.model` / `ctx.desk`. This predates it and
+ * stays working.
  *
  * Each call is a distinct session, as with `createToolContext`. A spec that
  * wants two sessions sharing one script calls this twice with the same routes

@@ -172,32 +172,34 @@ test("a discovered registry composes onto a slot-backed agent", () => {
   expectTypeOf(def.tools.ping).toExtend<ToolDef | undefined>();
 });
 
-test("syncState is a record of slot projections keyed by slot name", () => {
-  const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-  const def = agent({
-    name: "t",
-    syncState: { cart: cartSlot.projection((cart) => ({ count: cart.items.length })) },
+test("syncState resolves to a record of slot projections keyed by slot name", () => {
+  const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
+    view: (cart) => ({ count: cart.items.length }),
   });
+  const def = agent({ name: "t", syncState: cartSlot.projected });
   expectTypeOf(def.syncState).toEqualTypeOf<
     Readonly<Record<string, StateProjection>> | undefined
   >();
   // And it is callable with nothing, which is how a client derives its
   // pre-first-tool-call frame from the same function the server pushes.
-  expectTypeOf(cartSlot.projection((cart) => cart.items.length)()).toEqualTypeOf<number>();
+  expectTypeOf(cartSlot.projected()).toEqualTypeOf<{ count: number }>();
 });
 
-test("an agent projects more than one slot as more than one key", () => {
+test("syncState takes a projection, a list, or the deprecated record", () => {
   const a = sessionSlot("a", () => ({ x: 1 }));
   const b = sessionSlot("b", () => ({ y: 2 }));
   expectTypeOf<
-    AgentAccepts<{ name: string; syncState: { a: typeof a.projected; b: typeof b.projected } }>
-  >().toEqualTypeOf<true>();
-  // The two forms the record replaced: a bare projection and an array.
-  expectTypeOf<
     AgentAccepts<{ name: string; syncState: typeof a.projected }>
-  >().toEqualTypeOf<false>();
+  >().toEqualTypeOf<true>();
   expectTypeOf<
     AgentAccepts<{ name: string; syncState: readonly StateProjection[] }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; syncState: { a: typeof a.projected; b: typeof b.projected } }>
+  >().toEqualTypeOf<true>();
+  // Not a projection at all.
+  expectTypeOf<
+    AgentAccepts<{ name: string; syncState: readonly string[] }>
   >().toEqualTypeOf<false>();
 });
 

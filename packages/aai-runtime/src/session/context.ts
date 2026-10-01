@@ -35,7 +35,7 @@ import type { AgentDef, SessionContext, SessionContextArgs } from "@alexkroman1/
 import { normalizeClientLocation } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
-import { type Logger, silentLogger } from "../runtime-config.ts";
+import { type Logger, silentLogger } from "../logger.ts";
 
 /**
  * How long a session waits for its `sessionContext` before starting without it.

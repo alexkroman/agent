@@ -21,21 +21,14 @@
  */
 
 import { traceIdOf } from "@alexkroman1/aai-runtime/internal";
+import { OTEL_SERVICE_NAME_ENV } from "@alexkroman1/aai-runtime/tracing";
 import { InMemorySpanExporter, type SpanExporter } from "@opentelemetry/sdk-trace-base";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { applyPlatformMiddleware } from "./app-middleware.ts";
 import type { HonoEnv } from "./context.ts";
-import {
-  DEFAULT_SERVICE_NAME,
-  OTEL_ENDPOINT_ENVS,
-  OTEL_SERVICE_NAME_ENV,
-  startTracing,
-  type Tracing,
-  tracingEndpoint,
-  tracingMiddleware,
-} from "./tracing.ts";
+import { DEFAULT_SERVICE_NAME, startTracing, type Tracing, tracingMiddleware } from "./tracing.ts";
 
 const logs = captureLogs();
 
@@ -82,29 +75,6 @@ function appWithMiddleware(): Hono<HonoEnv> {
   app.get("/ok", (c) => c.text("ok"));
   return app;
 }
-
-describe("tracingEndpoint", () => {
-  test("is undefined with no collector configured", () => {
-    expect(tracingEndpoint({})).toBeUndefined();
-  });
-
-  test.each(OTEL_ENDPOINT_ENVS)("reads the standard variable %s", (name) => {
-    expect(tracingEndpoint({ [name]: "http://collector:4318" })).toBe("http://collector:4318");
-  });
-
-  test("prefers the signal-specific endpoint over the general one", () => {
-    expect(
-      tracingEndpoint({
-        OTEL_EXPORTER_OTLP_ENDPOINT: "http://general:4318",
-        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://traces:4318/v1/traces",
-      }),
-    ).toBe("http://traces:4318/v1/traces");
-  });
-
-  test("treats a blank variable as unset, which is how a template spells it", () => {
-    expect(tracingEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "   " })).toBeUndefined();
-  });
-});
 
 describe("off by default", () => {
   test("constructs no exporter when no collector is configured", () => {

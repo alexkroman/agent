@@ -6,7 +6,7 @@
 import { PREEMPTIVE_CONFIDENCE_THRESHOLD } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../../../_logger-test-utils.ts";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 import type { SpeculativeStream } from "../llm/index.ts";
 import { createSpeculationController, type SpeculationControllerDeps } from "./speculation.ts";
 

@@ -9,9 +9,6 @@ import type { EventFromLogic } from 'xstate';
 import { z } from 'zod';
 
 // @public
-type AgentInstructions = (ctx: AgentSessionContext) => string;
-
-// @public
 type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
 
 // @public @sealed
@@ -22,7 +19,7 @@ interface AgentSessionContext {
 }
 
 // @public
-type AgentSystemPrompt = string | AgentInstructions;
+type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 // @public
 type AnyDialog = Dialog<AnyStateMachine, unknown>;
@@ -282,6 +279,9 @@ export function expectPromptBuiltinsDeclared(def: {
     readonly builtinTools?: readonly BuiltinTool[] | undefined;
     readonly tools?: Readonly<Record<string, unknown>> | undefined;
 }): BuiltinTool[];
+
+// @public
+export function expectToolOk<R>(result: R): R extends DialogToolResult<infer V> ? V : Exclude<R, ToolFailure>;
 
 // @public
 export function expectToolOk<T>(result: unknown): T;
@@ -560,17 +560,17 @@ type SayOptions = {
 // @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
-// @public
+// @public @deprecated
 export interface ScriptedToolContext {
     ctx: TestToolContext;
     desk: StubDelegate;
     model: StubGenerate;
 }
 
-// @public
+// @public @deprecated
 export function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
 
-// @public
+// @public @deprecated
 export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
     generate?: StubGenerateScript | undefined;
     delegate?: StubDelegateScript | undefined;

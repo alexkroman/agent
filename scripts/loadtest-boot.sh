@@ -19,7 +19,7 @@
 # under `aai dev` and has to — a `"use workflow"` body is durable only after the
 # WDK builder has transformed it, so the single-process host `stub` uses would
 # run the bodies inline with no journal to measure. Pair it with
-# `pnpm loadtest:endpoint` for the fan-out.
+# `pnpm loadtest endpoint` for the fan-out.
 #
 # WORKDIR defaults OUTSIDE the repo, and an in-repo one is REFUSED below rather
 # than ignored — each scaffolded project installs ~70 MB of node_modules and
@@ -33,11 +33,11 @@
 # The harnesses, once something is up:
 #
 #   pnpm loadtest --scenario=http|workflow|session --ports=<name>=<port>
-#   pnpm loadtest:probe --port=<port> [--speak]
-#   pnpm loadtest:turns --port=4900        # stub agent only
-#   pnpm loadtest:runs --port=4960 --workflow=chain|fanout|nap
-#   pnpm loadtest:endpoint                 # the far side a fan-out step calls
-#   pnpm loadtest:platform --slug=<slug> --guest=<origin>
+#   pnpm loadtest probe --port=<port> [--speak]
+#   pnpm loadtest turns --port=4900        # stub agent only
+#   pnpm loadtest runs --port=4960 --workflow=chain|fanout|nap
+#   pnpm loadtest endpoint                 # the far side a fan-out step calls
+#   pnpm loadtest platform --slug=<slug> --guest=<origin>
 set -uo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

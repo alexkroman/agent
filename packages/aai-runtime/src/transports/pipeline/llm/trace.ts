@@ -33,7 +33,7 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 import type { LlmTiming } from "../turn/index.ts";
 
 /** The fields of a stream part the trace reads beyond its type. */

@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * What `createRuntimeServer().close()` owes `runtime.shutdown()`.
+ * What `createServerForRuntime().close()` owes `runtime.shutdown()`.
  *
  * The describe was called "server shutdown timeout" and no test supplied a
  * shutdown that hung — because there is no timeout HERE: `close()` awaits
@@ -11,7 +11,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_logger-test-utils.ts";
-import { createRuntimeServer, type SessionRuntime } from "./server.ts";
+import { createServerForRuntime, type SessionRuntime } from "./server.ts";
 
 /**
  * A server whose runtime does exactly what `shutdown` says.
@@ -21,17 +21,18 @@ import { createRuntimeServer, type SessionRuntime } from "./server.ts";
  * whatever the module initializer happened to leave, and the coupling between
  * a test and its double was invisible at the test.
  */
-async function startServer(
-  shutdown: () => Promise<void> = () => Promise.resolve(),
-): Promise<{ server: ReturnType<typeof createRuntimeServer>; shutdown: ReturnType<typeof vi.fn> }> {
+async function startServer(shutdown: () => Promise<void> = () => Promise.resolve()): Promise<{
+  server: ReturnType<typeof createServerForRuntime>;
+  shutdown: ReturnType<typeof vi.fn>;
+}> {
   const spy = vi.fn(shutdown);
-  // `SessionRuntime`, the slice `createRuntimeServer` takes — a `Runtime` is
+  // `SessionRuntime`, the slice `createServerForRuntime` takes — a `Runtime` is
   // sealed and only `createRuntime` builds one.
   const runtime: SessionRuntime = {
     startSession: vi.fn(),
     shutdown: spy,
   };
-  const server = createRuntimeServer({ runtime, logger: silentLogger });
+  const server = createServerForRuntime({ runtime, logger: silentLogger });
   await server.listen(0);
   return { server, shutdown: spy };
 }

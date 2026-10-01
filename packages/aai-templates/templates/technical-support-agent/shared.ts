@@ -6,12 +6,7 @@
  * articles with it.
  */
 
-import {
-  type DeepReadonly,
-  type SlotCaps,
-  type StateProjection,
-  sessionSlot,
-} from "@alexkroman1/aai";
+import { type DeepReadonly, type SlotCaps, sessionSlot } from "@alexkroman1/aai";
 import { product } from "./knowledge.json" with { type: "json" };
 
 /**
@@ -95,7 +90,7 @@ export const ASKED_CAP = 20;
  */
 const caps: SlotCaps<SupportState> = { asked: ASKED_CAP };
 
-export const supportSlot = sessionSlot("support", emptySupportState, { caps });
+export const supportSlot = sessionSlot("support", emptySupportState, { view: supportView, caps });
 
 /**
  * The call as a READ hands it out: deep-frozen, and typed to say so.
@@ -131,15 +126,3 @@ export function supportView(state: FrozenSupportState): SupportView {
     ticket: state.ticket?.reference ?? null,
   };
 }
-
-/**
- * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in
- * the client.
- *
- * Annotated with `StateProjection<SupportView>` because this export IS the
- * contract between the two — it is the only thing `agent.ts` and `client.tsx`
- * share, and naming what a projection is (a callable carrying the slot's `key`
- * and `create`) is what tells a reader why passing it to `useAgentState`
- * derives the pre-first-frame value for free.
- */
-export const supportProjection: StateProjection<SupportView> = supportSlot.projection(supportView);

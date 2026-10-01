@@ -102,7 +102,7 @@ AudioContext stops — possibly after the turn or session is over. Two guards:
 - **The worklet's `stop` echoes its turn id** and `audio/voice-io.ts` settles
   only the matching wait (details in `../worklets/CLAUDE.md`).
 
-The server side paces audio at a bounded lead (`aai/host/audio-pacer.ts`):
+The server side paces audio at a bounded lead (`aai-runtime/session/audio-pacer.ts`):
 `CLIENT_AUDIO_LEAD_MS` **must stay above `PLAYBACK_JITTER_MS`**; `audio_done` is
 queued BEHIND held audio; `cancelled`/`reset` DISCARD held audio.
 
