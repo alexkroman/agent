@@ -113,17 +113,24 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
 
   // Built once: everything here is fixed for the session's lifetime, and
   // `history` is a thunk precisely because the array is not.
+  const toolParameters = new Map((opts.toolSchemas ?? []).map((t) => [t.name, t.parameters]));
   const toolStepDeps = {
     sessionId: opts.id,
     agentConfig: opts.agentConfig,
-    executeTool: opts.executeTool,
+    // The shared per-call core's context (`../tools/run-tool-call.ts`) — the
+    // same coercion, snapshot and record the pipeline's tools run with.
+    toolCall: {
+      executeTool: opts.executeTool,
+      sessionId: opts.id,
+      messages: () => history,
+      parameters: (name: string) => toolParameters.get(name),
+      // Straight into the same window the transcripts land in, so a tool reads
+      // an earlier tool's result on the next call of the reply — see
+      // `ToolStepDeps.toolCall`.
+      recordToolResult: (message: Message) => pushMessages(message),
+    },
     emit,
     log,
-    history: () => history,
-    // Straight into the same window the transcripts land in, so a tool reads
-    // an earlier tool's result on the next call of the reply — see
-    // `ToolStepDeps.recordToolResult`.
-    recordToolResult: (message: Message) => pushMessages(message),
     relayed: Boolean(opts.onToolResult),
   };
 

@@ -1,19 +1,19 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Converts agent {@link ToolSchema}[] to Vercel AI SDK tools, delegating
- * `execute` to the agent's {@link ExecuteTool} so validation, tool context,
- * hooks, and timeouts remain the single source of truth for tool behavior.
+ * `execute` to `run-tool-call.ts` — the one tool-call core every transport
+ * runs — so coercion, validation, tool context, hooks, and timeouts remain the
+ * single source of truth for tool behavior.
  */
 
 import type { Message } from "@alexkroman1/aai";
-import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
+import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import { compactRecordsForModel } from "../_compact-records.ts";
-import { coerceToolArgs } from "./arg-coercion.ts";
 import { type FatalToolError, isFatalToolError } from "./error-policy.ts";
 import type { ToolSpeechController } from "./messages-runner.ts";
-import { toolResultMessage } from "./result-message.ts";
+import { runToolCall, type SettledToolCall, type ToolCallContext } from "./run-tool-call.ts";
 
 interface ToVercelToolsContext {
   executeTool: ExecuteTool;
@@ -62,33 +62,6 @@ interface ToVercelToolsContext {
 }
 
 /**
- * The per-call options `executeTool` takes, assembled from what the AI SDK
- * handed this invocation.
- *
- * Its own function because both members are conditional under
- * `exactOptionalPropertyTypes` and the two guards were the difference between
- * `execute` being inside the cognitive-complexity cap and outside it. The
- * SIGNAL comes back beside them because the tool-message runner needs the same
- * one, and deriving it twice is how the two would come to disagree.
- */
-function callOptions(
-  options: ToolExecutionOptions<unknown>,
-  fallbackSignal: AbortSignal | undefined,
-): { signal: AbortSignal | undefined; executeOptions: ExecuteToolOptions } {
-  // Per-call abortSignal from streamText takes precedence over bag-level
-  // ctx.signal so individual invocations respect outer-turn aborts.
-  const signal = options.abortSignal ?? fallbackSignal;
-  const executeOptions: ExecuteToolOptions = {};
-  if (signal !== undefined) executeOptions.signal = signal;
-  // The AI SDK declares `toolCallId` required, so this guard is dead by the
-  // vendor's own types — kept because it is the vendor's claim about its
-  // runtime, not ours, and `ExecuteToolOptions.toolCallId` is optional under
-  // `exactOptionalPropertyTypes`.
-  if (options.toolCallId !== undefined) executeOptions.toolCallId = options.toolCallId;
-  return { signal, executeOptions };
-}
-
-/**
  * What the MODEL is told about one tool — shared by {@link toVercelTools} and
  * {@link toDeclaredTools}, because a speculation's request has to carry exactly
  * the declarations the real one does.
@@ -103,6 +76,14 @@ export function toVercelTools(
 ): Record<string, Tool> {
   const out: Record<string, Tool> = {};
   const hinted = new HintedModelCopies();
+  const parameters = new Map(schemas.map((schema) => [schema.name, schema.parameters]));
+  const core: ToolCallContext = {
+    executeTool: ctx.executeTool,
+    sessionId: ctx.sessionId,
+    messages: ctx.messages,
+    parameters: (name) => parameters.get(name),
+    recordToolResult: ctx.recordToolResult,
+  };
   for (const schema of schemas) {
     out[schema.name] = tool({
       ...declarationOf(schema),
@@ -117,70 +98,54 @@ export function toVercelTools(
         value: hinted.get(toolCallId) ?? compactRecordsForModel(String(output)),
       }),
       execute: async (args: unknown, options: ToolExecutionOptions<unknown>) => {
-        // Repair stringified scalars ("1500", "true") toward the schema's
-        // declared types before the tool (or a relay observer) sees them.
-        const input = coerceToolArgs(
-          (args ?? {}) as Readonly<Record<string, unknown>>,
-          schema.parameters,
-        );
-        const { signal, executeOptions } = callOptions(options, ctx.signal);
-        // Snapshot history so concurrent mutation from a newer turn can't
-        // leak into this tool's view.
-        const history = ctx.messages().slice();
-        // The tool's own voice for the length of this call: the START line
-        // (awaited only when it is `blocking`) and the delay ladder, both
-        // stopped on every exit path below.
-        const speech = ctx.toolSpeech?.begin(schema.messages, schema.name, input, signal);
-        let result: string;
+        // The call itself — coercion, the history snapshot, execution, the
+        // recorded result and the model's copy — is `run-tool-call.ts`'s, the
+        // one core the S2S tool step runs too. What stays here is what only a
+        // pipeline turn has: the tool's own voice and the fatal latch.
+        const signal = options.abortSignal ?? ctx.signal;
+        let speech: ReturnType<ToolSpeechController["begin"]> | undefined;
+        let settled: SettledToolCall;
         try {
-          await speech?.start();
-          result = await ctx.executeTool(
-            schema.name,
-            input,
-            ctx.sessionId,
-            history,
-            executeOptions,
+          settled = await runToolCall(
+            {
+              name: schema.name,
+              args: (args ?? {}) as Readonly<Record<string, unknown>>,
+              toolCallId: options.toolCallId,
+              signal,
+            },
+            core,
+            // The tool's own voice for the length of this call: the START line
+            // (awaited only when it is `blocking`) and the delay ladder, both
+            // stopped on every exit path below. It needs the COERCED input.
+            async (input) => {
+              speech = ctx.toolSpeech?.begin(schema.messages, schema.name, input, signal);
+              await speech?.start();
+            },
           );
         } catch (err: unknown) {
           speech?.dispose();
           // The ONE rejection `executeTool` produces (see its doc): a failure
           // the author declared unrecoverable. Announced before it is re-thrown,
           // because the throw itself goes nowhere useful — the AI SDK catches
-          // it, emits a `tool-error` part and keeps stepping.
+          // it, emits a `tool-error` part and keeps stepping. Nothing was
+          // recorded: what reaches here is a result the model is not given.
           if (isFatalToolError(err)) ctx.onFatalToolError?.(err);
           throw err;
         }
         // Stops the ladder and speaks the outcome. A `role: "system"` completion
         // annotates the result with its hint, which the model and the
-        // `tool.completed` event both carry, while the line below records the
-        // tool's OWN result — the same split the S2S arm makes on its failure
-        // path. Record collections are rendered as rows in the MODEL's copy
-        // alone (`../_compact-records.ts`, via `toModelOutput` above); the AI SDK
-        // keeps that copy in the step's messages, so later turns read rows too.
-        const shaped = compactRecordsForModel(result);
+        // `tool.completed` event both carry, while the history holds the tool's
+        // OWN result — the same split the S2S arm makes on its failure path.
+        // Record collections are rendered as rows in the MODEL's copy alone
+        // (via `toModelOutput` above); the AI SDK keeps that copy in the step's
+        // messages, so later turns read rows too.
+        const { result, forModel: shaped } = settled;
         const forModel = speech?.settled(shaped) ?? shaped;
         // `settled` returns what it was given, or that with a hint APPENDED, so
         // the hint is the tail past `shaped` and goes after the tool's own
         // string just the same.
         const hint = forModel.slice(shaped.length);
         if (hint !== "" && shaped !== result) hinted.keep(options.toolCallId, forModel);
-        // AFTER the call, so a tool never reads its own result back, and in
-        // COMPLETION order, which is the only order that is true: the loop runs
-        // a step's calls concurrently, so two siblings finishing out of issue
-        // order really did finish that way and a later call reading them wants
-        // what happened, not what was asked for.
-        //
-        // A throw skips this deliberately. `executeTool` resolves with a
-        // serialized failure for anything the MODEL should see and recover
-        // from, so what reaches here as a rejection is the executor itself
-        // failing — a result the model is not given either.
-        ctx.recordToolResult?.(
-          toolResultMessage({
-            result,
-            toolName: schema.name,
-            toolCallId: options.toolCallId,
-          }),
-        );
         return result + hint;
       },
     });

@@ -334,6 +334,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       emitter,
       agentConfig,
       executeTool,
+      toolSchemas,
       transport,
       logger,
       ...omitUndefined({ onToolResult: options.onToolResult }),

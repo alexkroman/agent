@@ -21,6 +21,7 @@ import { consoleLogger } from "../runtime-config.ts";
 import { OPENAI_REALTIME_CAPABILITIES } from "./capabilities.ts";
 import { createEmitError } from "./emit-error.ts";
 import { createOpenaiRealtimeLifecycle } from "./openai-realtime-lifecycle.ts";
+import { withS2sTurnMetrics } from "./s2s-turn-metrics.ts";
 import {
   resolveGreeting,
   resolveSystemPrompt,
@@ -63,10 +64,10 @@ type OpenaiRealtimeTransportOptions = {
 };
 
 export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptions): Transport {
+  const callbacks = withS2sTurnMetrics(opts.callbacks); // + `metrics.collected` per reply
   const log = opts.logger ?? consoleLogger;
-  // The one place "the session is over" is spelled — omitting `fatal` is what
-  // says it, so it is worth having exactly one function that knows that.
-  const emitError = createEmitError(opts.callbacks);
+  // The one place "the session is over" is spelled (omitting `fatal` says it).
+  const emitError = createEmitError(callbacks);
   const createWs = opts.createWebSocket ?? defaultCreateHeaderWebSocket;
   const model = opts.options.model ?? DEFAULT_MODEL;
   const voice = opts.options.voice ?? DEFAULT_VOICE;
@@ -196,9 +197,9 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
    * the three paths that used to call it — see `openai-realtime-lifecycle.ts`.
    */
   const lifecycle = createOpenaiRealtimeLifecycle({
-    replyStarted: (replyId) => opts.callbacks.onReplyStarted(replyId),
-    replyCompleted: () => opts.callbacks.report({ type: "reply.completed" }),
-    replyCancelled: () => opts.callbacks.report({ type: "reply.cancelled" }),
+    replyStarted: (replyId) => callbacks.onReplyStarted(replyId),
+    replyCompleted: () => callbacks.report({ type: "reply.completed" }),
+    replyCancelled: () => callbacks.report({ type: "reply.cancelled" }),
     cancelResponse: () => send({ type: "response.cancel" }),
     clearTurnBuffers,
     // No `fatal` key: the socket is gone, so the session really is over.
@@ -275,13 +276,13 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   function handleAudioDelta(obj: Record<string, unknown>): void {
     if (typeof obj.delta === "string") {
       // `log`, not the module default: a drop here is this session's.
-      opts.callbacks.onAudioChunk(base64ToUint8(obj.delta, log));
+      callbacks.onAudioChunk(base64ToUint8(obj.delta, log));
     }
   }
 
   function handleUserTranscript(obj: Record<string, unknown>): void {
     if (typeof obj.transcript === "string") {
-      opts.callbacks.report({ type: "userTranscript.committed", text: obj.transcript });
+      callbacks.report({ type: "userTranscript.committed", text: obj.transcript });
     }
   }
 
@@ -300,7 +301,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const id = asString(obj.item_id);
     const text = agentTranscriptBuffers.get(id) ?? "";
     agentTranscriptBuffers.delete(id);
-    if (text) opts.callbacks.report({ type: "agentTranscript.committed", text });
+    if (text) callbacks.report({ type: "agentTranscript.committed", text });
   }
 
   function handleResponseDone(): void {
@@ -374,7 +375,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const argsStr = asString(obj.arguments) || (buf?.argsBuffer ?? "");
     log.info("OpenAI Realtime tool call", { name, callId, args: argsStr });
     const args = parseToolArgs(argsStr, name, callId);
-    opts.callbacks.report({ type: "tool.called", toolCallId: callId, toolName: name, args });
+    callbacks.report({ type: "tool.called", toolCallId: callId, toolName: name, args });
   }
 
   function handleMessage(data: unknown): void {
@@ -390,17 +391,17 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         handleAudioDelta(obj);
         return;
       case "response.output_audio.done":
-        opts.callbacks.report({ type: "audio.completed" });
+        callbacks.report({ type: "audio.completed" });
         return;
       case "input_audio_buffer.speech_started":
         // Only `replying` acts on this — under server VAD it is a barge-in, and
         // the lifecycle reports the cancellation the client needs to flush its
         // buffered audio with. The speaking edge is reported either way.
         lifecycle.send({ type: "SPEECH_STARTED" });
-        opts.callbacks.report({ type: "speech.started" });
+        callbacks.report({ type: "speech.started" });
         return;
       case "input_audio_buffer.speech_stopped":
-        opts.callbacks.report({ type: "speech.stopped" });
+        callbacks.report({ type: "speech.stopped" });
         return;
       case "conversation.item.input_audio_transcription.completed":
         handleUserTranscript(obj);
