@@ -26,7 +26,7 @@
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
-import type { PlatformEndpoint } from "../platform-endpoint.ts";
+import type { PlatformEndpoint } from "../platform/index.ts";
 import { platformGuestOptions } from "./platform-world.ts";
 
 /**
