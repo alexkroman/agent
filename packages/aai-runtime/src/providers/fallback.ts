@@ -96,8 +96,8 @@ function keyFor(
 }
 
 /**
- * The machinery both stages share: walk the members from `start`, adopting the
- * first that opens, reporting each one skipped.
+ * Walk the members from `start`, answering the first that opens and reporting
+ * each one skipped.
  */
 async function openFrom<M extends { readonly kind: string }, Session>(
   members: readonly M[],
@@ -123,96 +123,168 @@ async function openFrom<M extends { readonly kind: string }, Session>(
   throw lastError;
 }
 
-/** A fallback STT opener over resolved members, in order. */
-export function createFallbackSttOpener(
-  members: readonly FallbackMember<SttOpener>[],
-  env: ProviderEnv | undefined,
-): SttOpener & FailoverAwareOpener<SttOpenOptions, SttSession> {
-  const openReporting = async (
-    options: SttOpenOptions,
-    onFailover: FailoverListener,
-  ): Promise<SttSession> => {
-    const out = listenerTable<SttEvents>();
-    const openMember = (m: FallbackMember<SttOpener>) =>
-      m.opener.open({ ...options, apiKey: keyFor(m, env, options.apiKey) });
-    let current: SttSession | null = null;
-    let index = 0;
-    let produced = false;
-    let closed = false;
-    let subs: Unsubscribe[] = [];
+/** What a stage tells the core about one adopted member's events. */
+type MemberHooks = {
+  /** The member produced output: from now on its errors are the turn's. */
+  output(): void;
+  /** The member reported an error; `forward` hands it on unchanged. */
+  error(err: unknown, forward: () => void): void;
+};
 
-    const adopt = (session: SttSession, at: number): void => {
-      current = session;
-      index = at;
-      subs = [
-        session.on("partial", (text, meta) => {
-          produced = true;
-          out.emit("partial", (fn) => fn(text, meta));
-        }),
-        session.on("final", (text, meta) => {
-          produced = true;
-          out.emit("final", (fn) => fn(text, meta));
-        }),
-        session.on("error", (err) => {
-          const next = members[index + 1];
-          if (produced || closed || options.signal.aborted || next === undefined) {
-            out.emit("error", (fn) => fn(err));
-            return;
-          }
-          onFailover(failoverOf("stt", members[index]?.kind ?? "", next.kind, err));
-          void switchFrom(session, index + 1);
-        }),
-      ];
-    };
+/** The live member of one fallback session, as the stage's wrapper reads it. */
+type FailoverCore<Session> = {
+  current(): Session | null;
+  produced(): boolean;
+  /** The member the session opened with — whose optional controls it claims. */
+  readonly first: Session;
+  close(): Promise<void>;
+};
 
-    const switchFrom = async (failed: SttSession, start: number): Promise<void> => {
-      for (const off of subs) off();
-      current = null;
-      await failed.close().catch(() => undefined);
-      try {
-        const { session, index: at } = await openFrom(
-          members,
-          start,
-          openMember,
-          options.signal,
-          onFailover,
-          "stt",
-        );
-        if (closed || options.signal.aborted) await session.close().catch(() => undefined);
-        else adopt(session, at);
-      } catch (err) {
-        if (!closed)
-          out.emit("error", (fn) => fn(createSttError("stt_connect_failed", errorMessage(err))));
-      }
-    };
+/**
+ * The state machine both socket stages share: open the first member that
+ * opens, subscribe it through the stage's `wire`, and on an error before any
+ * output close it and adopt the next behind the same wrapper. `adopted` runs
+ * after each adoption (TTS replays what it was sent); `connectError` reports
+ * a list that ran out after the session had opened.
+ */
+async function openFailoverCore<
+  M extends { readonly kind: string },
+  Session extends { close(): Promise<void> },
+>(args: {
+  stage: ProviderFailover["stage"];
+  members: readonly M[];
+  open: (member: M) => Promise<Session>;
+  signal: AbortSignal;
+  onFailover: FailoverListener;
+  wire: (session: Session, hooks: MemberHooks) => Unsubscribe[];
+  adopted?: (session: Session) => void;
+  connectError: (message: string) => void;
+}): Promise<FailoverCore<Session>> {
+  const { stage, members, signal, onFailover } = args;
+  let current: Session | null = null;
+  let index = 0;
+  let produced = false;
+  let closed = false;
+  let subs: Unsubscribe[] = [];
 
-    const first = await openFrom(members, 0, openMember, options.signal, onFailover, "stt");
-    adopt(first.session, first.index);
-    const wrapper: SttSession = {
-      sendAudio: (pcm) => current?.sendAudio(pcm),
-      on: (event, fn) => out.on(event, fn),
-      async close() {
-        closed = true;
-        for (const off of subs) off();
-        await current?.close();
+  const adopt = (session: Session, at: number): void => {
+    current = session;
+    index = at;
+    subs = args.wire(session, {
+      output: () => {
+        produced = true;
       },
-    };
-    // The optional controls are the ADOPTED member's: a transport reads their
-    // presence as "this provider can", so the wrapper claims only what the
-    // session it opened with claims, and forwards to whichever member is live.
-    if (first.session.updateEndpointing) {
-      wrapper.updateEndpointing = (ms) => current?.updateEndpointing?.(ms);
-    }
-    if (first.session.forceEndOfTurn) {
-      wrapper.forceEndOfTurn = () => current?.forceEndOfTurn?.();
-    }
-    return wrapper;
+      error: (err, forward) => {
+        const next = members[index + 1];
+        if (produced || closed || signal.aborted || next === undefined) {
+          forward();
+          return;
+        }
+        onFailover(failoverOf(stage, members[index]?.kind ?? "", next.kind, err));
+        void switchFrom(session, index + 1);
+      },
+    });
+    args.adopted?.(session);
   };
+
+  const switchFrom = async (failed: Session, start: number): Promise<void> => {
+    for (const off of subs) off();
+    current = null;
+    await failed.close().catch(() => undefined);
+    try {
+      const next = await openFrom(members, start, args.open, signal, onFailover, stage);
+      if (closed || signal.aborted) await next.session.close().catch(() => undefined);
+      else adopt(next.session, next.index);
+    } catch (err) {
+      if (!closed) args.connectError(errorMessage(err));
+    }
+  };
+
+  const first = await openFrom(members, 0, args.open, signal, onFailover, stage);
+  adopt(first.session, first.index);
+  return {
+    current: () => current,
+    produced: () => produced,
+    first: first.session,
+    async close() {
+      closed = true;
+      for (const off of subs) off();
+      await current?.close();
+    },
+  };
+}
+
+/** The member half of a core's arguments: each member opened with its own key. */
+function membersOf<Options extends { apiKey: string; signal: AbortSignal }, Session>(
+  members: readonly FallbackMember<{ open(options: Options): Promise<Session> }>[],
+  env: ProviderEnv | undefined,
+  options: Options,
+  onFailover: FailoverListener,
+) {
+  return {
+    members,
+    open: (m: FallbackMember<{ open(options: Options): Promise<Session> }>) =>
+      m.opener.open({ ...options, apiKey: keyFor(m, env, options.apiKey) }),
+    signal: options.signal,
+    onFailover,
+  };
+}
+
+/** The opener a stage's `openReporting` becomes: named by its members, silent by default. */
+function fallbackOpener<Options, Session>(
+  members: readonly { readonly kind: string }[],
+  openReporting: (options: Options, onFailover: FailoverListener) => Promise<Session>,
+): {
+  readonly name: string;
+  open(options: Options): Promise<Session>;
+} & FailoverAwareOpener<Options, Session> {
   return {
     name: `fallback(${members.map((m) => m.kind).join(",")})`,
     open: (options) => openReporting(options, () => undefined),
     openReporting,
   };
+}
+
+/** A fallback STT opener over resolved members, in order. */
+export function createFallbackSttOpener(
+  members: readonly FallbackMember<SttOpener>[],
+  env: ProviderEnv | undefined,
+): SttOpener & FailoverAwareOpener<SttOpenOptions, SttSession> {
+  return fallbackOpener(members, async (options: SttOpenOptions, onFailover) => {
+    const out = listenerTable<SttEvents>();
+    const core = await openFailoverCore({
+      stage: "stt",
+      ...membersOf(members, env, options, onFailover),
+      wire: (session, hooks) => [
+        session.on("partial", (text, meta) => {
+          hooks.output();
+          out.emit("partial", (fn) => fn(text, meta));
+        }),
+        session.on("final", (text, meta) => {
+          hooks.output();
+          out.emit("final", (fn) => fn(text, meta));
+        }),
+        session.on("error", (err) => hooks.error(err, () => out.emit("error", (fn) => fn(err)))),
+      ],
+      connectError: (message) =>
+        out.emit("error", (fn) => fn(createSttError("stt_connect_failed", message))),
+    });
+    const wrapper: SttSession = {
+      sendAudio: (pcm) => core.current()?.sendAudio(pcm),
+      on: (event, fn) => out.on(event, fn),
+      close: () => core.close(),
+    };
+    // The optional controls are the ADOPTED member's: a transport reads their
+    // presence as "this provider can", so the wrapper claims only what the
+    // session it opened with claims, and forwards to whichever member is live.
+    if (core.first.updateEndpointing) {
+      wrapper.updateEndpointing = (ms) => core.current()?.updateEndpointing?.(ms);
+    }
+    if (core.first.forceEndOfTurn) {
+      wrapper.forceEndOfTurn = () => core.current()?.forceEndOfTurn?.();
+    }
+    return wrapper;
+  });
 }
 
 /** One call made on a TTS session before its first audio — what a switch replays. */
@@ -225,100 +297,52 @@ export function createFallbackTtsOpener(
   members: readonly FallbackMember<TtsOpener>[],
   env: ProviderEnv | undefined,
 ): TtsOpener & FailoverAwareOpener<TtsOpenOptions, TtsSession> {
-  const openReporting = async (
-    options: TtsOpenOptions,
-    onFailover: FailoverListener,
-  ): Promise<TtsSession> => {
+  return fallbackOpener(members, async (options: TtsOpenOptions, onFailover) => {
     const out = listenerTable<TtsEvents>();
-    const openMember = (m: FallbackMember<TtsOpener>) =>
-      m.opener.open({ ...options, apiKey: keyFor(m, env, options.apiKey) });
-    let current: TtsSession | null = null;
-    let index = 0;
-    let produced = false;
-    let closed = false;
-    let subs: Unsubscribe[] = [];
     // Everything sent since the session opened, until the first audio: what a
     // member that failed before speaking never got to say.
     const pending: TtsCall[] = [];
-
-    const adopt = (session: TtsSession, at: number): void => {
-      current = session;
-      index = at;
-      subs = [
+    const core = await openFailoverCore({
+      stage: "tts",
+      ...membersOf(members, env, options, onFailover),
+      wire: (session, hooks) => [
         session.on("audio", (pcm) => {
-          produced = true;
+          hooks.output();
           pending.length = 0;
           out.emit("audio", (fn) => fn(pcm));
         }),
         session.on("words", (words) => out.emit("words", (fn) => fn(words))),
         session.on("done", () => out.emit("done", (fn) => fn())),
-        session.on("error", (err) => {
-          const next = members[index + 1];
-          if (produced || closed || options.signal.aborted || next === undefined) {
-            out.emit("error", (fn) => fn(err));
-            return;
-          }
-          onFailover(failoverOf("tts", members[index]?.kind ?? "", next.kind, err));
-          void switchFrom(session, index + 1);
-        }),
-      ];
-      for (const call of pending) {
-        if (call.method === "sendText") session.sendText(call.text);
-        else session.flush();
-      }
-    };
-
-    const switchFrom = async (failed: TtsSession, start: number): Promise<void> => {
-      for (const off of subs) off();
-      current = null;
-      await failed.close().catch(() => undefined);
-      try {
-        const { session, index: at } = await openFrom(
-          members,
-          start,
-          openMember,
-          options.signal,
-          onFailover,
-          "tts",
-        );
-        if (closed || options.signal.aborted) await session.close().catch(() => undefined);
-        else adopt(session, at);
-      } catch (err) {
-        if (!closed)
-          out.emit("error", (fn) => fn(createTtsError("tts_connect_failed", errorMessage(err))));
-      }
-    };
-
-    const first = await openFrom(members, 0, openMember, options.signal, onFailover, "tts");
-    adopt(first.session, first.index);
+        session.on("error", (err) => hooks.error(err, () => out.emit("error", (fn) => fn(err)))),
+      ],
+      adopted: (session) => {
+        for (const call of pending) {
+          if (call.method === "sendText") session.sendText(call.text);
+          else session.flush();
+        }
+      },
+      connectError: (message) =>
+        out.emit("error", (fn) => fn(createTtsError("tts_connect_failed", message))),
+    });
     const record = (call: TtsCall): void => {
-      if (!produced) pending.push(call);
+      if (!core.produced()) pending.push(call);
     };
     return {
       sendText(text) {
         record({ method: "sendText", text });
-        current?.sendText(text);
+        core.current()?.sendText(text);
       },
       flush() {
         record({ method: "flush" });
-        current?.flush();
+        core.current()?.flush();
       },
       cancel() {
         // A cancelled turn is not replayed into a successor.
         pending.length = 0;
-        current?.cancel();
+        core.current()?.cancel();
       },
       on: (event, fn) => out.on(event, fn),
-      async close() {
-        closed = true;
-        for (const off of subs) off();
-        await current?.close();
-      },
+      close: () => core.close(),
     };
-  };
-  return {
-    name: `fallback(${members.map((m) => m.kind).join(",")})`,
-    open: (options) => openReporting(options, () => undefined),
-    openReporting,
-  };
+  });
 }

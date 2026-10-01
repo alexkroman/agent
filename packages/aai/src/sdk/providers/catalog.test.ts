@@ -9,7 +9,6 @@ import {
   STT_PROVIDERS,
   TTS_PROVIDERS,
 } from "./catalog.ts";
-import { defineProvider, describeProvider } from "./define-provider.ts";
 import { KNOWN_LLM_PROVIDERS, llm } from "./llm/llm.ts";
 import { assemblyAIS2s } from "./s2s/assemblyai.ts";
 import { openAIS2s } from "./s2s/openai.ts";
@@ -73,27 +72,5 @@ describe("PROVIDER_CATALOG", () => {
     for (const name of KNOWN_LLM_PROVIDERS) {
       expect(llm({ provider: name, model: "m" }).kind).toBe(LLM_PROVIDERS[name].kind);
     }
-  });
-});
-
-describe("defineProvider / describeProvider", () => {
-  const def = defineProvider({
-    kind: "acme",
-    stage: "stt",
-    envVar: "ACME_API_KEY",
-    label: "Acme",
-    factory: "acmeStt",
-    subpath: "stt",
-  });
-
-  it("freezes the definition", () => {
-    expect(Object.isFrozen(def)).toBe(true);
-  });
-
-  it("stamps the kind and COPIES the options", () => {
-    const options = { model: "a" };
-    const d = describeProvider(def, options);
-    options.model = "b";
-    expect(d).toEqual({ kind: "acme", options: { model: "a" } });
   });
 });

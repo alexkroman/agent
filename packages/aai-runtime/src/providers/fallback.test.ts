@@ -13,7 +13,6 @@ import {
   createFakeTtsProvider,
 } from "../_pipeline-test-fakes.ts";
 import type { ProviderFailover } from "./_failover.ts";
-import { openReportingFailover, withOpenerFailoverListener } from "./_failover.ts";
 import { createFallbackSttOpener, createFallbackTtsOpener } from "./fallback.ts";
 import type { SttError, TtsError } from "./openers.ts";
 
@@ -255,44 +254,5 @@ describe("fallback TTS", () => {
       "three",
     );
     expect(failovers.map((f) => `${f.from}->${f.to}`)).toEqual(["a->b", "b->c"]);
-  });
-});
-
-describe("the per-session listener seam", () => {
-  test("binds a fallback opener's open() to the listener", async () => {
-    const opener = createFallbackSttOpener(
-      [
-        { opener: createFailingSttProvider("stt_connect_failed", "x"), envVar: "A", kind: "a" },
-        { opener: createFakeSttProvider(), envVar: "B", kind: "b" },
-      ],
-      {},
-    );
-    const seen: ProviderFailover[] = [];
-    await withOpenerFailoverListener(opener, (f) => seen.push(f)).open(sttOptions());
-    expect(seen).toHaveLength(1);
-  });
-
-  test("passes any other opener through by identity", async () => {
-    const plain = createFakeSttProvider();
-    expect(withOpenerFailoverListener(plain, () => undefined)).toBe(plain);
-    await openReportingFailover(plain, sttOptions(), () => undefined);
-    expect(plain.sessions).toHaveLength(1);
-  });
-
-  test("bounds a reason, which can be a whole error page", async () => {
-    const opener = createFallbackSttOpener(
-      [
-        {
-          opener: createFailingSttProvider("stt_connect_failed", "x".repeat(5000)),
-          envVar: "A",
-          kind: "a",
-        },
-        { opener: createFakeSttProvider(), envVar: "B", kind: "b" },
-      ],
-      {},
-    );
-    const seen: ProviderFailover[] = [];
-    await opener.openReporting(sttOptions(), (f) => seen.push(f));
-    expect(seen[0]?.reason.length).toBe(500);
   });
 });

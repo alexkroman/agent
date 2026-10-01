@@ -1,6 +1,6 @@
 ---
-"@alexkroman1/aai": minor
-"@alexkroman1/aai-runtime": minor
+"@alexkroman1/aai": major
+"@alexkroman1/aai-runtime": major
 ---
 
 Provider failover and one registration per vendor.
@@ -13,6 +13,9 @@ Provider failover and one registration per vendor.
   (decided per request). Never on an interruption or after output. Each switch
   is a new `provider.failed-over` session event (`stage`, `from`, `to`,
   `reason`), and every member's key is required by the credential preflight.
+  **Breaking:** the event vocabulary grew, so an exhaustive `switch` over
+  `SessionEvent["type"]` must handle it (`aai:events` epoch 2, epoch 1
+  dropped).
 - Each built-in vendor is now one `defineProvider` record in the SDK
   (`PROVIDER_CATALOG` on `@alexkroman1/aai/host-internal`), which its factory,
   the runtime's opener registry, `requiredProviderEnvVars` and the docs site's
