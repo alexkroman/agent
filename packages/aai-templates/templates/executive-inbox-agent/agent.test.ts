@@ -3,9 +3,9 @@ import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import {
+  createToolContext,
   expectDialogOk,
   expectToolOk,
-  scriptedToolContext,
   stubGenerate,
   toolRunner,
 } from "@alexkroman1/aai/testing";
@@ -73,7 +73,7 @@ function scriptedDesk(
     update?: { logic: string; updatePrompt: boolean; newPrompt: string };
   } = {},
 ) {
-  return scriptedToolContext({
+  const ctx = createToolContext({
     generate: {
       routes: {
         [TRIAGE_SYSTEM]: (call) => ({ object: verdictFor(call.prompt) }),
@@ -101,6 +101,7 @@ function scriptedDesk(
       },
     },
   });
+  return { ctx, model: ctx.model, desk: ctx.desk };
 }
 
 const stateOf = (ctx: ToolContext) => assistantSlot.get(ctx);

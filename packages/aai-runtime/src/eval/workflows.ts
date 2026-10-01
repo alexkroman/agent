@@ -102,7 +102,8 @@ import {
 export const DEFAULT_RUN_TIMEOUT_MS = 300_000;
 
 /**
- * Can this machine run workflow evals against `agent`?
+ * Can this machine run workflow evals against `agent`? The gate for
+ * {@link openEvalWorkflows} / `describeWorkflowEval`.
  *
  * The sibling of `evalCredentials`, and it is a DIFFERENT question rather than a
  * convenience wrapper: `requiredProviderEnvVars` answers `[]` for a

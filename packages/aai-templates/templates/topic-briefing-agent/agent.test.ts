@@ -5,7 +5,6 @@ import {
   expectToolOk,
   runTool,
   type StubDelegateCall,
-  scriptedToolContext,
   stubDelegate,
   toolOf,
   toolRunner,
@@ -61,7 +60,7 @@ function scriptedDesk(
   } = {},
 ) {
   const research = options.research ?? ((call) => `Findings for ${call.task}.`);
-  return scriptedToolContext({
+  const ctx = createToolContext({
     delegate: {
       routes: {
         researcher: (call) => {
@@ -80,6 +79,7 @@ function scriptedDesk(
       },
     },
   });
+  return { ctx, desk: ctx.desk };
 }
 
 describe("the desk itself", () => {

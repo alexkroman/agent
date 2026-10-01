@@ -109,7 +109,13 @@ export type EvalCredentials = {
 };
 
 /**
- * Can this machine run evals against `agent`?
+ * Can this machine run evals against `agent` — a VOICE agent, through
+ * {@link openEvalSession} / `describeEval`?
+ *
+ * One of three gates, one per harness, because each asks which keys ITS run
+ * dials: this for a voice session, `evalTextCredentials` for a `mode: "text"`
+ * agent (`openEvalTextAgent`), `evalWorkflowCredentials` for a workflow app
+ * (`openEvalWorkflows`). The `describe*Eval` suites call the right one.
  *
  * An eval spends real tokens on a real key, so a suite that cannot find one has
  * to SKIP — and a silent skip is the worst outcome available, because a green

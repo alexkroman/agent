@@ -14,7 +14,6 @@ import {
   type StubDelegateCall,
   type StubGenerateCall,
   schemaInputIssues,
-  scriptedToolContext,
   type TestToolContext,
   toolRunner,
 } from "@alexkroman1/aai/testing";
@@ -129,7 +128,7 @@ interface Script {
  * swap the model would also swap the state.
  */
 function scriptedDesk(script: Script = {}) {
-  const scripted = scriptedToolContext({
+  const ctx = createToolContext({
     generate: {
       routes: {
         [EVALUATOR_SYSTEM]: (call: StubGenerateCall) => {
@@ -151,7 +150,7 @@ function scriptedDesk(script: Script = {}) {
       },
     },
   });
-  return { ...scripted, script };
+  return { ctx, model: ctx.model, desk: ctx.desk, script };
 }
 
 const at = (ctx: ToolContext) => hiringFlow.position(ctx).state;

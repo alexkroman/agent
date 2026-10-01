@@ -7,10 +7,8 @@ import {
   expectToolOk,
   runGuardrail,
   runTool,
-  type ScriptedToolContext,
   type StubDelegateRoute,
   type StubGenerateRoute,
-  scriptedToolContext,
   stubDelegate,
   toolRunner,
 } from "@alexkroman1/aai/testing";
@@ -50,7 +48,7 @@ vi.mock("@alexkroman1/aai/tools", () => ({ webSearch: vi.fn(), visitWebpage: vi.
 // subagent, so the `delegate` script drives it, routed by subagent name. That
 // split is the conversion showing through in the test file, and it is the
 // honest one: a spec that scripted the executor's turns was scripting a loop
-// this template no longer owns. `scriptedToolContext` builds both fakes and
+// this template no longer owns. `createToolContext` builds both fakes and
 // the context they are wired into, so every test below starts from one call.
 
 interface Script {
@@ -76,7 +74,7 @@ function stepReply(answer: string | StepAnswer): string {
   return JSON.stringify(typeof answer === "string" ? { finding: answer, settled: true } : answer);
 }
 
-function scriptedDesk(script: Script = {}): ScriptedToolContext {
+function scriptedDesk(script: Script = {}) {
   const answers = [...(script.answers ?? [])];
   const acts = [...(script.acts ?? [])];
   // The replanner and the reviser are the same node with a different brief, so
@@ -92,7 +90,7 @@ function scriptedDesk(script: Script = {}): ScriptedToolContext {
     toolCalls: (script.searches ?? []).map((query) => ({ name: "search", input: { query } })),
   });
 
-  return scriptedToolContext({
+  const ctx = createToolContext({
     generate: {
       routes: {
         [PLANNER_SYSTEM]: { object: { steps: script.steps ?? ["Only step"] } },
@@ -102,6 +100,7 @@ function scriptedDesk(script: Script = {}): ScriptedToolContext {
     },
     delegate: { routes: { executor: worksTheStep } },
   });
+  return { ctx, model: ctx.model, desk: ctx.desk };
 }
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup,
@@ -485,7 +484,7 @@ describe("work_next_step", () => {
 
   test("two independent contexts never share a plan", async () => {
     // What this really checks: the state lives in the SLOT and not in a
-    // module-level variable. `scriptedToolContext()` hands each call its own
+    // module-level variable. `createToolContext()` hands each call its own
     // detached slot store, so the isolation is per CONTEXT — two distinct
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.

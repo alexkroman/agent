@@ -63,7 +63,16 @@ export interface StubGateway {
 }
 
 /**
- * Build a fake LLM gateway answering `replies` in order.
+ * Build a fake LLM gateway answering `replies` in order, as a `fetch` for the
+ * caller to install on the GLOBAL `fetch`.
+ *
+ * Three names, one fake, picked by SEAM:
+ *
+ * | You need | Use |
+ * | --- | --- |
+ * | the global `fetch`, installed and undone for you (vitest) | `installStubGateway` (`@alexkroman1/aai/testing/vitest`) |
+ * | the global `fetch`, installed by you (any runner) | `stubGateway` — this |
+ * | a published `stepFetch` that other fakes share (a page, a transcription) | {@link stubGatewayRoute}, composed into `installStubStepFetch` |
  *
  * The LAST reply repeats once the list runs out, so a spec names only the turns
  * it cares about — which is what makes this usable for a step whose model call
@@ -159,7 +168,8 @@ export interface StubGatewayRoute {
 
 /**
  * A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot
- * rather than the global `fetch`.
+ * rather than the global `fetch` — a ROUTE to compose, not a fake to install.
+ * {@link stubGateway} says which of the three gateway fakes fits which seam.
  *
  * {@link stubGateway} answers over `globalThis.fetch`, which is the wrong seam
  * whenever anything has published a `stepFetch`: publishing REPLACES, so a flow
