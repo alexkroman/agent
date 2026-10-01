@@ -114,6 +114,17 @@ import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { estimateConversationTokens, HISTORY_RETAIN_TOKENS } from "./_history-retention.ts";
 import { recordingTts } from "./_pipeline-test-fakes.ts";
+import {
+  contentsOf,
+  ERROR_PHRASE,
+  INTERIM_KINDS,
+  KIND,
+  keep,
+  LIVE_ONLY_KINDS,
+  REPLAY_ONLY_KINDS,
+  SHARED_KINDS,
+  START_FAILURE_PHRASE,
+} from "./_replay-equivalence-kinds.ts";
 import type { TtsSession } from "./providers/openers.ts";
 import { messagesFromEvents } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
@@ -122,64 +133,6 @@ import type { PipelineProviderSessions } from "./transports/pipeline-providers.t
 import { createTurnGate } from "./transports/pipeline-turn-gate.ts";
 import { createTurnOutcome } from "./transports/pipeline-turn-outcome.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
-
-/**
- * Every message this driver can produce, keyed by the first character of its
- * text, so a message's PROVENANCE is readable off the message itself.
- *
- * The classification is what makes the boundary assertable without either
- * implementation being consulted about it: a leaked `[interrupted]` reply is a
- * `k` where only `u`/`a`/`g` may appear.
- */
-const KIND = {
-  /** A committed user turn. Both sides. */
-  user: "u",
-  /** A spoken reply. Both sides. */
-  reply: "a",
-  /** The greeting. Both sides. */
-  greeting: "g",
-  /** An injected prompt (resume / nudge / `injectTurn`). LIVE ONLY. */
-  synthetic: "s",
-  /** The heard prefix of an interrupted reply. LIVE ONLY. */
-  interrupted: "k",
-  /** `errorPhrase`. NEITHER side, since the `recovery` tag. */
-  errorPhrase: "e",
-  /** `startFailurePhrase`. NEITHER side, since the `recovery` tag. */
-  startFailure: "f",
-  /** A `user-transcript.updated` partial. NEITHER side. */
-  userPartial: "p",
-  /**
-   * An `agent-transcript.updated` interim. NEITHER side.
-   *
-   * Tagged distinctly from the committed text it precedes, which is the
-   * FAITHFUL choice and not a convenience: interim snapshots "legitimately
-   * shrink and differ mid-string", and an interrupted reply's carry the dead-air
-   * filler the caller heard and the record excludes
-   * (`session-event-history.ts:16-21`).
-   */
-  agentInterim: "i",
-} as const;
-
-const SHARED_KINDS: ReadonlySet<string> = new Set([KIND.user, KIND.reply, KIND.greeting]);
-const LIVE_ONLY_KINDS: ReadonlySet<string> = new Set([KIND.synthetic, KIND.interrupted]);
-/**
- * The two recovery phrases. Named for the boundary they USED to sit on: both are
- * now spoken and captioned but enter no history, so what either reconstruction
- * contains of this set must be EMPTY. Kept as a live assertion rather than
- * deleted — an untagged phrase would land back here, which is the regression.
- */
-const REPLAY_ONLY_KINDS: ReadonlySet<string> = new Set([KIND.errorPhrase, KIND.startFailure]);
-/** The interim vocabulary, which neither reconstruction may ever contain. */
-const INTERIM_KINDS: ReadonlySet<string> = new Set([KIND.userPartial, KIND.agentInterim]);
-
-/** Fixed, because both phrases are session-scoped config rather than per-turn text. */
-const ERROR_PHRASE = `${KIND.errorPhrase} sorry, I had trouble with that`;
-const START_FAILURE_PHRASE = `${KIND.startFailure} I cannot start this call`;
-
-const kindOf = (m: Message): string => m.content.slice(0, 1);
-const contentsOf = (msgs: readonly Message[]): string[] => msgs.map((m) => m.content);
-const keep = (msgs: readonly Message[], kinds: ReadonlySet<string>): Message[] =>
-  msgs.filter((m) => kinds.has(kindOf(m)));
 
 /** One turn of a pipeline session, as the transport really ends one. */
 type Turn =
@@ -717,7 +670,9 @@ describe("a conversation read back out of its own event log", () => {
     // reply and every injected prompt, and gains only a failure phrase per
     // failed turn, so it is the side that lags. Re-taken over 6 runs after the
     // rollback fix above (12-22 / 8-16), then over 13 more (live 11-21, replay
-    // 5-16): replay hit 5 on CI, so it is floored `> 0` (never filled).
+    // 5-16): replay hit 5 on CI, so it is floored `> 0` (never filled). Re-taken
+    // when the bound moved to tokens (`WINDOW_RETAIN = 1200`), over 4 runs:
+    // live 17-26, replay 10-17 — the same band, so the floors stand.
     expect(reached.liveTrims, "the live window never filled").toBeGreaterThan(5); // 11-21
     expect(reached.replayTrims, "the replayed window never filled").toBeGreaterThan(0); // 5-16
   });
