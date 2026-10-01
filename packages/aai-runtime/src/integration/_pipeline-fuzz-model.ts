@@ -390,7 +390,7 @@ export function instrumentLlm(
   // `LanguageModel` is a union over three provider spec versions plus a bare
   // model id, and a `doStream` override written against the union satisfies
   // none of them. The fake is always the v3 object, so narrow to that arm — the
-  // same move `error-injection.test.ts`'s `refusingLlm` makes.
+  // same move `../transports/pipeline/error-injection.test.ts`'s `refusingLlm` makes.
   if (typeof llm === "string" || llm.specificationVersion !== "v3") {
     throw new Error("the fake model is a v3 object, never an id or another spec version");
   }

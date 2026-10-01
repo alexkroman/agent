@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Inject a failure into the GUEST→SERVER hop and assert what the caller is
- * told — the same gate as `../error-injection.test.ts`, one layer down.
+ * told — the same gate as `../transports/pipeline/error-injection.test.ts`, one layer down.
  *
  * ## Why this needs its own sweep
  *

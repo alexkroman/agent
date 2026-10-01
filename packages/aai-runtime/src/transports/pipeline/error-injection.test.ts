@@ -35,21 +35,21 @@ import { SessionErrorCodeSchema } from "@alexkroman1/aai/protocol";
 import type { LanguageModel } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import {
+  createFailingSttProvider,
+  createFailingTtsProvider,
+  createFakeLanguageModel,
+  createFakeTtsProvider,
+} from "../../_pipeline-test-fakes.ts";
+import { makeOpts, useVirtualTime } from "../_pipeline-transport-harness.ts";
+import type { TransportEventBody } from "../types.ts";
+import {
   CLIENT_MINTED_CODES,
   drivenHere,
   SESSION_ERROR_SITES,
   type SessionErrorSite,
   unclassifiedCodes,
 } from "./_error-injection-matrix.ts";
-import {
-  createFailingSttProvider,
-  createFailingTtsProvider,
-  createFakeLanguageModel,
-  createFakeTtsProvider,
-} from "./_pipeline-test-fakes.ts";
-import { makeOpts, useVirtualTime } from "./transports/_pipeline-transport-harness.ts";
-import { createPipelineTransport } from "./transports/pipeline/index.ts";
-import type { TransportEventBody } from "./transports/types.ts";
+import { createPipelineTransport } from "./index.ts";
 
 /**
  * The ONE arm of `LanguageModel` this fake really is.
