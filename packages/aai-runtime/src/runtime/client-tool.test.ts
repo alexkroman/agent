@@ -3,7 +3,7 @@
  * A `clientTool` end to end through the socket: the session emits the
  * ordinary `tool.called`, the page's `tool_result` frame goes through the
  * command dispatcher to the broker, and the call completes with the page's
- * answer — the self-hosted twin of host mode's relay spec in `../host-mode.test.ts`.
+ * answer — the self-hosted twin of host mode's relay spec in `../server/host-mode.test.ts`.
  */
 
 import { clientTool } from "@alexkroman1/aai";

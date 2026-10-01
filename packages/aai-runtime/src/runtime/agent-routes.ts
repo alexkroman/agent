@@ -4,7 +4,7 @@
  * one call that answers a parsed request with a status and a JSON body.
  *
  * The HTTP half — the `/api` prefix, the body cap, JSON parsing, `?client=` —
- * is `../agent-routes-http.ts`, and the line between them is the bundle boundary.
+ * is `../server/agent-routes-http.ts`, and the line between them is the bundle boundary.
  * A deployed guest holds two copies of this package (see "A deployed guest has
  * TWO copies of this package" in this package's guide): `createRuntimeServer`
  * is the harness's, while the runtime — and the handlers, and the

@@ -92,7 +92,7 @@ import { parseTraceparent } from "./_trace-context.ts";
  *
  * Twelve of those — one per name this module used to import — failed a real
  * `vercel deploy` of a scaffolded project. It had already failed once before,
- * through a different importer (`server.ts`, which is why `_request-trace.ts`
+ * through a different importer (`server/server.ts`, which is why `_request-trace.ts`
  * exists), and the invariant that both breaches violated ("keep this module out
  * of that bundle") is not one any author can be expected to hold: it is a
  * property of the whole import graph, re-decided by every new caller.

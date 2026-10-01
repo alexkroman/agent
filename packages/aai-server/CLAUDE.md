@@ -425,7 +425,7 @@ traps in `packages/aai-guest/CLAUDE.md`, "Guest network access".
 `WS /websocket` (and `/inbox`) refuses an upgrade without one (4401).
 
 - **What it proves is only that the holder fetched this agent's config**, a
-  minute ago (`mintPlatformSessionTicket`, `aai-runtime/session-ticket.ts`).
+  minute ago (`mintPlatformSessionTicket`, `aai-runtime/server/session-ticket.ts`).
   The platform knows no end user; `allowedOrigins` has no platform setting yet.
 - **Resume is by POSSESSION.** Every ticket is BOUND to one session id; a
   lookup presenting the previous ticket (`aai-session-ticket` header) within

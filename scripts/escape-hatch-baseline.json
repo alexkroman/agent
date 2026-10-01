@@ -21,7 +21,7 @@
     "packages/aai-runtime/src/_fake-llm.ts": 1,
     "packages/aai-runtime/src/_ws.ts": 1,
     "packages/aai-runtime/src/generate.test.ts": 2,
-    "packages/aai-runtime/src/host-mode.test.ts": 1,
+    "packages/aai-runtime/src/server/host-mode.test.ts": 1,
     "packages/aai-runtime/src/integration/_s2s-fuzz-model.ts": 1,
     "packages/aai-runtime/src/providers/_openai-stream-repair.test.ts": 1,
     "packages/aai-runtime/src/providers/resolve.test.ts": 1,

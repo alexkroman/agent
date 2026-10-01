@@ -199,7 +199,7 @@ export const DEFAULT_S2S_CONFIG: S2sConfig = {
  * on 4 of 5 live sessions (a mangled fragment on the fifth), and a tau2 retail
  * run scored 2/25 with the pin in place. So a host-mode client that DECLARES a
  * rate this transport cannot honour has its handshake REJECTED rather than
- * silently overridden — see `assertHostRatesSupported` in `host-mode.ts`. This
+ * silently overridden — see `assertHostRatesSupported` in `server/host-mode.ts`. This
  * function's warn covers the other caller: an operator passing `s2sConfig` to
  * `createRuntime` directly, where there is no handshake to fail.
  *

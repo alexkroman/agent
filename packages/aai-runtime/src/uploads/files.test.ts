@@ -10,7 +10,7 @@
  * backend could not survive, and the reason this is a directory rather than
  * memory.
  *
- * Temp-directory specs in the unit tier, following `../server-static.test.ts` and
+ * Temp-directory specs in the unit tier, following `../server/static.test.ts` and
  * `workspace-files.test.ts` next door.
  */
 

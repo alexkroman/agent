@@ -417,8 +417,8 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
  * call, relay never invoked and `toolSchemas` empty, so the model was told it had
  * no tools; a lone `toolSchemas` was discarded in favour of `agent.tools`. Both are
  * a mis-wiring in OUR code (the pair is `@internal`, reached only from
- * `../host-mode.ts` and the platform harness), so a construction throw naming the
- * absent option is the one failure a caller can act on — `../host-mode.ts` already
+ * `../server/host-mode.ts` and the platform harness), so a construction throw naming the
+ * absent option is the one failure a caller can act on — `../server/host-mode.ts` already
  * turns it into a handshake rejection quoting it. A discriminated union on
  * `RuntimeOptions` was the candidate and is worse at both ends: it rejects a bag
  * built through `omitUndefined` (this repo's idiom widens both fields to

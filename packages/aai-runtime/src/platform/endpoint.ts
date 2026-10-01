@@ -20,10 +20,10 @@
  * `/internal` (the typed-json codec, the route tables), and `aai-runtime` may not
  * import the server. So the shared declaration has to sit on this side, and the
  * handlers take their `*_ROUTE` from {@link PLATFORM_ROUTES} rather than spelling a
- * literal. That is the same move `../server-routes.ts` makes for the OPPOSITE
+ * literal. That is the same move `../server/routes.ts` makes for the OPPOSITE
  * direction, for the same reason its doc gives.
  *
- * This is a source of truth, not a collection point — unlike `../server-routes.ts`,
+ * This is a source of truth, not a collection point — unlike `../server/routes.ts`,
  * whose entries are imported from the modules that serve them. Here the callers are
  * in this package and the servers are in another, so the strings are declared once,
  * here, and both ends read them.

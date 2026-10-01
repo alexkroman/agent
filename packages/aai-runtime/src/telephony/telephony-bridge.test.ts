@@ -5,7 +5,7 @@ import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "../_mock-ws.ts";
 import { makeLogger } from "../_test-utils.ts";
-import type { SessionRuntime } from "../server.ts";
+import type { SessionRuntime } from "../server/index.ts";
 import { telnyxCodec, twilioCodec } from "./carriers.ts";
 import { mulawToPcm16, pcm16ToMulaw, TELEPHONY_SAMPLE_RATE } from "./mulaw.ts";
 import { ACTED_ON_EVENTS, createTelephonyBridge } from "./telephony-bridge.ts";

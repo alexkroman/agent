@@ -228,10 +228,10 @@ export const WORKFLOW_BODY_PATHSPECS = ["packages/aai-templates/templates/*/work
  * violation.
  */
 export const RUNTIME_ROUTE_SOURCES = [
-  "packages/aai-runtime/src/server.ts",
-  "packages/aai-runtime/src/server-routes.ts",
+  "packages/aai-runtime/src/server/server.ts",
+  "packages/aai-runtime/src/server/routes.ts",
   "packages/aai-runtime/src/telephony/telephony-server.ts",
-  "packages/aai-runtime/src/session-events-api.ts",
+  "packages/aai-runtime/src/server/session-events-api.ts",
   "packages/aai-runtime/src/workflow/serve.ts",
   "packages/aai-runtime/src/workflow/queue-dispatch.ts",
 ];

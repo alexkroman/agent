@@ -177,21 +177,28 @@ export { consoleLogger } from "./runtime-config.ts";
 // gate. Shared for the same reason `isPathInside` below is: the guest harness makes
 // the identical statement about a deployed agent and had its own copy of the line,
 // so a gate variable added later would have had to be remembered in two places.
-export { agentServerEnv } from "./server-env.ts";
 // The two route TABLES — every path this package serves, split by which surface
 // mounts it. `aai-server`'s `GUEST_ROUTES` composes them with the harness's own
 // routes instead of re-typing the strings, which is what it did while
 // `WORKFLOW_FLOW_PATH` below was already exported for exactly that purpose. See
-// `server-routes.ts` for why there are two tables and not one.
+// `server/routes.ts` for why there are two tables and not one.
+// The containment rule under the static-asset server, shared because it is
+// SSRF-adjacent and worth one definition rather than one per caller.
+// The managed platform's session tickets: the broker (`aai-server`'s
+// `client-config` handler) mints with these, and the guest derives the same key
+// from its bearer to verify. Here, not on `/auth`, because only those two do.
 export {
+  agentServerEnv,
+  isPathInside,
+  mintPlatformSessionTicket,
+  PLATFORM_TICKET_RESUME_GRACE_SECONDS,
+  type PlatformTicketInput,
+  platformSessionSecret,
   SERVER_ROUTES,
   type ServerRoute,
   type ServerRouteMatch,
   WORKFLOW_CALLBACK_ROUTES,
-} from "./server-routes.ts";
-// The containment rule under the static-asset server, shared because it is
-// SSRF-adjacent and worth one definition rather than one per caller.
-export { isPathInside } from "./server-static.ts";
+} from "./server/index.ts";
 // Wiring a socket up under a session. `SessionWebSocket` — the minimal socket
 // shape a host supplies — is contracted, on the root barrel. The socket's
 // options are the transport-neutral lifecycle's plus its own, so that type is
@@ -253,15 +260,6 @@ export {
   type SessionStateStore,
   type StoredSessionEvent,
 } from "./session-state/store.ts";
-// The managed platform's session tickets: the broker (`aai-server`'s
-// `client-config` handler) mints with these, and the guest derives the same key
-// from its bearer to verify. Here, not on `/auth`, because only those two do.
-export {
-  mintPlatformSessionTicket,
-  PLATFORM_TICKET_RESUME_GRACE_SECONDS,
-  type PlatformTicketInput,
-  platformSessionSecret,
-} from "./session-ticket.ts";
 // The route `createRuntimeServer` serves carriers on and the query key naming
 // one, for the CLI's preflight, which prints the webhook a carrier is pointed at.
 // An embedder bridging a call itself chooses its own path, so neither is part of

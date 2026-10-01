@@ -326,7 +326,7 @@ export interface RuntimeOptions extends HostAgentOptions {
  * barrel's zero-`@internal` ratchet exists to refuse: API Extractor reads the
  * tag at the declaration and the member stayed in every embedder's
  * autocomplete, and the rest followed it. Their callers are this package's
- * own — host mode (`../host-mode.ts`), the eval harness (`eval/session.ts`) and
+ * own — host mode (`../server/host-mode.ts`), the eval harness (`eval/session.ts`) and
  * the specs — each reaching `createRuntimeWithSeams` by a relative import, so
  * the seams keep working and nothing outside the package can name them.
  *

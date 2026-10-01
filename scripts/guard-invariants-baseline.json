@@ -109,7 +109,7 @@
     "packages/aai-runtime/src/providers/tts/assemblyai.test.ts": 1,
     "packages/aai-runtime/src/providers/tts/cartesia.test.ts": 2,
     "packages/aai-runtime/src/providers/tts/rime.test.ts": 1,
-    "packages/aai-runtime/src/session-auth.test.ts": 1,
+    "packages/aai-runtime/src/server/session-auth.test.ts": 1,
     "packages/aai-runtime/src/ssrf-pinning.test.ts": 1,
     "packages/aai-runtime/src/step-fetch.test.ts": 1,
     "packages/aai-runtime/src/step-speak.test.ts": 1,

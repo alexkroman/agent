@@ -206,7 +206,7 @@ export function answerHandlerFailure(
  * can present rather than merely a short one.
  *
  * The refusal is HERE, at the comparison, as well as at the env read that feeds
- * it (`agentGateToken`, `server-env.ts`) because this function is reachable
+ * it (`agentGateToken`, `../../server/env.ts`) because this function is reachable
  * without that read: a self-hoster calling `createWorkflowApi({ token })` or
  * `createSessionEventsApi({ token })` directly, and whatever the third caller
  * turns out to be. This layer makes the primitive safe for all of them, and it

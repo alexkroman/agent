@@ -11,7 +11,6 @@
 
 export { compileAgentRoutes, ROUTE_METHODS } from "./agent-routes.ts";
 export { connectSession } from "./connect.ts";
-export type { SessionStartOptions } from "./runtime.ts";
 export { createRuntime, createRuntimeWithSeams } from "./runtime.ts";
 export { attachSessionStream } from "./session-stream.ts";
 export type { SessionGreeting } from "./transport.ts";
@@ -24,4 +23,5 @@ export type {
   runtimeBrand,
   SessionConnection,
   SessionConnectOptions,
+  SessionStartOptions,
 } from "./types.ts";

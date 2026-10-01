@@ -212,7 +212,7 @@ export type TextAgentTestRun = {
  *
  * The agent half is `TextAgentOptions` MINUS the two things this helper
  * supplies — derived by subtraction rather than restated, for the reason
- * `agent-server-forwarding.ts` exists in this package: every field of that type
+ * `../server/agent-server-forwarding.ts` exists in this package: every field of that type
  * is optional, so an omission is valid TypeScript and presents as a harness
  * quietly ignoring part of its own configuration. A capability added to a text
  * agent is reachable from here the day it lands.

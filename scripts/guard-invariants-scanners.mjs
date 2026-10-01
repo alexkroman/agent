@@ -191,7 +191,7 @@ function guestRouteLiterals() {
  *
  * Ten of `GUEST_ROUTES`' entries are no longer literals — they compose
  * `SERVER_ROUTES` / `WORKFLOW_CALLBACK_ROUTES` from
- * `packages/aai-runtime/src/server-routes.ts`, so the text read below finds seven
+ * `packages/aai-runtime/src/server/routes.ts`, so the text read below finds seven
  * strings where it used to find seventeen and would report the runtime's own
  * declarations as undeclared. That is the reader being right about the text and
  * wrong about the program.
@@ -211,7 +211,7 @@ function guestRouteLiterals() {
  * route out of both checks.
  */
 function tableDeclaredRoutes() {
-  const tableUrl = new URL("../packages/aai-runtime/src/server-routes.ts", import.meta.url);
+  const tableUrl = new URL("../packages/aai-runtime/src/server/routes.ts", import.meta.url);
   const table = readFileSync(tableUrl, "utf8");
 
   // Every `path: <IDENT>` in the two tables, plus the paths this module declares
@@ -221,7 +221,7 @@ function tableDeclaredRoutes() {
   );
   if (referenced.size === 0) {
     throw new Error(
-      "guard-invariants rule 12: packages/aai-runtime/src/server-routes.ts named no " +
+      "guard-invariants rule 12: packages/aai-runtime/src/server/routes.ts named no " +
         "`path: CONSTANT` entries. The scan reads it as text, so a reshaped table " +
         "silently stops declaring the runtime's routes — fix the pattern.",
     );

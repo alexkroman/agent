@@ -64,18 +64,9 @@
 // author's concern. DECLARED in this package (`providers/openers.ts`), so the
 // `providers` capability that publishes them also owns them.
 export type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
-export {
-  type AgentServerOptions,
-  createAgentServer,
-} from "./agent-server.ts";
 // What every way of RUNNING an agent definition takes — `RuntimeOptions`,
 // `TextAgentOptions` and the two eval option bags all extend it.
 export type { HostAgentOptions } from "./host-agent-options.ts";
-export {
-  createHostServer,
-  type HostServerOptions,
-  type HostSessionDefaults,
-} from "./host-server.ts";
 // The guest's own stdout/stderr ring, and the platform's client of it. Shared
 // rather than guest-local because both ends of one wire read this shape: the
 // guest fills it (`aai-guest/harness-logs.ts`) and the platform serialises what
@@ -181,27 +172,32 @@ export type {
   LogLevel,
   S2sConfig,
 } from "./runtime-config.ts";
-export {
-  type AgentServer,
-  createRuntimeServer,
-  DEFAULT_LISTEN_HOST,
-  type RuntimeServerOptions,
-  rejectingRuntime,
-  type ServerRequestHook,
-  type ServerUpgradeHook,
-  type SessionRuntime,
-  type SharedServerOptions,
-} from "./server.ts";
-// Authenticating `WS /websocket` — `createSessionAuth`, the ticket helpers and
-// their types — is `@alexkroman1/aai-runtime/auth` (`auth-barrel.ts`), its own
-// subpath and capability. A server option names only the opaque `SessionAuth`.
-export type { SessionEventPage, SessionEventStream, SessionWebSocket } from "./session/index.ts";
 // The bearer variable that CLOSES the event-stream read route, beside the types a
 // reader of it names. On the barrel for the same reason `WORKFLOW_API_TOKEN_ENV` is:
 // a host closing a surface has to be able to spell the variable that closes it, and
 // this one reached no published subpath at all — so an embedder either hardcoded the
 // string or left the route as it found it.
-export { SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
+export {
+  type AgentServer,
+  type AgentServerOptions,
+  createAgentServer,
+  createHostServer,
+  createRuntimeServer,
+  DEFAULT_LISTEN_HOST,
+  type HostServerOptions,
+  type HostSessionDefaults,
+  type RuntimeServerOptions,
+  rejectingRuntime,
+  SESSION_EVENTS_TOKEN_ENV,
+  type ServerRequestHook,
+  type ServerUpgradeHook,
+  type SessionRuntime,
+  type SharedServerOptions,
+} from "./server/index.ts";
+// Authenticating `WS /websocket` — `createSessionAuth`, the ticket helpers and
+// their types — is `@alexkroman1/aai-runtime/auth` (`auth-barrel.ts`), its own
+// subpath and capability. A server option names only the opaque `SessionAuth`.
+export type { SessionEventPage, SessionEventStream, SessionWebSocket } from "./session/index.ts";
 // Applying the session-state DDL to a database this deployment OWNS. The tables
 // come with the database and the owner applies them; a self-hosted server is that
 // owner, so it needs a way to say so at boot. See the function's own doc.

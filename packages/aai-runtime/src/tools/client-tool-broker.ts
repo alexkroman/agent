@@ -3,7 +3,7 @@
  * Where a `clientTool` call waits for the browser — the `tool_result` a page's
  * `useClientTool` sends back, matched to the call by `toolCallId`.
  *
- * The self-hosted twin of `../host-relay.ts`, and deliberately narrower: host mode
+ * The self-hosted twin of `../server/host-relay.ts`, and deliberately narrower: host mode
  * relays EVERY tool and so emits `tool.called` itself, where this sits under the
  * ordinary dispatcher. The session has already emitted `tool.called` (S2S from
  * `../session/tool-steps.ts`, the pipeline from its stream parts) and will emit

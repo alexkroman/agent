@@ -327,7 +327,7 @@ export function createSessionEventStream(options: {
     //
     // **The empty guard is not defensive, it is the definition.** A read STARTING
     // past the tail is legitimate — `startIndex` is a caller's cursor and
-    // `../session-events-api.ts` clamps a huge one to `MAX_SAFE_INTEGER` — and it
+    // `../server/session-events-api.ts` clamps a huge one to `MAX_SAFE_INTEGER` — and it
     // answers zero events, about which the tail says nothing. The first draft
     // omitted the guard and two existing specs failed inside eight seconds, which
     // is the whole argument for stating a property where every test drives it
