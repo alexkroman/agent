@@ -70,7 +70,7 @@ export function checkLaws(program: Program, run: ConcurrentScenario, oracle: Sce
  * a `loop` reaches one name twice, so a cancel between its two iterations leaves
  * `s0` at one against the oracle's two — the same truncation the keys rule
  * already calls the cancel's business, seen at a finer grain. The suite REQUIRES
- * that state (`cancelsMidWalk`, floored above 8, counts a cancel that won with
+ * that state (`cancelsMidWalk`, floored above 5, counts a cancel that won with
  * `run.total < oracle.total`), so forbidding it here was two claims about one
  * fact disagreeing. It never fired because a delivery opened with two sequential
  * round trips, which gave a cancel issued in the same burst time to land before
