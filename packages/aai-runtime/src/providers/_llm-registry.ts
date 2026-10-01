@@ -59,6 +59,7 @@ import { type DeferredModel, lazyModel } from "./_lazy-model.ts";
 import { repairOpenAiStream } from "./_openai-stream-repair.ts";
 import { mergeRequestBody } from "./_request-body-extras.ts";
 import { pickEndpoint } from "./_utils.ts";
+import { bind } from "./registry.ts";
 
 /** One registry entry per LLM provider — adding a provider is one entry here. */
 export type LlmRegistryEntry = {
@@ -349,11 +350,14 @@ const LLM_CLIENTS = {
  * The LLM registry: each catalog definition's credential variable and label,
  * joined to its client. Mutable, because `registerLlmKind` writes it.
  */
-export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = Object.fromEntries(
-  Object.values(LLM_PROVIDERS).map((definition) => [
-    definition.kind,
-    { envVar: definition.envVar, label: definition.label, ...LLM_CLIENTS[definition.kind] },
-  ]),
+export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = bind(
+  Object.values(LLM_PROVIDERS),
+  LLM_CLIENTS,
+  (definition, client): LlmRegistryEntry => ({
+    envVar: definition.envVar,
+    label: definition.label,
+    ...client,
+  }),
 );
 
 /**
