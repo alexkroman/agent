@@ -143,9 +143,10 @@
   },
   "step": {
     "current": 4,
-    "supported": [2, 4],
+    "supported": [4],
     "dropped": {
       "1": "Names SubagentDef, which is replaced by SpeakerDef.",
+      "2": "Epoch 2 promised stepDelegate(SubagentDef, …) and was covered only by the epoch-1 roll-call; SubagentDef is replaced by SpeakerDef.",
       "3": "stepDelegate takes a SpeakerDef; SubagentDef no longer exists, so a step naming it no longer compiles."
     }
   },
