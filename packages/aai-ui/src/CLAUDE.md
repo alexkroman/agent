@@ -223,7 +223,7 @@ INVARIANTS. Beyond "Property tests run on fast-check" (`.agents/testing.md`):
 
 ## Workflow apps
 
-A `page: "static"` agent (declared with `workflowApp({ name, workflows })` from
+A `mode: "workflow-app"` agent (declared with `workflowApp({ name, workflows })` from
 `@alexkroman1/aai`) is a web page over the workflow HTTP API: no session,
 WebSocket or audio. The routes are served by `aai/host/workflow-api.ts`, whose
 module doc is the authoritative table; the platform brokers them at
@@ -241,9 +241,8 @@ module doc is the authoritative table; the platform brokers them at
   telephony defaults off; it needs NO provider credential
   (`requiredProviderEnvVars` returns `[]`, keyed off `page` because provider
   injection has already happened by preflight; `createRuntime` DEFERS provider
-  resolution). `StaticAgentParams` types every non-static field as
-  `WorkflowAppMisuse`; voice arms refuse `page: "static"` via
-  `StaticFrontDoorMisuse`.
+  resolution). `StaticAgentParams` (`mode: "workflow-app"`) has none of the
+  session fields — they are absent, not message-typed.
 - **Three factories**: `createAgentClient` (`@alexkroman1/aai/workflow-api`, the
   one to reach for), `createWorkflowApiClient` (the narrow SDK client it wraps),
   `createWorkflowApi` (ours: adds only the base URL from `location`).

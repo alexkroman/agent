@@ -176,7 +176,7 @@ describe("studioSystemPrompt", () => {
     // The escape hatch it must NOT take: workflowApp() is that declaration
     // with the discriminant already set, and the fields it refuses are refused
     // on purpose.
-    expect(prompt).toContain('agent({ page: "static" })');
+    expect(prompt).toContain('agent({ mode: "workflow-app" })');
     // Bodies are transformed only under workflows/.
     expect(prompt).toContain("Bodies go in `workflows/*.ts` and nowhere else");
   });

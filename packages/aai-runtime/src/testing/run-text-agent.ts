@@ -45,7 +45,7 @@
  * template — so the entry is a claim, and this is it.
  *
  * A template's agent is a VOICE agent. `createTextAgent` refuses one by name
- * ("add `text: true` … or run it as a voice session with `createRuntime`"), so a
+ * ("add `mode: "text"` … or run it as a voice session with `createRuntime`"), so a
  * template cannot reach this harness without becoming a different kind of
  * template. Text mode's consumer is a host that embeds the runtime — the studio's
  * own coding agent is the shipped one — which is the same audience
@@ -175,7 +175,7 @@ export type TextAgentTestRun = {
    * import { saidIn, toolCallsInEvents, toolNames } from "@alexkroman1/aai-runtime/eval";
    * import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
    *
-   * const desk = agent({ name: "Desk", text: true });
+   * const desk = agent({ name: "Desk", mode: "text" });
    * const run = await runTextAgent(desk, "where is order 7?", {
    *   script: [
    *     { text: "Let me check.", toolCalls: [{ name: "look_up", input: { id: "7" } }] },
@@ -257,7 +257,7 @@ function toolCallsOf(step: StepResult<ToolSet>): TextAgentTestToolCall[] {
 /**
  * Run one turn of `def` against `script`, and hand back what it did.
  *
- * `def` must declare `text: true` — `createTextAgent` refuses a voice agent by
+ * `def` must declare `mode: "text"` — `createTextAgent` refuses a voice agent by
  * name, and this makes no exception, so a spec cannot accidentally measure an
  * agent whose `greeting` and voice tuning are being silently dropped.
  *
@@ -266,7 +266,7 @@ function toolCallsOf(step: StepResult<ToolSet>): TextAgentTestToolCall[] {
  * import { agent } from "@alexkroman1/aai";
  * import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
  *
- * const desk = agent({ name: "Desk", text: true, systemPrompt: "Be brief." });
+ * const desk = agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." });
  *
  * const run = await runTextAgent(desk, "where is order 7?", {
  *   script: [

@@ -23,6 +23,7 @@ so a new field cannot skip it.
 | Interface             | Module                  | The rule                                                        |
 | --------------------- | ----------------------- | --------------------------------------------------------------- |
 | `PipelineVoiceTuning` | `agent-voice-tuning.ts` | pipeline transport or nothing                                   |
+| `AgentMode`           | `agent-mode.ts`         | `mode` picks the `agent()` member, and the wire carries it      |
 | `AgentModelTuning`    | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five** |
 | `AgentGuardrails`     | `agent-guardrails.ts`   | the only declarations that may STOP a turn                      |
 | `AgentObservation`    | `agent-observation.ts`  | the two that deliberately may not                               |
@@ -44,15 +45,27 @@ so a new field cannot skip it.
 - **`systemPrompt` takes a RESOLVER** `(ctx: AgentSessionContext) => string`,
   called per model request — `agent-instructions.ts` owns it.
 
-## A misuse arm is defeated by a shape-competing SIBLING arm
+## `agent()`'s legality is a discriminated union, not message types
 
-A union arm typed as an unsatisfiable string literal (so `tsc` prints the RULE)
-works only when no sibling arm is a closer match for the offending value —
-TypeScript elaborates against the closest arm and the literal never reaches the
-output. Before adding a misuse arm, check what else in the union can absorb the
-value, and verify the message with a real `tsc` run. If nothing can print it,
-the union is the bug: NAME its arms (`{ reply }` / `{ routes }`, as the
-testing scripts now do). `PipelineOnlyMisuse` and `AgentParams`' arms print.
+**A field belongs to the members it appears in, and nowhere else.** Each member
+of `AgentParams` is cut from `AgentDef` by subtracting a field-list TYPE
+(`PipelineOnlyField`, `TextOnlyExcludedField`, `WorkflowAppOnlyField` in
+`agent-params.ts`); `_agent-modes.ts`'s refusal tables `satisfies` a `Record`
+over the same types. A new mode-specific field goes in a list — never as a
+message-typed key on a member, and never as a hand-kept run-time table. Members
+stay CLEAN — no `never` keys: an absent key gives the excess-property error
+naming the member, and autocomplete shows only what the mode has. The one
+exception is the pipeline member's `s2s?: undefined`, without which `{ s2s }`
+missing its `mode` would be absorbed by it when `agent()` resolves against the
+whole union. Prove a refusal with `AgentAccepts<X>` (`_test-utils.ts`: the
+excess-property rule over every overload), not an expect-error directive —
+those count against the escape-hatch ratchet.
+`InlineToolsMisuse` and `SyncMutationMisuse` remain: neither is a MODE rule.
+
+**A message arm is defeated by a shape-competing SIBLING arm** (still true of
+the two that remain): TypeScript elaborates against the closest arm. Verify any
+such message with a real `tsc` run; if nothing can print it, NAME the arms
+(`{ reply }` / `{ routes }`, as the testing scripts do).
 
 ## Wire-shape rules
 
@@ -389,9 +402,9 @@ database) — a known gap.
 
 ## Workflow apps and the workflow HTTP API
 
-`AgentDef.page` is `"voice"` (default) or `"static"` — a page over the workflow
-API, declared with `workflowApp()` (`define.ts`), which refuses fields it cannot
-use. Author-facing half: "Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
+`mode: "workflow-app"` is a page over the workflow API, declared with
+`workflowApp()` (`define.ts`), whose member has none of the fields it cannot
+use; `GET /client-config` reports it as `page: "static"`. Author-facing half: "Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
 
 - **Read a run's newest line with `ctx.workflows.lastLine(runId)`, never
   `streamTail` + `stream` by hand** — a progress channel is never closed, so

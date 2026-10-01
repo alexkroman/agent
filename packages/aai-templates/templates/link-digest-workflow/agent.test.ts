@@ -4,7 +4,7 @@
  *
  * There are no tools to exercise, which is the point: what this template
  * demonstrates is a DECLARATION, so the spec asserts the declaration. Three
- * things carry the shape and each is silent when wrong — the `page: "static"`
+ * things carry the shape and each is silent when wrong — the `mode: "workflow-app"`
  * field (without it the deployed agent still offers a `/websocket` nothing will
  * answer), the workflow's NAME (the page starts a run by that string, so a
  * rename here is a runtime 400 there), and the input schema (which is both the

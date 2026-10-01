@@ -10,7 +10,7 @@
  * `runtime-transport.ts`.
  */
 
-import type { AgentDef } from "@alexkroman1/aai";
+import type { AgentDef, AgentMode } from "@alexkroman1/aai";
 import { assertProviderTriple, defaultProviders } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { SessionMode } from "@alexkroman1/aai/manifest";
@@ -37,6 +37,14 @@ export function resolveEffectiveProviders(
   s2s: AgentDef["s2s"];
   /** Never `"text"` — a text agent is refused below, before any of this. */
   mode: Exclude<SessionMode, "text">;
+  /**
+   * The AUTHORED mode these providers amount to, for `toAgentConfig`: the
+   * session mode, except that a workflow app keeps its own (its front door is
+   * not a provider question). Not the agent's own `mode` — a full triple in the
+   * options replaces an S2S declaration, and `mode: "s2s"` beside no descriptor
+   * is a contradiction the config boundary refuses.
+   */
+  agentMode: Exclude<AgentMode, "text">;
 } {
   const stt = opts.stt ?? agent.stt;
   const llm = opts.llm ?? agent.llm;
@@ -50,8 +58,9 @@ export function resolveEffectiveProviders(
   // `s2s` descriptor (`assemblyAIS2s()`), so a config that loses its
   // providers can no longer silently run S2S — this mirrors, not replaces,
   // the "never let S2S be a fallback" rule in runtime-transport.ts.
-  if (agent.text === true) throw textAgentHasNoSession(agent.name);
+  if (agent.mode === "text") throw textAgentHasNoSession(agent.name);
   const defaults = defaultProviders({ stt, llm, tts, s2s });
+  const app = agent.mode === "workflow-app";
   if (defaults) {
     return {
       stt: stt ?? defaults.stt,
@@ -59,15 +68,11 @@ export function resolveEffectiveProviders(
       tts: tts ?? defaults.tts,
       s2s: undefined,
       mode: "pipeline",
+      agentMode: app ? "workflow-app" : "pipeline",
     };
   }
-  return {
-    stt,
-    llm,
-    tts,
-    s2s,
-    mode: assertProviderTriple(stt, llm, tts, s2s),
-  };
+  const mode = assertProviderTriple(stt, llm, tts, s2s);
+  return { stt, llm, tts, s2s, mode, agentMode: app ? "workflow-app" : mode };
 }
 
 /**
@@ -86,7 +91,7 @@ export function resolveEffectiveProviders(
  * model id, TTS voice), and those are the values a misbehaving session gets
  * blamed on. See `_provider-settings.ts`.
  *
- * A WORKFLOW APP gets its own line. A `page: "static"` agent's providers are
+ * A WORKFLOW APP gets its own line. A `mode: "workflow-app"` agent's providers are
  * DEFERRED behind a thunk nobody calls — that deferral is what lets one boot
  * with no credentials at all (`runtime-providers.test.ts`) — so `mode: pipeline`
  * plus a stt/llm/tts settings dump reports three resolutions that did not
@@ -98,11 +103,11 @@ export function resolveEffectiveProviders(
 export function logResolvedRuntime(opts: {
   logger: Logger;
   slug: string;
-  page: AgentDef["page"];
+  mode: AgentDef["mode"];
   providers: ReturnType<typeof resolveEffectiveProviders>;
   sessionState: { backend: string; durable: boolean };
 }): void {
-  if (opts.page === "static") {
+  if (opts.mode === "workflow-app") {
     opts.logger.info("Workflow app resolved", {
       slug: opts.slug,
       sessionState: opts.sessionState,

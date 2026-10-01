@@ -133,17 +133,15 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     !options.db && providerEnv.DATABASE_URL ? openAppDb(providerEnv.DATABASE_URL) : undefined;
   const resolvedDb = options.db ?? ownedDb;
 
-  // Validate against the *effective* providers, not the agent's own fields.
-  // Providers may arrive as runtime options rather than on the agent object,
-  // and reading `agent` alone once resolved mode "s2s" for every deployed
-  // pipeline agent, so `assertPipelineTuning` rejected all six voice tuning
-  // knobs at session start — a deployed agent with `holdPhrase` (a tuning
-  // field since removed) died with "holdPhrase requires pipeline mode (stt,
-  // llm, and tts all set)" while
-  // listing all three providers — and left `agentConfig.mode` wrong for
-  // everything downstream that reads it.
+  // Validate against the *effective* providers AND mode, not the agent's own
+  // fields. Providers may arrive as runtime options rather than on the agent
+  // object, and reading `agent` alone once resolved mode "s2s" for every
+  // deployed pipeline agent, so every voice tuning knob was refused at session
+  // start — a deployed agent listing all three providers died with "holdPhrase
+  // requires pipeline mode" — and left `agentConfig.mode` wrong downstream.
   const agentConfig = toAgentConfig({
     ...agent,
+    mode: effectiveProviders.agentMode,
     stt: effectiveProviders.stt,
     llm: effectiveProviders.llm,
     tts: effectiveProviders.tts,
@@ -232,7 +230,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   logResolvedRuntime({
     logger,
     slug,
-    page: agent.page,
+    mode: agent.mode,
     providers: effectiveProviders,
     sessionState: sessionState.describe,
   });

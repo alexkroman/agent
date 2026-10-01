@@ -36,7 +36,7 @@ const partsOf = (message: PromptMessage): PromptPart[] =>
 const toolsDir = (project: string): URL =>
   new URL(`./fixtures/tool-dirs/${project}/tools/`, import.meta.url);
 
-const chatAgent = () => agent({ name: "Roller", text: true });
+const chatAgent = () => agent({ name: "Roller", mode: "text" });
 
 describe("withToolsDir", () => {
   test("registers a tools/ file under the name the file declares", async () => {

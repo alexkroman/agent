@@ -69,10 +69,10 @@ import { buildWorker } from "./worker-bundler.ts";
  *   can't mask one that would be missing both here and after deploy.
  */
 export function agentEnvWarnings(
-  // `page` because a workflow app needs no provider credential at all — see
-  // `requiredProviderEnvVars`. Omitted here, every static agent was warned
+  // `mode` because a workflow app needs no provider credential at all — see
+  // `requiredProviderEnvVars`. Omitted here, every workflow app was warned
   // about an AssemblyAI key it never dials.
-  agentDef: Pick<AgentDef, "stt" | "llm" | "tts" | "s2s" | "requiredEnv" | "page">,
+  agentDef: Pick<AgentDef, "stt" | "llm" | "tts" | "s2s" | "requiredEnv" | "mode">,
   env: Record<string, string>,
   shellEnv: Record<string, string | undefined> = process.env,
 ): string[] {
@@ -374,7 +374,10 @@ export async function startDevServer(
       // it: an agent that declares a carrier serves `/phone` here, one that
       // does not serves it nowhere, and a carrier pointed at an `aai dev`
       // tunnel gets the same 404 it would get after a deploy.
-      ...omitUndefined({ page: agentDef.page, telephony: agentDef.telephony }),
+      ...omitUndefined({
+        page: agentDef.mode === "workflow-app" ? "static" : undefined,
+        telephony: agentDef.telephony,
+      }),
       // The PLATFORM's delivery door, and `aai dev` deliberately supplies no
       // `allowRemote`, so it answers 401. That is correct rather than an
       // omission: there is no queue outside this process — the engine's

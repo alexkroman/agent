@@ -18,11 +18,11 @@ const state = vi.hoisted(() => ({
     | { sendCommand: ReturnType<typeof vi.fn>; sendAudio: ReturnType<typeof vi.fn> }
     | undefined,
   shutdown: vi.fn(() => Promise.resolve()),
-  page: undefined as string | undefined,
+  mode: undefined as string | undefined,
 }));
 
 vi.mock("./_dev-server.ts", () => ({
-  loadWorker: vi.fn(async () => ({ name: "Desk", page: state.page })),
+  loadWorker: vi.fn(async () => ({ name: "Desk", mode: state.mode })),
   resolveAgentEnv: vi.fn(async () => ({})),
 }));
 
@@ -71,7 +71,7 @@ function fakeAudio() {
 
 beforeEach(() => {
   state.sink = undefined;
-  state.page = undefined;
+  state.mode = undefined;
   vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 });
 
@@ -189,7 +189,7 @@ describe("executeConsole", () => {
   });
 
   test("a workflow app is refused before any device opens", async () => {
-    state.page = "static";
+    state.mode = "workflow-app";
     const { audio } = fakeAudio();
     const result = await executeConsole({ cwd: "/p", audio, untilQuit: Promise.resolve() });
     expect(result).toMatchObject({ ok: false, code: "not_a_voice_agent" });

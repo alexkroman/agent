@@ -71,7 +71,7 @@ function memoKey(slug: string, version: number | undefined, guestOrigin: string)
  * `page` rides along for the same reason `name` does — it is the guest's live
  * agent definition talking, and the platform stores nothing it could read
  * instead. Without it the default client would render a start screen whose only
- * button opens a `/websocket` a `page: "static"` agent declines.
+ * button opens a `/websocket` a `mode: "workflow-app"` agent declines.
  */
 type GuestClientConfig = { name?: string; greeting?: string; page?: "voice" | "static" };
 

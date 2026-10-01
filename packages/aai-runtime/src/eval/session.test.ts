@@ -68,7 +68,7 @@ describe("evalCredentials", () => {
 
 describe("openEvalSession", () => {
   test("refuses an s2s agent rather than evaluating a config nobody deployed", async () => {
-    const def = agent({ name: "Realtime", s2s: { kind: "assemblyai", options: {} } });
+    const def = agent({ name: "Realtime", mode: "s2s", s2s: { kind: "assemblyai", options: {} } });
     await expect(openEvalSession({ agent: def })).rejects.toThrow(/s2s provider/);
   });
 

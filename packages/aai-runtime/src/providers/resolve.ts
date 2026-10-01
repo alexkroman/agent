@@ -385,7 +385,7 @@ export function descriptorKind(value: object | undefined): string | undefined {
  */
 export function requiredProviderEnvVars(agent: ProviderEnvVarsQuery): string[] {
   // **A workflow app dials no provider, so it needs no provider credential.**
-  // `page: "static"` declines `/websocket` with a reason and defaults telephony
+  // `mode: "workflow-app"` declines `/websocket` with a reason and defaults telephony
   // OFF, so there is no session to open one from — and yet an agent declaring no
   // providers at all fell through to the default-pipeline branch below and
   // required `ASSEMBLYAI_API_KEY`, which `aai dev` answers by reaching for the
@@ -403,7 +403,7 @@ export function requiredProviderEnvVars(agent: ProviderEnvVarsQuery): string[] {
   // (`createRuntimeServer({ telephony: true })`, self-hosted) is not preflighted. Its
   // runtime still resolves credentials the ordinary way and reports a missing
   // one at the first call; nothing here gates a session.
-  if (agent.page === "static") return [];
+  if (agent.mode === "workflow-app") return [];
 
   const vars = new Set<string>();
   const add = (envVar: string | undefined): void => {

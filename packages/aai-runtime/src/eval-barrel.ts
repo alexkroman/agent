@@ -39,7 +39,7 @@
  *
  * {@link openEvalTextAgent} is the same question asked of a TEXT agent, and it
  * is a second harness rather than an option on the first because
- * `createRuntime` REFUSES `text: true`: a text agent fills no pipeline stages,
+ * `createRuntime` REFUSES `mode: "text"`: a text agent fills no pipeline stages,
  * so there is nothing for the fake speech pair to stand between. Everything
  * above the model is shared — `send()` is `say()`, the turn record is the same
  * {@link EvalTurn}, and the readers below take a text turn unchanged, because a
@@ -173,7 +173,7 @@ export {
   type StubTtsSession,
 } from "./eval/stub-speech.ts";
 // Driving a TEXT agent, which the session harness structurally cannot:
-// `createRuntime` refuses `text: true` by name, so there is no session to fake
+// `createRuntime` refuses `mode: "text"` by name, so there is no session to fake
 // the two speech stages of. Public for the same reason `openEvalSession` is —
 // a text agent's whole observable behaviour is the same `SessionEvent` stream,
 // and a host embedding one (the studio's coding agent is the shipped example)

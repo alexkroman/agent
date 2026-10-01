@@ -44,6 +44,7 @@
     "MetricsSample",
     "MetricsSummary",
     "MintCodeOptions",
+    "ModeAgentDef",
     "ModelTuning",
     "PersonaPosition",
     "PollOptions",

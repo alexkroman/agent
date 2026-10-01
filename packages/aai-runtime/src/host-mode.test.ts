@@ -346,7 +346,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
       startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1" },
-        baseAgent: { ...s2sBase, s2s: assemblyAIS2s() },
+        baseAgent: { ...s2sBase, mode: "s2s", s2s: assemblyAIS2s() },
         logger: silentLogger,
         createRuntime,
       });
@@ -370,7 +370,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
       startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "k" },
-        baseAgent: { ...s2sBase, s2s: assemblyAIS2s() },
+        baseAgent: { ...s2sBase, mode: "s2s", s2s: assemblyAIS2s() },
         logger: silentLogger,
         createRuntime,
       });
@@ -386,7 +386,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
       startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "k" },
-        baseAgent: { ...s2sBase, s2s: assemblyAIS2s() },
+        baseAgent: { ...s2sBase, mode: "s2s", s2s: assemblyAIS2s() },
         logger: silentLogger,
         createRuntime,
       });

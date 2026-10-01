@@ -40,7 +40,8 @@ export const ClientConfigResponseSchema = z.object({
    */
   sessionUrl: z.string().optional(),
   /**
-   * What this agent's front door is — see `AgentDef.page`.
+   * What this agent's front door is: `"static"` for a workflow app
+   * (`mode: "workflow-app"`, see `AgentDef.mode`), `"voice"` for every other.
    *
    * Here so a client can tell the two apart BEFORE it dials: a static agent has
    * no `/websocket` to open, and the default shell would otherwise render a

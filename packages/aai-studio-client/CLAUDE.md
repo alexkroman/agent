@@ -374,8 +374,8 @@ so every piece of per-project state resets on a switch with no effect to do it.
     Twilio webhook into a carrier console and a voice agent got twelve workflow
     routes it had nothing to call them with. Both halves are now gated on what
     the agent ITSELF answers:
-    - **No carrier webhook for a workflow app.** `page: "static"` declines
-      `/websocket` with a reason and can declare no carrier (`AgentDef.page`),
+    - **No carrier webhook for a workflow app.** `mode: "workflow-app"` declines
+      `/websocket` with a reason and can declare no carrier (`AgentDef.mode`),
       so a phone number pointed at one answers and hangs up — the worst kind of
       wrong documentation, since it is only wrong at the end of an afternoon in
       somebody's carrier console. `frontDoorEndpoints(page)` drops the

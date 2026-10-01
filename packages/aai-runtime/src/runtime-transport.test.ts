@@ -87,7 +87,7 @@ async function buildS2sSessionConfig(agentOverrides: Record<string, unknown>) {
     close: vi.fn(),
   };
   vi.spyOn(_internals, "connectS2s").mockResolvedValue(handle);
-  const agent = makeAgent({ s2s: assemblyAIS2s(), ...agentOverrides });
+  const agent = makeAgent({ mode: "s2s", s2s: assemblyAIS2s(), ...agentOverrides });
   const build = createTransportFactory(transportDeps({ agent }));
   const transport = build(buildArgs());
   // The connect is async — `updateSession` runs once it resolves, not at build.
@@ -122,7 +122,7 @@ describe("createTransportFactory (S2S)", () => {
       resumeSession: vi.fn(),
       close: vi.fn(),
     });
-    const agent = makeAgent({ s2s: assemblyAIS2s() });
+    const agent = makeAgent({ mode: "s2s", s2s: assemblyAIS2s() });
     const build = createTransportFactory(transportDeps({ agent, logger }));
 
     build({ ...buildArgs(), dialogTurn: () => ({ temperature: 0.3 }) });
@@ -140,7 +140,7 @@ describe("createTransportFactory (S2S)", () => {
       close: vi.fn(),
     });
     const build = createTransportFactory(
-      transportDeps({ agent: makeAgent({ s2s: assemblyAIS2s() }), logger }),
+      transportDeps({ agent: makeAgent({ mode: "s2s", s2s: assemblyAIS2s() }), logger }),
     );
 
     build(buildArgs());
@@ -176,7 +176,10 @@ describe("createTransportFactory (S2S)", () => {
   });
 
   test("omits each descriptor option the author did not set", async () => {
-    const handle = await buildS2sSessionConfig({ s2s: assemblyAIS2s({ voice: "michael" }) });
+    const handle = await buildS2sSessionConfig({
+      mode: "s2s",
+      s2s: assemblyAIS2s({ voice: "michael" }),
+    });
     const sent = handle.updateSession.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(sent).toHaveProperty("voice", "michael");
     // An unset `languages` means "detect per turn" service-side — forwarding a
@@ -256,14 +259,14 @@ describe("createTransportFactory (pipeline)", () => {
 
   test("a pipelineProviders thunk that throws reports ITS error, not 'no transport'", () => {
     // Why the dep is a thunk at all: `createRuntime` defers this resolution for
-    // a `page: "static"` agent, whose injected default providers must not be
+    // a `mode: "workflow-app"` agent, whose injected default providers must not be
     // dialled — and a static agent given a voice surface by an embedder
     // (`createRuntimeServer({ telephony: true })`) then resolves here. Passing a plain
     // `null` for that case would answer "no transport for session" and bury the
     // real cause.
     const factory = createTransportFactory(
       transportDeps({
-        agent: makeAgent({ page: "static" }),
+        agent: makeAgent({ mode: "workflow-app" }),
         env: {},
         pipelineProviders: () => {
           throw new Error(
@@ -315,7 +318,7 @@ describe("createTransportFactory (pipeline)", () => {
     // its HTTP API, and never resolves a provider credential.
     const pipelineProviders = vi.fn(() => null);
     createTransportFactory(
-      transportDeps({ agent: makeAgent({ page: "static" }), env: {}, pipelineProviders }),
+      transportDeps({ agent: makeAgent({ mode: "workflow-app" }), env: {}, pipelineProviders }),
     );
     expect(pipelineProviders).not.toHaveBeenCalled();
   });

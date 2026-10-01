@@ -220,7 +220,7 @@ placeholders or guess missing parameters.
 - **A workflow app is not an agent with the voice turned off.** It has no
   session and no LLM loop, so `systemPrompt`, `tools`, `maxSteps`,
   `state`, `syncState` and every provider field (stt/llm/tts/s2s) are TYPE
-  ERRORS on one. Never reach for `agent({ page: "static" })` to add them
+  ERRORS on one. Never reach for `agent({ mode: "workflow-app" })` to add them
   back — `workflowApp()` is that declaration with the discriminant already
   set, and the fields are refused on purpose. `greeting` and `requiredEnv`
   stay.
@@ -1105,7 +1105,7 @@ That is the whole declaration, and the fields it does NOT take are the point:
 a workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
 `maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob
 are **compile errors** here, not fields that quietly do nothing. `greeting` and
-`requiredEnv` stay. `workflowApp()` is `agent({ …, page: "static" })` with the
+`requiredEnv` stay. `workflowApp()` is `agent({ …, mode: "workflow-app" })` with the
 discriminant already set — same definition object out, so `aai build`,
 `aai dev` and `aai publish` treat it like any other agent.
 
@@ -1954,7 +1954,7 @@ Only the audio + LLM transport differs.
 
 **Four front doors, each one field on `agent()`.** Omit them all for PIPELINE
 (voice, cascaded STT → LLM → TTS) — the default, and the mode this guide
-assumes. `s2s:` selects speech-to-speech. **`text: true` selects a text-only
+assumes. `s2s:` selects speech-to-speech. **`mode: "text"` selects a text-only
 agent**: no STT, no TTS, `llm` is the one stage, and the host runs it with
 `createTextAgent` from `@alexkroman1/aai-runtime`. `workflowApp()` (see
 "Workflow apps") builds a form with no session at all. Setting a field from the

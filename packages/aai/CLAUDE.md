@@ -150,9 +150,20 @@ is on the root alone.
 
 ## Session modes
 
-`toAgentConfig()` selects one of three from which fields `agent()` got:
+**`mode` is the discriminant** (`AgentMode`, `sdk/agent-mode.ts`): `agent()` is
+OVERLOADED over a union with one member per mode (`sdk/agent-params.ts`), each
+CUT from `AgentDef` by subtracting field lists, so a field a mode lacks is
+ABSENT from its member — an excess-property error naming it, not a message
+type. The runtime refusal for an untyped caller (`assertModeFields`,
+`sdk/_agent-modes.ts`) reads tables that `satisfies` a `Record` over the same
+field-list types, so neither half can drift. There are no other mode flags
+(`text`, `page` and a bare `s2s:` were removed; the stray-field check names the
+replacement). `agent()` writes `mode` on every definition and the wire carries
+it unchanged — a workflow app is `"workflow-app"` everywhere; only the browser's
+`GET /client-config` body still says `page: "static"`. `toAgentConfig()` runs
+one of three SESSION modes underneath:
 
-- **Text mode** (`text: true`, explicit) — no audio; `createTextAgent` over a
+- **Text mode** (`mode: "text"`, explicit) — no audio; `createTextAgent` over a
   message list. Text and `s2s` refuse each other by name. See
   `aai-runtime`'s `text-agent.ts` module doc.
 - **Pipeline mode** (the DEFAULT) — any subset of `stt`/`llm`/`tts`, or none;
@@ -163,16 +174,16 @@ is on the root alone.
   `fatal: true` and aai-ui ends the call on a fatal frame, so every turn-level
   reporter passes `{ fatal: false }` — `aai-runtime`'s
   `transports/pipeline-error.ts` owns it.
-- **S2S mode** (`s2s: assemblyAIS2s()` or `openAIS2s()`, explicit) — one
+- **S2S mode** (`mode: "s2s"` + `assemblyAIS2s()`/`openAIS2s()`) — one
   WebSocket; STT, LLM and TTS run service-side. **Never reachable by
   omission.** [`S2S-CLAUDE.md`](S2S-CLAUDE.md) owns the wire rules (24 kHz both
   ways, tool-call captions, in-band errors, abandoning a handshake) — read it
   before changing either S2S transport.
 
 The default fill runs at every mode-derivation site (`toAgentConfig` and
-`createRuntime`) before `assertProviderTriple`. `s2s` combined with a pipeline
-provider or pipeline-only field fails `tsc` naming the rule
-(`PipelineOnlyMisuse` in `AgentParams`, `sdk/define.ts`).
+`createRuntime`) before `assertProviderTriple`. `createRuntime` hands
+`toAgentConfig` its EFFECTIVE mode (`resolveEffectiveProviders().agentMode`):
+a full provider triple in the runtime options replaces an S2S declaration.
 
 ## One canonical config schema, deny-list boundaries
 
@@ -186,12 +197,13 @@ an explicit deny-list instead of copying fields**:
   `tools`, `syncState`, `workflows`, `events`, `subagents`) and undefined
   values, then validates. `_internal-types.test.ts` pins
   `Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>` = `never`.
-- **`agent()`** derives its parameters from `AgentDef` (`AgentParams` = `Omit`
-  plus `Partial<Pick>` of defaulted fields) plus three conveniences it
-  normalizes away (`system` → `systemPrompt`, `llm` as a model-id string via
+- **`agent()`** derives each member of its parameters from `AgentDef` (`Omit`
+  plus `Pick` per mode) plus the conveniences `normalizeAgentParams`
+  (`sdk/_author-conveniences.ts`) lowers away (`llm` as a model-id string via
   `sdk/providers/llm/shared/from-string.ts`, `voice` →
-  `tts: assemblyAITts({ voice })`). Never re-declare the shape inline — neither
-  bundler typechecks user code. `define.test-d.ts` locks this. **Defaults go
+  `tts: assemblyAITts({ voice })`, the endpointing pair). Never re-declare the
+  shape inline — neither bundler typechecks user code. `define.test-d.ts` and
+  `define-modes.test-d.ts` lock this. **Defaults go
   through `omitUndefined`**: a spread lets a present-and-`undefined` key (from
   an options bag) beat the default, yielding `undefined` required fields.
 - **`IsolateConfigSchema`** (`aai-server/rpc-schemas.ts`) is

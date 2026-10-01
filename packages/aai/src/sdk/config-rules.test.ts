@@ -36,7 +36,7 @@ describe("toAgentConfig — mode classification", () => {
   });
 
   test("s2s descriptor (assemblyAIS2s) ⇒ mode: 's2s', no pipeline injection", () => {
-    const parsed = config({ s2s: assemblyAIS2s() });
+    const parsed = config({ mode: "s2s", s2s: assemblyAIS2s() });
     expect(parsed.mode).toBe("s2s");
     expect(parsed.s2s).toEqual({ kind: "assemblyai", options: {} });
     expect(parsed.stt).toBeUndefined();
@@ -69,8 +69,8 @@ describe("toAgentConfig — mode classification", () => {
   });
 
   test("s2s + a pipeline stage ⇒ throws (never filled into S2S)", () => {
-    expect(() => config({ s2s: assemblyAIS2s(), tts: pipelineFields.tts })).toThrow(
-      /s2s and the stt\/llm\/tts pipeline cannot be set together/,
+    expect(() => config({ mode: "s2s", s2s: assemblyAIS2s(), tts: pipelineFields.tts })).toThrow(
+      /`tts` is the pipeline's text-to-speech stage — it has no effect on a "s2s" agent/,
     );
   });
 
@@ -89,20 +89,23 @@ describe("toAgentConfig — mode classification", () => {
   });
 
   test("voice + s2s ⇒ throws (pipeline-mode only)", () => {
-    expect(() => config({ voice: "michael", s2s: assemblyAIS2s() })).toThrow(
-      /`voice` is pipeline-mode only/,
+    expect(() => config({ voice: "michael", mode: "s2s", s2s: assemblyAIS2s() })).toThrow(
+      /`voice` is the default pipeline's TTS voice — it has no effect on a "s2s" agent/,
     );
   });
 
   test("accepts an s2s descriptor by raw shape", () => {
-    const parsed = config({ s2s: { kind: "openai-realtime", options: { model: "gpt-realtime" } } });
+    const parsed = config({
+      mode: "s2s",
+      s2s: { kind: "openai-realtime", options: { model: "gpt-realtime" } },
+    });
     expect(parsed.s2s).toEqual({ kind: "openai-realtime", options: { model: "gpt-realtime" } });
     expect(parsed.mode).toBe("s2s");
   });
 
   test("rejects s2s combined with the pipeline triple", () => {
     expect(() =>
-      config({ ...pipelineFields, s2s: { kind: "openai-realtime", options: {} } }),
+      config({ ...pipelineFields, mode: "s2s", s2s: { kind: "openai-realtime", options: {} } }),
     ).toThrow(/s2s.*pipeline|cannot.*together/i);
   });
 });
@@ -119,8 +122,8 @@ describe("toAgentConfig — silence nudge", () => {
   });
 
   test("rejects silenceTimeoutMs in s2s mode", () => {
-    expect(() => config({ s2s: assemblyAIS2s(), silenceTimeoutMs: 15_000 })).toThrow(
-      /silenceTimeoutMs requires pipeline mode/,
+    expect(() => config({ mode: "s2s", s2s: assemblyAIS2s(), silenceTimeoutMs: 15_000 })).toThrow(
+      /`silenceTimeoutMs` is the pipeline's silence nudge — it has no effect on a "s2s" agent/,
     );
   });
 
@@ -301,8 +304,8 @@ describe("toAgentConfig — pipeline voice tuning", () => {
     ["userTurnLimit", { maxWords: 60 }],
     ["turnDetection", "manual"],
   ])("rejects %s in s2s mode", (field, value) => {
-    expect(() => config({ s2s: assemblyAIS2s(), [field]: value })).toThrow(
-      new RegExp(`${field} requires pipeline mode`),
+    expect(() => config({ mode: "s2s", s2s: assemblyAIS2s(), [field]: value })).toThrow(
+      new RegExp(`\`${field}\` is .* — it has no effect on a "s2s" agent`),
     );
   });
 
@@ -350,8 +353,8 @@ describe("toAgentConfig — pipeline voice tuning", () => {
 
     test("is refused on a text agent, as every pipeline-only knob is", () => {
       expect(() =>
-        rawConfig({ name: "chat", text: true, userTurnLimit: { maxWords: 60 } }),
-      ).toThrow(/userTurnLimit requires pipeline mode/);
+        rawConfig({ name: "chat", mode: "text", userTurnLimit: { maxWords: 60 } }),
+      ).toThrow(/`userTurnLimit` is .* no effect on a "text" agent/);
     });
   });
 });
@@ -492,7 +495,7 @@ describe("author conveniences on raw configs (no agent())", () => {
   test("keeps an explicit llm, which is the one stage it has", () => {
     const parsed = rawConfig({
       name: "chat",
-      text: true,
+      mode: "text",
       llm: "anthropic/claude-sonnet-4-5",
     });
     expect(parsed.mode).toBe("text");
@@ -503,19 +506,21 @@ describe("author conveniences on raw configs (no agent())", () => {
   test.each([
     ["stt", { stt: assemblyAIStt() }, /no audio path/],
     ["tts", { tts: { kind: "assemblyai", options: {} } }, /no audio path/],
-    ["s2s", { s2s: { kind: "assemblyai", options: {} } }, /no speech stage/],
+    ["s2s", { s2s: { kind: "assemblyai", options: {} } }, /no effect on a "text" agent/],
   ])("rejects text combined with %s", (_label, extra, message) => {
-    expect(() => rawConfig({ name: "chat", text: true, ...extra })).toThrow(message);
+    expect(() => rawConfig({ name: "chat", mode: "text", ...extra })).toThrow(message);
   });
 
   test("rejects the pipeline-only tuning knobs, as s2s does", () => {
-    expect(() => rawConfig({ name: "chat", text: true, deadAirCoverMs: 5000 })).toThrow(
-      /deadAirCoverMs requires pipeline mode/,
+    expect(() => rawConfig({ name: "chat", mode: "text", deadAirCoverMs: 5000 })).toThrow(
+      /`deadAirCoverMs` is .* no effect on a "text" agent/,
     );
   });
 
   test("rejects the `voice` shorthand rather than fabricating a tts stage", () => {
-    expect(() => rawConfig({ name: "chat", text: true, voice: "jane" })).toThrow(/never speaks/);
+    expect(() => rawConfig({ name: "chat", mode: "text", voice: "jane" })).toThrow(
+      /`voice` is .* no effect on a "text" agent/,
+    );
   });
 
   test("assertProviderTriple only answers `text` when asked about text", () => {
@@ -635,13 +640,13 @@ describe("temperature scope", () => {
   });
 
   test("a text agent may set it — nothing about it is voice-specific", () => {
-    expect(rawConfig({ name: "Docs", text: true, temperature: 0.9 }).temperature).toBe(0.9);
+    expect(rawConfig({ name: "Docs", mode: "text", temperature: 0.9 }).temperature).toBe(0.9);
   });
 
   test("an S2S agent is REFUSED, rather than having it silently dropped", () => {
-    expect(() => rawConfig({ name: "Line", s2s: assemblyAIS2s(), temperature: 0.2 })).toThrow(
-      /no effect in s2s mode/,
-    );
+    expect(() =>
+      rawConfig({ name: "Line", mode: "s2s", s2s: assemblyAIS2s(), temperature: 0.2 }),
+    ).toThrow(/no effect in s2s mode/);
   });
 
   test("out of range is refused by the schema", () => {
@@ -671,8 +676,8 @@ describe("temperature scope", () => {
     });
 
     test("is refused on a text agent, which has no microphone to gate", () => {
-      expect(() => rawConfig({ name: "chat", text: true, turnDetection: "manual" })).toThrow(
-        /turnDetection requires pipeline mode/,
+      expect(() => rawConfig({ name: "chat", mode: "text", turnDetection: "manual" })).toThrow(
+        /`turnDetection` is .* no effect on a "text" agent/,
       );
     });
   });

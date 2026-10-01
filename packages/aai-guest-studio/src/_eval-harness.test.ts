@@ -68,7 +68,7 @@ describe("credentialProbe", () => {
   // being `createStudioAgent`'s output.
   test("is the coding agent's own definition, not a look-alike", () => {
     const def = credentialProbe();
-    expect(def.text).toBe(true);
+    expect(def.mode).toBe("text");
     expect(def.name).toBe("AAI Studio");
     // One name from each tool family, so a family that stopped being merged
     // would change what credential question is asked.

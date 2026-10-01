@@ -39,7 +39,7 @@ describe("expectDeployable", () => {
   });
 
   test("an s2s def derives s2s mode with NO cascade beside it", () => {
-    const config = expectDeployable(agent({ name: "Line", s2s: assemblyAIS2s() }));
+    const config = expectDeployable(agent({ name: "Line", mode: "s2s", s2s: assemblyAIS2s() }));
     expect(config.mode).toBe("s2s");
     expect(config.s2s?.kind).toBe("assemblyai");
     expect(config.stt).toBeUndefined();
@@ -50,7 +50,7 @@ describe("expectDeployable", () => {
   test("a text agent derives text mode with no audio stage — and its llm may be absent", () => {
     // `defaultProviders` skips a text agent; `createTextAgent` defaults the llm
     // at run time. So the invariant is the missing audio path, not a filled llm.
-    const config = expectDeployable(agent({ name: "Chat", text: true }));
+    const config = expectDeployable(agent({ name: "Chat", mode: "text" }));
     expect(config.mode).toBe("text");
     expect(config.stt).toBeUndefined();
     expect(config.tts).toBeUndefined();
@@ -77,7 +77,7 @@ describe("expectDeployable", () => {
     // reached by spreading, exactly as `custom-pipeline-agent`'s spec does.
     expect(() =>
       expectDeployable({
-        ...agent({ name: "Line", s2s: assemblyAIS2s() }),
+        ...agent({ name: "Line", mode: "s2s", s2s: assemblyAIS2s() }),
         tts: { kind: "cartesia", options: {} },
       }),
     ).toThrow(/does not pass manifest validation/);

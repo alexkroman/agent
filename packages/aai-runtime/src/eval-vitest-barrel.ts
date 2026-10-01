@@ -23,7 +23,7 @@ export {
 } from "./eval/describe.ts";
 // The TEXT-agent suite. Its own function rather than a flag on `describeEval`
 // for the reason there are two harnesses at all: `createRuntime` refuses
-// `text: true` by name, so there is no session to open — see the module doc.
+// `mode: "text"` by name, so there is no session to open — see the module doc.
 export {
   type DescribeTextEvalOptions,
   describeTextEval,

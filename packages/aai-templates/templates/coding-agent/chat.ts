@@ -3,7 +3,7 @@
  * directly), then type a request and press enter.
  *
  * A text agent has no session, so this file is its front door rather than
- * `aai dev`: `createRuntime` REFUSES `text: true` by name, because there are no
+ * `aai dev`: `createRuntime` REFUSES `mode: "text"` by name, because there are no
  * speech stages for a transport to sit between and no socket for a browser to
  * open. What runs it instead is `createTextAgent` — a message list and a model.
  * Everything else an agent has is the same code a voice agent runs: the tools,

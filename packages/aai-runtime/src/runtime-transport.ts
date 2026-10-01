@@ -207,7 +207,7 @@ export interface TransportFactoryDeps {
   /**
    * Resolves non-null exactly when the session mode is pipeline.
    *
-   * A thunk because a `page: "static"` agent must not resolve providers it
+   * A thunk because a `mode: "workflow-app"` agent must not resolve providers it
    * will never dial (see `createRuntime`) — and a session that somehow starts
    * on one still gets the real credential error rather than this file's
    * "no transport for session".

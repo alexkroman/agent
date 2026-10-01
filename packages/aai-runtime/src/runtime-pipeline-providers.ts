@@ -54,7 +54,7 @@ function resolvePipelineProviders(
  * than at whatever moment someone first speaks — `resolveLlm` throwing at
  * construction is the whole mechanism.
  *
- * Never for a `page: "static"` agent. That server declines `/websocket` and
+ * Never for a `mode: "workflow-app"` agent. That server declines `/websocket` and
  * defaults telephony off, so its providers are the default triple
  * `defaultProviders` injected into an agent that declared none — a credential
  * nothing will ever dial. Resolving it anyway was FATAL: a workflow app with no
@@ -71,7 +71,7 @@ function resolvePipelineProviders(
  * @internal
  */
 export function createPipelineProviderResolver(opts: {
-  agent: Pick<AgentDef, "page">;
+  agent: Pick<AgentDef, "mode">;
   effectiveProviders: EffectiveProviders;
   providerEnv: Record<string, string>;
 }): () => ResolvedPipelineProviders | null {
@@ -82,6 +82,6 @@ export function createPipelineProviderResolver(opts: {
     resolved ??= { value: resolvePipelineProviders(opts.effectiveProviders, opts.providerEnv) };
     return resolved.value;
   };
-  if (opts.agent.page !== "static") resolve();
+  if (opts.agent.mode !== "workflow-app") resolve();
   return resolve;
 }

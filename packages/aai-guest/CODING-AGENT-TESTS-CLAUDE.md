@@ -108,7 +108,7 @@ it and the unit config excludes it, exactly as `.scenario.` works one tier down.
 
 **`describeEval` itself is the one piece that could not be reused, and it is
 structural.** That function stands up `openEvalSession` → `createRuntime`,
-which REFUSES `text: true` by name — a text agent fills no pipeline stages, so
+which REFUSES `mode: "text"` by name — a text agent fills no pipeline stages, so
 there is nothing for the fake speech pair to stand between. `openEvalTextAgent`
 is the sibling harness for exactly that, and its module doc names where the
 announce then belongs ("`describeEval` for a template, `_gate.ts` for
@@ -117,7 +117,7 @@ lifetime.
 
 **Why here and not in `aai-evals`.** That package's guide argued it before this
 existed ("A SECOND, in-process studio eval belongs in `aai-guest`, not here"):
-`createStudioAgent` returns a plain `AgentDef` with `text: true`, which is what
+`createStudioAgent` returns a plain `AgentDef` with `mode: "text"`, which is what
 `openEvalTextAgent` takes — but `StudioSession` carries a real workspace `dir`
 and `StudioAgentDeps` is `HarnessBundleAccess & { typecheck }`, all of which
 live here, and `evals-package-boundary` denies that package this one by name.

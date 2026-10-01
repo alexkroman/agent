@@ -132,7 +132,7 @@ function stepToParts(step: ScriptedTextStep, mintId: () => string): ScriptedPart
  * import { scriptedTextModel } from "@alexkroman1/aai-runtime/testing";
  *
  * const chat = createTextAgent({
- *   agent: agent({ name: "Desk", text: true, systemPrompt: "Be brief." }),
+ *   agent: agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }),
  *   model: scriptedTextModel([
  *     { text: "Let me check.", toolCalls: [{ name: "look_up", input: { id: "7" } }] },
  *     { text: "It shipped yesterday." },

@@ -1,11 +1,19 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { normalizeAgentConveniences } from "./_author-conveniences.ts";
+import { normalizeAgentParams } from "./_author-conveniences.ts";
 import { declaredPersonas } from "./_dialog-meta.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
 import { KNOWN_AGENT_FIELDS } from "./agent-config.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
-import type { AgentParams, DefaultedAgentField, StaticAgentParams } from "./agent-params.ts";
+import type {
+  AgentParams,
+  DefaultedAgentField,
+  ModeAgentDef,
+  PipelineAgentParams,
+  S2sAgentParams,
+  StaticAgentParams,
+  TextAgentParams,
+} from "./agent-params.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
@@ -73,6 +81,12 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  * Applies sensible defaults for omitted fields. Export as the default
  * export of your `agent.ts` file.
  *
+ * Overloaded over {@link AgentMode}, one signature per member of
+ * {@link AgentParams}: `mode` picks the member, and a field that member does
+ * not have is a compile error naming it — `deadAirCoverMs` is a pipeline knob,
+ * so it does not exist on {@link S2sAgentParams} at all. With no `mode` the
+ * agent is a pipeline agent. {@link AgentDef} documents what every field means.
+ *
  * **Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
  * default-exports `tool({ … })` is the tool `echo`, registered by existing, and
  * `agent({ tools })` is a compile error naming the file to create
@@ -92,14 +106,6 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  * own default and its own storage, so there is no `state` factory to remember.
  * `syncState` takes that slot's projection.
  *
- * @remarks
- * Session mode: with no provider fields the agent runs the default
- * all-AssemblyAI cascaded pipeline. Set any subset of `stt`, `llm`, `tts`
- * to swap individual stages (unset stages keep the AssemblyAI default), and
- * `voice` to pick the default pipeline's TTS voice — or set `s2s` (e.g.
- * `assemblyAIS2s()`) to opt into the speech-to-speech path instead. See
- * {@link AgentDef} for every field.
- *
  * @example Default pipeline with a voice and a different LLM
  * ```ts
  * import { agent } from "@alexkroman1/aai";
@@ -113,61 +119,87 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  *
  * @public
  */
+export function agent(def: PipelineAgentParams): ModeAgentDef<"pipeline">;
+/**
+ * Define a speech-to-speech agent: `mode: "s2s"` and its `s2s` descriptor. See
+ * {@link S2sAgentParams}.
+ *
+ * @example
+ * ```ts
+ * import { agent, assemblyAIS2s } from "@alexkroman1/aai";
+ *
+ * export default agent({ name: "Concierge", mode: "s2s", s2s: assemblyAIS2s() });
+ * ```
+ *
+ * @public
+ */
+export function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
+/**
+ * Define a text agent: `mode: "text"`, driven over a message list by
+ * `createTextAgent` rather than by a session socket. See {@link TextAgentParams}.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ *
+ * export default agent({
+ *   name: "Docs Assistant",
+ *   mode: "text",
+ *   systemPrompt: "Answer questions about the docs.",
+ * });
+ * ```
+ *
+ * @public
+ */
+export function agent(def: TextAgentParams): ModeAgentDef<"text">;
+/**
+ * Define a workflow app: `mode: "workflow-app"`. {@link workflowApp} is the
+ * same member with the mode already set. See {@link StaticAgentParams}.
+ *
+ * @public
+ */
+export function agent(def: StaticAgentParams): ModeAgentDef<"workflow-app">;
+/**
+ * Any member of {@link AgentParams} — the signature a value typed as the whole
+ * union resolves against (an options bag assembled elsewhere, a wrapper that
+ * forwards its argument).
+ *
+ * @public
+ */
+export function agent(def: AgentParams): AgentDef;
 export function agent(def: AgentParams): AgentDef {
   return buildAgent(def);
 }
 
 /**
  * The shared body of {@link agent} and {@link workflowApp}.
- *
- * They cannot forward to each other through the public types: `workflowApp`
- * takes the arm that carries the workflow-app compile-error MESSAGES, while
- * `agent`'s static arm types the same fields `never` so tsc's printed union
- * stays readable for a voice agent (see `StaticAgentParamsCore`). A message
- * type is not assignable to `never`, so `agent({ ...def, page: "static" })` no
- * longer type-checks from inside `workflowApp` — and the fix is this shared
- * body rather than a cast, which is the same runtime object either way.
  */
 function buildAgent(def: object): AgentDef {
   assertNoInlineTools(def);
+  // Mode, field legality, the mode mirrors and the conveniences — in that
+  // order; see `_author-conveniences.ts`.
+  const normalized = normalizeAgentParams(def) as Record<string, unknown>;
   // The same net `toAgentConfig` holds, one layer earlier. `agent()` is where
   // an author is standing, so a field the SDK does not know should fail here
   // rather than at `aai build` — and a raw `export default {...}` that skips
   // this function still meets the check at the config boundary.
-  assertNoStrayFields(
-    normalizeAgentConveniences(def) as Record<string, unknown>,
-    KNOWN_AGENT_FIELDS,
-  );
+  assertNoStrayFields(normalized, KNOWN_AGENT_FIELDS);
   /**
    * `omitUndefined` because a spread lets an own key whose value is
-   * `undefined` WIN over the default beneath it. Writing
-   * `agent({ greeting: undefined })` is already a compile error under
-   * `exactOptionalPropertyTypes` — but `agent({ name, ...opts })`, where
-   * `opts` is declared `{ greeting?: string; maxSteps?: number }`, is not, and
-   * that is how an options bag reaches here. It returned an agent whose
-   * `greeting`, `systemPrompt` and `maxSteps` were all `undefined` while every
-   * one of them is typed as REQUIRED on {@link AgentDef} — so the agent opened
-   * on silence, ran on no system prompt, and the pipeline's `stopWhen` budget
-   * was `NaN`, with nothing anywhere reporting it.
-   *
+   * `undefined` WIN over the default beneath it — `agent({ name, ...opts })`
+   * with `opts` declared `{ greeting?: string }` returned an agent whose
+   * required `greeting`, `systemPrompt` and `maxSteps` were `undefined`.
    * Making absent and present-and-undefined mean the same thing is what those
-   * fields' docs ("Defaults to …") already promise. The cast back is the same
-   * one the normalize call needs — `omitUndefined` widens every key to
-   * optional, and `name` is not.
+   * fields' docs ("Defaults to …") already promise.
    */
-  const params = omitUndefined(
-    normalizeAgentConveniences(def) as AgentParamsCore,
-  ) as AgentParamsCore;
+  const params = omitUndefined(normalized as AgentParamsCore) as AgentParamsCore;
   assertNoOrphanPins(params);
   // The one table `agent()` fills itself: `tools` is the field it refuses an
   // argument for, so there is nothing in `params` to overwrite. A declared
   // roster becomes an ordinary entry here — see `sdk/subagent-roster.ts` — so it
   // is schema'd, dispatched and executed by the same paths a `tools/` file
-  // takes, on all three transports, and the sandbox path needs nothing: the
-  // guest holds the real definition, which is the only side that can hold a
-  // `SubagentDef`'s functions anyway. A roster of PERSONAS lowers the same way —
-  // every persona's gated tools plus the minted `handoff` — see
-  // `sdk/persona-roster.ts`.
+  // takes. A roster of PERSONAS lowers the same way — every persona's gated
+  // tools plus the minted `handoff` — see `sdk/persona-roster.ts`.
   const tools: Record<string, ToolDef> = {};
   if (params.subagents) tools[DELEGATE_TOOL_NAME] = rosterTool(params.subagents);
   if (params.personas) {
@@ -249,19 +281,15 @@ function assertNoInlineTools(def: unknown): void {
  * Define a WORKFLOW APP — an agent whose front door is a form rather than a
  * microphone, and whose work happens in `workflows`.
  *
- * `agent({ …, page: "static" })` with the discriminant already set, so the
- * mode is the CALL rather than a field to remember, and the fields a workflow
- * app has no use for are absent from the parameter type instead of being
- * rejected by it. Returns the same {@link AgentDef} `agent()` does — there is
- * one definition type, one config, one deploy path, and `page` is only ever
- * about the front door.
+ * `agent({ mode: "workflow-app", … })` with the discriminant already set, so
+ * the mode is the CALL rather than a field to remember, and the fields a
+ * workflow app has no use for are absent from the parameter type. Returns the
+ * same {@link AgentDef} `agent()` does — there is one definition type, one
+ * config, one deploy path.
  *
  * It mirrors the split `@alexkroman1/aai-ui` already makes in the browser:
  * `mountPage()` mounts a workflow app's UI and `mountClient()` mounts a voice
- * one,
- * because a flag would leave every session-shaped question ("what does this
- * mean with no session?") answered by a conditional. Same reasoning, same
- * seam, other end of the wire.
+ * one.
  *
  * @example
  * ```ts
@@ -282,32 +310,27 @@ function assertNoInlineTools(def: unknown): void {
  *
  * @public
  */
-export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef {
-  return buildAgent({ ...def, page: "static" });
+export function workflowApp(def: Omit<StaticAgentParams, "mode">): AgentDef {
+  return buildAgent({ ...def, mode: "workflow-app" });
 }
 
 /**
  * `AgentParams` with the author-only conveniences normalized away — what
- * {@link normalizeAgentConveniences} returns and `agent()` spreads over the
+ * {@link normalizeAgentParams} returns and `agent()` spreads over the
  * defaults.
  */
 type AgentParamsCore = Omit<AgentDef, DefaultedAgentField> &
   Partial<Pick<AgentDef, DefaultedAgentField>>;
 
 /**
- * The parameter shape lives in its own module (see its header); the four ARMS
+ * The parameter shape lives in its own module (see its header); the members
  * and their union are re-exported here so `agent()` and its params stay one
- * import for an author.
- *
- * The ten FIELD-LIST and MESSAGE types behind them are deliberately NOT — they
- * are the implementation of a compile error, not something an `agent.ts` names,
- * and the root barrel's membership test is whether an author would name a
- * symbol. They still appear in the arms' rendered signatures (which is where
- * they do their job) and `typedoc.json` lists them as intentionally
- * unexported.
+ * import for an author. The FIELD-LIST types behind them are deliberately not —
+ * they are how a member is cut, not something an `agent.ts` names.
  */
 export type {
   AgentParams,
+  ModeAgentDef,
   PipelineAgentParams,
   S2sAgentParams,
   SharedAgentParams,

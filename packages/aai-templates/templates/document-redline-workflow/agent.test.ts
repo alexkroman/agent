@@ -2,7 +2,7 @@
  * Specs for the redline desk — the reflection port, as a workflow app.
  *
  * The declaration is testable (three things that are silent when wrong — the
- * `page: "static"` field, the workflow's name, and the input schema) and so are
+ * `mode: "workflow-app"` field, the workflow's name, and the input schema) and so are
  * the STEPS, which imported with no bundler in the path are ordinary async
  * functions: their JSON contract with the model, their `FatalError` guards, and
  * the pure helpers underneath them.

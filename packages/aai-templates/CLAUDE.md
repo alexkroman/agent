@@ -398,7 +398,7 @@ wrongly. The check compares VALUES, so composing a string from the file passes,
 and a `systemPrompt` RESOLVER passes unchecked (it closes over its own `?raw`
 import). `_discovery.ts` resolves prompts for `templates.test.ts`.
 
-**`coding-agent` is TEXT-mode** (`text: true`), so `createRuntime` refuses it
+**`coding-agent` is TEXT-mode** (`mode: "text"`), so `createRuntime` refuses it
 and it ships its own front door, `chat.ts` — the only entry point in
 `templates/`. `shared.ts` explains why its nine `tools/` files share one
 `createCodingTools` registry.

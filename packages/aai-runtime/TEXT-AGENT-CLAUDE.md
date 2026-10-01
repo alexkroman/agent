@@ -94,7 +94,7 @@ before touching either:
   the one thing worse than an ungradeable agent is two vocabularies that
   disagree about what a tool call is. The measured cost of having neither is
   `aai-studio-server/src/studio-eval-target.ts`, which grades an
-  `agent({ text: true })` definition with five REGEXES over tool-output text.
+  `agent({ mode: "text" })` definition with five REGEXES over tool-output text.
 - **`session.configured` is refused for want of an honest field**, and it is the
   only member refused on those grounds: it requires `audioFormat`, `sampleRate`
   and `ttsSampleRate`, `0` fails the schema, and any real number is a lie a
@@ -111,7 +111,7 @@ before touching either:
 ### A TEXT agent is evaluated by `openEvalTextAgent`, its own harness
 
 `@alexkroman1/aai-runtime/eval` carries both, and there are two because
-`createRuntime` REFUSES `text: true` by name: a text agent fills no pipeline
+`createRuntime` REFUSES `mode: "text"` by name: a text agent fills no pipeline
 stages and resolves no transport, so there is nothing for the fake speech pair
 to stand between and `openEvalSession` structurally cannot serve one. Everything
 a case can SEE is the same — `send()` is `say()`, it hands back the same
@@ -165,7 +165,7 @@ harness:
 
 Its own function rather than a flag on `describeEval`, for the reason there are
 two harnesses at all: `openEvalSession` stands up `createRuntime`, which refuses
-`text: true` by name, so nothing about the two can be merged below the suite.
+`mode: "text"` by name, so nothing about the two can be merged below the suite.
 What IS shared is everything a case author sees — the two modes, the announce
 line, the per-case `stubReply`, the `live`/`scripted` markers, the `EvalTurn`,
 and every reader and assertion above it — so a case moved between the two files
@@ -292,7 +292,7 @@ the first and third; neither is built.
 
 **A workflow app's credential gate is a different question**, hence
 `evalWorkflowCredentials`: `requiredProviderEnvVars` returns `[]` for a
-`page: "static"` agent, so asked alone it reports every workflow app "ready" and
+`mode: "workflow-app"` agent, so asked alone it reports every workflow app "ready" and
 a keyless run goes live and 401s three layers down inside a step. It reads
 `requiredEnv` too, which is the only place a workflow app declares what it
 needs.

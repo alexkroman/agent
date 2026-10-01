@@ -15,7 +15,7 @@
  * import { createTextAgent } from "@alexkroman1/aai-runtime";
  *
  * const chat = createTextAgent({
- *   agent: agent({ name: "Helper", text: true, systemPrompt: "Be brief." }),
+ *   agent: agent({ name: "Helper", mode: "text", systemPrompt: "Be brief." }),
  *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
  * });
  * const result = chat.stream({ messages: [{ role: "user", content: "hi" }] });
@@ -134,7 +134,7 @@ function resolveModel(options: TextAgentOptions): LanguageModel {
  */
 export function textAgentHasNoSession(name: string): Error {
   return new Error(
-    `Agent "${name}" declares \`text: true\` and has no voice session — run it ` +
+    `Agent "${name}" declares \`mode: "text"\` and has no voice session — run it ` +
       "with `createTextAgent` from `@alexkroman1/aai-runtime`, not `createRuntime`.",
   );
 }
@@ -142,7 +142,7 @@ export function textAgentHasNoSession(name: string): Error {
 /**
  * Create a text agent bound to one conversation.
  *
- * @throws if the definition does not declare `text: true`. A voice agent run
+ * @throws if the definition does not declare `mode: "text"`. A voice agent run
  *   as a text one would silently drop its `greeting` and every voice knob it
  *   was tuned with; refusing by name is the mirror of `createRuntime`'s
  *   refusal of a text agent.
@@ -151,9 +151,9 @@ export function textAgentHasNoSession(name: string): Error {
  */
 export function createTextAgent(options: TextAgentOptions): TextAgent {
   const { agent, logger = consoleLogger } = options;
-  if (agent.text !== true) {
+  if (agent.mode !== "text") {
     throw new Error(
-      `Agent "${agent.name}" is not a text agent — add \`text: true\` to its ` +
+      `Agent "${agent.name}" is not a text agent — add \`mode: "text"\` to its ` +
         "definition, or run it as a voice session with `createRuntime`.",
     );
   }

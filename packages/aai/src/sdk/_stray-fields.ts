@@ -65,6 +65,9 @@ export function assertNoStrayFields(
 const RENAMED_FIELDS: Readonly<Record<string, string>> = {
   system: "systemPrompt",
   instructions: "systemPrompt",
+  // The mode flags `mode` replaced.
+  text: 'mode: "text"',
+  page: 'mode: "workflow-app"',
 };
 
 /**

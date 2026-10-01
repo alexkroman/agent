@@ -518,8 +518,8 @@ That is the whole declaration, and the fields it does NOT take are the point:
 a workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
 `maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob
 are **compile errors** here, not fields that quietly do nothing. `greeting` and
-`requiredEnv` stay. `workflowApp()` is `agent({ …, page: "static" })` with the
-discriminant already set — same definition object out, so `aai build`,
+`requiredEnv` stay. `workflowApp()` is `agent({ mode: "workflow-app", … })` with
+the discriminant already set — same definition object out, so `aai build`,
 `aai dev` and `aai publish` treat it like any other agent.
 
 Reach for it when the user asks for something that outlives a request: an
@@ -1284,19 +1284,21 @@ Pipeline mode is the default: omitting `stt`/`llm`/`tts` (and `s2s`) gives
 you the all-AssemblyAI pipeline, and any stage you do declare replaces just
 that stage — the rest keep the default.
 
-**S2S mode is an explicit opt-in.** Setting `s2s: assemblyAIS2s()` (imported
-from `@alexkroman1/aai`, next to `agent()`) selects AssemblyAI's
-speech-to-speech Voice Agent API: STT, the LLM loop, and TTS run
-service-side in one socket. Fewer moving parts, but you cannot choose the
-model or swap a provider. There is no way to reach S2S by omission — only
-the `s2s` field selects it, and it is mutually exclusive with the
-`stt`/`llm`/`tts` triple.
+**S2S mode is an explicit opt-in.** `mode: "s2s"` beside an
+`s2s: assemblyAIS2s()` descriptor (imported from `@alexkroman1/aai`, next to
+`agent()`) selects AssemblyAI's speech-to-speech Voice Agent API: STT, the LLM
+loop, and TTS run service-side in one socket. Fewer moving parts, but you cannot
+choose the model or swap a provider. There is no way to reach S2S by omission,
+and the S2S member of `agent()`'s parameter type has none of the
+`stt`/`llm`/`tts` triple or its tuning. (An `s2s` descriptor with no `mode` is
+refused: that declares a pipeline agent carrying an unused descriptor.)
 
 ```ts
 import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 
 export default agent({
   name: "My Agent",
+  mode: "s2s",
   s2s: assemblyAIS2s(),
 });
 ```
@@ -1308,6 +1310,7 @@ import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 
 export default agent({
   name: "My Agent",
+  mode: "s2s",
   sttPrompt: "Callers spell order numbers one character at a time.",
   s2s: assemblyAIS2s({
     voice: "michael",
@@ -1365,15 +1368,17 @@ export default agent({
 Tools, the database, `ctx`, and the UI all behave identically across modes.
 Only the audio + LLM transport differs.
 
-**Four front doors, each one field on `agent()`.** Omit them all for PIPELINE
-(voice, cascaded STT → LLM → TTS) — the default, and the mode this guide
-assumes. `s2s:` selects speech-to-speech. **`text: true` selects a text-only
+**Four modes, one field on `agent()`: `mode`.** Omit it for PIPELINE (voice,
+cascaded STT → LLM → TTS) — the default, and the mode this guide assumes.
+`mode: "s2s"` selects speech-to-speech. **`mode: "text"` selects a text-only
 agent**: no STT, no TTS, `llm` is the one stage, and the host runs it with
 `createTextAgent` from `@alexkroman1/aai-runtime`. `workflowApp()` (see
-"Workflow apps") builds a form with no session at all. Setting a field from the
-wrong arm is a compile error naming the rule, so the modes cannot be mixed by
-accident. Every pipeline agent must declare a real TTS provider — that is a
-statement about pipeline mode, not about the SDK.
+"Workflow apps") is `mode: "workflow-app"`: a form with no session at all. Each
+mode is its own member of the parameter type, and a field that mode does not
+have is simply ABSENT from it — so setting one is a compile error naming the
+member, and the modes cannot be mixed by accident. Every pipeline agent must
+declare a real TTS provider — that is a statement about pipeline mode, not about
+the SDK.
 
 ### Answering a phone call
 
@@ -2522,7 +2527,7 @@ own journaled `ctx.random()` instead.
 - **Declare only the pipeline stages you're changing.** Unset stages of
   `stt` / `llm` / `tts` default to AssemblyAI (omit all three for the full
   default pipeline; `voice` picks its TTS voice). S2S needs an explicit
-  `s2s: assemblyAIS2s()` and takes no pipeline fields.
+  `mode: "s2s"` and `s2s: assemblyAIS2s()`, and takes no pipeline fields.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Derive state with `useToolResult`, not `useEffect` + `toolCalls`** — it

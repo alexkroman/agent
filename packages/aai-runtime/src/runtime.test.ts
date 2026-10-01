@@ -251,7 +251,7 @@ describe("createRuntime", () => {
    */
   test("readyConfig pins an AssemblyAI S2S session to the service's only rate", () => {
     const exec = createRuntimeWithSeams({
-      agent: makeAgent({ s2s: assemblyAIS2s() }),
+      agent: makeAgent({ mode: "s2s", s2s: assemblyAIS2s() }),
       env: { ASSEMBLYAI_API_KEY: "k" },
       s2sConfig: {
         wssUrl: "wss://fake",
@@ -656,7 +656,7 @@ describe("createRuntime — provider resolution seams", () => {
   test("logs s2s mode for an agent that opts in via the s2s descriptor", () => {
     const logger = makeLogger();
     createRuntimeWithSeams({
-      agent: { ...baseAgent, s2s: assemblyAIS2s() },
+      agent: { ...baseAgent, mode: "s2s", s2s: assemblyAIS2s() },
       env: PROVIDER_KEYS,
       logger,
     });
@@ -670,9 +670,9 @@ describe("createRuntime — provider resolution seams", () => {
     // The assertion must keep firing where it is right: an explicit S2S agent.
     expect(() =>
       createRuntimeWithSeams({
-        agent: { ...baseAgent, s2s: assemblyAIS2s(), deadAirCoverMs: 2500 },
+        agent: { ...baseAgent, mode: "s2s", s2s: assemblyAIS2s(), deadAirCoverMs: 2500 },
         env: PROVIDER_KEYS,
       }),
-    ).toThrow(/deadAirCoverMs requires pipeline mode/);
+    ).toThrow(/`deadAirCoverMs` is .* no effect on a "s2s" agent/);
   });
 });

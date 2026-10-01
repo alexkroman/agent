@@ -13,11 +13,6 @@
 
 import { GUARDRAIL_FIELDS, type GuardrailField } from "./agent-guardrails.ts";
 import { MODEL_TUNING_FIELDS, type ModelTuningField } from "./agent-model-tuning.ts";
-import type {
-  PipelineVoiceTuning,
-  TurnDetectionMode,
-  UserTurnLimit,
-} from "./agent-voice-tuning.ts";
 import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
@@ -51,7 +46,7 @@ export type SessionMode = "s2s" | "pipeline" | "text";
  *
  * Pipeline mode requires STT, LLM, and TTS all set; S2S mode requires
  * none of them. An `s2s` descriptor selects the S2S provider — it must not
- * be combined with any pipeline field. `text: true` selects the text mode
+ * be combined with any pipeline field. `mode: "text"` selects the text mode
  * and takes only `llm`: it is the same explicit-opt-in shape as `s2s`, for
  * the same reason (see "Never let S2S be a fallback" in
  * `packages/aai/CLAUDE.md`) — a mode reachable by OMISSION is a mode an
@@ -132,103 +127,21 @@ export function assertProviderTriple(
 }
 
 /**
- * Enforce the silence-nudge config rules. `silenceTimeoutMs` makes the
- * assistant proactively take a turn after that much user silence — only the
- * pipeline transport implements it, so it's rejected in S2S mode rather than
- * silently ignored. `silencePrompt` customizes the injected instruction and
- * is meaningless without the timeout.
- *
- * Shared by `toAgentConfig` and the server's `IsolateConfigSchema` — one
- * source of truth for the validation.
+ * The one silence-nudge rule that is not a MODE rule: `silencePrompt` is the
+ * instruction injected when `silenceTimeoutMs` elapses, so without the timeout
+ * nothing ever reads it. (Which modes may carry either field is
+ * `assertModeFields`' question — `_agent-modes.ts`.)
  *
  * @internal
  */
 export function assertSilencePolicy(
-  mode: SessionMode,
   silenceTimeoutMs: number | undefined,
   silencePrompt: string | undefined,
 ): void {
-  if (silenceTimeoutMs !== undefined && mode !== "pipeline") {
-    throw new Error("silenceTimeoutMs requires pipeline mode (stt, llm, and tts all set)");
-  }
   if (silencePrompt !== undefined && silenceTimeoutMs === undefined) {
     throw new Error("silencePrompt requires silenceTimeoutMs to be set");
   }
 }
-
-/**
- * Voice-UX tuning fields that only the pipeline transport implements, with
- * each field's value shape. The one declaration both {@link PipelineTuning}
- * and `assertPipelineTuning` derive from, so a new pipeline-only field
- * cannot be added to the type but skip validation (which is how
- * `startFailurePhrase` once slipped through).
- *
- * The `satisfies` closes the other half of that gap: it makes the object
- * TOTAL over {@link PipelineVoiceTuning}, so a field added to the authoring
- * interface and not to this table is a compile error here rather than a knob
- * an S2S agent can set and never have honoured.
- */
-const PIPELINE_ONLY_TUNING = {
-  minBargeInWords: "number",
-  interruptionMinDurationMs: "number",
-  startSpeakingFloorMs: "number",
-  interruptionBackoffMs: "number",
-  deadAirCoverMs: "number",
-  errorPhrase: "string",
-  startFailurePhrase: "string",
-  resumeFalseInterruption: "boolean",
-  preemptiveGeneration: "boolean",
-  // An OBJECT, the one non-scalar knob: `{ maxWords?, maxDurationMs? }`. Its
-  // own tag rather than a fifth scalar, so it cannot skip this list and with
-  // it `assertPipelineTuning` — the same reason the phrase lists got theirs.
-  userTurnLimit: "user-turn-limit",
-  // A closed set of POLICY names, not free text — its own tag so the mapped
-  // type below can hand it the literal union rather than `string`.
-  turnDetection: "turn-detection",
-} as const satisfies Record<
-  keyof PipelineVoiceTuning,
-  // The six value shapes a pipeline-only tuning field may have. Written
-  // INLINE, both here and in the mapped type below, and that is a constraint
-  // rather than a style: a named alias for either half becomes a type
-  // `PipelineTuning`'s published signature references and no subpath exports,
-  // which `check:api-nameable` counts (it caught exactly that on the two
-  // aliases this replaced). The table used to be `"number" | "string" |
-  // "boolean"`, which was what the first four fields happened to be rather
-  // than a rule — the two phrase lists and the endpointing table are
-  // declarations rather than dials, and they get
-  // their own tags so that a field cannot skip this list and with it
-  // `assertPipelineTuning`.
-  "number" | "string" | "boolean" | "phrases" | "user-turn-limit" | "turn-detection"
->;
-
-type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
-
-const PIPELINE_ONLY_TUNING_FIELDS = Object.keys(
-  PIPELINE_ONLY_TUNING,
-) as readonly PipelineTuningField[];
-
-/**
- * Voice-UX tuning fields that only the pipeline transport implements.
- * Shared by `assertPipelineTuning` and the config layers that carry
- * these fields (AgentDef → manifest → AgentConfig → IsolateConfig).
- *
- * @internal
- */
-export type PipelineTuning = {
-  [K in PipelineTuningField]?:
-    | ((typeof PIPELINE_ONLY_TUNING)[K] extends "number"
-        ? number
-        : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean"
-          ? boolean
-          : (typeof PIPELINE_ONLY_TUNING)[K] extends "string"
-            ? string
-            : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit"
-              ? UserTurnLimit
-              : (typeof PIPELINE_ONLY_TUNING)[K] extends "turn-detection"
-                ? TurnDetectionMode
-                : readonly string[])
-    | undefined;
-};
 
 /**
  * Every {@link AgentModelTuning} knob describes a request THIS runtime
@@ -316,24 +229,6 @@ export function assertGuardrailScope(
         `${GUARDRAIL_FIELDS[field]}, and this mode reaches no moment at which that check ` +
         `could act. ${why} Remove it, or run this agent on the pipeline.`,
     );
-  }
-}
-
-/**
- * Reject pipeline-only voice-UX tuning fields in S2S mode — the S2S provider
- * owns endpointing/barge-in service-side, so these would be silently ignored.
- *
- * Shared by `toAgentConfig` and the server's `IsolateConfigSchema` — one
- * source of truth for the validation, mirroring `assertSilencePolicy`.
- *
- * @internal
- */
-export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void {
-  if (mode === "pipeline") return;
-  for (const key of PIPELINE_ONLY_TUNING_FIELDS) {
-    if (tuning[key] !== undefined) {
-      throw new Error(`${key} requires pipeline mode (stt, llm, and tts all set)`);
-    }
   }
 }
 

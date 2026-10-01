@@ -10,7 +10,7 @@
  *
  * ```ts
  * import { agent, assemblyAIS2s } from "@alexkroman1/aai";
- * export default agent({ name: "Ivy", s2s: assemblyAIS2s() });
+ * export default agent({ name: "Ivy", mode: "s2s", s2s: assemblyAIS2s() });
  * ```
  *
  * Bills to `ASSEMBLYAI_API_KEY`, same as the pipeline preset.

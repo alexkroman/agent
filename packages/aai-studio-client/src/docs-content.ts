@@ -101,7 +101,7 @@ export const VOICE_ENDPOINTS: readonly DocEndpoint[] = [
  * The routes to document for one agent's front door, given what the agent says
  * it IS (`ClientConfigResponse.page`, absent reading as `"voice"`).
  *
- * **A workflow app is not offered the carrier webhook.** `page: "static"`
+ * **A workflow app is not offered the carrier webhook.** `mode: "workflow-app"`
  * declines `/websocket` with a reason and cannot declare a carrier at all (see
  * `AgentDef.page`), so a phone number pointed at one answers and hangs up —
  * documenting the route would be an invitation to spend an afternoon in a

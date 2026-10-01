@@ -342,7 +342,7 @@ describe("missingDeployEnv", () => {
           "vercel",
           {},
           {
-            page: "static",
+            mode: "workflow-app",
             requiredEnv: ["ORDERS_API_KEY"],
           },
         ),
@@ -370,7 +370,7 @@ describe("missingDeployEnv", () => {
           "vercel",
           {},
           {
-            page: "static",
+            mode: "workflow-app",
             requiredEnv: ["IN_BOTH", "FROM_CONFIG"],
           },
         ),
@@ -385,7 +385,7 @@ describe("missingDeployEnv", () => {
           dir,
           "vercel",
           { ORDERS_API_KEY: "v" },
-          { page: "static", requiredEnv: ["ORDERS_API_KEY"] },
+          { mode: "workflow-app", requiredEnv: ["ORDERS_API_KEY"] },
         ),
       ).toEqual([]);
     });
@@ -401,7 +401,7 @@ describe("missingDeployEnv", () => {
           dir,
           "node",
           {},
-          { page: "static", requiredEnv: ["ORDERS_API_KEY"] },
+          { mode: "workflow-app", requiredEnv: ["ORDERS_API_KEY"] },
         ),
       ).toEqual([]);
     });

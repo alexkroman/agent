@@ -14,7 +14,7 @@
  * Two properties of the definition are worth stating, because they are the
  * ones a reader would otherwise have to infer:
  *
- * - **`text: true`.** The coding agent has no audio path at all; declaring
+ * - **`mode: "text"`.** The coding agent has no audio path at all; declaring
  *   the mode is what makes `createTextAgent` accept it, and what makes
  *   `createRuntime` refuse it.
  * - **The web builtins are NAMED, not adapted.** `builtinTools` is the
@@ -107,7 +107,7 @@ export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps)
   const diagnostics = createPostWriteDiagnostics(deps.typecheck);
   const authored = agent({
     name: "AAI Studio",
-    text: true,
+    mode: "text",
     systemPrompt: session.system,
     // The model is host configuration delivered by `studio/session-init`; the
     // KEY is the caller's own and rides in as `providerEnv`, never here.

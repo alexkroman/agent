@@ -11,7 +11,7 @@
  * | The agent is | The page calls | It talks to |
  * | --- | --- | --- |
  * | a voice agent (the default) | {@link mountClient} | a live session: socket, microphone, playback |
- * | a `workflowApp()` / `agent({ page: "static" })` | {@link mountPage} | the workflow HTTP API — no session, no socket, no mic |
+ * | a `workflowApp()` / `agent({ mode: "workflow-app" })` | {@link mountPage} | the workflow HTTP API — no session, no socket, no mic |
  *
  * There is no route to write and no glue file: the agent server already serves
  * both, so a component talks to a live agent directly. {@link createBrowserSession}

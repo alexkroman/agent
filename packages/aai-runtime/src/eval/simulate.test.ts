@@ -147,7 +147,7 @@ describe("simulateCall", () => {
     const agentLlm = scriptedAgentLlm({ steps: [[{ type: "text", text: "Hello from text." }]] });
     const callerLlm = installStubLlm(["hi", { tool: END_CALL_TOOL }]);
     const textAgent = await openEvalTextAgent({
-      agent: agent({ name: "Texty", text: true }),
+      agent: agent({ name: "Texty", mode: "text" }),
       llm: agentLlm.llm,
       providerEnv: agentLlm.providerEnv,
     });

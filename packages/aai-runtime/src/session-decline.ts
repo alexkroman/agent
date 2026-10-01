@@ -5,7 +5,7 @@
  * Split out of `server.ts` at the 500-line cap, and it is a real seam rather than
  * a slice: nothing here knows what a session is. Every path is a socket this
  * server has accepted and will not serve — a `createHostServer` whose
- * `/websocket` has no agent behind it, a `page: "static"` agent that has no voice
+ * `/websocket` has no agent behind it, a `mode: "workflow-app"` agent that has no voice
  * surface, and host mode being off.
  *
  * The rule they share is the one worth keeping: a refusal must SAY something.

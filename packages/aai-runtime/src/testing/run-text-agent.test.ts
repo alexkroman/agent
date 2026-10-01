@@ -28,7 +28,7 @@ function textAgent(def: Parameters<typeof agent>[0], tools: ToolRegistry = {}): 
 }
 
 const desk = (tools: ToolRegistry = {}) =>
-  textAgent({ name: "Desk", text: true, systemPrompt: "Be brief." }, tools);
+  textAgent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }, tools);
 
 describe("runTextAgent", () => {
   test("hands back what the agent said, per step and concatenated", async () => {

@@ -152,13 +152,15 @@ export function malformedOnError(handler: (err: unknown, ctx: never) => unknown)
 export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
   // Most host suites exercise the S2S transport through a mocked WebSocket,
   // and pre-dated the pipeline-by-default flip. Keep them on S2S explicitly
-  // (the descriptor the flip requires) unless the caller declares providers.
+  // (the mode and the descriptor it requires) unless the caller declares
+  // providers or a mode of its own.
   const declaresProviders =
     overrides != null &&
     (overrides.stt != null ||
       overrides.llm != null ||
       overrides.tts != null ||
-      overrides.s2s != null);
+      overrides.s2s != null ||
+      overrides.mode !== undefined);
   const base: AgentDef = {
     name: "test-agent",
     systemPrompt: "Be helpful.",
@@ -166,7 +168,7 @@ export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
     maxSteps: 5,
     tools: {},
   };
-  if (!declaresProviders) base.s2s = assemblyAIS2s();
+  if (!declaresProviders) Object.assign(base, { mode: "s2s", s2s: assemblyAIS2s() });
   return { ...base, ...overrides };
 }
 
@@ -529,7 +531,7 @@ export function createFixtureSession(agent: AgentDef, options?: { env?: Record<s
     agent:
       agent.stt != null || agent.llm != null || agent.tts != null || agent.s2s != null
         ? agent
-        : { ...agent, s2s: assemblyAIS2s() },
+        : { ...agent, mode: "s2s", s2s: assemblyAIS2s() },
     env: options?.env ?? {},
     logger: silentLogger,
   });

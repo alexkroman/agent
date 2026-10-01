@@ -122,7 +122,7 @@ the socket itself.
 - **Anything `listen()` does that is not the BIND is a bug** — it runs in dev
   and silently not in production. `listen()` is the bind plus the boot line.
 - **A serverless host gets no WebSocket** (`/websocket`, `/phone` unreachable);
-  the HTTP surface is unaffected, which is all a `page: "static"` app needs.
+  the HTTP surface is unaffected, which is all a `mode: "workflow-app"` app needs.
 - **`server.mjs` still calls `listen()`**: `npm start` owns its lifecycle
   (`PORT`, boot line, signal handlers). A serverless deployment is a second,
   tiny entry module, not a mode of that one.

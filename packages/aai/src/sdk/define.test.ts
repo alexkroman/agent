@@ -261,7 +261,7 @@ describe("agent()", () => {
   });
 
   test("agent with s2s descriptor resolves to mode 's2s'", () => {
-    const def = agent({ name: "t", systemPrompt: "p", s2s: assemblyAIS2s() });
+    const def = agent({ name: "t", systemPrompt: "p", mode: "s2s", s2s: assemblyAIS2s() });
     const parsed = toAgentConfig(def);
     expect(parsed.mode).toBe("s2s");
     expect(parsed.stt).toBeUndefined();
@@ -297,9 +297,9 @@ describe("agent()", () => {
   });
 
   test("`voice` combined with s2s throws", () => {
-    expect(() => agentMisuse({ name: "t", voice: "michael", s2s: assemblyAIS2s() })).toThrow(
-      /`voice` is pipeline-mode only/,
-    );
+    expect(() =>
+      agentMisuse({ name: "t", voice: "michael", mode: "s2s", s2s: assemblyAIS2s() }),
+    ).toThrow(/`voice` is .* no effect on a "s2s" agent/);
   });
 
   test("endpointing shorthand desugars to the default pipeline's STT descriptor", () => {
@@ -327,14 +327,14 @@ describe("agent()", () => {
   });
 
   test("endpointing shorthand combined with s2s throws", () => {
-    expect(() => agentMisuse({ name: "t", maxTurnSilenceMs: 4500, s2s: assemblyAIS2s() })).toThrow(
-      /S2S runs STT service-side/,
-    );
+    expect(() =>
+      agentMisuse({ name: "t", maxTurnSilenceMs: 4500, mode: "s2s", s2s: assemblyAIS2s() }),
+    ).toThrow(/`maxTurnSilenceMs` is .* no effect on a "s2s" agent/);
   });
 
   test("endpointing shorthand combined with text throws", () => {
-    expect(() => agentMisuse({ name: "t", maxTurnSilenceMs: 4500, text: true })).toThrow(
-      /a text agent has none/,
+    expect(() => agentMisuse({ name: "t", maxTurnSilenceMs: 4500, mode: "text" })).toThrow(
+      /`maxTurnSilenceMs` is .* no effect on a "text" agent/,
     );
   });
 
@@ -357,13 +357,13 @@ describe("workflowApp()", () => {
 
   test("declares the front door, so the field is the call rather than a thing to remember", () => {
     const def = workflowApp({ name: "Link Digest", workflows: { digest } });
-    expect(def.page).toBe("static");
+    expect(def.mode).toBe("workflow-app");
     expect(def.workflows).toEqual({ digest });
   });
 
   test("is `agent()` underneath — same definition, so nothing downstream sees a second shape", () => {
     const viaHelper = workflowApp({ name: "Link Digest", workflows: { digest } });
-    const viaAgent = agent({ name: "Link Digest", workflows: { digest }, page: "static" });
+    const viaAgent = agent({ name: "Link Digest", workflows: { digest }, mode: "workflow-app" });
     expect(viaHelper).toEqual(viaAgent);
   });
 

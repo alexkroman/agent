@@ -65,7 +65,7 @@ export function resolveEvalMode(
  * question.
  *
  * Split rather than folded in because the two gates read different fields and the
- * wrong one is silent: a `page: "static"` agent needs no provider credential, so
+ * wrong one is silent: a `mode: "workflow-app"` agent needs no provider credential, so
  * `evalCredentials` reports every workflow app ready and a keyless run goes LIVE
  * — then every case fails on a 401 three layers down. `evalWorkflowCredentials`
  * reads `requiredEnv`, which is the only thing a workflow app declares its

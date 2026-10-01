@@ -68,7 +68,7 @@ durable runs, no microphone — whose default template is
 Guest-side; the detail is "The coding agent is an ordinary `agent()`" in
 `packages/aai-guest-studio/CLAUDE.md`. Keep the prompt consistent with it:
 
-- `createTextAgent` with `text: true`, `MAX_CHAT_STEPS` = 80 plus a wall-clock
+- `createTextAgent` with `mode: "text"`, `MAX_CHAT_STEPS` = 80 plus a wall-clock
   turn budget.
 - Tools: list/read (windowed, numbered)/write/edit/delete, `glob`, `grep`,
   `bash` (guest token scrubbed), `todo_write`, `test_agent` (the ONE
