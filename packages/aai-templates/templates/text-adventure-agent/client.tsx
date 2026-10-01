@@ -12,7 +12,7 @@ import {
   useTheme,
 } from "@alexkroman1/aai-ui";
 import type { CSSProperties, ReactNode } from "react";
-import { gameStatus } from "./shared.ts";
+import { gameSlot } from "./shared.ts";
 
 const CSS = `
 @keyframes ic-flicker {
@@ -167,7 +167,7 @@ function Transcript() {
  * score it could not show at all.
  */
 function StatusBar() {
-  const { currentRoom, score, rank, moves } = useAgentState(gameStatus);
+  const { currentRoom, score, rank, moves } = useAgentState(gameSlot.projected);
   return (
     <div
       className="flex items-center justify-between px-5 py-2 text-[13px] font-bold tracking-wider shrink-0"

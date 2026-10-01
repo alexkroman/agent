@@ -1,6 +1,7 @@
 {
   "@alexkroman1/aai": [
     "AgentClientInbox",
+    "AgentDeclaration",
     "AgentGuardrails",
     "AgentInstructions",
     "AgentModelTuning",
@@ -80,10 +81,12 @@
     "StandardSchemaResult",
     "StandardSchemaV1",
     "StandardWebhookOptions",
+    "StateProjection",
     "StaticAgentParams",
     "StepOptions",
     "StepSchemaOptions",
     "SttProvider",
+    "SyncStateDeclaration",
     "ToolCompletionMessage",
     "ToolConditionOperator",
     "ToolDelayedMessage",
@@ -108,6 +111,7 @@
     "WaitForOptions",
     "WaitForSchemaOptions",
     "WebhookRouteOptions",
+    "WorkflowAppAgentParams",
     "WorkflowFailureContext",
     "WorkflowFailureHandler",
     "WorkflowFailureHook",

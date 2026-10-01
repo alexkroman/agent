@@ -1,7 +1,7 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { AutoScroll, mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import type { AssistantView, Triage } from "./shared.ts";
-import { assistantProjection } from "./shared.ts";
+import { assistantSlot } from "./shared.ts";
 
 /**
  * The Agent Inbox, rendered beside the call.
@@ -81,7 +81,7 @@ function EmailRow({ email }: { email: AssistantView["emails"][number] }) {
 }
 
 function InboxSidebar() {
-  const view = useAgentState(assistantProjection);
+  const view = useAgentState(assistantSlot.projected);
   const queued = view.emails.filter((email) => email.status !== "closed");
   const closed = view.emails.filter((email) => email.status === "closed");
 

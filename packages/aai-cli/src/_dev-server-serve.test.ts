@@ -56,6 +56,16 @@ describe("agentEnvWarnings", () => {
     expect(warnings[0]).toContain("STRIPE_KEY");
   });
 
+  test("an MCP tokenEnv and a keyed builtin's key are flagged without a requiredEnv entry", () => {
+    const agent = {
+      builtinTools: ["brave_search"],
+      mcpServers: { docs: { url: "https://mcp.example.com/mcp", tokenEnv: "DOCS_MCP_TOKEN" } },
+    };
+    const warnings = agentEnvWarnings(agent, { ASSEMBLYAI_API_KEY: "sk-env" }, {});
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("DOCS_MCP_TOKEN, BRAVE_API_KEY");
+  });
+
   test("a requiredEnv key present in .env is silent", () => {
     const agent = { requiredEnv: ["STRIPE_KEY"] };
     const env = { ASSEMBLYAI_API_KEY: "sk-env", STRIPE_KEY: "sk-env" };

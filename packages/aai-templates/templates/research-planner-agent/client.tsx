@@ -1,6 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { AutoScroll, Facts, mountClient, useAgentState } from "@alexkroman1/aai-ui";
-import { planProjection } from "./shared.ts";
+import { planSlot } from "./shared.ts";
 
 /**
  * The plan, ticking off.
@@ -10,7 +10,7 @@ import { planProjection } from "./shared.ts";
  * out. The sidebar is where that lives; the call is where the decisions happen.
  */
 function PlanSidebar() {
-  const plan = useAgentState(planProjection);
+  const plan = useAgentState(planSlot.projected);
 
   if (!plan.objective) {
     return (

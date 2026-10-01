@@ -51,24 +51,26 @@
 import type { AgentSessionContext } from "./agent-session-context.ts";
 
 /**
- * Compute the agent's instructions for the request about to be assembled.
+ * A system-prompt resolver — the function half of {@link AgentSystemPrompt}.
  *
- * Synchronous: the request is being built, and there is no point at which a
- * promise could be awaited without putting a round trip in front of every turn.
- * Work that needs awaiting belongs in a tool, whose result the next request
- * carries.
- *
+ * @deprecated Name {@link AgentSystemPrompt} (what `agent({ systemPrompt })`
+ * takes); for the function alone, `Exclude<AgentSystemPrompt, string>`.
+ * Identical type.
  * @public
  */
-export type AgentInstructions = (ctx: AgentSessionContext) => string;
+export type AgentInstructions = Exclude<AgentSystemPrompt, string>;
 
 /**
  * What `agent({ systemPrompt })` accepts: the text, or a function that answers
- * it per request.
+ * it per request from the live {@link AgentSessionContext}.
  *
- * A plain string is byte-identical to what shipped before resolvers existed —
- * it is not called, not wrapped, and reaches `buildSystemPrompt` as it always
- * did.
+ * The function is SYNCHRONOUS: the request is being built, and there is no
+ * point at which a promise could be awaited without putting a round trip in
+ * front of every turn. Work that needs awaiting belongs in a tool, whose result
+ * the next request carries.
+ *
+ * A plain string is not called or wrapped; it reaches `buildSystemPrompt`
+ * as written.
  *
  * ## With a `system-prompt.md`
  *
@@ -95,7 +97,7 @@ export type AgentInstructions = (ctx: AgentSessionContext) => string;
  *
  * @public
  */
-export type AgentSystemPrompt = string | AgentInstructions;
+export type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 /**
  * The static half of an {@link AgentSystemPrompt}, or `undefined` for a
@@ -127,12 +129,12 @@ export function staticSystemPrompt(prompt: AgentSystemPrompt | undefined): strin
  *
  * Narrowed for the reason above, and here it also retires this module's only
  * cast: with the union as the parameter, `typeof prompt === "function"` IS the
- * narrowing to {@link AgentInstructions}.
+ * narrowing to the function half of {@link AgentSystemPrompt}.
  *
  * @internal
  */
 export function systemPromptResolver(
   prompt: AgentSystemPrompt | undefined,
-): AgentInstructions | undefined {
+): Exclude<AgentSystemPrompt, string> | undefined {
   return typeof prompt === "function" ? prompt : undefined;
 }

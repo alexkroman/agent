@@ -17,7 +17,6 @@ import { PLAYER_SYSTEM, playerPrompt } from "./player.ts";
 import {
   currentWord,
   GAME_SECONDS,
-  gameProjection,
   gameSlot,
   gameView,
   secondsLeft,
@@ -337,7 +336,7 @@ describe("a round", () => {
   });
 
   test("an untouched session projects the idle frame the client renders first", () => {
-    expect(gameProjection()).toMatchObject({
+    expect(gameSlot.projected()).toMatchObject({
       phase: "idle",
       word: null,
       score: 0,

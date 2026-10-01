@@ -47,13 +47,7 @@
  * renders the number.
  */
 
-import type {
-  DeepReadonly,
-  SessionEventHandlers,
-  SlotCaps,
-  SlotHolder,
-  StateProjection,
-} from "@alexkroman1/aai";
+import type { DeepReadonly, SessionEventHandlers, SlotCaps, SlotHolder } from "@alexkroman1/aai";
 import { sessionSlot } from "@alexkroman1/aai";
 import { containsWord } from "./guess.ts";
 
@@ -132,7 +126,7 @@ export function newGame(): GameState {
 const GAME_CAPS: SlotCaps<GameState> = { descriptions: 12, spoken: 12, wrongGuesses: 10 };
 
 /** The round, as one typed slot. */
-export const gameSlot = sessionSlot("game", newGame, { caps: GAME_CAPS });
+export const gameSlot = sessionSlot("game", newGame, { view: gameView, caps: GAME_CAPS });
 
 /**
  * The describer's own words, recorded as the runtime commits them.
@@ -253,11 +247,3 @@ export function gameView(game: FrozenGameState): GameView {
     wrongGuesses: game.wrongGuesses,
   };
 }
-
-/**
- * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in
- * the client. Annotated because {@link StateProjection} is the contract at that
- * seam — one declaration naming the frame the scoreboard renders, so the two
- * ends cannot drift and neither has to infer it from the other.
- */
-export const gameProjection: StateProjection<GameView> = gameSlot.projection(gameView);

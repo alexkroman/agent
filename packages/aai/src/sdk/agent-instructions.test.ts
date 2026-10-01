@@ -8,10 +8,13 @@
 // rejects.
 
 import { describe, expect, test } from "vitest";
-import type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.ts";
+import type { AgentSystemPrompt } from "./agent-instructions.ts";
 import { staticSystemPrompt, systemPromptResolver } from "./agent-instructions.ts";
 import type { AgentSessionContext } from "./agent-session-context.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
+
+/** The function half of `AgentSystemPrompt` (the deprecated `AgentInstructions`). */
+type Resolver = Exclude<AgentSystemPrompt, string>;
 
 const CTX: AgentSessionContext = {
   sessionId: "s-1",
@@ -19,7 +22,7 @@ const CTX: AgentSessionContext = {
   slots: createDetachedSlotStore(),
 };
 
-const resolver: AgentInstructions = (ctx) => `Session ${ctx.sessionId}, tier ${ctx.env.TIER}.`;
+const resolver: Resolver = (ctx) => `Session ${ctx.sessionId}, tier ${ctx.env.TIER}.`;
 
 describe("the two halves are EXCLUSIVE — exactly one answers for any prompt", () => {
   test("a plain string is static and has no resolver", () => {
@@ -81,7 +84,7 @@ describe("the resolver it hands back is the author's own function", () => {
     // A nullary resolver could vary the prompt by wall-clock time and nothing
     // else. Reading a slot is what lets it say "this caller is authenticated".
     const seen: AgentSessionContext[] = [];
-    const recording: AgentInstructions = (ctx) => {
+    const recording: Resolver = (ctx) => {
       seen.push(ctx);
       return "ok";
     };

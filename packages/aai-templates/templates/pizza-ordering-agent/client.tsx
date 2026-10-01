@@ -1,7 +1,7 @@
 import { formatMoney } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
 import { Facts, mountClient, useAgentState } from "@alexkroman1/aai-ui";
-import { orderProjection, pizzaPrice } from "./shared.ts";
+import { orderSlot, pizzaPrice } from "./shared.ts";
 
 function PizzaIcon({ size }: { size: string }) {
   const dim = size === "small" ? 36 : size === "large" ? 52 : 44;
@@ -25,7 +25,7 @@ function OrderSidebar() {
   // tool call. This replaced ~45 lines that rebuilt the cart by diffing
   // added/removed/updated events — where one missed event desynced the view
   // for the rest of the session.
-  const order = useAgentState(orderProjection);
+  const order = useAgentState(orderSlot.projected);
 
   if (order.orderPlaced) {
     return (

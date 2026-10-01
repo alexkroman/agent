@@ -1,5 +1,4 @@
 import { agent } from "@alexkroman1/aai";
-import { storeView } from "./shared.ts";
 import { callFlow, gateFor, record, retailSlot } from "./store.ts";
 
 export default agent({
@@ -40,13 +39,13 @@ export default agent({
 
   // The store lives in one `sessionSlot` (`store.ts`), a pristine copy per
   // session — callers must not see each other's cancellations. Nothing declares
-  // it here: the slot installs itself on first access, and its `projection`
-  // below is what gives a session that has run no tool something to render.
+  // it here: the slot installs itself on first access, and its `projected`
+  // view below is what gives a session that has run no tool something to render.
 
   // One projection pushed after every tool call. It is a projection, not a
   // flag, because the state holds all six seeded customers and only the
-  // authenticated one may reach the browser.
-  syncState: { retail: retailSlot.projection(storeView) },
+  // authenticated one may reach the browser (`storeView`, the slot's view).
+  syncState: retailSlot.projected,
 
   /**
    * Declaring the flow is what lets the CALL move it, not just a tool.

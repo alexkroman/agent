@@ -58,7 +58,7 @@ const ProjectedPlan = z.object({
 /**
  * The latest `syncState` frame — what the browser would be rendering.
  *
- * `planProjection` rides out on `state.updated` after every tool call, so this
+ * `planSlot.projected` rides out on `state.updated` after every tool call, so this
  * is how an eval sees the plan at all: the session hands back events, and the
  * projection is the one of them that carries state. `lastStateIn` is the SDK's
  * reader for exactly this.

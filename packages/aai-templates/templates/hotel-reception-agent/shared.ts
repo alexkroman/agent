@@ -28,7 +28,7 @@
  * | `record_followup`, `take_guest_message`, `dispatch_emergency`, … (write-only tables) | {@link Ticket}s on the slot, rendered by `client.tsx` |
  * | a caller who rings off mid-booking (their `abandoned_booking` followup) | `events.ts`, on `agent({ events })` — the one write no tool can make |
  * | `HOTEL_TODAY=2026-06-08` (the simulation pin) | {@link TODAY}, fixed |
- * | `ui_view.py` (SQLite changesets streamed to the playground) | `deskView`, pushed by `syncState` via `session.ts`'s `deskProjection` |
+ * | `ui_view.py` (SQLite changesets streamed to the playground) | `deskView`, pushed by `syncState` via `session.ts`'s `hotelSlot.projected` |
  *
  * **The LLM never owns a money value**, which is their README's first
  * sentence and this port's too: every total comes out of {@link computeInvoice},

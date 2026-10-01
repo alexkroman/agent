@@ -11,8 +11,9 @@
  * details, rating, price level, hours — is a cost decision this module makes
  * once, and it is the set a voice agent actually reads out.
  *
- * The key handling — agent env only, not derived into `requiredEnv` — is
- * `_keyed-api.ts`'s, shared with `brave_search`.
+ * The key handling — agent env only, derived into the deploy's env check by
+ * `BUILTIN_TOOL_ENV` (`sdk/derived-env.ts`) — is `_keyed-api.ts`'s, shared
+ * with `brave_search`.
  *
  * **"Near me" means the client's location when it reported one.** A session
  * opened with `?location=` (see `session-location.ts`) gets its address

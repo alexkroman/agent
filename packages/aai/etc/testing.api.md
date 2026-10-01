@@ -9,9 +9,6 @@ import type { EventFromLogic } from 'xstate';
 import { z } from 'zod';
 
 // @public
-type AgentInstructions = (ctx: AgentSessionContext) => string;
-
-// @public
 type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
 
 // @public @sealed
@@ -22,7 +19,7 @@ interface AgentSessionContext {
 }
 
 // @public
-type AgentSystemPrompt = string | AgentInstructions;
+type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 // @public
 type AnyDialog = Dialog<AnyStateMachine, unknown>;

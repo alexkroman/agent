@@ -16,7 +16,7 @@ import {
   useAgentState,
 } from "@alexkroman1/aai-ui";
 import type { DispatchState, IncidentSummary, Severity, Status } from "./shared.ts";
-import { dashboardProjection } from "./shared.ts";
+import { dispatchSlot } from "./shared.ts";
 
 /*
  * The board's own motion: the slide a new card and a new bubble make. The pulse
@@ -324,7 +324,7 @@ function App() {
   // It is the ONLY subscription at this level: the session reads that used to
   // sit beside it moved into the four components above, so a partial transcript
   // no longer re-renders the incident cards.
-  const dash = useAgentState(dashboardProjection);
+  const dash = useAgentState(dispatchSlot.projected);
 
   const incidentList = [...dash.incidents].reverse();
   const activeIncidents = incidentList.filter((i) => i.status !== "resolved");

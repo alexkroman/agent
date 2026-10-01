@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
-import { frontDoorOf } from "@alexkroman1/aai/internal";
+import { agentRequiredEnv, frontDoorOf } from "@alexkroman1/aai/internal";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { omitUndefined, plural } from "@alexkroman1/aai/utils";
 // One static import: the runtime barrel is already loaded for the helpers
@@ -66,21 +66,21 @@ import { buildWorker } from "./worker-bundler.ts";
  * - a provider key found only in the shell → works here (the
  *   `withHostCredentialFallback` ergonomic) but is invisible to `aai deploy`,
  *   which uploads `.env` — the classic "works locally, dead on deploy";
- * - a declared `requiredEnv` key absent from `.env` → `ctx.env` won't contain
- *   it at all: custom keys never fall back to the shell, so a shell export
- *   can't mask one that would be missing both here and after deploy.
+ * - a `requiredEnv` key, MCP `tokenEnv` or keyed builtin's key absent from
+ *   `.env` → `ctx.env` won't contain it at all: custom keys never fall back to
+ *   the shell, so a shell export can't mask one missing here and after deploy.
  */
 export function agentEnvWarnings(
   // `mode` because a workflow app needs no provider credential at all — see
-  // `requiredProviderEnvVars`. Omitted here, every workflow app was warned
-  // about an AssemblyAI key it never dials.
-  agentDef: Pick<AgentDef, "stt" | "llm" | "tts" | "s2s" | "requiredEnv" | "mode">,
+  // `requiredProviderEnvVars`.
+  agentDef: Pick<
+    AgentDef,
+    "stt" | "llm" | "tts" | "s2s" | "requiredEnv" | "mode" | "mcpServers" | "builtinTools"
+  >,
   env: Record<string, string>,
   shellEnv: Record<string, string | undefined> = process.env,
 ): string[] {
-  // Derived from the provider registries rather than matched against hardcoded
-  // kinds, so a new provider needs no change here and nothing is missed. (The
-  // previous check looked only at `stt`/`llm` and only for AssemblyAI.)
+  // Derived from the provider registries, so a new provider needs no change here.
   const required = requiredProviderEnvVars(agentDef);
   const warnings: string[] = [];
 
@@ -101,10 +101,11 @@ export function agentEnvWarnings(
     );
   }
 
-  const declared = (agentDef.requiredEnv ?? []).filter((name) => !env[name]);
+  const declared = agentRequiredEnv(agentDef).filter((name) => !env[name]);
   if (declared.length > 0) {
     warnings.push(
-      `Missing requiredEnv ${plural(declared.length, "key")} declared by the agent: ` +
+      `Missing ${plural(declared.length, "key")} the agent declares (requiredEnv, an MCP ` +
+        "tokenEnv or a keyed builtin): " +
         `${declared.join(", ")}. Set ${plural(declared.length, "it", "them")} in .env — ` +
         `ctx.env will not contain ${plural(declared.length, "it", "them")} otherwise.`,
     );
@@ -255,7 +256,6 @@ export async function startDevServer(
   const vitePort = port;
 
   // When no custom client.tsx, serve the pre-built default aai-ui client.
-  // Resolved once — the location can't change for the process lifetime.
   const clientDirOpt = hasClient ? {} : { clientDir: defaultClientDir() };
 
   // One eval memo for the server's lifetime — a no-op save re-uses the
@@ -457,8 +457,7 @@ export async function startDevServer(
     : undefined;
 
   // Set once the backend has bound but before the supervisor owns it: if Vite
-  // then fails to boot, this is the only handle on a server already holding
-  // the port, and startDevServer throws. It used to leak.
+  // then fails to boot, this is the only handle on a server holding the port.
   let boundServer: DevBackend | undefined;
   try {
     const initialServer = await buildServer();
@@ -470,8 +469,7 @@ export async function startDevServer(
 
     if (hasClient) {
       const { createServer: createViteServer } = await import("vite");
-      // No `vite.config.*` in the project: the React + Tailwind pair the
-      // scaffold's config used to declare, from the project's own deps.
+      // No `vite.config.*` in the project: React + Tailwind from its own deps.
       const clientPlugins = (await defaultClientPlugins(cwd)) ?? [];
       viteServer = await createViteServer(viteDevConfig(cwd, vitePort, backendPort, clientPlugins));
       await viteServer.listen();

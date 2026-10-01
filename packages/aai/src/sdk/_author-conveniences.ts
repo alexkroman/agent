@@ -46,7 +46,7 @@ export function normalizeAgentParams(input: unknown): unknown {
   assertModeFields(mode, rest);
   rest.mode = mode;
   if (typeof rest.llm === "string") rest.llm = normalizeLlm(rest.llm);
-  assertSyncStateRecord(rest.syncState);
+  if (rest.syncState !== undefined) rest.syncState = normalizeSyncState(rest.syncState);
   normalizeEndpointing(rest);
   // AFTER the desugaring, and over `rest.stt` rather than over the two
   // shorthands: the same contradiction is expressible on an explicit
@@ -99,33 +99,50 @@ function takeNumber(group: Record<string, unknown>, key: string): number | undef
 }
 
 /**
- * `syncState` is a record keyed by SLOT NAME, and each key must be its
- * projection's own slot key — the browser selects by that name, so a key that
- * disagrees with the slot it projects would publish one name and render
- * another. A bare projection or an array (the forms the record replaced) is
- * refused with the spelling to write instead.
+ * `syncState` → the canonical record keyed by SLOT NAME, which is what the
+ * `agent_state` frame and the browser select by.
+ *
+ * Accepts a projection, a list of them, or the deprecated record (whose keys
+ * must equal each projection's own slot key — a key that disagreed would
+ * publish one name and render another). Idempotent: the record it returns is
+ * accepted unchanged, since `toAgentConfig` also sees `agent()`'s output.
  */
-function assertSyncStateRecord(syncState: unknown): void {
-  if (syncState === undefined) return;
+function normalizeSyncState(syncState: unknown): Record<string, unknown> {
   const isProjection = (value: unknown): value is { key: unknown } =>
     typeof value === "function" && "key" in value;
-  if (isProjection(syncState) || Array.isArray(syncState)) {
-    const sample = isProjection(syncState) ? String(syncState.key) : "cart";
-    throw new Error(
-      `\`syncState\` takes a record keyed by slot name — write \`syncState: { ${sample}: ${sample}Slot.projected }\`, one entry per slot.`,
-    );
+  const sample =
+    "`syncState: cartSlot.projected` or `syncState: [cartSlot.projected, prefsSlot.projected]`";
+  if (isProjection(syncState)) return { [String(syncState.key)]: syncState };
+  if (Array.isArray(syncState)) {
+    const record: Record<string, unknown> = {};
+    syncState.forEach((projection: unknown, index) => {
+      if (!isProjection(projection)) {
+        throw new Error(
+          `\`syncState[${index}]\` is not a slot projection — pass a slot's \`.projected\` (declare the view with \`sessionSlot(key, create, { view })\`).`,
+        );
+      }
+      const key = String(projection.key);
+      if (key in record) {
+        throw new Error(
+          `\`syncState\` projects the "${key}" slot twice — a slot has ONE view on the wire; derive a second shape from it in the page.`,
+        );
+      }
+      record[key] = projection;
+    });
+    return record;
   }
   if (!isRecord(syncState)) {
-    throw new Error("`syncState` takes a record keyed by slot name, of slot projections.");
+    throw new Error(`\`syncState\` takes a slot projection or a list of them — write ${sample}.`);
   }
   for (const [name, projection] of Object.entries(syncState)) {
     if (!isProjection(projection)) {
-      throw new Error(`\`syncState.${name}\` is not a slot projection (use \`slot.projected\`).`);
+      throw new Error(`\`syncState.${name}\` is not a slot projection — write ${sample}.`);
     }
     if (projection.key !== name) {
       throw new Error(
-        `\`syncState.${name}\` projects the "${String(projection.key)}" slot — key it by that slot's name: \`${String(projection.key)}: …\`.`,
+        `\`syncState.${name}\` projects the "${String(projection.key)}" slot — pass the projection itself (\`syncState: [${String(projection.key)}Slot.projected]\`), which needs no key.`,
       );
     }
   }
+  return syncState;
 }

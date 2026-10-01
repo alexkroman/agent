@@ -155,27 +155,17 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    * What this slot shows the BROWSER — declared here so it is written once and
    * read from both ends as {@link SessionSlot.projected}.
    *
-   * `agent({ syncState: { cart: cartSlot.projected } })` and
+   * `agent({ syncState: cartSlot.projected })` and
    * `useAgentState(cartSlot.projected)` are then the same object, so the frame
    * the server pushes and the frame the page renders before the first push
-   * cannot disagree. That drift is what this field exists to remove:
-   * {@link SessionSlot.projection} is a METHOD, so the projection is a value
-   * somebody has to name, export and import at both ends — and every shipped
-   * example that got it right did so by exporting
-   * `export const cartProjection = cartSlot.projection(cartView)` from a
-   * `shared.ts`, eight of them also hand-writing the `StateProjection<V>`
-   * annotation that follows from the view.
-   *
-   * It also makes the memoization caveat on `useAgentState` evaporate for this
-   * path: `projected` is built ONCE, at declaration, so it is identity-stable
-   * for the life of the module and a projection spelled inline in a render body
-   * is not something this spelling can express.
+   * cannot disagree, and the projection is identity-stable for the life of
+   * the module.
    *
    * **Absent, the WHOLE value is projected.** Declare a view to narrow it — to
    * what the page renders, rather than to whatever the slot happens to hold.
    *
-   * `syncState` takes ONE projection per slot, keyed by the slot's name; a
-   * page that needs a second shape of the same slot derives it from this one.
+   * `syncState` takes ONE projection per slot; a page that needs a second
+   * shape of the same slot derives it from this one.
    *
    * ```ts
    * import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -185,7 +175,7 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    *   view: (cart) => ({ count: cart.items.length }),
    * });
    *
-   * export default agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
+   * export default agent({ name: "Shop", syncState: cartSlot.projected });
    * ```
    */
   view?: (value: DeepReadonly<T>) => V;

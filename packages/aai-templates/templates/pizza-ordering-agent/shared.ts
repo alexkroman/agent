@@ -1,4 +1,4 @@
-import { type DeepReadonly, type StateProjection, sessionSlot } from "@alexkroman1/aai";
+import { type DeepReadonly, sessionSlot } from "@alexkroman1/aai";
 import { formatMoney, roundMoney, type ToolFailure, toolFailure } from "@alexkroman1/aai/utils";
 
 export const SIZES = ["small", "medium", "large"] as const;
@@ -127,7 +127,7 @@ export function emptyOrder(): OrderState {
 }
 
 /** The session's cart, as one typed slot. */
-export const orderSlot = sessionSlot("order", emptyOrder);
+export const orderSlot = sessionSlot("order", emptyOrder, { view: orderView });
 
 /**
  * The running cart, as every tool that touches it reports it back.
@@ -223,13 +223,3 @@ export function orderView(order: FrozenOrderState): OrderView {
       : {}),
   };
 }
-
-/**
- * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the
- * client.
- *
- * Annotated rather than left to inference because this is the WIRE contract —
- * `StateProjection<OrderView>` is what a reader of `client.tsx` has to know the
- * browser is handed, and it is stated here, at the one place both ends import.
- */
-export const orderProjection: StateProjection<OrderView> = orderSlot.projection(orderView);

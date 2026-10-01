@@ -5566,7 +5566,7 @@ See [ToolContext.speech](index.md#speech-2). Defaults to the recorder behind `Te
 optional workflows?: ToolContext["workflows"];
 ```
 
-See [ToolContext.workflows](index.md#workflows-3). Defaults to a client whose every method rejects.
+See [ToolContext.workflows](index.md#workflows-4). Defaults to a client whose every method rejects.
 
 ***
 

@@ -76,7 +76,7 @@ export type ToolContext = {
   /**
    * Environment variables available to this agent's tools (from `.env` under
    * `aai dev`, `aai secret` in production). Custom keys a tool depends on
-   * should be declared in {@link AgentDef.requiredEnv} so a missing value
+   * should be declared in {@link AgentDeclaration.requiredEnv} so a missing value
    * fails at deploy time.
    *
    * **`Partial`, so every read is `string | undefined`.** A variable that was

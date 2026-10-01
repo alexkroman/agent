@@ -357,6 +357,7 @@ export const DEFAULT_STATE: GameState = {
 const GAME_CAPS: SlotCaps<GameState> = { sessionLog: MAX_LOG_ENTRIES };
 
 export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE), {
+  view: gameView,
   // The derived-field recalculation every mutating tool used to have to
   // remember. It was written out by hand in `applyConsequences`,
   // `revertConsequences` and `update_state`, which is the shape `after` exists
@@ -385,13 +386,11 @@ export interface StoryArcView {
 /**
  * What the browser is sent, which is NOT the whole campaign.
  *
- * This was `gameSlot.projection((game) => game)`, argued as "this campaign IS
- * what the client renders, so there is nothing to trim". It isn't: the sidebar
- * reads 26 of ~35 fields and touches none of the seven dropped here, and of the
- * blueprint it uses only the act COUNT and the current act's phase — so every
- * unplayed act's goal and mood rode in every `syncState` frame. The projection
- * seam is the only defence there is, since slot state is otherwise server-side,
- * and a spoiler leak is invisible in the UI and permanent once someone opens
+ * The sidebar reads 26 of ~35 fields and none of the seven dropped here, and of
+ * the blueprint only the act COUNT and the current act's phase — an unplayed
+ * act's goal and mood must never ride a `syncState` frame. The slot's view is
+ * the only defence there is (slot state is otherwise server-side), and a
+ * spoiler leak is invisible in the UI and permanent once someone opens
  * devtools.
  */
 export function gameView(game: FrozenGameState) {
@@ -418,9 +417,6 @@ export function gameView(game: FrozenGameState) {
       : null,
   };
 }
-
-/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
-export const gameProjection = gameSlot.projection(gameView);
 
 // ── The story, as a machine ──────────────────────────────────────────────────
 

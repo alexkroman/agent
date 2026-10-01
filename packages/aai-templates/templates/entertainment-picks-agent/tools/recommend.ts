@@ -64,7 +64,7 @@ export default nightSlot.updateTool({
       picks: PICKS[args.category][args.mood],
     };
     // APPENDED, so the log reads in the order the night happened. The slot's
-    // `caps` trims the front when it bites, and `nightProjection` is what turns
+    // `caps` trims the front when it bites, and `nightSlot.projected` is what turns
     // it around for the sidebar — `shared.ts` carries both halves.
     night.recs.push(result);
     // A NUDGE, not state: shown once, when the third pick lands. It is a

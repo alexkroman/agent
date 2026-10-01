@@ -229,6 +229,7 @@ const CAPS: SlotCaps<AssistantState> = {
  * leave `openId` pointing at it.
  */
 export const assistantSlot = sessionSlot("assistant", seedAssistant, {
+  view: assistantView,
   after: (state) => {
     const open = state.openId ? findEmail(state.emails, state.openId) : undefined;
     if (!open || open.status === "closed") {
@@ -483,6 +484,3 @@ export function assistantView(state: FrozenAssistantState): AssistantView {
     log: state.log,
   };
 }
-
-/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
-export const assistantProjection = assistantSlot.projection(assistantView);

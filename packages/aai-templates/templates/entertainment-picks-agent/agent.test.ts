@@ -15,7 +15,7 @@ import {
 // takes the same guard from the same place.
 import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
-import { CATEGORIES, MAX_RECS, MOODS, nightProjection, nightSlot } from "./shared.ts";
+import { CATEGORIES, MAX_RECS, MOODS, nightSlot } from "./shared.ts";
 import recommend from "./tools/recommend.ts";
 import revisit from "./tools/revisit.ts";
 
@@ -95,9 +95,9 @@ describe("entertainment-picks-agent template", () => {
   });
 
   test("the projection an untouched session pushes is an empty log", () => {
-    // What `useAgentState(nightProjection)` reads before the first tool call —
+    // What `useAgentState(nightSlot.projected)` reads before the first tool call —
     // derived from the slot's own default rather than guessed at in the page.
-    expect(nightProjection()).toEqual({ recs: [] });
+    expect(nightSlot.projected()).toEqual({ recs: [] });
   });
 });
 
@@ -115,7 +115,7 @@ describe("recommend", () => {
     const ctx = createToolContext();
     const first = await run("recommend", { category: "book", mood: "spooky" }, ctx);
     const second = await run("recommend", { category: "music", mood: "chill" }, ctx);
-    expect(nightProjection(nightSlot.get(ctx))).toEqual({ recs: [second, first] });
+    expect(nightSlot.projected(nightSlot.get(ctx))).toEqual({ recs: [second, first] });
     // The two orders are DIFFERENT and both are deliberate: the slot keeps the
     // night in the order it happened, which is what a position word means and
     // which end `caps` trims; newest-first is the sidebar's, and the projection
@@ -212,7 +212,7 @@ describe("revisit", () => {
     // The distinction is the whole reason the two orders are separate: the
     // sidebar's top card is the newest, and a listener saying "the last one you
     // gave me" means that same pick from the other end.
-    expect(nightProjection(nightSlot.get(ctx)).recs[0]).toMatchObject({ category: "music" });
+    expect(nightSlot.projected(nightSlot.get(ctx)).recs[0]).toMatchObject({ category: "music" });
     expect(await run("revisit", { which: "the last one" }, ctx)).toMatchObject({
       category: "music",
       mood: "chill",
@@ -264,9 +264,9 @@ describe("revisit", () => {
     // because the guarantee is the reason to declare a read tool as one.
     const ctx = createToolContext();
     await threePicks(ctx);
-    const before = nightProjection(nightSlot.get(ctx));
+    const before = nightSlot.projected(nightSlot.get(ctx));
     await run("revisit", { which: "the first one" }, ctx);
     await run("revisit", { which: "nothing like this" }, ctx);
-    expect(nightProjection(nightSlot.get(ctx))).toEqual(before);
+    expect(nightSlot.projected(nightSlot.get(ctx))).toEqual(before);
   });
 });

@@ -20,7 +20,7 @@ import {
   GROUNDED_SYSTEM,
   REWRITE_SYSTEM,
 } from "./prompts.ts";
-import { ASKED_CAP, supportProjection, supportSlot, supportView } from "./shared.ts";
+import { ASKED_CAP, supportSlot, supportView } from "./shared.ts";
 /** The tool FILES themselves: a file's default export is the very object
  *  `agentDef` registers under its name, and handing it to `runTool` is what
  *  types the call's arguments and its result. */
@@ -434,7 +434,7 @@ describe("supportView projection", () => {
   test("an untouched call projects an empty trace, not undefined", () => {
     // Exactly the frame `client.tsx` renders before the first push — it passes
     // this same projection to `useAgentState`.
-    expect(supportProjection()).toMatchObject({
+    expect(supportSlot.projected()).toMatchObject({
       product: "Meridian Fibre",
       trace: null,
       asked: [],

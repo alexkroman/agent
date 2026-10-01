@@ -1,7 +1,7 @@
 import { plural } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
 import { AutoScroll, Facts, mountClient, useAgentState } from "@alexkroman1/aai-ui";
-import { PRODUCT, supportProjection } from "./shared.ts";
+import { PRODUCT, supportSlot } from "./shared.ts";
 
 /**
  * The graph, as it ran for the last question.
@@ -12,7 +12,7 @@ import { PRODUCT, supportProjection } from "./shared.ts";
  * support line nobody can tell apart from one that just guesses well.
  */
 function TraceSidebar() {
-  const support = useAgentState(supportProjection);
+  const support = useAgentState(supportSlot.projected);
   const trace = support.trace;
 
   return (

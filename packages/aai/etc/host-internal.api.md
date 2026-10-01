@@ -109,9 +109,6 @@ export type AgentEnv = Record<string, string> & {
 // @public
 type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
-// @public
-type AgentInstructions = (ctx: AgentSessionContext) => string;
-
 // @internal
 export function agentInstructionsSection(instructions: string): string;
 
@@ -123,7 +120,7 @@ interface AgentSessionContext {
 }
 
 // @public
-type AgentSystemPrompt = string | AgentInstructions;
+type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -1789,7 +1786,7 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @internal
-export function systemPromptResolver(prompt: AgentSystemPrompt | undefined): AgentInstructions | undefined;
+export function systemPromptResolver(prompt: AgentSystemPrompt | undefined): Exclude<AgentSystemPrompt, string> | undefined;
 
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;

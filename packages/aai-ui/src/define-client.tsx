@@ -138,7 +138,13 @@ export type ClientHandle = {
 export function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
   if (typeof target !== "string") return target;
   const el = document.querySelector<HTMLElement>(target);
-  if (!el) throw new Error(`Element not found: ${target}`);
+  if (!el) {
+    throw new Error(
+      `Element not found: ${target} — no element matches that selector when the mount runs. ` +
+        `Add \`<div id="app"></div>\` (or the element your selector names) to the page before the script, ` +
+        "or pass the element itself as the mount's `target` option.",
+    );
+  }
   return el;
 }
 
