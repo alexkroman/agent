@@ -140,8 +140,8 @@ with role 'tool' must be a response to a preceding message with 'tool_calls'",
 Anthropic with an unexpected-`tool_result` error — so every turn for the rest of
 the call would fail at the provider and the caller would hear `errorPhrase`
 instead of a reply. `evictLlm` (the memory retention) never cuts between a call
-and its result, so it cannot make that shape; the seed filter is the other half of that
-invariant.
+and its result, so it cannot make that shape; the seed filter is the other half
+of that invariant.
 
 **What a resume DOES seed is the pair, built from both halves.**
 `modelHistoryOf` (`session-event-history.ts`) joins each `tool` message to the
