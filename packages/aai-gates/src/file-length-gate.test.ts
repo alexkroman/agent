@@ -4,7 +4,7 @@
  * Guards the HEADROOM half of `scripts/check-file-length.mjs`.
  *
  * The cap itself has never been the expensive part. What costs time is
- * learning about it late: a file already at 500 lines is one the next feature
+ * learning about it late: a file already at its cap is one the next feature
  * has to split, and a split discovered mid-change lands as an unrelated
  * refactor inside a diff that was about something else. Branches here have
  * carried several of those — "moved X into its own module to stay under the
@@ -145,8 +145,8 @@ function block(opener: string): string {
 describe("check-file-length", () => {
   test("the script is present and declares its caps", () => {
     expect(script, "scripts/check-file-length.mjs not found").toBeTypeOf("string");
-    expect(constant("SOURCE_MAX")).toBe(500);
-    expect(constant("TEST_MAX")).toBe(700);
+    expect(constant("SOURCE_MAX")).toBe(900);
+    expect(constant("TEST_MAX")).toBe(1200);
   });
 
   test("the warn ratio leaves a margin worth acting on", () => {
@@ -166,8 +166,8 @@ describe("check-file-length", () => {
 
   test("headroom is measured against a grandfathered file's own ceiling", () => {
     // A file in the allowlist may not pass ITS ceiling, which is the number it
-    // has left — measuring against the 500/700 cap would report an allowlisted
-    // 800-line file as 300 lines over budget and never as approaching a limit.
+    // has left — measuring against the 900/1200 cap would report an allowlisted
+    // 1200-line source file as 300 lines over budget and never as approaching a limit.
     expect(script).toMatch(/remaining: ceiling - lines/);
     expect(script).toMatch(/const ceiling = path in allowlist \? allowlist\[path\] : cap/);
   });
