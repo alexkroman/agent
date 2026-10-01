@@ -8172,6 +8172,7 @@ export function buildClientConfig(source: {
     greeting?: string | undefined;
     sessionUrl?: string | undefined;
     page?: "voice" | "static" | undefined;
+    sessionToken?: string | undefined;
 }): ClientConfigResponse;
 
 // @public
@@ -8198,6 +8199,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>;
+    sessionToken: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
 // @public
@@ -8475,10 +8477,19 @@ export const RestoredToolCallSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+
+// @public
 export const SESSION_COMMAND_TYPES: ReadonlySet<string>;
 
 // @public
 export const SESSION_EVENT_TYPES: ReadonlySet<string>;
+
+// @public
+export const SESSION_PROTOCOL = "aai.session";
+
+// @public
+export const SESSION_TICKET_HEADER = "aai-session-ticket";
 
 // @public
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
@@ -12584,6 +12595,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>;
+    sessionToken: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
 // @public
@@ -15902,6 +15914,9 @@ export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
 // @public
 export const MAX_WORKFLOW_RUN_LABEL_CHARS = 200;
 
+// @internal
+export function mintPlatformSessionTicket(input: PlatformTicketInput): string;
+
 // @public
 export function normalizeRunLabel(value: unknown): string | undefined;
 
@@ -15931,6 +15946,9 @@ export const PLATFORM_ROUTES: {
 
 // @internal
 export const PLATFORM_SOCKET_PATH = "/platform-socket";
+
+// @internal
+export const PLATFORM_TICKET_RESUME_GRACE_SECONDS: number;
 
 // @internal
 export type PlatformEndpoint = {
@@ -15968,6 +15986,9 @@ const PlatformReplyFrameSchema: z.ZodObject<{
 // @public
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
+// @internal
+export function platformSessionSecret(guestToken: string): string;
+
 // @public
 type PlatformSessionStateOptions = PlatformEndpoint;
 
@@ -15990,6 +16011,14 @@ type PlatformSocketReply = {
 
 // @public
 export function platformSocketUrl(base: string): string;
+
+// @public
+export type PlatformTicketInput = {
+    guestToken: string;
+    previousGuestTokens?: readonly string[];
+    presented?: string | undefined;
+    now?: number;
+};
 
 // @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
@@ -16933,7 +16962,7 @@ export function ChatView(input: {
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "WebSocket"> & {
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "token" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
     theme?: ClientTheme;
@@ -17063,6 +17092,7 @@ export type CreateInboxOptions = {
     onNotice?: ((notice: InboxNotice) => void) | undefined;
     onEvent?: ((event: InboxEvent) => void) | undefined;
     events?: boolean | undefined;
+    token?: VoiceSessionOptions["token"];
     WebSocket?: WebSocketConstructor | undefined;
 };
 
@@ -17347,6 +17377,7 @@ export type SessionIdentity = {
     clientId(): string | undefined;
     holderId(): string;
     sessionId(): string | undefined;
+    ticket(): string | undefined | Promise<string | undefined>;
 };
 
 // @public
@@ -17879,6 +17910,9 @@ export type VoiceSessionOptions = {
     phone?: string | (() => string | undefined) | undefined;
     client?: string | (() => string | undefined) | undefined;
     preConnectAudio?: boolean | undefined;
+    token?: string | ((attempt: {
+        readonly sessionId: string | undefined;
+    }) => string | undefined | Promise<string | undefined>) | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
 
@@ -18066,7 +18100,7 @@ export const DEFAULT_PROGRESS_POLL_MS = 5000;
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
 // @internal
-export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
+export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch, presentedTicket?: string): Promise<ClientConfigResponse | null>;
 
 // @public
 export const MAX_MISSING_READS = 3;
@@ -18089,6 +18123,7 @@ type SessionIdentity = {
     clientId(): string | undefined;
     holderId(): string;
     sessionId(): string | undefined;
+    ticket(): string | undefined | Promise<string | undefined>;
 };
 
 // @internal

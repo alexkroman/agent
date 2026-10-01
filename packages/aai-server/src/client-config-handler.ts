@@ -7,8 +7,9 @@
  * shell, plus `sessionUrl` — the public `/websocket` endpoint on the agent's
  * sandbox tunnel that clients connect to DIRECTLY (voice sessions no longer
  * pass through the platform host). Resolving the sandbox here is what boots
- * it on the first request. Same auth posture as the agent page and the
- * session endpoint itself: none.
+ * it on the first request. Same auth posture as the agent page: none — and it
+ * is the one door to the session endpoint, which opens only for the
+ * `sessionToken` minted here (`sessionTicketFor`).
  *
  * Name/greeting are PROXIED from the guest's own `/client-config` — the
  * bundle's live agent definition, interpreted by the bundle's own SDK —
@@ -24,13 +25,21 @@
  * {@link memoKey} for why the origin alone is not enough.
  */
 
-import { buildClientConfig, ClientConfigResponseSchema } from "@alexkroman1/aai/protocol";
+import {
+  buildClientConfig,
+  ClientConfigResponseSchema,
+  SESSION_TICKET_HEADER,
+} from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { mintPlatformSessionTicket } from "@alexkroman1/aai-runtime/internal";
+import { HTTPException } from "hono/http-exception";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AppContext } from "./context.ts";
 import { forwardToGuest } from "./guest/forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
+import { guestTokenFor } from "./guest/token.ts";
 import { brokerSessionUrlOrThrow } from "./sandbox/broker.ts";
+import { agentSandboxName } from "./sandbox/directory.ts";
 import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 
 /**
@@ -120,16 +129,46 @@ export function createAgentClientConfigHandler(
   return async (c, broker) => {
     const slug = c.var.slug;
     const brokered = await brokerSessionUrlOrThrow(slug, broker);
+    // The version of the guest the session is ROUTED to — see
+    // `BrokeredSession.version`. The row is only the fallback for a broker
+    // that could not say (a test double).
+    const version = brokered.version ?? (await c.env.store.getAgentVersion(slug));
+    // The broker above answered for a resident whose row a delete already
+    // removed (the same window `workflow-handler.ts`'s `gone` covers): there is
+    // no deploy left to mint a ticket for.
+    if (version === null) throw new HTTPException(404, { message: `Not found: ${slug}` });
 
     const guestConfig = await fetchGuestClientConfig(
-      memoKey(slug, broker.slots.get(slug)?.version, brokered.guestOrigin),
+      memoKey(slug, version, brokered.guestOrigin),
       brokered.guestOrigin,
     );
+    // Never cached anywhere: every answer carries a fresh, single-session ticket.
+    c.header("Cache-Control", "no-store");
     return c.json(
       buildClientConfig({
         ...guestConfig,
         sessionUrl: brokered.sessionUrl,
+        sessionToken: sessionTicketFor(slug, version, c.req.header(SESSION_TICKET_HEADER)),
       }),
     );
   };
+}
+
+/**
+ * The session ticket this lookup hands the browser — see
+ * `mintPlatformSessionTicket` (aai-runtime) for what it proves and how a
+ * presented ticket resumes its session.
+ *
+ * Keyed off the sandbox's own bearer (`guestTokenFor(agentSandboxName(...))`,
+ * which the guest holds as `AAI_GUEST_TOKEN`), so the guest verifies it with a
+ * key derived from what it already has and nothing new is delivered. The
+ * previous deploy's bearer is accepted for a PRESENTED ticket only, so a call
+ * survives a redeploy; what is minted is always for the current deploy.
+ */
+function sessionTicketFor(slug: string, version: number, presented: string | undefined): string {
+  return mintPlatformSessionTicket({
+    guestToken: guestTokenFor(agentSandboxName(slug, version)),
+    previousGuestTokens: version > 1 ? [guestTokenFor(agentSandboxName(slug, version - 1))] : [],
+    ...omitUndefined({ presented }),
+  });
 }

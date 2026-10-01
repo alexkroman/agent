@@ -987,6 +987,7 @@ function fetchClientConfig(platformUrl?: string, fetchFn?: {
   greeting?: string;
   name?: string;
   page: "static" | "voice";
+  sessionToken?: string;
   sessionUrl?: string;
 }>;
 ```
@@ -1038,6 +1039,7 @@ supplies its own credentials. Defaults to the global `fetch`.
   `greeting?`: `string`;
   `name?`: `string`;
   `page`: `"static"` \| `"voice"`;
+  `sessionToken?`: `string`;
   `sessionUrl?`: `string`;
 \}\>
 
@@ -4841,6 +4843,7 @@ type AgentClient = WorkflowApi & {
         static: "static";
         voice: "voice";
      }>;
+     sessionToken?: z.ZodOptional<z.ZodString>;
      sessionUrl?: z.ZodOptional<z.ZodString>;
   }>;
 };
@@ -4879,6 +4882,7 @@ config(): Promise<{
      static: "static";
      voice: "voice";
   }>;
+  sessionToken?: z.ZodOptional<z.ZodString>;
   sessionUrl?: z.ZodOptional<z.ZodString>;
 }>;
 ```
@@ -4905,6 +4909,7 @@ this call works with no `token`, and a workflow API closed by
      `static`: `"static"`;
      `voice`: `"voice"`;
   \}\>;
+  `sessionToken?`: `z.ZodOptional`\<`z.ZodString`\>;
   `sessionUrl?`: `z.ZodOptional`\<`z.ZodString`\>;
 \}\>
 
@@ -5695,6 +5700,7 @@ type ClientConfig = Pick<VoiceSessionOptions,
   | "location"
   | "phone"
   | "client"
+  | "token"
   | "WebSocket"> & {
   buttonText?: string;
   component?: ComponentType;
@@ -6483,6 +6489,7 @@ type CreateInboxOptions = {
   onEvent?: (event: InboxEvent) => void;
   onNotice?: (notice: InboxNotice) => void;
   platformUrl: string;
+  token?: VoiceSessionOptions["token"];
   WebSocket?: WebSocketConstructor;
 };
 ```
@@ -6575,6 +6582,18 @@ platformUrl: string;
 ```
 
 The agent's base URL — the socket is `<platformUrl>/inbox`.
+
+##### token?
+
+```ts
+optional token?: VoiceSessionOptions["token"];
+```
+
+The session ticket to present, for a server that requires one — the same
+option, with the same rules, as `VoiceSessionOptions.token`: a string, or a
+getter asked on EVERY connection attempt (told `sessionId: undefined`; the
+inbox resumes no session). A getter that throws or rejects presents none.
+`useInbox()` fills it in from the session.
 
 ##### WebSocket?
 
@@ -7981,6 +8000,7 @@ type SessionIdentity = {
   clientId: string | undefined;
   holderId: string;
   sessionId: string | undefined;
+  ticket: string | Promise<string | undefined> | undefined;
 };
 ```
 
@@ -8035,6 +8055,23 @@ session sets it from its own `config` frame. Sensitive — see
 ###### Returns
 
 `string` \| `undefined`
+
+##### ticket()
+
+```ts
+ticket(): string | Promise<string | undefined> | undefined;
+```
+
+A session ticket for ANOTHER socket on the same server — what `useInbox()`
+presents on `WS /inbox`, which a gated server checks exactly like
+`/websocket`. The session's own `token` option when it has one; otherwise a
+fresh one from the server's `client-config` (`aai dev` with
+`AAI_SESSION_SECRET`), until a lookup shows the server issues none.
+`undefined` means "present none". Fresh on every call: tickets are short-lived.
+
+###### Returns
+
+`string` \| `Promise`\<`string` \| `undefined`\> \| `undefined`
 
 #### Properties
 
@@ -10484,6 +10521,10 @@ type VoiceSessionOptions = {
   platformUrl: string;
   preConnectAudio?: boolean;
   resumeSessionId?: string;
+  token?:   | string
+     | ((attempt: {
+     sessionId: string | undefined;
+   }) => string | undefined | Promise<string | undefined>);
   WebSocket?: WebSocketConstructor;
 };
 ```
@@ -10631,6 +10672,58 @@ Session ID from a previous connection. When set, the server resumes
 that session if its per-session state is still within the resume grace
 window (`SESSION_RESUME_GRACE_MS`), replaying history into the new
 connection. Sensitive — see [onSessionId](#onsessionid).
+
+##### token?
+
+```ts
+optional token?: 
+  | string
+  | ((attempt: {
+  sessionId: string | undefined;
+}) => string | undefined | Promise<string | undefined>);
+```
+
+The session ticket this client presents — for a server that requires one
+(`AAI_SESSION_SECRET`, or `createSessionAuth()` on
+`@alexkroman1/aai-runtime/auth`).
+
+A string, or a getter asked on EVERY connection attempt — the first, each
+reconnect and each resume — so a short-lived ticket (60 s by default) is
+fresh each time. Fetch it from your own backend, which checks its own login
+and mints with `createSessionToken()`; the secret must never reach the
+browser. The getter is told the session the attempt RESUMES (`undefined`
+for a new one), so a backend can bind a resume ticket to it
+(`createSessionToken({ sessionId })`) — what a resume needs after the
+server restarted.
+
+It travels in `Sec-WebSocket-Protocol` as `aai.auth.<ticket>` beside the
+plain `aai.session` protocol, never in the URL, so it stays out of access
+logs (a value that is not a valid protocol token falls back to `?token=`).
+An empty or `undefined` answer sends none, and so does a getter that throws
+or rejects: the attempt still dials, and a server that requires a ticket
+refuses it with a reason. Give a fetch inside the getter a deadline — the
+attempt waits for it. With an injected [WebSocket](#websocket-1) the getter must
+answer synchronously.
+
+When omitted, a ticket the server's `client-config` issued is used — which
+`aai dev` does for its own client when `AAI_SESSION_SECRET` is set.
+
+###### Example
+
+```ts
+import { mountClient } from "@alexkroman1/aai-ui";
+
+mountClient({
+  token: async ({ sessionId }) => {
+    const res = await fetch("/my-backend/session-ticket", {
+      method: "POST",
+      body: JSON.stringify({ sessionId }),
+      signal: AbortSignal.timeout(5000),
+    });
+    return (await res.json()).token;
+  },
+});
+```
 
 ##### WebSocket?
 

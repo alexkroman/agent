@@ -50,7 +50,8 @@ export async function findPeerSession(
     if (version === null) return null;
     const peer = await directory.find(slug, version);
     if (!peer) return null;
-    return { ok: true, sessionUrl: peer.sessionUrl, guestOrigin: peer.guestOrigin };
+    // The peer was found BY this version, so it is the version its guest runs.
+    return { ok: true, sessionUrl: peer.sessionUrl, guestOrigin: peer.guestOrigin, version };
   } catch (err) {
     log.warn("directory lookup failed", { slug, error: errorMessage(err) });
     return null;

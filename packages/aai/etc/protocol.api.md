@@ -12,6 +12,7 @@ export function buildClientConfig(source: {
     greeting?: string | undefined;
     sessionUrl?: string | undefined;
     page?: "voice" | "static" | undefined;
+    sessionToken?: string | undefined;
 }): ClientConfigResponse;
 
 // @public
@@ -38,6 +39,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>;
+    sessionToken: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
 // @public
@@ -315,10 +317,19 @@ export const RestoredToolCallSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+
+// @public
 export const SESSION_COMMAND_TYPES: ReadonlySet<string>;
 
 // @public
 export const SESSION_EVENT_TYPES: ReadonlySet<string>;
+
+// @public
+export const SESSION_PROTOCOL = "aai.session";
+
+// @public
+export const SESSION_TICKET_HEADER = "aai-session-ticket";
 
 // @public
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;

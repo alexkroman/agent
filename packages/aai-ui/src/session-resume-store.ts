@@ -60,3 +60,28 @@ export function writeStoredSessionId(platformUrl: string, sessionId: string): vo
 export function clearStoredSessionId(platformUrl: string): void {
   storageRemove("session", keyFor(platformUrl));
 }
+
+const TICKET_PREFIX = "aai:session-ticket:";
+
+/**
+ * The last session ticket this agent's `client-config` issued — beside the id
+ * and for its reason: on the managed platform a ticket is BOUND to its session,
+ * and presenting it (`SESSION_TICKET_HEADER`) is what makes the broker re-mint
+ * for that session rather than a new one, so a reload that lost it cannot
+ * resume. As sensitive as the id it stands beside, and stored the same way.
+ *
+ * @internal
+ */
+export function readStoredTicket(platformUrl: string): string | undefined {
+  return storageGet("session", urlSlot(TICKET_PREFIX, platformUrl));
+}
+
+/** Remember the last server-issued ticket. @internal */
+export function writeStoredTicket(platformUrl: string, ticket: string): void {
+  storageSet("session", urlSlot(TICKET_PREFIX, platformUrl), ticket);
+}
+
+/** Forget it, with the session it was for. @internal */
+export function clearStoredTicket(platformUrl: string): void {
+  storageRemove("session", urlSlot(TICKET_PREFIX, platformUrl));
+}

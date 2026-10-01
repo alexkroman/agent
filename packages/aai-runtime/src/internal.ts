@@ -244,6 +244,15 @@ export {
   type SessionStateStore,
   type StoredSessionEvent,
 } from "./session-state/store.ts";
+// The managed platform's session tickets: the broker (`aai-server`'s
+// `client-config` handler) mints with these, and the guest derives the same key
+// from its bearer to verify. Here, not on `/auth`, because only those two do.
+export {
+  mintPlatformSessionTicket,
+  PLATFORM_TICKET_RESUME_GRACE_SECONDS,
+  type PlatformTicketInput,
+  platformSessionSecret,
+} from "./session-ticket.ts";
 // The route `createRuntimeServer` serves carriers on and the query key naming
 // one, for the CLI's preflight, which prints the webhook a carrier is pointed at.
 // An embedder bridging a call itself chooses its own path, so neither is part of

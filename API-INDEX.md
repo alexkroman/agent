@@ -21,8 +21,8 @@ of it — and want the import.
 - [Agent authoring](#agent-authoring) — 580 names
 - [Browser client](#browser-client) — 181 names
 - [Testing and evals](#testing-and-evals) — 254 names
-- [Hosting and tooling](#hosting-and-tooling) — 236 names
-- [Framework internals](#framework-internals) — 401 names
+- [Hosting and tooling](#hosting-and-tooling) — 238 names
+- [Framework internals](#framework-internals) — 405 names
 
 ## Agent authoring
 
@@ -1060,11 +1060,13 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `RuntimeServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Configuration for `createRuntimeServer`. |
 | `RuntimeTracing` | type | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | A started tracer. |
 | `S2sConfig` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Speech-to-Speech (S2S) endpoint configuration. |
-| `SESSION_AUTH_PROTOCOL_PREFIX` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | `Sec-WebSocket-Protocol` entry prefix a ticket travels under. |
+| `SESSION_AUTH_PROTOCOL_PREFIX` | const | `@alexkroman1/aai/protocol` (also `@alexkroman1/aai-runtime/auth`) | `aai:protocol` | `Sec-WebSocket-Protocol` entry prefix a session ticket travels under. |
 | `SESSION_COMMAND_TYPES` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The set of recognised client→server command `type` values — pass to `lenientParse` so a known-but-invalid message warns instead of being silently dropped as an … |
 | `SESSION_EVENTS_TOKEN_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:session` | Env var holding the bearer this route requires. |
 | `SESSION_EVENT_TYPES` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Every event name, as a set — for `lenientParse`'s known-types argument. |
+| `SESSION_PROTOCOL` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The plain session subprotocol a client offers beside its ticket, and the one a server selects. |
 | `SESSION_SECRET_ENV` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The env variable that turns the built-in ticket check on. |
+| `SESSION_TICKET_HEADER` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The request header a browser presents its LAST session ticket in, on `GET client-config`, to resume that ticket's session. |
 | `SESSION_UNAUTHORIZED_CLOSE_CODE` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The close code a refused session ends with — HTTP 401 in the 4000-4999 application range, so a client can tell "not allowed" from a dropped network. |
 | `ServerRequestHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every HTTP request (after `/health`). |
 | `ServerUpgradeHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every WebSocket upgrade. |
@@ -1338,6 +1340,7 @@ trace or a type error can be traced back to something.
 | `PIPELINE_PLAYBACK_GRACE_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `PLATFORM_ROUTES` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `PLATFORM_SOCKET_PATH` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `PLATFORM_TICKET_RESUME_GRACE_SECONDS` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `PLAYBACK_BUFFER_SECONDS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `PLAYBACK_CONCEAL_FADE_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `PLAYBACK_CONCEAL_FLOOR` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1356,6 +1359,7 @@ trace or a type error can be traced back to something.
 | `PlatformReplyFrame` | type | `@alexkroman1/aai-runtime/internal` |  |  |
 | `PlatformRoute` | type | `@alexkroman1/aai-runtime/internal` |  | One of `PLATFORM_ROUTES`. |
 | `PlatformSocket` | type | `@alexkroman1/aai-runtime/internal` |  |  |
+| `PlatformTicketInput` | type | `@alexkroman1/aai-runtime/internal` |  | Input to `mintPlatformSessionTicket`. |
 | `PollHost` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ProviderDefinition` | interface · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ProviderEnvVarsQuery` | type | `@alexkroman1/aai-runtime/internal` |  | What `requiredProviderEnvVars` (`resolve.ts`) reads off an agent: its four descriptor slots and its front door. |
@@ -1523,6 +1527,7 @@ trace or a type error can be traced back to something.
 | `loadSessionStateConformance` | function | `@alexkroman1/aai-runtime/internal` |  |  |
 | `mapStream` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `matchesToolConditions` | function | `@alexkroman1/aai/host-internal` |  | Every condition must hold; a message with none always matches. |
+| `mintPlatformSessionTicket` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `normalizeClientLocation` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `normalizeE164` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `normalizeLlm` | function | `@alexkroman1/aai/host-internal` |  | Normalize an `llm` field that may be a model-id string shorthand. |
@@ -1539,6 +1544,7 @@ trace or a type error can be traced back to something.
 | `partsOf` | function | `@alexkroman1/aai-runtime/internal` |  | A stored boundary list, whatever the driver handed back. |
 | `pinnedFetch` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `planDelayedLadder` | function | `@alexkroman1/aai/host-internal` |  | The ladder this call gets: one line per DISTINCT `afterMs`, ascending. |
+| `platformSessionSecret` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `platformSocketUrl` | function | `@alexkroman1/aai-runtime/internal` |  | `<base>/platform-socket` with a WebSocket scheme. |
 | `pollWorkflow` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishChannelOutbox` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

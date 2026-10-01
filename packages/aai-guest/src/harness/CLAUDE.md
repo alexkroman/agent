@@ -123,6 +123,17 @@ unguessable without the platform secret, distinct per sandbox, rotated on
 redeploy. Given up: rotation on respawn of the same version. Unset
 `AAI_GUEST_TOKEN_SECRET` falls back to a per-process key, announced at boot.
 
+## A session opens only for a ticket
+
+`agent-mode.ts` passes `auth: guestSessionAuth(token, boot.env)`
+(`session-tickets.ts`): `WS /websocket` and `/inbox` need a ticket signed with
+`platformSessionSecret(AAI_GUEST_TOKEN)` — what the platform's `client-config`
+broker mints (`packages/aai-server/CLAUDE.md`, "A deployed agent's session opens
+only for a broker-minted ticket") — or with the agent env's
+`AAI_SESSION_SECRET` when the author set one. The key is derived from the bearer
+the guest already holds, so no new credential is delivered. `/phone` is not
+gated (a carrier holds no ticket; its webhook verification is the route's).
+
 ## A phone call is an ordinary session
 
 `WS /phone` (SDK `aai/host/telephony/`, served by `createRuntimeServer` here and
