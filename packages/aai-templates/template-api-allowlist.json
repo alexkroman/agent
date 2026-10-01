@@ -65,6 +65,7 @@
     "SessionEventBody",
     "SessionEventMap",
     "SessionEventSchema",
+    "SessionEventTypeList",
     "SessionSlot",
     "SessionSlotOptions",
     "SessionSourcedEventType",
