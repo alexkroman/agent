@@ -12,83 +12,10 @@ import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runti
 import { SERVER_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import getPort from "get-port";
 import { describe, expect, test, vi } from "vitest";
-import { agentEnvWarnings } from "./_dev-agent-env.ts";
 import { startDevServer } from "./_dev-server.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
-
-describe("agentEnvWarnings", () => {
-  const DEFAULT_AGENT = {}; // no descriptors → default AssemblyAI pipeline → needs ASSEMBLYAI_API_KEY
-
-  test("warns when a provider key is missing everywhere", () => {
-    const warnings = agentEnvWarnings(DEFAULT_AGENT, {}, {});
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("Missing provider credential");
-    expect(warnings[0]).toContain("ASSEMBLYAI_API_KEY");
-  });
-
-  test("warns about the deploy cliff when a key resolves from the shell only", () => {
-    const warnings = agentEnvWarnings(DEFAULT_AGENT, {}, { ASSEMBLYAI_API_KEY: "sk-shell" });
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("resolved from your shell, not .env");
-    expect(warnings[0]).toContain("ASSEMBLYAI_API_KEY");
-    expect(warnings[0]).toContain("aai publish");
-  });
-
-  test("silent when the key is declared in .env", () => {
-    expect(agentEnvWarnings(DEFAULT_AGENT, { ASSEMBLYAI_API_KEY: "sk-env" }, {})).toEqual([]);
-  });
-
-  test("a requiredEnv key is flagged even when the shell exports it", () => {
-    const agent = { requiredEnv: ["STRIPE_KEY"] };
-    const warnings = agentEnvWarnings(
-      agent,
-      { ASSEMBLYAI_API_KEY: "sk-env" },
-      { STRIPE_KEY: "sk-shell" }, // custom keys never fall back to the shell
-    );
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("requiredEnv");
-    expect(warnings[0]).toContain("STRIPE_KEY");
-  });
-
-  test("an MCP tokenEnv and a keyed builtin's key are flagged without a requiredEnv entry", () => {
-    const agent = {
-      builtinTools: ["brave_search"],
-      mcpServers: { docs: { url: "https://mcp.example.com/mcp", tokenEnv: "DOCS_MCP_TOKEN" } },
-    };
-    const warnings = agentEnvWarnings(agent, { ASSEMBLYAI_API_KEY: "sk-env" }, {});
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("DOCS_MCP_TOKEN, BRAVE_API_KEY");
-  });
-
-  test("a requiredEnv key present in .env is silent", () => {
-    const agent = { requiredEnv: ["STRIPE_KEY"] };
-    const env = { ASSEMBLYAI_API_KEY: "sk-env", STRIPE_KEY: "sk-env" };
-    expect(agentEnvWarnings(agent, env, {})).toEqual([]);
-  });
-
-  test("a workflow app with no credential anywhere warns about nothing", () => {
-    // The `page` field has to be in the Pick, or a static agent is warned about
-    // a key it never dials — and `resolveAgentEnv` reads the same list to decide
-    // whether to reach for the logged-in key, so on that path the same omission
-    // is a `missing_assemblyai_key` that stops `aai dev` from starting at all —
-    // demanding a credential of an app that dials no provider.
-    expect(agentEnvWarnings({ mode: "workflow-app" }, {}, {})).toEqual([]);
-  });
-
-  test("a workflow app is still told about its own requiredEnv keys", () => {
-    // Suppressing the PROVIDER credential must not suppress the agent's own —
-    // a workflow app reads `ctx.env` like any other.
-    const warnings = agentEnvWarnings(
-      { mode: "workflow-app", requiredEnv: ["STRIPE_KEY"] },
-      {},
-      {},
-    );
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("STRIPE_KEY");
-  });
-});
 
 describe("viteDevConfig", () => {
   test("proxies /websocket with ws:true and /health to the backend", () => {

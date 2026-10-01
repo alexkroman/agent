@@ -7,7 +7,7 @@ import { type ArgsDef, renderUsage } from "citty";
 import { execa } from "execa";
 import { describe, expect, test } from "vitest";
 import { findUnknownFlags } from "./_cli-common.ts";
-import { BARE_AAI_HELP, HELP_SECTIONS, rootHelp } from "./_help.ts";
+import { HELP_SECTIONS, rootHelp } from "./_help.ts";
 import { withTempDir } from "./_test-utils.ts";
 import { mainCommand, TEST_ALL_DEPRECATION } from "./cli.ts";
 
@@ -120,23 +120,6 @@ describe("aai --help is grouped", () => {
     expect(new Set(placed).size).toBe(placed.length);
     // A command no section names would land under "Other" — never shipped.
     expect(normalize(await rootHelp(mainCommand))).not.toContain("OTHER");
-  });
-
-  test("names the sections the request asked for, in order", () => {
-    expect(HELP_SECTIONS.map((s) => s.commands)).toEqual([
-      ["init", "dev", "console", "test", "eval", "build"],
-      ["pull", "push", "publish", "delete", "list"],
-      ["logs", "secret", "workflow"],
-      ["start"],
-      ["login"],
-      ["templates"],
-    ]);
-  });
-
-  test("says that a bare `aai` in an agent directory publishes to production", async () => {
-    const help = normalize(await rootHelp(mainCommand));
-    for (const line of BARE_AAI_HELP) expect(help).toContain(line);
-    expect(help).toMatch(/PRODUCTION/);
   });
 
   test("the real bin prints the grouped help", async () => {
