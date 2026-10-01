@@ -1486,7 +1486,8 @@ deploy. Use `orFail(stepGenerateJson)` with a Zod `schema` if you need a shape.
 ### From a step, wrap the call in `orFail`
 
 `orFail` (`@alexkroman1/aai/step-errors`) wraps any `/step` call that can fail
-remotely, classifying its failure, and **inside a step the wrapped call is the one to use**:
+remotely, classifying its failure, and **inside a step the wrapped call is the
+one to use**:
 
 ```ts
 import { stepFetch, stepGenerateJson, stepTranscribeSubmit } from "@alexkroman1/aai/step";
@@ -1526,12 +1527,12 @@ stop outright, `toStepError(cause, message)` to build the error without throwing
 or `throwFfmpegStepError(err)` for a media failure, whose default runs the other
 way (only a `timeout` or an `aborted` is worth another attempt).
 
-**Why the split exists, since the wrapped call is what you usually want:** this is
-importing from here is the OPT-IN, and `/step` is not written only for a step —
-`mapConcurrent` bounds a rate-limited call anywhere, `stepFetch` is an ordinary
-HTTP client, and your specs drive exported steps directly. None of those callers
-has a retry budget to burn, so none should meet a vocabulary whose whole subject
-is one. A step pays nothing for the extra import line.
+**Why the split exists, since the wrapped call is what you usually want:**
+importing from here is the OPT-IN, and `/step` is not written only for a step:
+`mapConcurrent` bounds a rate-limited call anywhere, `stepFetch` is an
+ordinary HTTP client, and your specs drive exported steps directly. None of
+those callers has a retry budget to burn, so none should meet a vocabulary whose
+whole subject is one. A step pays nothing for the extra import line.
 
 ### Media, big files, and transcription from a step
 
@@ -1579,7 +1580,8 @@ export async function measure(uploadId: string) {
 
 A run that finishes while nobody is on the line needs somewhere to put the
 result. `slackChannel({ webhookUrl })` (or `textbeltChannel({ key, to })`, an
-SMS) names a destination and `orFail(sendToChannel)(channel, message)` posts to it:
+SMS) names a destination and `orFail(sendToChannel)(channel, message)` posts to
+it:
 
 ```ts no-check
 import { type ChannelMessage, sendToChannel, slackChannel } from "@alexkroman1/aai/channels";

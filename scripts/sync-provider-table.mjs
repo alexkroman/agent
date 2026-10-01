@@ -38,8 +38,7 @@ const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
 const CATALOG = join(ROOT, "packages/aai/src/sdk/providers/catalog.ts");
 const DOC_PATH = "docs/src/content/docs/more/voices-and-models.md";
 const DOC = join(ROOT, DOC_PATH);
-const START =
-  "<!-- provider-table:start (generated: pnpm sync:provider-table) -->";
+const START = "<!-- provider-table:start (generated: pnpm sync:provider-table) -->";
 const END = "<!-- provider-table:end -->";
 
 const { values: FLAGS } = parseScriptArgs({

@@ -29,9 +29,10 @@ compatible, else `--bump aai-runtime:<capability> --drop "<reason>"` or
 - **A capability is not a subpath.** `/eval/vitest` is the ONE import an eval
   file needs, so it re-exports every eval capability: `eval` (over `/eval` and
   `/eval/vitest`), `eval-assert`, `eval-network`, `eval-simulate` (also on
-  `/eval`; it once had a subpath of its own) and `eval-stubs` — the SDK's `aai:testing` stubs
-  re-exported for an eval, owned HERE because dropping one from the door is this
-  package's break. A re-export never moves ownership; each keeps its epoch.
+  `/eval`; it once had a subpath of its own) and `eval-stubs` — the SDK's
+  `aai:testing` stubs re-exported for an eval, owned HERE because dropping one
+  from the door is this package's break. A re-export never moves ownership; each
+  keeps its epoch.
 - Which barrel a name goes on, and the `@internal` rules, are in the package
   guide, "The published surface: two barrels and a rule between them".
 
