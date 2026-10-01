@@ -3,7 +3,7 @@
  * Where an upload's RECORD lives, as the store addresses it — and the Postgres
  * implementation of it.
  *
- * `_upload-blobs.ts` did this for the BYTES and the argument here is the same
+ * `blobs.ts` did this for the BYTES and the argument here is the same
  * one, arriving one layer over: the store is a set of invariants about windows
  * (an ordinary upload does not exist until it is finished; a streamed one exists
  * from its first byte; a part is recorded only once the bucket confirms it), and
@@ -44,9 +44,9 @@
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
-import { ensureOnce } from "./_ensure-once.ts";
-import { partsOf, type UploadPart } from "./_upload-blobs.ts";
-import { UPLOADS_TABLE, UploadIdTakenError } from "./_upload-store.ts";
+import { ensureOnce } from "../_ensure-once.ts";
+import { partsOf, type UploadPart } from "./blobs.ts";
+import { UPLOADS_TABLE, UploadIdTakenError } from "./store.ts";
 
 /**
  * One upload's record, in the shapes the store actually wants.

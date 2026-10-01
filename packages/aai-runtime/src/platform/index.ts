@@ -5,7 +5,7 @@
  * (`socket.ts`, `socket-frames.ts`, `socket-registry.ts`), and `platformPost`,
  * which rides the socket or falls back to `rpcFetch` (`rpc.ts`). Outside this
  * directory, import from here; a name not re-exported here is private to it
- * (`module-boundaries.test.ts`).
+ * (guard-invariants rule 37).
  */
 
 export type { PlatformEndpoint, PlatformRoute } from "./endpoint.ts";

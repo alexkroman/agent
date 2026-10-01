@@ -4,7 +4,7 @@
  * the five paths declared once.
  *
  * Five modules reach the platform over HTTP — `session-state-platform.ts`,
- * `../uploads-platform.ts`, `workflow/journal/platform.ts`,
+ * `../uploads/platform.ts`, `workflow/journal/platform.ts`,
  * `workflow/keys-platform.ts` and
  * `workflow/platform-queue.ts` — and each had grown its own `{base, token, fetch?}`
  * options type, its own `` `${base.replace(/\/+$/, "")}/…` ``, and its own copy of
@@ -118,7 +118,7 @@ export type PlatformEndpoint = {
   /**
    * Where the platform is dialable, slug included — `AAI_PLATFORM_BASE_URL`.
    *
-   * The same value `../_upload-blobs-brokered.ts` takes, and for the same reason: the
+   * The same value `../uploads/blobs-brokered.ts` takes, and for the same reason: the
    * guest does not COMPOSE this URL, so it cannot name another app's slug even in
    * principle. The platform derives the tenant from the slug in the path and
    * verifies this sandbox's bearer against it.

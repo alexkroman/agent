@@ -3,7 +3,7 @@
  * {@link UploadBackend} for a DEPLOYED guest: every byte operation is one request to
  * the agent's own public platform surface, and the guest holds no credential.
  *
- * This is the half of `_upload-blobs.ts`'s "Signing is NOT here" that makes the
+ * This is the half of `blobs.ts`'s "Signing is NOT here" that makes the
  * rule true rather than aspirational. The bucket is platform-wide — every tenant's
  * uploads and every tenant's worker bundles are in it — and the guest runs tenant
  * code, so a service key in the guest env is a cross-tenant read of everything.
@@ -51,10 +51,10 @@ import { RETRYABLE_STATUS } from "@alexkroman1/aai/host-internal";
 import { jitteredBackoff, sleep } from "@alexkroman1/aai/internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
-import { blobFetch } from "./_egress-fetch.ts";
-import type { UploadBackend } from "./_upload-blobs.ts";
-import { contentLength, IDENTITY_ENCODING } from "./_upload-blobs.ts";
-import { collectCapped } from "./_upload-byte-util.ts";
+import { blobFetch } from "../_egress-fetch.ts";
+import type { UploadBackend } from "./blobs.ts";
+import { contentLength, IDENTITY_ENCODING } from "./blobs.ts";
+import { collectCapped } from "./byte-util.ts";
 
 /**
  * How long one byte operation may take.
@@ -114,7 +114,7 @@ export type BrokeredUploadBlobsOptions = {
   base: string;
   /**
    * Test seam — production takes the pooled HTTP/1.1 `blobFetch`, NEVER
-   * `globalThis.fetch`: see `_egress-fetch.ts`.
+   * `globalThis.fetch`: see `../_egress-fetch.ts`.
    */
   fetch?: typeof globalThis.fetch | undefined;
 };
@@ -129,7 +129,7 @@ export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): Upl
   // to one origin, some of them carrying megabytes, which is the exact shape undici
   // 8's HTTP/2 default turns into one multiplexed connection and a stream reset with
   // no status. That reset is the `fetch failed` this module's own retry could not
-  // ride out — `_egress-fetch.ts` carries the production log and the measurements.
+  // ride out — `../_egress-fetch.ts` carries the production log and the measurements.
   const call = opts.fetch ?? blobFetch;
   // The key the STORE composes is `<prefix>/<id>/<at>`; the platform composes its
   // own from the slug, so only the last two segments travel. Sliced rather than
@@ -177,7 +177,7 @@ export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): Upl
 
   return {
     async put(key, body, options): Promise<number> {
-      // Buffered for the reason `_upload-blobs-http.ts` gives — the far side stores
+      // Buffered for the reason `blobs-http.ts` gives — the far side stores
       // one object and needs its length — and bounded by the window, not the file.
       // OUTSIDE `attempt`, and it has to be: this drains the caller's stream, so a
       // second pass over it would send an empty body. The collected array is what

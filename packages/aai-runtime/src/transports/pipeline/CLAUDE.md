@@ -32,14 +32,15 @@ The files beside this guide are the ASSEMBLY — `transport.ts`
 - **Outside a directory, import its `index.ts` and nothing else**; a name not
   re-exported there is private, so there is no `_` prefix inside these
   directories. Outside `pipeline/` that means `pipeline/index.ts` only.
-  `../../module-boundaries.test.ts` enforces it for every non-test importer;
-  specs and `_*-harness.ts`/`*-test-utils.ts` may reach internals.
+  `guard-invariants` rule 37 enforces it for every importer, specs included —
+  a spec that needs a private module lives beside it, and shared test
+  scaffolding (`../_pipeline-transport-harness.ts`) lives outside.
 - **The stage directions are konsistent's `pipeline-stage-*` conventions**
   (raw specifiers, so a stage file stays one level deep), and a stage never
   imports the assembly. Biome's `noImportCycles` only sees a cycle once it
   closes; these rules refuse the first wrong-way edge.
 - **An `index.ts` lists exactly what is imported from outside** and is a pure
-  barrel of named re-exports (konsistent `runtime-directory-index-barrels`).
+  barrel of named re-exports (konsistent `module-dir-index-is-re-export-only`).
 - `speech/` reaches `llm/` only for speculation, and `history/` reaches
   `output/` only for `toModelMessage` (`tts.ts`).
 

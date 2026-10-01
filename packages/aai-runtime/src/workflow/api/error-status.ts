@@ -209,7 +209,7 @@ export function isPlatformUnavailable(err: unknown): boolean {
  *
  * **The failure this exists for reached a client as `500 Internal server
  * error`.** A deployed guest's every byte operation and every platform call is a
- * request out of a sandbox (`_upload-blobs-brokered.ts`, `../../platform/rpc.ts`), and
+ * request out of a sandbox (`../../uploads/blobs-brokered.ts`, `../../platform/rpc.ts`), and
  * `fetch` rejecting with `TypeError: fetch failed` — no status, the real code two
  * `cause` hops down — arrived at the router as an unnamed rejection. Observed in
  * production on a part claim: six consecutive

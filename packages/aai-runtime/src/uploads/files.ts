@@ -6,7 +6,7 @@
  * ## This is not the deleted file backend, and the difference is the whole point
  *
  * There used to be a file store and it was removed for a good reason
- * (`_upload-blobs.ts`): it stored a dev upload perfectly well and lost it by the
+ * (`blobs.ts`): it stored a dev upload perfectly well and lost it by the
  * time a resumed run read it, with nothing reporting a thing. That failure was not
  * caused by files. It was caused by a MISMATCH — the runs lived in Postgres and
  * outlived every process, the bytes lived in a directory and did not, and nothing
@@ -52,11 +52,11 @@ import { Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { assertUploadToken } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
-import { ensureOnce } from "./_ensure-once.ts";
-import { partsOf, type UploadBackend } from "./_upload-blobs.ts";
-import { concat } from "./_upload-byte-util.ts";
-import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
-import { UploadIdTakenError, UploadTooLargeError } from "./_upload-store.ts";
+import { ensureOnce } from "../_ensure-once.ts";
+import { partsOf, type UploadBackend } from "./blobs.ts";
+import { concat } from "./byte-util.ts";
+import type { UploadRecord, UploadRecords } from "./records.ts";
+import { UploadIdTakenError, UploadTooLargeError } from "./store.ts";
 
 /** Where the records go, under the caller's directory. */
 const RECORDS_DIR = "records";

@@ -10,7 +10,7 @@
  * backend could not survive, and the reason this is a directory rather than
  * memory.
  *
- * Temp-directory specs in the unit tier, following `server-static.test.ts` and
+ * Temp-directory specs in the unit tier, following `../server-static.test.ts` and
  * `workspace-files.test.ts` next door.
  */
 
@@ -19,9 +19,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { UploadIdTakenError } from "./_upload-store.ts";
-import { body, digest, ramp } from "./_upload-store-test-utils.ts";
-import { createUploadStore } from "./workflow/uploads.ts";
+import { body, digest, ramp } from "../_upload-store-test-utils.ts";
+import { createUploadStore } from "../workflow/uploads.ts";
+import { UploadIdTakenError } from "./store.ts";
 
 let dir: string;
 

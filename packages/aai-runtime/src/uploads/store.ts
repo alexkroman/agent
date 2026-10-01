@@ -20,9 +20,9 @@
  *
  * There used to be two backends holding the bytes themselves — a `bytea` row per
  * megabyte in the app's own database, or a file per upload under `aai dev` — and
- * both are gone. There is one store (`_upload-store-blobs.ts`): a metadata row in
+ * both are gone. There is one store (`store-blobs.ts`): a metadata row in
  * the app's database, and the bytes as objects in a bucket
- * (`_upload-blobs.ts`, which carries why they left Postgres and why the interface
+ * (`blobs.ts`, which carries why they left Postgres and why the interface
  * mints no URLs).
  *
  * The old shape's whole argument was that the file backend was "a valid double for
@@ -136,7 +136,7 @@ export const UPLOADS_TABLE = "aai_workflow_uploads";
  * Window objects a whole-file write keeps in flight at once.
  *
  * The number that decides whether the uplink and the bucket work at the same time
- * or take turns — see `putWindows` in `_upload-store-blobs.ts`, which is the only
+ * or take turns — see `putWindows` in `store-blobs.ts`, which is the only
  * caller. What it costs is memory, and exactly this much: the window's width times
  * `UPLOAD_PART_BYTES`, i.e. 32 MiB held while a body is arriving, because a window
  * is buffered whole before its write starts and stays held until that write
@@ -185,7 +185,7 @@ export const UPLOAD_WINDOW_CONCURRENCY = 4;
  * **The last column is flat, and that is the finding**: the probes now run
  * alongside the record read that `recordParts` was waiting for anyway, so a claim
  * costs what its record round trips cost and its width is free. What is left is one
- * read and one write, both load-bearing — `upload-record-round-trips.test.ts`
+ * read and one write, both load-bearing — `record-round-trips.test.ts`
  * counts every operation's round trips and argues the two this one keeps.
  */
 export const UPLOAD_PROBE_CONCURRENCY = UPLOAD_CLAIM_BATCH;

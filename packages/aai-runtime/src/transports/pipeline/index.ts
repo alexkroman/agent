@@ -7,7 +7,7 @@
  * not re-exported here is private to the pipeline. The stages behind it are
  * subdirectories, each with its own `index.ts` (`speech/`, `llm/`, `reply/`,
  * `output/`, `heard/`, `history/`, `turn/`, `knobs/`); the files beside this one
- * assemble them into one transport. `module-boundaries.test.ts` enforces the
+ * assemble them into one transport. guard-invariants rule 37 enforces the
  * index rule and konsistent's `pipeline-stage-*` conventions the direction
  * between stages; `CLAUDE.md` here has the map.
  */

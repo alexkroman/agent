@@ -142,7 +142,7 @@ export function installWorkflowSupport(options: {
   // Sharing the app pool's connections would have been WRONG before the bytes left
   // the database: a part was a `bytea` row held for a megabyte, and it was
   // measured slowing every non-upload query on the guest to p50 1.34s against
-  // 0.43s (`_upload-blobs.ts`, "The pool"). What is left here is one small
+  // 0.43s (`../uploads/blobs.ts`, "The pool"). What is left here is one small
   // `update` naming a window that landed — a round trip, like every other
   // statement on this pool.
   const databaseUrl = options.env?.DATABASE_URL;

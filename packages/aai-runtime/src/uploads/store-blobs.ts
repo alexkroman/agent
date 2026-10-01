@@ -9,7 +9,7 @@
  * Each has two implementations, and the pairing is decided once — in
  * `workflow/uploads.ts` — by whether the deployment has a `DATABASE_URL`: the
  * app's own database plus a bucket when it does, the local workflow world's data
- * directory when it does not (`_upload-files.ts`, which carries why that is not
+ * directory when it does not (`files.ts`, which carries why that is not
  * the file backend this store used to have).
  *
  * ## The record is the record; the bucket is the bytes
@@ -54,16 +54,10 @@ import {
 } from "@alexkroman1/aai/host-internal";
 import { mapConcurrent, type UploadInfo } from "@alexkroman1/aai/step";
 import { createKeyedLock, omitUndefined, withLock } from "@alexkroman1/aai/utils";
-import {
-  partKey,
-  partsCovering,
-  rangesOf,
-  type UploadBackend,
-  type UploadPart,
-} from "./_upload-blobs.ts";
-import { concat, once, windows } from "./_upload-byte-util.ts";
-import { assertUploadOpen, declaredTotal, measuredPart } from "./_upload-parts-checks.ts";
-import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
+import { partKey, partsCovering, rangesOf, type UploadBackend, type UploadPart } from "./blobs.ts";
+import { concat, once, windows } from "./byte-util.ts";
+import { assertUploadOpen, declaredTotal, measuredPart } from "./parts-checks.ts";
+import type { UploadRecord, UploadRecords } from "./records.ts";
 import {
   assertPartOffset,
   assertPartTotal,
@@ -76,7 +70,7 @@ import {
   UploadPartError,
   type UploadStore,
   UploadTooLargeError,
-} from "./_upload-store.ts";
+} from "./store.ts";
 
 /**
  * What a merge produces: the row to write, and the answer to give the caller.

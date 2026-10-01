@@ -4,7 +4,7 @@
  * (`inbox.ts`), the live event feed it can carry (`event-feed.ts`, a
  * `Symbol.for` slot), and a workflow channel's outbox. Outside this directory,
  * import from here; a name not re-exported here is private to it
- * (`module-boundaries.test.ts`).
+ * (guard-invariants rule 37).
  */
 
 export { installChannelOutbox } from "./channel-outbox.ts";

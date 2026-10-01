@@ -4,7 +4,7 @@
  * config, adapting their tool schemas, the drift/trust record, and the `"mcp"`
  * toolset `withMcpTools` attaches after the agent's own (`tools.ts`). Outside
  * this directory, import from here; a name not re-exported here is private to
- * it (`module-boundaries.test.ts`).
+ * it (guard-invariants rule 37).
  */
 
 export type {

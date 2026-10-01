@@ -5,7 +5,7 @@
  * The implementation for `aai dev` and for a self-hosted server: the bucket is the
  * OPERATOR's, and the operator and the agent author are the same person, so there
  * is no boundary between the credential and the code. A deployed guest gets
- * `_upload-blobs-brokered.ts` instead — see `_upload-blobs.ts`, "Signing is NOT
+ * `blobs-brokered.ts` instead — see `blobs.ts`, "Signing is NOT
  * here", for why that split is the security model rather than a configuration
  * choice.
  *
@@ -36,10 +36,10 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { blobFetch } from "./_egress-fetch.ts";
-import { contentLength, IDENTITY_ENCODING, type UploadBackend } from "./_upload-blobs.ts";
-import { collectCapped } from "./_upload-byte-util.ts";
-import { UPLOAD_STORAGE_BUCKET_ENV, UPLOAD_STORAGE_URL_ENV } from "./_upload-env.ts";
+import { blobFetch } from "../_egress-fetch.ts";
+import { contentLength, IDENTITY_ENCODING, type UploadBackend } from "./blobs.ts";
+import { collectCapped } from "./byte-util.ts";
+import { UPLOAD_STORAGE_BUCKET_ENV, UPLOAD_STORAGE_URL_ENV } from "./env.ts";
 
 export type HttpUploadBackendOptions = {
   /** Project URL (`https://<ref>.supabase.co`), or any Storage-compatible origin. */
@@ -49,7 +49,7 @@ export type HttpUploadBackendOptions = {
   bucket: string;
   /**
    * Test seam — production takes the pooled HTTP/1.1 `blobFetch`, NEVER
-   * `globalThis.fetch`: see `_egress-fetch.ts`.
+   * `globalThis.fetch`: see `../_egress-fetch.ts`.
    */
   fetch?: typeof globalThis.fetch | undefined;
 };
@@ -62,7 +62,7 @@ export function storageEndpoint(url: string): string {
 /** {@link UploadBackend} over Supabase Storage's REST API. */
 export function createHttpUploadBackend(options: HttpUploadBackendOptions): UploadBackend {
   const endpoint = storageEndpoint(options.url);
-  // See `_egress-fetch.ts`: the operator's own bucket is reached the same way the
+  // See `../_egress-fetch.ts`: the operator's own bucket is reached the same way the
   // platform is, several windows at a time, so it takes the same HTTP/1.1 pool.
   const call = options.fetch ?? blobFetch;
   const auth = {

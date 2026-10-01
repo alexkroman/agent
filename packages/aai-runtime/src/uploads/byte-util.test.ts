@@ -16,7 +16,7 @@
  *    subject's own cut is not an oracle — a reversal in `concat` would cancel
  *    against itself.
  * 2. **`assertPartOffset`'s GRID**, which is the independent one. That function
- *    lives in `_upload-store.ts` and was written for the offsets a caller PUTs a
+ *    lives in `store.ts` and was written for the offsets a caller PUTs a
  *    part at; nothing about it knows `windows` exists. So its agreement with
  *    every offset a streamed cut produces is evidence rather than a restatement,
  *    and it is exactly the invariant the growing cut put at risk (see the `grow`
@@ -43,15 +43,8 @@
 import { UPLOAD_CHUNK_BYTES, UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import {
-  chunked,
-  collectCapped,
-  concat,
-  once,
-  type PlacedWindow,
-  windows,
-} from "./_upload-byte-util.ts";
-import { assertPartOffset, UploadTooLargeError } from "./_upload-store.ts";
+import { chunked, collectCapped, concat, once, type PlacedWindow, windows } from "./byte-util.ts";
+import { assertPartOffset, UploadTooLargeError } from "./store.ts";
 
 /** Chunks in the largest body a property generates. Nine, so the ramp reaches its
  * fourth window (1 + 2 + 4 MiB, then a remainder) without paying for the 24 MiB a

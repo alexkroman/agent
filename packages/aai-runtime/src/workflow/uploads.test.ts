@@ -11,15 +11,15 @@
  * over a temp directory, on the argument that the file backend's being a valid double
  * made either trustworthy. There is one store now — `_upload-store-test-utils.ts`
  * carries why that pairing was the wrong axis — and the byte contract it writes
- * through has specs of its own in `_upload-blobs.test.ts`.
+ * through has specs of its own in `../uploads/blobs.test.ts`.
  */
 
 import { UPLOAD_CHUNK_BYTES, UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { fakeFetch } from "../_test-utils.ts";
-import type { UploadBackend } from "../_upload-blobs.ts";
-import { UPLOAD_WINDOW_CONCURRENCY } from "../_upload-store.ts";
 import { body, memoryStore, ramp, recordingDb } from "../_upload-store-test-utils.ts";
+import type { UploadBackend } from "../uploads/index.ts";
+import { UPLOAD_WINDOW_CONCURRENCY } from "../uploads/index.ts";
 import {
   createMemoryUploadBackend,
   createUnavailableUploadStore,
@@ -73,7 +73,7 @@ describe("the store", () => {
 
   test("cuts a whole-file write into the SAME windows a parts upload uses", async () => {
     // One byte layout whatever route an upload arrived by — the property
-    // `_upload-blobs.ts` states, and the reason `stepReadUpload` needs no idea which
+    // `../uploads/blobs.ts` states, and the reason `stepReadUpload` needs no idea which
     // write produced an object.
     const whole = memoryStore();
     const created = await whole.store.create({}, body(ramp(UPLOAD_PART_BYTES + 100)));

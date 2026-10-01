@@ -10,7 +10,6 @@
  */
 
 import type http from "node:http";
-import { sendJson } from "./workflow/api/http.ts";
 import {
   UnknownUploadError,
   UploadCompleteError,
@@ -18,7 +17,8 @@ import {
   UploadPartError,
   UploadsUnavailableError,
   UploadTooLargeError,
-} from "./workflow/uploads.ts";
+} from "../uploads.ts";
+import { sendJson } from "./http.ts";
 
 /**
  * Answer an upload failure this route can name, or decline so the caller re-throws.

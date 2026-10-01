@@ -10,13 +10,13 @@
  *
  * The two are asserted TOGETHER because the interesting property is where they differ:
  * one carries a service key to a bucket, the other carries nothing to a platform route,
- * and that split is the security boundary (`_upload-blobs.ts`, "Signing is NOT here").
+ * and that split is the security boundary (`blobs.ts`, "Signing is NOT here").
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createBrokeredUploadBlobs } from "./_upload-blobs-brokered.ts";
-import { createHttpUploadBackend, storageEndpoint } from "./_upload-blobs-http.ts";
-import { UploadTooLargeError } from "./_upload-store.ts";
+import { createBrokeredUploadBlobs } from "./blobs-brokered.ts";
+import { createHttpUploadBackend, storageEndpoint } from "./blobs-http.ts";
+import { UploadTooLargeError } from "./store.ts";
 
 /** One request the implementation made, reduced to what a spec asks about. */
 type Call = { method: string; url: string; headers: Record<string, string>; bytes: number };

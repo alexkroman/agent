@@ -42,9 +42,9 @@ import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
 import { createWorkflowApiClient } from "@alexkroman1/aai/workflow-api";
 import { afterEach, expect, test } from "vitest";
-import { silentLogger } from "./_test-utils.ts";
-import { memoryStore } from "./_upload-store-test-utils.ts";
-import { createWorkflowApi } from "./workflow/api.ts";
+import { silentLogger } from "../_test-utils.ts";
+import { memoryStore } from "../_upload-store-test-utils.ts";
+import { createWorkflowApi } from "../workflow/api.ts";
 
 /** Six windows' worth, and so ONE part at the default size — the case that broke. */
 const TOTAL = UPLOAD_CHUNK_BYTES * 6;

@@ -14,7 +14,7 @@
  * the toll is paid per claim rather than per part (`UPLOAD_CLAIM_BATCH`). The
  * second is on the guest side, where one claim used to cost three round trips to
  * the record's home plus eight sequential rounds of bucket probes — see
- * `aai-runtime/_upload-store.ts`, `UPLOAD_PROBE_CONCURRENCY`, which carries the
+ * `aai-runtime/uploads/store.ts`, `UPLOAD_PROBE_CONCURRENCY`, which carries the
  * measurement (5013 ms to 1203 ms on a harness at these latencies).
  *
  * Its own module because `workflow-upload-parts.ts` is at the file-length cap and

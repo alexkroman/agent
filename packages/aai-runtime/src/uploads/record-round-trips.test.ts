@@ -40,10 +40,10 @@
 import { publishUploadReader, UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
 import { stepReadUpload, stepUploadInfo } from "@alexkroman1/aai/step";
 import { afterEach, expect, test } from "vitest";
-import { partKey } from "./_upload-blobs.ts";
-import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
-import { createBlobUploadStore } from "./_upload-store-blobs.ts";
-import { createMemoryUploadBackend } from "./workflow/uploads.ts";
+import { createMemoryUploadBackend } from "../workflow/uploads.ts";
+import { partKey } from "./blobs.ts";
+import type { UploadRecord, UploadRecords } from "./records.ts";
+import { createBlobUploadStore } from "./store-blobs.ts";
 
 /** Where this deployment's objects live — arbitrary, and the same on both sides. */
 const PREFIX = "uploads/agent";
@@ -51,7 +51,7 @@ const PREFIX = "uploads/agent";
 /**
  * A record home that COUNTS, over a `Map`.
  *
- * Deliberately not `recordingDb` from `_upload-store-test-utils.ts`: that one
+ * Deliberately not `recordingDb` from `../_upload-store-test-utils.ts`: that one
  * records SQL statements, which is a fact about the Postgres arm, where what is
  * counted here is calls to the seam — the thing a platform deployment pays a round
  * trip for whichever home is behind it.
@@ -63,7 +63,7 @@ function countingRecords(): { records: UploadRecords; calls: () => number } {
     calls: () => calls,
     records: {
       // Local on the platform arm, so it is NOT counted — see
-      // `uploads-platform.ts`, "`ensure` is local".
+      // `platform.ts`, "`ensure` is local".
       ensure: () => Promise.resolve(),
       read(id) {
         calls += 1;

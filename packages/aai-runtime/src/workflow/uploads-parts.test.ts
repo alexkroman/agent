@@ -11,8 +11,8 @@
 import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
 import { tick } from "../_test-utils.ts";
-import type { UploadBackend } from "../_upload-blobs.ts";
 import { body, digest, memoryStore, ramp } from "../_upload-store-test-utils.ts";
+import type { UploadBackend } from "../uploads/index.ts";
 import {
   createUploadStore,
   UnknownUploadError,

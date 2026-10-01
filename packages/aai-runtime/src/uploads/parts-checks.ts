@@ -5,7 +5,7 @@
  * Three pure functions, all answering the same question from different ends: what
  * does this upload's own record permit — a total a window has to fit inside, and a
  * `complete` that closes it to further windows altogether. They are here rather
- * than in `_upload-store-blobs.ts` because that file crossed the 500-line cap, and
+ * than in `store-blobs.ts` because that file crossed the 500-line cap, and
  * this is the seam it had: everything else in it closes over the store's `records`,
  * `blobs` and lock, while these take a record and a number and return a value.
  *
@@ -20,9 +20,9 @@
  * @internal
  */
 
-import type { UploadPart } from "./_upload-blobs.ts";
-import type { UploadRecord } from "./_upload-records.ts";
-import { UploadCompleteError, UploadPartError } from "./_upload-store.ts";
+import type { UploadPart } from "./blobs.ts";
+import type { UploadRecord } from "./records.ts";
+import { UploadCompleteError, UploadPartError } from "./store.ts";
 
 /**
  * One probed window, or the reason it may not be recorded.
@@ -94,7 +94,7 @@ export function assertUploadOpen(id: string, held: UploadRecord): void {
  * `beginParts` writes `expected` and nothing else ever does, so a copy of it cannot
  * go stale the way `parts` can.
  *
- * (This block was left behind in `_upload-store-blobs.ts` when the function moved
+ * (This block was left behind in `store-blobs.ts` when the function moved
  * here, where it bound to the next declaration instead and this one had none.)
  */
 export function declaredTotal(id: string, held: UploadRecord, offset: number): number {

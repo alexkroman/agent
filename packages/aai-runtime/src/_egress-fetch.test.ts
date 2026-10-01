@@ -37,8 +37,8 @@ vi.mock("undici", () => ({
 
 const { blobFetch, closeEgressFetch, EGRESS_RPC_HTTP2_ENV, egressRpcAllowsH2, rpcFetch } =
   await import("./_egress-fetch.ts");
-const { createBrokeredUploadBlobs } = await import("./_upload-blobs-brokered.ts");
-const { createHttpUploadBackend } = await import("./_upload-blobs-http.ts");
+const { createBrokeredUploadBlobs } = await import("./uploads/index.ts");
+const { createHttpUploadBackend } = await import("./uploads/index.ts");
 const { platformPost } = await import("./platform/index.ts");
 
 /** Forget any pool a previous test built, so `agentOptions` counts this test's. */

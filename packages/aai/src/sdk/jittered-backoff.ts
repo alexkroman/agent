@@ -13,7 +13,7 @@
  *
  * `sdk/_upload-retry.ts` (re-sending one upload window), `sdk/_upload-resume.ts`
  * (re-entering a whole upload after an outage) and
- * `aai-runtime/_upload-blobs-brokered.ts` (a guest re-issuing one brokered byte
+ * `aai-runtime/uploads/blobs-brokered.ts` (a guest re-issuing one brokered byte
  * op). Two of them even named their local function `retryDelay`. Each carried
  * its own comment explaining the jitter, which is the tell this repo already
  * reads as a missing shared primitive — the same tell that produced `sleep()`,

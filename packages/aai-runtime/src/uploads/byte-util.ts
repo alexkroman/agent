@@ -5,13 +5,13 @@
  * Five functions the whole upload surface shares and none of which knows what an
  * upload is: cut a body into pieces, group those into placed WINDOWS, join pieces
  * into one buffer, hand one buffer over as an iterable, drain a body into one buffer
- * with a cap. They sat at the bottom of `_upload-store.ts` — which is
+ * with a cap. They sat at the bottom of `store.ts` — which is
  * the store's INTERFACE, its error vocabulary and its invariants — and that file
  * crossed the 500-line cap when `UPLOAD_PROBE_CONCURRENCY` arrived.
  *
  * This is the seam that file already had rather than the smallest cut available:
  * these are byte plumbing with four importers, all of them a blob backend
- * (`_upload-blobs.ts`, `-http.ts`, `-brokered.ts`) or the file home, and not one
+ * (`blobs.ts`, `-http.ts`, `-brokered.ts`) or the file home, and not one
  * of them reads anything else from the store's module. The error classes are the
  * other candidate and stay put: the docs on the five cross-reference each other by
  * position ("its own error for the reason the four above are"), and they have 23
@@ -25,7 +25,7 @@
  */
 
 import { UPLOAD_CHUNK_BYTES, UPLOAD_PART_BYTES } from "@alexkroman1/aai/host-internal";
-import { UploadTooLargeError } from "./_upload-store.ts";
+import { UploadTooLargeError } from "./store.ts";
 
 /**
  * Read a body into `UPLOAD_CHUNK_BYTES` pieces, refusing anything past `limit`.
@@ -65,7 +65,7 @@ export type PlacedWindow = { at: number; bytes: Uint8Array };
 /**
  * A body as window objects, refusing anything past `limit`.
  *
- * Here rather than in `_upload-store-blobs.ts` because it is what this module is
+ * Here rather than in `store-blobs.ts` because it is what this module is
  * for — cutting a body into buffers — and because that file is at the 500-line cap.
  * Each window carries the offset it starts at, which it knows and its consumer would
  * otherwise have to derive from the previous write's return value, i.e. from a value

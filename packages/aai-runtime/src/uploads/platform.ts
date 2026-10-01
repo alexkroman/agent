@@ -55,16 +55,16 @@
  * Neither translation is a FALLBACK, and the difference matters: this arm is
  * taken once (`createUploadStore`'s `options.platform` branch), so there is no local
  * store to fall back TO — and a local record behind the platform's bucket would
- * be the half-durable pairing `_upload-store-blobs.ts` refuses everywhere else.
+ * be the half-durable pairing `store-blobs.ts` refuses everywhere else.
  * Everything else non-2xx throws, because a silent failure would mean an upload
  * whose bytes are in the bucket and whose record says nothing arrived.
  */
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import { partsOf } from "./_upload-blobs.ts";
-import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
-import { UploadIdTakenError, UploadsUnavailableError } from "./_upload-store.ts";
-import { PLATFORM_ROUTES, type PlatformEndpoint, platformResult } from "./platform/index.ts";
+import { PLATFORM_ROUTES, type PlatformEndpoint, platformResult } from "../platform/index.ts";
+import { partsOf } from "./blobs.ts";
+import type { UploadRecord, UploadRecords } from "./records.ts";
+import { UploadIdTakenError, UploadsUnavailableError } from "./store.ts";
 
 /**
  * How long one record call may take.

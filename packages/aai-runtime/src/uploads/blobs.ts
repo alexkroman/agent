@@ -50,11 +50,11 @@
  *
  * So there are two implementations and the SPLIT is the security boundary:
  *
- * - **`_upload-blobs-brokered.ts`** is what a deployed guest gets. Every operation
+ * - **`blobs-brokered.ts`** is what a deployed guest gets. Every operation
  *   is one request to the agent's own public platform surface, which holds the
  *   credential — the guest carries no key and could not name another app's prefix
  *   if it tried, because the prefix is the slug in the URL it was given.
- * - **`_upload-blobs-http.ts`** talks to a bucket directly with a service key, for
+ * - **`blobs-http.ts`** talks to a bucket directly with a service key, for
  *   `aai dev` and a self-hosted server. There the operator and the agent author are
  *   the same person and the bucket is theirs, so there is no boundary to cross.
  *
@@ -62,8 +62,8 @@
  */
 
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
-import { collectCapped } from "./_upload-byte-util.ts";
-import type { ByteRange } from "./_upload-store.ts";
+import { collectCapped } from "./byte-util.ts";
+import type { ByteRange } from "./store.ts";
 
 /** One window of an upload, and the object holding it. */
 export type UploadPart = {

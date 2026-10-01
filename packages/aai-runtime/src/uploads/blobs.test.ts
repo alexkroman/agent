@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { ramp } from "../_upload-store-test-utils.ts";
 import {
   createMemoryUploadBackend,
   partKey,
@@ -19,9 +20,8 @@ import {
   partsOf,
   rangesOf,
   type UploadPart,
-} from "./_upload-blobs.ts";
-import { UploadTooLargeError } from "./_upload-store.ts";
-import { ramp } from "./_upload-store-test-utils.ts";
+} from "./blobs.ts";
+import { UploadTooLargeError } from "./store.ts";
 
 async function* once(value: Uint8Array): AsyncGenerator<Uint8Array> {
   yield value;

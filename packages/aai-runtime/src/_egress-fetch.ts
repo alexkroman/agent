@@ -15,8 +15,8 @@
  *
  * What was left behind is that the RUNTIME's own calls are the same shape and
  * were still on the global: the upload broker's byte operations
- * (`_upload-blobs-brokered.ts`), the operator-bucket ones beside them
- * (`_upload-blobs-http.ts`), and every platform RPC (`platform/rpc.ts`). All of
+ * (`uploads/blobs-brokered.ts`), the operator-bucket ones beside them
+ * (`uploads/blobs-http.ts`), and every platform RPC (`platform/rpc.ts`). All of
  * them go to ONE origin, several at a time, some carrying megabytes.
  *
  * **Observed in production**, on a deployed transcription workflow uploading a

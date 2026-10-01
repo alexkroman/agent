@@ -334,7 +334,7 @@ export const TIMING_RULES = [
       "There were THREE byte-identical copies of this, in two packages, and two\n" +
       "of them had even named their local function `retryDelay`:\n" +
       "`sdk/_upload-retry.ts`, `sdk/_upload-resume.ts` and\n" +
-      "`aai-runtime/_upload-blobs-brokered.ts`. Each carried its own comment\n" +
+      "`aai-runtime/uploads/blobs-brokered.ts`. Each carried its own comment\n" +
       "explaining why the jitter is there, which is this repo's standing tell\n" +
       "that the explanation IS the function.\n" +
       "\n" +

@@ -5,7 +5,7 @@
  *
  * `endpoint.ts` collapsed the credential pair and the five paths. What it
  * left behind was four `call()` bodies — `session-state-platform.ts`,
- * `../uploads-platform.ts`, `workflow-platform-storage.ts` and
+ * `../uploads/platform.ts`, `workflow-platform-storage.ts` and
  * `workflow/platform-queue.ts` — each spelling out the same seven steps: resolve
  * the fetch seam, build the URL, set `authorization` and `content-type`, wrap the
  * whole thing in `pTimeout`, read the body, throw on non-2xx with the status and a
@@ -47,7 +47,7 @@
  * `pTimeout`'s message is read by whoever is looking at a step that failed for no
  * other stated reason, and the actionable fact is WHICH of the four deadlines
  * elapsed — they are 10s, 15s, 15s and 20s, set for four different reasons. So it
- * is `<label> timed out after <ms>ms`, matching `../_upload-blobs-brokered.ts`, which
+ * is `<label> timed out after <ms>ms`, matching `../uploads/blobs-brokered.ts`, which
  * already had it right. The enqueue client's message used to interpolate the URL
  * instead; that was an artifact of the URL having once been built twice per call,
  * and the base is one operator-set value the label does not need to repeat.
@@ -276,7 +276,7 @@ async function send(
  * for why that is the one answer this condition must not get.
  *
  * `RETRYABLE_STATUS` is the SDK's own set rather than a list written here, for
- * the reason `../_upload-blobs-brokered.ts` gives for taking it: the two ends of a
+ * the reason `../uploads/blobs-brokered.ts` gives for taking it: the two ends of a
  * platform call cannot be allowed to disagree about which statuses mean "later".
  * A status outside it stays code-less on purpose — a 400, 401, 404 or 501 will
  * be the same answer next time, and a 503 telling a page to retry one forever is
