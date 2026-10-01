@@ -119,7 +119,10 @@ function specifiersBySource(manifest) {
   return bySource;
 }
 
-/** The exported names in one `export { a, type B, c as d }` clause. */
+/**
+ * The exported names in one `export { a, type B, c as d }` (or `export type
+ * { … }`) clause.
+ */
 const clauseNames = (clause) =>
   clause
     .replace(/\/\/.*$/gm, "")
@@ -163,7 +166,7 @@ function* ownedNames(dir) {
     .sort()) {
     const capability = `${key}:${file.replace(/\.ts$/, "")}`;
     const text = readFileSync(join(entryDir, file), "utf8");
-    for (const [, clause, from] of text.matchAll(/export\s*\{([^}]*)\}\s*from\s*"([^"]+)"/g)) {
+    for (const [, clause, from] of text.matchAll(/export\s+(?:type\s+)?\{([^}]*)\}\s*from\s*"([^"]+)"/g)) {
       // Both groups are mandatory in the pattern, but `matchAll` types them
       // `string | undefined` under the scripts' strict checking.
       if (clause === undefined || from === undefined) continue;
