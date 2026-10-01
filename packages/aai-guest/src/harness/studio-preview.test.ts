@@ -3,21 +3,32 @@
  * Studio mode's preview server is the LOADED bundle's own, rebuilt per bundle.
  */
 
+import type http from "node:http";
+import { GUEST_HOST } from "@alexkroman1/aai-runtime/internal";
 import { emptyHarnessState } from "aai-guest-core/bundle";
 import type { CreateGuestRuntime, GuestHost } from "aai-guest-core/types";
 import { describe, expect, test, vi } from "vitest";
 import { warnOnSecondRuntime } from "./agent-mode.ts";
-import { studioPreview } from "./studio-preview.ts";
+import { type PreviewServer, studioPreview } from "./studio-preview.ts";
 
-/** A factory whose host builds a recognisable fake server. */
-function factoryWithHost(label: string) {
-  const close = vi.fn(() => Promise.resolve());
-  const createRuntimeServer = vi.fn(() => ({ node: { label }, close }));
-  const factory = Object.assign(
+/** A bundle factory carrying `host`, as the worker wrapper builds one. */
+function bundle(host: GuestHost): CreateGuestRuntime {
+  return Object.assign(
     () => ({ startSession: () => undefined, shutdown: () => Promise.resolve() }),
-    { host: { version: 1, createRuntimeServer } as unknown as GuestHost },
-  ) as CreateGuestRuntime;
-  return { factory, createRuntimeServer, close };
+    { host },
+  );
+}
+
+/** A built server the spec can recognise, and a builder that records whose host it used. */
+function recordingBuilder() {
+  const built: { host: GuestHost; server: PreviewServer; close: ReturnType<typeof vi.fn> }[] = [];
+  const build = (host: GuestHost): PreviewServer => {
+    const close = vi.fn(() => Promise.resolve());
+    const server: PreviewServer = { node: {} as http.Server, close };
+    built.push({ host, server, close });
+    return server;
+  };
+  return { build, built };
 }
 
 describe("studioPreview", () => {
@@ -25,25 +36,26 @@ describe("studioPreview", () => {
     expect(studioPreview(emptyHarnessState()).current()).toBeUndefined();
   });
 
-  test("builds the server from the bundle's host once, and rebuilds for a new bundle", () => {
+  test("builds from the LOADED bundle's host once, and rebuilds for a new bundle", () => {
     const state = emptyHarnessState();
-    const preview = studioPreview(state);
-    const first = factoryWithHost("first");
-    state.createRuntime = first.factory;
-    state.host = first.factory.host;
+    const { build, built } = recordingBuilder();
+    const preview = studioPreview(state, build);
 
+    const firstHost = { ...GUEST_HOST };
+    state.createRuntime = bundle(firstHost);
+    state.host = firstHost;
     const a = preview.current();
     expect(preview.current()).toBe(a);
-    expect(first.createRuntimeServer).toHaveBeenCalledOnce();
-    expect(a?.node).toEqual({ label: "first" });
+    expect(built.map((b) => b.host)).toEqual([firstHost]);
 
     // A second `test_agent` load replaces the bundle: the old server is closed
-    // and the next request is served by the new bundle's runtime.
-    const second = factoryWithHost("second");
-    state.createRuntime = second.factory;
-    state.host = second.factory.host;
-    expect(preview.current()?.node).toEqual({ label: "second" });
-    expect(first.close).toHaveBeenCalledOnce();
+    // and the next request is served by a server the NEW bundle's host built.
+    const secondHost = { ...GUEST_HOST };
+    state.createRuntime = bundle(secondHost);
+    state.host = secondHost;
+    expect(preview.current()).toBe(built[1]?.server);
+    expect(built[1]?.host).toBe(secondHost);
+    expect(built[0]?.close).toHaveBeenCalledOnce();
   });
 });
 

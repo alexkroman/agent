@@ -123,9 +123,7 @@ export type { StateSyncSession } from "./_state-sync.ts";
  * and the log line cannot come to disagree about what a header means.
  */
 export { parseTraceparent, type TraceParent, traceIdOf } from "./_trace-context.ts";
-// The surface an agent bundle hands the guest harness, which carries no runtime
-// of its own (see `guest-host.ts`). The worker wrapper attaches it to
-// `__aaiCreateRuntime`.
+// What a bundle hands the runtime-less guest harness, as `__aaiCreateRuntime.host`.
 export { GUEST_HOST, GUEST_HOST_VERSION, type GuestHost } from "./guest-host.ts";
 // The two sizes an upload is measured in, plus the id grammar. Exported for the
 // PLATFORM, which owns the byte route a deployed guest brokers through: its window

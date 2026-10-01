@@ -84,8 +84,8 @@ platform replica. `bundle-source.ts` is the guest half.
 ## Why the buffer lives in the guest
 
 `logs.ts` tees both process streams into a bounded cursor-indexed ring
-(`createLogBuffer`, `@alexkroman1/aai/host-internal`), served at `GET /manage/logs` —
-the source for the studio Logs pane and `aai logs`. It lives in the GUEST
+(`createLogBuffer`, `@alexkroman1/aai/host-internal`), served at
+`GET /manage/logs` — the source for the studio Logs pane and `aai logs`. It lives in the GUEST
 because a sandbox is resident on one replica and replicas never proxy for each
 other; the guest's own URL is reachable from all of them.
 

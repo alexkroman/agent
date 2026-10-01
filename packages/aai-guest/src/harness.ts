@@ -66,12 +66,11 @@
  * Run with: node harness.mjs
  */
 
-import http from "node:http";
+import type http from "node:http";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
-import { formatSchemaIssues, requestPath } from "@alexkroman1/aai/internal";
+import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
-import { verifyBearer } from "aai-guest-core/auth";
 import { emptyHarnessState, type HarnessState } from "aai-guest-core/bundle";
 import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "aai-guest-core/limits";
 import {
@@ -98,6 +97,7 @@ import { captureGuestOutput } from "./harness/logs.ts";
 import { resolveGuestPort } from "./harness/port.ts";
 import { guestSdkVersion } from "./harness/sdk-version.ts";
 import { studioPreview } from "./harness/studio-preview.ts";
+import { createStudioServer, startStudioTracing } from "./harness/studio-server.ts";
 
 // ---- Control-channel dispatch -----------------------------------------------
 
@@ -268,9 +268,7 @@ export function main(): void {
   // Studio mode's span export, through the PLATFORM's runtime the coding agent
   // runs on — imported here, dynamically, so agent mode never loads it. A no-op
   // that imports nothing further when no collector is configured.
-  void import("@alexkroman1/aai-runtime/tracing")
-    .then(({ startTracingDetached }) => startTracingDetached())
-    .catch((err: unknown) => console.error(`studio tracing unavailable: ${errorMessage(err)}`));
+  void startStudioTracing();
 
   const state = emptyHarnessState();
   let hostSocket: WebSocket | null = null;
@@ -324,60 +322,21 @@ export function main(): void {
   // `/websocket` previews, the workflow API — by a server the LOADED BUNDLE's
   // runtime builds (`studioPreview`), so a preview runs on one runtime copy end
   // to end, exactly as a deployed agent does.
-  const preview = studioPreview(state);
-  const server = http.createServer((req, res) => {
-    const url = requestPath(req.url);
-    const method = req.method ?? "GET";
+  const server = createStudioServer({
+    token,
     // Ahead of the chat surface: the install route is gated by the HOST token
     // and MINTS the chat token the chat surface checks, so it cannot sit behind
     // a session that may not exist yet (see studio/session-init.ts).
-    if (
+    handleOwn: (req, res, url, method) =>
       handleSessionInitRequest(state, token, req, res, url, method) ||
-      handleStudioRequest(state.studio, studioDeps, req, res, url, method)
-    ) {
-      return;
-    }
-    const target = preview.current();
-    if (target) {
-      target.node.emit("request", req, res);
-      return;
-    }
-    // No bundle loaded yet: the harness is up (the host's readiness probe), and
-    // there is no agent to describe.
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.writeHead(url === "/health" ? 200 : 503, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(url === "/health" ? { status: "ok" } : { error: "No agent loaded" }));
-  });
-  server.on("upgrade", (req, socket, head) => {
-    const pathname = requestPath(req.url);
-    if (pathname !== "/ws") {
-      const target = preview.current();
-      if (target) {
-        target.node.emit("upgrade", req, socket, head);
-        return;
-      }
-      socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
-      socket.destroy();
-      return;
-    }
-
-    // The control channel: the tunnel URL is public — an upgrade without
-    // the per-sandbox bearer token is rejected before the handshake.
-    if (!verifyBearer(req.headers.authorization, token)) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
-    }
-    // One host per harness: a second authenticated dial would interleave
-    // two hosts' RPC streams. The host never redials a live sandbox.
-    if (hostSocket) {
-      socket.write("HTTP/1.1 409 Conflict\r\n\r\n");
-      socket.destroy();
-      return;
-    }
-    controlWss.handleUpgrade(req, socket, head, (ws) => {
-      controlWss.emit("connection", ws, req);
-    });
+      handleStudioRequest(state.studio, studioDeps, req, res, url, method),
+    preview: studioPreview(state),
+    hostConnected: () => hostSocket !== null,
+    acceptControl: (req, socket, head) => {
+      controlWss.handleUpgrade(req, socket, head, (ws) => {
+        controlWss.emit("connection", ws, req);
+      });
+    },
   });
 
   // Orphan check: with no host control connection past the window — host

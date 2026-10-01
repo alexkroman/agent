@@ -26,8 +26,17 @@ export type PreviewServer = Pick<ReturnType<GuestHost["createRuntimeServer"]>, "
 /** The current preview server, or `undefined` while no bundle is loaded. */
 export type StudioPreview = { current(): PreviewServer | undefined };
 
+/** How a preview server is built from a bundle's host — injectable for specs. */
+export type BuildPreview = (host: GuestHost, state: HarnessState) => PreviewServer;
+
+const buildFromHost: BuildPreview = (host, state) =>
+  host.createRuntimeServer({ runtime: lazyRuntime(state) });
+
 /** See the module doc. */
-export function studioPreview(state: HarnessState): StudioPreview {
+export function studioPreview(
+  state: HarnessState,
+  build: BuildPreview = buildFromHost,
+): StudioPreview {
   let built: { for: CreateGuestRuntime; server: PreviewServer } | undefined;
   return {
     current() {
@@ -43,7 +52,7 @@ export function studioPreview(state: HarnessState): StudioPreview {
           console.error(`studio preview: closing the previous server: ${errorMessage(err)}`);
         });
       }
-      const server = host.createRuntimeServer({ runtime: lazyRuntime(state) });
+      const server = build(host, state);
       built = { for: factory, server };
       return server;
     },

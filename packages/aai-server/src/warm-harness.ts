@@ -17,7 +17,7 @@
  */
 
 import { createServer } from "node:net";
-import type { LogPage } from "@alexkroman1/aai-runtime";
+import type { LogPage } from "@alexkroman1/aai/host-internal";
 import { readGuestLogs } from "./agent-logs.ts";
 import { MANAGE_REQUEST_TIMEOUT_MS } from "./constants.ts";
 import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest/routes.ts";

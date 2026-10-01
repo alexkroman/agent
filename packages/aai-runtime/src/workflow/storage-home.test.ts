@@ -9,11 +9,14 @@
  * honours the home through what it logs and does.
  */
 
-import type { Db } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { isDurableHome, resolveStorageHome } from "./storage-home.ts";
 
-const db = { query: vi.fn() } as unknown as Db;
+/**
+ * The home is generic over what stands for the database (an open `Db` for the
+ * stores, its URL for `ownedSchemaUrl`), so a URL is a faithful stand-in here.
+ */
+const db = "postgres://app@127.0.0.1:5432/app";
 
 afterEach(() => {
   vi.unstubAllEnvs();

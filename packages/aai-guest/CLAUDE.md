@@ -101,9 +101,10 @@ deployed agent.
   `__aaiCreateRuntime.host` is the typed `GuestHost` surface
   (`aai-runtime/guest-host.ts`): agent mode builds its server, delivery door,
   tracing and session gate from it. Studio mode serves its own routes (`/ws`,
-  session-init, `/studio/*`) on a plain `node:http` server and hands every other
-  request to a server the LOADED bundle's host builds (`harness/studio-preview.ts`),
-  so a preview is one runtime copy too. The studio coding agent alone uses the
+  session-init, `/studio/*`) on a plain `node:http` server
+  (`harness/studio-server.ts`) and hands every other request to a server the
+  LOADED bundle's host builds (`harness/studio-preview.ts`), so a preview is one
+  runtime copy too. The studio coding agent alone uses the
   image's runtime, by DYNAMIC import (`chat.ts`) so agent mode never loads it.
   Host-side helpers the harness calls itself (`parseBearer`, `createLogBuffer`,
   `publishStepEnv`, `safeFetch`) come from `@alexkroman1/aai/host-internal`.
