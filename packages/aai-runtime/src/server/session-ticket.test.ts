@@ -107,8 +107,8 @@ const identity = fc.record(
 );
 
 /** What a verified ticket hands back: the identity, as JSON would carry it. */
-function asCarried(input: fc.RecordValue<{ sub: string; sessionId?: string; claims?: object }>) {
-  return JSON.parse(JSON.stringify(input)) as unknown;
+function asCarried(input: object): unknown {
+  return JSON.parse(JSON.stringify(input));
 }
 
 describe("session tickets, for any input", () => {

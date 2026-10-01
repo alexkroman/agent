@@ -52,9 +52,13 @@ describe("parsePlatformFrame", () => {
   test("any text is a frame the schema accepts, or undefined — never a throw", () => {
     fc.assert(
       fc.property(wireText, (text) => {
-        for (const schema of [PlatformInboundFrameSchema, PlatformOutboundFrameSchema]) {
-          const frame = parsePlatformFrame(schema, text);
-          if (frame !== undefined) expect(schema.safeParse(frame).success).toBe(true);
+        const toPlatform = parsePlatformFrame(PlatformInboundFrameSchema, text);
+        if (toPlatform !== undefined) {
+          expect(PlatformInboundFrameSchema.safeParse(toPlatform).success).toBe(true);
+        }
+        const toGuest = parsePlatformFrame(PlatformOutboundFrameSchema, text);
+        if (toGuest !== undefined) {
+          expect(PlatformOutboundFrameSchema.safeParse(toGuest).success).toBe(true);
         }
       }),
       { numRuns: 500 },
