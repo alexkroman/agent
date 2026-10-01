@@ -5,7 +5,7 @@
  * `createAgentServer` is what the self-hosting page documents and what
  * `examples/self-hosted-server` runs, and a `DATABASE_URL` puts BOTH of this
  * runtime's durable stores in that database — session state
- * (`runtime-session-state.ts`) and the durable-run journal (`selectJournal`).
+ * (`runtime/session-state.ts`) and the durable-run journal (`selectJournal`).
  * The tables come with whoever OWNS the database, and a self-hosted deployment
  * has no migration step anywhere to hang them off, so the door has to apply the
  * DDL itself. It did not: both `ensure*Schema` functions are PUBLIC precisely so

@@ -8,7 +8,7 @@
  * event stream, on the same lazy getter and for the same reason: every front
  * door — `aai dev`, a self-hosted server, a deployed guest — serves it
  * identically, and a guest builds its runtime on the first request that needs
- * one. The dispatch itself is the runtime's (`agent-routes.ts`), which is the
+ * one. The dispatch itself is the runtime's (`runtime/agent-routes.ts`), which is the
  * copy that holds the handlers; this side hands it strings and a parsed body.
  *
  * ## Claimed only when the agent declares routes
@@ -34,8 +34,8 @@ import type http from "node:http";
 import { CLIENT_ID_RE } from "@alexkroman1/aai/host-internal";
 import { requestQuery } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { AgentRuntime } from "./runtime/index.ts";
 import type { Logger } from "./runtime-config.ts";
-import type { AgentRuntime } from "./runtime-types.ts";
 import { BodyTooLargeError, claimUnder, readBody, sendJson } from "./workflow/api/http.ts";
 
 /**

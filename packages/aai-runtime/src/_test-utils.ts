@@ -20,7 +20,7 @@ import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { type Mock, vi } from "vitest";
-import { createRuntimeWithSeams } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime/index.ts";
 import { type LogFn, type Logger, type LogLevel, silentLogger } from "./runtime-config.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s/index.ts";
 import type { ServerSession } from "./session/index.ts";

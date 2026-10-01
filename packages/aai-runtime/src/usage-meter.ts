@@ -46,8 +46,8 @@
  *   `agent({ usageLimits })` is refused at config time
  *   (`assertSamplingScope`) rather than accepting a budget nothing could
  *   enforce. What is missing is the FEED, not the meter: one is built for every
- *   session whatever its mode (`runtime-session-controls.ts`) and every tool
- *   call carries it (`runtime-tools.ts`), so an s2s agent whose tool calls
+ *   session whatever its mode (`runtime/session-controls.ts`) and every tool
+ *   call carries it (`runtime/tools.ts`), so an s2s agent whose tool calls
  *   `ctx.generate` or `ctx.delegate` really does meter those — they are
  *   host-side model requests like any other, and rows two and three of the
  *   table above apply unchanged. Reporting the loop's turns as zeroes would be
@@ -173,7 +173,7 @@ function finite(value: number | undefined): number {
  * in-memory and free, so it happens for every session; announcing is not —
  * each snapshot is an allocation on the per-STEP path, and on the pipeline it
  * becomes a durable event and a client frame besides (see
- * `runtime-session-controls.ts`, which decides when a session has a reader).
+ * `runtime/session-controls.ts`, which decides when a session has a reader).
  * So the spread is paid by a meter that has a sink and by no other:
  * `snapshot()` still answers the live total either way.
  *

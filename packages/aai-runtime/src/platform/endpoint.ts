@@ -109,7 +109,7 @@ export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16_777_216;
  *
  * ONE type, aliased by each client's own name rather than restated: the four were
  * structurally identical, which is why `resolvePlatformQueue()`'s single result is
- * already handed to three of them (`../runtime.ts`, `workflow/install.ts`) under three
+ * already handed to three of them (`../runtime/runtime.ts`, `workflow/install.ts`) under three
  * different names.
  *
  * @internal

@@ -4,7 +4,7 @@
  *
  * `createAgentServer` is the door the self-hosting page documents, and a
  * `DATABASE_URL` in the env it is handed puts BOTH of this runtime's durable
- * stores in that database — session state (`runtime-session-state.ts`) and the
+ * stores in that database — session state (`runtime/session-state.ts`) and the
  * durable-run journal (`selectJournal`). The tables come with whoever OWNS the
  * database, and a self-hosted deployment has no migration step anywhere to hang
  * them off.

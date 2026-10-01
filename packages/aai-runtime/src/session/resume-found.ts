@@ -23,13 +23,13 @@
  *
  * Deliberately not a general-purpose primitive. It is a latch with one writer
  * per source and one reader, and the reason it is a named module rather than two
- * lines in `../runtime.ts` is that the ORDER it depends on is invisible at the call
+ * lines in `../runtime/runtime.ts` is that the ORDER it depends on is invisible at the call
  * sites: the transport is built before either lookup runs, so the greeting has to
  * read this LATE (see `SkipGreetingOption` in `transports/types.ts`) or it reads
  * `false` every time and the whole thing silently does nothing.
  */
 
-import type { SessionGreeting } from "../runtime-transport.ts";
+import type { SessionGreeting } from "../runtime/index.ts";
 import { type SkipGreetingOption, shouldSkipGreeting } from "../transports/types.ts";
 
 /** What a resume recovered, written by the lookups and read by the greeting. */

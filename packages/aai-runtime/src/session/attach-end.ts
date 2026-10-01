@@ -19,7 +19,7 @@ import type { AttachSessionOptions } from "./attach.ts";
 
 /**
  * `session.start()` rejected because the app's `sessionContext` answered
- * `refuse` — thrown by `../runtime-session-stream.ts` before the transport starts,
+ * `refuse` — thrown by `../runtime/session-stream.ts` before the transport starts,
  * and told apart from a failed start in `attach.ts`, where the close is
  * decided.
  *

@@ -14,7 +14,7 @@
  *
  * It used to be nineteen `on*` methods: five mirroring the five command names,
  * thirteen mirroring the event names, and `onAudio`. `ws-handler.ts` held a switch
- * to pick among the first five and `../runtime-session-callbacks.ts` a flat forward
+ * to pick among the first five and `../runtime/session-callbacks.ts` a flat forward
  * for the other thirteen, so every name existed three times over — here, at the
  * transport boundary, and in whichever harness stood in for the thing that fired
  * it. None of that duplication decided anything; see `transports/types.ts` for the

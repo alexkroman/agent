@@ -13,9 +13,9 @@
  * | registry | claimed by | read through |
  * | --- | --- | --- |
  * | the `ServerSession` | `attach.ts`, at resume takeover | {@link SessionDirectory.session}, {@link SessionDirectory.speech} |
- * | the client sink | `../runtime.ts`'s `createSession` | (released with the session's wiring) |
- * | the event emitter | `../runtime.ts`'s `createSession` | {@link SessionDirectory.emitter} (`ctx.send`, a hook commit) |
- * | the token meter | `../runtime.ts`'s `createSession` | {@link SessionDirectory.meter} (`ctx.generate`, `ctx.delegate`) |
+ * | the client sink | `../runtime/runtime.ts`'s `createSession` | (released with the session's wiring) |
+ * | the event emitter | `../runtime/runtime.ts`'s `createSession` | {@link SessionDirectory.emitter} (`ctx.send`, a hook commit) |
+ * | the token meter | `../runtime/runtime.ts`'s `createSession` | {@link SessionDirectory.meter} (`ctx.generate`, `ctx.delegate`) |
  *
  * Each is an `OwnedMap` (`sdk/owned-map.ts`): a claim's release deletes the
  * entry only while that claim still owns it, which is what keeps an old

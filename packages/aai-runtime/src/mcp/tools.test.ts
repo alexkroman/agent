@@ -31,7 +31,7 @@ import type { JSONSchema7 } from "json-schema";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { makeLogger, silentLogger } from "../_test-utils.ts";
-import { createRuntimeWithSeams } from "../runtime.ts";
+import { createRuntimeWithSeams } from "../runtime/index.ts";
 import type { McpSession, ResolvedMcpServer } from "./connect.ts";
 import { withMcpTools } from "./tools.ts";
 

@@ -10,8 +10,8 @@
 
 import type http from "node:http";
 import type { AgentDef } from "@alexkroman1/aai";
+import type { AgentRuntime } from "./runtime/index.ts";
 import type { Logger } from "./runtime-config.ts";
-import type { AgentRuntime } from "./runtime-types.ts";
 import type { SessionAuth } from "./session-auth.ts";
 import type { CarrierName } from "./telephony/carriers.ts";
 

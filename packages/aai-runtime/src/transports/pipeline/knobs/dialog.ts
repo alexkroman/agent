@@ -14,7 +14,7 @@
  * | `voice` | `TtsOpenOptions` — the voice is baked into the DESCRIPTOR that produced the opener, and the open happens once per session | **no** |
  *
  * The last one is refused where an author can see it rather than dropped here —
- * see `reportDialogKnobs` in `../../../runtime-dialog-knobs.ts`, which warns naming the
+ * see `reportDialogKnobs` in `../../../runtime/dialog-knobs.ts`, which warns naming the
  * state and the knob. A knob that silently does nothing is worse than one that
  * is absent, and "the TTS voice changes mid-disclosure" is exactly the claim a
  * reader would believe on finding the field accepted.

@@ -27,11 +27,14 @@ import { HostConfigMessageSchema } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createRelayExecuteTool } from "./host-relay.ts";
 import { ALL_PROVIDER_ENV_VARS } from "./providers/resolve.ts";
-import { createRuntimeWithSeams, type SessionStartOptions } from "./runtime.ts";
+import type { HostRuntimeOptions, Runtime } from "./runtime/index.ts";
+import {
+  createRuntimeWithSeams,
+  type SessionStartOptions,
+  usesAssemblyS2s,
+} from "./runtime/index.ts";
 import type { Logger, S2sConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
-import { usesAssemblyS2s } from "./runtime-transport.ts";
-import type { HostRuntimeOptions, Runtime } from "./runtime-types.ts";
 import {
   type SessionWebSocket,
   safeSend,

@@ -368,7 +368,7 @@ describe("session event hooks", () => {
   test("offers the event to the DIALOGS before announcing it to the hooks", () => {
     // The order is the decision, not an implementation detail: a hook that reads
     // `dialog.position(ctx)` must see the state this event moved the dialog TO.
-    // See `../runtime-dialogs.ts`.
+    // See `../runtime/dialogs.ts`.
     const order: string[] = [];
     const { emitter } = setup({
       observe: () => order.push("dialogs"),

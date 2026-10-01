@@ -46,7 +46,7 @@
  */
 
 import type { AgentServerOptions } from "./agent-server.ts";
-import type { RuntimeOptions } from "./runtime-types.ts";
+import type { RuntimeOptions } from "./runtime/index.ts";
 
 /**
  * `RuntimeOptions` members this door deliberately does not carry, each with why.

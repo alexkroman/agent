@@ -29,7 +29,7 @@ import {
   registerFakeProviders,
 } from "../_pipeline-test-fakes.ts";
 import { makeAgent, makeLogger } from "../_test-utils.ts";
-import { createRuntimeWithSeams } from "../runtime.ts";
+import { createRuntimeWithSeams } from "../runtime/index.ts";
 import { twilioCodec } from "./carriers.ts";
 import { startTelephonySession } from "./telephony-server.ts";
 

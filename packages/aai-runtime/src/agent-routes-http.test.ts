@@ -18,9 +18,8 @@ import {
   registerFakeProviders,
 } from "./_pipeline-test-fakes.ts";
 import { makeAgent, silentLogger } from "./_test-utils.ts";
-import { compileAgentRoutes } from "./agent-routes.ts";
 import { MAX_ROUTE_BODY_BYTES } from "./agent-routes-http.ts";
-import { createRuntimeWithSeams } from "./runtime.ts";
+import { compileAgentRoutes, createRuntimeWithSeams } from "./runtime/index.ts";
 import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
 import { createSessionEventStream } from "./session/index.ts";
 import { createMemoryStateBackend } from "./session-state/store.ts";

@@ -13,8 +13,8 @@
  * `_fault-socket.ts` destroying it.
  *
  * What it pins is `pushStateSnapshot(sessionId, emitter)` — wired in by
- * `runtime.ts`'s `createSession` and called by `attachSessionState`
- * (`runtime-session-state.ts`) once the session's slots have hydrated: the
+ * `runtime/runtime.ts`'s `createSession` and called by `attachSessionState`
+ * (`runtime/session-state.ts`) once the session's slots have hydrated: the
  * surviving state pushed to a socket that has never seen it.
  * Without that line a resumed client renders EMPTY until some later tool call
  * happens to change something, which it may never do — verified by disabling it,
@@ -27,7 +27,7 @@
  * - `sessionState.sweeps.cancel(id)` is unreachable from here. The sweep fires
  *   `SESSION_RESUME_GRACE_MS` (120s) after the old session stops, so a test that
  *   reconnects in 50ms passes whether or not the cancel happens. Its coverage is
- *   `runtime-lifecycle.test.ts`'s two grace-window specs, on fake timers.
+ *   `runtime/lifecycle.test.ts`'s two grace-window specs, on fake timers.
  * - `sinkMap.claim(id, client)` is exercised incidentally — the snapshot arrives
  *   on the new socket, so the claim worked — but the ownership hazard it exists
  *   for (an old session's late `stop()` evicting the resumed session's entry) is
@@ -57,7 +57,7 @@ import { WebSocket } from "ws";
 import { z } from "zod";
 import { createSeveringProxy, type SeveringProxy } from "./_fault-socket.ts";
 import { makeMockHandle, silentLogger } from "./_test-utils.ts";
-import { createRuntime } from "./runtime.ts";
+import { createRuntime } from "./runtime/index.ts";
 import type { S2sCallbacks } from "./s2s/index.ts";
 import { createRuntimeServer } from "./server.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";

@@ -54,7 +54,7 @@ import { publishClientInboxDefaults, publishStepEnv } from "@alexkroman1/aai/hos
 import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { ensureOwnedSchemas, ownedSchemaUrl } from "./agent-server-schemas.ts";
-import { createRuntime } from "./runtime.ts";
+import { createRuntime } from "./runtime/index.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { type AgentServer, createRuntimeServer, type SharedServerOptions } from "./server.ts";
 import { agentServerEnv } from "./server-env.ts";

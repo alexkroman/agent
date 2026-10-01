@@ -9,7 +9,7 @@
     "packages/aai-runtime/src/_test-utils.ts": 16,
     "packages/aai-runtime/src/eval/stub-speech.ts": 10,
     "packages/aai-runtime/src/integration/_s2s-fuzz-commands.ts": 17,
-    "packages/aai-runtime/src/runtime-dialog-knobs.ts": 20,
+    "packages/aai-runtime/src/runtime/dialog-knobs.ts": 20,
     "packages/aai-runtime/src/server-static.ts": 19,
     "packages/aai-runtime/src/tracing.ts": 20,
     "packages/aai-runtime/tsdown.config.ts": 21,

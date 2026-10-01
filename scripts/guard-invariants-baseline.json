@@ -10,9 +10,9 @@
   "rule16_sessionCallbackName": {
     "packages/aai-runtime/src/integration/_pipeline-fuzz-model.ts": 1,
     "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts": 2,
-    "packages/aai-runtime/src/runtime-session-callbacks.ts": 2,
-    "packages/aai-runtime/src/runtime-types.ts": 5,
-    "packages/aai-runtime/src/runtime.ts": 1,
+    "packages/aai-runtime/src/runtime/session-callbacks.ts": 2,
+    "packages/aai-runtime/src/runtime/types.ts": 5,
+    "packages/aai-runtime/src/runtime/runtime.ts": 1,
     "packages/aai-runtime/src/session/commands.ts": 1,
     "packages/aai-runtime/src/session/core.ts": 3,
     "packages/aai-runtime/src/transports/_transport-recorder.ts": 2,

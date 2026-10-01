@@ -119,7 +119,7 @@ export function sessionSpeechFor(lookup: () => SpeechVerbs | undefined): Session
 
 /**
  * Every session's speech, by id, over the runtime's session map — the one
- * object `../runtime.ts` builds and hands to each surface that reaches a live
+ * object `../runtime/runtime.ts` builds and hands to each surface that reaches a live
  * session from outside its turn:
  *
  * - `of(sid)` for a context bound to a session (a tool call, an event

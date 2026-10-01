@@ -149,7 +149,7 @@ export type ServerSession = {
    * Put a prior conversation back, on resume.
    *
    * **The SERVER calls this, from its own retained event stream** — see
-   * `../runtime-session-stream.ts`. It used to be driven by a `history` client
+   * `../runtime/session-stream.ts`. It used to be driven by a `history` client
    * frame, i.e. the client was the authority on what the agent remembered, which
    * is what the event stream exists to replace: a client could omit, truncate or
    * invent turns, and a client that had never connected before (a second tab, a

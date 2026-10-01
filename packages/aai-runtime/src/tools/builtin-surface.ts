@@ -2,7 +2,7 @@
 /**
  * The builtin tool surface merged with the tools a mode dispatches itself.
  *
- * Its own module because both tool paths read it (`../runtime-tools.ts` for the
+ * Its own module because both tool paths read it (`../runtime/tools.ts` for the
  * sandbox and self-hosted runtimes, `../text-agent/agent.ts` for text mode), and the
  * collision policy it owns has to be the same rule on each.
  *

@@ -8,7 +8,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import { makeAgent, makeLogger, silentLogger } from "./_test-utils.ts";
-import { createRuntime } from "./runtime.ts";
+import { createRuntime } from "./runtime/index.ts";
 import { createRuntimeServer, type SessionRuntime } from "./server.ts";
 
 /**
@@ -226,7 +226,7 @@ describe("createRuntimeServer", () => {
   // A case called "accepts shutdownTimeoutMs in runtime options" stood here and
   // asserted `expect(server).toHaveProperty("close")` — nothing about the
   // option, which is `createRuntime`'s and not this server's. What the deadline
-  // actually does is asserted in `runtime-lifecycle.test.ts`.
+  // actually does is asserted in `runtime/lifecycle.test.ts`.
 
   test("responses carry security headers", async () => {
     const { runtime } = makeRuntime();

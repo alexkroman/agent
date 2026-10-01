@@ -8,9 +8,9 @@
  * log, the socket, the agent's hooks). This is a reader that belongs to a
  * CLIENT: every session bound to it by `?client=` (`sessionClientId`), whichever
  * socket opened it. The session side calls {@link feedClientEvent} from the
- * emitter's `observe` step (`../runtime-session-controls.ts`, beside the metrics
+ * emitter's `observe` step (`../runtime/session-controls.ts`, beside the metrics
  * sinks) and {@link feedClientSessionEnd} once a session's log is flushed
- * (`../runtime-session-memory.ts`); the inbox (`inbox.ts`) publishes where
+ * (`../runtime/session-memory.ts`); the inbox (`inbox.ts`) publishes where
  * the frames go.
  *
  * ## What is forwarded, and what never is

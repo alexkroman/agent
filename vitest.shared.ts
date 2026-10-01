@@ -118,7 +118,7 @@ export const sharedConfig = {
     // Every test runs in UTC, whatever zone the machine is in.
     //
     // A date test is otherwise a test of WHERE it ran.
-    // `aai-runtime/runtime-system-prompt.test.ts` ("a replica that lives across
+    // `aai-runtime/runtime/system-prompt.test.ts` ("a replica that lives across
     // midnight stops serving yesterday's date") failed on every branch on a
     // Pacific laptop and passed in CI, which runs UTC — so a green
     // `pnpm check` was a property of the runner's timezone, and the documented

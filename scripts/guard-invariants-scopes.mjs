@@ -52,9 +52,9 @@ export const SESSION_SURFACE_PATHS = [
   "packages/aai-runtime/src/session/core.ts",
   "packages/aai-runtime/src/session/commands.ts",
   "packages/aai-runtime/src/transports/types.ts",
-  "packages/aai-runtime/src/runtime-types.ts",
-  "packages/aai-runtime/src/runtime-session-callbacks.ts",
-  "packages/aai-runtime/src/runtime.ts",
+  "packages/aai-runtime/src/runtime/types.ts",
+  "packages/aai-runtime/src/runtime/session-callbacks.ts",
+  "packages/aai-runtime/src/runtime/runtime.ts",
   "packages/aai-runtime/src/session/ws-handler.ts",
   // The doubles. A per-name callback surface has a MULTIPLIER: every harness
   // standing in for the thing that fires a callback has to satisfy its whole

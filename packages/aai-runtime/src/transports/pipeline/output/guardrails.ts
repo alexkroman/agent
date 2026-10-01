@@ -184,7 +184,7 @@ export const NO_GUARDRAILS: TurnGuardrails = {
  *
  * **A session that declared none gets {@link NO_GUARDRAILS} itself**, and that
  * is what makes the fast path real rather than merely documented. The runtime
- * wires this for every session (`../../../runtime-session-controls.ts`), so
+ * wires this for every session (`../../../runtime/session-controls.ts`), so
  * `../transport.ts`'s `opts.guardrails ?? NO_GUARDRAILS` never once took
  * its right-hand arm: every turn of every agent awaited two nested async frames
  * on the time-to-first-word path to discover there was nothing to run. Deciding

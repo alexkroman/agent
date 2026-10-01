@@ -7,7 +7,7 @@
  *
  * This type used to carry one method per thing a transport observes — sixteen of
  * them, and its own comment said as much: "one per event the transport produces".
- * `ServerSession` then declared the same sixteen, `runtime-session-callbacks.ts`
+ * `ServerSession` then declared the same sixteen, `../runtime/session-callbacks.ts`
  * forwarded each to its twin, and four test harnesses stubbed the whole set. So a
  * seventeenth thing worth observing cost a declaration in three places and a stub
  * in four, none of which DECIDED anything: the transport already knew what
@@ -158,7 +158,7 @@ export type SendTtsText = (text: string, options?: SendTtsOptions) => void;
  * **Runtime-internal, and NOT the type an author writes.** `agent({
  * systemPrompt })` takes `AgentSystemPrompt` — a string or a resolver handed
  * the SESSION (`sdk/agent-instructions.ts`) — and the runtime asks that
- * resolver in `runtime-system-prompt.ts`, where the session context lives. What
+ * resolver in `../runtime/system-prompt.ts`, where the session context lives. What
  * reaches a transport is one layer down: the assembled prompt, or a nullary
  * thunk over `SessionSystemPrompt.resolve()` that re-reads it. A transport has
  * no session context to pass and needs none.
@@ -419,7 +419,7 @@ export interface Transport {
    *
    * The caller so far is nothing: this is the seam a `dialog()` phase change
    * will reach for, in the same change that installs the prompt suffix (see
-   * `runtime-system-prompt.ts`).
+   * `../runtime/system-prompt.ts`).
    */
   refreshSystemPrompt?(): void;
   /**

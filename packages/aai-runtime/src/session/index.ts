@@ -27,8 +27,8 @@ export {
   resolveSessionContext,
   SESSION_CONTEXT_TIMEOUT_MS,
 } from "./context.ts";
-export type { ServerSession } from "./core.ts";
 export { createSessionCore } from "./core.ts";
+export type { ServerSession } from "./core-types.ts";
 export type { SessionDirectory, SessionWiring } from "./directory.ts";
 export { createSessionDirectory } from "./directory.ts";
 export type { SessionEmitter, SessionEventHookDeps } from "./emitter.ts";
@@ -45,5 +45,5 @@ export type { ResumeFindings } from "./resume-found.ts";
 export { composeSessionGreeting, createResumeFindings } from "./resume-found.ts";
 export type { SpeechDirectory } from "./speech.ts";
 export type { SessionWebSocket } from "./ws-frames.ts";
-export { asSessionWebSocket } from "./ws-frames.ts";
-export { safeSend, wireSessionSocket } from "./ws-handler.ts";
+export { asSessionWebSocket, safeSend } from "./ws-frames.ts";
+export { wireSessionSocket } from "./ws-handler.ts";

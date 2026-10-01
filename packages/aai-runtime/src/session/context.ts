@@ -23,11 +23,11 @@
  *   and a `location` is held to the rule the socket's `?location=` is. A
  *   `refuse` is kept only as a non-empty string, control characters replaced
  *   and capped at {@link MAX_REFUSE_REASON_CHARS} — acting on it is
- *   `../runtime-session-stream.ts`'s. A `greeting` is held to the same shape at
+ *   `../runtime/session-stream.ts`'s. A `greeting` is held to the same shape at
  *   {@link MAX_SESSION_GREETING_CHARS}, except that an EMPTY one is kept: it
  *   is the app saying "no greeting", not saying nothing.
  *
- * Its own module rather than a closure in `../runtime-session-memory.ts` so the
+ * Its own module rather than a closure in `../runtime/session-memory.ts` so the
  * three rules are testable without a session around them.
  */
 

@@ -20,7 +20,7 @@
  *    session's STATE where a hook is an observer of it: a handler that reads
  *    `claim.position(ctx)` must see the state this event moved the dialog TO,
  *    which is the state it declared a transition to in order to handle it. See
- *    `../runtime-dialogs.ts`, which owns that argument and the re-entry latch that
+ *    `../runtime/dialogs.ts`, which owns that argument and the re-entry latch that
  *    keeps a transition's own commit from coming back through here.
  * 4. **Hooks** — the agent's typed handler for this event, then its `"*"`
  *    handler. Last, and non-fatally.
@@ -313,7 +313,7 @@ export function createSessionEmitter(opts: {
     // latch says "we are inside the agent's hooks", and an event a hook emits
     // (`ctx.send`, a slot write's commit) is a fact about the session like any
     // other and a dialog watching for it should see it. The recursion a dialog
-    // transition can cause is latched in `../runtime-dialogs.ts`, which is the only
+    // transition can cause is latched in `../runtime/dialogs.ts`, which is the only
     // module that can tell its own commit's `state.updated` from anyone else's.
     // Contained here for the same reason a send is: a throw would take down the
     // transport dispatch that called us.

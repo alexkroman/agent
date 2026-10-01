@@ -62,7 +62,7 @@ import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
-import { createRuntimeWithSeams } from "../runtime.ts";
+import { createRuntimeWithSeams } from "../runtime/index.ts";
 import { silentLogger } from "../runtime-config.ts";
 import { SessionRefusedError } from "../session/index.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
@@ -431,7 +431,7 @@ async function openWithFakes(
  * Start `session`, answering the app's refusal reason when its `sessionContext`
  * refused — `undefined` when it started.
  *
- * The refusal is the runtime's own (`runtime-session-stream.ts` throws it
+ * The refusal is the runtime's own (`../runtime/session-stream.ts` throws it
  * before the transport starts); this only turns it into a value, and stops the
  * session as `../session/attach.ts` does for a refused connection. Any other
  * failure to start is still a throw.

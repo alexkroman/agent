@@ -11,7 +11,7 @@ import { sessionSlot } from "@alexkroman1/aai";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createRuntimeWithSeams } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime/index.ts";
 
 describe("SDK integration: AgentDef → tool execution", () => {
   test("AgentDef + tools + executeToolCall round-trip", async () => {

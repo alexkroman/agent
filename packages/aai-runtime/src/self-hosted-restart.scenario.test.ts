@@ -27,7 +27,7 @@
  * FLUSHED to Postgres, the process that wrote them GONE, and a reconnect on a
  * new process turning those rows back into the history the agent's own tools
  * see. `historyFromEvents` → `core.restoreHistory` is what runs there
- * (`runtime-session-stream.ts`), and until now nothing exercised it over a real
+ * (`runtime/session-stream.ts`), and until now nothing exercised it over a real
  * database at all.
  *
  * ## Why `createAgentServer` specifically

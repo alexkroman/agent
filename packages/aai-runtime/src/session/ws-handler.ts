@@ -112,7 +112,7 @@ function dispatchFrame(data: unknown, attached: AttachedSession, log: Logger, si
  * There is no third step any more. A reconnecting client used to send a HISTORY
  * frame with the messages it still held, which made it the authority on the
  * agent's memory; the server restores the conversation from its own retained
- * event stream (see `../runtime-session-stream.ts`).
+ * event stream (see `../runtime/session-stream.ts`).
  *
  * @internal
  */

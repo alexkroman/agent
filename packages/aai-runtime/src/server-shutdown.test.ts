@@ -5,7 +5,7 @@
  * The describe was called "server shutdown timeout" and no test supplied a
  * shutdown that hung — because there is no timeout HERE: `close()` awaits
  * `runtime.shutdown()` outright, and the deadline belongs to the runtime
- * (`shutdownTimeoutMs`, asserted in `runtime-lifecycle.test.ts`). What the
+ * (`shutdownTimeoutMs`, asserted in `runtime/lifecycle.test.ts`). What the
  * server owes is that it waits for the shutdown, and propagates its failure.
  */
 

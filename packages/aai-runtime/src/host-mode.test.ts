@@ -16,8 +16,7 @@ import {
   withHostCredentials,
 } from "./host-mode.ts";
 import { createRelayExecuteTool } from "./host-relay.ts";
-import type { Runtime, runtimeBrand } from "./runtime.ts";
-import type { HostRuntimeOptions } from "./runtime-types.ts";
+import type { HostRuntimeOptions, Runtime, runtimeBrand } from "./runtime/index.ts";
 import type { SessionWebSocket } from "./session/index.ts";
 import {
   createSessionCore,

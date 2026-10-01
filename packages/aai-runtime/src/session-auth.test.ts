@@ -28,7 +28,7 @@ vi.mock("./host-mode.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./host-mode.ts")>()),
   startHostSession: (
     ws: { send(data: string): void },
-    opts: { startOpts?: import("./runtime-types.ts").SessionStartOptions },
+    opts: { startOpts?: import("./runtime/index.ts").SessionStartOptions },
   ) => {
     hostStarts.push(opts.startOpts?.resumeFrom ?? "fresh");
     opts.startOpts?.onSinkCreated?.(`host-${hostStarts.length}`, makeClientSink());

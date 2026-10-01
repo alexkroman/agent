@@ -157,13 +157,19 @@ export {
   registerTtsKind,
   resolveLlm,
 } from "./providers/resolve.ts";
+// The seal `Runtime` carries. TYPE-ONLY: there is no value to import, which is
+// what stops a hand-written object from satisfying the type.
+export type { runtimeBrand, SessionConnection, SessionConnectOptions } from "./runtime/index.ts";
+// A session over a caller's own audio I/O — a free function over the sealed
+// handle rather than a method on it. See `runtime/connect.ts`.
 export {
   type AgentRuntime,
+  connectSession,
   createRuntime,
   type Runtime,
   type RuntimeOptions,
   type SessionStartOptions,
-} from "./runtime.ts";
+} from "./runtime/index.ts";
 // The logger a host passes in, and the S2S tuning bag a config can override.
 // The two shipped `Logger` VALUES (`consoleLogger`, `createConsoleLogger`) and
 // the debug-env predicates are infrastructure — see
@@ -175,12 +181,6 @@ export type {
   LogLevel,
   S2sConfig,
 } from "./runtime-config.ts";
-// A session over a caller's own audio I/O — a free function over the sealed
-// handle rather than a method on it. See `runtime-connect.ts`.
-export { connectSession } from "./runtime-connect.ts";
-// The seal `Runtime` carries. TYPE-ONLY: there is no value to import, which is
-// what stops a hand-written object from satisfying the type.
-export type { runtimeBrand, SessionConnection, SessionConnectOptions } from "./runtime-types.ts";
 export {
   type AgentServer,
   createRuntimeServer,

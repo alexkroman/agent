@@ -52,7 +52,7 @@ import { cartesiaTts } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
 import { sleep } from "../_test-utils.ts";
 import { LLM_REGISTRY } from "../providers/_llm-registry.ts";
-import { createRuntimeWithSeams } from "../runtime.ts";
+import { createRuntimeWithSeams } from "../runtime/index.ts";
 import { consoleLogger } from "../runtime-config.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
