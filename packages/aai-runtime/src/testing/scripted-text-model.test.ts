@@ -23,7 +23,7 @@ import { type AgentDef, agent, tool } from "@alexkroman1/aai";
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createTextAgent } from "../text-agent.ts";
+import { createTextAgent } from "../text-agent/index.ts";
 import { scriptedTextModel } from "./scripted-text-model.ts";
 
 /** A text agent WITH its tools — `agent()` takes none, a tool being a FILE. */

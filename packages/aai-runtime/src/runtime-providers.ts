@@ -19,7 +19,7 @@ import type { TtsProvider } from "@alexkroman1/aai/tts";
 import { describeResolvedProviders } from "./providers/_provider-settings.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
-import { textAgentHasNoSession } from "./text-agent.ts";
+import { textAgentHasNoSession } from "./text-agent/index.ts";
 
 /**
  * Determine the effective STT/LLM/TTS providers and session mode. Providers

@@ -30,8 +30,8 @@ import { withTools } from "@alexkroman1/aai/manifest";
 import { LLMock } from "@copilotkit/aimock";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { z } from "zod";
-import { silentLogger } from "./_test-utils.ts";
-import { createTextAgent } from "./text-agent.ts";
+import { silentLogger } from "../_test-utils.ts";
+import { createTextAgent } from "./agent.ts";
 
 const QUESTION = "Where is order 42?";
 const TOOL_CALL_ID = "call_lookup_42";

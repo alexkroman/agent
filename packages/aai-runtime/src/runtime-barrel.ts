@@ -230,7 +230,7 @@ export {
   type TextAgentOptions,
   type TextTurnOptions,
   type TextTurnResult,
-} from "./text-agent.ts";
+} from "./text-agent/index.ts";
 export type { ExecuteTool, ExecuteToolOptions } from "./tools/index.ts";
 // The repair both `streamText` loops share. Exported for a caller assembling
 // its own request against the same model (and because `salvageJson` is the

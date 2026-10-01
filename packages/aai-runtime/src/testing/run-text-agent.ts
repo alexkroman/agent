@@ -67,7 +67,11 @@ import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ModelMessage, StepResult, ToolSet } from "ai";
 import { silentLogger } from "../runtime-config.ts";
-import { createTextAgent, type TextAgentOptions, type TextTurnOptions } from "../text-agent.ts";
+import {
+  createTextAgent,
+  type TextAgentOptions,
+  type TextTurnOptions,
+} from "../text-agent/index.ts";
 import { type ScriptedTextStep, scriptedTextModel } from "./scripted-text-model.ts";
 
 /**
@@ -197,7 +201,7 @@ export type TextAgentTestRun = {
    *
    * Ends in exactly one `reply.completed` or `reply.cancelled`, on every turn
    * this helper drives: it consumes the whole stream, so the terminal part has
-   * always passed through by the time this resolves. `text-agent-events.ts`
+   * always passed through by the time this resolves. `../text-agent/events.ts`
    * carries which events a text agent emits and which it refuses.
    */
   readonly events: readonly SessionEvent[];

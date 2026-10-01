@@ -88,7 +88,7 @@
  * mid-sentence would cut the agent off in the middle of speech and the caller
  * would hear a dropped call rather than a limit; so the request in flight
  * finishes, and the next one is refused wherever it is about to be made: the
- * next turn (`transports/pipeline/turn-body.ts`, `text-agent.ts`), the next `ctx.generate`
+ * next turn (`transports/pipeline/turn-body.ts`, `text-agent/agent.ts`), the next `ctx.generate`
  * (the forwarder in `tools/executor.ts`), the next delegated attempt
  * (`runUntilAccepted`).
  *

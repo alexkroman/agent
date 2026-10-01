@@ -18,7 +18,7 @@ import { agent } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
 import { silentLogger } from "../_test-utils.ts";
-import { createTextAgent } from "../text-agent.ts";
+import { createTextAgent } from "../text-agent/index.ts";
 import { withToolsDir } from "./tools-dir.ts";
 
 /** As much of the model's prompt as the last spec reads a tool result out of. */

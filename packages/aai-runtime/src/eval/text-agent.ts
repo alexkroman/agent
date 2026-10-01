@@ -15,7 +15,7 @@
  * read the same way; the same readers in `eval/events.ts` and the same
  * assertion vocabulary above them apply, because a text agent emits the same
  * {@link SessionEvent} union narrowed to seven members it can fill honestly
- * (`text-agent-events.ts` carries which, and the eleven it refuses). A case
+ * (`../text-agent/events.ts` carries which, and the eleven it refuses). A case
  * author moving between the two harnesses learns the difference between a
  * voice agent and a text one, and nothing else.
  *
@@ -146,7 +146,7 @@ import type { HostAgentOptions } from "../host-agent-options.ts";
 import { llmProviderEnvVar } from "../providers/_provider-env-var.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { silentLogger } from "../runtime-config.ts";
-import { createTextAgent } from "../text-agent.ts";
+import { createTextAgent } from "../text-agent/index.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { measuredToolCalls, measuredTurn } from "./_turn-faults.ts";
 import { type EvalToolCall, saidIn, TURN_ENDS } from "./events.ts";

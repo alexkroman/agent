@@ -13,10 +13,10 @@ import { type AgentDef, agent, type Message, sessionSlot, tool } from "@alexkrom
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createFakeLanguageModel } from "./_fake-llm.ts";
-import { silentLogger } from "./_test-utils.ts";
-import { createRuntime } from "./runtime.ts";
-import { createTextAgent } from "./text-agent.ts";
+import { createFakeLanguageModel } from "../_fake-llm.ts";
+import { silentLogger } from "../_test-utils.ts";
+import { createRuntime } from "../runtime.ts";
+import { createTextAgent } from "./agent.ts";
 
 /** Drain a turn's text, which is also what forces the tool loop to run. */
 async function drain(result: { textStream: AsyncIterable<string> }): Promise<string> {

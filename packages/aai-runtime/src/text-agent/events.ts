@@ -79,7 +79,7 @@
  *
  * `agentTranscript.updated` is the deliberate omission that is NOT about
  * honesty: a per-delta snapshot would be truthful and is simply redundant here.
- * `text-agent.ts` returns the vendor's `StreamTextResult` precisely so a chat
+ * `agent.ts` returns the vendor's `StreamTextResult` precisely so a chat
  * surface consumes `textStream`, so the interim text is already in the caller's
  * hands, and the readers assert on committed text on purpose — *"a delta is a
  * draft"*. Emitting it would double every reply's bytes through a second
@@ -117,7 +117,7 @@
  * ## Two things a text agent's tools could do and could not report
  *
  * `ctx.send` and an uncaught tool throw both reach `executeToolCall` as
- * optional callbacks (`send`, `onUncaught`), and `text-agent.ts` passed neither
+ * optional callbacks (`send`, `onUncaught`), and `agent.ts` passed neither
  * — so a tool's `ctx.send` was silently dropped and a tool that THREW produced
  * one `logger.warn`. Both are wired here, through the same
  * {@link decideClientEvent} the session path uses, so a payload this drops is a
@@ -149,9 +149,9 @@ import {
 } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { ModelMessage, StreamTextOnChunkCallback, TextStreamPart, ToolSet } from "ai";
-import type { Logger } from "./runtime-config.ts";
-import { stampSessionEvent } from "./session-event-stream.ts";
-import type { UsageSnapshot } from "./usage-meter.ts";
+import type { Logger } from "../runtime-config.ts";
+import { stampSessionEvent } from "../session-event-stream.ts";
+import type { UsageSnapshot } from "../usage-meter.ts";
 
 /** What a text agent reports, one stamped event at a time. */
 export type TextAgentEventHandler = (event: SessionEvent) => void;
@@ -160,7 +160,7 @@ export type TextAgentEventHandler = (event: SessionEvent) => void;
  * The two `streamText` hooks one turn installs.
  *
  * Handed back as the vendor's own callback types rather than as a recorder this
- * module invents, so `text-agent.ts` spreads them into the request and owns no
+ * module invents, so `agent.ts` spreads them into the request and owns no
  * translation layer of its own.
  */
 export type TextTurnEventHooks = {
@@ -185,7 +185,7 @@ export type TextAgentEvents = {
   /** A tool that THREW rather than returning a failure — `executeToolCall`'s `onUncaught`. */
   readonly toolFault: (message: string) => void;
   /**
-   * The conversation's running token total — see `usage-meter.ts`.
+   * The conversation's running token total — see `../usage-meter.ts`.
    *
    * Conversation-scoped like `custom` above, and CUMULATIVE like the pipeline's,
    * so an eval asserting on what a run spent reads the same frame whichever mode

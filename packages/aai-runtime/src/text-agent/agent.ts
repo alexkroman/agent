@@ -51,7 +51,7 @@
  * {@link SessionEvent} stream a voice session emits, so an eval reads a text
  * agent's behaviour with the readers it already has instead of scraping text.
  * It is additive — nothing about `TextTurnResult` changes — and
- * `text-agent-events.ts` carries the vocabulary and its argument.
+ * `events.ts` carries the vocabulary and its argument.
  */
 
 import type { AgentSessionContext, Message } from "@alexkroman1/aai";
@@ -70,21 +70,11 @@ import {
   composePreparers,
   forceFinalAnswer,
   resetToolChoiceAfterFirstStep,
-} from "./_prepare-step.ts";
-import { createGenerateFn } from "./generate.ts";
-import { resolveLlm } from "./providers/resolve.ts";
-import { consoleLogger } from "./runtime-config.ts";
-import { createSubagentRunner } from "./subagent.ts";
-import { createTextAgentEvents } from "./text-agent-events.ts";
-import { toContextMessages } from "./text-agent-messages.ts";
-// Imported as well as re-exported below: a re-export does not bring a name into
-// this module's scope, and the factory's own signature needs all four.
-import type {
-  TextAgent,
-  TextAgentOptions,
-  TextTurnOptions,
-  TextTurnResult,
-} from "./text-agent-types.ts";
+} from "../_prepare-step.ts";
+import { createGenerateFn } from "../generate.ts";
+import { resolveLlm } from "../providers/resolve.ts";
+import { consoleLogger } from "../runtime-config.ts";
+import { createSubagentRunner } from "../subagent.ts";
 import {
   createFatalToolLatch,
   createToolCallRepair,
@@ -95,12 +85,17 @@ import {
   pairToolCallsLogged,
   toVercelTools,
   withFatalSignal,
-} from "./tools/index.ts";
-import { createUsageMeter } from "./usage-meter.ts";
+} from "../tools/index.ts";
+import { createUsageMeter } from "../usage-meter.ts";
+import { createTextAgentEvents } from "./events.ts";
+import { toContextMessages } from "./messages.ts";
+// Imported as well as re-exported below: a re-export does not bring a name into
+// this module's scope, and the factory's own signature needs all four.
+import type { TextAgent, TextAgentOptions, TextTurnOptions, TextTurnResult } from "./types.ts";
 
 /**
  * The four public TYPES — `TextTurnResult`, `TextAgentOptions`,
- * `TextTurnOptions` and `TextAgent` — live in `text-agent-types.ts`, split off
+ * `TextTurnOptions` and `TextAgent` — live in `types.ts`, split off
  * when this file passed the source-length cap. They are the surface a caller
  * writes against and carry a paragraph per field; what is left here is the
  * factory. Re-exported below, so no importer moved.
@@ -110,7 +105,7 @@ export type {
   TextAgentOptions,
   TextTurnOptions,
   TextTurnResult,
-} from "./text-agent-types.ts";
+} from "./types.ts";
 
 /**
  * The LLM a text agent runs on when its definition names none.
@@ -227,7 +222,7 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
   const events = createTextAgentEvents(options.onEvent, logger);
 
   /**
-   * This conversation's token meter — see `usage-meter.ts`.
+   * This conversation's token meter — see `../usage-meter.ts`.
    *
    * Built unconditionally, because usage is worth REPORTING whether or not a
    * budget is declared; the cap is `agent.usageLimits` and is `undefined` for
@@ -344,7 +339,7 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
       const forceFinal = forceFinalAnswer(maxSteps, logger, sessionId);
       const toolChoice = turn.toolChoice ?? agent.toolChoice ?? "auto";
       // The budget, checked where the request is about to be made — see
-      // `usage-meter.ts`. A throw rather than a silently empty stream: this
+      // `../usage-meter.ts`. A throw rather than a silently empty stream: this
       // door's caller is code, not a person on a phone, and it can act on one.
       const exhausted = usage.exhausted();
       if (exhausted !== undefined) throw new Error(exhausted);
@@ -418,7 +413,7 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
 
 /**
  * The message projection — `toContextMessages` and the three helpers under it —
- * lives in `text-agent-messages.ts`, split off when this file passed the
+ * lives in `messages.ts`, split off when this file passed the
  * 500-line cap. The seam is the natural one: everything there is about turning
  * the AI SDK's `ModelMessage` list into the `{ role, content }` view
  * `ctx.messages` promises a tool, and nothing in it knows this module exists.

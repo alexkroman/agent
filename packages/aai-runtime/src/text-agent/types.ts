@@ -3,10 +3,10 @@
  * The surface `createTextAgent` is called through: its options, one turn's
  * options, and the handle it returns.
  *
- * Split out of `text-agent.ts` at the source-length cap, on the seam that file
+ * Split out of `agent.ts` at the source-length cap, on the seam that file
  * already had — every declaration here is a caller-facing contract with a
  * paragraph of argument per field, and what stays next door is the factory that
- * reads them. `text-agent.ts` re-exports all four, so no importer moved.
+ * reads them. `agent.ts` re-exports all four, so no importer moved.
  *
  * @module
  */
@@ -22,7 +22,7 @@ import type {
   streamText,
   ToolSet,
 } from "ai";
-import type { HostAgentOptions } from "./host-agent-options.ts";
+import type { HostAgentOptions } from "../host-agent-options.ts";
 
 /**
  * What one turn hands back: the AI SDK's own `streamText` result, with this
@@ -77,7 +77,7 @@ export interface TextAgentOptions extends HostAgentOptions {
    * ADDITIVE, and deliberately so: {@link TextAgent.stream} still returns the
    * vendor's `StreamTextResult` and nothing about it changes. A chat surface
    * consumes that; this is for whoever is GRADING or auditing the agent.
-   * `text-agent-events.ts` carries which events are emitted, which eleven are
+   * `events.ts` carries which events are emitted, which eleven are
    * not, and why the turn terminator fires exactly once.
    *
    * **Conversation-scoped, and the envelope carries no turn coordinate** (see

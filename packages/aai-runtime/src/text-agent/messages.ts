@@ -3,7 +3,7 @@
  * The AI SDK's `ModelMessage` list, projected into the `{ role, content }` view
  * `ctx.messages` promises a tool.
  *
- * Split out of `text-agent.ts` at the source-length cap. It is a coherent unit
+ * Split out of `agent.ts` at the source-length cap. It is a coherent unit
  * rather than an arbitrary cut: every function here answers one question — what
  * does a TOOL see of this conversation — and the answer is the same three-role
  * `Message` union the pipeline and the session both produce, which is why the
@@ -15,7 +15,7 @@
 
 import type { Message } from "@alexkroman1/aai";
 import type { ModelMessage, ToolModelMessage, ToolResultPart } from "ai";
-import { toolResultMessage } from "./tools/index.ts";
+import { toolResultMessage } from "../tools/index.ts";
 
 /**
  * What one `tool-result` part says, as the string a tool body would read.

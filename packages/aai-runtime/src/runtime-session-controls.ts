@@ -142,7 +142,7 @@ export function openSessionWiring(deps: {
   // reader that arrives late still sees the true total and per-step granularity
   // buys nobody anything. Wired therefore only for the two readers the SDK
   // documents — a declared budget, and an `events` handler for this type or
-  // `"*"` — which is the treatment `text-agent-events.ts` already gives it via
+  // `"*"` — which is the treatment `text-agent/events.ts` already gives it via
   // `NO_EVENTS.usage`. `record()` stays unconditional: it is in-memory, free,
   // and what `usageLimits` is enforced from.
   const readsUsage =

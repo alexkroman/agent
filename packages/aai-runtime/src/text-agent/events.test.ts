@@ -21,11 +21,11 @@ import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import type { TextStreamPart, ToolSet } from "ai";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createFakeLanguageModel } from "./_fake-llm.ts";
-import { makeLogger, silentLogger } from "./_test-utils.ts";
-import { saidIn, TURN_ENDS, toolCallsInEvents, toolNames } from "./eval/events.ts";
-import { createTextAgent } from "./text-agent.ts";
-import { createTextAgentEvents } from "./text-agent-events.ts";
+import { createFakeLanguageModel } from "../_fake-llm.ts";
+import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { saidIn, TURN_ENDS, toolCallsInEvents, toolNames } from "../eval/events.ts";
+import { createTextAgent } from "./agent.ts";
+import { createTextAgentEvents } from "./events.ts";
 
 /** A text agent WITH its tools — the def a build produces, in one call. */
 function textAgent(def: Parameters<typeof agent>[0], tools: ToolRegistry = {}): AgentDef {
@@ -345,7 +345,7 @@ describe("createTextAgent event stream", () => {
         "tool.called",
         "tool.completed",
         // One per completed step, carrying the conversation's running total —
-        // see `usage-meter.ts`.
+        // see `../usage-meter.ts`.
         "usage.updated",
         "agentTranscript.committed",
         "reply.completed",

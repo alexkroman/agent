@@ -147,7 +147,7 @@ type ExecuteToolCallOptions = {
    * nothing, so whoever is watching is the only one who will ever hear about
    * it. The SESSION is still alive either way, which is why neither maps to a
    * `fatal: true` error frame (that one releases the caller's microphone). A
-   * reporter that ignores `info` (`../text-agent.ts`'s `toolFault`) stays assignable.
+   * reporter that ignores `info` (`../text-agent/agent.ts`'s `toolFault`) stays assignable.
    */
   onUncaught?: ((message: string, info: { readonly fatal: boolean }) => void) | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;

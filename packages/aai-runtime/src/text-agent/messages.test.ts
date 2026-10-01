@@ -9,7 +9,7 @@
 import { MAX_TOOL_RESULT_CHARS } from "@alexkroman1/aai/internal";
 import type { ModelMessage, ToolResultPart } from "ai";
 import { describe, expect, test } from "vitest";
-import { toContextMessages, toolOutputText } from "./text-agent-messages.ts";
+import { toContextMessages, toolOutputText } from "./messages.ts";
 
 /** One `tool` message carrying the given result parts. */
 function toolMessage(...parts: ToolResultPart[]): ModelMessage {
