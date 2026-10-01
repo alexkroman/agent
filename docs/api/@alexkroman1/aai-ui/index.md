@@ -10482,6 +10482,7 @@ type VoiceSessionOptions = {
   onSessionId?: (sessionId: string) => void;
   phone?: string | (() => string | undefined);
   platformUrl: string;
+  preConnectAudio?: boolean;
   resumeSessionId?: string;
   WebSocket?: WebSocketConstructor;
 };
@@ -10603,6 +10604,22 @@ platformUrl: string;
 ```
 
 Base URL of the AAI platform server.
+
+##### preConnectAudio?
+
+```ts
+optional preConnectAudio?: boolean;
+```
+
+Open the microphone when the session connects, rather than once the
+server has configured it, and send what the caller said in between ahead
+of the live audio — so an opener spoken while the agent is still joining
+(a handshake, or a sandbox boot on the platform) reaches it instead of
+being lost. The latest 10 seconds are kept.
+
+Default `true`. `false` asks for the microphone only after the server's
+`config` frame, as before; a UI that wants the permission prompt to
+follow its own greeting might.
 
 ##### resumeSessionId?
 

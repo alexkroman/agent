@@ -89,6 +89,11 @@ export type AudioPathEffects = {
   open(config: AudioPathConfig, callbacks: AudioPathCallbacks): Promise<VoiceIO>;
   /** Relay captured microphone audio to the server. */
   sendMicAudio(pcm16: ArrayBuffer): void;
+  /**
+   * Relay the audio captured before the session was configured — one burst,
+   * ahead of the first live frame (`session-core-preconnect.ts`).
+   */
+  sendPreConnectAudio(chunks: ArrayBuffer[]): void;
   /** Tell the server how much agent audio is still unplayed. */
   reportProgress(bufferedMs: number): void;
   /** Tell the server the microphone is live. */
@@ -181,6 +186,10 @@ const audioPathMachine = setup({
         let mine: VoiceIO | null = null;
         const callbacks: AudioPathCallbacks = {
           onMicData: (pcm16) => input.effects.sendMicAudio(pcm16),
+          // Unguarded like `onMicData`: it fires inside `open`, before
+          // adoption, and a path abandoned mid-grant is released before it
+          // could (the burst is synchronous with the hand-off).
+          onPreConnectAudio: (chunks) => input.effects.sendPreConnectAudio(chunks),
           onProgress: (bufferedMs) => {
             if (mine) input.send({ type: "PROGRESS", io: mine, bufferedMs });
           },
