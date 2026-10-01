@@ -1158,7 +1158,7 @@
     },
     {
       "name": "template-eval-runtime-subpaths",
-      "description": "A template's eval imports its HARNESS from ONE subpath, `@alexkroman1/aai-runtime/eval/vitest`, which re-exports the runner-free `/eval` half, the simulated caller and judge, and the `@alexkroman1/aai/testing` stubs a case composes with \u2014 one door because an eval file used to reach four subpaths of two packages for one harness. So `/eval`, `@alexkroman1/aai/testing` and `/testing/vitest` are refused HERE as well: `/eval` is the door for a harness that is not vitest, and the SDK's testing subpaths stay the unit-level surface a tool's or a step's own spec imports (a stub an eval needs and the one door lacks is a line in `eval-vitest-barrel.ts`, not a second import). No other subpath of the runtime package either. The root barrel is the one that bites: it reaches `agent-server.ts` \u2192 `server.ts` \u2192 `workflow/install.ts` \u2192 `step-fetch.ts`, so an eval that imports the root for one TYPE drags this runtime's node-reaching module graph into the template's own TypeScript program \u2014 three `BodyInit`/`exactOptionalPropertyTypes` errors in runtime files the eval never calls. It happened the day the surface shipped, in three template evals reaching for `RunCodeExecutor`, which is why `/eval` re-exports that type rather than letting a template reach past it. `/testing` is forbidden HERE and not in templates generally: eight template `agent.test.ts` files legitimately use `runWorkflow` from it, but an eval driving a real session has no business starting a durable run through a second door, and the two subpaths gate on different credentials. `/auth`, `/metrics` and `/tracing` are an EMBEDDER's — a server's ticket gate and its telemetry — and nothing an eval of the agent itself has reason to reach. `/internal` is already refused for every template file by `template-authoring-boundary`, so this list plus that one is TOTAL over the package's export map \u2014 an allow-list spelled as a complete deny-list, which is the only form konsistent has. It was written down before only inside a JSDoc block copied verbatim into four template evals, and deduplicating those onto `createVmRunCode` is what left it with no home \u2014 the general hazard in a dedupe being that the copies carry prose as well as code, and the prose is the half a diff does not miss.",
+      "description": "A template's eval imports its HARNESS from ONE subpath, `@alexkroman1/aai-runtime/eval/vitest`, which re-exports the runner-free `/eval` half, the simulated caller and judge, and the `@alexkroman1/aai/testing` stubs a case composes with \u2014 one door because an eval file used to reach four subpaths of two packages for one harness. So `/eval`, `@alexkroman1/aai/testing` and `/testing/vitest` are refused HERE as well: `/eval` is the door for a harness that is not vitest, and the SDK's testing subpaths stay the unit-level surface a tool's or a step's own spec imports (a stub an eval needs and the one door lacks is a line in `eval-vitest-barrel.ts`, not a second import). No other subpath of the runtime package either. The root barrel is the one that bites: it reaches `agent-server.ts` \u2192 `server.ts` \u2192 `workflow/install.ts` \u2192 `step-fetch.ts`, so an eval that imports the root for one TYPE drags this runtime's node-reaching module graph into the template's own TypeScript program \u2014 three `BodyInit`/`exactOptionalPropertyTypes` errors in runtime files the eval never calls. It happened the day the surface shipped, in three template evals reaching for `RunCodeExecutor`, which is why `/eval` re-exports that type rather than letting a template reach past it. `/testing` is forbidden HERE and not in templates generally: eight template `agent.test.ts` files legitimately use `runWorkflow` from it, but an eval driving a real session has no business starting a durable run through a second door, and the two subpaths gate on different credentials. `/auth`, `/metrics` and `/tracing` are an EMBEDDER's \u2014 a server's ticket gate and its telemetry \u2014 and nothing an eval of the agent itself has reason to reach. `/internal` is already refused for every template file by `template-authoring-boundary`, so this list plus that one is TOTAL over the package's export map \u2014 an allow-list spelled as a complete deny-list, which is the only form konsistent has. It was written down before only inside a JSDoc block copied verbatim into four template evals, and deduplicating those onto `createVmRunCode` is what left it with no home \u2014 the general hazard in a dedupe being that the copies carry prose as well as code, and the prose is the half a diff does not miss.",
       "paths": ["packages/aai-templates/templates/**/*.eval.test.ts"],
       "mustNot": {
         "importFrom": [
@@ -1668,6 +1668,32 @@
           "node:url",
           "node:fs"
         ]
+      }
+    },
+    {
+      "name": "ui-module-dir-index-is-re-export-only",
+      "description": "A directory under aai-ui's `src/` that holds an `index.ts` (`session/`, `audio/`, `upload/`) is a MODULE: the index is its only import surface for the rest of the package, and a sibling of the index is private because nothing re-exports it (guard-invariants rule 37 fails an import from outside the directory that names any other file in it). The index is therefore a pure re-export surface, held to the rule `*-barrel.ts` files are: a declaration in it would be a symbol with no home module inside the directory, and it is what lets `check-module-tests.mjs` treat these indexes as owing no test of their own. The directories replaced prefix families (`session-core-*.ts`, `audio-*.ts`, `_upload-*.ts`) split out to stay under the 500-line cap; a prefix is a directory with no boundary.",
+      "paths": "packages/aai-ui/src/*/index.ts",
+      "must": {
+        "areBarrelFiles": true
+      }
+    },
+    {
+      "name": "ui-audio-imports-no-session",
+      "description": "aai-ui's `audio/` is the device layer \u2014 the mic grant, the capture and playback worklet nodes, the `VoiceIO` and the pre-connect capture \u2014 and it knows nothing of a session: the session core drives it (`session/audio-setup.ts` opens it, `session/audio-state.ts` decides when), never the reverse. Two things depend on that direction. `audio/` is a LAZY chunk, reached only through a dynamic `import(\"../audio/index.ts\")`, so a session import from it would drag the session core's graph into the chunk and make the two load as one. And `audio/voice-io.test.ts` / `audio/fuzz-voiceio.test.ts` spec the audio path with no socket and no snapshot, which holds only while the module graph under them has none. `upload/` is denied too: a workflow page has no audio, and audio has no upload.",
+      "paths": ["packages/aai-ui/src/audio/*.ts", "packages/aai-ui/src/audio/**/*.ts"],
+      "excludeFiles": ["**/*.test.ts"],
+      "mustNot": {
+        "importFrom": ["../session/*", "../upload/*"]
+      }
+    },
+    {
+      "name": "ui-upload-imports-no-session",
+      "description": "aai-ui's `upload/` is the workflow hooks' upload machinery (id claiming, the pause gate, the reload recall, report coalescing), and a workflow app is a web page over the workflow HTTP API with no session, WebSocket or audio (`src/CLAUDE.md`, \"Workflow apps\"). An import of `session/` or `audio/` from here would tie every workflow page that uploads a file to the voice client it has no use for.",
+      "paths": ["packages/aai-ui/src/upload/*.ts", "packages/aai-ui/src/upload/**/*.ts"],
+      "excludeFiles": ["**/*.test.ts"],
+      "mustNot": {
+        "importFrom": ["../session/*", "../audio/*"]
       }
     },
     {

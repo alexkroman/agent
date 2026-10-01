@@ -58,6 +58,7 @@ import {
 } from "./_ratchet.mjs";
 import { scanChangesetPackageNames } from "./guard-invariants-changesets.mjs";
 import { SELF_REFERENTIAL_ENTRIES } from "./guard-invariants-exemptions.mjs";
+import { scanDeepModuleImports } from "./guard-invariants-module-dirs.mjs";
 import { LINE_RULES, NODE_RULES, SCAN_CORPORA } from "./guard-invariants-rules.mjs";
 import {
   scanSymlinks,
@@ -196,6 +197,23 @@ const ABSOLUTE_RULES = [
       "relative path resolves: those five broke `aai test`, `aai build` and\n" +
       "`npm start` for their own users while `check:template-types`,\n" +
       "`templates.test.ts` and each template's own spec stayed green.",
+  },
+  {
+    id: 37,
+    label: "import past a module directory's index",
+    scan: scanDeepModuleImports,
+    remedy:
+      "Import from the directory's `index.ts`, and re-export the name there if\n" +
+      "the rest of the package genuinely needs it. A directory under aai-ui's\n" +
+      "`src/` that holds an `index.ts` (`session/`, `audio/`, `upload/`) is a\n" +
+      "module: its index is the only import surface, and a sibling of the index\n" +
+      "is PRIVATE because nothing re-exports it. A spec that needs a private\n" +
+      "module moves into the directory beside it.\n\n" +
+      "These were prefix families (`session-core-*.ts`, `audio-*.ts`,\n" +
+      "`_upload-*.ts`) split out to stay under the 500-line cap, and a prefix\n" +
+      "is a directory with no boundary — any module could reach any member.\n" +
+      "The specifier is RESOLVED, so `../session/dial.ts` from `components/`\n" +
+      "and `./session/dial.ts` from `src/` are the same violation.",
   },
 ];
 

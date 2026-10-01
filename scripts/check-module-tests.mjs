@@ -115,6 +115,10 @@ const EXCLUSIONS = [
     match: (file) => path.basename(file).endsWith("-barrel.ts"),
   },
   {
+    why: "an aai-ui module directory's `index.ts` is the same pure re-export surface — konsistent's `ui-module-dir-index-is-re-export-only` holds it to that, over exactly these paths",
+    match: (file) => /^packages\/aai-ui\/src\/[^/]+\/index\.ts$/.test(file),
+  },
+  {
     why: "test infrastructure IS a test file by role — every suite that imports it exercises it, and it has no behaviour of its own to claim",
     match: (file) => {
       const base = path.basename(file);

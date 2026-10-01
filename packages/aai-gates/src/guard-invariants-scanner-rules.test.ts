@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /// <reference types="vite/client" />
 /**
- * The SCANNER half of `scripts/guard-invariants.mjs` — rules 7, 12, 13 and 14,
+ * The SCANNER half of `scripts/guard-invariants.mjs` — rules 7, 12, 13, 14 and 37,
  * the ones with no `re` to sample.
  *
  * Split out of `guard-invariants-gate.test.ts` when that file passed the
@@ -269,5 +269,67 @@ describe("rule 14 — a fixture directory nothing reads", () => {
   test("the deleted aai-server fixture set is really gone", () => {
     // The one-time deletion this rule turns into a standing check.
     expect(dirs).not.toContain("packages/aai-server/src/compat-fixtures");
+  });
+});
+
+/**
+ * Rule 37's pure half, imported the same way as the four above. Its scanner
+ * shells out for the directory list, so the list is passed in here and the
+ * decision is exercised against the real three directories by name.
+ */
+const { deepModuleImport } =
+  sole(
+    import.meta.glob<{
+      deepModuleImport: (file: string, specifier: string, dirs: string[]) => string | undefined;
+    }>("../../../scripts/guard-invariants-module-dirs.mjs", { eager: true }),
+  ) ?? {};
+
+describe("rule 37 — an import past a module directory's index", () => {
+  const SRC = "packages/aai-ui/src";
+  const DIRS = [`${SRC}/audio`, `${SRC}/session`, `${SRC}/upload`];
+
+  test("the pure half is importable", () => {
+    expect(deepModuleImport, "deepModuleImport not exported").toBeTypeOf("function");
+  });
+
+  test("flags a flat module reaching a private sibling of the index", () => {
+    expect(deepModuleImport?.(`${SRC}/inbox.ts`, "./session/ticket.ts", DIRS)).toBe(
+      `${SRC}/session`,
+    );
+  });
+
+  test("spares the index itself", () => {
+    expect(deepModuleImport?.(`${SRC}/inbox.ts`, "./session/index.ts", DIRS)).toBeUndefined();
+  });
+
+  test("spares a module inside the directory, at any depth", () => {
+    expect(deepModuleImport?.(`${SRC}/session/dial.ts`, "./ticket.ts", DIRS)).toBeUndefined();
+    expect(deepModuleImport?.(`${SRC}/session/nested/x.ts`, "../ticket.ts", DIRS)).toBeUndefined();
+  });
+
+  test("RESOLVES, so a deeper importer with more dots is the same violation", () => {
+    // `../session/types.ts` from `components/` and `./session/types.ts` from
+    // `src/` name one file; a text match on `./session/` would miss the first.
+    expect(
+      deepModuleImport?.(`${SRC}/components/integration.test.tsx`, "../session/types.ts", DIRS),
+    ).toBe(`${SRC}/session`);
+  });
+
+  test("one module directory entering another's private module is flagged", () => {
+    // The session core reaches audio only through `audio/index.ts` — the
+    // dynamic import that keeps it a lazy chunk names the index too.
+    expect(deepModuleImport?.(`${SRC}/session/audio-setup.ts`, "../audio/voice-io.ts", DIRS)).toBe(
+      `${SRC}/audio`,
+    );
+  });
+
+  test("a bare directory specifier is not its index", () => {
+    expect(deepModuleImport?.(`${SRC}/index.ts`, "./session", DIRS)).toBe(`${SRC}/session`);
+  });
+
+  test("a path that only shares a PREFIX with a directory is not inside it", () => {
+    // `session-resume-store.ts` was a flat sibling once; `session/` must not
+    // swallow a name that merely starts the same way.
+    expect(deepModuleImport?.(`${SRC}/index.ts`, "./session-like.ts", DIRS)).toBeUndefined();
   });
 });
