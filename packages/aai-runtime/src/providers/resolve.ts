@@ -18,6 +18,7 @@ import {
   ASSEMBLYAI_STT_API_KEY_ENV,
   fallbackMembers,
   isFallbackDescriptor,
+  stageMembers,
 } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { S2sProvider } from "@alexkroman1/aai/s2s";
@@ -29,7 +30,11 @@ import type { LlmRegistryEntry } from "./_llm-registry.ts";
 import { LLM_REGISTRY, llmEntryFor } from "./_llm-registry.ts";
 import { descriptorEnvVar, envVarOf, type ProviderEnvVarsQuery } from "./_provider-env-var.ts";
 import { requireApiKey } from "./_utils.ts";
-import { createFallbackSttOpener, createFallbackTtsOpener } from "./fallback.ts";
+import {
+  createFallbackSttOpener,
+  createFallbackTtsOpener,
+  type FallbackMember,
+} from "./fallback.ts";
 import type { SttOpener, TtsOpener } from "./openers.ts";
 import {
   type AnyOpenerEntry,
@@ -122,21 +127,29 @@ export type ResolvedOpener<Opener> = {
  * travels with a fallback opener is the PRIMARY's.
  */
 export function resolveStt(descriptor: SttProvider, env?: ProviderEnv): ResolvedOpener<SttOpener> {
-  if (isFallbackDescriptor(descriptor)) {
-    const members = resolveMembers(descriptor, "STT", (d) => resolveStt(d, env));
-    return { opener: createFallbackSttOpener(members, env), envVar: members[0]?.envVar ?? "" };
-  }
-  const entry = lookupProvider(STT_REGISTRY, descriptor.kind, "STT");
-  return { opener: openEntry(entry, descriptor), envVar: envVarOf(entry, descriptor) };
+  return resolveOpener(STT_REGISTRY, "STT", createFallbackSttOpener, descriptor, env);
 }
 
 /** Resolve a {@link TtsProvider} descriptor. Mirror of {@link resolveStt}. */
 export function resolveTts(descriptor: TtsProvider, env?: ProviderEnv): ResolvedOpener<TtsOpener> {
+  return resolveOpener(TTS_REGISTRY, "TTS", createFallbackTtsOpener, descriptor, env);
+}
+
+/** The one body of {@link resolveStt} and {@link resolveTts}, over a stage's registry. */
+function resolveOpener<Opener>(
+  registry: Record<string, AnyOpenerEntry<Opener>>,
+  label: string,
+  createFallback: (members: FallbackMember<Opener>[], env: ProviderEnv | undefined) => Opener,
+  descriptor: { kind: string; options: Record<string, unknown> },
+  env: ProviderEnv | undefined,
+): ResolvedOpener<Opener> {
   if (isFallbackDescriptor(descriptor)) {
-    const members = resolveMembers(descriptor, "TTS", (d) => resolveTts(d, env));
-    return { opener: createFallbackTtsOpener(members, env), envVar: members[0]?.envVar ?? "" };
+    const members = resolveMembers(descriptor, label, (d) =>
+      resolveOpener(registry, label, createFallback, d, env),
+    );
+    return { opener: createFallback(members, env), envVar: members[0]?.envVar ?? "" };
   }
-  const entry = lookupProvider(TTS_REGISTRY, descriptor.kind, "TTS");
+  const entry = lookupProvider(registry, descriptor.kind, label);
   return { opener: openEntry(entry, descriptor), envVar: envVarOf(entry, descriptor) };
 }
 
@@ -305,23 +318,13 @@ export function requiredProviderEnvVars(agent: ProviderEnvVarsQuery): string[] {
     if (envVar) vars.add(envVar);
   };
 
-  // Through `envVarOf` like every resolver: this is the site that once skipped
-  // the override, and an unknown kind has no default to fall back to — only the
-  // override is knowable. Resolution throws on one; a preflight does not.
-  const envVarFor = <E extends { envVar: string }>(
-    registry: Record<string, E>,
-    descriptor: object | undefined,
-  ): string | undefined => {
-    if (descriptor === undefined) return undefined;
-    const entry = registry[descriptorKind(descriptor) ?? ""];
-    return entry === undefined ? descriptorEnvVar(descriptor) : envVarOf(entry, descriptor);
-  };
+  const kindOf = (d: object): string => descriptorKind(d) ?? "";
 
   // A fallback needs EVERY member's key: one whose secondary has none fails at
   // exactly the moment it is needed, so the preflight names it up front.
-  for (const d of stageMembers(agent.stt)) add(envVarFor(STT_REGISTRY, d));
-  for (const d of stageMembers(agent.tts)) add(envVarFor(TTS_REGISTRY, d));
-  for (const d of stageMembers(agent.llm)) add(llmEnvVarFor(d));
+  for (const d of stageMembers(agent.stt)) add(envVarFor(STT_REGISTRY[kindOf(d)], d));
+  for (const d of stageMembers(agent.tts)) add(envVarFor(TTS_REGISTRY[kindOf(d)], d));
+  for (const d of stageMembers(agent.llm)) add(envVarFor(llmEntryFor(d), d));
 
   // No pipeline triple: either an explicit `s2s` descriptor selects a vendor,
   // or nothing is declared and the default AssemblyAI pipeline is injected.
@@ -335,22 +338,19 @@ export function requiredProviderEnvVars(agent: ProviderEnvVarsQuery): string[] {
     add(
       agent.s2s === undefined
         ? ASSEMBLYAI_STT_API_KEY_ENV
-        : (descriptorEnvVar(agent.s2s) ??
-            (isS2sKind(s2sKind) ? (S2S_REGISTRY[s2sKind]?.envVar ?? "") : "")),
+        : envVarFor(isS2sKind(s2sKind) ? S2S_REGISTRY[s2sKind] : undefined, agent.s2s),
     );
   }
   return [...vars];
 }
 
-/** A stage field as the descriptors it dials: a fallback's members, else itself. */
-function stageMembers(descriptor: object | undefined): object[] {
-  if (descriptor === undefined) return [];
-  return isFallbackDescriptor(descriptor) ? fallbackMembers(descriptor) : [descriptor];
-}
-
-/** An LLM descriptor's key variable, for the preflight — an unknown kind's override only. */
-function llmEnvVarFor(descriptor: object): string | undefined {
-  const entry = llmEntryFor(descriptor);
+/**
+ * A descriptor's key variable for the preflight, given the entry its kind
+ * selected: through `envVarOf` like every resolver (this is the site that once
+ * skipped the override), and an unknown kind has no default to fall back to —
+ * only the override is knowable. Resolution throws on one; a preflight does not.
+ */
+function envVarFor(entry: { envVar: string } | undefined, descriptor: object): string | undefined {
   return entry === undefined ? descriptorEnvVar(descriptor) : envVarOf(entry, descriptor);
 }
 

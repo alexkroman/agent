@@ -118,3 +118,15 @@ export function fallbackMembers(
       : [],
   );
 }
+
+/**
+ * A stage field as the descriptors it dials: a fallback's members, else
+ * itself, and nothing for an unset stage. What the credential preflight and
+ * the config warnings read member by member.
+ */
+export function stageMembers<D>(
+  descriptor: D | undefined,
+): (D | { kind: string; options: Record<string, unknown> })[] {
+  if (descriptor === undefined) return [];
+  return isFallbackDescriptor(descriptor) ? fallbackMembers(descriptor) : [descriptor];
+}

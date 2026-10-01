@@ -355,6 +355,7 @@
     "setSessionLocation",
     "setSessionPhone",
     "ssrfSafeFetch",
+    "stageMembers",
     "staticSystemPrompt",
     "systemPromptResolver",
     "toToolJsonSchema"
