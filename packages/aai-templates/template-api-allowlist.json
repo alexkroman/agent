@@ -423,7 +423,8 @@
     "LlmDescriptorOptions",
     "LlmProviderName",
     "LlmSpec",
-    "ProviderCredentialOptions"
+    "ProviderCredentialOptions",
+    "fallback"
   ],
   "@alexkroman1/aai/s2s": ["ProviderCredentialOptions"],
   "@alexkroman1/aai/step": [
@@ -505,7 +506,7 @@
     "STEP_FILE_WINDOW_BYTES",
     "WriteUploadFromFileOptions"
   ],
-  "@alexkroman1/aai/stt": ["ProviderCredentialOptions"],
+  "@alexkroman1/aai/stt": ["ProviderCredentialOptions", "fallback"],
   "@alexkroman1/aai/testing": [
     "DeployedConfig",
     "DeployedStage",
@@ -582,7 +583,7 @@
     "installStubClientInbox"
   ],
   "@alexkroman1/aai/tools": ["FetchJsonOptions", "UntypedJsonBody"],
-  "@alexkroman1/aai/tts": ["ProviderCredentialOptions"],
+  "@alexkroman1/aai/tts": ["ProviderCredentialOptions", "fallback"],
   "@alexkroman1/aai/utils": [
     "FitToolResultOptions",
     "HttpError",
