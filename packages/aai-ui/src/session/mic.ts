@@ -19,7 +19,7 @@
  *   all.
  * - **The stream clock.** The transcriber timestamps by samples received. The
  *   runtime's own push-to-talk silences the mic the same way, for the same
- *   reason (`pipeline-transport-commands.ts`, "sent as SILENCE rather than
+ *   reason (`aai-runtime/src/transports/pipeline/commands.ts`, "sent as SILENCE rather than
  *   withheld").
  * - **Idle.** Nothing is gained on the server side by going quiet: the session
  *   idle deadline deliberately does not count user audio (`ServerSession.onAudio`

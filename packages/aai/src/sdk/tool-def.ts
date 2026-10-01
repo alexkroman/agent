@@ -102,7 +102,7 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
    * free: it is the whole response, in the prompt, for the rest of the turn.
    * Return the fields the model needs. A result over the cap is warned about
    * once per tool (see `warnOversizedResult` in `aai-runtime`'s
-   * `tool-executor.ts`).
+   * `aai-runtime/src/tools/executor.ts`).
    */
   execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
   /**

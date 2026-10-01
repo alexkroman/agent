@@ -231,7 +231,7 @@ describe("agentBootEnv", () => {
    * `const` over `process.env`, and a deployed agent's env arrives as a boot FILE
    * the harness parses into an object — never merged into `process.env`. So the
    * one line that decomposes the guest→platform journal RPC
-   * (`platform-rpc.ts`'s `{ label, route, traceId, status, elapsedMs }`) was
+   * (`aai-runtime/src/platform/rpc.ts`'s `{ label, route, traceId, status, elapsedMs }`) was
    * unreachable in every deployed guest, which is the only place that RPC exists.
    * Forwarding it explicitly keeps the minimal-env property: the guest inherits
    * nothing, and this is one more declared `AAI_*` boot parameter.

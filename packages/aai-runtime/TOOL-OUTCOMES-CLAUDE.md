@@ -14,11 +14,11 @@ guide, for the reason `JOURNAL-CLAUDE.md` is one: Claude Code auto-loads only
 `CLAUDE.md`, so a sibling is read on demand and is the right shape for
 REFERENCE. The two RULES an author or an editor of this package has to carry
 around — read a tool arm by ROLE, and a fifth producer of a `role: "tool"`
-message goes through `_tool-result-message.ts` — are in `src/CLAUDE.md`, under "A
+message goes through `tools/result-message.ts` — are in `src/CLAUDE.md`, under "A
 settled tool call writes a `role: "tool"` message" and "A tool's throw is
 CLASSIFIED". Everything below is the argument behind them: the four producers,
 the two traps that are silent when you get them wrong, and the four guard rules
-in `tool-error-policy.ts`.
+in `tools/error-policy.ts`.
 
 The AUTHOR-facing account of the `"tool"` arm — what it is, that it does not
 reach the model, and that filters by role were unaffected — is
@@ -27,9 +27,9 @@ reach the model, and that filters by role were unaffected — is
 
 ## One shape, four producers, and a CAP that makes them agree
 
-`_tool-result-message.ts` exports one function, `toolResultMessage()`, and it is
+`tools/result-message.ts` exports one function, `toolResultMessage()`, and it is
 the only place a `role: "tool"` message is built. That is the same move
-`historyMessageOf` (`session-event-history.ts`) makes for a TRANSCRIPT, for the
+`historyMessageOf` (`session/event-history.ts`) makes for a TRANSCRIPT, for the
 same reason: a tool must see the same history under `aai dev`, in the sandbox
 and after a reconnect, and four literals are four chances at a `toolName` that
 is present live and absent on resume.
@@ -43,12 +43,12 @@ provider, not through here.
 
 **The model's copy is SHAPED, and only it.** `_compact-records.ts` renders any
 collection of three or more same-shaped scalar records as rows — one record per
-line under one header — because models misread a field against its neighbours
-in long nested JSON. It is applied where the provider's copy is chosen
-(`toModelOutput` in `to-vercel-tools.ts`, `pendingTools` in
-`session-tool-steps.ts`), never here: the recorded message and the
-`tool.completed` frame keep the tool's own string. In `to-vercel-tools.ts` that
-is why the rows are NOT what `execute` returns — the stream's `tool-result`
+line under one header — because models misread a field against its neighbours in
+long nested JSON. It is applied where the provider's copy is chosen
+(`toModelOutput` in `tools/to-vercel-tools.ts`, `pendingTools` in
+`session/tool-steps.ts`), never here: the recorded message and the
+`tool.completed` frame keep the tool's own string. In `tools/to-vercel-tools.ts`
+that is why the rows are NOT what `execute` returns — the stream's `tool-result`
 part carries `execute`'s value and the text agent builds its `tool.completed`
 frame from that part, so rows there reached the frame and an eval parsing it as
 JSON threw. The pipeline's LLM view keeps the step's messages, so later turns
@@ -66,11 +66,11 @@ one's sink is bound, not as a fifth literal):
 
 | Producer                                    | Sink                                              | What is particular to it                                                                                                                                                                                                               |
 | ------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `to-vercel-tools.ts`                        | `recordToolResult?` on the tool context           | The pipeline's and the text agent's tool loop. The AI SDK hands the string straight back to the model and the assistant/`tool` pair only materializes at the END of the step, so this is the one moment the host knows a result at all |
+| `tools/to-vercel-tools.ts`                  | `recordToolResult?` on the tool context           | The pipeline's and the text agent's tool loop. The AI SDK hands the string straight back to the model and the assistant/`tool` pair only materializes at the END of the step, so this is the one moment the host knows a result at all |
 | `transports/pipeline/transport.ts`          | `history.pushToolResult(message)`                 | Wires that sink to the pipeline's own conversation view                                                                                                                                                                                |
 | `text-agent.ts`                             | a per-turn `view` array, plus `toContextMessages` | Two entries: the sink for a turn it runs, and the conversion of an INCOMING `ToolModelMessage`'s `tool-result` parts when a caller hands the agent a history                                                                           |
-| `session-tool-steps.ts` → `session-core.ts` | `recordToolResult` → `pushMessages`               | S2S, where the provider runs the loop and the runtime only observes it                                                                                                                                                                 |
-| `session-event-history.ts`                  | the rebuilt `messages` array                      | RESUME, from the `tool.completed` events in the session's own log                                                                                                                                                                      |
+| `session/tool-steps.ts` → `session/core.ts` | `recordToolResult` → `pushMessages`               | S2S, where the provider runs the loop and the runtime only observes it                                                                                                                                                                 |
+| `session/event-history.ts`                  | the rebuilt `messages` array                      | RESUME, from the `tool.completed` events in the session's own log                                                                                                                                                                      |
 
 Three details in that table are decisions rather than plumbing:
 
@@ -93,8 +93,8 @@ Three details in that table are decisions rather than plumbing:
   a live history and a rebuilt one drift. The `maxSteps` refusal records `"{}"`
   for the same reason: that is what the `tool.completed` frame carried.
 
-`session-event-history.ts` is deliberately NOT part of `historyMessageOf`. That
-rule is shared with `session-core.ts`'s live dispatch, which also sees the
+`session/event-history.ts` is deliberately NOT part of `historyMessageOf`. That
+rule is shared with `session/core.ts`'s live dispatch, which also sees the
 pipeline's `tool.completed` reports for a session whose tools already recorded
 their results at the call site — appending there would record every pipeline
 result twice. The live producers and the resume agree by sharing
@@ -104,7 +104,7 @@ result twice. The live producers and the resume agree by sharing
 
 `RestoredToolCall.afterMessageIndex` is an index into the VISIBLE messages —
 the transcripts, in order, with the `"tool"` ones subtracted. That is the list
-the client receives: `session-core.ts`'s `restoreHistory` filters the array to
+the client receives: `session/core.ts`'s `restoreHistory` filters the array to
 `user`/`assistant` before it goes on the wire, because `history.restored`
 renders dialogue and carries the tool calls separately.
 
@@ -144,7 +144,7 @@ and its result, so it cannot make that shape; the seed filter is the other half
 of that invariant.
 
 **What a resume DOES seed is the pair, built from both halves.**
-`modelHistoryOf` (`session-event-history.ts`) joins each `tool` message to the
+`modelHistoryOf` (`session/event-history.ts`) joins each `tool` message to the
 `RestoredToolCall` with its `callId` and emits the assistant `tool-call` part
 plus the `tool-result`, exactly as a live step leaves them; a call with only one
 half (front-trimmed, or pending) is dropped. It used to render each call as
@@ -173,7 +173,7 @@ PRODUCED.** The model is not called, so the sentence exists only in
 `consumeLlmStream`'s return value, appended after the settled steps' messages.
 It is a fourth producer of a message for history, and deliberately NOT a fifth
 producer of a `role: "tool"` one — the tool's result is recorded by
-`to-vercel-tools.ts` exactly as it always was.
+`tools/to-vercel-tools.ts` exactly as it always was.
 
 **Which arm a settled call takes is decided by `isToolFailure` over the parsed
 result**, not by whether `execute` threw. A throw the runtime serialized and a
@@ -188,7 +188,7 @@ The AI SDK runs a tool call only when its step finished with `stop` or
 `tool-calls` (ai@7.0.70+). A step that ends on a call with `length`, `other` or
 `content-filter` leaves the call in its messages with no result, and one such
 message in history refuses every later request of the session ("Tool result is
-missing for tool call …"). `tool-call-pairs.ts` is the one guard: the
+missing for tool call …"). `tools/call-pairs.ts` is the one guard: the
 pipeline history re-pairs its LLM view on every write, and the text agent and a
 subagent revision pair what they send. A call nothing ran gets an error result
 (`"This tool call was not executed."`); a result with no call is dropped. It is
@@ -205,7 +205,7 @@ tool in one turn apart when they are there.
 
 ## A tool's throw is CLASSIFIED: `ToolDef.onError`
 
-`tool-error-policy.ts` is the one place the three kinds of tool failure are told
+`tools/error-policy.ts` is the one place the three kinds of tool failure are told
 apart, and its module doc carries the full argument. The three:
 
 - **Expected** — `execute` RETURNS a `ToolFailure`. The author is saying "the
@@ -218,12 +218,12 @@ apart, and its module doc carries the full argument. The three:
   turn stops.** The rejection alone would not stop it: the AI SDK catches a
   rejecting `execute`, emits a `tool-error` part that `transports/pipeline/reply/stream-parts.ts`
   only logs (`Tool call failed`), and keeps stepping. `FatalToolLatch` is the side
-  channel that carries the verdict out of the tool call — `to-vercel-tools.ts`
+  channel that carries the verdict out of the tool call — `tools/to-vercel-tools.ts`
   fires it through `onFatalToolError`, and `withFatalSignal` folds its signal
   into the REQUEST signal only, never the turn's, because aborting the turn's
   own signal reads as a barge-in (interrupted tail, no drain, nothing spoken).
   The turn then ends through its ordinary failure path. **S2S is the exception
-  and does not abort**: `session-tool-steps.ts` catches the rejection and hands
+  and does not abort**: `session/tool-steps.ts` catches the rejection and hands
   the provider a serialized failure, because the provider owns the loop and the
   host has no verb to stop a turn service-side.
 
@@ -302,7 +302,7 @@ PARAMETER rather than a second callback, so a reporter that does not care —
 `text-agent.ts`'s `toolFault`, which takes only the message — stays assignable
 and needed no change.
 
-**`info.fatal` is not the wire's `fatal`.** `runtime-tools.ts` emits
+**`info.fatal` is not the wire's `fatal`.** `runtime/tools.ts` emits
 `error.reported` with `code: "tool"` and `fatal: false` for BOTH arms, and that
 is the decision to keep: in this codebase a `fatal: true` error frame means the
 SESSION is over, and `aai-ui` answers one by releasing the microphone and ending

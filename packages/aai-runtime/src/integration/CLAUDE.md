@@ -39,6 +39,6 @@ generated fill scripts, driving both
 taken before the push. The rule it holds is in
 [`../transports/pipeline/history/CLAUDE.md`](../transports/pipeline/history/CLAUDE.md),
 "A rollback must undo the eviction its push caused".
-`session-history-replay-equivalence.test.ts` compares TAILS for an unrelated
+`../session/history-replay-equivalence.test.ts` compares TAILS for an unrelated
 reason (the two sides trim different sequences), and its `liveTrims` floor
 stands.

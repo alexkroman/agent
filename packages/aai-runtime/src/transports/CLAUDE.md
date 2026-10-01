@@ -52,7 +52,7 @@ edit the rows there, then paste the output here:
 field, not a string plus a resolver, so no read site has a precedence to forget.
 A plain string resolves to itself. This is a transport seam, NOT the authoring
 `AgentSystemPrompt`, which needs the session and is resolved in
-`runtime-system-prompt.ts`.
+`../runtime/system-prompt.ts`.
 
 | Transport       | Resolves                                                | Why there                                                                                        |
 | --------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |

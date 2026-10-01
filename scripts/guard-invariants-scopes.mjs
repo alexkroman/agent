@@ -20,7 +20,7 @@
  * boundary and `transports/pipeline/llm/stream.ts`, its neighbour, decomposes a
  * hot path with `on*` parameters — a glob over `transports/` would catch both and
  * a glob over `host/*.ts` would catch neither. The two things NOT in scope are in
- * scope for that reason: provider adapter contracts (`_s2s-dispatch.ts`'s
+ * scope for that reason: provider adapter contracts (`aai-runtime/src/s2s/dispatch.ts`'s
  * `S2sCallbacks`, `providers/**`'s `onSttPartial`/`onTtsAudio`) sit BELOW the
  * session and are what a new provider is written against, and utilities that take
  * an `on*` PARAMETER (`_timer.ts`) are ordinary function decomposition.
@@ -223,7 +223,7 @@ export const WORKFLOW_BODY_PATHSPECS = ["packages/aai-templates/templates/*/work
  * and for opposite purposes: they are scanned for INLINE literals (which is the
  * gap the rule exists for — a route added to `server.ts` is served by every
  * guest), and they are read again to resolve the `export const` a table entry in
- * `server-routes.ts` references. One list, so a module can never be scanned
+ * `aai-runtime/src/server/routes.ts` references. One list, so a module can never be scanned
  * without also being resolvable, which would report its own declaration as a
  * violation.
  */
@@ -346,7 +346,7 @@ export const SCAN_CORPORA = [
   },
   // The other explicit file list, and the one that had no floor. Rule 12 does
   // not just SCAN these — it `readFileSync`s each to resolve the `export const`
-  // a `server-routes.ts` entry references, unguarded, so a renamed module threw
+  // a `aai-runtime/src/server/routes.ts` entry references, unguarded, so a renamed module threw
   // an uncaught ENOENT out of the gate and took the OTHER 29 rules' findings
   // with it: one moved file, and `check:invariants` reported nothing about
   // anything. Two of these six were repointed when `workflow-*` became

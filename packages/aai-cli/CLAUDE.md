@@ -586,7 +586,7 @@ connections, to test session resume. Choose correctly:
   preserves durable slot state (`aai/host/session-state-store.ts`) but not the
   call; a socket drop is the only disconnect a session survives.
 - **It severs (`destroy()`), never closes** — a clean close is "user hung up",
-  which aai-ui does not reconnect from; `session-resume.scenario.test.ts`
+  which aai-ui does not reconnect from; `aai-runtime/src/server/session-resume.scenario.test.ts`
   asserts **1006**.
 - **It is a proxy** so no fault injector lives in production code.
 

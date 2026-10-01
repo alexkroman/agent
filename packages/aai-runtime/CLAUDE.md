@@ -17,10 +17,16 @@ transports, the provider openers, the workflow API, and the WebSocket handler.
 Rules that govern one area live beside the files they govern, and Claude Code
 loads them when you work there:
 
-- [`src/CLAUDE.md`](src/CLAUDE.md) — the flat `src/` modules: session
-  lifecycle and vocabularies, `createAgentServer`, tools, subagents, the prompt
-  suffix, dialogs/personas wiring, hook commits, the upload store, the egress
-  pools, reply metrics.
+- [`src/CLAUDE.md`](src/CLAUDE.md) — the `src/` map (which directory holds
+  what, what stays flat), client surfaces, subagents, egress pools, reply
+  metrics.
+- [`src/session/CLAUDE.md`](src/session/CLAUDE.md),
+  [`src/server/CLAUDE.md`](src/server/CLAUDE.md),
+  [`src/runtime/CLAUDE.md`](src/runtime/CLAUDE.md),
+  [`src/tools/CLAUDE.md`](src/tools/CLAUDE.md),
+  [`src/uploads/CLAUDE.md`](src/uploads/CLAUDE.md) — one session's lifecycle
+  and vocabularies; `createAgentServer`; the prompt suffix, dialogs and
+  personas; tool execution; the upload store.
 - [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — capabilities, epochs,
   and the frozen compatibility templates.
 - [`src/transports/CLAUDE.md`](src/transports/CLAUDE.md) — the transport
@@ -93,10 +99,13 @@ capability, no epoch, no TypeDoc page, no semver promise.
 
 ## Layout
 
-The filename prefix is the grouping: `runtime-*` (the runtime object and its
-wiring), `session-*` (one session), `ws-*` / `_ws*` (the socket layer),
-`_upload-*` (the upload store), plus `providers/`, `transports/`,
-`telephony/`, `eval/`, `testing/` and `session-state/`.
+**A directory holding an `index.ts` is a module**, entered through that index
+alone (`guard-invariants` rule 37, in aai-ui too): `runtime/`, `server/`,
+`session/`, `tools/`, `uploads/`, `mcp/`, `platform/`, `inbox/`, `s2s/`,
+`text-agent/`, and `transports/pipeline/` with one subdirectory per stage. The
+map, and what stays flat and why, is [`src/CLAUDE.md`](src/CLAUDE.md).
+`providers/`, `telephony/`, `eval/`, `testing/` and `session-state/` are
+older directories with no index.
 
 **The durable-workflow half is the directory `workflow/`**, with `api/`,
 `replay/` and `journal/` for its three largest clusters. It holds the
@@ -252,7 +261,7 @@ detector for it.
 
 Stated so far:
 
-- **`session.page.tail`** (`session-event-stream.ts`) — a page cannot contain
+- **`session.page.tail`** (`session/event-stream.ts`) — a page cannot contain
   events its own tail says do not exist (a read starting past the tail is
   legitimate and answers zero events).
 - **`capacity.line.terms`** (`aai-server/platform-db-capacity.ts`) — the terms

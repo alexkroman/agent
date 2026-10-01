@@ -7,7 +7,7 @@
  * open so a workflow step can reach it after the voice session is gone
  * (`stepNotifyClient`, `@alexkroman1/aai/step`, whose module doc says why the
  * RUN is the outbox). Its two ends ship on different schedules, exactly like
- * `/websocket`'s: `aai-runtime`'s `client-inbox.ts` sends these frames from
+ * `/websocket`'s: `aai-runtime`'s `aai-runtime/src/inbox/inbox.ts` sends these frames from
  * whatever SDK the agent was built with, and `aai-ui`'s `inbox-protocol.ts` (or
  * a firmware's `inbox.c`) reads them. So they are declared ONCE, here, and both
  * ends are typed against this declaration.

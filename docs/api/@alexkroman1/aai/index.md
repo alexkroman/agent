@@ -1865,7 +1865,7 @@ Read a variable off [ToolContext.env](#env-6), failing by NAME when it is not se
 The `ToolContext` twin of `requireStepEnv`, and there for the same reason: a
 missing credential is not transient, so it should say which key and how to
 set it rather than surface as a `TypeError` on the first property access —
-which `tool-executor.ts` serializes and hands to the MODEL, so what a caller
+which `aai-runtime/src/tools/executor.ts` serializes and hands to the MODEL, so what a caller
 hears is the agent apologising for something no log line explains.
 
 ```ts no-check
@@ -15087,7 +15087,7 @@ fails at deploy time.
 **`Partial`, so every read is `string | undefined`.** A variable that was
 never set is `undefined` at runtime whatever the type says, and the type
 used to say `string`: `ctx.env.NEVER_DECLARED` type-checked, built green,
-and threw a `TypeError` on the first live call — which `tool-executor.ts`
+and threw a `TypeError` on the first live call — which `aai-runtime/src/tools/executor.ts`
 then hands to the MODEL, so the caller hears the agent improvise an
 apology. `noUncheckedIndexedAccess` says the same thing, but it is the
 AUTHOR's tsconfig and cannot be relied on from here.
@@ -15345,7 +15345,7 @@ say the cap applied to both, which made an unshaped `await res.json()` look
 free: it is the whole response, in the prompt, for the rest of the turn.
 Return the fields the model needs. A result over the cap is warned about
 once per tool (see `warnOversizedResult` in `aai-runtime`'s
-`tool-executor.ts`).
+`aai-runtime/src/tools/executor.ts`).
 
 ###### Parameters
 
@@ -17336,7 +17336,7 @@ payment-callback flow is a supported shape.
 It was NOT, until recently, and the note here said so — the URL was served
 by the DevKit's own hook table, which knew nothing about this wait and
 answered `HookNotFound`. Both hops are covered now: the route→`signal` hop
-by `server-workflow-app.test.ts`, and `signal`→resume by
+by `aai-runtime/src/server/workflow-app.test.ts`, and `signal`→resume by
 `workflow/in-process.test.ts`.
 
 ```ts no-check
@@ -18069,7 +18069,7 @@ publishes its own tool names, so without a prefix a server could publish
 stood — the model would call it and nothing would say so. With the prefix,
 shadowing a native tool takes an author writing a `tools/mcp_*.ts` file
 themselves, and even that loses: the native tool wins and the drop is logged
-(`registerTools`, in `@alexkroman1/aai-runtime`'s `mcp-tools.ts`).
+(`registerTools`, in `@alexkroman1/aai-runtime`'s `aai-runtime/src/mcp/tools.ts`).
 
 ***
 

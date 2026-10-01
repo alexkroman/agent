@@ -426,7 +426,7 @@ export type WorkflowContext = {
    * It was NOT, until recently, and the note here said so — the URL was served
    * by the DevKit's own hook table, which knew nothing about this wait and
    * answered `HookNotFound`. Both hops are covered now: the route→`signal` hop
-   * by `server-workflow-app.test.ts`, and `signal`→resume by
+   * by `aai-runtime/src/server/workflow-app.test.ts`, and `signal`→resume by
    * `workflow/in-process.test.ts`.
    *
    * ```ts no-check

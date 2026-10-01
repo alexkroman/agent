@@ -82,7 +82,7 @@ describe("HostConfigSchema", () => {
   });
 
   // Which NAMES are allowed is not a schema concern — the allowlist lives in
-  // `unknownCredentialName` (host-mode.ts), where the rejection can name the
+  // `unknownCredentialName` (aai-runtime/src/server/host-mode.ts), where the rejection can name the
   // offending key instead of collapsing into a generic parse failure.
   test("accepts an unlisted credential name at the schema layer", () => {
     const result = HostConfigSchema.safeParse({

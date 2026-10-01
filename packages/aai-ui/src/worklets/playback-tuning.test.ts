@@ -335,7 +335,7 @@ describe.skipIf(!present)("playback tuning against a real TTS reply", () => {
   });
 
   test("HEARD_AUDIO_LAG_MS leaves the heard cursor erring EARLY, by tens of ms", () => {
-    // The direction is the contract (`pipeline-heard.ts`: over-keeping is the
+    // The direction is the contract (`aai-runtime/src/transports/pipeline/heard/tracker.ts`: over-keeping is the
     // measured failure, under-keeping costs a word or two of redundancy), and the
     // MAGNITUDE is what two wrong derivations got wrong — 750 left the cursor
     // ~694 ms early on this link and 950 left it ~894 ms, which is ~10 words

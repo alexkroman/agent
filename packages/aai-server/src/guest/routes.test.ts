@@ -180,7 +180,7 @@ describe("guest route exposure", () => {
  *
  * So each proxied route names the SDK export that owns its verbs. All three are
  * derived from the guest's own dispatch now, which is what makes adding a route
- * to `workflow-api.ts`'s table — or narrowing a verb in `server-routes.ts` —
+ * to `workflow-api.ts`'s table — or narrowing a verb in `aai-runtime/src/server/routes.ts` —
  * enough on its own.
  */
 /**

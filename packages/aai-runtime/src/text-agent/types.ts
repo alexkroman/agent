@@ -77,7 +77,7 @@ export interface TextAgentOptions extends HostAgentOptions {
    * ADDITIVE, and deliberately so: {@link TextAgent.stream} still returns the
    * vendor's `StreamTextResult` and nothing about it changes. A chat surface
    * consumes that; this is for whoever is GRADING or auditing the agent.
-   * `events.ts` carries which events are emitted, which eleven are
+   * `text-agent/events.ts` carries which events are emitted, which eleven are
    * not, and why the turn terminator fires exactly once.
    *
    * **Conversation-scoped, and the envelope carries no turn coordinate** (see

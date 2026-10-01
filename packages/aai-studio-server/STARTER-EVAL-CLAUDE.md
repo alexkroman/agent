@@ -93,7 +93,7 @@ module of this eval that ships without one fails in the diff that lands it.
 
 ## The five regexes are about tool OUTPUT, not about missing events
 
-`aai-runtime`'s `text-agent-events.ts` cites this eval as "the measured
+`aai-runtime/src/text-agent/events.ts` cites this eval as "the measured
 consequence" of a text agent having had no event stream — five REGEXES over
 tool-output text. That is the right motivation for the event stream and the wrong
 prediction about these five, and the audit is worth recording because it says

@@ -305,9 +305,9 @@ is the same one-declaration rule that section records being bitten by twice, now
 across a package boundary. What is REAL: `createRuntime`, the pipeline
 transport, the LLM on a live key, the tool executor, `ctx` and its slots,
 history trimming, the step budget, and the session event stream. What is not,
-stated rather than papered over: `ws-handler.ts`, the audio pacer, and frame
-ordering — all of which have unit and scenario coverage, where "given this
-utterance, did the agent do the right thing" had none.
+stated rather than papered over: `aai-runtime/src/session/ws-handler.ts`, the
+audio pacer, and frame ordering — all of which have unit and scenario coverage,
+where "given this utterance, did the agent do the right thing" had none.
 
 **The fakes go in through `registerSttKind`/`registerTtsKind` on
 `@alexkroman1/aai-runtime`.** That seam's own doc gives the reason: a fake

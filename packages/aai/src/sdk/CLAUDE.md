@@ -325,7 +325,7 @@ stays for non-file registries (the studio's coding agent).
   `{ role: "tool", content, toolName?, toolCallId? }`, capped as
   `tool.completed` caps it. Read it by ROLE (the ids are optional). **It never
   reaches the MODEL** — an orphan `tool` message is rejected by providers.
-  `aai-runtime`'s `_tool-result-message.ts` is the one statement of the shape;
+  `aai-runtime/src/tools/result-message.ts` is the one statement of the shape;
   more in `packages/aai-runtime/TOOL-OUTCOMES-CLAUDE.md`.
 - **`ctx.delegate`** runs a `SpeakerDef` OFF the line — a whole tool loop
   (`ToolLoopAgent`) with its own instructions, model, tools and context window;
@@ -376,8 +376,8 @@ and `ensureComposioWebhook` (a setup script's, not an agent's).
 ## `ToolDef.messages` — what a tool SAYS
 
 `tool-messages.ts` declares, `tool-messages-select.ts` chooses (both pure);
-`aai-runtime`'s `tool-messages-runner.ts` speaks. Kinds: `start`, `delayed`,
-`complete`, `failed`.
+`aai-runtime/src/tools/messages-runner.ts` speaks. Kinds:
+`start`, `delayed`, `complete`, `failed`.
 
 - **Same timing = VARIANTS (one drawn); different timings = STAGES.** Group
   before the draw.
@@ -557,4 +557,4 @@ The store and why record and bytes pair off one `DATABASE_URL` are in
 - **The parts path DECLINES rather than fails** (uncuttable body, one-part file
   for `upload`, 404 on declaration), and is the only path that may RETRY — a
   retried single `POST` mints a second upload. `workflow-upload-parts.ts` and
-  `aai-runtime`'s `_upload-store.ts` carry backoff and `Retry-After`.
+  `aai-runtime/src/uploads/store.ts` carry backoff and `Retry-After`.

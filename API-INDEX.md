@@ -1040,7 +1040,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `McpCallResult` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | What a `tools/call` came back with, flattened. |
 | `McpConnectOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | Options `openMcpSession` takes; every one of them is a test seam. |
 | `McpDrift` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | `detectToolDrift`'s answer, kept as its own name so a status can carry it. |
-| `McpInputSchema` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | What `mcp-tools.ts` puts in a `ToolDef.inputSchema`. |
+| `McpInputSchema` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | What `mcp/tools.ts` puts in a `ToolDef.inputSchema`. |
 | `McpServerStatus` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | What one declared server ended up contributing, and why when the answer is nothing. |
 | `McpSession` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | A live connection to one server. |
 | `McpSessionOpener` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | How a session is opened. |

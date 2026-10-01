@@ -20,13 +20,13 @@ leaves in history is "History records what was HEARD" there.
   UNKNOWN window is budgeted as the smallest the catalog carries
   (`UNKNOWN_MODEL_CONTEXT_TOKENS`), because nothing else bounds the request; the
   count is calibrated per SESSION against reported `usage.inputTokens`.
-- **The RECORD** is bounded for memory only, also in tokens
-  (`retention.ts`, `HISTORY_RETAIN_TOKENS` = 2 x
-  `LARGEST_CONTEXT_TOKEN_BUDGET`), and that size is what makes it unable to
-  change a request: the budget sends a suffix no larger than its limit, and
-  retention always keeps a larger one (`retention.test.ts` states it
-  as a property). The same bound applies in `session-core.ts` and to a resume
-  (`historyFromEvents`); the event log itself stays whole.
+- **The RECORD** is bounded for memory only, also in tokens (`retention.ts`,
+  `HISTORY_RETAIN_TOKENS` = 2 x `LARGEST_CONTEXT_TOKEN_BUDGET`), and that size
+  is what makes it unable to change a request: the budget sends a suffix no
+  larger than its limit, and retention always keeps a larger one
+  (`retention.test.ts` states it as a property). The same bound applies in
+  `../../../session/core.ts` and to a resume (`historyFromEvents`); the event
+  log itself stays whole.
 - **The one count left is a DISPLAY bound**: `MAX_CLIENT_MESSAGES` caps what a
   `history.restored` frame carries (`clientHistoryFrame`) and what `aai-ui`
   keeps in its snapshot.

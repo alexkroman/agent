@@ -142,7 +142,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     // Severed by DESTROYING the socket server-side, so the client sees 1006. A
     // clean close is the "user hung up" case aai-ui deliberately does not
     // reconnect from, so a test built on `close()` would prove the opposite of
-    // what it looks like. (The `_fault-socket.ts` proxy does this properly for
+    // what it looks like. (The `aai-runtime/src/server/_fault-socket.ts` proxy does this properly for
     // in-package tests; it is `_`-internal to `aai`, which this package may not
     // import — hence the fake server severing its own socket.)
     const page = await browser.newPage();
@@ -388,7 +388,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
  * the stack a user runs: delete `viteDevConfig`'s `"/websocket": { ws: true }`
  * proxy entry and all fifteen still pass. This one fails.
  *
- * `session.configured` is the assertion because `ws-handler.ts` sends it the
+ * `session.configured` is the assertion because `aai-runtime/src/session/ws-handler.ts` sends it the
  * moment the socket opens, before any provider is dialled, and it cannot
  * arrive unless the upgrade really crossed Vite into the backend.
  */

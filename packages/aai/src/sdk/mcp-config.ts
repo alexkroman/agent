@@ -5,7 +5,7 @@
  * Types and the one naming rule, and deliberately nothing that connects: this
  * module is imported by `types.ts` (the `AgentDef` field) and by
  * `agent-config.ts` (the wire schema), both of which have to stay loadable in a
- * browser. The client is `mcp-tools.ts` in `@alexkroman1/aai-runtime`, which is
+ * browser. The client is `aai-runtime/src/mcp/tools.ts` in `@alexkroman1/aai-runtime`, which is
  * where a socket may be opened.
  *
  * ## A server is a URL plus the NAME of a token variable
@@ -76,7 +76,7 @@ export const MCP_TOOL_NAME_MAX: number = 64;
  * stood — the model would call it and nothing would say so. With the prefix,
  * shadowing a native tool takes an author writing a `tools/mcp_*.ts` file
  * themselves, and even that loses: the native tool wins and the drop is logged
- * (`registerTools`, in `@alexkroman1/aai-runtime`'s `mcp-tools.ts`).
+ * (`registerTools`, in `@alexkroman1/aai-runtime`'s `aai-runtime/src/mcp/tools.ts`).
  */
 export const MCP_TOOL_PREFIX = "mcp_";
 

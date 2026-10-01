@@ -429,7 +429,7 @@ describe("createBrowserSession", () => {
       second?.simulateMessage(makeConfig(16_000, 24_000, "sess-1"));
       // The resume id is the whole of what the client contributes now: the
       // SERVER restores the conversation, from its own retained event stream
-      // keyed by that id (`runtime-session-stream.ts`). What used to follow here
+      // keyed by that id (`aai-runtime/src/runtime/session-stream.ts`). What used to follow here
       // was the client pushing its `messages` back, i.e. the client deciding
       // what the agent remembered.
       const sent = (second?.send.mock.calls ?? [])

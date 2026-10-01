@@ -28,11 +28,11 @@ clients.
 **The routes did not change, and neither did anything above the transport.** A
 frame names one of `PLATFORM_ROUTES` and carries the same already-encoded body
 the `POST` carried; the platform turns it back into a real `Request` and runs it
-through the same Hono app. So `platform-rpc.ts`'s error taxonomy, every client's
-`errorFor`, `RETRYABLE_STATUS`, the `{result}` envelope and each caller's own
-deadline all keep working unread. That is the property that made this safe to do
-at all, and the reason the swap lives under `platformPost` rather than in five
-clients.
+through the same Hono app. So `aai-runtime/src/platform/rpc.ts`'s error
+taxonomy, every client's `errorFor`, `RETRYABLE_STATUS`, the `{result}` envelope
+and each caller's own deadline all keep working unread. That is the property
+that made this safe to do at all, and the reason the swap lives under
+`platformPost` rather than in five clients.
 
 The five HTTP routes are UNCHANGED and still serve every call. They are the
 fallback, and they are what an older guest image (pinned at deploy time) keeps

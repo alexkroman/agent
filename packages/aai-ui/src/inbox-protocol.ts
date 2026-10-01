@@ -3,7 +3,7 @@
  * The browser half of the `WS /inbox` wire, without the socket: frames in, what
  * to play and what to answer out.
  *
- * The server half is `aai-runtime`'s `client-inbox.ts`, and the frames are
+ * The server half is `aai-runtime`'s `aai-runtime/src/inbox/inbox.ts`, and the frames are
  * declared once, as `InboxServerFrame` / `InboxClientFrame` on
  * `@alexkroman1/aai/protocol`, which both ends are typed against: a notice
  * header followed by `bytes` of audio in binary frames, answered with an ack or
@@ -30,7 +30,7 @@
  *   could not parse.
  *
  * The live-conversation frames a holder asked for with `?events=1`
- * (`client-event-feed.ts` server-side) share the text channel and are told apart
+ * (`aai-runtime/src/inbox/event-feed.ts` server-side) share the text channel and are told apart
  * by {@link parseInboxEvent}.
  */
 

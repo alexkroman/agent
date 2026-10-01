@@ -8,7 +8,7 @@
  *
  * 1. The socket's `?location=` (`ws-upgrade.ts`), recorded before the session
  *    exists — what the DEVICE says about itself.
- * 2. `sessionContext`'s `location` (`aai-runtime`'s `runtime-session-memory.ts`),
+ * 2. `sessionContext`'s `location` (`aai-runtime`'s `aai-runtime/src/runtime/session-memory.ts`),
  *    recorded once the app's own hook has answered — what the APP knows about
  *    that client. It runs after the upgrade, so it overrides: the address a
  *    person typed into the app's settings is a better answer than whatever a

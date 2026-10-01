@@ -79,7 +79,7 @@ function enders(): OwnedMap<string, SessionEnder> {
  * Register how `sessionId` is ended; returns the release for THIS claim, a
  * no-op once a resumed connection has claimed the id again.
  *
- * @internal — the runtime's half (`session-attach.ts`), and `createToolContext`'s.
+ * @internal — the runtime's half (`aai-runtime/src/session/attach.ts`), and `createToolContext`'s.
  */
 export function claimSessionEnder(sessionId: string, ender: SessionEnder): () => boolean {
   return enders().claim(sessionId, ender);

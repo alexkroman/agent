@@ -357,7 +357,7 @@ describe("turn scoping", () => {
 });
 
 /**
- * The claim `text-agent-events.ts` was written for: a TEXT agent emits the same
+ * The claim `aai-runtime/src/text-agent/events.ts` was written for: a TEXT agent emits the same
  * `SessionEvent` union, so this vocabulary reads one with no second
  * implementation.
  *

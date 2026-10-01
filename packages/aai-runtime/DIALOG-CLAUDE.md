@@ -7,7 +7,7 @@ read_when: >-
 
 # Dialogs, wired to a session
 
-Reference for `runtime-dialogs.ts`, `runtime-dialog-knobs.ts` and
+Reference for `runtime/dialogs.ts`, `runtime/dialog-knobs.ts` and
 `transports/pipeline/knobs/dialog.ts` — the runtime half of `dialog()`. A
 SIBLING of the package guide rather than a section of it, per the root
 `AGENTS.md`: this is read once you are already changing the dialog bridge, and
@@ -22,7 +22,7 @@ when no tool is running, which is why none of it could work from inside one:
 
 | Promise                                                 | Where                                                    | Reaches                                                                   |
 | ------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- |
-| session events move it (`@`-prefixed transitions)       | `SessionDialogs.observe`, called by `session-emitter.ts` | every transport                                                           |
+| session events move it (`@`-prefixed transitions)       | `SessionDialogs.observe`, called by `session/emitter.ts` | every transport                                                           |
 | the active instruction reaches the model on EVERY turn  | `SessionSystemPrompt.setSuffix`                          | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
 | a per-state `timeout` is armed and fired                | `createRestartableTimer` per dialog                      | every transport                                                           |
 | `interruption` / `toolChoice` / `temperature` per state | `PipelineTransportOptions.dialogTurn`                    | **pipeline only**                                                         |
@@ -93,7 +93,7 @@ names the events that count, which is what `@`-prefixed transitions already are.
 writes the slot when — and only when — the active state handled the event, and it
 returns the position either way, so comparing positions cannot see a self
 transition. The bridge therefore offers events through a write-counting
-`SlotStore`, the same instrument `session-emitter.ts` uses on a hook's context and
+`SlotStore`, the same instrument `session/emitter.ts` uses on a hook's context and
 for the same reason: the commit is what a move costs, and almost every session
 event reaches a dialog that declares no transition on it.
 
@@ -136,8 +136,8 @@ the dialog actually is instead of firing a transition the conversation has left.
   event a dialog may declare a transition on. The whole settle runs under a latch;
   an event emitted while it is held is recorded and sent to the client like any
   other and offered to no dialog. Same shape and same argument as the emitter's
-  `announcing` guard one layer up. Both `runtime-dialogs.test.ts` and
-  `session-emitter.test.ts` A/B it.
+  `announcing` guard one layer up. Both `runtime/dialogs.test.ts` and
+  `session/emitter.test.ts` A/B it.
 - **`refreshSystemPrompt` is called only when the rendered suffix CHANGED.** The
   suffix thunk itself always renders fresh, so pipeline mode is correct with no
   push at all; the push exists for a service holding its instructions as session
@@ -168,7 +168,7 @@ the dialog actually is instead of firing a transition the conversation has left.
 state — a property of the POSITION rather than a write, so a resumed session is
 pinned the same way and `handoff` to anyone else is refused until the dialog
 moves. `agent()` checks the name against the roster at declaration. The bridge
-here does not apply it: `runtime-personas.ts` re-renders the persona section on
+here does not apply it: `runtime/personas.ts` re-renders the persona section on
 the `state.updated` a move commits, which is what pushes a pin change to a
 transport holding its prompt as session state.
 

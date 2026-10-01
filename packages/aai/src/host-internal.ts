@@ -374,7 +374,7 @@ export { agentInstructionsSection, buildSystemPrompt } from "./sdk/system-prompt
 // The tool-message DECLARATION is authoring API (`ToolDef.messages`, on the
 // root); choosing which line a given call gets is the runtime's, so the two
 // budgets and the three selectors come out here. The runner that speaks them
-// is `aai-runtime`'s `tool-messages-runner.ts`.
+// is `aai-runtime`'s `aai-runtime/src/tools/messages-runner.ts`.
 export {
   DEFAULT_TOOL_START_PHRASES,
   TOOL_START_BLOCKING_MAX_MS,

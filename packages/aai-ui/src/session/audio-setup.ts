@@ -7,7 +7,7 @@
  * WHEN one is opened, whether it is still wanted by the time it settles, and
  * what happens to audio that arrives meanwhile all live in
  * `session/audio-state.ts` — the same split `s2s-lifecycle.ts` and
- * `pipeline-speech-edges.ts` draw in the runtime, and for the same reason:
+ * `aai-runtime/src/transports/pipeline/speech/edges.ts` draw in the runtime, and for the same reason:
  * nothing here reads or writes session state, so it is callable from an
  * invoked actor and testable without one.
  */

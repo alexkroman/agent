@@ -37,8 +37,9 @@ was stated alongside it.
   three-way live measurement, the tau2 scores with the pin in place, and why a
   resampler was built and reverted. `pinAssemblyS2sRates`
   (`host/runtime-config.ts`) is the pin; `assertHostRatesSupported`
-  (`host-mode.ts`) is the counterpart it cannot reach, refusing a host-mode
-  handshake that declares a rate this transport cannot honour.
+  (`aai-runtime/src/server/host-mode.ts`) is the counterpart it cannot reach,
+  refusing a host-mode handshake that declares a rate this transport cannot
+  honour.
 
   **S2S has no agent captions on tool-call turns, and `transcript.agent.delta`
   is the remedy.** Neither reply of a tool-call turn emits `transcript.agent`,
@@ -74,17 +75,18 @@ was stated alongside it.
   the runtime honours — and it reads to an author as "unsupported", so it draws
   no bug report at all. **When a config field's mode rule changes, the type
   gate, the doc, and the transport all move together or none of them do.**
-  `runtime-transport.test.ts` pins the forwarding at the point it was missing.
+  `aai-runtime/src/runtime/transport.test.ts` pins the forwarding at the point
+  it was missing.
 
   `input.language_codes`, `input.keyterms` and `output.voice` are reachable as
   of 2026-08-09: `assemblyAIS2s()` takes `{ voice, languages, keyterms }`, read
   off the stored descriptor by `readAssemblyS2sOptions` in
-  `runtime-transport.ts` and forwarded on presence only. Before that an S2S
-  agent could not pick its voice at all, so this guide's "the voice rides on the
-  `s2s` descriptor" was wrong when written and is now merely how it works.
-  **`AssemblyAIS2sOptions` (`sdk/providers/s2s/assemblyai.ts`) owns the rest** —
-  the tau2-bench retail measurement behind the three settings (spelled first
-  name 1/6 -> 6/6, word recall ~0.89 -> ~0.93), why `languages` must stay
+  `aai-runtime/src/runtime/transport.ts` and forwarded on presence only. Before
+  that an S2S agent could not pick its voice at all, so this guide's "the voice
+  rides on the `s2s` descriptor" was wrong when written and is now merely how it
+  works. **`AssemblyAIS2sOptions` (`sdk/providers/s2s/assemblyai.ts`) owns the
+  rest** — the tau2-bench retail measurement behind the three settings (spelled
+  first name 1/6 -> 6/6, word recall ~0.89 -> ~0.93), why `languages` must stay
   AUTHOR-controlled rather than defaulted, why an unverified `voice` id leaves
   an agent that connects, reports ready and never speaks, and why
   `turn_detection` is deliberately not pinned.

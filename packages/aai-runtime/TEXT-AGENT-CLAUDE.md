@@ -85,7 +85,7 @@ text turn with no second implementation, and `runTextAgent` hands the recorded
 list back as `TextAgentTestRun.events`.
 
 **The argument, the emitted set, and the eleven refusals live in
-`src/text-agent-events.ts`'s module doc** — this guide is REFERENCE and that
+`src/text-agent/events.ts`'s module doc** — this guide is REFERENCE and that
 file is where the reasoning has to be read from. Four things worth knowing
 before touching either:
 
@@ -369,14 +369,13 @@ case then measures the deadline instead of the agent. `workflows` supplies
 
 **Who is calling is recorded where a connection records it.** `clientId`,
 `phone` and `call` (on `EvalSessionOptions`, so per suite, and on
-`EvalCaseOptions` per case) go through `recordSessionIdentity` (the
-runtime's one identity writer) under the session id before the session is
-built — the point `ws-handler.ts` and `telephony-server.ts` record them — so
-`sessionClientId`,
-`sessionCall`, `sessionContext`'s args, `onSessionEnd` and the client binding
-all read the same values (`eval/_session-identity.ts`). A downstream suite had
-wrapped `sessionContext` to hand it a fake `call`, which reached the hook and
-nothing else. Two decisions:
+`EvalCaseOptions` per case) go through `recordSessionIdentity` (the runtime's
+one identity writer) under the session id before the session is built — the
+point `session/ws-handler.ts` and `telephony-server.ts` record them — so
+`sessionClientId`, `sessionCall`, `sessionContext`'s args, `onSessionEnd` and
+the client binding all read the same values (`eval/_session-identity.ts`). A
+downstream suite had wrapped `sessionContext` to hand it a fake `call`, which
+reached the hook and nothing else. Two decisions:
 
 - **A refusal is `session.refused`, not a throw.** The refusal is often the
   claim (a calling agent refusing a stream that names no call it placed), and a
@@ -398,7 +397,7 @@ again: a calling agent's hook claims the call row.
 **`endSession(ctx)` takes effect.** The session is built with
 `runtime.createSession` directly, so no ender was registered and a tool's
 `end_call` answered `false` while the session kept answering. `_session-end.ts`
-claims one where `session-attach.ts` does and ends the session the way the paced
+claims one where `session/attach.ts` does and ends the session the way the paced
 sink does, minus playback: `afterReply` (default) at the reply's own terminator,
 so the goodbye is captured whole; `afterReply: false` at once. Either way it is
 the session's ordinary stop, so `onSessionEnd` fires when the agent hangs up.

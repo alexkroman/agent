@@ -201,7 +201,7 @@ export type TextAgentTestRun = {
    *
    * Ends in exactly one `reply.completed` or `reply.cancelled`, on every turn
    * this helper drives: it consumes the whole stream, so the terminal part has
-   * always passed through by the time this resolves. `../text-agent/events.ts`
+   * always passed through by the time this resolves. `text-agent/events.ts`
    * carries which events a text agent emits and which it refuses.
    */
   readonly events: readonly SessionEvent[];
@@ -212,7 +212,7 @@ export type TextAgentTestRun = {
  *
  * The agent half is `TextAgentOptions` MINUS the two things this helper
  * supplies — derived by subtraction rather than restated, for the reason
- * `../server/agent-server-forwarding.ts` exists in this package: every field of that type
+ * `server/agent-server-forwarding.ts` exists in this package: every field of that type
  * is optional, so an omission is valid TypeScript and presents as a harness
  * quietly ignoring part of its own configuration. A capability added to a text
  * agent is reachable from here the day it lands.

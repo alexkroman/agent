@@ -67,7 +67,7 @@ import { asSchema, type Tool } from "ai";
 import type { JSONSchema7 } from "json-schema";
 
 /**
- * What `tools.ts` puts in a `ToolDef.inputSchema`.
+ * What `mcp/tools.ts` puts in a `ToolDef.inputSchema`.
  *
  * Both halves are named in the type because both are load-bearing:
  * `~standard` is what `executeToolCall` validates through, and `toJsonSchema`

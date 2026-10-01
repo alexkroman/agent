@@ -256,9 +256,9 @@ and `AgentConfigSchema` — and the type guards fail if either is missing.
 
 A config that loses its providers gets the AssemblyAI pipeline
 (`defaultProviders`), never a silent S2S session. `buildTransport`
-(`aai-runtime`'s `runtime-transport.ts`) throws on a descriptor-less config
-whose pipeline providers did not resolve. `createRuntime` logs
-`"Session mode resolved"` once with the mode and each stage's effective
+(`aai-runtime/src/runtime/transport.ts`) throws on a
+descriptor-less config whose pipeline providers did not resolve. `createRuntime`
+logs `"Session mode resolved"` once with the mode and each stage's effective
 settings (see "Settings, not just kinds" in `src/sdk/providers/CLAUDE.md`).
 
 ## Data flow

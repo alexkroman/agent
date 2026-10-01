@@ -6,7 +6,7 @@
  *
  * The framework-agnostic core `useInbox()` wraps; the receiving rules (acks,
  * repeats, busy, a notice cut short) are `inbox-protocol.ts`, and the server
- * half is `aai-runtime`'s `client-inbox.ts`.
+ * half is `aai-runtime`'s `aai-runtime/src/inbox/inbox.ts`.
  *
  * - **Held from creation, reconnected until `close()`**, on a jittered backoff
  *   from 1 s doubling to 30 s (`jitteredBackoff`), reset by every open. The

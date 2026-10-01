@@ -6,7 +6,7 @@
  * A device that connects with `?client=<id>` has one conversation across many
  * sessions, and the runtime keeps every session's raw event log for it rather
  * than reclaiming it when the session ends (see `aai-runtime`'s
- * `session-client-history.ts`). This is how the app's own summarizer reads that
+ * `aai-runtime/src/session/client-history.ts`). This is how the app's own summarizer reads that
  * log: `onSessionEnd` starts a run, and the run's step calls this with the
  * client id and a cursor, then writes whatever digest it likes somewhere its
  * `sessionContext` can find it next time.

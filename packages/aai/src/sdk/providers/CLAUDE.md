@@ -51,7 +51,7 @@ error before the first output (a transcript / audio); the LLM switches per
 REQUEST on a throw or a stream error before the first content part; never on an
 abort or after output. The host half is `aai-runtime`'s `providers/fallback.ts`
 and `_fallback-llm.ts`; each switch is a `provider.failedOver` session event
-(`protocol-events-accounting.ts`), bound per session in `runtime-transport.ts`
+(`protocol-events-accounting.ts`), bound per session in `aai-runtime/src/runtime/transport.ts`
 because resolution is per runtime. **Every member's key is required** — the
 preflight demands them all, and `resolveLlm` resolves every member eagerly.
 `agentConfigWarnings` and the settings log read members one by one.
@@ -173,7 +173,7 @@ Opener rules (`aai-runtime`'s `providers/_utils.ts`, `_socket.ts`):
   connect deadline (`WS_OPEN_TIMEOUT_MS`, under the session start timeout) and
   the pre-connect `error` guard.
 - **All four stages are registries, S2S included**: `S2sKind` is the closed
-  union of `S2S_PROVIDERS`' kinds and `runtime-transport.ts` switches
+  union of `S2S_PROVIDERS`' kinds and `aai-runtime/src/runtime/transport.ts` switches
   exhaustively over it; S2S credentials resolve through `resolveS2sEnvVar`
   honouring `apiKeyEnv`, so the preflight and the session read the same key.
 

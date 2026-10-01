@@ -62,7 +62,7 @@ export type ScriptedToolCall = {
    *
    * Serialized to the JSON string the wire carries, so a spec writes the
    * arguments it means and the real coercion, Standard Schema validation and
-   * repair path (`../tools/call-repair.ts`) all still run on the way in — which is
+   * repair path (`tools/call-repair.ts`) all still run on the way in — which is
    * the point of scripting a MODEL rather than calling `execute` directly.
    * Defaults to `{}`.
    */

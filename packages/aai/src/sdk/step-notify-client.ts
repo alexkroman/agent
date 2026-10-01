@@ -45,7 +45,7 @@
  * ## Why a global slot
  *
  * The same reason as {@link stepWebhookUrl}: the sockets live in the server
- * (`aai-runtime`'s `client-inbox.ts`) and the step runs from the agent bundle's
+ * (`aai-runtime`'s `aai-runtime/src/inbox/inbox.ts`) and the step runs from the agent bundle's
  * own copy of this module. An unpublished slot THROWS a `FatalError` — there is
  * no inbox to wait for, and retrying would only wait longer to say so.
  *

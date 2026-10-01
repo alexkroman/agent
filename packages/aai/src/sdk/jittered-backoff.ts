@@ -63,7 +63,7 @@ export type JitteredBackoffOptions = {
    * The largest window the doubling may reach, if any.
    *
    * Omitted means uncapped, which is only safe when the ATTEMPT COUNT is the
-   * bound instead — `_upload-blobs-brokered.ts` is the one such caller, at
+   * bound instead — `aai-runtime/src/uploads/blobs-brokered.ts` is the one such caller, at
    * three attempts off a 250ms base, so its worst case is ~750ms by
    * construction. A caller that retries until a deadline needs a cap here, or
    * the doubling reaches minutes.

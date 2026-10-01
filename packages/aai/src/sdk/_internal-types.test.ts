@@ -177,7 +177,7 @@ describe("toAgentConfig", () => {
     // no session at serialization time, so there is nothing honest to snapshot
     // and a value taken here would be one turn's answer frozen for the life of
     // the deployment. Not a regression: what resolves per request is the LIVE
-    // definition, in the runtime (`runtime-system-prompt.ts`), which folds the
+    // definition, in the runtime (`aai-runtime/src/runtime/system-prompt.ts`), which folds the
     // resolver's answer in under the same precedence header a string lands
     // under. The config is the SERIALIZABLE shape, so the key is dropped and
     // `AgentConfigSchema` supplies `DEFAULT_SYSTEM_PROMPT` for it.

@@ -7,7 +7,7 @@
  * They exist for a device that has ONE conversation across many sessions — a
  * smart speaker that connects with `?client=<id>` every time somebody says the
  * wake word. The runtime already keeps that client's raw transcript (see
- * `aai-runtime`'s `session-client-history.ts`) and loads the recent part of it
+ * `aai-runtime`'s `aai-runtime/src/session/client-history.ts`) and loads the recent part of it
  * into every new session; what it cannot do is decide what an OLDER part of it
  * means. So the app does: {@link AgentSessionLifecycle.onSessionEnd} starts a
  * workflow that summarizes what was just said (reading it back with
@@ -23,7 +23,7 @@
  * and a prompt that changes between requests defeats the provider's prompt
  * cache. So the answer is awaited once, before the first model call, and the
  * text is installed as a STABLE block for the whole session (see
- * `aai-runtime`'s `runtime-system-prompt.ts` for where it lands).
+ * `aai-runtime`'s `aai-runtime/src/runtime/system-prompt.ts` for where it lands).
  *
  * ## Why their contexts are narrower than a tool's
  *

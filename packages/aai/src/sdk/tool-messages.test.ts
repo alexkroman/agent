@@ -4,7 +4,7 @@
 //
 // CHOOSING between the declared lines is `tool-messages-select.test.ts`, beside
 // the module that does it. The runtime half — the timers, the barge-in rules,
-// the model skip — is `aai-runtime`'s `tool-messages-runner.test.ts` and
+// the model skip — is `aai-runtime`'s `aai-runtime/src/tools/messages-runner.test.ts` and
 // `aai-runtime/src/transports/pipeline/tool-messages.test.ts`.
 
 import { describe, expect, test } from "vitest";

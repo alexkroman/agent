@@ -49,7 +49,7 @@ the string to `start`.
 answered as one on `user_turn_commit`; the mic is SILENCED with zeros outside a
 turn (the transcriber's clock keeps pace); a final with no turn open is dropped.
 Opening a turn is the barge-in — `startUserTurn()` reports whether it
-interrupted and `session-commands.ts` then acts like a client `cancel`
+interrupted and `../../../session/commands.ts` then acts like a client `cancel`
 (`manualTurn` in the table). The eval harness's `say()` presses and releases
 for a manual agent.
 

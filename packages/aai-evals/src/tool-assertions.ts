@@ -12,7 +12,7 @@
  * claims are "it called the right tool with the right arguments" and "it called
  * them in that order" — and every one of them takes a TEXT agent's events
  * unchanged, since a text agent emits the same `SessionEvent` union
- * (`text-agent-events.ts`). What it had no way to say is the claim a
+ * (`aai-runtime/src/text-agent/events.ts`). What it had no way to say is the claim a
  * VERIFYING agent — a coding agent, the shipped example being the studio's own
  * — is graded on:
  *

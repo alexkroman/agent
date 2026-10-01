@@ -5,7 +5,7 @@
  * and the two things it does locally rather than waiting a round trip for —
  * stopping the agent's audio on a press, and clearing the caption of a
  * discarded turn. What the server does with the frames is `aai-runtime`'s
- * `pipeline-manual-turn.test.ts`.
+ * `aai-runtime/src/transports/pipeline/speech/manual-turn.test.ts`.
  *
  * And the typed turn, `sendText`, which shares the local interruption: the
  * frame it sends, and the echo it deliberately does NOT make.

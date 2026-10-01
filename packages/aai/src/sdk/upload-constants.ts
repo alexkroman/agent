@@ -59,7 +59,7 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  *
  * **8 MiB, and the reason it sat here has now been REMOVED — so this number is due a
  * re-measurement.** On the direct path (a deployed agent — see
- * `_upload-blobs-brokered.ts`) a part used to be two serialized requests: the window
+ * `aai-runtime/src/uploads/blobs-brokered.ts`) a part used to be two serialized requests: the window
  * to the platform, then a body-less `PUT …/parts?offset=…&stored=1` telling the agent
  * it landed. Measured against a deployed agent, per 4 MiB part:
  *
@@ -108,7 +108,7 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * on the size alone, and they are why a future re-measurement that flatters 16 MiB
  * still would not settle it on its own:
  *
- * - **Platform memory.** `_upload-blobs-http.ts` buffers a whole window to hand
+ * - **Platform memory.** `aai-runtime/src/uploads/blobs-http.ts` buffers a whole window to hand
  *   Storage a length — unavoidable, and the reason the cap is a window rather than a
  *   file. At eight wide, 16 MiB parts ask a shared memory-bounded process to hold
  *   128 MiB for ONE upload.

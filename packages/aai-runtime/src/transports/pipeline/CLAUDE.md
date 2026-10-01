@@ -56,7 +56,7 @@ never got.
   truncation and the resume anchor (`buildTailResumePrompt`) both READ it, and
   it owns the playback clock the barge-in gate reads.
 - **Two accuracy tiers, chosen at runtime**: word timings where the provider
-  sends them (AssemblyAI `WordBoundaries`, `providers/tts/assemblyai-words.ts`);
+  sends them (AssemblyAI `WordBoundaries`, `../../providers/tts/assemblyai-words.ts`);
   otherwise a proportional estimate snapped to a word. Both round toward
   UNDER-keeping.
 - **The proportional estimate is CLAMPED** (`MAX_SPEECH_CHARS_PER_MS`), because

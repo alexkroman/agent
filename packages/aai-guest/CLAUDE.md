@@ -290,7 +290,7 @@ different runtimes. **Known split: `.node-version` says 24 against
 `node:26-slim`.** Every package declares `engines.node >=24`, so **code may use
 only APIs on Node 24** — `tsc` cannot enforce it (`lib: ["ESNext"]`), so
 `Map.prototype.getOrInsert*`, `Iterator.concat`, `Temporal` typecheck and then
-throw on the floor (`runtime-tools.ts` is the worked example). Safe:
+throw on the floor (`aai-runtime/src/runtime/tools.ts` is the worked example). Safe:
 `crypto.hash()`, `module.enableCompileCache()`, `await using` +
 `Symbol.asyncDispose`. `DisposableStack`/`AsyncDisposableStack` are unverified
 (note in `studio-session-broker.ts`).

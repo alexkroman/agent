@@ -6,7 +6,7 @@
  *
  * Split out of `session/browser-session.ts` at the source-length cap. Each is a frame to
  * the server; what the server does with it is `aai-runtime`'s
- * `pipeline-manual-turn.ts`. The two things done HERE rather than waiting a
+ * `aai-runtime/src/transports/pipeline/speech/manual-turn.ts`. The two things done HERE rather than waiting a
  * round trip for are the reason these are more than `sendJson` calls: a press
  * stops the agent's queued audio at once, and a discarded turn's caption is
  * cleared because no transcript for it will ever arrive.

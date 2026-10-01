@@ -495,7 +495,7 @@ assertion built on them works over a text turn unchanged.
 ADDITIVE, and deliberately so: [TextAgent.stream](https://github.com/alexkroman/agent/tree/main/packages/aai-runtime#readme) still returns the
 vendor's `StreamTextResult` and nothing about it changes. A chat surface
 consumes that; this is for whoever is GRADING or auditing the agent.
-`text-agent-events.ts` carries which events are emitted, which eleven are
+`text-agent/events.ts` carries which events are emitted, which eleven are
 not, and why the turn terminator fires exactly once.
 
 **Conversation-scoped, and the envelope carries no turn coordinate** (see
@@ -1634,7 +1634,7 @@ What [runTextAgent](#runtextagent) takes, beyond the definition and the conversa
 
 The agent half is `TextAgentOptions` MINUS the two things this helper
 supplies — derived by subtraction rather than restated, for the reason
-`agent-server-forwarding.ts` exists in this package: every field of that type
+`server/agent-server-forwarding.ts` exists in this package: every field of that type
 is optional, so an omission is valid TypeScript and presents as a harness
 quietly ignoring part of its own configuration. A capability added to a text
 agent is reachable from here the day it lands.
@@ -1809,7 +1809,7 @@ The arguments, as an object.
 
 Serialized to the JSON string the wire carries, so a spec writes the
 arguments it means and the real coercion, Standard Schema validation and
-repair path (`tool-call-repair.ts`) all still run on the way in — which is
+repair path (`tools/call-repair.ts`) all still run on the way in — which is
 the point of scripting a MODEL rather than calling `execute` directly.
 Defaults to `{}`.
 
@@ -2099,7 +2099,7 @@ for a reply to end rather than for a timer.
 
 Ends in exactly one `reply.completed` or `reply.cancelled`, on every turn
 this helper drives: it consumes the whole stream, so the terminal part has
-always passed through by the time this resolves. `text-agent-events.ts`
+always passed through by the time this resolves. `text-agent/events.ts`
 carries which events a text agent emits and which it refuses.
 
 ##### messages
