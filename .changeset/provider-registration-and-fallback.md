@@ -11,7 +11,7 @@ Provider failover and one registration per vendor.
   transcript/audio (unspoken TTS text is replayed into the next one), or an LLM
   request that throws or whose stream errors before the first content part
   (decided per request). Never on an interruption or after output. Each switch
-  is a new `provider.failed-over` session event (`stage`, `from`, `to`,
+  is a new `provider.failedOver` session event (`stage`, `from`, `to`,
   `reason`), and every member's key is required by the credential preflight.
   **Breaking:** the event vocabulary grew, so an exhaustive `switch` over
   `SessionEvent["type"]` must handle it (`aai:events` epoch 2, epoch 1
