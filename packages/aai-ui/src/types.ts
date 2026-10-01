@@ -316,6 +316,8 @@ export type VoiceSessionOptions = {
    *
    * @example
    * ```ts
+   * import { mountClient } from "@alexkroman1/aai-ui";
+   *
    * mountClient({
    *   token: async ({ sessionId }) => {
    *     const res = await fetch("/my-backend/session-ticket", {

@@ -10551,6 +10551,8 @@ When omitted, a ticket the server's `client-config` issued is used — which
 ###### Example
 
 ```ts
+import { mountClient } from "@alexkroman1/aai-ui";
+
 mountClient({
   token: async ({ sessionId }) => {
     const res = await fetch("/my-backend/session-ticket", {

@@ -69,7 +69,7 @@ export function resolveSessionTokenSync(
 ): string | undefined {
   if (typeof option !== "function") return trimmed(option);
   const value = option(attempt);
-  if (typeof value === "object" && value !== null) {
+  if (typeof value !== "string" && value !== undefined) {
     throw new TypeError(
       "VoiceSessionOptions.token: an injected `WebSocket` opens synchronously, so its " +
         "`token` getter must return a string, not a Promise",

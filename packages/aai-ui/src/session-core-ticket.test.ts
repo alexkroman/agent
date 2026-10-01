@@ -9,7 +9,7 @@
  */
 import { SESSION_AUTH_PROTOCOL_PREFIX, SESSION_PROTOCOL } from "@alexkroman1/aai/protocol";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { MockWebSocket, MockWebSocketConstructor } from "./_session-core-test-utils.ts";
+import { lastSocket, MockWebSocket, MockWebSocketConstructor } from "./_session-core-test-utils.ts";
 import { createDialer } from "./session-core-dial.ts";
 import {
   resolveSessionToken,
@@ -74,9 +74,10 @@ describe("createDialer with an injected WebSocket", () => {
       WebSocket: MockWebSocketConstructor,
       token: "ticket",
     });
-    const socket = dialer.open() as unknown as MockWebSocket;
-    expect(socket.protocols).toEqual(offer("ticket"));
-    expect(new URL(socket.url).searchParams.has("token")).toBe(false);
+    dialer.open();
+    const socket = lastSocket;
+    expect(socket?.protocols).toEqual(offer("ticket"));
+    expect(new URL(socket?.url ?? "").searchParams.has("token")).toBe(false);
   });
 
   test("no token offers no subprotocols", () => {
@@ -84,7 +85,8 @@ describe("createDialer with an injected WebSocket", () => {
       platformUrl: "http://test.local",
       WebSocket: MockWebSocketConstructor,
     });
-    expect((dialer.open() as unknown as MockWebSocket).protocols).toBeUndefined();
+    dialer.open();
+    expect(lastSocket?.protocols).toBeUndefined();
   });
 });
 

@@ -49,6 +49,12 @@ export type DevClientConfigSource = {
   page?: "voice" | "static" | undefined;
 };
 
+/** The part of an `http.ServerResponse` the `client-config` answer writes. */
+export type ClientConfigResponse = {
+  writeHead(status: number, headers: Record<string, string>): unknown;
+  end(body: string): unknown;
+};
+
 /** The two server options that turn dev ticketing on. */
 export type DevSessionTicketing = {
   /** The gate: dev tickets, resume bound to the upgrade (see the module doc). */
@@ -58,8 +64,8 @@ export type DevSessionTicketing = {
    * `true` when it answered, `undefined` to fall through (so `??` composes it).
    */
   clientConfig: (
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
+    req: unknown,
+    res: ClientConfigResponse,
     url: string,
     method: string,
   ) => true | undefined;

@@ -3,7 +3,12 @@ import type http from "node:http";
 import { ClientConfigResponseSchema } from "@alexkroman1/aai/protocol";
 import { createSessionToken, verifySessionToken } from "@alexkroman1/aai-runtime/auth";
 import { describe, expect, test } from "vitest";
-import { DEV_TICKET_SUB, devSessionTicketing, devTicketVerifier } from "./_dev-session-ticket.ts";
+import {
+  type ClientConfigResponse,
+  DEV_TICKET_SUB,
+  devSessionTicketing,
+  devTicketVerifier,
+} from "./_dev-session-ticket.ts";
 
 const SECRET = "dev-secret";
 const SOURCE = { name: "Support", greeting: "Hi", page: "voice" } as const;
@@ -11,17 +16,16 @@ const SOURCE = { name: "Support", greeting: "Hi", page: "voice" } as const;
 /** A response double that records what the hook wrote. */
 function fakeResponse() {
   const out = { status: 0, headers: {} as Record<string, string>, body: "" };
-  const res = {
-    writeHead(status: number, headers: Record<string, string>) {
+  const res: ClientConfigResponse = {
+    writeHead(status, headers) {
       out.status = status;
       out.headers = headers;
-      return res;
     },
-    end(body: string) {
+    end(body) {
       out.body = body;
     },
   };
-  return { res: res as unknown as http.ServerResponse, out };
+  return { res, out };
 }
 
 const req = (url: string) => ({ url, headers: {} }) as http.IncomingMessage;
