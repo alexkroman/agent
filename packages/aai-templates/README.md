@@ -72,7 +72,7 @@ by `aai-cli/worker-bundler.ts` in a build and by `src/_discovery.ts` (Vite's
 ## The catalog
 
 Six are **workflow apps** (`workflowApp()`, a form rather than a microphone, no
-session and no voice pipeline); the rest are voice agents, two of which hand
+session and no voice pipeline); the rest are voice agents, three of which hand
 work off to a durable workflow.
 
 | Template                    | Kind             | What it is                                                                                                                                                                                                                                                         |
@@ -100,6 +100,7 @@ work off to a durable workflow.
 | `word-game-agent`           | voice            | a three-way phone word game (Pipecat's) — the host is the agent, the A.I. player is `ctx.generate` on its own context, the referee is a function, and the two-minute clock is a dialog `timeout`                                                                   |
 | `research-handoff-agent`    | voice + workflow | a research desk that hands off — a tool starts a durable run, answers the turn, and the finished run speaks back                                                                                                                                                   |
 | `meeting-recap-agent`       | voice + workflow | a recap desk that transcribes and writes up a recording — the Temporal patterns (cancel, signal, compensate) over a phone call                                                                                                                                     |
+| `home-assistant-agent`      | voice + workflow | an Alexa-style home speaker — reminders and deep research as durable runs that find the speaker again by its `?client=` id and SAY their result through its inbox, behind a tap-to-talk light-ring page                                                            |
 | `link-digest-workflow`      | workflow app     | a URL in, a digest out — the smallest one; read it before the other five                                                                                                                                                                                           |
 | `transcription-workflow`    | workflow app     | a transcription desk for an uploaded recording — split it, transcribe each piece in its own step, stitch                                                                                                                                                           |
 | `spoken-summary-workflow`   | workflow app     | a recording summarized and read back aloud — audio in, audio out                                                                                                                                                                                                   |
