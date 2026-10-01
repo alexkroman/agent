@@ -5,14 +5,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { readGlobalConfig } from "./_config.ts";
 import { CliError } from "./_output.ts";
 import { createFakeUi } from "./_test-utils.ts";
-import { defaultOpenBrowser, executeLogin } from "./login.ts";
+import { defaultOpenBrowser, executeLogin, type OpenerSpawn } from "./login.ts";
 
 // The default browser opener's spawn, handed in rather than module-mocked, so
 // its swallowed-error path is exercised without launching a real browser (a
 // missing opener must not fail the login — the URL is printed).
-const spawnMock = vi.fn(() => {
+const spawnMock = vi.fn<OpenerSpawn>(() => {
   const child = {
-    on(_event: string, cb: (err: Error) => void) {
+    on(_event: "error", cb: (err: Error) => void) {
       cb(new Error("opener not installed"));
       return child;
     },
@@ -113,9 +113,7 @@ describe("aai login", () => {
   });
 
   test("the default opener swallows a failed spawn — the URL is printed either way", () => {
-    expect(() =>
-      defaultOpenBrowser("https://x.test/?cli-link=c", spawnMock as never),
-    ).not.toThrow();
+    expect(() => defaultOpenBrowser("https://x.test/?cli-link=c", spawnMock)).not.toThrow();
     expect(spawnMock).toHaveBeenCalledOnce();
   });
 

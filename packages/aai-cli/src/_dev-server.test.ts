@@ -61,7 +61,6 @@ describe("startDevServer", () => {
         publicUrl: "http://localhost:3000",
       });
       expect(fake.lastBuild()?.serverOptions).toMatchObject({
-        runtime: expect.anything(),
         name: "test-agent",
       });
       // Second arg is the bind host: undefined (AAI_DEV_HOST unset), so the

@@ -39,7 +39,13 @@ export type UiPrompts = {
   confirm: typeof clack.confirm;
   text: typeof clack.text;
   password: typeof clack.password;
-  select: typeof clack.select;
+  /** A single choice among string values — the one shape `aai init` asks. */
+  select(opts: {
+    message: string;
+    options: { value: string; label?: string; hint?: string }[];
+    initialValue?: string;
+    maxItems?: number;
+  }): Promise<string | symbol>;
   spinner(): UiSpinner;
   intro(title: string): void;
   cancel(message: string): void;

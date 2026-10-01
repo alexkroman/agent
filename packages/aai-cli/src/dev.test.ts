@@ -13,7 +13,7 @@ const mockNotify = vi.fn();
 /** What every spec hands `executeDev`: a fake dev server and a fake terminal. */
 function baseDeps(): DevDeps {
   return {
-    startDevServer: mockStartDevServer as unknown as NonNullable<DevDeps["startDevServer"]>,
+    startDevServer: mockStartDevServer,
     ui: { ...createFakeUi(), notify: mockNotify },
   };
 }

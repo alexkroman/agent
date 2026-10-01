@@ -190,7 +190,14 @@ function openerFor(platform: NodeJS.Platform): [string, string[]] {
  * Best-effort: the link URL is always printed, so a failure is fine.
  * `spawnFn` is the seam a spec drives the swallowed-error path through.
  */
-export function defaultOpenBrowser(url: string, spawnFn: typeof spawn = spawn): void {
+/** The one `spawn` call the opener makes, narrowed to what it uses. */
+export type OpenerSpawn = (
+  cmd: string,
+  args: string[],
+  options: { stdio: "ignore"; detached: true },
+) => { on(event: "error", listener: (err: Error) => void): unknown; unref(): void };
+
+export function defaultOpenBrowser(url: string, spawnFn: OpenerSpawn = spawn): void {
   const [cmd, args] = openerFor(process.platform);
   try {
     const child = spawnFn(cmd, [...args, url], { stdio: "ignore", detached: true });

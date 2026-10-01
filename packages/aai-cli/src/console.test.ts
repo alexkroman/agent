@@ -7,20 +7,26 @@
  * specced in `aai-runtime`.
  */
 
+import { type AgentDef, agent } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ConsoleAudio } from "./_console-session.ts";
 import { createFakeUi } from "./_test-utils.ts";
-import { type ConsoleSeams, executeConsole, terminalPrinter } from "./console.ts";
+import {
+  type ConsoleConnection,
+  type ConsoleRuntime,
+  type ConsoleSeams,
+  executeConsole,
+  terminalPrinter,
+} from "./console.ts";
 
 const state = {
   sink: undefined as ClientSink | undefined,
   resolveEnded: undefined as (() => void) | undefined,
-  connection: undefined as
-    | { sendCommand: ReturnType<typeof vi.fn>; sendAudio: ReturnType<typeof vi.fn> }
-    | undefined,
-  shutdown: vi.fn(() => Promise.resolve()),
-  mode: undefined as string | undefined,
+  connection: undefined as ConsoleConnection | undefined,
+  shutdown: vi.fn(async () => undefined),
+  mode: undefined as AgentDef["mode"],
 };
 
 /**
@@ -28,30 +34,37 @@ const state = {
  * the session itself is `connectSession`'s and is specced in `aai-runtime`.
  */
 const seams = {
-  loadAgent: vi.fn(async () => ({ name: "Desk", mode: state.mode })),
+  loadAgent: vi.fn(
+    async (): Promise<AgentDef> => ({
+      ...agent({ name: "Desk" }),
+      ...omitUndefined({ mode: state.mode }),
+    }),
+  ),
   resolveEnv: vi.fn(async () => ({})),
-  ensureSessionStateSchema: vi.fn(),
-  ensureWorkflowJournalSchema: vi.fn(),
-  createRuntime: vi.fn(() => ({
-    readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
-    shutdown: state.shutdown,
-  })),
-  connectSession: vi.fn((_runtime: unknown, sink: ClientSink) => {
-    state.sink = sink;
-    const ended = new Promise<void>((resolve) => {
-      state.resolveEnded = resolve;
-    });
-    const connection = {
-      id: "sess-1",
-      sendCommand: vi.fn(),
-      sendAudio: vi.fn(),
-      close: vi.fn(() => state.resolveEnded?.()),
-      ended,
-    };
-    state.connection = connection;
-    return connection;
-  }),
-} as unknown as Partial<ConsoleSeams>;
+  ensureSessionStateSchema: vi.fn(async () => true),
+  ensureWorkflowJournalSchema: vi.fn(async () => true),
+  startRuntime: vi.fn(
+    (): ConsoleRuntime => ({
+      readyConfig: { sampleRate: 16_000, ttsSampleRate: 24_000 },
+      shutdown: state.shutdown,
+      connect: (sink) => {
+        state.sink = sink;
+        const ended = new Promise<void>((resolve) => {
+          state.resolveEnded = resolve;
+        });
+        const connection: ConsoleConnection = {
+          id: "sess-1",
+          sendCommand: vi.fn(),
+          sendAudio: vi.fn(),
+          close: vi.fn(() => state.resolveEnded?.()),
+          ended,
+        };
+        state.connection = connection;
+        return connection;
+      },
+    }),
+  ),
+} satisfies ConsoleSeams;
 
 /** A quit the user never asks for — the session has to end it. */
 const never = (): Promise<void> => new Promise(() => undefined);

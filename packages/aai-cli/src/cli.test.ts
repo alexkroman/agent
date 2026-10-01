@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
-import { renderUsage } from "citty";
+import { type ArgsDef, renderUsage } from "citty";
 import { execa } from "execa";
 import { describe, expect, test } from "vitest";
 import { findUnknownFlags } from "./_cli-common.ts";
@@ -151,9 +151,8 @@ describe("aai --help is grouped", () => {
 });
 
 describe("kebab-case flags", () => {
-  const argsOf = (name: string) =>
-    (mainCommand.subCommands as Record<string, { args: Record<string, unknown> }>)[name]?.args ??
-    {};
+  const argsOf = (name: string): ArgsDef =>
+    (mainCommand.subCommands as Record<string, { args: ArgsDef }>)[name]?.args ?? {};
 
   test.each([
     ["build", "skip-tests", "--skipTests"],
@@ -166,7 +165,7 @@ describe("kebab-case flags", () => {
     expect(args).toHaveProperty(kebab);
     // The old spelling is undeclared (so `--help` shows only kebab-case) and
     // still parses — citty aliases it and the unknown-flag guard normalizes it.
-    expect(findUnknownFlags([camel, `--${kebab}`], args as never)).toEqual([]);
+    expect(findUnknownFlags([camel, `--${kebab}`], args)).toEqual([]);
   });
 });
 

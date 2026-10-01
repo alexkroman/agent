@@ -24,7 +24,7 @@ import {
 // specs exercise.
 const mockApiRequest = vi.fn();
 const getServerInfo = vi.fn();
-const platform = { getServerInfo, apiRequest: mockApiRequest } as unknown as PlatformDeps;
+const platform: PlatformDeps = { getServerInfo, apiRequest: mockApiRequest };
 let ui: FakeUi;
 
 beforeEach(() => {

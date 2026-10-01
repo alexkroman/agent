@@ -13,12 +13,17 @@
  */
 
 import { styleText } from "node:util";
+import type { AgentDef } from "@alexkroman1/aai";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
   connectSession,
   createRuntime,
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
   type Logger,
+  type RuntimeOptions,
+  type SessionConnection,
+  type SessionConnectOptions,
 } from "@alexkroman1/aai-runtime";
 import { withHostCredentialFallback } from "@alexkroman1/aai-runtime/internal";
 import pTimeout from "p-timeout";
@@ -93,13 +98,26 @@ export function terminalPrinter(write: (line: string) => void): ConsolePrinter {
  */
 export type ConsoleSeams = {
   /** Bundle and evaluate `agent.ts`. */
-  loadAgent: (cwd: string) => ReturnType<typeof loadWorker>;
+  loadAgent: (cwd: string) => Promise<AgentDef>;
   /** The agent's env, as `aai dev` resolves it. */
   resolveEnv: typeof resolveAgentEnv;
   ensureSessionStateSchema: typeof ensureSessionStateSchema;
   ensureWorkflowJournalSchema: typeof ensureWorkflowJournalSchema;
-  createRuntime: typeof createRuntime;
-  connectSession: typeof connectSession;
+  /** Build the runtime — narrowed to the three things the console uses. */
+  startRuntime: (options: RuntimeOptions) => ConsoleRuntime;
+};
+
+/** The part of a session connection the console drives. */
+export type ConsoleConnection = Pick<
+  SessionConnection,
+  "id" | "sendAudio" | "sendCommand" | "close" | "ended"
+>;
+
+/** The part of a runtime the console drives, with `connectSession` bound to it. */
+export type ConsoleRuntime = {
+  readyConfig: { sampleRate: number; ttsSampleRate: number };
+  shutdown(): Promise<void>;
+  connect(sink: ClientSink, options: SessionConnectOptions): ConsoleConnection;
 };
 
 const REAL_CONSOLE_SEAMS: ConsoleSeams = {
@@ -107,8 +125,14 @@ const REAL_CONSOLE_SEAMS: ConsoleSeams = {
   resolveEnv: resolveAgentEnv,
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
-  createRuntime,
-  connectSession,
+  startRuntime: (options) => {
+    const runtime = createRuntime(options);
+    return {
+      readyConfig: runtime.readyConfig,
+      shutdown: () => runtime.shutdown(),
+      connect: (sink, connectOptions) => connectSession(runtime, sink, connectOptions),
+    };
+  },
 };
 
 /**
@@ -137,7 +161,7 @@ export async function executeConsole(opts: {
   const logger = consoleRuntimeLogger(opts.verbose === true);
 
   ui.log.step("Bundling agent…");
-  let agentDef: Awaited<ReturnType<typeof loadWorker>>;
+  let agentDef: AgentDef;
   try {
     agentDef = await seams.loadAgent(opts.cwd);
   } catch (err) {
@@ -158,7 +182,7 @@ export async function executeConsole(opts: {
     await seams.ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger });
   }
 
-  const runtime = seams.createRuntime({
+  const runtime = seams.startRuntime({
     agent: agentDef,
     env,
     providerEnv: withHostCredentialFallback(env),
@@ -222,7 +246,7 @@ export async function executeConsole(opts: {
     },
   });
 
-  const connection = seams.connectSession(runtime, sink, {
+  const connection = runtime.connect(sink, {
     audioLeadMs: CONSOLE_AUDIO_LEAD_MS,
     logContext: { transport: "console" },
   });

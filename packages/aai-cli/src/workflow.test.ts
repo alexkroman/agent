@@ -51,7 +51,7 @@ function primeServerInfo(): void {
  */
 const mockReadProjectConfig = vi.fn();
 /** Handed to every executor in place of the real target resolution. */
-const deps = { getServerInfo, readProjectConfig: mockReadProjectConfig } as unknown as WorkflowDeps;
+const deps: WorkflowDeps = { getServerInfo, readProjectConfig: mockReadProjectConfig };
 let ui: FakeUi;
 
 // Typed as the fetch it stands in for: `ReturnType<typeof vi.fn>` erases the

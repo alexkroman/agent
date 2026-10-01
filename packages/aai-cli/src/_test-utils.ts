@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, type MockInstance, vi } from "vitest";
+import { describe, type Mock, type MockInstance, vi } from "vitest";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
 import type { LogLevel, NotifyLevel, Ui, UiPrompts, UiSpinner } from "./_ui.ts";
 
@@ -162,16 +162,13 @@ export type UiLine = { level: LogLevel | `notify:${NotifyLevel}`; message: strin
 
 /** The prompts of a {@link FakeUi}, as spies a spec scripts or asserts on. */
 export type FakePrompts = {
-  confirm: MockInstance<UiPrompts["confirm"]> & UiPrompts["confirm"];
-  text: MockInstance<UiPrompts["text"]> & UiPrompts["text"];
-  password: MockInstance<UiPrompts["password"]> & UiPrompts["password"];
-  select: MockInstance<
-    (opts: { message: string; initialValue?: unknown; options: unknown[] }) => Promise<unknown>
-  > &
-    UiPrompts["select"];
+  confirm: Mock<UiPrompts["confirm"]>;
+  text: Mock<UiPrompts["text"]>;
+  password: Mock<UiPrompts["password"]>;
+  select: Mock<UiPrompts["select"]>;
   spinner: () => UiSpinner;
-  intro: MockInstance<UiPrompts["intro"]> & UiPrompts["intro"];
-  cancel: MockInstance<UiPrompts["cancel"]> & UiPrompts["cancel"];
+  intro: Mock<UiPrompts["intro"]>;
+  cancel: Mock<UiPrompts["cancel"]>;
   isCancel: UiPrompts["isCancel"];
 };
 
@@ -217,16 +214,16 @@ export function createFakeUi(opts: { silenced?: boolean } = {}): FakeUi {
   const unscripted = (name: string) => () =>
     Promise.reject(new Error(`createFakeUi: unexpected ${name} prompt`));
   const prompts: FakePrompts = {
-    confirm: vi.fn(unscripted("confirm")) as FakePrompts["confirm"],
-    text: vi.fn(unscripted("text")) as FakePrompts["text"],
-    password: vi.fn(unscripted("password")) as FakePrompts["password"],
-    select: vi.fn(unscripted("select")) as unknown as FakePrompts["select"],
+    confirm: vi.fn<UiPrompts["confirm"]>(unscripted("confirm")),
+    text: vi.fn<UiPrompts["text"]>(unscripted("text")),
+    password: vi.fn<UiPrompts["password"]>(unscripted("password")),
+    select: vi.fn<UiPrompts["select"]>(unscripted("select")),
     spinner: () => ({
       start: (msg?: string) => spinner.started.push(msg ?? ""),
       stop: (msg?: string) => spinner.stopped.push(msg ?? ""),
     }),
-    intro: vi.fn() as FakePrompts["intro"],
-    cancel: vi.fn() as FakePrompts["cancel"],
+    intro: vi.fn<UiPrompts["intro"]>(),
+    cancel: vi.fn<UiPrompts["cancel"]>(),
     isCancel: (value: unknown): value is symbol => value === CANCEL,
   };
   const levelOf = (line: UiLine): LogLevel =>

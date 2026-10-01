@@ -53,9 +53,7 @@ let fetchSpy: MockInstance<typeof fetch>;
 
 beforeEach(() => {
   ui = createFakeUi();
-  ui.prompts.select.mockImplementation(({ initialValue }: { initialValue?: unknown }) =>
-    Promise.resolve(initialValue),
-  );
+  ui.prompts.select.mockImplementation(async ({ initialValue }) => initialValue ?? "");
   fetchSpy = vi.spyOn(globalThis, "fetch");
 });
 

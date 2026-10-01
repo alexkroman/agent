@@ -11,9 +11,15 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Runtime, RuntimeOptions, RuntimeServerOptions } from "@alexkroman1/aai-runtime";
+import type { RuntimeOptions } from "@alexkroman1/aai-runtime";
 import { vi } from "vitest";
-import type { DevBackend, DevServerSeams, DevVite } from "./_dev-server.ts";
+import type {
+  DevBackend,
+  DevRuntime,
+  DevServeOptions,
+  DevServerSeams,
+  DevVite,
+} from "./_dev-server.ts";
 import type { DevWatchFn } from "./_dev-watch.ts";
 import { createFakeUi, linkSdkNodeModules } from "./_test-utils.ts";
 
@@ -54,7 +60,7 @@ export async function writeProject(
 /** One `serve` call: what the build asked for, with the server options resolved. */
 export type ServedBuild = {
   runtimeOptions: RuntimeOptions;
-  serverOptions: RuntimeServerOptions;
+  serverOptions: DevServeOptions;
 };
 
 /**
@@ -91,10 +97,10 @@ export function makeDevSeams() {
     };
   });
   const vite = {
-    listen: vi.fn(async () => undefined),
+    listen: vi.fn(async (): Promise<unknown> => undefined),
     close: vi.fn(async () => undefined),
     httpServer: null,
-  };
+  } satisfies DevVite;
   const seams = {
     ui,
     watch,
@@ -108,9 +114,7 @@ export function makeDevSeams() {
     getPort: vi.fn<DevServerSeams["getPort"]>(
       async (candidates) => candidates[Symbol.iterator]().next().value ?? 0,
     ),
-    createViteServer: vi.fn<DevServerSeams["createViteServer"]>(
-      async () => vite as unknown as DevVite,
-    ),
+    createViteServer: vi.fn<DevServerSeams["createViteServer"]>(async () => vite),
   } satisfies DevServerSeams;
   return {
     seams,
@@ -132,4 +136,4 @@ export function makeDevSeams() {
 }
 
 /** The runtime a fake `serve` builds its server options over. */
-export const FAKE_RUNTIME = { runtime: "fake" } as unknown as Runtime;
+export const FAKE_RUNTIME: DevRuntime = {};

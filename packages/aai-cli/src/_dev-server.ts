@@ -96,8 +96,10 @@ export type DevServerOptions = {
 export type DevBackend = Pick<AgentServer, "listen" | "close">;
 
 /** The part of a {@link ViteDevServer} `startDevServer` drives. */
-export type DevVite = Pick<ViteDevServer, "listen" | "close"> & {
-  httpServer?: Pick<NonNullable<ViteDevServer["httpServer"]>, "on"> | null;
+export type DevVite = {
+  listen(): Promise<unknown>;
+  close(): Promise<void>;
+  httpServer?: { on(event: "error", listener: (err: Error) => void): unknown } | null;
 };
 
 /**
@@ -125,13 +127,20 @@ export type DevServerSeams = {
   /**
    * Build one backend: the runtime from `runtimeOptions`, then the server over
    * it. The server options are a function of the runtime because the workflow
-   * delivery door reads `runtime.deliverWorkflow`.
+   * delivery door reads `runtime.deliverWorkflow` — the one member they read,
+   * so a fake hands in only that. The real seam adds `runtime` itself.
    */
   serve: (
     runtimeOptions: RuntimeOptions,
-    serverOptions: (runtime: Runtime) => RuntimeServerOptions,
+    serverOptions: (runtime: DevRuntime) => DevServeOptions,
   ) => DevBackend;
 };
+
+/** The part of a {@link Runtime} the server options are built from. */
+export type DevRuntime = Pick<Runtime, "deliverWorkflow">;
+
+/** {@link RuntimeServerOptions} less the runtime, which the real `serve` supplies. */
+export type DevServeOptions = Omit<RuntimeServerOptions, "runtime">;
 
 const REAL_SEAMS: DevServerSeams = {
   ui: defaultUi,
@@ -141,8 +150,10 @@ const REAL_SEAMS: DevServerSeams = {
   getPort: (candidates) => getPort({ port: candidates }),
   createViteServer: async (config) => (await import("vite")).createServer(config),
   watch,
-  serve: (runtimeOptions, serverOptions) =>
-    createRuntimeServer(serverOptions(createRuntime(runtimeOptions))),
+  serve: (runtimeOptions, serverOptions) => {
+    const runtime = createRuntime(runtimeOptions);
+    return createRuntimeServer({ ...serverOptions(runtime), runtime });
+  },
 };
 
 /**
@@ -287,7 +298,6 @@ export async function startDevServer(
     });
 
     return serve(runtimeOptions, (runtime) => ({
-      runtime,
       name: agentDef.name,
       // Makes host mode *available* in the dev server — it stays off unless
       // AAI_ALLOW_HOST is set, since a `?host=1` client supplies its own agent

@@ -11,12 +11,13 @@ import { executeLogs, formatLine } from "./logs.ts";
 const mockApiRequest = vi.fn();
 const platform = {
   getServerInfo: async () => ({
+    studioProject: undefined,
     serverUrl: "http://localhost:9999",
     slug: "test-agent",
     apiKey: "test-api-key",
   }),
   apiRequest: mockApiRequest,
-} as unknown as PlatformDeps;
+} satisfies PlatformDeps;
 let ui: FakeUi;
 beforeEach(() => {
   ui = createFakeUi();
