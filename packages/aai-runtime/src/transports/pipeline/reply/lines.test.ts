@@ -13,10 +13,9 @@
 import type { SessionEventBody } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import type { SendTtsOptions } from "../../types.ts";
-import { createHeardTracker } from "../heard/tracker.ts";
-import { createPipelineHistory } from "../history/history.ts";
-import { createTurnGate } from "../turn/gate.ts";
-import { createTurnMachine } from "../turn/state.ts";
+import { createHeardTracker } from "../heard/index.ts";
+import { createPipelineHistory } from "../history/index.ts";
+import { createTurnGate, createTurnMachine } from "../turn/index.ts";
 import { createLineReply, speakFixedLine } from "./lines.ts";
 
 const SAMPLE_RATE = 16_000;

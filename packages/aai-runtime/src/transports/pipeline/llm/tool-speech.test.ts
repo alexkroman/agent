@@ -10,8 +10,8 @@
 import { describe, expect, test } from "vitest";
 import { silentLogger } from "../../../_test-utils.ts";
 import { createToolSpeechController } from "../../../tool-messages-runner.ts";
-import { createTtsTextCoalescer } from "../output/tts.ts";
-import { createStreamPartHandler, type StreamPartHandler } from "../reply/stream-parts.ts";
+import { createTtsTextCoalescer } from "../output/index.ts";
+import { createStreamPartHandler, type StreamPartHandler } from "../reply/index.ts";
 import { bindToolSpeech, stepMessages } from "./tool-speech.ts";
 import type { StepResult } from "./types.ts";
 

@@ -18,9 +18,9 @@ import { silentLogger } from "../../_test-utils.ts";
 import { toVercelTools } from "../../to-vercel-tools.ts";
 import { executeToolCall } from "../../tool-executor.ts";
 import { createToolSpeechController } from "../../tool-messages-runner.ts";
-import { useVirtualTime } from "./_transport-harness.ts";
-import { consumeLlmStream } from "./llm/stream.ts";
-import { createStreamPartHandler } from "./reply/stream-parts.ts";
+import { useVirtualTime } from "../_pipeline-transport-harness.ts";
+import { consumeLlmStream } from "./llm/index.ts";
+import { createStreamPartHandler } from "./reply/index.ts";
 
 function schemaWith(messages: ToolMessages): ToolSchema {
   return {

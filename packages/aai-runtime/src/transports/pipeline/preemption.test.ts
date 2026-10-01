@@ -16,7 +16,7 @@ import {
   noopToolSchema,
   spoken,
   useVirtualTime,
-} from "./_transport-harness.ts";
+} from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 /** High enough to clear PREEMPTIVE_CONFIDENCE_THRESHOLD however it is retuned. */

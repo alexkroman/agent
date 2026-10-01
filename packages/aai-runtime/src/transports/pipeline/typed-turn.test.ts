@@ -7,14 +7,14 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../../_pipeline-test-fakes.ts";
-import type { Transport } from "../types.ts";
 import {
   inFlightReplyScript,
   llmCalls,
   makeOpts,
   spoken,
   useVirtualTime,
-} from "./_transport-harness.ts";
+} from "../_pipeline-transport-harness.ts";
+import type { Transport } from "../types.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();

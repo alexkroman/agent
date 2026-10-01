@@ -22,7 +22,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 import { describe, expect, test, vi } from "vitest";
-import { makeOpts, noopToolSchema } from "./_transport-harness.ts";
+import { makeOpts, noopToolSchema } from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 // ─── OpenAI-Responses-shaped fake for turn 1 ─────────────────────────────────

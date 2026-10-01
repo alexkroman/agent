@@ -34,8 +34,8 @@ import {
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../../_pipeline-test-fakes.ts";
+import { makeOpts, noopToolSchema, useVirtualTime } from "../_pipeline-transport-harness.ts";
 import { partialTranscripts } from "../_transport-recorder.ts";
-import { makeOpts, noopToolSchema, useVirtualTime } from "./_transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();

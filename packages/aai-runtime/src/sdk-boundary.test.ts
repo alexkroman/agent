@@ -32,7 +32,7 @@ describe("the SDK boundary, from the runtime's side", () => {
   const files = sourceFiles(SRC);
 
   test("the scan sees the runtime", () => {
-    expect(files).toContain(path.join(SRC, "client-event-feed.ts"));
+    expect(files).toContain(path.join(SRC, "inbox/event-feed.ts"));
   });
 
   test("no runtime source spells a key the SDK registry owns", () => {

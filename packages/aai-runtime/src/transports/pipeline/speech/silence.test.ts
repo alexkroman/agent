@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../../../_pipeline-test-fakes.ts";
-import { makeOpts, useVirtualTime } from "../_transport-harness.ts";
+import { makeOpts, useVirtualTime } from "../../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "../transport.ts";
 import { createSilenceNudger } from "./silence.ts";
 

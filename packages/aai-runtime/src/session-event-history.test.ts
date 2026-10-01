@@ -14,7 +14,7 @@ import {
   SEEDED_TOOL_RESULT_CHARS,
 } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
-import { estimateConversationTokens } from "./transports/pipeline/history/retention.ts";
+import { estimateConversationTokens } from "./transports/pipeline/index.ts";
 
 /** A small retention bound, so a spec reaches it in tens of events. */
 const RETAIN = 400;

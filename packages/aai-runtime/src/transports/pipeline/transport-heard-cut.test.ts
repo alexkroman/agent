@@ -15,7 +15,7 @@ import {
   speakFor,
 } from "../../_pipeline-test-fakes.ts";
 import { silentLogger } from "../../runtime-config.ts";
-import { llmCalls, makeOpts, useVirtualTime } from "./_transport-harness.ts";
+import { llmCalls, makeOpts, useVirtualTime } from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();

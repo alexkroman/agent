@@ -127,14 +127,14 @@ import {
 import type { TtsSession } from "./providers/openers.ts";
 import { messagesFromEvents } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
-import { createPipelineHistory } from "./transports/pipeline/history/history.ts";
+import type { PipelineProviderSessions } from "./transports/pipeline/index.ts";
 import {
+  createPipelineHistory,
+  createTurnGate,
+  createTurnOutcome,
   estimateConversationTokens,
   HISTORY_RETAIN_TOKENS,
-} from "./transports/pipeline/history/retention.ts";
-import type { PipelineProviderSessions } from "./transports/pipeline/providers.ts";
-import { createTurnGate } from "./transports/pipeline/turn/gate.ts";
-import { createTurnOutcome } from "./transports/pipeline/turn-outcome.ts";
+} from "./transports/pipeline/index.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
 
 /** One turn of a pipeline session, as the transport really ends one. */

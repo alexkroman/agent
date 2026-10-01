@@ -8,7 +8,11 @@
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../../../_pipeline-test-fakes.ts";
 import { silentLogger } from "../../../_test-utils.ts";
-import { inFlightReplyScript, makeOpts, useVirtualTime } from "../_transport-harness.ts";
+import {
+  inFlightReplyScript,
+  makeOpts,
+  useVirtualTime,
+} from "../../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "../transport.ts";
 import {
   AUTO_TURN_DETECTION,

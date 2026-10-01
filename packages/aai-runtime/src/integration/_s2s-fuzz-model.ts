@@ -22,7 +22,7 @@
  * @internal Test infrastructure, not part of any public API.
  */
 
-import type { CreateS2sWebSocket, S2sWebSocket } from "../s2s/client.ts";
+import type { CreateS2sWebSocket, S2sWebSocket } from "../s2s/index.ts";
 
 const CONNECTING = 0;
 const OPEN = 1;

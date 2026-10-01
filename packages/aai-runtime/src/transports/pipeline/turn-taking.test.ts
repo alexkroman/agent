@@ -9,7 +9,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../../_fake-llm.ts";
-import { inFlightReplyScript, makeOpts, useVirtualTime } from "./_transport-harness.ts";
+import { inFlightReplyScript, makeOpts, useVirtualTime } from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();

@@ -20,7 +20,7 @@ import {
   makeOpts,
   noopToolSchema,
   useVirtualTime,
-} from "./_transport-harness.ts";
+} from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();

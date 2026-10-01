@@ -5,8 +5,8 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, createFakeTtsProvider } from "../../_pipeline-test-fakes.ts";
+import { makeOpts, spoken, useVirtualTime } from "../_pipeline-transport-harness.ts";
 import type { SpokenLine } from "../types.ts";
-import { makeOpts, spoken, useVirtualTime } from "./_transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();

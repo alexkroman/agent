@@ -6,6 +6,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { makeOpts } from "./_pipeline-transport-harness.ts";
 import { makeCallbacks } from "./_transport-recorder.ts";
 import {
   ASSEMBLYAI_S2S_CAPABILITIES,
@@ -18,8 +19,7 @@ import {
   type TransportVerb,
 } from "./capabilities.ts";
 import { createOpenaiRealtimeTransport } from "./openai-realtime-transport.ts";
-import { makeOpts } from "./pipeline/_transport-harness.ts";
-import { createPipelineTransport } from "./pipeline/transport.ts";
+import { createPipelineTransport } from "./pipeline/index.ts";
 import { createS2sTransport } from "./s2s-transport.ts";
 import type { Transport } from "./types.ts";
 

@@ -47,8 +47,8 @@ import {
   createFakeLanguageModel,
   createFakeTtsProvider,
 } from "./_pipeline-test-fakes.ts";
-import { makeOpts, useVirtualTime } from "./transports/pipeline/_transport-harness.ts";
-import { createPipelineTransport } from "./transports/pipeline/transport.ts";
+import { makeOpts, useVirtualTime } from "./transports/_pipeline-transport-harness.ts";
+import { createPipelineTransport } from "./transports/pipeline/index.ts";
 import type { TransportEventBody } from "./transports/types.ts";
 
 /**

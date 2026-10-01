@@ -61,7 +61,7 @@ export const SESSION_SURFACE_PATHS = [
   // shape, and 78 of the original 157 occurrences were exactly that.
   "packages/aai/src/host/_test-utils.ts",
   "packages/aai-runtime/src/transports/_transport-recorder.ts",
-  "packages/aai-runtime/src/transports/pipeline/_transport-harness.ts",
+  "packages/aai-runtime/src/transports/_pipeline-transport-harness.ts",
   "packages/aai-runtime/src/integration/_pipeline-fuzz-model.ts",
   "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts",
 ];

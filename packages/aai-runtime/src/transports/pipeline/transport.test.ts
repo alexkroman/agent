@@ -10,8 +10,13 @@ import {
   type ScriptedPart,
 } from "../../_pipeline-test-fakes.ts";
 import type { SttOpener, SttSession } from "../../providers/openers.ts";
+import {
+  firstCallArg,
+  llmCalls,
+  makeOpts,
+  useVirtualTime,
+} from "../_pipeline-transport-harness.ts";
 import { makeCallbacks } from "../_transport-recorder.ts";
-import { firstCallArg, llmCalls, makeOpts, useVirtualTime } from "./_transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 // Turn-processing specs (STT final → LLM stream → TTS) live in

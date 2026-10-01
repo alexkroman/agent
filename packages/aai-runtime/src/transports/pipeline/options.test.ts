@@ -2,7 +2,7 @@
 /**
  * The shipped pipeline defaults.
  *
- * `_transport-harness.ts` overrides the turn-taking windows so the
+ * `../_pipeline-transport-harness.ts` overrides the turn-taking windows so the
  * behavioural specs don't have to wait them out, which means no other spec in
  * this directory ever sees what a real agent gets. This file is the one that
  * does: it resolves an options object carrying nothing but the required fields

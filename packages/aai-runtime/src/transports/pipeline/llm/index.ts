@@ -8,5 +8,5 @@
 export type { SpeculativeStream } from "./speculative-stream.ts";
 export { startSpeculativeStream } from "./speculative-stream.ts";
 export type { TurnLlmRunner } from "./stream.ts";
-export { createTurnLlmRunner } from "./stream.ts";
+export { consumeLlmStream, createTurnLlmRunner } from "./stream.ts";
 export type { AdoptedLlmStream, SharedLlmRequest } from "./types.ts";

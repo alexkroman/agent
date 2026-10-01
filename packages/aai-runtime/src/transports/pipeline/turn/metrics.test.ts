@@ -11,7 +11,7 @@ import {
   createTestClock,
 } from "../../../_pipeline-test-fakes.ts";
 import { createUsageMeter } from "../../../usage-meter.ts";
-import { makeOpts, useVirtualTime } from "../_transport-harness.ts";
+import { makeOpts, useVirtualTime } from "../../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "../transport.ts";
 import type { MetricsCollectedBody } from "./metrics.ts";
 import { createTurnMetrics } from "./metrics.ts";

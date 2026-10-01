@@ -28,7 +28,7 @@ import {
   tick,
 } from "./_test-utils.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
-import type { ConnectS2sOptions, S2sCallbacks } from "./s2s/client.ts";
+import type { ConnectS2sOptions, S2sCallbacks } from "./s2s/index.ts";
 import type { OpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
 import { asSessionWebSocket } from "./ws-handler.ts";

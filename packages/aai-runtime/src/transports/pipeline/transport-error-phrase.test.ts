@@ -9,8 +9,8 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../../_pipeline-test-fakes.ts";
+import { makeOpts, useVirtualTime } from "../_pipeline-transport-harness.ts";
 import { partialTranscripts } from "../_transport-recorder.ts";
-import { makeOpts, useVirtualTime } from "./_transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();

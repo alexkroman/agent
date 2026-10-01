@@ -15,9 +15,9 @@ import type { SessionEventBody } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { recordingTts } from "../../_pipeline-test-fakes.ts";
 import type { TransportCallbacks } from "../types.ts";
-import { createPipelineHistory } from "./history/history.ts";
+import { createPipelineHistory } from "./history/index.ts";
 import type { PipelineProviderSessions } from "./providers.ts";
-import { createTurnGate } from "./turn/gate.ts";
+import { createTurnGate } from "./turn/index.ts";
 import { createTurnOutcome } from "./turn-outcome.ts";
 
 const ERROR_PHRASE = "Sorry, I had a problem just then.";

@@ -7,7 +7,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger, tick } from "../../_test-utils.ts";
-import { makeOpts } from "./_transport-harness.ts";
+import { makeOpts } from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 /**

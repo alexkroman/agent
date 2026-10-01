@@ -13,8 +13,8 @@ import {
   makeOpts,
   noopToolSchema,
   useVirtualTime,
-} from "./_transport-harness.ts";
-import type { DialogTurnKnobs } from "./knobs/dialog.ts";
+} from "../_pipeline-transport-harness.ts";
+import type { DialogTurnKnobs } from "./knobs/index.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();

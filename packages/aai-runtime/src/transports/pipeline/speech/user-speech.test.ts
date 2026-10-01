@@ -9,7 +9,7 @@
 import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../../../_test-utils.ts";
-import { useVirtualTime } from "../_transport-harness.ts";
+import { useVirtualTime } from "../../_pipeline-transport-harness.ts";
 import { createGatedSpeechEdges, createSpeechEdgeTracker } from "./edges.ts";
 import { createUserActivity } from "./user-speech.ts";
 

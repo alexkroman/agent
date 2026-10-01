@@ -63,13 +63,13 @@ import type { ModelMessage } from "ai";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import type { TtsSession, Unsubscribe } from "../providers/openers.ts";
+import type { PipelineProviderSessions } from "../transports/pipeline/index.ts";
 import {
   createPipelineHistory,
+  createTurnGate,
+  createTurnOutcome,
   type PipelineHistory,
-} from "../transports/pipeline/history/history.ts";
-import type { PipelineProviderSessions } from "../transports/pipeline/providers.ts";
-import { createTurnGate } from "../transports/pipeline/turn/gate.ts";
-import { createTurnOutcome } from "../transports/pipeline/turn-outcome.ts";
+} from "../transports/pipeline/index.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
 
 /**

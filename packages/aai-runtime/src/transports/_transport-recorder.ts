@@ -4,7 +4,7 @@
  * out into one spy per event type.
  *
  * Its own module because it is not pipeline-specific and three files had written
- * it out by hand — `pipeline/_transport-harness.ts`, `s2s-transport.test.ts` and
+ * it out by hand — `_pipeline-transport-harness.ts`, `s2s-transport.test.ts` and
  * `pipeline/open-latency.test.ts` each carried a fourteen-entry `vi.fn()` literal,
  * which is the multiplier a per-name callback surface has: every harness standing
  * in for the thing that fires a callback has to satisfy its whole shape. There is

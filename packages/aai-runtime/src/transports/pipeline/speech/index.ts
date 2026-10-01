@@ -9,6 +9,7 @@
  */
 
 export type { ManualTurn } from "./manual-turn.ts";
+export { AUTO_TURN_DETECTION } from "./manual-turn.ts";
 export type { SpeculationController } from "./speculation.ts";
 export { createPipelineSpeculation } from "./speculation.ts";
 export { hasMinWords } from "./text.ts";

@@ -12,7 +12,7 @@ import {
   makeOpts,
   spoken,
   useVirtualTime,
-} from "./_transport-harness.ts";
+} from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 /** A reply long enough to still be streaming when the re-prompts land. */

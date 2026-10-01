@@ -8,10 +8,10 @@ import {
   createFakeSttProvider,
   createFakeTtsProvider,
   type ScriptedPart,
-} from "../../_pipeline-test-fakes.ts";
-import { silentLogger } from "../../runtime-config.ts";
-import { makeCallbacks, type RecordingCallbacks } from "../_transport-recorder.ts";
-import type { PipelineTransportOptions } from "./transport.ts";
+} from "../_pipeline-test-fakes.ts";
+import { silentLogger } from "../runtime-config.ts";
+import { makeCallbacks, type RecordingCallbacks } from "./_transport-recorder.ts";
+import type { PipelineTransportOptions } from "./pipeline/index.ts";
 
 export type SttFake = ReturnType<typeof createFakeSttProvider>;
 export type TtsFake = ReturnType<typeof createFakeTtsProvider>;
@@ -80,7 +80,7 @@ export function makeOpts(
     // partial and asserts the reply was cancelled is testing the cancel path,
     // not the gate, and the real default would make every such spec wait out
     // 500 ms of "sustained speech" it never simulates. The gate's own specs set
-    // it explicitly, and `options.test.ts` pins the shipped
+    // it explicitly, and `pipeline/options.test.ts` pins the shipped
     // default so this override cannot hide a bad one.
     interruptionMinDurationMs: 0,
     ...overrides,
@@ -136,7 +136,7 @@ export const noopToolSchema = {
  * - These are races, so a contended runner fails them FIRST — the flake lands
  *   on whoever is merging, and it names a timing spec rather than a bug.
  *
- * `vi.useFakeTimers()` reaches all of it, including the fakes: `../../_fake-llm.ts`
+ * `vi.useFakeTimers()` reaches all of it, including the fakes: `../_fake-llm.ts`
  * spaces its scripted parts with the same GLOBAL `setTimeout` that fake timers
  * replace, which is why no scheduler had to be threaded through
  * `PipelineTransportOptions` to make this work. `vi.waitFor` composes too — it

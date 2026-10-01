@@ -21,8 +21,8 @@ import {
   noopToolSchema,
   spoken,
   useVirtualTime,
-} from "./_transport-harness.ts";
-import { createTurnGuardrails } from "./output/guardrails.ts";
+} from "../_pipeline-transport-harness.ts";
+import { createTurnGuardrails } from "./output/index.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();

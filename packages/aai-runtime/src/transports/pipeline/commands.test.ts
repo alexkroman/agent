@@ -12,12 +12,12 @@ import { createEpoch } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../../_test-utils.ts";
 import { createPipelineCommands, type PipelineCommandDeps } from "./commands.ts";
-import type { HeardTracker } from "./heard/tracker.ts";
-import type { PipelineHistory } from "./history/history.ts";
+import type { HeardTracker } from "./heard/index.ts";
+import type { PipelineHistory } from "./history/index.ts";
 import type { PipelineProviderSessions } from "./providers.ts";
-import { AUTO_TURN_DETECTION } from "./speech/manual-turn.ts";
-import type { SpeculationController } from "./speech/speculation.ts";
-import type { TurnGate } from "./turn/gate.ts";
+import type { SpeculationController } from "./speech/index.ts";
+import { AUTO_TURN_DETECTION } from "./speech/index.ts";
+import type { TurnGate } from "./turn/index.ts";
 
 /** One command's whole world, with every call recorded in order. */
 function harness(overrides: { terminated?: boolean } = {}) {

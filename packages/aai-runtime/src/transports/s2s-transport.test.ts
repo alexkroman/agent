@@ -1,7 +1,7 @@
 import { S2S_MAX_RESUME_ATTEMPTS } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeMockHandle, silentLogger, sleep } from "../_test-utils.ts";
-import type { ConnectS2sOptions, S2sCallbacks, S2sHandle, S2sWebSocket } from "../s2s/client.ts";
+import type { ConnectS2sOptions, S2sCallbacks, S2sHandle, S2sWebSocket } from "../s2s/index.ts";
 import { makeCallbacks, type RecordingCallbacks } from "./_transport-recorder.ts";
 import { _internals, createS2sTransport, type S2sTransportOptions } from "./s2s-transport.ts";
 

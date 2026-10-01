@@ -8,6 +8,7 @@
  */
 
 export { installChannelOutbox } from "./channel-outbox.ts";
-export { feedClientEvent, feedClientSessionEnd } from "./event-feed.ts";
+export type { ClientEventFeed } from "./event-feed.ts";
+export { feedClientEvent, feedClientSessionEnd, publishClientEventFeed } from "./event-feed.ts";
 export type { ClientInbox } from "./inbox.ts";
 export { CLIENT_INBOX_PATH, installClientInbox } from "./inbox.ts";

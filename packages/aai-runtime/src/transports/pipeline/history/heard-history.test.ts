@@ -8,8 +8,8 @@ import type { ModelMessage } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { createTestClock } from "../../../_pipeline-test-fakes.ts";
 import { silentLogger } from "../../../runtime-config.ts";
-import { createHeardTracker } from "../heard/tracker.ts";
-import { createTurnGate } from "../turn/gate.ts";
+import { createHeardTracker } from "../heard/index.ts";
+import { createTurnGate } from "../turn/index.ts";
 import { createHeardHistory, type PersistedReply, truncateToHeard } from "./heard-history.ts";
 import { createPipelineHistory, type PipelineHistory } from "./history.ts";
 

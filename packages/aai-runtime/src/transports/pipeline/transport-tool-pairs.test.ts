@@ -22,7 +22,12 @@ import { makeLogger } from "../../_test-utils.ts";
 import { historyFromEvents, modelHistoryOf } from "../../session-event-history.ts";
 import { stampSessionEvent } from "../../session-event-stream.ts";
 import { FatalToolError } from "../../tool-error-policy.ts";
-import { llmCalls, makeOpts, noopToolSchema, useVirtualTime } from "./_transport-harness.ts";
+import {
+  llmCalls,
+  makeOpts,
+  noopToolSchema,
+  useVirtualTime,
+} from "../_pipeline-transport-harness.ts";
 import type { PipelineTransportOptions } from "./options.ts";
 import { createPipelineTransport } from "./transport.ts";
 

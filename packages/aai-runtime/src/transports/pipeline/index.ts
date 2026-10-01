@@ -12,7 +12,9 @@
  * between stages; `CLAUDE.md` here has the map.
  */
 
+export type { PipelineHistory } from "./history/index.ts";
 export {
+  createPipelineHistory,
   estimateConversationTokens,
   evictBeyondRetention,
   HISTORY_RETAIN_TOKENS,
@@ -27,6 +29,9 @@ export { interruptionKnobs } from "./knobs/index.ts";
 export type { PipelineTransportOptions } from "./options.ts";
 export type { TurnGuardrails } from "./output/index.ts";
 export { createTurnGuardrails } from "./output/index.ts";
+export type { PipelineProviderSessions } from "./providers.ts";
 export type { InReplyLineFlags } from "./reply/index.ts";
 export { hasMinWords } from "./speech/index.ts";
 export { createPipelineTransport } from "./transport.ts";
+export { createTurnGate } from "./turn/index.ts";
+export { createTurnOutcome } from "./turn-outcome.ts";

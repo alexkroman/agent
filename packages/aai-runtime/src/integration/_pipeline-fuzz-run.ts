@@ -24,7 +24,7 @@ import {
 } from "../_pipeline-test-fakes.ts";
 import { sleep } from "../_test-utils.ts";
 import { silentLogger } from "../runtime-config.ts";
-import { createPipelineTransport } from "../transports/pipeline/transport.ts";
+import { createPipelineTransport } from "../transports/pipeline/index.ts";
 import { buildActions } from "./_pipeline-fuzz-actions.ts";
 import {
   buildScript,

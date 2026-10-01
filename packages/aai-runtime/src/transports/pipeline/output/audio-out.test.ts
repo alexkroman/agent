@@ -21,8 +21,8 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { makeLogger } from "../../../_test-utils.ts";
-import { createHeardTracker } from "../heard/tracker.ts";
-import { createTurnMachine } from "../turn/state.ts";
+import { createHeardTracker } from "../heard/index.ts";
+import { createTurnMachine } from "../turn/index.ts";
 import { createAudioOut } from "./audio-out.ts";
 import { NO_GUARDRAILS } from "./guardrails.ts";
 

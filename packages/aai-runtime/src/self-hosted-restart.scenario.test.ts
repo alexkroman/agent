@@ -67,7 +67,7 @@ import { WebSocket } from "ws";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
-import type { S2sCallbacks } from "./s2s/client.ts";
+import type { S2sCallbacks } from "./s2s/index.ts";
 import { ensureSessionStateSchema } from "./session-state/backends/postgres.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 

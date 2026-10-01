@@ -10,8 +10,8 @@ import { z } from "zod";
 import type { FakeLanguageModel, ScriptedPart } from "../../../_fake-llm.ts";
 import { createFakeLanguageModel } from "../../../_pipeline-test-fakes.ts";
 import { makeLogger, silentLogger } from "../../../_test-utils.ts";
-import { createContextBudget } from "../history/context-budget.ts";
-import { createStreamPartHandler, type StreamPart } from "../reply/stream-parts.ts";
+import { createContextBudget } from "../history/index.ts";
+import { createStreamPartHandler, type StreamPart } from "../reply/index.ts";
 import { type AdoptedLlmStream, consumeLlmStream, type TapeEntry } from "./stream.ts";
 
 type ConsumeArgs = Parameters<typeof consumeLlmStream>[0];

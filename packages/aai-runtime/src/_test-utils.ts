@@ -22,7 +22,7 @@ import pTimeout from "p-timeout";
 import { type Mock, vi } from "vitest";
 import { createRuntimeWithSeams } from "./runtime.ts";
 import { type LogFn, type Logger, type LogLevel, silentLogger } from "./runtime-config.ts";
-import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s/client.ts";
+import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s/index.ts";
 import type { ServerSession } from "./session-core.ts";
 import {
   createSessionEmitter,

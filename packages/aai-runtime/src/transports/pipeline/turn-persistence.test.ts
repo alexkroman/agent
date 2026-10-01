@@ -12,14 +12,14 @@ import { DEAD_AIR_OPENING_PHRASE, DEFAULT_TTS_SAMPLE_RATE } from "@alexkroman1/a
 import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, createTestClock, speakFor } from "../../_pipeline-test-fakes.ts";
-import { partialTranscripts } from "../_transport-recorder.ts";
 import {
   inFlightReplyScript,
   llmCalls,
   makeOpts,
   noopToolSchema,
   useVirtualTime,
-} from "./_transport-harness.ts";
+} from "../_pipeline-transport-harness.ts";
+import { partialTranscripts } from "../_transport-recorder.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();
