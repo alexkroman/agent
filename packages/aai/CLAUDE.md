@@ -336,13 +336,13 @@ coverage floors.
 ### Specs that observe a timer
 
 **A spec that observes a TIMER runs on virtual time, never the wall clock.**
-`useVirtualTime()` (`transports/pipeline/_transport-harness.ts`) installs fake
-timers per file; drive with `vi.advanceTimersByTimeAsync(ms)`. `_fake-llm.ts`'s
-`delayMs` uses the global `setTimeout`, so no scheduler needs threading. Under
-virtual time `tick()` hangs (use `vi.advanceTimersByTimeAsync(0)`), and
-`vi.waitFor` still polls in real time — advance by the amount the work needs.
-Queue-settle yields (`s2s-transport.test.ts`'s `sleep(5)`) are not timer
-observations and stay.
+`useVirtualTime()` (`aai-runtime/transports/_pipeline-transport-harness.ts`)
+installs fake timers per file; drive with `vi.advanceTimersByTimeAsync(ms)`.
+`_fake-llm.ts`'s `delayMs` uses the global `setTimeout`, so no scheduler needs
+threading. Under virtual time `tick()` hangs (use
+`vi.advanceTimersByTimeAsync(0)`), and `vi.waitFor` still polls in real time —
+advance by the amount the work needs. Queue-settle yields
+(`s2s-transport.test.ts`'s `sleep(5)`) are not timer observations and stay.
 
 ### Fixture replay testing
 

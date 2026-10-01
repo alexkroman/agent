@@ -70,7 +70,7 @@ here — every piece of that is `agent()` plus `createTextAgent`
   reply use the same model.
 - **The 120s tool deadline is `toolTimeoutMs`** on `createTextAgent` (the SDK
   default 30s is a voice budget; these tools install packages and typecheck).
-- **Tool-call repair is the SDK's** (`aai-runtime/tool-call-repair.ts`), JSON
+- **Tool-call repair is the SDK's** (`aai-runtime/tools/call-repair.ts`), JSON
   salvage tier included.
 - **Step budget is `maxSteps + 1`** with `toolChoice: "none"` forced on the
   extra step, so a capped turn ends with an answer rather than silently after a

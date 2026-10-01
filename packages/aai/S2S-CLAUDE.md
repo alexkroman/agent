@@ -30,7 +30,7 @@ in which mode — and points here.
   **`ASSEMBLYAI_S2S_SAMPLE_RATE` (`sdk/s2s-constants.ts`) owns all of it**: the
   three-way live measurement, the tau2 scores with the pin in place, and why a
   resampler was built and reverted. `pinAssemblyS2sRates`
-  (`host/runtime-config.ts`) is the pin; `assertHostRatesSupported`
+  (`aai-runtime/runtime-config.ts`) is the pin; `assertHostRatesSupported`
   (`aai-runtime/src/server/host-mode.ts`) is the counterpart it cannot reach,
   refusing a host-mode handshake that declares a rate this transport cannot
   honour.
@@ -43,7 +43,7 @@ in which mode — and points here.
   (511 frames over one 215s session; this guide asserted the opposite for a
   while), and `s2s.ts` forwards them as a partial and commits them on a
   COMPLETED reply that sent no final — never on an interrupted one, which would
-  put words in history the caller never heard. **Read `aai-runtime/_s2s-reply.ts`'s
+  put words in history the caller never heard. **Read `aai-runtime/s2s/reply.ts`'s
   module doc** for both measurements, the two properties that decide how the
   deltas are consumed, and the anomaly log; this guide is at its cap and that
   module owns the finding.

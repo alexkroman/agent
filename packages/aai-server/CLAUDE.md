@@ -459,7 +459,7 @@ means "cannot sign", `guestUnderstandsBundleUrl` for pinned older guests) is
 
 A guest holds no bucket credential (a service key there is a cross-tenant read
 of every upload and bundle). Bytes go through a platform route the guest brokers
-(`aai-runtime/_upload-blobs-brokered.ts`, selected by `AAI_UPLOAD_BROKER_URL`;
+(`aai-runtime/uploads/blobs-brokered.ts`, selected by `AAI_UPLOAD_BROKER_URL`;
 `agentBootEnv` has why it is a second name). `upload-handler.ts`'s module doc
 carries the argument (key derivation, public posture, reads REDIRECT, writes do
 not). **The key is composed from the slug Hono matched, never from caller

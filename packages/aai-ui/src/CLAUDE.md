@@ -31,7 +31,8 @@ upload id claiming, pause gate, recall and report coalescing).
   names one (specs and test helpers included). A directory opts in by holding
   an `index.ts`, so a new one is covered on arrival.
 - **Inside a directory, names carry no prefix and no underscore**:
-  `session/dial.ts`, not `session-core-dial.ts`; privacy is the index's job.
+  `session/dial.ts`, never a `session-core-` prefixed name; privacy is the
+  index's job.
 - **`index.ts` is re-export only** (konsistent
   `module-dir-index-is-re-export-only`), which is why `check-module-tests`
   does not ask it for a test.
@@ -217,7 +218,7 @@ processors. They assert INVARIANTS. Beyond "Property tests run on fast-check" (`
 
 A `mode: "workflow-app"` agent (declared with `workflowApp({ name, workflows })`
 from `@alexkroman1/aai`) is a web page over the workflow HTTP API: no session,
-WebSocket or audio. The routes are served by `aai/host/workflow-api.ts`, whose
+WebSocket or audio. The routes are served by `aai-runtime/workflow/api.ts`, whose
 module doc is the authoritative table; the platform brokers them at
 `/:slug/workflows/*`.
 

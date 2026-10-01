@@ -276,7 +276,7 @@ from a project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
 
 ## Running the SDK's own server (`aai dev` and host mode)
 
-`createRuntimeServer` (`packages/aai-runtime/src/server.ts`) is `aai dev`'s
+`createRuntimeServer` (`packages/aai-runtime/src/server/server.ts`) is `aai dev`'s
 backend; with no `AAI_SESSION_SECRET` it authenticates no one, so both
 defaults fail closed.
 This package owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`;
@@ -296,8 +296,8 @@ This package owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`;
 - **A host client may bring its own provider credentials.** The handshake's
   `credentials` record is merged over the server env for that connection and
   WINS, so a server holding only `AAI_ALLOW_HOST` spends only callers' keys.
-  `createHostServer` (`aai-runtime/host-server.ts`, whose module doc has the
-  argument) is that server in one call; `defaults` excludes the four
+  `createHostServer` (`aai-runtime/server/host-server.ts`, whose module doc has
+  the argument) is that server in one call; `defaults` excludes the four
   handshake-owned fields; `examples/host-server` is the runnable shape.
 - **The credential allowlist is a security boundary.** Names are screened
   against `ALL_PROVIDER_ENV_VARS`, checked against the SERVER's env before the
@@ -459,7 +459,7 @@ AAI_FAULT_PROFILE=restart-on-boot pnpm test:e2e     # the whole suite, under fau
 
 ### The other fault mode lives in `aai-runtime`, and faults a SOCKET
 
-`packages/aai-runtime/src/_fault-socket.ts` is a TCP proxy that SEVERS live
+`packages/aai-runtime/src/server/_fault-socket.ts` is a TCP proxy that SEVERS live
 connections, to test session resume. Choose correctly:
 
 - **This mode kills a PROCESS; that one cuts a CONNECTION.** A restart
