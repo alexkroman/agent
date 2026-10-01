@@ -58,7 +58,10 @@ import {
 } from "./_ratchet.mjs";
 import { scanChangesetPackageNames } from "./guard-invariants-changesets.mjs";
 import { SELF_REFERENTIAL_ENTRIES } from "./guard-invariants-exemptions.mjs";
-import { scanDeepModuleImports } from "./guard-invariants-module-dirs.mjs";
+import {
+  scanDeepModuleImports,
+  scanWrongWayStageImports,
+} from "./guard-invariants-module-dirs.mjs";
 import { LINE_RULES, NODE_RULES, SCAN_CORPORA } from "./guard-invariants-rules.mjs";
 import {
   scanSymlinks,
@@ -215,6 +218,21 @@ const ABSOLUTE_RULES = [
       "is a directory with no boundary — any module could reach any member.\n" +
       "The specifier is RESOLVED, so `../session/dial.ts` from `components/`\n" +
       "and `./session/dial.ts` from `src/` are the same violation.",
+  },
+  {
+    id: 38,
+    label: "pipeline stage importing the wrong way",
+    scan: scanWrongWayStageImports,
+    remedy:
+      "A stage under `aai-runtime/src/transports/pipeline/` imports only the\n" +
+      "stages `PIPELINE_STAGES` (scripts/guard-invariants-module-dirs.mjs) lets\n" +
+      "it, through their `index.ts`, and never the assembly beside\n" +
+      "`pipeline/index.ts` (`transport.ts`, `commands.ts`, …), which imports\n" +
+      "every stage. Move the shared piece DOWN into a stage both sides may\n" +
+      "import, or pass it in from the assembly.\n\n" +
+      "The directions are one DAG, and Biome's `noImportCycles` sees a cycle\n" +
+      "only once it closes; a wrong-way edge through an index is legal until\n" +
+      "the far side imports back. The map is `transports/pipeline/CLAUDE.md`.",
   },
 ];
 

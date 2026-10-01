@@ -277,10 +277,11 @@ describe("rule 14 — a fixture directory nothing reads", () => {
  * shells out for the directory list, so the list is passed in here and the
  * decision is exercised against the real three directories by name.
  */
-const { deepModuleImport } =
+const { deepModuleImport, wrongWayStageImport } =
   sole(
     import.meta.glob<{
       deepModuleImport: (file: string, specifier: string, dirs: string[]) => string | undefined;
+      wrongWayStageImport: (file: string, specifier: string) => string | undefined;
     }>("../../../scripts/guard-invariants-module-dirs.mjs", { eager: true }),
   ) ?? {};
 
@@ -331,5 +332,44 @@ describe("rule 37 — an import past a module directory's index", () => {
     // `session-resume-store.ts` was a flat sibling once; `session/` must not
     // swallow a name that merely starts the same way.
     expect(deepModuleImport?.(`${SRC}/index.ts`, "./session-like.ts", DIRS)).toBeUndefined();
+  });
+});
+
+describe("rule 38 — a pipeline stage importing the wrong way", () => {
+  const PIPE = "packages/aai-runtime/src/transports/pipeline";
+
+  test("the pure half is importable", () => {
+    expect(wrongWayStageImport, "wrongWayStageImport not exported").toBeTypeOf("function");
+  });
+
+  test("flags a stage reaching a stage its row does not list", () => {
+    expect(wrongWayStageImport?.(`${PIPE}/output/tts.ts`, "../llm/index.ts")).toBe("llm/");
+    expect(wrongWayStageImport?.(`${PIPE}/turn/gate.ts`, "../heard/index.ts")).toBe("heard/");
+  });
+
+  test("spares a stage its row lists, and the stage's own files", () => {
+    expect(wrongWayStageImport?.(`${PIPE}/output/tts.ts`, "../heard/index.ts")).toBeUndefined();
+    expect(wrongWayStageImport?.(`${PIPE}/speech/edges.ts`, "../llm/index.ts")).toBeUndefined();
+    expect(wrongWayStageImport?.(`${PIPE}/output/tts.ts`, "./gate.ts")).toBeUndefined();
+  });
+
+  test("flags ANY file beside pipeline/index.ts as the assembly, with no hand list", () => {
+    expect(wrongWayStageImport?.(`${PIPE}/heard/tracker.ts`, "../transport.ts")).toBe(
+      "the assembly (transport.ts)",
+    );
+    // The file the old hand-kept konsistent lists had drifted past.
+    expect(wrongWayStageImport?.(`${PIPE}/llm/request.ts`, "../_error-injection-matrix.ts")).toBe(
+      "the assembly (_error-injection-matrix.ts)",
+    );
+  });
+
+  test("spares a spec, the assembly itself, and imports leaving the pipeline", () => {
+    expect(
+      wrongWayStageImport?.(`${PIPE}/heard/tracker.test.ts`, "../transport.ts"),
+    ).toBeUndefined();
+    expect(wrongWayStageImport?.(`${PIPE}/transport.ts`, "./speech/index.ts")).toBeUndefined();
+    expect(
+      wrongWayStageImport?.(`${PIPE}/turn/gate.ts`, "../../../session/index.ts"),
+    ).toBeUndefined();
   });
 });

@@ -8,8 +8,8 @@
  * subdirectories, each with its own `index.ts` (`speech/`, `llm/`, `reply/`,
  * `output/`, `heard/`, `history/`, `turn/`, `knobs/`); the files beside this one
  * assemble them into one transport. guard-invariants rule 37 enforces the
- * index rule and konsistent's `pipeline-stage-*` conventions the direction
- * between stages; `CLAUDE.md` here has the map.
+ * index rule and rule 38 the direction between stages; `CLAUDE.md` here has
+ * the map.
  */
 
 export type { PipelineHistory } from "./history/index.ts";
