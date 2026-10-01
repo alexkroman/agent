@@ -230,19 +230,19 @@ lowered the tools and forgot the prompt measured the framework default and
 reported green, so the two halves are one call now.
 
 **The glob belongs to the importing file rather than to a shared helper, and
-that is the whole lesson of the bug it replaced.** Five specs imported
-`../../_discovery.ts` — this package's own helper — which resolves in-tree and
-**does not exist in a scaffolded project**, so `aai test`, `aai build` (it
-type-checks) and `npm start` were all broken for anyone who scaffolded
-`pizza-ordering-agent`, `research-planner-agent`, `retail-orders-agent`,
-`technical-support-agent` or `travel-concierge-agent`, while
-`check:template-types`, `templates.test.ts` and each template's own spec stayed
-green — every gate in the repo runs IN the repo. `guard-invariants.mjs` **rule
-13** closes it: a template file may not import a path that escapes its own
-template directory, resolved rather than pattern-matched (`../shared.ts` from
-`tools/a.ts` is fine, `../../shared.ts` from the same file is not, and both
-spell the same number of dots as a legal import one level up). Anything shared
-has to be IN the template or on a published subpath.
+that is the whole lesson of the bug it replaced.** Five specs imported this
+package's own `src/_discovery.ts` helper by relative path, which resolves
+in-tree and **does not exist in a scaffolded project**, so `aai test`,
+`aai build` (it type-checks) and `npm start` were all broken for anyone who
+scaffolded `pizza-ordering-agent`, `research-planner-agent`,
+`retail-orders-agent`, `technical-support-agent` or `travel-concierge-agent`,
+while `check:template-types`, `templates.test.ts` and each template's own spec
+stayed green — every gate in the repo runs IN the repo. `guard-invariants.mjs`
+**rule 13** closes it: a template file may not import a path that escapes its
+own template directory, resolved rather than pattern-matched (`"../shared.ts"`
+from a file in `tools/` is fine, `"../../shared.ts"` from the same file is not,
+and both spell the same number of dots as a legal import one level up). Anything
+shared has to be IN the template or on a published subpath.
 
 `_discovery.ts` survives for `templates.test.ts` alone, which needs every
 template at once and so needs a repo-wide literal pattern — `import.meta.glob`
@@ -254,11 +254,10 @@ tools through NODE's resolver instead of the test runner's, giving them a second
 copy of the SDK, so a slot's module state would differ between the tool under
 test and the agent holding it.
 
-**Those are the only two ways in, and there are exactly two.** The other loader
-with no bundler was `scaffold/server.mjs`, which now boots the BUILT worker — so
-every path to a tool goes through a bundler or through a glob, and there is no
-runtime directory scan in the repo (see "Self-hosting is the scaffold's default"
-in `CLAUDE.md`).
+**Those are the only two ways in, and there are exactly two.** Self-hosting
+boots the BUILT worker too (`aai start`) — so every path to a tool goes through
+a bundler or through a glob, and there is no runtime directory scan in the repo
+(see "Self-hosting is the scaffold's default" in `CLAUDE.md`).
 
 Note what this DROPS: a `tools:` map checked each tool's assignability against
 the agent's state type, so a tool whose state shape disagreed was a compile error
@@ -306,7 +305,7 @@ grow, twice:
   be used there at all — a `TtsSession` is an event stream wired into a live
   pipeline's playback, with a turn tracker and barge-in behind it, and a step has
   no turn to be part of and has to return a VALUE. `sdk/step-speak.ts` and
-  `host/step-speak.ts` carry the argument, including why the one-socket exchange
+  `aai-runtime/step-speak.ts` carry the argument, including why the one-socket exchange
   reuses nothing from the session opener.
 - **`stepWriteUpload`** is `stepReadUpload`'s other direction. A run's OUTPUT is
   read back as JSON, so audio cannot travel in one — the same rule that keeps a

@@ -128,16 +128,13 @@ describe("agent guide size", () => {
       ).toBeLessThanOrEqual(AUTO_BUDGET);
       return;
     }
+    // Shrinking under the entry is an improvement: the script WARNS and
+    // offers `--update`, so only growth fails here.
     expect(
       text.length,
       `${path} is ${text.length} chars — past its shrink-only baseline of ${recorded} ` +
         `in scripts/claude-md-baseline.json. ${remedy}`,
     ).toBeLessThanOrEqual(recorded);
-    expect(
-      text.length,
-      `${path} shrank to ${text.length} chars under its baseline of ${recorded} — ` +
-        "run `pnpm claude-md:update` to lock the gain in.",
-    ).toBe(recorded);
   });
 
   test.each(referenceEntries)("reference $path is within its budget", ({ path, text }) => {
@@ -177,18 +174,22 @@ describe("agent guide size", () => {
     expect(rootShim?.trim()).toBe("@AGENTS.md");
   });
 
-  test("the root guide points at every package guide", () => {
+  test("the guide index points at every package guide, and AGENTS.md at the index", () => {
     const root = guides["../../../AGENTS.md"];
+    const index = guides["../../../.agents/index.md"];
     if (!root) throw new Error("root AGENTS.md not found");
-    // A guide nothing links to is a guide nobody opens: AGENTS.md's generated
-    // tables (package, sibling, directory) are the only index, since Claude
-    // Code auto-loads a guide only once you are working in its directory.
+    if (!index) throw new Error(".agents/index.md not found");
+    // A guide nothing links to is a guide nobody opens: `.agents/index.md`'s
+    // generated tables (package, sibling, directory) are the only index, since
+    // Claude Code auto-loads a guide only once you are working in its
+    // directory — and AGENTS.md, which IS auto-loaded, must point at it.
+    expect(root).toContain(".agents/index.md");
     const packageGuides = entries
       .map((e) => e.path)
       .filter((p) => p.startsWith("packages/") && !p.includes("/scaffold/"));
     expect(packageGuides.length).toBeGreaterThan(0);
     for (const path of packageGuides) {
-      expect(root, `the root CLAUDE.md does not mention ${path}`).toContain(path);
+      expect(index, `.agents/index.md does not mention ${path}`).toContain(path);
     }
   });
 

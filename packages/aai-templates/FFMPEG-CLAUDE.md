@@ -100,22 +100,10 @@ degrading a field at a time; the two lines are one `stepReport` each.
 
 ### A `workflows/` module may hold a Node-only import at module scope
 
-That rule is RETIRED, and this is the account of what it cost.
-
-`packages/aai/CLAUDE.md` points here for the two templates that paid for getting
-the old rule wrong, so the account stays even though the rule does not.
-
-The Workflow DevKit compiled a `workflows/` directory into a second artifact run
-as a `node:vm` `Script` with no `require`, so a Node-reaching import that any
-SURVIVING top-level binding still named rode into that VM and died at REPLAY
-with `ReferenceError: require is not defined` — from generated code inside the
-SDK, with nothing pointing back at the import. Both ffmpeg templates shipped
-broken this way, each carrying a one-function `workflows/ffmpeg-verdict.ts`
-whose only job was to keep a module-scope `isFfmpegError` out of the bundle.
-Both built, type-checked, passed their specs, deployed, and failed EVERY run.
-There is no second artifact now, so both boundary files dissolved and
 `call-audit-workflow/workflows/ingest.ts` holds `node:fs/promises`,
-`@alexkroman1/aai/ffmpeg` and `@alexkroman1/aai/step-files` at module scope.
+`@alexkroman1/aai/ffmpeg` and `@alexkroman1/aai/step-files` at module scope:
+workflows compile into the one worker artifact, so there is no separate VM
+bundle a Node-reaching import could break at replay.
 
 **What generalizes is the failure SHAPE.** It did not reproduce in-tree — pnpm
 links the workspace SDK and `@dev/source` resolves it to TypeScript — so every

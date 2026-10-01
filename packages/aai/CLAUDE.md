@@ -92,9 +92,9 @@ Twenty-three code subpaths, twenty mapped below, plus one CONFIG export:
 `@alexkroman1/aai/tsconfig` → `presets/tsconfig.agent.json`, the compiler
 options every agent project extends. Its `files` entry loads
 `presets/agent-env.d.ts` (the `virtual:aai/agent` declaration) and its `types`
-names `vite/client` — the scaffold's old `global.d.ts`, now versioned with the
-SDK. `presets/` is a PRODUCT tree (`_package-layout-scope.mjs`), shipped via
-`files`. Its test-side twin is `defineAgentTestConfig()` on `/testing/vite`.
+names `vite/client`, versioned with the SDK rather than scaffolded. `presets/`
+is a PRODUCT tree (`_package-layout-scope.mjs`), shipped via `files`. Its
+test-side twin is `defineAgentTestConfig()` on `/testing/vite`.
 
 ### The root barrel is CURATED, and `export *` is what broke it
 
@@ -246,8 +246,8 @@ an explicit deny-list instead of copying fields**:
 - **The server never maps a stored config onto a runtime agent**; sessions run
   the bundle's own SDK. Provider descriptors are keyed off their own presence,
   never the optional `config.mode` (`superRefine` rejects a disagreeing
-  `mode`). `rpc-schemas.test.ts` pins
-  `Exclude<keyof AgentConfig, keyof IsolateConfig>` = `never`.
+  `mode`). `Exclude<keyof AgentConfig, keyof IsolateConfig>` must stay
+  `never`.
 
 A new serializable field needs exactly two edits — `AgentDef` (docs + type)
 and `AgentConfigSchema` — and the type guards fail if either is missing.

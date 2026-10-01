@@ -94,7 +94,7 @@ capability, no epoch, no TypeDoc page, no semver promise.
   `toToolJsonSchema`) import zod.
 - **Adding a symbol:** authoring API → import from the public subpath that owns
   it; otherwise add it to `host-internal.ts`. Never a relative path into
-  `../aai/sdk/` — Biome's `noRestrictedImports` rejects it and
+  `packages/aai/src/sdk/` — Biome's `noRestrictedImports` rejects it and
   `tsconfig.build.json` reports `TS6059`.
 
 ## Layout
@@ -270,6 +270,6 @@ Stated so far:
 - **`session.page.tail`** (`session/event-stream.ts`) — a page cannot contain
   events its own tail says do not exist (a read starting past the tail is
   legitimate and answers zero events).
-- **`capacity.line.terms`** (`aai-server/platform-db-capacity.ts`) — the terms
+- **`capacity.line.terms`** (`aai-server/platform/db-capacity.ts`) — the terms
   a boot line names must COMPOSE the total it prints. See "The boot line
   describes the reading it was built from" in that package.

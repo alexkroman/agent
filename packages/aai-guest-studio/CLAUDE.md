@@ -16,11 +16,11 @@ SERVICE that drives it is `packages/aai-studio-server/CLAUDE.md`.
 
 **The agent itself and its tools are documented below**, from "The coding agent
 is an ordinary `agent()`" on; its tests and eval are
-`packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md`.
+`CODING-AGENT-TESTS-CLAUDE.md` (a sibling of this guide).
 
 ## What is in here, and what the boundary buys
 
-Everything that was `aai-guest/src/studio/` — 60 files — plus
+The studio half of the guest (formerly a directory of `aai-guest`), plus
 `studio-prompts/`, the committed copies `scripts/sync-studio-prompt.mjs`
 writes. The prompts moved because `_eval-prompt.ts` reads them relative to
 itself.
@@ -70,7 +70,7 @@ here — every piece of that is `agent()` plus `createTextAgent`
   reply use the same model.
 - **The 120s tool deadline is `toolTimeoutMs`** on `createTextAgent` (the SDK
   default 30s is a voice budget; these tools install packages and typecheck).
-- **Tool-call repair is the SDK's** (`aai/host/tool-call-repair.ts`), JSON
+- **Tool-call repair is the SDK's** (`aai-runtime/tool-call-repair.ts`), JSON
   salvage tier included.
 - **Step budget is `maxSteps + 1`** with `toolChoice: "none"` forced on the
   extra step, so a capped turn ends with an answer rather than silently after a
@@ -86,7 +86,7 @@ keeps the agent's narrative text. Tier 2 (LLM summary) runs only if still over
 budget. **Cut points must fall on turn boundaries:** a cut at index `i` is safe
 iff `messages[i]` is not a `tool` message (providers reject an unmatched tool
 result; same failure `capLlm` documents in
-`aai/host/transports/pipeline/history/history.ts`). Boundaries only move OUTWARD.
+`aai-runtime/transports/pipeline/history/history.ts`). Boundaries only move OUTWARD.
 
 `STUDIO_TOOL_LABELS` and `MUTATING_TOOLS` are checked against
 `createStudioAgent`'s real tool surface, never a hand-merged copy.
@@ -144,7 +144,7 @@ without it `new URL("agent.md", …)` replaces the last segment. Path-rewriting
 sweeps drop it.
 
 Testing:
-[`packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md`](../aai-guest/CODING-AGENT-TESTS-CLAUDE.md)
+[`packages/aai-guest-studio/CODING-AGENT-TESTS-CLAUDE.md`](CODING-AGENT-TESTS-CLAUDE.md)
 — the agent-level spec through `runTextAgent` and the agent's own eval.
 
 ## One claim on the workspace at a time — turns AND re-installs

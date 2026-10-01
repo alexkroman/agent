@@ -7,20 +7,8 @@ read_when: >-
 
 # packages/aai-server — images and sandbox backends
 
-A SIBLING of `packages/aai-server/CLAUDE.md`, not a second package guide.
-Claude Code auto-loads only `CLAUDE.md`, so nothing here is resident: read it
-when you touch `scripts/modal_image.py`, `modal_deploy.py`, or
-`microsandbox-*.ts`. It exists because the platform guide hit the 120,000-char
-agent-context cap (`pnpm check:claude-md`, which measures this file too — the
-pathspec is `*CLAUDE.md`) and this is the one subject in it that is REFERENCE
-for a build recipe rather than behaviour on a request path.
-
-`konsistent.json`'s `workspace-package-layout` requires a `CLAUDE.md` per
-package and forbids no other file, so a sibling is permitted; the root guide's
-"points at every package guide" assertion
-(`packages/aai-gates/src/claude-md-limit.test.ts`) globs `packages/*/CLAUDE.md`
-exactly and does not reach this name.
-
+Reference for the image build recipe and the sandbox backends: read it when you
+touch `scripts/modal_image.py`, `modal_deploy.py`, or `src/microsandbox/`.
 Everything else about the platform — the sandbox lifecycle, the three backends'
 SELECTION policy, the security model — is in `CLAUDE.md` beside this file.
 
@@ -151,9 +139,8 @@ all measured:
 
 ## No warm pool — every spawn boots from the snapshot image
 
-There is NO warm sandbox pool (`sandbox-pool.ts` and its `SANDBOX_POOL_SIZE`,
-`pool` role and `setTags` plumbing are deleted — production always ran with it
-disabled, so it was pure complexity). Every spawn — agent, studio — boots
+There is NO warm sandbox pool, and none should be re-added without a
+measurement that needs one. Every spawn — agent, studio — boots
 directly from the published content-addressed harness snapshot image, one code
 path per backend, and every sandbox knows its identity (role/slug tags) at
 creation. When Modal's
@@ -312,8 +299,7 @@ studio session, a first-ever spawn — logged nothing, that promise having been
 kept on the pinned half alone, and its create escaped
 `SandboxUnavailableError`, both spawners calling `createGuestSandbox` OUTSIDE
 the terminating `try`: a 500 where the taxonomy owes a 503. See
-`translateSpawnFailure`, and `guest-image-wait-gate.test.ts` for the gate that
-no-op'd over a broken publisher for three green deploys.
+`translateSpawnFailure`.
 
 ## Rolling back: `modal app rollback` first, a dispatch second
 
@@ -553,7 +539,7 @@ Four things to know before reaching for it:
   WebSocket IS the liveness signal — a host that dies without teardown
   drops its sockets, and the harness self-exits after
   `HARNESS_ORPHAN_TIMEOUT_MS` with no host connected (constants in
-  `aai-guest/limits.ts`; the window also covers the boot gap before the
+  `aai-guest-core/limits.ts`; the window also covers the boot gap before the
   first dial). AGENT guests have no host socket, so they own their own
   lifecycle instead: self-exit after `AGENT_IDLE_EXIT_MS` with zero
   sessions (see `packages/aai-guest/src/harness/CLAUDE.md`). Either way, once

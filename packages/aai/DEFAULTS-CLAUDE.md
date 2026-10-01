@@ -11,12 +11,6 @@ read_when: >-
 Every numeric default an `agent()` field carries, where it is applied, and the
 measurement or argument behind it.
 
-Split out of `packages/aai/CLAUDE.md` when that guide crossed the 120,000-char
-cap. It is REFERENCE by the root guide's own test — nobody needs the endpointing
-milliseconds or the barge-in word count to start work in this package, and
-everybody who does need one needs the argument beside it, which is why the rows
-are long. The guide keeps a pointer.
-
 All numeric constants live in `packages/aai/src/sdk/constants.ts` (client-audio
 budgets are split into `sdk/client-audio-constants.ts` for file-length reasons
 and re-exported from `constants.ts`, so the import path is unchanged).

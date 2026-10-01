@@ -122,7 +122,9 @@ Each of these is one page in the docs:
 
 ## Contributing
 
-[`AGENTS.md`](./AGENTS.md) is the guide for working on the framework itself.
+[`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md) is the quickstart: setup,
+running tests, the local checks, changesets and running the platform locally.
+[`AGENTS.md`](./AGENTS.md) is the full guide for working on the framework itself.
 [`scaffold/CLAUDE.md`](./packages/aai-templates/scaffold/CLAUDE.md) is the full
 authoring guide for building agents, and ships inside the SDK as
 `AGENT_GUIDE.md`.

@@ -91,7 +91,7 @@ place in that manifest first, or the starter fails to build.
 
 Every project runs on its own with `npm start` (`prestart`/`start` → `aai
 start`). The mechanism is the CLI's: see "Self-hosting is the scaffold's
-default, and it runs the BUILT worker" in `packages/aai-cli/CLAUDE.md`.
+default, and it runs the BUILT worker" in `packages/aai-cli/SELF-HOSTING-CLAUDE.md`.
 
 ## The authoring guide ships inside the SDK
 

@@ -182,7 +182,7 @@ transport holding its prompt as session state.
   reads the staged change either. It is NOT fine for the shape it most looks
   like: a `timeout` on a confirmation gate that returns to the browsing state
   would move the position while `pending` still holds a staged change, which is
-  exactly the position/store disagreement `retail/store.ts` argues against in
+  exactly the position/store disagreement `retail-orders-agent/store.ts` argues against in
   its own note on why `IDENTIFIED` is not declared on `serving`. Closing it
   means letting a transition name a tool, which is a real design question — a
   tool body is async and a dialog's mutation window is not — and not a gap to

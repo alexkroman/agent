@@ -7,24 +7,11 @@ read_when: >-
 
 # JOURNAL-CLAUDE.md — the durable journal and the replay engine's decisions
 
-A SIBLING of `packages/aai-runtime/CLAUDE.md` rather than a second package
-guide, for the reason `packages/aai-server/MODAL-CLAUDE.md` is one: Claude Code
-auto-loads only `CLAUDE.md`, so a sibling is read on demand and is the right
-shape for REFERENCE — which all of this is. It moved here when that guide hit
-its 120,000-char cap, and the rule for what may follow it is the same: a
-decision somebody needs resident while working elsewhere in the package belongs
-in `CLAUDE.md`; the journal's own decisions, the engine's walk, the topology of
-their tests and the minutiae of what the contract does and does not promise
-belong here.
-
-The guide keeps the one thing a reader elsewhere in the package needs — which
-journal a deployment gets, and in what order — under the same heading this file
-opens with, and points here for the rest. It grew a second time when
-`ctx.messages`' tool arm and per-tool error classification had nowhere to be
-written down: the whole `## A run's journal has THREE homes` section came over
-then, subsections and all, which is why the pointer stubs `CLAUDE.md` used to
-carry for "An attempt is a LEASE" and "A failure of the JOURNAL is not a failure
-of the RUN" are gone — the accounts they pointed at are below.
+Reference for the journal's own decisions, the engine's walk, the topology of
+their tests and what the contract does and does not promise. A decision needed
+while working elsewhere in the package belongs in `CLAUDE.md` instead, which
+keeps which journal a deployment gets (and in what order) and points here.
+Paths below are under `packages/aai-runtime/src/` unless they name a package.
 
 ## A run's journal has THREE homes, and the order between them is a decision
 
@@ -37,8 +24,8 @@ none of them carries a copy of the order. The boot line names whichever won.
 - **platform** — `createPlatformJournal`, one `POST /:slug/workflow-journal` per
   operation, beside the queue, session state and upload records that already work
   this way. The statements run on the platform's own database
-  (`aai-server/platform-workflow-journal.ts`), which mirrors
-  `workflow-journal-schema.ts` with a `slug` added to every key.
+  (`aai-server/platform/workflow-journal.ts`), which mirrors
+  `workflow/journal/schema.ts` with a `slug` added to every key.
 - **postgres** — `createPostgresJournal` over the agent's own `DATABASE_URL`,
   which is what a self-hosted deployment has and the platform never provisions.
 - **memory** — a `Map`, for trying a workflow out before provisioning anything.
@@ -78,7 +65,7 @@ its own elapsed at debug; `aai-server`'s `withReserved` logs `waitedMs` and
 which matters because `ADMIN_POOL_MAX` had already been widened once on the
 assumption that it was. One span per CALL: a run's whole walk is not one trace,
 which would need the trace minted at the delivery and carried through
-`workflow-run-context.ts`.
+`workflow/run-context.ts`.
 
 Every platform-arm `JournalStore` call is one `POST /:slug/workflow-journal`,
 measured at **~840 ms of server time**, on a route holding one of
@@ -88,15 +75,15 @@ on ONE run: a fan-out's `settledSince` re-reads the WHOLE journal once per step,
 the overlapping walks above each do it again, and a delivery's opening was three
 SEQUENTIAL round trips, then two, and is now ONE.
 
-`_journal-shared-reads.ts` collapses the first two — `getRun`, `readSteps` and
-`readSleeps` being the reads that are pure functions of a run id — and its
-module doc carries the argument. The one thing to know first: it is a
+`workflow/journal/_shared-reads.ts` collapses the first two — `getRun`,
+`readSteps` and `readSleeps` being the reads that are pure functions of a run id
+— and its module doc carries the argument. The one thing to know first: it is a
 **COALESCER, not a cache**, so a caller arriving mid-flight gets a TRAILING read
 and none is answered from a read that started before it asked. `settledSince`
 exists to rely on exactly that; a cache would silently defeat it.
 `ReplayOptions.steps` is the third — the step read is issued BESIDE the
-`running` compare-and-set — and `ADMIN_POOL_MAX` was widened with them (see
-"The admin pool bounds guest THROUGHPUT" in
+`running` compare-and-set — and `ADMIN_POOL_MAX` was widened with them (see "The
+admin pool bounds guest THROUGHPUT" in
 `packages/aai-server/src/platform/CLAUDE.md`).
 
 **The record read joined them, and `setStatus`'s `expect` is what made that
@@ -108,8 +95,8 @@ may not walk answers `false` rather than moving, so an eager set can neither
 resurrect a terminal run nor undo an `abandon`; and a LOST eager set is
 **re-asked, never believed** — issued beside the record read it can reach the
 store ahead of a racing `start`'s `createRun` and decline a run that is alive,
-which `workflow-concurrent-delivery.test.ts` shrinks to a step the body needed
-and nothing ever ran. `workflow-engine-opening.test.ts` states both. The
+which `workflow/concurrent-delivery.test.ts` shrinks to a step the body needed
+and nothing ever ran. `workflow/engine-opening.test.ts` states both. The
 speedup also moved where a cancel lands, which is why law 1 relaxes its
 per-name floor for a cancelled run and `cancelsMidWalk`'s floor was
 re-measured.
@@ -131,7 +118,7 @@ were hand-rolling (`transcription-workflow`'s `startClock`,
 `call-audit-workflow`'s two `now` reads), and `guard-invariants` rule 30 stays
 the lexical backstop with its remedy naming them.
 
-**`workflow-replay-determinism.ts`'s module doc is the argument**, and the three
+**`workflow/replay/determinism.ts`'s module doc is the argument**, and the three
 decisions it records are the ones not to relitigate: their own key space (per
 KIND, so inserting one shifts no other); NO attempt lease (a lease bounds
 abandonment and these have no body to abandon); and one float per `random()` call
@@ -161,7 +148,7 @@ await ctx.sleep("schedule", WEEK_MS); // sleep!1 on walk 1, sleep!0 on walk 2
 Positionally, walk 2 read the elapsed `early` record and the week-long wait
 resolved instantly, reporting `completed` with the clock unmoved. The hook
 version is worse: the body is handed the other wait's PAYLOAD.
-`workflow-replay-wait.test.ts`'s "a body that reaches a different NUMBER of
+`workflow/replay/wait.test.ts`'s "a body that reaches a different NUMBER of
 waits" pins all three cases and A/Bs green against positional keys.
 
 Three things not to relitigate:
@@ -184,7 +171,7 @@ What is left is one shape, and it is strictly better than what it replaced: a
 label or token that is ITSELF non-deterministic mints a key no walk has reached,
 so the run registers a fresh wait and PARKS on something nobody can signal. That
 hangs rather than answering wrongly, and nothing detects it —
-`workflow-replay-divergence.ts` states the residual and why the NEW-key report
+`workflow/replay/divergence.ts` states the residual and why the NEW-key report
 that would catch it is not built. `waitTokenDiverged` there is the nearest thing:
 it compares the token `claimHook` hands back against the one the walk reached, so
 it is an assertion about the KEY SCHEME (unreachable while a key names its token)
@@ -194,7 +181,7 @@ rather than about the body, and it is what caught the positional case.
 
 `ctx.sleep` and `ctx.waitFor` belong to the body. The closure `ctx.step` is
 handed CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep("nap",
-2000))` is one line away at every call site, and until `workflow-replay-wait.ts`
+2000))` is one line away at every call site, and until `workflow/replay/wait.ts`
 existed the engine ran it — silently, and wrongly in three separate ways. Two of
 them are measured below and both still stand; the third was the key slide, which
 naming the waits closed independently (see "A wait is keyed by NAME").
@@ -208,7 +195,7 @@ naming the waits closed independently (see "A wait is keyed by NAME").
 - **And every LATER wait in the run READ the wrong record.** That half is CLOSED,
   and not by this check — see "A wait is keyed by NAME" above, which carries the
   transcript. It is listed here because it was one of three reasons for the
-  refusal rather than the whole of it, and because `workflow-replay-wait.ts`'s
+  refusal rather than the whole of it, and because `workflow/replay/wait.ts`'s
   own doc is still the clearest statement of what positional keys cost.
 
 So both methods now refuse when `currentRun()?.step` is set — which is true for
@@ -220,28 +207,28 @@ into `completed` — the third verdict on that channel, beside a divergence and 
 abandoned step.
 
 **It cannot be a TYPE**, and it is not worth making RESUMABLE either;
-`workflow-replay-wait.ts`'s module doc argues both (a captured binding is not an
+`workflow/replay/wait.ts`'s module doc argues both (a captured binding is not an
 argument, and TypeScript has no effect system; "work, then wait, then more work"
 is already two steps with the wait between them).
 
 **What the refusal cost, recorded because it is a real loss.** The property
-grammar's `nestedWait` node (`_workflow-resume-program.ts`) generated exactly
+grammar's `nestedWait` node (`workflow/_resume-program.ts`) generated exactly
 this shape and was the 10-out-of-10 regression for the lease fix ("An attempt is
 a LEASE, and it EXPIRES", below). It is
 gone: it can no longer generate a legal body. The arm it defended — a suspend
 GIVING BACK its charge — is gone too, and needs no replacement: a suspension is
 no longer a THROW, so nothing unwinds through a step's attempt loop and there is
-no charge to hand back (`workflow-replay-suspend.ts`). The half of the lease
+no charge to hand back (`workflow/replay/suspend.ts`). The half of the lease
 still reachable through `ctx` — a charge NOT given back when an attempt dies —
 is held by `flaky`. Removing the node also lowered two coverage floors in
-`workflow-resume-equivalence.test.ts`, re-measured over 20 runs with the old
+`workflow/resume-equivalence.test.ts`, re-measured over 20 runs with the old
 ranges kept beside the new ones.
 
 **And the refusal now guards LIVENESS as well.** A wait parks on a promise that
 never settles and quiescence means "no engine operation in flight", so a wait
 inside a step is a step awaiting something that cannot settle, holding the walk
 open against the check that would suspend it — `replayRun` would never return.
-A/B'd: with the check disabled, all eight cases in `workflow-replay-wait.test.ts`
+A/B'd: with the check disabled, all eight cases in `workflow/replay/wait.test.ts`
 stop failing and start timing OUT. That module's own doc carries it.
 
 **That residual is REACHABLE, and the estimate beside it was measured wrong.**
@@ -263,7 +250,7 @@ second walk re-ran `normalizeRecording`, `splitRecording`, four
 `transcribeSegment` calls against the real provider and `mergeTranscript` on a
 run already marked `completed`.
 
-**That half is CLOSED, by `settledSince` in `workflow-replay-step.ts`.** A
+**That half is CLOSED, by `settledSince` in `workflow/replay/step.ts`.** A
 snapshot can only be stale about a key somebody ELSE reached, and `claimAttempt`
 already answers exactly that: `1` means this attempt is the only one
 outstanding, so nothing has been missed. So a miss in the snapshot re-reads the
@@ -272,10 +259,10 @@ settled entry answers the step instead of running it — which also makes a
 settled step answer from the journal rather than take the `StepAbandonedError`
 the blown budget above would otherwise produce (the two checks are ordered on
 that ground). The happy path pays nothing: a first walk reaching a fresh step
-sees `1` and never re-reads. `workflow-concurrent-delivery.test.ts` measured the
+sees `1` and never re-reads. `workflow/concurrent-delivery.test.ts` measured the
 effect — generated `duplicateSteps` fell from **44-107 to 6-21**, and its floor
 came down with a re-measured range — and
-`workflow-replay-stale-snapshot.test.ts` pins the two interleavings by hand.
+`workflow/replay/stale-snapshot.test.ts` pins the two interleavings by hand.
 
 What is NOT closed is the race it was never about: two walks reaching a step
 NEITHER has settled still both run it, which is the engine's stated
@@ -299,7 +286,7 @@ than the agent's — an agent may set any other `AAI_*` key as a secret, so a
 tenant read would let it pin its own version and have the message assert as a
 fact the one cause it had ruled out. Absence therefore means UNKNOWN in both
 directions and may never read as "unchanged"; only a deployed guest has a hash.
-`workflow-code-version.ts` carries the rest, including why an inequality does not
+`workflow/code-version.ts` carries the rest, including why an inequality does not
 refuse the run.
 
 ### A step body can read its own ATTEMPT
@@ -313,7 +300,7 @@ argument** — the two differences from the DevKit's `getStepMetadata()`, and wh
 `maxAttempts` has to travel with the attempt rather than be restated at the body.
 
 What is this package's: `installWorkflowSupport` publishes the reader
-(`createStepInfoReader` in `workflow-report.ts`) into a `Symbol.for` slot like
+(`createStepInfoReader` in `workflow/report.ts`) into a `Symbol.for` slot like
 `stepReport()`'s, because the answer lives in this package's `AsyncLocalStorage`
 and `/step` rides the browser bundle. It derives `isLastAttempt` with `>=` and
 not `===`, since a burned boot can push the count past the ceiling and that is
@@ -364,8 +351,8 @@ instead; every claim that matters is asserted by name.
 
 ### A parked delivery asks to come back PROPORTIONATELY
 
-`workflow-queue-dispatch.ts` refuses a delivery whose run is already being
-walked, and `workflow-queue-park.ts` decides what to answer it:
+`workflow/queue-dispatch.ts` refuses a delivery whose run is already being
+walked, and `workflow/queue-park.ts` decides what to answer it:
 `clamp(walkingForSeconds / 8, 5, 120)`, reported on the same curve — one park is
 one line and one reschedule, so `reportPark` ANSWERS the delay it printed rather
 than either half computing it twice.
@@ -403,13 +390,13 @@ thing holding the guest open.
 
 The claims are of four different kinds, which is why there are four files:
 
-- **`workflow/journal/platform.test.ts`** — our side of the wire. The CODEC (a
-  `Uint8Array` in a step's output crosses as an envelope, not as an index map,
-  which `JSON.stringify` produces with no error), and three answers REFUSED
-  rather than invented: `claimAttempt` on a non-number (a made-up ceiling does
-  not hold), `appendStep` on an unreadable answer (the STORED entry is what makes
-  a double execution deterministic), `claimSleep` likewise.
-- **`aai-server/platform-workflow-journal.test.ts`** — SHAPE, over all thirteen
+- **`workflow/journal/backends/platform.test.ts`** — our side of the wire. The
+  CODEC (a `Uint8Array` in a step's output crosses as an envelope, not as an
+  index map, which `JSON.stringify` produces with no error), and three answers
+  REFUSED rather than invented: `claimAttempt` on a non-number (a made-up
+  ceiling does not hold), `appendStep` on an unreadable answer (the STORED entry
+  is what makes a double execution deterministic), `claimSleep` likewise.
+- **`aai-server/platform/workflow-journal.test.ts`** — SHAPE, over all thirteen
   methods as a TABLE rather than a case each: every statement binds the slug as
   `$1`, no statement binds a bare `$n::jsonb`, `claimAttempt` issues exactly one
   query. A table because the interesting failure is one method forgetting, and a
@@ -424,7 +411,7 @@ The claims are of four different kinds, which is why there are four files:
   every counting gate in this repo carries a floor: the success output of a
   hand-kept table is indistinguishable from a complete one.
 
-- **`aai-server/platform-workflow-journal.scenario.test.ts`** — the only place
+- **`aai-server/platform/workflow-journal.scenario.test.ts`** — the only place
   TENANCY is testable, that being a claim about column values in a shared table.
   Two tenants' rows, and every cross-tenant read comes back empty.
 - **`aai-server/journal-conformance-platform.scenario.test.ts`** — the shared
@@ -615,11 +602,8 @@ the A/B: with the snapshot arm removed, claims per delivery go
 
 ## An attempt is a LEASE, and it EXPIRES
 
-Moved here from `CLAUDE.md` when that guide hit its 120,000-character cap; the
-pointer stub it kept for a while came over with the rest of the journal section
-and is gone. What is below is the original account of why a charge is a lease
-rather than a tally, followed by the two things the lease grew: a HOLDER, and an
-expiry.
+Why a charge is a lease rather than a tally, and the lease's two parts: a
+HOLDER, and an expiry.
 
 `claimAttempt` charges an attempt before a step's body runs — a crash therefore
 burns it, which is the whole reason the charge precedes the body — and
@@ -664,8 +648,8 @@ than over minutes.
   answers the same number rather than a higher one. The engine claims once per
   walk per key, so this is a defence rather than a fix — but a claim is a
   non-idempotent write over an at-least-once transport, and
-  `workflow/journal/platform.ts` had to carry a rule about it ("must not soften
-  it by retrying the call itself — a retried claim would burn two").
+  `workflow/journal/backends/platform.ts` had to carry a rule about it ("must
+  not soften it by retrying the call itself — a retried claim would burn two").
 - **A charge can EXPIRE**, which is the half that fixes a real defect. A scalar
   counter cannot: the charge a dead walk left was indistinguishable from a live
   one, so it stood forever and `maxAttempts` deaths on one step key refused that
@@ -691,7 +675,7 @@ against a contract that no two ever agree, caught by the conformance suite's
 
 `workflow/journal/_attempts.ts` holds the statement and the three cases its
 `case` expression gets right; the platform twin is in
-`aai-server/platform-workflow-journal.ts` with a `slug` added to the key.
+`aai-server/platform/workflow-journal.ts` with a `slug` added to the key.
 
 ### The window is generous, and there is no heartbeat
 
@@ -720,7 +704,7 @@ what the `case` in the statement is for, and an unconditional add would delete
 it silently.
 
 It is pinned twice, and the conformance half is exact rather than coarse. The
-recorder tests in `workflow/journal/postgres.test.ts` and
+recorder tests in `workflow/journal/backends/postgres.test.ts` and
 `platform/workflow-journal.test.ts` assert the branch with no clock in them at
 all. The conformance case OWNS the clock instead of racing it: it spies
 `Date.now` to stamp the first claim half an hour ago, re-claims now, and reads

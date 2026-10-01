@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Agent-guide size gate, in two tiers.
+ * Agent-guide gate: a size cap in two tiers, and no dangling paths.
  *
  * Usage:
  *   node scripts/check-claude-md.mjs            # verify
@@ -18,10 +18,18 @@
  *
  * An auto-loaded guide still over its cap is listed in
  * `scripts/claude-md-baseline.json` at its recorded size. The baseline is
- * shrink-only: a listed file fails when it grows past its entry AND when it
- * shrinks below it (so the gain is locked in), an entry for a missing file
- * fails, and `--update` only ever lowers or removes entries — never raises one
- * or adds a file, so an increase is a hand edit in a reviewable diff.
+ * shrink-only: a listed file fails when it grows past its entry, WARNS when it
+ * shrinks below it (run `--update` to lock the gain in), an entry for a missing
+ * file fails, and `--update` only ever lowers or removes entries — never raises
+ * one or adds a file, so an increase is a hand edit in a reviewable diff.
+ *
+ * **Dangling paths.** Every backticked repo path in a non-product guide must
+ * resolve to a tracked file or directory; what counts as a path and the
+ * shorthand that may resolve one (package-relative, path suffixes, bare file
+ * names, globs and placeholders skipped) are in `scripts/_guide-paths.mjs`. The
+ * baseline's `dangling` map lists known misses per guide, shrink-only the same
+ * way: a new miss fails, a listed one that now resolves warns until `--update`
+ * drops it.
  *
  * The root `CLAUDE.md` is pinned to `@AGENTS.md` rather than measured: content
  * pasted there would be read by Claude Code and no other tool.
@@ -36,6 +44,7 @@ import { join } from "node:path";
 
 import { parseScriptArgs } from "./_args.mjs";
 import { compareNames, repoRoot } from "./_fs.mjs";
+import { danglingPaths, repoTree } from "./_guide-paths.mjs";
 
 const ROOT = repoRoot(import.meta.url);
 const BASELINE = "scripts/claude-md-baseline.json";
@@ -116,9 +125,10 @@ if (files.includes(ROOT_SHIM)) {
   }
 }
 
-/** @type {{ _description?: string, guides?: Record<string, number> }} */
+/** @type {{ _description?: string, guides?: Record<string, number>, dangling?: Record<string, Record<string, number>> }} */
 const baselineFile = JSON.parse(readFileSync(join(ROOT, BASELINE), "utf8"));
 const baseline = baselineFile.guides ?? {};
+const knownDangling = baselineFile.dangling ?? {};
 
 const num = (n) => n.toLocaleString("en-US");
 
@@ -132,6 +142,30 @@ const guides = files
     return { path, size, tier, cap, recorded, limit: recorded ?? cap };
   });
 const byPath = new Map(guides.map((g) => [g.path, g]));
+
+// --- Dangling paths, against the baseline's per-guide known misses.
+const tree = repoTree(ROOT);
+// An entry is `{ guide: { span: allowed occurrences } }`.
+/** @type {{ path: string, line: number, span: string }[]} */
+const newDangling = [];
+/** @type {Record<string, Record<string, number>>} */
+const stillDangling = {};
+for (const { path } of guides.filter((g) => !PRODUCT.test(g.path))) {
+  const allowed = knownDangling[path] ?? {};
+  /** @type {Record<string, number>} */
+  const seen = {};
+  for (const miss of danglingPaths(ROOT, path, tree)) {
+    stillDangling[path] = seen;
+    const count = (seen[miss.span] ?? 0) + 1;
+    seen[miss.span] = count;
+    if (count > (allowed[miss.span] ?? 0)) newDangling.push({ path, ...miss });
+  }
+}
+const resolvedDangling = Object.entries(knownDangling).flatMap(([path, spans]) =>
+  Object.entries(spans)
+    .filter(([span, allowed]) => (stillDangling[path]?.[span] ?? 0) < allowed)
+    .map(([span]) => ({ path, span })),
+);
 
 /** A guide's `##` sections, largest first — the remedy is a choice of section. */
 function topSections(text, limit = 5) {
@@ -183,17 +217,34 @@ if (FLAGS.update === true) {
     next[path] = Math.min(recorded, guide.size);
   }
   const sorted = Object.fromEntries(Object.entries(next).sort(([a], [b]) => compareNames(a, b)));
-  const out = { ...baselineFile, guides: sorted };
+  const sortedKeys = (record) =>
+    Object.fromEntries(Object.entries(record).sort(([a], [b]) => compareNames(a, b)));
+  /** @type {Record<string, Record<string, number>>} */
+  const dangling = {};
+  for (const [path, spans] of Object.entries(knownDangling)) {
+    /** @type {Record<string, number>} */
+    const kept = {};
+    for (const [span, allowed] of Object.entries(spans)) {
+      const count = Math.min(allowed, stillDangling[path]?.[span] ?? 0);
+      if (count > 0) kept[span] = count;
+    }
+    if (Object.keys(kept).length > 0) dangling[path] = sortedKeys(kept);
+  }
+  const out = { ...baselineFile, guides: sorted, dangling: sortedKeys(dangling) };
   writeFileSync(join(ROOT, BASELINE), `${JSON.stringify(out, null, 2)}\n`);
   const removed = Object.keys(baseline).filter((p) => !(p in sorted));
   const lowered = Object.keys(sorted).filter((p) => (sorted[p] ?? 0) < (baseline[p] ?? 0));
   console.log(
-    `check-claude-md: ${BASELINE} updated — ${lowered.length} lowered, ${removed.length} removed.`,
+    `check-claude-md: ${BASELINE} updated — ${lowered.length} lowered, ${removed.length} removed, ` +
+      `${resolvedDangling.length} resolved dangling path(s) dropped.`,
   );
   const unlisted = guides.filter(
     (g) => g.tier === "auto" && g.recorded === undefined && g.size > MAX_AUTO_CHARS,
   );
-  if (refused.length > 0 || unlisted.length > 0) {
+  for (const { path, line, span } of newDangling) {
+    console.error(`  ${path}:${line} \`${span}\` resolves nowhere — --update never adds`);
+  }
+  if (refused.length > 0 || unlisted.length > 0 || newDangling.length > 0) {
     for (const g of refused) {
       console.error(`  ${g.path} grew to ${num(g.size)} past its entry — --update never raises`);
     }
@@ -247,15 +298,32 @@ if (violations.length > 0) {
   }
   console.error(`\n${REMEDY}`);
 }
-if (slack.length > 0) {
+if (newDangling.length > 0) {
   failed = true;
-  console.error(`\ncheck-claude-md: ${slack.length} baselined guide(s) shrank — lock the gain in:`);
-  for (const g of slack) {
-    console.error(`  ${g.path} — ${num(g.size)} chars, baseline ${num(g.recorded ?? 0)}`);
-  }
-  console.error("Run `pnpm claude-md:update` and commit the lowered baseline.");
+  console.error(
+    `\ncheck-claude-md: ${newDangling.length} backticked path(s) in guides resolve to no tracked file:\n`,
+  );
+  for (const { path, line, span } of newDangling) console.error(`  ${path}:${line}  \`${span}\``);
+  console.error(
+    "\nPoint each at the file's current path (repo-root, package- or guide-relative, or a\n" +
+      "unique tail such as `sandbox/vm.ts`), or drop it if the file is gone. A guide that\n" +
+      "describes ANOTHER project's files marks the section `<!-- paths: external -->`.\n" +
+      "The rule is in the header of scripts/_guide-paths.mjs.\n",
+  );
 }
 if (failed) process.exit(1);
+
+// An improvement is not a failure: say so, and offer the command that locks it in.
+if (slack.length > 0 || resolvedDangling.length > 0) {
+  console.warn("\ncheck-claude-md: the baseline is looser than the tree — lock the gain in:");
+  for (const g of slack) {
+    console.warn(`  ${g.path} — ${num(g.size)} chars, baseline ${num(g.recorded ?? 0)}`);
+  }
+  for (const { path, span } of resolvedDangling) {
+    console.warn(`  ${path} — \`${span}\` no longer dangles`);
+  }
+  console.warn("Run `pnpm claude-md:update` (or `node scripts/check-claude-md.mjs --update`).");
+}
 
 console.log(
   `\ncheck-claude-md: ${guides.length} file(s) within limits ` +
