@@ -93,7 +93,10 @@ describe("SDK integration: AgentDef → tool execution", () => {
     };
     const exec = createRuntimeWithSeams({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
     const result = await exec.executeTool("nonexistent", {}, "s1", []);
-    expect(JSON.parse(result)).toEqual({ error: "Unknown tool: nonexistent" });
+    expect(JSON.parse(result)).toEqual({
+      error: "Unknown tool: nonexistent",
+      reason: "unknown_tool",
+    });
   });
 
   test("tool parameter validation rejects bad input", async () => {

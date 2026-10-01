@@ -8,12 +8,13 @@
  */
 
 import type { SessionEvent } from "@alexkroman1/aai";
-import { createOwnedMap } from "@alexkroman1/aai/internal";
+
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { makeClientSink, makeMockCore, silentLogger } from "./_test-utils.ts";
 import { type AttachSessionOptions, attachSession } from "./session-attach.ts";
 import type { ServerSession } from "./session-core.ts";
+import { createSessionDirectory } from "./session-directory.ts";
 
 const readyConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
 
@@ -29,7 +30,7 @@ function deferred(): { promise: Promise<void>; resolve: () => void; reject: (e: 
 
 function attach(core: ServerSession, overrides: Partial<AttachSessionOptions> = {}) {
   const client = makeClientSink({ close: vi.fn() });
-  const sessions = createOwnedMap<string, ServerSession>();
+  const sessions = createSessionDirectory();
   const attached = attachSession(client, {
     sessions,
     createSession: () => core,
@@ -49,7 +50,7 @@ describe("attachSession", () => {
     const core = makeMockCore();
     const { attached, sessions } = attach(core);
 
-    expect(sessions.get(attached.id)).toBe(core);
+    expect(sessions.session(attached.id)).toBe(core);
     expect(core.configure).toHaveBeenCalledWith(readyConfig);
     expect(core.start).toHaveBeenCalledTimes(1);
   });
@@ -107,7 +108,7 @@ describe("attachSession", () => {
     await attached.ended;
 
     expect(core.stop).toHaveBeenCalledTimes(1);
-    expect(sessions.get(attached.id)).toBeUndefined();
+    expect(sessions.session(attached.id)).toBeUndefined();
     expect(onSessionEnd).toHaveBeenCalledWith(attached.id, client);
   });
 
@@ -140,7 +141,7 @@ describe("attachSession", () => {
   test("a createSession that throws reports the failure and ends at once", async () => {
     const client = makeClientSink({ close: vi.fn() });
     const attached = attachSession(client, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: () => {
         throw new Error("unregistered transport");
       },
@@ -157,7 +158,7 @@ describe("attachSession", () => {
   });
 
   test("resuming a live id closes the superseded client and stops its session", () => {
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
     const oldCore = makeMockCore();
     const oldClient = makeClientSink({ close: vi.fn() });
     const first = attachSession(oldClient, {
@@ -176,7 +177,7 @@ describe("attachSession", () => {
       resumeFrom: first.id,
     });
 
-    expect(sessions.get(first.id)).toBe(newCore);
+    expect(sessions.session(first.id)).toBe(newCore);
     expect(oldClient.close).toHaveBeenCalledWith("session resumed by another connection");
     expect(oldCore.stop).toHaveBeenCalled();
   });

@@ -91,13 +91,17 @@ state there): a hook's write still lands in the store, without the commit.
 command (so a cut from code and one from the client report the same
 `reply.cancelled`), and answers `false` only when `Transport.isReplying` says
 the agent is silent. `say` goes to `Transport.speakLine`, or settles
-`"unsupported"` with one warning per session when the transport has none.
+`"dropped"` when the transport lacks the `say` capability (said once at session
+start — `transports/CLAUDE.md`, "What works on which transport").
 
-- **Every author-facing handle resolves the session per CALL**, through
-  `speechDirectory(sessions)` built once in `runtime.ts`: `of(sid)` for a tool
-  or handler context (a timer can fire after a resume swapped the session),
-  `live(sid)` for `RouteContext.speech`, and `announce` for a run's `notify`.
-  Never capture a `ServerSession` in a context.
+- **Every reach for a live session goes through ONE `SessionDirectory`**
+  (`session-directory.ts`, built once in `runtime.ts`), resolved per CALL: the
+  session (`session-attach.ts`'s resume takeover claims it), its emitter and
+  meter (`ctx.send`, a hook commit, `ctx.generate`), and `speech` — `of(sid)`
+  for a tool or handler context (a timer can fire after a resume swapped the
+  session), `live(sid)` for `RouteContext.speech`, `announce` for a run's
+  `notify`. Never capture a `ServerSession` in a context; `guard-invariants`
+  rule 36 refuses a session-keyed map anywhere else in the package.
 - A sessionless context (a step's `stepDelegate`, an unwired double) holds
   `DETACHED_SESSION_SPEECH` from `/host-internal`: every line `"dropped"`.
 
@@ -139,7 +143,7 @@ the socket itself.
 - **Anything `listen()` does that is not the BIND is a bug** — it runs in dev
   and silently not in production. `listen()` is the bind plus the boot line.
 - **A serverless host gets no WebSocket** (`/websocket`, `/phone` unreachable);
-  the HTTP surface is unaffected, which is all a `page: "static"` app needs.
+  the HTTP surface is unaffected, which is all a `mode: "workflow-app"` app needs.
 - **`server.mjs` still calls `listen()`**: `npm start` owns its lifecycle
   (`PORT`, boot line, signal handlers). A serverless deployment is a second,
   tiny entry module, not a mode of that one.
@@ -196,10 +200,11 @@ refused with a warning naming the state). `runtime-dialog-knobs.ts` decides
 which; `transports/pipeline-dialog-knobs.ts` applies them. Everything else is
 in [`../DIALOG-CLAUDE.md`](../DIALOG-CLAUDE.md).
 
-## Personas are wired to a SESSION here
+## A roster's speakers are wired to a SESSION here
 
-`runtime-personas.ts` installs the active persona as the `"active-persona"`
-suffix (sorting ahead of `"dialogs"`), pushes it to a transport that holds its
+`runtime-personas.ts` installs the roster's active SPEAKING entry ("persona")
+as the `"active-persona"` suffix (sorting ahead of `"dialogs"`; a roster with
+no `speaks: true` entry installs nothing), pushes it to a transport that holds its
 prompt as session state only when it CHANGED (re-rendered on `tool.completed`
 and `state.updated`), and hands the pipeline the persona's
 `toolChoice`/`temperature` as a `prepareStep` preparer between the agent's reset
@@ -212,6 +217,25 @@ narrows the EXECUTION set too, so a call to a hidden tool becomes a
 doc carries it.
 
 ## Tools
+
+### Every tool source is a `Toolset`, and the executor reads nothing else
+
+`agentToolsToSchemas` and `executeToolCall` consume `Toolset`s
+(`aai/sdk/toolset.ts`): `agentToolsets(agent)` (files, then `agent.toolsets` —
+the roster's, MCP's — each layered with the dialogs' gates), then the
+`"builtin"` set LAST from `mergeBuiltinSurface`. `createToolDispatcher` composes
+them first-wins, the same table the schemas were drawn from.
+
+- **`executeToolCall(name, args, { toolset })`**: entry lookup
+  (`reason: "unknown_tool"`), schema (`"invalid_arguments"`), context, cancel
+  check (`"cancelled"`), then `toolset.gate` — a refusal is the result, the body
+  never runs — then `toolset.execute` under the entry's deadline.
+- **No gate lives in a wrapped `execute`** except `dialog.tool`'s own re-check
+  (for a spec calling it directly); a roster entry's tools are the author's defs.
+- **The executor is the ENTRY's** (`ToolsetEntry.executor`), set by `toolEntry`,
+  the one function that reads the `clientTool` brand.
+- MCP attaches an `"mcp"` toolset after the agent's (`withMcpTools`), so a remote
+  tool can never shadow an authored one; a subagent's map is a `"subagent"` set.
 
 ### Tool discovery off the platform
 
@@ -253,7 +277,9 @@ bug; `ToolDef.onError` says which kind. `tool-error-policy.ts` decides
 - A fatal verdict stops the turn in pipeline and text mode through
   `FatalToolLatch` (the AI SDK swallows the rejection). `withFatalSignal` folds
   it into the REQUEST signal, never the turn's, or it reads as a barge-in.
-- **S2S cannot abort** and degrades to a serialized failure.
+- **S2S cannot abort** and degrades to a serialized failure — the `fatalTool`
+  capability, warned once at session start for an agent whose tools declare
+  `onError`.
 - **The wire's `fatal` stays `false` for both arms**: `fatal: true` means the
   SESSION is over and `aai-ui` ends the call.
 - The four guard rules are in
@@ -262,23 +288,29 @@ bug; `ToolDef.onError` says which kind. `tool-error-policy.ts` decides
 ### A `clientTool` is answered by the PAGE, over the wire host mode already speaks
 
 `clientTool()` (SDK) is an ordinary `ToolDef` carrying a brand (its
-`timeoutMs`). The self-hosted dispatcher in `runtime-tools.ts` binds each call's
-wait on `client-tool-broker.ts`, keyed by (session, `toolCallId`), onto the
-`ToolContext` as `clientCall`; the tool's own `execute` calls it. The session
+`timeoutMs`), which `toolEntry` turns into a `"client"` entry with that
+deadline. The self-hosted dispatcher in `runtime-tools.ts` hands each call its
+wait on `client-tool-broker.ts`, keyed by (session, `toolCallId`), as
+`clientCall`; `executeToolCall` binds it onto the `ToolContext` only for a
+`"client"` entry, after the gate, and the tool's own `execute` calls it. The session
 emits `tool.called` / `tool.completed` as for any tool; the page's `tool_result`
 reaches the broker through `ServerSessionOptions.clientTools`, which
 `session-core.ts` consults only when there is no relay (`onToolResult` owns
 every `tool_result` in host mode).
 
-- **The wait rides the CONTEXT, never a swapped `execute`**: a persona gate or
-  dialog `when` wraps a tool by calling `def.execute(args, ctx)`, and replacing
-  the outer `execute` would skip that gate.
+- **The wait rides the CONTEXT, never a swapped `execute`**: a `dialog.tool`
+  around a `clientTool` calls the inner `execute` itself (the gate and
+  transition bracket it), and replacing the outer `execute` would skip both.
 - **`ctx.delegate` strips `clientCall`** — a subagent's tools must not wait on
   the parent's call id.
 - **An answer may beat its wait** (neither transport orders `tool.called` after
   the executor starts), so the broker HOLDS an unmatched answer, bounded
   runtime-wide (`MAX_EARLY_ANSWERS`, oldest evicted), never swept per session.
-- **Both symbols are `Symbol.for`** for the two-copies reason (`../CLAUDE.md`).
+- **The brand and the per-call wait are registered boundary keys** (`clientTool`,
+  `clientToolCall` in the SDK's `_boundary.ts`): the bundle and this runtime
+  hold two SDK copies ("The bundle/runtime boundary" in
+  `packages/aai/CLAUDE.md`). Read the brand only through `clientToolBrand`,
+  whose one caller is `toolEntry`.
 
 ### A tool can SPEAK, and a filler line may not open the barge-in gate
 
@@ -292,12 +324,14 @@ every `tool_result` in host mode).
   `consumeLlmStream` APPENDS it to the turn's messages; the latch is per TURN
   (`beginTurn()` clears it).
 - **Filler goes out `record: false`, and nothing here may abort anything.**
-  START/DELAYED lines use the dead-air flag that
-  `HeardTracker.spokeRecordable()` reads, so filler alone never makes a turn
-  interruptible. The runner owns no signal, cancels no TTS, flushes nothing; a
-  `blocking` wait is an ESTIMATE of spoken length bounded by `pTimeout`, never
-  a TTS acknowledgement (touching the reply's lifecycle is what once muted an
-  agent for 20+ s).
+  Every line goes through `ToolSpeechChannel.speak` → `speakInReply`
+  (`transports/pipeline-lines.ts`), the dead-air cover's placement, so it is
+  separated from the words around it. START/DELAYED lines use the dead-air
+  flag that `HeardTracker.spokeRecordable()` reads, so filler alone never
+  makes a turn interruptible. The runner owns no signal, cancels no TTS,
+  flushes nothing; a `blocking` wait is an ESTIMATE of spoken length bounded
+  by `pTimeout`, never a TTS acknowledgement (touching the reply's lifecycle
+  is what once muted an agent for 20+ s).
 - The generic dead-air cover stands down while a tool covers its own gap
   (`toolCovering` in `transports/pipeline-stream-parts.ts`).
 
@@ -323,17 +357,19 @@ every `tool_result` in host mode).
 
 ## Subagents: `ctx.delegate` is a second tool loop
 
-`subagent.ts` implements `ctx.delegate` (contract: `sdk/subagent.ts` in the
-SDK) as the AI SDK's `ToolLoopAgent`-inside-a-tool pattern, with the runtime
-supplying what an author would get wrong:
+`subagent.ts` implements `ctx.delegate` (contract: `sdk/speaker.ts` in the
+SDK) — any `SpeakerDef` run OFF the line, whether named in code or chosen by a
+roster's `delegate` — as the AI SDK's `ToolLoopAgent`-inside-a-tool pattern,
+with the runtime supplying what an author would get wrong:
 
 - **The model** resolves through `resolveLlm` with the agent env — a hand-built
   agent would read `process.env`, which holds no user keys on the platform.
 - **The tools** go through `executeToolCall` (coercion, validation, deadline,
-  real `ToolContext`, failure-as-result).
+  real `ToolContext`, failure-as-result), as a `"subagent"` toolset ahead of a
+  `"builtin"` one.
 - **The step budget** spends its last step with `toolChoice: "none"`
   (`forceFinalAnswer`), so a capped subagent ANSWERS.
-- **A guardrail**: `SubagentDef.guardrail` may complain; `runUntilAccepted`
+- **A guardrail**: `SpeakerDef.guardrail` may complain; `runUntilAccepted`
   re-runs with the rejected answer and complaint appended to the SAME
   conversation. Exhausting `maxRevisions` (default 1) returns the last attempt
   with `accepted: false`, never a throw.
@@ -343,8 +379,9 @@ supplying what an author would get wrong:
 Rules:
 
 - **`SubagentRunner` takes `ToolCallDefaults`**
-  (`Omit<ExecuteToolCallOptions, "tool">`, declared in `tool-executor.ts`), so a
-  capability added to a tool context cannot be missing from a delegated one.
+  (`Omit<ExecuteToolCallOptions, "toolset">`, declared in `tool-executor.ts`),
+  so a capability added to a tool context cannot be missing from a delegated
+  one.
 - **The context is the parent's minus `ctx.messages`** — same `env`, slots,
   `db`, `sessionId`; `DelegateOptions.task` must be a complete brief.
 - **Budget**: a delegated run spends on the DELEGATING session's meter per step
@@ -360,9 +397,9 @@ Rules:
   sessionless). A step's subagent gets MCP tools from `stepMcp` (`step-mcp.ts`,
   the same kind of slot), which calls `connectMcpServers` — the core
   `withMcpTools` runs at host start — with the step's `clientId`, and rejects
-  instead of degrading when a server is unavailable. A `subagents` roster is
-  lowered to one ordinary `delegate` tool in `agent()`
-  (`sdk/subagent-roster.ts`) — no branch here.
+  instead of degrading when a server is unavailable. A roster's non-speaking
+  entries are lowered to one ordinary `delegate` tool in `agent()`
+  (`sdk/roster-tools.ts`) — no branch here.
 - Wired in `setupSubagents` (`runtime-tools.ts`, sandbox and self-hosted) and
   `createTextAgent`; `createSubagentRunner` memoizes models per descriptor
   object.
@@ -438,4 +475,5 @@ producers already take (`pipeline-llm-trace.ts`, `pipeline-audio-out.ts`).
   `metrics-sink.ts` (`registerMetricsSink`, `/metrics`), `Symbol.for`-keyed for
   the two-copies reason. `startTracing` registers `otelMetricsSink`
   (`_metrics-otel.ts`); a missing metrics peer is a warning, never a throw.
-- S2S and text mode emit no frame yet.
+- S2S and text mode emit no frame yet (the `turnMetrics` capability row in
+  `transports/CLAUDE.md`).

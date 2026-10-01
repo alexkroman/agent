@@ -15,6 +15,7 @@
 import { KNOWN_TURN_DETECTION_MODES } from "./agent-voice-tuning.ts";
 import { isKnown } from "./is-known.ts";
 import { isRecord } from "./is-record.ts";
+import { fallbackMembers, isFallbackDescriptor } from "./providers/fallback.ts";
 import { KNOWN_LLM_PROVIDERS } from "./providers/llm/llm.ts";
 import {
   ASSEMBLYAI_TTS_HOST,
@@ -53,21 +54,31 @@ export function agentConfigWarnings(config: {
   stt?: unknown;
   llm?: unknown;
   voicePresets?: unknown;
-  turnDetection?: unknown;
+  turnTaking?: unknown;
   builtinTools?: unknown;
   telephony?: unknown;
 }): string[] {
+  // A `fallback([...])` is warned about member by member: each one is a
+  // descriptor its own resolver will dial.
+  const tts = stageMembers(config.tts);
   return [
-    assemblyAIVoiceWarning(config.tts),
+    ...tts.map(assemblyAIVoiceWarning),
     assemblyAIVoiceWarning(config.s2s),
-    uncatalogedVoiceWarning(config.tts),
+    ...tts.map(uncatalogedVoiceWarning),
     euResidencyWarning(config),
-    unknownLlmProviderWarning(config.llm),
+    ...stageMembers(config.llm).map(unknownLlmProviderWarning),
     ...unknownVoicePresetWarnings(config.voicePresets),
-    unknownTurnDetectionWarning(config.turnDetection),
+    unknownTurnDetectionWarning(
+      isRecord(config.turnTaking) ? config.turnTaking.detection : undefined,
+    ),
     ...unknownBuiltinToolWarnings(config.builtinTools),
     ...unknownTelephonyCarrierWarnings(config.telephony),
   ].filter((warning): warning is string => warning !== undefined);
+}
+
+/** A stage field as the descriptors it dials: a fallback's members, else itself. */
+function stageMembers(descriptor: unknown): unknown[] {
+  return isFallbackDescriptor(descriptor) ? fallbackMembers(descriptor) : [descriptor];
 }
 
 /**
@@ -153,7 +164,7 @@ function unknownTelephonyCarrierWarnings(access: unknown): string[] {
 }
 
 /**
- * A `turnDetection` mode this release does not implement. The runtime treats
+ * A `turnTaking.detection` mode this release does not implement. The runtime treats
  * anything but `"manual"` as `"auto"`, so an unknown mode runs as automatic
  * end-of-turn detection — said here rather than refused.
  */
@@ -161,7 +172,7 @@ function unknownTurnDetectionWarning(mode: unknown): string | undefined {
   if (typeof mode !== "string") return undefined;
   if (isKnown(KNOWN_TURN_DETECTION_MODES, mode)) return undefined;
   return (
-    `turnDetection "${mode}" is not a mode this SDK implements ` +
+    `turnTaking.detection "${mode}" is not a mode this SDK implements ` +
     `(${KNOWN_TURN_DETECTION_MODES.join(", ")}); the session runs with "auto".`
   );
 }

@@ -24,10 +24,16 @@ try {
 }
 ```
 
-In a vitest project, reach for `describeEval` from
-`@alexkroman1/aai-runtime/eval/vitest` instead — it owns the credential gate,
-the scripted-model fallback and the per-case session, so a case is its
-assertions and nothing else.
+**An eval FILE imports `@alexkroman1/aai-runtime/eval/vitest`, not this.**
+That subpath is the one author-facing entry point: it re-exports every name
+here, plus `describeEval` (the credential gate, the scripted-model fallback
+and the per-case session, so a case is its assertions and nothing else) and
+the `@alexkroman1/aai/testing` stubs a case composes with. This subpath is the
+RUNNER-FREE half that one is built on, for a harness that is not vitest — a
+load-test stub, a recording runner — and it stays importable without vitest
+installed. The simulated caller and the judge are here too ([simulateCall](#simulatecall),
+[judgeCall](#judgecall), [evalSimulation](#evalsimulation)), which used to have a subpath of
+their own.
 
 **What it does NOT measure**: everything below the audio boundary —
 endpointing, splits and merges, barge-in, and the
@@ -39,7 +45,7 @@ warning at the seams where it would be forgotten.
 
 [openEvalTextAgent](#openevaltextagent) is the same question asked of a TEXT agent, and it
 is a second harness rather than an option on the first because
-`createRuntime` REFUSES `text: true`: a text agent fills no pipeline stages,
+`createRuntime` REFUSES `mode: "text"`: a text agent fills no pipeline stages,
 so there is nothing for the fake speech pair to stand between. Everything
 above the model is shared — `send()` is `say()`, the turn record is the same
 [EvalTurn](#evalturn), and the readers below take a text turn unchanged, because a
@@ -503,6 +509,46 @@ to a host named in `passthrough`, or refused and recorded.
 
 ***
 
+### evalSimulation()
+
+```ts
+function evalSimulation(settings: EvalSimulationOptions): EvalSimulationContext;
+```
+
+Build the `simulate`/`judge` pair for one case. Every stub it installs is
+released before the call that installed it returns, so a case owes nothing
+back.
+
+In a `describeEval` / `describeTextEval` case it builds the pair from the
+case's own `session` and `mode`, live or scripted the way the rest of the
+suite is:
+
+```ts
+import type { AgentDef } from "@alexkroman1/aai";
+import { type EvalTestContext, evalSimulation } from "@alexkroman1/aai-runtime/eval/vitest";
+
+declare const agentDef: AgentDef;
+
+// The body of a `describeEval` case: `session` and `mode` come from its context.
+export async function forecastCase({ session, mode }: EvalTestContext): Promise<boolean> {
+  const { simulate, judge } = evalSimulation({ agent: agentDef, mode, target: session });
+  const call = await simulate({ persona: "a commuter", goal: "the forecast" });
+  return (await judge(call, ["It answered the question."])).pass;
+}
+```
+
+#### Parameters
+
+##### settings
+
+[`EvalSimulationOptions`](#evalsimulationoptions)
+
+#### Returns
+
+[`EvalSimulationContext`](#evalsimulationcontext)
+
+***
+
 ### evalTextCredentials()
 
 ```ts
@@ -548,7 +594,7 @@ Can this machine run workflow evals against `agent`?
 
 The sibling of `evalCredentials`, and it is a DIFFERENT question rather than a
 convenience wrapper: `requiredProviderEnvVars` answers `[]` for a
-`page: "static"` agent — correctly, since a workflow app dials no provider
+`mode: "workflow-app"` agent — correctly, since a workflow app dials no provider
 from a session — so asking it alone reports every workflow app ready and every
 keyless run live, and every case then fails on a 401 inside a step.
 
@@ -731,26 +777,71 @@ Register both fake stages. Call `release()` when the case is done.
 
 ***
 
+### judgeCall()
+
+```ts
+function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVerdict>;
+```
+
+Have a model rule on `criteria` over `input`, and hand back the verdict.
+
+```ts
+import { llm } from "@alexkroman1/aai/llm";
+import { judgeCall, type SimulatedCall } from "@alexkroman1/aai-runtime/eval";
+
+export async function grade(call: SimulatedCall): Promise<void> {
+  const verdict = await judgeCall(call, {
+    criteria: [
+      "The agent looked the order up before saying whether it shipped.",
+      "The agent never asked for a card number.",
+    ],
+    llm: llm({ provider: "anthropic", model: "claude-sonnet-5" }),
+  });
+  if (!verdict.pass) throw new Error(verdict.explain());
+}
+```
+
+#### Parameters
+
+##### input
+
+[`JudgeInput`](#judgeinput)
+
+##### options
+
+[`JudgeCallOptions`](#judgecalloptions)
+
+#### Returns
+
+`Promise`\<[`CallVerdict`](#callverdict)\>
+
+#### Throws
+
+if `criteria` is empty — a judge with nothing to rule on passes
+  vacuously, which is the silent green this module exists not to produce.
+
+***
+
 ### lastStateIn()
 
 #### Call Signature
 
 ```ts
-function lastStateIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): T | undefined;
+function lastStateIn<T>(
+   events: readonly SessionEvent[], 
+   slot: string, 
+   schema: StandardSchemaV1<unknown, T>
+): T | undefined;
 ```
 
 The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page
-is showing.
+is showing — or one SLOT's value in it. The frame is keyed by slot name, so a
+case names its slot exactly as the page does (`useAgentState(slot.projected)`
+reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
 
-For a template with a projection this is the strongest assertion available:
-not "the tool returned ok" but "the customer can see it". Three separate eval
-files hand-rolled this filter plus a cast before it was published.
-
-**Pass the SCHEMA.** The frame is `unknown` on the wire, so the alternative is
-a cast, and a cast is silent exactly when the projection changed shape
-underneath the eval — which is the regression an eval exists to catch. With a
-schema, a frame that stopped matching FAILS naming the field. The overload
-without one is for a case that only asks whether anything was pushed.
+**Pass the SCHEMA.** A frame is JSON off the wire, and a cast is silent exactly
+when the projection changed shape underneath the eval; with a schema, a value
+that stopped matching FAILS naming the field. Without a slot: the whole frame.
 
 ##### Type Parameters
 
@@ -764,6 +855,10 @@ without one is for a case that only asks whether anything was pushed.
 
 readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 
+###### slot
+
+`string`
+
 ###### schema
 
 [`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
@@ -775,21 +870,46 @@ readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 #### Call Signature
 
 ```ts
-function lastStateIn(events: readonly SessionEvent[]): unknown;
+function lastStateIn(events: readonly SessionEvent[], slot: string): unknown;
 ```
 
 The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page
-is showing.
+is showing — or one SLOT's value in it. The frame is keyed by slot name, so a
+case names its slot exactly as the page does (`useAgentState(slot.projected)`
+reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
 
-For a template with a projection this is the strongest assertion available:
-not "the tool returned ok" but "the customer can see it". Three separate eval
-files hand-rolled this filter plus a cast before it was published.
+**Pass the SCHEMA.** A frame is JSON off the wire, and a cast is silent exactly
+when the projection changed shape underneath the eval; with a schema, a value
+that stopped matching FAILS naming the field. Without a slot: the whole frame.
 
-**Pass the SCHEMA.** The frame is `unknown` on the wire, so the alternative is
-a cast, and a cast is silent exactly when the projection changed shape
-underneath the eval — which is the regression an eval exists to catch. With a
-schema, a frame that stopped matching FAILS naming the field. The overload
-without one is for a case that only asks whether anything was pushed.
+##### Parameters
+
+###### events
+
+readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
+
+###### slot
+
+`string`
+
+##### Returns
+
+`unknown`
+
+#### Call Signature
+
+```ts
+function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
+```
+
+The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page
+is showing — or one SLOT's value in it. The frame is keyed by slot name, so a
+case names its slot exactly as the page does (`useAgentState(slot.projected)`
+reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
+
+**Pass the SCHEMA.** A frame is JSON off the wire, and a cast is silent exactly
+when the projection changed shape underneath the eval; with a schema, a value
+that stopped matching FAILS naming the field. Without a slot: the whole frame.
 
 ##### Parameters
 
@@ -799,7 +919,7 @@ readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 
 ##### Returns
 
-`unknown`
+`Readonly`\<`Record`\<`string`, `unknown`\>\> \| `undefined`
 
 ***
 
@@ -934,7 +1054,7 @@ boilerplate.
 
 #### Throws
 
-if the agent does not declare `text: true`. That is the mirror of
+if the agent does not declare `mode: "text"`. That is the mirror of
   `createTextAgent`'s own refusal, made here so the message names the harness
   to use instead.
 
@@ -1092,30 +1212,74 @@ readonly `string`[]
 
 ***
 
+### simulateCall()
+
+```ts
+function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;
+```
+
+Run a simulated call against `target` and hand back every turn, the way it
+ended, and what was measured.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { llm } from "@alexkroman1/aai/llm";
+import { openEvalSession, simulateCall } from "@alexkroman1/aai-runtime/eval";
+
+export async function hurriedCaller(): Promise<void> {
+  const session = await openEvalSession({ agent: agent({ name: "Order Desk" }) });
+  try {
+    const call = await simulateCall(session, {
+      caller: {
+        persona: "a polite but hurried customer",
+        goal: "find out whether order W1234 has shipped",
+      },
+      llm: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
+    });
+    if (call.endedBy !== "caller") throw new Error(call.transcript());
+    console.log(call.metrics.toolCallCounts, call.metrics.latencyMs);
+  } finally {
+    await session.close();
+  }
+}
+```
+
+The target is used as is and left OPEN — whoever opened it closes it, the
+same ownership every other door here keeps.
+
+#### Parameters
+
+##### target
+
+[`SimulationTarget`](#simulationtarget)
+
+##### options
+
+[`SimulateCallOptions`](#simulatecalloptions)
+
+#### Returns
+
+`Promise`\<[`SimulatedCall`](#simulatedcall)\>
+
+***
+
 ### statesIn()
 
 #### Call Signature
 
 ```ts
-function statesIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): readonly T[];
+function statesIn<T>(
+   events: readonly SessionEvent[], 
+   slot: string, 
+   schema: StandardSchemaV1<unknown, T>
+): readonly T[];
 ```
 
-Every state frame the agent pushed (`AgentDef.syncState`), oldest first —
-what the page showed, in order.
-
-[lastStateIn](#laststatein) answers the newest, which is the right question for "can
-the customer see it". The SEQUENCE is a different claim and a stronger one:
-"the cart was never shown as placed before the tool ran", "no frame between
-these two turns leaked the pending change". Three eval files hand-rolled it —
-`events.flatMap((e) => (e.type === "state.updated" ? [Schema.parse(e.state)] : []))`
-in three spellings, one of them a `for` loop — and every one of them reached
-for the schema, which is the tell that a frame is `unknown` on the wire and
-asserting on a cast is how a projection that changed shape stops being
-noticed.
-
-A case wanting the frames only up to some point slices `events` first: this
-reads whatever list it is given, which is why it takes events rather than a
-session.
+Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
+one SLOT's value in each. The SEQUENCE is a stronger claim than
+[lastStateIn](#laststatein)'s: "the cart was never shown as placed before the tool
+ran". Pass the schema for its reason. A case wanting the frames only up to
+some point slices `events` first, which is why this takes events.
 
 ##### Type Parameters
 
@@ -1129,6 +1293,10 @@ session.
 
 readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 
+###### slot
+
+`string`
+
 ###### schema
 
 [`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
@@ -1140,25 +1308,40 @@ readonly `T`[]
 #### Call Signature
 
 ```ts
-function statesIn(events: readonly SessionEvent[]): readonly unknown[];
+function statesIn(events: readonly SessionEvent[], slot: string): readonly unknown[];
 ```
 
-Every state frame the agent pushed (`AgentDef.syncState`), oldest first —
-what the page showed, in order.
+Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
+one SLOT's value in each. The SEQUENCE is a stronger claim than
+[lastStateIn](#laststatein)'s: "the cart was never shown as placed before the tool
+ran". Pass the schema for its reason. A case wanting the frames only up to
+some point slices `events` first, which is why this takes events.
 
-[lastStateIn](#laststatein) answers the newest, which is the right question for "can
-the customer see it". The SEQUENCE is a different claim and a stronger one:
-"the cart was never shown as placed before the tool ran", "no frame between
-these two turns leaked the pending change". Three eval files hand-rolled it —
-`events.flatMap((e) => (e.type === "state.updated" ? [Schema.parse(e.state)] : []))`
-in three spellings, one of them a `for` loop — and every one of them reached
-for the schema, which is the tell that a frame is `unknown` on the wire and
-asserting on a cast is how a projection that changed shape stops being
-noticed.
+##### Parameters
 
-A case wanting the frames only up to some point slices `events` first: this
-reads whatever list it is given, which is why it takes events rather than a
-session.
+###### events
+
+readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
+
+###### slot
+
+`string`
+
+##### Returns
+
+readonly `unknown`[]
+
+#### Call Signature
+
+```ts
+function statesIn(events: readonly SessionEvent[]): readonly Readonly<Record<string, unknown>>[];
+```
+
+Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
+one SLOT's value in each. The SEQUENCE is a stronger claim than
+[lastStateIn](#laststatein)'s: "the cart was never shown as placed before the tool
+ran". Pass the schema for its reason. A case wanting the frames only up to
+some point slices `events` first, which is why this takes events.
 
 ##### Parameters
 
@@ -1168,7 +1351,7 @@ readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 
 ##### Returns
 
-readonly `unknown`[]
+readonly `Readonly`\<`Record`\<`string`, `unknown`\>\>[]
 
 ***
 
@@ -1850,7 +2033,7 @@ transform and the real engine cannot start it.
 What [openEvalTextAgent](#openevaltextagent) takes.
 
 The fields every way of running an agent shares are [HostAgentOptions](#hostagentoptions);
-here `agent` must declare `text: true`, and the rest mean what they mean on
+here `agent` must declare `mode: "text"`, and the rest mean what they mean on
 `EvalSessionOptions`: `providerEnv` defaults to `env` with any credential it
 does not carry filled in from this machine's own environment (a value in
 `env` always wins over the shell), `runCode` absent makes the builtin refuse
@@ -2699,6 +2882,106 @@ The word as the provider synthesized it (may be normalized: "$5.00" → "five do
 
 ## Type Aliases
 
+### CallVerdict
+
+```ts
+type CallVerdict = {
+  criteria: readonly CriterionVerdict[];
+  pass: boolean;
+  scripted: boolean;
+  summary: string;
+  explain: string;
+};
+```
+
+The judge's verdict over a whole conversation.
+
+#### Methods
+
+##### explain()
+
+```ts
+explain(): string;
+```
+
+The failed rulings, one per line — what a failure message should print.
+
+###### Returns
+
+`string`
+
+#### Properties
+
+##### criteria
+
+```ts
+readonly criteria: readonly CriterionVerdict[];
+```
+
+One ruling per criterion, in the order they were given.
+
+##### pass
+
+```ts
+readonly pass: boolean;
+```
+
+Every criterion passed.
+
+##### scripted
+
+```ts
+readonly scripted: boolean;
+```
+
+The rulings came from a script (`stubJudge`), not a model's reading.
+
+##### summary
+
+```ts
+readonly summary: string;
+```
+
+The judge's overall summary.
+
+***
+
+### CriterionVerdict
+
+```ts
+type CriterionVerdict = {
+  criterion: string;
+  pass: boolean;
+  reason: string;
+};
+```
+
+One criterion's ruling.
+
+#### Properties
+
+##### criterion
+
+```ts
+readonly criterion: string;
+```
+
+##### pass
+
+```ts
+readonly pass: boolean;
+```
+
+##### reason
+
+```ts
+readonly reason: string;
+```
+
+The judge's reason, in a sentence or two.
+
+***
+
 ### EvalCredentials
 
 ```ts
@@ -3392,6 +3675,192 @@ transport starts), so a refused session never reached the model and never
 spoke: `said()` is empty and [EvalSession.say](#say) REJECTS, naming the
 reason. A case that did not expect a refusal therefore still fails at its
 first `say()`, with the app's own words in the message.
+
+***
+
+### EvalSimulationContext
+
+```ts
+type EvalSimulationContext = {
+  judge: Promise<CallVerdict>;
+  simulate: Promise<SimulatedCall>;
+};
+```
+
+What a case gets for running a simulated caller and grading the result.
+
+#### Methods
+
+##### judge()
+
+```ts
+judge(
+   input: JudgeInput, 
+   criteria: readonly string[], 
+   options?: {
+  context?: string;
+}
+): Promise<CallVerdict>;
+```
+
+Have a model rule on `criteria` over a simulated call, a list of turns,
+the case's `session` itself, or a transcript — every form but the last
+with the user's lines as well as the agent's. See `judgeCall`.
+
+###### Parameters
+
+###### input
+
+[`JudgeInput`](#judgeinput)
+
+###### criteria
+
+readonly `string`[]
+
+###### options?
+
+###### context?
+
+`string`
+
+###### Returns
+
+`Promise`\<[`CallVerdict`](#callverdict)\>
+
+##### simulate()
+
+```ts
+simulate(caller: SimulatedCaller, options?: {
+  maxTurns?: number;
+}): Promise<SimulatedCall>;
+```
+
+Run a simulated caller against this case's session (or text agent) until
+it hangs up or `maxTurns` runs out. See `simulateCall`.
+
+###### Parameters
+
+###### caller
+
+[`SimulatedCaller`](#simulatedcaller)
+
+###### options?
+
+###### maxTurns?
+
+`number`
+
+###### Returns
+
+`Promise`\<[`SimulatedCall`](#simulatedcall)\>
+
+***
+
+### EvalSimulationOptions
+
+```ts
+type EvalSimulationOptions = {
+  agent: AgentDef;
+  callerLlm?: LlmProvider;
+  env?: Record<string, string>;
+  judgeLlm?: LlmProvider;
+  llm?: LlmProvider;
+  mode: EvalMode;
+  providerEnv?: ProviderEnv;
+  stubCaller?: StubScript;
+  stubJudge?: readonly boolean[];
+  target: SimulationTarget;
+};
+```
+
+What [evalSimulation](#evalsimulation) takes.
+
+#### Properties
+
+##### agent
+
+```ts
+readonly agent: AgentDef;
+```
+
+The agent under evaluation. Live, the caller and the judge default to its model.
+
+##### callerLlm?
+
+```ts
+readonly optional callerLlm?: LlmProvider;
+```
+
+The model that PLAYS the caller when live. Defaults to the agent's model.
+
+##### env?
+
+```ts
+readonly optional env?: Record<string, string>;
+```
+
+The agent env, for live credentials. Defaults to none.
+
+##### judgeLlm?
+
+```ts
+readonly optional judgeLlm?: LlmProvider;
+```
+
+The model that JUDGES when live. Defaults to the agent's model.
+
+##### llm?
+
+```ts
+readonly optional llm?: LlmProvider;
+```
+
+The model the AGENT was evaluated on, when the suite overrode it (its
+`llm` option) — the live default for both of the above.
+
+##### mode
+
+```ts
+readonly mode: EvalMode;
+```
+
+Which model this run got — the case context's `mode`. `"stub"` scripts the
+caller and the judge too; a keyless simulation checks wiring, not behaviour.
+
+##### providerEnv?
+
+```ts
+readonly optional providerEnv?: ProviderEnv;
+```
+
+Provider credentials when live. Defaults to `env` plus the host's own.
+
+##### stubCaller?
+
+```ts
+readonly optional stubCaller?: StubScript;
+```
+
+The simulated caller's lines in a keyless run, one per caller turn. End it
+with `{ tool: "end_call", args: { reason } }`; absent, the stub caller says
+one line and hangs up.
+
+##### stubJudge?
+
+```ts
+readonly optional stubJudge?: readonly boolean[];
+```
+
+The rulings a keyless judge hands back, one per criterion in order —
+missing entries pass. Absent, every criterion passes, marked scripted.
+
+##### target
+
+```ts
+readonly target: SimulationTarget;
+```
+
+What the simulated caller talks to — the case's `session`, or its text `agent`.
 
 ***
 
@@ -4374,6 +4843,79 @@ makes this a loop), with what the provider reported — see
 
 ***
 
+### JudgeCallOptions
+
+```ts
+type JudgeCallOptions = {
+  context?: string;
+  criteria: readonly string[];
+  llm: LlmProvider;
+  providerEnv?: ProviderEnv;
+};
+```
+
+What [judgeCall](#judgecall) takes.
+
+#### Properties
+
+##### context?
+
+```ts
+readonly optional context?: string;
+```
+
+Extra context the judge should know — the agent's purpose, a policy.
+
+##### criteria
+
+```ts
+readonly criteria: readonly string[];
+```
+
+What must be true of the conversation, one claim each — "the agent
+confirmed the order number before cancelling". Phrase each so it can be
+ruled on from the transcript alone.
+
+##### llm
+
+```ts
+readonly llm: LlmProvider;
+```
+
+The JUDGING model. Any `@alexkroman1/aai/llm` descriptor.
+
+##### providerEnv?
+
+```ts
+readonly optional providerEnv?: ProviderEnv;
+```
+
+Where the judge's credential is resolved from. Defaults to this machine's.
+
+***
+
+### JudgeInput
+
+```ts
+type JudgeInput = 
+  | SimulatedCall
+  | readonly EvalTurn[]
+  | Pick<EvalSession, "events">
+  | string;
+```
+
+What a judge may be handed: a simulated call, a list of turns, a SESSION
+(anything with its event stream — an `EvalSession`, an `EvalTextAgent`), or
+a transcript of your own.
+
+Every form but the last reaches the judge with BOTH sides: each line the
+user said (`User:`), each tool call with its arguments and result, and each
+reply (`Agent:`). A session is the whole conversation, the greeting
+included; a list of turns is those turns, each opening with what the user
+said on it.
+
+***
+
 ### LogContext
 
 ```ts
@@ -4443,6 +4985,329 @@ Isolated executor backing the run_code builtin (see the module doc).
   \| \{
   `error`: `string`;
 \}\>
+
+***
+
+### SimulateCallOptions
+
+```ts
+type SimulateCallOptions = {
+  caller: SimulatedCaller;
+  llm: LlmProvider;
+  maxTurns?: number;
+  providerEnv?: ProviderEnv;
+};
+```
+
+What [simulateCall](#simulatecall) takes.
+
+#### Properties
+
+##### caller
+
+```ts
+readonly caller: SimulatedCaller;
+```
+
+Who is calling.
+
+##### llm
+
+```ts
+readonly llm: LlmProvider;
+```
+
+The model PLAYING the caller. Any `@alexkroman1/aai/llm` descriptor —
+including one from `installStubLlm`, which is how a keyless run scripts the
+caller's lines (`{ tool: "end_call", args: { reason } }` ends it).
+
+##### maxTurns?
+
+```ts
+readonly optional maxTurns?: number;
+```
+
+The most caller turns before the harness hangs up for them. Default
+[DEFAULT\_MAX\_TURNS](#default_max_turns).
+
+##### providerEnv?
+
+```ts
+readonly optional providerEnv?: ProviderEnv;
+```
+
+Where the caller model's credential is resolved from. Defaults to this
+machine's environment, the same trust decision `openEvalSession` makes.
+
+***
+
+### SimulatedCall
+
+```ts
+type SimulatedCall = {
+  caller: SimulatedCaller;
+  endedBy: "caller" | "agent" | "max-turns";
+  endReason: string | undefined;
+  greeting: readonly string[];
+  metrics: SimulationMetrics;
+  turns: readonly SimulatedTurn[];
+  transcript: string;
+};
+```
+
+A finished simulated call.
+
+#### Methods
+
+##### transcript()
+
+```ts
+transcript(): string;
+```
+
+The call as `Agent:`/`Caller:` lines — what a judge or a failure message reads.
+
+###### Returns
+
+`string`
+
+#### Properties
+
+##### caller
+
+```ts
+readonly caller: SimulatedCaller;
+```
+
+##### endedBy
+
+```ts
+readonly endedBy: "caller" | "agent" | "max-turns";
+```
+
+`"caller"` — it called `end_call`. `"agent"` — the AGENT hung up: a tool
+called `endSession(ctx)` during the last turn ([EvalTurn.endedSession](#endedsession)),
+and the simulation stopped there, since nobody is left on the line to
+answer. `"max-turns"` — the harness hung up after
+[SimulateCallOptions.maxTurns](#maxturns), which usually means the goal was
+never met.
+
+##### endReason
+
+```ts
+readonly endReason: string | undefined;
+```
+
+The reason the caller gave to `end_call`, when it gave one — never set when the agent hung up.
+
+##### greeting
+
+```ts
+readonly greeting: readonly string[];
+```
+
+The agent's opening line(s) before the caller spoke — empty for a text agent.
+
+##### metrics
+
+```ts
+readonly metrics: SimulationMetrics;
+```
+
+##### turns
+
+```ts
+readonly turns: readonly SimulatedTurn[];
+```
+
+***
+
+### SimulatedCaller
+
+```ts
+type SimulatedCaller = {
+  goal: string;
+  opening?: string;
+  persona: string;
+};
+```
+
+Who the simulated caller is, and what they called for.
+
+#### Properties
+
+##### goal
+
+```ts
+readonly goal: string;
+```
+
+What they want out of the call, stated as the CALLER would know it —
+including the facts they hold ("order W1234", "a table for four on
+Friday"). The simulating model is told to reveal them only when asked, as a
+caller would.
+
+##### opening?
+
+```ts
+readonly optional opening?: string;
+```
+
+The caller's first line. Absent, the model writes one — after the
+greeting, when the target has one.
+
+##### persona
+
+```ts
+readonly persona: string;
+```
+
+Who they are and how they talk — "a hurried commuter who answers in
+fragments", "an elderly caller who asks for things to be repeated".
+
+***
+
+### SimulatedTurn
+
+```ts
+type SimulatedTurn = {
+  caller: string;
+  latencyMs: number | undefined;
+  turn: EvalTurn;
+};
+```
+
+One exchange: what the caller said and the turn it produced.
+
+#### Properties
+
+##### caller
+
+```ts
+readonly caller: string;
+```
+
+The caller's line.
+
+##### latencyMs
+
+```ts
+readonly latencyMs: number | undefined;
+```
+
+Milliseconds from the committed utterance to the first reply text —
+`undefined` for a turn that produced no text.
+
+##### turn
+
+```ts
+readonly turn: EvalTurn;
+```
+
+The agent's turn in reply, exactly as `say()`/`send()` returned it.
+
+***
+
+### SimulationMetrics
+
+```ts
+type SimulationMetrics = {
+  durationMs: number;
+  latencyMs: {
+     max: number | undefined;
+     mean: number | undefined;
+     p50: number | undefined;
+  };
+  toolCallCounts: Readonly<Record<string, number>>;
+  toolCalls: readonly EvalToolCall[];
+  turns: number;
+};
+```
+
+What was measured over the whole call.
+
+#### Properties
+
+##### durationMs
+
+```ts
+readonly durationMs: number;
+```
+
+Wall-clock time of the whole simulation, caller model included.
+
+##### latencyMs
+
+```ts
+readonly latencyMs: {
+  max: number | undefined;
+  mean: number | undefined;
+  p50: number | undefined;
+};
+```
+
+Reply latency over the turns that produced text.
+
+###### max
+
+```ts
+readonly max: number | undefined;
+```
+
+###### mean
+
+```ts
+readonly mean: number | undefined;
+```
+
+###### p50
+
+```ts
+readonly p50: number | undefined;
+```
+
+##### toolCallCounts
+
+```ts
+readonly toolCallCounts: Readonly<Record<string, number>>;
+```
+
+Tool calls per tool name.
+
+##### toolCalls
+
+```ts
+readonly toolCalls: readonly EvalToolCall[];
+```
+
+Every tool call the agent made, in order.
+
+##### turns
+
+```ts
+readonly turns: number;
+```
+
+Caller turns taken.
+
+***
+
+### SimulationTarget
+
+```ts
+type SimulationTarget = 
+  | {
+  said: readonly string[];
+  say: Promise<EvalTurn>;
+}
+  | {
+  said: readonly string[];
+  send: Promise<EvalTurn>;
+};
+```
+
+What a simulation drives: an `EvalSession` (`say`) or an `EvalTextAgent`
+(`send`). Structural, so either handle passes as is.
 
 ***
 
@@ -4978,6 +5843,16 @@ hangs to the suite deadline and reads as a broken harness.
 
 ## Variables
 
+### DEFAULT\_MAX\_TURNS
+
+```ts
+const DEFAULT_MAX_TURNS: 12 = 12;
+```
+
+How many caller turns a simulation may take unless told otherwise.
+
+***
+
 ### DEFAULT\_RUN\_TIMEOUT\_MS
 
 ```ts
@@ -4989,6 +5864,16 @@ How long one run may take before the harness gives up on it.
 Generous next to a session turn's 90s, because a workflow is the shape of work
 that does not fit in a turn — a fan-out over sixty segments, seven long-form
 model calls — and the eval tier's own budget is 1800s.
+
+***
+
+### END\_CALL\_TOOL
+
+```ts
+const END_CALL_TOOL: "end_call" = "end_call";
+```
+
+The name of the caller-side hang-up tool.
 
 ***
 

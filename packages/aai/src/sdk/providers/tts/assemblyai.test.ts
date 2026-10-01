@@ -1,40 +1,28 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The VOICE half of this descriptor's checking: a voice id is never refused
 // (the catalog is the service's and goes stale between releases), so a wrong
-// one is warned about — and the warning has to reach the shape the docs lead
-// with, `agent({ voice: "michael" })`.
+// one is warned about — ONCE, off the descriptor, by `agentConfigWarnings`.
+// A voice has one spelling (the descriptor's option), so the raw `AgentDef`
+// the CLI hands that function already carries it.
 //
 // The `language` rules are exercised through `toAgentConfig` in
-// `config-rules.test.ts`; what is here is what that file cannot see, since
-// `agentConfigWarnings` reads the RAW `AgentDef` and the shorthand has no `tts`
-// on it until `toAgentConfig` desugars one.
+// `config-rules.test.ts`.
 
 import { describe, expect, test, vi } from "vitest";
 import { agent } from "../../define.ts";
 import type { AgentConfig } from "../../manifest-barrel.ts";
-import { toAgentConfig } from "../../manifest-barrel.ts";
+import { agentConfigWarnings, toAgentConfig } from "../../manifest-barrel.ts";
 import type { TtsProvider } from "../../providers.ts";
-import type { AssemblyAITtsVoice } from "./assemblyai.ts";
 import { assemblyAITts, assemblyAIVoiceWarning } from "./assemblyai.ts";
 
-/**
- * Build a config the way an AUTHOR does — through `agent()` — rather than by
- * handing `toAgentConfig` a raw object.
- *
- * The raw path needs a cast, and not for a reason the spec should absorb:
- * `toAgentConfig` normalizes the author conveniences (`voice`, `system`, a
- * string `llm`) at runtime, but `AgentConfigSource` does not declare them, so
- * the SDK casts internally to call its own normalizer. Going through `agent()`
- * tests the shape these cases are actually about — the shorthand the docs lead
- * with — and needs no cast at all.
- */
-function config(voice: AssemblyAITtsVoice): AgentConfig {
-  return toAgentConfig(agent({ name: "x", systemPrompt: "p", voice }));
-}
-
-/** The descriptor path, which `voice` desugars INTO. */
+/** Build a config the way an AUTHOR does — through `agent()`. */
 function configTts(tts: TtsProvider): AgentConfig {
   return toAgentConfig(agent({ name: "x", systemPrompt: "p", tts }));
+}
+
+/** The warnings `aai build` / `aai dev` print for an agent with this stage. */
+function warningsFor(tts: TtsProvider): string[] {
+  return agentConfigWarnings(agent({ name: "x", systemPrompt: "p", tts }));
 }
 
 describe("assemblyAIVoiceWarning", () => {
@@ -70,51 +58,38 @@ describe("assemblyAIVoiceWarning", () => {
   });
 });
 
-describe("toAgentConfig warns about the voice on EVERY authoring path", () => {
-  test("the `agent({ voice })` shorthand — the shape the docs lead with", () => {
-    // This is the case nothing checked: `agentConfigWarnings` runs on the raw
-    // def, whose `tts` is undefined until the shorthand is desugared, so
-    // `voice: "michal"` built clean, deployed, connected, reported ready and
-    // never spoke.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    config("michal");
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]?.[0]).toContain('"michal"');
-    expect(warn.mock.calls[0]?.[0]).toContain('Did you mean "michael"');
-    warn.mockRestore();
+describe("the voice warning is computed once, off the descriptor", () => {
+  test("agentConfigWarnings carries it for an author-written descriptor", () => {
+    const voiceLines = warningsFor(assemblyAITts({ voice: "michal" })).filter((line) =>
+      line.includes('"michal"'),
+    );
+    expect(voiceLines).toHaveLength(1);
+    expect(voiceLines[0]).toContain('Did you mean "michael"');
   });
 
   test("with no `language` set, which is the common shape", () => {
-    // The voice check used to sit behind the `language === undefined` early
-    // return, so it ran for almost nobody — the server infers the language
-    // from the voice, so hardly any config sets one.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    configTts(assemblyAITts({ voice: "estele" }));
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]?.[0]).toContain('Did you mean "estelle"');
-    warn.mockRestore();
+    const lines = warningsFor(assemblyAITts({ voice: "estele" }));
+    expect(lines.some((line) => line.includes('Did you mean "estelle"'))).toBe(true);
   });
 
-  test("once per sentence — a config is rebuilt per session, not per build", () => {
+  test("toAgentConfig prints nothing — the CLI's warning list is the one channel", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    config("michalx");
-    config("michalx");
-    expect(warn).toHaveBeenCalledTimes(1);
+    configTts(assemblyAITts({ voice: "michal" }));
+    expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 
   test("a WARNING and never a throw — a voice shipped after this release still runs", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    expect(() => config("voice-shipped-last-week")).not.toThrow();
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
+    expect(() => configTts(assemblyAITts({ voice: "voice-shipped-last-week" }))).not.toThrow();
+    expect(warningsFor(assemblyAITts({ voice: "voice-shipped-last-week" })).length).toBeGreaterThan(
+      0,
+    );
   });
 
   test("says nothing about a listed voice", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    config("michael");
-    expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
+    expect(warningsFor(assemblyAITts({ voice: "michael" })).some((l) => l.includes("voice"))).toBe(
+      false,
+    );
   });
 
   test("the language rules still THROW — only the voice check is a warning", () => {

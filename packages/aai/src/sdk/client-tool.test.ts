@@ -1,10 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { BOUNDARY_KEYS } from "./_boundary.ts";
 import { agentToolsToSchemas } from "./_internal-types.ts";
 import { clientTool, clientToolBrand } from "./client-tool.ts";
 import { tool } from "./define.ts";
 import { createToolContext } from "./testing.ts";
+import { toolset } from "./toolset.ts";
 
 describe("clientTool", () => {
   const getLocation = clientTool({
@@ -24,11 +26,13 @@ describe("clientTool", () => {
 
   test("the brand survives a spread and a second copy of this module (Symbol.for)", () => {
     expect(clientToolBrand({ ...getLocation })).toEqual({ timeoutMs: 20_000 });
-    expect(Reflect.get(getLocation, Symbol.for("aai.clientTool"))).toEqual({ timeoutMs: 20_000 });
+    expect(Reflect.get(getLocation, Symbol.for(BOUNDARY_KEYS.brands.clientTool))).toEqual({
+      timeoutMs: 20_000,
+    });
   });
 
   test("its schema is an ordinary tool's", () => {
-    const [schema] = agentToolsToSchemas({ get_location: getLocation });
+    const [schema] = agentToolsToSchemas([toolset("files", { get_location: getLocation })]);
     expect(schema).toMatchObject({ name: "get_location", description: "the caller's location" });
     expect(schema?.parameters).toMatchObject({ properties: { precise: { type: "boolean" } } });
   });

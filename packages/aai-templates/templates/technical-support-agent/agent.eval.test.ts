@@ -28,13 +28,13 @@
 /** The def a DEPLOYED agent runs — see `agent.test.ts` on why the glob is here. */
 import agentDef from "virtual:aai/agent";
 import {
+  describeEval,
   describeToolCalls,
   describeTurn,
   type EvalSession,
   statesIn,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 
@@ -84,7 +84,7 @@ const Lookup = z.object({
  * case slice the stream first; the schema above is what it takes one for.
  */
 function frames(session: EvalSession) {
-  return statesIn(session.events(), ProjectedSupport);
+  return statesIn(session.events(), "support", ProjectedSupport);
 }
 
 /**

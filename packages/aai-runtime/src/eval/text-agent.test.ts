@@ -63,17 +63,17 @@ const grade = tool({
   execute: async (_args, ctx) => `graded:${(await ctx.generate({ prompt: "grade it" })).text}`,
 });
 
-const desk = agent({ name: "Text Desk", text: true, systemPrompt: "Be brief." });
+const desk = agent({ name: "Text Desk", mode: "text", systemPrompt: "Be brief." });
 
 describe("openEvalTextAgent refusals", () => {
   test("refuses a voice agent, naming the harness that drives one", async () => {
     await expect(openEvalTextAgent({ agent: agent({ name: "Voice" }) })).rejects.toThrow(
-      /does not declare `text: true`[\s\S]*openEvalSession/,
+      /does not declare `mode: "text"`[\s\S]*openEvalSession/,
     );
   });
 
   test("refuses a text agent that also declares s2s", async () => {
-    // Spread rather than `agent({ text: true, s2s })`, which `AgentParams`
+    // Spread rather than `agent({ mode: "text", s2s })`, which `AgentParams`
     // already refuses at COMPILE time with a message of its own — this is the
     // other door: a raw `export default {…}`, or a definition loaded from a
     // config, reaches the harness having skipped that check.

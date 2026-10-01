@@ -72,7 +72,7 @@ export const MAX_START_SPEAKING_FLOOR_MS = 5000;
  * mechanism in that window — `resumeFalseInterruption` — whose whole design is
  * that the resume must not race the caller's real turn, and it waits on the
  * transcript stream going quiet rather than on a fixed deadline
- * (`PipelineVoiceTuning.resumeFalseInterruption` carries why the wait cannot
+ * (`InterruptionTuning.resumeFalseInterruption` carries why the wait cannot
  * be a knob). A fixed 1s block on top of that is a second, blinder answer to
  * the same question, and adding it un-measured risks the failure that one was
  * built to avoid.

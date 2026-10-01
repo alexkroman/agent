@@ -45,5 +45,6 @@ export {
   type SessionEventMap,
   SessionEventSchema,
   type SessionEventType,
+  type SessionEventTypeList,
   type SessionSourcedEventType,
 } from "../../index.ts";

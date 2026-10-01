@@ -13,7 +13,7 @@
  *
  * Be precise about what that cost, because the obvious answer is wrong and this
  * doc gave it for one commit. `packages/aai-studio-server/src/studio-eval-target.ts` grades
- * the studio's coding agent — an ordinary `agent({ text: true })` definition —
+ * the studio's coding agent — an ordinary `agent({ mode: "text" })` definition —
  * with five regexes over tool output, and **those five survive this module**:
  * they classify a tool result's TEXT, and an event carries that same string
  * (`tool.completed.result`) rather than a parsed verdict. Retiring them wants

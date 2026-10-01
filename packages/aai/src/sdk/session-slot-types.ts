@@ -155,7 +155,7 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    * What this slot shows the BROWSER — declared here so it is written once and
    * read from both ends as {@link SessionSlot.projected}.
    *
-   * `agent({ syncState: cartSlot.projected })` and
+   * `agent({ syncState: { cart: cartSlot.projected } })` and
    * `useAgentState(cartSlot.projected)` are then the same object, so the frame
    * the server pushes and the frame the page renders before the first push
    * cannot disagree. That drift is what this field exists to remove:
@@ -174,9 +174,8 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    * **Absent, the WHOLE value is projected.** Declare a view to narrow it — to
    * what the page renders, rather than to whatever the slot happens to hold.
    *
-   * A slot with more than one audience keeps
-   * {@link SessionSlot.projection}: `syncState` takes an array, so a second view
-   * is a second projection over the same slot.
+   * `syncState` takes ONE projection per slot, keyed by the slot's name; a
+   * page that needs a second shape of the same slot derives it from this one.
    *
    * ```ts
    * import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -186,7 +185,7 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    *   view: (cart) => ({ count: cart.items.length }),
    * });
    *
-   * export default agent({ name: "Shop", syncState: cartSlot.projected });
+   * export default agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
    * ```
    */
   view?: (value: DeepReadonly<T>) => V;

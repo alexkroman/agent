@@ -56,13 +56,13 @@
  * hand-rolled this helper; it is now the rule in one place.
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot } from "./_boundary.ts";
 
 /**
  * The registry-wide slot. Prefixed with the package name so a second copy of
  * this SDK in the same process shares it rather than shadowing it.
  */
-const STEP_REPORTER_SLOT = globalSlot<StepReporter>("@alexkroman1/aai.stepReporter");
+const STEP_REPORTER_SLOT = globalSlot<StepReporter>("stepReporter");
 
 /**
  * What a published reporter does with one chunk.

@@ -13,7 +13,7 @@
  * ## Where it goes is the SDK's job
  *
  * `@alexkroman1/aai/channels` owns the destination: `slackChannel()` names it,
- * `sendToChannelOrFail` (`@alexkroman1/aai/step-errors`) posts and classifies —
+ * `orFail(sendToChannel)` (`@alexkroman1/aai/step-errors`) posts and classifies —
  * a 4xx is a `FatalError`, because a revoked webhook answers identically on
  * every retry, and a 5xx is a `RetryableError` carrying Slack's own
  * `Retry-After`. None of that is written here, and the module doc of
@@ -44,11 +44,12 @@ import {
   type ChannelSection,
   isSlackWorkflowTriggerUrl,
   type SlackChannel,
+  sendToChannel,
   slackChannel,
 } from "@alexkroman1/aai/channels";
 import type { DeepResearchNote } from "@alexkroman1/aai/experimental";
 import { stepEnv, stepReport } from "@alexkroman1/aai/step";
-import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+import { orFail } from "@alexkroman1/aai/step-errors";
 import { plural } from "@alexkroman1/aai/utils";
 
 /** The webhook a finished report is posted to. Absent means "file nowhere". */
@@ -144,7 +145,7 @@ export async function file(filing: Filing): Promise<string> {
   const channel = filingChannel();
   if (channel) {
     await stepReport(`Filing the findings to the ${channel.kind} channel.`);
-    await sendToChannelOrFail(channel, renderFiling(filing));
+    await orFail(sendToChannel)(channel, renderFiling(filing));
   } else {
     // Not a failure, and it must not read like one: nothing about the research
     // is worse for having nowhere to go, and the report is on the run.

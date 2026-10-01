@@ -1,4 +1,4 @@
-import type { AnyDialog, DialogBargeIn, DialogTimeoutSpec } from "@alexkroman1/aai";
+import type { AnyDialog, DialogTimeoutSpec, PipelineTuning } from "@alexkroman1/aai";
 import { dialog } from "@alexkroman1/aai";
 
 /**
@@ -19,7 +19,7 @@ import { dialog } from "@alexkroman1/aai";
  * | `onCall.locating` | a caller who has gone quiet gets re-prompted, and a talkative one does not | `timeout` + a self transition on `@userTranscript.committed` |
  * | `onCall.quiet` | the re-prompt is a different instruction, not a louder one | `instruction` |
  * | `onCall.verifying` | do not invent a policy, and give up after two minutes | `instruction` + `timeout` |
- * | `onCall.disclosure` | the fee disclosure is delivered IN FULL | `bargeIn: "off"` |
+ * | `onCall.disclosure` | the fee disclosure is delivered IN FULL | `interruption: "off"` |
  * | `onCall.dispatching` | do not promise a truck without sending one | `toolChoice` |
  * | `abandoned` | nothing acts on a call whose caller is gone | `final: true` |
  *
@@ -79,7 +79,7 @@ const VERIFICATION_DEADLINE: DialogTimeoutSpec = { afterMs: 120_000, send: "UNVE
  * A named constant because the argument is the interesting part; inline it is
  * two characters that read like a whim.
  */
-const UNINTERRUPTIBLE: DialogBargeIn = "off";
+const UNINTERRUPTIBLE: PipelineTuning["interruption"] = "off";
 
 // ─── The call ────────────────────────────────────────────────────────────────
 
@@ -118,7 +118,7 @@ export const CALL_SPEC = {
           // agent's own default. It costs the occasional false start on a
           // single-word STT partial, which on a phase made of short questions
           // is the cheaper of the two mistakes.
-          bargeIn: { minWords: 1 },
+          interruption: { minWords: 1 },
           timeout: SILENCE_LADDER,
           on: {
             // A self transition, and the whole silence ladder rests on it: it
@@ -157,7 +157,7 @@ export const CALL_SPEC = {
             "service_disclosure, read back exactly what it gives you — all of it, in those " +
             "words, without summarising — and then ask whether they want to go ahead. Call " +
             "acknowledge_disclosure with what they answered.",
-          bargeIn: UNINTERRUPTIBLE,
+          interruption: UNINTERRUPTIBLE,
           on: { DISCLOSED: "dispatching" },
         },
         dispatching: {

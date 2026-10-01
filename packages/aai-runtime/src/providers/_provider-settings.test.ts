@@ -9,7 +9,7 @@
  * test-length cap and because the subject is this module.
  */
 
-import { assemblyAIStt } from "@alexkroman1/aai/stt";
+import { assemblyAIStt, deepgramStt, fallback } from "@alexkroman1/aai/stt";
 import { describe, expect, test } from "vitest";
 import { describeResolvedProviders } from "./_provider-settings.ts";
 
@@ -32,6 +32,20 @@ describe("describeResolvedProviders", () => {
       languages: ["en", "es"],
       // And the settings a reader came for are untouched by the squash.
       minTurnSilenceMs: 1600,
+    });
+  });
+
+  test("a fallback reports every member with its own effective settings, in order", () => {
+    const described = describeResolvedProviders({
+      mode: "pipeline",
+      stt: fallback([assemblyAIStt(), deepgramStt()]),
+    });
+    expect(described.stt).toMatchObject({
+      kind: "fallback",
+      providers: [
+        { kind: "assemblyai", minTurnSilenceMs: 1600 },
+        { kind: "deepgram", model: "nova-3", language: "en" },
+      ],
     });
   });
 

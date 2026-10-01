@@ -536,6 +536,51 @@ describe("startDevServer", () => {
       await cleanup();
     });
   });
+
+  test("AAI_SESSION_SECRET in .env gates sessions AND mints its own client's ticket", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+      mockResolveServerEnv.mockResolvedValue({
+        ASSEMBLYAI_API_KEY: "test-key",
+        AAI_SESSION_SECRET: "dev-secret",
+      });
+
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+      const options = mockCreateServer.mock.calls.at(-1)?.[0] as {
+        auth?: unknown;
+        request: (req: unknown, res: unknown, url: string, method: string) => boolean;
+      };
+      expect(options.auth).toBeDefined();
+      let body = "";
+      const res = {
+        writeHead: () => res,
+        end: (b: string) => {
+          body = b;
+        },
+      };
+      expect(options.request({ url: "/client-config" }, res, "/client-config", "GET")).toBe(true);
+      expect(JSON.parse(body)).toMatchObject({
+        name: "test-agent",
+        sessionToken: expect.any(String),
+      });
+
+      await cleanup();
+    });
+  });
+
+  test("without AAI_SESSION_SECRET the server gets no gate and no ticket", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+      const options = mockCreateServer.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(options).not.toHaveProperty("auth");
+
+      await cleanup();
+    });
+  });
 });
 
 describe("file watcher filtering", () => {

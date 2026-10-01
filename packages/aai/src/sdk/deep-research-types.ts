@@ -9,10 +9,10 @@
  */
 
 import type { DeepResearchPrompts } from "./deep-research-prompts.ts";
+import type { SpeakerDef } from "./speaker.ts";
 import type { StandardSchemaV1 } from "./standard-schema.ts";
 import type { StepGenerateOptions } from "./step-generate.ts";
-import type { SubagentDef } from "./subagent.ts";
-import type { BuiltinTool, ToolSet } from "./types.ts";
+import type { BuiltinTool, ToolMap } from "./types.ts";
 
 /** One source a researcher actually used. @public */
 export interface DeepResearchSource {
@@ -67,7 +67,7 @@ export interface DeepResearchBudget {
   readonly maxGapAngles?: number | undefined;
   /** Angles investigated at once. The far side of every one is a rate limit. */
   readonly concurrency?: number | undefined;
-  /** Tool-calling steps one researcher may take before it must answer (`SubagentDef.maxSteps`). */
+  /** Tool-calling steps one researcher may take before it must answer (`SpeakerDef.maxSteps`). */
   readonly researcherSteps?: number | undefined;
   /** Attempts an `investigate` step gets — an angle is the expensive thing to lose. */
   readonly angleAttempts?: number | undefined;
@@ -87,9 +87,9 @@ export interface DeepResearchResearcher {
    */
   readonly builtinTools?: readonly BuiltinTool[];
   /** Tools of your own beside the `cite` tool the pass adds (which may not be replaced). */
-  readonly tools?: ToolSet;
+  readonly tools?: ToolMap;
   /** The researcher's model. Default: the gateway default `stepDelegate` binds. */
-  readonly llm?: SubagentDef["llm"];
+  readonly llm?: SpeakerDef["llm"];
 }
 
 /** An input schema whose parsed value carries the `topic` to research. @public */

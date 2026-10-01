@@ -15,8 +15,9 @@ default — so swapping one thing is one line.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
-export default agent({ name: "My Agent", voice: "michael" });
+export default agent({ name: "My Agent", tts: assemblyAITts({ voice: "michael" }) });
 ```
 
 The ids are the keys of `ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai/tts`). Every
@@ -47,7 +48,7 @@ A bare id routes through the AssemblyAI LLM gateway on your existing key. A
 `AI_GATEWAY_API_KEY` in your secrets.
 
 Bare ids autocomplete from `AssemblyAIGatewayModel` (`@alexkroman1/aai`), the
-union generated from what the gateway advertises. Like `voice`, it is
+union generated from what the gateway advertises. Like a voice id, it is
 autocomplete rather than a guard.
 
 :::caution[A wrong model id is a gateway error on the first turn]
@@ -75,23 +76,27 @@ export default agent({
 
 Each factory reads one key from the environment:
 
-| Factory                                                             | Import from            | Key it reads                   |
-| ------------------------------------------------------------------- | ---------------------- | ------------------------------ |
-| `assemblyAIStt`, `assemblyAITts`, `llm({ provider: "assemblyai" })` | `/stt`, `/tts`, `/llm` | `ASSEMBLYAI_API_KEY`           |
-| `deepgramStt`                                                       | `@alexkroman1/aai/stt` | `DEEPGRAM_API_KEY`             |
-| `elevenLabsStt`                                                     | `@alexkroman1/aai/stt` | `ELEVENLABS_API_KEY`           |
-| `sonioxStt`                                                         | `@alexkroman1/aai/stt` | `SONIOX_API_KEY`               |
-| `cartesiaTts`                                                       | `@alexkroman1/aai/tts` | `CARTESIA_API_KEY`             |
-| `rimeTts`                                                           | `@alexkroman1/aai/tts` | `RIME_API_KEY`                 |
-| `llm({ provider: "anthropic" })`                                    | `@alexkroman1/aai/llm` | `ANTHROPIC_API_KEY`            |
-| `llm({ provider: "openai" })`                                       | `@alexkroman1/aai/llm` | `OPENAI_API_KEY`               |
-| `llm({ provider: "google" })`                                       | `@alexkroman1/aai/llm` | `GOOGLE_GENERATIVE_AI_API_KEY` |
-| `llm({ provider: "mistral" })`                                      | `@alexkroman1/aai/llm` | `MISTRAL_API_KEY`              |
-| `llm({ provider: "xai" })`                                          | `@alexkroman1/aai/llm` | `XAI_API_KEY`                  |
-| `llm({ provider: "groq" })`                                         | `@alexkroman1/aai/llm` | `GROQ_API_KEY`                 |
-| `llm({ provider: "cerebras" })`                                     | `@alexkroman1/aai/llm` | `CEREBRAS_API_KEY`             |
-| `llm({ provider: "openrouter" })`                                   | `@alexkroman1/aai/llm` | `OPENROUTER_API_KEY`           |
-| `llm({ provider: "gateway" })`                                      | `@alexkroman1/aai/llm` | `AI_GATEWAY_API_KEY`           |
+<!-- provider-table:start (generated: pnpm sync:provider-table) -->
+
+| Factory                                                                              | Import from                    | Key it reads                   |
+| ------------------------------------------------------------------------------------ | ------------------------------ | ------------------------------ |
+| `assemblyAIStt`, `assemblyAITts`, `llm({ provider: "assemblyai" })`, `assemblyAIS2s` | `/stt`, `/tts`, `/llm`, `/s2s` | `ASSEMBLYAI_API_KEY`           |
+| `deepgramStt`                                                                        | `@alexkroman1/aai/stt`         | `DEEPGRAM_API_KEY`             |
+| `elevenLabsStt`                                                                      | `@alexkroman1/aai/stt`         | `ELEVENLABS_API_KEY`           |
+| `sonioxStt`                                                                          | `@alexkroman1/aai/stt`         | `SONIOX_API_KEY`               |
+| `cartesiaTts`                                                                        | `@alexkroman1/aai/tts`         | `CARTESIA_API_KEY`             |
+| `rimeTts`                                                                            | `@alexkroman1/aai/tts`         | `RIME_API_KEY`                 |
+| `llm({ provider: "anthropic" })`                                                     | `@alexkroman1/aai/llm`         | `ANTHROPIC_API_KEY`            |
+| `llm({ provider: "openai" })`, `openAIS2s`                                           | `/llm`, `/s2s`                 | `OPENAI_API_KEY`               |
+| `llm({ provider: "google" })`                                                        | `@alexkroman1/aai/llm`         | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `llm({ provider: "mistral" })`                                                       | `@alexkroman1/aai/llm`         | `MISTRAL_API_KEY`              |
+| `llm({ provider: "xai" })`                                                           | `@alexkroman1/aai/llm`         | `XAI_API_KEY`                  |
+| `llm({ provider: "groq" })`                                                          | `@alexkroman1/aai/llm`         | `GROQ_API_KEY`                 |
+| `llm({ provider: "openrouter" })`                                                    | `@alexkroman1/aai/llm`         | `OPENROUTER_API_KEY`           |
+| `llm({ provider: "cerebras" })`                                                      | `@alexkroman1/aai/llm`         | `CEREBRAS_API_KEY`             |
+| `llm({ provider: "gateway" })`                                                       | `@alexkroman1/aai/llm`         | `AI_GATEWAY_API_KEY`           |
+
+<!-- provider-table:end -->
 
 The LLM stage is one factory: `llm({ provider, model })`, where `provider` is a
 string. Any other provider name also compiles — give it a `baseUrl` (and an
@@ -101,6 +106,66 @@ Put that key in `.env` locally, and in your agent's secrets in production — se
 [Publish](/agent/deploy/publish/). It is read on the server and never reaches
 the browser. Each factory's options are in the
 [SDK reference](/agent/reference/).
+
+## A backup provider
+
+`fallback([primary, secondary])` takes two or more providers for one stage and
+tries the next when one fails. It is on `/stt`, `/llm` and `/tts`:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { llm } from "@alexkroman1/aai/llm";
+import { assemblyAIStt, deepgramStt, fallback } from "@alexkroman1/aai/stt";
+
+export default agent({
+  name: "My Agent",
+  stt: fallback([assemblyAIStt(), deepgramStt()]),
+  llm: fallback([
+    llm({ provider: "assemblyai", model: "gpt-5.6-luna" }),
+    llm({ provider: "anthropic", model: "claude-sonnet-5" }),
+  ]),
+});
+```
+
+It switches only before the stage has produced anything, so a caller never
+hears half an answer from one vendor and the rest from another:
+
+- **STT and TTS** switch when the connection fails to open, or when the session
+  reports an error before its first transcript (STT) or its first audio (TTS).
+- **The LLM** switches when a request fails, or when its stream errors before
+  the first word or tool call. It decides per request: the next turn tries the
+  primary again.
+- **Nothing** switches on an interruption or after output has started.
+
+Each switch is a `provider.failedOver` session event naming the stage, both
+providers and the reason, so an `events` handler can count them. Every
+provider in the list needs its key: `aai dev` and Publish check all of them.
+
+## Your own provider
+
+A provider this SDK does not ship is registered by the program that runs the
+agent — `aai dev` does not, but a self-hosted `server.mjs` can. Register the
+kind with `registerSttKind`, `registerTtsKind` or `registerLlmKind` from
+`@alexkroman1/aai-runtime` before the agent server starts, and the agent names
+it with a plain descriptor:
+
+```js
+// server.mjs
+import { registerSttKind } from "@alexkroman1/aai-runtime";
+
+registerSttKind("my-stt", {
+  envVar: "MY_STT_API_KEY",
+  open: ({ options }) => myStt(options), // an `SttOpener`
+});
+
+// agent.ts
+// stt: { kind: "my-stt", options: { model: "fast" } },
+```
+
+The key is read from the agent's environment like any other provider's. The
+opener is written against `SttOpener` / `TtsOpener` (also on
+`@alexkroman1/aai-runtime`); `registerLlmKind` takes a function that builds a
+Vercel AI SDK model.
 
 ## Speech-to-speech
 
@@ -112,14 +177,14 @@ is an explicit opt-in, never something you reach by omission.
 import { agent } from "@alexkroman1/aai";
 import { openAIS2s } from "@alexkroman1/aai/s2s";
 
-export default agent({ name: "My Agent", s2s: openAIS2s() });
+export default agent({ name: "My Agent", mode: "s2s", s2s: openAIS2s() });
 ```
 
 `assemblyAIS2s()` is the other one, from the same subpath.
 
 What you buy is one round trip instead of three hops. What you give up is the
-seams. Providers can no longer be mixed, the S2S descriptor owns its own voice
-rather than the `voice` field, and the tuning fields below are implemented by
+seams. Providers can no longer be mixed, the S2S descriptor owns its own
+voice, and the tuning groups below are implemented by
 the three-stage pipeline alone — so setting one on an S2S agent is a compile
 error naming the rule rather than a silent no-op.
 
@@ -128,18 +193,18 @@ are trying to fix.
 
 ## Tuning the conversation
 
-Five fields on `agent()` decide how a pipeline agent handles pauses,
-interruptions and monologues. Reach for them once you have heard a specific
-problem, not before.
+Three groups on `agent()` — `turnTaking`, `interruption` and `silence` —
+decide how a pipeline agent handles pauses, interruptions and monologues. Reach
+for them once you have heard a specific problem, not before.
 
-| Field                       | What it decides                                                                                                                                                                                                                                                                                   | Default                                           |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `maxTurnSilenceMs`          | How long a caller may pause mid-sentence before the turn is force-ended. Raise it for callers who dictate addresses or confirmation numbers.                                                                                                                                                      | `3000`                                            |
-| `minBargeInWords`           | How many words of caller speech interrupt the agent's reply. `1` interrupts on any word; the default lets "yeah" and "mm-hmm" through.                                                                                                                                                            | `2`                                               |
-| `interruptionMinDurationMs` | How long that speech must be sustained before it counts as an interruption. `0` disables the gate.                                                                                                                                                                                                | `500`                                             |
-| `deadAirCoverMs`            | How long a turn may send nothing before the agent speaks a short filler, so a long tool chain does not sound like a dropped call. `0` disables.                                                                                                                                                   | `2400`                                            |
-| `userTurnLimit`             | A cap on one caller turn, `{ maxWords, maxDurationMs }` — either or both. A caller who never pauses never ends a turn; past the cap the transcriber ends it as a pause would, the agent answers what it heard, and the rest opens the next turn. Each cut is a `userTurn.exceeded` event.         | unset (no cap)                                    |
-| `turnDetection`             | Who ends a caller turn. `"manual"` is push-to-talk: the client opens and closes each turn (`usePushToTalk()` in `@alexkroman1/aai-ui`), audio outside a held turn is never transcribed, everything said while held is answered as one turn on release, and pressing is what interrupts the agent. | `"auto"` (the transcriber ends a turn on a pause) |
+| Field                        | What it decides                                                                                                                                                                                                                                                                                   | Default                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `turnTaking.maxSilenceMs`    | How long a caller may pause mid-sentence before the turn is force-ended. Raise it for callers who dictate addresses or confirmation numbers.                                                                                                                                                      | `3500`                                            |
+| `interruption.minWords`      | How many words of caller speech interrupt the agent's reply. The default interrupts on any word, so a one-word "Hello?" is heard; `minDurationMs` filters a short backchannel.                                                                                                                    | `1`                                               |
+| `interruption.minDurationMs` | How long that speech must be sustained before it counts as an interruption. `0` disables the gate.                                                                                                                                                                                                | `500`                                             |
+| `silence.deadAirCoverMs`     | How long a turn may send nothing before the agent speaks a short filler, so a long tool chain does not sound like a dropped call. `0` disables.                                                                                                                                                   | `2400`                                            |
+| `turnTaking.userTurnLimit`   | A cap on one caller turn, `{ maxWords, maxDurationMs }` — either or both. A caller who never pauses never ends a turn; past the cap the transcriber ends it as a pause would, the agent answers what it heard, and the rest opens the next turn. Each cut is a `userTurn.exceeded` event.         | unset (no cap)                                    |
+| `turnTaking.detection`       | Who ends a caller turn. `"manual"` is push-to-talk: the client opens and closes each turn (`usePushToTalk()` in `@alexkroman1/aai-ui`), audio outside a held turn is never transcribed, everything said while held is answered as one turn on release, and pressing is what interrupts the agent. | `"auto"` (the transcriber ends a turn on a pause) |
 
 The rest, including the phrases spoken on a provider failure, are in the
 [SDK reference](/agent/reference/).

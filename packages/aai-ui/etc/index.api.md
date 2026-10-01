@@ -51,6 +51,9 @@ export type AgentCustomEvent = {
 export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
 // @public
+export type AgentStateFrame = Readonly<Record<string, unknown>>;
+
+// @public
 export function AudioResult(input: AudioResultProps): ReactNode;
 
 // @public
@@ -157,7 +160,7 @@ export function ChatView(input: {
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "WebSocket"> & {
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "token" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
     theme?: ClientTheme;
@@ -287,6 +290,7 @@ export type CreateInboxOptions = {
     onNotice?: ((notice: InboxNotice) => void) | undefined;
     onEvent?: ((event: InboxEvent) => void) | undefined;
     events?: boolean | undefined;
+    token?: VoiceSessionOptions["token"];
     WebSocket?: WebSocketConstructor | undefined;
 };
 
@@ -487,6 +491,9 @@ export type RouteMutationRunOptions = {
 };
 
 // @public
+export function selectAgentState<V = DefaultToolResult>(slot: string): (snapshot: SessionSnapshot) => V | undefined;
+
+// @public
 export function SelectField(input: FieldShell & {
     options?: readonly (string | {
         value: string;
@@ -571,6 +578,7 @@ export type SessionIdentity = {
     clientId(): string | undefined;
     holderId(): string;
     sessionId(): string | undefined;
+    ticket(): string | undefined | Promise<string | undefined>;
 };
 
 // @public
@@ -583,7 +591,7 @@ export type SessionSnapshot = {
     readonly messages: ChatMessage[];
     readonly toolCalls: ToolCallInfo[];
     readonly customEvents: AgentCustomEvent[];
-    readonly agentState: unknown;
+    readonly agentState: AgentStateFrame | null;
     readonly userTranscript: string | null;
     readonly agentTranscript: string | null;
     readonly error: SessionError | null;
@@ -714,13 +722,16 @@ export type UploadStatus = UploadProgress & {
 };
 
 // @public
-export function useAgentState<S = DefaultToolResult>(): S | null;
+export function useAgentState(): AgentStateFrame | null;
 
 // @public
 export function useAgentState<V>(projection: StateProjection<V>): V;
 
 // @public
-export function useAgentState<S = DefaultToolResult>(fallback: S): S;
+export function useAgentState<V = DefaultToolResult>(slot: string): V | null;
+
+// @public
+export function useAgentState<V>(slot: string, fallback: V): V;
 
 // @public
 export function useClientId(): string | undefined;
@@ -1103,6 +1114,9 @@ export type VoiceSessionOptions = {
     phone?: string | (() => string | undefined) | undefined;
     client?: string | (() => string | undefined) | undefined;
     preConnectAudio?: boolean | undefined;
+    token?: string | ((attempt: {
+        readonly sessionId: string | undefined;
+    }) => string | undefined | Promise<string | undefined>) | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
 

@@ -43,7 +43,7 @@
  * import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
  *
  * const run = await runTextAgent(
- *   agent({ name: "Desk", text: true, systemPrompt: "Be brief." }),
+ *   agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }),
  *   "where is order 7?",
  *   { script: [{ text: "It shipped yesterday." }] },
  * );

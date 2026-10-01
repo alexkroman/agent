@@ -38,7 +38,7 @@ function makeAudioOut(
   const log = makeLogger();
   const audioOut = createAudioOut({
     startSpeakingFloorMs: windows.floorMs ?? 0,
-    interruptionBackoffMs: windows.backoffMs ?? 0,
+    interruptionBackoffMs: () => windows.backoffMs ?? 0,
     turns,
     heard,
     tts: opts.tts ?? (() => ({ sendText: (text: string) => sent.push(text) })),

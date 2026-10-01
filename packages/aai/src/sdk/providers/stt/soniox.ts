@@ -9,12 +9,23 @@
  */
 
 import type { ProviderCredentialOptions, SttProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
+
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const SONIOX_PROVIDER = defineProvider({
+  kind: "soniox",
+  stage: "stt",
+  envVar: "SONIOX_API_KEY",
+  label: "Soniox",
+  factory: "sonioxStt",
+  subpath: "stt",
+});
 
 /** Kind tag recognised by the host-side resolver. */
-export const SONIOX_KIND = "soniox" as const;
+export const SONIOX_KIND = SONIOX_PROVIDER.kind;
 
 /** Agent-env variable holding the Soniox API key. */
-export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
+export const SONIOX_API_KEY_ENV: string = SONIOX_PROVIDER.envVar;
 
 /** Options for {@link sonioxStt}. */
 export interface SonioxSttOptions extends ProviderCredentialOptions {
@@ -59,7 +70,7 @@ export interface SonioxSttOptions extends ProviderCredentialOptions {
  * auto-detects — which is not the same as English.
  */
 export function sonioxStt(options: SonioxSttOptions = {}): SttProvider {
-  return { kind: SONIOX_KIND, options: { ...options } };
+  return describeProvider(SONIOX_PROVIDER, options);
 }
 
 /** Streaming model used when the descriptor names none. */

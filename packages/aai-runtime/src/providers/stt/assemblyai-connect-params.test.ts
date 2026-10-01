@@ -102,6 +102,21 @@ describe("assemblyAIStt STT adapter — prompt default", () => {
     expect("prompt" in fake.params).toBe(false);
     await session.close();
   });
+
+  test("sttPrompt is the ONLY steering input: no agent context, no keyterms", async () => {
+    // The decision recorded beside the barge-in row in DEFAULTS-CLAUDE.md: the
+    // implicit `agent_context` (greeting seed, replaced after every agent turn)
+    // and `keyterms_prompt` were never measured, so neither is sent — at
+    // connect or mid-stream — even on the one model family that accepts both.
+    const session = await openSession(
+      { model: "universal-3-5-pro" },
+      { sttPrompt: "Terms: dosage names." },
+    );
+    const fake = fakeOf(session);
+    expect(Object.keys(fake.params).filter((key) => /context|keyterm/i.test(key))).toEqual([]);
+    expect(fake.updateConfigurationCalls).toEqual([]);
+    await session.close();
+  });
 });
 
 describe("assemblyAIStt STT adapter — voice focus", () => {

@@ -375,9 +375,9 @@ export function checkPrompt(prompt: readonly unknown[], mon: Monitor): void {
     mon.flag("an interrupted reply was recorded in a session that forwarded no audio");
   }
   if (prompt.some((m) => (m as PromptMsg).role === "tool")) mon.hit("llmRequestWithTool");
-  // Past DEFAULT_MAX_HISTORY the cap trims on every push — the state the
-  // orphan-tool-result oracle exists for.
-  if (prompt.length >= 201) mon.hit("llmRequestAtHistoryCap");
+  // A request past the depth the retired 200-message cap trimmed at — the deep
+  // history the orphan-tool-result oracle exists to validate.
+  if (prompt.length >= 201) mon.hit("llmRequestDeepHistory");
 }
 
 /** Wrap the fake model so every request is validated and every stream tracked. */

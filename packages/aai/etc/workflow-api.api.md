@@ -33,6 +33,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>;
+    sessionToken: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
 // @public

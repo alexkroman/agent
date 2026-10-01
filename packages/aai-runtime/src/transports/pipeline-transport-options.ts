@@ -29,7 +29,7 @@ import type { LanguageModel } from "ai";
 import type { SttOpener, TtsOpener } from "../providers/openers.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import type { UsageMeter } from "../usage-meter.ts";
-import type { DialogTurnSource } from "./pipeline-dialog-knobs.ts";
+import type { DialogTurnSource, PersonaInterruptionSource } from "./pipeline-dialog-knobs.ts";
 import type { TurnGuardrails } from "./pipeline-guardrails.ts";
 import type { PersonaTurnSource } from "./pipeline-persona-knobs.ts";
 import type { SkipGreetingOption, TransportCallbacks, TransportSessionConfig } from "./types.ts";
@@ -250,7 +250,7 @@ export interface PipelineTransportOptions {
    *
    * Absent for every agent that declares no dialog, and for one whose states
    * carry only instructions and deadlines: it is present exactly when some state
-   * declares a `bargeIn`, `toolChoice` or `temperature`, which is also what
+   * declares a `interruption`, `toolChoice` or `temperature`, which is also what
    * turns preemptive generation off (see {@link preemptiveGeneration} and the
    * speculation's construction in `pipeline-transport.ts`).
    *
@@ -267,6 +267,12 @@ export interface PipelineTransportOptions {
    * preemptive generation off, as {@link dialogTurn} does.
    */
   personaTurn?: PersonaTurnSource | undefined;
+  /**
+   * The active PERSONA's `interruption` group in transport units — see
+   * {@link PersonaInterruptionSource}. It overrides the agent's four
+   * interruption options key by key, under a dialog state's own override.
+   */
+  personaInterruption?: PersonaInterruptionSource | undefined;
   /** Take an unprompted turn after this many ms of user silence. Unset/non-positive disables. */
   silenceTimeoutMs?: number | undefined;
   /** Instruction injected on silence timeout. Defaults to DEFAULT_SILENCE_PROMPT. */

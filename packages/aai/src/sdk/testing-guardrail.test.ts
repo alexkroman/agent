@@ -1,10 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { type GuardrailVerdict, subagent } from "./subagent.ts";
+import { type GuardrailVerdict, speaker } from "./speaker.ts";
 import { runGuardrail } from "./testing-guardrail.ts";
 
-const checker = subagent({
+const checker = speaker({
   name: "fact-checker",
   systemPrompt: "Check.",
   guardrail: ({ text, toolCalls }) => {
@@ -30,14 +30,14 @@ describe("runGuardrail", () => {
   });
 
   test("throws when the def declares no guardrail, rather than accepting by default", () => {
-    const plain = subagent({ name: "researcher", systemPrompt: "Research." });
+    const plain = speaker({ name: "researcher", systemPrompt: "Research." });
     expect(() => runGuardrail(plain, "anything")).toThrow(
       'runGuardrail: subagent "researcher" declares no guardrail.',
     );
   });
 
   test("throws when the guardrail is asynchronous, naming what to do instead", () => {
-    const slow = subagent({
+    const slow = speaker({
       name: "slow",
       systemPrompt: "Check slowly.",
       guardrail: async (): Promise<GuardrailVerdict> => true,

@@ -1,4 +1,4 @@
-import type { DelegateOptions, SubagentDef } from "@alexkroman1/aai";
+import type { DelegateOptions, SpeakerDef } from "@alexkroman1/aai";
 import { DELEGATE_TOOL_NAME, isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
@@ -137,8 +137,12 @@ describe("the desk itself", () => {
     // The two tools name their own subagent, so those two must NOT be on the
     // roster: a subagent reachable both ways gives the model a second, worse
     // route to a tool that does real work around the delegation.
-    expect(authoredAgent.subagents?.map((one) => one.name)).toEqual(["explainer", "counterpoint"]);
-    for (const one of authoredAgent.subagents ?? []) {
+    expect(authoredAgent.roster?.delegates.map((one) => one.name)).toEqual([
+      "explainer",
+      "counterpoint",
+    ]);
+    expect(authoredAgent.roster?.speaking).toEqual([]);
+    for (const one of authoredAgent.roster?.list ?? []) {
       // The only thing the router reads. `agent()` refuses a roster without it;
       // asserted here too because the template is what an author copies.
       expect(one.description, one.name).toBeTruthy();
@@ -146,7 +150,7 @@ describe("the desk itself", () => {
   });
 
   test("publishes the roster as one delegate tool listing both subagents", () => {
-    const delegate = deployed.tools[DELEGATE_TOOL_NAME];
+    const delegate = toolOf(deployed, DELEGATE_TOOL_NAME);
     expect(delegate).toBeDefined();
     expect(delegate?.description).toContain("explainer:");
     expect(delegate?.description).toContain("counterpoint:");
@@ -207,7 +211,7 @@ describe("research_topic", () => {
     // Parameters ANNOTATED rather than inferred: `DelegateFn` is overloaded
     // (a subagent with a `schema` answers with a parsed `object`), and a bare
     // arrow has no single signature to contextually type itself against.
-    const delegate = ((sub: SubagentDef, options: DelegateOptions) =>
+    const delegate = ((sub: SpeakerDef, options: DelegateOptions) =>
       model.delegate(sub, options).finally(() => {
         inFlight -= 1;
       })) as typeof model.delegate;

@@ -3,7 +3,7 @@
 // tool plumbing (including sandbox mode), and executeToolCall. Session
 // lifecycle/routing specs live in runtime-lifecycle.test.ts.
 
-import type { ToolDef } from "@alexkroman1/aai";
+import type { PipelineTuning, ToolDef } from "@alexkroman1/aai";
 import { sessionSlot } from "@alexkroman1/aai";
 import {
   ASSEMBLYAI_S2S_SAMPLE_RATE,
@@ -16,7 +16,7 @@ import {
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
-import { toAgentConfig } from "@alexkroman1/aai/manifest";
+import { toAgentConfig, toolset } from "@alexkroman1/aai/manifest";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { ASSEMBLYAI_TTS_DEFAULT_VOICE, cartesiaTts } from "@alexkroman1/aai/tts";
@@ -70,7 +70,9 @@ describe("createRuntime", () => {
   test("executeTool returns error for unknown tool", async () => {
     const exec = createRuntimeWithSeams({ agent: makeAgent(), env: {} });
     const result = await exec.executeTool("nonexistent", {}, "session-1", []);
-    expect(result).toBe(JSON.stringify({ error: "Unknown tool: nonexistent" }));
+    expect(result).toBe(
+      JSON.stringify({ error: "Unknown tool: nonexistent", reason: "unknown_tool" }),
+    );
   });
 
   test("executeTool with a real tool returns result", async () => {
@@ -251,7 +253,7 @@ describe("createRuntime", () => {
    */
   test("readyConfig pins an AssemblyAI S2S session to the service's only rate", () => {
     const exec = createRuntimeWithSeams({
-      agent: makeAgent({ s2s: assemblyAIS2s() }),
+      agent: makeAgent({ mode: "s2s", s2s: assemblyAIS2s() }),
       env: { ASSEMBLYAI_API_KEY: "k" },
       s2sConfig: {
         wssUrl: "wss://fake",
@@ -304,28 +306,37 @@ function toolReturning(description: string, value: unknown): ToolDef {
   return { description, execute: () => value as unknown as string };
 }
 
+/** Run one def through `executeToolCall` as a one-tool `"files"` toolset. */
+function callTool(name: string, args: Record<string, unknown>, tool: ToolDef, extra = {}) {
+  return executeToolCall(name, args, {
+    toolset: toolset("files", { [name]: tool }),
+    env: {},
+    ...extra,
+  });
+}
+
 describe("executeToolCall", () => {
   test("returns 'null' when tool execute returns null", async () => {
     const tool = toolReturning("Returns null", null);
-    const result = await executeToolCall("nullTool", {}, { tool, env: {} });
+    const result = await callTool("nullTool", {}, tool);
     expect(result).toBe("null");
   });
 
   test("returns 'null' when tool execute returns undefined", async () => {
     const tool = toolReturning("Returns undefined", undefined);
-    const result = await executeToolCall("undefinedTool", {}, { tool, env: {} });
+    const result = await callTool("undefinedTool", {}, tool);
     expect(result).toBe("null");
   });
 
   test("JSON.stringifies non-string results", async () => {
     const tool = toolReturning("Returns object", { count: 42 });
-    const result = await executeToolCall("objTool", {}, { tool, env: {} });
+    const result = await callTool("objTool", {}, tool);
     expect(result).toBe(JSON.stringify({ count: 42 }));
   });
 
   test("JSON.stringifies numeric results", async () => {
     const tool = toolReturning("Returns number", 123);
-    const result = await executeToolCall("numTool", {}, { tool, env: {} });
+    const result = await callTool("numTool", {}, tool);
     expect(result).toBe("123");
   });
 
@@ -335,7 +346,7 @@ describe("executeToolCall", () => {
       inputSchema: z.object({ n: z.number() }),
       execute: ({ n }: { n: number }) => String(n),
     };
-    const result = await executeToolCall("typedTool", { n: "not-a-number" }, { tool, env: {} });
+    const result = await callTool("typedTool", { n: "not-a-number" }, tool);
     expect(result).toContain("error");
     expect(result).toContain("Invalid arguments");
     expect(result).toContain("typedTool");
@@ -347,11 +358,7 @@ describe("executeToolCall", () => {
       inputSchema: z.object({ config: z.object({ port: z.number() }) }),
       execute: () => "ok",
     };
-    const result = await executeToolCall(
-      "nestedTool",
-      { config: { port: "abc" } },
-      { tool, env: {} },
-    );
+    const result = await callTool("nestedTool", { config: { port: "abc" } }, tool);
     expect(result).toContain("config.port");
   });
 
@@ -363,7 +370,7 @@ describe("executeToolCall", () => {
       },
     };
     const logger = makeLogger();
-    const result = await executeToolCall("failTool", {}, { tool, env: {}, logger });
+    const result = await callTool("failTool", {}, tool, { logger });
     expect(result).toContain("error");
     expect(result).toContain("boom");
     expect(logger.warn).toHaveBeenCalledWith(
@@ -380,7 +387,7 @@ describe("executeToolCall", () => {
       },
     };
     const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const result = await executeToolCall("failTool", {}, { tool, env: {} });
+    const result = await callTool("failTool", {}, tool);
     expect(result).toContain("error");
     expect(result).toContain("no-logger-boom");
     expect(spy).toHaveBeenCalledWith(
@@ -401,8 +408,8 @@ describe("executeToolCall", () => {
       description: "Bump and report",
       execute: (_args, ctx) => JSON.stringify(slot.update(ctx, (s) => ++s.n)),
     };
-    const first = await executeToolCall("stateTool", {}, { tool, env: {} });
-    const second = await executeToolCall("stateTool", {}, { tool, env: {} });
+    const first = await callTool("stateTool", {}, tool);
+    const second = await callTool("stateTool", {}, tool);
     expect([JSON.parse(first), JSON.parse(second)]).toEqual([1, 1]);
   });
 
@@ -411,7 +418,7 @@ describe("executeToolCall", () => {
       description: "Get messages",
       execute: (_args, ctx) => JSON.stringify(ctx.messages),
     };
-    const result = await executeToolCall("msgTool", {}, { tool, env: {} });
+    const result = await callTool("msgTool", {}, tool);
     expect(JSON.parse(result)).toEqual([]);
   });
 
@@ -423,18 +430,18 @@ describe("executeToolCall", () => {
       description: "Get sessionId",
       execute: (_args, ctx) => ctx.sessionId,
     };
-    const first = await executeToolCall("sidTool", {}, { tool, env: {} });
-    const second = await executeToolCall("sidTool", {}, { tool, env: {} });
+    const first = await callTool("sidTool", {}, tool);
+    const second = await callTool("sidTool", {}, tool);
     expect(first).not.toBe("");
     expect(second).not.toBe(first);
   });
 
   test("tool with no parameters schema accepts any args", async () => {
-    const tool: Parameters<typeof executeToolCall>[2]["tool"] = {
+    const tool: ToolDef = {
       description: "No params",
       execute: () => "ok",
     };
-    const result = await executeToolCall("noParamsTool", { any: "thing" }, { tool, env: {} });
+    const result = await callTool("noParamsTool", { any: "thing" }, tool);
     expect(result).toBe("ok");
   });
 });
@@ -565,12 +572,11 @@ describe("createRuntime — provider resolution seams", () => {
     tools: {},
   };
 
-  test.each([
-    ["deadAirCoverMs", { deadAirCoverMs: 2500 }],
-    ["minBargeInWords", { minBargeInWords: 3 }],
-    ["interruptionMinDurationMs", { interruptionMinDurationMs: 200 }],
-    ["resumeFalseInterruption", { resumeFalseInterruption: false }],
-    ["userTurnLimit", { userTurnLimit: { maxWords: 60 } }],
+  test.each<[string, PipelineTuning]>([
+    ["silence", { silence: { deadAirCoverMs: 2500, nudge: { afterMs: 9000 } } }],
+    ["interruption", { interruption: { minWords: 3, minDurationMs: 200 } }],
+    ["interruption off", { interruption: "off" }],
+    ["turnTaking", { turnTaking: { userTurnLimit: { maxWords: 60 } } }],
   ])("accepts %s when the providers arrive as runtime options", (_name, tuning) => {
     // The platform strips stt/llm/tts off
     // the agent object and passes them as options, so validating the agent's
@@ -656,7 +662,7 @@ describe("createRuntime — provider resolution seams", () => {
   test("logs s2s mode for an agent that opts in via the s2s descriptor", () => {
     const logger = makeLogger();
     createRuntimeWithSeams({
-      agent: { ...baseAgent, s2s: assemblyAIS2s() },
+      agent: { ...baseAgent, mode: "s2s", s2s: assemblyAIS2s() },
       env: PROVIDER_KEYS,
       logger,
     });
@@ -670,9 +676,14 @@ describe("createRuntime — provider resolution seams", () => {
     // The assertion must keep firing where it is right: an explicit S2S agent.
     expect(() =>
       createRuntimeWithSeams({
-        agent: { ...baseAgent, s2s: assemblyAIS2s(), deadAirCoverMs: 2500 },
+        agent: {
+          ...baseAgent,
+          mode: "s2s",
+          s2s: assemblyAIS2s(),
+          silence: { deadAirCoverMs: 2500 },
+        },
         env: PROVIDER_KEYS,
       }),
-    ).toThrow(/deadAirCoverMs requires pipeline mode/);
+    ).toThrow(/`silence` is .* no effect on a "s2s" agent/);
   });
 });

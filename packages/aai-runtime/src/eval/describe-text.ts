@@ -4,7 +4,7 @@
  *
  * Its own function rather than a flag, for the reason there are two harnesses
  * underneath: `openEvalSession` stands up `createRuntime`, which REFUSES
- * `text: true` by name, so a text agent's eval runs on `openEvalTextAgent` and
+ * `mode: "text"` by name, so a text agent's eval runs on `openEvalTextAgent` and
  * nothing about the two can be merged below the suite. What IS shared is
  * everything a reader cares about — the two modes, the announce line, the
  * per-case script, the `live`/`scripted` markers, and the `EvalTurn` a case
@@ -54,8 +54,8 @@ import {
 
 /**
  * What a text case body is handed: its own conversation and the mode. A
- * simulated caller is `evalSimulation({ target: agent, … })` on
- * `@alexkroman1/aai-runtime/eval/simulate`, as for a voice case.
+ * simulated caller is `evalSimulation({ target: agent, … })` (on this same
+ * `@alexkroman1/aai-runtime/eval/vitest`), as for a voice case.
  *
  * @sealed
  */
@@ -88,7 +88,7 @@ const DEFAULT_STUB_REPLY = "This is a scripted reply from the eval stub model.";
  * import { describeTextEval } from "@alexkroman1/aai-runtime/eval/vitest";
  * import { expect } from "vitest";
  *
- * const agentDef = agent({ name: "Coder", text: true });
+ * const agentDef = agent({ name: "Coder", mode: "text" });
  *
  * describeTextEval(agentDef, (test) => {
  *   test(

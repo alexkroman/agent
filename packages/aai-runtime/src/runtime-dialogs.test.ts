@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { makeConfig, makeLogger, makeSessionContext } from "./_test-utils.ts";
 import { openSessionDialogs } from "./runtime-dialogs.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
+import { OPENAI_REALTIME_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
 
 const TEST_SESSION_CONTEXT = makeSessionContext();
@@ -51,6 +52,7 @@ function claimDialog(key = "claim") {
 function makeTransport(): { transport: Transport; refreshes: () => number } {
   const refreshSystemPrompt = vi.fn();
   const transport: Transport = {
+    capabilities: OPENAI_REALTIME_CAPABILITIES,
     start: async () => undefined,
     stop: async () => undefined,
     sendUserAudio: () => undefined,

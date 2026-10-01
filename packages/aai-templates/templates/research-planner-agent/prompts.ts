@@ -65,7 +65,7 @@ export const actSchema = z.object({
 });
 
 /**
- * What one worked step comes back as — `SubagentDef.schema`, so the executor is
+ * What one worked step comes back as — `SpeakerDef.schema`, so the executor is
  * a TYPED subagent and `ctx.delegate` answers a `TypedDelegateResult`.
  *
  * **`settled` is the half a prompt could not hold.** The instruction "say
@@ -110,7 +110,7 @@ export const EXECUTOR_SYSTEM = [
 ].join(" ");
 
 /**
- * What the executor's FINAL MESSAGE has to be — `SubagentDef.expectedOutput`.
+ * What the executor's FINAL MESSAGE has to be — `SpeakerDef.expectedOutput`.
  *
  * The half of the prompt that was about the ANSWER rather than about how to
  * work, split out when the executor became a subagent: what crosses back to the

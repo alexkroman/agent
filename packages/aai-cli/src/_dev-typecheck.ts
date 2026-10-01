@@ -4,9 +4,9 @@
  *
  * `assertTypechecks` is wired into `build`, `deploy` and `studio` — and not
  * into `dev`, the loop an author actually lives in. That made the whole
- * compile-message system in `agent-params.ts` (five families of hand-written
- * diagnostic sentences, the most careful work in the SDK) conditional on the
- * author having an editor open on the right file. Demonstrated: a project whose
+ * mode-discriminated `agent()` union in `agent-params.ts` (a field that does
+ * not exist in the declared mode is a compile error naming the member)
+ * conditional on the author having an editor open on the right file. Demonstrated: a project whose
  * `agent.ts` fails `tsc --noEmit` starts cleanly under `aai dev` and serves,
  * and the typo is found later by `aai build` — or by a caller.
  *

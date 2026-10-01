@@ -4,19 +4,18 @@
  * thing to say per step.
  *
  * The AI SDK's per-step hook is a single slot: a second caller does not add a
- * layer, it REPLACES the first. Two things want it in the voice pipeline —
- * `forceFinalAnswer`, which spends the reserved step on an answer with no
- * tools, and the context budget, which decides which messages this step may
- * send — and a third, a caller's own `prepareStep`, on the text agent's door.
- * Composing them is therefore not a convenience: writing either one directly
- * into the slot silently deletes the other, and both failures are invisible
- * (a turn that stops mid-chain with an empty transcript; a request that
- * overflows the model's window).
+ * layer, it REPLACES the first. The voice pipeline has six concerns that want
+ * it (the context budget, the agent-scoped `toolChoice` reset, the persona's
+ * and the dialog state's knobs, the tool-error budget, `forceFinalAnswer`), the
+ * text agent three, a subagent one. Writing any of them directly into the slot
+ * silently deletes the others, and every such failure is invisible (a turn
+ * that stops mid-chain with an empty transcript; a request that overflows the
+ * model's window; a dialog pin that stops applying after step 0).
  *
- * The combinator used to be a private function in `text-agent.ts` composing
- * exactly two. It is shared and variadic now, so the pipeline's pair and the
- * text agent's pair are the same code, and the one test that a composition
- * keeps BOTH results covers both call sites.
+ * So the slot is filled only by {@link composePreparers}, a pipeline every
+ * concern REGISTERS into by stage, whose order ({@link PREPARER_ORDER}) is
+ * decided once here rather than by the order a call site lists things in.
+ * `guard-invariants` rule 35 holds every `prepareStep:` in this package to it.
  *
  * {@link forceFinalAnswer} sits beside it — the preparer every one of those
  * call sites ends with. It came out of `pipeline-llm-stream.ts`, which three
@@ -33,30 +32,91 @@ import type { PrepareStepFunction, PrepareStepResult, ToolSet } from "ai";
 import type { Logger } from "./runtime-config.ts";
 
 /**
- * Run each preparer in order and layer their results, LAST writer winning per
- * key.
+ * Every per-step concern this package has, in the ORDER they are layered.
  *
- * The order is the point, and it is the caller's to choose. A preparer that
- * owns the step's MESSAGES — compaction, a context budget, an injected wrap-up
- * notice — must run early and keep what it returned; nothing legitimately owns
- * `toolChoice` on the step the budget reserved for answering, because that step
- * exists precisely so the model has no move left but to speak. So
- * `forceFinalAnswer` goes LAST at every call site and wins on the one key it
- * sets, while every other key passes through untouched.
+ * The order is ONE decision, made here, rather than a convention each call
+ * site re-derives: {@link composePreparers} sorts what it is handed into this
+ * order, so a call site registers its concerns and cannot get the precedence
+ * wrong by listing them wrong. That is the bug this replaced — the dialog
+ * state's knobs were once composed BEFORE the agent-scoped reset, which then
+ * overwrote a state's `toolChoice` pin with `"auto"` from step 1 on, on every
+ * agent whose own `toolChoice` demanded something.
  *
- * An `undefined` preparer is skipped (the text agent's caller hook is
- * optional), and a preparer answering `undefined` — "nothing to say about this
- * step" — contributes no keys rather than erasing the ones before it. That
- * second rule is the one a hand-rolled merge gets wrong: `a ?? b` would drop
- * everything `a` said the moment `b` had an opinion.
+ * Last writer wins per key, so the rule is `ToolChoice`'s documented scope
+ * precedence (agent → persona → dialog state → forced answers) written out:
+ *
+ * 1. `caller` — a text-agent caller's own `prepareStep` (compaction, deadline
+ *    notices). First, so everything below layers over what it decided.
+ * 2. `context-budget` — owns `messages`, and shares no key with those below.
+ * 3. `agent-tool-choice` — {@link resetToolChoiceAfterFirstStep}, the AGENT
+ *    scope.
+ * 4. `persona` — the active persona's knobs: who is speaking is broader than
+ *    where in their script they are.
+ * 5. `dialog` — the active dialog state's knobs, which beat the agent's and the
+ *    persona's for exactly as long as the conversation is in that state.
+ * 6. `tool-error-budget` — {@link toolErrorBudget}: a state pinning a tool must
+ *    not keep the model calling one that cannot succeed.
+ * 7. `force-final-answer` — {@link forceFinalAnswer}, which owns `toolChoice`
+ *    on the one reserved step and must win there over everything. It and the
+ *    error budget both force `"none"`, so their relative order changes no
+ *    request.
  */
-export function composePrepareStep(
-  ...preparers: readonly (PrepareStepFunction<ToolSet> | undefined)[]
-): PrepareStepFunction<ToolSet> {
+export const PREPARER_ORDER = [
+  "caller",
+  "context-budget",
+  "agent-tool-choice",
+  "persona",
+  "dialog",
+  "tool-error-budget",
+  "force-final-answer",
+] as const;
+
+/** One of the {@link PREPARER_ORDER} stages. */
+export type PreparerStage = (typeof PREPARER_ORDER)[number];
+
+/**
+ * A per-step concern, registered by STAGE.
+ *
+ * `prepare` may be `undefined` — "this concern does not apply to this session"
+ * (no persona roster, an agent with no demanding `toolChoice`) — so a call site
+ * registers every concern unconditionally and the absent ones cost nothing.
+ */
+export interface Preparer {
+  readonly stage: PreparerStage;
+  readonly prepare: PrepareStepFunction<ToolSet> | undefined;
+}
+
+/**
+ * The ONE way to fill `streamText`'s (or `ToolLoopAgent`'s) `prepareStep` slot.
+ *
+ * The AI SDK's per-step hook is a single slot: a second writer does not add a
+ * layer, it REPLACES the first, silently. So every concern registers here and
+ * this builds the slot's one function — `guard-invariants` rule 35 rejects a
+ * `prepareStep:` property in this package whose value is anything else.
+ *
+ * - **Order is {@link PREPARER_ORDER}, whatever order the registrations
+ *   arrive in.** Results layer LAST writer wins per key.
+ * - **A stage may be registered at most once**; a duplicate throws at
+ *   construction, because two writers for one stage is exactly the ambiguity
+ *   the order exists to remove.
+ * - **An `undefined` preparer is skipped**, and a preparer answering
+ *   `undefined` ("nothing to say about this step") contributes no keys rather
+ *   than erasing the ones before it — the rule a hand-rolled `a ?? b` merge
+ *   gets wrong.
+ */
+export function composePreparers(preparers: readonly Preparer[]): PrepareStepFunction<ToolSet> {
+  const seen = new Set<PreparerStage>();
+  for (const { stage } of preparers) {
+    if (seen.has(stage)) throw new Error(`prepareStep stage "${stage}" registered twice`);
+    seen.add(stage);
+  }
+  const ordered = [...preparers]
+    .sort((a, b) => PREPARER_ORDER.indexOf(a.stage) - PREPARER_ORDER.indexOf(b.stage))
+    .flatMap(({ prepare }) => (prepare === undefined ? [] : [prepare]));
   return async (options) => {
     let merged: NonNullable<PrepareStepResult<ToolSet>> = {};
-    for (const preparer of preparers) {
-      const result = await preparer?.(options);
+    for (const prepare of ordered) {
+      const result = await prepare(options);
       if (result) merged = { ...merged, ...result };
     }
     return merged;

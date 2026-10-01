@@ -150,12 +150,12 @@ tool can be wrong for releases. Drive every tool you add.
 
 Rules the table carries that apply to any template:
 
-- A slot whose `create()` pulls a seed uses `useAgentState(fallback)`, not the
-  projection overload, or the seed ships to the browser.
+- A slot whose `create()` pulls a seed uses `useAgentState("slot", fallback)`,
+  not the projection overload, or the seed ships to the browser.
 - Do not call `spokenOrdinal` beside `resolveOne`; it consults it internally.
 - Name a subagent in code when the tool IS the choice; put it on
-  `agent({ subagents })` when the caller's words are. Give every subagent an
-  `expectedOutput`. Reach for `SubagentDef.guardrail` only when a `schema`
+  `agent({ roster })` when the caller's words are. Give every speaker an
+  `expectedOutput`. Reach for `SpeakerDef.guardrail` only when a `schema`
   cannot express the check; an unaccepted result stays a field on the tool
   result, not a `ToolFailure`.
 - `ToolDef.onError` is a classifier: re-throw to make a failure fatal instead
@@ -226,7 +226,7 @@ the rationale.
 ### A dialog can describe a CALL
 
 Everything a dialog does when no tool is running — session events, deadlines,
-the active `instruction` on every turn, per-state `bargeIn`/`toolChoice`/
+the active `instruction` on every turn, per-state `interruption`/`toolChoice`/
 `temperature` — requires `agent({ dialogs: DIALOGS })`; without it the dialog
 still gates and moves on `send`. `packages/aai-runtime/DIALOG-CLAUDE.md` owns
 the wiring; `roadside-assistance-agent` is the example.
@@ -236,7 +236,7 @@ the wiring; `roadside-assistance-agent` is the example.
 - A `timeout` needs a state to LAND in (a different instruction). A committed
   turn, not a partial, restarts the clock, so a deadline leads to a nudge,
   never to anything irreversible.
-- `bargeIn: "off"` applies per step, so the tool that SPEAKS the protected
+- `interruption: "off"` applies per step, so the tool that SPEAKS the protected
   sentence must not advance the dialog; advance with a second tool a turn later.
 - Pin `toolChoice` only where the tool needs nothing the caller has not said,
   and only on idempotent tools — a pin fires on every later step.
@@ -299,11 +299,11 @@ and replayed. Declare `uploads: [...]` and read windows with `stepReadUpload`.
 
 ### A transcription step is the SDK's; the boundaries are the template's
 
-Use `stepTranscribeUpload`/`Submit`/`Poll` and `stepTranscribeSync` via their
-`*OrFail` forms (which turn `TranscribeError`'s `retryable`/`retryAfter` into
-the engine's verdict). The SDK cannot ship a step — a step is what a body wraps
-in `ctx.step(name, fn)` — so the template owns which steps exist, i.e. what is
-journaled and what a retry repeats.
+Use `stepTranscribeUpload`/`Submit`/`Poll` and `stepTranscribeSync` wrapped in
+`orFail` (`orFail(stepTranscribeSubmit)`, which turns `TranscribeError`'s
+`retryable`/`retryAfter` into the engine's verdict). The SDK cannot ship a step
+— a step is what a body wraps in `ctx.step(name, fn)` — so the template owns
+which steps exist, i.e. what is journaled and what a retry repeats.
 
 - Keep upload and submit as separate steps, so a submit retry does not
   re-upload the file.
@@ -365,7 +365,7 @@ prose to READ, a `workflowApp()` page, or a voice agent that hands off to a run.
 `applicant-screening-agent` is `lead-score-flow` (`crews.ts` has attribution).
 A crew task's OUTPUT decides its primitive: `output_pydantic` →
 `ctx.generate({ schema })` through `mapConcurrent`; prose with rules →
-`subagent()` with `expectedOutput` and `guardrail`. The feedback loop is
+`speaker()` with `expectedOutput` and `guardrail`. The feedback loop is
 bounded (`MAX_FEEDBACK_ROUNDS`), and a score is stored under the id the desk
 asked about, not the id the model echoed.
 
@@ -398,7 +398,7 @@ wrongly. The check compares VALUES, so composing a string from the file passes,
 and a `systemPrompt` RESOLVER passes unchecked (it closes over its own `?raw`
 import). `_discovery.ts` resolves prompts for `templates.test.ts`.
 
-**`coding-agent` is TEXT-mode** (`text: true`), so `createRuntime` refuses it
+**`coding-agent` is TEXT-mode** (`mode: "text"`), so `createRuntime` refuses it
 and it ships its own front door, `chat.ts` — the only entry point in
 `templates/`. `shared.ts` explains why its nine `tools/` files share one
 `createCodingTools` registry.

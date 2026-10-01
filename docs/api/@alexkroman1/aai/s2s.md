@@ -20,13 +20,13 @@ import { openAIS2s } from "@alexkroman1/aai/s2s";
 export default agent({
   name: "Concierge",
   systemPrompt: "You are a hotel concierge. Be brief.",
+  mode: "s2s",
   s2s: openAIS2s({ model: "gpt-realtime", voice: "marin" }),
 });
 ```
 
-`s2s` and the pipeline fields refuse each other at COMPILE time, and so does
-the top-level `voice` convenience — an S2S voice rides on the descriptor,
-because it is the service that synthesizes.
+`s2s` and the pipeline fields refuse each other at COMPILE time; an S2S
+voice rides on the descriptor, because it is the service that synthesizes.
 
 **[assemblyAIS2s](index.md#assemblyais2s) is also on the root barrel**, which is the one
 exception to "provider factories live on subpaths". S2S became opt-in when
@@ -82,6 +82,7 @@ import { openAIS2s } from "@alexkroman1/aai/s2s";
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
+  mode: "s2s",
   s2s: openAIS2s({ model: "gpt-realtime", voice: "marin" }),
 });
 ```

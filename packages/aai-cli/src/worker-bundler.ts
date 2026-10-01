@@ -184,7 +184,7 @@ function wrapperEntrySource(
     .join("\n");
 
   return `import def from "../agent.ts";
-import { agentToolsToSchemas, toAgentConfig, toolRegistry, withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
+import { agentToolsets, agentToolsToSchemas, toAgentConfig, toolRegistry, withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
 ${runtime ? `import { createRuntime } from "@alexkroman1/aai-runtime";` : ""}
 ${systemPromptFile ? `import __aaiSystemPrompt from "../${SYSTEM_PROMPT_FILE}?raw";` : ""}
 ${toolImports}
@@ -205,7 +205,7 @@ ${toolEntries}
 export default __aaiAgent;
 export const __aaiConfig = {
   ...toAgentConfig(__aaiAgent),
-  toolSchemas: agentToolsToSchemas(__aaiAgent.tools ?? {}),
+  toolSchemas: agentToolsToSchemas(agentToolsets(__aaiAgent)),
 };
 ${
   runtime

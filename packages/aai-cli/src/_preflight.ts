@@ -68,7 +68,7 @@ export type PreflightConfig = Parameters<typeof requiredProviderEnvVars>[0] & {
   requiredEnv?: readonly string[] | undefined;
   /**
    * `AgentDef.telephony`, for {@link missingTelephonySecrets} and
-   * {@link telephonyWebhooks}. Serializable like `page` is, so it survives the
+   * {@link telephonyWebhooks}. Serializable like `mode` is, so it survives the
    * trip through `__aaiConfig` — see `packages/aai/src/sdk/telephony-config.ts`.
    *
    * `readonly string[]` rather than `TelephonyAccess`'s carrier union, and

@@ -13,12 +13,44 @@ read_when: >-
 `types.ts` is the transport boundary; session-side rules are in
 [`../CLAUDE.md`](../CLAUDE.md).
 
+## What works on which transport is ONE descriptor
+
+`Transport.capabilities` (`capabilities.ts`) answers every "can this transport
+do X"; read the flag, never a verb's presence, and never add an "S2S cannot"
+branch at a call site. An absence is handled at `agent()` (`config-rules.ts`
+refuses by mode), once at session start (`reportSessionCapabilities`), or as an
+ignored client command. The table is RENDERED by `renderCapabilityTable()` and
+`capabilities.test.ts` holds it, and each optional verb, to the descriptors —
+edit the rows there, then paste the output here:
+
+<!-- capability-table:start -->
+
+| capability         | feature                                                                                      | pipeline | OpenAI Realtime | AssemblyAI S2S | where absent                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------- | -------- | --------------- | -------------- | -------------------------------------------------------------------------------------- |
+| `say`              | `speech.say()` — speak host text VERBATIM (`interruptible`, `record`)                        | yes      | no              | no             | logged at session start; every `say` settles `dropped`                                 |
+| `replyState`       | `speech.interrupt()` knows whether a reply is in flight                                      | yes      | no              | no             | "cannot tell" interrupts, as the client's blind `cancel` does                          |
+| `announce`         | an unprompted MODEL turn — a run's `notify`, `ServerSession.announce`                        | yes      | no              | no             | logged at session start; `announce` answers `false`                                    |
+| `typedTurn`        | a typed user turn (`user_text`)                                                              | yes      | no              | no             | client command ignored, warned once per session                                        |
+| `manualTurn`       | push-to-talk (`turnTaking: { detection: "manual" }`)                                         | yes      | no              | no             | refused by `agent()`; client commands ignored, warned once per session                 |
+| `reset`            | client `reset` clears the conversation and re-greets                                         | yes      | no              | no             | ignored — the service holds the conversation (a known gap)                             |
+| `seedHistory`      | a resume re-seeds the host-held model history                                                | yes      | no              | no             | nothing to seed — the service resumes its own context                                  |
+| `playbackProgress` | client `playback_progress` corrects the heard clock                                          | yes      | no              | no             | ignored — the host keeps no playback model                                             |
+| `promptPush`       | a changed system prompt is PUSHED to the service                                             | no       | yes             | no             | pipeline: resolved per request, nothing to push                                        |
+| `perTurnPrompt`    | the system prompt is re-resolved between turns (a `dialog()` phase, a persona)               | yes      | yes             | no             | resolved ONCE at construction; a phase is learned through tool results                 |
+| `dialogKnobs`      | a dialog state's `interruption` / `toolChoice` / `temperature`                               | yes      | no              | no             | warned at session start; states, deadlines and tool gates still work                   |
+| `personaKnobs`     | a persona's `interruption` / `toolChoice` / `temperature`                                    | yes      | no              | no             | warned at session start; the prompt section and tool gate still hold                   |
+| `fatalTool`        | a tool's `onError` FATAL verdict stops the turn and speaks `errorPhrase`                     | yes      | no              | no             | warned at session start; a fatal verdict reaches the model as a failure result instead |
+| `turnMetrics`      | one `metrics.collected` frame per settled reply (`pipeline-turn-metrics.ts`)                 | yes      | no              | no             | no frame — the service reports no per-stage marks (a known gap)                        |
+| `hostedTurn`       | the HOST runs the model turn: guardrails, `usageLimits`, model tuning, pipeline voice tuning | yes      | no              | no             | refused by `agent()` (`config-rules.ts`) — never reaches a session                     |
+
+<!-- capability-table:end -->
+
 ## `speech_started` means "the agent is yielding", on BOTH transports
 
 In S2S the service fires speech-started when it stops generating, so the event
 coincides with a real interruption. Pipeline mode derives it from STT partials,
 where the first word of a cough or backchannel would open it while
-`minBargeInWords` / `interruptionMinDurationMs` correctly keep the agent
+`interruption.minWords` / `.minDurationMs` correctly keep the agent
 talking. Clients act on the event (tau2-bench discards its playout buffer on
 it), so pipeline mode matches S2S:
 
@@ -60,30 +92,45 @@ the final, and `system` cannot be amended mid-stream, so `take()` discards with
 `prompt-moved` (like `history-moved`). The controller resolves ONCE and hands
 the string to `start`.
 
-## A step's REQUEST is bounded in tokens; the message cap only guards growth
+## History is budgeted in TOKENS everywhere; there is no message cap
 
-`DEFAULT_MAX_HISTORY` counts messages, which does not predict request size.
-`pipeline-context-budget.ts` trims as a **`prepareStep` preparer**, so
-`PipelineHistory` keeps everything (replay, resume and `ctx.messages` read it)
-and only the request is trimmed. The window is
-`ASSEMBLYAI_GATEWAY_MODELS.context` less `CONTEXT_WINDOW_RESERVE`; an unknown
-window yields NO preparer; the count is calibrated per SESSION against reported
-`usage.inputTokens`. The module doc carries the argument.
+- **The REQUEST** is bounded only by `pipeline-context-budget.ts`, a
+  **`prepareStep` preparer**, so `PipelineHistory` keeps everything (replay,
+  resume and `ctx.messages` read it) and only the request is trimmed. The window
+  is `ASSEMBLYAI_GATEWAY_MODELS.context` less `CONTEXT_WINDOW_RESERVE`; an
+  UNKNOWN window is budgeted as the smallest the catalog carries
+  (`UNKNOWN_MODEL_CONTEXT_TOKENS`), because nothing else bounds the request; the
+  count is calibrated per SESSION against reported `usage.inputTokens`.
+- **The RECORD** is bounded for memory only, also in tokens
+  (`../_history-retention.ts`, `HISTORY_RETAIN_TOKENS` = 2 x
+  `LARGEST_CONTEXT_TOKEN_BUDGET`), and that size is what makes it unable to
+  change a request: the budget sends a suffix no larger than its limit, and
+  retention always keeps a larger one (`_history-retention.test.ts` states it
+  as a property). The same bound applies in `session-core.ts` and to a resume
+  (`historyFromEvents`); the event log itself stays whole.
+- **The one count left is a DISPLAY bound**: `MAX_CLIENT_MESSAGES` caps what a
+  `history.restored` frame carries (`clientHistoryFrame`) and what `aai-ui`
+  keeps in its snapshot.
 
-**Preparers COMPOSE** (`../_prepare-step.ts`): the budget owns `messages`,
-`forceFinalAnswer` goes last and owns `toolChoice`. Writing either straight
-into the slot silently deletes the other.
+**Preparers REGISTER into one pipeline** (`../_prepare-step.ts`):
+`composePreparers([{ stage, prepare }, …])` layers them in `PREPARER_ORDER`
+(budget → agent reset → persona → dialog → error budget → `forceFinalAnswer`)
+whatever order a call site lists them in, last writer winning per key. Writing
+any preparer straight into the slot silently deletes the others, so
+`guard-invariants` rule 35 rejects a `prepareStep:` in this package whose value
+is not a `composePreparers(…)` call; a new concern is a new stage.
 
 ## A rollback must undo the eviction its push caused
 
-`pipeline-history.ts` keeps two capped views. `dropTrailingUser` rolls back an
-injected prompt (false-interruption resume, silence nudge, `injectTurn`), and at
-`DEFAULT_MAX_HISTORY` a bare pop would lose the message the push trimmed. A push
-records what it evicted and the pop that undoes THAT push restores it. Argued at
-`PushUndo`: one slot PER VIEW, recorded only for a single-message push,
-consumed by IDENTITY; `capLlm`'s healed tool-pair halves count as part of the
-eviction. Oracle: `../integration/pipeline-history-rollback.integration.test.ts`,
-plus two pins in `pipeline-history.test.ts`.
+`pipeline-history.ts` keeps two views, each retained to the token bound.
+`dropTrailingUser` rolls back an injected prompt (false-interruption resume,
+silence nudge, `injectTurn`), and at the bound a bare pop would lose what the
+push evicted. A push records what it evicted and the pop that undoes THAT push
+restores it. Argued at `PushUndo`: one slot PER VIEW, recorded only for a
+single-message push, consumed by IDENTITY; a tool pair `evictLlm` took whole
+counts as part of the eviction. Oracle:
+`../integration/pipeline-history-rollback.integration.test.ts` (driven at a small
+`retainTokens`), plus two pins in `pipeline-history.test.ts`.
 
 ## History records what was HEARD, not what was generated
 
@@ -128,28 +175,38 @@ chain, so it runs after the aborted turn unwinds.
 - **`skipGreeting` does not reach `greet()`** — it is a RESUME flag scoped to a
   connection's start, the opposite claim from a reset. (Hence `aai-ui`'s
   `reset()` drops the resume identity when the socket is already closed.)
-- **Neither S2S transport re-greets — a known gap.** AssemblyAI S2S has no
-  `reset()` verb; OpenAI Realtime could re-issue `response.create` but the
-  service still holds the conversation, and clearing it means deleting every
-  tracked `conversation.item`.
+- **Neither S2S transport re-greets — a known gap** (`reset` in the table):
+  OpenAI Realtime could re-issue `response.create`, but the service still holds
+  the conversation, and clearing it means deleting every tracked
+  `conversation.item`.
 
 ## Push-to-talk holds the turn in the TRANSPORT
 
-`agent({ turnDetection: "manual" })` moves the end of turn to the client.
+`agent({ turnTaking: { detection: "manual" } })` moves the end of turn to the client.
 `pipeline-manual-turn.ts` owns it: finals are HELD while a turn is open and
 answered as one on `user_turn_commit`; the mic is SILENCED with zeros outside a
 turn (the transcriber's clock keeps pace); a final with no turn open is dropped.
 Opening a turn is the barge-in — `startUserTurn()` reports whether it
-interrupted and `session-commands.ts` then acts like a client `cancel`. Both
-S2S transports omit the verbs. The eval harness's `say()` presses and releases
+interrupted and `session-commands.ts` then acts like a client `cancel`
+(`manualTurn` in the table). The eval harness's `say()` presses and releases
 for a manual agent.
 
 **A typed turn (`user_text`) is a committed transcript with no transcriber.**
 `Transport.sendUserText` → `commitTypedTurn` in `pipeline-user-speech.ts` cuts a
 reply in flight or playing (reporting `reply.cancelled` BEFORE the
 `userTranscript.committed`, so the stream's order is right), then commits on
-the same path a final does, under either `turnDetection`. S2S omits the verb;
-the dispatcher warns once.
+the same path a final does, under either `turnTaking.detection` (`typedTurn` in
+the table).
+
+## Every code-initiated line states `{ record, interruptible }`
+
+`LineFlags` (`types.ts`) is the pair `speech.say()` takes, and every word no
+model token produced states it. `pipeline-lines.ts`'s module table lists each
+line, its flags and its placement: a reply of its own (`createLineReply`), a
+failed turn's last words (`speakFixedLine`), or INSIDE the reply in flight
+(`speakInReply` — dead-air filler and tool messages, through the stream-part
+handler's separator and transcript). Never spell a send for a new line; pick a
+placement. The silence nudge and `notify` are model turns, not lines.
 
 ## `speakLine` is the greeting's path for any caller
 
@@ -165,11 +222,11 @@ written as HEARD once playback ends. It resolves `"played"`, `"interrupted"` or
 - **The queue epoch is read when the line is ASKED for**, not when it reaches
   the chain, so an interrupt drops a held line as it drops a queued one.
   `TurnChain.chain`'s `onStranded` answers for a line the gate stranded.
-- `isReplying()` is `turns.inFlight() || heard.pending()`; both S2S transports
-  omit both verbs.
+- `isReplying()` is `turns.inFlight() || heard.pending()` (`say` and
+  `replyState` in the table).
 - **`interruptible: false` HOLDS THE FLOOR** for exactly that line:
   `knobs.holdFloor` makes `minBargeInWords` `Infinity` (a dialog's
-  `bargeIn: "off"`) from before the line starts until it settles, so the
+  `interruption: "off"`) from before the line starts until it settles, so the
   caller is still transcribed and answered afterwards. Cancels, interrupts and
   typed turns ignore it. **`record: false`** captions with `recorded: false`
   and skips `createLineReply`'s history writes.
@@ -178,4 +235,4 @@ written as HEARD once playback ends. It resolves `"played"`, `"interrupted"` or
 
 `start(def, input, { key, notify })` makes the starting session take an
 unprompted, interruptible turn when the run lands. `Transport.injectTurn` is the
-primitive — pipeline only; on S2S a logged no-op. See `../workflow/notify.ts`.
+primitive (`announce` in the table). See `../workflow/notify.ts`.

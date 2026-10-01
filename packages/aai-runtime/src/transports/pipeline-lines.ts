@@ -1,10 +1,44 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * FIXED lines — the words pipeline mode speaks that no model turn produced: the
- * greeting, the error phrase after a failed turn, and the start-failure phrase.
+ * CODE-INITIATED lines — every word pipeline mode speaks that no model token
+ * produced — and the one place their two rules are decided: what the CAPTION
+ * says, and what HISTORY records (what was heard, and only when it is on the
+ * record). Every such line states the same two flags a `speech.say()` takes,
+ * {@link LineFlags}, and goes through one of two placements:
  *
- * Each used to spell its own sends, and the three spellings had drifted on the
- * two rules every one of them has to get right:
+ * | line | placement | `record` | `interruptible` | caption |
+ * | --- | --- | --- | --- | --- |
+ * | greeting, `speech.say()` | a reply of its own ({@link createLineReply}) | `true` (`say`: the author's) | `true` (`say`: the author's) | one final |
+ * | error / start-failure phrase | the failed turn's last words ({@link speakFixedLine}) | never (`recovery` tag) | `true` | one final |
+ * | dead-air filler | inside the reply in flight ({@link speakInReply}) | `false` | `true` | the reply's interim |
+ * | tool START / DELAYED line | inside the reply in flight | `false` | `true` | the reply's interim |
+ * | tool `assistant` completion | inside the reply in flight | `true` | `true` | the reply's interim, then its final |
+ *
+ * The silence nudge and a run's `notify` are NOT code-initiated LINES: each is
+ * a MODEL turn on an injected instruction (`runChainedTurn(…, { synthetic:
+ * true })`, the one path `Transport.injectTurn` and the nudger share), so the
+ * model's reply follows the ordinary turn rules and owes nothing here.
+ *
+ * ## Why the in-reply placement is one function
+ *
+ * Filler and a tool's messages used to spell their own sends — boundary, send,
+ * boundary, plus an `onDelta` for a verbatim completion — and had drifted on the
+ * caption rule: only the dead-air cover went through the stream-part handler's
+ * segment separator, so a tool's line FUSED with the words around it ("Let me
+ * check.One moment."), in the caption and, for a verbatim completion, in the
+ * turn's recorded text. {@link speakInReply} is the one spelling.
+ *
+ * Inside a reply, `record` is ALSO the barge-in eligibility of the words
+ * (`HeardTracker.spokeRecordable()`): a line that is not the agent's own
+ * dialogue must not let a caller's "are you still there?" count as cutting the
+ * work it covers ("Stop dead-air filler from opening the barge-in gate"). The
+ * reply it sits in is what a barge-in cuts, so an in-reply line is exactly as
+ * interruptible as that reply — `interruptible: true` by type.
+ *
+ * ## FIXED lines, and why they drifted
+ *
+ * The greeting, the error phrase and the start-failure phrase each used to
+ * spell their own sends, and had drifted on the same two rules:
  *
  * | line | caption, before | caption, now | history, before | history, now |
  * | --- | --- | --- | --- | --- |
@@ -45,7 +79,47 @@ import type { HeardTracker } from "./pipeline-heard.ts";
 import { type PipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
 import type { TurnGate } from "./pipeline-turn-gate.ts";
 import type { TurnMachine } from "./pipeline-turn-state.ts";
-import type { SendTtsText, TransportCallbacks } from "./types.ts";
+import type { LineFlags, SendTtsText, TransportCallbacks } from "./types.ts";
+
+/** A line spoken INSIDE a reply: as interruptible as the reply it sits in. @internal */
+export type InReplyLineFlags = LineFlags & { readonly interruptible: true };
+
+/**
+ * The reply in flight's text funnel, as {@link speakInReply} uses it — the
+ * stream-part handler's, which owns the segment separator and the transcript.
+ *
+ * @internal
+ */
+export type ReplyTextSink = {
+  /** Emit text into the reply: separator, transcript when `record`, TTS. */
+  emit(text: string, record: boolean): void;
+  /** Release what the TTS coalescer holds, and re-arm its first chunk. */
+  boundary(): void;
+  /** The next text is a new segment: separate it from this line. */
+  separate(): void;
+};
+
+/**
+ * Speak one code-initiated line INSIDE the reply in flight — the dead-air
+ * cover's filler and a tool's declared messages; see this module's table.
+ *
+ * Bounded by a TTS boundary on both sides: before, because a tool call is not
+ * guaranteed to follow the `text-end` that releases the buffer (the AI SDK may
+ * start `execute` first) and a line sent past a buffered fragment would be
+ * spoken out of order; after, because the reply has gone quiet and nothing
+ * else is coming to flush it. Separated from what follows, so the next segment
+ * does not fuse onto it.
+ *
+ * @internal
+ */
+export function speakInReply(sink: ReplyTextSink, text: string, line: InReplyLineFlags): void {
+  if (text.length === 0) return;
+  sink.boundary();
+  sink.separate();
+  sink.emit(text, line.record);
+  sink.separate();
+  sink.boundary();
+}
 
 /** The tag a failure phrase's caption carries — `AgentTranscriptRecovery`. */
 type Recovery = NonNullable<SessionEventBody<"agentTranscript.committed">["recovery"]>;

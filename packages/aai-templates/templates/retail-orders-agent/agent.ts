@@ -46,7 +46,7 @@ export default agent({
   // One projection pushed after every tool call. It is a projection, not a
   // flag, because the state holds all six seeded customers and only the
   // authenticated one may reach the browser.
-  syncState: retailSlot.projection(storeView),
+  syncState: { retail: retailSlot.projection(storeView) },
 
   /**
    * Declaring the flow is what lets the CALL move it, not just a tool.

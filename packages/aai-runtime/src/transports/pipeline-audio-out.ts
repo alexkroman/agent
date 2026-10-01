@@ -62,8 +62,14 @@ export interface AudioOut {
 export function createAudioOut(deps: {
   /** Minimum ms between a reply starting and its first audio out; 0 disables. */
   startSpeakingFloorMs: number;
-  /** Ms of blocked audio after a real interruption; 0 disables. */
-  interruptionBackoffMs: number;
+  /**
+   * Ms of blocked audio after a real interruption; 0 disables. A THUNK, read
+   * when the interruption lands, because a dialog state or a persona may move
+   * it for its own phase.
+   */
+  interruptionBackoffMs: () => number;
+  /** Whether {@link interruptionBackoffMs} can change mid-session — see the gate's `mayHold`. */
+  backoffMayVary?: boolean | undefined;
   /** Clock source for the gate — the transport's test seam. */
   now?: (() => number) | undefined;
   turns: TurnMachine;
@@ -82,7 +88,8 @@ export function createAudioOut(deps: {
 
   const speakGate = createSpeakGate({
     startSpeakingFloorMs: deps.startSpeakingFloorMs,
-    interruptionBackoffMs: deps.interruptionBackoffMs,
+    interruptionBackoffMs: deps.interruptionBackoffMs(),
+    mayHold: deps.backoffMayVary,
     now: deps.now,
     log,
     sid: deps.sid,
@@ -161,7 +168,7 @@ export function createAudioOut(deps: {
       ttsTextAtMs = undefined;
       speakGate.hold(deps.startSpeakingFloorMs);
     },
-    onInterrupted: () => speakGate.hold(deps.interruptionBackoffMs),
+    onInterrupted: () => speakGate.hold(deps.interruptionBackoffMs()),
     drop: () => speakGate.drop(),
     stop: () => speakGate.stop(),
   };

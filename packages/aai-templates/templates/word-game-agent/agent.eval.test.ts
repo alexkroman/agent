@@ -12,9 +12,13 @@ import agentDef from "virtual:aai/agent";
 // which still boots this agent, still resolves `tools/`, still arms the dialog
 // and still executes the tool a script names — so a stub run proves the wiring
 // and proves nothing about what the agent chose.
-import { dialogResultSchema } from "@alexkroman1/aai/testing";
-import { lastStateIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeEval,
+  dialogResultSchema,
+  lastStateIn,
+  toolNames,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { isCorrectGuess } from "./guess.ts";
@@ -68,7 +72,7 @@ describeEval(agentDef, (test) => {
       expect(started.result.intro).toMatch(/^Welcome to Word Wrangler!/);
       expect(started.result.intro).toContain(`Here's your first word: ${started.result.word}.`);
       // The describer's screen shows the word and the running round.
-      expect(lastStateIn(turn.events, Board)).toMatchObject({
+      expect(lastStateIn(turn.events, "game", Board)).toMatchObject({
         phase: "playing",
         word: started.result.word,
         score: 0,
@@ -110,7 +114,7 @@ describeEval(agentDef, (test) => {
       if (relayed.result.verdict === "wrong") {
         expect(relayed.result.score).toBe(0);
         expect(relayed.state).toBe("playing");
-        expect(lastStateIn(turn.events, Board)).toMatchObject({
+        expect(lastStateIn(turn.events, "game", Board)).toMatchObject({
           score: 0,
           wrongGuesses: [relayed.result.guess],
         });
@@ -173,8 +177,8 @@ describeEval(agentDef, (test) => {
         dialogResultSchema(z.object({ verdict: z.string(), word: z.string(), score: z.number() })),
       );
       expect(relayed.result).toMatchObject({ verdict: "foul", word, score: 0 });
-      expect(lastStateIn(turn.events, Board)).toMatchObject({ fouls: 1, score: 0 });
-      expect(lastStateIn(turn.events, Board)?.word).not.toBe(word);
+      expect(lastStateIn(turn.events, "game", Board)).toMatchObject({ fouls: 1, score: 0 });
+      expect(lastStateIn(turn.events, "game", Board)?.word).not.toBe(word);
     },
     {
       stubReply: [
@@ -201,7 +205,7 @@ describeEval(agentDef, (test) => {
       ).result;
       const turn = await session.say("Ugh, skip this one.");
       expect(toolNames(turn.toolCalls)).toEqual(["skip_word"]);
-      const board = lastStateIn(turn.events, Board);
+      const board = lastStateIn(turn.events, "game", Board);
       expect(board?.score).toBe(0);
       expect(board?.word).not.toBe(word);
       expect(board?.phase).toBe("playing");

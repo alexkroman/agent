@@ -9,10 +9,10 @@
  * @module
  */
 
-import type { AgentDef, ToolDef } from "@alexkroman1/aai";
+import type { AgentDef, Toolset } from "@alexkroman1/aai";
 import { resolveAllBuiltins } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_BUILTIN_TOOLS } from "@alexkroman1/aai/internal";
-import type { ToolSchema } from "@alexkroman1/aai/manifest";
+import { type ToolSchema, toolset } from "@alexkroman1/aai/manifest";
 import type { Logger } from "./runtime-config.ts";
 
 /**
@@ -37,7 +37,8 @@ export function mergeBuiltinSurface(
   provided: { schemas: ToolSchema[]; guidance?: string[] },
   logger?: Logger | undefined,
 ): {
-  defs: Record<string, ToolDef>;
+  /** The `"builtin"` toolset — the shadowed names already dropped. Append it LAST. */
+  toolset: Toolset;
   schemas: ToolSchema[];
   guidance: string[];
 } {
@@ -55,7 +56,7 @@ export function mergeBuiltinSurface(
   }
   const builtins = resolveAllBuiltins(names, builtinOpts);
   return {
-    defs: builtins.defs,
+    toolset: toolset("builtin", builtins.defs),
     schemas: [...provided.schemas, ...builtins.schemas],
     guidance: [...(provided.guidance ?? []), ...builtins.guidance],
   };

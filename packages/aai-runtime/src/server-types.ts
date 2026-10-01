@@ -160,7 +160,7 @@ export type RuntimeServerOptions = {
    * for a static agent because it is off for EVERY agent that does not declare
    * a carrier — see `telephony` below.)
    */
-  page?: NonNullable<AgentDef["page"]>;
+  page?: "voice" | "static";
   /**
    * Which phone carriers may open a media stream on `WS /phone` — see
    * `AgentDef.telephony`. Defaults to NONE: the route refuses every upgrade
@@ -261,7 +261,7 @@ export type AgentServer = {
    * So the rule is: reach for the host's own upgrade channel before concluding
    * it has none. A host that genuinely has neither still runs the HTTP surface
    * — `/health`, `/client-config`, `/workflows/*`, the webhook route, static
-   * assets — which is what a `page: "static"` workflow app needs and all it
+   * assets — which is what a `mode: "workflow-app"` workflow app needs and all it
    * needs.
    */
   node: http.Server;

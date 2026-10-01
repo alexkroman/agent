@@ -17,24 +17,36 @@
  * cross from the first to the second by way of a real step message.** In the
  * LLM view a `tool` message is one half of a PAIR — the assistant message
  * carrying the `tool-call` part is the other — and both providers reject a
- * result with no call to answer (that is the whole of {@link capLlm}). The
- * conversation view has no pairs, so {@link PipelineHistory.seed} never maps a
+ * result with no call to answer (which is why {@link evictLlm} cuts only at a
+ * message that can lead). The conversation view has no pairs, so {@link PipelineHistory.seed} never maps a
  * resume's `tool` messages across; it takes pairs built from both halves.
  *
  * **The LLM view is re-PAIRED on every write** (`../tool-call-pairs.ts`), so
  * `history` itself — not just one request built from it — stays valid.
  *
- * Both views are capped at `DEFAULT_MAX_HISTORY` (oldest trimmed) — and each
- * push records what its own cap evicted, so `dropTrailingUser` can undo the
- * eviction along with the append. See that member's doc for the turn a rollback
- * at the cap used to cost.
+ * **Neither view is capped by message count, and neither decides what a
+ * request SENDS.** That is the token budget's job, done per step in
+ * `pipeline-context-budget.ts` over the whole `llm` view. What bounds the views
+ * here is MEMORY: each is retained down to the newest `retainTokens` estimated
+ * tokens (`../_history-retention.ts`, default `HISTORY_RETAIN_TOKENS`), a
+ * multiple of the largest request budget any model has, so retention can never
+ * remove a message a request would have sent. A push records what its own
+ * retention evicted, so `dropTrailingUser` can undo the eviction along with the
+ * append — see that member's doc for the turn a rollback at the bound used to
+ * cost.
  */
 
 import type { Message } from "@alexkroman1/aai";
-import { createEpoch, DEFAULT_MAX_HISTORY, type Epoch } from "@alexkroman1/aai/internal";
+import { createEpoch, type Epoch } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
+import {
+  estimateConversationTokens,
+  evictBeyondRetention,
+  HISTORY_RETAIN_TOKENS,
+} from "../_history-retention.ts";
 import type { Logger } from "../runtime-config.ts";
 import { pairToolCallsInPlace } from "../tool-call-pairs.ts";
+import { estimateMessageTokens } from "./pipeline-context-budget.ts";
 import { toModelMessage } from "./pipeline-stream.ts";
 
 /** Conversation memory handle returned by {@link createPipelineHistory}. */
@@ -54,7 +66,7 @@ export interface PipelineHistory {
    * - **It never touches `llm`.** A `tool` message there needs the assistant
    *   `tool-call` message that answers it, and the turn pushes both together
    *   as step messages; a second copy from here would be an orphan result of
-   *   exactly the kind {@link capLlm} exists to remove.
+   *   exactly the kind {@link evictLlm} refuses to leave at the front.
    * - **It does not bump {@link revision}.** That epoch gates adopting a
    *   preemptive speculation, and what a speculation's request is assembled
    *   from is `llm` — untouched here, so the request in flight is still the
@@ -105,13 +117,14 @@ export interface PipelineHistory {
    * message it did not write.
    *
    * **It is an INVERSE of the push, which took new state to make true.** Both
-   * views are CAPPED, so an append at `DEFAULT_MAX_HISTORY` trims the oldest
-   * message; popping the append undid the append and not the eviction it caused,
-   * and the rolled-back prompt — a message the caller never said — permanently
-   * cost one real conversation turn: push at 200 trims the front and lands at
-   * 200, the pop leaves 199, and the trimmed message was never restored. So a
-   * push records what it evicted ({@link PushUndo}) and a pop that undoes THAT
-   * push unshifts it back. Nothing in the system could see the loss — both views
+   * views are RETAINED to a token bound, so an append at the bound evicts the
+   * oldest message; popping the append undid the append and not the eviction it
+   * caused, and the rolled-back prompt — a message the caller never said —
+   * permanently cost one real conversation turn (found when the bound was a
+   * 200-message cap: push at 200 trimmed the front and landed at 200, the pop
+   * left 199, and the trimmed message was never restored). So a push records
+   * what it evicted ({@link PushUndo}) and a pop that undoes THAT push unshifts
+   * it back. Nothing in the system could see the loss — both views
    * are the right shape afterwards, one turn shallower — which is why the claim
    * is now stated as a property over generated depths
    * (`pipeline-history-rollback.integration.test.ts`) rather than at the one depth a
@@ -169,19 +182,6 @@ export function markInterrupted(heard: string): string {
 }
 
 /**
- * Trim `arr` to the cap, ANSWERING what came off the front.
- *
- * The return value is what makes {@link PipelineHistory.dropTrailingUser} an
- * inverse — see {@link PushUndo}. It is `splice`'s own answer, so the eviction
- * is recorded by the operation that performs it rather than reconstructed by a
- * caller that would have to know the cap.
- */
-function cap<T>(arr: T[]): T[] {
-  if (arr.length <= DEFAULT_MAX_HISTORY) return [];
-  return arr.splice(0, arr.length - DEFAULT_MAX_HISTORY);
-}
-
-/**
  * Whether a conversation message may be mapped into the LLM view.
  *
  * Only `tool` messages are refused, and the module doc says why: the LLM view
@@ -195,35 +195,21 @@ function isLlmSeedable(m: Message): boolean {
 }
 
 /**
- * Cap the LLM view, then heal a tool-call/result pair the trim split.
+ * Retain the LLM view to `retain` tokens, never cutting between a tool-call
+ * and its result, ANSWERING what came off the front.
  *
- * {@link cap} is a pure index trim, and the LLM view — unlike the text-only
- * `conversation` view — holds PAIRS: an assistant message carrying `tool-call`
- * parts followed by the `tool` message carrying their results. When the trim
- * boundary lands between the two, the call is dropped and the result survives
- * with nothing to answer. Both providers reject that outright — OpenAI with
- * "messages with role 'tool' must be a response to a preceding message with
- * 'tool_calls'", Anthropic with an unexpected-`tool_result` error — so every
- * turn for the rest of the call fails at the provider and the caller hears
- * `errorPhrase` instead of a reply.
+ * The answer is what makes {@link PipelineHistory.dropTrailingUser} an inverse
+ * ({@link PushUndo}): `splice`'s own, so the operation that evicts records it.
  *
- * Turn sizes vary (a text-only turn is 2 messages, a one-tool turn 4, a tool
- * chain more), so the window drifts out of alignment with turn boundaries on
- * its own; nothing about the conversation has to be unusual. Only the FRONT of
- * the window is trimmed, so a leading `tool` message is the only shape this can
- * produce — dropping those is sufficient, and it costs at most a few messages
- * below the cap.
+ * A cut between an assistant `tool-call` message and the `tool` message
+ * answering it leaves a result with nothing to answer, which both providers
+ * reject outright (OpenAI: "messages with role 'tool' must be a response to a
+ * preceding message with 'tool_calls'") — every later turn of the call fails.
+ * Turn sizes vary, so cuts drift off turn boundaries on their own. Only the
+ * FRONT is cut, so a cut point is simply never a `tool` message.
  */
-function capLlm(arr: ModelMessage[]): ModelMessage[] {
-  const evicted = cap(arr);
-  while (arr.length > 0 && arr[0]?.role === "tool") {
-    const shifted = arr.shift();
-    if (shifted) evicted.push(shifted);
-  }
-  // Front order, and the healed pair halves come after the capped ones because
-  // that is where they sat: a rollback unshifts this list whole, so the array it
-  // restores is byte-for-byte the one the push found.
-  return evicted;
+function evictLlm(arr: ModelMessage[], retain: number): ModelMessage[] {
+  return evictBeyondRetention(arr, retain, estimateMessageTokens, (m) => m.role !== "tool");
 }
 
 /**
@@ -351,9 +337,9 @@ export function persistInterruptedTurn(args: {
  * What one single-message push evicted, so the pop that undoes that push can
  * put it back.
  *
- * **A push is capped and a pop is not, so without this a rollback is not a
- * rollback.** An append at the cap trims the oldest message; popping the append
- * leaves the window one message shallower than it was, permanently — see
+ * **A push is retained and a pop is not, so without this a rollback is not a
+ * rollback.** An append at the bound evicts the oldest message; popping the
+ * append leaves the window one message shallower than it was, permanently — see
  * {@link PipelineHistory.dropTrailingUser}, and `pipeline-history-rollback.integration.test.ts`
  * for the property that states it.
  *
@@ -374,14 +360,27 @@ export function persistInterruptedTurn(args: {
  */
 type PushUndo<T> = { readonly pushed: T; readonly evicted: readonly T[] } | null;
 
-/**
- * Create a {@link PipelineHistory}, optionally seeded from prior text history.
- * `opts` is where a repaired tool pair is reported.
- */
+/** Options for {@link createPipelineHistory}. */
+export interface PipelineHistoryOptions {
+  /** Where a repaired tool pair is reported. */
+  log?: Pick<Logger, "warn">;
+  sid?: string;
+  /**
+   * Estimated tokens each view retains (the MEMORY bound, see the module doc);
+   * default `HISTORY_RETAIN_TOKENS`. A spec lowers it to reach the bound.
+   */
+  retainTokens?: number;
+}
+
+/** Create a {@link PipelineHistory}, optionally seeded from prior text history. */
 export function createPipelineHistory(
   seed?: readonly Message[],
-  opts: { log?: Pick<Logger, "warn">; sid?: string } = {},
+  opts: PipelineHistoryOptions = {},
 ): PipelineHistory {
+  const retain = opts.retainTokens ?? HISTORY_RETAIN_TOKENS;
+  const retainText = (arr: Message[]): Message[] =>
+    evictBeyondRetention(arr, retain, estimateConversationTokens);
+  const retainLlm = (arr: ModelMessage[]): ModelMessage[] => evictLlm(arr, retain);
   const conversation: Message[] = seed ? [...seed] : [];
   // Same subtraction `seed()` below makes, for the same reason — a `tool`
   // message has no half to pair with here.
@@ -412,8 +411,8 @@ export function createPipelineHistory(
     if (last === undefined || last.role !== "user" || last.content !== content) return;
     arr.pop();
     // The front of the restored list is whatever sat at index 0 before the push,
-    // which `capLlm`'s invariant says is never a `tool` message — so restoring a
-    // healed pair half cannot re-expose an orphan result.
+    // which `evictLlm`'s invariant says is never a `tool` message — so restoring
+    // a healed pair half cannot re-expose an orphan result.
     if (undo?.pushed === last) arr.unshift(...undo.evicted);
   };
 
@@ -423,14 +422,14 @@ export function createPipelineHistory(
     revision: { current: revision.current, isCurrent: revision.isCurrent },
     pushConversation(...msgs: Message[]): void {
       conversation.push(...msgs);
-      const evicted = cap(conversation);
+      const evicted = retainText(conversation);
       const pushed = msgs.length === 1 ? msgs[0] : undefined;
       conversationUndo = pushed ? { pushed, evicted } : null;
       revision.bump();
     },
     pushToolResult(msg: Message): void {
       conversation.push(msg);
-      cap(conversation);
+      retainText(conversation);
       // Spent, not recorded — see the member's doc for all three halves.
       conversationUndo = null;
     },
@@ -447,7 +446,7 @@ export function createPipelineHistory(
         }
       }
       pairLlm();
-      const evicted = capLlm(llm);
+      const evicted = retainLlm(llm);
       const only = pushed.length === 1 ? pushed[0] : undefined;
       llmUndo = only ? { pushed: only, evicted } : null;
       revision.bump();
@@ -460,7 +459,7 @@ export function createPipelineHistory(
       // An edit that removed an assistant message must not strand its results.
       pairLlm();
       // Spent, like any intervening mutation: a removal shifted the window, so
-      // restoring an eviction under a later pop could overrun the cap.
+      // restoring an eviction under a later pop could reorder it.
       conversationUndo = null;
       llmUndo = null;
       revision.bump();
@@ -476,11 +475,11 @@ export function createPipelineHistory(
     seed(msgs: readonly Message[], llmMsgs?: readonly ModelMessage[]): void {
       if (msgs.length === 0 && !llmMsgs?.length) return;
       conversation.push(...msgs);
-      cap(conversation);
+      retainText(conversation);
       llm.push(...(llmMsgs ?? msgs.filter(isLlmSeedable).map(toModelMessage)));
-      // Paired before the cap, as `pushLlm` does: `capLlm` heals its own cut.
+      // Paired before retention, as `pushLlm` does: `evictLlm` never splits a pair.
       pairLlm();
-      capLlm(llm);
+      retainLlm(llm);
       // A reconnect seed is never rolled back — nothing pushes a synthetic
       // prompt through this door — and its eviction is therefore not owed back
       // to anybody. Cleared rather than recorded so a stale slot cannot outlive

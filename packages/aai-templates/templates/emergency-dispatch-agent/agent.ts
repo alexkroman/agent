@@ -27,7 +27,7 @@ export default agent({
   // something to project rather than an empty state object.
   // One projection replaces eleven `ctx.send("incidents", ...)` calls, and
   // is the single place that decides caller PII stays server-side.
-  syncState: dashboardProjection,
+  syncState: { dispatch: dashboardProjection },
   // A dispatcher reads addresses and unit numbers in bursts with pauses inside
   // one message ("unit twelve … respond to"). The default pipeline's
   // `max_turn_silence` already tolerates that; reach for

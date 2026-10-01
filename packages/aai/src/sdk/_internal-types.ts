@@ -16,7 +16,7 @@ import { omitUndefined } from "./omit-undefined.ts";
 import { toToolJsonSchema } from "./schema.ts";
 import { normalizeToolMessages } from "./tool-messages.ts";
 import type { ToolSchema } from "./tool-schema.ts";
-import type { ToolDef } from "./types.ts";
+import { composeToolsets, type Toolset } from "./toolset.ts";
 
 export {
   type AgentConfig,
@@ -31,8 +31,10 @@ export { type ToolSchema, ToolSchemaSchema } from "./tool-schema.ts";
 
 export const EMPTY_PARAMS = z.object({});
 
-export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[] {
-  return Object.entries(tools).map(([name, def]) => {
+export function agentToolsToSchemas(toolsets: readonly Toolset[]): ToolSchema[] {
+  // Composed first-wins — the table the dispatcher reads — so a shadowed name is
+  // advertised once, as the tool that will actually run.
+  return composeToolsets(toolsets).tools.map(({ name, entry: { def } }) => {
     // TypeScript catches this rename; an untypechecked JS agent would
     // otherwise silently ship a no-arg tool spec.
     if ("parameters" in def && def.inputSchema === undefined) {

@@ -107,9 +107,9 @@ export const WORKFLOW_BODY_RULES = [
     id: 26,
     key: "rule26_unclassifiedStepCall",
     label: "raw step call in a shipped workflow body",
-    // A call position. The wrappers themselves are excluded by the trailing
-    // `\\(`: their names are the banned name plus `OrFail`, so the paren
-    // never follows. See both fragments' docs.
+    // A call position. The remedy is excluded by the trailing `\\(`:
+    // `orFail(stepGenerate)(x)` puts a `)` after the name, so the paren never
+    // follows. See both fragments' docs.
     re: `${NOT_IDENT_BEFORE}(${CLASSIFIABLE_STEP_CALLS})\\(`,
     paths: WORKFLOW_BODY_PATHSPECS,
     skipComments: true,
@@ -117,23 +117,23 @@ export const WORKFLOW_BODY_RULES = [
       // DERIVED from the alternation, one pair per banned name, so a name added
       // to `CLASSIFIABLE_STEP_CALLS` is sampled in both directions without
       // anyone remembering to. It also keeps every literal here short: spelled
-      // out, `  await stepTranscribeSyncOrFail(bytes);` is long enough that
+      // out, `  await orFail(stepTranscribeSync)(bytes);` is long enough that
       // biome's `noSecrets` entropy heuristic scores it as a credential, and
       // the formatter folds any concatenation written to dodge that.
       matches: CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await ${name}(x);`),
       ignores: [
-        // The remedy: the same name plus the suffix, which the trailing `(`
-        // in the pattern is what excludes.
-        ...CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await ${name}OrFail(x);`),
+        // The remedy, `orFail(name)(x)`, which the trailing `(` in the
+        // pattern is what excludes.
+        ...CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await orFail(${name})(x);`),
         // Not a call: an import, a type position, a property.
         'import { stepGenerate } from "@alexkroman1/aai/step";',
         "  const opts: StepGenerateOptions = { system };",
       ],
     },
     remedy:
-      'Inside a `"use step"` body, call the `*OrFail` sibling from\n' +
-      "`@alexkroman1/aai/step-errors` — the same name plus that suffix, for\n" +
-      "each of the callers this rule names.\n" +
+      'Inside a `"use step"` body, wrap the call in `orFail` from\n' +
+      "`@alexkroman1/aai/step-errors` — pass it the step call, then call what\n" +
+      "it answers — for each of the callers this rule names.\n" +
       "\n" +
       "The DevKit decides its retry policy from WHICH error a step throws, and a\n" +
       "raw call throws the same thing for every failure. So a bad API key is\n" +
@@ -141,7 +141,7 @@ export const WORKFLOW_BODY_RULES = [
       "DevKit's default one second while the delay the gateway itself named sits\n" +
       "unread on the error. That last one is worst exactly where this SDK\n" +
       "encourages a fan-out: N steps hit the limit together, and a second later\n" +
-      "all N ask again. The wrapper is the call plus `throwStepError`, nothing\n" +
+      "all N ask again. `orFail(call)` is the call plus `throwStepError`, nothing\n" +
       "else — a terminal failure raises `FatalError` and stops, a transient one\n" +
       "raises `RetryableError` carrying the far side's own `Retry-After`.\n" +
       "\n" +
@@ -151,8 +151,7 @@ export const WORKFLOW_BODY_RULES = [
       "`meeting-recap-agent`'s `discardTranscript` is the worked example.\n" +
       "\n" +
       "Scoped to shipped `workflows/` bodies because those are what a user\n" +
-      "copies, and because the SDK's own `sdk/step-errors.ts` calls all six —\n" +
-      "being the wrappers.",
+      "copies.",
   },
   {
     id: 30,

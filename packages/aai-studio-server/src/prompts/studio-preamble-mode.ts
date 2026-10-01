@@ -70,7 +70,7 @@ form-fronted workflow app instead.`,
   from "@alexkroman1/aai" and mount its client.tsx with \`mountPage()\` instead
   of \`mountClient()\`. It has no session and no LLM loop, so systemPrompt, tools,
   maxSteps, state and every provider field are TYPE ERRORS on one — do not
-  reach for \`agent({ page: "static" })\` and add them back.
+  reach for \`agent({ mode: "workflow-app" })\` and add them back.
 - Workflow BODIES go in \`workflows/*.ts\` — the build transforms that
   directory and nothing else, so a \`"use workflow"\` body written in agent.ts
   runs inline with no durability and nothing reporting it. The body replays
@@ -107,8 +107,8 @@ search agent whose whole output is speech. If the project already has a
 client.tsx, preserve its established style.
 
 The way to surface state is the SDK's hooks, and \`useAgentState\` is the
-one to reach for first: declare \`state\` and \`syncState\` on the agent and
-read the projection with \`useAgentState<T>()\` in client.tsx. Use
+one to reach for first: declare a slot and \`syncState: { [slot]: slot.projected }\` and
+read it with \`useAgentState(slot.projected)\` in client.tsx. Use
 \`useToolResult("tool_name", ...)\` for reacting to a single tool's return
 value, not as the way to mirror state — that pattern means every tool has
 to return a full snapshot and the client has to keep a \`useState\` copy in
@@ -162,7 +162,7 @@ it in the UI pane."`,
 /**
  * Workflow mode: a STATIC workflow app — `workflowApp()` plus a `mountPage()`.
  *
- * "Static" is the discriminant's own word (`page: "static"`, which
+ * "Static" is the discriminant's own word (`mode: "workflow-app"`, which
  * `workflowApp()` sets) and it is the default this mode has to hold, because
  * the OTHER workflow shape is a voice agent whose tool calls
  * `ctx.workflows.start` — and that shape is what a model reaches for by
@@ -194,7 +194,7 @@ unless they ask outright for a voice agent instead.`,
 - **A workflow app is not an agent with the voice turned off.** It has no
   session and no LLM loop, so \`systemPrompt\`, \`tools\`, \`maxSteps\`,
   \`state\`, \`syncState\` and every provider field (stt/llm/tts/s2s) are TYPE
-  ERRORS on one. Never reach for \`agent({ page: "static" })\` to add them
+  ERRORS on one. Never reach for \`agent({ mode: "workflow-app" })\` to add them
   back — \`workflowApp()\` is that declaration with the discriminant already
   set, and the fields are refused on purpose. \`greeting\` and \`requiredEnv\`
   stay.

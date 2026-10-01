@@ -5,9 +5,10 @@
  *
  * A case asks for it rather than being handed it: a `describeEval` /
  * `describeTextEval` context carries its `session` and `mode` and nothing about
- * simulated callers, so the simulation surface is its own subpath
- * (`@alexkroman1/aai-runtime/eval/simulate`) and its own capability, versioned
- * apart from the harness a case runs in.
+ * simulated callers, so the simulation surface is its own capability
+ * (`eval-simulate`), versioned apart from the harness a case runs in — though
+ * not its own import: it is on `@alexkroman1/aai-runtime/eval/vitest` beside
+ * the suite (and on the runner-free `/eval`).
  *
  * Live, the caller and the judge run on `callerLlm`/`judgeLlm`,
  * falling back to the model the agent itself is evaluated on — one key, one
@@ -20,7 +21,7 @@
  * One function for both doors so the two cannot come to disagree about which
  * model a simulated caller runs on.
  *
- * `eval-simulate-barrel.ts` carries the worked example.
+ * {@link evalSimulation} carries the worked example.
  *
  * @module
  */
@@ -109,6 +110,24 @@ const DEFAULT_STUB_CALLER: StubScript = [
  * Build the `simulate`/`judge` pair for one case. Every stub it installs is
  * released before the call that installed it returns, so a case owes nothing
  * back.
+ *
+ * In a `describeEval` / `describeTextEval` case it builds the pair from the
+ * case's own `session` and `mode`, live or scripted the way the rest of the
+ * suite is:
+ *
+ * ```ts
+ * import type { AgentDef } from "@alexkroman1/aai";
+ * import { type EvalTestContext, evalSimulation } from "@alexkroman1/aai-runtime/eval/vitest";
+ *
+ * declare const agentDef: AgentDef;
+ *
+ * // The body of a `describeEval` case: `session` and `mode` come from its context.
+ * export async function forecastCase({ session, mode }: EvalTestContext): Promise<boolean> {
+ *   const { simulate, judge } = evalSimulation({ agent: agentDef, mode, target: session });
+ *   const call = await simulate({ persona: "a commuter", goal: "the forecast" });
+ *   return (await judge(call, ["It answered the question."])).pass;
+ * }
+ * ```
  *
  * @public
  */

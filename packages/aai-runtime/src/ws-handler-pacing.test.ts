@@ -4,12 +4,12 @@
 // its ordering against audio_done and against a barge-in load-bearing. Other
 // wireSessionSocket lifecycle specs live in ws-handler-lifecycle.test.ts.
 
-import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import type { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
+import { createSessionDirectory } from "./session-directory.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
@@ -26,7 +26,7 @@ describe("wireSessionSocket audio pacing", () => {
     const ws = openSocket();
     let client!: ClientSink;
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: (_sid, sink) => {
         client = sink;
         return makeMockCore();

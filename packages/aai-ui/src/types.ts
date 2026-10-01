@@ -301,6 +301,54 @@ export type VoiceSessionOptions = {
    */
   preConnectAudio?: boolean | undefined;
   /**
+   * The session ticket this client presents — for a server that requires one
+   * (`AAI_SESSION_SECRET`, or `createSessionAuth()` on
+   * `@alexkroman1/aai-runtime/auth`).
+   *
+   * A string, or a getter asked on EVERY connection attempt — the first, each
+   * reconnect and each resume — so a short-lived ticket (60 s by default) is
+   * fresh each time. Fetch it from your own backend, which checks its own login
+   * and mints with `createSessionToken()`; the secret must never reach the
+   * browser. The getter is told the session the attempt RESUMES (`undefined`
+   * for a new one), so a backend can bind a resume ticket to it
+   * (`createSessionToken({ sessionId })`) — what a resume needs after the
+   * server restarted.
+   *
+   * It travels in `Sec-WebSocket-Protocol` as `aai.auth.<ticket>` beside the
+   * plain `aai.session` protocol, never in the URL, so it stays out of access
+   * logs (a value that is not a valid protocol token falls back to `?token=`).
+   * An empty or `undefined` answer sends none, and so does a getter that throws
+   * or rejects: the attempt still dials, and a server that requires a ticket
+   * refuses it with a reason. Give a fetch inside the getter a deadline — the
+   * attempt waits for it. With an injected {@link WebSocket} the getter must
+   * answer synchronously.
+   *
+   * When omitted, a ticket the server's `client-config` issued is used — which
+   * `aai dev` does for its own client when `AAI_SESSION_SECRET` is set.
+   *
+   * @example
+   * ```ts
+   * import { mountClient } from "@alexkroman1/aai-ui";
+   *
+   * mountClient({
+   *   token: async ({ sessionId }) => {
+   *     const res = await fetch("/my-backend/session-ticket", {
+   *       method: "POST",
+   *       body: JSON.stringify({ sessionId }),
+   *       signal: AbortSignal.timeout(5000),
+   *     });
+   *     return (await res.json()).token;
+   *   },
+   * });
+   * ```
+   */
+  token?:
+    | string
+    | ((attempt: {
+        readonly sessionId: string | undefined;
+      }) => string | undefined | Promise<string | undefined>)
+    | undefined;
+  /**
    * WebSocket constructor override. Primarily useful for testing with a mock
    * WebSocket. When omitted, the session uses a reconnecting WebSocket
    * (partysocket) that retries with exponential backoff after an unexpected

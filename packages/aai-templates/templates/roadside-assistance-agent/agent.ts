@@ -55,7 +55,7 @@ export default agent({
    * would happen: `@session.timedOut` and `@userTranscript.committed` would
    * reach nothing, the two `timeout` deadlines would never be armed, the active
    * state's `instruction` would reach the model only on turns that happened to
-   * call a tool, and `bargeIn` and `toolChoice` would be declarations nothing
+   * call a tool, and `interruption` and `toolChoice` would be declarations nothing
    * read.
    *
    * The two knobs are a PIPELINE property. On either speech-to-speech

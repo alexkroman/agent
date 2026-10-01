@@ -68,8 +68,11 @@ export interface FalseInterruptionRecovery {
 
 /** Create a {@link FalseInterruptionRecovery}. */
 export function createFalseInterruptionRecovery(opts: {
-  /** `resumeFalseInterruption`; false disables recovery entirely. */
-  enabled: boolean;
+  /**
+   * `resumeFalseInterruption`; false disables recovery. A THUNK, read when a
+   * resume would be armed, because a dialog state or a persona may move it.
+   */
+  enabled: () => boolean;
   /** Max back-to-back resumes before the user must speak again. */
   maxConsecutive: number;
   /** False once the transport terminated — a released latch then does nothing. */
@@ -95,7 +98,7 @@ export function createFalseInterruptionRecovery(opts: {
       // Budget spent: persistent cross-talk must not loop barge-in → resume →
       // barge-in indefinitely, each cycle costing a full LLM+TTS turn and
       // another copy of the continuation prompt in history.
-      if (!opts.enabled || spent()) return;
+      if (!opts.enabled() || spent()) return;
       armed = resumePrompt;
     },
     clear(): void {

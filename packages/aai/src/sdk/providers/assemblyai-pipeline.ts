@@ -27,12 +27,12 @@
  * gap, and it did not. So the gap was closed twice over: first with this
  * preset, then structurally — an `agent()` that declares no providers runs
  * this pipeline by default, unset stages of a partial triple are filled from
- * it, and the default pipeline's voice is one field
- * (`agent({ voice: "jane" })`). The golden path needs no preset at all:
+ * it, and a voice is one descriptor option
+ * (`tts: assemblyAITts({ voice: "jane" })`). The golden path needs no preset:
  *
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * export default agent({ name: "Jane", voice: "jane" });
+ * export default agent({ name: "Jane" }); // the default pipeline, voice "jane"
  * // Swap one stage; the other two stay on AssemblyAI:
  * agent({ name: "Jane", llm: "claude-sonnet-4-6" });
  * ```
@@ -71,8 +71,8 @@ export interface AssemblyAIPipelineOptions {
    * language — see
    * `ASSEMBLYAI_TTS_VOICES` (from `@alexkroman1/aai/tts`) for the
    * catalog; a name outside it fails in-band after connect and leaves the
-   * agent silent. (`agent({ voice })` is the same setting without the
-   * preset.)
+   * agent silent. (`tts: assemblyAITts({ voice })` is the same setting
+   * without the preset.)
    */
   voice?: AssemblyAITtsVoice;
   /**

@@ -19,6 +19,8 @@ function line(): SpokenLine & { takeBack: () => void; started: () => boolean } {
   let started = false;
   return {
     signal: ctl.signal,
+    record: true,
+    interruptible: true,
     onStart: () => {
       started = true;
     },

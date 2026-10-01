@@ -128,6 +128,17 @@ describe("session-core server events", () => {
       send(socket, { type: "state.updated", state: { step: "answering" } });
       expect(core.getSnapshot().agentState).toEqual({ step: "answering" });
     });
+
+    it("keeps an unchanged slot's value object, so a per-slot selector is stable", () => {
+      const socket = connect();
+      send(socket, { type: "state.updated", state: { cart: { n: 1 }, prefs: { units: "si" } } });
+      const first = core.getSnapshot().agentState;
+      send(socket, { type: "state.updated", state: { cart: { n: 2 }, prefs: { units: "si" } } });
+      const second = core.getSnapshot().agentState;
+      expect(second?.cart).toEqual({ n: 2 });
+      expect(second?.prefs).toBe(first?.prefs);
+      expect(second?.cart).not.toBe(first?.cart);
+    });
   });
 
   describe("agent transcript commit", () => {

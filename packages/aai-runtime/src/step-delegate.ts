@@ -6,7 +6,7 @@
  * It is `createSubagentRunner` with a SESSIONLESS parent bag, and that reuse is
  * the whole design: the alternative is a second tool loop, and the last thing a
  * subagent's behaviour should depend on is which side of the `ToolContext`
- * boundary reached it. So a `SubagentDef` delegated from a step gets the same
+ * boundary reached it. So a `SpeakerDef` delegated from a step gets the same
  * model resolution, the same `executeToolCall` for its tools, the same forced
  * final answer at the budget, and the same guardrail loop as one delegated from
  * a tool.
@@ -40,7 +40,7 @@
  * the default is `ASSEMBLYAI_LLM_DEFAULT_MODEL` through the AssemblyAI LLM
  * Gateway on `ASSEMBLYAI_API_KEY`, exactly what `stepGenerate` resolves and for
  * the same reason: a workflow and the agent beside it should not silently run on
- * different models. A `SubagentDef.llm` still wins, so a step that wants a
+ * different models. A `SpeakerDef.llm` still wins, so a step that wants a
  * cheaper or a bigger model names one.
  */
 

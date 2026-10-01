@@ -35,8 +35,12 @@
  */
 import agentDef from "virtual:aai/agent";
 import { countWords } from "@alexkroman1/aai/utils";
-import { describeTurn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeEval,
+  describeTurn,
+  toolNames,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { MAX_ANGLES } from "./shared.ts";

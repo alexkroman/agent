@@ -7,7 +7,7 @@
  * no LLM, and a subagent trying to delegate again.
  */
 
-import { subagent, tool } from "@alexkroman1/aai";
+import { speaker, tool } from "@alexkroman1/aai";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -51,7 +51,7 @@ describe("createSubagentRunner", () => {
     const { model, descriptor, env } = setup([{ text: "done" }]);
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
     await run(
-      subagent({ name: "tuned", systemPrompt: "S.", temperature: 0.3, maxOutputTokens: 64 }),
+      speaker({ name: "tuned", systemPrompt: "S.", temperature: 0.3, maxOutputTokens: 64 }),
       { task: "t" },
       parentCall(),
     );
@@ -63,7 +63,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     const result = await run(
-      subagent({ name: "researcher", systemPrompt: "Research and summarize." }),
+      speaker({ name: "researcher", systemPrompt: "Research and summarize." }),
       { task: "Is it raining?" },
       parentCall(),
     );
@@ -95,7 +95,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     const result = await run(
-      subagent({ name: "researcher", systemPrompt: "Look things up.", tools: { lookup } }),
+      speaker({ name: "researcher", systemPrompt: "Look things up.", tools: { lookup } }),
       { task: "What is the tide doing?" },
       parentCall(),
     );
@@ -122,7 +122,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     const result = await run(
-      subagent({ name: "researcher", systemPrompt: "Look things up.", tools: { lookup } }),
+      speaker({ name: "researcher", systemPrompt: "Look things up.", tools: { lookup } }),
       { task: "anything" },
       parentCall(),
     );
@@ -143,7 +143,7 @@ describe("createSubagentRunner", () => {
       inputSchema: z.object({}),
       execute: async (_args, ctx) => {
         await ctx
-          .delegate(subagent({ name: "nested", systemPrompt: "hi" }), { task: "again" })
+          .delegate(speaker({ name: "nested", systemPrompt: "hi" }), { task: "again" })
           .catch((err: unknown) => {
             refusal = err instanceof Error ? err.message : String(err);
           });
@@ -153,7 +153,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     await run(
-      subagent({ name: "researcher", systemPrompt: "Delegate.", tools: { deeper } }),
+      speaker({ name: "researcher", systemPrompt: "Delegate.", tools: { deeper } }),
       { task: "anything" },
       parentCall(),
     );
@@ -174,7 +174,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     const result = await run(
-      subagent({
+      speaker({
         name: "researcher",
         systemPrompt: "Look things up.",
         tools: { lookup },
@@ -194,7 +194,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     await run(
-      subagent({ name: "researcher", systemPrompt: "Be brief." }),
+      speaker({ name: "researcher", systemPrompt: "Be brief." }),
       { task: "Summarize.", context: "The caller is Ada." },
       parentCall(),
     );
@@ -210,7 +210,7 @@ describe("createSubagentRunner", () => {
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
     await run(
-      subagent({
+      speaker({
         name: "researcher",
         systemPrompt: "Search.",
         builtinTools: ["web_search", "calculate"],
@@ -229,7 +229,7 @@ describe("createSubagentRunner", () => {
   it("rejects naming the subagent when no LLM is configured or named", async () => {
     const run = createSubagentRunner({ env: {}, logger: silent });
     await expect(
-      run(subagent({ name: "researcher", systemPrompt: "hi" }), { task: "x" }, parentCall()),
+      run(speaker({ name: "researcher", systemPrompt: "hi" }), { task: "x" }, parentCall()),
     ).rejects.toThrow(/subagent "researcher": no LLM configured/);
   });
 
@@ -239,7 +239,7 @@ describe("createSubagentRunner", () => {
     const controller = new AbortController();
 
     await run(
-      subagent({ name: "researcher", systemPrompt: "hi" }),
+      speaker({ name: "researcher", systemPrompt: "hi" }),
       { task: "x" },
       parentCall({ signal: controller.signal }),
     );
@@ -260,7 +260,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       await run(
-        subagent({
+        speaker({
           name: "researcher",
           systemPrompt: "Research the task.",
           expectedOutput: "One paragraph, naming your sources.",
@@ -279,7 +279,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       await run(
-        subagent({
+        speaker({
           name: "researcher",
           systemPrompt: "Research the task.",
           expectedOutput: "One paragraph.",
@@ -298,7 +298,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       await run(
-        subagent({ name: "researcher", systemPrompt: "Research the task." }),
+        speaker({ name: "researcher", systemPrompt: "Research the task." }),
         { task: "x" },
         parentCall(),
       );
@@ -320,7 +320,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       const result = await run(
-        subagent({ name: "checker", systemPrompt: "Check it.", schema: Verdict }),
+        speaker({ name: "checker", systemPrompt: "Check it.", schema: Verdict }),
         { task: "x" },
         parentCall(),
       );
@@ -341,7 +341,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       const result = await run(
-        subagent({ name: "checker", systemPrompt: "Check it.", schema: Verdict }),
+        speaker({ name: "checker", systemPrompt: "Check it.", schema: Verdict }),
         { task: "x" },
         parentCall(),
       );
@@ -357,7 +357,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       const result = await run(
-        subagent({ name: "checker", systemPrompt: "Check it.", schema: Verdict }),
+        speaker({ name: "checker", systemPrompt: "Check it.", schema: Verdict }),
         { task: "Is it raining?" },
         parentCall(),
       );
@@ -380,7 +380,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       const result = await run(
-        subagent({
+        speaker({
           name: "checker",
           systemPrompt: "Check it.",
           schema: Verdict,
@@ -407,7 +407,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       await run(
-        subagent({
+        speaker({
           name: "checker",
           systemPrompt: "Check it.",
           schema: Verdict,
@@ -432,7 +432,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       const result = await run(
-        subagent({ name: "checker", systemPrompt: "Check it.", guardrail: () => true }),
+        speaker({ name: "checker", systemPrompt: "Check it.", guardrail: () => true }),
         { task: "x" },
         parentCall(),
       );
@@ -447,7 +447,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       const result = await run(
-        subagent({
+        speaker({
           name: "checker",
           systemPrompt: "Check it.",
           guardrail: ({ text }) =>
@@ -485,7 +485,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       const result = await run(
-        subagent({
+        speaker({
           name: "checker",
           systemPrompt: "Check it.",
           tools: { lookup },
@@ -511,7 +511,7 @@ describe("createSubagentRunner", () => {
       });
 
       const result = await run(
-        subagent({
+        speaker({
           name: "checker",
           systemPrompt: "Check it.",
           guardrail: () => "Not good enough",
@@ -535,7 +535,7 @@ describe("createSubagentRunner", () => {
     it("honours maxRevisions, and 0 means the guardrail reports without retrying", async () => {
       const { model, descriptor, env } = setup([{ text: "a" }, { text: "b" }, { text: "c" }]);
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
-      const check = subagent({
+      const check = speaker({
         name: "checker",
         systemPrompt: "Check it.",
         guardrail: () => "nope",
@@ -555,7 +555,7 @@ describe("createSubagentRunner", () => {
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
 
       const result = await run(
-        subagent({
+        speaker({
           name: "checker",
           systemPrompt: "Check it.",
           guardrail: async ({ text }) => (text === "second" ? true : "try again"),
@@ -573,7 +573,7 @@ describe("createSubagentRunner", () => {
       const seen: unknown[] = [];
 
       await run(
-        subagent({
+        speaker({
           name: "checker",
           systemPrompt: "Check it.",
           maxRevisions: 0,

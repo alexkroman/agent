@@ -56,11 +56,13 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
 
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts
    the agent's shape; an eval drives a real session and asserts what it did.
-   Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one):
+   Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one),
+   and EVERYTHING an eval needs — `describeEval`, the readers and claims,
+   `evalSimulation`, and stubs like `stubGatewayRoute` — is one import,
+   `@alexkroman1/aai-runtime/eval/vitest`:
 
    ```ts no-check
-   import { expectCalled } from "@alexkroman1/aai-runtime/eval";
-   import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+   import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/eval/vitest";
    import { expect } from "vitest";
    import agentDef from "./agent.ts";
 
@@ -330,9 +332,6 @@ export default agent({
                                              // instead; declare it only to COMPOSE one.
                                              // There is no `system` alias — one name.
   greeting?: string;                         // default: "Hey there..."
-  voice?: string;                            // TTS voice for the default pipeline, e.g. "michael"
-                                             // (shorthand for tts: assemblyAITts({ voice });
-                                             // invalid with an explicit `tts` or with `s2s`)
   stt?: SttProvider;                         // pipeline stage overrides — set any subset;
   llm?: LlmProvider | string;                // unset stages default to AssemblyAI
   tts?: TtsProvider;                         // (llm also takes a model-id string)
@@ -353,32 +352,37 @@ export default agent({
   toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
                                              // | { type: "tool", toolName }
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
-  silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
-  silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
-  minBargeInWords?: number;                  // pipeline only — words before user speech interrupts the reply (default 2)
-  interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 500; 0 disables)
-  deadAirCoverMs?: number;                   // pipeline only — speak a short filler after this much silence in a turn (default 2400; 0 disables)
-  resumeFalseInterruption?: boolean;         // pipeline only — resume an interrupted reply if no user turn commits (default true)
-  preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default false; true opts in)
-  userTurnLimit?: { maxWords?: number;       // pipeline only — cap ONE user turn: end it after this many words
-                    maxDurationMs?: number };//   and/or this long (ms). Default: no cap. Emits `userTurn.exceeded`.
-  turnDetection?: "auto" | "manual";         // pipeline only — "manual" is push-to-talk: the CLIENT ends each turn
-  syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
-                                             // (read it with useAgentState; see UI hooks)
-  minTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ENDS a user turn once the
-                                             // text reads complete (default 560)
-  maxTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ends a turn REGARDLESS of
-                                             // content (default 1600). The endpointing knob to reach for:
-                                             // it bounds the utterances that never read as finished.
-                                             // Both are shorthand for the same options on the default
-                                             // assemblyAIStt() stage — invalid with an explicit `stt`.
+  // ── pipeline only: three groups (`PipelineTuning`), refused on s2s / text ──
+  turnTaking?: {
+    minSilenceMs?: number;                   // pause (ms) that ENDS a turn once the text reads
+                                             // complete (default 1600) — lowered onto the default
+    maxSilenceMs?: number;                   // assemblyAIStt(); pause that ends it REGARDLESS of
+                                             // content (default 3500). Invalid beside an explicit `stt`.
+    detection?: "auto" | "manual";           // "manual" is push-to-talk: the CLIENT ends each turn
+    userTurnLimit?: { maxWords?: number; maxDurationMs?: number }; // cap ONE user turn. Default: none.
+    preemptiveGeneration?: boolean;          // start the reply from a confident interim (default false)
+    startSpeakingFloorMs?: number;           // earliest agent audio after a turn ends (default 0)
+  };
+  interruption?: "off" | {                   // "off": the caller never cuts the agent off
+    minWords?: number;                       // interim words before speech interrupts (default 1)
+    minDurationMs?: number;                  // sustained speech (ms) first (default 500; 0 disables)
+    backoffMs?: number;                      // agent audio held after a real interruption (default 0)
+    resumeFalseInterruption?: boolean;       // resume a reply if no user turn commits (default true)
+  };
+  silence?: {
+    deadAirCoverMs?: number;                 // filler after this much silence IN a turn (default 2400; 0 off)
+    nudge?: { afterMs: number; prompt?: string }; // speak up after this much USER silence
+  };
+  syncState?: Record<string, StateProjection>; // show slots to the client, keyed by slot
+                                             // name: { cart: cartSlot.projected } (read it
+                                             // with useAgentState; see UI hooks)
   requiredEnv?: string[];                    // env vars this agent reads. A deploy CHECKS them, so a
                                              // missing key fails at `aai push` instead of mid-call.
                                              // Declare every key any tool or step reads.
-  text?: true;                               // text-only agent: no STT, no TTS, `llm` is the one stage
+  mode?: "pipeline" | "s2s" | "text" | "workflow-app"; // default "pipeline"; "text": `llm` is the one stage
   events?: SessionEventHandlers;             // observe the session; "metrics.collected" is each
                                              // reply's latency/tokens: createMetricsCollector()
-  personas?: Personas;                       // see "Personas"
+  roster?: Roster;                           // see "Speakers"
 });
 ```
 
@@ -401,14 +405,15 @@ export default agent({
 
 No provider fields means the default all-AssemblyAI pipeline: all three
 stages bill to the one key a published agent is guaranteed to have. Pick
-its voice with the `voice` field:
+its voice on the TTS descriptor, which replaces only that stage:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  voice: "paul",
+  tts: assemblyAITts({ voice: "paul" }),
 });
 ```
 
@@ -530,8 +535,8 @@ That is the whole declaration, and the fields it does NOT take are the point:
 a workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
 `maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob
 are **compile errors** here, not fields that quietly do nothing. `greeting` and
-`requiredEnv` stay. `workflowApp()` is `agent({ …, page: "static" })` with the
-discriminant already set — same definition object out, so `aai build`,
+`requiredEnv` stay. `workflowApp()` is `agent({ mode: "workflow-app", … })` with
+the discriminant already set — same definition object out, so `aai build`,
 `aai dev` and `aai publish` treat it like any other agent.
 
 Reach for it when the user asks for something that outlives a request: an
@@ -931,8 +936,8 @@ A step has no `ctx`, so the two things tool code takes for granted come from
 root barrel would drag the whole SDK into that bundle.
 
 ```ts
-import { stepEnv } from "@alexkroman1/aai/step";
-import { stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
+import { stepEnv, stepGenerate } from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 async function summarize(text: string) {
   // The agent's env by name — the same values a tool reads from `ctx.env`.
@@ -940,7 +945,7 @@ async function summarize(text: string) {
   const style = stepEnv("DIGEST_STYLE") ?? "plain";
 
   // One model call, on the agent's own ASSEMBLYAI_API_KEY and default model.
-  return await stepGenerateOrFail(`${style} summary of:\n\n${text}`, {
+  return await orFail(stepGenerate)(`${style} summary of:\n\n${text}`, {
     system: "Reply with two sentences and nothing else.",
   });
 }
@@ -952,29 +957,36 @@ before and after a deploy. List what you read in `requiredEnv` and a deploy
 checks it for you. And **`stepGenerate` is not `ctx.generate`**: it is one
 request to the AssemblyAI LLM Gateway, with no tools and no structured output,
 because bundling the AI SDK into a step artifact costs megabytes on every
-deploy. Use `stepGenerateJsonOrFail` with a Zod `schema` if you need a shape.
+deploy. Use `orFail(stepGenerateJson)` with a Zod `schema` if you need a shape.
 
-### From a step, reach for the `OrFail` call
+### From a step, wrap the call in `orFail`
 
-`@alexkroman1/aai/step-errors` publishes a wrapper for every `/step` call that
-can fail against a remote service, and **inside a step the wrapper is the one to
-use**:
+`orFail` (`@alexkroman1/aai/step-errors`) wraps any `/step` call that can fail
+remotely, classifying its failure, and **inside a step the wrapped call is the
+one to use**:
 
-| Raw, on `@alexkroman1/aai/step`            | Use this instead, on `@alexkroman1/aai/step-errors` |
-| ------------------------------------------ | --------------------------------------------------- |
-| `stepGenerate`                             | `stepGenerateOrFail`                                |
-| `stepGenerateJson`                         | `stepGenerateJsonOrFail`                            |
-| `stepFetch`                                | `stepFetchOrFail`                                   |
-| `stepTranscribeSync`                       | `stepTranscribeSyncOrFail`                          |
-| `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*OrFail`                              |
-| `sendToChannel` (`/channels`)              | `sendToChannelOrFail`                               |
+```ts
+import { stepFetch, stepGenerateJson, stepTranscribeSubmit } from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
+import { z } from "zod";
 
-`stepFetchOrFail` is the one that is not spelled `*OrFail`, and the name is the
-difference: the others turn an already-thrown failure into a classified one,
-while this also turns a NON-2XX RESPONSE into a throw — `stepFetch` resolves
-with a `404` rather than raising it. Two changes, so two names.
+const Reply = z.object({ headline: z.string() });
 
-The whole of what a wrapper adds is `throwStepError`, and that is worth having
+export async function digest(url: string, audioUrl: string) {
+  const page = await (await orFail(stepFetch)(url)).text(); // a 404 stops, a 503 retries
+  const reply = await orFail(stepGenerateJson)(page, { schema: Reply });
+  const job = await orFail(stepTranscribeSubmit)(audioUrl);
+  return { headline: reply.headline, transcriptId: job.id };
+}
+```
+
+It covers `stepGenerate`, `stepGenerateJson`, `stepFetch`, `stepTranscribeSync`,
+`stepTranscribeUpload` / `Submit` / `Poll` and `sendToChannel` (`/channels`) —
+and any call of your own that throws a `Response` or an error carrying
+`retryable`. Around `stepFetch` it also turns a NON-2XX RESPONSE into a throw:
+`stepFetch` resolves with a `404` rather than raising it.
+
+The whole of what `orFail` adds is `throwStepError`, and that is worth having
 because the engine's retry policy is decided by WHICH error a step throws. Raw,
 every failure looks the same to it: a bad API key is retried until the attempts
 run out, and a rate limit backs off for the engine's default one second while
@@ -991,12 +1003,12 @@ stop outright, `toStepError(cause, message)` to build the error without throwing
 or `throwFfmpegStepError(err)` for a media failure, whose default runs the other
 way (only a `timeout` or an `aborted` is worth another attempt).
 
-**Why the split exists, since the wrapper is what you usually want:** this is
-importing from here is the OPT-IN, and `/step` is not written only for a step —
-`mapConcurrent` bounds a rate-limited call anywhere, `stepFetch` is an ordinary
-HTTP client, and your specs drive exported steps directly. None of those callers
-has a retry budget to burn, so none should meet a vocabulary whose whole subject
-is one. A step pays nothing for the extra import line.
+**Why the split exists, since the wrapped call is what you usually want:**
+importing from here is the OPT-IN, and `/step` is not written only for a step:
+`mapConcurrent` bounds a rate-limited call anywhere, `stepFetch` is an
+ordinary HTTP client, and your specs drive exported steps directly. None of
+those callers has a retry budget to burn, so none should meet a vocabulary whose
+whole subject is one. A step pays nothing for the extra import line.
 
 ### Media, big files, and transcription from a step
 
@@ -1007,8 +1019,8 @@ bundling rule as `/step` — import them there, never through the root barrel:
   recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
   `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
   the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
-  lives on `/step` with the other step primitives.) Use the `OrFail`
-  wrappers above: a provider refusal — a container it will not read, a
+  lives on `/step` with the other step primitives.) Wrap each in `orFail`
+  as above: a provider refusal — a container it will not read, a
   recording with no speech — arrives
   with `retryable: false`, and unclassified a step re-uploads the same bytes
   until its attempts run out.
@@ -1044,19 +1056,20 @@ export async function measure(uploadId: string) {
 
 A run that finishes while nobody is on the line needs somewhere to put the
 result. `slackChannel({ webhookUrl })` (or `textbeltChannel({ key, to })`, an
-SMS) names a destination and `sendToChannelOrFail(channel, message)` posts to it:
+SMS) names a destination and `orFail(sendToChannel)(channel, message)` posts to
+it:
 
 ```ts no-check
-import { type ChannelMessage, slackChannel } from "@alexkroman1/aai/channels";
+import { type ChannelMessage, sendToChannel, slackChannel } from "@alexkroman1/aai/channels";
 import { requireStepEnv } from "@alexkroman1/aai/step";
-import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 export async function announce(headline: string, points: string[]) {
   const message: ChannelMessage = {
     text: headline,
     sections: points.map((point) => ({ body: point })),
   };
-  return await sendToChannelOrFail(slackChannel({ webhookUrl: requireStepEnv("SLACK_WEBHOOK_URL") }), message);
+  return await orFail(sendToChannel)(slackChannel({ webhookUrl: requireStepEnv("SLACK_WEBHOOK_URL") }), message);
 }
 ```
 
@@ -1296,19 +1309,21 @@ Pipeline mode is the default: omitting `stt`/`llm`/`tts` (and `s2s`) gives
 you the all-AssemblyAI pipeline, and any stage you do declare replaces just
 that stage — the rest keep the default.
 
-**S2S mode is an explicit opt-in.** Setting `s2s: assemblyAIS2s()` (imported
-from `@alexkroman1/aai`, next to `agent()`) selects AssemblyAI's
-speech-to-speech Voice Agent API: STT, the LLM loop, and TTS run
-service-side in one socket. Fewer moving parts, but you cannot choose the
-model or swap a provider. There is no way to reach S2S by omission — only
-the `s2s` field selects it, and it is mutually exclusive with the
-`stt`/`llm`/`tts` triple.
+**S2S mode is an explicit opt-in.** `mode: "s2s"` beside an
+`s2s: assemblyAIS2s()` descriptor (imported from `@alexkroman1/aai`, next to
+`agent()`) selects AssemblyAI's speech-to-speech Voice Agent API: STT, the LLM
+loop, and TTS run service-side in one socket. Fewer moving parts, but you cannot
+choose the model or swap a provider. There is no way to reach S2S by omission,
+and the S2S member of `agent()`'s parameter type has none of the
+`stt`/`llm`/`tts` triple or its tuning. (An `s2s` descriptor with no `mode` is
+refused: that declares a pipeline agent carrying an unused descriptor.)
 
 ```ts
 import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 
 export default agent({
   name: "My Agent",
+  mode: "s2s",
   s2s: assemblyAIS2s(),
 });
 ```
@@ -1320,6 +1335,7 @@ import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 
 export default agent({
   name: "My Agent",
+  mode: "s2s",
   sttPrompt: "Callers spell order numbers one character at a time.",
   s2s: assemblyAIS2s({
     voice: "michael",
@@ -1349,15 +1365,15 @@ providers when:
 - you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq,
   hundreds of models via OpenRouter, or 25+ models via the AssemblyAI
   LLM Gateway)
-- you want a specific STT model, or a non-AssemblyAI TTS provider (for the
-  default pipeline's voice, use the `voice` field instead)
+- you want a specific STT model, a non-AssemblyAI TTS provider, or another
+  voice (`tts: assemblyAITts({ voice })`)
 - you need to swap providers without changing agent code
 
 **The rule:** declare only the stages you're changing — any subset of
 `stt`, `llm`, `tts`; each unset stage runs on the AssemblyAI default.
 Combining `s2s` with any pipeline provider or pipeline-only tuning field is
-a compile error naming the rule, as is `voice` alongside an explicit `tts`
-descriptor (the descriptor owns its own voice). A raw config that skips
+a compile error naming the rule; a voice has one place to live, the TTS
+descriptor (there is no agent-level `voice`). A raw config that skips
 `agent()` is still checked at parse time.
 
 ```ts
@@ -1377,15 +1393,17 @@ export default agent({
 Tools, the database, `ctx`, and the UI all behave identically across modes.
 Only the audio + LLM transport differs.
 
-**Four front doors, each one field on `agent()`.** Omit them all for PIPELINE
-(voice, cascaded STT → LLM → TTS) — the default, and the mode this guide
-assumes. `s2s:` selects speech-to-speech. **`text: true` selects a text-only
+**Four modes, one field on `agent()`: `mode`.** Omit it for PIPELINE (voice,
+cascaded STT → LLM → TTS) — the default, and the mode this guide assumes.
+`mode: "s2s"` selects speech-to-speech. **`mode: "text"` selects a text-only
 agent**: no STT, no TTS, `llm` is the one stage, and the host runs it with
 `createTextAgent` from `@alexkroman1/aai-runtime`. `workflowApp()` (see
-"Workflow apps") builds a form with no session at all. Setting a field from the
-wrong arm is a compile error naming the rule, so the modes cannot be mixed by
-accident. Every pipeline agent must declare a real TTS provider — that is a
-statement about pipeline mode, not about the SDK.
+"Workflow apps") is `mode: "workflow-app"`: a form with no session at all. Each
+mode is its own member of the parameter type, and a field that mode does not
+have is simply ABSENT from it — so setting one is a compile error naming the
+member, and the modes cannot be mixed by accident. Every pipeline agent must
+declare a real TTS provider — that is a statement about pipeline mode, not about
+the SDK.
 
 ### Answering a phone call
 
@@ -1420,37 +1438,32 @@ WebSocket gets 1008). A tool hangs up with `endSession(ctx)` once the reply has
 been spoken (`{ afterReply: false }` cuts it); a spec reads
 `endSessionCalls(ctx)` (`/testing`). Tunnel to the port `aai dev` prints.
 
-**Silence nudge (pipeline only):** `silenceTimeoutMs` makes the assistant take
-a turn after that much user silence ("Are you still there?"); `silencePrompt`
-sets the instruction. It is never a user transcript, and stops after 3
-unanswered nudges until the user speaks.
+**Turn-taking tuning (`PipelineTuning`, pipeline only)** is three groups:
 
-**Voice-UX tuning (`PipelineVoiceTuning`, pipeline only):**
-`minBargeInWords` is how many words interrupt a reply (default 2, so a lone
-"yeah" doesn't); `interruptionMinDurationMs` adds a sustained-speech gate
-(default 500 ms; `0` disables; interims only — committed turns always land).
-How long a pause ends a turn belongs to the STT provider:
-`assemblyAIStt({ minTurnSilenceMs })` (default 1600 ms) /
-`deepgramStt({ endpointing })` (default 1500 ms).
-`deadAirCoverMs` is how long a turn may go silent before a short filler is
-spoken, so a long tool chain doesn't sound like a dropped call; measured
-silence, so a prompt reply pays nothing; `0` disables. The wording is fixed:
-declarative, never a request for patience, or the caller's answer barges in.
-`resumeFalseInterruption` (default `true`) resumes a reply whose barge-in was
-noise (no user turn commits); it fires once transcripts go quiet with no final,
-so it never races a real turn.
-`userTurnLimit` (`UserTurnLimit`; default no cap) bounds ONE user turn —
-`{ maxWords }`, `{ maxDurationMs }`, or both: past a cap the transcriber ends
-the turn as a pause would (heard words commit, the rest opens the next turn),
-emitting `userTurn.exceeded` (`limit`, `words`, `durationMs`); `{}` is
-refused. Inert (logged once) on a transcriber that cannot end a turn on demand;
-the default `assemblyAIStt()` can.
-`turnDetection: "manual"` is PUSH-TO-TALK (`usePushToTalk()` in `aai-ui`):
-the mic is heard only while held, all of it is ONE turn answered on release,
-and pressing is the barge-in.
-`preemptiveGeneration` (default **`false`**) starts the reply from a confident
-interim, adopted if the commit matches (measured **+8ms per turn**, 44% of
-requests wasted); it never speaks or calls a tool until adopted.
+- `silence.nudge: { afterMs, prompt? }` makes the assistant take a turn after
+  that much user silence ("Are you still there?"); `afterMs` is required inside
+  it. It is never a user transcript, and stops after 3 unanswered nudges.
+  `silence.deadAirCoverMs` is how long a turn may go silent before a short
+  filler is spoken (default 2400; `0` disables). The wording is fixed:
+  declarative, never a request for patience, or the caller's answer barges in.
+- `interruption` — `minWords` (default 1) words interrupt a reply, gated by
+  `minDurationMs` of sustained speech (default 500 ms; `0` disables; interims
+  only — committed turns always land); `backoffMs` holds agent audio after a
+  real interruption; `resumeFalseInterruption` (default `true`) resumes a reply
+  whose barge-in was noise. `interruption: "off"` means nothing the caller says
+  cuts the agent off. **The same type is a dialog state's `interruption` and a
+  persona's**, overriding the agent's per key (state, then persona, then agent).
+- `turnTaking` — `minSilenceMs`/`maxSilenceMs` are how long a pause ends a turn
+  (lowered onto the default `assemblyAIStt()`; with an explicit `stt` set them
+  on the descriptor, e.g. `deepgramStt({ endpointing })`). `userTurnLimit`
+  (`{ maxWords }`, `{ maxDurationMs }` or both; `{}` refused) ends ONE turn as
+  a pause would, emitting `userTurn.exceeded`. `detection: "manual"` is
+  PUSH-TO-TALK (`usePushToTalk()` in `aai-ui`): the mic is heard only while
+  held, all of it is ONE turn answered on release, and pressing is the
+  barge-in. `preemptiveGeneration` (default **`false`**) starts the reply from
+  a confident interim, adopted if the commit matches (measured **+8ms per
+  turn**, 44% of requests wasted); it never speaks or calls a tool until
+  adopted.
 
 ### Placing a call
 
@@ -1513,7 +1526,7 @@ speaking on every one never stops. Speak from an event your line cannot produce
 (`tool.called`, a timer), or check the event's `text` first.
 
 `done` never rejects: `"played"` once playback ends, `"interrupted"`,
-`"dropped"` (call ended, or taken back), `"unsupported"` on S2S. **Never await
+`"dropped"` (call ended, taken back, or an S2S agent). **Never await
 `done` inside the reply it waits behind** (a tool's `execute`). **A session id
 is not authorization**: verify a webhook first. Specs: `createToolContext()`
 records into `ctx.said`.
@@ -1624,8 +1637,8 @@ Override with `{ voice, model, language }`.
 
 **AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the
 LLM Gateway, so an all-AssemblyAI pipeline needs exactly one secret. On the
-default pipeline, `agent({ voice: "michael" })` is the shorthand for
-`tts: assemblyAITts({ voice: "michael" })` — same catalog, same rules. Each
+default pipeline, `tts: assemblyAITts({ voice: "michael" })` changes the voice
+and leaves the other two stages on the default. Each
 voice speaks one language, and this is the whole catalog — **a voice not on
 this list is rejected after the socket opens, which leaves the agent
 connected, "ready", and permanently silent**, so pick one from here rather
@@ -1690,7 +1703,7 @@ ctx.send(event, data): void                    // push custom event to browser c
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
                                                // with a `schema`, `object` is REQUIRED and typed by it
 ctx.delegate(sub, opts): Promise<DelegateResult> // run a subagent — a whole tool loop with its own
-                                               // context window (see "Subagents")
+                                               // context window (see "Speakers")
 ctx.signal: AbortSignal                        // aborts on barge-in, reset, session stop, or this call's timeout
 ctx.speech: SessionSpeech                      // say(text) verbatim LATER, or interrupt() — see "Saying
                                                // something from outside a turn"; never await it in execute
@@ -1815,7 +1828,7 @@ Four rules, and each is an error rather than advice if you get it wrong:
   either way; that is the reason for the rules above.
 
 There is nothing to declare on `agent()` — the slot owns its own default. Use
-`syncState: slot.projection(view)` to show state to a custom client.
+`syncState: { [slotName]: slot.projected }` to show state to a custom client.
 `slot.snapshot(ctx)` returns a mutable deep copy of the value — what a spec
 hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
 
@@ -1893,18 +1906,18 @@ attempts" a state you declare and handle rather than an error. Options are
 `ProcedureRunOptions`; the machine is an XState machine, and `xstate` is already
 an SDK dependency. `technical-support-agent` is the worked example.
 
-### Subagents (`ctx.delegate`)
+### Speakers (`speaker()`, `ctx.delegate`, `roster()`)
 
 `ctx.generate` is ONE prompt. When answering takes an unknown number of tool
-calls whose intermediate results the conversation has no reason to carry,
-delegate to a **subagent**: a second tool loop with its own system
-prompt, model, tools and — the whole point — its own context window.
+calls the conversation has no reason to carry, delegate to a **speaker** off
+the line: a second tool loop with its own prompt, model, tools and — the whole
+point — its own context window.
 
 ```ts
-import { subagent, tool } from "@alexkroman1/aai";
+import { speaker, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-const researcher = subagent({
+const researcher = speaker({
   name: "researcher",
   systemPrompt: "Research the task with the tools you have.",
   expectedOutput: "A self-contained summary — the only thing the caller sees.",
@@ -1922,46 +1935,45 @@ export default tool({
 });
 ```
 
-Four rules, each the way a subagent disappoints when skipped: you receive its
+Four rules, each the way a delegation disappoints when skipped: you receive its
 FINAL message, so declare `expectedOutput`; its context is isolated, so `task`
 must be a complete brief; `maxSteps` bounds the loop, and a capped run is asked
 for its answer with tools withheld; and say you are looking it up before you
-call. A subagent may name its own `llm` and its own `tools` map; **delegation is
-one level deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it
-by subagent name.
-
-### Personas and `handoff` (`personas()`)
+call. It may name its own `llm` and `tools` map; **delegation is one level
+deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it by name.
 
 When the SPEAKER has to change — triage verifies the caller, billing takes over
-with its own instructions and tools, one history — declare a roster of
-**personas**; the first entry answers the call.
+with its own instructions and tools, one history — mark them `speaks: true` on
+a `roster()`; the first speaking entry answers the call.
 
 ```ts
-import { agent, persona, personas } from "@alexkroman1/aai";
+import { agent, speaker, roster } from "@alexkroman1/aai";
 
-const triage = persona({
+const triage = speaker({
   name: "triage",
+  speaks: true,
   description: "Answers the phone and picks the desk",
   systemPrompt: "Bill or fault? Find out, then hand off.",
 });
-const billing = persona({
+const billing = speaker({
   name: "billing",
+  speaks: true,
   description: "Invoices, payments and refunds",
   systemPrompt: "You are the billing desk.",
 });
-export const desk = personas([triage, billing]);
+export const desk = roster([triage, billing]);
 
-export default agent({ name: "Front Desk", personas: desk });
+export default agent({ name: "Front Desk", roster: desk });
 ```
 
-The roster mints one `handoff` tool the model routes with, described by each
-persona's `description`. A tool body hands off in code with `desk.handoff(ctx,
-billing, { note })` and returns the result; the same turn continues as the new
-persona. The target may be a name, and names are INFERRED: `desk.handoff(ctx,
-"biling")` does not compile. A persona's `tools` (a map) refuse at execution
-while another persona speaks, naming who is and how to hand off. `tools/` and
-`system-prompt.md` hold under every persona; a dialog state pins one with
-`persona`. Example: `front-desk-agent`.
+One roster mints `handoff` over its speaking entries and `delegate` over the
+rest, each described by the entries' `description`. A tool body hands off with
+`desk.handoff(ctx, billing, { note })` and returns the result; the turn goes on
+as the new speaker. Names are INFERRED: `desk.handoff(ctx, "biling")` does not
+compile. A speaking entry's `tools` refuse while another speaks, naming who is
+and how to hand off. `tools/` and `system-prompt.md` hold under every speaker; a
+dialog state pins one with `persona`. Examples: `front-desk-agent`,
+`topic-briefing-agent`.
 
 ### A tool that calls an API
 
@@ -2426,21 +2438,22 @@ export const cartSlot = sessionSlot("cart", () => ({ cart: [] as Item[], staffPi
 // server-side, and the agent and the client cannot name different views of it.
 export const cartProjection = cartSlot.projection((s) => ({ cart: s.cart }));
 
-// agent.ts
-export default agent({ syncState: cartProjection });
+// agent.ts — keyed by SLOT NAME; the key must be the slot's own (agent() checks)
+export default agent({ syncState: { cart: cartProjection } });
 
-// client.tsx — the projection types the state AND supplies the frame the client
-// renders before the first push, so there is no type argument and no `?? EMPTY`.
+// client.tsx — selects `state.cart`; the projection types it AND supplies the
+// frame rendered before the first push, so no type argument and no `?? EMPTY`.
 const view = useAgentState(cartProjection);
 return <Cart items={view.cart} />;
 ```
 
-Passing the projection is the shape to copy. The other two overloads still
-exist: `useAgentState<S>()` returns `S | null` (nullable — nothing is pushed
-before the first tool call), and `useAgentState<S>(fallback)` returns `S` for a
-frame you build yourself. Reach for `fallback` only when the slot's factory is
-expensive to import into the browser — the projection overload calls it to build
-the empty frame.
+Passing the projection is the shape to copy. The frame is `{ [slot]: view }`,
+one key per slot. The other overloads: `useAgentState()` is the whole frame or
+`null`; `useAgentState<S>("cart")` is one slot by name, `S | null` (nothing is
+pushed before the first tool call); `useAgentState("cart", fallback)` returns
+`S` for an empty frame you build yourself — reach for it only when the slot's
+factory is expensive to import into the browser. `selectAgentState("cart")` is
+the same slot as a `useSessionSelector` selector.
 
 **Reach for this before wiring `useToolResult` into `useState`.** Without
 it the pattern is: return a cart snapshot from every tool, declare a type
@@ -2448,7 +2461,7 @@ describing what those tools return, and mirror it into `useState` — three
 things to keep in step, and the usual source of drift when you add a tool
 and forget to return the snapshot from it.
 
-`syncState` is a projection, not a flag, because state often holds things
+`syncState` holds projections, not flags, because state often holds things
 that should not reach a browser (keys, PINs, scratch) or cannot be
 serialized. Whatever it returns is exactly what the client receives. It runs
 after every tool call and is sent only when the result changed.
@@ -2633,10 +2646,11 @@ own journaled `ctx.random()` instead.
 
 - **Tool execute must return a value.** A missing return = `undefined` in
   LLM context = the model thinks the tool failed.
-- **Declare only the pipeline stages you're changing.** Unset stages of
-  `stt` / `llm` / `tts` default to AssemblyAI (omit all three for the full
-  default pipeline; `voice` picks its TTS voice). S2S needs an explicit
-  `s2s: assemblyAIS2s()` and takes no pipeline fields.
+- **Declare only the pipeline stages you're changing.** Unset stages of `stt` /
+  `llm` / `tts` default to AssemblyAI (omit all three for the full default
+  pipeline; `tts: assemblyAITts({ voice })` picks a voice). S2S needs an
+  explicit `mode: "s2s"` and `s2s: assemblyAIS2s()`, and takes no pipeline
+  fields.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Derive state with `useToolResult`, not `useEffect` + `toolCalls`** — it

@@ -7,21 +7,94 @@ entries call `toAgentConfig`, which is why this subpath is published.
 
 ## Functions
 
+### agentToolsets()
+
+```ts
+function agentToolsets(def: ToolBearingDef): Toolset[];
+```
+
+Every toolset an agent definition carries, in precedence order: its `tools/`
+files, then what `agent()` and a host step attached (`toolsets` — the roster,
+MCP) — each layered with the agent's dialog gates, so a `dialog.tool` refuses
+through [Toolset.gate](index.md#gate-1) wherever it is declared. Builtins are the
+runtime's to append, since they resolve against host options.
+
+#### Parameters
+
+##### def
+
+[`ToolBearingDef`](#toolbearingdef)
+
+#### Returns
+
+[`Toolset`](index.md#toolset)[]
+
+***
+
 ### agentToolsToSchemas()
 
 ```ts
-function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[];
+function agentToolsToSchemas(toolsets: readonly Toolset[]): ToolSchema[];
 ```
 
 #### Parameters
 
-##### tools
+##### toolsets
 
-`Readonly`\<`Record`\<`string`, [`ToolDef`](index.md#tooldef)\>\>
+readonly [`Toolset`](index.md#toolset)[]
 
 #### Returns
 
 [`ToolSchema`](#toolschema)[]
+
+***
+
+### composeToolsets()
+
+```ts
+function composeToolsets(sets: readonly Toolset[], onShadowed?: (name: string, kept: ToolSource, dropped: ToolSource) => void): ToolTable;
+```
+
+Compose toolsets, FIRST WINS: a later set's tool of an already-taken name is
+dropped, and `onShadowed` hears about it — the precedence is the order.
+
+#### Parameters
+
+##### sets
+
+readonly [`Toolset`](index.md#toolset)[]
+
+##### onShadowed?
+
+(`name`: `string`, `kept`: [`ToolSource`](index.md#toolsource), `dropped`: [`ToolSource`](index.md#toolsource)) => `void`
+
+#### Returns
+
+[`ToolTable`](#tooltable)
+
+***
+
+### gateToolset()
+
+```ts
+function gateToolset(set: Toolset, gates: readonly ToolGate[]): Toolset;
+```
+
+Layer extra gates over a set — every gate must pass, the set's own first.
+
+#### Parameters
+
+##### set
+
+[`Toolset`](index.md#toolset)
+
+##### gates
+
+readonly [`ToolGate`](#toolgate)[]
+
+#### Returns
+
+[`Toolset`](index.md#toolset)
 
 ***
 
@@ -58,13 +131,17 @@ function toAgentConfig(source: AgentConfigSource): {
   clientInbox?: {
      sampleRate?: number;
   };
-  deadAirCoverMs?: number;
   description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
-  interruptionBackoffMs?: number;
-  interruptionMinDurationMs?: number;
+  interruption?:   | "off"
+     | {
+     backoffMs?: number;
+     minDurationMs?: number;
+     minWords?: number;
+     resumeFalseInterruption?: boolean;
+   };
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -78,22 +155,22 @@ function toAgentConfig(source: AgentConfigSource): {
      tokenEnv?: string;
      url?: string;
   }>;
-  minBargeInWords?: number;
-  mode?: "s2s" | "text" | "pipeline";
+  mode?: "s2s" | "pipeline" | "text" | "workflow-app";
   name: string;
-  page?: "voice" | "static";
-  preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
   resetToolChoice?: boolean;
-  resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  silencePrompt?: string;
-  silenceTimeoutMs?: number;
+  silence?: {
+     deadAirCoverMs?: number;
+     nudge?: {
+        afterMs: number;
+        prompt?: string;
+     };
+  };
   startFailurePhrase?: string;
-  startSpeakingFloorMs?: number;
   stt?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -102,7 +179,6 @@ function toAgentConfig(source: AgentConfigSource): {
   systemPrompt: string;
   telephony?: boolean | readonly string[];
   temperature?: number;
-  text?: true;
   toolChoice?:   | "auto"
      | "required"
      | "none"
@@ -114,13 +190,19 @@ function toAgentConfig(source: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  turnDetection?: string;
+  turnTaking?: {
+     detection?: string;
+     maxSilenceMs?: number;
+     minSilenceMs?: number;
+     preemptiveGeneration?: boolean;
+     startSpeakingFloorMs?: number;
+     userTurnLimit?: {
+        maxDurationMs?: number;
+        maxWords?: number;
+     };
+  };
   usageLimits?: {
      totalTokens?: number;
-  };
-  userTurnLimit?: {
-     maxDurationMs?: number;
-     maxWords?: number;
   };
   voicePresets?: readonly string[];
 };
@@ -145,13 +227,17 @@ the runtime.
   clientInbox?: {
      sampleRate?: number;
   };
-  deadAirCoverMs?: number;
   description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
-  interruptionBackoffMs?: number;
-  interruptionMinDurationMs?: number;
+  interruption?:   | "off"
+     | {
+     backoffMs?: number;
+     minDurationMs?: number;
+     minWords?: number;
+     resumeFalseInterruption?: boolean;
+   };
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -165,22 +251,22 @@ the runtime.
      tokenEnv?: string;
      url?: string;
   }>;
-  minBargeInWords?: number;
-  mode?: "s2s" | "text" | "pipeline";
+  mode?: "s2s" | "pipeline" | "text" | "workflow-app";
   name: string;
-  page?: "voice" | "static";
-  preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
   resetToolChoice?: boolean;
-  resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  silencePrompt?: string;
-  silenceTimeoutMs?: number;
+  silence?: {
+     deadAirCoverMs?: number;
+     nudge?: {
+        afterMs: number;
+        prompt?: string;
+     };
+  };
   startFailurePhrase?: string;
-  startSpeakingFloorMs?: number;
   stt?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -189,7 +275,6 @@ the runtime.
   systemPrompt: string;
   telephony?: boolean | readonly string[];
   temperature?: number;
-  text?: true;
   toolChoice?:   | "auto"
      | "required"
      | "none"
@@ -201,13 +286,19 @@ the runtime.
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  turnDetection?: string;
+  turnTaking?: {
+     detection?: string;
+     maxSilenceMs?: number;
+     minSilenceMs?: number;
+     preemptiveGeneration?: boolean;
+     startSpeakingFloorMs?: number;
+     userTurnLimit?: {
+        maxDurationMs?: number;
+        maxWords?: number;
+     };
+  };
   usageLimits?: {
      totalTokens?: number;
-  };
-  userTurnLimit?: {
-     maxDurationMs?: number;
-     maxWords?: number;
   };
   voicePresets?: readonly string[];
 }
@@ -225,12 +316,6 @@ optional builtinTools?: readonly string[];
 {
   sampleRate?: number;
 }
-```
-
-##### deadAirCoverMs?
-
-```ts
-optional deadAirCoverMs?: number;
 ```
 
 ##### description?
@@ -257,16 +342,17 @@ greeting: string;
 optional idleTimeoutMs?: number;
 ```
 
-##### interruptionBackoffMs?
+##### interruption?
 
 ```ts
-optional interruptionBackoffMs?: number;
-```
-
-##### interruptionMinDurationMs?
-
-```ts
-optional interruptionMinDurationMs?: number;
+optional interruption?: 
+  | "off"
+  | {
+  backoffMs?: number;
+  minDurationMs?: number;
+  minWords?: number;
+  resumeFalseInterruption?: boolean;
+};
 ```
 
 ##### llm?
@@ -307,34 +393,16 @@ optional mcpServers?: Record<string, {
 }>;
 ```
 
-##### minBargeInWords?
-
-```ts
-optional minBargeInWords?: number;
-```
-
 ##### mode?
 
 ```ts
-optional mode?: "s2s" | "text" | "pipeline";
+optional mode?: "s2s" | "pipeline" | "text" | "workflow-app";
 ```
 
 ##### name
 
 ```ts
 name: string;
-```
-
-##### page?
-
-```ts
-optional page?: "voice" | "static";
-```
-
-##### preemptiveGeneration?
-
-```ts
-optional preemptiveGeneration?: boolean;
 ```
 
 ##### requiredEnv?
@@ -349,12 +417,6 @@ optional requiredEnv?: readonly string[];
 optional resetToolChoice?: boolean;
 ```
 
-##### resumeFalseInterruption?
-
-```ts
-optional resumeFalseInterruption?: boolean;
-```
-
 ##### s2s?
 
 ```ts
@@ -364,28 +426,22 @@ optional resumeFalseInterruption?: boolean;
 }
 ```
 
-##### silencePrompt?
+##### silence?
 
 ```ts
-optional silencePrompt?: string;
-```
-
-##### silenceTimeoutMs?
-
-```ts
-optional silenceTimeoutMs?: number;
+{
+  deadAirCoverMs?: number;
+  nudge?: {
+     afterMs: number;
+     prompt?: string;
+  };
+}
 ```
 
 ##### startFailurePhrase?
 
 ```ts
 optional startFailurePhrase?: string;
-```
-
-##### startSpeakingFloorMs?
-
-```ts
-optional startSpeakingFloorMs?: number;
 ```
 
 ##### stt?
@@ -421,12 +477,6 @@ optional telephony?: boolean | readonly string[];
 optional temperature?: number;
 ```
 
-##### text?
-
-```ts
-optional text?: true;
-```
-
 ##### toolChoice?
 
 ```ts
@@ -449,10 +499,20 @@ optional toolChoice?:
 }
 ```
 
-##### turnDetection?
+##### turnTaking?
 
 ```ts
-optional turnDetection?: string;
+{
+  detection?: string;
+  maxSilenceMs?: number;
+  minSilenceMs?: number;
+  preemptiveGeneration?: boolean;
+  startSpeakingFloorMs?: number;
+  userTurnLimit?: {
+     maxDurationMs?: number;
+     maxWords?: number;
+  };
+}
 ```
 
 ##### usageLimits?
@@ -463,20 +523,32 @@ optional turnDetection?: string;
 }
 ```
 
-##### userTurnLimit?
-
-```ts
-{
-  maxDurationMs?: number;
-  maxWords?: number;
-}
-```
-
 ##### voicePresets?
 
 ```ts
 optional voicePresets?: readonly string[];
 ```
+
+***
+
+### toolEntry()
+
+```ts
+function toolEntry(def: ToolDef): ToolsetEntry;
+```
+
+Classify one def into an entry: the ONE place a def's identity is inspected.
+A `clientTool` (its brand) is executed by the page; everything else here.
+
+#### Parameters
+
+##### def
+
+[`ToolDef`](index.md#tooldef)
+
+#### Returns
+
+[`ToolsetEntry`](index.md#toolsetentry)
 
 ***
 
@@ -504,14 +576,45 @@ would put top-level `await` in a bundle the guest loads.
 
 ***
 
+### toolset()
+
+```ts
+function toolset(
+   source: ToolSource, 
+   tools: ToolMap, 
+   gate?: ToolGate
+): Toolset;
+```
+
+Build a [Toolset](index.md#toolset) over a map of defs, optionally gated.
+
+#### Parameters
+
+##### source
+
+[`ToolSource`](index.md#toolsource)
+
+##### tools
+
+[`ToolMap`](index.md#toolmap)
+
+##### gate?
+
+[`ToolGate`](#toolgate)
+
+#### Returns
+
+[`Toolset`](index.md#toolset)
+
+***
+
 ### withTools()
 
 ```ts
 function withTools<D extends {
   builtinTools?: readonly string[];
-  personas?: unknown;
-  subagents?: readonly unknown[];
   tools: ToolRegistry;
+  toolsets?: readonly Toolset[];
 }>(def: D, registry: ToolRegistry): D;
 ```
 
@@ -566,9 +669,8 @@ carries none still passes and this module still names no builtin catalog.
 
 `D` *extends* \{
   `builtinTools?`: readonly `string`[];
-  `personas?`: `unknown`;
-  `subagents?`: readonly `unknown`[];
   `tools`: [`ToolRegistry`](#toolregistry);
+  `toolsets?`: readonly [`Toolset`](index.md#toolset)[];
 \}
 
 #### Parameters
@@ -584,6 +686,121 @@ carries none still passes and this module still names no builtin catalog.
 #### Returns
 
 `D`
+
+## Interfaces
+
+### DialogToolGate
+
+A dialog, as far as gating goes: it refuses a def it minted (`dialog.tool`)
+outside its `when` states, and answers `undefined` for anything else.
+
+#### Methods
+
+##### gate()
+
+```ts
+gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
+```
+
+###### Parameters
+
+###### tool
+
+[`ToolDef`](index.md#tooldef)
+
+###### ctx
+
+[`SlotHolder`](index.md#slotholder)
+
+###### Returns
+
+[`ToolRefusal`](index.md#toolrefusal) \| `undefined`
+
+***
+
+### ResolvedTool
+
+One resolved name in a [ToolTable](#tooltable).
+
+#### Properties
+
+##### entry
+
+```ts
+readonly entry: ToolsetEntry;
+```
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+##### toolset
+
+```ts
+readonly toolset: Toolset;
+```
+
+***
+
+### ToolBearingDef
+
+What [agentToolsets](#agenttoolsets) reads off a definition.
+
+#### Properties
+
+##### dialogs?
+
+```ts
+readonly optional dialogs?: readonly DialogToolGate[];
+```
+
+##### tools
+
+```ts
+readonly tools: ToolMap;
+```
+
+##### toolsets?
+
+```ts
+readonly optional toolsets?: readonly Toolset[];
+```
+
+***
+
+### ToolTable
+
+Several toolsets composed into one name → tool lookup.
+
+#### Methods
+
+##### resolve()
+
+```ts
+resolve(name: string): ResolvedTool | undefined;
+```
+
+###### Parameters
+
+###### name
+
+`string`
+
+###### Returns
+
+[`ResolvedTool`](#resolvedtool) \| `undefined`
+
+#### Properties
+
+##### tools
+
+```ts
+readonly tools: readonly ResolvedTool[];
+```
+
+Every advertised tool, in precedence order.
 
 ## Type Aliases
 
@@ -603,13 +820,13 @@ config that flows CLI → server → runtime unchanged.
 ```ts
 type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcpServers"> & {
   mcpServers?: McpServers;
+  mode?: AgentMode;
   systemPrompt?: AgentSystemPrompt;
 } & { [K in HostOnlyAgentField]?: unknown };
 ```
 
 What [toAgentConfig](#toagentconfig) accepts: every serializable [AgentConfig](#agentconfig)
-field (`mode` excepted — it is derived, never supplied) plus the host-only
-fields the deny-list strips. `AgentDef` is assignable to this by
+field plus the host-only fields the deny-list strips. `AgentDef` is assignable to this by
 construction; the explicit `| undefined` on the host-only members keeps
 spread call sites (`{...agent, stt: maybeUndefined}`) legal under
 `exactOptionalPropertyTypes`.
@@ -625,6 +842,14 @@ optional mcpServers?: McpServers;
 Wider than the wire's record for the same reason: an `McpServerConfig` may
 carry a `url` RESOLVER and `headers`, both host-only. `toAgentConfig`
 strips them (see `wireMcpServers`).
+
+##### mode?
+
+```ts
+optional mode?: AgentMode;
+```
+
+See `AgentDef.mode`; `undefined` from a spread means the default.
 
 ##### systemPrompt?
 
@@ -668,6 +893,34 @@ validation.
 a system prompt and its tools, driven by `createTextAgent`
 (`@alexkroman1/aai-runtime`) over a message list rather than by a
 transport over a socket.
+
+***
+
+### ToolGate
+
+```ts
+type ToolGate = (name: string, def: ToolDef, ctx: ToolContext) => ToolRefusal | undefined;
+```
+
+A gate over one def — what [toolset](#toolset-1) composes into [Toolset.gate](index.md#gate-1).
+
+#### Parameters
+
+##### name
+
+`string`
+
+##### def
+
+[`ToolDef`](index.md#tooldef)
+
+##### ctx
+
+[`ToolContext`](index.md#toolcontext)
+
+#### Returns
+
+[`ToolRefusal`](index.md#toolrefusal) \| `undefined`
 
 ***
 
@@ -757,7 +1010,7 @@ type: "function";
 ### HOST\_ONLY\_AGENT\_FIELDS
 
 ```ts
-const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails", "sessionContext", "onSessionEnd", "routes"];
+const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "roster", "toolsets", "dialogs", "events", "inputGuardrails", "outputGuardrails", "sessionContext", "onSessionEnd", "routes"];
 ```
 
 `AgentDef` fields that must never cross the serialization boundary — the

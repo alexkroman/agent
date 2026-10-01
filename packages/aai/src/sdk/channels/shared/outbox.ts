@@ -5,7 +5,7 @@
  *
  * Every channel send ends in `postToChannel`: the `text_me` host builtin calls
  * it directly with its screened fetch, and a workflow step reaches it through
- * `sendToChannel` / `sendToChannelOrFail`. So one sink checked THERE is the
+ * `sendToChannel` / `orFail(sendToChannel)`. So one sink checked THERE is the
  * whole of "try the agent without texting anyone": a developer running
  * `aai dev` against a real Textbelt key, or a Slack webhook that posts to a
  * real channel, can watch what WOULD have gone out without a byte of it
@@ -28,9 +28,8 @@
  * @module
  */
 
+import { globalSlot } from "../../_boundary.ts";
 import type { Channel, ChannelPayload } from "./channel-types.ts";
-
-const CHANNEL_OUTBOX_SLOT = Symbol.for("@alexkroman1/aai.channelOutbox");
 
 /**
  * One captured send: the channel's kind, the recipient when the descriptor
@@ -56,7 +55,7 @@ export type ChannelOutboxEntry = {
  */
 export type ChannelOutbox = (entry: ChannelOutboxEntry) => void | Promise<void>;
 
-type OutboxSlot = { [CHANNEL_OUTBOX_SLOT]?: ChannelOutbox };
+const CHANNEL_OUTBOX_SLOT = globalSlot<ChannelOutbox>("channelOutbox");
 
 /*
  * Which option and body fields are CREDENTIALS is declared per kind, on the
@@ -151,13 +150,12 @@ export function redactCredentials(values: readonly unknown[], text: string): str
  * @internal — a host concern. An agent sends with `sendToChannel` unchanged.
  */
 export function publishChannelOutbox(sink: ChannelOutbox | undefined): void {
-  if (sink === undefined) delete (globalThis as OutboxSlot)[CHANNEL_OUTBOX_SLOT];
-  else (globalThis as OutboxSlot)[CHANNEL_OUTBOX_SLOT] = sink;
+  CHANNEL_OUTBOX_SLOT.set(sink);
 }
 
 /** The published sink, if any. @internal */
 export function publishedChannelOutbox(): ChannelOutbox | undefined {
-  return (globalThis as OutboxSlot)[CHANNEL_OUTBOX_SLOT];
+  return CHANNEL_OUTBOX_SLOT.get();
 }
 
 /**

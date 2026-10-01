@@ -15,6 +15,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { agent } from "./define.ts";
 import { type DeepReadonly, sessionSlot } from "./session-slot.ts";
 import { createToolContext } from "./testing.ts";
 
@@ -122,5 +123,35 @@ describe("projected", () => {
       view: (value) => ({ log: value.log }),
     });
     expect(capped.projected()).toEqual({ log: ["b", "c"] });
+  });
+});
+
+describe("agent({ syncState }) is keyed by slot name", () => {
+  /** Past the overloads on purpose — the run-time half an untyped config meets. */
+  const untyped = (syncState: unknown) =>
+    agent({ name: "Shop", syncState } as Parameters<typeof agent>[0]);
+
+  test("one entry per slot, keyed by the slot's own name", () => {
+    const def = agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
+    expect(Object.keys(def.syncState ?? {})).toEqual(["cart"]);
+  });
+
+  test("a key that disagrees with its slot is refused, naming the slot", () => {
+    expect(() => untyped({ basket: cartSlot.projected })).toThrow(
+      /`syncState.basket` projects the "cart" slot — key it by that slot's name/,
+    );
+  });
+
+  test("the bare and array forms the record replaced are refused with the spelling to write", () => {
+    expect(() => untyped(cartSlot.projected)).toThrow(
+      /record keyed by slot name — write `syncState: \{ cart: cartSlot.projected \}`/,
+    );
+    expect(() => untyped([cartSlot.projected])).toThrow(/record keyed by slot name/);
+  });
+
+  test("an entry that is not a projection is refused", () => {
+    expect(() => untyped({ cart: { items: [] } })).toThrow(
+      /`syncState.cart` is not a slot projection/,
+    );
   });
 });

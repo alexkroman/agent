@@ -45,7 +45,7 @@ import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
  */
 export type ClientConfig = Pick<
   VoiceSessionOptions,
-  "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "WebSocket"
+  "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "token" | "WebSocket"
 > & {
   /** CSS selector or DOM element to render into. Defaults to `"#app"`. */
   target?: string | HTMLElement;
@@ -380,6 +380,7 @@ export function mountClient(config: ClientConfig): ClientHandle {
     location: config.location,
     phone: config.phone,
     client: config.client,
+    token: config.token,
     WebSocket: config.WebSocket,
   });
 

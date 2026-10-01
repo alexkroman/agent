@@ -25,7 +25,7 @@ import { describeTextEval } from "./describe-text.ts";
 import { toolNames } from "./events.ts";
 import { evalTextCredentials } from "./text-agent.ts";
 
-const def = agent({ name: "Text Mode", text: true });
+const def = agent({ name: "Text Mode", mode: "text" });
 
 describe("evalTextCredentials", () => {
   test("asks for the DEFAULTED model's key when the agent declares no llm", () => {
@@ -41,7 +41,7 @@ describe("evalTextCredentials", () => {
     // a suite the machine could run.
     const anthropic = agent({
       name: "Text Anthropic",
-      text: true,
+      mode: "text",
       llm: llm({ provider: "anthropic", model: "claude-opus-5" }),
     });
     expect(evalTextCredentials(anthropic, { ANTHROPIC_API_KEY: "k" })).toMatchObject({
@@ -56,7 +56,7 @@ describe("evalTextCredentials", () => {
   test("names the descriptor's own apiKeyEnv, like every other credential read", () => {
     const own = agent({
       name: "Text Own Key",
-      text: true,
+      mode: "text",
       llm: llm({ provider: "anthropic", model: "claude-opus-5", apiKeyEnv: "MY_KEY" }),
     });
     // The NAME comes off the descriptor. Whether the shell can satisfy it is a
@@ -79,7 +79,7 @@ const echo = tool({
   execute: async ({ line }) => `echoed: ${line}`,
 });
 
-describeTextEval(withTools(agent({ name: "Text Stub Suite", text: true }), { echo }), (test) => {
+describeTextEval(withTools(agent({ name: "Text Stub Suite", mode: "text" }), { echo }), (test) => {
   test(
     "drives a real text agent against the scripted model",
     async ({ agent: textAgent, mode }) => {

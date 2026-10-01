@@ -206,7 +206,7 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * This slot's declared view as a `syncState` projection — built ONCE, here,
    * so both ends can pass the same object.
    *
-   * `agent({ syncState: cartSlot.projected })` on the server and
+   * `agent({ syncState: { cart: cartSlot.projected } })` on the server and
    * `useAgentState(cartSlot.projected)` in the browser are then the SAME
    * projection by construction, and the frame rendered before the first push
    * cannot describe a different view than the frames pushed after it. Composing
@@ -228,7 +228,7 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    *   view: (cart) => ({ count: cart.items.length }),
    * });
    *
-   * export default agent({ name: "Shop", syncState: cartSlot.projected });
+   * export default agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
    * ```
    */
   readonly projected: StateProjection<V>;
@@ -237,15 +237,15 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * the session has not touched it), then project.
    *
    * **Reach for {@link SessionSlot.projected} first** — one view, declared with
-   * the slot, passed by both ends. This is the multi-view case: `syncState`
-   * takes an array, so an agent that shows one slot to two audiences composes a
-   * second projection here.
+   * the slot, passed by both ends. This is the spelling for a view composed
+   * where it is used rather than declared on the slot; `syncState` still takes
+   * ONE projection per slot, keyed by the slot's name.
    *
    * The result is CALLABLE as well as declarable, which is what lets a client
    * derive its own empty state from the same function the server pushes —
    * `slot.projection(view)()` is the pre-first-tool-call frame. Declaring it is
-   * `agent({ syncState: slot.projection(view) })`, and an agent with more than
-   * one slot passes an array; the frame carries the merge.
+   * `agent({ syncState: { [name]: slot.projection(view) } })`, one entry per
+   * slot; the frame is keyed the same way.
    *
    * `project` receives a REAL value, so a projection needs no optional chaining
    * for the moment before the first tool call.
@@ -258,7 +258,7 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    *
    * export default agent({
    *   name: "Shop",
-   *   syncState: cartSlot.projection((cart) => ({ count: cart.items.length })),
+   *   syncState: { cart: cartSlot.projection((cart) => ({ count: cart.items.length })) },
    * });
    * ```
    */

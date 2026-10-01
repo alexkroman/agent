@@ -2,16 +2,16 @@
 
 import { describe, expect, it } from "vitest";
 import { createToolContext } from "./_testing-context.ts";
-import { subagent } from "./subagent.ts";
+import { speaker } from "./speaker.ts";
 import { stubDelegate } from "./testing-delegate.ts";
 
-const researcher = subagent({ name: "researcher", systemPrompt: "Research." });
-const checker = subagent({ name: "fact-checker", systemPrompt: "Check." });
+const researcher = speaker({ name: "researcher", systemPrompt: "Research." });
+const checker = speaker({ name: "fact-checker", systemPrompt: "Check." });
 
 describe("subagent", () => {
   it("returns its definition unchanged", () => {
     const def = { name: "researcher", systemPrompt: "Research." };
-    expect(subagent(def)).toBe(def);
+    expect(speaker(def)).toBe(def);
   });
 });
 

@@ -15,7 +15,7 @@
  * import { createTextAgent } from "@alexkroman1/aai-runtime";
  *
  * const chat = createTextAgent({
- *   agent: agent({ name: "Helper", text: true, systemPrompt: "Be brief." }),
+ *   agent: agent({ name: "Helper", mode: "text", systemPrompt: "Be brief." }),
  *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
  * });
  * const result = chat.stream({ messages: [{ role: "user", content: "hi" }] });
@@ -54,7 +54,7 @@
  * `text-agent-events.ts` carries the vocabulary and its argument.
  */
 
-import type { AgentDef, AgentSessionContext, Message } from "@alexkroman1/aai";
+import type { AgentSessionContext, Message } from "@alexkroman1/aai";
 import {
   createDetachedSlotStore,
   staticSystemPrompt,
@@ -63,11 +63,11 @@ import {
 import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
-import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
+import { agentToolsets, agentToolsToSchemas } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type LanguageModel, stepCountIs, streamText, type ToolSet } from "ai";
 import {
-  composePrepareStep,
+  composePreparers,
   forceFinalAnswer,
   resetToolChoiceAfterFirstStep,
 } from "./_prepare-step.ts";
@@ -134,7 +134,7 @@ function resolveModel(options: TextAgentOptions): LanguageModel {
  */
 export function textAgentHasNoSession(name: string): Error {
   return new Error(
-    `Agent "${name}" declares \`text: true\` and has no voice session — run it ` +
+    `Agent "${name}" declares \`mode: "text"\` and has no voice session — run it ` +
       "with `createTextAgent` from `@alexkroman1/aai-runtime`, not `createRuntime`.",
   );
 }
@@ -142,7 +142,7 @@ export function textAgentHasNoSession(name: string): Error {
 /**
  * Create a text agent bound to one conversation.
  *
- * @throws if the definition does not declare `text: true`. A voice agent run
+ * @throws if the definition does not declare `mode: "text"`. A voice agent run
  *   as a text one would silently drop its `greeting` and every voice knob it
  *   was tuned with; refusing by name is the mirror of `createRuntime`'s
  *   refusal of a text agent.
@@ -151,9 +151,9 @@ export function textAgentHasNoSession(name: string): Error {
  */
 export function createTextAgent(options: TextAgentOptions): TextAgent {
   const { agent, logger = consoleLogger } = options;
-  if (agent.text !== true) {
+  if (agent.mode !== "text") {
     throw new Error(
-      `Agent "${agent.name}" is not a text agent — add \`text: true\` to its ` +
+      `Agent "${agent.name}" is not a text agent — add \`mode: "text"\` to its ` +
         "definition, or run it as a voice session with `createRuntime`.",
     );
   }
@@ -161,21 +161,18 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
   const sessionId = options.sessionId ?? crypto.randomUUID();
   const env = Object.freeze({ ...(options.env ?? {}) });
 
+  const agentSets = agentToolsets(agent);
   const builtins = mergeBuiltinSurface(
     agent,
     {
       ...omitUndefined({ fetch: options.fetch }),
       ...omitUndefined({ runCode: options.runCode }),
     },
-    { schemas: agentToolsToSchemas(agent.tools ?? {}) },
+    { schemas: agentToolsToSchemas(agentSets) },
   );
-  // The agent's own tools win a name collision, exactly as in a session — the
-  // merge above has already dropped the shadowed builtin from the schemas, so
-  // the model never sees a duplicate name either.
-  const allTools: Record<string, AgentDef["tools"][string]> = {
-    ...builtins.defs,
-    ...agent.tools,
-  };
+  // The agent's own toolsets win a name collision, exactly as in a session —
+  // builtins go LAST, and the merge above already dropped a shadowed one.
+  const toolsets = [...agentSets, builtins.toolset];
 
   // Derived ONCE and shared by both, rather than the same two expressions
   // written out three times across this factory (`resolveModel` is the third).
@@ -247,9 +244,9 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
   const sessionContext: AgentSessionContext = { sessionId, env, slots };
   const instructions = systemPromptResolver(agent.systemPrompt);
 
-  const executeTool = createToolDispatcher(allTools, (tool, call) =>
+  const executeTool = createToolDispatcher(toolsets, (toolset, call) =>
     executeToolCall(call.name, call.args, {
-      tool,
+      toolset,
       env,
       slots,
       // The agent's own id when the caller named none: one text agent is one
@@ -377,17 +374,18 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
         // alternatives, not replacements — a wall-clock deadline must be able
         // to end a turn early and must never extend one past the step cap.
         stopWhen: [stepCountIs(maxSteps + 1), ...(turn.stopWhen ?? [])],
-        prepareStep: composePrepareStep(
-          turn.prepareStep,
-          // Before `forceFinalAnswer`, which owns the same key on the reserved
-          // step — see `_prepare-step.ts`.
-          resetToolChoiceAfterFirstStep(toolChoice, agent.resetToolChoice ?? true),
+        prepareStep: composePreparers([
+          { stage: "caller", prepare: turn.prepareStep },
+          {
+            stage: "agent-tool-choice",
+            prepare: resetToolChoiceAfterFirstStep(toolChoice, agent.resetToolChoice ?? true),
+          },
           // No `toolErrorBudget` here, deliberately: it exists because a voice
           // caller hears every failed round trip as silence. A text caller is
           // code, often a coding loop whose next call is meant to follow a
           // failure, and it can install its own `prepareStep`.
-          forceFinal,
-        ),
+          { stage: "force-final-answer", prepare: forceFinal },
+        ]),
         experimental_repairToolCall: createToolCallRepair(model, logger, () => turn.signal),
         // The caller's signal PLUS the fatal-tool latch, so a tool the author
         // declared unrecoverable stops the run instead of handing the model a

@@ -15,16 +15,17 @@
  */
 
 import { expectTypeOf, test } from "vitest";
+import type { AgentAccepts } from "./_test-utils.ts";
 import type { AgentGuardrail, GuardrailVerdict } from "./agent-guardrails.ts";
 import type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.ts";
 import type { AgentSessionContext } from "./agent-session-context.ts";
-import { type AgentParams, agent } from "./define.ts";
-import { type PersonaDef, type Personas, persona, personas } from "./persona.ts";
+import { agent } from "./define.ts";
 import type { S2sProvider } from "./providers.ts";
+import { type Roster, roster } from "./roster.ts";
 import type { SessionEventContext } from "./session-events.ts";
 import type { SessionSpeech } from "./session-speech.ts";
-import type { SubagentDef } from "./subagent.ts";
-import type { ToolSet } from "./tool-def.ts";
+import { type SpeakerDef, speaker } from "./speaker.ts";
+import type { ToolMap } from "./tool-def.ts";
 import type { AgentDef, ToolContext } from "./types.ts";
 
 /**
@@ -39,49 +40,61 @@ import type { AgentDef, ToolContext } from "./types.ts";
  * all, and that a workflow app (which runs no model and speaks nothing) cannot.
  */
 test("the model-tuning knobs and the guardrails are session-arm fields", () => {
-  expectTypeOf<{
-    name: string;
-    description: string;
-    temperature: number;
-    maxOutputTokens: number;
-    maxRetries: number;
-    resetToolChoice: boolean;
-    usageLimits: { totalTokens: number };
-  }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      description: string;
+      temperature: number;
+      maxOutputTokens: number;
+      maxRetries: number;
+      resetToolChoice: boolean;
+      usageLimits: { totalTokens: number };
+    }>
+  >().toEqualTypeOf<true>();
 
-  expectTypeOf<{
-    name: string;
-    inputGuardrails: readonly AgentGuardrail[];
-    outputGuardrails: readonly AgentGuardrail[];
-  }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      inputGuardrails: readonly AgentGuardrail[];
+      outputGuardrails: readonly AgentGuardrail[];
+    }>
+  >().toEqualTypeOf<true>();
 
   // A text agent declares them too — none of these is voice-specific, and the
   // one rule they share is about who assembles the request.
-  expectTypeOf<{ name: string; text: true; maxOutputTokens: number }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; maxOutputTokens: number }>
+  >().toEqualTypeOf<true>();
 
   // A workflow app runs no model and opens no session, so all seven are the
   // same silent no-op the rest of `WorkflowAppOnlyField` is.
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: NonNullable<AgentDef["workflows"]>;
-    maxOutputTokens: number;
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: NonNullable<AgentDef["workflows"]>;
-    outputGuardrails: readonly AgentGuardrail[];
-  }>().not.toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "workflow-app";
+      workflows: NonNullable<AgentDef["workflows"]>;
+      maxOutputTokens: number;
+    }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "workflow-app";
+      workflows: NonNullable<AgentDef["workflows"]>;
+      outputGuardrails: readonly AgentGuardrail[];
+    }>
+  >().toEqualTypeOf<false>();
 
   // `description` is deliberately NOT refused there: a listing wants one
   // whatever the front door is.
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: NonNullable<AgentDef["workflows"]>;
-    description: string;
-  }>().toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "workflow-app";
+      workflows: NonNullable<AgentDef["workflows"]>;
+      description: string;
+    }>
+  >().toEqualTypeOf<true>();
 });
 
 /**
@@ -104,16 +117,22 @@ test("systemPrompt accepts a per-request resolver", () => {
   expectTypeOf<() => string>().toExtend<AgentInstructions>();
   expectTypeOf<AgentInstructions>().parameter(0).toEqualTypeOf<AgentSessionContext>();
   expectTypeOf<AgentInstructions>().returns.toBeString();
-  expectTypeOf<{ name: string; systemPrompt: string }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; systemPrompt: Resolve }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; s2s: S2sProvider; systemPrompt: Resolve }>().toExtend<AgentParams>();
-  expectTypeOf<{ name: string; text: true; systemPrompt: Resolve }>().toExtend<AgentParams>();
+  expectTypeOf<AgentAccepts<{ name: string; systemPrompt: string }>>().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; systemPrompt: Resolve }>>().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider; systemPrompt: Resolve }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; systemPrompt: Resolve }>
+  >().toEqualTypeOf<true>();
   // An ASYNC resolver is refused: there is nowhere to await while a request is
   // being assembled that does not put a round trip in front of every turn.
-  expectTypeOf<{
-    name: string;
-    systemPrompt: (ctx: AgentSessionContext) => Promise<string>;
-  }>().not.toExtend<AgentParams>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      systemPrompt: (ctx: AgentSessionContext) => Promise<string>;
+    }>
+  >().toEqualTypeOf<false>();
 });
 
 /** A guardrail's verdict vocabulary is the subagent's, deliberately. */
@@ -160,25 +179,25 @@ test("AgentSessionContext and SessionEventContext are the same shape, bar `speec
  * A roster knows its own names. `persona()` infers each `name` as a literal and
  * `personas()` collects them, so a handoff to a desk that is not on the roster
  * is a compile error in the tool body rather than a throw on a live call. The
- * default parameter keeps a bare `Personas` annotation accepting any roster.
+ * default parameter keeps a bare `Roster` annotation accepting any roster.
  */
 test("persona names are inferred, and a mistyped handoff target does not compile", () => {
-  const triage = persona({ name: "triage", description: "d", systemPrompt: "p" });
-  const billing = persona({ name: "billing", description: "d", systemPrompt: "p" });
-  expectTypeOf(triage).toEqualTypeOf<PersonaDef<"triage">>();
-  const desk = personas([triage, billing]);
-  expectTypeOf(desk).toEqualTypeOf<Personas<"triage" | "billing">>();
+  const triage = speaker({ name: "triage", speaks: true, description: "d", systemPrompt: "p" });
+  const billing = speaker({ name: "billing", speaks: true, description: "d", systemPrompt: "p" });
+  expectTypeOf(triage).toEqualTypeOf<SpeakerDef<"triage">>();
+  const desk = roster([triage, billing]);
+  expectTypeOf(desk).toEqualTypeOf<Roster<"triage" | "billing">>();
   const ctx = {} as ToolContext;
   desk.handoff(ctx, "billing");
   desk.handoff(ctx, billing);
   type HandoffTo = Parameters<typeof desk.handoff>[1];
   // "biling" is not on the roster, nor is a persona declared for another one.
   expectTypeOf<"biling">().not.toExtend<HandoffTo>();
-  expectTypeOf<PersonaDef<"sales">>().not.toExtend<HandoffTo>();
+  expectTypeOf<SpeakerDef<"sales">>().not.toExtend<HandoffTo>();
   // Backward compatible: the default is `string`, and a typed roster fits it.
-  const loose: Personas = desk;
+  const loose: Roster = desk;
   loose.handoff(ctx, "anyone");
-  expectTypeOf<PersonaDef>().toEqualTypeOf<PersonaDef<string>>();
+  expectTypeOf<SpeakerDef>().toEqualTypeOf<SpeakerDef<string>>();
 });
 
 /**
@@ -200,10 +219,9 @@ test("ctx.send is typed by ClientEventMap, per declared event", () => {
   ctx.send(name, 42);
 });
 
-test("ToolSet is the one tool-map shape AgentDef, PersonaDef and SubagentDef share", () => {
-  expectTypeOf<AgentDef["tools"]>().toEqualTypeOf<ToolSet>();
-  expectTypeOf<NonNullable<PersonaDef["tools"]>>().toEqualTypeOf<ToolSet>();
-  expectTypeOf<NonNullable<SubagentDef["tools"]>>().toEqualTypeOf<ToolSet>();
+test("ToolMap is the one tool-map shape AgentDef and SpeakerDef share", () => {
+  expectTypeOf<AgentDef["tools"]>().toEqualTypeOf<ToolMap>();
+  expectTypeOf<NonNullable<SpeakerDef["tools"]>>().toEqualTypeOf<ToolMap>();
 });
 
 declare module "./session-event-map.ts" {

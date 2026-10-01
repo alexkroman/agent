@@ -76,6 +76,13 @@ describe("server→client event wire format", () => {
     { type: "guardrail.blocked", direction: "output", replacement: "I can't help with that." },
     { type: "userTurn.exceeded", limit: "words", words: 60, durationMs: 14_200 },
     {
+      type: "provider.failedOver",
+      stage: "stt",
+      from: "assemblyai",
+      to: "deepgram",
+      reason: "401",
+    },
+    {
       type: "metrics.collected",
       interrupted: false,
       latencyMs: 910,

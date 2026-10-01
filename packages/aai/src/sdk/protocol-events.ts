@@ -50,9 +50,9 @@
 
 import { z } from "zod";
 import {
-  DEFAULT_MAX_HISTORY,
   MAX_AUDIO_SAMPLE_RATE,
   MAX_CLIENT_EVENT_NAME_LENGTH,
+  MAX_CLIENT_MESSAGES,
   MAX_ERROR_MESSAGE_CHARS,
   MAX_TOOL_RESULT_CHARS,
   MAX_TRANSCRIPT_CHARS,
@@ -60,6 +60,7 @@ import {
 import { SessionEventMetaSchema } from "./protocol-event-meta.ts";
 import {
   GuardrailBlockedEventSchema,
+  ProviderFailedOverEventSchema,
   UsageUpdatedEventSchema,
   UserTurnExceededEventSchema,
 } from "./protocol-events-accounting.ts";
@@ -395,7 +396,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("state.updated"),
     meta: SessionEventMetaSchema,
-    state: z.unknown(),
+    state: z.record(z.string(), z.unknown()),
   }),
   // The events about what a session SPENDS, REFUSES and CUTS SHORT. Their
   // schemas live in `protocol-events-accounting.ts` — named here rather than
@@ -405,6 +406,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   UsageUpdatedEventSchema,
   GuardrailBlockedEventSchema,
   UserTurnExceededEventSchema,
+  ProviderFailedOverEventSchema,
   // What one reply cost, stage by stage — `protocol-events-metrics.ts`.
   MetricsCollectedEventSchema,
   /**
@@ -442,7 +444,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
           content: z.string().max(MAX_TRANSCRIPT_CHARS),
         }),
       )
-      .max(DEFAULT_MAX_HISTORY),
+      .max(MAX_CLIENT_MESSAGES),
     /**
      * The tool calls interleaved through those messages.
      *
@@ -456,7 +458,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
      * did. A call with no completion stays `pending` — it may really have been in
      * flight when the process died.
      */
-    toolCalls: z.array(RestoredToolCallSchema).max(DEFAULT_MAX_HISTORY),
+    toolCalls: z.array(RestoredToolCallSchema).max(MAX_CLIENT_MESSAGES),
   }),
 ]);
 

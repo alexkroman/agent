@@ -2,7 +2,7 @@
 /**
  * Push-to-talk's three edges on the browser session — `session.userTurn`'s
  * `start`, `commit` and `clear` — for an agent that declares
- * `turnDetection: "manual"`; and `session.sendText`, a turn the caller TYPED.
+ * `turnTaking: { detection: "manual" }`; and `session.sendText`, a turn the caller TYPED.
  *
  * Split out of `session-core.ts` at the source-length cap. Each is a frame to
  * the server; what the server does with it is `aai-runtime`'s

@@ -1,10 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * One session's declared personas, bound to the two things a roster cannot
- * reach from inside a tool call: the PROMPT and the TRANSPORT.
+ * One session's roster — its SPEAKING entries ("personas" here) — bound to the
+ * two things a roster cannot reach from inside a tool call: the PROMPT and the
+ * TRANSPORT.
  *
- * `personas()` gives an agent a roster, a slot and a gate: a persona's tool
- * refuses while another persona speaks, and `handoff` writes the slot. That
+ * `roster()` gives an agent a slot and a gate: a speaking entry's tool refuses
+ * while another one speaks, and `handoff` writes the slot. That
  * much works from any tool body on any transport with nothing wired. What a
  * handoff also owes, and what only a session can do, is:
  *
@@ -46,10 +47,14 @@
  * closes that.
  */
 
-import type { PersonaDef, Personas, SessionEvent, SlotHolder, SlotStore } from "@alexkroman1/aai";
+import type { Roster, SessionEvent, SlotHolder, SlotStore, SpeakerDef } from "@alexkroman1/aai";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionSystemPrompt } from "./runtime-system-prompt.ts";
+import {
+  interruptionKnobs,
+  type PersonaInterruptionSource,
+} from "./transports/pipeline-dialog-knobs.ts";
 import type { PersonaTurnSource } from "./transports/pipeline-persona-knobs.ts";
 import type { Transport } from "./transports/types.ts";
 
@@ -79,9 +84,19 @@ export interface SessionPersonas {
    * changes the prompt and the gate's answer, and nothing about the request.
    */
   readonly turnKnobs: PersonaTurnSource | undefined;
+  /**
+   * The active persona's `interruption` group in the pipeline's units, or
+   * `undefined` when no persona declares one — so a roster that never mentions
+   * barge-in leaves the transport's interruption reads constant.
+   */
+  readonly interruption: PersonaInterruptionSource | undefined;
 }
 
-const NO_PERSONAS: SessionPersonas = { observe: () => undefined, turnKnobs: undefined };
+const NO_PERSONAS: SessionPersonas = {
+  observe: () => undefined,
+  turnKnobs: undefined,
+  interruption: undefined,
+};
 
 /**
  * Bind an agent's roster to one session.
@@ -93,7 +108,7 @@ const NO_PERSONAS: SessionPersonas = { observe: () => undefined, turnKnobs: unde
  * @internal
  */
 export function openSessionPersonas(
-  roster: Personas | undefined,
+  roster: Roster | undefined,
   sessionId: string,
   deps: {
     prompt: SessionSystemPrompt;
@@ -104,23 +119,22 @@ export function openSessionPersonas(
     logger: Logger;
   },
 ): SessionPersonas {
-  // `personas()` refuses an empty roster, so the second arm is unreachable
-  // through the SDK — it exists so the entry persona is a `PersonaDef` below
-  // rather than a cast, and an empty hand-written roster is inert rather than
-  // a throw out of prompt assembly.
+  // A roster whose entries all run off the line has nobody to put on it: no
+  // section, no knobs — the prompt stays byte-identical, as with no roster.
   if (roster === undefined) return NO_PERSONAS;
-  const entry = roster.list[0];
+  const entry = roster.speaking[0];
   if (entry === undefined) return NO_PERSONAS;
   // Re-bound as consts: the readers below are hoisted function declarations,
   // which TypeScript does not narrow through, and the two guards above are
   // what make these non-optional.
-  const live: Personas = roster;
-  const first: PersonaDef = entry;
+  const live: Roster = roster;
+  const first: SpeakerDef = entry;
   const { prompt, transport, logger } = deps;
   const ctx: SlotHolder = { slots: deps.slots, sessionId };
-  const varies = roster.list.some(
+  const varies = roster.speaking.some(
     (one) => one.toolChoice !== undefined || one.temperature !== undefined,
   );
+  const interrupts = roster.speaking.some((one) => one.interruption !== undefined);
 
   /**
    * Who is speaking, with a stale slot contained.
@@ -130,7 +144,7 @@ export function openSessionPersonas(
    * persona's call to take, with the reason in the log, rather than a throw out
    * of prompt assembly on a live turn.
    */
-  function speaking(): ReturnType<Personas["position"]> {
+  function speaking(): ReturnType<Roster["position"]> {
     try {
       return live.position(ctx);
     } catch (err: unknown) {
@@ -138,13 +152,13 @@ export function openSessionPersonas(
         sessionId,
         error: errorMessage(err),
       });
-      return { persona: first };
+      return { speaker: first };
     }
   }
 
   function render(): string {
     const at = speaking();
-    const lines = [`${SECTION_HEADING}: ${at.persona.name}`, at.persona.systemPrompt];
+    const lines = [`${SECTION_HEADING}: ${at.speaker.name}`, at.speaker.systemPrompt];
     if (at.from !== undefined) {
       lines.push(
         at.note === undefined
@@ -179,12 +193,13 @@ export function openSessionPersonas(
     },
     turnKnobs: varies
       ? () => {
-          const { persona } = speaking();
+          const { speaker } = speaking();
           return omitUndefined({
-            toolChoice: persona.toolChoice,
-            temperature: persona.temperature,
+            toolChoice: speaker.toolChoice,
+            temperature: speaker.temperature,
           });
         }
       : undefined,
+    interruption: interrupts ? () => interruptionKnobs(speaking().speaker.interruption) : undefined,
   };
 }

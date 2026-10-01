@@ -20,6 +20,7 @@ import { makeEmitter } from "./_test-utils.ts";
 import type { ServerSession, ServerSessionOptions } from "./session-core.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
+import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
 
 // `playAudioDone` / `start` / `stop` are plain `vi.fn()`s like every other
@@ -56,6 +57,7 @@ export function makeSink(): {
 
 export function makeTransport(): Transport {
   return {
+    capabilities: ASSEMBLYAI_S2S_CAPABILITIES,
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
     sendUserAudio: vi.fn(),

@@ -18,6 +18,7 @@ import {
 } from "../_ws.ts";
 import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
+import { OPENAI_REALTIME_CAPABILITIES } from "./capabilities.ts";
 import { createOpenaiRealtimeLifecycle } from "./openai-realtime-lifecycle.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import {
@@ -450,6 +451,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   }
 
   return {
+    capabilities: OPENAI_REALTIME_CAPABILITIES,
     start,
     stop,
     refreshSystemPrompt,

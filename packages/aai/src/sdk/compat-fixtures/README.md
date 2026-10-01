@@ -57,7 +57,7 @@ The schemas and messages are v2's; only the cap on a `tool.completed` result
 rejects a longer frame, so the constant is checked against the newest fixture
 only, while v2's messages must still parse.
 
-## v4 renamed six event types, and retired v2 and v3 the way v1 went
+## v4 renamed the off-grammar event types, and retired v2 and v3 the way v1 went
 
 Every session event name is now `<subject>.<verb>` in camelCase
 (`userTranscript.committed`, `agentTranscript.updated`, `userTurn.exceeded`,

@@ -36,7 +36,7 @@ import {
  *
  * The provider triple is the useful part: descriptors are plain data, so
  * declaring the pipeline here costs no credential. Everything else an
- * `AgentDef` carries — `voice`, `idleTimeoutMs`, `minBargeInWords`,
+ * `AgentDef` carries — `voice`, `idleTimeoutMs`, `interruption`,
  * `builtinTools` — is operator policy and stands for every tenant.
  */
 export type HostSessionDefaults = Omit<

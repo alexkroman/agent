@@ -5,13 +5,13 @@
 // in ws-handler.test.ts.
 
 import { DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
-import { createOwnedMap } from "@alexkroman1/aai/internal";
+
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
-import type { ServerSession } from "./session-core.ts";
+import { createSessionDirectory } from "./session-directory.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
@@ -21,7 +21,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -39,7 +39,7 @@ describe("wireSessionSocket lifecycle", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger,
@@ -60,7 +60,7 @@ describe("wireSessionSocket lifecycle", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger,
@@ -79,7 +79,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       onOpen,
@@ -94,7 +94,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       onClose,
@@ -108,7 +108,7 @@ describe("wireSessionSocket lifecycle", () => {
   test("onSessionEnd is called with sessionId after session cleanup", async () => {
     const onSessionEnd = vi.fn();
     const ws = openSocket();
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
 
     wireSessionSocket(ws, {
       sessions,
@@ -119,7 +119,7 @@ describe("wireSessionSocket lifecycle", () => {
     });
 
     expect(sessions.size).toBe(1);
-    const sessionId = [...sessions.keys()][0] ?? "";
+    const sessionId = [...sessions.ids()][0] ?? "";
 
     ws.close();
 
@@ -137,7 +137,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       onSinkCreated,
@@ -153,7 +153,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: (_sid, client) => {
         capturedClient = client;
         return makeMockCore();
@@ -172,7 +172,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: (_sid, client) => {
         capturedClient = client;
         return makeMockCore();
@@ -194,7 +194,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: (_sid, client) => {
         capturedClient = client;
         return makeMockCore();
@@ -212,7 +212,7 @@ describe("wireSessionSocket lifecycle", () => {
     let capturedClient!: ClientSink;
     const ws = openSocket();
     const logger = makeLogger();
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
     const closeSpy = vi.spyOn(ws, "close");
 
     wireSessionSocket(ws, {
@@ -258,7 +258,7 @@ describe("wireSessionSocket lifecycle", () => {
     (ws as { bufferedAmount: number | undefined }).bufferedAmount = undefined;
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: (_sid, client) => {
         capturedClient = client;
         return makeMockCore();
@@ -276,7 +276,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: (_sid, client) => {
         capturedClient = client;
         return makeMockCore();
@@ -303,7 +303,7 @@ describe("wireSessionSocket lifecycle", () => {
     const startGate = Promise.withResolvers<void>();
     const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
     const ws = openSocket();
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
 
     wireSessionSocket(ws, {
       sessions,
@@ -323,7 +323,7 @@ describe("wireSessionSocket lifecycle", () => {
   test("start() failure removes session from map before close", async () => {
     const core = makeMockCore({ start: vi.fn(() => Promise.reject(new Error("boom"))) });
     const ws = openSocket();
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
 
     wireSessionSocket(ws, {
       sessions,
@@ -344,7 +344,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -360,7 +360,7 @@ describe("wireSessionSocket lifecycle", () => {
 
   test("createSession throwing sends an error frame and closes without crashing", () => {
     const ws = openSocket();
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
 
     // A synchronous throw from createSession (e.g. buildTransport rejecting an
     // unregistered transport kind) must not escape as an uncaughtException.
@@ -401,7 +401,7 @@ describe("wireSessionSocket lifecycle", () => {
         ),
       });
       const ws = openSocket();
-      const sessions = createOwnedMap<string, ServerSession>();
+      const sessions = createSessionDirectory();
 
       wireSessionSocket(ws, {
         sessions,
@@ -431,7 +431,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket(MockWebSocket.CONNECTING);
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -446,7 +446,7 @@ describe("wireSessionSocket lifecycle", () => {
   });
 
   test("without resumeFrom, generates a new UUID session ID", () => {
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
     const ws = openSocket();
     let capturedId: string | undefined;
 
@@ -476,7 +476,7 @@ describe("wireSessionSocket lifecycle", () => {
       const ws = Object.assign(openSocket(), { ping });
 
       wireSessionSocket(ws, {
-        sessions: createOwnedMap(),
+        sessions: createSessionDirectory(),
         createSession: () => makeMockCore(),
         readyConfig: defaultConfig,
         logger: silentLogger,
@@ -498,7 +498,7 @@ describe("wireSessionSocket lifecycle", () => {
       const ws = Object.assign(openSocket(), { ping });
 
       wireSessionSocket(ws, {
-        sessions: createOwnedMap(),
+        sessions: createSessionDirectory(),
         createSession: () => makeMockCore(),
         readyConfig: defaultConfig,
         logger: silentLogger,
@@ -523,7 +523,7 @@ describe("wireSessionSocket lifecycle", () => {
       const ws = openSocket(); // MockWebSocket has no ping()
       expect(() =>
         wireSessionSocket(ws, {
-          sessions: createOwnedMap(),
+          sessions: createSessionDirectory(),
           createSession: () => makeMockCore(),
           readyConfig: defaultConfig,
           logger: silentLogger,
@@ -541,7 +541,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger,

@@ -172,6 +172,8 @@ export function useInbox(options: UseInboxOptions = {}): UseInboxResult {
     const inbox = createInbox({
       platformUrl: identity.platformUrl,
       client: () => identity.clientId(),
+      // The session's ticket, so a gated server admits this socket too.
+      token: () => identity.ticket(),
       holder,
       events,
       busy: () => (latest.current.busy ?? (() => session.getSnapshot().running))(),

@@ -66,8 +66,11 @@ export function createUserActivity(deps: {
   silenceTimeoutMs: number | undefined;
   /** Synthetic user message a nudge injects; defaults to DEFAULT_SILENCE_PROMPT. */
   silencePrompt: string | undefined;
-  /** Resume a barged-in reply when the interruption commits no user turn. */
-  resumeFalseInterruption: boolean;
+  /**
+   * Resume a barged-in reply when the interruption commits no user turn — a
+   * thunk, per the dialog/persona override (`pipeline-dialog-knobs.ts`).
+   */
+  resumeFalseInterruption: () => boolean;
   /**
    * Speaking-edge idle watchdog (ms), and with it THE false-interruption
    * resume deadline — the watchdog is what fires the resume, so 0 disables

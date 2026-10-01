@@ -21,6 +21,7 @@ import { compile } from "html-to-text";
 import { z } from "zod";
 import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
 import { HTML_ACCEPT, MAX_HTML_BYTES, MAX_JSON_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
+import { toolset } from "../sdk/toolset.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { builtinCover } from "./_builtin-cover.ts";
 import { calculate } from "./_calculate.ts";
@@ -416,5 +417,5 @@ export function resolveAllBuiltins(
   }
 
   // One tool→wire-schema mapping for builtins and agent tools alike.
-  return { defs, schemas: agentToolsToSchemas(defs), guidance };
+  return { defs, schemas: agentToolsToSchemas([toolset("builtin", defs)]), guidance };
 }

@@ -18,16 +18,18 @@
  *   strongest one here validates each LLM request payload the way Anthropic and
  *   OpenAI do (`promptProblems`): a `tool` result with no matching `tool-call`
  *   is a hard 400. That oracle is what surfaced the history-cap bug fixed in
- *   `pipeline-history.ts` (`capLlm`), which is why `LONG_SEEDS` exists — those
- *   are the only seeds that push past `DEFAULT_MAX_HISTORY` and make the cap
- *   trim at all.
+ *   `pipeline-history.ts` (now `evictLlm`), which is why the long property
+ *   exists — its runs are the only ones that push a request past the depth
+ *   (200 messages) the retired message cap used to trim at. There is no
+ *   message cap any more: the request is bounded in TOKENS, so this oracle is
+ *   what says a DEEP history still reaches the provider well-formed.
  * - **The REGRESSION guard for that bug is the deterministic spec in
  *   `transports/pipeline-history.test.ts`**, not this suite. Whether a trim
  *   splits a tool pair depends on the window's alignment with turn boundaries,
  *   so a random walk reaches it only sometimes. Discovery and regression are
  *   different jobs; do not delete that spec on the grounds that this one covers
  *   the same ground. That is measured rather than assumed: reverting the
- *   `capLlm` fix leaves THIS suite green — both before and after it moved to
+ *   `capLlm` (now `evictLlm`) fix leaves THIS suite green — both before and after it moved to
  *   fast-check — while `pipeline-history.test.ts` fails immediately.
  * - **The generator must not itself break a provider contract.** An earlier
  *   draft emitted TTS audio at arbitrary moments and the truncation oracle duly
@@ -224,7 +226,7 @@ describe("pipeline transport — randomized interleaving", () => {
     );
   }, 60_000);
 
-  test("global invariants hold across a long session past the history cap", async () => {
+  test("global invariants hold across a long session with a deep history", async () => {
     const harness = installHarness();
     try {
       await fc.assert(
@@ -270,8 +272,8 @@ describe("pipeline transport — randomized interleaving", () => {
     if (process.env.PIPELINE_FUZZ_COVERAGE === "1") {
       console.log(JSON.stringify(harness.cov, null, 2));
     }
-    // The state this property exists for: past DEFAULT_MAX_HISTORY the cap
-    // trims on every push, which is what can orphan a tool result.
+    // The state this property exists for: a request past the depth the retired
+    // 200-message cap trimmed at, so the orphan oracle validates a DEEP history.
     //
     // THE INSTRUMENT DECIDES THIS COUNTER, and that is the whole story of the
     // number below. It was 75, justified by 229-425 measured over 24 runs on a
@@ -302,8 +304,8 @@ describe("pipeline transport — randomized interleaving", () => {
     // depending on wall clock (root guide: "a spec that observes a TIMER runs
     // on virtual time"), not get a bigger number.
     expect(
-      harness.cov.llmRequestAtHistoryCap ?? 0,
-      "never reached the history cap",
+      harness.cov.llmRequestDeepHistory ?? 0,
+      "never sent a request past 200 messages",
     ).toBeGreaterThan(20); // CI 44-68 (n=3); local 199-425 (n=29)
   }, 60_000);
 });

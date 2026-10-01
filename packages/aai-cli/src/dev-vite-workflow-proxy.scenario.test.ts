@@ -165,7 +165,7 @@ describe("aai dev's workflow prefix", () => {
     ["a path with no file behind it", "/workflows/never-written.ts"],
   ])("still proxies %s to the agent server", async (_label, url) => {
     // The other half of the fix, and the one a naive "let Vite win" would break:
-    // a `page: "static"` app's entire front door is these routes, and the last
+    // a `mode: "workflow-app"` app's entire front door is these routes, and the last
     // case is why the filesystem is the discriminator rather than an extension
     // or a query — an unknown path belongs to the API, which is the end that can
     // say what is wrong with it.

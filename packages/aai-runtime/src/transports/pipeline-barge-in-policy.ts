@@ -7,7 +7,7 @@
  * stream, the speaking edges, the nudger and the recovery latch. Splitting it
  * out is not only file length: the decision has FOUR inputs that arrive from
  * three different layers — a word count and a stopwatch the agent set, two
- * phrase lists the agent set, and `bargeIn: "off"` which a dialog STATE sets
+ * phrase lists the agent set, and `interruption: "off"` which a dialog STATE sets
  * mid-call — and their precedence is the part of this transport most likely
  * to be got wrong by someone editing one of the four.
  *
@@ -27,7 +27,7 @@
  *    the substantive answer discarded and regenerated each time, with the
  *    caller at their most impatient. Such an utterance takes the deferral
  *    path instead: it commits as a chained turn, answered once the reply lands.
- * 2. **`bargeIn: "off"` refuses everything.** An unreachable threshold
+ * 2. **`interruption: "off"` refuses everything.** An unreachable threshold
  *    (`Infinity`) is a dialog state declaring that this sentence gets
  *    finished — a disclosure, a legal line — stated locally, about this phase,
  *    by the author. The phrase lists below override a THRESHOLD; they must not
@@ -133,7 +133,7 @@ export function createBargeInPolicy(deps: {
    * opened — see the module doc, step 1. False while no edge is open.
    */
   utteranceOpenedOverSpeech: () => boolean;
-  /** Interim words required to interrupt; `Infinity` is `bargeIn: "off"`. Per dialog state. */
+  /** Interim words required to interrupt; `Infinity` is `interruption: "off"`. Per dialog state. */
   minBargeInWords: () => number;
   /** Sustained-speech gate for an interim-triggered barge-in; 0 disables. Per state. */
   interruptionMinDurationMs: () => number;

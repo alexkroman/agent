@@ -94,16 +94,16 @@ export type TextbeltChannel = Channel & {
  *
  * @example Text the owner from a step
  * ```ts
- * import { textbeltChannel } from "@alexkroman1/aai/channels";
+ * import { sendToChannel, textbeltChannel } from "@alexkroman1/aai/channels";
  * import { requireStepEnv } from "@alexkroman1/aai/step";
- * import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+ * import { orFail } from "@alexkroman1/aai/step-errors";
  *
  * export async function textOwner(summary: string): Promise<string> {
  *   const channel = textbeltChannel({
  *     key: requireStepEnv("TEXTBELT_KEY"),
  *     to: requireStepEnv("SMS_TO_PHONE"),
  *   });
- *   return await sendToChannelOrFail(channel, { text: summary });
+ *   return await orFail(sendToChannel)(channel, { text: summary });
  * }
  * ```
  *

@@ -20,13 +20,13 @@ owns the authoring half; `sdk/dialog.ts` owns the gate.
 than a formality. Everything `dialog()` promises beyond the tool gate happens
 when no tool is running, which is why none of it could work from inside one:
 
-| Promise                                                | Where                                                    | Reaches                                                                   |
-| ------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------- |
-| session events move it (`@`-prefixed transitions)      | `SessionDialogs.observe`, called by `session-emitter.ts` | every transport                                                           |
-| the active instruction reaches the model on EVERY turn | `SessionSystemPrompt.setSuffix`                          | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
-| a per-state `timeout` is armed and fired               | `createRestartableTimer` per dialog                      | every transport                                                           |
-| `bargeIn` / `toolChoice` / `temperature` per state     | `PipelineTransportOptions.dialogTurn`                    | **pipeline only**                                                         |
-| `voice` per state                                      | nothing                                                  | **nothing — warned at the first session**                                 |
+| Promise                                                 | Where                                                    | Reaches                                                                   |
+| ------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| session events move it (`@`-prefixed transitions)       | `SessionDialogs.observe`, called by `session-emitter.ts` | every transport                                                           |
+| the active instruction reaches the model on EVERY turn  | `SessionSystemPrompt.setSuffix`                          | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
+| a per-state `timeout` is armed and fired                | `createRestartableTimer` per dialog                      | every transport                                                           |
+| `interruption` / `toolChoice` / `temperature` per state | `PipelineTransportOptions.dialogTurn`                    | **pipeline only**                                                         |
+| `voice` per state                                       | nothing                                                  | **nothing — warned at the first session**                                 |
 
 An UNDECLARED dialog is unchanged: its tool gate, `send`, `position` and
 `projection` all work exactly as they did, and an author can still drive one by
@@ -67,7 +67,7 @@ NESTED, so a phase that pins a voice and a barge-in together means them together
 and `toVoiceConfig` is deepest-DECLARATION for that reason. Two dialogs have no
 containment relation — neither is a special case of the other — so there is no
 "together" to preserve and per-key is the only merge with a meaning. Last writer
-wins is what `composePrepareStep` already does one layer down.
+wins is what `composePreparers` already does one layer down.
 
 ### The deadline clock runs from the dialog's last MOVE
 
@@ -106,13 +106,14 @@ the dialog actually is instead of firing a transition the conversation has left.
 
 `transports/pipeline-dialog-knobs.ts` carries the table. The short version:
 
-- **`bargeIn`** — live. The two interim gates in `pipeline-user-speech.ts` are
-  read at the moment a partial is classified, so they became thunks.
-  `bargeIn: "off"` is `minBargeInWords: Infinity`: both gates are
-  `words >= threshold` tests, so an unreachable threshold is exactly "the agent
-  finishes its sentence". The word COUNT is still computed, so a caller talking
-  over a disclosure is still transcribed, still opens the speaking edge, and is
-  still answered once the reply ends.
+- **`interruption`** — live. The two interim gates in `pipeline-user-speech.ts`
+  are read at the moment a partial is classified, so they became thunks.
+  `interruption: "off"` is an infinite word threshold (the transport's
+  `minBargeInWords: Infinity`): both gates are `words >= threshold` tests, so an
+  unreachable threshold is exactly "the agent finishes its sentence". The word
+  COUNT is still computed, so a caller talking over a disclosure is still
+  transcribed, still opens the speaking edge, and is still answered once the
+  reply ends.
 - **`toolChoice` / `temperature`** — live, and **per STEP** rather than per turn.
   They arrive as a `prepareStep` preparer composed before `forceFinalAnswer`,
   which is the stronger place: a gated tool can move the dialog in the MIDDLE of
@@ -151,7 +152,7 @@ the dialog actually is instead of firing a transition the conversation has left.
   knobs.** The speculation decides once, from the SESSION's `toolChoice`, whether
   speculating is free at all, so a state that pins a tool would make every
   speculation end at the tool boundary with the gate still believing it was free.
-  Conservative in one direction on purpose: a dialog declaring only `bargeIn`
+  Conservative in one direction on purpose: a dialog declaring only `interruption`
   turns it off too, and preemptive generation ships off by default.
 - **A throwing dialog is contained PER DIALOG**, exactly as the emitter's two
   hook slots are — they are independent declarations, and this runs from transport
@@ -162,8 +163,8 @@ the dialog actually is instead of firing a transition the conversation has left.
 
 ### A state may PIN a persona
 
-`DialogStateSpec.persona` names one of `agent({ personas })`' roster, and
-`Personas.position` answers it for as long as the conversation is in that
+`DialogStateSpec.persona` names a `speaks: true` entry of `agent({ roster })`, and
+`Roster.position` answers it for as long as the conversation is in that
 state — a property of the POSITION rather than a write, so a resumed session is
 pinned the same way and `handoff` to anyone else is refused until the dialog
 moves. `agent()` checks the name against the roster at declaration. The bridge

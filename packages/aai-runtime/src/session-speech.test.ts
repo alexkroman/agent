@@ -4,13 +4,19 @@
 // `interrupt()` is the client's cancel and nothing else.
 
 import { describe, expect, test, vi } from "vitest";
-import { makeLogger } from "./_test-utils.ts";
 import { createSpeechVerbs, type SpeechVerbs, speechDirectory } from "./session-speech.ts";
+import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { SpokenLine, SpokenLineOutcome, Transport } from "./transports/types.ts";
 
 /** A transport with the two speech verbs scripted, and every other verb inert. */
 function transport(overrides: Partial<Transport> = {}): Transport {
   return {
+    // The flags follow the verbs scripted, as a real transport's do.
+    capabilities: {
+      ...ASSEMBLYAI_S2S_CAPABILITIES,
+      say: overrides.speakLine !== undefined,
+      replyState: overrides.isReplying !== undefined,
+    },
     start: async () => undefined,
     stop: async () => undefined,
     sendUserAudio: () => undefined,
@@ -33,16 +39,13 @@ function heldSpeakLine() {
 }
 
 function verbs(t: Transport, state: { stopped?: boolean } = {}) {
-  const log = makeLogger();
   const cancel = vi.fn();
   const speech = createSpeechVerbs({
-    sid: "s-1",
     transport: t,
-    log,
     stopped: () => state.stopped === true,
     cancel,
   });
-  return { speech, cancel, log };
+  return { speech, cancel };
 }
 
 describe("say", () => {
@@ -67,11 +70,20 @@ describe("say", () => {
     ]);
   });
 
-  test("an S2S transport settles UNSUPPORTED, and says why once per session", async () => {
-    const { speech, log } = verbs(transport());
-    await expect(speech.say("one").done).resolves.toBe("unsupported");
-    await expect(speech.say("two").done).resolves.toBe("unsupported");
-    expect(log.warn).toHaveBeenCalledTimes(1);
+  test("a transport without the `say` capability settles DROPPED, and says nothing per line", async () => {
+    // The absence is said ONCE, at session start, from the capability row
+    // (`reportSessionCapabilities`), never as a degraded branch here.
+    const { speech } = verbs(transport());
+    await expect(speech.say("one").done).resolves.toBe("dropped");
+    await expect(speech.say("two").done).resolves.toBe("dropped");
+  });
+
+  test("the capability, not the verb's presence, decides", async () => {
+    const held = heldSpeakLine();
+    const t = transport({ speakLine: held.speakLine });
+    const { speech } = verbs({ ...t, capabilities: { ...t.capabilities, say: false } });
+    await expect(speech.say("one").done).resolves.toBe("dropped");
+    expect(held.lines).toEqual([]);
   });
 
   test("blank text and a stopped session settle DROPPED without reaching the transport", async () => {

@@ -103,7 +103,7 @@ async function serve(): Promise<Harness> {
       toolChoice: "auto",
       // The projection carries the slot's own default, so there is nothing to
       // declare for `pushStateSnapshot` to have something to project on a resume.
-      syncState: probeSlot.projection((state) => ({ items: state.items })),
+      syncState: { probe: probeSlot.projection((state) => ({ items: state.items })) },
       tools: {
         add_item: tool({
           description: "Add an item to the list.",
@@ -236,7 +236,7 @@ describe("a sessionSlot's value across a severed connection (real runtime)", () 
 
     await addItem(harness, "widget", "call-1");
     const beforeDrop = await first.waitFor("state.updated");
-    expect(beforeDrop.state).toEqual({ items: ["widget"] });
+    expect(beforeDrop.state).toEqual({ probe: { items: ["widget"] } });
 
     const closed = first.closed();
     harness.proxy.severAll();
@@ -246,7 +246,7 @@ describe("a sessionSlot's value across a severed connection (real runtime)", () 
     // has never seen this state, and no further tool call is made.
     const second = await connect(harness.proxy, `?sessionId=${sessionId}`);
     const resumed = await second.waitFor("state.updated");
-    expect(resumed.state).toEqual({ items: ["widget"] });
+    expect(resumed.state).toEqual({ probe: { items: ["widget"] } });
     const resumedConfig = await second.waitFor("session.configured");
     expect(resumedConfig.sessionId).toBe(sessionId);
     second.ws.close();
@@ -275,7 +275,7 @@ describe("a sessionSlot's value across a severed connection (real runtime)", () 
     await addItem(harness, "second", "call-2");
 
     const after = await second.waitFor("state.updated", { count: 2 });
-    expect(after.state).toEqual({ items: ["first", "second"] });
+    expect(after.state).toEqual({ probe: { items: ["first", "second"] } });
     second.ws.close();
   });
 
@@ -316,7 +316,7 @@ describe("a sessionSlot's value across a severed connection (real runtime)", () 
     }
 
     const snapshot = await client.waitFor("state.updated");
-    expect(snapshot.state).toEqual({ items: ["one", "two", "three"] });
+    expect(snapshot.state).toEqual({ probe: { items: ["one", "two", "three"] } });
     expect(harness.proxy.severed()).toBe(3);
     client.ws.close();
   });

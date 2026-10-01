@@ -309,7 +309,7 @@ describe("the S2S stage: an opt-in that REPLACES the pipeline", () => {
       [assemblyAIS2s({ keyterms: ["AssemblyAI"] } satisfies AssemblyAIS2sOptions), "assemblyai"],
       [openAIS2s({ voice } satisfies OpenAIS2sOptions), "openai-realtime"],
     ] as const satisfies readonly (readonly [S2sProvider, string])[]) {
-      const config = toAgentConfig(agent({ name: NAME, s2s }));
+      const config = toAgentConfig(agent({ name: NAME, mode: "s2s", s2s }));
       expect(config.s2s?.kind).toBe(kind);
       expect(config.mode).toBe("s2s");
       // No cascade is filled in: speech-to-speech has no separate STT or TTS,
@@ -324,7 +324,7 @@ describe("the S2S stage: an opt-in that REPLACES the pipeline", () => {
     // is why this reaches the runtime rule by spreading instead. Both halves
     // matter — the second is what catches a raw `export default {...}` that
     // never went through `agent()`.
-    const s2sAgent = agent({ name: NAME, s2s: assemblyAIS2s() });
+    const s2sAgent = agent({ name: NAME, mode: "s2s", s2s: assemblyAIS2s() });
     expect(() => toAgentConfig({ ...s2sAgent, tts: cartesiaTts() })).toThrow();
   });
 });

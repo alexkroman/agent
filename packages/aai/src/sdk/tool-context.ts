@@ -17,7 +17,7 @@ import type { RandomSource } from "./random.ts";
 import type { ClientEventSender } from "./session-event-map.ts";
 import type { SessionSpeech } from "./session-speech.ts";
 import type { SlotStore } from "./session-state.ts";
-import type { DelegateFn } from "./subagent.ts";
+import type { DelegateFn } from "./speaker.ts";
 import type { Message } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
 

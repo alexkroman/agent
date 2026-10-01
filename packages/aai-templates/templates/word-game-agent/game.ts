@@ -56,7 +56,7 @@ const gameSpec = {
       timeout: { afterMs: GAME_SECONDS * 1000, send: "TIME_UP" },
       // A describer talks over the host's remark constantly, and should be able
       // to: the host's lines are one sentence and the clock is theirs.
-      bargeIn: { minWords: 1 },
+      interruption: { minWords: 1 },
       on: { TIME_UP: "over", WORDS_DONE: "over" },
     },
     over: {

@@ -254,7 +254,7 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     silencePrompt: undefined,
     // No confidence policy: every final commits, which is what an agent that
     // declares none gets. The band's own specs override both of these.
-    resumeFalseInterruption: true,
+    resumeFalseInterruption: () => true,
     // The watchdog IS the resume: an armed latch fires when the speaking edge
     // goes idle. Short here, since a barge-in opens the edge and these specs
     // never commit the final that would close it.

@@ -379,7 +379,7 @@ describe("the vocabulary over a TEXT agent's events", () => {
     inputSchema: z.object({}),
     execute: () => "no errors",
   });
-  const coder = withTools(agent({ name: "Coder", text: true }), {
+  const coder = withTools(agent({ name: "Coder", mode: "text" }), {
     write_file: writeFile,
     check_types: checkTypes,
   });

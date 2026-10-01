@@ -4,6 +4,7 @@ import { z } from "zod";
 import { agentToolsToSchemas } from "./_internal-types.ts";
 import { sessionSlot } from "./session-slot.ts";
 import { createToolContext } from "./testing.ts";
+import { toolset } from "./toolset.ts";
 
 type Cart = { items: string[]; nextId: number };
 
@@ -479,7 +480,7 @@ describe("sessionSlot", () => {
         },
         messages: { failed: [{ role: "system", content: "Say the cart is unavailable." }] },
       });
-      const [countSchema, addSchema] = agentToolsToSchemas({ count, add });
+      const [countSchema, addSchema] = agentToolsToSchemas([toolset("files", { count, add })]);
       expect(countSchema?.messages).toEqual({
         start: [{ content: "Counting." }],
         complete: [{ role: "assistant", content: "Counted." }],

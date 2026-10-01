@@ -15,6 +15,12 @@
  */
 
 import { type AgentConfig, toAgentConfig } from "./agent-config.ts";
+import type {
+  PipelineAgentParams,
+  S2sAgentParams,
+  StaticAgentParams,
+  TextAgentParams,
+} from "./agent-params.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
 /**
@@ -23,7 +29,7 @@ import type { ToolContext, ToolDef } from "./types.ts";
  * cast per assertion.
  *
  * `AgentConfigSource` deliberately forbids the shapes those specs exercise (a
- * `system` alias, a string `llm`, `text: true`, a `mode` on a hand-written
+ * `system` alias, a string `llm`, `mode: "text"`, a `mode` on a hand-written
  * `export default {...}`, a guardrail on an s2s agent), because a TYPED caller
  * must not write them — but `toAgentConfig` is documented to accept them from a
  * raw object, and that behaviour is what the cases cover. Narrowing once means
@@ -48,3 +54,38 @@ export function rawConfig(fields: Record<string, unknown>): AgentConfig {
 export async function runToolDef(tool: ToolDef, ctx: ToolContext): Promise<unknown> {
   return await tool.execute({}, ctx);
 }
+
+/** Every key ANY member of a union has — `keyof` of a union is only the shared ones. */
+type KeysOf<T> = T extends unknown ? keyof T : never;
+
+/**
+ * Whether an object LITERAL of type `X` is accepted where `M` is expected:
+ * assignable, and carrying no key outside `M` — the excess-property check tsc
+ * applies to a literal argument. For a union `M` the excess check is against
+ * every member's keys, as tsc's is.
+ *
+ * Why a type and not structural `toExtend`: `agent()`'s members are CUT from
+ * `AgentDef`, so a field a mode lacks is ABSENT from its member rather than
+ * typed unsatisfiable, and an absent field is one an object may structurally
+ * carry. What refuses it is the excess-property check on the literal — which
+ * this models — and, for a caller that check never sees, `_agent-modes.ts`.
+ * Why not an expect-error directive on a real call: every one is an escape
+ * hatch the ratchet counts, and it passes on ANY error.
+ */
+export type Accepts<M, X> = [X] extends [M]
+  ? [Exclude<keyof X, KeysOf<M>>] extends [never]
+    ? true
+    : false
+  : false;
+
+/**
+ * Whether ANY overload of `agent()` accepts the literal `X` — i.e. whether the
+ * call `agent(x)` compiles. One member per overload, plus the union one.
+ */
+export type AgentAccepts<X> = true extends
+  | Accepts<PipelineAgentParams, X>
+  | Accepts<S2sAgentParams, X>
+  | Accepts<TextAgentParams, X>
+  | Accepts<StaticAgentParams, X>
+  ? true
+  : false;

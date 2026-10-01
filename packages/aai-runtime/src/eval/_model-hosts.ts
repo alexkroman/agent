@@ -24,6 +24,7 @@
  * @module
  */
 
+import { fallbackMembers, isFallbackDescriptor } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { isRecord } from "@alexkroman1/aai/utils";
 
@@ -50,6 +51,13 @@ const DEFAULT_HOSTS: Readonly<Record<string, readonly string[]>> = {
 function hostsOf(llm: LlmProvider | string | undefined): readonly string[] {
   // Absent or a bare model id: the AssemblyAI gateway, the SDK's default stage.
   if (llm === undefined || typeof llm === "string") return DEFAULT_HOSTS.assemblyai ?? [];
+  // A fallback reaches every member's host — the secondary is dialled exactly
+  // when the primary is not answering.
+  if (isFallbackDescriptor(llm)) {
+    return fallbackMembers(llm).flatMap((m) =>
+      hostsOf({ kind: m.kind, options: { ...m.options, model: "" } }),
+    );
+  }
   const options: unknown = llm.options;
   const baseUrl = isRecord(options) ? options.baseUrl : undefined;
   if (typeof baseUrl === "string") {

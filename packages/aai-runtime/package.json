@@ -46,11 +46,6 @@
       "types": "./dist/eval-vitest-barrel.d.ts",
       "import": "./dist/eval-vitest-barrel.js"
     },
-    "./eval/simulate": {
-      "@dev/source": "./src/eval-simulate-barrel.ts",
-      "types": "./dist/eval-simulate-barrel.d.ts",
-      "import": "./dist/eval-simulate-barrel.js"
-    },
     "./testing": {
       "@dev/source": "./src/testing-barrel.ts",
       "types": "./dist/testing-barrel.d.ts",

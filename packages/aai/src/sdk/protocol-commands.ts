@@ -30,7 +30,7 @@ export const SessionCommandSchema = z.discriminatedUnion("type", [
   cmd("cancel"),
   cmd("reset"),
   // Push-to-talk — the three edges of a turn the CLIENT ends, honoured only by
-  // an agent declaring `turnDetection: "manual"` (any other agent logs and
+  // an agent declaring `turnTaking: { detection: "manual" }` (any other agent logs and
   // ignores them, since its transcriber already owns the turn). `start` opens
   // the microphone window and interrupts the agent; `commit` closes it and
   // answers everything heard inside it as one turn; `clear` closes it and
@@ -47,7 +47,7 @@ export const SessionCommandSchema = z.discriminatedUnion("type", [
      * interrupts a reply in flight the way a new turn does, lands in the
      * retained stream as the same `userTranscript.committed` a spoken turn
      * produces (so `messages`, history and a resume all see it), and the agent
-     * answers it aloud. Honoured whatever the agent's `turnDetection`, since it
+     * answers it aloud. Honoured whatever the agent's `turnTaking.detection`, since it
      * bypasses the transcriber that policy is about. Only the pipeline can take
      * it: an S2S service owns its own conversation and has no text input, so
      * such a session logs once and ignores the command.

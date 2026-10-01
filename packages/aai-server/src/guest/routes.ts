@@ -84,7 +84,7 @@ export const GUEST_ROUTES = {
    * the agent's env sets `AAI_WORKFLOW_API_TOKEN`.
    *
    * A programmatic caller (`aai workflow`, a script) reaches it through the
-   * platform, and a PAGE has no other way to: a `page: "static"` agent is served
+   * platform, and a PAGE has no other way to: a `mode: "workflow-app"` agent is served
    * by this platform at `GET /:slug/`, and `createWorkflowApi` builds every
    * request URL from `location.origin + location.pathname` with no broker step
    * of the kind the voice session gets from `/client-config`. So its calls land

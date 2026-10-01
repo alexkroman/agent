@@ -163,16 +163,16 @@ export interface AgentServerOptions extends SharedServerOptions {
   publicUrl?: string | undefined;
   /**
    * What this server's front door IS — see `RuntimeServerOptions.page`. Defaults to
-   * the agent's own `page`, so declaring `page: "static"` on the agent is
+   * the agent's own `page`, so declaring `mode: "workflow-app"` on the agent is
    * enough.
    *
    * Read off the agent for the same reason `name` and `greeting` are, and it is
-   * the same silent drop: a `page: "static"` agent served through this door
+   * the same silent drop: a `mode: "workflow-app"` agent served through this door
    * still mounted `/websocket` and `/phone`, and answered `GET /client-config`
    * as a voice agent, because nothing carried the declaration through. Set it
    * here only to override what the agent says.
    */
-  page?: AgentDef["page"] | undefined;
+  page?: "voice" | "static" | undefined;
   /**
    * Which phone carriers may open a media stream on `WS /phone` — see
    * `AgentDef.telephony`. Defaults to the agent's own declaration, so
@@ -295,7 +295,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
    * absence of every route it omits) over the wire. If `createRuntimeServer`'s default
    * moves, that spec fails rather than the log quietly becoming false.
    */
-  const effectivePage = page ?? agent.page;
+  const effectivePage = page ?? (agent.mode === "workflow-app" ? "static" : "voice");
   const isStatic = effectivePage === "static";
   const servesCarriers = enabledCarriers(telephony ?? agent.telephony);
   const servesWorkflows = Object.keys(agent.workflows ?? {}).length > 0;

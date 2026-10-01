@@ -34,6 +34,14 @@ export type AgentCustomEvent = {
 };
 
 /**
+ * The agent's projected state as the client holds it: one entry per slot the
+ * agent's `syncState` names, keyed by that slot's name.
+ *
+ * @public
+ */
+export type AgentStateFrame = Readonly<Record<string, unknown>>;
+
+/**
  * Immutable snapshot of the session state.
  *
  * Consumers (e.g. React hooks via `useSyncExternalStore`) read this to render.
@@ -108,11 +116,13 @@ export type SessionSnapshot = {
    */
   readonly customEvents: AgentCustomEvent[];
   /**
-   * Latest state the agent projected via `syncState`, or `null` before the
-   * first push. A value, not a log — a component that mounts mid-session
-   * reads current state rather than replaying events it missed.
+   * Latest state the agent projected via `syncState` — keyed by slot name,
+   * `{ [slot]: view }` — or `null` before the first push. A value, not a log —
+   * a component that mounts mid-session reads current state rather than
+   * replaying events it missed. A slot whose view did not change keeps its
+   * previous value object, so a selector over one slot is stable across pushes.
    */
-  readonly agentState: unknown;
+  readonly agentState: AgentStateFrame | null;
   /**
    * The caller's in-progress turn, as STT reports it.
    *
@@ -176,7 +186,7 @@ export declare const browserSessionBrand: unique symbol;
 /**
  * Push-to-talk's three edges on a {@link BrowserSession} — `session.userTurn`.
  *
- * Only an agent declaring `turnDetection: "manual"` honours them; any other
+ * Only an agent declaring `turnTaking: { detection: "manual" }` honours them; any other
  * agent logs once and ignores them, because its transcriber already ends each
  * turn on a pause. `usePushToTalk` is the hook a button is built on, and the
  * way a `client.tsx` reaches these: a sub-handle rather than three methods on
@@ -267,7 +277,7 @@ export type BrowserSession = {
   readonly identity: SessionIdentity;
   /**
    * Send a TYPED user turn: the agent answers `text` exactly as if the caller
-   * had said it — aloud, with tools, under any `turnDetection`.
+   * had said it — aloud, with tools, under any `turnTaking.detection`.
    *
    * Interrupts the agent if it is speaking or thinking (its queued audio is
    * discarded here at once, as `cancel()` does). The message is NOT echoed into

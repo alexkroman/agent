@@ -9,11 +9,11 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
+import { speaker } from "./speaker.ts";
 import { publishStepDelegate, stepDelegate } from "./step-delegate.ts";
-import { subagent } from "./subagent.ts";
 import { stubStepDelegate } from "./testing-delegate.ts";
 
-const researcher = subagent({ name: "researcher", systemPrompt: "Research it." });
+const researcher = speaker({ name: "researcher", systemPrompt: "Research it." });
 
 afterEach(() => publishStepDelegate(undefined));
 
@@ -97,12 +97,12 @@ describe("stubStepDelegate", () => {
     const desk = stubStepDelegate({
       routes: { researcher: "a finding", checker: "Confirmed: yes." },
     });
-    const checker = subagent({ name: "checker", systemPrompt: "Check it." });
+    const checker = speaker({ name: "checker", systemPrompt: "Check it." });
 
     expect((await stepDelegate(researcher, { task: "x" })).text).toBe("a finding");
     expect((await stepDelegate(checker, { task: "y" })).text).toBe("Confirmed: yes.");
     await expect(
-      stepDelegate(subagent({ name: "unrouted", systemPrompt: "?" }), { task: "z" }),
+      stepDelegate(speaker({ name: "unrouted", systemPrompt: "?" }), { task: "z" }),
     ).rejects.toThrow(/no route for subagent "unrouted"/);
     expect(desk.calls).toHaveLength(3);
   });

@@ -23,8 +23,8 @@ import {
   type DelegateFn,
   type GuardrailVerdict,
   isoDate,
+  speaker,
   spokenDate,
-  subagent,
   tool,
 } from "@alexkroman1/aai";
 import { z } from "zod";
@@ -104,7 +104,7 @@ export function statesAvailability(text: string): GuardrailVerdict {
 /** Steps the assistant may take: two weeks of lookups and an answer. */
 export const MAX_MEETING_STEPS = 4;
 
-export const meetingAssistant = subagent({
+export const meetingAssistant = speaker({
   name: "meeting-assistant",
   systemPrompt: meetingSystem(EXECUTIVE, `${spokenDate(TODAY)} (${TODAY})`),
   expectedOutput: MEETING_EXPECTED_OUTPUT,

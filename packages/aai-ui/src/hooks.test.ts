@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 
-import { sessionSlot } from "@alexkroman1/aai";
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createMockSessionCore } from "./_react-test-utils.ts";
 import { SessionProvider } from "./context.ts";
-import { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
+import { useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
 import type { ToolCallInfo } from "./types.ts";
 
 function createMockCore(toolCalls: ToolCallInfo[] = []) {
@@ -197,111 +196,6 @@ describe("useToolCallStart", () => {
 
     act(() => core.update({ toolCalls: [{ ...pending, status: "done", result: "{}" }] }));
     expect(cb).toHaveBeenCalledOnce();
-  });
-});
-
-describe("useAgentState", () => {
-  const wrap =
-    (core: ReturnType<typeof createMockCore>) =>
-    ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-
-  it("is null before the agent has pushed anything", () => {
-    // A UI has to render the moment before the first tool call.
-    const core = createMockCore();
-    const { result } = renderHook(() => useAgentState(), { wrapper: wrap(core) });
-    expect(result.current).toBeNull();
-  });
-
-  it("exposes the latest pushed state", () => {
-    const core = createMockCore();
-    const { result } = renderHook(() => useAgentState<{ cart: string[] }>(), {
-      wrapper: wrap(core),
-    });
-    act(() => core.update({ agentState: { cart: ["margherita"] } }));
-    expect(result.current).toEqual({ cart: ["margherita"] });
-  });
-
-  it("projects the slot's default before the agent has pushed anything", () => {
-    // The round-trip the overload closes: the pre-first-push frame is the SAME
-    // projection run over the slot's own default, so a field added to the
-    // projection reaches the first render too.
-    const core = createMockCore();
-    const cartSlot = sessionSlot("cart", () => ({ items: ["seeded"] }));
-    const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
-    const { result } = renderHook(() => useAgentState(projection), { wrapper: wrap(core) });
-    expect(result.current).toEqual({ count: 1 });
-  });
-
-  it("prefers the pushed state over the projection's default", () => {
-    const core = createMockCore();
-    const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-    const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
-    const { result } = renderHook(() => useAgentState(projection), { wrapper: wrap(core) });
-    act(() => core.update({ agentState: { count: 7 } }));
-    expect(result.current).toEqual({ count: 7 });
-  });
-
-  it("keeps the projected default a stable reference across renders", () => {
-    // The doc promises this, and it is the half the `fallback` overload can
-    // only ask a caller to arrange by hoisting: a fresh object per render
-    // re-fires every downstream effect and memo that depends on the frame.
-    const core = createMockCore();
-    const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-    const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
-    const { result, rerender } = renderHook(() => useAgentState(projection), {
-      wrapper: wrap(core),
-    });
-    const first = result.current;
-    rerender();
-    expect(result.current).toBe(first);
-  });
-
-  it("takes the slot's DECLARED view, and the two ends are one object", async () => {
-    // The browser half of the round trip: the agent declares
-    // `syncState: cartSlot.projected` and this passes the same field, so the
-    // frame rendered before the first push and the frames pushed after it are
-    // the same view by construction rather than by two expressions agreeing.
-    const core = createMockCore();
-    const cartSlot = sessionSlot("cart", () => ({ items: ["seeded"] }), {
-      view: (cart) => ({ count: cart.items.length }),
-    });
-    const { result, rerender } = renderHook(() => useAgentState(cartSlot.projected), {
-      wrapper: wrap(core),
-    });
-    const before = result.current;
-    expect(before).toEqual({ count: 1 });
-    // Stable without anything to hoist — the projection is built at DECLARATION,
-    // so its identity (which the empty frame is memoized on) cannot change.
-    rerender();
-    expect(result.current).toBe(before);
-
-    // …and a pushed frame carries the same fields, which is the drift this
-    // spelling removes.
-    act(() => core.update({ agentState: cartSlot.projected({ items: ["a", "b"] }) }));
-    expect(Object.keys(result.current).sort()).toEqual(Object.keys(before).sort());
-    expect(result.current).toEqual({ count: 2 });
-  });
-
-  it("still treats a plain object as a fallback, not a projection", () => {
-    // The projection overload is declared FIRST so it wins for a function, and
-    // a type test caught `fallback: S` swallowing one. This is the other
-    // direction: the older overload must keep working unchanged.
-    const core = createMockCore();
-    const { result } = renderHook(() => useAgentState<{ cart: string[] }>({ cart: [] }), {
-      wrapper: wrap(core),
-    });
-    expect(result.current).toEqual({ cart: [] });
-  });
-
-  it("replaces rather than accumulating", () => {
-    // The distinction from useEvent: this is a value, not a log, so a
-    // component mounting late reads current state instead of replaying.
-    const core = createMockCore();
-    const { result } = renderHook(() => useAgentState<{ n: number }>(), { wrapper: wrap(core) });
-    act(() => core.update({ agentState: { n: 1 } }));
-    act(() => core.update({ agentState: { n: 2 } }));
-    expect(result.current).toEqual({ n: 2 });
   });
 });
 

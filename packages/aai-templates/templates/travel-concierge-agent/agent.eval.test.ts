@@ -29,17 +29,19 @@
  * tools and read as a model that refuses to act.
  */
 import agentDef from "virtual:aai/agent";
-import { dialogRefusalPattern, eventsOf, isEvent } from "@alexkroman1/aai/testing";
 import {
+  describeEval,
   describeTurn,
+  dialogRefusalPattern,
   type EvalSession,
   type EvalToolCall,
+  eventsOf,
+  isEvent,
   lastStateIn,
   toolCallsInTurns,
   toolNames,
   turnCalling,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 
@@ -84,7 +86,7 @@ function framesBeforeConfirm(session: EvalSession): z.infer<typeof ProjectedTrip
  * The latest frame — what the browser would be rendering now. `lastStateIn` is
  * the SDK's reader for exactly this; the schema is why it is worth passing one.
  */
-const tripState = (session: EvalSession) => lastStateIn(session.events(), ProjectedTrip);
+const tripState = (session: EvalSession) => lastStateIn(session.events(), "trip", ProjectedTrip);
 
 /**
  * A call that really STAGED — it answered with the read-back rather than with a

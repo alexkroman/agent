@@ -37,12 +37,12 @@
  */
 import agentDef from "virtual:aai/agent";
 import {
+  describeEval,
   type EvalTurn,
   lastToolResultIn,
   toolCallsInTurns,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { DEFAULT_GAME_STATE, rankFor } from "./shared.ts";

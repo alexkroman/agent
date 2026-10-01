@@ -41,9 +41,10 @@ describe("constants", () => {
 });
 
 describe("type contracts", () => {
-  test("agent() returns AgentDef", () => {
+  test("agent() returns AgentDef, with the mode it declared known", () => {
     const def = agent({ name: "test" });
-    expectTypeOf(def).toEqualTypeOf<AgentDef>();
+    expectTypeOf(def).toExtend<AgentDef>();
+    expectTypeOf(def.mode).toEqualTypeOf<"pipeline">();
   });
 
   test("tool() infers input type from Zod schema", () => {
@@ -73,7 +74,7 @@ describe("type contracts", () => {
     // `agent()` takes no tools — a tool is its file. This is the shape the build
     // produces, and it is still an ordinary `AgentDef` on the other side.
     const def = withTools(agent({ name: "with-tools" }), { echo: t });
-    expectTypeOf(def).toEqualTypeOf<AgentDef>();
+    expectTypeOf(def).toExtend<AgentDef>();
     expect(def.tools.echo).toBe(t);
   });
 

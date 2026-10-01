@@ -131,6 +131,43 @@ export type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>
 export type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 /**
+ * Every built-in session event name, spelled out in schema order — the same
+ * set as {@link SessionEventType} before any augmentation.
+ *
+ * Written out because a rename must move the `aai:events` contract hash, and
+ * the hash cannot see a name that only reaches it through `SessionEventSchema`
+ * (a `const`, whose literals it reads as `string`). `session-event-names.test.ts`
+ * fails if this and the schema disagree.
+ *
+ * @public
+ */
+export type SessionEventTypeList = readonly [
+  "session.configured",
+  "audio.completed",
+  "speech.started",
+  "speech.stopped",
+  "userTranscript.updated",
+  "userTranscript.committed",
+  "agentTranscript.updated",
+  "agentTranscript.committed",
+  "tool.called",
+  "tool.completed",
+  "reply.completed",
+  "reply.cancelled",
+  "session.reset",
+  "session.timedOut",
+  "error.reported",
+  "custom.emitted",
+  "state.updated",
+  "usage.updated",
+  "guardrail.blocked",
+  "userTurn.exceeded",
+  "provider.failedOver",
+  "metrics.collected",
+  "history.restored",
+];
+
+/**
  * One **server→client** session event, envelope included: a fact the session
  * reports, in the shape it takes on the wire and in the retained stream.
  *

@@ -4,17 +4,17 @@
 // Split from ws-handler-lifecycle.test.ts for file length.
 
 import { DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
-import { createOwnedMap } from "@alexkroman1/aai/internal";
+
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
-import type { ServerSession } from "./session-core.ts";
+import { createSessionDirectory } from "./session-directory.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 describe("wireSessionSocket resume", () => {
   test("resumeFrom reuses old session ID instead of generating new UUID", () => {
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
     const ws = openSocket();
     let capturedId: string | undefined;
 
@@ -30,7 +30,7 @@ describe("wireSessionSocket resume", () => {
     });
 
     expect(capturedId).toBe("old-session-abc");
-    expect(sessions.has("old-session-abc")).toBeTruthy();
+    expect(sessions.session("old-session-abc") !== undefined).toBeTruthy();
   });
 
   test("the resumed id is the session's id, so its announcement carries it", () => {
@@ -38,7 +38,7 @@ describe("wireSessionSocket resume", () => {
     let capturedId: string | undefined;
 
     wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
+      sessions: createSessionDirectory(),
       createSession: (sid) => {
         capturedId = sid;
         return makeMockCore();
@@ -55,7 +55,7 @@ describe("wireSessionSocket resume", () => {
   });
 
   test("old session's delayed stop does not evict a resumed session with the same id", async () => {
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
     const onSessionEnd = vi.fn();
     const stopGate = Promise.withResolvers<void>();
     const oldCore = makeMockCore({ stop: vi.fn(() => stopGate.promise) });
@@ -69,7 +69,7 @@ describe("wireSessionSocket resume", () => {
       onSessionEnd,
       resumeFrom: "resume-race-id",
     });
-    expect(sessions.get("resume-race-id")).toBe(oldCore);
+    expect(sessions.session("resume-race-id")).toBe(oldCore);
 
     // Client disconnects — the old session's stop() starts draining slowly
     // (in-flight tool / transport teardown).
@@ -86,7 +86,7 @@ describe("wireSessionSocket resume", () => {
       logger: silentLogger,
       resumeFrom: "resume-race-id",
     });
-    expect(sessions.get("resume-race-id")).toBe(newCore);
+    expect(sessions.session("resume-race-id")).toBe(newCore);
 
     // The old stop settles — its cleanup must not delete the NEW session's
     // registry entry (it would escape runtime.shutdown()).
@@ -94,7 +94,7 @@ describe("wireSessionSocket resume", () => {
     await vi.waitFor(() => {
       expect(onSessionEnd).toHaveBeenCalledWith("resume-race-id", expect.anything());
     });
-    expect(sessions.get("resume-race-id")).toBe(newCore);
+    expect(sessions.session("resume-race-id")).toBe(newCore);
   });
 
   test("resuming an id whose session is still live evicts the superseded session", async () => {
@@ -103,7 +103,7 @@ describe("wireSessionSocket resume", () => {
     // and a replayed id can land at any time. Left running, the old session
     // would share tool state concurrently with the new one and escape
     // runtime.shutdown() once the claim replacement orphans it.
-    const sessions = createOwnedMap<string, ServerSession>();
+    const sessions = createSessionDirectory();
     const oldCore = makeMockCore({ stop: vi.fn(() => Promise.resolve()) });
     const oldWs = openSocket();
     wireSessionSocket(oldWs, {
@@ -113,7 +113,7 @@ describe("wireSessionSocket resume", () => {
       logger: silentLogger,
       resumeFrom: "hijack-id",
     });
-    expect(sessions.get("hijack-id")).toBe(oldCore);
+    expect(sessions.session("hijack-id")).toBe(oldCore);
     expect(oldCore.stop).not.toHaveBeenCalled();
 
     // Old socket is still OPEN when a second connection presents the same id.
@@ -129,14 +129,14 @@ describe("wireSessionSocket resume", () => {
 
     // The new session owns the id; the superseded one is stopped and its
     // socket closed so its client gets a real signal.
-    expect(sessions.get("hijack-id")).toBe(newCore);
+    expect(sessions.session("hijack-id")).toBe(newCore);
     expect(oldCore.stop).toHaveBeenCalled();
     await vi.waitFor(() => {
       expect(oldWs.readyState).toBe(MockWebSocket.CLOSED);
     });
     // The old connection's close-handler teardown must not evict the new
     // session's entry.
-    expect(sessions.get("hijack-id")).toBe(newCore);
+    expect(sessions.session("hijack-id")).toBe(newCore);
   });
 
   test("start-timeout cleanup after close does not evict a resumed session", async () => {
@@ -152,7 +152,7 @@ describe("wireSessionSocket resume", () => {
     // `onSessionEnd`, which the old connection's cleanup fires last.
     vi.useFakeTimers();
     try {
-      const sessions = createOwnedMap<string, ServerSession>();
+      const sessions = createSessionDirectory();
       const logger = makeLogger();
       const onSessionEnd = vi.fn();
       const stopGate = Promise.withResolvers<void>();
@@ -189,7 +189,7 @@ describe("wireSessionSocket resume", () => {
         logger: silentLogger,
         resumeFrom: "timeout-race-id",
       });
-      expect(sessions.get("timeout-race-id")).toBe(newCore);
+      expect(sessions.session("timeout-race-id")).toBe(newCore);
 
       // Let the start timeout fire; its cleanup must not key-delete the
       // resumed session's entry.
@@ -198,7 +198,7 @@ describe("wireSessionSocket resume", () => {
         "Session start failed",
         expect.objectContaining({ error: expect.stringContaining("timed out") }),
       );
-      expect(sessions.get("timeout-race-id")).toBe(newCore);
+      expect(sessions.session("timeout-race-id")).toBe(newCore);
 
       // And neither may the OLD stop settling afterwards. `onSessionEnd` runs
       // in the same `finally` as the entry release, so it is the signal that
@@ -207,7 +207,7 @@ describe("wireSessionSocket resume", () => {
       await vi.waitFor(() => {
         expect(onSessionEnd).toHaveBeenCalledWith("timeout-race-id", expect.anything());
       });
-      expect(sessions.get("timeout-race-id")).toBe(newCore);
+      expect(sessions.session("timeout-race-id")).toBe(newCore);
     } finally {
       vi.useRealTimers();
     }

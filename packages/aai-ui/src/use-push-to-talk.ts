@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * `usePushToTalk` — a hold-to-speak button, for an agent that declares
- * `turnDetection: "manual"`.
+ * `turnTaking: { detection: "manual" }`.
  *
  * The three session edges underneath (`session.userTurn`'s `start`, `commit`
  * and `clear`) are one line each; what a button needs on top of them is
@@ -83,7 +83,7 @@ const selectRunning = (snapshot: SessionSnapshot): boolean => snapshot.running;
  * turn gets stuck open handled — see this module's doc.
  *
  * Must be used inside the provider `mountClient()` installs, against an agent
- * declaring `turnDetection: "manual"`; any other agent ignores the commands and
+ * declaring `turnTaking: { detection: "manual" }`; any other agent ignores the commands and
  * its server says so once.
  *
  * @example A hold-to-talk button

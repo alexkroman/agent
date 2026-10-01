@@ -15,6 +15,8 @@ import type { ClientSink } from "@alexkroman1/aai/protocol";
 import type { OpenAIS2sOptions } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { LanguageModel } from "ai";
+import { type ProviderFailover, withOpenerFailoverListener } from "./providers/_failover.ts";
+import { withFailoverListener } from "./providers/_fallback-llm.ts";
 import type { SttOpener, TtsOpener } from "./providers/openers.ts";
 import {
   descriptorKind,
@@ -26,11 +28,17 @@ import {
 import type { Logger, S2sConfig } from "./runtime-config.ts";
 import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
+import { reportSessionCapabilities } from "./transports/capabilities.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
-import type { DialogTurnSource } from "./transports/pipeline-dialog-knobs.ts";
+import {
+  type DialogTurnSource,
+  interruptionKnobs,
+  type PersonaInterruptionSource,
+} from "./transports/pipeline-dialog-knobs.ts";
 import type { TurnGuardrails } from "./transports/pipeline-guardrails.ts";
 import type { PersonaTurnSource } from "./transports/pipeline-persona-knobs.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
+import type { PipelineTransportOptions } from "./transports/pipeline-transport-options.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type { SystemPromptOption, Transport, TransportCallbacks } from "./transports/types.ts";
 import { resolveSystemPrompt } from "./transports/types.ts";
@@ -147,11 +155,11 @@ export type BuildTransportArgs = {
    * **Only the pipeline branch takes it**, and the asymmetry is the same one the
    * prompt thunk has for the same reason: two of the three knobs are `streamText`
    * request settings, and the two S2S services assemble their own requests
-   * service-side. A dialog's `bargeIn` is likewise a decision the host makes only
+   * service-side. A dialog's `interruption` is likewise a decision the host makes only
    * in pipeline mode — both S2S services own turn-taking. `reportDialogKnobs`
    * warns for a knob nothing applies; it does not know the transport, so an
-   * agent that declares one and runs on S2S is warned by `buildTransport` below
-   * instead — this file is the one that knows which branch a session took.
+   * agent that declares one and runs on S2S is warned at session start from the
+   * transport's `capabilities` instead (`transports/capabilities.ts`).
    */
   dialogTurn?: DialogTurnSource | undefined;
   /**
@@ -166,6 +174,12 @@ export type BuildTransportArgs = {
    * regardless; what an S2S session loses is the two knobs, warned about below.
    */
   personaTurn?: PersonaTurnSource | undefined;
+  /**
+   * The active persona's `interruption` group, or absent when no persona
+   * declares one — pipeline only, for `dialogTurn`'s reason (both S2S services
+   * own turn-taking).
+   */
+  personaInterruption?: PersonaInterruptionSource | undefined;
   /**
    * This session's guardrails, already bound to their context.
    *
@@ -207,7 +221,7 @@ export interface TransportFactoryDeps {
   /**
    * Resolves non-null exactly when the session mode is pipeline.
    *
-   * A thunk because a `page: "static"` agent must not resolve providers it
+   * A thunk because a `mode: "workflow-app"` agent must not resolve providers it
    * will never dial (see `createRuntime`) — and a session that somehow starts
    * on one still gets the real credential error rather than this file's
    * "no transport for session".
@@ -246,11 +260,15 @@ export function createTransportFactory(
     providers: ResolvedPipelineProviders,
   ): Transport {
     const { sessionOpts, systemPrompt, callbacks } = args;
+    // A `fallback([...])` stage reports each switch into THIS session; every
+    // other provider is passed through by identity (`_failover.ts`).
+    const onFailover = (failover: ProviderFailover): void =>
+      callbacks.report({ type: "provider.failedOver", ...failover });
     return createPipelineTransport({
       sid: sessionOpts.id,
-      stt: providers.stt.opener,
-      llm: providers.llm,
-      tts: providers.tts.opener,
+      stt: withOpenerFailoverListener(providers.stt.opener, onFailover),
+      llm: withFailoverListener(providers.llm, onFailover),
+      tts: withOpenerFailoverListener(providers.tts.opener, onFailover),
       callbacks,
       // The LINE, not the opening: `reset()` re-greets through `greeting`, and the
       // resume skip must not reach it. The opening line is `skipGreeting`'s
@@ -274,57 +292,48 @@ export function createTransportFactory(
       maxRetries: agentConfig.maxRetries,
       ...omitUndefined({ guardrails: args.guardrails, usage: args.usage }),
       ...omitUndefined({ sttPrompt: agentConfig.sttPrompt }),
-      silenceTimeoutMs: agentConfig.silenceTimeoutMs,
-      silencePrompt: agentConfig.silencePrompt,
-      userTurnLimit: agentConfig.userTurnLimit,
-      turnDetection: agentConfig.turnDetection,
-      minBargeInWords: agentConfig.minBargeInWords,
-      interruptionMinDurationMs: agentConfig.interruptionMinDurationMs,
-      // Not an agent field: the pair the STT stage resolved, so a rule's
-      // window is clamped against the ceiling the socket really dialled.
-      startSpeakingFloorMs: agentConfig.startSpeakingFloorMs,
-      interruptionBackoffMs: agentConfig.interruptionBackoffMs,
-      deadAirCoverMs: agentConfig.deadAirCoverMs,
+      ...pipelineTuningOptions(agentConfig),
       // errorPhrase used to be missing here, so an agent that set it (including
       // to "" to disable) silently got the default instead.
       errorPhrase: agentConfig.errorPhrase,
       startFailurePhrase: agentConfig.startFailurePhrase,
-      resumeFalseInterruption: agentConfig.resumeFalseInterruption,
-      preemptiveGeneration: agentConfig.preemptiveGeneration,
-      ...omitUndefined({ dialogTurn: args.dialogTurn, personaTurn: args.personaTurn }),
+      ...omitUndefined({
+        dialogTurn: args.dialogTurn,
+        personaTurn: args.personaTurn,
+        personaInterruption: args.personaInterruption,
+      }),
       logger,
     });
   }
 
   /**
-   * Say so when a persona declares a model knob this session's transport
-   * cannot apply per step — same shape as {@link warnDialogKnobsUnavailable},
-   * and the same reason it is a warning rather than a refusal: the prompt
-   * section and the execution gate still hold, so nothing is unsafe.
+   * Session start: say, once per runtime, what this transport cannot do of
+   * what the session declared — `reportSessionCapabilities` reads the
+   * descriptor, so the warnings and their wording live with the capability
+   * table, not in a branch per transport. A warning rather than a refusal for
+   * the two knob rows: a dialog's states and a persona's prompt and gate still
+   * hold, so nothing is unsafe, and the alternative is throwing on a caller
+   * already on the line.
    */
-  function warnPersonaKnobsUnavailable(args: BuildTransportArgs, kind: string): void {
-    if (args.personaTurn === undefined) return;
-    logger.warn(
-      `This agent's personas declare toolChoice/temperature, and the ${kind} transport applies neither per step: that service assembles each request itself. Every persona's prompt section still reaches the model, and another persona's tool still refuses at execution.`,
+  const reported = new Set<string>();
+  const declaresOnError = Object.values(agent.tools ?? {}).some((t) => t.onError !== undefined);
+  function reportCapabilities(
+    transport: Transport,
+    name: string,
+    args: BuildTransportArgs,
+  ): Transport {
+    reportSessionCapabilities(
+      transport.capabilities,
+      name,
+      {
+        dialogKnobs: args.dialogTurn !== undefined,
+        personaKnobs: args.personaTurn !== undefined || args.personaInterruption !== undefined,
+        fatalTool: declaresOnError,
+      },
+      logger,
+      reported,
     );
-  }
-
-  /**
-   * Say so when a dialog declares a per-state knob this session's transport
-   * cannot apply.
-   *
-   * The knob-by-knob check in `runtime-dialog-knobs.ts` runs before a transport
-   * exists, so it can only rule out the two that no transport could apply. This
-   * is the other half: on either S2S branch the SERVICE assembles the request
-   * and owns turn-taking, so none of the three the pipeline honours has a moment
-   * here to take effect. Once per session and at warn level, for the reason that
-   * module gives — the alternative is throwing on a caller already on the line.
-   */
-  function warnDialogKnobsUnavailable(args: BuildTransportArgs, kind: string): void {
-    if (args.dialogTurn === undefined) return;
-    logger.warn(
-      `This agent's dialogs declare per-state bargeIn/toolChoice/temperature, and the ${kind} transport applies none of them: that service assembles each request and owns turn-taking, so there is no per-turn moment in this process to apply one at. The dialog's states, instructions, deadlines and tool gates all still work — only these three knobs are inert.`,
-    );
+    return transport;
   }
 
   /**
@@ -401,7 +410,7 @@ export function createTransportFactory(
   return function buildTransport(args: BuildTransportArgs): Transport {
     const resolved = pipelineProviders();
     if (resolved) {
-      return buildPipelineTransport(args, resolved);
+      return reportCapabilities(buildPipelineTransport(args, resolved), "pipeline", args);
     }
     if (agent.s2s !== undefined) {
       const kind = descriptorKind(agent.s2s);
@@ -414,13 +423,9 @@ export function createTransportFactory(
       }
       switch (kind) {
         case OPENAI_S2S_KIND:
-          warnDialogKnobsUnavailable(args, "OpenAI Realtime");
-          warnPersonaKnobsUnavailable(args, "OpenAI Realtime");
-          return buildOpenaiRealtimeTransport(args);
+          return reportCapabilities(buildOpenaiRealtimeTransport(args), "OpenAI Realtime", args);
         case ASSEMBLYAI_S2S_KIND:
-          warnDialogKnobsUnavailable(args, "AssemblyAI S2S");
-          warnPersonaKnobsUnavailable(args, "AssemblyAI S2S");
-          return buildAssemblyS2sTransport(args);
+          return reportCapabilities(buildAssemblyS2sTransport(args), "AssemblyAI S2S", args);
         default: {
           // `kind` is `never` here, which is the point: adding a member to
           // `S2sKind` (i.e. an entry to S2S_REGISTRY) fails to compile until
@@ -453,4 +458,25 @@ export function createTransportFactory(
  */
 export function usesAssemblyS2s(agent: RuntimeOptions["agent"]): boolean {
   return agent.s2s !== undefined && descriptorKind(agent.s2s) === ASSEMBLYAI_S2S_KIND;
+}
+
+/**
+ * The agent's `turnTaking` / `interruption` / `silence` groups, flattened onto
+ * the transport's options. The transport keeps flat names because each one is
+ * read by a different consumer; the GROUPS are the author's surface. An
+ * `interruption: "off"` arrives as an unreachable word threshold, exactly as a
+ * dialog state's does (`interruptionKnobs`).
+ */
+function pipelineTuningOptions(config: AgentConfig): Partial<PipelineTransportOptions> {
+  const { turnTaking, silence } = config;
+  return {
+    silenceTimeoutMs: silence?.nudge?.afterMs,
+    silencePrompt: silence?.nudge?.prompt,
+    deadAirCoverMs: silence?.deadAirCoverMs,
+    userTurnLimit: turnTaking?.userTurnLimit,
+    turnDetection: turnTaking?.detection,
+    startSpeakingFloorMs: turnTaking?.startSpeakingFloorMs,
+    preemptiveGeneration: turnTaking?.preemptiveGeneration,
+    ...interruptionKnobs(config.interruption),
+  };
 }

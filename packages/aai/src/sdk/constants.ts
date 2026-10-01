@@ -241,8 +241,18 @@ export const MAX_DESIGN_STYLESHEETS = 5;
  * @internal
  */
 export const MAX_JSON_BYTES = 1_000_000;
-/** Sliding window of conversation messages retained per session. */
-export const DEFAULT_MAX_HISTORY = 200;
+/**
+ * Transcript messages a `history.restored` frame carries, and the browser
+ * client keeps in its session snapshot (tool-call rows likewise).
+ *
+ * A DISPLAY and wire bound, and nothing else: it decides neither what a
+ * session remembers nor what the model is sent. Both of those are budgeted in
+ * TOKENS by the host runtime — the request against the model's context window,
+ * the record against memory — because a message count predicts neither.
+ *
+ * @internal
+ */
+export const MAX_CLIENT_MESSAGES = 200;
 /**
  * The barge-in gates live in `barge-in-constants.ts` — moved when this file
  * reached the source-length cap, and re-exported here so no import moved. See

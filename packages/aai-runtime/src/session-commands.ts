@@ -64,11 +64,11 @@ export function createCommandDispatcher(deps: CommandDeps): CommandDispatcher {
   // (both S2S services) is sent the same three commands on every press.
   let warnedNoTurnVerbs = false;
   const turnVerbsOrWarn = (type: string): boolean => {
-    if (transport.startUserTurn !== undefined) return true;
+    if (transport.capabilities.manualTurn) return true;
     if (!warnedNoTurnVerbs) {
       warnedNoTurnVerbs = true;
       log.warn(
-        `Client sent ${type}, but this session's transport cannot end a caller's turn — push-to-talk needs a pipeline agent declaring turnDetection: "manual".`,
+        `Client sent ${type}, but this session's transport cannot end a caller's turn — push-to-talk needs a pipeline agent declaring turnTaking: { detection: "manual" }.`,
         { sid: sessionId },
       );
     }
@@ -77,7 +77,7 @@ export function createCommandDispatcher(deps: CommandDeps): CommandDispatcher {
   // Once per session too: a client with a text box sends it on every message.
   let warnedNoText = false;
   const userText = (text: string): void => {
-    if (transport.sendUserText !== undefined) {
+    if (transport.capabilities.typedTurn && transport.sendUserText !== undefined) {
       // The transport reports the cancel (if any) and the committed turn
       // itself, in that order — see `Transport.sendUserText`. The idle
       // deadline is re-armed by that `userTranscript.committed`, the same

@@ -40,7 +40,8 @@ export const ClientConfigResponseSchema = z.object({
    */
   sessionUrl: z.string().optional(),
   /**
-   * What this agent's front door is — see `AgentDef.page`.
+   * What this agent's front door is: `"static"` for a workflow app
+   * (`mode: "workflow-app"`, see `AgentDef.mode`), `"voice"` for every other.
    *
    * Here so a client can tell the two apart BEFORE it dials: a static agent has
    * no `/websocket` to open, and the default shell would otherwise render a
@@ -50,6 +51,22 @@ export const ClientConfigResponseSchema = z.object({
    * endpoint states the front door rather than leaving a reader to infer one.
    */
   page: z.enum(["voice", "static"]),
+  /**
+   * A session ticket the SERVER issued for the next connection attempt — the
+   * client presents it on `WS /websocket` (as an `aai.auth.<ticket>`
+   * subprotocol) when its own `token` option gave none. Re-fetched with this
+   * config on every attempt, so a short-lived ticket is always fresh.
+   *
+   * Two servers send one. The managed platform's broker ALWAYS does: a deployed
+   * agent's session opens only for it, and it is bound to one session — a
+   * lookup presenting the previous ticket (`SESSION_TICKET_HEADER`) gets one
+   * for the same session, any other lookup one for a new session. And `aai dev`
+   * with `AAI_SESSION_SECRET` set, for the client it serves itself. A
+   * self-hosted `createRuntimeServer` never does: this endpoint is
+   * unauthenticated, and there the ticket is meant to prove the operator's own
+   * login, which a ticket anyone could fetch here would not.
+   */
+  sessionToken: z.string().optional(),
 });
 
 /** Parsed body of `GET /client-config`. */
@@ -67,12 +84,14 @@ export function buildClientConfig(source: {
   greeting?: string | undefined;
   sessionUrl?: string | undefined;
   page?: "voice" | "static" | undefined;
+  sessionToken?: string | undefined;
 }): ClientConfigResponse {
   return {
     ...omitUndefined({
       name: source.name,
       greeting: source.greeting,
       sessionUrl: source.sessionUrl,
+      sessionToken: source.sessionToken,
     }),
     page: source.page ?? "voice",
   };

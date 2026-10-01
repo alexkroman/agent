@@ -30,7 +30,6 @@ import {
   MAX_MESSAGE_BUFFER_SIZE,
   MAX_WS_PAYLOAD_BYTES,
 } from "@alexkroman1/aai/host-internal";
-import type { OwnedMap } from "@alexkroman1/aai/internal";
 import {
   type ClientSink,
   lenientParse,
@@ -44,13 +43,17 @@ import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { closeRefused, endOnRequest, SessionRefusedError } from "./session-attach-end.ts";
 import type { ServerSession } from "./session-core.ts";
+import type { SessionDirectory } from "./session-directory.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createWsSessionLifecycle } from "./ws-session-lifecycle.ts";
 
 /** Options for {@link attachSession}. */
 export type AttachSessionOptions = {
-  /** Map of active sessions (claimed on attach, released on end). */
-  sessions: OwnedMap<string, ServerSession>;
+  /**
+   * The runtime's live sessions (`session-directory.ts`): claimed on attach —
+   * evicting whatever held the id — and released on end.
+   */
+  sessions: Pick<SessionDirectory, "claim" | "session">;
   /** Factory function to create a session for a given ID and client sink. */
   createSession: (sessionId: string, client: ClientSink) => ServerSession;
   /** Protocol config announced to the client as soon as the session exists. */
@@ -391,7 +394,7 @@ export function attachSession(client: ClientSink, options: AttachSessionOptions)
     // its connection is already dead) and close its sink so its client gets a
     // real signal. All cleanup on the old connection releases by claim, so its
     // late teardown cannot touch the entries registered below.
-    const superseded = sessions.get(sessionId);
+    const superseded = sessions.session(sessionId);
     releaseSessionEntry = sessions.claim(sessionId, session);
     releaseEnder = claimSessionEnder(sessionId, endOnRequest({ client, options, log, ctx, sid }));
     sinkBySession.set(session, client);

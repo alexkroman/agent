@@ -316,6 +316,8 @@ describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
         ok: true,
         sessionUrl: "wss://peer.test:443/websocket",
         guestOrigin: "wss://peer.test:443",
+        // The version the peer was found BY — what its session ticket is minted for.
+        version,
       });
       expect(mockSpawnAgentServer).not.toHaveBeenCalled();
     } finally {

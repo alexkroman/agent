@@ -99,7 +99,7 @@ export function openSessionWiring(deps: {
   // The roster, on the SAME per-session prompt the dialogs installed into: its
   // section is a second keyed suffix, sorted ahead of theirs. Inert for an
   // agent that declares none — see `runtime-personas.ts`.
-  const personas = openSessionPersonas(agent.personas, sessionId, {
+  const personas = openSessionPersonas(agent.roster, sessionId, {
     prompt: dialogs.prompt,
     slots,
     transport: deps.transport,
@@ -185,16 +185,15 @@ export function openSessionWiring(deps: {
  * caller force-closes what is left. Never rejects.
  */
 export async function stopSessionsWithin(
-  sessions: { readonly size: number; values(): Iterable<ServerSession> },
+  sessions: { readonly size: number; live(): Iterable<ServerSession> },
   timeoutMs: number,
   logger: Logger,
 ): Promise<void> {
   if (sessions.size === 0) return;
   try {
-    const results = await pTimeout(
-      Promise.allSettled([...sessions.values()].map((s) => s.stop())),
-      { milliseconds: timeoutMs },
-    );
+    const results = await pTimeout(Promise.allSettled([...sessions.live()].map((s) => s.stop())), {
+      milliseconds: timeoutMs,
+    });
     for (const r of results) {
       if (r.status === "rejected") logger.warn(`Session stop failed during shutdown: ${r.reason}`);
     }

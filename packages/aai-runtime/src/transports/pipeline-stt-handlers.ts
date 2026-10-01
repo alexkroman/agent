@@ -132,9 +132,9 @@ export function createSttEventHandlers(deps: {
   /**
    * Interim words required to barge in — a THUNK, resolved at the moment a
    * partial is classified, because a `dialog()` state may declare its own
-   * `bargeIn`: a disclosure state has to be able to FINISH its sentence and a
+   * `interruption`: a disclosure state has to be able to FINISH its sentence and a
    * menu state wants to be maximally interruptible, so the threshold belongs
-   * to the phase rather than to the session. `Infinity` is `bargeIn: "off"`.
+   * to the phase rather than to the session. `Infinity` is `interruption: "off"`.
    */
   minBargeInWords: () => number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */

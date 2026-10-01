@@ -18,7 +18,7 @@ describe("mergeBuiltinSurface", () => {
       { schemas: [schema("web_search")] },
     );
     expect(merged.schemas.map((s) => s.name)).toEqual(["web_search", "calculate"]);
-    expect(Object.keys(merged.defs)).toEqual(["calculate"]);
+    expect(Object.keys(merged.toolset.list())).toEqual(["calculate"]);
   });
 
   test("a builtin the author DECLARED and a file shadows is logged; an unset default is not", () => {

@@ -30,7 +30,7 @@
  *   curtailment mean" and "who says otherwise" want different subagents and
  *   nothing else about them differs. They reach the model as one `delegate`
  *   tool whose `subagent` argument is the two names, described by their own
- *   {@link SubagentDef.description}s.
+ *   {@link SpeakerDef.description}s.
  *
  * The rule that follows: **name a subagent in code when the tool IS the choice;
  * put it on the roster when the caller's words are.** An agent that grew a
@@ -43,13 +43,14 @@ import {
   type DelegateFn,
   type DelegateOptions,
   type DelegateResult,
+  type DelegateToolCall,
+  type Roster,
   resolveOne,
-  type SubagentRoster,
-  type SubagentToolCall,
+  roster,
   sessionSlot,
-  subagent,
+  speaker,
   type ToolFailure,
-  type TypedSubagentDef,
+  type TypedSpeakerDef,
   toolFailure,
 } from "@alexkroman1/aai";
 import { type AssemblyAIGatewayModel, llm } from "@alexkroman1/aai/llm";
@@ -91,7 +92,7 @@ export const MAX_RESEARCH_STEPS = 6;
  * every author had to remember to write; declaring it is what makes the runtime
  * responsible for putting it in front of the model instead.
  */
-export const researcher = subagent({
+export const researcher = speaker({
   name: "researcher",
   systemPrompt: [
     "You are a research agent working one angle of a briefing.",
@@ -117,7 +118,7 @@ export const researcher = subagent({
  * A SCHEMA rather than a sentence prefix. The desk branches on which of the
  * three it is (`tools/verify_claim.ts` tells it to correct itself on
  * `contradicted`), so this is a value the caller reads, not prose it forwards —
- * and a value the caller reads is what `SubagentDef.schema` is for.
+ * and a value the caller reads is what `SpeakerDef.schema` is for.
  */
 export const VerdictSchema = z.object({
   verdict: z.enum(["confirmed", "contradicted", "unclear"]),
@@ -135,7 +136,7 @@ export type Verdict = z.infer<typeof VerdictSchema>;
  * reason to reach for a subagent: a capability a run does not need is one it
  * cannot misuse.
  *
- * **And it is the worked example for `SubagentDef.schema`.** The verdict is not
+ * **And it is the worked example for `SpeakerDef.schema`.** The verdict is not
  * a style preference — `tools/verify_claim.ts` tells the desk to CORRECT itself
  * when a claim comes back contradicted, and the desk can only act on that if it
  * can READ which of the three it is. This used to be an English sentence prefix
@@ -150,12 +151,12 @@ export type Verdict = z.infer<typeof VerdictSchema>;
  * sources that are all one publisher — and this was never that.
  *
  * **The annotation is what the schema BUYS, said out loud.** `subagent()`
- * answers a {@link TypedSubagentDef} for a def that declares one, and that is
+ * answers a {@link TypedSpeakerDef} for a def that declares one, and that is
  * the overload `ctx.delegate` reads to hand `tools/verify_claim.ts` a parsed
  * `object` instead of a string. Writing it down means dropping the schema fails
  * HERE, naming the type, rather than three files away at the `.object` read.
  */
-export const factChecker: TypedSubagentDef<Verdict> = subagent({
+export const factChecker: TypedSpeakerDef<Verdict> = speaker({
   name: "fact-checker",
   systemPrompt: [
     "You check ONE claim against what you can find on the web.",
@@ -182,7 +183,7 @@ export const factChecker: TypedSubagentDef<Verdict> = subagent({
  * is what this subagent reads once it has been picked. Keeping them apart is
  * the difference between a roster the model can route and a list of names.
  */
-export const explainer = subagent({
+export const explainer = speaker({
   name: "explainer",
   description: "Explains a term, unit or concept in plain language, from general knowledge",
   systemPrompt: [
@@ -206,7 +207,7 @@ export const explainer = subagent({
  * `counterpoint` differs from `explainer` except what the caller wanted, so a
  * tool file per subagent would be two bodies differing in one identifier.
  */
-export const counterpoint = subagent({
+export const counterpoint = speaker({
   name: "counterpoint",
   description: "Finds the strongest argument AGAINST something the desk has said",
   systemPrompt: [
@@ -224,8 +225,9 @@ export const counterpoint = subagent({
 });
 
 /**
- * The roster `agent({ subagents })` publishes — the subagents the MODEL picks
- * between.
+ * The roster `agent({ roster })` publishes — the speakers the MODEL delegates
+ * to through the minted `delegate` tool. None of them `speaks`: each runs off
+ * the line and hands its answer back.
  *
  * Declared here rather than inline in `agent.ts` so that membership sits beside
  * the definitions, which is where the question "should this one be routable?"
@@ -233,7 +235,7 @@ export const counterpoint = subagent({
  * reached by a tool that does real work around the delegation, and a subagent
  * reachable both ways gives the model a second, worse route to it.
  */
-export const roster: SubagentRoster = [explainer, counterpoint];
+export const desk: Roster<"explainer" | "counterpoint"> = roster([explainer, counterpoint]);
 
 /** One angle, as the desk holds it. */
 export interface Finding {
@@ -273,7 +275,7 @@ export function angleBrief(topic: string, angle: string): DelegateOptions {
  * as neither: a researcher that gains a third tool should not silently inflate
  * "searches".
  */
-export function countWork(toolCalls: readonly SubagentToolCall[]): AngleWork {
+export function countWork(toolCalls: readonly DelegateToolCall[]): AngleWork {
   let searches = 0;
   let reads = 0;
   for (const call of toolCalls) {

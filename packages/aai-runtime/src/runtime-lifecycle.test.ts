@@ -637,7 +637,7 @@ describe("Runtime — session routing", () => {
     );
 
     const runtime = createRuntimeWithSeams({
-      agent: makeAgent({ s2s: openAIS2s({ model: "gpt-realtime" }) }),
+      agent: makeAgent({ mode: "s2s", s2s: openAIS2s({ model: "gpt-realtime" }) }),
       env: { OPENAI_API_KEY: "sk-test" },
       logger: silentLogger,
       createOpenaiRealtimeWebSocket,

@@ -351,6 +351,16 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   four guide tables match what `pnpm sync:guide-index` generates from them; a
   missing marker pair fails. Hand-kept tables drift. `pnpm docs:list` prints
   the same index for a reader. Floored at 30 guides.
+- **`pnpm check:defaults`** (`scripts/check-defaults.mjs`) — every stated
+  default agrees with the `DEFAULT_*` constant that is the default. It imports
+  the constants' real values from `packages/aai/src/sdk/` and checks every
+  `@defaultValue` there (a literal against the constant the tag names, or the
+  `export const` it sits on; a NUMBER naming no constant fails), the docs
+  site's "Tuning the conversation" table in `more/voices-and-models.md`, and
+  every "(default X)" the scaffold guide states for a field (its copies are
+  held by `check:agent-guide` / `check:studio-prompt`). Written after
+  `minBargeInWords` moved 2 → 1 and all three kept saying 2. Floored at each
+  source's measured count; spec `packages/aai-gates/src/defaults-gate.test.ts`.
 - **`pnpm check:workflows`** (`scripts/check-workflows.mjs`) — actionlint and
   zizmor over `.github/workflows/`, the config agents edit most and which
   nothing read before GitHub ran it. actionlint type-checks expressions,

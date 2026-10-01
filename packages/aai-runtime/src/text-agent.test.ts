@@ -42,7 +42,7 @@ describe("createTextAgent", () => {
   test("streams a reply, sending the agent's system prompt", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "hello there" }] });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", text: true, systemPrompt: "Be brief." }),
+      agent: textAgent({ name: "Helper", mode: "text", systemPrompt: "Be brief." }),
       model,
       logger: silentLogger,
     });
@@ -61,7 +61,7 @@ describe("createTextAgent", () => {
     // SDK refuses the whole request — see `tool-call-pairs.ts`.
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", text: true }),
+      agent: textAgent({ name: "Helper", mode: "text" }),
       model,
       logger: silentLogger,
     });
@@ -92,7 +92,7 @@ describe("createTextAgent", () => {
 
   test("createRuntime refuses a text agent, naming what to use instead", () => {
     expect(() =>
-      createRuntime({ agent: textAgent({ name: "Chat", text: true }), env: {} }),
+      createRuntime({ agent: textAgent({ name: "Chat", mode: "text" }), env: {} }),
     ).toThrow(/createTextAgent/);
   });
 
@@ -120,7 +120,7 @@ describe("createTextAgent", () => {
       agent: textAgent(
         {
           name: "Notes",
-          text: true,
+          mode: "text",
         },
         { remember },
       ),
@@ -146,7 +146,7 @@ describe("createTextAgent", () => {
       agent: textAgent(
         {
           name: "Researcher",
-          text: true,
+          mode: "text",
           builtinTools: ["calculate"],
         },
         {
@@ -182,7 +182,7 @@ describe("createTextAgent", () => {
       agent: textAgent(
         {
           name: "Math",
-          text: true,
+          mode: "text",
         },
         {
           add: tool({
@@ -218,7 +218,7 @@ describe("createTextAgent", () => {
       agent: textAgent(
         {
           name: "Math",
-          text: true,
+          mode: "text",
         },
         {
           add: tool({
@@ -250,7 +250,7 @@ describe("createTextAgent", () => {
       agent: textAgent(
         {
           name: "Capped",
-          text: true,
+          mode: "text",
           maxSteps: 1,
         },
         { noop: tool({ description: "Nothing", execute: () => "ok" }) },
@@ -277,7 +277,7 @@ describe("createTextAgent", () => {
       agent: textAgent(
         {
           name: "Capped",
-          text: true,
+          mode: "text",
           maxSteps: 1,
         },
         { noop: tool({ description: "Nothing", execute: () => "ok" }) },
@@ -316,7 +316,7 @@ describe("createTextAgent", () => {
       agent: textAgent(
         {
           name: "Budgeted",
-          text: true,
+          mode: "text",
           maxSteps: 10,
         },
         { noop: tool({ description: "Nothing", execute: () => "ok" }) },
@@ -346,7 +346,7 @@ describe("createTextAgent", () => {
       agent: textAgent(
         {
           name: "Peeker",
-          text: true,
+          mode: "text",
         },
         {
           peek: tool({
@@ -391,7 +391,7 @@ describe("createTextAgent", () => {
       },
     });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Peeker", text: true }, { peek }),
+      agent: textAgent({ name: "Peeker", mode: "text" }, { peek }),
       model: createFakeLanguageModel({
         steps: [
           [{ type: "tool-call", toolCallId: "c1", toolName: "peek", input: "{}" }],
@@ -419,7 +419,7 @@ describe("createTextAgent", () => {
     let seen: unknown;
     const chat = createTextAgent({
       agent: textAgent(
-        { name: "Peeker", text: true },
+        { name: "Peeker", mode: "text" },
         {
           peek: tool({
             description: "Read history",
@@ -497,7 +497,7 @@ describe("createTextAgent", () => {
       },
     });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Peeker", text: true }, { peek }),
+      agent: textAgent({ name: "Peeker", mode: "text" }, { peek }),
       model: createFakeLanguageModel({
         // One step per `doStream` call, and the two turns interleave: turn 1's
         // request, turn 2's request, then each turn's answering step.
@@ -530,7 +530,7 @@ describe("createTextAgent", () => {
     // reads an empty `ctx.messages` rather than some other turn's.
     const chat = createTextAgent({
       agent: textAgent(
-        { name: "Peeker", text: true },
+        { name: "Peeker", mode: "text" },
         { peek: tool({ description: "Read history", execute: () => "ok" }) },
       ),
       model: createFakeLanguageModel({ script: [] }),
@@ -550,7 +550,7 @@ describe("createTextAgent", () => {
       delayMs: 20,
     });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Stoppable", text: true }),
+      agent: textAgent({ name: "Stoppable", mode: "text" }),
       model,
       logger: silentLogger,
     });
@@ -574,7 +574,7 @@ describe("createTextAgent", () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     let phase = "intake";
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", text: true, systemPrompt: () => `Phase: ${phase}.` }),
+      agent: textAgent({ name: "Helper", mode: "text", systemPrompt: () => `Phase: ${phase}.` }),
       model,
       logger: silentLogger,
     });
@@ -594,7 +594,7 @@ describe("createTextAgent", () => {
   test("a per-turn system prompt overrides the agent's", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", text: true, systemPrompt: "Base." }),
+      agent: textAgent({ name: "Helper", mode: "text", systemPrompt: "Base." }),
       model,
       logger: silentLogger,
     });
