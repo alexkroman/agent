@@ -8,7 +8,7 @@
 import { describe, expect, test } from "vitest";
 import { createFailingSttProvider, createFakeSttProvider } from "../_pipeline-test-fakes.ts";
 import type { ProviderFailover } from "./_failover.ts";
-import { failoverOf, openReportingFailover, withOpenerFailoverListener } from "./_failover.ts";
+import { failoverOf, withOpenerFailoverListener } from "./_failover.ts";
 import { createFallbackSttOpener } from "./fallback.ts";
 
 const sttOptions = () => ({
@@ -43,8 +43,9 @@ describe("the per-session listener seam", () => {
 
   test("passes any other opener through by identity", async () => {
     const plain = createFakeSttProvider();
-    expect(withOpenerFailoverListener(plain, () => undefined)).toBe(plain);
-    await openReportingFailover(plain, sttOptions(), () => undefined);
+    const bound = withOpenerFailoverListener(plain, () => undefined);
+    expect(bound).toBe(plain);
+    await bound.open(sttOptions());
     expect(plain.sessions).toHaveLength(1);
   });
 
