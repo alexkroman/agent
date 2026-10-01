@@ -45,7 +45,7 @@ export default agent({
   // reads and every unplayed act's goal and mood with them, which is the only
   // defence there is against a spoiler leak (see `shared.ts`). The slot's own
   // default is what a session that has run no tool projects.
-  syncState: gameProjection,
+  syncState: { game: gameProjection },
 
   // The flow gates the tools whether or not it is declared here. What DECLARING
   // it buys is the other half the states were written for: the active state's

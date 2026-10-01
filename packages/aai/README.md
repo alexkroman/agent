@@ -59,7 +59,7 @@ export default agent({
   name: "Notes",
   systemPrompt: "You take short notes for the caller.",
   // Show the slot to the browser client, read there with `useAgentState`.
-  syncState: notesSlot.projection((notes) => ({ count: notes.items.length })),
+  syncState: { notes: notesSlot.projection((notes) => ({ count: notes.items.length })) },
 });
 ```
 
@@ -107,7 +107,7 @@ export default agent({
   maxSteps: 6,
   turnTaking: { minSilenceMs: 1200 },
   // What the browser client renders with `useAgentState`.
-  syncState: cart.projection((c) => ({ count: c.items.length })),
+  syncState: { cart: cart.projection((c) => ({ count: c.items.length })) },
   // Observe-only hooks over the session event stream.
   events: {
     "tool.called": (event) => {
@@ -425,7 +425,7 @@ export const cartSlot = sessionSlot("cart", () => ({
 // `staffPin` never reaches the browser.
 export const cartProjection = cartSlot.projection((s) => ({ cart: s.cart }));
 
-export default agent({ name: "Storefront", syncState: cartProjection });
+export default agent({ name: "Storefront", syncState: { cart: cartProjection } });
 ```
 
 ```tsx

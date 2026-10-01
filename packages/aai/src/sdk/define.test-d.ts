@@ -169,26 +169,33 @@ test("a discovered registry composes onto a slot-backed agent", () => {
   expectTypeOf(def.tools.ping).toExtend<ToolDef | undefined>();
 });
 
-test("a slot's projection is what syncState takes", () => {
+test("syncState is a record of slot projections keyed by slot name", () => {
   const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
   const def = agent({
     name: "t",
-    syncState: cartSlot.projection((cart) => ({ count: cart.items.length })),
+    syncState: { cart: cartSlot.projection((cart) => ({ count: cart.items.length })) },
   });
-  expectTypeOf(def.syncState).toExtend<StateProjection | readonly StateProjection[] | undefined>();
+  expectTypeOf(def.syncState).toEqualTypeOf<
+    Readonly<Record<string, StateProjection>> | undefined
+  >();
   // And it is callable with nothing, which is how a client derives its
   // pre-first-tool-call frame from the same function the server pushes.
   expectTypeOf(cartSlot.projection((cart) => cart.items.length)()).toEqualTypeOf<number>();
 });
 
-test("an agent may project more than one slot", () => {
+test("an agent projects more than one slot as more than one key", () => {
   const a = sessionSlot("a", () => ({ x: 1 }));
   const b = sessionSlot("b", () => ({ y: 2 }));
-  const def = agent({
-    name: "t",
-    syncState: [a.projection((v) => ({ x: v.x })), b.projection((v) => ({ y: v.y }))],
-  });
-  expectTypeOf(def.syncState).toExtend<StateProjection | readonly StateProjection[] | undefined>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; syncState: { a: typeof a.projected; b: typeof b.projected } }>
+  >().toEqualTypeOf<true>();
+  // The two forms the record replaced: a bare projection and an array.
+  expectTypeOf<
+    AgentAccepts<{ name: string; syncState: typeof a.projected }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; syncState: readonly StateProjection[] }>
+  >().toEqualTypeOf<false>();
 });
 
 test("`tools` on the authoring params is the message, not a map", () => {

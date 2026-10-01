@@ -48,8 +48,10 @@ const ProjectedAssistant = z.object({
   sent: z.array(z.unknown()),
 });
 
-const frames = (session: EvalSession) => statesIn(session.events(), ProjectedAssistant);
-const latest = (session: EvalSession) => lastStateIn(session.events(), ProjectedAssistant);
+const frames = (session: EvalSession) =>
+  statesIn(session.events(), "assistant", ProjectedAssistant);
+const latest = (session: EvalSession) =>
+  lastStateIn(session.events(), "assistant", ProjectedAssistant);
 
 /** A triage verdict, as the JSON the scripted model returns for `respondTo`. */
 const verdict = (response: "no" | "email" | "notify") =>

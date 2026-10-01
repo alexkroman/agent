@@ -64,7 +64,8 @@ const ProjectedHiring = z.object({
   drafts: z.array(z.unknown()),
 });
 
-const hiringState = (session: EvalSession) => lastStateIn(session.events(), ProjectedHiring);
+const hiringState = (session: EvalSession) =>
+  lastStateIn(session.events(), "hiring", ProjectedHiring);
 
 /** What `screen_candidates` answers with. */
 const Screened = z.object({

@@ -96,7 +96,11 @@ const emitted = (event: string, data: unknown): SessionEvent => ({
   event,
   data,
 });
-const pushed = (state: unknown): SessionEvent => ({ type: "state.updated", meta, state });
+const pushed = (state: Record<string, unknown>): SessionEvent => ({
+  type: "state.updated",
+  meta,
+  state,
+});
 
 /** A schema, spelled without zod: these readers take any Standard Schema. */
 const cartSchema = {
@@ -124,18 +128,29 @@ describe("customEventsIn", () => {
 
 describe("lastStateIn", () => {
   test("answers the LAST frame, which is what the page is showing", () => {
-    expect(lastStateIn([pushed({ items: 1 }), pushed({ items: 2 })])).toEqual({ items: 2 });
+    expect(lastStateIn([pushed({ cart: { items: 1 } }), pushed({ cart: { items: 2 } })])).toEqual({
+      cart: { items: 2 },
+    });
+  });
+
+  test("names a SLOT and answers its value, as the page selects it", () => {
+    const events = [pushed({ cart: { items: 2 }, prefs: { units: "metric" } })];
+    expect(lastStateIn(events, "cart")).toEqual({ items: 2 });
+    expect(lastStateIn(events, "absent")).toBeUndefined();
   });
 
   test("is undefined when nothing was pushed", () => {
     expect(lastStateIn([saidByAgent("hi")])).toBeUndefined();
+    expect(lastStateIn([saidByAgent("hi")], "cart")).toBeUndefined();
   });
 
-  test("validates through a schema, so a changed projection FAILS by name", () => {
-    expect(lastStateIn([pushed({ items: 2 })], cartSchema)).toEqual({ items: 2 });
+  test("validates the slot through a schema, so a changed projection FAILS by name", () => {
+    expect(lastStateIn([pushed({ cart: { items: 2 } })], "cart", cartSchema)).toEqual({ items: 2 });
     // The regression an eval exists to catch: the projection changed shape and a
     // cast would have sailed straight past it.
-    expect(() => lastStateIn([pushed({ nope: true })], cartSchema)).toThrow(/items: not a cart/);
+    expect(() => lastStateIn([pushed({ cart: { nope: true } })], "cart", cartSchema)).toThrow(
+      /items: not a cart/,
+    );
   });
 });
 
@@ -275,11 +290,16 @@ describe("toolResultsIn", () => {
 });
 
 describe("statesIn", () => {
-  const pushed = (state: unknown): SessionEvent => ({ type: "state.updated", meta, state });
+  const pushed = (state: Record<string, unknown>): SessionEvent => ({
+    type: "state.updated",
+    meta,
+    state,
+  });
 
   test("reads every frame in stream order, and lastStateIn's answer is the last", () => {
-    const events = [pushed({ n: 1 }), saidByAgent("hi"), pushed({ n: 2 })];
-    expect(statesIn(events)).toEqual([{ n: 1 }, { n: 2 }]);
+    const events = [pushed({ c: { n: 1 } }), saidByAgent("hi"), pushed({ c: { n: 2 } })];
+    expect(statesIn(events)).toEqual([{ c: { n: 1 } }, { c: { n: 2 } }]);
+    expect(statesIn(events, "c")).toEqual([{ n: 1 }, { n: 2 }]);
     expect(statesIn(events).at(-1)).toEqual(lastStateIn(events));
   });
 
@@ -287,15 +307,17 @@ describe("statesIn", () => {
     expect(statesIn([saidByAgent("hi")])).toEqual([]);
   });
 
-  test("with a schema every frame is parsed, and a drifted one fails by position", () => {
+  test("with a schema every slot value is parsed, and a drifted one fails by position", () => {
     const View = z.object({ placed: z.boolean() });
-    expect(statesIn([pushed({ placed: false }), pushed({ placed: true })], View)).toEqual([
-      { placed: false },
-      { placed: true },
-    ]);
-    expect(() => statesIn([pushed({ placed: false }), pushed({ done: true })], View)).toThrow(
-      /state frame 1 does not match the schema/,
-    );
+    const events = [pushed({ order: { placed: false } }), pushed({ order: { placed: true } })];
+    expect(statesIn(events, "order", View)).toEqual([{ placed: false }, { placed: true }]);
+    expect(() =>
+      statesIn(
+        [pushed({ order: { placed: false } }), pushed({ order: { done: true } })],
+        "order",
+        View,
+      ),
+    ).toThrow(/state frame 1's "order" does not match the schema/);
   });
 });
 

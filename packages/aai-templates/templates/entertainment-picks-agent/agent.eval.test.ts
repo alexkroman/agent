@@ -62,12 +62,11 @@ const ProjectedNight = z.object({ recs: z.array(RecSchema) });
 /**
  * The night's log as the PAGE has it: the last `syncState` frame pushed.
  *
- * This agent declares one projection, so the frame IS `nightProjection`'s
- * result — the same `{ recs }` value `useAgentState(nightProjection)` reads in
- * `client.tsx`. Asserting on it is asserting on what the sidebar shows.
+ * The frame's `night` key is `nightProjection`'s result — the same `{ recs }`
+ * value `useAgentState(nightProjection)` selects in `client.tsx`. Asserting on it is asserting on what the sidebar shows.
  */
 const pushedRecs = (events: readonly SessionEvent[]) =>
-  lastStateIn(events, ProjectedNight)?.recs ?? [];
+  lastStateIn(events, "night", ProjectedNight)?.recs ?? [];
 
 /** The `wind_down` nudges in `events` — `customEventsIn` filters by name. */
 const nudges = (events: readonly SessionEvent[]) => customEventsIn(events, "wind_down");

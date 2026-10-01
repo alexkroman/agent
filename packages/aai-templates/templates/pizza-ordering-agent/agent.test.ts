@@ -258,7 +258,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
 
 // ─── 3. The projection contract with client.tsx ─────────────────────────────
 //
-// `syncState: orderView` is now the ONLY thing the sidebar reads, which makes
+// `syncState: { order: orderProjection }` is the ONLY thing the sidebar reads, which makes
 // the contract a pure function of state rather than an if/else chain over
 // event shapes. What used to need six event-shape assertions is three.
 

@@ -40,7 +40,7 @@ const desk = sessionSlot("desk", () => ({ symbols: [] as string[] }));
 export default agent({
   name: "Market Desk",
   systemPrompt: "You look up quotes and keep the caller's watchlist.",
-  syncState: desk.projection((state) => ({ symbols: state.symbols })),
+  syncState: { desk: desk.projection((state) => ({ symbols: state.symbols })) },
 });
 ```
 
@@ -112,9 +112,9 @@ import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
 import QuoteCard from "./quote-card.tsx";
 
 function Watchlist() {
-  // Whatever `syncState` projected, live. Null until the first push, which is
-  // a moment the UI has to render.
-  const desk = useAgentState<{ symbols: string[] }>();
+  // The `desk` slot `syncState` projected, live. Null until the first push,
+  // which is a moment the UI has to render.
+  const desk = useAgentState<{ symbols: string[] }>("desk");
   return (
     <div>
       <QuoteCard />
@@ -208,7 +208,8 @@ the same session as a plain store with an immutable snapshot per change, for a
 non-React client. `SessionSnapshot`, `AgentState`, `ChatMessage`,
 `ToolCallInfo`, `SessionError` and `SessionErrorCode` come with it.
 
-**What the agent pushes** — `useAgentState()` (the `syncState` projection),
+**What the agent pushes** — `useAgentState(slot.projected)` (that slot's entry
+in the agent's `syncState`; `selectAgentState(slot)` for `useSessionSelector`),
 `useToolResult()` / `useToolCallStart()` (tool calls as they run), and
 `useEvent()` (custom events from `ctx.send`, and the one to prefer in new
 code over reading tool results).

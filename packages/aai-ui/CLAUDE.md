@@ -77,7 +77,8 @@ contract (`src/contracts/CLAUDE.md`); `pnpm check:api-contracts` fails otherwise
   state/effects/setup, handshake, reconnect, user turn, types).
 - `context.ts` — `SessionProvider`, `useSession`, `useSessionCore`,
   `useSessionSelector`, `ThemeProvider`, `useTheme`.
-- `hooks.ts` — `useAgentState`, `useToolResult`, `useToolCallStart`, `useEvent`.
+- `hooks.ts` — `useToolResult`, `useToolCallStart`, `useEvent`, re-exporting
+  `useAgentState`/`selectAgentState` from `agent-state.ts`.
 - `audio.ts` — PCM encode/decode, AudioWorklet management.
 - `client-config.ts` — the `GET /client-config` lookups.
 - `client-identity.ts` — `client: "auto"`, the per-tab inbox holder,

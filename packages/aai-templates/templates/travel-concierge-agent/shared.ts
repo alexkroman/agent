@@ -866,7 +866,7 @@ export function tripView(state: FrozenTripState): TripView {
  * client.
  *
  * Annotated, because the annotation is the CONTRACT rather than a restatement:
- * `agent({ syncState })` and `useAgentState()` are both declared against
+ * `agent({ syncState: { trip } })` and `useAgentState(tripProjection)` both take a
  * `StateProjection<V>`, so writing it here is what says the frame the server
  * pushes and the frame the browser renders are the same {@link TripView} — and
  * what fails at this line, rather than in `client.tsx`, if `tripView` stops

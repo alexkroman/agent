@@ -316,7 +316,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "state.updated":
         // Replace, never append: this is the current value of the agent's
         // state, and only the newest one is meaningful.
-        updateState({ agentState: e.state });
+        updateState({ agentState: shareUnchangedSlots(getSnapshot().agentState, e.state) });
         break;
       case "history.restored": {
         // Replace both lists, for the same reason and one more: the server is
@@ -432,4 +432,23 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   }
 
   return { handleMessage };
+}
+
+/**
+ * The new frame, with every slot whose view did not change keeping the OLD
+ * value object — so `useAgentState(slot)` re-renders only for its own slot.
+ * Compared by serialization, which is how the server decided to push at all.
+ */
+function shareUnchangedSlots(
+  previous: Readonly<Record<string, unknown>> | null,
+  next: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  if (previous === null) return next;
+  const frame: Record<string, unknown> = {};
+  for (const [slot, value] of Object.entries(next)) {
+    const before = previous[slot];
+    frame[slot] =
+      slot in previous && JSON.stringify(before) === JSON.stringify(value) ? before : value;
+  }
+  return frame;
 }

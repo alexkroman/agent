@@ -389,7 +389,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("state.updated"),
     meta: SessionEventMetaSchema,
-    state: z.unknown(),
+    state: z.record(z.string(), z.unknown()),
   }),
   // The events about what a session SPENDS, REFUSES and CUTS SHORT. Their
   // schemas live in `protocol-events-accounting.ts` — named here rather than

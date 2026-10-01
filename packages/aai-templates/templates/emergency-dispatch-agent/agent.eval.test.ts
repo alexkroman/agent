@@ -122,7 +122,8 @@ const StatusChange = dialogResultSchema(
  * a frame that stopped matching FAILS naming the field, where the cast this
  * replaced would have handed the assertions `undefined`.
  */
-const dashboard = (events: readonly SessionEvent[]) => lastStateIn(events, ProjectedDashboard);
+const dashboard = (events: readonly SessionEvent[]) =>
+  lastStateIn(events, "dispatch", ProjectedDashboard);
 
 /** One incident as the browser sees it. */
 const boardEntry = (events: readonly SessionEvent[], id: string) =>

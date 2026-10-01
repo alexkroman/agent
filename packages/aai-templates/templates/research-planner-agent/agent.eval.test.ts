@@ -63,7 +63,7 @@ const ProjectedPlan = z.object({
  * projection is the one of them that carries state. `lastStateIn` is the SDK's
  * reader for exactly this.
  */
-const planState = (session: EvalSession) => lastStateIn(session.events(), ProjectedPlan);
+const planState = (session: EvalSession) => lastStateIn(session.events(), "plan", ProjectedPlan);
 
 /** What `plan_status` answers on an untouched desk. An ordinary `tool()`, so no
  *  dialog envelope — it reads the position itself. */

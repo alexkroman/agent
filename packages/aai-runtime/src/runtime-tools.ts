@@ -83,19 +83,12 @@ export function mergeBuiltinSurface(
 }
 
 /**
- * `agent.syncState` as a list, since it takes one projection or several.
- *
- * One is overwhelmingly the common case — every stateful template projects a
- * single slot — so the singular form is what an author writes and the array is
- * what an agent with two slots reaches for.
+ * `agent.syncState`'s projections, in declaration order. `agent()` has already
+ * checked that each key is its projection's own slot key, so the values carry
+ * everything the frame needs.
  */
 function toProjectionList(syncState: AgentDef["syncState"]): readonly StateProjection[] {
-  if (!syncState) return [];
-  // `Array.isArray` narrows the ARRAY arm and leaves the other one as the whole
-  // union (a `StateProjection` is callable, not an array, but the check's
-  // type predicate is `unknown[]` and says nothing about the negative case), so
-  // the singular arm is read off a flattened copy rather than asserted.
-  return [syncState].flat();
+  return syncState ? Object.values(syncState) : [];
 }
 
 /** The runtime's resolved tool surface: dispatcher, schemas, and LLM guidance. */

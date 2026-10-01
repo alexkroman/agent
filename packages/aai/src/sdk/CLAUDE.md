@@ -222,8 +222,11 @@ on the member it governs**:
 - **A durable value is checked STRUCTURALLY in every backend** (`Map` → `{}`,
   `Date` → string, `NaN` → null don't throw). Running it in memory too is what
   makes memory a valid double.
-- **`syncState` takes `slot.projection(view)`**, callable and carrying key and
-  default, so a session that ran no tool still renders.
+- **`syncState` is a record keyed by SLOT NAME** of `slot.projected` /
+  `slot.projection(view)` values — callable and carrying key and default, so a
+  session that ran no tool still renders. Each key must equal its projection's
+  slot key (`assertSyncStateRecord`, `_author-conveniences.ts`), so the frame
+  is `{ [slot]: view }` and the browser selects by the same name.
 - **`caps` bounds a TOP-LEVEL array on every store, AFTER `after`**;
   `SlotCaps<T>` admits only array keys, bad caps refused at declaration
   (`_session-slot-caps.ts`). The hook sees the untrimmed draft.

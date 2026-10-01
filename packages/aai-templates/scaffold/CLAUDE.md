@@ -359,8 +359,9 @@ export default agent({
     deadAirCoverMs?: number;                 // filler after this much silence IN a turn (default 2400; 0 off)
     nudge?: { afterMs: number; prompt?: string }; // speak up after this much USER silence
   };
-  syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
-                                             // (read it with useAgentState; see UI hooks)
+  syncState?: Record<string, StateProjection>; // show slots to the client, keyed by slot
+                                             // name: { cart: cartSlot.projected } (read it
+                                             // with useAgentState; see UI hooks)
   requiredEnv?: string[];                    // env vars this agent reads. A deploy CHECKS them, so a
                                              // missing key fails at `aai push` instead of mid-call.
                                              // Declare every key any tool or step reads.
@@ -1765,7 +1766,7 @@ Four rules, and each is an error rather than advice if you get it wrong:
   either way; that is the reason for the rules above.
 
 There is nothing to declare on `agent()` — the slot owns its own default. Use
-`syncState: slot.projection(view)` to show state to a custom client.
+`syncState: { [slotName]: slot.projected }` to show state to a custom client.
 `slot.snapshot(ctx)` returns a mutable deep copy of the value — what a spec
 hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
 
@@ -2328,21 +2329,22 @@ export const cartSlot = sessionSlot("cart", () => ({ cart: [] as Item[], staffPi
 // server-side, and the agent and the client cannot name different views of it.
 export const cartProjection = cartSlot.projection((s) => ({ cart: s.cart }));
 
-// agent.ts
-export default agent({ syncState: cartProjection });
+// agent.ts — keyed by SLOT NAME; the key must be the slot's own (agent() checks)
+export default agent({ syncState: { cart: cartProjection } });
 
-// client.tsx — the projection types the state AND supplies the frame the client
-// renders before the first push, so there is no type argument and no `?? EMPTY`.
+// client.tsx — selects `state.cart`; the projection types it AND supplies the
+// frame rendered before the first push, so no type argument and no `?? EMPTY`.
 const view = useAgentState(cartProjection);
 return <Cart items={view.cart} />;
 ```
 
-Passing the projection is the shape to copy. The other two overloads still
-exist: `useAgentState<S>()` returns `S | null` (nullable — nothing is pushed
-before the first tool call), and `useAgentState<S>(fallback)` returns `S` for a
-frame you build yourself. Reach for `fallback` only when the slot's factory is
-expensive to import into the browser — the projection overload calls it to build
-the empty frame.
+Passing the projection is the shape to copy. The frame is `{ [slot]: view }`,
+one key per slot. The other overloads: `useAgentState()` is the whole frame or
+`null`; `useAgentState<S>("cart")` is one slot by name, `S | null` (nothing is
+pushed before the first tool call); `useAgentState("cart", fallback)` returns
+`S` for an empty frame you build yourself — reach for it only when the slot's
+factory is expensive to import into the browser. `selectAgentState("cart")` is
+the same slot as a `useSessionSelector` selector.
 
 **Reach for this before wiring `useToolResult` into `useState`.** Without
 it the pattern is: return a cart snapshot from every tool, declare a type
@@ -2350,7 +2352,7 @@ describing what those tools return, and mirror it into `useState` — three
 things to keep in step, and the usual source of drift when you add a tool
 and forget to return the snapshot from it.
 
-`syncState` is a projection, not a flag, because state often holds things
+`syncState` holds projections, not flags, because state often holds things
 that should not reach a browser (keys, PINs, scratch) or cannot be
 serialized. Whatever it returns is exactly what the client receives. It runs
 after every tool call and is sent only when the result changed.

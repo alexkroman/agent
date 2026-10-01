@@ -18,5 +18,5 @@ export default agent({
   turnTaking: { detection: "manual" },
   // The notebook, pushed to the page after every tool call. The panel renders
   // `useAgentState(notebookProjection)` and keeps no copy of its own.
-  syncState: notebookProjection,
+  syncState: { notebook: notebookProjection },
 });

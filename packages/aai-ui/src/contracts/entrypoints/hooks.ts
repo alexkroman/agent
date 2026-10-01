@@ -13,6 +13,8 @@
  */
 
 export {
+  type AgentStateFrame,
+  selectAgentState,
   type ToolCallInfo,
   useAgentState,
   useEvent,

@@ -82,7 +82,8 @@ const ProjectedStore = z.object({
  * `lastStateIn` is the SDK's reader; the schema is what is worth passing to it,
  * for the reason above — a frame that stopped matching fails naming the field.
  */
-const projection = (events: readonly SessionEvent[]) => lastStateIn(events, ProjectedStore);
+const projection = (events: readonly SessionEvent[]) =>
+  lastStateIn(events, "retail", ProjectedStore);
 
 /** The status the projection carries for `orderId` — the one fact "did anything
  *  change?" turns on. `undefined` covers both "no projection yet" and "not this

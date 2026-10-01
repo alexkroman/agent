@@ -405,8 +405,9 @@ describe("the authentication gate", () => {
 });
 
 describe("agent config", () => {
-  test("declares a syncState projection — without it the UI never updates", () => {
-    expect(typeof retailAgent.syncState).toBe("function");
+  test("projects its slot under the slot name — without it the UI never updates", () => {
+    expect(Object.keys(retailAgent.syncState ?? {})).toEqual(["retail"]);
+    expect(typeof retailAgent.syncState?.retail).toBe("function");
   });
 
   // The slot owns the default now — there is no `state` factory on the agent to

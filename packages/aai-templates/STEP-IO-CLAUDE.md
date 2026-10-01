@@ -274,7 +274,7 @@ whole catalog to the browser. It says so in place.
 
 That is now the ONE exception to the rule the other six follow: **compose the
 projection in the module that declares the slot, and import it at both ends** —
-`syncState: cartProjection` on the agent, `useAgentState(cartProjection)` in
+`syncState: { cart: cartProjection }` on the agent, `useAgentState(cartProjection)` in
 the client. It used to be composed twice, once per end, with the client
 deriving its empty frame by calling it with `undefined` and restating the view's
 type a third time on the hook. Nothing checked that the two compositions named

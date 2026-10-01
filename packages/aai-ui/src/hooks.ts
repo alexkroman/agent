@@ -1,10 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { DefaultToolResult, StateProjection } from "@alexkroman1/aai";
-import { useEffect, useMemo, useRef } from "react";
+import type { DefaultToolResult } from "@alexkroman1/aai";
+import { useEffect, useRef } from "react";
 import { tryParseJSON } from "./_utils.ts";
 import { useSessionSelector } from "./context.ts";
 import type { ToolCallInfo } from "./types.ts";
+
+export { selectAgentState, useAgentState } from "./agent-state.ts";
 
 type ToolCallCallback = (...args: unknown[]) => void;
 
@@ -221,138 +223,6 @@ export function useToolResult<R = unknown>(
 ): void;
 export function useToolResult(...args: unknown[]): void {
   useToolCallEffect("done", args, fireResult);
-}
-
-/**
- * The agent's projected session state, or `null` before the first push.
- *
- * The counterpart to `syncState` on the agent: whatever that projection
- * returns is what arrives here — no per-tool result mirroring needed.
- *
- * ```tsx
- * import { useAgentState } from "@alexkroman1/aai-ui";
- *
- * type Item = { sku: string; qty: number };
- *
- * function Cart() {
- *   const state = useAgentState<{ cart: Item[] }>();
- *   return <ul>{state?.cart.map((item) => <li key={item.sku}>{item.qty}</li>)}</ul>;
- * }
- * ```
- *
- * Typed by the caller for the same reason `useToolResult` is: the shape is
- * the author's own projection, which the framework cannot see. It is
- * nullable on purpose — nothing has been pushed before the first tool call,
- * and a UI has to render that moment.
- *
- * @public
- */
-export function useAgentState<S = DefaultToolResult>(): S | null;
-/**
- * The agent's projected session state, typed and defaulted by the SAME
- * projection the agent pushes — pass `slot.projected` and there is no type
- * argument to restate and no empty frame to derive.
- *
- * This is the overload to reach for whenever `syncState` is a slot projection,
- * because it closes the round-trip the other two leave open. A projection is
- * callable, so the pre-first-push frame is what `projection()` returns — the
- * `fallback` overload's own doc tells you to build it that way — and the
- * projection's return type is the state's type, so `useAgentState<CartView>`
- * was restating what `cartView` already knew. Both halves came out of the same
- * declaration and both were written by hand:
- *
- * ```tsx no-check
- * // `no-check`: the slot lives with the agent, in another file.
- * // Before — the empty frame derived by hand, the type named three times:
- * const EMPTY: CartView = cartSlot.projection(cartView)(undefined);
- * const cart = useAgentState<CartView>(EMPTY);
- *
- * // After — the slot declares its `view`, and both ends pass the one object
- * // it built at declaration:
- * const cart = useAgentState(cartSlot.projected);
- * ```
- *
- * **`slot.projected` is the spelling to prefer, and it retires the caveat
- * below.** Declare the view on the slot (`sessionSlot(key, create, { view })`)
- * and the projection is built ONCE where the slot is, so `agent({ syncState })`
- * and this hook are handed the same object and nothing has to arrange for that.
- * `slot.projection(view)` composes a NEW projection per call, which is what
- * leaves both halves below to a convention.
- *
- * The empty frame is memoized on the projection's identity, so a module-scope
- * projection (the normal case) produces ONE frame for the life of the
- * component — which the `fallback` overload can only ask you to arrange by
- * hoisting, and which a `slot.projection(view)` spelled inline in the render
- * body silently got wrong. A `slot.projected` cannot be spelled inline: it is
- * the slot's own field.
- *
- * **The one case that cannot use this overload is a slot whose declaring module
- * is expensive to IMPORT.** A projection is built from the slot, so the browser
- * bundle gets whatever that module pulls in — and the cost is the static import
- * graph rather than the `create()` call, so no option on the slot can avoid it.
- * `retail-orders-agent` is the worked example: its slot lives beside a 107 KB seed, so the
- * page passes a `fallback` built by running the same view over a cheap empty
- * state, from a module that imports no seed. Reach for this overload
- * everywhere the slot's module is cheap, which is every other stateful
- * template.
- *
- * @param projection - The same projection the agent declares as `syncState`.
- *   `slot.projected` is that object by construction; a `slot.projection(view)`
- *   has to be exported from the module that declares the slot so the two ends
- *   cannot drift.
- *
- * @public
- */
-export function useAgentState<V>(projection: StateProjection<V>): V;
-/**
- * The agent's projected session state, falling back to `fallback` before the
- * first push — so the return is never `null` and a sidebar needs no branch for
- * the pre-first-tool-call moment.
- *
- * Build the fallback by running the SAME projection over an empty state, not
- * by hand-writing an empty-looking literal: a field added to the projection
- * then reaches the first render too, instead of being `undefined` only in
- * that one frame.
- *
- * ```tsx no-check
- * // `no-check`: the projection lives with the agent, in another file.
- * import { useAgentState } from "@alexkroman1/aai-ui";
- * import { cartSlot, cartView, type CartView } from "./shared.ts";
- *
- * const EMPTY: CartView = cartSlot.projection(cartView)(undefined);
- *
- * function Cart() {
- *   const cart = useAgentState<CartView>(EMPTY);
- *   return <ul>{cart.items.map((item) => <li key={item.sku}>{item.qty}</li>)}</ul>;
- * }
- * ```
- *
- * @param fallback - Returned while the agent has pushed nothing. Not memoized
- *   here — hoist it to module scope (or memoize it) so it is a stable
- *   reference across renders.
- *
- * @public
- */
-export function useAgentState<S = DefaultToolResult>(fallback: S): S;
-export function useAgentState<S = DefaultToolResult>(fallback?: S | StateProjection<S>): S | null {
-  const state = useSessionSelector((snapshot) => snapshot.agentState) as S | null;
-  // A projection is a FUNCTION, and a fallback state never is — `agentState` is
-  // whatever crossed the wire as JSON, so no legitimate `fallback` value can
-  // collide with this test.
-  const isProjection = typeof fallback === "function";
-  // Keyed on the projection's identity so a module-scope projection yields one
-  // stable frame. Unconditional, because a hook may not be called conditionally;
-  // the non-projection arm never calls anything.
-  const projected = useMemo(
-    () => (isProjection ? (fallback as StateProjection<S>)() : undefined),
-    [fallback, isProjection],
-  );
-  if (state !== null) return state;
-  if (isProjection) return projected as S;
-  // An absent `fallback` must read back as `null`, not `undefined` — that is
-  // the no-arg overload's documented pre-first-push value, and a client
-  // spelling `state === null` predates this parameter.
-  return fallback === undefined ? null : (fallback as S);
 }
 
 /**

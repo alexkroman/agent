@@ -25,8 +25,7 @@
  * export default agent({
  *   name: "Storefront",
  *   systemPrompt: "You help callers order from the catalog.",
- *   voice: "michael",
- *   syncState: cart.projected,
+ *   syncState: { cart: cart.projected },
  * });
  * ```
  *

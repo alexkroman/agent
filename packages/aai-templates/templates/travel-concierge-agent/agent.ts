@@ -37,7 +37,7 @@ export default agent({
   // so a resumed connection has something to project.
   // One projection replaces a `ctx.send` in each of eleven tools — and is the
   // single place that decides the caller's record leaves the server trimmed.
-  syncState: tripProjection,
+  syncState: { trip: tripProjection },
   /**
    * Declared so the CALL can move the gate, not only a tool.
    *

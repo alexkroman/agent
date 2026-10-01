@@ -246,6 +246,7 @@
   "@alexkroman1/aai-ui": [
     "AgentClient",
     "AgentCustomEvent",
+    "AgentStateFrame",
     "AudioResultCaptions",
     "AudioResultProps",
     "BrowserSession",
@@ -359,6 +360,7 @@
     "inboxEventToItem",
     "phoneE164",
     "routeFetch",
+    "selectAgentState",
     "useClientId",
     "useClientRuns",
     "useConversation",

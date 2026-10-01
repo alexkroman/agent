@@ -41,22 +41,22 @@ agent projects from one with `syncState`, so declare a slot first or there is
 nothing to receive — see [Remembering things](/agent/build/state/).
 
 :::note[No slot to hand?]
-A page that cannot import the slot — a client kept apart from the agent — passes
-a fallback object instead: `useAgentState(EMPTY)`, declared at module scope so
-the reference is stable across renders. Reach for the slot whenever you have
+A page that cannot import the slot — a client kept apart from the agent — names
+it instead, with a fallback: `useAgentState("cart", EMPTY)`, `EMPTY` declared at
+module scope so the reference is stable across renders. Reach for the slot whenever you have
 it: `cartSlot.projected` is the same object the agent pushes with, so there is
 no empty frame to write and no type to restate.
 :::
 
 ## The hooks
 
-| Hook                            | What it gives you                                                                      |
-| ------------------------------- | -------------------------------------------------------------------------------------- |
-| `useAgentState(slot.projected)` | Whatever the agent's `syncState` projects — typed and defaulted by the same projection |
-| `useSession()`                  | Connection state and the transcript                                                    |
-| `useUserTranscript()`           | "Speech detected" separately from "first word back"                                    |
-| `useToolResult(name, cb)`       | A card per tool call                                                                   |
-| `useEvent(name, cb)`            | Whatever a tool pushed with `ctx.send`                                                 |
+| Hook                            | What it gives you                                                                         |
+| ------------------------------- | ----------------------------------------------------------------------------------------- |
+| `useAgentState(slot.projected)` | That slot's entry in the agent's `syncState` — typed and defaulted by the same projection |
+| `useSession()`                  | Connection state and the transcript                                                       |
+| `useUserTranscript()`           | "Speech detected" separately from "first word back"                                       |
+| `useToolResult(name, cb)`       | A card per tool call                                                                      |
+| `useEvent(name, cb)`            | Whatever a tool pushed with `ctx.send`                                                    |
 
 `mountClient` takes more than a `sidebar`: `component` replaces the whole page,
 and `name`, `subtitle`, `icon`, `theme`, `buttonText` and `sidebarPosition`

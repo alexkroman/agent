@@ -107,8 +107,8 @@ search agent whose whole output is speech. If the project already has a
 client.tsx, preserve its established style.
 
 The way to surface state is the SDK's hooks, and \`useAgentState\` is the
-one to reach for first: declare \`state\` and \`syncState\` on the agent and
-read the projection with \`useAgentState<T>()\` in client.tsx. Use
+one to reach for first: declare a slot and \`syncState: { [slot]: slot.projected }\` and
+read it with \`useAgentState(slot.projected)\` in client.tsx. Use
 \`useToolResult("tool_name", ...)\` for reacting to a single tool's return
 value, not as the way to mirror state — that pattern means every tool has
 to return a full snapshot and the client has to keep a \`useState\` copy in

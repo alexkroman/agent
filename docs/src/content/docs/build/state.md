@@ -101,12 +101,12 @@ call:
 import { agent } from "@alexkroman1/aai";
 import { cartSlot } from "./shared.ts";
 
-export default agent({ name: "Store", syncState: cartSlot.projected });
+export default agent({ name: "Store", syncState: { cart: cartSlot.projected } });
 ```
 
 **3. Read it in the browser** with the same object:
-`useAgentState(cartSlot.projected)`. No type argument, and no empty frame to
-write by hand. See [Your own UI](/agent/more/custom-ui/).
+`useAgentState(cartSlot.projected)`, which selects the `cart` key. No type
+argument, no slot name to repeat, and no empty frame to write by hand. See [Your own UI](/agent/more/custom-ui/).
 
 :::note[No `syncState`, nothing to receive]
 `useAgentState` only ever shows what an agent projects. An agent that declares
@@ -122,29 +122,29 @@ first tool call and the frames pushed after it cannot describe different views.
 Writing out a view at each end separately is what could drift: two expressions
 have to agree, and nothing checks that they do.
 
-### Showing one slot two ways
+### More than one slot
 
-`syncState` also takes an array, so one slot can be projected more than once —
-its declared view for one panel, a different view for another. Build the extra
-projections with `slot.projection(view)`:
+`syncState` is keyed by slot name, one entry per slot the page shows. The
+browser frame is keyed the same way, so each panel reads its own slot and
+re-renders only when that slot changes:
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
-type Cart = { items: string[] };
-
-const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }), {
+const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
   view: (cart) => ({ count: cart.items.length }),
 });
+const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
 
 export default agent({
   name: "Store",
-  syncState: [
-    cartSlot.projected, // { count }
-    cartSlot.projection((cart) => ({ items: [...cart.items] })),
-  ],
+  // The frame: { cart: { count }, prefs: { units } }.
+  syncState: { cart: cartSlot.projected, prefs: prefsSlot.projected },
 });
 ```
+
+The key must be the slot's own name; `agent()` refuses one that is not. A
+slot has one view — a panel that needs another shape derives it from that one.
 
 ## Next
 

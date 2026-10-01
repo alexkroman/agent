@@ -6,7 +6,13 @@ import { createElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createMockSessionCore } from "./_react-test-utils.ts";
 import { SessionProvider } from "./context.ts";
-import { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
+import {
+  selectAgentState,
+  useAgentState,
+  useEvent,
+  useToolCallStart,
+  useToolResult,
+} from "./hooks.ts";
 import type { ToolCallInfo } from "./types.ts";
 
 function createMockCore(toolCalls: ToolCallInfo[] = []) {
@@ -211,15 +217,17 @@ describe("useAgentState", () => {
     const core = createMockCore();
     const { result } = renderHook(() => useAgentState(), { wrapper: wrap(core) });
     expect(result.current).toBeNull();
+    const named = renderHook(() => useAgentState("cart"), { wrapper: wrap(core) });
+    expect(named.result.current).toBeNull();
   });
 
-  it("exposes the latest pushed state", () => {
+  it("exposes the latest frame, and one slot of it by name", () => {
     const core = createMockCore();
-    const { result } = renderHook(() => useAgentState<{ cart: string[] }>(), {
-      wrapper: wrap(core),
-    });
-    act(() => core.update({ agentState: { cart: ["margherita"] } }));
-    expect(result.current).toEqual({ cart: ["margherita"] });
+    const whole = renderHook(() => useAgentState(), { wrapper: wrap(core) });
+    const cart = renderHook(() => useAgentState<string[]>("cart"), { wrapper: wrap(core) });
+    act(() => core.update({ agentState: { cart: ["margherita"], prefs: { units: "metric" } } }));
+    expect(whole.result.current).toEqual({ cart: ["margherita"], prefs: { units: "metric" } });
+    expect(cart.result.current).toEqual(["margherita"]);
   });
 
   it("projects the slot's default before the agent has pushed anything", () => {
@@ -233,19 +241,18 @@ describe("useAgentState", () => {
     expect(result.current).toEqual({ count: 1 });
   });
 
-  it("prefers the pushed state over the projection's default", () => {
+  it("selects the projection's OWN slot from the frame", () => {
     const core = createMockCore();
     const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
     const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
     const { result } = renderHook(() => useAgentState(projection), { wrapper: wrap(core) });
-    act(() => core.update({ agentState: { count: 7 } }));
+    act(() => core.update({ agentState: { cart: { count: 7 }, other: { count: 99 } } }));
     expect(result.current).toEqual({ count: 7 });
   });
 
   it("keeps the projected default a stable reference across renders", () => {
-    // The doc promises this, and it is the half the `fallback` overload can
-    // only ask a caller to arrange by hoisting: a fresh object per render
-    // re-fires every downstream effect and memo that depends on the frame.
+    // A fresh object per render re-fires every downstream effect and memo that
+    // depends on the frame.
     const core = createMockCore();
     const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
     const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
@@ -257,11 +264,11 @@ describe("useAgentState", () => {
     expect(result.current).toBe(first);
   });
 
-  it("takes the slot's DECLARED view, and the two ends are one object", async () => {
+  it("takes the slot's DECLARED view, and the two ends are one object", () => {
     // The browser half of the round trip: the agent declares
-    // `syncState: cartSlot.projected` and this passes the same field, so the
-    // frame rendered before the first push and the frames pushed after it are
-    // the same view by construction rather than by two expressions agreeing.
+    // `syncState: { cart: cartSlot.projected }` and this passes the same field,
+    // so the frame rendered before the first push and the frames pushed after
+    // it are the same view by construction.
     const core = createMockCore();
     const cartSlot = sessionSlot("cart", () => ({ items: ["seeded"] }), {
       view: (cart) => ({ count: cart.items.length }),
@@ -271,37 +278,45 @@ describe("useAgentState", () => {
     });
     const before = result.current;
     expect(before).toEqual({ count: 1 });
-    // Stable without anything to hoist — the projection is built at DECLARATION,
-    // so its identity (which the empty frame is memoized on) cannot change.
     rerender();
     expect(result.current).toBe(before);
 
-    // …and a pushed frame carries the same fields, which is the drift this
-    // spelling removes.
-    act(() => core.update({ agentState: cartSlot.projected({ items: ["a", "b"] }) }));
+    act(() => core.update({ agentState: { cart: cartSlot.projected({ items: ["a", "b"] }) } }));
     expect(Object.keys(result.current).sort()).toEqual(Object.keys(before).sort());
     expect(result.current).toEqual({ count: 2 });
   });
 
-  it("still treats a plain object as a fallback, not a projection", () => {
-    // The projection overload is declared FIRST so it wins for a function, and
-    // a type test caught `fallback: S` swallowing one. This is the other
-    // direction: the older overload must keep working unchanged.
+  it("a named slot with a fallback answers the fallback until pushed", () => {
     const core = createMockCore();
-    const { result } = renderHook(() => useAgentState<{ cart: string[] }>({ cart: [] }), {
-      wrapper: wrap(core),
-    });
-    expect(result.current).toEqual({ cart: [] });
+    const EMPTY = { items: [] as string[] };
+    const { result } = renderHook(() => useAgentState("retail", EMPTY), { wrapper: wrap(core) });
+    expect(result.current).toBe(EMPTY);
+    act(() => core.update({ agentState: { retail: { items: ["a"] } } }));
+    expect(result.current).toEqual({ items: ["a"] });
   });
 
   it("replaces rather than accumulating", () => {
     // The distinction from useEvent: this is a value, not a log, so a
     // component mounting late reads current state instead of replaying.
     const core = createMockCore();
-    const { result } = renderHook(() => useAgentState<{ n: number }>(), { wrapper: wrap(core) });
+    const { result } = renderHook(() => useAgentState<number>("n"), { wrapper: wrap(core) });
     act(() => core.update({ agentState: { n: 1 } }));
     act(() => core.update({ agentState: { n: 2 } }));
-    expect(result.current).toEqual({ n: 2 });
+    expect(result.current).toBe(2);
+  });
+});
+
+describe("selectAgentState", () => {
+  it("is one stable selector per slot name", () => {
+    expect(selectAgentState("cart")).toBe(selectAgentState("cart"));
+    expect(selectAgentState("cart")).not.toBe(selectAgentState("prefs"));
+  });
+
+  it("reads its slot off a snapshot, undefined before a push", () => {
+    const core = createMockCore();
+    expect(selectAgentState("cart")(core.getSnapshot())).toBeUndefined();
+    core.update({ agentState: { cart: { count: 2 } } });
+    expect(selectAgentState("cart")(core.getSnapshot())).toEqual({ count: 2 });
   });
 });
 

@@ -35,7 +35,7 @@ export default agent({
   // thing and what makes it worth reading `shared.ts` for.
   description: "Hosts a two-minute word game between the caller and an A.I. guesser",
   // The scoreboard: the word the describer is looking at, the score, the clock.
-  syncState: gameProjection,
+  syncState: { game: gameProjection },
   /**
    * Arms the clock. `playing` declares a two-minute `timeout`, and a dialog's
    * deadline is armed by the runtime only for a dialog listed here — without

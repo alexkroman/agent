@@ -34,6 +34,14 @@ export type AgentCustomEvent = {
 };
 
 /**
+ * The agent's projected state as the client holds it: one entry per slot the
+ * agent's `syncState` names, keyed by that slot's name.
+ *
+ * @public
+ */
+export type AgentStateFrame = Readonly<Record<string, unknown>>;
+
+/**
  * Immutable snapshot of the session state.
  *
  * Consumers (e.g. React hooks via `useSyncExternalStore`) read this to render.
@@ -108,11 +116,13 @@ export type SessionSnapshot = {
    */
   readonly customEvents: AgentCustomEvent[];
   /**
-   * Latest state the agent projected via `syncState`, or `null` before the
-   * first push. A value, not a log — a component that mounts mid-session
-   * reads current state rather than replaying events it missed.
+   * Latest state the agent projected via `syncState` — keyed by slot name,
+   * `{ [slot]: view }` — or `null` before the first push. A value, not a log —
+   * a component that mounts mid-session reads current state rather than
+   * replaying events it missed. A slot whose view did not change keeps its
+   * previous value object, so a selector over one slot is stable across pushes.
    */
-  readonly agentState: unknown;
+  readonly agentState: AgentStateFrame | null;
   /**
    * The caller's in-progress turn, as STT reports it.
    *

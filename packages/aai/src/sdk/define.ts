@@ -104,7 +104,7 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  *
  * **Session state is not declared here either** — a {@link sessionSlot} owns its
  * own default and its own storage, so there is no `state` factory to remember.
- * `syncState` takes that slot's projection.
+ * `syncState` takes that slot's projection, keyed by the slot's name.
  *
  * @example Default pipeline with a voice and a different LLM
  * ```ts

@@ -123,13 +123,18 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   `useSessionError()` — never whole `useSession()` in a chrome.
 - **`useUserTranscript()`**: `null` is silence, `""` is speech with no words
   yet. Render on `speaking`; `text` carries the placeholder; `partial` is raw.
-- **`useAgentState(projection)`** is the overload to use: typed and defaulted by
-  the projection, memoized on its identity. Export the projection once from the
+- **The `agent_state` frame is keyed by slot name** (`{ [slot]: view }`, the
+  agent's `syncState` keys), so every reader selects ONE slot
+  (`agent-state.ts`). **`useAgentState(projection)`** is the overload to
+  use: it selects `state[projection.key]`, typed and defaulted by the
+  projection, memoized on its identity. Export the projection once from the
   module declaring the slot and import it in both `agent.ts` and `client.tsx`.
-  The projection overload is declared FIRST (else `fallback: S` swallows it) and
-  discriminated by `typeof === "function"` (wire JSON cannot be a function);
-  `hooks.test-d.ts` pins all three signatures. Prefer the `fallback` overload
-  only when the slot's `create()` is expensive to ship to the browser.
+  `useAgentState("slot", fallback)` is only for a slot whose `create()` is
+  expensive to ship to the browser; `useAgentState()` is the whole frame.
+  `hooks.test-d.ts` pins all four signatures. **Per-slot re-renders hold
+  because of two things together**: `selectAgentState(slot)` is ONE stable
+  selector per name, and the session core keeps an unchanged slot's value
+  object across pushes (`shareUnchangedSlots`, `session-core-messages.ts`).
 - **State or moment:** if re-rendering after a reload would be RIGHT, it is
   state → a `sessionSlot` read by `useAgentState`. If it would be a lie or a
   nuisance, it is a moment → `useEvent` / `useToolCallStart` (which never

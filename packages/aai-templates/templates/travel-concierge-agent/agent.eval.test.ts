@@ -84,7 +84,7 @@ function framesBeforeConfirm(session: EvalSession): z.infer<typeof ProjectedTrip
  * The latest frame — what the browser would be rendering now. `lastStateIn` is
  * the SDK's reader for exactly this; the schema is why it is worth passing one.
  */
-const tripState = (session: EvalSession) => lastStateIn(session.events(), ProjectedTrip);
+const tripState = (session: EvalSession) => lastStateIn(session.events(), "trip", ProjectedTrip);
 
 /**
  * A call that really STAGED — it answered with the read-back rather than with a

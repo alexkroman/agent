@@ -43,13 +43,14 @@ const ProjectedOrder = z.object({
 /**
  * The last cart `syncState` pushed to the browser, i.e. what the page shows.
  *
- * This agent declares ONE projection, so the frame IS `orderView`'s result —
- * not a record keyed by the slot. That is the same value `useAgentState(
- * orderProjection)` reads in `client.tsx`, which is why an eval can assert on
- * it: it is the cart the customer is looking at. `lastStateIn` is the SDK's
+ * The frame is keyed by slot name, so the `order` key is `orderView`'s
+ * result — the same value `useAgentState(orderProjection)` selects in
+ * `client.tsx`, which is why an eval can assert on it: it is the cart the
+ * customer is looking at. `lastStateIn` is the SDK's
  * reader for exactly this.
  */
-const lastPushedView = (events: readonly SessionEvent[]) => lastStateIn(events, ProjectedOrder);
+const lastPushedView = (events: readonly SessionEvent[]) =>
+  lastStateIn(events, "order", ProjectedOrder);
 
 /**
  * Every cart the session pushed, in stream order — `statesIn` is `lastStateIn`'s
@@ -58,7 +59,7 @@ const lastPushedView = (events: readonly SessionEvent[]) => lastStateIn(events, 
  * The SEQUENCE is the stronger claim: not "the cart is not placed now" but "no
  * frame the customer ever saw showed it placed".
  */
-const pushedViews = (events: readonly SessionEvent[]) => statesIn(events, ProjectedOrder);
+const pushedViews = (events: readonly SessionEvent[]) => statesIn(events, "order", ProjectedOrder);
 
 describeEval(agentDef, (test) => {
   test(

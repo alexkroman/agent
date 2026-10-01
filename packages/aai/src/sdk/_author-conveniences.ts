@@ -46,6 +46,7 @@ export function normalizeAgentParams(input: unknown): unknown {
   assertModeFields(mode, rest);
   rest.mode = mode;
   if (typeof rest.llm === "string") rest.llm = normalizeLlm(rest.llm);
+  assertSyncStateRecord(rest.syncState);
   normalizeEndpointing(rest);
   // AFTER the desugaring, and over `rest.stt` rather than over the two
   // shorthands: the same contradiction is expressible on an explicit
@@ -95,4 +96,36 @@ function takeNumber(group: Record<string, unknown>, key: string): number | undef
   }
   delete group[key];
   return value;
+}
+
+/**
+ * `syncState` is a record keyed by SLOT NAME, and each key must be its
+ * projection's own slot key — the browser selects by that name, so a key that
+ * disagrees with the slot it projects would publish one name and render
+ * another. A bare projection or an array (the forms the record replaced) is
+ * refused with the spelling to write instead.
+ */
+function assertSyncStateRecord(syncState: unknown): void {
+  if (syncState === undefined) return;
+  const isProjection = (value: unknown): value is { key: unknown } =>
+    typeof value === "function" && "key" in value;
+  if (isProjection(syncState) || Array.isArray(syncState)) {
+    const sample = isProjection(syncState) ? String(syncState.key) : "cart";
+    throw new Error(
+      `\`syncState\` takes a record keyed by slot name — write \`syncState: { ${sample}: ${sample}Slot.projected }\`, one entry per slot.`,
+    );
+  }
+  if (!isRecord(syncState)) {
+    throw new Error("`syncState` takes a record keyed by slot name, of slot projections.");
+  }
+  for (const [name, projection] of Object.entries(syncState)) {
+    if (!isProjection(projection)) {
+      throw new Error(`\`syncState.${name}\` is not a slot projection (use \`slot.projected\`).`);
+    }
+    if (projection.key !== name) {
+      throw new Error(
+        `\`syncState.${name}\` projects the "${String(projection.key)}" slot — key it by that slot's name: \`${String(projection.key)}: …\`.`,
+      );
+    }
+  }
 }

@@ -28,7 +28,7 @@ export default agent({
    * runtime merges all move the two apart, and the one on screen was never the
    * one the narrator was told. `syncState` sends the game's own.
    */
-  syncState: gameStatus,
+  syncState: { game: gameStatus },
   /**
    * The world's rules, plus the board as it stands RIGHT NOW.
    *

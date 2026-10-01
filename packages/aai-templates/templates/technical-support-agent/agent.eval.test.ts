@@ -84,7 +84,7 @@ const Lookup = z.object({
  * case slice the stream first; the schema above is what it takes one for.
  */
 function frames(session: EvalSession) {
-  return statesIn(session.events(), ProjectedSupport);
+  return statesIn(session.events(), "support", ProjectedSupport);
 }
 
 /**

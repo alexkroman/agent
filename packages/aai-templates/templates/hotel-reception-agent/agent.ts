@@ -25,7 +25,7 @@ export default agent({
     "Takes a hotel front desk's calls: room bookings, restaurant tables, folios and concierge requests",
   // The receptionist's own screen: who is verified, what is being booked, and
   // the ledger of everything this call wrote — their SQLite changeset stream.
-  syncState: deskProjection,
+  syncState: { hotel: deskProjection },
   /**
    * Wires `@user-transcript.committed` and `@session.timed-out` to the desk
    * dialog. Without it `offering` and `readBack` — the two states that exist to

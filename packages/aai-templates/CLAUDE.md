@@ -150,8 +150,8 @@ tool can be wrong for releases. Drive every tool you add.
 
 Rules the table carries that apply to any template:
 
-- A slot whose `create()` pulls a seed uses `useAgentState(fallback)`, not the
-  projection overload, or the seed ships to the browser.
+- A slot whose `create()` pulls a seed uses `useAgentState("slot", fallback)`,
+  not the projection overload, or the seed ships to the browser.
 - Do not call `spokenOrdinal` beside `resolveOne`; it consults it internally.
 - Name a subagent in code when the tool IS the choice; put it on
   `agent({ subagents })` when the caller's words are. Give every subagent an

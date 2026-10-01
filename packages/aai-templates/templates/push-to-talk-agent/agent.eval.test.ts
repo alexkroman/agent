@@ -37,7 +37,7 @@ describeEval(agentDef, (test) => {
       expectCalled(turn, "save_note");
       // One note, one call: the whole press is one thought.
       expect(toolNames(turn.toolCalls).filter((name) => name === "save_note")).toHaveLength(1);
-      const notes = lastStateIn(turn.events, Projected)?.notes ?? [];
+      const notes = lastStateIn(turn.events, "notebook", Projected)?.notes ?? [];
       expect(notes).toHaveLength(1);
       expect(notes[0]?.text.toLowerCase()).toContain("window seal");
     },
