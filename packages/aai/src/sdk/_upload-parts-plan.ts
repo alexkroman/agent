@@ -27,7 +27,7 @@
  *   that fits in one part — the ordinary size of a recording off a phone — so
  *   pausing one and resuming it sent the WHOLE file again and was then refused as a
  *   taken id: a pause button that was a cancel with a longer failure, the exact
- *   thing `aai-ui/_upload-session.ts` says it is not.
+ *   thing `aai-ui/upload/session.ts` says it is not.
  * - **The granularity**, which the shape alone does not buy. A part is
  *   ALL-OR-NOTHING: a window interrupted half-written covers nothing, so a resume
  *   sends it again in full. At the default 8 MiB part size every smaller file is

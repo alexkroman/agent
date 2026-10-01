@@ -8,8 +8,8 @@
 import { act } from "react";
 import { vi } from "vitest";
 import type { SessionIdentity } from "./client-identity.ts";
-import { CLEARED_SESSION_STATE } from "./session-core-messages.ts";
-import type { BrowserSession, browserSessionBrand, SessionSnapshot } from "./session-core-types.ts";
+import type { BrowserSession, browserSessionBrand, SessionSnapshot } from "./session/index.ts";
+import { CLEARED_SESSION_STATE } from "./session/index.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
 /**
@@ -203,7 +203,7 @@ function noop() {
 }
 
 /** Default voice options for tests. */
-export function voiceOpts(overrides?: Partial<import("./audio.ts").VoiceIOOptions>) {
+export function voiceOpts(overrides?: Partial<import("./audio/index.ts").VoiceIOOptions>) {
   return {
     sttSampleRate: 16_000,
     ttsSampleRate: 24_000,

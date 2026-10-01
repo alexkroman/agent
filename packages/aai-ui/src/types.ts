@@ -74,7 +74,7 @@ export const VOICE_CAPTURE_CONSTRAINTS = {
  *   happened yet. **The default chrome paints this with the same live
  *   indicator as `"listening"`**, which is deliberate — to a caller they are
  *   the same "the agent is there" — but they are not the same thing, and a
- *   session can wedge here (see `session-core-handshake.ts`).
+ *   session can wedge here (see `session/handshake.ts`).
  * - `"listening"` — the microphone is open and the agent is waiting for the
  *   caller. Check {@link SessionSnapshot.recording} for whether the mic is
  *   actually live.

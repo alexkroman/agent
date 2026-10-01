@@ -92,7 +92,7 @@ export type BenchRunOptions = {
  * `pcmUrl` is fetched once and sliced per delivery, so the page replays the
  * same bytes the offline renderer does. `sampleRate` must be the trace's: the
  * context is created at it and the page REFUSES to run if the browser grants
- * another, exactly as `audio.ts` does — PCM written into a context at the wrong
+ * another, exactly as `audio/voice-io.ts` does — PCM written into a context at the wrong
  * rate plays at the wrong speed, which would look like a tuning result.
  */
 export function benchPageHtml(opts: {

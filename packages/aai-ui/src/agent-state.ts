@@ -15,7 +15,7 @@
 import type { DefaultToolResult, StateProjection } from "@alexkroman1/aai";
 import { useMemo } from "react";
 import { useSessionSelector } from "./context.ts";
-import type { AgentStateFrame, SessionSnapshot } from "./session-core-types.ts";
+import type { AgentStateFrame, SessionSnapshot } from "./session/index.ts";
 
 /** One stable selector per slot name — see {@link selectAgentState}. */
 const selectors = new Map<string, (snapshot: SessionSnapshot) => unknown>();

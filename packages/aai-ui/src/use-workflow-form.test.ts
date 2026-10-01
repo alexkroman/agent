@@ -80,7 +80,7 @@ afterEach(() => {
   // `useFakeTimers` is outside `restoreMocks`; one spec below installs them.
   vi.useRealTimers();
   // So is `sessionStorage`, and an upload id lives there for the life of the tab
-  // (`_upload-recall.ts`) — which across specs means one spec's stored file
+  // (`upload/recall.ts`) — which across specs means one spec's stored file
   // deciding the next spec's upload, in file order.
   sessionStorage.clear();
 });
@@ -172,7 +172,7 @@ describe("useWorkflowSubmit", () => {
 
     const plain = fakeApi();
     // Its OWN file, because the one above is now stored: an id survives the tab
-    // (`_upload-recall.ts`), so re-submitting the same file reuses the upload
+    // (`upload/recall.ts`), so re-submitting the same file reuses the upload
     // instead of sending it again — which is the point of that mechanism and
     // would leave this spec with no second upload to read the options off.
     const other = new File(["abc"], "planning.wav", { type: "audio/wav" });

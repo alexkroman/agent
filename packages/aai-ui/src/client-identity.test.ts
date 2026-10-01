@@ -21,7 +21,7 @@ import {
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
 import { browserClientId, createSessionIdentity, inboxHolderId } from "./client-identity.ts";
-import { createBrowserSession } from "./session-core.ts";
+import { createBrowserSession } from "./session/index.ts";
 
 const AGENT = "http://localhost:3000/";
 

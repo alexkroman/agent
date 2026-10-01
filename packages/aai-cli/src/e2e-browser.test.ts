@@ -263,7 +263,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     // test used to claim: `setupEventInjector` does not return until the session
     // reaches `data-state="error"`, and the `initAudioCapture` failure that puts
     // it there (no microphone in headless chromium) clears `running` in the same
-    // update — see session-core-audio-setup.ts. Only `start`/`toggle` set
+    // update — see session/audio-setup.ts. Only `start`/`toggle` set
     // `running` back, so no injected fixture frame can move it.
     const toggleBtn = page.getByRole("button", { name: "Resume", exact: true });
     await toggleBtn.waitFor({ timeout: 30_000 });

@@ -1838,7 +1838,7 @@ nothing at all when the session is fine.
 **This used to be four lines inside `ConsoleShell`, and that is why it is its
 own component.** The banner was the reason `ConsoleShell` was published —
 `role="alert"` is the one part of that component a reviewer cannot see is
-missing, since per the `fatalError` latch in `session-core.ts` the banner is
+missing, since per the `fatalError` latch in `session/browser-session.ts` the banner is
 the ONLY remaining signal a session died (the state eyebrow beside it goes
 back to reading like a live session), and a screen reader is never told an
 unannounced one appeared. But `ConsoleShell` is a whole FRAME: a centred
@@ -3278,7 +3278,7 @@ chrome could not reach. `<Controls>` and `<StartScreen>` in this package pair
 a one-field `useSessionSelector` with this package's own `useSessionCore`
 (`context.ts`, unpublished); a `client.tsx`
 could not, because that hook is not published — so a footer needing `start`
-and `toggle` held a WHOLE-SNAPSHOT `useSession()`, and `session-core.ts`
+and `toggle` held a WHOLE-SNAPSHOT `useSession()`, and `session/browser-session.ts`
 rebuilds the snapshot object on every change. Measured consequence: four
 components across three templates re-rendered on every STT partial and every
 streaming delta, in files whose every other component is narrowly subscribed
@@ -3381,7 +3381,7 @@ its own narrow subscription.
 
 The other half of [useSessionStatus](#usesessionstatus) — the second of the two fields a
 custom chrome reads over and over, and the one whose absence is invisible:
-per the `fatalError` latch in `session-core.ts` the error is the ONLY
+per the `fatalError` latch in `session/browser-session.ts` the error is the ONLY
 remaining signal that a session died, since the state beside it goes back to
 reading like a live one.
 
@@ -5001,7 +5001,7 @@ The seven members, in the order a call passes through them:
   happened yet. **The default chrome paints this with the same live
   indicator as `"listening"`**, which is deliberate — to a caller they are
   the same "the agent is there" — but they are not the same thing, and a
-  session can wedge here (see `session-core-handshake.ts`).
+  session can wedge here (see `session/handshake.ts`).
 - `"listening"` — the microphone is open and the agent is waiting for the
   caller. Check [SessionSnapshot.recording](#recording) for whether the mic is
   actually live.
@@ -10425,7 +10425,7 @@ accepts and does nothing with is the silent-no-op failure this repo keeps
 paying for. Adopting an earlier run by key would hand this hook a run whose
 input names an upload id it did not mint and is not filling — so the run
 would sit waiting for bytes nobody is sending until its own abandonment
-bound. That is the same reason `_upload-recall.ts` deliberately does not
+bound. That is the same reason `upload/recall.ts` deliberately does not
 recall for this hook, one layer up: here the id is part of a run's INPUT.
 `key` itself still works, and still makes the run findable — but it is NOT
 defaulted here the way `useWorkflowSubmit` defaults it, because the whole

@@ -40,7 +40,7 @@ import {
 } from "./_tap-to-talk-state.ts";
 import { isTypingTarget } from "./_utils.ts";
 import { useSessionCore, useSessionSelector } from "./context.ts";
-import type { BrowserSession, SessionSnapshot } from "./session-core-types.ts";
+import type { BrowserSession, SessionSnapshot } from "./session/index.ts";
 import type { AgentState, SessionError } from "./types.ts";
 
 /**

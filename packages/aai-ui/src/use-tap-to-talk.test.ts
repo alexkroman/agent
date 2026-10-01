@@ -12,7 +12,7 @@ import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMockSessionCore } from "./_react-test-utils.ts";
 import { SessionProvider } from "./context.ts";
-import type { SessionSnapshot } from "./session-core-types.ts";
+import type { SessionSnapshot } from "./session/index.ts";
 import { type UseTapToTalkOptions, useTapToTalk } from "./use-tap-to-talk.ts";
 
 function mount(options?: UseTapToTalkOptions, snapshot: Partial<SessionSnapshot> = {}) {

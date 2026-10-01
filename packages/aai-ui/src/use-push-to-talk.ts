@@ -26,7 +26,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isTypingTarget } from "./_utils.ts";
 import { useSessionCore, useSessionSelector } from "./context.ts";
-import type { SessionSnapshot } from "./session-core-types.ts";
+import type { SessionSnapshot } from "./session/index.ts";
 
 /** Options for {@link usePushToTalk}. */
 export type UsePushToTalkOptions = {

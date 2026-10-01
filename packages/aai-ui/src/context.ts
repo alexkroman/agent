@@ -12,7 +12,7 @@ import {
 // The non-shim entry point delegates to React's native useSyncExternalStore
 // (guaranteed by the React 18+ peer) instead of bundling the userland shim.
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
-import type { BrowserSession, SendTextOptions, SessionSnapshot } from "./session-core-types.ts";
+import type { BrowserSession, SendTextOptions, SessionSnapshot } from "./session/index.ts";
 import type { AgentState, ClientTheme, SessionError } from "./types.ts";
 
 // AssemblyAI design system ("website refresh"): warm cream surface, deep
@@ -132,7 +132,7 @@ export function useOptionalSessionCore(): BrowserSession | null {
  * a one-field `useSessionSelector` with this package's own `useSessionCore`
  * (`context.ts`, unpublished); a `client.tsx`
  * could not, because that hook is not published — so a footer needing `start`
- * and `toggle` held a WHOLE-SNAPSHOT `useSession()`, and `session-core.ts`
+ * and `toggle` held a WHOLE-SNAPSHOT `useSession()`, and `session/browser-session.ts`
  * rebuilds the snapshot object on every change. Measured consequence: four
  * components across three templates re-rendered on every STT partial and every
  * streaming delta, in files whose every other component is narrowly subscribed
@@ -347,7 +347,7 @@ export function useSessionStatus(): AgentState {
  *
  * The other half of {@link useSessionStatus} — the second of the two fields a
  * custom chrome reads over and over, and the one whose absence is invisible:
- * per the `fatalError` latch in `session-core.ts` the error is the ONLY
+ * per the `fatalError` latch in `session/browser-session.ts` the error is the ONLY
  * remaining signal that a session died, since the state beside it goes back to
  * reading like a live one.
  *

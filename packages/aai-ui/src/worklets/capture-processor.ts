@@ -4,7 +4,7 @@
 // 128-sample render quantum.
 //
 // Rate conversion is deliberately NOT done here. The capture AudioContext is
-// created at the STT rate (audio.ts asserts the browser honored it), so the
+// created at the STT rate (audio/voice-io.ts asserts the browser honored it), so the
 // browser's band-limited resampler has already done the work by the time
 // samples arrive. Doing it here instead meant linear interpolation, which
 // folds everything above the new Nyquist back into the band as aliasing.

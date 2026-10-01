@@ -15,7 +15,7 @@
 
 import { useMemo } from "react";
 import { useSessionActions, useSessionSelector } from "./context.ts";
-import type { SessionSnapshot } from "./session-core-types.ts";
+import type { SessionSnapshot } from "./session/index.ts";
 
 /**
  * What {@link useSessionControls} returns.
