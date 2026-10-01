@@ -492,8 +492,9 @@ export function createToolDispatcher(
   const table = composeToolsets(toolsets);
   return (name, args, sessionId, messages, options) => {
     const found = table.resolve(name);
-    const unknown = serializeToolFailure(`Unknown tool: ${name}`, "unknown_tool");
-    if (!found) return Promise.resolve(unknown);
+    if (!found) {
+      return Promise.resolve(serializeToolFailure(`Unknown tool: ${name}`, "unknown_tool"));
+    }
     return run(found.toolset, { name, args, sessionId: sessionId ?? "", messages, options });
   };
 }
