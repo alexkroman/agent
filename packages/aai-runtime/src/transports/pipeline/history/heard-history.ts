@@ -26,7 +26,7 @@
 
 import type { Message } from "@alexkroman1/aai";
 import type { AssistantModelMessage, ModelMessage } from "ai";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 import type { HeardPosition, HeardTracker } from "../heard/index.ts";
 import type { TurnGate } from "../turn/index.ts";
 import { markInterrupted, type PipelineHistory } from "./history.ts";

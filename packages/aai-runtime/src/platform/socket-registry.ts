@@ -12,7 +12,7 @@
  * @module platform-socket-registry
  */
 
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { PlatformEndpoint } from "./endpoint.ts";
 import {
   type CreatePlatformWebSocket,

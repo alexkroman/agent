@@ -2,8 +2,8 @@
 // S2S transport — wraps connectS2s and forwards typed callbacks into the ServerSession.
 
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { Logger, S2sConfig } from "../runtime-config.ts";
-import { consoleLogger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
+import { consoleLogger } from "../logger.ts";
 import {
   type CreateS2sWebSocket,
   connectS2s,
@@ -12,6 +12,7 @@ import {
   type S2sHandle,
   type S2sSessionConfig,
 } from "../s2s/index.ts";
+import type { S2sConfig } from "../s2s-config.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "./capabilities.ts";
 import { createEmitError } from "./emit-error.ts";
 import { createS2sLifecycle } from "./s2s-lifecycle.ts";

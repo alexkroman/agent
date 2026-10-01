@@ -70,7 +70,7 @@ import { type CoalescingRunner, createCoalescingRunner } from "@alexkroman1/aai/
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { getOrCreate } from "../_get-or-create.ts";
 import type { StateSyncSession } from "../_state-sync.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { ClientSessionLog } from "./clients.ts";
 
 /** One retained session event: its index in the session's log, and its JSON. */

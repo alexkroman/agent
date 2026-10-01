@@ -38,7 +38,7 @@ import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/
 import type { ClientTranscript, StepClientTranscriptOptions } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { SpeechDirectory } from "../session/index.ts";
 import { type ClientHistoryDeps, readClientTranscript } from "../session/index.ts";
 import type { AgentRuntime } from "./types.ts";

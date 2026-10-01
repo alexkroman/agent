@@ -19,7 +19,7 @@ import {
 } from "../_pipeline-test-fakes.ts";
 import { makeAgent, makeClientSink, makeLogger, silentLogger } from "../_test-utils.ts";
 import { createFallbackSttOpener } from "../providers/fallback.ts";
-import { DEFAULT_S2S_CONFIG } from "../runtime-config.ts";
+import { DEFAULT_S2S_CONFIG } from "../s2s-config.ts";
 import { PIPELINE_CAPABILITIES } from "../transports/capabilities.ts";
 import * as pipelineTransport from "../transports/pipeline/index.ts";
 import { _internals } from "../transports/s2s-transport.ts";

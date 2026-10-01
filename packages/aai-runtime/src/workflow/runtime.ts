@@ -39,7 +39,7 @@
 import type { AgentDef } from "@alexkroman1/aai";
 import type { Db } from "@alexkroman1/aai/internal";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { createWorkflowClient } from "./client.ts";
 import { createInProcessWorkflowEngine } from "./in-process.ts";
 import { createPlatformJournal } from "./journal/backends/platform.ts";

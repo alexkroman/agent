@@ -49,7 +49,7 @@
 
 import type { Roster, SessionEvent, SlotHolder, SlotStore, SpeakerDef } from "@alexkroman1/aai";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { PersonaTurnSource } from "../transports/pipeline/index.ts";
 import { interruptionKnobs, type PersonaInterruptionSource } from "../transports/pipeline/index.ts";
 import type { Transport } from "../transports/types.ts";

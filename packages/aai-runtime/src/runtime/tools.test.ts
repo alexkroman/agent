@@ -23,7 +23,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createScriptedOneShotModel, registerFakeProviders } from "../_pipeline-test-fakes.ts";
 import { makeAgent, makeSpeech, makeUsageMeter, tick } from "../_test-utils.ts";
-import { consoleLogger, type Logger } from "../runtime-config.ts";
+import { consoleLogger, type Logger } from "../logger.ts";
 import {
   createSessionEmitter,
   createSessionEventStream,

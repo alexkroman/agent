@@ -15,8 +15,8 @@ import {
 } from "@alexkroman1/aai/host-internal";
 import type { ModelMessage } from "ai";
 import pTimeout from "p-timeout";
+import type { Logger } from "../../../logger.ts";
 import type { TtsSession, Unsubscribe } from "../../../providers/openers.ts";
-import type { Logger } from "../../../runtime-config.ts";
 import type { EmitError, SendTtsOptions, SendTtsText } from "../../types.ts";
 
 /** Convert an internal conversation {@link Message} to a Vercel AI {@link ModelMessage}. */

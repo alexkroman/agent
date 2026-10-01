@@ -34,8 +34,8 @@ import type http from "node:http";
 import { CLIENT_ID_RE } from "@alexkroman1/aai/host-internal";
 import { requestQuery } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { Logger } from "../logger.ts";
 import type { AgentRuntime } from "../runtime/index.ts";
-import type { Logger } from "../runtime-config.ts";
 import { BodyTooLargeError, claimUnder, readBody, sendJson } from "../workflow/api/http.ts";
 
 /**

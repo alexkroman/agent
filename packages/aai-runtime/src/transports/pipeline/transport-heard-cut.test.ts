@@ -14,7 +14,7 @@ import {
   type ScriptedPart,
   speakFor,
 } from "../../_pipeline-test-fakes.ts";
-import { silentLogger } from "../../runtime-config.ts";
+import { silentLogger } from "../../logger.ts";
 import { llmCalls, makeOpts, useVirtualTime } from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 

@@ -61,7 +61,7 @@ import {
   PREEMPTIVE_CONFIDENCE_THRESHOLD,
 } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 import { createToolCallRepair, toDeclaredTools } from "../../../tools/index.ts";
 import { resolveSystemPrompt, type SystemPromptOption } from "../../types.ts";
 import type { PipelineHistory } from "../history/index.ts";

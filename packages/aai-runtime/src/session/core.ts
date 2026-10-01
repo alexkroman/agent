@@ -24,7 +24,7 @@
 import type { Message } from "@alexkroman1/aai";
 import { DEFAULT_IDLE_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { consoleLogger } from "../runtime-config.ts";
+import { consoleLogger } from "../logger.ts";
 import type { ClientToolAnswer } from "../tools/index.ts";
 import {
   createRetainedView,

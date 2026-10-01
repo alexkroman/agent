@@ -16,7 +16,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { BodyTooLargeError, readBody } from "./api/http.ts";
 
 /** A fetch-style handler. Module-private: `serveFetch` is the only consumer. */

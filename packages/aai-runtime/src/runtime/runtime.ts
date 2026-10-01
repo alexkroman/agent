@@ -13,7 +13,8 @@ import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { openAppDb } from "../app-db.ts";
-import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "../runtime-config.ts";
+import { consoleLogger } from "../logger.ts";
+import { DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "../s2s-config.ts";
 import {
   composeSessionGreeting,
   createResumeFindings,

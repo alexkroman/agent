@@ -22,7 +22,7 @@ import { requestPath } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { lookup as mimeLookup } from "mime-types";
 import { decodePathSegment } from "../_path-decode.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 
 /**
  * Separator-safe containment: `target` is `dir` itself or strictly inside it.

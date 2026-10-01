@@ -25,7 +25,7 @@ import {
   type ResolvedFailureHandler,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { Logger } from "../../runtime-config.ts";
+import type { Logger } from "../../logger.ts";
 
 /** What one hook run needs. */
 export type FailureHookRun = {

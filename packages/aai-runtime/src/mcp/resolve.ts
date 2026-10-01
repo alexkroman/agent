@@ -12,7 +12,7 @@
 
 import type { McpResolvable, McpResolveContext, McpServerConfig } from "@alexkroman1/aai";
 import type { ToolSet } from "ai";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { ResolvedMcpServer } from "./connect.ts";
 
 /**

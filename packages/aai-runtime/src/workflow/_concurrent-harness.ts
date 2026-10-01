@@ -42,7 +42,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { workflow } from "@alexkroman1/aai";
 import type fc from "fast-check";
-import { silentLogger } from "../runtime-config.ts";
+import { silentLogger } from "../logger.ts";
 import { COLLIDING_STARTS } from "./_laws-harness.ts";
 import { measure, type Stats } from "./_reach-harness.ts";
 

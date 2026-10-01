@@ -16,8 +16,8 @@
  * setter, so there is still exactly one flag.
  */
 
+import type { Logger } from "../../logger.ts";
 import type { SttError, TtsError } from "../../providers/openers.ts";
-import type { Logger } from "../../runtime-config.ts";
 import {
   type EmitError,
   type GreetingOption,

@@ -23,7 +23,7 @@
 
 import type { AgentDef } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { consoleLogger } from "../runtime-config.ts";
+import { consoleLogger } from "../logger.ts";
 import {
   type AgentServer,
   createRuntimeServer,

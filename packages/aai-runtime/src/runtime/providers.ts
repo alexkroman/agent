@@ -16,8 +16,8 @@ import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { SessionMode } from "@alexkroman1/aai/manifest";
 import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
+import type { Logger } from "../logger.ts";
 import { describeResolvedProviders } from "../providers/_provider-settings.ts";
-import type { Logger } from "../runtime-config.ts";
 import { textAgentHasNoSession } from "../text-agent/index.ts";
 import type { RuntimeOptions } from "./types.ts";
 

@@ -3,7 +3,7 @@
 // unless AAI_DEBUG enables it, so per-message hot-path logs cost nothing.
 
 import { describe, expect, test, vi } from "vitest";
-import { createConsoleLogger, isDebugEnv } from "./runtime-config.ts";
+import { createConsoleLogger, isDebugEnv } from "./logger.ts";
 
 describe("isDebugEnv", () => {
   test("enables on '1' and 'true' only", () => {

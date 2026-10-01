@@ -16,8 +16,8 @@ import {
   defaultCreateHeaderWebSocket,
   type HeaderWebSocket,
 } from "../_ws.ts";
-import type { Logger } from "../runtime-config.ts";
-import { consoleLogger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
+import { consoleLogger } from "../logger.ts";
 import { OPENAI_REALTIME_CAPABILITIES } from "./capabilities.ts";
 import { createEmitError } from "./emit-error.ts";
 import { createOpenaiRealtimeLifecycle } from "./openai-realtime-lifecycle.ts";

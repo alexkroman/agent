@@ -67,6 +67,11 @@ export type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/ho
 // What every way of RUNNING an agent definition takes — `RuntimeOptions`,
 // `TextAgentOptions` and the two eval option bags all extend it.
 export type { HostAgentOptions } from "./host-agent-options.ts";
+// The logger a host passes in, and the S2S tuning bag a config can override.
+// The two shipped `Logger` VALUES (`consoleLogger`, `createConsoleLogger`) and
+// the debug-env predicates are infrastructure — see
+// `@alexkroman1/aai-runtime/internal`.
+export type { LogContext, LogFn, Logger, LogLevel } from "./logger.ts";
 export type { McpDrift, McpInputSchema, McpTrust } from "./mcp/index.ts";
 // MCP tool discovery — the other source of tools a host assembles before it
 // builds a runtime, and the only one that reaches a third party. HTTP only; the
@@ -144,17 +149,7 @@ export {
   type RuntimeOptions,
   type SessionStartOptions,
 } from "./runtime/index.ts";
-// The logger a host passes in, and the S2S tuning bag a config can override.
-// The two shipped `Logger` VALUES (`consoleLogger`, `createConsoleLogger`) and
-// the debug-env predicates are infrastructure — see
-// `@alexkroman1/aai-runtime/internal`.
-export type {
-  LogContext,
-  LogFn,
-  Logger,
-  LogLevel,
-  S2sConfig,
-} from "./runtime-config.ts";
+export type { S2sConfig } from "./s2s-config.ts";
 // The bearer variable that CLOSES the event-stream read route, beside the types a
 // reader of it names. On the barrel for the same reason `WORKFLOW_API_TOKEN_ENV` is:
 // a host closing a surface has to be able to spell the variable that closes it, and

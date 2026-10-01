@@ -9,7 +9,7 @@ import {
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
-import { silentLogger } from "../runtime-config.ts";
+import { silentLogger } from "../logger.ts";
 import { makeCallbacks, type RecordingCallbacks } from "./_transport-recorder.ts";
 import type { PipelineTransportOptions } from "./pipeline/index.ts";
 

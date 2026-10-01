@@ -21,7 +21,7 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import escapeHtml from "escape-html";
 import { WebSocketServer } from "ws";
 import { adoptRequestTrace } from "../_request-trace.ts";
-import { consoleLogger } from "../runtime-config.ts";
+import { consoleLogger } from "../logger.ts";
 import { asSessionWebSocket } from "../session/index.ts";
 import { enabledCarriers, handleTelephonyUpgrade } from "../telephony/telephony-server.ts";
 import { answerHandlerFailure, sendJson } from "../workflow/api/http.ts";

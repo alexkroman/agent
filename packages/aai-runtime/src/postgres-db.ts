@@ -17,7 +17,7 @@ import pTimeout from "p-timeout";
 // types below (`postgres.Sql`, `postgres.ReservedSql`, …) erase at compile
 // time, so this import costs nothing at runtime.
 import type postgres from "postgres";
-import { consoleLogger } from "./runtime-config.ts";
+import { consoleLogger } from "./logger.ts";
 
 /**
  * A query did not complete within its pool's deadline —

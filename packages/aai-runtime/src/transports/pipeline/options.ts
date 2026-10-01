@@ -26,8 +26,8 @@ import {
 } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { LanguageModel } from "ai";
+import { consoleLogger, type Logger } from "../../logger.ts";
 import type { SttOpener, TtsOpener } from "../../providers/openers.ts";
-import { consoleLogger, type Logger } from "../../runtime-config.ts";
 import type { UsageMeter } from "../../usage-meter.ts";
 import type { SkipGreetingOption, TransportCallbacks, TransportSessionConfig } from "../types.ts";
 import type {
