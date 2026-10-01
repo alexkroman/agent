@@ -191,8 +191,10 @@ it; the agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`
 (`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both load in one
 process, so **anything used to rendezvous between them must be keyed on
 `globalThis` (`Symbol.for`), never a module-level value.** A single-value slot is
-`globalSlot(key)` from `@alexkroman1/aai/internal`, not a hand-written
-`delete (globalThis as S)[SYM]` pair.
+`globalSlot(name)` from `@alexkroman1/aai/internal` — a name registered in the
+SDK's `BOUNDARY_KEYS` (`aai/src/sdk/_boundary.ts`) — not a hand-written
+`delete (globalThis as S)[SYM]` pair. The SDK's own two-copies seam (bundle vs
+host) is "The bundle/runtime boundary" in `packages/aai/CLAUDE.md`.
 
 The workflow run context (`workflow/run-context.ts`) and the metrics sink
 registry (`metrics-sink.ts`) are both `Symbol.for`-keyed for this reason; a
