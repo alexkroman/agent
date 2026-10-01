@@ -11,8 +11,8 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 | session state | [sessionSlot](#sessionslot-1) — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projected` shows it to the browser |
 | conversation order | [dialog](#dialog-1) — a tool declared `when` simply does not run outside those states |
 | work that outlives the call | [workflow](#workflow-3) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
-| a second tool loop | [subagent](#subagent), reached with `ctx.delegate` |
-| who is speaking | [personas](#personas-2) — a roster the session hands the caller between, with `handoff` |
+| a second tool loop | [speaker](#speaker-1), reached with `ctx.delegate` |
+| who is speaking | [roster](#roster-2) — `speaks: true` entries the session hands the caller between, with `handoff` |
 | the default pipeline, spelled out | [assemblyAIPipeline](#assemblyaipipeline); [assemblyAIS2s](#assemblyais2s) opts into speech-to-speech instead |
 
 ```ts
@@ -1466,70 +1466,6 @@ const orderTotal = failable((id: string) => orFail(findOrder(id)).total);
 
 ***
 
-### persona()
-
-```ts
-function persona<N extends string>(def: PersonaDef<N>): PersonaDef<N>;
-```
-
-Define a persona. An identity function, like [tool](#tool-2) and [subagent](#subagent):
-it exists for the type, for the name to grep for, and so a persona is
-declared at module scope where both the roster and a tool that hands off to
-it can import it.
-
-The name is inferred as a LITERAL (`const N`), so a roster built from these
-knows its own names and a handoff to one that is not on it fails to compile.
-
-#### Type Parameters
-
-##### N
-
-`N` *extends* `string`
-
-#### Parameters
-
-##### def
-
-[`PersonaDef`](#personadef)\<`N`\>
-
-#### Returns
-
-[`PersonaDef`](#personadef)\<`N`\>
-
-***
-
-### personas()
-
-```ts
-function personas<N extends string>(list: readonly PersonaDef<N>[]): Personas<N>;
-```
-
-Declare the roster.
-
-Checked HERE, at module scope, rather than when `agent()` runs — every
-refusal below reaches an author at the declaration, and each is a failure
-with no symptom otherwise: two personas with one name route to whichever the
-lookup finds; a tool two personas both declare is gated by whichever wrapper
-landed last.
-
-#### Type Parameters
-
-##### N
-
-`N` *extends* `string`
-
-#### Parameters
-
-##### list
-
-readonly [`PersonaDef`](#personadef)\<`N`\>[]
-
-#### Returns
-
-[`Personas`](#personas-1)\<`N`\>
-
-***
-
 ### pickOne()
 
 ```ts
@@ -1966,6 +1902,35 @@ async function startRun(url: string): Promise<string> {
   return ((await res.json()) as { runId: string }).runId;
 }
 ```
+
+***
+
+### roster()
+
+```ts
+function roster<N extends string>(list: readonly SpeakerDef<N>[]): Roster<N>;
+```
+
+Declare the roster — checked HERE, at module scope, because every refusal
+below stands in for a failure with no symptom (two entries of one name route
+to whichever the lookup finds; a tool two speakers own is gated by whichever
+landed last).
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string`
+
+#### Parameters
+
+##### list
+
+readonly [`SpeakerDef`](#speakerdef)\<`N`\>[]
+
+#### Returns
+
+[`Roster`](#roster-1)\<`N`\>
 
 ***
 
@@ -2445,6 +2410,72 @@ shuffled([1, 2, 3], () => 0); // a new array; the input is untouched
 
 ***
 
+### speaker()
+
+#### Call Signature
+
+```ts
+function speaker<N extends string, S extends StandardSchemaV1<unknown, unknown>>(def: SpeakerDef<N> & {
+  schema: S;
+}): TypedSpeakerDef<InferSchemaOutput<S>, N>;
+```
+
+Define a speaker. An identity function, like [tool](#tool-2): it exists for the
+type (the name inferred as a LITERAL, the schema's output typed), for the name
+to grep for, and so a speaker is declared at module scope where both a roster
+and a tool that delegates or hands off to it can import it.
+
+##### Type Parameters
+
+###### N
+
+`N` *extends* `string`
+
+###### S
+
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
+
+##### Parameters
+
+###### def
+
+[`SpeakerDef`](#speakerdef)\<`N`\> & \{
+  `schema`: `S`;
+\}
+
+##### Returns
+
+[`TypedSpeakerDef`](#typedspeakerdef)\<[`InferSchemaOutput`](#inferschemaoutput)\<`S`\>, `N`\>
+
+#### Call Signature
+
+```ts
+function speaker<N extends string>(def: SpeakerDef<N>): SpeakerDef<N>;
+```
+
+Define a speaker. An identity function, like [tool](#tool-2): it exists for the
+type (the name inferred as a LITERAL, the schema's output typed), for the name
+to grep for, and so a speaker is declared at module scope where both a roster
+and a tool that delegates or hands off to it can import it.
+
+##### Type Parameters
+
+###### N
+
+`N` *extends* `string`
+
+##### Parameters
+
+###### def
+
+[`SpeakerDef`](#speakerdef)\<`N`\>
+
+##### Returns
+
+[`SpeakerDef`](#speakerdef)\<`N`\>
+
+***
+
 ### spokenAlphanumeric()
 
 ```ts
@@ -2692,52 +2723,6 @@ spokenTime("00:00"); // "12 AM"
 
 ***
 
-### subagent()
-
-#### Call Signature
-
-```ts
-function subagent<S extends StandardSchemaV1<unknown, unknown>>(def: SubagentDef & {
-  schema: S;
-}): TypedSubagentDef<InferSchemaOutput<S>>;
-```
-
-##### Type Parameters
-
-###### S
-
-`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
-
-##### Parameters
-
-###### def
-
-[`SubagentDef`](#subagentdef) & \{
-  `schema`: `S`;
-\}
-
-##### Returns
-
-[`TypedSubagentDef`](#typedsubagentdef)\<[`InferSchemaOutput`](#inferschemaoutput)\<`S`\>\>
-
-#### Call Signature
-
-```ts
-function subagent(def: SubagentDef): SubagentDef;
-```
-
-##### Parameters
-
-###### def
-
-[`SubagentDef`](#subagentdef)
-
-##### Returns
-
-[`SubagentDef`](#subagentdef)
-
-***
-
 ### tool()
 
 ```ts
@@ -2856,6 +2841,30 @@ export const orderTotal = tool({
   },
 });
 ```
+
+***
+
+### toolRefusal()
+
+```ts
+function toolRefusal(reason: ToolRefusalReason, message: string): ToolRefusal;
+```
+
+Build a [ToolRefusal](#toolrefusal).
+
+#### Parameters
+
+##### reason
+
+[`ToolRefusalReason`](#toolrefusalreason)
+
+##### message
+
+`string`
+
+#### Returns
+
+[`ToolRefusal`](#toolrefusal)
 
 ***
 
@@ -3500,7 +3509,7 @@ point: `tools`, `events` and `workflows` are host-only because a consumer
 of a stored config could not act on a function, but a description is
 exactly what such a consumer wants and could not get. Every peer SDK puts
 one on the agent (Anthropic's `AgentDefinition.description` is required);
-this SDK had one on [SubagentDef](#subagentdef), [WorkflowDef](#workflowdef) and
+this SDK had one on [SpeakerDef](#speakerdef), [WorkflowDef](#workflowdef) and
 [ToolDef](#tooldef) and none on the agent itself.
 
 ##### dialogs?
@@ -3744,7 +3753,7 @@ the AI SDK's own (2 retries, exponential backoff)
 Transport-level retries of a request that never produced an answer at all
 (a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
 a subagent's requests retry on the AI SDK default, and its guardrail
-sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
+sending an answer back is [SpeakerDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -3923,14 +3932,6 @@ The two are not exclusive at the FEATURE level: a `"voice"` agent may
 declare workflows and start them from a tool, and a `"static"` one may
 declare tools it never reaches. This field is only about the surface.
 
-##### personas?
-
-```ts
-optional personas?: Personas<string>;
-```
-
-WHO speaks: a roster handed between mid-call over one history; mints `handoff` and each persona's tools into `tools`. Host-only. See `sdk/persona.ts`.
-
 ##### preemptiveGeneration?
 
 ```ts
@@ -4060,6 +4061,17 @@ rather than on a deadline of its own.
 ###### Inherited from
 
 [`PipelineVoiceTuning`](#pipelinevoicetuning).[`resumeFalseInterruption`](#resumefalseinterruption-1)
+
+##### roster?
+
+```ts
+optional roster?: Roster<string>;
+```
+
+The [SpeakerDef](#speakerdef)s the MODEL routes to: `handoff` puts a `speaks: true`
+entry on the line, `delegate` hands the rest a task. Mints both tools (and
+each speaking entry's gated tools) into `toolsets`, so a `tools/handoff.ts`
+or `tools/delegate.ts` beside it is a collision. Host-only. See `sdk/roster.ts`.
 
 ##### routes?
 
@@ -4251,21 +4263,6 @@ to drop — on tau2-bench retail a transcription prompt took the caller's
 spelled first name from 1 of 6 attempts correct to 6 of 6, and the S2S path
 was ignoring the field without a warning.
 
-##### subagents?
-
-```ts
-optional subagents?: SubagentRoster;
-```
-
-Subagents the MODEL may hand a task to, published as one `delegate` tool.
-
-The other half of `ctx.delegate`: a tool body naming a subagent is the
-AUTHOR routing in code, a roster is the MODEL routing per turn. Every entry
-needs a [SubagentDef.description](#description-4) — the only thing the router reads —
-and `agent()` refuses one without it. The one field whose declaration MINTS
-A TOOL, so a `tools/delegate.ts` beside a roster is a collision; host-only,
-like `tools`. Worked example and argument: `sdk/subagent-roster.ts`.
-
 ##### syncState?
 
 ```ts
@@ -4456,7 +4453,7 @@ take a tool-choice parameter.
 ##### tools
 
 ```ts
-tools: ToolSet;
+tools: ToolMap;
 ```
 
 The tools the agent may invoke, keyed by the name the model calls.
@@ -4478,6 +4475,16 @@ and writes session state through [sessionSlot](#sessionslot-1), which types the 
 in the module that declares the slot. The `NoInfer<S>` this used to hold
 existed to keep a single un-annotated tool from dragging the agent's whole
 state shape back to `unknown`, which is a problem a slot does not have.
+
+##### toolsets?
+
+```ts
+optional toolsets?: readonly Toolset[];
+```
+
+Every toolset beyond the `tools/` files — RESOLVED, never authored: `agent()`
+puts the roster's here and `withMcpTools` an MCP server's. Read the whole
+table through `agentToolsets` (`/manifest`). Host-only. See `sdk/toolset.ts`.
 
 ##### tts?
 
@@ -4774,7 +4781,7 @@ the AI SDK's own (2 retries, exponential backoff)
 Transport-level retries of a request that never produced an answer at all
 (a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
 a subagent's requests retry on the AI SDK default, and its guardrail
-sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
+sending an answer back is [SpeakerDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -5512,6 +5519,53 @@ listed. Default 10 minutes.
 
 ***
 
+### DelegateAnswer
+
+ONE attempt at an answer — what a [SpeakerGuardrail](#speakerguardrail) judges.
+
+`text` is the answer; `steps` and `toolCalls` are what the attempt COST,
+which is the half a voice agent needs in order to say something true about
+the wait ("I checked four sources"). They are a report, not a transcript: the
+tool RESULTS stay inside the subagent's context, which is the entire reason
+to have delegated.
+
+Split from [DelegateResult](#delegateresult) so a guardrail cannot read the fields that
+only make sense once the run is OVER — `revisions` counts the guardrail's own
+verdicts, and asking it to judge an answer against its own past judgements is
+not a check, it is a loop.
+
+#### Extended by
+
+- [`DelegateResult`](#delegateresult)
+
+#### Properties
+
+##### steps
+
+```ts
+steps: number;
+```
+
+How many steps this attempt took, including the final answering step.
+
+##### text
+
+```ts
+text: string;
+```
+
+The subagent's final message — see [SpeakerDef.expectedOutput](#expectedoutput).
+
+##### toolCalls
+
+```ts
+toolCalls: readonly DelegateToolCall[];
+```
+
+Every tool call this attempt made, in order.
+
+***
+
 ### DelegateOptions
 
 Per-call options for [DelegateFn](#delegatefn).
@@ -5558,7 +5612,7 @@ took.
 
 #### Extends
 
-- [`SubagentAnswer`](#subagentanswer)
+- [`DelegateAnswer`](#delegateanswer)
 
 #### Extended by
 
@@ -5613,7 +5667,7 @@ How many steps this attempt took, including the final answering step.
 
 ###### Inherited from
 
-[`SubagentAnswer`](#subagentanswer).[`steps`](#steps-1)
+[`DelegateAnswer`](#delegateanswer).[`steps`](#steps)
 
 ##### text
 
@@ -5621,23 +5675,47 @@ How many steps this attempt took, including the final answering step.
 text: string;
 ```
 
-The subagent's final message — see [SubagentDef.expectedOutput](#expectedoutput).
+The subagent's final message — see [SpeakerDef.expectedOutput](#expectedoutput).
 
 ###### Inherited from
 
-[`SubagentAnswer`](#subagentanswer).[`text`](#text-2)
+[`DelegateAnswer`](#delegateanswer).[`text`](#text-1)
 
 ##### toolCalls
 
 ```ts
-toolCalls: readonly SubagentToolCall[];
+toolCalls: readonly DelegateToolCall[];
 ```
 
 Every tool call this attempt made, in order.
 
 ###### Inherited from
 
-[`SubagentAnswer`](#subagentanswer).[`toolCalls`](#toolcalls-1)
+[`DelegateAnswer`](#delegateanswer).[`toolCalls`](#toolcalls)
+
+***
+
+### DelegateToolCall
+
+One tool call a subagent made, as reported back to the caller.
+
+#### Properties
+
+##### input
+
+```ts
+input: unknown;
+```
+
+The arguments it was called with.
+
+##### name
+
+```ts
+name: string;
+```
+
+The tool's name, as the subagent's model called it.
 
 ***
 
@@ -5665,6 +5743,32 @@ The event union [Dialog.send](#send) and a gated tool's
   it builds is an implementation detail and its type carries no events.
 
 #### Methods
+
+##### gate()
+
+```ts
+gate(tool: ToolDef, ctx: SlotHolder): ToolRefusal | undefined;
+```
+
+The refusal for `tool` right now: a [ToolRefusal](#toolrefusal) (`reason: "dialog"`)
+when it is one this dialog's [Dialog.tool](#tool) minted and the conversation
+is outside its `when` states, `undefined` otherwise. The runtime layers it
+over every toolset (`agentToolsets`); the minted tool's own `execute` checks
+the same thing, so a spec calling it directly is gated too.
+
+###### Parameters
+
+###### tool
+
+[`ToolDef`](#tooldef)
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+[`ToolRefusal`](#toolrefusal) \| `undefined`
 
 ##### matches()
 
@@ -6245,7 +6349,7 @@ optional persona?: string;
 ```
 
 The persona that speaks while the conversation is in this state, by name —
-one of the agent's `personas`. It PINS: `Personas.handoff` to anyone else
+one of the agent's `personas`. It PINS: `Roster.handoff` to anyone else
 is refused until the dialog moves on, and the pin is a property of the
 position rather than a write, so a resumed session is pinned the same way.
 Checked against the roster by `agent()`.
@@ -6834,7 +6938,7 @@ The TTS voice for this phase of the call.
 
 ### HandoffOptions
 
-Per-call options for [Personas.handoff](#handoff-1).
+Per-call options for [Roster.handoff](#handoff-1).
 
 #### Properties
 
@@ -6844,10 +6948,9 @@ Per-call options for [Personas.handoff](#handoff-1).
 optional note?: string;
 ```
 
-What the next persona should know that the transcript does not say — "the
+What the next speaker should know that the transcript does not say — "the
 caller is verified", "wants a refund on invoice 4471". Rendered into the
-new persona's prompt section until the next handoff, so it survives the
-turn that made it rather than living only in one tool result.
+new speaker's prompt section until the next handoff.
 
 ***
 
@@ -6866,7 +6969,7 @@ model learns, in the same turn, who is speaking now.
 readonly from: string;
 ```
 
-The persona that was speaking.
+The speaker that was on the line.
 
 ##### handoff
 
@@ -6882,9 +6985,7 @@ Always `true`: a discriminant a client or a spec can switch on.
 readonly instruction: string;
 ```
 
-What the MODEL should do next, phrased for it: the tool result is the last
-thing it reads before it speaks, and the persona section of its prompt has
-already changed by the time it does.
+What the MODEL should do next — its prompt section has already changed.
 
 ##### note?
 
@@ -6900,7 +7001,7 @@ The note that travelled with it, when one did.
 readonly to: string;
 ```
 
-The persona speaking now.
+The speaker on the line now.
 
 ***
 
@@ -7161,20 +7262,20 @@ another drawn, so the caller does not have to loop.
 ### ModelTuning
 
 The per-REQUEST knobs every model loop this runtime runs takes — the agent's
-own conversational loop and a [SubagentDef](#subagentdef)'s delegated one alike.
+own conversational loop and a [SpeakerDef](#speakerdef)'s delegated one alike.
 
 **One declaration, extended by both, rather than a list each restates.**
-`SubagentDef` used to carry its own `temperature` and `maxOutputTokens` beside
+`SpeakerDef` used to carry its own `temperature` and `maxOutputTokens` beside
 `AgentModelTuning`'s, with one-line docs of their own, and a `maxRetries` that
 meant something else entirely (the guardrail's revision budget, now
-[SubagentDef.maxRevisions](#maxrevisions)). A knob added here reaches both loops, and
+[SpeakerDef.maxRevisions](#maxrevisions)). A knob added here reaches both loops, and
 the name means one thing wherever it is written.
 
 Every field is passed straight through to the provider request, so each is
 refused in S2S mode on the AGENT — there the provider runs the loop; see this
 module's header. A subagent always runs on this runtime, whatever the parent's
 mode, so it may set `temperature` and `maxOutputTokens` — but not
-`maxRetries`, which [SubagentDef](#subagentdef) omits so the old guardrail-budget
+`maxRetries`, which [SpeakerDef](#speakerdef) omits so the old guardrail-budget
 spelling fails to compile.
 
 #### Extended by
@@ -7216,7 +7317,7 @@ the AI SDK's own (2 retries, exponential backoff)
 Transport-level retries of a request that never produced an answer at all
 (a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
 a subagent's requests retry on the AI SDK default, and its guardrail
-sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
+sending an answer back is [SpeakerDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -7236,273 +7337,6 @@ Omitted by default, so the model's own default applies; some models (Claude
 5 among them) ignore it and warn, so set it only for a temperature-capable
 one. A booking desk and a game master want different values; so do a
 researcher subagent and the voice that relays what it found.
-
-***
-
-### PersonaDef
-
-One persona: a speaker the session can hand the caller to.
-
-Every field but `tools`, `toolChoice` and `temperature` is required, and each
-requirement is a failure with no symptom otherwise: a persona with no
-`description` routes badly and reads as the model being unreliable; one with
-no `systemPrompt` speaks as the agent and nobody can tell it took over.
-
-#### Type Parameters
-
-##### N
-
-`N` *extends* `string` = `string`
-
-The persona's `name`, as a literal when [persona](#persona-4)
-  infers it — what lets [Personas.handoff](#handoff-1) refuse a misspelled target
-  at compile time. Defaults to `string`, which is every persona written
-  before the parameter existed.
-
-#### Properties
-
-##### description
-
-```ts
-description: string;
-```
-
-What this persona is FOR, in one line, written for whoever is choosing
-between personas: the `handoff` tool's description is these lines and
-nothing else, so write it as the job ("Invoices, payments and refunds"),
-not the mechanism.
-
-##### name
-
-```ts
-name: N;
-```
-
-What this persona is called — the value of the `handoff` tool's `persona`
-argument, the name a log line carries, and what `position(ctx).name` is.
-
-##### systemPrompt
-
-```ts
-systemPrompt: string;
-```
-
-The instructions in force while this persona is speaking, appended to the
-agent's own prompt under a heading naming the persona. The agent's
-`systemPrompt` stays — this is the section that CHANGES on a handoff.
-
-##### temperature?
-
-```ts
-optional temperature?: number;
-```
-
-The model's sampling temperature while this persona is speaking.
-
-##### toolChoice?
-
-```ts
-optional toolChoice?: ToolChoice;
-```
-
-The model's tool-choice policy while this persona is speaking.
-
-##### tools?
-
-```ts
-optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
-```
-
-The tools only this persona may call, by the name the model calls them by.
-
-A MAP, like `subagent({ tools })`, because these are declared on the
-persona rather than discovered from `tools/`: the agent's `tools/` files are
-every persona's, and this is the strictly narrower set one persona owns.
-Each name must be unique across the roster and must not collide with a
-`tools/` file — one tool has one owner, or the gate cannot say whose it is.
-
-***
-
-### PersonaPosition
-
-**`Sealed`**
-
-Where a session is, persona-wise — the position [Personas.position](#position-1)
-answers, the shape `DialogPosition` has for a dialog.
-
-#### Type Parameters
-
-##### N
-
-`N` *extends* `string` = `string`
-
-The roster's persona names — see [Personas](#personas-1).
-
-#### Properties
-
-##### from?
-
-```ts
-readonly optional from?: string;
-```
-
-Who handed off to it, when a handoff has happened this session.
-
-##### note?
-
-```ts
-readonly optional note?: string;
-```
-
-The [HandoffOptions.note](#note) that came with that handoff.
-
-##### persona
-
-```ts
-readonly persona: PersonaDef<N>;
-```
-
-The persona speaking now.
-
-##### pinnedBy?
-
-```ts
-readonly optional pinnedBy?: {
-  dialog: string;
-  state: string;
-};
-```
-
-The dialog PINNING this persona, when a dialog state declares one. While a
-pin is in force `handoff` to anyone else is refused — the state said who
-speaks here, and the dialog moving is what releases it.
-
-###### dialog
-
-```ts
-readonly dialog: string;
-```
-
-###### state
-
-```ts
-readonly state: string;
-```
-
-***
-
-### Personas
-
-**`Sealed`**
-
-The roster the agent declares and every tool reaches for — what
-[personas](#personas-2) returns.
-
-A HANDLE with methods that take the session, like [Dialog](#dialog), rather than
-a bare array like `agent({ subagents })`: a handoff has to know the whole
-roster to name who it came FROM and to refuse a target that is not on it, and
-a bare array gives a tool body neither.
-
-#### Type Parameters
-
-##### N
-
-`N` *extends* `string` = `string`
-
-The roster's persona names, inferred by [personas](#personas-2) from
-  the literal names [persona](#persona-4) gives each entry, so
-  `desk.handoff(ctx, "biling")` is a compile error rather than a throw on a
-  live call. Defaults to `string`, so a `Personas` annotation written before
-  the parameter existed still accepts any roster.
-
-#### Methods
-
-##### active()
-
-```ts
-active(ctx: SlotHolder): PersonaDef<N>;
-```
-
-The persona speaking now: `position(ctx).persona`.
-
-###### Parameters
-
-###### ctx
-
-[`SlotHolder`](#slotholder)
-
-###### Returns
-
-[`PersonaDef`](#personadef)\<`N`\>
-
-##### handoff()
-
-```ts
-handoff(
-   ctx: SlotHolder, 
-   to: N | PersonaDef<N>, 
-   options?: HandoffOptions
-): HandoffResult;
-```
-
-Make `to` the speaker from the next model step on.
-
-Synchronous and cheap: one slot write. The prompt section, the pipeline's
-`activeTools` and the gate all READ the slot at the next step, so the same
-turn continues as the new persona — the model is told so through the
-returned [HandoffResult.instruction](#instruction-3), which the calling tool should
-return (or fold into) as its result.
-
-Throws when `to` is not on the roster, or when a dialog state currently
-PINS another persona (see [PersonaPosition.pinnedBy](#pinnedby)). Both are
-authoring mistakes a tool body should not have to defend against; the
-minted `handoff` tool turns them into a `ToolFailure` for the model.
-
-###### Parameters
-
-###### ctx
-
-[`SlotHolder`](#slotholder)
-
-###### to
-
-`N` \| [`PersonaDef`](#personadef)\<`N`\>
-
-###### options?
-
-[`HandoffOptions`](#handoffoptions)
-
-###### Returns
-
-[`HandoffResult`](#handoffresult)
-
-##### position()
-
-```ts
-position(ctx: SlotHolder): PersonaPosition<N>;
-```
-
-Who is speaking, and how they came to be — see [PersonaPosition](#personaposition).
-
-###### Parameters
-
-###### ctx
-
-[`SlotHolder`](#slotholder)
-
-###### Returns
-
-[`PersonaPosition`](#personaposition)\<`N`\>
-
-#### Properties
-
-##### list
-
-```ts
-readonly list: readonly PersonaDef<N>[];
-```
-
-The roster, in declaration order. The first entry is the ENTRY persona.
 
 ***
 
@@ -8079,6 +7913,125 @@ callers wrote this by hand to get.
 ###### Returns
 
 `number`
+
+***
+
+### Roster
+
+**`Sealed`**
+
+The roster the agent declares and every tool reaches for — what
+[roster](#roster-2) returns. A HANDLE, like [Dialog](#dialog): a handoff has to know
+the whole roster to name who it came FROM and refuse a target not on it.
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+The roster's names, inferred from the literal names
+  [speaker](#speaker-1) gives each entry, so `desk.handoff(ctx, "biling")` is a
+  compile error rather than a throw on a live call.
+
+#### Methods
+
+##### active()
+
+```ts
+active(ctx: SlotHolder): SpeakerDef<N>;
+```
+
+The speaker on the line now: `position(ctx).speaker`.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+[`SpeakerDef`](#speakerdef)\<`N`\>
+
+##### handoff()
+
+```ts
+handoff(
+   ctx: SlotHolder, 
+   to: N | SpeakerDef<N>, 
+   options?: HandoffOptions
+): HandoffResult;
+```
+
+Put `to` on the line from the next model step on — one slot write. Return
+(or fold in) the [HandoffResult](#handoffresult) as the calling tool's result.
+
+Throws when `to` is not a speaking entry, or a dialog state PINS another
+one ([SpeakerPosition.pinnedBy](#pinnedby)); the minted `handoff` tool turns
+both into a `ToolRefusal` for the model.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### to
+
+`N` \| [`SpeakerDef`](#speakerdef)\<`N`\>
+
+###### options?
+
+[`HandoffOptions`](#handoffoptions)
+
+###### Returns
+
+[`HandoffResult`](#handoffresult)
+
+##### position()
+
+```ts
+position(ctx: SlotHolder): SpeakerPosition<N>;
+```
+
+Who is on the line, and how they came to be. Throws when nobody speaks.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+[`SpeakerPosition`](#speakerposition)\<`N`\>
+
+#### Properties
+
+##### delegates
+
+```ts
+readonly delegates: readonly SpeakerDef<N>[];
+```
+
+The entries that run off the line — what `delegate` routes between.
+
+##### list
+
+```ts
+readonly list: readonly SpeakerDef<N>[];
+```
+
+Every entry, in declaration order.
+
+##### speaking
+
+```ts
+readonly speaking: readonly SpeakerDef<N>[];
+```
+
+The `speaks: true` entries, in order. The first is the ENTRY speaker.
 
 ***
 
@@ -10456,6 +10409,410 @@ Omit.onError
 
 ***
 
+### SpeakerDef
+
+A speaker definition — what [speaker](#speaker-1) returns, [DelegateFn](#delegatefn) runs
+off the line and a `roster()` hands the call to.
+
+Every field except `name` and `systemPrompt` is optional, and the defaults
+are the parent agent's: the same LLM descriptor, no tools, and the framework
+default (`DEFAULT_MAX_STEPS`) steps.
+
+It takes [ModelTuning](#modeltuning) WITHOUT `maxRetries`: on `ModelTuning` that means
+provider retries, and the guardrail budget is [SpeakerDef.maxRevisions](#maxrevisions).
+
+#### Extends
+
+- `Omit`\<[`ModelTuning`](#modeltuning), `"maxRetries"`\>
+
+#### Extended by
+
+- [`TypedSpeakerDef`](#typedspeakerdef)
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+The `name`, as a literal when [speaker](#speaker-1) infers it — what
+  lets `Roster.handoff` refuse a misspelled target at compile time.
+
+#### Properties
+
+##### builtinTools?
+
+```ts
+optional builtinTools?: readonly BuiltinTool[];
+```
+
+Builtins this subagent may call, resolved exactly as `agent({
+builtinTools })` resolves them. Independent of the parent's: a parent that
+enables none can still delegate to a subagent that searches the web.
+
+##### description?
+
+```ts
+optional description?: string;
+```
+
+What this speaker is FOR, in one line, written for whoever is choosing
+between them — the minted `delegate` and `handoff` tools' descriptions are
+these lines. REQUIRED of a roster entry (`roster()` refuses one without
+it); ignored by `ctx.delegate(def, …)` in code, where the choice is made.
+
+Write it as the job, not the mechanism: "Researches a topic on the open web
+and reports what it found" — not "calls web_search".
+
+##### expectedOutput?
+
+```ts
+optional expectedOutput?: string;
+```
+
+What a GOOD final message looks like — the shape of the answer, declared
+apart from the instructions for producing it.
+
+The runtime appends it to the instructions as its own labelled section, so
+it lands in the same place every time rather than wherever an author
+happened to put it in prose. It is also what a [SpeakerDef.guardrail](#guardrail)
+is quoted against when it sends an answer back, so the two halves of "what
+this run owes" stay one sentence rather than two that can disagree.
+
+Split out of `systemPrompt` for the reason CrewAI splits `expected_output`
+off `description`: the failure it prevents is structural, not a matter of
+prompting skill. A subagent whose brief says only what to DO ends its run
+when it is done, which for a delegated run is precisely the wrong moment to
+stop talking.
+
+```ts
+import { speaker } from "@alexkroman1/aai";
+
+const researcher = speaker({
+  name: "researcher",
+  systemPrompt: "Research the task with the tools you have.",
+  expectedOutput:
+    "A self-contained paragraph of what you found, naming the sources you " +
+    "trusted. Three sentences is plenty; do not write a report.",
+});
+```
+
+##### guardrail?
+
+```ts
+optional guardrail?: SpeakerGuardrail;
+```
+
+Check the subagent's answer, and send it back with a complaint when it is
+not good enough.
+
+Return `true` to accept. Return a STRING to reject: the string is the
+complaint, and the runtime re-runs the subagent with its own rejected
+answer and that complaint appended to the conversation it already has — so
+the retry keeps every tool result the first attempt paid for and is told
+exactly what to fix. Bounded by [SpeakerDef.maxRevisions](#maxrevisions).
+
+**A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
+of an answer and cannot say that a citation is missing, that the sources
+were all one publisher, or that the answer contradicts what the caller
+already said. That judgement is a function, and until now the only place to
+put it was after the delegation returned — where the one thing it could not
+do was ask for a better answer.
+
+Runs on every attempt including the last. Throwing from it fails the
+delegation, so a guardrail that cannot decide should return `true`.
+
+```ts
+import { speaker } from "@alexkroman1/aai";
+
+const researcher = speaker({
+  name: "researcher",
+  systemPrompt: "Research the task with the tools you have.",
+  expectedOutput: "A paragraph naming the sources you trusted.",
+  guardrail: ({ text, toolCalls }) =>
+    toolCalls.length === 0
+      ? "You answered without looking anything up. Search first, then answer."
+      : text.length > 1200
+        ? "Too long for someone listening on a phone — three sentences."
+        : true,
+});
+```
+
+##### llm?
+
+```ts
+optional llm?: LlmSpec;
+```
+
+LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
+model-id string — the same shorthand as `agent({ llm })` and
+[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
+
+Naming a cheaper model here is the usual reason to set it: a subagent
+doing lookups is spending most of its tokens on tool results, not on
+reasoning.
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
+```
+
+Not a field. Typed as the message that names the rename, so
+`speaker({ maxRetries: 3 })` fails to compile with the fix in the error
+rather than with a bare excess-property one — the idiom `agent({ tools })`
+uses. See [SpeakerDef.maxRevisions](#maxrevisions).
+
+##### maxRevisions?
+
+```ts
+optional maxRevisions?: number;
+```
+
+How many times a [SpeakerDef.guardrail](#guardrail) may send an answer back.
+
+###### Default Value
+
+`1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
+
+**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-2) retries
+a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
+delegation that SUCCEEDED and was judged not good enough. A subagent does
+not accept `maxRetries` at all, so code written against the old name fails
+to compile rather than quietly meaning something else.
+
+One, not CrewAI's three, because a revision is another FULL run of the
+subagent and the caller is on a live phone call — the third attempt at a
+summary arrives well after the moment anyone was waiting for it. Raise it
+for a subagent delegated from a workflow step, where nobody is listening.
+
+Exhausting the budget is not an error: the last attempt comes back with
+[DelegateResult.accepted](#accepted) `false` and the guardrail's
+[DelegateResult.complaint](#complaint), because a voice agent holding a rejected
+answer still has to say something, and it should be the caller's tool —
+not the runtime — that decides what.
+
+##### maxSteps?
+
+```ts
+optional maxSteps?: number;
+```
+
+Tool-calling steps this subagent may take before it must answer. Defaults
+to the framework's `DEFAULT_MAX_STEPS`.
+
+The budget is the mechanism: a subagent told to "keep looking until sure"
+is a subagent whose cost nobody can quote. Past the cap it is asked for
+its answer with tools withheld, so a capped run still returns prose rather
+than stopping mid-chain.
+
+##### name
+
+```ts
+name: N;
+```
+
+What this speaker is called: the value of the `delegate`/`handoff` tool's
+argument, the id on its own requests, and what a log line names.
+
+##### schema?
+
+```ts
+optional schema?: StandardSchemaV1<unknown, unknown>;
+```
+
+The SHAPE the final message must have — any
+[Standard Schema](https://standardschema.dev), zod being the documented
+default. The runtime parses the answer as JSON and checks it, and a reply
+that does not match is sent BACK the way a
+[SpeakerDef.guardrail](#guardrail) rejection is, with the schema's own issues as
+the complaint. Declare it through [speaker](#speaker-1) to get the parsed value
+typed on [TypedDelegateResult.object](#object).
+
+**This is not the guardrail, and the two are complementary.** A schema
+settles the SHAPE — that a verdict is one of three words rather than a
+sentence that implies one — where a guardrail is the judgement a shape
+cannot express (a missing citation, sources that are all one publisher).
+A subagent may declare both; the shape is checked first, because a
+guardrail asked to judge a malformed answer is being asked the wrong
+question.
+
+Reach for it when the CALLER has to branch on the answer.
+`topic-briefing-agent`'s fact-checker had a three-value verdict crossing three
+layers as an English sentence prefix — restated in `expectedOutput`,
+re-checked by a guardrail doing `startsWith`, and re-asked up to the retry
+budget — because a model that wrote `"Confirmed - "` was wrong in a way
+only prose could describe. A schema makes that a parse.
+
+```ts
+import { speaker } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const factChecker = speaker({
+  name: "fact-checker",
+  systemPrompt: "Check ONE claim against what you can find.",
+  schema: z.object({
+    verdict: z.enum(["confirmed", "contradicted", "unclear"]),
+    detail: z.string(),
+  }),
+});
+```
+
+##### speaks?
+
+```ts
+optional speaks?: boolean;
+```
+
+Whether the CALLER hears this speaker. `true` puts it on the roster's
+`handoff` tool — it takes the call, over the same history and slots; absent
+or `false` puts it on `delegate` — it runs off the line and hands back an
+answer. The first speaking entry of a roster answers the call.
+
+##### systemPrompt
+
+```ts
+systemPrompt: string;
+```
+
+The speaker's instructions — on the line and off it.
+
+**Tell it to summarize** — or, better, declare [SpeakerDef.expectedOutput](#expectedoutput)
+and let the runtime say it. The parent gets [DelegateResult.text](#text-1),
+which is the subagent's FINAL message, so a subagent that ends its run by
+saying "Done." has thrown away everything it learned and no amount of step
+budget recovers it. This is the single most common way a subagent
+disappoints, and it was a sentence every author had to remember to write
+here; `expectedOutput` is the field that remembers it for them.
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+Sampling temperature.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
+
+##### toolChoice?
+
+```ts
+optional toolChoice?: ToolChoice;
+```
+
+The model's tool-choice policy while this speaker is ON THE LINE.
+
+##### tools?
+
+```ts
+optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
+```
+
+The tools this subagent may call, by the name the model calls them by.
+
+A MAP rather than the filesystem registration `agent()` uses: `tools/`
+declares what every turn can reach, and this the narrower set this speaker
+owns. Off the line, they are its delegated loop's tools; on the line, the
+roster gates them to the turns it is speaking (one owner per name). An
+off-line speaker with no tools and no `builtinTools` is a pure reasoning
+pass.
+
+***
+
+### SpeakerPosition
+
+**`Sealed`**
+
+Who is on the line — what [Roster.position](#position-1) answers, the shape
+`DialogPosition` has for a dialog.
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+#### Properties
+
+##### from?
+
+```ts
+readonly optional from?: string;
+```
+
+Who handed off to it, when a handoff has happened this session.
+
+##### note?
+
+```ts
+readonly optional note?: string;
+```
+
+The [HandoffOptions.note](#note) that came with that handoff.
+
+##### pinnedBy?
+
+```ts
+readonly optional pinnedBy?: {
+  dialog: string;
+  state: string;
+};
+```
+
+The dialog PINNING this speaker, when a dialog state declares one. While a
+pin is in force `handoff` to anyone else is refused.
+
+###### dialog
+
+```ts
+readonly dialog: string;
+```
+
+###### state
+
+```ts
+readonly state: string;
+```
+
+##### speaker
+
+```ts
+readonly speaker: SpeakerDef<N>;
+```
+
+The speaker on the line now.
+
+***
+
 ### SpeechHandle
 
 **`Sealed`**
@@ -10723,397 +11080,118 @@ The slot key whose value this projects.
 
 ***
 
-### SubagentAnswer
+### Toolset
 
-ONE attempt at an answer — what a [SubagentGuardrail](#subagentguardrail) judges.
+A source of tools, as the runtime consumes it.
 
-`text` is the answer; `steps` and `toolCalls` are what the attempt COST,
-which is the half a voice agent needs in order to say something true about
-the wait ("I checked four sources"). They are a report, not a transcript: the
-tool RESULTS stay inside the subagent's context, which is the entire reason
-to have delegated.
+The advertised list is fixed per session on every transport (an S2S service
+holds its tool list for the whole session), so a rule about WHEN a tool may
+run is a [Toolset.gate](#gate-1) at the call — which is also where the model is
+told why, and how to recover.
 
-Split from [DelegateResult](#delegateresult) so a guardrail cannot read the fields that
-only make sense once the run is OVER — `revisions` counts the guardrail's own
-verdicts, and asking it to judge an answer against its own past judgements is
-not a check, it is a loop.
+#### Methods
 
-#### Extended by
+##### execute()
 
-- [`DelegateResult`](#delegateresult)
+```ts
+execute(
+   name: string, 
+   args: unknown, 
+   ctx: ToolContext
+): unknown;
+```
+
+Run `name`'s body with already-validated arguments. Gating is the caller's.
+
+###### Parameters
+
+###### name
+
+`string`
+
+###### args
+
+`unknown`
+
+###### ctx
+
+[`ToolContext`](#toolcontext)
+
+###### Returns
+
+`unknown`
+
+##### gate()
+
+```ts
+gate(name: string, ctx: ToolContext): ToolRefusal | undefined;
+```
+
+`undefined` when `name` may run now; otherwise the refusal the model reads.
+
+###### Parameters
+
+###### name
+
+`string`
+
+###### ctx
+
+[`ToolContext`](#toolcontext)
+
+###### Returns
+
+[`ToolRefusal`](#toolrefusal) \| `undefined`
+
+##### list()
+
+```ts
+list(): Readonly<Record<string, ToolsetEntry>>;
+```
+
+Every tool this set advertises, by the name the model calls.
+
+###### Returns
+
+`Readonly`\<`Record`\<`string`, [`ToolsetEntry`](#toolsetentry)\>\>
 
 #### Properties
 
-##### steps
+##### source
 
 ```ts
-steps: number;
+readonly source: ToolSource;
 ```
-
-How many steps this attempt took, including the final answering step.
-
-##### text
-
-```ts
-text: string;
-```
-
-The subagent's final message — see [SubagentDef.expectedOutput](#expectedoutput).
-
-##### toolCalls
-
-```ts
-toolCalls: readonly SubagentToolCall[];
-```
-
-Every tool call this attempt made, in order.
 
 ***
 
-### SubagentDef
+### ToolsetEntry
 
-A subagent definition — what [subagent](#subagent) returns and
-[DelegateFn](#delegatefn) runs.
-
-Every field except `name` and `systemPrompt` is optional, and the defaults
-are the parent agent's: the same LLM descriptor, no tools, and
-the framework default (`DEFAULT_MAX_STEPS`) steps.
-
-It takes [ModelTuning](#modeltuning) WITHOUT `maxRetries`, deliberately. That name
-was this def's guardrail budget before the knobs were unified, and on
-`ModelTuning` it means provider retries; accepting it here would have kept
-`subagent({ guardrail, maxRetries: 3 })` compiling while silently changing
-what the 3 bounds. Refused instead, it is a compile error whose message
-names [SubagentDef.maxRevisions](#maxrevisions). A subagent's provider requests
-retry on the AI SDK's default.
-
-#### Extends
-
-- `Omit`\<[`ModelTuning`](#modeltuning), `"maxRetries"`\>
-
-#### Extended by
-
-- [`TypedSubagentDef`](#typedsubagentdef)
+One advertised tool: the def the model reads, and who executes it.
 
 #### Properties
 
-##### builtinTools?
+##### def
 
 ```ts
-optional builtinTools?: readonly BuiltinTool[];
+readonly def: ToolDef;
 ```
 
-Builtins this subagent may call, resolved exactly as `agent({
-builtinTools })` resolves them. Independent of the parent's: a parent that
-enables none can still delegate to a subagent that searches the web.
+Description, schema, `messages` and `onError` — what the model and the executor read.
 
-##### description?
+##### executor
 
 ```ts
-optional description?: string;
+readonly executor: ToolExecutor;
 ```
 
-What this subagent is FOR, in one line, written for whoever is choosing
-between subagents rather than for the subagent itself.
-
-Ignored by call-site delegation — `ctx.delegate(researcher, …)` names the
-subagent in code, so the choice is already made and there is nothing to
-describe it to. It is REQUIRED of a subagent listed in
-`agent({ subagents })`, and that is the whole reason it exists: a roster is
-routed by the model, which reads this and nothing else. `agent()` refuses a
-roster entry without one rather than shipping an agent that picks a
-subagent off a list of bare names.
-
-Write it as the job, not the mechanism: "Researches a topic on the open web
-and reports what it found" — not "calls web_search".
-
-##### expectedOutput?
+##### timeoutMs?
 
 ```ts
-optional expectedOutput?: string;
+readonly optional timeoutMs?: number;
 ```
 
-What a GOOD final message looks like — the shape of the answer, declared
-apart from the instructions for producing it.
-
-The runtime appends it to the instructions as its own labelled section, so
-it lands in the same place every time rather than wherever an author
-happened to put it in prose. It is also what a [SubagentDef.guardrail](#guardrail)
-is quoted against when it sends an answer back, so the two halves of "what
-this run owes" stay one sentence rather than two that can disagree.
-
-Split out of `systemPrompt` for the reason CrewAI splits `expected_output`
-off `description`: the failure it prevents is structural, not a matter of
-prompting skill. A subagent whose brief says only what to DO ends its run
-when it is done, which for a delegated run is precisely the wrong moment to
-stop talking.
-
-```ts
-import { subagent } from "@alexkroman1/aai";
-
-const researcher = subagent({
-  name: "researcher",
-  systemPrompt: "Research the task with the tools you have.",
-  expectedOutput:
-    "A self-contained paragraph of what you found, naming the sources you " +
-    "trusted. Three sentences is plenty; do not write a report.",
-});
-```
-
-##### guardrail?
-
-```ts
-optional guardrail?: SubagentGuardrail;
-```
-
-Check the subagent's answer, and send it back with a complaint when it is
-not good enough.
-
-Return `true` to accept. Return a STRING to reject: the string is the
-complaint, and the runtime re-runs the subagent with its own rejected
-answer and that complaint appended to the conversation it already has — so
-the retry keeps every tool result the first attempt paid for and is told
-exactly what to fix. Bounded by [SubagentDef.maxRevisions](#maxrevisions).
-
-**A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
-of an answer and cannot say that a citation is missing, that the sources
-were all one publisher, or that the answer contradicts what the caller
-already said. That judgement is a function, and until now the only place to
-put it was after the delegation returned — where the one thing it could not
-do was ask for a better answer.
-
-Runs on every attempt including the last. Throwing from it fails the
-delegation, so a guardrail that cannot decide should return `true`.
-
-```ts
-import { subagent } from "@alexkroman1/aai";
-
-const researcher = subagent({
-  name: "researcher",
-  systemPrompt: "Research the task with the tools you have.",
-  expectedOutput: "A paragraph naming the sources you trusted.",
-  guardrail: ({ text, toolCalls }) =>
-    toolCalls.length === 0
-      ? "You answered without looking anything up. Search first, then answer."
-      : text.length > 1200
-        ? "Too long for someone listening on a phone — three sentences."
-        : true,
-});
-```
-
-##### llm?
-
-```ts
-optional llm?: LlmSpec;
-```
-
-LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
-model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
-
-Naming a cheaper model here is the usual reason to set it: a subagent
-doing lookups is spending most of its tokens on tool results, not on
-reasoning.
-
-##### maxOutputTokens?
-
-```ts
-optional maxOutputTokens?: number;
-```
-
-Cap on generated tokens per step, passed straight through to the provider.
-
-The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
-call. Per STEP, not per turn: a reply that calls three tools has four
-generations in it, and the cap bounds each.
-
-On a voice agent it is a bluntness knob rather than a cost one — a model
-that runs long is a model the caller is waiting through — and a value low
-enough to truncate mid-sentence will truncate mid-sentence, because the
-provider stops emitting rather than wrapping up.
-
-###### Inherited from
-
-[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
-
-##### maxRetries?
-
-```ts
-optional maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
-```
-
-Not a field. Typed as the message that names the rename, so
-`subagent({ maxRetries: 3 })` fails to compile with the fix in the error
-rather than with a bare excess-property one — the idiom `agent({ tools })`
-uses. See [SubagentDef.maxRevisions](#maxrevisions).
-
-##### maxRevisions?
-
-```ts
-optional maxRevisions?: number;
-```
-
-How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
-
-###### Default Value
-
-`1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
-
-**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-2) retries
-a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
-delegation that SUCCEEDED and was judged not good enough. A subagent does
-not accept `maxRetries` at all, so code written against the old name fails
-to compile rather than quietly meaning something else.
-
-One, not CrewAI's three, because a revision is another FULL run of the
-subagent and the caller is on a live phone call — the third attempt at a
-summary arrives well after the moment anyone was waiting for it. Raise it
-for a subagent delegated from a workflow step, where nobody is listening.
-
-Exhausting the budget is not an error: the last attempt comes back with
-[DelegateResult.accepted](#accepted) `false` and the guardrail's
-[DelegateResult.complaint](#complaint), because a voice agent holding a rejected
-answer still has to say something, and it should be the caller's tool —
-not the runtime — that decides what.
-
-##### maxSteps?
-
-```ts
-optional maxSteps?: number;
-```
-
-Tool-calling steps this subagent may take before it must answer. Defaults
-to the framework's `DEFAULT_MAX_STEPS`.
-
-The budget is the mechanism: a subagent told to "keep looking until sure"
-is a subagent whose cost nobody can quote. Past the cap it is asked for
-its answer with tools withheld, so a capped run still returns prose rather
-than stopping mid-chain.
-
-##### name
-
-```ts
-name: string;
-```
-
-What this subagent is called. It reaches the model only as the id on the
-subagent's own requests; its reader is a log line and a failure message
-("subagent \"researcher\" ran out of steps"), which is why it is required
-and why an anonymous subagent is not expressible.
-
-##### schema?
-
-```ts
-optional schema?: StandardSchemaV1<unknown, unknown>;
-```
-
-The SHAPE the final message must have — any
-[Standard Schema](https://standardschema.dev), zod being the documented
-default. The runtime parses the answer as JSON and checks it, and a reply
-that does not match is sent BACK the way a
-[SubagentDef.guardrail](#guardrail) rejection is, with the schema's own issues as
-the complaint. Declare it through [subagent](#subagent) to get the parsed value
-typed on [TypedDelegateResult.object](#object).
-
-**This is not the guardrail, and the two are complementary.** A schema
-settles the SHAPE — that a verdict is one of three words rather than a
-sentence that implies one — where a guardrail is the judgement a shape
-cannot express (a missing citation, sources that are all one publisher).
-A subagent may declare both; the shape is checked first, because a
-guardrail asked to judge a malformed answer is being asked the wrong
-question.
-
-Reach for it when the CALLER has to branch on the answer.
-`topic-briefing-agent`'s fact-checker had a three-value verdict crossing three
-layers as an English sentence prefix — restated in `expectedOutput`,
-re-checked by a guardrail doing `startsWith`, and re-asked up to the retry
-budget — because a model that wrote `"Confirmed - "` was wrong in a way
-only prose could describe. A schema makes that a parse.
-
-```ts
-import { subagent } from "@alexkroman1/aai";
-import { z } from "zod";
-
-const factChecker = subagent({
-  name: "fact-checker",
-  systemPrompt: "Check ONE claim against what you can find.",
-  schema: z.object({
-    verdict: z.enum(["confirmed", "contradicted", "unclear"]),
-    detail: z.string(),
-  }),
-});
-```
-
-##### systemPrompt
-
-```ts
-systemPrompt: string;
-```
-
-The subagent's system prompt.
-
-**Tell it to summarize** — or, better, declare [SubagentDef.expectedOutput](#expectedoutput)
-and let the runtime say it. The parent gets [DelegateResult.text](#text-2),
-which is the subagent's FINAL message, so a subagent that ends its run by
-saying "Done." has thrown away everything it learned and no amount of step
-budget recovers it. This is the single most common way a subagent
-disappoints, and it was a sentence every author had to remember to write
-here; `expectedOutput` is the field that remembers it for them.
-
-##### temperature?
-
-```ts
-optional temperature?: number;
-```
-
-Sampling temperature.
-
-Omitted by default, so the model's own default applies; some models (Claude
-5 among them) ignore it and warn, so set it only for a temperature-capable
-one. A booking desk and a game master want different values; so do a
-researcher subagent and the voice that relays what it found.
-
-###### Inherited from
-
-[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
-
-##### tools?
-
-```ts
-optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
-```
-
-The tools this subagent may call, by the name the model calls them by.
-
-A MAP rather than the filesystem registration `agent()` uses, and the
-difference is deliberate: `tools/` declares what the CALLER can reach, and
-this declares the strictly narrower set one delegated task can reach. A
-subagent with no entry here and no `builtinTools` is a pure reasoning
-pass — legal, and occasionally what you want.
-
-***
-
-### SubagentToolCall
-
-One tool call a subagent made, as reported back to the caller.
-
-#### Properties
-
-##### input
-
-```ts
-input: unknown;
-```
-
-The arguments it was called with.
-
-##### name
-
-```ts
-name: string;
-```
-
-The tool's name, as the subagent's model called it.
+A per-call deadline the entry carries (a `clientTool`'s `timeoutMs`).
 
 ***
 
@@ -11127,7 +11205,7 @@ TOOL fails does not reject: the failure goes back to the subagent as a tool
 result, exactly as it would in the parent loop, and the subagent gets to
 recover from it.
 
-A [SubagentDef.guardrail](#guardrail) that never accepts does not reject either —
+A [SpeakerDef.guardrail](#guardrail) that never accepts does not reject either —
 the run comes back with [DelegateResult.accepted](#accepted) `false`. The two
 rejections above are both "this delegation could not happen"; a rejected
 answer is a delegation that happened and produced something, and a caller on
@@ -11183,7 +11261,7 @@ The guardrail's last complaint. Present exactly when `accepted` is `false`
 object: T;
 ```
 
-The final message, PARSED against [SubagentDef.schema](#schema).
+The final message, PARSED against [SpeakerDef.schema](#schema).
 
 Present exactly when the subagent declares one, which is why it lives on
 this type rather than on [DelegateResult](#delegateresult): a caller that declared no
@@ -11220,7 +11298,7 @@ How many steps this attempt took, including the final answering step.
 
 ###### Inherited from
 
-[`DelegateResult`](#delegateresult).[`steps`](#steps)
+[`DelegateResult`](#delegateresult).[`steps`](#steps-1)
 
 ##### text
 
@@ -11228,43 +11306,44 @@ How many steps this attempt took, including the final answering step.
 text: string;
 ```
 
-The subagent's final message — see [SubagentDef.expectedOutput](#expectedoutput).
+The subagent's final message — see [SpeakerDef.expectedOutput](#expectedoutput).
 
 ###### Inherited from
 
-[`DelegateResult`](#delegateresult).[`text`](#text-1)
+[`DelegateResult`](#delegateresult).[`text`](#text-2)
 
 ##### toolCalls
 
 ```ts
-toolCalls: readonly SubagentToolCall[];
+toolCalls: readonly DelegateToolCall[];
 ```
 
 Every tool call this attempt made, in order.
 
 ###### Inherited from
 
-[`DelegateResult`](#delegateresult).[`toolCalls`](#toolcalls)
+[`DelegateResult`](#delegateresult).[`toolCalls`](#toolcalls-1)
 
 ***
 
-### TypedSubagentDef
+### TypedSpeakerDef
 
-Define a subagent.
-
-An identity function, like [tool](#tool-2) — it exists for the type, for the
-name to grep for, and so a subagent is declared at module scope rather than
-rebuilt inside `execute` on every call.
+A [SpeakerDef](#speakerdef) that declares a [SpeakerDef.schema](#schema) — what
+[speaker](#speaker-1) returns for one, so `ctx.delegate` types `object`.
 
 #### Extends
 
-- [`SubagentDef`](#subagentdef)
+- [`SpeakerDef`](#speakerdef)\<`N`\>
 
 #### Type Parameters
 
 ##### T
 
 `T`
+
+##### N
+
+`N` *extends* `string` = `string`
 
 #### Properties
 
@@ -11280,7 +11359,7 @@ enables none can still delegate to a subagent that searches the web.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`builtinTools`](#builtintools-1)
+[`SpeakerDef`](#speakerdef).[`builtinTools`](#builtintools-1)
 
 ##### description?
 
@@ -11288,23 +11367,17 @@ enables none can still delegate to a subagent that searches the web.
 optional description?: string;
 ```
 
-What this subagent is FOR, in one line, written for whoever is choosing
-between subagents rather than for the subagent itself.
-
-Ignored by call-site delegation — `ctx.delegate(researcher, …)` names the
-subagent in code, so the choice is already made and there is nothing to
-describe it to. It is REQUIRED of a subagent listed in
-`agent({ subagents })`, and that is the whole reason it exists: a roster is
-routed by the model, which reads this and nothing else. `agent()` refuses a
-roster entry without one rather than shipping an agent that picks a
-subagent off a list of bare names.
+What this speaker is FOR, in one line, written for whoever is choosing
+between them — the minted `delegate` and `handoff` tools' descriptions are
+these lines. REQUIRED of a roster entry (`roster()` refuses one without
+it); ignored by `ctx.delegate(def, …)` in code, where the choice is made.
 
 Write it as the job, not the mechanism: "Researches a topic on the open web
 and reports what it found" — not "calls web_search".
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`description`](#description-4)
+[`SpeakerDef`](#speakerdef).[`description`](#description-3)
 
 ##### expectedOutput?
 
@@ -11317,7 +11390,7 @@ apart from the instructions for producing it.
 
 The runtime appends it to the instructions as its own labelled section, so
 it lands in the same place every time rather than wherever an author
-happened to put it in prose. It is also what a [SubagentDef.guardrail](#guardrail)
+happened to put it in prose. It is also what a [SpeakerDef.guardrail](#guardrail)
 is quoted against when it sends an answer back, so the two halves of "what
 this run owes" stay one sentence rather than two that can disagree.
 
@@ -11328,9 +11401,9 @@ when it is done, which for a delegated run is precisely the wrong moment to
 stop talking.
 
 ```ts
-import { subagent } from "@alexkroman1/aai";
+import { speaker } from "@alexkroman1/aai";
 
-const researcher = subagent({
+const researcher = speaker({
   name: "researcher",
   systemPrompt: "Research the task with the tools you have.",
   expectedOutput:
@@ -11341,12 +11414,12 @@ const researcher = subagent({
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`expectedOutput`](#expectedoutput)
+[`SpeakerDef`](#speakerdef).[`expectedOutput`](#expectedoutput)
 
 ##### guardrail?
 
 ```ts
-optional guardrail?: SubagentGuardrail;
+optional guardrail?: SpeakerGuardrail;
 ```
 
 Check the subagent's answer, and send it back with a complaint when it is
@@ -11356,7 +11429,7 @@ Return `true` to accept. Return a STRING to reject: the string is the
 complaint, and the runtime re-runs the subagent with its own rejected
 answer and that complaint appended to the conversation it already has — so
 the retry keeps every tool result the first attempt paid for and is told
-exactly what to fix. Bounded by [SubagentDef.maxRevisions](#maxrevisions).
+exactly what to fix. Bounded by [SpeakerDef.maxRevisions](#maxrevisions).
 
 **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
 of an answer and cannot say that a citation is missing, that the sources
@@ -11369,9 +11442,9 @@ Runs on every attempt including the last. Throwing from it fails the
 delegation, so a guardrail that cannot decide should return `true`.
 
 ```ts
-import { subagent } from "@alexkroman1/aai";
+import { speaker } from "@alexkroman1/aai";
 
-const researcher = subagent({
+const researcher = speaker({
   name: "researcher",
   systemPrompt: "Research the task with the tools you have.",
   expectedOutput: "A paragraph naming the sources you trusted.",
@@ -11386,7 +11459,7 @@ const researcher = subagent({
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`guardrail`](#guardrail)
+[`SpeakerDef`](#speakerdef).[`guardrail`](#guardrail)
 
 ##### llm?
 
@@ -11404,7 +11477,7 @@ reasoning.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`llm`](#llm-1)
+[`SpeakerDef`](#speakerdef).[`llm`](#llm-1)
 
 ##### maxOutputTokens?
 
@@ -11430,17 +11503,17 @@ provider stops emitting rather than wrapping up.
 ##### maxRetries?
 
 ```ts
-optional maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+optional maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
 ```
 
 Not a field. Typed as the message that names the rename, so
-`subagent({ maxRetries: 3 })` fails to compile with the fix in the error
+`speaker({ maxRetries: 3 })` fails to compile with the fix in the error
 rather than with a bare excess-property one — the idiom `agent({ tools })`
-uses. See [SubagentDef.maxRevisions](#maxrevisions).
+uses. See [SpeakerDef.maxRevisions](#maxrevisions).
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxRetries`](#maxretries-3)
+[`SpeakerDef`](#speakerdef).[`maxRetries`](#maxretries-3)
 
 ##### maxRevisions?
 
@@ -11448,7 +11521,7 @@ uses. See [SubagentDef.maxRevisions](#maxrevisions).
 optional maxRevisions?: number;
 ```
 
-How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
+How many times a [SpeakerDef.guardrail](#guardrail) may send an answer back.
 
 ###### Default Value
 
@@ -11473,7 +11546,7 @@ not the runtime — that decides what.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxRevisions`](#maxrevisions)
+[`SpeakerDef`](#speakerdef).[`maxRevisions`](#maxrevisions)
 
 ##### maxSteps?
 
@@ -11491,22 +11564,20 @@ than stopping mid-chain.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxSteps`](#maxsteps-2)
+[`SpeakerDef`](#speakerdef).[`maxSteps`](#maxsteps-2)
 
 ##### name
 
 ```ts
-name: string;
+name: N;
 ```
 
-What this subagent is called. It reaches the model only as the id on the
-subagent's own requests; its reader is a log line and a failure message
-("subagent \"researcher\" ran out of steps"), which is why it is required
-and why an anonymous subagent is not expressible.
+What this speaker is called: the value of the `delegate`/`handoff` tool's
+argument, the id on its own requests, and what a log line names.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`name`](#name-2)
+[`SpeakerDef`](#speakerdef).[`name`](#name-2)
 
 ##### schema
 
@@ -11518,8 +11589,8 @@ The SHAPE the final message must have — any
 [Standard Schema](https://standardschema.dev), zod being the documented
 default. The runtime parses the answer as JSON and checks it, and a reply
 that does not match is sent BACK the way a
-[SubagentDef.guardrail](#guardrail) rejection is, with the schema's own issues as
-the complaint. Declare it through [subagent](#subagent) to get the parsed value
+[SpeakerDef.guardrail](#guardrail) rejection is, with the schema's own issues as
+the complaint. Declare it through [speaker](#speaker-1) to get the parsed value
 typed on [TypedDelegateResult.object](#object).
 
 **This is not the guardrail, and the two are complementary.** A schema
@@ -11538,10 +11609,10 @@ budget — because a model that wrote `"Confirmed - "` was wrong in a way
 only prose could describe. A schema makes that a parse.
 
 ```ts
-import { subagent } from "@alexkroman1/aai";
+import { speaker } from "@alexkroman1/aai";
 import { z } from "zod";
 
-const factChecker = subagent({
+const factChecker = speaker({
   name: "fact-checker",
   systemPrompt: "Check ONE claim against what you can find.",
   schema: z.object({
@@ -11553,7 +11624,22 @@ const factChecker = subagent({
 
 ###### Overrides
 
-[`SubagentDef`](#subagentdef).[`schema`](#schema)
+[`SpeakerDef`](#speakerdef).[`schema`](#schema)
+
+##### speaks?
+
+```ts
+optional speaks?: boolean;
+```
+
+Whether the CALLER hears this speaker. `true` puts it on the roster's
+`handoff` tool — it takes the call, over the same history and slots; absent
+or `false` puts it on `delegate` — it runs off the line and hands back an
+answer. The first speaking entry of a roster answers the call.
+
+###### Inherited from
+
+[`SpeakerDef`](#speakerdef).[`speaks`](#speaks)
 
 ##### systemPrompt
 
@@ -11561,10 +11647,10 @@ const factChecker = subagent({
 systemPrompt: string;
 ```
 
-The subagent's system prompt.
+The speaker's instructions — on the line and off it.
 
-**Tell it to summarize** — or, better, declare [SubagentDef.expectedOutput](#expectedoutput)
-and let the runtime say it. The parent gets [DelegateResult.text](#text-2),
+**Tell it to summarize** — or, better, declare [SpeakerDef.expectedOutput](#expectedoutput)
+and let the runtime say it. The parent gets [DelegateResult.text](#text-1),
 which is the subagent's FINAL message, so a subagent that ends its run by
 saying "Done." has thrown away everything it learned and no amount of step
 budget recovers it. This is the single most common way a subagent
@@ -11573,7 +11659,7 @@ here; `expectedOutput` is the field that remembers it for them.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`systemPrompt`](#systemprompt-2)
+[`SpeakerDef`](#speakerdef).[`systemPrompt`](#systemprompt-1)
 
 ##### temperature?
 
@@ -11592,6 +11678,18 @@ researcher subagent and the voice that relays what it found.
 
 [`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
 
+##### toolChoice?
+
+```ts
+optional toolChoice?: ToolChoice;
+```
+
+The model's tool-choice policy while this speaker is ON THE LINE.
+
+###### Inherited from
+
+[`SpeakerDef`](#speakerdef).[`toolChoice`](#toolchoice-3)
+
 ##### tools?
 
 ```ts
@@ -11600,15 +11698,16 @@ optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
 
 The tools this subagent may call, by the name the model calls them by.
 
-A MAP rather than the filesystem registration `agent()` uses, and the
-difference is deliberate: `tools/` declares what the CALLER can reach, and
-this declares the strictly narrower set one delegated task can reach. A
-subagent with no entry here and no `builtinTools` is a pure reasoning
-pass — legal, and occasionally what you want.
+A MAP rather than the filesystem registration `agent()` uses: `tools/`
+declares what every turn can reach, and this the narrower set this speaker
+owns. Off the line, they are its delegated loop's tools; on the line, the
+roster gates them to the turns it is speaking (one owner per name). An
+off-line speaker with no tools and no `builtinTools` is a pure reasoning
+pass.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`tools`](#tools-2)
+[`SpeakerDef`](#speakerdef).[`tools`](#tools-1)
 
 ***
 
@@ -12285,25 +12384,25 @@ once `aai build` type-checked.
 
 ```ts
 type DelegateFn = {
-<T>  (subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
-  (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+<T>  (subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+  (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };
 ```
 
 Run a subagent to completion — the signature of `ctx.delegate`.
 
 OVERLOADED, the way [GenerateFn](#generatefn) is and for the same reason: a subagent
-that declares a [SubagentDef.schema](#schema) answers with the parsed value
+that declares a [SpeakerDef.schema](#schema) answers with the parsed value
 typed on [TypedDelegateResult.object](#object), and one that does not should not
-be handed the field at all. Declaring the def through [subagent](#subagent) is
-what picks the overload — a `SubagentRoster` entry stays a plain
-[SubagentDef](#subagentdef), so a model-chosen delegation is untyped, which is
+be handed the field at all. Declaring the def through [speaker](#speaker-1) is
+what picks the overload — a roster entry stays a plain
+[SpeakerDef](#speakerdef), so a model-chosen delegation is untyped, which is
 correct: nothing at that call site knows which subagent the model picked.
 
 #### Call Signature
 
 ```ts
-<T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+<T>(subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
 ```
 
 ##### Type Parameters
@@ -12316,7 +12415,7 @@ correct: nothing at that call site knows which subagent the model picked.
 
 ###### subagent
 
-[`TypedSubagentDef`](#typedsubagentdef)\<`T`\>
+[`TypedSpeakerDef`](#typedspeakerdef)\<`T`\>
 
 ###### options
 
@@ -12329,14 +12428,14 @@ correct: nothing at that call site knows which subagent the model picked.
 #### Call Signature
 
 ```ts
-(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+(subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 ```
 
 ##### Parameters
 
 ###### subagent
 
-[`SubagentDef`](#subagentdef)
+[`SpeakerDef`](#speakerdef)
 
 ###### options
 
@@ -12962,7 +13061,7 @@ type LlmSpec =
 };
 ```
 
-What an `llm` FIELD takes — `agent({ llm })`, `subagent({ llm })`,
+What an `llm` FIELD takes — `agent({ llm })`, `speaker({ llm })`,
 `ctx.generate({ llm })`: a descriptor from [llm](llm.md#llm), or a model-id string.
 
 A bare id routes through AssemblyAI's LLM Gateway (so
@@ -14264,7 +14363,8 @@ type SharedAgentParams = Omit<AgentDef,
   | DefaultedAgentField
   | PipelineOnlyField
   | ProviderField
-  | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+  | FrontDoorField
+  | "toolsets"> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
   tools?: InlineToolsMisuse;
 };
 ```
@@ -14457,6 +14557,29 @@ virtual one is neither, because the things a virtual slot exists to hold
 ###### Returns
 
 `void`
+
+***
+
+### SpeakerGuardrail
+
+```ts
+type SpeakerGuardrail = (answer: DelegateAnswer) => 
+  | GuardrailVerdict
+| Promise<GuardrailVerdict>;
+```
+
+Judge one attempt — see [SpeakerDef.guardrail](#guardrail).
+
+#### Parameters
+
+##### answer
+
+[`DelegateAnswer`](#delegateanswer)
+
+#### Returns
+
+  \| [`GuardrailVerdict`](#guardrailverdict)
+  \| `Promise`\<[`GuardrailVerdict`](#guardrailverdict)\>
 
 ***
 
@@ -14661,44 +14784,6 @@ readonly optional __stage?: "stt";
 ```
 
 Compile-time stage tag; never present at runtime.
-
-***
-
-### SubagentGuardrail
-
-```ts
-type SubagentGuardrail = (answer: SubagentAnswer) => 
-  | GuardrailVerdict
-| Promise<GuardrailVerdict>;
-```
-
-Judge one attempt — see [SubagentDef.guardrail](#guardrail).
-
-#### Parameters
-
-##### answer
-
-[`SubagentAnswer`](#subagentanswer)
-
-#### Returns
-
-  \| [`GuardrailVerdict`](#guardrailverdict)
-  \| `Promise`\<[`GuardrailVerdict`](#guardrailverdict)\>
-
-***
-
-### SubagentRoster
-
-```ts
-type SubagentRoster = readonly SubagentDef[];
-```
-
-The subagents an agent publishes for the MODEL to choose between —
-`agent({ subagents })`.
-
-Every entry needs a [SubagentDef.description](#description-4): it is the only thing the
-router reads, and `agent()` refuses a roster without one rather than shipping
-an agent that picks off a list of bare names.
 
 ***
 
@@ -15675,6 +15760,17 @@ the runtime refuses a thenable return and treats it as fatal, the same rule
 
 ***
 
+### ToolExecutor
+
+```ts
+type ToolExecutor = "host" | "client";
+```
+
+Who runs a tool's body: this process (`"host"`), or the connected browser page
+(`"client"`, a `clientTool` — the call waits for the page's `tool_result`).
+
+***
+
 ### ToolFailure
 
 ```ts
@@ -15715,6 +15811,22 @@ A schema accepted for tool inputs and `ctx.generate` structured output:
 any Standard Schema that can also convert to JSON Schema (Zod natively,
 or a vendor `toJsonSchema()` method). Zod object schemas are the
 documented default.
+
+***
+
+### ToolMap
+
+```ts
+type ToolMap = Readonly<Record<string, ToolDef>>;
+```
+
+A map of tools by the name the model calls them by — the shape every field
+that DECLARES a set of tools takes: [AgentDef.tools](#tools) (what `tools/`
+lowers to) and [SpeakerDef.tools](#tools-1).
+
+Named once so the two cannot drift, and so a helper that builds or filters
+a set of tools has one type to be written against rather than restating
+`Readonly<Record<string, ToolDef>>`.
 
 ***
 
@@ -15906,19 +16018,63 @@ optional start?:
 
 ***
 
-### ToolSet
+### ToolRefusal
 
 ```ts
-type ToolSet = Readonly<Record<string, ToolDef>>;
+type ToolRefusal = ToolFailure & {
+  reason: ToolRefusalReason;
+};
 ```
 
-A map of tools by the name the model calls them by — the shape every field
-that DECLARES a set of tools takes: [AgentDef.tools](#tools) (what `tools/`
-lowers to), [PersonaDef.tools](#tools-1) and [SubagentDef.tools](#tools-2).
+A [ToolFailure](#toolfailure) the RUNTIME or a gate answered before the body ran, its
+`reason` saying which. Still a `ToolFailure` (`isToolFailure` is `true`); the
+field is not on `ToolFailure` itself, so an author's own `{ error }` literal
+keeps narrowing out of a `T | ToolFailure` union.
 
-Named once so the three cannot drift, and so a helper that builds or filters
-a set of tools has one type to be written against rather than restating
-`Readonly<Record<string, ToolDef>>`.
+#### Type Declaration
+
+##### reason
+
+```ts
+reason: ToolRefusalReason;
+```
+
+***
+
+### ToolRefusalReason
+
+```ts
+type ToolRefusalReason = 
+  | "unknown_tool"
+  | "invalid_arguments"
+  | "cancelled"
+  | "persona"
+  | "dialog"
+  | "roster";
+```
+
+Why a call was REFUSED rather than run — the one discriminant every gate and
+dispatcher answers with, so a spec or a client switches on one field instead
+of matching four sentences.
+
+- `"unknown_tool"` — no toolset advertises the name.
+- `"invalid_arguments"` — the arguments failed the tool's input schema.
+- `"cancelled"` — the turn was cut before the body started.
+- `"persona"` — a roster entry's tool, called while another one speaks, or a
+  handoff a dialog pin forbids.
+- `"dialog"` — a `dialog.tool`, called outside its `when` states.
+- `"roster"` — a handoff or delegation naming nobody the roster can route to.
+
+***
+
+### ToolSource
+
+```ts
+type ToolSource = "files" | "builtin" | "mcp" | "roster" | "subagent";
+```
+
+Where a [Toolset](#toolset)'s tools come from — for a log line, a collision
+message, and a spec. It decides nothing about execution; the entry does.
 
 ***
 
@@ -17993,8 +18149,8 @@ equal.
 const DEFAULT_GUARDRAIL_MAX_REVISIONS: number;
 ```
 
-How many times a [SubagentDef.guardrail](#guardrail) may send an answer back when
-the subagent names no [SubagentDef.maxRevisions](#maxrevisions) of its own.
+How many times a [SpeakerDef.guardrail](#guardrail) may send an answer back when
+the subagent names no [SpeakerDef.maxRevisions](#maxrevisions) of its own.
 
 Declared here rather than in `constants.ts` for the reason
 `DEFAULT_STEP_MAX_ATTEMPTS` is declared beside `ctx.step`: a budget whose
@@ -18084,17 +18240,7 @@ would drift from the one the agent runs.
 const DELEGATE_TOOL_NAME: "delegate" = "delegate";
 ```
 
-The name the model calls a roster by.
-
-One tool with a `subagent` argument rather than one tool PER subagent, which
-is the other obvious lowering. Per-subagent tools put the roster in the tool
-LIST, which reads well — and the list is fixed for the whole session
-(`toolSchemas` is computed once and handed to the transport at session
-creation, the same constraint `sdk/dialog.ts` documents), so a roster that
-varies by state is unreachable either way, and n tools cost n schemas in every
-request where this costs one. The deciding reason is smaller: `delegate` is
-also where a shared instruction about HOW to brief a subagent goes, and n
-copies of it is n places for it to drift.
+The name the model hands a TASK off by.
 
 ***
 
@@ -18104,7 +18250,7 @@ copies of it is n places for it to drift.
 const HANDOFF_TOOL_NAME: "handoff" = "handoff";
 ```
 
-The name the model hands off by.
+The name the model hands the CALL off by.
 
 ***
 

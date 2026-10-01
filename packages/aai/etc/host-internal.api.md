@@ -680,9 +680,16 @@ export type DelayedRung = {
 };
 
 // @public
+interface DelegateAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly DelegateToolCall[];
+}
+
+// @public
 type DelegateFn = {
-    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
-    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+    <T>(subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };
 
 // @public
@@ -693,10 +700,16 @@ interface DelegateOptions {
 }
 
 // @public @sealed
-interface DelegateResult extends SubagentAnswer {
+interface DelegateResult extends DelegateAnswer {
     accepted: boolean;
     complaint?: string;
     revisions: number;
+}
+
+// @public
+interface DelegateToolCall {
+    input: unknown;
+    name: string;
 }
 
 // @internal
@@ -1329,7 +1342,7 @@ type SayOptions = {
 export function selectToolMessage<T extends ToolMessageBase>(list: readonly T[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): T | undefined;
 
 // @internal
-export function serializeToolFailure(message: string): string;
+export function serializeToolFailure(message: string, reason?: ToolRefusalReason): string;
 
 // @internal
 export const SESSION_KEEPALIVE_INTERVAL_MS = 15000;
@@ -1409,6 +1422,27 @@ export type SpawnCappedResult = {
     stdout: string;
     stderr: string;
 };
+
+// @public
+interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRetries"> {
+    builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SpeakerGuardrail;
+    llm?: LlmSpec;
+    maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
+    maxRevisions?: number;
+    maxSteps?: number;
+    name: N;
+    schema?: StandardSchemaV1;
+    speaks?: boolean;
+    systemPrompt: string;
+    toolChoice?: ToolChoice;
+    tools?: ToolMap;
+}
+
+// @public
+type SpeakerGuardrail = (answer: DelegateAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
 // @public @sealed
 interface SpeechHandle {
@@ -1501,7 +1535,7 @@ type StepClientTranscriptOptions = {
 };
 
 // @internal
-export type StepDelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
+export type StepDelegateFn = (subagent: SpeakerDef, options: DelegateOptions) => Promise<DelegateResult>;
 
 // @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
@@ -1529,7 +1563,7 @@ export type StepInfoReader = () => StepInfo | undefined;
 
 // @public
 export type StepMcp = {
-    readonly tools: ToolSet;
+    readonly tools: ToolMap;
     readonly servers: readonly StepMcpServer[];
     close(): Promise<void>;
 };
@@ -1597,38 +1631,6 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
 
-// @public
-interface SubagentAnswer {
-    steps: number;
-    text: string;
-    toolCalls: readonly SubagentToolCall[];
-}
-
-// @public
-interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
-    builtinTools?: readonly BuiltinTool[];
-    description?: string;
-    expectedOutput?: string;
-    guardrail?: SubagentGuardrail;
-    llm?: LlmSpec;
-    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
-    maxRevisions?: number;
-    maxSteps?: number;
-    name: string;
-    schema?: StandardSchemaV1;
-    systemPrompt: string;
-    tools?: ToolSet;
-}
-
-// @public
-type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
-
-// @public
-interface SubagentToolCall {
-    input: unknown;
-    name: string;
-}
-
 // @internal
 export function systemPromptResolver(prompt: AgentSystemPrompt | undefined): AgentInstructions | undefined;
 
@@ -1637,6 +1639,12 @@ export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
 // @public
 export const TOOL_START_BLOCKING_MAX_MS = 8000;
+
+// @public
+type ToolChoice = "auto" | "required" | "none" | {
+    type: "tool";
+    toolName: string;
+};
 
 // @public
 type ToolCompletionMessage = {
@@ -1695,6 +1703,9 @@ type ToolFailure = {
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+type ToolMap = Readonly<Record<string, ToolDef>>;
+
+// @public
 export type ToolMessageBase = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1724,6 +1735,9 @@ type ToolMessagesInput = {
 };
 
 // @public
+type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster";
+
+// @public
 type ToolSchema = {
     type: "function";
     name: string;
@@ -1731,9 +1745,6 @@ type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
 };
-
-// @public
-type ToolSet = Readonly<Record<string, ToolDef>>;
 
 // @public
 type ToolStartMessage = {
@@ -1762,7 +1773,7 @@ interface TypedDelegateResult<T> extends DelegateResult {
 }
 
 // @public
-interface TypedSubagentDef<T> extends SubagentDef {
+interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
 }

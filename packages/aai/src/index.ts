@@ -11,8 +11,8 @@
  * | session state | {@link sessionSlot} — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projected` shows it to the browser |
  * | conversation order | {@link dialog} — a tool declared `when` simply does not run outside those states |
  * | work that outlives the call | {@link workflow} — journaled, resumable; {@link workflowApp} for an agent whose front door is a form |
- * | a second tool loop | {@link subagent}, reached with `ctx.delegate` |
- * | who is speaking | {@link personas} — a roster the session hands the caller between, with `handoff` |
+ * | a second tool loop | {@link speaker}, reached with `ctx.delegate` |
+ * | who is speaking | {@link roster} — `speaks: true` entries the session hands the caller between, with `handoff` |
  * | the default pipeline, spelled out | {@link assemblyAIPipeline}; {@link assemblyAIS2s} opts into speech-to-speech instead |
  *
  * ```ts

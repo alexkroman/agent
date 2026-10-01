@@ -148,6 +148,17 @@ export type ToolFailure = {
 export function toolFailure(message: string): ToolFailure;
 
 // @public
+export type ToolRefusal = ToolFailure & {
+    reason: ToolRefusalReason;
+};
+
+// @public
+export function toolRefusal(reason: ToolRefusalReason, message: string): ToolRefusal;
+
+// @public
+export type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster";
+
+// @public
 export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;
 
 // (No @packageDocumentation comment for this package)

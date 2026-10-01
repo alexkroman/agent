@@ -1254,9 +1254,9 @@ const handler = routeStepFetch([model.route, (req) =>
 
 ```ts
 function runGuardrail(
-   def: SubagentDef, 
+   def: SpeakerDef, 
    text: string, 
-   answer?: Partial<SubagentAnswer>
+   answer?: Partial<DelegateAnswer>
 ): GuardrailVerdict;
 ```
 
@@ -1279,7 +1279,7 @@ would add to that.
 
 ##### def
 
-[`SubagentDef`](index.md#subagentdef)
+[`SpeakerDef`](index.md#speakerdef)
 
 ##### text
 
@@ -1287,7 +1287,7 @@ would add to that.
 
 ##### answer?
 
-`Partial`\<[`SubagentAnswer`](index.md#subagentanswer)\>
+`Partial`\<[`DelegateAnswer`](index.md#delegateanswer)\>
 
 #### Returns
 
@@ -1296,10 +1296,10 @@ would add to that.
 #### Example
 
 ```ts
-import { subagent } from "@alexkroman1/aai";
+import { speaker } from "@alexkroman1/aai";
 import { runGuardrail } from "@alexkroman1/aai/testing";
 
-const checker = subagent({
+const checker = speaker({
   name: "fact-checker",
   systemPrompt: "Open with Confirmed:, Contradicted: or Unclear:.",
   guardrail: ({ text }) => /^(Confirmed|Contradicted|Unclear):/.test(text) || "Open with a verdict word.",
@@ -2741,7 +2741,7 @@ The whole options object, for asserting `context` and `maxSteps`.
 ##### subagent
 
 ```ts
-subagent: SubagentDef;
+subagent: SpeakerDef;
 ```
 
 The subagent that was asked.
@@ -3797,7 +3797,7 @@ type StubDelegateReply =
   revisions?: number;
   steps?: number;
   text: string;
-  toolCalls?: readonly SubagentToolCall[];
+  toolCalls?: readonly DelegateToolCall[];
 };
 ```
 
@@ -3821,7 +3821,7 @@ is what a tool that only reads `text` wants. The object form fills in
   revisions?: number;
   steps?: number;
   text: string;
-  toolCalls?: readonly SubagentToolCall[];
+  toolCalls?: readonly DelegateToolCall[];
 }
 ```
 
@@ -3863,7 +3863,7 @@ text: string;
 ###### toolCalls?
 
 ```ts
-optional toolCalls?: readonly SubagentToolCall[];
+optional toolCalls?: readonly DelegateToolCall[];
 ```
 
 ***
@@ -5297,21 +5297,37 @@ is not here, for the same reason it is not in the browser.
 
 ```ts
 type ToolBearingAgent = {
+  dialogs?: readonly AnyDialog[];
   tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+  toolsets?: readonly Toolset[];
 };
 ```
 
-The slice of an agent these helpers read: its tool table.
+The slice of an agent these helpers read: its tool table — the `tools/`
+files plus every toolset `agent()` attached (a roster's `handoff`, `delegate`
+and gated tools), gated by its dialogs.
 
 Structural rather than `AgentDef`, so a spec may pass the agent's default
 export, a bare `{ tools }` literal, or anything else carrying one.
 
 #### Properties
 
+##### dialogs?
+
+```ts
+readonly optional dialogs?: readonly AnyDialog[];
+```
+
 ##### tools
 
 ```ts
 readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+```
+
+##### toolsets?
+
+```ts
+readonly optional toolsets?: readonly Toolset[];
 ```
 
 ***

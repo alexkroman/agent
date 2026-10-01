@@ -848,7 +848,7 @@ export async function memorize(
 ### stepDelegate()
 
 ```ts
-function stepDelegate(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+function stepDelegate(subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 ```
 
 Hand a bounded task to a SUBAGENT from inside a step.
@@ -865,7 +865,7 @@ cancelled parent.
 
 ##### subagent
 
-[`SubagentDef`](index.md#subagentdef)
+[`SpeakerDef`](index.md#speakerdef)
 
 ##### options
 

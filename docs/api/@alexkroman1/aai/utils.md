@@ -969,6 +969,24 @@ Re-exports [ToolFailure](index.md#toolfailure)
 
 ***
 
+### toolRefusal
+
+Re-exports [toolRefusal](index.md#toolrefusal-1)
+
+***
+
+### ToolRefusal
+
+Re-exports [ToolRefusal](index.md#toolrefusal)
+
+***
+
+### ToolRefusalReason
+
+Re-exports [ToolRefusalReason](index.md#toolrefusalreason)
+
+***
+
 ### withLock
 
 Re-exports [withLock](index.md#withlock)

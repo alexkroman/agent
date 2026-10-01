@@ -1,0 +1,22 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "subagent",
+  "epoch": 5,
+  "rule": 2,
+  "sha256": "5b6afe89e57e8453b156748c820373dcd4266a574ceabbe674ad3d06e75ad4b4",
+  "exports": [
+    "DEFAULT_GUARDRAIL_MAX_REVISIONS",
+    "DelegateAnswer",
+    "DelegateFn",
+    "DelegateOptions",
+    "DelegateResult",
+    "DelegateToolCall",
+    "GuardrailVerdict",
+    "SpeakerDef",
+    "SpeakerGuardrail",
+    "TypedDelegateResult",
+    "TypedSpeakerDef",
+    "speaker"
+  ],
+  "rollup": "0abbe3ef1cf108d62b7a75698cbf13bd99896b433a6648c38c2e5450d296d39f"
+}

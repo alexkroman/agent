@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 16,
-    "supported": [1, 2, 3, 9, 11, 12, 15, 16],
+    "current": 17,
+    "supported": [1, 2, 3, 9, 15, 17],
     "dropped": {
       "4": "keyterms, agentContext and the lowConfidence policy are removed. An epoch-4 agent that declared assemblyAIStt({ keyterms }) or agent({ lowConfidence }) no longer compiles, so its frozen example could not either — which is why this is a retire rather than an example somebody owes.",
       "5": "Epoch 5 is the epoch that HAD the fast/slow split: it added `AgentModelTuning.twoTier`, `TwoTierConfig`, `SlowTierEffort` and the digest constants, and epoch 7 removes all of them. An epoch-5 author's declaration does not compile, so a frozen example for it could not either — which is why this is a retire rather than an example somebody owes. Epoch 4, the last epoch BEFORE the field, is unaffected and stays supported: removing `twoTier` restores exactly the surface its own frozen example was written against.",
@@ -9,8 +9,11 @@
       "7": "Removes agent({ lowConfidence }) and the three LowConfidence* types with it. An epoch-7 agent that declared the policy no longer compiles; one that did not is unaffected, but the type is gone from the surface so there is nothing to retain.",
       "8": "The regex-keyed endpointing rule table, the two barge-in phrase lists and the smartMatching preset are removed, so an epoch-8 agent declaring endpointingRules, acknowledgementPhrases, interruptionPhrases or voicePresets: [\"smartMatching\"] no longer compiles. All four decided behaviour by pattern-matching the caller's own words; the table was measured to absorb 27-40% of turns' endpointing budget, which is why a minTurnSilenceMs change could not be measured at all.",
       "10": "Its frozen example indexes VOICE_PRESETS with a VoicePresetName; VoicePresetName is open now (any string) and VOICE_PRESETS is keyed by KnownVoicePresetName, so the index no longer type-checks.",
+      "11": "Declares personas via persona()/personas() and agent({ personas }); both are replaced by speaker({ speaks: true }), roster() and agent({ roster }).",
+      "12": "Declares agent({ personas: personas([...]) }); replaced by roster() and agent({ roster }).",
       "13": "VoicePresetName and the turnDetection field are now open vocabularies (KnownVoicePresetName | (string & {}), TurnDetectionMode = KnownTurnDetectionMode | (string & {})) and VOICE_PRESETS is Readonly<Record<KnownVoicePresetName, string>> rather than its literal text; code that indexes VOICE_PRESETS with a VoicePresetName, or narrows an AgentDef's turnDetection/voicePresets to the old closed unions, no longer compiles.",
-      "14": "BuiltinTool and TelephonyCarrier are open vocabularies now (each gained | (string & {})), and KnownTurnDetectionMode and KnownVoicePresetName were removed with the rest of the Known* aliases: an epoch-14 author importing either name, or narrowing exhaustively over an AgentDef's builtinTools or telephony carriers, no longer compiles."
+      "14": "BuiltinTool and TelephonyCarrier are open vocabularies now (each gained | (string & {})), and KnownTurnDetectionMode and KnownVoicePresetName were removed with the rest of the Known* aliases: an epoch-14 author importing either name, or narrowing exhaustively over an AgentDef's builtinTools or telephony carriers, no longer compiles.",
+      "16": "AgentDef's subagents and personas fields are replaced by one roster (a roster() of SpeakerDefs) and the resolved toolsets field; an agent passing either old field no longer compiles."
     }
   },
   "builtins": {
@@ -93,9 +96,11 @@
     "dropped": {}
   },
   "persona": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "persona()/personas()/PersonaDef/Personas/PersonaPosition are replaced by speaker() with speaks: true, roster(), SpeakerDef, Roster and SpeakerPosition (position.speaker, not position.persona)."
+    }
   },
   "procedure": {
     "current": 1,
@@ -137,9 +142,12 @@
     "dropped": {}
   },
   "step": {
-    "current": 3,
-    "supported": [1, 2, 3],
-    "dropped": {}
+    "current": 4,
+    "supported": [2, 4],
+    "dropped": {
+      "1": "Names SubagentDef, which is replaced by SpeakerDef.",
+      "3": "stepDelegate takes a SpeakerDef; SubagentDef no longer exists, so a step naming it no longer compiles."
+    }
   },
   "step-errors": {
     "current": 1,
@@ -159,12 +167,13 @@
     }
   },
   "subagent": {
-    "current": 4,
-    "supported": [4],
+    "current": 5,
+    "supported": [5],
     "dropped": {
       "1": "Imports DEFAULT_GUARDRAIL_MAX_RETRIES, renamed DEFAULT_GUARDRAIL_MAX_REVISIONS, and sets maxRetries as the guardrail budget — which is now the provider's retry budget (ModelTuning.maxRetries); the guardrail's is maxRevisions.",
       "2": "Sets maxRetries beside a guardrail as the revision budget. SpeakerDef no longer accepts maxRetries — it is a compile error naming maxRevisions, the guardrail's budget now — so an epoch-2 subagent fails to build rather than silently budgeting the wrong thing.",
-      "3": "The guardrail's revision budget is renamed maxRevisions and DEFAULT_GUARDRAIL_MAX_RETRIES is DEFAULT_GUARDRAIL_MAX_REVISIONS. SpeakerDef takes ModelTuning WITHOUT maxRetries, so an epoch-3 subagent writing guardrail + maxRetries (or importing the constant) no longer compiles, and the error names maxRevisions; a subagent's provider requests retry on the AI SDK default."
+      "3": "The guardrail's revision budget is renamed maxRevisions and DEFAULT_GUARDRAIL_MAX_RETRIES is DEFAULT_GUARDRAIL_MAX_REVISIONS. SpeakerDef takes ModelTuning WITHOUT maxRetries, so an epoch-3 subagent writing guardrail + maxRetries (or importing the constant) no longer compiles, and the error names maxRevisions; a subagent's provider requests retry on the AI SDK default.",
+      "4": "subagent()/SubagentDef/SubagentRoster and the Subagent* answer types are replaced by speaker(), SpeakerDef, a roster() and DelegateAnswer/DelegateToolCall/SpeakerGuardrail; DELEGATE_TOOL_NAME moved to the persona (roster) capability."
     }
   },
   "testing": {

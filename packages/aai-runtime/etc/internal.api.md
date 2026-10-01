@@ -34,9 +34,9 @@ import type { SessionEventType } from '@alexkroman1/aai';
 import type { SessionSourcedEventType } from '@alexkroman1/aai';
 import type { SessionSpeech } from '@alexkroman1/aai';
 import type { SlotStore } from '@alexkroman1/aai';
+import type { SpeakerDef } from '@alexkroman1/aai';
 import type { SpeechHandle } from '@alexkroman1/aai';
-import type { SubagentDef } from '@alexkroman1/aai';
-import type { ToolDef } from '@alexkroman1/aai';
+import type { Toolset } from '@alexkroman1/aai';
 import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
 import { UPLOAD_PART_BYTES } from '@alexkroman1/aai/host-internal';
 import { UPLOAD_TOKEN_RE } from '@alexkroman1/aai/host-internal';
@@ -178,7 +178,7 @@ export function executeToolCall(name: string, args: Readonly<Record<string, unkn
 
 // @public (undocumented)
 type ExecuteToolCallOptions = {
-    tool: ToolDef;
+    toolset: Toolset;
     env: Readonly<Record<string, string>>;
     slots?: SlotStore | undefined;
     sessionId?: string | undefined;
@@ -698,13 +698,13 @@ export type StoredSessionEvent = {
 };
 
 // @internal
-type SubagentRunner = (subagent: SubagentDef, options: DelegateOptions, parent: ToolCallDefaults) => Promise<DelegateResult>;
+type SubagentRunner = (subagent: SpeakerDef, options: DelegateOptions, parent: ToolCallDefaults) => Promise<DelegateResult>;
 
 // @public
 export const TELEPHONY_PATH = "/phone";
 
 // @internal
-type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
+type ToolCallDefaults = Omit<ExecuteToolCallOptions, "toolset">;
 
 // @internal
 export function traceIdOf(header: string | null | undefined): string | undefined;

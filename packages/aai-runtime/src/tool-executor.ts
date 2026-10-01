@@ -480,10 +480,8 @@ type ToolCall = {
  * The dispatcher every in-process tool path shares: compose the toolsets
  * first-wins (the precedence `agentToolsToSchemas` advertised), look the name
  * up, or report an unknown one AS A TOOL RESULT (`reason: "unknown_tool"`) — a
- * failure the MODEL recovers from, not a throw that fails the turn.
- *
- * Everything below the lookup stays with the caller: the paths build genuinely
- * different contexts (a live emitter and commit point, or a detached store).
+ * failure the MODEL recovers from, not a throw that fails the turn. Everything
+ * below the lookup stays with the caller, whose contexts genuinely differ.
  *
  * @internal
  */
@@ -494,8 +492,8 @@ export function createToolDispatcher(
   const table = composeToolsets(toolsets);
   return (name, args, sessionId, messages, options) => {
     const found = table.resolve(name);
-    if (!found)
-      return Promise.resolve(serializeToolFailure(`Unknown tool: ${name}`, "unknown_tool"));
+    const unknown = serializeToolFailure(`Unknown tool: ${name}`, "unknown_tool");
+    if (!found) return Promise.resolve(unknown);
     return run(found.toolset, { name, args, sessionId: sessionId ?? "", messages, options });
   };
 }

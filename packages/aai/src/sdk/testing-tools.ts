@@ -16,9 +16,10 @@
  */
 
 import { createToolContext } from "./_testing-context.ts";
+import type { AnyDialog } from "./dialog-handle.ts";
 import { isRecord } from "./is-record.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
-import { agentToolsets, composeToolsets, type DialogToolGate, type Toolset } from "./toolset.ts";
+import { agentToolsets, composeToolsets, type Toolset } from "./toolset.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
 /**
@@ -34,7 +35,7 @@ import type { ToolContext, ToolDef } from "./types.ts";
 export type ToolBearingAgent = {
   readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
   readonly toolsets?: readonly Toolset[] | undefined;
-  readonly dialogs?: readonly DialogToolGate[] | undefined;
+  readonly dialogs?: readonly AnyDialog[] | undefined;
 };
 
 /**

@@ -23,7 +23,6 @@
 
 export {
   DEFAULT_GUARDRAIL_MAX_REVISIONS,
-  DELEGATE_TOOL_NAME,
   type DelegateAnswer,
   type DelegateFn,
   type DelegateOptions,

@@ -3,7 +3,7 @@
   "capability": "tool",
   "epoch": 5,
   "rule": 2,
-  "sha256": "a4594cb762b0a58a870253f09dfab2d411aa43a35393b603516784167997223d",
+  "sha256": "501b4ed1f9797f922c36adef6dfe6b0a7c2ed9d4061366df2f8dc5ee093246f0",
   "exports": [
     "ClientToolDef",
     "DefaultToolResult",
@@ -17,23 +17,30 @@
     "ToolDef",
     "ToolDelayedMessage",
     "ToolErrorHandler",
+    "ToolExecutor",
     "ToolFailure",
     "ToolInputSchema",
+    "ToolMap",
     "ToolMessageCondition",
     "ToolMessages",
     "ToolMessagesInput",
-    "ToolSet",
+    "ToolRefusal",
+    "ToolRefusalReason",
+    "ToolSource",
     "ToolStartMessage",
+    "Toolset",
+    "ToolsetEntry",
     "clientTool",
     "failable",
     "isToolFailure",
     "orFail",
     "requireEnv",
     "tool",
-    "toolFailure"
+    "toolFailure",
+    "toolRefusal"
   ],
   "rollup": "2976e3bb2f94220cad2af268e01619aa4833adb6abf5abe57107a7d0b20a7423",
-  "revision": 3,
+  "revision": 4,
   "revisions": [
     {
       "revision": 0,
@@ -58,6 +65,12 @@
       "rule": 2,
       "sha256": "a4594cb762b0a58a870253f09dfab2d411aa43a35393b603516784167997223d",
       "reason": "additive (checked): +ClientToolDef, +ToolSet, +clientTool"
+    },
+    {
+      "revision": 4,
+      "rule": 2,
+      "sha256": "501b4ed1f9797f922c36adef6dfe6b0a7c2ed9d4061366df2f8dc5ee093246f0",
+      "reason": "additive (checked): +ClientToolDef, +ToolExecutor, +ToolMap, +ToolRefusal, +ToolRefusalReason, +ToolSource, +Toolset, +ToolsetEntry, +clientTool, +toolRefusal"
     }
   ]
 }

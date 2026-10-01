@@ -77,7 +77,8 @@ export default agent({
   synchronously. There is no `ctx.state` and no `ctx.db`.
 - `dialog()` / `procedure()` — a flow the model is gated by, and a flow your
   own code drives.
-- `subagent()` — a second tool loop to delegate to.
+- `speaker()` / `roster()` — a second voice: delegated to off the line
+  (`ctx.delegate`), or handed the call (`speaks: true`).
 - `workflow()` / `workflowApp()` — a durable run, and a form-shaped agent whose
   front door is a workflow rather than a microphone.
 - `assemblyAIPipeline()` — the same default pipeline as an explicit spread
@@ -328,10 +329,10 @@ several angles — and the call carries only the answer. A subagent is a second
 tool loop with its own system prompt, model, tools and context window:
 
 ```ts
-import { subagent, tool } from "@alexkroman1/aai";
+import { speaker, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-const researcher = subagent({
+const researcher = speaker({
   name: "researcher",
   systemPrompt:
     "Research the task with the tools you have. IMPORTANT: your final message " +

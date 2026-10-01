@@ -306,44 +306,37 @@ function toolReturning(description: string, value: unknown): ToolDef {
   return { description, execute: () => value as unknown as string };
 }
 
+/** Run one def through `executeToolCall` as a one-tool `"files"` toolset. */
+function callTool(name: string, args: Record<string, unknown>, tool: ToolDef, extra = {}) {
+  return executeToolCall(name, args, {
+    toolset: toolset("files", { [name]: tool }),
+    env: {},
+    ...extra,
+  });
+}
+
 describe("executeToolCall", () => {
   test("returns 'null' when tool execute returns null", async () => {
     const tool = toolReturning("Returns null", null);
-    const result = await executeToolCall(
-      "nullTool",
-      {},
-      { toolset: toolset("files", { nullTool: tool }), env: {} },
-    );
+    const result = await callTool("nullTool", {}, tool);
     expect(result).toBe("null");
   });
 
   test("returns 'null' when tool execute returns undefined", async () => {
     const tool = toolReturning("Returns undefined", undefined);
-    const result = await executeToolCall(
-      "undefinedTool",
-      {},
-      { toolset: toolset("files", { undefinedTool: tool }), env: {} },
-    );
+    const result = await callTool("undefinedTool", {}, tool);
     expect(result).toBe("null");
   });
 
   test("JSON.stringifies non-string results", async () => {
     const tool = toolReturning("Returns object", { count: 42 });
-    const result = await executeToolCall(
-      "objTool",
-      {},
-      { toolset: toolset("files", { objTool: tool }), env: {} },
-    );
+    const result = await callTool("objTool", {}, tool);
     expect(result).toBe(JSON.stringify({ count: 42 }));
   });
 
   test("JSON.stringifies numeric results", async () => {
     const tool = toolReturning("Returns number", 123);
-    const result = await executeToolCall(
-      "numTool",
-      {},
-      { toolset: toolset("files", { numTool: tool }), env: {} },
-    );
+    const result = await callTool("numTool", {}, tool);
     expect(result).toBe("123");
   });
 
@@ -353,11 +346,7 @@ describe("executeToolCall", () => {
       inputSchema: z.object({ n: z.number() }),
       execute: ({ n }: { n: number }) => String(n),
     };
-    const result = await executeToolCall(
-      "typedTool",
-      { n: "not-a-number" },
-      { toolset: toolset("files", { typedTool: tool }), env: {} },
-    );
+    const result = await callTool("typedTool", { n: "not-a-number" }, tool);
     expect(result).toContain("error");
     expect(result).toContain("Invalid arguments");
     expect(result).toContain("typedTool");
@@ -369,11 +358,7 @@ describe("executeToolCall", () => {
       inputSchema: z.object({ config: z.object({ port: z.number() }) }),
       execute: () => "ok",
     };
-    const result = await executeToolCall(
-      "nestedTool",
-      { config: { port: "abc" } },
-      { toolset: toolset("files", { nestedTool: tool }), env: {} },
-    );
+    const result = await callTool("nestedTool", { config: { port: "abc" } }, tool);
     expect(result).toContain("config.port");
   });
 
@@ -385,11 +370,7 @@ describe("executeToolCall", () => {
       },
     };
     const logger = makeLogger();
-    const result = await executeToolCall(
-      "failTool",
-      {},
-      { toolset: toolset("files", { failTool: tool }), env: {}, logger },
-    );
+    const result = await callTool("failTool", {}, tool, { logger });
     expect(result).toContain("error");
     expect(result).toContain("boom");
     expect(logger.warn).toHaveBeenCalledWith(
@@ -406,11 +387,7 @@ describe("executeToolCall", () => {
       },
     };
     const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const result = await executeToolCall(
-      "failTool",
-      {},
-      { toolset: toolset("files", { failTool: tool }), env: {} },
-    );
+    const result = await callTool("failTool", {}, tool);
     expect(result).toContain("error");
     expect(result).toContain("no-logger-boom");
     expect(spy).toHaveBeenCalledWith(
@@ -431,16 +408,8 @@ describe("executeToolCall", () => {
       description: "Bump and report",
       execute: (_args, ctx) => JSON.stringify(slot.update(ctx, (s) => ++s.n)),
     };
-    const first = await executeToolCall(
-      "stateTool",
-      {},
-      { toolset: toolset("files", { stateTool: tool }), env: {} },
-    );
-    const second = await executeToolCall(
-      "stateTool",
-      {},
-      { toolset: toolset("files", { stateTool: tool }), env: {} },
-    );
+    const first = await callTool("stateTool", {}, tool);
+    const second = await callTool("stateTool", {}, tool);
     expect([JSON.parse(first), JSON.parse(second)]).toEqual([1, 1]);
   });
 
@@ -449,11 +418,7 @@ describe("executeToolCall", () => {
       description: "Get messages",
       execute: (_args, ctx) => JSON.stringify(ctx.messages),
     };
-    const result = await executeToolCall(
-      "msgTool",
-      {},
-      { toolset: toolset("files", { msgTool: tool }), env: {} },
-    );
+    const result = await callTool("msgTool", {}, tool);
     expect(JSON.parse(result)).toEqual([]);
   });
 
@@ -465,16 +430,8 @@ describe("executeToolCall", () => {
       description: "Get sessionId",
       execute: (_args, ctx) => ctx.sessionId,
     };
-    const first = await executeToolCall(
-      "sidTool",
-      {},
-      { toolset: toolset("files", { sidTool: tool }), env: {} },
-    );
-    const second = await executeToolCall(
-      "sidTool",
-      {},
-      { toolset: toolset("files", { sidTool: tool }), env: {} },
-    );
+    const first = await callTool("sidTool", {}, tool);
+    const second = await callTool("sidTool", {}, tool);
     expect(first).not.toBe("");
     expect(second).not.toBe(first);
   });
@@ -484,11 +441,7 @@ describe("executeToolCall", () => {
       description: "No params",
       execute: () => "ok",
     };
-    const result = await executeToolCall(
-      "noParamsTool",
-      { any: "thing" },
-      { toolset: toolset("files", { noParamsTool: tool }), env: {} },
-    );
+    const result = await callTool("noParamsTool", { any: "thing" }, tool);
     expect(result).toBe("ok");
   });
 });
