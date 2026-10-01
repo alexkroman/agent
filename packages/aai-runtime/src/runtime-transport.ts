@@ -307,6 +307,7 @@ export function createTransportFactory(
    * already on the line.
    */
   const reported = new Set<string>();
+  const declaresOnError = Object.values(agent.tools ?? {}).some((t) => t.onError !== undefined);
   function reportCapabilities(
     transport: Transport,
     name: string,
@@ -315,7 +316,11 @@ export function createTransportFactory(
     reportSessionCapabilities(
       transport.capabilities,
       name,
-      { dialogKnobs: args.dialogTurn !== undefined, personaKnobs: args.personaTurn !== undefined },
+      {
+        dialogKnobs: args.dialogTurn !== undefined,
+        personaKnobs: args.personaTurn !== undefined,
+        fatalTool: declaresOnError,
+      },
       logger,
       reported,
     );

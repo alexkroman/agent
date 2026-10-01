@@ -257,7 +257,9 @@ bug; `ToolDef.onError` says which kind. `tool-error-policy.ts` decides
 - A fatal verdict stops the turn in pipeline and text mode through
   `FatalToolLatch` (the AI SDK swallows the rejection). `withFatalSignal` folds
   it into the REQUEST signal, never the turn's, or it reads as a barge-in.
-- **S2S cannot abort** and degrades to a serialized failure.
+- **S2S cannot abort** and degrades to a serialized failure — the `fatalTool`
+  capability, warned once at session start for an agent whose tools declare
+  `onError`.
 - **The wire's `fatal` stays `false` for both arms**: `fatal: true` means the
   SESSION is over and `aai-ui` ends the call.
 - The four guard rules are in
@@ -444,4 +446,5 @@ producers already take (`pipeline-llm-trace.ts`, `pipeline-audio-out.ts`).
   `metrics-sink.ts` (`registerMetricsSink`, `/metrics`), `Symbol.for`-keyed for
   the two-copies reason. `startTracing` registers `otelMetricsSink`
   (`_metrics-otel.ts`); a missing metrics peer is a warning, never a throw.
-- S2S and text mode emit no frame yet.
+- S2S and text mode emit no frame yet (the `turnMetrics` capability row in
+  `transports/CLAUDE.md`).

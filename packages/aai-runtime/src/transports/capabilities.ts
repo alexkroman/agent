@@ -129,6 +129,19 @@ export const CAPABILITY_ROWS = {
     warnAtStart:
       "This agent's personas declare toolChoice/temperature, and the {transport} transport applies neither per step: that service assembles each request itself. Every persona's prompt section still reaches the model, and another persona's tool still refuses at execution.",
   },
+  fatalTool: {
+    feature: "a tool's `onError` FATAL verdict stops the turn and speaks `errorPhrase`",
+    verbs: [],
+    absent:
+      "warned at session start; a fatal verdict reaches the model as a failure result instead",
+    warnAtStart:
+      "This agent's tools declare onError, and the {transport} transport cannot stop a turn on a FATAL verdict: the service runs the turn and has no abort the host can send. A fatal verdict there reaches the model as an ordinary failure result.",
+  },
+  turnMetrics: {
+    feature: "one `metrics.collected` frame per settled reply (`pipeline-turn-metrics.ts`)",
+    verbs: [],
+    absent: "no frame — the service reports no per-stage marks (a known gap)",
+  },
   hostedTurn: {
     feature:
       "the HOST runs the model turn: guardrails, `usageLimits`, model tuning, pipeline voice tuning",
@@ -157,6 +170,8 @@ export const PIPELINE_CAPABILITIES: TransportCapabilities = {
   perTurnPrompt: true,
   dialogKnobs: true,
   personaKnobs: true,
+  fatalTool: true,
+  turnMetrics: true,
   hostedTurn: true,
 };
 
@@ -174,6 +189,8 @@ const S2S_BASE: TransportCapabilities = {
   perTurnPrompt: false,
   dialogKnobs: false,
   personaKnobs: false,
+  fatalTool: false,
+  turnMetrics: false,
   hostedTurn: false,
 };
 
@@ -220,6 +237,7 @@ export function renderCapabilityTable(): string {
 export type DeclaredFeatures = {
   readonly dialogKnobs: boolean;
   readonly personaKnobs: boolean;
+  readonly fatalTool: boolean;
 };
 
 /**
@@ -244,7 +262,7 @@ export function reportSessionCapabilities(
     once.add(key);
     line();
   };
-  for (const name of ["dialogKnobs", "personaKnobs"] as const) {
+  for (const name of ["dialogKnobs", "personaKnobs", "fatalTool"] as const) {
     if (!declared[name] || capabilities[name]) continue;
     say(name, () =>
       log.warn(CAPABILITY_ROWS[name].warnAtStart.replace("{transport}", transportName)),

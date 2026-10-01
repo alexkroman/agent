@@ -116,7 +116,7 @@ describe("reportSessionCapabilities", () => {
   test("warns for a declared knob the transport cannot apply, once", () => {
     const log = makeLogger();
     const once = new Set<string>();
-    const declared = { dialogKnobs: true, personaKnobs: false };
+    const declared = { dialogKnobs: true, personaKnobs: false, fatalTool: false };
     reportSessionCapabilities(ASSEMBLYAI_S2S_CAPABILITIES, "AssemblyAI S2S", declared, log, once);
     reportSessionCapabilities(ASSEMBLYAI_S2S_CAPABILITIES, "AssemblyAI S2S", declared, log, once);
     expect(log.warn).toHaveBeenCalledTimes(1);
@@ -127,7 +127,7 @@ describe("reportSessionCapabilities", () => {
 
   test("says nothing for a transport that can do everything declared", () => {
     const log = makeLogger();
-    const declared = { dialogKnobs: true, personaKnobs: true };
+    const declared = { dialogKnobs: true, personaKnobs: true, fatalTool: true };
     reportSessionCapabilities(PIPELINE_CAPABILITIES, "pipeline", declared, log, new Set());
     expect(log.warn).not.toHaveBeenCalled();
     expect(log.info).not.toHaveBeenCalled();
