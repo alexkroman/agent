@@ -631,8 +631,8 @@ driver-level bugs.
 
 `createLogger("<namespace>")` at module scope; nothing writes to `console.*`.
 It is built on the SDK's `Logger` (konsistent `platform-logger`). Specs use
-`captureLogs()` (`_logger-test-utils.ts`) and assert THAT a line was written, not its
-wording.
+`captureLogs()` (`_logger-test-utils.ts`) and assert THAT a line was
+written, not its wording.
 
 ### An agent's own output — `GET /:slug/logs`
 
