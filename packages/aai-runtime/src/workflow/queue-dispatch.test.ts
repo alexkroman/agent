@@ -256,7 +256,7 @@ describe("a park is reported, with how long the walk has been running", () => {
       headers: { "x-vqs-queue-name": queueName },
     });
 
-  /** The `Logger` shape is every level required — see `runtime-config.ts`. */
+  /** The `Logger` shape is every level required — see `logger.ts`. */
   const fakeLogger = () => ({
     debug: vi.fn(),
     info: vi.fn(),

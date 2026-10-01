@@ -41,7 +41,7 @@ import {
   createRateLimiter,
   WORKFLOW_START_IP_RATE_LIMIT,
 } from "./rate-limit.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 /** Every key this file mints. The sweep matches this and nothing else. */
 const KEY_PREFIX = `rl-scenario-${process.pid}-`;

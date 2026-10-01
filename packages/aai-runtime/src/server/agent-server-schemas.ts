@@ -31,7 +31,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { ensureSessionStateSchema } from "../session-state/backends/postgres.ts";
 import { ensureWorkflowJournalSchema } from "../workflow/journal/schema.ts";
 import { resolveStorageHome } from "../workflow/storage-home.ts";

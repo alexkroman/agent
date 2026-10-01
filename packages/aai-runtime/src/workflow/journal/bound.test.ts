@@ -14,7 +14,7 @@
 import type { WorkflowContext } from "@alexkroman1/aai";
 import type { Mock } from "vitest";
 import { describe, expect, test, vi } from "vitest";
-import type { Logger } from "../../runtime-config.ts";
+import type { Logger } from "../../logger.ts";
 import { replayRun } from "../replay.ts";
 import { createMemoryJournal } from "./backends/memory.ts";
 import { journalBound, WORKFLOW_JOURNAL_MAX_STEPS, WORKFLOW_JOURNAL_WARN_STEPS } from "./bound.ts";

@@ -35,7 +35,7 @@ import { describe, expect, test, vi } from "vitest";
 import { WebSocket as NodeWebSocket } from "ws";
 import { z } from "zod";
 import { makeLogger, silentLogger, withDeadline } from "../_test-utils.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { AGENT_SERVER_ENV as ENV, withServer } from "./_agent-server-test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
 

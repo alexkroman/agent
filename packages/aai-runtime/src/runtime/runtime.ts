@@ -8,18 +8,14 @@
  */
 
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS, systemPromptResolver } from "@alexkroman1/aai/host-internal";
-import { invariant } from "@alexkroman1/aai/internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { openAppDb } from "../app-db.ts";
-import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "../runtime-config.ts";
+import { consoleLogger } from "../logger.ts";
+import { DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "../s2s-config.ts";
 import {
-  composeSessionGreeting,
-  createResumeFindings,
-  createSessionCore,
   createSessionDirectory,
-  type ServerSession,
   type SessionWebSocket,
   wireSessionSocket,
 } from "../session/index.ts";
@@ -30,14 +26,12 @@ import { compileAgentRoutes } from "./agent-routes.ts";
 import { registerConnector } from "./connect.ts";
 import { createPipelineProviderResolver } from "./pipeline-providers.ts";
 import { logResolvedRuntime, resolveEffectiveProviders } from "./providers.ts";
-import { buildSessionCallbacks } from "./session-callbacks.ts";
-import { openSessionWiring, stopSessionsWithin } from "./session-controls.ts";
-import { openSessionMemory } from "./session-memory.ts";
-import { attachSessionState, createRuntimeSessionState } from "./session-state.ts";
-import { attachSessionStream } from "./session-stream.ts";
+import { stopSessionsWithin } from "./session-controls.ts";
+import { createSessionFactory } from "./session-factory.ts";
+import { createRuntimeSessionState } from "./session-state.ts";
 import { createSystemPromptResolver } from "./system-prompt.ts";
 import { setupTools } from "./tools.ts";
-import { createTransportFactory, type SessionBuildOpts, usesAssemblyS2s } from "./transport.ts";
+import { createTransportFactory, usesAssemblyS2s } from "./transport.ts";
 import type {
   HostRuntime,
   HostRuntimeOptions,
@@ -260,117 +254,23 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   });
 
   const recall = { agent, env, workflows, logger, history: sessionState.history, speech };
-  function createSession(sessionOpts: SessionBuildOpts): ServerSession {
-    // A resume under this id (same key, new socket) reclaims its tool state —
-    // cancel the sweep the previous session's stop() scheduled.
-    sessionState.sweeps.cancel(sessionOpts.id);
-    // Everything one session is wired with before its transport exists — the
-    // event emitter and its hooks, the dialogs that address the prompt, the
-    // token meter and the guardrails. See `session-controls.ts`.
-    const { dialogs, personas, emitter, usage, guardrails } = openSessionWiring({
-      agent,
-      env,
-      sessionId: sessionOpts.id,
-      client: sessionOpts.client,
-      state: sessionState,
-      prompt: systemPrompts,
-      limits: agentConfig.usageLimits,
-      transport: () => transport,
-      logger,
-      speech: speech.of(sessionOpts.id),
-      ...omitUndefined({ commitSessionState }),
-    });
-    const wiring = { sink: sessionOpts.client, emitter, meter: usage };
-    const releaseWiring = sessions.claimWiring(sessionOpts.id, wiring);
-
-    // Call it — `pipelineProviders` is a thunk (see above), so `Boolean(...)` on
-    // the function itself is always true and would route every S2S session down
-    // the pipeline branch. By here a session is being created, so resolving is
-    // exactly what a static agent's deferral was waiting for.
-    const isPipeline = pipelineProviders() !== null;
-    // Relay (host) mode: the relay `executeTool` emits the client-facing
-    // `tool.called` itself (mirrors the `relayed` flag session-core passes on).
-    const isRelay = Boolean(options.onToolResult);
-    // Late-bound: callbacks are built before the ServerSession, filled in below.
-    let core: ServerSession | null = null;
-    function bindCore(): ServerSession {
-      // An invariant rather than a validation: `core` is this closure's own
-      // local, filled in below and readable by nobody else, so a null here is a
-      // mis-ordering in THIS function and never anything a caller did.
-      invariant(core !== null, "session.core.bound");
-      return core;
-    }
-
-    // Everything a transport calls back into, including the one callback with
-    // three different right answers — see `session-callbacks.ts`.
-    const callbacks = buildSessionCallbacks({ bindCore, emitter, isPipeline, isRelay });
-
-    // What this resume recovered; must exist BEFORE the transport, and
-    // `session/resume-found.ts` owns the decision `skipGreeting` becomes.
-    const findings = createResumeFindings();
-    const { id, skipGreeting, resumed } = sessionOpts;
-    // Before the transport, which reads the greeting `sessionContext` answered.
-    const memory = openSessionMemory({ ...recall, sessionId: id, prompt: dialogs.prompt });
-    const transport = buildTransport({
-      sessionOpts: {
-        ...sessionOpts,
-        // THE one place the greeting is decided — see `SessionGreeting`.
-        greeting: composeSessionGreeting({ skipGreeting, resumed, findings, memory, agentConfig }),
-      },
-      // The THUNK, not its value: a transport that can resolve per turn does,
-      // and one that cannot resolves it once (see `transport.ts`).
-      systemPrompt: () => dialogs.prompt.resolve(),
-      callbacks,
-      guardrails,
-      usage,
-      ...omitUndefined({ dialogTurn: dialogs.turnKnobs, personaTurn: personas.turnKnobs }),
-      ...omitUndefined({ personaInterruption: personas.interruption }),
-    });
-
-    core = createSessionCore({
-      id: sessionOpts.id,
-      agent: sessionOpts.agent,
-      client: sessionOpts.client,
-      emitter,
-      agentConfig,
-      executeTool,
-      transport,
-      logger,
-      ...omitUndefined({ onToolResult: options.onToolResult }),
-      clientTools,
-    });
-
-    // Hydration in, reclamation out — `attachSessionState` owns both orderings
-    // and why they are here rather than in `ws-handler`.
-    attachSessionState(core, {
-      state: sessionState,
-      sessionId: sessionOpts.id,
-      emitter,
-      // Both claims come off together: they are one session's hold on one id, and
-      // releasing only the sink would leave a `ctx.send` from a straggling tool
-      // call resolving an emitter whose socket is gone.
-      release: () => {
-        // The dialog deadlines come off here too: a pending timer keeps the
-        // event loop alive and would fire into a session already swept.
-        dialogs.stop();
-        return releaseWiring();
-      },
-      pushStateSnapshot,
-      findings,
-    });
-
-    // The event log's own bookends — `session-stream.ts`, which also
-    // restores the client's prior sessions (`memory`) beside a resume's own log.
-    attachSessionStream(core, {
-      stream: sessionState.stream,
-      sessionId: sessionOpts.id,
-      resumed: sessionOpts.resumed === true,
-      findings,
-      memory,
-    });
-
-    return core;
-  }
+  // One session's wiring — controls, transport, core, state and event-log
+  // bookends — is `session-factory.ts`'s.
+  const createSession = createSessionFactory({
+    agent,
+    env,
+    agentConfig,
+    logger,
+    sessionState,
+    sessions,
+    systemPrompts,
+    pipelineProviders,
+    buildTransport,
+    tools: { executeTool, ...omitUndefined({ pushStateSnapshot, commitSessionState }) },
+    clientTools,
+    relayToolResult: options.onToolResult,
+    recall,
+  });
 
   // ── AgentRuntime methods ──────────────────────────────────────────────
 

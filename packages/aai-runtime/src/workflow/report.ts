@@ -36,7 +36,7 @@ import type { StepInfoReader, StepReporter } from "@alexkroman1/aai/host-interna
 // step author imports rather than from the host support surface beside it.
 import type { StepInfo } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { currentRun } from "./run-context.ts";
 
 /**

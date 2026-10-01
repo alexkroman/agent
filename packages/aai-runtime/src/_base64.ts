@@ -67,7 +67,7 @@
  * all three of which `Buffer.from` decoded to something.
  */
 
-import { consoleLogger, type Logger } from "./runtime-config.ts";
+import { consoleLogger, type Logger } from "./logger.ts";
 
 export function uint8ToBase64(bytes: Uint8Array): string {
   // Zero-copy view over the same memory — avoids duplicating every audio chunk.

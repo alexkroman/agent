@@ -77,7 +77,7 @@
 import type { AnyDialog, SessionEvent, SlotHolder, SlotStore } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { createRestartableTimer, type RestartableTimer } from "../_timer.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { DialogTurnSource } from "../transports/pipeline/index.ts";
 import type { Transport } from "../transports/types.ts";
 import { mergeTurnKnobs, reportDialogKnobs } from "./dialog-knobs.ts";

@@ -8,7 +8,7 @@ import { MAX_CLIENT_WS_BUFFERED_BYTES } from "@alexkroman1/aai/host-internal";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { createPacedClientSink, type PacedClientSink } from "./paced-client-sink.ts";
 import { type SessionWebSocket, safeSend } from "./ws-frames.ts";
 

@@ -125,6 +125,10 @@ export type { StateSyncSession } from "./_state-sync.ts";
 export { parseTraceparent, type TraceParent, traceIdOf } from "./_trace-context.ts";
 // What a bundle hands the runtime-less guest harness, as `__aaiCreateRuntime.host`.
 export { GUEST_HOST, GUEST_HOST_VERSION, type GuestHost } from "./guest-host.ts";
+// The console-backed `Logger` the CLI, the guest and the platform's own logger
+// all start from. The `Logger` TYPE — the thing a host implements — is
+// contracted, on the root barrel.
+export { consoleLogger } from "./logger.ts";
 // The two sizes an upload is measured in, plus the id grammar. Exported for the
 // PLATFORM, which owns the byte route a deployed guest brokers through: its window
 // cap and its key derivation have to be stated in the same units the SDK cuts in,
@@ -171,10 +175,6 @@ export type { ProviderEnvVarsQuery } from "./providers/_provider-env-var.ts";
 // one returns, is the SDK's and is named from `@alexkroman1/aai/host-internal`.
 export { withHostCredentialFallback } from "./providers/host-env.ts";
 export { requiredProviderEnvVars } from "./providers/resolve.ts";
-// The console-backed `Logger` the CLI, the guest and the platform's own logger
-// all start from. The `Logger` TYPE — the thing a host implements — is
-// contracted, on the root barrel.
-export { consoleLogger } from "./runtime-config.ts";
 // Which keys of an agent's env a SERVER may read — everything but the host-mode
 // gate. Shared for the same reason `isPathInside` below is: the guest harness makes
 // the identical statement about a deployed agent and had its own copy of the line,

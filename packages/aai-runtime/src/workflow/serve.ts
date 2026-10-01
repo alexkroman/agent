@@ -50,7 +50,7 @@ import {
   publishStepWebhookUrl,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { consoleLogger, type Logger } from "../runtime-config.ts";
+import { consoleLogger, type Logger } from "../logger.ts";
 import { sendJson } from "./api/http.ts";
 import { serveFetch } from "./http-adapter.ts";
 import { deliverQueueMessage, WORKFLOW_QUEUE_PATH } from "./queue-dispatch.ts";

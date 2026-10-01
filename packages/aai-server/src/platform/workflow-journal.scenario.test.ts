@@ -34,7 +34,7 @@
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 import { ensurePlatformTables } from "./schema-test-utils.ts";
 import * as journal from "./workflow-journal.ts";
 

@@ -4,16 +4,17 @@
  * tokens, the onboarding PUT) lives next door in _studio-auth-test-utils.ts,
  * which the suites that never mock a route need without these fakes.
  *
- * The mock *state* lives here so both files observe the same fakes; the
- * `vi.mock` calls themselves cannot — they are hoisted per module, so each
- * suite declares its own and reaches these instances through an `await
- * import()` inside the (async) factory. That indirection is what keeps the
- * factory from touching a top-level binding before it is initialized.
+ * The fakes are INJECTED, not module-mocked: {@link createFakedCombined} and
+ * {@link withFakedDevAuth} hand the deploy pipeline, the session broker
+ * factory and the preview wake to the studio routes through their test seams
+ * (`StudioRouteOptions`), so a suite observes the same instances below.
  */
 
 import type { TestFetch } from "aai-server/test-utils";
 import { authFetch } from "aai-server/test-utils";
 import { vi } from "vitest";
+import { withDevAuth } from "./_studio-auth-test-utils.ts";
+import { createTestCombined } from "./_test-combined.ts";
 import type { deployStudioProject, StudioDeployResult } from "./studio-deploy.ts";
 import type { wakeProjectPreview } from "./studio-preview-wake.ts";
 import type { createStudioSessionBroker, StudioSessionBroker } from "./studio-session-broker.ts";
@@ -105,6 +106,23 @@ export function lastWake(): Parameters<typeof wakeProjectPreview>[0] {
   if (!options) throw new Error("wakeProjectPreview was never called");
   return options;
 }
+
+/** The route seams every faked suite fills, each with an observable fake above. */
+const ROUTE_FAKES = {
+  deployProject: deployMock,
+  studioSessionBroker: brokerMock,
+  wakePreview: wakePreviewMock,
+};
+
+/** The combined harness with the deploy pipeline, broker and wake faked. */
+export const createFakedCombined = (
+  overrides: Parameters<typeof createTestCombined>[0] = {},
+): ReturnType<typeof createTestCombined> => createTestCombined({ ...ROUTE_FAKES, ...overrides });
+
+/** {@link createFakedCombined} with dev auth wired in. */
+export const withFakedDevAuth = (
+  overrides: Parameters<typeof withDevAuth>[0] = {},
+): ReturnType<typeof withDevAuth> => withDevAuth({ ...ROUTE_FAKES, ...overrides });
 
 export function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<Response> {
   return authFetch(fetch, "/studio/projects", { body: { name }, key });

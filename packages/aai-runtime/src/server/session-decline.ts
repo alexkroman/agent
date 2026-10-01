@@ -13,7 +13,7 @@
  * never answer, with nothing in the frame log explaining why.
  */
 
-import { consoleLogger, type Logger } from "../runtime-config.ts";
+import { consoleLogger, type Logger } from "../logger.ts";
 import { safeSend, stampSessionEvent } from "../session/index.ts";
 import type { SessionRuntime } from "./server.ts";
 

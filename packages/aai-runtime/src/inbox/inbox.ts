@@ -71,7 +71,7 @@ import { createOwnedMap, requestQuery } from "@alexkroman1/aai/internal";
 import { InboxClientFrameSchema, type InboxServerFrame } from "@alexkroman1/aai/protocol";
 import { createKeyedLock, omitUndefined, safeJsonParse, withLock } from "@alexkroman1/aai/utils";
 import type { RawData, WebSocket } from "ws";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { type ClientEventFrame, publishClientEventFeed } from "./event-feed.ts";
 
 /** @internal */

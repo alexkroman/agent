@@ -21,7 +21,7 @@
  * @module
  */
 
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 
 /**
  * The optional {@link Transport} verbs a capability is carried by. Spelled out

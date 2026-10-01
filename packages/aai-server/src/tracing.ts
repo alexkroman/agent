@@ -120,6 +120,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { OTEL_SERVICE_NAME_ENV, tracingEndpoint } from "@alexkroman1/aai-runtime/tracing";
 import { httpInstrumentationMiddleware } from "@hono/otel";
 import { propagation, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
@@ -135,21 +136,6 @@ import { createLogger } from "./logger.ts";
 import { aaiTraceparentPropagator } from "./tracing-propagator.ts";
 
 const log = createLogger("tracing");
-
-/**
- * The standard variables that name a collector. Either one arms this.
- *
- * Exported so the spec asserts the same strings an operator sets, rather than
- * its own copy of them — the failure `EGRESS_RPC_HTTP2_ENV` names one package
- * over.
- */
-export const OTEL_ENDPOINT_ENVS = [
-  "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-  "OTEL_EXPORTER_OTLP_ENDPOINT",
-] as const;
-
-/** The standard variable naming this service in every exported span. */
-export const OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME";
 
 /**
  * What a span says it came from when the operator did not say.
@@ -192,21 +178,6 @@ export type TracingOptions = {
    */
   createExporter?: () => SpanExporter;
 };
-
-/**
- * The collector this environment names, or `undefined` for "no tracing".
- *
- * Whitespace-only counts as unset: an empty variable is how a deployment
- * template spells "not configured", and taking it literally would arm the
- * exporter against an endpoint of `""`.
- */
-export function tracingEndpoint(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  for (const name of OTEL_ENDPOINT_ENVS) {
-    const value = env[name]?.trim();
-    if (value) return value;
-  }
-  return undefined;
-}
 
 /**
  * The HTTP middleware, or `undefined` when tracing is off.

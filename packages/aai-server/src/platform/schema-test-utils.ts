@@ -19,7 +19,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 
 /**
  * Create the `aai_platform` tables on the database under test, if it has none.

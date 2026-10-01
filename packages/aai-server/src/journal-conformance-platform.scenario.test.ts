@@ -51,7 +51,7 @@ import { createPlatformJournal, loadJournalConformance } from "@alexkroman1/aai-
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { ensurePlatformTables } from "./platform/schema-test-utils.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import {
   bearerFor,
   createTestOrchestrator,

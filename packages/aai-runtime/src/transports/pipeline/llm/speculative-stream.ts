@@ -20,7 +20,7 @@
 // `../speech/speculation.ts`. This module only knows how to run one and hold it.
 
 import type { LanguageModelUsage } from "ai";
-import type { Logger } from "../../../runtime-config.ts";
+import type { Logger } from "../../../logger.ts";
 import type { AdoptedLlmStream, LlmRequest, StepResult, TapeEntry } from "./stream.ts";
 import { startLlmStream } from "./stream.ts";
 

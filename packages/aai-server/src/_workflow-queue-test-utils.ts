@@ -43,7 +43,7 @@ import { slugMw } from "./middleware.ts";
 import type { AdminDb } from "./platform/lock.ts";
 import { ensurePlatformTables } from "./platform/schema-test-utils.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import { createTestStore, type TestFetch } from "./test-utils.ts";
 import { type EnqueueParams, WORKFLOW_QUEUE_CHANNEL } from "./workflow-queue-store.ts";
 

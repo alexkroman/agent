@@ -14,7 +14,7 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import type { QueuedMessage } from "./workflow-queue-store.ts";
 
 /**

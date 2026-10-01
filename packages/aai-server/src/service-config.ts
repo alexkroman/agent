@@ -60,8 +60,8 @@ import {
   createVaultSecretStore,
   PLATFORM_STORAGE_KEY_SECRET,
   type SecretStore,
-  type SqlExec,
 } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import { createStudioAuthFromEnv } from "./supabase-auth.ts";
 import {
   createMemoryWorkspaceStore,

@@ -51,9 +51,9 @@ import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { cartesiaTts } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
 import { sleep } from "../_test-utils.ts";
+import { consoleLogger } from "../logger.ts";
 import { LLM_REGISTRY } from "../providers/_llm-registry.ts";
 import { createRuntimeWithSeams } from "../runtime/index.ts";
-import { consoleLogger } from "../runtime-config.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturePath = join(here, "fixtures/hello-how-are-you.pcm16");

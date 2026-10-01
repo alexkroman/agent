@@ -12,7 +12,7 @@
  */
 
 import { isBlankSecret } from "@alexkroman1/aai/host-internal";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 
 /**
  * An agent's env as a SERVER may read it: everything except the host-mode gate.

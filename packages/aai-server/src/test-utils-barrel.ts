@@ -28,6 +28,7 @@
  */
 
 export { ensurePlatformTables } from "./platform/schema-test-utils.ts";
+export { conformanceLike, noParent, uniqueKeys } from "./store-conformance.ts";
 export {
   authFetch,
   authHeaders,

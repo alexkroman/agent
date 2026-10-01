@@ -40,7 +40,7 @@ keeps each index a list of named re-exports.
 `session-state/`, `eval/` and `testing/` predate the rule and hold no index.
 
 **What stays flat, and why**: the six barrels, `internal.ts` and `tracing.ts`
-(a published subpath names each file); `runtime-config.ts` and the small
+(a published subpath names each file); `logger.ts`, `s2s-config.ts` and the small
 leaves every directory imports (`_timer`, `_pcm`, `_base64`, `_ws`,
 `_audio-gate`, `_get-or-create`, `_ensure-once`, `_path-decode`,
 `_compact-records`, `usage-meter`); `guest-host.ts` (the surface `/internal`

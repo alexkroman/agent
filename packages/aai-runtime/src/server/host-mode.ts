@@ -25,6 +25,8 @@ import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { HostConfig } from "@alexkroman1/aai/protocol";
 import { HostConfigMessageSchema } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
+import type { Logger } from "../logger.ts";
+import { consoleLogger } from "../logger.ts";
 import { ALL_PROVIDER_ENV_VARS } from "../providers/resolve.ts";
 import type { HostRuntimeOptions, Runtime } from "../runtime/index.ts";
 import {
@@ -32,8 +34,8 @@ import {
   type SessionStartOptions,
   usesAssemblyS2s,
 } from "../runtime/index.ts";
-import type { Logger, S2sConfig } from "../runtime-config.ts";
-import { consoleLogger, DEFAULT_S2S_CONFIG } from "../runtime-config.ts";
+import type { S2sConfig } from "../s2s-config.ts";
+import { DEFAULT_S2S_CONFIG } from "../s2s-config.ts";
 import {
   type SessionWebSocket,
   safeSend,

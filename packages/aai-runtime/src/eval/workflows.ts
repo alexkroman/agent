@@ -76,9 +76,9 @@ import type {
   WorkflowRunStatus,
 } from "@alexkroman1/aai/workflow-api";
 import pTimeout from "p-timeout";
+import { type Logger, silentLogger } from "../logger.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
-import { type Logger, silentLogger } from "../runtime-config.ts";
 import { createWorkflowClient } from "../workflow/client.ts";
 import { createMemoryKeyStore } from "../workflow/keys.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";

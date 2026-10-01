@@ -57,7 +57,7 @@
 
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { decodePathSegment } from "../_path-decode.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { BodyTooLargeError } from "./api/http.ts";
 import { WORKFLOW_WEBHOOK_PREFIX } from "./serve.ts";
 

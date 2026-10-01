@@ -65,7 +65,7 @@ import { jitteredBackoff } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { createRestartableTimer } from "../_timer.ts";
 import { type HeaderWebSocket, openHeaderWebSocket } from "../_ws.ts";
-import { consoleLogger, type Logger } from "../runtime-config.ts";
+import { consoleLogger, type Logger } from "../logger.ts";
 import { PLATFORM_UNAVAILABLE_CODE } from "../workflow/api/error-status.ts";
 import {
   MAX_PLATFORM_SOCKET_FRAME_BYTES,

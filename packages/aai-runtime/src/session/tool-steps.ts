@@ -29,7 +29,7 @@ import { capToolResult } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { compactRecordsForModel } from "../_compact-records.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { toolResultMessage } from "../tools/index.ts";
 import type { SessionEmitter } from "./emitter.ts";
 

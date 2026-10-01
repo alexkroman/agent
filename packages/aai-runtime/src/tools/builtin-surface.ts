@@ -13,7 +13,7 @@ import type { AgentDef, Toolset } from "@alexkroman1/aai";
 import { resolveAllBuiltins } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_BUILTIN_TOOLS } from "@alexkroman1/aai/internal";
 import { type ToolSchema, toolset } from "@alexkroman1/aai/manifest";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 
 /**
  * Merge the agent's builtins with the tools a mode dispatches itself — the

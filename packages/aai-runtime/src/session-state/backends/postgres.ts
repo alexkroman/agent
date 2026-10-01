@@ -50,8 +50,8 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import type { Db } from "@alexkroman1/aai/internal";
+import type { Logger } from "../../logger.ts";
 import { createPostgresDb } from "../../postgres-db.ts";
-import type { Logger } from "../../runtime-config.ts";
 import { createClientTouchThrottle } from "../client-touch.ts";
 import type { SessionStateBackend } from "../store.ts";
 

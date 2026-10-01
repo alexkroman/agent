@@ -9,6 +9,7 @@
  * (guard-invariants rule 37).
  */
 
+export { isPathInside } from "@alexkroman1/aai/workspace-files";
 export type { AgentServerOptions } from "./agent-server.ts";
 export { createAgentServer } from "./agent-server.ts";
 export { agentServerEnv } from "./env.ts";
@@ -44,7 +45,6 @@ export {
   platformSessionSecret,
   verifySessionToken,
 } from "./session-ticket.ts";
-export { isPathInside } from "./static.ts";
 export type {
   AgentServer,
   RuntimeServerOptions,

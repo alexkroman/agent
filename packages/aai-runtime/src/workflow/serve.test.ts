@@ -15,7 +15,7 @@ import { requestPath } from "@alexkroman1/aai/internal";
 import { stepWebhookUrl } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import { WORKFLOW_QUEUE_PATH } from "./queue-dispatch.ts";
 import {
   handleWorkflowRequest,

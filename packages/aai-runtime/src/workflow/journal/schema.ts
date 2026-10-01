@@ -19,8 +19,8 @@
 
 import type { Db } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import type { Logger } from "../../logger.ts";
 import { createPostgresDb } from "../../postgres-db.ts";
-import type { Logger } from "../../runtime-config.ts";
 
 /**
  * One row per run.

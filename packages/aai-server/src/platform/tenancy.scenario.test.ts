@@ -73,7 +73,7 @@ import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
 import { emptyCensus, programArb, SLUGS } from "../_tenancy-ops-harness.ts";
 import { createPlatformArm } from "../_tenancy-platform-harness.ts";
 import { checkPartition, explain } from "../_tenancy-world-harness.ts";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 import { ensurePlatformTables } from "./schema-test-utils.ts";
 
 describeWithPg("the platform's stores over a real Postgres, two tenants at once", () => {

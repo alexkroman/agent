@@ -41,7 +41,7 @@ import {
   SWEEP_WORKFLOW_RUN_KEYS,
   SWEEP_WORKFLOW_RUNS,
 } from "./pg-cron-bodies.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 // Re-exported by NAME so `pg-cron.ts` stays the one import surface: this type is
 // half of `platformCronJobs`'s signature, and a caller reading that signature

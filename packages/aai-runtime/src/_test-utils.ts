@@ -20,8 +20,8 @@ import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { type Mock, vi } from "vitest";
+import { type LogFn, type Logger, type LogLevel, silentLogger } from "./logger.ts";
 import { createRuntimeWithSeams } from "./runtime/index.ts";
-import { type LogFn, type Logger, type LogLevel, silentLogger } from "./runtime-config.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s/index.ts";
 import type { ServerSession } from "./session/index.ts";
 import {
@@ -276,7 +276,7 @@ export function makeClientSink(overrides?: Partial<ClientSink>): ClientSink {
  * A logger that discards. Shared by 26 suites purely to keep test output
  * quiet — it is NOT for asserting on.
  *
- * Re-exported rather than declared: `runtime-config.ts` owns the one silent
+ * Re-exported rather than declared: `logger.ts` owns the one silent
  * logger now, beside `consoleLogger`, because the fuzz harnesses need the same
  * value and may not import this file (its vitest-backed helpers are not
  * declaration-portable). Kept under this name so the 26 suites already
@@ -289,7 +289,7 @@ export function makeClientSink(overrides?: Partial<ClientSink>): ClientSink {
  * `expect(silentLogger.error).toHaveBeenCalled()` could be satisfied by an
  * error some earlier test logged. Two suites were asserting on it.
  */
-export { silentLogger } from "./runtime-config.ts";
+export { silentLogger } from "./logger.ts";
 
 /**
  * Narrow a test double to `fetch`'s type, in ONE place.

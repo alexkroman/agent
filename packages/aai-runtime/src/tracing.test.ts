@@ -46,6 +46,15 @@ describe("the env gate", () => {
     expect(tracingEndpoint({ [name]: "http://c:4318" })).toBe("http://c:4318");
   });
 
+  test("prefers the signal-specific endpoint over the general one", () => {
+    expect(
+      tracingEndpoint({
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://general:4318",
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://traces:4318/v1/traces",
+      }),
+    ).toBe("http://traces:4318/v1/traces");
+  });
+
   test("treats a blank variable as unset", () => {
     expect(tracingEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "  " })).toBeUndefined();
   });

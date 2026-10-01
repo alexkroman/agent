@@ -26,12 +26,16 @@ import type { CloseableDb } from "@alexkroman1/aai-runtime";
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import type { SqlExec } from "aai-server/stores";
 import { createPgWorkspaceStore } from "aai-server/stores";
-import { describeWithStack, ensurePlatformTables, pgUrl } from "aai-server/test-utils";
+import {
+  conformanceLike,
+  describeWithStack,
+  ensurePlatformTables,
+  pgUrl,
+} from "aai-server/test-utils";
 import { afterAll, beforeAll, describe } from "vitest";
 import { createPgPreviewQueue } from "./studio-preview-queue.ts";
 import { createPgStudioSessionRegistry } from "./studio-session-registry.ts";
 import {
-  conformanceLike,
   previewQueueConformance,
   studioSessionRegistryConformance,
 } from "./studio-store-conformance.ts";

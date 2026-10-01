@@ -17,8 +17,8 @@
  */
 
 import type { StepMcp, StepMcpFn } from "@alexkroman1/aai/host-internal";
+import type { Logger } from "./logger.ts";
 import { connectMcpServers, type McpToolsOptions } from "./mcp/index.ts";
-import type { Logger } from "./runtime-config.ts";
 
 /**
  * Build the connector `installWorkflowSupport` publishes.

@@ -86,7 +86,7 @@
 
 import { type PinnedRequestInit, pinnedFetch } from "@alexkroman1/aai/host-internal";
 import { createEgressPool, type EgressPool } from "./_egress-pool.ts";
-import { isDebugEnv } from "./runtime-config.ts";
+import { isDebugEnv } from "./logger.ts";
 
 /**
  * Connections one egress pool may hold open per origin.

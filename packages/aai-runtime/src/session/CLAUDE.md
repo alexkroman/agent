@@ -55,8 +55,9 @@ plus the two audio paths is the whole inbound surface. `guard-invariants` rule
   Handlers run synchronously off `emit` and async ones are never awaited, so a
   subscriber cannot add turn latency.
 
-`../transports/types.ts` holds the boundary and argument; `core.ts` and
-`commands.ts` own the two dispatchers.
+`../transports/types.ts` holds the boundary and argument; `report.ts` and
+`commands.ts` own the two dispatchers, which `core.ts` composes over the
+current reply (`reply-tracker.ts`).
 
 ## A hook's write needs a commit, and a guard
 

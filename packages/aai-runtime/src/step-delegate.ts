@@ -48,7 +48,7 @@ import type { StepDelegateFn } from "@alexkroman1/aai/host-internal";
 import { normalizeLlm } from "@alexkroman1/aai/host-internal";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { Logger } from "./runtime-config.ts";
+import type { Logger } from "./logger.ts";
 import { createSubagentRunner } from "./subagent.ts";
 
 /**

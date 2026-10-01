@@ -15,6 +15,7 @@ import type { ClientSink } from "@alexkroman1/aai/protocol";
 import type { OpenAIS2sOptions } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { LanguageModel } from "ai";
+import type { Logger } from "../logger.ts";
 import { type ProviderFailover, withOpenerFailoverListener } from "../providers/_failover.ts";
 import { withFailoverListener } from "../providers/_fallback-llm.ts";
 import type { SttOpener, TtsOpener } from "../providers/openers.ts";
@@ -25,7 +26,7 @@ import {
   resolveApiKey,
   resolveS2sEnvVar,
 } from "../providers/resolve.ts";
-import type { Logger, S2sConfig } from "../runtime-config.ts";
+import type { S2sConfig } from "../s2s-config.ts";
 import type { ExecuteTool } from "../tools/index.ts";
 import { reportSessionCapabilities } from "../transports/capabilities.ts";
 import { createOpenaiRealtimeTransport } from "../transports/openai-realtime-transport.ts";

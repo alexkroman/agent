@@ -55,7 +55,7 @@ import {
   useQueueFixture,
   withQueueNotifications,
 } from "./_workflow-queue-test-utils.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import { claimDue, WORKFLOW_QUEUE_STEPS_PER_RUN } from "./workflow-queue-claim.ts";
 import {
   ack,

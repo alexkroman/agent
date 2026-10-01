@@ -108,14 +108,16 @@ const SELECT_STEP = `select key, name, status, output::text as output, error, at
 /** The same, for a {@link RunRecord} and the two reads that rebuild one. */
 const SELECT_RUN = `select run_id, workflow, status, created_at, input::text as input, output::text as output, error, code_version, label from ${WORKFLOW_RUN_TABLE}`;
 
-/**
- * Build a journal over `db`.
- *
- * @internal
- */
-export function createPostgresJournal(options: { db: Db }): JournalStore {
-  const { db } = options;
+type RunOps = Pick<JournalStore, "createRun" | "getRun" | "listRuns" | "setStatus">;
+type StepOps = Pick<
+  JournalStore,
+  "readSteps" | "readStep" | "appendStep" | "claimAttempt" | "releaseAttempt"
+>;
+type SleepOps = Pick<JournalStore, "readSleeps" | "claimSleep" | "wakeSleeps">;
+type HookOps = Pick<JournalStore, "claimHook" | "closeHook" | "deliverHook">;
 
+/** The run row: create, read, list, and the status compare-and-set. */
+function runOps(db: Db): RunOps {
   return {
     async createRun(record: RunRecord): Promise<void> {
       // A plain insert: the primary key is what refuses a collision, so two
@@ -203,7 +205,12 @@ export function createPostgresJournal(options: { db: Db }): JournalStore {
       );
       return rows.length > 0;
     },
+  };
+}
 
+/** A run's step journal and the per-step attempt lease. */
+function stepOps(db: Db): StepOps {
+  return {
     async readSteps(runId: string): Promise<StepEntry[]> {
       const rows = await db.query<StepRow>(
         `${SELECT_STEP} where run_id = $1 order by finished_at, key`,
@@ -226,6 +233,54 @@ export function createPostgresJournal(options: { db: Db }): JournalStore {
     releaseAttempt: (runId, key, holder) =>
       releaseAttemptLease(db, WORKFLOW_ATTEMPT_TABLE, { runId, key, holder }),
 
+    async appendStep(runId: string, entry: StepEntry): Promise<StepEntry> {
+      // Idempotent on `key`, in ONE statement, so the FIRST entry stays
+      // authoritative and two executions that both ran the step agree on what it
+      // returned. The retry is for the rival the statement cannot see.
+      return await firstWriteWins(
+        async () => {
+          const rows = await db.query<StepRow>(
+            `with mine as (
+               insert into ${WORKFLOW_STEP_TABLE}
+                 (run_id, key, name, status, output, error, attempts, started_at,
+                  finished_at)
+               values ($1, $2, $3, $4, $5::text::jsonb, $6, $7, $8, $9)
+               on conflict (run_id, key) do nothing
+               returning key, name, status, output::text as output, error, attempts,
+                         started_at, finished_at
+             )
+             select key, name, status, output, error, attempts, started_at, finished_at
+               from mine
+             union all
+             select key, name, status, output::text as output, error, attempts,
+                    started_at, finished_at
+               from ${WORKFLOW_STEP_TABLE} where run_id = $1 and key = $2`,
+            [
+              runId,
+              entry.key,
+              entry.name,
+              entry.status,
+              encodedOrNull(entry.output),
+              entry.error?.message ?? null,
+              entry.attempts,
+              // `null`, never `undefined`: postgres.js refuses an undefined
+              // parameter outright — see `encodedOrNull`.
+              entry.startedAt ?? null,
+              entry.finishedAt,
+            ],
+          );
+          const row = rows[0];
+          return row ? toStepEntry(row) : undefined;
+        },
+        () => `workflow step ${entry.key} vanished for run ${runId}`,
+      );
+    },
+  };
+}
+
+/** Durable sleeps: read, first-write-wins claim, and the early wake. */
+function sleepOps(db: Db): SleepOps {
+  return {
     async readSleeps(runId: string): Promise<SleepEntry[]> {
       // `order by key`, which is what the interface promises and what makes the
       // three backends comparable. No index is added for it: the table's primary
@@ -309,7 +364,12 @@ export function createPostgresJournal(options: { db: Db }): JournalStore {
       );
       return rows.length;
     },
+  };
+}
 
+/** Hooks: the token claim, the window close, and a delivery. */
+function hookOps(db: Db): HookOps {
+  return {
     async claimHook(runId: string, key: string, token: string): Promise<HookRecord> {
       // A token held by a DIFFERENT wait is a bug rather than a race — one signal
       // would end whichever the store found first and the other would wait
@@ -405,55 +465,25 @@ export function createPostgresJournal(options: { db: Db }): JournalStore {
       );
       return rows[0]?.run_id;
     },
+  };
+}
 
+/**
+ * Build a journal over `db`.
+ *
+ * @internal
+ */
+export function createPostgresJournal(options: { db: Db }): JournalStore {
+  const { db } = options;
+  return {
+    ...runOps(db),
+    ...stepOps(db),
+    ...sleepOps(db),
+    ...hookOps(db),
+    // Its own module — see `workflow/journal/_resumable.ts`, which carries the
+    // planner measurement behind the statement's shape.
     async resumableRuns(limit: number): Promise<ResumableRun[]> {
-      // Its own module — see `workflow/journal/_resumable.ts`, which carries the
-      // planner measurement behind the statement's shape. It is a leaf: nothing
-      // else in this store reads it, and this file is at the 500-line cap.
       return resumableRuns(db, limit);
-    },
-
-    async appendStep(runId: string, entry: StepEntry): Promise<StepEntry> {
-      // Idempotent on `key`, in ONE statement, so the FIRST entry stays
-      // authoritative and two executions that both ran the step agree on what it
-      // returned. The retry is for the rival the statement cannot see.
-      return await firstWriteWins(
-        async () => {
-          const rows = await db.query<StepRow>(
-            `with mine as (
-               insert into ${WORKFLOW_STEP_TABLE}
-                 (run_id, key, name, status, output, error, attempts, started_at,
-                  finished_at)
-               values ($1, $2, $3, $4, $5::text::jsonb, $6, $7, $8, $9)
-               on conflict (run_id, key) do nothing
-               returning key, name, status, output::text as output, error, attempts,
-                         started_at, finished_at
-             )
-             select key, name, status, output, error, attempts, started_at, finished_at
-               from mine
-             union all
-             select key, name, status, output::text as output, error, attempts,
-                    started_at, finished_at
-               from ${WORKFLOW_STEP_TABLE} where run_id = $1 and key = $2`,
-            [
-              runId,
-              entry.key,
-              entry.name,
-              entry.status,
-              encodedOrNull(entry.output),
-              entry.error?.message ?? null,
-              entry.attempts,
-              // `null`, never `undefined`: postgres.js refuses an undefined
-              // parameter outright — see `encodedOrNull`.
-              entry.startedAt ?? null,
-              entry.finishedAt,
-            ],
-          );
-          const row = rows[0];
-          return row ? toStepEntry(row) : undefined;
-        },
-        () => `workflow step ${entry.key} vanished for run ${runId}`,
-      );
     },
   };
 }

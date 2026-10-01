@@ -51,7 +51,7 @@ import {
   type StepClientTranscriptOptions,
 } from "@alexkroman1/aai/step";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { ClientSessionRecord } from "../session-state/clients.ts";
 import type { SessionStateBackend } from "../session-state/store.ts";
 import { historyMessageOf, seededToolResult } from "./event-history.ts";

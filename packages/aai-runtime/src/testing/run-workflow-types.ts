@@ -10,7 +10,7 @@
  */
 
 import type { WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 import type { JournalStore } from "../workflow/journal/types.ts";
 import type { DeterminismKind } from "../workflow/replay/determinism.ts";
 

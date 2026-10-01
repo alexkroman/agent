@@ -6,7 +6,7 @@
 
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { Logger } from "../runtime-config.ts";
+import type { Logger } from "../logger.ts";
 
 /**
  * Minimal WebSocket interface accepted by {@link AgentRuntime.startSession}.
