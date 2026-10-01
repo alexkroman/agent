@@ -5,7 +5,7 @@ import type { AgentAccepts } from "./_test-utils.ts";
 // `InlineToolsMisuse` is off the public barrel (it is the implementation of a
 // compile error, not authoring API), so this spec names it at its own module.
 import type { InlineToolsMisuse } from "./agent-params.ts";
-import type { TurnDetectionMode } from "./agent-voice-tuning.ts";
+import type { TurnDetectionMode } from "./agent-tuning.ts";
 import { type AgentParams, agent, type SharedAgentParams, tool } from "./define.ts";
 import type { AssemblyAIGatewayModel } from "./providers/llm/llm.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";

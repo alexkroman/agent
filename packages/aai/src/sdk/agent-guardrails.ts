@@ -8,7 +8,7 @@
  * on the main agent — `SpeakerDef.guardrail` could send a delegated answer
  * back, and the agent doing the talking could not be checked at all.
  *
- * Split out of `types.ts` for the reason `agent-voice-tuning.ts` and
+ * Split out of `types.ts` for the reason `agent-tuning.ts` and
  * `agent-model-tuning.ts` are: a group of `AgentDef` fields sharing one rule,
  * declared where the rule can be argued at length. The rule here is the one
  * below, and it is the whole design.

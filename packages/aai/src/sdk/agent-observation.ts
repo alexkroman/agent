@@ -14,7 +14,7 @@
  * somewhere a reader trips over.
  *
  * Split out of `types.ts` at the source-length cap, on the same seam
- * `agent-voice-tuning.ts` and `agent-model-tuning.ts` use: a group of
+ * `agent-tuning.ts` and `agent-model-tuning.ts` use: a group of
  * `AgentDef` fields that share one rule, declared once. Re-exported from
  * `types.ts`, so no import moved.
  */

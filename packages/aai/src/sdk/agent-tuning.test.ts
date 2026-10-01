@@ -1,17 +1,19 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Unit tests for the pipeline voice-tuning vocabulary: the one runtime value it
+ * Unit tests for the pipeline tuning vocabulary: the one runtime value it
  * declares (the list of turn-detection modes this release implements) and the
  * type shapes an author writes against.
  */
 
 import { describe, expect, expectTypeOf, test } from "vitest";
-import type { PipelineTuning, SilenceNudge, TurnTakingTuning } from "./agent-tuning.ts";
 import {
   KNOWN_TURN_DETECTION_MODES,
+  type PipelineTuning,
+  type SilenceNudge,
   type TurnDetectionMode,
+  type TurnTakingTuning,
   type UserTurnLimit,
-} from "./agent-voice-tuning.ts";
+} from "./agent-tuning.ts";
 
 describe("KNOWN_TURN_DETECTION_MODES", () => {
   test("names exactly the two modes the runtime implements, once each", () => {
