@@ -437,7 +437,12 @@ traps in `packages/aai-guest/CLAUDE.md`, "Guest network access".
   as `AAI_GUEST_TOKEN` through its exec env. Nothing new reaches the agent env,
   the bundle or the browser; the key does not reveal the bearer. A presented
   ticket from the previous deploy (`version - 1`) still proves its session, so a
-  call survives a redeploy; minting is always for the current deploy.
+  call survives a redeploy.
+- **Mint for the guest the session is ROUTED to** (`BrokeredSession.version`:
+  the resident sandbox's own `version`, or the version a peer was found by),
+  never the row's or the local slot's — mid-redeploy either can name another
+  deploy, and that guest refuses the ticket (4401). The row is the fallback
+  only for a broker that cannot say.
 - The guest also accepts the AUTHOR's tickets when the agent env sets
   `AAI_SESSION_SECRET` (`aai-guest/src/harness/session-tickets.ts`).
 

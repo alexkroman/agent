@@ -6393,6 +6393,7 @@ type CreateInboxOptions = {
   onEvent?: (event: InboxEvent) => void;
   onNotice?: (notice: InboxNotice) => void;
   platformUrl: string;
+  token?: VoiceSessionOptions["token"];
   WebSocket?: WebSocketConstructor;
 };
 ```
@@ -6485,6 +6486,18 @@ platformUrl: string;
 ```
 
 The agent's base URL — the socket is `<platformUrl>/inbox`.
+
+##### token?
+
+```ts
+optional token?: VoiceSessionOptions["token"];
+```
+
+The session ticket to present, for a server that requires one — the same
+option, with the same rules, as `VoiceSessionOptions.token`: a string, or a
+getter asked on EVERY connection attempt (told `sessionId: undefined`; the
+inbox resumes no session). A getter that throws or rejects presents none.
+`useInbox()` fills it in from the session.
 
 ##### WebSocket?
 
@@ -7891,6 +7904,7 @@ type SessionIdentity = {
   clientId: string | undefined;
   holderId: string;
   sessionId: string | undefined;
+  ticket: string | Promise<string | undefined> | undefined;
 };
 ```
 
@@ -7945,6 +7959,23 @@ session sets it from its own `config` frame. Sensitive — see
 ###### Returns
 
 `string` \| `undefined`
+
+##### ticket()
+
+```ts
+ticket(): string | Promise<string | undefined> | undefined;
+```
+
+A session ticket for ANOTHER socket on the same server — what `useInbox()`
+presents on `WS /inbox`, which a gated server checks exactly like
+`/websocket`. The session's own `token` option when it has one; otherwise a
+fresh one from the server's `client-config` (`aai dev` with
+`AAI_SESSION_SECRET`), until a lookup shows the server issues none.
+`undefined` means "present none". Fresh on every call: tickets are short-lived.
+
+###### Returns
+
+`string` \| `Promise`\<`string` \| `undefined`\> \| `undefined`
 
 #### Properties
 

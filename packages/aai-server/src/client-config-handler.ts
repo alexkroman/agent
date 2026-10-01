@@ -129,7 +129,10 @@ export function createAgentClientConfigHandler(
   return async (c, broker) => {
     const slug = c.var.slug;
     const brokered = await brokerSessionUrlOrThrow(slug, broker);
-    const version = broker.slots.get(slug)?.version ?? (await c.env.store.getAgentVersion(slug));
+    // The version of the guest the session is ROUTED to — see
+    // `BrokeredSession.version`. The row is only the fallback for a broker
+    // that could not say (a test double).
+    const version = brokered.version ?? (await c.env.store.getAgentVersion(slug));
     // The broker above answered for a resident whose row a delete already
     // removed (the same window `workflow-handler.ts`'s `gone` covers): there is
     // no deploy left to mint a ticket for.

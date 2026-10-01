@@ -156,6 +156,68 @@ describe("handleAgentClientConfig", () => {
       expect(again.ticket).not.toBe(first.ticket);
     });
 
+    describe("during a redeploy, it is minted for the guest the session is ROUTED to", () => {
+      const keyFor = (slug: string, version: number) =>
+        platformSessionSecret(guestTokenFor(agentSandboxName(slug, version)));
+
+      /** Deploy twice, so the row is at v2 while a v1 guest may still be serving. */
+      async function redeployed(
+        slug: string,
+        overrides: Parameters<typeof createTestOrchestrator>[0],
+      ) {
+        const guestFetch: typeof globalThis.fetch = async () => Response.json({ page: "voice" });
+        const ctx = await createTestOrchestrator({ guestFetch, ...overrides });
+        await deployAgent(ctx.fetch, slug);
+        await deployAgent(ctx.fetch, slug);
+        const current = (await ctx.store.getAgentVersion(slug)) ?? 0;
+        if (current < 2) throw new Error("a second deploy did not bump the version");
+        return { ...ctx, current };
+      }
+      const ticketOf = async (fetch: (p: string) => Promise<Response>, slug: string) =>
+        ((await (await fetch(`/${slug}/client-config`)).json()) as { sessionToken: string })
+          .sessionToken;
+
+      test("a v1 resident still serving after the row moved on gets a v1 ticket", async () => {
+        const slots = createSlotCache();
+        const { fetch, current } = await redeployed("race-agent", { slots });
+        const old = current - 1;
+        setSlot(slots, {
+          slug: "race-agent",
+          version: old,
+          sandbox: fakeSandbox({ version: old }),
+        });
+
+        const ticket = await ticketOf(fetch, "race-agent");
+        expect(verifySessionToken(ticket, { secret: keyFor("race-agent", old) })).toBeDefined();
+        expect(
+          verifySessionToken(ticket, { secret: keyFor("race-agent", current) }),
+        ).toBeUndefined();
+      });
+
+      test("a session routed to a PEER's new guest gets its version, not the local slot's", async () => {
+        // The race: this replica's slot still names the old deploy (its guest
+        // just died), the broker routes the session to a peer replica's guest of
+        // the new one, and a ticket keyed off the local slot was refused 4401.
+        const slots = createSlotCache();
+        const found: [string, number][] = [];
+        const directory = {
+          find: async (slug: string, version: number) => {
+            found.push([slug, version]);
+            return { sessionUrl: "wss://peer.test/websocket", guestOrigin: "wss://peer.test" };
+          },
+        };
+        const { fetch, current } = await redeployed("peer-agent", { slots, directory });
+        const old = current - 1;
+        const dead = fakeSandbox({ version: old, alive: vi.fn(() => false) });
+        setSlot(slots, { slug: "peer-agent", version: old, sandbox: dead });
+
+        const ticket = await ticketOf(fetch, "peer-agent");
+        expect(found).toEqual([["peer-agent", current]]);
+        expect(verifySessionToken(ticket, { secret: keyFor("peer-agent", current) })).toBeDefined();
+        expect(verifySessionToken(ticket, { secret: keyFor("peer-agent", old) })).toBeUndefined();
+      });
+    });
+
     test("another agent's ticket, or garbage, proves nothing", async () => {
       const other = await brokered("other-agent");
       const foreign = await other.lookup();
