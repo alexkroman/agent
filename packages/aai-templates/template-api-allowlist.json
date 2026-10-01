@@ -224,6 +224,7 @@
     "evalNetwork",
     "evalTextCredentials",
     "evalWorkflowCredentials",
+    "eventsOf",
     "installStubLlm",
     "installStubSpeechProviders",
     "judgeCall",
