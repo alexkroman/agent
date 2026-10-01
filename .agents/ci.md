@@ -30,15 +30,27 @@ read_when: >-
 
 ## Full CI check (`pnpm check`)
 
-`scripts/check.mjs` runs every gate in one turbo invocation from its `GATES`
-table (`phase`, `fatal`, one runner); turbo starts dependency-free tasks at once
-and build-dependent ones after `build`.
+`scripts/check.mjs` is a table plus one runner: the `GATES` rows (`phase`,
+`fatal`, `fix`; catalogue in [`ratchets.md`](ratchets.md)) and the turbo task
+lists in `scripts/_check-turbo-tasks.mjs`. It runs the ratchet gates in
+parallel, then ONE turbo call per mode (dependency-free tasks start at once,
+build-dependent ones after `build`, `--continue`), then the after-tests gates,
+the later turbo calls (the stubbed `check:eval`, then `check:e2e` alone), and
+the after-build gates in source order.
 
-- **`pnpm check:local`** runs the subset build, typecheck, lint, publint,
-  syncpack, sherif, knip, `check:prettier`, `check:polyglot`, `test:coverage`
-  with `--continue`, and ends by naming
-  the gates it skipped (`check:attw`, `check:markdown`, `check:integration`,
-  `check:e2e`, `docs`) so a green subset is not read as a green branch.
+- **`pnpm check:local`** is what the pre-push hook runs. Full mode is a strict
+  SUPERSET of it (the runner refuses to start otherwise), and it ends by naming
+  what it skipped — computed as full minus local: `check:attw`,
+  `check:dedupe`, `check:markdown`, `check:shell`, `check:integration`,
+  `check:scenario`, `docs`, `check:e2e` — so a green subset is not read as a
+  green branch.
+- **`pnpm fix`** runs every auto-fixer: `pnpm format`, then each row's `fix` in
+  table order (the `sync:*` copies, `api-report`, `docs:md`, the lower-only
+  baseline `*:update`s).
+- **CI derives both lists.** The lint job runs `node scripts/check.mjs --turbo ci`
+  (full mode's first call minus `CI_ELSEWHERE`, the tasks another job or step
+  owns) and `node scripts/check.mjs --gates ci`; `gate-wiring.test.ts` fails if
+  either is restated in the workflow.
 - **Both modes run `test:coverage`, not `test`**, because the coverage floors
   are what CI gates on. `pnpm check:affected` (and
   `pnpm test:coverage:affected`) use turbo `--affected` against the default

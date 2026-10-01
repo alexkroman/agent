@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Drive `WS /phone` as a CARRIER — the tier nothing else exercises end to end.
 //
-//   pnpm loadtest:phone --port=4900                  # the stub agent
-//   pnpm loadtest:phone --port=4900 --carrier=telnyx --seconds=4
+//   pnpm loadtest phone --port=4900                  # the stub agent
+//   pnpm loadtest phone --port=4900 --carrier=telnyx --seconds=4
 //
 // `packages/aai-runtime/src/telephony/` has unit tests for the codecs, the bridge
 // and the resampler; what it has never had is a caller. This is one: it sends

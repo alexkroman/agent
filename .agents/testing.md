@@ -102,10 +102,9 @@ read_when: >-
   dead scripts. A script that is a module is reached through its importer; one
   a `package.json` script or vitest `globalSetup` names is discovered by knip
   and must not be repeated.
-- **`check:gateway-models` is wired into no pipeline, deliberately**: it spends
-  real tokens and depends on a third-party service. It shells out to
-  `gen-gateway-models.mjs` by path, which is why that is `knip.json`'s one named
-  `entry`.
+- **`audit:gateway-models` is wired into no pipeline, deliberately**: it spends
+  real tokens and depends on a third-party service. `pnpm gen:gateway-models`
+  regenerates the catalog it compares against.
 
 ## Mutation score is a manual DIAGNOSTIC, not a tier and not a gate
 

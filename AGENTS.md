@@ -46,7 +46,8 @@ pnpm lint                # Run Biome linter (all packages)
 pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
 pnpm check:konsistent    # Structural conventions (konsistent.json)
-pnpm check:local         # Fast pre-commit gate (single turbo invocation, max parallelism)
+pnpm check:local         # Pre-push gate: parallel ratchets + one turbo call; names what it skips
+pnpm fix                 # Every auto-fixer: format, sync:*, api-report, docs:md, baseline updates
 pnpm check:affected      # Only check packages affected by changes since main
 pnpm docs:list           # Every agent guide: what it covers, when to read it
 ```
@@ -241,7 +242,7 @@ apart in `packages/aai-ui/CLAUDE.md`.
 
 The catalogue is the **`concurrency-primitives`** konsistent convention plus
 "Concurrency primitives" in `packages/aai/src/sdk/CLAUDE.md`; `guard-invariants`
-rules 2, 3, 4, 19, 21, 22, 23 and 31 catch hand-rolled copies. Two are
+rules 2, 3, 4, 8, 9, 19, 21, 22 and 31 catch hand-rolled copies. Two are
 repo-wide:
 
 - **Timeouts**: use `p-timeout`, never a hand-rolled `Promise.race` with a
@@ -307,7 +308,7 @@ nearly-full guide's largest sections.
 When a branch is done, push it and open a PR without asking. Run
 `pnpm check:local` before the first commit and rebase on `origin/main` before
 pushing. The pre-push hook blocks pushes to `main`, a branch behind or
-conflicting with `origin/main`, a missing changeset and a failing `pnpm check`.
+conflicting with `origin/main`, a missing changeset and a failing `pnpm check:local`.
 In a worktree, `unset GIT_DIR` before `pnpm changeset status` and install with
 `--frozen-lockfile`; never edit `pnpm-lock.yaml` directly. Full procedure: the
 `pr-workflow` skill; changesets: the `changeset-release` skill.

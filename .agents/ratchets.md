@@ -13,15 +13,169 @@ every task's context. AGENTS.md's "Detailed references" table points here. -->
 
 Beyond lint/typecheck/test, `scripts/check.mjs` **and the CI check job** run
 the **gates** in its `GATES` table (all also runnable standalone) that hold the
-line on technical debt — the count is not written here, because a hand-kept one
-was already stale when two more landed. Four compare against a COMMITTED
-PER-FILE BASELINE (`check:hatches`, `check:invariants`, `check:api-nameable`,
-`check:duplication`); the rest are absolute. They must stay
-wired into BOTH: for a long time they lived only in `check.mjs`, which CI never
-invokes, so the only thing enforcing them was the pre-push hook — and
-`git push --no-verify` skipped them entirely.
+line on technical debt. The catalogue below is GENERATED from that table
+(`pnpm sync:gate-catalogue`; `check:gate-catalogue` fails when it is stale or
+when a row is described nowhere in this file), so no count is written here.
 
-**None of them resolves a git ref any more, and that is deliberate.** The
+- **Phase.** `ratchets` run first, IN PARALLEL with buffered output printed back
+  in table order; `after-tests` reads `test:coverage` output; `after-build` reads
+  `dist/` and runs serially in source order, because api-report →
+  api-contracts → authoring-guide each read what the one before wrote.
+- **Failure.** A fatal gate stops the run; the rest are all reported at the end,
+  so a branch tripping three ratchets hears about three.
+- **Fix.** The root script that repairs a failure mechanically. A failing gate
+  prints it, and **`pnpm fix`** runs `pnpm format` then every fix in table order
+  (with `pnpm build` before the first one that reads `dist/`). Every gate whose
+  fix ends in `:update` compares against a COMMITTED BASELINE in `scripts/`,
+  and that `--update` is LOWER-ONLY: it records an improvement and refuses to
+  raise a budget, so blessing growth is a hand edit in a reviewable diff.
+- **An improvement WARNS, never fails.** A baseline sitting above the tree
+  prints the entries to give back and the command; only growth fails. Same rule
+  in every ratchet (`_ratchet.mjs`'s `warnStale`, `check-file-length.mjs`,
+  `check-bundled-deps.mjs`).
+
+They must stay wired into BOTH `check.mjs` and CI: for a long time they lived
+only in `check.mjs`, so the only thing enforcing them was the pre-push hook —
+and `git push --no-verify` skipped them entirely.
+
+<!-- gate-catalogue:start (generated: pnpm sync:gate-catalogue) -->
+
+| Gate                      | Phase       | Failure             | Mode | Runs                                              | Fix                           |
+| ------------------------- | ----------- | ------------------- | ---- | ------------------------------------------------- | ----------------------------- |
+| `check:hatches`           | ratchets    | reported at the end | both | `node scripts/check-escape-hatches.mjs`           | `pnpm hatches:update`         |
+| `check:invariants`        | ratchets    | reported at the end | both | `node scripts/guard-invariants.mjs`               | `pnpm invariants:update`      |
+| `check:file-length`       | ratchets    | reported at the end | both | `node scripts/check-file-length.mjs`              | `pnpm file-length:update`     |
+| `check:duplication`       | ratchets    | reported at the end | both | `node scripts/check-duplication.mjs`              | `pnpm duplication:update`     |
+| `check:guest-contract`    | ratchets    | reported at the end | both | `node scripts/check-guest-contract.mjs`           | —                             |
+| `check:package-layout`    | ratchets    | reported at the end | both | `node scripts/check-package-layout.mjs`           | —                             |
+| `check:test-assertions`   | ratchets    | reported at the end | both | `node scripts/check-test-assertions.mjs`          | —                             |
+| `check:property-floors`   | ratchets    | reported at the end | both | `node scripts/check-property-floors.mjs`          | `pnpm property-floors:update` |
+| `check:module-tests`      | ratchets    | reported at the end | both | `node scripts/check-module-tests.mjs`             | `pnpm module-tests:update`    |
+| `check:claude-md`         | ratchets    | reported at the end | both | `node scripts/check-claude-md.mjs`                | `pnpm claude-md:update`       |
+| `check:guide-index`       | ratchets    | reported at the end | both | `node scripts/docs-list.mjs --check`              | `pnpm sync:guide-index`       |
+| `check:gate-catalogue`    | ratchets    | reported at the end | both | `node scripts/check.mjs --catalogue check`        | `pnpm sync:gate-catalogue`    |
+| `check:guest-toolchain`   | ratchets    | reported at the end | both | `node scripts/sync-guest-toolchain.mjs --check`   | `pnpm sync:guest-toolchain`   |
+| `check:agent-guide`       | ratchets    | reported at the end | both | `node scripts/sync-agent-guide.mjs --check`       | `pnpm sync:agent-guide`       |
+| `check:provider-table`    | ratchets    | reported at the end | both | `node scripts/sync-provider-table.mjs --check`    | `pnpm sync:provider-table`    |
+| `check:studio-prompt`     | ratchets    | reported at the end | both | `node scripts/sync-studio-prompt.mjs --check`     | `pnpm sync:studio-prompt`     |
+| `check:scaffold`          | ratchets    | reported at the end | both | `node scripts/sync-scaffold-versions.mjs --check` | `pnpm sync:scaffold`          |
+| `check:defaults`          | ratchets    | reported at the end | both | `node scripts/check-defaults.mjs`                 | —                             |
+| `check:konsistent`        | ratchets    | reported at the end | both | `konsistent check`                                | —                             |
+| `check:deploy-changeset`  | ratchets    | reported at the end | both | `node scripts/check-deploy-changeset.mjs`         | —                             |
+| `check:migration-order`   | ratchets    | reported at the end | both | `node scripts/check-migration-order.mjs`          | —                             |
+| `check:optional-peers`    | ratchets    | reported at the end | both | `node scripts/check-optional-peers.mjs`           | —                             |
+| `check:untyped-imports`   | ratchets    | reported at the end | both | `node scripts/check-untyped-imports.mjs`          | —                             |
+| `check:coverage-per-file` | after-tests | reported at the end | both | `node scripts/check-coverage-per-file.mjs`        | —                             |
+| `check:publish-names`     | after-build | stops the run       | both | `node scripts/check-publish-names.mjs`            | —                             |
+| `check:publish-protocols` | after-build | stops the run       | both | `node scripts/check-publish-protocols.mjs`        | —                             |
+| `check:api-report`        | after-build | stops the run       | both | `node scripts/api-report.mjs --check`             | `pnpm api-report`             |
+| `check:api-nameable`      | after-build | stops the run       | both | `node scripts/check-api-nameable.mjs`             | `pnpm api-nameable:update`    |
+| `check:bundled-deps`      | after-build | reported at the end | both | `node scripts/check-bundled-deps.mjs`             | `pnpm bundled-deps:update`    |
+| `check:api-contracts`     | after-build | stops the run       | both | `node scripts/api-contracts.mjs`                  | —                             |
+| `check:authoring-guide`   | after-build | stops the run       | both | `node scripts/check-authoring-guide.mjs`          | —                             |
+| `check:docs-md`           | after-build | stops the run       | both | `node scripts/docs-markdown.mjs --check`          | `pnpm docs:md`                |
+| `check:template-types`    | after-build | stops the run       | both | `node scripts/check-template-types.mjs`           | —                             |
+| `check:doc-examples`      | after-build | stops the run       | both | `node scripts/check-doc-examples.mjs`             | —                             |
+
+<!-- gate-catalogue:end -->
+
+## Why each gate exists
+
+The gates with a section of their own further down (`check:hatches`,
+`check:package-layout`, `check:bundled-deps`, `check:optional-peers`,
+`check:file-length`, `check:test-assertions`, `check:claude-md`,
+`check:guide-index`, `check:template-types`) carry their reasons there.
+
+- **`check:invariants`** — the mechanical half of AGENTS.md (`guard-invariants`
+  rules; `node scripts/guard-invariants.mjs --rules` prints them). A rule that
+  lives only as prose is enforced exactly as long as a reviewer remembers it.
+- **`check:duplication`** — jscpd over the tree, per-file baseline, ratchets
+  down only. A bug fixed in one copy of a block and not the other is churn
+  nothing points at; the sync gates cover copies somebody noticed, this finds
+  the rest. ~10s, pure fs.
+- **`check:guest-contract`** — an agent sandbox runs the harness PINNED at
+  deploy time, so the platform is routinely newer than the guest it spawns, and
+  CI builds both ends from one commit so no test sees them disagree. This ties
+  `GUEST_CONTRACT_VERSION` to the surface it versions (boot env keys,
+  `/manage/*`, the bundle handshake) and makes every change record a reason
+  (`--record` / `--revise`). Not auto-fixable on purpose.
+- **`check:property-floors`** — one level under `check:test-assertions`. A
+  property test's load-bearing half is its coverage FLOOR: a generated sequence
+  that stops reaching the interesting state passes faster and forever, and a
+  floor with no recorded actual cannot be re-measured.
+- **`check:module-tests`** — `check:coverage-per-file` can be satisfied
+  INCIDENTALLY by a test written for an importer, so a module with no test file
+  of its own can sit at 100%. Per-file allowlist, goal zero.
+- **`check:gate-catalogue`** — this file's table, against the `GATES` table.
+- **`check:guest-toolchain`** — the guest toolchain lockfile is baked into every
+  guest image; a stale one bakes a different tree than the repo tested. Pure
+  JSON comparison, no registry (`pnpm sync:guest-toolchain` needs one).
+- **`check:agent-guide`** — the authoring guide ships INSIDE the
+  `@alexkroman1/aai` tarball, so a project reads guidance matching the SDK it
+  resolved; the copy must match `scaffold/CLAUDE.md`.
+- **`check:studio-prompt`** — `aai-guest`'s coding-agent eval runs the studio's
+  shipped system prompt from committed copies (importing `aai-studio-server`
+  would close a package cycle). A stale copy grades a prompt nobody deploys and
+  reports green.
+- **`check:provider-table`** — the docs site's provider table (which factory
+  reads which key) is GENERATED from the SDK's `defineProvider` records, the
+  ones the runtime registry and the credential preflight derive from; the
+  hand-kept table once went on not listing a provider that had shipped. Pure fs
+  plus a type-stripped import, no build.
+- **`check:defaults`** — a default is one `DEFAULT_*` constant restated in its
+  field's `@defaultValue`, the docs site's tuning table and the authoring guide.
+  It imports the constants' real values (Node strips the types), so a stated
+  number that disagrees fails here rather than in a caller's ear. No fixer: the
+  right number is a decision.
+- **`check:scaffold`** — the scaffold's manifest SHIPS and cannot say
+  `catalog:`, so every catalogued bump is applied to it a second time; unchecked,
+  it once wrote a literal `catalog:` into a manifest npm cannot resolve.
+- **`check:konsistent`** — structural conventions (`konsistent.json`): shapes no
+  per-file tool sees because none is wrong WITHIN a file — a provider module
+  exporting four of its five symbols, an import across a forbidden boundary.
+- **`check:deploy-changeset`** — `ship.yml` arms a deploy on a version bump to a
+  carrier, and `changeset status` accepts an EMPTY changeset, so a branch could
+  rewrite the platform and ship nothing (#1341). `supabase/migrations/**` is in
+  scope too. Diff-scoped; see below.
+- **`check:migration-order`** — two branches each pick a plausible next
+  migration timestamp; the inversion exists only in the merge, and
+  `supabase db push` then REFUSES a pending file older than the last remote row
+  — at release time, after the npm publish. Diff-scoped; see below.
+- **`check:untyped-imports`** — `tsconfig.scripts.json` and
+  `tsconfig.browser.json` set `noImplicitAny: false`, which also hides a MISSING
+  DECLARATION (TS7016). This re-runs both programs with the flag forced on and
+  fails on TS7016 only, with a TS7006 floor so a tsc that resolved nothing
+  cannot pass.
+- **`check:coverage-per-file`** — reads what `test:coverage` wrote (`turbo.json`
+  declares `coverage/**` as its output, so a cache hit still measures the current
+  tree). The per-package floors catch a package sliding; this catches one new
+  module landing untested. Runs per package in CI's coverage matrix.
+- **`check:publish-names`** — a publishable package must use the
+  `@alexkroman1/` scope (the unscoped names belong to other npm publishers),
+  plus what a published manifest owes beyond packaging (`.agents/dependencies.md`).
+- **`check:publish-protocols`** — it PACKS. `catalog:` and `workspace:` are
+  pnpm-only protocols rewritten at pack time; publint reads the source manifest
+  and cannot see a release that installs for nobody.
+- **`check:api-report`** — a committed API report per published entry point,
+  from the emitted `dist/*.d.ts`, so a SIGNATURE change is a reviewable diff.
+- **`check:api-nameable`** — reads the same reports: every type a published
+  signature references must be importable from some subpath. Per-file baseline.
+- **`check:api-contracts`** — immediately after api-report, since it reads the
+  authoring surface out of the committed reports: turns "the signature moved"
+  into "and it is a major, and here is the frozen example proving epoch N still
+  compiles". Recording a hash is a decision (`api-contract-epoch-bump` skill),
+  so it has no fix.
+- **`check:authoring-guide`** — after THAT: the guide that ships to users must
+  name every capability the contracts version. `check:agent-guide` asserts it
+  is CURRENT; this asserts it is COMPLETE.
+- **`check:docs-md`** — `docs/api/` is TypeDoc's own markdown, committed, for an
+  agent that cannot fetch the rendered site.
+- **`check:doc-examples`** — every `ts`/`tsx` fence in published doc comments
+  and user-facing markdown compiles under the scaffold tsconfig (the PUBLISHED
+  types), like `check:template-types`; a `no-check` fence is an escape hatch
+  with its own budget (`no-check-baseline.json`).
+
+**None of them resolves a git ref, except two, and that is deliberate.** The
 escape-hatch gate used to diff the work tree against its merge-base with
 `origin/main`, which had three failure modes documented as known weaknesses
 rather than fixed: a grand total let a branch trade a removed hatch for a new
@@ -33,14 +187,16 @@ exited 0, which is the shape of failure this repo keeps finding, a gate
 reporting success while checking nothing, in exactly the environments that get
 one commit of history. A file in the tree has no merge base and no such modes.
 
-**`check:deploy-changeset` is the ONE exception, and it does not weaken the
-rule.** What it checks is a property of a BRANCH rather than of the tree — did
-this change to platform source bring a changeset that ships it — so there is no
-tree-scoped spelling of it available. What generalizes from the paragraph above
-is not "never resolve a ref", it is **never report success over a comparison you
-could not make**: an unresolvable base FAILS there, naming `--base` and
-`git fetch`, where the escape-hatch gate printed a checkmark. Read that as the
-bar any future diff-scoped gate has to clear, not as a precedent for skipping.
+**`check:deploy-changeset` and `check:migration-order` are the exceptions, and
+they do not weaken the rule.** What they check is a property of a BRANCH rather
+than of the tree, so there is no tree-scoped spelling of either. What
+generalizes from the paragraph above is not "never resolve a ref", it is **never
+report success over a comparison you could not make**: an unresolvable base
+FAILS there, naming `--base` and `git fetch`, where the escape-hatch gate
+printed a checkmark. Read that as the bar any future diff-scoped gate has to
+clear, not as a precedent for skipping.
+
+## Gates with a section of their own
 
 - **`pnpm check:hatches`** (`scripts/check-escape-hatches.mjs`) — counts
   static-analysis escape hatches (`@ts-expect-error`, `@ts-ignore`,
@@ -160,10 +316,16 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   `external` (the first takes 26 of the 52 with it, being their tree) and the
   25 that remain are pure JS where inlining is free.
 
-  It RUNS the studio build and reads tsdown's own
-  `Detected dependencies in bundle` hint rather than re-deriving the set from
-  the lockfile: rolldown inlines what is imported, not what is declared, and a
-  gate whose set disagrees with the real bundle is worse than none. An ABSENT
+  It reads tsdown's own `Detected dependencies in bundle` hint rather than
+  re-deriving the set from the lockfile: rolldown inlines what is imported, not
+  what is declared, and a gate whose set disagrees with the real bundle is worse
+  than none. It asks turbo for the build (`turbo run build --filter
+aai-studio-server`) and reads turbo's task log
+  (`packages/aai-studio-server/.turbo/turbo-build.log`), which a cache hit
+  restores with `dist/`, so the hint is the one the current bundle's build
+  printed and the gate costs a cache lookup rather than a rebuild.
+  `pnpm bundled-deps:update` only DROPS packages no longer inlined; adding one
+  is a hand edit to the baseline. An ABSENT
   hint is a hard failure — `deps.onlyBundle` suppresses it while ALSO
   externalizing `aai-server` itself, which is the cold-start regression that
   config's comment exists to prevent, and an unparsed hint and a bundle that
@@ -224,12 +386,14 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   workspace's devDependency.
 
 - **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
-  source files at 500 lines and test files at 700. Files that already
-  exceed the cap are grandfathered in `scripts/file-length-allowlist.json`,
-  which records each file's current ceiling; a grandfathered file may not
-  grow past its ceiling, and ceilings should only ever be lowered as files
-  are split up. New files must come in under the cap. Templates under
-  `packages/aai-templates/templates/` are exempt.
+  source files at 500 CODE lines and test files at 700: blank lines and lines
+  wholly inside comments do not count (comment ranges from `oxc-parser`), so
+  documentation never forces a split. Files that already exceed the cap are
+  grandfathered in `scripts/file-length-allowlist.json` (empty today), which
+  records each file's ceiling; a grandfathered file may not grow past it, and
+  `pnpm file-length:update` only ever lowers or removes entries. A ceiling
+  above the file's count WARNS. New files must come in under the cap.
+  Templates under `packages/aai-templates/templates/` are exempt.
 
   **Its `scripts/` pathspec measured nothing at the top level for as long as it
   existed**, and the trap generalizes to every git pathspec in the repo. A
@@ -245,26 +409,12 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   the miss survived review. Verify any pathspec with `git ls-files "<glob>"`
   rather than reading it; `file-length-gate.test.ts` pins both shapes.
 
-  **Read the HEADROOM report before starting a feature in `transports/`, because
-  the cap is where a four-branch integration nearly broke.** The gate prints the
-  files closest to their ceiling for exactly this, and it is advisory, so nobody
-  reads it until something is already red. Measured 2026-09-11 on the
-  integration branch: **105 files sit within 10% of a cap.** Two of them were
-  already over on an unpushed branch —
-  `aai-runtime/src/transports/pipeline/transport.ts` at 530 and
-  `aai-runtime/src/transports/pipeline/speech/user-speech.ts` at 592, neither
-  allowlisted, 122 lines over between them — and the violation went unnoticed
-  only because that branch had never been pushed and so had never run a pre-push
-  `pnpm check`. Both files sat within six lines of the cap on `main` (500 and
-  494), so _any_ feature touching them owed a split before it owed anything
-  else. Two branches then extracted from the SAME file independently and
-  produced duplicate modules, which is the shape to expect when a hot file has
-  no headroom.
-
-  **And `aai-runtime/src/session/history-replay-equivalence.test.ts` is at
-  exactly 700/700**, so the next line added there forces a split. Recorded
-  rather than pre-split: the seam is not obvious and the split should belong to
-  whoever next needs the room.
+  **Read the HEADROOM report before starting a feature in a hot file.** The
+  gate prints the files closest to their ceiling (`--top N`, `--all`, `--json`)
+  and the pre-commit hook prints it for staged files, because it is advisory and
+  nobody reads it once something is already red. A hot file with no headroom is
+  where two branches extract the same module independently and produce
+  duplicates; plan the split as its own commit before the feature that forces it.
 
 - **`pnpm check:test-assertions`** (`scripts/check-test-assertions.mjs`) —
   fails on any `test()`/`it()` body containing no `expect` / `expectTypeOf` /
