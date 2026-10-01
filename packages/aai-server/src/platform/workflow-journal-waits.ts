@@ -22,7 +22,7 @@
  */
 
 import { firstWriteWins } from "@alexkroman1/aai-runtime/internal";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 import type { JournalSleepRow } from "./workflow-journal-rows.ts";
 import { millis, text } from "./workflow-journal-rows.ts";
 

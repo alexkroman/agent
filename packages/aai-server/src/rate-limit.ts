@@ -34,7 +34,7 @@
 
 import { invariant } from "@alexkroman1/aai/internal";
 import { TtlCache } from "./_ttl-cache.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 /** LRU cap on tracked keys per limiter. */
 const MAX_TRACKED_KEYS = 10_000;

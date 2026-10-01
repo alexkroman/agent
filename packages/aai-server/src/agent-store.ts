@@ -28,7 +28,7 @@
  */
 
 import { z } from "zod";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 
 const AgentRecordSchema = z.object({
   slug: z.string(),

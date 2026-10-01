@@ -11,7 +11,7 @@ import {
   WORKFLOW_IP_RATE_LIMIT,
   WORKFLOW_START_IP_RATE_LIMIT,
 } from "./rate-limit.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import { rateLimiterConformance } from "./store-conformance-cases.ts";
 
 // ── The CONTRACT, over the arm that runs everywhere ─────────────────────────

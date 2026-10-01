@@ -62,7 +62,7 @@ import { RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import { envCount, envMs } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform/lock.ts";
-import type { SqlExec } from "./secret-store.ts";
+import type { SqlExec } from "./sql-exec.ts";
 import type { DeliveryBudget } from "./workflow-queue-budget.ts";
 import { claimDue } from "./workflow-queue-claim.ts";
 import { fail, failUnreachable, isGuestUnreachable } from "./workflow-queue-failure.ts";

@@ -68,7 +68,7 @@ import { traceIdOf } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import type { AppContext } from "../context.ts";
 import { assertGuestBearer } from "../guest/bearer.ts";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 import { PLATFORM_DB_RESERVE_TIMEOUT_MS } from "./db-errors.ts";
 import type { AdminDb } from "./lock.ts";
 

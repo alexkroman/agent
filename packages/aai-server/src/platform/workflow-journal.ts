@@ -66,7 +66,7 @@
  */
 
 import { firstWriteWins } from "@alexkroman1/aai-runtime/internal";
-import type { SqlExec } from "../secret-store.ts";
+import type { SqlExec } from "../sql-exec.ts";
 import { HOOKS } from "./workflow-journal-hooks.ts";
 import type { JournalRunRow, JournalStepRow } from "./workflow-journal-rows.ts";
 import { toRun, toStep } from "./workflow-journal-rows.ts";
