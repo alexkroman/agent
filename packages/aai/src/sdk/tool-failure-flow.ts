@@ -121,8 +121,8 @@ class ToolFailureSignal extends Error {
  *   verdict; anything it cannot classify is rethrown unchanged). This is how a
  *   `workflows/` step calls a `/step` primitive — `orFail(stepFetch)`,
  *   `orFail(stepGenerateJson)`, `orFail(stepTranscribeSubmit)`,
- *   `orFail(sendToChannel)` — and it replaces the eight `*OrFail` twins, which
- *   are deprecated spellings of it. A failure labelled by its request
+ *   `orFail(sendToChannel)` — and it replaced the eight `*OrFail` twins that
+ *   spelled it one name per call. A failure labelled by its request
  *   (`GET https://…`) is the function arm's one special case: a call whose
  *   first argument is a URL.
  *

@@ -7,7 +7,7 @@
  * question — fatal, retryable, or unclassifiable — and depends on nothing else
  * in the subpath. Everything that stayed CONSUMES an answer: `orFail(call)`
  * (`_step-or-fail.ts`) and `throwFfmpegStepError` reach one from a shape they
- * recognise, and the deprecated `*OrFail` twins are `orFail` over one call.
+ * recognise.
  *
  * Cutting it the other way round — the classified callers out, the verdict in —
  * is the obvious split and does not work: those callers need
@@ -78,7 +78,7 @@ export function toStepError(cause: unknown, message?: string): Error {
     // the headers and the status it was derived FROM are what a reader debugs
     // with. It is not journaled — the log's codec keeps a message and nothing
     // else (`workflow/replay/step.ts` says so) — so this is for the process
-    // that threw it, and `stepFetchOrFail` has already read the body by the time it
+    // that threw it, and `orFail(stepFetch)` has already read the body by the time it
     // gets here.
     if (!isTransientStatus(cause.status)) return new FatalError(sentence, { cause });
     return retryableError(sentence, retryAfter(cause), cause);
@@ -118,7 +118,7 @@ export function toStepError(cause: unknown, message?: string): Error {
  * A bad credential spent the whole retry budget re-asking with a key that could
  * never work, and a rate limit's own delay was discarded — so N fan-out
  * siblings all asked again one second later, which is the exact pile-up
- * `stepFetchOrFail` and the `*OrFail` wrappers were written to prevent. An
+ * `orFail(stepX)` was written to prevent. An
  * explicit `throw new FatalError(...)` from the same step stopped in 378ms
  * throughout, which is what located the fault here rather than in the DevKit.
  *

@@ -144,8 +144,8 @@ export type { EvalMode } from "./_announce.ts";
  * workflow app behind it.
  *
  * A simulated caller and a model-graded judge are NOT on it: a case that wants
- * them builds the pair from `session` and `mode` with `evalSimulation` on
- * `@alexkroman1/aai-runtime/eval/simulate`, a surface versioned on its own.
+ * them builds the pair from `session` and `mode` with `evalSimulation` (on this
+ * same `@alexkroman1/aai-runtime/eval/vitest`), a surface versioned on its own.
  *
  * @sealed
  */

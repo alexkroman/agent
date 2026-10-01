@@ -14,8 +14,8 @@
  * would hand it to every tool body and spec that imports that subpath, which is
  * why `/step-errors` exists at all (see its module doc). So the discoverable
  * name stays the wrong one inside a workflow, and the least this surface can do
- * is say so where it is read. (The `*OrFail` twins this used to name are
- * deprecated aliases of the same `orFail(stepX)`.)
+ * is say so where it is read. (It used to name eight `*OrFail` twins, which
+ * `orFail(stepX)` replaced.)
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

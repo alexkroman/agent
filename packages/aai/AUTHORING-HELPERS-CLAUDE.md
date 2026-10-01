@@ -312,9 +312,9 @@ declaration:
 `orFail(stepGenerate)` answers the same call with its failure classified for the
 step engine (`_step-or-fail.ts`): a throw, or a non-2xx `Response` it resolves
 to, leaves as `toStepError`'s verdict; anything unclassifiable is rethrown
-unchanged; a sync function stays sync. It replaced the eight `*OrFail` twins on
-`/step-errors` (now `@deprecated` aliases, kept one epoch), and
-`/step-errors` re-exports this ONE declaration rather than declaring a second
+unchanged; a sync function stays sync. It replaced (and removed) the eight
+`*OrFail` twins on `/step-errors`, and `/step-errors` re-exports this ONE
+declaration rather than declaring a second
 `orFail` — `API-INDEX.md` merges a name's rows across subpaths, so two
 declarations would be documented as one. A `ToolFailure` is never a function,
 so the arms cannot collide; a function VALUE passed only to be handed back now

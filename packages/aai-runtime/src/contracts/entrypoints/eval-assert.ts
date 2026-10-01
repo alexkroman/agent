@@ -12,7 +12,8 @@
  * message or overload changing is not a change to the harness that runs the
  * case. The readers `eval` has carried since its first epoch stay there.
  *
- * Re-exported from `@alexkroman1/aai-runtime/eval`. This file is not shipped
+ * Re-exported from `@alexkroman1/aai-runtime/eval` and `/eval/vitest`. This
+ * file is not shipped
  * and nothing imports it — it exists so `pnpm check:api-contracts` can extract
  * a report for this capability alone, hash it, and hold it to a committed
  * epoch. See `scripts/api-contracts.mjs`.

@@ -19,8 +19,12 @@
  * would measure an agent on the framework default prompt.
  */
 import agentDef from "virtual:aai/agent";
-import { expectCalled, lastStateIn, toolNames } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeEval,
+  expectCalled,
+  lastStateIn,
+  toolNames,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 

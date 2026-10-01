@@ -39,7 +39,7 @@ import {
   type EvalToolCall,
   toolCallsInTurns,
   toolNames,
-} from "@alexkroman1/aai-runtime/eval";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { describeStudioEval, type StudioEvalContext } from "./_eval-harness.ts";
 import { studioStarter } from "./_eval-prompt.ts";

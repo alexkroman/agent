@@ -40,9 +40,13 @@ import agentDef from "virtual:aai/agent";
  * call would be measuring the old prompt.
  */
 import type { InferToolInput } from "@alexkroman1/aai";
-import { dialogResultSchema } from "@alexkroman1/aai/testing";
-import { type EvalTurn, toolResultIn, toolResultsIn } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeEval,
+  dialogResultSchema,
+  type EvalTurn,
+  toolResultIn,
+  toolResultsIn,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import type setupCharacter from "./tools/setup_character.ts";

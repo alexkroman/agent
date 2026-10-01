@@ -142,9 +142,11 @@
     "dropped": {}
   },
   "step-errors": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The eight *OrFail twins (stepFetchOrFail, stepGenerateOrFail, stepGenerateJsonOrFail, stepTranscribeSyncOrFail, stepTranscribeUploadOrFail, stepTranscribeSubmitOrFail, stepTranscribePollOrFail, sendToChannelOrFail) were removed: orFail(stepX), re-exported from this subpath, is the same call and the same verdict. An epoch-1 step importing any twin no longer compiles."
+    }
   },
   "step-files": {
     "current": 1,

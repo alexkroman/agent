@@ -4,13 +4,13 @@
  * step engine.
  *
  * `orFail(stepGenerate)` is the one spelling for what eight `*OrFail` twins on
- * `@alexkroman1/aai/step-errors` used to spell one name each. Every twin was the
- * call plus {@link throwStepError}, and `stepFetchOrFail` added the one branch
- * the others had no use for: a resolved `Response` that is not `ok` is a
- * failure too, because `fetch` RESOLVES a 503. That branch is here as well, so
- * `orFail(stepFetch)` is the old `stepFetchOrFail` exactly — same verdict, same
- * message, labelled by the request (`GET https://…`) whenever the call's first
- * argument is a URL.
+ * `@alexkroman1/aai/step-errors` used to spell one name each (they are gone).
+ * Every twin was the call plus {@link throwStepError}, and `stepFetchOrFail`
+ * added the one branch the others had no use for: a resolved `Response` that is
+ * not `ok` is a failure too, because `fetch` RESOLVES a 503. That branch is here
+ * as well, so `orFail(stepFetch)` is the old `stepFetchOrFail` exactly — same
+ * verdict, same message, labelled by the request (`GET https://…`) whenever the
+ * call's first argument is a URL.
  *
  * `_`-prefixed because it is not an import path: `orFail` is declared once, in
  * `tool-failure-flow.ts`, and dispatches here when handed a function — one

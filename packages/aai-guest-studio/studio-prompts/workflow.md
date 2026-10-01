@@ -631,11 +631,13 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
 
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts
    the agent's shape; an eval drives a real session and asserts what it did.
-   Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one):
+   Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one),
+   and EVERYTHING an eval needs — `describeEval`, the readers and claims,
+   `evalSimulation`, and stubs like `stubGatewayRoute` — is one import,
+   `@alexkroman1/aai-runtime/eval/vitest`:
 
    ```ts no-check
-   import { expectCalled } from "@alexkroman1/aai-runtime/eval";
-   import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+   import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/eval/vitest";
    import { expect } from "vitest";
    import agentDef from "./agent.ts";
 
@@ -1535,23 +1537,28 @@ deploy. Use `orFail(stepGenerateJson)` with a Zod `schema` if you need a shape.
 against a remote service and hands back the same call with its failure
 classified, and **inside a step the wrapped call is the one to use**:
 
-```ts no-check
+```ts
 import { stepFetch, stepGenerateJson, stepTranscribeSubmit } from "@alexkroman1/aai/step";
 import { orFail } from "@alexkroman1/aai/step-errors";
+import { z } from "zod";
 
-const page = await orFail(stepFetch)(url); // a 404 stops, a 503 retries
-const reply = await orFail(stepGenerateJson)(prompt, { schema: Reply });
-const job = await orFail(stepTranscribeSubmit)(audioUrl);
+const Reply = z.object({ headline: z.string() });
+
+export async function digest(url: string, audioUrl: string) {
+  const page = await (await orFail(stepFetch)(url)).text(); // a 404 stops, a 503 retries
+  const reply = await orFail(stepGenerateJson)(page, { schema: Reply });
+  const job = await orFail(stepTranscribeSubmit)(audioUrl);
+  return { headline: reply.headline, transcriptId: job.id };
+}
 ```
 
 It covers `stepGenerate`, `stepGenerateJson`, `stepFetch`, `stepTranscribeSync`,
 `stepTranscribeUpload` / `Submit` / `Poll` and `sendToChannel` (`/channels`) —
 and any call of your own that throws a `Response` or an error carrying
 `retryable`. Around `stepFetch` it also turns a NON-2XX RESPONSE into a throw:
-`stepFetch` resolves with a `404` rather than raising it. (The older
-`stepGenerateOrFail`-style names still work for now, and are deprecated
-spellings of exactly this.) It is the same `orFail` a tool helper uses to
-forward a `ToolFailure` — handed a function rather than a value.
+`stepFetch` resolves with a `404` rather than raising it. It is the same
+`orFail` a tool helper uses to forward a `ToolFailure` — handed a function
+rather than a value.
 
 The whole of what `orFail` adds is `throwStepError`, and that is worth having
 because the engine's retry policy is decided by WHICH error a step throws. Raw,

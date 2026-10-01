@@ -108,9 +108,8 @@ export const WORKFLOW_BODY_RULES = [
     key: "rule26_unclassifiedStepCall",
     label: "raw step call in a shipped workflow body",
     // A call position. The remedy is excluded by the trailing `\\(`:
-    // `orFail(stepGenerate)(x)` puts a `)` after the name (and a deprecated
-    // `*OrFail` twin a suffix), so the paren never follows. See both
-    // fragments' docs.
+    // `orFail(stepGenerate)(x)` puts a `)` after the name, so the paren never
+    // follows. See both fragments' docs.
     re: `${NOT_IDENT_BEFORE}(${CLASSIFIABLE_STEP_CALLS})\\(`,
     paths: WORKFLOW_BODY_PATHSPECS,
     skipComments: true,
@@ -118,16 +117,14 @@ export const WORKFLOW_BODY_RULES = [
       // DERIVED from the alternation, one pair per banned name, so a name added
       // to `CLASSIFIABLE_STEP_CALLS` is sampled in both directions without
       // anyone remembering to. It also keeps every literal here short: spelled
-      // out, `  await stepTranscribeSyncOrFail(bytes);` is long enough that
+      // out, `  await orFail(stepTranscribeSync)(bytes);` is long enough that
       // biome's `noSecrets` entropy heuristic scores it as a credential, and
       // the formatter folds any concatenation written to dodge that.
       matches: CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await ${name}(x);`),
       ignores: [
         // The remedy, `orFail(name)(x)`, which the trailing `(` in the
-        // pattern is what excludes — and the deprecated twins, the same name
-        // plus a suffix, for the one epoch they remain.
+        // pattern is what excludes.
         ...CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await orFail(${name})(x);`),
-        ...CLASSIFIABLE_STEP_CALLS.split("|").map((name) => `  await ${name}OrFail(x);`),
         // Not a call: an import, a type position, a property.
         'import { stepGenerate } from "@alexkroman1/aai/step";',
         "  const opts: StepGenerateOptions = { system };",
@@ -135,8 +132,8 @@ export const WORKFLOW_BODY_RULES = [
     },
     remedy:
       'Inside a `"use step"` body, wrap the call in `orFail` from\n' +
-      "`@alexkroman1/aai/step-errors` — `orFail(stepGenerate)(prompt)` — for\n" +
-      "each of the callers this rule names.\n" +
+      "`@alexkroman1/aai/step-errors` — pass it the step call, then call what\n" +
+      "it answers — for each of the callers this rule names.\n" +
       "\n" +
       "The DevKit decides its retry policy from WHICH error a step throws, and a\n" +
       "raw call throws the same thing for every failure. So a bad API key is\n" +

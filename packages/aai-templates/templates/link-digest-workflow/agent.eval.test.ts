@@ -26,9 +26,11 @@
 
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { stubGatewayRoute } from "@alexkroman1/aai/testing";
-import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
-import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeWorkflowEval,
+  installStubStepFetch,
+  stubGatewayRoute,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect, onTestFinished } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import { SETTLE_MS } from "./workflows/digest.ts";

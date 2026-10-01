@@ -486,8 +486,9 @@ callback as jest's `done`, so `async (session) => …` is an error where
 play the user — a `persona` and a `goal` — against an `EvalSession` or an
 `EvalTextAgent`, until it calls `end_call` or `maxTurns` runs out.
 `judgeCall(input, { criteria, llm })` (`eval/judge.ts`) has a model rule on each
-criterion over the result. Both are on `@alexkroman1/aai-runtime/eval/simulate`
-— their own subpath and their own `eval-simulate` capability — and a
+criterion over the result. Both are their own `eval-simulate` capability, on
+`@alexkroman1/aai-runtime/eval/vitest` (the one eval import) and the runner-free
+`/eval` — they once had a subpath of their own — and a
 `describeEval`/`describeTextEval` case builds the pair with
 `evalSimulation({ agent, mode, target: session })`
 (`eval/simulation-context.ts`) rather than finding it on its context. They used

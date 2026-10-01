@@ -172,8 +172,7 @@ export const DISPOSE_CALL = `[${ID_TAIL}]\\[Symbol\\.(async)?[Dd]ispose\\]\\(`;
  * which git's matcher does not implement.
  *
  * What keeps rule 26 off the remedy is the other end (`orFail(stepGenerate)(x)`
- * puts a `)` after the name, and the deprecated `*OrFail` twins a suffix, so the
- * `\\(` never follows); this end
+ * puts a `)` after the name, so the `\\(` never follows); this end
  * is what keeps it off `myStepGenerate(` and off a property access.
  */
 export const NOT_IDENT_BEFORE = "(^|[^A-Za-z])";
