@@ -50,6 +50,18 @@ export const ClientConfigResponseSchema = z.object({
    * endpoint states the front door rather than leaving a reader to infer one.
    */
   page: z.enum(["voice", "static"]),
+  /**
+   * A session ticket the SERVER issued for the next connection attempt — the
+   * client presents it on `WS /websocket` (as an `aai.auth.<ticket>`
+   * subprotocol) when its own `token` option gave none. Re-fetched with this
+   * config on every attempt, so a short-lived ticket is always fresh.
+   *
+   * Only a server that is already its client's credential holder sends one:
+   * `aai dev` with `AAI_SESSION_SECRET` set, for the client it serves itself.
+   * A self-hosted `createRuntimeServer` never does — this endpoint is
+   * unauthenticated, so a ticket here would be one anyone could fetch.
+   */
+  sessionToken: z.string().optional(),
 });
 
 /** Parsed body of `GET /client-config`. */
@@ -67,12 +79,14 @@ export function buildClientConfig(source: {
   greeting?: string | undefined;
   sessionUrl?: string | undefined;
   page?: "voice" | "static" | undefined;
+  sessionToken?: string | undefined;
 }): ClientConfigResponse {
   return {
     ...omitUndefined({
       name: source.name,
       greeting: source.greeting,
       sessionUrl: source.sessionUrl,
+      sessionToken: source.sessionToken,
     }),
     page: source.page ?? "voice",
   };

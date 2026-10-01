@@ -19,7 +19,8 @@
  *   or whatever a caller's own `verify` accepts. Browsers cannot set headers on a
  *   WebSocket, so it rides the `Sec-WebSocket-Protocol` header as
  *   `aai.auth.<token>` — out of the URL, so out of access logs and `Referer` — and
- *   `?token=` is the fallback for a client that cannot offer a subprotocol.
+ *   `?token=` is the fallback. `aai-ui` offers it after `aai.session`, which
+ *   {@link selectSessionProtocol} selects.
  * - **Resume ownership.** A `?sessionId=` resume is only honoured for the
  *   identity that OPENED that session. See {@link SessionGate.admits}.
  *
@@ -54,6 +55,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import type { Duplex } from "node:stream";
 import { requestQuery } from "@alexkroman1/aai/internal";
+import { SESSION_AUTH_PROTOCOL_PREFIX as WIRE_AUTH_PREFIX } from "@alexkroman1/aai/protocol";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "./runtime-config.ts";
@@ -63,8 +65,8 @@ import { declineSocket } from "./session-decline.ts";
 /** The env variable that turns the built-in ticket check on. */
 export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
 
-/** `Sec-WebSocket-Protocol` entry prefix a ticket travels under. */
-export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+/** `Sec-WebSocket-Protocol` entry prefix a ticket travels under (the SDK's wire value). */
+export const SESSION_AUTH_PROTOCOL_PREFIX = WIRE_AUTH_PREFIX;
 
 /**
  * The close code a refused session ends with — HTTP 401 in the 4000-4999

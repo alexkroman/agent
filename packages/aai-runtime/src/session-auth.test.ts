@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
+import { SESSION_PROTOCOL } from "@alexkroman1/aai/protocol";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import { makeClientSink, silentLogger } from "./_test-utils.ts";
@@ -118,6 +119,12 @@ describe("selectSessionProtocol", () => {
     expect(selectSessionProtocol(new Set([`${SESSION_AUTH_PROTOCOL_PREFIX}t`, "aai.v1"]))).toBe(
       "aai.v1",
     );
+  });
+
+  test("answers the browser client's offer with the plain session protocol", () => {
+    // What aai-ui's `token` option offers: the plain protocol FIRST, then the ticket.
+    const offer = new Set([SESSION_PROTOCOL, `${SESSION_AUTH_PROTOCOL_PREFIX}t`]);
+    expect(selectSessionProtocol(offer)).toBe(SESSION_PROTOCOL);
   });
 
   test("answers with the ticket only when it is all that was offered", () => {

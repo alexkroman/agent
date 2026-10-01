@@ -50,3 +50,6 @@ export {
   type InboxServerFrame,
   InboxServerFrameSchema,
 } from "./protocol-inbox.ts";
+// The subprotocols a session upgrade offers — a leaf, so the browser bundle
+// imports them without the schemas.
+export { SESSION_AUTH_PROTOCOL_PREFIX, SESSION_PROTOCOL } from "./session-protocol.ts";
