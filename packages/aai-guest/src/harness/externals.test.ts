@@ -42,12 +42,7 @@ const PKG = join(import.meta.dirname, "..", "..");
 const HARNESS = join(PKG, "dist/harness.mjs");
 
 /** The `neverBundle` patterns, as the source strings they match. */
-const NEVER_BUNDLE = [
-  "@alexkroman1/aai-runtime",
-  "@alexkroman1/aai-cli",
-  "@vitejs/plugin-react",
-  "@tailwindcss/vite",
-] as const;
+const NEVER_BUNDLE = ["@alexkroman1/aai-cli", "@vitejs/plugin-react", "@tailwindcss/vite"] as const;
 
 /**
  * The declared list, read off the real config rather than re-typed.
@@ -113,27 +108,6 @@ describe("the built harness", () => {
     // a way no unit test would see.
     for (const specifier of ["@vitejs/plugin-react", "@tailwindcss/vite"]) {
       expect(bundle, `${specifier} looks inlined`).toContain(specifier);
-    }
-  });
-
-  test("holds NO copy of the host runtime — it imports the one beside it", () => {
-    // The gate behind "one runtime per guest process". The harness used to bundle
-    // its own `@alexkroman1/aai-runtime` while every agent bundle carried another,
-    // and every registry the two had to share (the metrics sinks, the workflow run
-    // context, the client event feed) had to be hung off `globalThis` to survive
-    // it. Agent bundles now IMPORT the runtime (`RUNTIME_EXTERNAL`, aai-cli's
-    // `worker-bundler.ts`) and are evaluated beside this file, so the two resolve
-    // one module — but only while this artifact inlines none of it.
-    expect(bundle).toMatch(/from\s*"@alexkroman1\/aai-runtime"/);
-    // Definitions only the runtime has. Any one appearing means a module of it was
-    // inlined — a second instance beside the one the agent's sessions run on.
-    for (const definition of [
-      /function\s+createRuntimeServer\s*\(/,
-      /function\s+createTextAgent\s*\(/,
-      /function\s+registerMetricsSink\s*\(/,
-      /function\s+createRuntime\s*\(/,
-    ]) {
-      expect(bundle, `${definition} is defined inside the harness`).not.toMatch(definition);
     }
   });
 });

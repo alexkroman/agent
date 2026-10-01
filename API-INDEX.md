@@ -21,7 +21,7 @@ of it — and want the import.
 - [Agent authoring](#agent-authoring) — 587 names
 - [Browser client](#browser-client) — 181 names
 - [Testing and evals](#testing-and-evals) — 254 names
-- [Hosting and tooling](#hosting-and-tooling) — 237 names
+- [Hosting and tooling](#hosting-and-tooling) — 236 names
 - [Framework internals](#framework-internals) — 385 names
 
 ## Agent authoring
@@ -1056,7 +1056,6 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `ProjectServerOptions` | interface | `@alexkroman1/aai-cli/start` |  | Options for `createProjectServer` and `executeStart`. |
 | `ProviderDescriptorSchema` | const · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `ProviderEnv` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Env acceptable for provider-credential resolution (STT/TTS/LLM openers, `ctx.generate`): the agent's own env or a host-fallback env. |
-| `RUNTIME_EXTERNAL` | const · `@internal` | `@alexkroman1/aai-cli/worker-bundler` |  |  |
 | `ReadyConfig` | type | `@alexkroman1/aai/protocol` | `aai:protocol` | Protocol-level session config returned to the client on connect. |
 | `ReadyConfigSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Zod schema for `ReadyConfig`. |
 | `ReservedDb` | type | `@alexkroman1/aai-runtime` | `aai-runtime:db` | One connection held out of the pool for the caller's exclusive use, so SESSION-scoped state — advisory locks, `SET` — survives across statements. |

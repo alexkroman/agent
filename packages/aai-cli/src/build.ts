@@ -193,7 +193,7 @@ export async function executeBuild(opts: {
   // `aai deploy` imports its bundle too (for the credential preflight), so
   // both commands run the developer's own project code — see the note in
   // "CLI credential destinations" in packages/aai-cli/CLAUDE.md.
-  const agentDef = await evalWorkerBundle(bundle.worker, cwd);
+  const agentDef = await evalWorkerBundle(bundle.worker);
   // Legal, and worth saying — today that is a voice outside the catalog, whose
   // whole failure mode is that nothing says anything until the agent is live
   // and silent. See `agentConfigWarnings`.
@@ -230,8 +230,7 @@ export async function executeBuild(opts: {
   // It costs a SECOND evaluation of the user's bundle, so it is skipped for a
   // target that deploys nowhere — which is every ordinary local build, `node`
   // being the default and `missingDeployEnv` returning nothing for it anyway.
-  const deployConfig =
-    output.dir === undefined ? undefined : await evalWorkerConfig(bundle.worker, cwd);
+  const deployConfig = output.dir === undefined ? undefined : await evalWorkerConfig(bundle.worker);
   const missingEnv = await missingDeployEnv(
     cwd,
     target,

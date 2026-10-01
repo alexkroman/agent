@@ -147,7 +147,9 @@ const MAX_INFLIGHT = 64;
  * The code on a refusal that means "this call was never sent".
  *
  * A property rather than a subclass, for the reason `platform-rpc.ts` gives about
- * `PLATFORM_UNAVAILABLE_CODE`: one spelling of the test, readable on any value.
+ * `PLATFORM_UNAVAILABLE_CODE`: a deployed guest holds two copies of this package
+ * (the harness's and the worker bundle's), so a class declared here would have
+ * two identities and the wrong copy could not recognise it.
  *
  * @internal
  */

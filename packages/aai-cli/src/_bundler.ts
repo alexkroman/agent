@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { hash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
@@ -43,19 +44,13 @@ export async function buildAgentBundle(
 }
 
 /**
- * Import the worker ESM from a uniquely named file and return the AgentDef
- * default export. A real `file:` URL, not a `data:` URL, for two reasons: the
- * worker IMPORTS the host runtime (`RUNTIME_EXTERNAL` in `worker-bundler.ts`),
- * which only a file with a `node_modules` above it can resolve, and its bundled
- * CJS interop calls `createRequire(import.meta.url)`, which rejects anything
- * that isn't a file URL or absolute path. (The guest harness imports bundles the
- * same way, for the same reasons.) The file is removed after import; the module
+ * Import the worker ESM from a uniquely named temp file and return the
+ * AgentDef default export. A real `file:` URL, not a `data:` URL: deploy
+ * bundles ship the SDK runtime, whose CJS interop calls
+ * `createRequire(import.meta.url)` — which rejects anything that isn't a
+ * file URL or absolute path. (The guest harness imports bundles the same
+ * way, for the same reason.) The file is removed after import; the module
  * lives on in memory.
- *
- * **`cwd` is a RESOLUTION ANCHOR**: the file is written under `<cwd>/.aai/`, so
- * the worker's `@alexkroman1/aai-runtime` resolves from the PROJECT's install —
- * the same one this CLI's own runtime came from, which is what makes the two one
- * module instance. A temp directory has no `node_modules` above it at all.
  *
  * Each call imports a unique URL, and Node's ESM registry never evicts — so
  * every call retains one bundle for the process lifetime. That is fine for
@@ -66,20 +61,16 @@ export async function buildAgentBundle(
  * out worker threads, and `node:vm` ESM evaluation is still flagged
  * experimental.
  */
-export async function evalWorkerBundle(code: string, cwd: string): Promise<AgentDef> {
-  const mod = await importWorkerModule(code, cwd);
+export async function evalWorkerBundle(code: string): Promise<AgentDef> {
+  const mod = await importWorkerModule(code);
   const agentDef = (mod.default ?? mod) as AgentDef;
   validateAgentExport(agentDef);
   return agentDef;
 }
 
-/** Import a built worker from a file under `<cwd>/.aai/`. See {@link evalWorkerBundle}. */
-async function importWorkerModule(code: string, cwd: string): Promise<Record<string, unknown>> {
-  // `.aai/` is the CLI's own scratch dir: dot-paths are ignored by the dev
-  // watcher, so writing here cannot trigger the rebuild that wrote it.
-  const scratch = path.join(cwd, ".aai");
-  await mkdir(scratch, { recursive: true });
-  const dir = await mkdtemp(path.join(scratch, "eval-"));
+/** Import a built worker from a temp file. See {@link evalWorkerBundle}. */
+async function importWorkerModule(code: string): Promise<Record<string, unknown>> {
+  const dir = await mkdtemp(path.join(tmpdir(), "aai-worker-"));
   const file = path.join(dir, "worker.mjs");
   try {
     await writeFile(file, code, "utf-8");
@@ -104,8 +95,8 @@ async function importWorkerModule(code: string, cwd: string): Promise<Record<str
  * Returns undefined for a bundle built by a CLI old enough not to emit the
  * export; the caller treats that as "nothing to preflight", never an error.
  */
-export async function evalWorkerConfig(code: string, cwd: string): Promise<unknown> {
-  const mod = await importWorkerModule(code, cwd);
+export async function evalWorkerConfig(code: string): Promise<unknown> {
+  const mod = await importWorkerModule(code);
   return mod.__aaiConfig;
 }
 
@@ -117,7 +108,7 @@ export async function evalWorkerConfig(code: string, cwd: string): Promise<unkno
  * `evalWorkerBundle`) to genuinely-new bundles — the residual one-module-per-
  * distinct-build leak is accepted for the reasons documented there.
  */
-export function createWorkerEvaluator(cwd: string): (code: string) => Promise<AgentDef> {
+export function createWorkerEvaluator(): (code: string) => Promise<AgentDef> {
   // One record rather than a hash/worker pair: a half-updated pair is
   // representable and the guard then needs a `lastWorker &&` conjunct that
   // documents the hazard instead of removing it.
@@ -125,7 +116,7 @@ export function createWorkerEvaluator(cwd: string): (code: string) => Promise<Ag
   return async (code: string): Promise<AgentDef> => {
     const codeHash = hash("sha256", code);
     if (last?.hash === codeHash) return last.worker;
-    const worker = await evalWorkerBundle(code, cwd);
+    const worker = await evalWorkerBundle(code);
     last = { hash: codeHash, worker };
     return worker;
   };

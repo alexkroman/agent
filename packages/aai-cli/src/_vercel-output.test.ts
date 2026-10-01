@@ -50,14 +50,17 @@ const exists = (dir: string, rel: string) =>
   );
 
 describe("emitVercelOutput", () => {
-  test("the function carries the worker INSIDE its entry, never as a file", async () => {
+  test("the function carries the worker artifact, which no tracer could find", async () => {
     await withTempDir(async (dir) => {
       await project(dir);
       await emitVercelOutput(dir, { bundle: stubBundle });
 
-      // The entry imports `.aai/worker.mjs` statically (`WORKER_IMPORT_SOURCE`), so
-      // the bundle holds it beside the one runtime copy its import resolves to.
-      expect(await exists(dir, path.join(VERCEL_FUNCTION_DIR, ".aai", "worker.mjs"))).toBe(false);
+      // `start.ts` loads this through `import(pathToFileURL(...))`. Under the
+      // `api/` shape @vercel/nft could not see it, the build was green, and the
+      // function failed on its first request with "No built agent".
+      expect(await read(dir, path.join(VERCEL_FUNCTION_DIR, ".aai", "worker.mjs"))).toContain(
+        "name: 'a'",
+      );
       expect(await read(dir, path.join(VERCEL_FUNCTION_DIR, "index.mjs"))).toBe(STUB);
     });
   });

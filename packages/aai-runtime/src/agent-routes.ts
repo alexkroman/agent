@@ -5,9 +5,11 @@
  *
  * The HTTP half — the `/api` prefix, the body cap, JSON parsing, `?client=` —
  * is `agent-routes-http.ts`, and the line between them is the bundle boundary.
- * The handlers — and the `routeResponse` they return — are the AGENT's code,
- * built against the bundle's own copy of the SDK, while the server is not. So
- * what crosses is data: a request of strings (headers and the raw body text included) and a
+ * A deployed guest holds two copies of this package (see "A deployed guest has
+ * TWO copies of this package" in this package's guide): `createRuntimeServer`
+ * is the harness's, while the runtime — and the handlers, and the
+ * `routeResponse` they return — are the agent bundle's. So what crosses is
+ * data: a request of strings (headers and the raw body text included) and a
  * parsed body in, `{ status, body }` out, and a `routeResponse` is recognized
  * by its `Symbol.for` brand (`readRouteResponse`), never by `instanceof`. `aai dev` has the same seam
  * with one copy of this package and two of the SDK, which is why the brand is

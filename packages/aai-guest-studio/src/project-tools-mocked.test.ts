@@ -7,7 +7,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ToolDef } from "@alexkroman1/aai";
-import { safeFetch } from "@alexkroman1/aai/host-internal";
+import { safeFetch } from "@alexkroman1/aai-runtime/internal";
 import { MAX_STUDIO_FILE_BYTES } from "aai-guest-core/limits";
 import { runTool, useTempDir } from "aai-guest-core/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -20,8 +20,8 @@ vi.mock("./spawn.ts", async (importOriginal) => {
   return { ...mod, runNpm: vi.fn() };
 });
 
-vi.mock("@alexkroman1/aai/host-internal", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@alexkroman1/aai/host-internal")>();
+vi.mock("@alexkroman1/aai-runtime/internal", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@alexkroman1/aai-runtime/internal")>();
   return { ...mod, safeFetch: vi.fn() };
 });
 

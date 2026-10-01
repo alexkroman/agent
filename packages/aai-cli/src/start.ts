@@ -81,17 +81,6 @@ export interface ProjectServerOptions {
    * container says so. An EMPTY `HOST` means unset, not "every interface".
    */
   host?: string | undefined;
-  /**
-   * The built worker, ALREADY imported — instead of loading
-   * {@link WORKER_ARTIFACT_REL} off disk.
-   *
-   * What a self-contained target's entry passes (`_target-entry.ts`): it imports
-   * `.aai/worker.mjs` statically, so the target bundler puts the worker in the
-   * entry's own module graph and the worker's `@alexkroman1/aai-runtime` import
-   * resolves to the SAME runtime this server is built from. Loaded off disk in a
-   * directory with no `node_modules`, that import would resolve nowhere.
-   */
-  worker?: { default: AgentDef } | undefined;
 }
 
 /**
@@ -154,7 +143,7 @@ function resolveClientDir(cwd: string): string {
  */
 export async function createProjectServer(options: ProjectServerOptions): Promise<AgentServer> {
   const { cwd } = options;
-  const agent = options.worker?.default ?? (await loadBuiltAgent(cwd));
+  const agent = await loadBuiltAgent(cwd);
   // `.env.example` counts as a declaration here — see `DEPLOY_ENV_FILES`, which
   // is what lets a container ship no `.env` and supply the values as real
   // environment variables.

@@ -27,9 +27,6 @@ export interface ProjectServerOptions {
     cwd: string;
     host?: string | undefined;
     port?: number | undefined;
-    worker?: {
-        default: AgentDef;
-    } | undefined;
 }
 
 // @public

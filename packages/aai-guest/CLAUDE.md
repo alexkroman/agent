@@ -56,11 +56,10 @@ never a security boundary**; capability is whatever the host delivers.
   control socket — "One studio sandbox per project, fleet-wide" in
   `packages/aai-studio-server/src/CLAUDE.md`).
 
-The harness embeds NO copy of the runtime (see "One runtime per guest"). tsdown
+The harness embeds NO agent runtime (see "User-shipped runtime"). tsdown
 bundles the server shell and the studio agent into `dist/harness.mjs`, keeping
-`@alexkroman1/aai-runtime` and the build toolchain (`@alexkroman1/aai-cli`,
-client-build plugins) EXTERNAL — resolved at runtime from the `node_modules`
-beside the harness.
+the build toolchain (`@alexkroman1/aai-cli`, client-build plugins) EXTERNAL —
+resolved at runtime from the `node_modules` beside the harness.
 
 **Error text comes from the SDK's `errorMessage`, never a local copy** — it
 unwraps a non-`Error` object with a string `message`, which is what a value
@@ -68,9 +67,9 @@ looks like after crossing the JSON-RPC boundary.
 
 ## Dev/prod parity
 
-**The guest IS the dev server.** The harness wraps the same
-`createRuntimeServer` `aai dev` runs, adding per mode the `/manage/*` hook or
-`/ws`, plus `lazyRuntime` (built on first session — a
+**The guest IS the dev server, and the runtime IS the user's.** The harness
+wraps the same `createRuntimeServer` `aai dev` runs, adding per mode the
+`/manage/*` hook or `/ws`, plus `lazyRuntime` (built on first session — a
 `test_agent` load carries an empty env). In agent mode the bundle arrives at
 exec time, hash-verified (`harness/bundle-source.ts`); `test_agent` loads
 through the same loader. **No deploy-time inspection mode**: the platform stores
@@ -89,26 +88,14 @@ Known remaining asymmetries:
 
 The guest base image's Node major is covered under "The snapshot image".
 
-## One runtime per guest
+## User-shipped runtime
 
-**A guest process holds ONE `@alexkroman1/aai-runtime`: the image's.** The
-worker bundle IMPORTS it rather than inlining it (`RUNTIME_EXTERNAL`, aai-cli's
-`worker-bundler.ts`) and is evaluated beside the harness
-(`harnessBundleDir`, `aai-guest-core/bundle.ts`), which keeps it external too —
-so both resolve `/opt/aai/node_modules` (this package's own in dev), and the
-runtime's module-level registries (metrics sinks, run context, run reads, client
-feed) are shared without `globalThis`. `harness/externals.test.ts` fails if the
-harness inlines a module of it; `_instance-check.ts` warns at runtime when a
-second copy loads anyway.
+The worker bundle ships its own SDK runtime: `buildWorker`'s wrapper exports
+`__aaiCreateRuntime` over the user's installed SDK, and the harness builds every
+session through it. **Never import `createRuntime` in the harness** —
+konsistent `guest-embeds-no-runtime`; platform SDK drift must never break a
+deployed agent.
 
-- **The runtime version is the IMAGE's, pinned at deploy** (the agent row's
-  `harness_image_tag`), not the user's lockfile: what a deployed agent runs is
-  frozen per deploy, and platform drift after it cannot reach the agent. The
-  authoring SDK (`@alexkroman1/aai`) is still the user's, inlined in the bundle.
-- **The bundle still binds the agent**: `buildWorker`'s wrapper exports
-  `__aaiCreateRuntime` (that runtime's `createRuntime` over THIS agent), and the
-  harness builds every session through it. **Never import `createRuntime` in the
-  harness** — konsistent `guest-embeds-no-runtime`.
 - **The contract stays tiny** (`CreateGuestRuntime`,
   `aai-guest-core/types.ts`): `{ env, runCode?, publicUrl? }` in,
   `{ startSession, shutdown }` out. Membership rule: **a capability or fact only
@@ -117,11 +104,13 @@ second copy loads anyway.
   never reads an `AAI_*` key). Every field is OPTIONAL and additive: old bundles
   ignore new fields, new bundles degrade without them.
 - A bundle without the factory is rejected at load; no embedded fallback.
-- A bundle is imported from a `file:` URL BESIDE the harness — a resolution
-  anchor for its runtime import (and the bundled CJS interop's
-  `createRequire(import.meta.url)`, which rejects `data:`) — and **the file is
-  unlinked once `import()` resolves**, or repeated `test_agent` runs fill the
-  disk. `MAX_WORKER_SIZE` is 30 MB.
+- Bundles are ~8 MB before user code (`MAX_WORKER_SIZE` 30 MB).
+  `evalWorkerBundle` imports via a temp `file:` URL (the runtime's CJS interop
+  calls `createRequire(import.meta.url)`, which rejects `data:`), and **unlinks
+  the file once `import()` resolves** — otherwise repeated `test_agent` runs
+  fill `tmpdir()`.
+- The dev server passes `runtime: false` to `buildWorker` (fast reloads);
+  `aai build` / `aai deploy` / studio builds always ship it.
 
 ## The `run_code` executor (`trial.ts`)
 

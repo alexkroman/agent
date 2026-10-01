@@ -1,5 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { tmpdir } from "node:os";
 import { describe, expect, test, vi } from "vitest";
 import { createWorkerEvaluator } from "./_bundler.ts";
 
@@ -15,7 +14,7 @@ vi.setConfig({ testTimeout: 30_000 });
 
 describe("createWorkerEvaluator", () => {
   test("byte-identical code returns the cached result without re-import", async () => {
-    const evaluate = createWorkerEvaluator(tmpdir());
+    const evaluate = createWorkerEvaluator();
     const code = `export default { name: "memo-test", tools: {} };`;
     const first = await evaluate(code);
     const second = await evaluate(code);
@@ -25,7 +24,7 @@ describe("createWorkerEvaluator", () => {
   });
 
   test("changed code re-evaluates and returns the new AgentDef", async () => {
-    const evaluate = createWorkerEvaluator(tmpdir());
+    const evaluate = createWorkerEvaluator();
     const first = await evaluate(`export default { name: "memo-v1", tools: {} };`);
     const second = await evaluate(`export default { name: "memo-v2", tools: {} };`);
     expect(second).not.toBe(first);
@@ -33,7 +32,7 @@ describe("createWorkerEvaluator", () => {
   });
 
   test("invalid exports still throw and are not cached", async () => {
-    const evaluate = createWorkerEvaluator(tmpdir());
+    const evaluate = createWorkerEvaluator();
     const bad = "export const notDefault = 42;";
     await expect(evaluate(bad)).rejects.toThrow("agent.ts must export default");
     // Failure was not memoized as a success.

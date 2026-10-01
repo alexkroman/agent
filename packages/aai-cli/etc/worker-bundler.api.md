@@ -14,10 +14,8 @@ export type BuildWorkerOptions = {
     minify?: boolean;
     configFile?: false;
     plugins?: PluginOption[];
+    runtime?: boolean;
 };
-
-// @internal
-export const RUNTIME_EXTERNAL: RegExp;
 
 // (No @packageDocumentation comment for this package)
 

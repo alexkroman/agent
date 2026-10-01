@@ -64,8 +64,7 @@ async function builtProject(dir: string): Promise<void> {
   await fs.mkdir(path.join(dir, ".aai"), { recursive: true });
   await fs.writeFile(
     path.join(dir, ".aai", "worker.mjs"),
-    `import { createRuntime } from "@alexkroman1/aai-runtime";\nexport const __aaiCreateRuntime = createRuntime;\n` +
-      `export default { name: "Bundle Probe", systemPrompt: "hi", greeting: "hi", tools: {} };\n`,
+    `export default { name: "Bundle Probe", systemPrompt: "hi", greeting: "hi", tools: {} };\n`,
   );
   await fs.writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
 }
@@ -97,7 +96,7 @@ describe("the bundled Vercel function", () => {
 
         // Stands in for Vercel's Node launcher, which invokes the module's
         // default export per request. Run from the function directory, since
-        // that is the layout the entry resolves `.aai/` against.
+        // that is the layout the entry resolves `.aai/worker.mjs` against.
         const driver = path.join(dir, VERCEL_FUNCTION_DIR, "driver.mjs");
         await fs.writeFile(
           driver,

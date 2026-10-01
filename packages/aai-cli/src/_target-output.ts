@@ -10,10 +10,8 @@
  * reason this is one module and not a shape each target re-derives —
  * a fourth target must not get to rediscover them.
  *
- * - **NOT `.aai/worker.mjs`**: the entry imports it statically
- *   (`WORKER_IMPORT_SOURCE`, `_target-entry.ts`), so it is IN the bundle and
- *   shares the entry's one copy of the runtime. Copied beside it and loaded off
- *   disk, its `@alexkroman1/aai-runtime` import would resolve nowhere.
+ * - **`.aai/worker.mjs`**, loaded through `import(pathToFileURL(...))`. Bundling
+ *   cannot inline it and nothing else would carry it.
  * - **The browser client.** `resolveClientDir` falls back to `defaultClientDir()`,
  *   which is `require.resolve("@alexkroman1/aai-ui/package.json")` — a lookup
  *   with no `node_modules` to answer it. A bundled deployment died at boot on
@@ -26,20 +24,20 @@
  * `modal.Secret`). Copying it would upload a developer's live credentials AND
  * let them outrank what the host was configured with.
  *
- * The nesting is not an accident. `createProjectServer` resolves the client at
- * `<cwd>/.aai/client` and each entry passes its own directory as `cwd`, so the
- * output holds its own `.aai/` — the layout the server already knows, rather
- * than a second one this module would have to teach it.
+ * The nesting is not an accident. `createProjectServer` resolves the worker at
+ * `<cwd>/.aai/worker.mjs` and each entry passes its own directory as `cwd`, so
+ * the output holds its own `.aai/` — the layout the server already knows,
+ * rather than a second one this module would have to teach it.
  */
 
 import fs from "node:fs/promises";
 import path from "node:path";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
-import { CLIENT_ARTIFACT_REL } from "./_artifacts.ts";
+import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { bundleTargetEntry, targetPathExists } from "./_target-bundle.ts";
 
 /** Files copied verbatim, each read at RUNTIME by a path no bundler can see. */
-const RUNTIME_FILES: readonly string[] = [".env.example"];
+const RUNTIME_FILES: readonly string[] = [WORKER_ARTIFACT_REL, ".env.example"];
 
 /** What a self-contained target declares about its own directory. */
 export interface SelfContainedTarget {
