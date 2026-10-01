@@ -103,7 +103,8 @@ export function repoTree(root) {
     const dir = /^packages\/([^/]+)\/package\.json$/.exec(file)?.[1];
     if (dir === undefined) continue;
     const { exports } = JSON.parse(readFileSync(join(root, file), "utf8"));
-    packages.set(dir, Object.keys(typeof exports === "object" && exports !== null ? exports : {}));
+    // A string `exports` is the sugar for a lone "." entry.
+    packages.set(dir, typeof exports === "string" ? ["."] : Object.keys(exports ?? {}));
   }
   return { entries, suffixes, packages };
 }
