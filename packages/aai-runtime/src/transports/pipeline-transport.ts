@@ -474,6 +474,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sendTtsText,
     drainTts,
     runReply,
+    holdFloor: knobs.holdFloor,
     logTurnCrash,
   });
 

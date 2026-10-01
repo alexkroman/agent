@@ -167,6 +167,12 @@ written as HEARD once playback ends. It resolves `"played"`, `"interrupted"` or
   `TurnChain.chain`'s `onStranded` answers for a line the gate stranded.
 - `isReplying()` is `turns.inFlight() || heard.pending()`; both S2S transports
   omit both verbs.
+- **`interruptible: false` HOLDS THE FLOOR** for exactly that line:
+  `knobs.holdFloor` makes `minBargeInWords` `Infinity` (a dialog's
+  `bargeIn: "off"`) from before the line starts until it settles, so the
+  caller is still transcribed and answered afterwards. Cancels, interrupts and
+  typed turns ignore it. **`record: false`** captions with `recorded: false`
+  and skips `createLineReply`'s history writes.
 
 ## A run can tell the caller it finished
 

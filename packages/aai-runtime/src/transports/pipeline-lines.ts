@@ -58,8 +58,8 @@ type Recovery = NonNullable<SessionEventBody<"agent-transcript.committed">["reco
  * @internal
  */
 export type FixedLine =
-  | { readonly text: string; readonly recovery?: undefined }
-  | { readonly text: string; readonly recovery: Recovery };
+  | { readonly text: string; readonly recovery?: undefined; readonly recorded?: false }
+  | { readonly text: string; readonly recovery: Recovery; readonly recorded?: undefined };
 
 /**
  * Caption and speak one fixed line.
@@ -77,7 +77,7 @@ export function speakFixedLine(
   deps.callbacks.report({
     type: "agent-transcript.committed",
     text: line.text,
-    ...omitUndefined({ recovery: line.recovery }),
+    ...omitUndefined({ recovery: line.recovery, recorded: line.recorded }),
   });
   deps.sendTtsText(line.text, { publishTranscript: false });
 }
@@ -137,16 +137,25 @@ export type LineOutcome = "played" | "interrupted";
  * that is what a `say`'s `done` reports, and "played" means the heard clock ran
  * out, not that synthesis did. `onStart` fires as the line takes the floor.
  *
+ * `record: false` (a `say`'s) keeps the line out of BOTH histories, played or
+ * cut, and tags its caption `recorded: false` so the session's own history and
+ * a resume skip it too: the caption is the one record every reader keys on.
+ *
  * @internal
  */
 export function createLineReply(deps: LineReplyDeps) {
   const { history, heard, gate, turns } = deps;
-  return async (idPrefix: string, text: string, onStart?: () => void): Promise<LineOutcome> => {
+  return async (
+    idPrefix: string,
+    text: string,
+    line: { onStart?: () => void; record?: boolean } = {},
+  ): Promise<LineOutcome> => {
+    const record = line.record !== false;
     let outcome: LineOutcome = "interrupted";
     await deps.runReply(idPrefix, async (signal) => {
-      onStart?.();
+      line.onStart?.();
       const historyEpoch = gate.historyEpoch();
-      speakFixedLine(deps, { text });
+      speakFixedLine(deps, record ? { text } : { text, recorded: false });
       turns.setDraining(true);
       try {
         await deps.drainTts(signal);
@@ -155,7 +164,7 @@ export function createLineReply(deps: LineReplyDeps) {
         turns.setDraining(false);
       }
       if (!signal.aborted) outcome = "played";
-      if (!gate.historyCurrent(historyEpoch)) return false;
+      if (!(record && gate.historyCurrent(historyEpoch))) return false;
       if (signal.aborted) {
         // The same rule, and the same helper, a model reply cut by a barge-in
         // goes through — so "heard" means one thing in this transport.

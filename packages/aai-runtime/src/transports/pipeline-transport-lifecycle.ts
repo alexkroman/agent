@@ -109,6 +109,8 @@ export interface PipelineLifecycleDeps {
   sendTtsText: SendTtsText;
   drainTts: (signal: AbortSignal) => Promise<void>;
   runReply: LineReplyDeps["runReply"];
+  /** A `say` with `interruptible: false` — see `PipelineDialogKnobs.holdFloor`. */
+  holdFloor: (held: boolean) => void;
   /** Turn-crash handler for `turnChain.chain` call sites — see turnCrashLogger. */
   logTurnCrash: (label: string) => (err: unknown) => void;
 }
@@ -220,12 +222,21 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
             drop();
             return;
           }
-          const result = await lineReply("pipeline-say", text, line.onStart).catch(
-            (err: unknown): SpokenLineOutcome => {
+          // Held for exactly this line: from before it takes the floor until it
+          // settles, played or cut, so a caller is never left unable to barge in.
+          const holds = line.interruptible === false;
+          if (holds) deps.holdFloor(true);
+          const result = await lineReply("pipeline-say", text, {
+            onStart: line.onStart,
+            record: line.record !== false,
+          })
+            .catch((err: unknown): SpokenLineOutcome => {
               logTurnCrash("Pipeline say failed")(err);
               return "interrupted";
-            },
-          );
+            })
+            .finally(() => {
+              if (holds) deps.holdFloor(false);
+            });
           resolve(result);
         }, drop);
       if (audioReady) queue();

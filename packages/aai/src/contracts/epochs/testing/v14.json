@@ -3,7 +3,7 @@
   "capability": "testing",
   "epoch": 14,
   "rule": 2,
-  "sha256": "acc6c7a0d7592aca0a02f66fce8fc34db978e76d7dd0de731f6a9eeb913d8dd0",
+  "sha256": "086a52e82ca0dfcc62ac895dea85991aca7b229e87cb36c9bdda1d7931e4ea37",
   "exports": [
     "DeployedConfig",
     "DeployedStage",
@@ -161,7 +161,7 @@
     {
       "revision": 4,
       "rule": 2,
-      "sha256": "acc6c7a0d7592aca0a02f66fce8fc34db978e76d7dd0de731f6a9eeb913d8dd0",
+      "sha256": "086a52e82ca0dfcc62ac895dea85991aca7b229e87cb36c9bdda1d7931e4ea37",
       "reason": "additive (checked): +FetchRouteHandler, +FetchRouteHit, +FetchRouteRequest, +FetchRouteTable, +FetchRoutesOptions, +RecordedStart, +RecordingWorkflows, +RecordingWorkflowsOptions, +SaidLine, +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +StubFetchRoutes, +StubPlaceCall, +StubPlaceCallOptions, +StubPlaceCallRefusal, +StubPlacedCall, +createRecordingWorkflows, +endSessionCalls, +installFetchRoutes, +installStubClientInbox, +stubClientInbox, +stubClientTranscript, +stubFetchRoutes, +stubPlaceCall"
     }
   ]

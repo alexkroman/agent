@@ -443,6 +443,8 @@ export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: Infer
 // @public
 export interface SaidLine {
     readonly interrupt: boolean;
+    readonly interruptible: boolean;
+    readonly record: boolean;
     readonly text: string;
 }
 
@@ -464,6 +466,8 @@ type SayOnClientNotice = {
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public

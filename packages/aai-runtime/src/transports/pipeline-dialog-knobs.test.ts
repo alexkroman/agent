@@ -84,3 +84,27 @@ describe("with a dialog source", () => {
     expect(await knobs.dialogStep?.(STEP)).toBeUndefined();
   });
 });
+
+describe("holdFloor", () => {
+  test("holds barge-in off for one reply, over whatever a dialog state declares", () => {
+    const knobs = createDialogKnobs(() => ({ minBargeInWords: 3 }), {
+      minBargeInWords: 2,
+      interruptionMinDurationMs: 0,
+    });
+    knobs.holdFloor(true);
+    expect(knobs.minBargeInWords()).toBe(Number.POSITIVE_INFINITY);
+    knobs.holdFloor(false);
+    expect(knobs.minBargeInWords()).toBe(3);
+  });
+
+  test("works with no dialog source too", () => {
+    const knobs = createDialogKnobs(undefined, {
+      minBargeInWords: 2,
+      interruptionMinDurationMs: 0,
+    });
+    knobs.holdFloor(true);
+    expect(knobs.minBargeInWords()).toBe(Number.POSITIVE_INFINITY);
+    knobs.holdFloor(false);
+    expect(knobs.minBargeInWords()).toBe(2);
+  });
+});

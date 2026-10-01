@@ -2057,19 +2057,19 @@ step's `maxAttempts` small. `timeLimitS` (default 600) caps the call. Specs:
 
 ### Saying something from outside a turn — `ctx.speech`
 
-A timer, a webhook, or an event can put an exact sentence on a live call, or
-stop the agent. `ctx.speech` is on an `events` handler's and a tool's context,
-and `ctx.speech(sessionId)` on a route's (`undefined` when no such call is
-live). `say(text)` is a reply of its OWN: spoken verbatim (no model call),
-queued behind the reply in flight (`{ interrupt: true }` cuts that off first),
-interruptible, and recorded in history as what the caller heard. `interrupt()`
-is the client's `cancel()`.
+A timer, webhook or event can speak an exact sentence on a live call, or stop
+the agent. `ctx.speech` is on `events` handler and tool contexts, and
+`ctx.speech(sessionId)` on a route's (`undefined` if that call is not live).
+`say(text)` is a reply of its OWN, spoken verbatim behind the reply in flight.
+Options: `interrupt: true` cuts that reply first; `interruptible: false` stops
+the CALLER talking over it (code and `cancel()` still can); `record: false`
+keeps it out of history. `interrupt()` is the client's `cancel()`.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
 
 export default agent({
-  name: "Kitchen timer",
+  name: "Timer",
   events: {
     "tool.called": (event, ctx) => {
       if (event.toolName !== "start_timer") return;
@@ -2082,12 +2082,16 @@ export default agent({
 });
 ```
 
+**A handler that speaks can hear itself**: the line is an
+`agent-transcript.committed` that reaches your handlers again, so a handler
+speaking on every one never stops. Speak from an event your line cannot produce
+(`tool.called`, a timer), or check the event's `text` first.
+
 `done` never rejects: `"played"` once playback ends, `"interrupted"`,
-`"dropped"` (the call ended, or it was taken back with `handle.interrupt()`),
-or `"unsupported"` on an S2S agent (pipeline only). **Never await `done` inside
-the reply it waits behind** (a tool's `execute`), or it waits for itself. **A
-session id is not authorization**: verify a webhook (`webhookRoute`) before a
-route speaks into a call. Specs: `createToolContext()` records into `ctx.said`.
+`"dropped"` (call ended, or taken back), `"unsupported"` on S2S. **Never await
+`done` inside the reply it waits behind** (a tool's `execute`). **A session id
+is not authorization**: verify a webhook first. Specs: `createToolContext()`
+records into `ctx.said`.
 
 ## Providers
 

@@ -191,7 +191,11 @@ describe("createLineReply", () => {
   test("onStart fires as the line takes the floor, before its caption", async () => {
     const order: string[] = [];
     const { reply, reported } = harness(() => undefined);
-    await reply("pipeline-say", LINE, () => order.push(`start:${reported.length}`));
+    await reply("pipeline-say", LINE, {
+      onStart: () => {
+        order.push(`start:${reported.length}`);
+      },
+    });
     expect(order).toEqual(["start:0"]);
   });
 

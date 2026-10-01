@@ -56,6 +56,17 @@ describe("say", () => {
     await expect(handle.done).resolves.toBe("played");
   });
 
+  test("interruptible and record reach the transport, defaulting to true", () => {
+    const held = heldSpeakLine();
+    const { speech } = verbs(transport({ speakLine: held.speakLine }));
+    speech.say("Default.");
+    speech.say("Held.", { interruptible: false, record: false });
+    expect(held.lines.map(({ line }) => [line.interruptible, line.record])).toEqual([
+      [true, true],
+      [false, false],
+    ]);
+  });
+
   test("an S2S transport settles UNSUPPORTED, and says why once per session", async () => {
     const { speech, log } = verbs(transport());
     await expect(speech.say("one").done).resolves.toBe("unsupported");

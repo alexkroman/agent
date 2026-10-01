@@ -432,6 +432,8 @@ type SayOnClientNotice = {
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public @sealed
@@ -1313,6 +1315,8 @@ type SayOnClientNotice = {
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public @sealed
@@ -3146,6 +3150,8 @@ export function sayOnClientWorkflow(host: SayOnClientHost, name: string, clientI
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public
@@ -4792,6 +4798,8 @@ export type SayOnClientNotice = {
 // @public
 export type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public
@@ -4936,6 +4944,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
+    recorded: z.ZodOptional<z.ZodLiteral<false>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -6167,6 +6176,8 @@ type SayOnClientNotice = {
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public @sealed
@@ -7227,6 +7238,8 @@ type SayOnClientNotice = {
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public
@@ -7351,6 +7364,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
+    recorded: z.ZodOptional<z.ZodLiteral<false>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -8470,6 +8484,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
+    recorded: z.ZodOptional<z.ZodLiteral<false>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -9087,6 +9102,8 @@ type SayOnClientNotice = {
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public @sealed
@@ -10564,6 +10581,8 @@ export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: Infer
 // @public
 export interface SaidLine {
     readonly interrupt: boolean;
+    readonly interruptible: boolean;
+    readonly record: boolean;
     readonly text: string;
 }
 
@@ -10585,6 +10604,8 @@ type SayOnClientNotice = {
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public
@@ -11666,6 +11687,8 @@ type SayOnClientNotice = {
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public @sealed

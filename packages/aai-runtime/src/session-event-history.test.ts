@@ -105,6 +105,19 @@ describe("messagesFromEvents", () => {
     ]);
   });
 
+  test("a say spoken with record: false is captioned but never part of the conversation", () => {
+    // Live, on resume and in `ctx.messages` alike: this is the one reader.
+    const unrecorded = at({
+      type: "agent-transcript.committed",
+      text: "One moment while I check.",
+      recorded: false,
+    });
+    expect(messagesFromEvents([user("hi"), unrecorded, agent("Found it.")])).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Found it." },
+    ]);
+  });
+
   test("an UNTAGGED phrase is an ordinary reply, which is what an old log holds", () => {
     // The old-reader/old-log direction: an event written before the field
     // existed carries no `recovery`, so it reads as the reply it is

@@ -1321,6 +1321,8 @@ export function sayOnClientWorkflow(host: SayOnClientHost, name: string, clientI
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public

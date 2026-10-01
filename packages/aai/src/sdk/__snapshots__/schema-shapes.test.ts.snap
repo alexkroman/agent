@@ -103,6 +103,7 @@ exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
 {
   "agent-transcript.committed": [
     "meta",
+    "recorded",
     "recovery",
     "text",
     "type",

@@ -199,6 +199,16 @@ stream like any reply. The same `SessionSpeech` is `ToolContext.speech` (so a
   an ended session, blank text, a line taken back or stranded by an interrupt.
 - **Never await `done` inside the reply it queues behind** (a tool's
   `execute`, a handler holding that reply) — it waits for itself.
+- **A speaking handler can hear itself.** A `say` emits
+  `agent-transcript.committed` and reply events AFTER the handler returned, so
+  the emitter's re-entry guard does not catch a handler that answers its own
+  line; it must key on what triggered it. LiveKit and Pipecat do not guard
+  this either. `session-speech.ts` carries the safe pattern.
+- **`interruptible: false`** holds the caller's barge-in off for that line
+  (`PipelineDialogKnobs.holdFloor`, the `bargeIn: "off"` threshold);
+  `interrupt()`, `cancel()` and a typed turn still cut it. **`record: false`**
+  tags the caption `recorded: false`, which `historyMessageOf` skips, so the
+  line is in no history, live or resumed.
 - **`AgentSessionContext` has no `speech`**: a resolver or guardrail runs INSIDE
   the reply. That is the one deliberate difference between the twins, pinned
   in `define-agent-groups.test-d.ts`.

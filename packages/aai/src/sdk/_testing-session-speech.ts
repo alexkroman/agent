@@ -20,6 +20,10 @@ export interface SaidLine {
   readonly text: string;
   /** Whether it asked to cut the agent off first (`{ interrupt: true }`). */
   readonly interrupt: boolean;
+  /** `false` when it asked not to be cut off by the caller (`{ interruptible: false }`). */
+  readonly interruptible: boolean;
+  /** `false` when it asked to stay out of history (`{ record: false }`). */
+  readonly record: boolean;
 }
 
 /**
@@ -39,7 +43,12 @@ export function recordingSpeech(): {
   let interrupts = 0;
   const speech: SessionSpeech = {
     say(text: string, options?: SayOptions): SpeechHandle {
-      said.push({ text, interrupt: options?.interrupt === true });
+      said.push({
+        text,
+        interrupt: options?.interrupt === true,
+        interruptible: options?.interruptible !== false,
+        record: options?.record !== false,
+      });
       return { done: Promise.resolve("played"), interrupt: () => undefined };
     },
     interrupt(): boolean {

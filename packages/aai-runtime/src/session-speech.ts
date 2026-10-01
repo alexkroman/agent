@@ -93,6 +93,8 @@ export function createSpeechVerbs(deps: SpeechVerbDeps): SpeechVerbs {
       onStart: () => {
         phase = "playing";
       },
+      interruptible: options.interruptible !== false,
+      record: options.record !== false,
     })
       // `speakLine` never rejects by contract; a transport that breaks it must
       // still not leave `done` to reject into a handler nobody awaits.

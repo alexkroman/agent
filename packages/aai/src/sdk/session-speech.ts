@@ -19,14 +19,35 @@
  *
  * - **Queued, never talked over.** It waits behind a reply in flight, unless
  *   `interrupt: true` cuts that reply off first.
- * - **Interruptible.** A caller who barges in cuts it like any reply.
- * - **History records what was HEARD.** Played out, the whole line enters the
- *   conversation as an assistant turn. Cut off, only the heard prefix enters,
- *   tagged `[interrupted]`. The model therefore knows what it "said".
+ * - **Interruptible**, unless `interruptible: false`. A caller who barges in
+ *   cuts it like any reply.
+ * - **History records what was HEARD**, unless `record: false`. Played out,
+ *   the whole line enters the conversation as an assistant turn. Cut off, only
+ *   the heard prefix enters, tagged `[interrupted]`. The model therefore knows
+ *   what it "said".
  *
  * On the session event stream a `say` is an ordinary reply (`reply.started`,
  * `agent-transcript.committed`, `reply.completed` or `reply.cancelled`), so
  * a reader of the log sees it as clearly as a model turn.
+ *
+ * ## A handler that speaks can hear itself
+ *
+ * **A `say` emits events, and those events reach your `events` handlers.** A
+ * handler that answers every `agent-transcript.committed` with a `say` answers
+ * its own line too, and the call never ends:
+ *
+ * ```ts no-check
+ * // LOOPS: the line this says is itself an agent-transcript.committed.
+ * "agent-transcript.committed": (_event, ctx) => ctx.speech.say("Anything else?"),
+ * ```
+ *
+ * The emitter's re-entry guard does not catch it, because the line is spoken
+ * after the handler has returned. So a handler that speaks must decide from
+ * what TRIGGERED it: an event its own line cannot produce (`tool.called`,
+ * `user-transcript.committed`, `session.timed-out`), or a check of the event
+ * (its `text`, a slot the handler set) that its own line cannot pass. LiveKit's
+ * `session.say` and Pipecat's `TTSSpeakFrame` share this property, and neither
+ * guards it either.
  *
  * ## Where it does not work
  *
@@ -69,6 +90,26 @@ export type SayOptions = {
    * {@link SessionSpeech.interrupt}'s. Default `false`.
    */
   interrupt?: boolean | undefined;
+  /**
+   * `false` to keep the CALLER from cutting this line off: their speech while
+   * it plays is held back as if a dialog state had declared `bargeIn: "off"`,
+   * and answered once the line is over. For a sentence that must be heard
+   * whole, such as a disclosure or a final goodbye.
+   *
+   * Code can still cut it: {@link SessionSpeech.interrupt}, the handle's own
+   * `interrupt()`, and the client's `cancel()` all work as usual, as does a
+   * typed turn. Default `true`.
+   */
+  interruptible?: boolean | undefined;
+  /**
+   * `false` to keep this line out of the conversation: it is spoken and
+   * captioned (its `agent-transcript.committed` carries `recorded: false`),
+   * but it enters neither the model's history nor `ctx.messages`, and a
+   * resumed session does not remember it. For a line the model should not
+   * treat as something it said, such as a hold message ("one moment while I
+   * check"). Default `true`.
+   */
+  record?: boolean | undefined;
 };
 
 /**

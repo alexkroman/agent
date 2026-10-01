@@ -2620,6 +2620,22 @@ readonly interrupt: boolean;
 
 Whether it asked to cut the agent off first (`{ interrupt: true }`).
 
+##### interruptible
+
+```ts
+readonly interruptible: boolean;
+```
+
+`false` when it asked not to be cut off by the caller (`{ interruptible: false }`).
+
+##### record
+
+```ts
+readonly record: boolean;
+```
+
+`false` when it asked to stay out of history (`{ record: false }`).
+
 ##### text
 
 ```ts

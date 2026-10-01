@@ -8490,6 +8490,7 @@ agent-transcript.committed: {
      at: number;
      id: string;
   };
+  recorded?: false;
   recovery?: "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
@@ -8503,6 +8504,12 @@ agent-transcript.committed: {
   at: number;
   id: string;
 }
+```
+
+###### recorded?
+
+```ts
+optional recorded?: false;
 ```
 
 ###### recovery?
@@ -13784,6 +13791,8 @@ Voice id, as `stepSpeak` takes it.
 ```ts
 type SayOptions = {
   interrupt?: boolean;
+  interruptible?: boolean;
+  record?: boolean;
 };
 ```
 
@@ -13800,6 +13809,34 @@ optional interrupt?: boolean;
 Cut off whatever the agent is saying (and drop whatever is queued) and
 speak this next, rather than waiting its turn. The cut is exactly
 [SessionSpeech.interrupt](#interrupt)'s. Default `false`.
+
+##### interruptible?
+
+```ts
+optional interruptible?: boolean;
+```
+
+`false` to keep the CALLER from cutting this line off: their speech while
+it plays is held back as if a dialog state had declared `bargeIn: "off"`,
+and answered once the line is over. For a sentence that must be heard
+whole, such as a disclosure or a final goodbye.
+
+Code can still cut it: [SessionSpeech.interrupt](#interrupt), the handle's own
+`interrupt()`, and the client's `cancel()` all work as usual, as does a
+typed turn. Default `true`.
+
+##### record?
+
+```ts
+optional record?: boolean;
+```
+
+`false` to keep this line out of the conversation: it is spoken and
+captioned (its `agent-transcript.committed` carries `recorded: false`),
+but it enters neither the model's history nor `ctx.messages`, and a
+resumed session does not remember it. For a line the model should not
+treat as something it said, such as a hold message ("one moment while I
+check"). Default `true`.
 
 ***
 
@@ -14112,6 +14149,12 @@ can speak.
 A `say` queues behind the reply in flight, and many events fire DURING a
 reply, so a handler must not hold anything that reply waits on until the
 line's `done` settles.
+
+**A line a handler says emits events that reach the handlers again.** A
+handler that speaks on every `agent-transcript.committed` hears its own
+line and speaks forever. Decide from an event the line cannot produce, or
+check the event first: see "A handler that speaks can hear itself" in
+`session-speech.ts`.
 
 ***
 
@@ -18193,6 +18236,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      at: z.ZodNumber;
      id: z.ZodString;
   }, z.core.$strip>;
+  recorded: z.ZodOptional<z.ZodLiteral<false>>;
   recovery: z.ZodOptional<z.ZodEnum<{
      session-failed: "session-failed";
      turn-failed: "turn-failed";

@@ -316,15 +316,21 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
    * for one that was interrupted. That makes the log's assistant turns exactly
    * the session's own, rather than a re-derivation that can disagree with it.
    *
-   * ...with ONE exception, which is why `recovery` exists: the transport also
-   * speaks for itself when a turn or a session FAILS, and the caller heard those
-   * words, so they belong in the caption. See {@link AgentTranscriptRecovery}.
+   * ...with TWO exceptions, each a field that says so. `recovery`: the
+   * transport also speaks for itself when a turn or a session FAILS, and the
+   * caller heard those words, so they belong in the caption. See
+   * {@link AgentTranscriptRecovery}. `recorded: false`: an author's
+   * `speech.say(text, { record: false })`, spoken and captioned but kept out of
+   * the conversation on purpose. A reader that reconstructs the CONVERSATION
+   * skips an event carrying either; a reader that renders the TRANSCRIPT shows
+   * both.
    */
   z.object({
     type: z.literal("agent-transcript.committed"),
     meta: SessionEventMetaSchema,
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
     recovery: AgentTranscriptRecoverySchema.optional(),
+    recorded: z.literal(false).optional(),
   }),
   z.object({
     type: z.literal("tool.called"),

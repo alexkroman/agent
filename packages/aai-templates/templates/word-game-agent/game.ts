@@ -110,7 +110,9 @@ export const TIME_UP_LINE = "Time's up! Pens down.";
 
 /**
  * Say {@link TIME_UP_LINE} when THIS round's two minutes are up, cutting the
- * host off if it is mid-remark.
+ * host off if it is mid-remark, and not to be cut off in turn: `playing`'s
+ * `bargeIn: { minWords: 1 }` lets the describer talk over every remark, which
+ * is right for a remark and wrong for the line that ends the round.
  *
  * The round is identified by its `startedAt`, so a timer armed by an earlier
  * round says nothing into a later one. It stays silent when the WORDS ran out
@@ -123,7 +125,7 @@ export function armTimeUpLine(ctx: ToolContext): void {
     const game = gameSlot.get(ctx);
     const clockRanOut =
       game.startedAt === round && game.endedAt === null && wordsPlayed(game) < game.words.length;
-    if (clockRanOut) ctx.speech.say(TIME_UP_LINE, { interrupt: true });
+    if (clockRanOut) ctx.speech.say(TIME_UP_LINE, { interrupt: true, interruptible: false });
   }, GAME_SECONDS * 1000);
 }
 

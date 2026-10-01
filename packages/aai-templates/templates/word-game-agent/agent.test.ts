@@ -451,7 +451,9 @@ describe("the time-up line", () => {
       await vi.advanceTimersByTimeAsync(GAME_SECONDS * 1000 - 1);
       expect(ctx.said).toEqual([]);
       await vi.advanceTimersByTimeAsync(1);
-      expect(ctx.said).toEqual([{ text: TIME_UP_LINE, interrupt: true }]);
+      expect(ctx.said).toEqual([
+        { text: TIME_UP_LINE, interrupt: true, interruptible: false, record: true },
+      ]);
     }));
 
   test("stays silent when the WORDS ran out first — time was not up", () =>
@@ -476,6 +478,8 @@ describe("the time-up line", () => {
       await vi.advanceTimersByTimeAsync(GAME_SECONDS * 1000 - 1000);
       expect(ctx.said).toEqual([]);
       await vi.advanceTimersByTimeAsync(1000);
-      expect(ctx.said).toEqual([{ text: TIME_UP_LINE, interrupt: true }]);
+      expect(ctx.said).toEqual([
+        { text: TIME_UP_LINE, interrupt: true, interruptible: false, record: true },
+      ]);
     }));
 });

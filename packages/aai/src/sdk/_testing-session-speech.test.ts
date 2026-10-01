@@ -6,11 +6,11 @@ describe("recordingSpeech", () => {
   test("records each say with its interrupt flag, in order, and settles it PLAYED", async () => {
     const { speech, said } = recordingSpeech();
     const first = speech.say("One.");
-    speech.say("Two.", { interrupt: true });
+    speech.say("Two.", { interrupt: true, interruptible: false, record: false });
     await expect(first.done).resolves.toBe("played");
     expect(said).toEqual([
-      { text: "One.", interrupt: false },
-      { text: "Two.", interrupt: true },
+      { text: "One.", interrupt: false, interruptible: true, record: true },
+      { text: "Two.", interrupt: true, interruptible: false, record: false },
     ]);
   });
 

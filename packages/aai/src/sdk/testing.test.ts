@@ -56,8 +56,8 @@ describe("createToolContext", () => {
 
     await expect(handle.done).resolves.toBe("played");
     expect(ctx.said).toEqual([
-      { text: "Your timer is done.", interrupt: true },
-      { text: "Anything else?", interrupt: false },
+      { text: "Your timer is done.", interrupt: true, interruptible: true, record: true },
+      { text: "Anything else?", interrupt: false, interruptible: true, record: true },
     ]);
     expect(ctx.interrupts).toBe(1);
   });

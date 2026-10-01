@@ -474,6 +474,8 @@ type SayOnClientNotice = {
 // @public
 type SayOptions = {
     interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
 };
 
 // @public @sealed

@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 16,
   "rule": 2,
-  "sha256": "1d4367242b1b8cf7efd52ac37de5329f08bcda128bb34c7934af0115ed66ad51",
+  "sha256": "9618e4eb13d84d716fd6b6a732729246a7c0b2255f7063d4688bd4ca95dc9b69",
   "exports": [
     "AgentClientInbox",
     "AgentDef",
@@ -98,7 +98,7 @@
     {
       "revision": 2,
       "rule": 2,
-      "sha256": "1d4367242b1b8cf7efd52ac37de5329f08bcda128bb34c7934af0115ed66ad51",
+      "sha256": "9618e4eb13d84d716fd6b6a732729246a7c0b2255f7063d4688bd4ca95dc9b69",
       "reason": "additive (checked): +ClientRun, +ClientRunStatus, +ClientRunsResponse, +ClientRunsRoutesOptions, +SayOptions, +SessionSpeech, +SpeechHandle, +SpeechOutcome, +clientRunsRoutes"
     }
   ]

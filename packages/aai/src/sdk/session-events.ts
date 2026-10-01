@@ -92,6 +92,12 @@ export type SessionEventContext = {
    * A `say` queues behind the reply in flight, and many events fire DURING a
    * reply, so a handler must not hold anything that reply waits on until the
    * line's `done` settles.
+   *
+   * **A line a handler says emits events that reach the handlers again.** A
+   * handler that speaks on every `agent-transcript.committed` hears its own
+   * line and speaks forever. Decide from an event the line cannot produce, or
+   * check the event first: see "A handler that speaks can hear itself" in
+   * `session-speech.ts`.
    */
   speech: SessionSpeech;
 };

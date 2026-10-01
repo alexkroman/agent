@@ -215,10 +215,17 @@ export type TransportSessionConfig = {
  * One {@link Transport.speakLine} call's controls: `signal` takes a still-queued
  * line back, and `onStart` fires as the line takes the floor, which is what
  * tells the session a later take-back must cut a reply rather than skip one.
+ * `interruptible: false` holds the caller's barge-in off while the line plays;
+ * `record: false` keeps it out of history. Both are the SDK's `SayOptions`.
  *
  * @internal
  */
-export type SpokenLine = { readonly signal: AbortSignal; readonly onStart: () => void };
+export type SpokenLine = {
+  readonly signal: AbortSignal;
+  readonly onStart: () => void;
+  readonly interruptible?: boolean | undefined;
+  readonly record?: boolean | undefined;
+};
 
 /**
  * How a {@link Transport.speakLine} line ended. The SDK's `SpeechOutcome` minus

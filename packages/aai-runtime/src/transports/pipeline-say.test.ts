@@ -31,13 +31,13 @@ function line(): SpokenLine & { takeBack: () => void; started: () => boolean } {
 async function holdingTransport() {
   const tts = createFakeTtsProvider({ autoDoneOnFlush: false });
   const llm = createFakeLanguageModel({ script: [{ type: "text", text: "Anything else?" }] });
-  const { opts, callbacks } = makeOpts({ llm }, { tts });
+  const { opts, stt, callbacks } = makeOpts({ llm }, { tts });
   const t = createPipelineTransport(opts);
   await t.start();
   const finishPlaying = (): void => {
     tts.last()?.emitter.emit("done");
   };
-  return { t, tts, llm, callbacks, finishPlaying };
+  return { t, stt, tts, llm, callbacks, finishPlaying };
 }
 
 describe("speakLine", () => {
@@ -161,6 +161,76 @@ describe("speakLine", () => {
 
     await expect(t.speakLine?.(LINE, line())).resolves.toBe("dropped");
     expect(spoken(tts)).toBe("");
+  });
+
+  test("a caller's speech cuts an ordinary line (the control for the case below)", async () => {
+    const { t, stt, tts } = await holdingTransport();
+    const controls = line();
+    const done = t.speakLine?.(LINE, controls);
+    await vi.waitFor(() => expect(controls.started()).toBe(true));
+    tts.last()?.fireAudio(new Int16Array(2400));
+
+    stt.last()?.firePartial("wait stop please");
+
+    await expect(done).resolves.toBe("interrupted");
+    await t.stop();
+  });
+
+  test("interruptible: false holds the caller off for the line, and lets go after it", async () => {
+    const { t, stt, tts, callbacks, finishPlaying } = await holdingTransport();
+    const held = line();
+    const done = t.speakLine?.(LINE, { ...held, interruptible: false });
+    await vi.waitFor(() => expect(held.started()).toBe(true));
+    tts.last()?.fireAudio(new Int16Array(2400));
+
+    stt.last()?.firePartial("wait stop please");
+    expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
+    finishPlaying();
+    // "played" waits out the line's playout clock, which virtual time must reach.
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(done).resolves.toBe("played");
+
+    // The hold was for that line only: the next one is cut as usual.
+    const next = line();
+    const nextDone = t.speakLine?.("Next line.", next);
+    await vi.waitFor(() => expect(next.started()).toBe(true));
+    tts.last()?.fireAudio(new Int16Array(2400));
+    stt.last()?.firePartial("no stop now");
+    await expect(nextDone).resolves.toBe("interrupted");
+    await t.stop();
+  });
+
+  test("interruptible: false still yields to an explicit cut from code or the client", async () => {
+    const { t, finishPlaying } = await holdingTransport();
+    const held = line();
+    const done = t.speakLine?.(LINE, { ...held, interruptible: false });
+    await vi.waitFor(() => expect(held.started()).toBe(true));
+
+    t.cancelReply();
+    finishPlaying();
+
+    await expect(done).resolves.toBe("interrupted");
+    await t.stop();
+  });
+
+  test("record: false is spoken and captioned, but the model never learns it was said", async () => {
+    const llm = createFakeLanguageModel({ script: [{ type: "text", text: "Anything else?" }] });
+    const { opts, tts, callbacks } = makeOpts({ llm });
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    await expect(t.speakLine?.(LINE, { ...line(), record: false })).resolves.toBe("played");
+    expect(spoken(tts)).toBe(LINE);
+    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: LINE,
+      recorded: false,
+    });
+
+    t.injectTurn?.("Ask whether the caller needs anything else.");
+    await vi.waitFor(() => expect(llm.calls).toHaveLength(1));
+    expect(JSON.stringify(llm.calls[0]?.prompt)).not.toContain(LINE);
+    await t.stop();
   });
 
   test("isReplying is false while the agent is silent", async () => {
