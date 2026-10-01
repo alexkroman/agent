@@ -99,11 +99,17 @@ test("an S2S agent cannot carry anything pipeline-shaped", () => {
     AgentAccepts<S2s & { idleTimeoutMs: number; sttPrompt: string }>
   >().toEqualTypeOf<true>();
   // A pipeline knob, the silence nudge, a stage, the voice and the shorthand.
-  expectTypeOf<AgentAccepts<S2s & { deadAirCoverMs: number }>>().toEqualTypeOf<false>();
-  expectTypeOf<AgentAccepts<S2s & { silenceTimeoutMs: number }>>().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<S2s & { silence: { deadAirCoverMs: number } }>
+  >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<S2s & { silence: { nudge: { afterMs: number } } }>
+  >().toEqualTypeOf<false>();
   expectTypeOf<AgentAccepts<S2s & { stt: SttProvider }>>().toEqualTypeOf<false>();
   expectTypeOf<AgentAccepts<S2s & { voice: "michael" }>>().toEqualTypeOf<false>();
-  expectTypeOf<AgentAccepts<S2s & { maxTurnSilenceMs: number }>>().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<S2s & { turnTaking: { maxSilenceMs: number } }>
+  >().toEqualTypeOf<false>();
   // The service assembles the request, so no sampling knob — and a guardrail
   // could only report on audio already heard.
   expectTypeOf<AgentAccepts<S2s & { temperature: number }>>().toEqualTypeOf<false>();
@@ -127,7 +133,7 @@ test("a text agent cannot carry anything from the audio half", () => {
   expectTypeOf<AgentAccepts<Text & { sttPrompt: string }>>().toEqualTypeOf<false>();
   expectTypeOf<AgentAccepts<Text & { telephony: true }>>().toEqualTypeOf<false>();
   expectTypeOf<
-    AgentAccepts<Text & { userTurnLimit: { maxWords: number } }>
+    AgentAccepts<Text & { turnTaking: { userTurnLimit: { maxWords: number } } }>
   >().toEqualTypeOf<false>();
 });
 
@@ -151,10 +157,15 @@ test("a workflow app carries only what a page and a deploy read", () => {
 
 test("a pipeline agent refuses the other modes' selectors and descriptors", () => {
   expectTypeOf<
-    AgentAccepts<{ name: string; mode: "pipeline"; deadAirCoverMs: number; temperature: number }>
+    AgentAccepts<{
+      name: string;
+      mode: "pipeline";
+      silence: { deadAirCoverMs: number };
+      temperature: number;
+    }>
   >().toEqualTypeOf<true>();
   expectTypeOf<
-    AgentAccepts<{ name: string; voice: "michael"; maxTurnSilenceMs: number }>
+    AgentAccepts<{ name: string; voice: "michael"; turnTaking: { maxSilenceMs: number } }>
   >().toEqualTypeOf<true>();
   // An s2s descriptor on a declared pipeline agent.
   expectTypeOf<
@@ -165,7 +176,7 @@ test("a pipeline agent refuses the other modes' selectors and descriptors", () =
     AgentAccepts<{ name: string; tts: TtsProvider; voice: "michael" }>
   >().toEqualTypeOf<false>();
   expectTypeOf<
-    AgentAccepts<{ name: string; stt: SttProvider; maxTurnSilenceMs: number }>
+    AgentAccepts<{ name: string; stt: SttProvider; turnTaking: { maxSilenceMs: number } }>
   >().toEqualTypeOf<false>();
   // Not a mode.
   expectTypeOf<AgentAccepts<{ name: string; mode: "voice" }>>().toEqualTypeOf<false>();

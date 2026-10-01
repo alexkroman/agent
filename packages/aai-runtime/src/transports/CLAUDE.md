@@ -18,7 +18,7 @@ read_when: >-
 In S2S the service fires speech-started when it stops generating, so the event
 coincides with a real interruption. Pipeline mode derives it from STT partials,
 where the first word of a cough or backchannel would open it while
-`minBargeInWords` / `interruptionMinDurationMs` correctly keep the agent
+`interruption.minWords` / `.minDurationMs` correctly keep the agent
 talking. Clients act on the event (tau2-bench discards its playout buffer on
 it), so pipeline mode matches S2S:
 
@@ -135,7 +135,7 @@ chain, so it runs after the aborted turn unwinds.
 
 ## Push-to-talk holds the turn in the TRANSPORT
 
-`agent({ turnDetection: "manual" })` moves the end of turn to the client.
+`agent({ turnTaking: { detection: "manual" } })` moves the end of turn to the client.
 `pipeline-manual-turn.ts` owns it: finals are HELD while a turn is open and
 answered as one on `user_turn_commit`; the mic is SILENCED with zeros outside a
 turn (the transcriber's clock keeps pace); a final with no turn open is dropped.
@@ -148,7 +148,7 @@ for a manual agent.
 `Transport.sendUserText` → `commitTypedTurn` in `pipeline-user-speech.ts` cuts a
 reply in flight or playing (reporting `reply.cancelled` BEFORE the
 `user-transcript.committed`, so the stream's order is right), then commits on
-the same path a final does, under either `turnDetection`. S2S omits the verb;
+the same path a final does, under either `turnTaking.detection`. S2S omits the verb;
 the dispatcher warns once.
 
 ## A run can tell the caller it finished

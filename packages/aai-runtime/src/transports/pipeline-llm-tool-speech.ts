@@ -32,9 +32,9 @@ import type { TtsTextCoalescer } from "./pipeline-stream.ts";
  * line IS the agent's answer and belongs in the turn's transcript.
  *
  * **`callerSpeaking` is the ONLY suppressor the channel is given, and a
- * `bargeIn` one must not join it.** The argument is on
+ * `interruption` one must not join it.** The argument is on
  * `ToolSpeechChannel.callerSpeaking`: the two are orthogonal, and a
- * `bargeIn: "off"` state — where the author has declared the agent keeps the
+ * `interruption: "off"` state — where the author has declared the agent keeps the
  * floor — is the phase that wants cover MOST. The one case where they seem to
  * overlap (a caller talking while the agent continues) is already this
  * predicate's, because cover is pointless when the line is not silent.

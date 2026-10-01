@@ -20,14 +20,14 @@ Providers have their own guide in `providers/CLAUDE.md`.
 interface that `AgentDef` extends; each rule is DERIVED from the declaration,
 so a new field cannot skip it.
 
-| Interface             | Module                  | The rule                                                        |
-| --------------------- | ----------------------- | --------------------------------------------------------------- |
-| `PipelineVoiceTuning` | `agent-voice-tuning.ts` | pipeline transport or nothing                                   |
-| `AgentMode`           | `agent-mode.ts`         | `mode` picks the `agent()` member, and the wire carries it      |
-| `AgentModelTuning`    | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five** |
-| `AgentGuardrails`     | `agent-guardrails.ts`   | the only declarations that may STOP a turn                      |
-| `AgentObservation`    | `agent-observation.ts`  | the two that deliberately may not                               |
-| `AgentRoutes`         | `agent-routes.ts`       | no session: `/api` handlers, data both ways across the bundle   |
+| Interface          | Module                  | The rule                                                                                                                        |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `PipelineTuning`   | `agent-tuning.ts`       | pipeline transport or nothing; `turnTaking`/`interruption`/`silence` groups, `interruption` reused per dialog state and persona |
+| `AgentMode`        | `agent-mode.ts`         | `mode` picks the `agent()` member, and the wire carries it                                                                      |
+| `AgentModelTuning` | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five**                                                                 |
+| `AgentGuardrails`  | `agent-guardrails.ts`   | the only declarations that may STOP a turn                                                                                      |
+| `AgentObservation` | `agent-observation.ts`  | the two that deliberately may not                                                                                               |
+| `AgentRoutes`      | `agent-routes.ts`       | no session: `/api` handlers, data both ways across the bundle                                                                   |
 
 - `assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
   total over `AgentModelTuning` — a knob missing from the table fails to
@@ -253,7 +253,7 @@ module doc owns it, `packages/aai-runtime/DIALOG-CLAUDE.md` owns the knobs.
   same machine. Two type traps are argued in `dialog-types.ts`.
 - **An `on` key starting with `@` is a SESSION event**
   (`"@session.timed-out"`), kept out of the author's `send` union. A state may
-  carry `timeout: { afterMs, send }` and `voice`/`bargeIn`/`toolChoice`/
+  carry `timeout: { afterMs, send }` and `voice`/`interruption`/`toolChoice`/
   `temperature`, read deepest-first, riding in `meta`. **`after` is REFUSED**
   — the actor is stopped inside its window, so a delay never fires.
 - **`tool()`, `dialog.tool`, `slot.tool`, `slot.updateTool` all thread `R`

@@ -97,8 +97,8 @@ describe("stray agent fields", () => {
     );
   });
 
-  test("endpointing shorthand passes — `takeNumber` deletes it before the check sees it", () => {
-    expect(() => configOf({ name: "A", maxTurnSilenceMs: 4000 })).not.toThrow();
+  test("the end-of-turn window passes — it is lowered onto `stt` before the check sees it", () => {
+    expect(() => configOf({ name: "A", turnTaking: { maxSilenceMs: 4000 } })).not.toThrow();
   });
 
   test("a well-formed agent is untouched", () => {

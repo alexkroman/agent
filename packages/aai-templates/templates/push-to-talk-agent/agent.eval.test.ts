@@ -6,7 +6,7 @@
 // `save_note` call carrying the whole note, rather than a reply to its first
 // half. Each `session.say()` here is one press of the button: the harness
 // frames it with the same `user_turn_start` / `user_turn_commit` pair the
-// page's `usePushToTalk()` sends, because a `turnDetection: "manual"` agent
+// page's `usePushToTalk()` sends, because a `turnTaking: { detection: "manual" }` agent
 // answers nothing that was not released.
 //
 // Without a provider key every case runs against a SCRIPTED model (its

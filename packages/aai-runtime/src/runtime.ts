@@ -319,9 +319,8 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     // three different right answers — see `runtime-session-callbacks.ts`.
     const callbacks = buildSessionCallbacks({ bindCore, emitter, isPipeline, isRelay });
 
-    // What this resume recovered, written by the two lookups below and read by
-    // the greeting — it must exist BEFORE the transport; `session-resume-found.ts`
-    // carries why, and owns the decision `skipGreeting` becomes.
+    // What this resume recovered; must exist BEFORE the transport, and
+    // `session-resume-found.ts` owns the decision `skipGreeting` becomes.
     const findings = createResumeFindings();
     const { id, skipGreeting, resumed } = sessionOpts;
     // Before the transport, which reads the greeting `sessionContext` answered.
@@ -339,6 +338,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       guardrails,
       usage,
       ...omitUndefined({ dialogTurn: dialogs.turnKnobs, personaTurn: personas.turnKnobs }),
+      ...omitUndefined({ personaInterruption: personas.interruption }),
     });
 
     core = createSessionCore({

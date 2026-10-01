@@ -10,9 +10,10 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { agent } from "./define.ts";
+import { agent, workflowApp } from "./define.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { expectDeployable } from "./testing-deployable.ts";
+import { workflow } from "./workflow.ts";
 
 describe("expectDeployable", () => {
   test("a def declaring nothing resolves to the default pipeline, every stage filled", () => {
@@ -21,6 +22,19 @@ describe("expectDeployable", () => {
     expect(config.stt?.kind).toBe("assemblyai");
     expect(config.llm?.kind).toBe("assemblyai");
     expect(config.tts?.kind).toBe("assemblyai");
+  });
+
+  test("a workflow app is deployable, and says so by its mode", () => {
+    const app = workflowApp({
+      name: "Forms",
+      workflows: { run: workflow({ description: "d", run: () => ({ ok: true }) }) },
+    });
+    expect(expectDeployable(app).mode).toBe("workflow-app");
+  });
+
+  test("a push-to-talk agent carries its detection through", () => {
+    const config = expectDeployable(agent({ name: "Walkie", turnTaking: { detection: "manual" } }));
+    expect(config.turnTaking?.detection).toBe("manual");
   });
 
   test("hands back the resolved config, so a spec can go on to its own claim", () => {

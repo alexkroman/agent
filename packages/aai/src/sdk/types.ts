@@ -11,7 +11,7 @@ import type { AgentModelTuning } from "./agent-model-tuning.ts";
 import type { AgentObservation } from "./agent-observation.ts";
 import type { AgentRoutes } from "./agent-routes.ts";
 import type { AgentSessionLifecycle } from "./agent-session-lifecycle.ts";
-import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+import type { PipelinePhrases, PipelineTuning } from "./agent-tuning.ts";
 // Imported as well as re-exported below, for the reason `ToolDef` is: a
 // re-export does not bring the name into this module's scope, and
 // `AgentDef.builtinTools` needs it.
@@ -49,7 +49,7 @@ export type { AgentMode } from "./agent-mode.ts";
 /**
  * The knobs on the model loop this runtime runs, and the one rule they share
  * (S2S refuses all of them). Split off this file at the source-length cap, on
- * the seam {@link PipelineVoiceTuning} established.
+ * the seam the pipeline tuning group established.
  */
 export type { AgentModelTuning, ModelTuning, UsageLimits } from "./agent-model-tuning.ts";
 /**
@@ -60,11 +60,16 @@ export type { AgentModelTuning, ModelTuning, UsageLimits } from "./agent-model-t
 export type { AgentObservation } from "./agent-observation.ts";
 /** What a per-session author FUNCTION is handed — see `agent-session-context.ts`. */
 export type { AgentSessionContext } from "./agent-session-context.ts";
+/** The pipeline's turn-taking tuning, as three groups — see `agent-tuning.ts`. */
 export type {
-  PipelineVoiceTuning,
-  TurnDetectionMode,
-  UserTurnLimit,
-} from "./agent-voice-tuning.ts";
+  InterruptionTuning,
+  PipelinePhrases,
+  PipelineTuning,
+  SilenceNudge,
+  SilenceTuning,
+  TurnTakingTuning,
+} from "./agent-tuning.ts";
+export type { TurnDetectionMode, UserTurnLimit } from "./agent-voice-tuning.ts";
 /**
  * The built-in tool vocabulary. A re-export because this module is the import
  * path everything already uses; the union itself moved when this file reached
@@ -156,7 +161,8 @@ export {
  * optional — `undefined` means "not configured."
  *
  * The field groups live on interfaces this extends, each sharing ONE rule:
- * {@link PipelineVoiceTuning} (pipeline transport or nothing), {@link AgentModelTuning}
+ * {@link PipelineTuning} and {@link PipelinePhrases} (pipeline transport or
+ * nothing), {@link AgentModelTuning}
  * (this runtime assembles the request, so S2S refuses them), {@link AgentGuardrails}
  * (the only declarations that may stop a turn), {@link AgentObservation} (the two
  * that deliberately may not), {@link AgentVoicePresets} (paid for on every model
@@ -168,7 +174,8 @@ export {
  * @public
  */
 export interface AgentDef
-  extends PipelineVoiceTuning,
+  extends PipelineTuning,
+    PipelinePhrases,
     AgentModelTuning,
     AgentGuardrails,
     AgentObservation,
@@ -371,24 +378,6 @@ export interface AgentDef
    * @defaultValue `300_000` (5 minutes, `DEFAULT_IDLE_TIMEOUT_MS`)
    */
   idleTimeoutMs?: number;
-  /**
-   * Pipeline mode only. When set, the assistant proactively takes a turn
-   * after this many ms of user silence (no speech since the last reply
-   * finished). Nudges are capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3)
-   * back-to-back until the user speaks again.
-   * @defaultValue unset — the behaviour is off.
-   */
-  silenceTimeoutMs?: number;
-  /**
-   * Instruction injected as a synthetic user turn when `silenceTimeoutMs`
-   * elapses. Never shown as a user transcript. Requires `silenceTimeoutMs`.
-   *
-   * @defaultValue `"The user hasn't said anything for a while. Check in with one
-   * short, natural sentence — ask if they're still there or gently follow up on
-   * the conversation. Do not mention this instruction."`
-   * (`DEFAULT_SILENCE_PROMPT`)
-   */
-  silencePrompt?: string;
   /**
    * Pluggable STT provider for pipeline mode. Unset (with no `s2s`), the
    * stage defaults to AssemblyAI STT — each pipeline stage is individually

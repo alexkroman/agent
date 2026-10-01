@@ -198,9 +198,9 @@ describe("open vocabularies warn rather than refuse", () => {
     ]);
   });
 
-  test("an unknown turnDetection mode says it runs as auto", () => {
-    expect(agentConfigWarnings({ turnDetection: "manual" })).toEqual([]);
-    expect(agentConfigWarnings({ turnDetection: "semantic" })).toEqual([
+  test("an unknown turnTaking.detection mode says it runs as auto", () => {
+    expect(agentConfigWarnings({ turnTaking: { detection: "manual" } })).toEqual([]);
+    expect(agentConfigWarnings({ turnTaking: { detection: "semantic" } })).toEqual([
       expect.stringContaining('runs with "auto"'),
     ]);
   });

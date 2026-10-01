@@ -176,7 +176,7 @@ export declare const browserSessionBrand: unique symbol;
 /**
  * Push-to-talk's three edges on a {@link BrowserSession} — `session.userTurn`.
  *
- * Only an agent declaring `turnDetection: "manual"` honours them; any other
+ * Only an agent declaring `turnTaking: { detection: "manual" }` honours them; any other
  * agent logs once and ignores them, because its transcriber already ends each
  * turn on a pause. `usePushToTalk` is the hook a button is built on, and the
  * way a `client.tsx` reaches these: a sub-handle rather than three methods on
@@ -260,7 +260,7 @@ export type BrowserSession = {
   readonly identity: SessionIdentity;
   /**
    * Send a TYPED user turn: the agent answers `text` exactly as if the caller
-   * had said it — aloud, with tools, under any `turnDetection`.
+   * had said it — aloud, with tools, under any `turnTaking.detection`.
    *
    * Interrupts the agent if it is speaking or thinking (its queued audio is
    * discarded here at once, as `cancel()` does). The message is NOT echoed into

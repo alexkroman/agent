@@ -3,7 +3,7 @@
 // tool plumbing (including sandbox mode), and executeToolCall. Session
 // lifecycle/routing specs live in runtime-lifecycle.test.ts.
 
-import type { ToolDef } from "@alexkroman1/aai";
+import type { PipelineTuning, ToolDef } from "@alexkroman1/aai";
 import { sessionSlot } from "@alexkroman1/aai";
 import {
   ASSEMBLYAI_S2S_SAMPLE_RATE,
@@ -565,12 +565,11 @@ describe("createRuntime — provider resolution seams", () => {
     tools: {},
   };
 
-  test.each([
-    ["deadAirCoverMs", { deadAirCoverMs: 2500 }],
-    ["minBargeInWords", { minBargeInWords: 3 }],
-    ["interruptionMinDurationMs", { interruptionMinDurationMs: 200 }],
-    ["resumeFalseInterruption", { resumeFalseInterruption: false }],
-    ["userTurnLimit", { userTurnLimit: { maxWords: 60 } }],
+  test.each<[string, PipelineTuning]>([
+    ["silence", { silence: { deadAirCoverMs: 2500, nudge: { afterMs: 9000 } } }],
+    ["interruption", { interruption: { minWords: 3, minDurationMs: 200 } }],
+    ["interruption off", { interruption: "off" }],
+    ["turnTaking", { turnTaking: { userTurnLimit: { maxWords: 60 } } }],
   ])("accepts %s when the providers arrive as runtime options", (_name, tuning) => {
     // The platform strips stt/llm/tts off
     // the agent object and passes them as options, so validating the agent's
@@ -670,9 +669,14 @@ describe("createRuntime — provider resolution seams", () => {
     // The assertion must keep firing where it is right: an explicit S2S agent.
     expect(() =>
       createRuntimeWithSeams({
-        agent: { ...baseAgent, mode: "s2s", s2s: assemblyAIS2s(), deadAirCoverMs: 2500 },
+        agent: {
+          ...baseAgent,
+          mode: "s2s",
+          s2s: assemblyAIS2s(),
+          silence: { deadAirCoverMs: 2500 },
+        },
         env: PROVIDER_KEYS,
       }),
-    ).toThrow(/`deadAirCoverMs` is .* no effect on a "s2s" agent/);
+    ).toThrow(/`silence` is .* no effect on a "s2s" agent/);
   });
 });

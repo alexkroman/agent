@@ -27,10 +27,15 @@ import type { Logger, S2sConfig } from "./runtime-config.ts";
 import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
-import type { DialogTurnSource } from "./transports/pipeline-dialog-knobs.ts";
+import {
+  type DialogTurnSource,
+  interruptionKnobs,
+  type PersonaInterruptionSource,
+} from "./transports/pipeline-dialog-knobs.ts";
 import type { TurnGuardrails } from "./transports/pipeline-guardrails.ts";
 import type { PersonaTurnSource } from "./transports/pipeline-persona-knobs.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
+import type { PipelineTransportOptions } from "./transports/pipeline-transport-options.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type { SystemPromptOption, Transport, TransportCallbacks } from "./transports/types.ts";
 import { resolveSystemPrompt } from "./transports/types.ts";
@@ -147,7 +152,7 @@ export type BuildTransportArgs = {
    * **Only the pipeline branch takes it**, and the asymmetry is the same one the
    * prompt thunk has for the same reason: two of the three knobs are `streamText`
    * request settings, and the two S2S services assemble their own requests
-   * service-side. A dialog's `bargeIn` is likewise a decision the host makes only
+   * service-side. A dialog's `interruption` is likewise a decision the host makes only
    * in pipeline mode — both S2S services own turn-taking. `reportDialogKnobs`
    * warns for a knob nothing applies; it does not know the transport, so an
    * agent that declares one and runs on S2S is warned by `buildTransport` below
@@ -166,6 +171,12 @@ export type BuildTransportArgs = {
    * regardless; what an S2S session loses is the two knobs, warned about below.
    */
   personaTurn?: PersonaTurnSource | undefined;
+  /**
+   * The active persona's `interruption` group, or absent when no persona
+   * declares one — pipeline only, for `dialogTurn`'s reason (both S2S services
+   * own turn-taking).
+   */
+  personaInterruption?: PersonaInterruptionSource | undefined;
   /**
    * This session's guardrails, already bound to their context.
    *
@@ -274,24 +285,16 @@ export function createTransportFactory(
       maxRetries: agentConfig.maxRetries,
       ...omitUndefined({ guardrails: args.guardrails, usage: args.usage }),
       ...omitUndefined({ sttPrompt: agentConfig.sttPrompt }),
-      silenceTimeoutMs: agentConfig.silenceTimeoutMs,
-      silencePrompt: agentConfig.silencePrompt,
-      userTurnLimit: agentConfig.userTurnLimit,
-      turnDetection: agentConfig.turnDetection,
-      minBargeInWords: agentConfig.minBargeInWords,
-      interruptionMinDurationMs: agentConfig.interruptionMinDurationMs,
-      // Not an agent field: the pair the STT stage resolved, so a rule's
-      // window is clamped against the ceiling the socket really dialled.
-      startSpeakingFloorMs: agentConfig.startSpeakingFloorMs,
-      interruptionBackoffMs: agentConfig.interruptionBackoffMs,
-      deadAirCoverMs: agentConfig.deadAirCoverMs,
+      ...pipelineTuningOptions(agentConfig),
       // errorPhrase used to be missing here, so an agent that set it (including
       // to "" to disable) silently got the default instead.
       errorPhrase: agentConfig.errorPhrase,
       startFailurePhrase: agentConfig.startFailurePhrase,
-      resumeFalseInterruption: agentConfig.resumeFalseInterruption,
-      preemptiveGeneration: agentConfig.preemptiveGeneration,
-      ...omitUndefined({ dialogTurn: args.dialogTurn, personaTurn: args.personaTurn }),
+      ...omitUndefined({
+        dialogTurn: args.dialogTurn,
+        personaTurn: args.personaTurn,
+        personaInterruption: args.personaInterruption,
+      }),
       logger,
     });
   }
@@ -323,7 +326,7 @@ export function createTransportFactory(
   function warnDialogKnobsUnavailable(args: BuildTransportArgs, kind: string): void {
     if (args.dialogTurn === undefined) return;
     logger.warn(
-      `This agent's dialogs declare per-state bargeIn/toolChoice/temperature, and the ${kind} transport applies none of them: that service assembles each request and owns turn-taking, so there is no per-turn moment in this process to apply one at. The dialog's states, instructions, deadlines and tool gates all still work — only these three knobs are inert.`,
+      `This agent's dialogs declare per-state interruption/toolChoice/temperature, and the ${kind} transport applies none of them: that service assembles each request and owns turn-taking, so there is no per-turn moment in this process to apply one at. The dialog's states, instructions, deadlines and tool gates all still work — only these three knobs are inert.`,
     );
   }
 
@@ -453,4 +456,25 @@ export function createTransportFactory(
  */
 export function usesAssemblyS2s(agent: RuntimeOptions["agent"]): boolean {
   return agent.s2s !== undefined && descriptorKind(agent.s2s) === ASSEMBLYAI_S2S_KIND;
+}
+
+/**
+ * The agent's `turnTaking` / `interruption` / `silence` groups, flattened onto
+ * the transport's options. The transport keeps flat names because each one is
+ * read by a different consumer; the GROUPS are the author's surface. An
+ * `interruption: "off"` arrives as an unreachable word threshold, exactly as a
+ * dialog state's does (`interruptionKnobs`).
+ */
+function pipelineTuningOptions(config: AgentConfig): Partial<PipelineTransportOptions> {
+  const { turnTaking, silence } = config;
+  return {
+    silenceTimeoutMs: silence?.nudge?.afterMs,
+    silencePrompt: silence?.nudge?.prompt,
+    deadAirCoverMs: silence?.deadAirCoverMs,
+    userTurnLimit: turnTaking?.userTurnLimit,
+    turnDetection: turnTaking?.detection,
+    startSpeakingFloorMs: turnTaking?.startSpeakingFloorMs,
+    preemptiveGeneration: turnTaking?.preemptiveGeneration,
+    ...interruptionKnobs(config.interruption),
+  };
 }

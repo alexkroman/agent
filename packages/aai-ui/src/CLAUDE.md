@@ -149,7 +149,7 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   hand, and never into `localStorage` (a stale id suppresses the greeting and
   rejoins a dead context).
 - **`usePushToTalk`** drives `session.userTurn` (`start`/`commit`/`clear`) for a
-  `turnDetection: "manual"` agent; its module doc lists the ways a hand-written
+  `turnTaking: { detection: "manual" }` agent; its module doc lists the ways a hand-written
   button leaves a turn open.
 - **`useTapToTalk`** is the toggle for an automatic-turn agent. Its decisions
   are a statechart (`_tap-to-talk-state.ts`: a `live` region and a `session`

@@ -53,7 +53,7 @@ export function agentConfigWarnings(config: {
   stt?: unknown;
   llm?: unknown;
   voicePresets?: unknown;
-  turnDetection?: unknown;
+  turnTaking?: unknown;
   builtinTools?: unknown;
   telephony?: unknown;
 }): string[] {
@@ -64,7 +64,9 @@ export function agentConfigWarnings(config: {
     euResidencyWarning(config),
     unknownLlmProviderWarning(config.llm),
     ...unknownVoicePresetWarnings(config.voicePresets),
-    unknownTurnDetectionWarning(config.turnDetection),
+    unknownTurnDetectionWarning(
+      isRecord(config.turnTaking) ? config.turnTaking.detection : undefined,
+    ),
     ...unknownBuiltinToolWarnings(config.builtinTools),
     ...unknownTelephonyCarrierWarnings(config.telephony),
   ].filter((warning): warning is string => warning !== undefined);
@@ -153,7 +155,7 @@ function unknownTelephonyCarrierWarnings(access: unknown): string[] {
 }
 
 /**
- * A `turnDetection` mode this release does not implement. The runtime treats
+ * A `turnTaking.detection` mode this release does not implement. The runtime treats
  * anything but `"manual"` as `"auto"`, so an unknown mode runs as automatic
  * end-of-turn detection — said here rather than refused.
  */
@@ -161,7 +163,7 @@ function unknownTurnDetectionWarning(mode: unknown): string | undefined {
   if (typeof mode !== "string") return undefined;
   if (isKnown(KNOWN_TURN_DETECTION_MODES, mode)) return undefined;
   return (
-    `turnDetection "${mode}" is not a mode this SDK implements ` +
+    `turnTaking.detection "${mode}" is not a mode this SDK implements ` +
     `(${KNOWN_TURN_DETECTION_MODES.join(", ")}); the session runs with "auto".`
   );
 }

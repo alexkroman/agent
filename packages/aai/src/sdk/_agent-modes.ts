@@ -38,37 +38,26 @@ function isAgentMode(value: unknown): value is AgentMode {
 const PIPELINE_STAGES = {
   stt: "the pipeline's speech-to-text stage",
   tts: "the pipeline's text-to-speech stage",
-} as const;
+} as const satisfies Record<Extract<PipelineOnlyField, "stt" | "tts">, string>;
 
 /**
  * What each pipeline-only field is FOR, in the words a refusal quotes. With
  * {@link PIPELINE_STAGES}, total over {@link PipelineOnlyField} minus the
- * guardrails (which `assertGuardrailScope` refuses with its own argument).
+ * guardrails (which `assertGuardrailScope` refuses with its own argument) — and
+ * EXACT, since each is a literal under its own `satisfies`: a field on one of
+ * these tables and on no member is a compile error too.
  */
 const PIPELINE_TUNING = {
   voice: "the default pipeline's TTS voice",
-  minTurnSilenceMs: "the default pipeline STT stage's end-of-turn window",
-  maxTurnSilenceMs: "the default pipeline STT stage's end-of-turn window",
-  minBargeInWords: "the pipeline's barge-in word gate",
-  interruptionMinDurationMs: "the pipeline's barge-in duration gate",
-  startSpeakingFloorMs: "the pipeline's start-speaking floor",
-  interruptionBackoffMs: "the pipeline's post-interruption backoff",
-  deadAirCoverMs: "the pipeline's dead-air cover",
+  turnTaking: "the pipeline's turn-taking tuning",
+  interruption: "the pipeline's barge-in tuning",
+  silence: "the pipeline's dead-air cover and silence nudge",
   errorPhrase: "the phrase the pipeline speaks when a turn fails",
   startFailurePhrase: "the phrase the pipeline speaks when a provider fails to open",
-  resumeFalseInterruption: "the pipeline's false-interruption recovery",
-  preemptiveGeneration: "the pipeline's preemptive generation",
-  userTurnLimit: "the pipeline's cap on one user turn",
-  turnDetection: "who ends the caller's turn on the pipeline",
-  silenceTimeoutMs: "the pipeline's silence nudge",
-  silencePrompt: "the instruction the pipeline's silence nudge injects",
-} as const;
+} as const satisfies Record<Exclude<PipelineOnlyField, GuardrailField | "stt" | "tts">, string>;
 
-/** The totality check over both halves. */
-const PIPELINE_ONLY = { ...PIPELINE_STAGES, ...PIPELINE_TUNING } as const satisfies Record<
-  Exclude<PipelineOnlyField, GuardrailField>,
-  string
->;
+/** Both halves — the shape every non-pipeline member subtracts. */
+const PIPELINE_ONLY = { ...PIPELINE_STAGES, ...PIPELINE_TUNING };
 
 /** The two fields a text agent drops beyond the pipeline-only ones. */
 const TEXT_EXCLUDED = {

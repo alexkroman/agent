@@ -83,7 +83,7 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  *
  * Overloaded over {@link AgentMode}, one signature per member of
  * {@link AgentParams}: `mode` picks the member, and a field that member does
- * not have is a compile error naming it — `deadAirCoverMs` is a pipeline knob,
+ * not have is a compile error naming it — `silence` is a pipeline group,
  * so it does not exist on {@link S2sAgentParams} at all. With no `mode` the
  * agent is a pipeline agent. {@link AgentDef} documents what every field means.
  *

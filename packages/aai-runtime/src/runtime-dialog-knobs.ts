@@ -27,11 +27,11 @@
  * the knob moves out of {@link INERT_KNOBS} and the warning stops.
  */
 
-import type { AnyDialog, DialogVoiceConfig, SlotHolder } from "@alexkroman1/aai";
+import type { AnyDialog, SlotHolder } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { AnyStateMachine } from "xstate";
 import type { Logger } from "./runtime-config.ts";
-import type { DialogTurnKnobs } from "./transports/pipeline-dialog-knobs.ts";
+import { type DialogTurnKnobs, interruptionKnobs } from "./transports/pipeline-dialog-knobs.ts";
 
 /**
  * The knobs a declared state may carry that nothing in this runtime applies.
@@ -52,7 +52,7 @@ import type { DialogTurnKnobs } from "./transports/pipeline-dialog-knobs.ts";
 const INERT_KNOBS = ["voice"] as const;
 
 /** The knobs a declared state may carry that the pipeline DOES apply per state. */
-const LIVE_KNOBS = ["bargeIn", "toolChoice", "temperature", "keyterms"] as const;
+const LIVE_KNOBS = ["interruption", "toolChoice", "temperature", "keyterms"] as const;
 
 /**
  * Runtimes whose dialogs have already been reported.
@@ -137,26 +137,6 @@ function warnInertKnobs(
 }
 
 /**
- * `bargeIn` in the two numbers the pipeline's gates actually read.
- *
- * `"off"` becomes an UNREACHABLE word threshold rather than a third flag, and
- * that is not a trick: both gates are `words >= threshold` tests, so an infinite
- * threshold is precisely "no interim and no final ever cuts the agent off" —
- * which is what a disclosure state means by it. The word COUNT is still
- * computed and still drives the speaking edge and the live caption, so a caller
- * who talks over a disclosure is still transcribed and still answered once the
- * agent finishes.
- */
-function fromBargeIn(bargeIn: DialogVoiceConfig["bargeIn"]): DialogTurnKnobs {
-  if (bargeIn === undefined || bargeIn === "default") return {};
-  if (bargeIn === "off") return { minBargeInWords: Number.POSITIVE_INFINITY };
-  return omitUndefined({
-    minBargeInWords: bargeIn.minWords,
-    interruptionMinDurationMs: bargeIn.minDurationMs,
-  });
-}
-
-/**
  * Fold the active states' voice configs into one set of turn knobs — LAST
  * declaration wins, per key.
  *
@@ -185,7 +165,7 @@ export function mergeTurnKnobs(
     if (config === undefined) continue;
     merged = {
       ...merged,
-      ...fromBargeIn(config.bargeIn),
+      ...interruptionKnobs(config.interruption),
       // `voice` is deliberately not read: nothing applies it, and
       // `reportDialogKnobs` has already said so where an author can see it.
       ...omitUndefined({

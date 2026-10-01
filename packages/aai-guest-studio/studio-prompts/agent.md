@@ -880,29 +880,33 @@ export default agent({
   toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
                                              // | { type: "tool", toolName }
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
-  silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
-  silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
-  minBargeInWords?: number;                  // pipeline only — words before user speech interrupts the reply (default 2)
-  interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 500; 0 disables)
-  deadAirCoverMs?: number;                   // pipeline only — speak a short filler after this much silence in a turn (default 2400; 0 disables)
-  resumeFalseInterruption?: boolean;         // pipeline only — resume an interrupted reply if no user turn commits (default true)
-  preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default false; true opts in)
-  userTurnLimit?: { maxWords?: number;       // pipeline only — cap ONE user turn: end it after this many words
-                    maxDurationMs?: number };//   and/or this long (ms). Default: no cap. Emits `user-turn.exceeded`.
-  turnDetection?: "auto" | "manual";         // pipeline only — "manual" is push-to-talk: the CLIENT ends each turn
+  // ── pipeline only: three groups (`PipelineTuning`), refused on s2s / text ──
+  turnTaking?: {
+    minSilenceMs?: number;                   // pause (ms) that ENDS a turn once the text reads
+                                             // complete (default 1600) — lowered onto the default
+    maxSilenceMs?: number;                   // assemblyAIStt(); pause that ends it REGARDLESS of
+                                             // content (default 3500). Invalid beside an explicit `stt`.
+    detection?: "auto" | "manual";           // "manual" is push-to-talk: the CLIENT ends each turn
+    userTurnLimit?: { maxWords?: number; maxDurationMs?: number }; // cap ONE user turn. Default: none.
+    preemptiveGeneration?: boolean;          // start the reply from a confident interim (default false)
+    startSpeakingFloorMs?: number;           // earliest agent audio after a turn ends (default 0)
+  };
+  interruption?: "off" | {                   // "off": the caller never cuts the agent off
+    minWords?: number;                       // interim words before speech interrupts (default 1)
+    minDurationMs?: number;                  // sustained speech (ms) first (default 500; 0 disables)
+    backoffMs?: number;                      // agent audio held after a real interruption (default 0)
+    resumeFalseInterruption?: boolean;       // resume a reply if no user turn commits (default true)
+  };
+  silence?: {
+    deadAirCoverMs?: number;                 // filler after this much silence IN a turn (default 2400; 0 off)
+    nudge?: { afterMs: number; prompt?: string }; // speak up after this much USER silence
+  };
   syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
                                              // (read it with useAgentState; see UI hooks)
-  minTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ENDS a user turn once the
-                                             // text reads complete (default 560)
-  maxTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ends a turn REGARDLESS of
-                                             // content (default 1600). The endpointing knob to reach for:
-                                             // it bounds the utterances that never read as finished.
-                                             // Both are shorthand for the same options on the default
-                                             // assemblyAIStt() stage — invalid with an explicit `stt`.
   requiredEnv?: string[];                    // env vars this agent reads. A deploy CHECKS them, so a
                                              // missing key fails at `aai push` instead of mid-call.
                                              // Declare every key any tool or step reads.
-  text?: true;                               // text-only agent: no STT, no TTS, `llm` is the one stage
+  mode?: "pipeline" | "s2s" | "text" | "workflow-app"; // default "pipeline"; "text": `llm` is the one stage
   events?: SessionEventHandlers;             // observe the session; "metrics.collected" is each
                                              // reply's latency/tokens: createMetricsCollector()
   personas?: Personas;                       // see "Personas"
@@ -1057,8 +1061,8 @@ That is the whole declaration, and the fields it does NOT take are the point:
 a workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
 `maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob
 are **compile errors** here, not fields that quietly do nothing. `greeting` and
-`requiredEnv` stay. `workflowApp()` is `agent({ …, mode: "workflow-app" })` with the
-discriminant already set — same definition object out, so `aai build`,
+`requiredEnv` stay. `workflowApp()` is `agent({ mode: "workflow-app", … })` with
+the discriminant already set — same definition object out, so `aai build`,
 `aai dev` and `aai publish` treat it like any other agent.
 
 Reach for it when the user asks for something that outlives a request: an
@@ -1823,19 +1827,21 @@ Pipeline mode is the default: omitting `stt`/`llm`/`tts` (and `s2s`) gives
 you the all-AssemblyAI pipeline, and any stage you do declare replaces just
 that stage — the rest keep the default.
 
-**S2S mode is an explicit opt-in.** Setting `s2s: assemblyAIS2s()` (imported
-from `@alexkroman1/aai`, next to `agent()`) selects AssemblyAI's
-speech-to-speech Voice Agent API: STT, the LLM loop, and TTS run
-service-side in one socket. Fewer moving parts, but you cannot choose the
-model or swap a provider. There is no way to reach S2S by omission — only
-the `s2s` field selects it, and it is mutually exclusive with the
-`stt`/`llm`/`tts` triple.
+**S2S mode is an explicit opt-in.** `mode: "s2s"` beside an
+`s2s: assemblyAIS2s()` descriptor (imported from `@alexkroman1/aai`, next to
+`agent()`) selects AssemblyAI's speech-to-speech Voice Agent API: STT, the LLM
+loop, and TTS run service-side in one socket. Fewer moving parts, but you cannot
+choose the model or swap a provider. There is no way to reach S2S by omission,
+and the S2S member of `agent()`'s parameter type has none of the
+`stt`/`llm`/`tts` triple or its tuning. (An `s2s` descriptor with no `mode` is
+refused: that declares a pipeline agent carrying an unused descriptor.)
 
 ```ts
 import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 
 export default agent({
   name: "My Agent",
+  mode: "s2s",
   s2s: assemblyAIS2s(),
 });
 ```
@@ -1847,6 +1853,7 @@ import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 
 export default agent({
   name: "My Agent",
+  mode: "s2s",
   sttPrompt: "Callers spell order numbers one character at a time.",
   s2s: assemblyAIS2s({
     voice: "michael",
@@ -1904,15 +1911,17 @@ export default agent({
 Tools, the database, `ctx`, and the UI all behave identically across modes.
 Only the audio + LLM transport differs.
 
-**Four front doors, each one field on `agent()`.** Omit them all for PIPELINE
-(voice, cascaded STT → LLM → TTS) — the default, and the mode this guide
-assumes. `s2s:` selects speech-to-speech. **`mode: "text"` selects a text-only
+**Four modes, one field on `agent()`: `mode`.** Omit it for PIPELINE (voice,
+cascaded STT → LLM → TTS) — the default, and the mode this guide assumes.
+`mode: "s2s"` selects speech-to-speech. **`mode: "text"` selects a text-only
 agent**: no STT, no TTS, `llm` is the one stage, and the host runs it with
 `createTextAgent` from `@alexkroman1/aai-runtime`. `workflowApp()` (see
-"Workflow apps") builds a form with no session at all. Setting a field from the
-wrong arm is a compile error naming the rule, so the modes cannot be mixed by
-accident. Every pipeline agent must declare a real TTS provider — that is a
-statement about pipeline mode, not about the SDK.
+"Workflow apps") is `mode: "workflow-app"`: a form with no session at all. Each
+mode is its own member of the parameter type, and a field that mode does not
+have is simply ABSENT from it — so setting one is a compile error naming the
+member, and the modes cannot be mixed by accident. Every pipeline agent must
+declare a real TTS provider — that is a statement about pipeline mode, not about
+the SDK.
 
 ### Answering a phone call
 
@@ -1947,37 +1956,32 @@ WebSocket gets 1008). A tool hangs up with `endSession(ctx)` once the reply has
 been spoken (`{ afterReply: false }` cuts it); a spec reads
 `endSessionCalls(ctx)` (`/testing`). Tunnel to the port `aai dev` prints.
 
-**Silence nudge (pipeline only):** `silenceTimeoutMs` makes the assistant take
-a turn after that much user silence ("Are you still there?"); `silencePrompt`
-sets the instruction. It is never a user transcript, and stops after 3
-unanswered nudges until the user speaks.
+**Turn-taking tuning (`PipelineTuning`, pipeline only)** is three groups:
 
-**Voice-UX tuning (`PipelineVoiceTuning`, pipeline only):**
-`minBargeInWords` is how many words interrupt a reply (default 2, so a lone
-"yeah" doesn't); `interruptionMinDurationMs` adds a sustained-speech gate
-(default 500 ms; `0` disables; interims only — committed turns always land).
-How long a pause ends a turn belongs to the STT provider:
-`assemblyAIStt({ minTurnSilenceMs })` (default 1600 ms) /
-`deepgramStt({ endpointing })` (default 1500 ms).
-`deadAirCoverMs` is how long a turn may go silent before a short filler is
-spoken, so a long tool chain doesn't sound like a dropped call; measured
-silence, so a prompt reply pays nothing; `0` disables. The wording is fixed:
-declarative, never a request for patience, or the caller's answer barges in.
-`resumeFalseInterruption` (default `true`) resumes a reply whose barge-in was
-noise (no user turn commits); it fires once transcripts go quiet with no final,
-so it never races a real turn.
-`userTurnLimit` (`UserTurnLimit`; default no cap) bounds ONE user turn —
-`{ maxWords }`, `{ maxDurationMs }`, or both: past a cap the transcriber ends
-the turn as a pause would (heard words commit, the rest opens the next turn),
-emitting `user-turn.exceeded` (`limit`, `words`, `durationMs`); `{}` is
-refused. Inert (logged once) on a transcriber that cannot end a turn on demand;
-the default `assemblyAIStt()` can.
-`turnDetection: "manual"` is PUSH-TO-TALK (`usePushToTalk()` in `aai-ui`):
-the mic is heard only while held, all of it is ONE turn answered on release,
-and pressing is the barge-in.
-`preemptiveGeneration` (default **`false`**) starts the reply from a confident
-interim, adopted if the commit matches (measured **+8ms per turn**, 44% of
-requests wasted); it never speaks or calls a tool until adopted.
+- `silence.nudge: { afterMs, prompt? }` makes the assistant take a turn after
+  that much user silence ("Are you still there?"); `afterMs` is required inside
+  it. It is never a user transcript, and stops after 3 unanswered nudges.
+  `silence.deadAirCoverMs` is how long a turn may go silent before a short
+  filler is spoken (default 2400; `0` disables). The wording is fixed:
+  declarative, never a request for patience, or the caller's answer barges in.
+- `interruption` — `minWords` (default 1) words interrupt a reply, gated by
+  `minDurationMs` of sustained speech (default 500 ms; `0` disables; interims
+  only — committed turns always land); `backoffMs` holds agent audio after a
+  real interruption; `resumeFalseInterruption` (default `true`) resumes a reply
+  whose barge-in was noise. `interruption: "off"` means nothing the caller says
+  cuts the agent off. **The same type is a dialog state's `interruption` and a
+  persona's**, overriding the agent's per key (state, then persona, then agent).
+- `turnTaking` — `minSilenceMs`/`maxSilenceMs` are how long a pause ends a turn
+  (lowered onto the default `assemblyAIStt()`; with an explicit `stt` set them
+  on the descriptor, e.g. `deepgramStt({ endpointing })`). `userTurnLimit`
+  (`{ maxWords }`, `{ maxDurationMs }` or both; `{}` refused) ends ONE turn as
+  a pause would, emitting `user-turn.exceeded`. `detection: "manual"` is
+  PUSH-TO-TALK (`usePushToTalk()` in `aai-ui`): the mic is heard only while
+  held, all of it is ONE turn answered on release, and pressing is the
+  barge-in. `preemptiveGeneration` (default **`false`**) starts the reply from
+  a confident interim, adopted if the commit matches (measured **+8ms per
+  turn**, 44% of requests wasted); it never speaks or calls a tool until
+  adopted.
 
 ### Placing a call
 
@@ -3061,7 +3065,7 @@ own journaled `ctx.random()` instead.
 - **Declare only the pipeline stages you're changing.** Unset stages of
   `stt` / `llm` / `tts` default to AssemblyAI (omit all three for the full
   default pipeline; `voice` picks its TTS voice). S2S needs an explicit
-  `s2s: assemblyAIS2s()` and takes no pipeline fields.
+  `mode: "s2s"` and `s2s: assemblyAIS2s()`, and takes no pipeline fields.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Derive state with `useToolResult`, not `useEffect` + `toolCalls`** — it

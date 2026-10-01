@@ -131,8 +131,10 @@ describe("AgentConfigSchema", () => {
     expect(AgentConfigSchema.safeParse({ ...base, minBargeInWords: 5 }).success).toBe(true);
   });
 
-  test("rejects minBargeInWords below 1", () => {
-    expect(AgentConfigSchema.safeParse({ ...base, minBargeInWords: 0 }).success).toBe(false);
+  test("rejects interruption.minWords below 1", () => {
+    expect(AgentConfigSchema.safeParse({ ...base, interruption: { minWords: 0 } }).success).toBe(
+      false,
+    );
   });
 
   test.each(["s2s", "pipeline"] as const)("accepts mode: %s", (mode) => {
@@ -208,12 +210,9 @@ describe("toAgentConfig", () => {
       toolChoice: "required" as const,
       builtinTools: ["think"] as const,
       idleTimeoutMs: 1000,
-      silenceTimeoutMs: 9000,
-      silencePrompt: "nudge",
-      minBargeInWords: 3,
-      interruptionMinDurationMs: 250,
-      deadAirCoverMs: 2500,
-      resumeFalseInterruption: true,
+      silence: { deadAirCoverMs: 2500, nudge: { afterMs: 9000, prompt: "nudge" } },
+      interruption: { minWords: 3, minDurationMs: 250, resumeFalseInterruption: true },
+      turnTaking: { detection: "manual", preemptiveGeneration: false },
       stt: desc("assemblyai"),
       llm: desc("anthropic"),
       tts: desc("cartesia"),

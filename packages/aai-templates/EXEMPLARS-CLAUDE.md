@@ -143,7 +143,7 @@ nested confirmation gate), `tabletop-rpg-agent` (nested, plus `final`),
   no chatter transition, so its deadline is wall clock. `onCall.quiet` is the
   ladder's landing rung (a shorter question). `service_disclosure` hands over
   the words and `acknowledge_disclosure` advances a turn later, so the
-  disclosure is spoken under `bargeIn: "off"`. `toolChoice` is pinned on
+  disclosure is spoken under `interruption: "off"`. `toolChoice` is pinned on
   `onCall.dispatching`, not on `verifying`; `dispatch_truck` is idempotent. The
   hang-up (`@session.timed-out` → final `abandoned`) is declared once on the
   `onCall` parent. `agent.test.ts` asserts no state declares `voice`/`keyterms`.

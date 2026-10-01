@@ -85,6 +85,7 @@
  * @module persona
  */
 
+import type { PipelineTuning } from "./agent-tuning.ts";
 import type { AnyDialog } from "./dialog-handle.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { sessionSlot } from "./session-slot.ts";
@@ -139,6 +140,13 @@ export interface PersonaDef<N extends string = string> {
   toolChoice?: ToolChoice;
   /** The model's sampling temperature while this persona is speaking. */
   temperature?: number;
+  /**
+   * How interruptible the agent is while this persona is speaking — the
+   * agent's own `PipelineTuning["interruption"]`, verbatim, overriding it field
+   * by field (a dialog state's own `interruption` overrides this in turn).
+   * Pipeline only: the S2S service owns barge-in.
+   */
+  interruption?: PipelineTuning["interruption"];
 }
 
 /**

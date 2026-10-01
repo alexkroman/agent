@@ -127,23 +127,6 @@ export function assertProviderTriple(
 }
 
 /**
- * The one silence-nudge rule that is not a MODE rule: `silencePrompt` is the
- * instruction injected when `silenceTimeoutMs` elapses, so without the timeout
- * nothing ever reads it. (Which modes may carry either field is
- * `assertModeFields`' question — `_agent-modes.ts`.)
- *
- * @internal
- */
-export function assertSilencePolicy(
-  silenceTimeoutMs: number | undefined,
-  silencePrompt: string | undefined,
-): void {
-  if (silencePrompt !== undefined && silenceTimeoutMs === undefined) {
-    throw new Error("silencePrompt requires silenceTimeoutMs to be set");
-  }
-}
-
-/**
  * Every {@link AgentModelTuning} knob describes a request THIS runtime
  * assembles, so an S2S agent may set none of them.
  *

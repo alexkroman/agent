@@ -68,7 +68,7 @@ export function createCommandDispatcher(deps: CommandDeps): CommandDispatcher {
     if (!warnedNoTurnVerbs) {
       warnedNoTurnVerbs = true;
       log.warn(
-        `Client sent ${type}, but this session's transport cannot end a caller's turn — push-to-talk needs a pipeline agent declaring turnDetection: "manual".`,
+        `Client sent ${type}, but this session's transport cannot end a caller's turn — push-to-talk needs a pipeline agent declaring turnTaking: { detection: "manual" }.`,
         { sid: sessionId },
       );
     }

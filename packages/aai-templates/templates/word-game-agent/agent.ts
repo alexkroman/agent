@@ -25,7 +25,7 @@ import { GAME_EVENTS, gameProjection } from "./shared.ts";
  * deliberately carries no `messages`. So it cannot tell the round's opening line
  * from a hint. It would also be paid for in this template's one currency: a held
  * reply cannot stream, turning time-to-first-word into time-to-last-token on a
- * two-minute clock whose `bargeIn: { minWords: 1 }` exists so the describer can
+ * two-minute clock whose `interruption: { minWords: 1 }` exists so the describer can
  * talk over the host.
  */
 export default agent({

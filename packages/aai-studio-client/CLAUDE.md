@@ -376,8 +376,8 @@ so every piece of per-project state resets on a switch with no effect to do it.
     the agent ITSELF answers:
     - **No carrier webhook for a workflow app.** `mode: "workflow-app"` declines
       `/websocket` with a reason and can declare no carrier (`AgentDef.mode`),
-      so a phone number pointed at one answers and hangs up — the worst kind of
-      wrong documentation, since it is only wrong at the end of an afternoon in
+      so a phone number pointed at one answers and hangs up: the worst kind of
+      wrong documentation, only wrong at the end of an afternoon in
       somebody's carrier console. `frontDoorEndpoints(page)` drops the
       `POST /phone` row and the Phone card goes with it; the page and its
       config stay, because they are how a caller discovers the shape at all.

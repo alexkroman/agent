@@ -302,11 +302,11 @@ describe("agent()", () => {
     ).toThrow(/`voice` is .* no effect on a "s2s" agent/);
   });
 
-  test("endpointing shorthand desugars to the default pipeline's STT descriptor", () => {
+  test("the end-of-turn window lowers onto the default pipeline's STT descriptor", () => {
     // The point of the shorthand: one number, no descriptor, and the stage is
     // still the default AssemblyAI one with every other setting intact.
-    const def = agent({ name: "t", maxTurnSilenceMs: 4500 });
-    expect("maxTurnSilenceMs" in def).toBe(false);
+    const def = agent({ name: "t", turnTaking: { maxSilenceMs: 4500 } });
+    expect("turnTaking" in def).toBe(false);
     expect(def.stt).toEqual(assemblyAIStt({ maxTurnSilenceMs: 4500 }));
     expect(toAgentConfig(def).mode).toBe("pipeline");
     const settings = resolveAssemblyAISttSettings({ maxTurnSilenceMs: 4500 });
@@ -315,27 +315,41 @@ describe("agent()", () => {
     expect(settings.minTurnSilenceMs).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
   });
 
+  test("both end-of-turn knobs lower together, and the rest of the group stays", () => {
+    const def = agent({ name: "t", turnTaking: { maxSilenceMs: 4500, detection: "manual" } });
+    expect(def.turnTaking).toEqual({ detection: "manual" });
+  });
+
   test("both endpointing knobs desugar together", () => {
-    const def = agent({ name: "t", minTurnSilenceMs: 1800, maxTurnSilenceMs: 4500 });
+    const def = agent({ name: "t", turnTaking: { minSilenceMs: 1800, maxSilenceMs: 4500 } });
     expect(def.stt).toEqual(assemblyAIStt({ minTurnSilenceMs: 1800, maxTurnSilenceMs: 4500 }));
   });
 
   test("endpointing shorthand beside an explicit stt descriptor throws", () => {
     expect(() =>
-      agentMisuse({ name: "t", maxTurnSilenceMs: 4500, stt: assemblyAIStt({ region: "eu" }) }),
+      agentMisuse({
+        name: "t",
+        turnTaking: { maxSilenceMs: 4500 },
+        stt: assemblyAIStt({ region: "eu" }),
+      }),
     ).toThrow(/an explicit `stt` descriptor owns its own end-of-turn window/);
   });
 
   test("endpointing shorthand combined with s2s throws", () => {
     expect(() =>
-      agentMisuse({ name: "t", maxTurnSilenceMs: 4500, mode: "s2s", s2s: assemblyAIS2s() }),
-    ).toThrow(/`maxTurnSilenceMs` is .* no effect on a "s2s" agent/);
+      agentMisuse({
+        name: "t",
+        turnTaking: { maxSilenceMs: 4500 },
+        mode: "s2s",
+        s2s: assemblyAIS2s(),
+      }),
+    ).toThrow(/`turnTaking` is .* no effect on a "s2s" agent/);
   });
 
   test("endpointing shorthand combined with text throws", () => {
-    expect(() => agentMisuse({ name: "t", maxTurnSilenceMs: 4500, mode: "text" })).toThrow(
-      /`maxTurnSilenceMs` is .* no effect on a "text" agent/,
-    );
+    expect(() =>
+      agentMisuse({ name: "t", turnTaking: { maxSilenceMs: 4500 }, mode: "text" }),
+    ).toThrow(/`turnTaking` is .* no effect on a "text" agent/);
   });
 
   test("assemblyAIPipeline carries the endpointing options onto its STT stage", () => {

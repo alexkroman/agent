@@ -82,8 +82,8 @@ export type ToolSpeechChannel = {
   /**
    * Is the caller mid-utterance? Filler declines rather than talking across.
    *
-   * **This is the ONLY suppressor, and a `bargeIn` one must not be added
-   * beside it.** The two are orthogonal: `bargeIn: "off"` governs whether
+   * **This is the ONLY suppressor, and a `interruption` one must not be added
+   * beside it.** The two are orthogonal: `interruption: "off"` governs whether
    * CALLER speech takes the floor from the agent, where filler governs whether
    * the agent covers its own latency. Suppressing filler inside a no-barge-in
    * state would play dead air during exactly the phase in which the author has

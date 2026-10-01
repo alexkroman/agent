@@ -28,7 +28,7 @@
  * | who the client is | {@link useSessionId}, {@link useClientId}, {@link browserClientId}, {@link createLinkedClient} |
  * | a run reaching the page later | {@link useInbox} (a reminder, a finished job — played when it lands) |
  * | what was said | {@link useConversation}, {@link useUserTranscript}, {@link useConversationLog} (across sessions, persisted) |
- * | the talk button | {@link useTapToTalk} (tap on, tap off), {@link usePushToTalk} (hold, for `turnDetection: "manual"`) |
+ * | the talk button | {@link useTapToTalk} (tap on, tap off), {@link usePushToTalk} (hold, for `turnTaking: { detection: "manual" }`) |
  * | the agent's own `/api` routes | {@link useRoute}, {@link useRouteMutation}, {@link routeFetch}, {@link useClientRuns} (a `clientRunsRoutes()` pair) |
  * | what this browser remembers | {@link useStoredValue} / {@link createStoredValue}, {@link phoneE164} |
  * | what the agent projects | {@link useAgentState} — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
@@ -336,7 +336,7 @@ export { type UseFlashResult, useFlash } from "./use-flash.ts";
 // A notice from a run, played when it lands — busy while a call is on, so it
 // never talks over a reply. Every browser app that wanted reminders wrote it.
 export { type UseInboxOptions, type UseInboxResult, useInbox } from "./use-inbox.ts";
-// A hold-to-speak button for a `turnDetection: "manual"` agent — pointer
+// A hold-to-speak button for a `turnTaking: { detection: "manual" }` agent — pointer
 // capture, key repeat, a lost keyup and an unmount mid-hold, all of which
 // otherwise leave the microphone open on a turn nothing will answer.
 export {

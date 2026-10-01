@@ -18,7 +18,8 @@ import {
   assemblyAIPipeline,
   assemblyAIS2s,
   type PipelineAgentParams,
-  type PipelineVoiceTuning,
+  type PipelinePhrases,
+  type PipelineTuning,
   requireEnv,
   type S2sAgentParams,
   type SharedAgentParams,
@@ -115,17 +116,15 @@ describe("voice-UX tuning is pipeline-only", () => {
   /**
    * The knobs that only exist because there IS a cascade: barge-in, dead air,
    * and what the agent says when a stage fails. `AgentDef` extends
-   * `PipelineVoiceTuning`, so these sit on `agent()` beside the stages rather
+   * `PipelineTuning` and `PipelinePhrases`, so these sit on `agent()` beside the stages rather
    * than on a descriptor — none of them belongs to one vendor.
    */
-  const TUNING: PipelineVoiceTuning = {
-    minBargeInWords: 3,
-    interruptionMinDurationMs: 200,
-    deadAirCoverMs: 1200,
+  const TUNING: PipelineTuning & PipelinePhrases = {
+    interruption: { minWords: 3, minDurationMs: 200, resumeFalseInterruption: true },
+    silence: { deadAirCoverMs: 1200 },
+    turnTaking: { preemptiveGeneration: true },
     errorPhrase: "Sorry — I lost that. Say it once more?",
     startFailurePhrase: "I'm having trouble hearing you right now.",
-    resumeFalseInterruption: true,
-    preemptiveGeneration: true,
   };
 
   test("every field survives into the config a deploy carries", () => {

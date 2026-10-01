@@ -15,22 +15,14 @@
 import { z } from "zod";
 import { normalizeAgentParams } from "./_author-conveniences.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
+import { InterruptionSchema, SilenceSchema, TurnTakingSchema } from "./_tuning-schema.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { type AgentSystemPrompt, staticSystemPrompt } from "./agent-instructions.ts";
 import { AGENT_MODES, type AgentMode } from "./agent-mode.ts";
-import {
-  assertGuardrailScope,
-  assertProviderTriple,
-  assertSamplingScope,
-  assertSilencePolicy,
-} from "./config-rules.ts";
+import { assertGuardrailScope, assertProviderTriple, assertSamplingScope } from "./config-rules.ts";
 import { MCP_SERVER_KEY_RE, type McpServers } from "./mcp-config.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
-import {
-  MAX_INTERRUPTION_BACKOFF_MS,
-  MAX_START_SPEAKING_FLOOR_MS,
-} from "./speak-gate-constants.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import {
@@ -214,42 +206,13 @@ export const AgentConfigSchema = z.object({
   // `agentConfigWarnings` — a preset dropped without a word is the failure.
   voicePresets: z.array(VoicePresetNameSchema).readonly().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
-  silenceTimeoutMs: z.number().positive().optional(),
-  silencePrompt: z.string().optional(),
-  minBargeInWords: z.number().int().min(1).optional(),
-  interruptionMinDurationMs: z.number().int().nonnegative().optional(),
-  // The two phrase lists and the endpointing table: serializable for the
-  // reason every other declaration here is — the runtime that reads them is in
-  // a guest sandbox, so they have to survive CLI → server → runtime. Which is
-  // also why an endpointing rule's pattern is a SOURCE STRING: a `RegExp` does
-  // not survive `JSON.stringify`, and one that silently became `{}` would be a
-  // rule that matches nothing with nothing to report it.
-  startSpeakingFloorMs: z.number().int().nonnegative().max(MAX_START_SPEAKING_FLOOR_MS).optional(),
-  interruptionBackoffMs: z.number().int().nonnegative().max(MAX_INTERRUPTION_BACKOFF_MS).optional(),
-  deadAirCoverMs: z.number().int().nonnegative().optional(),
+  // The pipeline's turn-taking tuning, as its three groups — see
+  // `_tuning-schema.ts` for why each is `.strict()`.
+  turnTaking: TurnTakingSchema.optional(),
+  interruption: InterruptionSchema.optional(),
+  silence: SilenceSchema.optional(),
   errorPhrase: z.string().optional(),
   startFailurePhrase: z.string().optional(),
-  resumeFalseInterruption: z.boolean().optional(),
-  preemptiveGeneration: z.boolean().optional(),
-  // A cap on one user turn, by words and/or elapsed time. REFINED rather than
-  // left as two optionals: `{}` is a limit on nothing, and a control that is
-  // accepted and never fires is the failure this whole layer exists to refuse.
-  userTurnLimit: z
-    .object({
-      maxWords: z.number().int().positive().optional(),
-      maxDurationMs: z.number().int().positive().optional(),
-    })
-    .refine((limit) => limit.maxWords !== undefined || limit.maxDurationMs !== undefined, {
-      message: "userTurnLimit must set maxWords, maxDurationMs, or both",
-    })
-    .optional(),
-  // Who ends the caller's turn: the transcriber on a pause, or the client's
-  // push-to-talk commit. A string rather than a boolean so a third policy (a
-  // semantic end-of-turn model, say) is a member rather than a second flag —
-  // and an OPEN string, so a config naming a mode a later SDK implements still
-  // deploys here; the runtime treats anything but "manual" as "auto", and
-  // `agentConfigWarnings` says so at build time.
-  turnDetection: z.string().min(1).optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
@@ -437,7 +400,6 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
     src.s2s,
     src.mode === "text" ? true : undefined,
   );
-  assertSilencePolicy(src.silenceTimeoutMs, src.silencePrompt);
   assertSamplingScope(mode, src);
   assertGuardrailScope(mode, src);
   // Runs inside the generated bundle entry too, so the studio's test_agent

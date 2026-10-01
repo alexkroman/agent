@@ -12,9 +12,8 @@
  *    does not have, refused by name. Against the AUTHORED fields, so `voice` on
  *    an S2S agent is reported as `voice`.
  * 3. **The conveniences** — a model-id string for `llm`, `voice` as shorthand
- *    for `tts: assemblyAITts({ voice })`, and `minTurnSilenceMs`/
- *    `maxTurnSilenceMs` as shorthand for the same two options on
- *    `assemblyAIStt()`.
+ *    for `tts: assemblyAITts({ voice })`, and `turnTaking.minSilenceMs`/
+ *    `maxSilenceMs` lowered onto the same two options of `assemblyAIStt()`.
  *
  * **There is no `system` alias.** `agent({ system: "…" })` reaches
  * `assertNoStrayFields` and is refused BY NAME, which is the better error: two
@@ -77,38 +76,43 @@ function lowerVoice(rest: Record<string, unknown>): void {
 }
 
 /**
- * `agent({ minTurnSilenceMs, maxTurnSilenceMs })` → the same two options on the
- * default AssemblyAI STT descriptor, in place.
+ * `turnTaking: { minSilenceMs, maxSilenceMs }` → the same two options on the
+ * default AssemblyAI STT descriptor, in place; the group is COPIED, so a
+ * caller's own object is never mutated.
  *
- * The shorthand exists because these are the highest-value tuning an agent has
+ * The lowering exists because these are the highest-value tuning an agent has
  * and were the highest-friction to express: reaching `maxTurnSilenceMs` used to
  * mean materializing a whole `assemblyAIStt({ … })` descriptor — which then
  * silently opted the stage out of the default fill. One number should not cost
- * a stage. Desugared rather than carried on `AgentDef` so there is ONE owner of
+ * a stage. Lowered rather than carried on `AgentDef` so there is ONE owner of
  * the value at runtime — `resolveAssemblyAISttSettings`.
  */
 function normalizeEndpointing(rest: Record<string, unknown>): void {
-  const [minKey, maxKey] = ENDPOINTING_KEYS;
-  const min = takeNumber(rest, minKey);
-  const max = takeNumber(rest, maxKey);
+  if (!isRecord(rest.turnTaking)) return;
+  const turnTaking: Record<string, unknown> = { ...rest.turnTaking };
+  const min = takeNumber(turnTaking, "minSilenceMs");
+  const max = takeNumber(turnTaking, "maxSilenceMs");
   if (min === undefined && max === undefined) return;
+  if (Object.keys(turnTaking).length === 0) delete rest.turnTaking;
+  else rest.turnTaking = turnTaking;
+  const [minKey, maxKey] = ENDPOINTING_KEYS;
   if (rest.stt !== undefined) {
     throw new Error(
-      `\`${minKey}\`/\`${maxKey}\` tune the default AssemblyAI STT stage — an explicit \`stt\` ` +
-        "descriptor owns its own end-of-turn window; set it there " +
+      "`turnTaking.minSilenceMs`/`maxSilenceMs` tune the default AssemblyAI STT stage — an " +
+        "explicit `stt` descriptor owns its own end-of-turn window; set it there " +
         `(e.g. \`assemblyAIStt({ ${maxKey} })\`), or remove \`stt\`.`,
     );
   }
   rest.stt = assemblyAIStt(omitUndefined({ [minKey]: min, [maxKey]: max }));
 }
 
-/** Read a numeric convenience off the params bag and REMOVE it, so `AgentDef` stays canonical. */
-function takeNumber(rest: Record<string, unknown>, key: string): number | undefined {
-  const value = rest[key];
+/** Read a numeric field off a group and REMOVE it, so `AgentDef` stays canonical. */
+function takeNumber(group: Record<string, unknown>, key: string): number | undefined {
+  const value = group[key];
   if (value === undefined) return undefined;
   if (typeof value !== "number") {
-    throw new Error(`\`${key}\` must be a number of milliseconds.`);
+    throw new Error(`\`turnTaking.${key}\` must be a number of milliseconds.`);
   }
-  delete rest[key];
+  delete group[key];
   return value;
 }

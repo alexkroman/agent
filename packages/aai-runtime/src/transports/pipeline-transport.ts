@@ -43,27 +43,24 @@ export type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
 
 /** Create a pipeline-mode Transport (STT → LLM → TTS). @internal */
 export function createPipelineTransport(opts: PipelineTransportOptions): Transport {
+  const resolved = resolvePipelineOptions(opts);
   const {
     log,
     sttSampleRate,
     ttsSampleRate,
     maxSteps,
-    minBargeInWords,
-    interruptionMinDurationMs,
     startSpeakingFloorMs,
-    interruptionBackoffMs,
     deadAirCoverMs,
     heardLagMs,
     errorPhrase,
     startFailurePhrase,
-    resumeFalseInterruption,
     preemptiveGeneration,
     speechIdleTimeoutMs,
     toolChoice,
     resetToolChoice,
     toolSchemas,
     executeTool,
-  } = resolvePipelineOptions(opts);
+  } = resolved;
   // This session's guardrails and its token meter, both absent for the
   // overwhelming majority of agents — see `pipeline-guardrails.ts` and
   // `usage-meter.ts`.
@@ -77,12 +74,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const metrics = createTurnMetrics({ usage, now: opts.heardNow });
 
   const { callbacks, sessionConfig } = opts;
-  // The three per-STATE knobs a `dialog()` can move mid-call, over the agent's
-  // own settings above. Constant thunks when no dialog declares one, so a
-  // session without dialogs behaves exactly as it did — and see
+  // The per-STATE knobs a `dialog()` can move mid-call, and the active persona's
+  // `interruption`, over the agent's own settings. Constant thunks when neither
+  // declares one, so such a session behaves exactly as it did — and see
   // `pipeline-dialog-knobs.ts` for why the other two a state may declare cannot
   // reach here at all.
-  const knobs = createDialogKnobs(opts.dialogTurn, { minBargeInWords, interruptionMinDurationMs });
+  const knobs = createDialogKnobs(opts.dialogTurn, resolved, opts.personaInterruption);
   // One scope up from the dialog's: the active PERSONA's two model knobs, per
   // step — and deliberately not its tool set; `pipeline-persona-knobs.ts` has
   // the measurement behind that.
@@ -191,7 +188,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // start-speaking floor and the post-interruption backoff, as ONE deadline.
   const audioOut = createAudioOut({
     startSpeakingFloorMs,
-    interruptionBackoffMs,
+    interruptionBackoffMs: knobs.interruptionBackoffMs,
+    backoffMayVary: opts.dialogTurn !== undefined || opts.personaInterruption !== undefined,
     now: opts.heardNow,
     turns,
     heard,
@@ -212,7 +210,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       callbacks,
       silenceTimeoutMs: opts.silenceTimeoutMs,
       silencePrompt: opts.silencePrompt,
-      resumeFalseInterruption,
+      resumeFalseInterruption: knobs.resumeFalseInterruption,
       speculation,
       speechIdleTimeoutMs,
       minBargeInWords: knobs.minBargeInWords,

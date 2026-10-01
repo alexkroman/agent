@@ -10,7 +10,7 @@ import { MAX_NOTES, notebookProjection, notebookSlot } from "./shared.ts";
  * the RESOLVED config, since `aai build` runs these before it bundles.
  *
  * The one thing it pins is the one thing the template is FOR: that the config
- * a deploy ships says `turnDetection: "manual"`. Dropping that line leaves a
+ * a deploy ships says `turnTaking: { detection: "manual" }`. Dropping that line leaves a
  * page whose button sends commands the agent ignores, while the transcriber
  * answers every pause — which looks like a working agent in a quiet room.
  */
@@ -22,7 +22,7 @@ describe("push-to-talk-agent template", () => {
   });
 
   test("the caller ends each turn, not the transcriber", () => {
-    expect(expectDeployable(agentDef).turnDetection).toBe("manual");
+    expect(expectDeployable(agentDef).turnTaking?.detection).toBe("manual");
   });
 
   test("both notebook tools are discovered from tools/", () => {

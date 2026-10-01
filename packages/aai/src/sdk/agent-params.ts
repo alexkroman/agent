@@ -7,7 +7,7 @@
  * carries no prose of its own: what a field means is documented once, on
  * `AgentDef`, and the member says only whether the field exists in that mode.
  * A pipeline-only knob is not typed as an error message on the S2S member — it
- * is ABSENT from it, so `agent({ mode: "s2s", s2s, deadAirCoverMs })` is an
+ * is ABSENT from it, so `agent({ mode: "s2s", s2s, silence })` is an
  * excess-property error naming {@link S2sAgentParams}, and autocomplete on an
  * S2S agent offers only what an S2S agent has.
  *
@@ -21,7 +21,7 @@
 import type { AgentGuardrails } from "./agent-guardrails.ts";
 import type { AgentMode } from "./agent-mode.ts";
 import type { AgentModelTuning } from "./agent-model-tuning.ts";
-import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+import type { PipelinePhrases, PipelineTuning, TurnTakingTuning } from "./agent-tuning.ts";
 import type { LlmSpec } from "./providers/llm/llm.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
@@ -63,31 +63,22 @@ export type ModeSelectorField = "mode";
 export type ProviderField = "stt" | "llm" | "tts" | "s2s";
 
 /**
- * The end-of-turn window shorthand: two numbers `agent()` lowers onto the
- * default AssemblyAI STT stage, so one knob costs one field rather than a
- * whole descriptor.
- */
-export type EndpointingShorthandField = "minTurnSilenceMs" | "maxTurnSilenceMs";
-
-/**
- * Every field only the PIPELINE member has — the STT/TTS stages and their
- * shorthands, the voice-UX tuning, the silence nudge and the guardrails. The
- * three other members subtract it.
+ * Every field only the PIPELINE member has — the STT/TTS stages and the
+ * `voice` shorthand, the {@link PipelineTuning} groups, the phrases and the
+ * guardrails. The three other members subtract it.
  *
- * Derived from {@link PipelineVoiceTuning} and {@link AgentGuardrails} rather
- * than re-listed, so a field added to either interface is pipeline-only on
- * every other member — and, through the totality of the run-time table, is
- * refused there at run time too — without touching this file.
+ * Derived from the interfaces rather than re-listed, so a group added to
+ * `PipelineTuning` is pipeline-only on every other member — and, through the
+ * totality of the run-time table, refused there at run time too — without
+ * touching this file.
  */
 export type PipelineOnlyField =
-  | keyof PipelineVoiceTuning
-  | "silenceTimeoutMs"
-  | "silencePrompt"
+  | keyof PipelineTuning
+  | keyof PipelinePhrases
   | keyof AgentGuardrails
   | "stt"
   | "tts"
-  | "voice"
-  | EndpointingShorthandField;
+  | "voice";
 
 /**
  * What every SESSION member shares — pipeline, S2S and text: everything on
@@ -115,34 +106,16 @@ export type SharedAgentParams = Omit<
 
 /**
  * The pipeline member's STT stage: an explicit descriptor, or the default one
- * tuned by the shorthand. An explicit descriptor owns its own end-of-turn
- * window, so the shorthand is `never` beside it — one owner per value.
+ * tuned by `turnTaking.minSilenceMs`/`maxSilenceMs`. An explicit descriptor
+ * owns its own end-of-turn window, so the two are `never` beside one — one
+ * owner per value.
  */
 type PipelineSttStage =
   | {
       stt: SttProvider;
-      minTurnSilenceMs?: never;
-      maxTurnSilenceMs?: never;
+      turnTaking?: TurnTakingTuning & { minSilenceMs?: never; maxSilenceMs?: never };
     }
-  | {
-      stt?: undefined;
-      /**
-       * End-of-turn CHECK window for the default AssemblyAI STT stage, in ms —
-       * shorthand for `stt: assemblyAIStt({ minTurnSilenceMs })`. Taxes every
-       * finished utterance; read `DEFAULT_MIN_TURN_SILENCE_MS` before moving it.
-       *
-       * @defaultValue `1600` (`DEFAULT_MIN_TURN_SILENCE_MS`)
-       */
-      minTurnSilenceMs?: number;
-      /**
-       * Pause tolerance for the default AssemblyAI STT stage, in ms —
-       * shorthand for `stt: assemblyAIStt({ maxTurnSilenceMs })`. **The knob to
-       * reach for**: it bounds only utterances that never read as complete.
-       *
-       * @defaultValue `3500` (`DEFAULT_MAX_TURN_SILENCE_MS`)
-       */
-      maxTurnSilenceMs?: number;
-    };
+  | { stt?: undefined };
 
 /**
  * The pipeline member's TTS stage: an explicit descriptor (which owns its
@@ -164,19 +137,15 @@ type PipelineTtsStage =
  * The PIPELINE member — `mode: "pipeline"`, or no `mode` at all (the default).
  *
  * Any subset of the `stt`/`llm`/`tts` triple; the unset stages run on the
- * default all-AssemblyAI pipeline. The only member with the voice-UX tuning,
- * the silence nudge and the guardrails.
+ * default all-AssemblyAI pipeline. The only member with the
+ * {@link PipelineTuning} groups, the phrases and the guardrails.
  *
  * @public
  */
 export type PipelineAgentParams = SharedAgentParams &
   Pick<
     AgentDef,
-    | keyof AgentModelTuning
-    | keyof PipelineVoiceTuning
-    | keyof AgentGuardrails
-    | "silenceTimeoutMs"
-    | "silencePrompt"
+    keyof AgentModelTuning | keyof PipelineTuning | keyof PipelinePhrases | keyof AgentGuardrails
   > & {
     /** See {@link AgentDef.mode}. Absent means `"pipeline"`. */
     mode?: "pipeline";
@@ -187,11 +156,11 @@ export type PipelineAgentParams = SharedAgentParams &
      * it is written, and widened by `string & {}` so a newer model compiles.
      */
     llm?: LlmSpec;
-    // Present and unsatisfiable, the one `never`-style key a modern member
-    // carries: the S2S descriptor is how the S2S member is SHAPED, and without
-    // this key an `{ s2s }` declaration that forgot `mode` would be an extra
-    // property this member absorbs when `agent()` resolves against the whole
-    // union — a pipeline agent carrying an unused descriptor.
+    // Present and unsatisfiable, the one `never`-style key a member carries:
+    // the S2S descriptor is how the S2S member is SHAPED, and without this key
+    // an `{ s2s }` declaration that forgot `mode` would be an extra property
+    // this member absorbs when `agent()` resolves against the whole union — a
+    // pipeline agent carrying an unused descriptor.
     s2s?: undefined;
   } & PipelineSttStage &
   PipelineTtsStage;

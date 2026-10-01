@@ -20,13 +20,13 @@ owns the authoring half; `sdk/dialog.ts` owns the gate.
 than a formality. Everything `dialog()` promises beyond the tool gate happens
 when no tool is running, which is why none of it could work from inside one:
 
-| Promise                                                | Where                                                    | Reaches                                                                   |
-| ------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------- |
-| session events move it (`@`-prefixed transitions)      | `SessionDialogs.observe`, called by `session-emitter.ts` | every transport                                                           |
-| the active instruction reaches the model on EVERY turn | `SessionSystemPrompt.setSuffix`                          | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
-| a per-state `timeout` is armed and fired               | `createRestartableTimer` per dialog                      | every transport                                                           |
-| `bargeIn` / `toolChoice` / `temperature` per state     | `PipelineTransportOptions.dialogTurn`                    | **pipeline only**                                                         |
-| `voice` per state                                      | nothing                                                  | **nothing — warned at the first session**                                 |
+| Promise                                                 | Where                                                    | Reaches                                                                   |
+| ------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| session events move it (`@`-prefixed transitions)       | `SessionDialogs.observe`, called by `session-emitter.ts` | every transport                                                           |
+| the active instruction reaches the model on EVERY turn  | `SessionSystemPrompt.setSuffix`                          | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
+| a per-state `timeout` is armed and fired                | `createRestartableTimer` per dialog                      | every transport                                                           |
+| `interruption` / `toolChoice` / `temperature` per state | `PipelineTransportOptions.dialogTurn`                    | **pipeline only**                                                         |
+| `voice` per state                                       | nothing                                                  | **nothing — warned at the first session**                                 |
 
 An UNDECLARED dialog is unchanged: its tool gate, `send`, `position` and
 `projection` all work exactly as they did, and an author can still drive one by
@@ -106,9 +106,9 @@ the dialog actually is instead of firing a transition the conversation has left.
 
 `transports/pipeline-dialog-knobs.ts` carries the table. The short version:
 
-- **`bargeIn`** — live. The two interim gates in `pipeline-user-speech.ts` are
+- **`interruption`** — live. The two interim gates in `pipeline-user-speech.ts` are
   read at the moment a partial is classified, so they became thunks.
-  `bargeIn: "off"` is `minBargeInWords: Infinity`: both gates are
+  `interruption: "off"` is an infinite word threshold (`minBargeInWords: Infinity` in the transport): both gates are
   `words >= threshold` tests, so an unreachable threshold is exactly "the agent
   finishes its sentence". The word COUNT is still computed, so a caller talking
   over a disclosure is still transcribed, still opens the speaking edge, and is
@@ -151,7 +151,7 @@ the dialog actually is instead of firing a transition the conversation has left.
   knobs.** The speculation decides once, from the SESSION's `toolChoice`, whether
   speculating is free at all, so a state that pins a tool would make every
   speculation end at the tool boundary with the gate still believing it was free.
-  Conservative in one direction on purpose: a dialog declaring only `bargeIn`
+  Conservative in one direction on purpose: a dialog declaring only `interruption`
   turns it off too, and preemptive generation ships off by default.
 - **A throwing dialog is contained PER DIALOG**, exactly as the emitter's two
   hook slots are — they are independent declarations, and this runs from transport

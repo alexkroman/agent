@@ -226,7 +226,7 @@ the rationale.
 ### A dialog can describe a CALL
 
 Everything a dialog does when no tool is running — session events, deadlines,
-the active `instruction` on every turn, per-state `bargeIn`/`toolChoice`/
+the active `instruction` on every turn, per-state `interruption`/`toolChoice`/
 `temperature` — requires `agent({ dialogs: DIALOGS })`; without it the dialog
 still gates and moves on `send`. `packages/aai-runtime/DIALOG-CLAUDE.md` owns
 the wiring; `roadside-assistance-agent` is the example.
@@ -236,7 +236,7 @@ the wiring; `roadside-assistance-agent` is the example.
 - A `timeout` needs a state to LAND in (a different instruction). A committed
   turn, not a partial, restarts the clock, so a deadline leads to a nudge,
   never to anything irreversible.
-- `bargeIn: "off"` applies per step, so the tool that SPEAKS the protected
+- `interruption: "off"` applies per step, so the tool that SPEAKS the protected
   sentence must not advance the dialog; advance with a second tool a turn later.
 - Pin `toolChoice` only where the tool needs nothing the caller has not said,
   and only on idempotent tools — a pin fires on every later step.

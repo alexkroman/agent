@@ -206,3 +206,26 @@ describe("the per-step knobs", () => {
     expect(knobs()).toEqual({ temperature: 0.1 });
   });
 });
+
+describe("the persona's interruption group", () => {
+  test("is absent when no persona declares one", () => {
+    const { bound } = setup(personas([triage, billing]));
+    expect(bound.interruption).toBeUndefined();
+  });
+
+  test("answers the SPEAKER's group in transport units, re-read after a handoff", () => {
+    const disclosure = persona({
+      name: "disclosure",
+      description: "Reads the terms",
+      systemPrompt: "Read the terms in full.",
+      interruption: "off",
+    });
+    const desk = personas([triage, disclosure]);
+    const { bound, slots } = setup(desk);
+    const read = bound.interruption;
+    if (!read) throw new Error("expected an interruption source");
+    expect(read()).toEqual({});
+    desk.handoff({ slots, sessionId: SID }, disclosure);
+    expect(read()).toEqual({ minBargeInWords: Number.POSITIVE_INFINITY });
+  });
+});

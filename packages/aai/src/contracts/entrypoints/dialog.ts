@@ -48,7 +48,6 @@
 export {
   type AnyDialog,
   type Dialog,
-  type DialogBargeIn,
   type DialogEvent,
   type DialogEventNames,
   type DialogGate,

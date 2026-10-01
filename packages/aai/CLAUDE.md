@@ -242,8 +242,11 @@ server locally.
 - **Pipeline**: PCM → STT → `user-transcript.updated` partials and
   `speech.started`/`speech.stopped` → `user-transcript.committed` → host LLM
   loop (`streamText`, tools host-side) → TTS → browser. A barge-in that never
-  commits a user turn resumes the reply (`resumeFalseInterruption`).
-  `preemptiveGeneration` is OFF by default.
+  commits a user turn resumes the reply (`interruption.resumeFalseInterruption`).
+  `turnTaking.preemptiveGeneration` is OFF by default. The turn-taking knobs are
+  three groups on the pipeline member (`PipelineTuning`, `sdk/agent-tuning.ts`)
+  — `turnTaking`, `interruption`, `silence` — and the same `interruption` type
+  is a dialog state's and a persona's override.
 
 ## Default values and magic numbers
 

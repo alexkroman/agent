@@ -111,35 +111,39 @@ describe("toAgentConfig — mode classification", () => {
 });
 
 describe("toAgentConfig — silence nudge", () => {
-  test("accepts silenceTimeoutMs + silencePrompt in pipeline mode", () => {
-    const parsed = config({
-      ...pipelineFields,
-      silenceTimeoutMs: 15_000,
-      silencePrompt: "Ask if the user is still there.",
-    });
-    expect(parsed.silenceTimeoutMs).toBe(15_000);
-    expect(parsed.silencePrompt).toBe("Ask if the user is still there.");
+  test("accepts the nudge in pipeline mode", () => {
+    const nudge = { afterMs: 15_000, prompt: "Ask if the user is still there." };
+    expect(config({ ...pipelineFields, silence: { nudge } }).silence).toEqual({ nudge });
   });
 
-  test("rejects silenceTimeoutMs in s2s mode", () => {
-    expect(() => config({ mode: "s2s", s2s: assemblyAIS2s(), silenceTimeoutMs: 15_000 })).toThrow(
-      /`silenceTimeoutMs` is the pipeline's silence nudge — it has no effect on a "s2s" agent/,
+  test("rejects the silence group in s2s mode", () => {
+    expect(() =>
+      config({ mode: "s2s", s2s: assemblyAIS2s(), silence: { nudge: { afterMs: 15_000 } } }),
+    ).toThrow(
+      /`silence` is the pipeline's dead-air cover and silence nudge — it has no effect on a "s2s" agent/,
     );
   });
 
-  test("rejects silencePrompt without silenceTimeoutMs", () => {
-    expect(() => config({ ...pipelineFields, silencePrompt: "Hello?" })).toThrow(
-      /silencePrompt requires silenceTimeoutMs/,
+  test("a nudge with no `afterMs` is refused by its SHAPE — the prompt is the timeout's payload", () => {
+    expect(() => config({ ...pipelineFields, silence: { nudge: { prompt: "Hello?" } } })).toThrow(
+      /silence\.nudge\.afterMs/,
     );
   });
 
-  test("rejects non-positive silenceTimeoutMs", () => {
+  test("rejects a non-positive afterMs", () => {
     // Named rather than bare: a bare `toThrow()` here passes on any throw the
     // shared `pipelineFields` fixture might start producing, so the guard could
     // be deleted and this test would stay green on unrelated validation.
-    expect(() => config({ ...pipelineFields, silenceTimeoutMs: 0 })).toThrow(
-      /silenceTimeoutMs[\s\S]*expected number to be >0/,
+    expect(() => config({ ...pipelineFields, silence: { nudge: { afterMs: 0 } } })).toThrow(
+      /silence\.nudge\.afterMs[\s\S]*expected number to be >0/,
     );
+  });
+
+  test("the flat fields the groups replaced are refused, not silently dropped", () => {
+    expect(() => config({ ...pipelineFields, silenceTimeoutMs: 15_000 })).toThrow(
+      /`silenceTimeoutMs`/,
+    );
+    expect(() => config({ ...pipelineFields, minBargeInWords: 2 })).toThrow(/`minBargeInWords`/);
   });
 });
 
@@ -238,8 +242,8 @@ describe("toAgentConfig — a shape mistake reads as a sentence", () => {
   });
 
   test("every bad field is named, not just the first", () => {
-    expect(() => config({ ...pipelineFields, maxSteps: 0, minBargeInWords: 0 })).toThrow(
-      /maxSteps[\s\S]*minBargeInWords/,
+    expect(() => config({ ...pipelineFields, maxSteps: 0, interruption: { minWords: 0 } })).toThrow(
+      /maxSteps[\s\S]*interruption\.minWords/,
     );
   });
 
@@ -261,82 +265,72 @@ describe("toAgentConfig — a shape mistake reads as a sentence", () => {
   });
 });
 
-describe("toAgentConfig — pipeline voice tuning", () => {
-  test("accepts all tuning fields in pipeline mode", () => {
-    const parsed = config({
-      ...pipelineFields,
-      minBargeInWords: 3,
-      interruptionMinDurationMs: 500,
-      deadAirCoverMs: 2500,
+describe("toAgentConfig — pipeline tuning groups", () => {
+  test("carries all three groups and the phrases in pipeline mode", () => {
+    const groups = {
+      turnTaking: { preemptiveGeneration: true, detection: "manual" },
+      interruption: { minWords: 3, minDurationMs: 500, resumeFalseInterruption: false },
+      silence: { deadAirCoverMs: 2500 },
       errorPhrase: "My brain went offline.",
-      resumeFalseInterruption: false,
-      preemptiveGeneration: true,
-    });
-    expect(parsed.preemptiveGeneration).toBe(true);
-    expect(parsed.minBargeInWords).toBe(3);
-    expect(parsed.interruptionMinDurationMs).toBe(500);
-    expect(parsed.deadAirCoverMs).toBe(2500);
-    expect(parsed.errorPhrase).toBe("My brain went offline.");
-    expect(parsed.resumeFalseInterruption).toBe(false);
+    };
+    expect(config({ ...pipelineFields, ...groups })).toMatchObject(groups);
   });
 
-  test("accepts the documented 'disable' values (0 timers, empty phrases)", () => {
+  test("accepts the documented 'disable' values (0 timers, empty phrases, no barge-in)", () => {
     const parsed = config({
       ...pipelineFields,
-      interruptionMinDurationMs: 0,
-      deadAirCoverMs: 0,
+      interruption: { minDurationMs: 0, resumeFalseInterruption: false },
+      silence: { deadAirCoverMs: 0 },
       errorPhrase: "",
-      resumeFalseInterruption: false,
     });
-    expect(parsed.interruptionMinDurationMs).toBe(0);
-    expect(parsed.deadAirCoverMs).toBe(0);
+    expect(parsed.interruption).toEqual({ minDurationMs: 0, resumeFalseInterruption: false });
+    expect(parsed.silence).toEqual({ deadAirCoverMs: 0 });
     expect(parsed.errorPhrase).toBe("");
-    expect(parsed.resumeFalseInterruption).toBe(false);
+    expect(config({ ...pipelineFields, interruption: "off" }).interruption).toBe("off");
   });
 
   test.each([
-    ["minBargeInWords", 2],
-    ["interruptionMinDurationMs", 500],
-    ["deadAirCoverMs", 2500],
+    ["turnTaking", { detection: "manual" }],
+    ["interruption", { minWords: 2 }],
+    ["silence", { deadAirCoverMs: 2500 }],
     ["errorPhrase", "Something broke."],
-    ["resumeFalseInterruption", false],
-    ["preemptiveGeneration", true],
-    ["userTurnLimit", { maxWords: 60 }],
-    ["turnDetection", "manual"],
   ])("rejects %s in s2s mode", (field, value) => {
     expect(() => config({ mode: "s2s", s2s: assemblyAIS2s(), [field]: value })).toThrow(
       new RegExp(`\`${field}\` is .* — it has no effect on a "s2s" agent`),
     );
   });
 
-  test("rejects minBargeInWords below 1", () => {
-    expect(() => config({ ...pipelineFields, minBargeInWords: 0 })).toThrow(
-      /minBargeInWords[\s\S]*expected number to be >=1/,
+  test("rejects interruption.minWords below 1", () => {
+    expect(() => config({ ...pipelineFields, interruption: { minWords: 0 } })).toThrow(
+      /interruption\.minWords[\s\S]*expected number to be >=1/,
     );
   });
 
-  describe("userTurnLimit", () => {
+  test("a misspelled field INSIDE a group is refused, not stripped", () => {
+    expect(() => config({ ...pipelineFields, interruption: { minWord: 1 } })).toThrow(
+      /interruption[\s\S]*minWord/,
+    );
+  });
+
+  describe("turnTaking.userTurnLimit", () => {
+    const limit = (userTurnLimit: object) =>
+      config({ ...pipelineFields, turnTaking: { userTurnLimit } }).turnTaking?.userTurnLimit;
+
     test("carries one cap, the other, or both", () => {
-      expect(config({ ...pipelineFields, userTurnLimit: { maxWords: 60 } }).userTurnLimit).toEqual({
+      expect(limit({ maxWords: 60 })).toEqual({ maxWords: 60 });
+      expect(limit({ maxDurationMs: 20_000 })).toEqual({ maxDurationMs: 20_000 });
+      expect(limit({ maxWords: 60, maxDurationMs: 20_000 })).toEqual({
         maxWords: 60,
+        maxDurationMs: 20_000,
       });
-      expect(
-        config({ ...pipelineFields, userTurnLimit: { maxDurationMs: 20_000 } }).userTurnLimit,
-      ).toEqual({ maxDurationMs: 20_000 });
-      expect(
-        config({ ...pipelineFields, userTurnLimit: { maxWords: 60, maxDurationMs: 20_000 } })
-          .userTurnLimit,
-      ).toEqual({ maxWords: 60, maxDurationMs: 20_000 });
     });
 
     test("is absent by default — no cap on a single user turn", () => {
-      expect(config(pipelineFields)).not.toHaveProperty("userTurnLimit");
+      expect(config(pipelineFields)).not.toHaveProperty("turnTaking");
     });
 
     test("refuses a limit that names no cap: `{}` would be a control that never fires", () => {
-      expect(() => config({ ...pipelineFields, userTurnLimit: {} })).toThrow(
-        /userTurnLimit must set maxWords, maxDurationMs, or both/,
-      );
+      expect(() => limit({})).toThrow(/userTurnLimit must set maxWords, maxDurationMs, or both/);
     });
 
     test.each([
@@ -346,15 +340,13 @@ describe("toAgentConfig — pipeline voice tuning", () => {
       ["maxDurationMs", 0],
       ["maxDurationMs", 1.5],
     ])("refuses a %s of %s — a cap is a positive integer", (field, value) => {
-      expect(() => config({ ...pipelineFields, userTurnLimit: { [field]: value } })).toThrow(
-        new RegExp(`userTurnLimit[\\s\\S]*${field}`),
-      );
+      expect(() => limit({ [field]: value })).toThrow(new RegExp(`userTurnLimit[\\s\\S]*${field}`));
     });
 
     test("is refused on a text agent, as every pipeline-only knob is", () => {
       expect(() =>
-        rawConfig({ name: "chat", mode: "text", userTurnLimit: { maxWords: 60 } }),
-      ).toThrow(/`userTurnLimit` is .* no effect on a "text" agent/);
+        rawConfig({ name: "chat", mode: "text", turnTaking: { userTurnLimit: { maxWords: 60 } } }),
+      ).toThrow(/`turnTaking` is .* no effect on a "text" agent/);
     });
   });
 });
@@ -512,9 +504,9 @@ describe("author conveniences on raw configs (no agent())", () => {
   });
 
   test("rejects the pipeline-only tuning knobs, as s2s does", () => {
-    expect(() => rawConfig({ name: "chat", mode: "text", deadAirCoverMs: 5000 })).toThrow(
-      /`deadAirCoverMs` is .* no effect on a "text" agent/,
-    );
+    expect(() =>
+      rawConfig({ name: "chat", mode: "text", silence: { deadAirCoverMs: 5000 } }),
+    ).toThrow(/`silence` is .* no effect on a "text" agent/);
   });
 
   test("rejects the `voice` shorthand rather than fabricating a tts stage", () => {
@@ -579,13 +571,13 @@ test("the warning fires on assemblyAIPipeline({ region: 'eu' }) itself", () => {
 });
 
 describe("the end-of-turn window", () => {
-  // `minTurnSilenceMs` is when the service CHECKS whether the turn reads as
-  // complete; `maxTurnSilenceMs` is when it force-ends regardless. Inverted,
+  // `minSilenceMs` is when the service CHECKS whether the turn reads as
+  // complete; `maxSilenceMs` is when it force-ends regardless. Inverted,
   // the check can never fire — the docs said so and nothing enforced it, so
   // `agent({ minTurnSilenceMs: 2000, maxTurnSilenceMs: 1000 })` built clean.
   test("an inverted pair is refused, naming both values", () => {
     expect(() =>
-      rawConfig({ name: "Line", minTurnSilenceMs: 2000, maxTurnSilenceMs: 1000 }),
+      rawConfig({ name: "Line", turnTaking: { minSilenceMs: 2000, maxSilenceMs: 1000 } }),
     ).toThrow(/`minTurnSilenceMs` is 2000 and `maxTurnSilenceMs` is 1000/);
   });
 
@@ -605,16 +597,18 @@ describe("the end-of-turn window", () => {
   test("a lone minimum is judged against the DEFAULT ceiling nobody typed", () => {
     // The half a check on the pair as written would miss: each side falls back
     // to its own default, so one number can invert the window on its own.
-    expect(() => rawConfig({ name: "Line", minTurnSilenceMs: 5000 })).toThrow(/the default/);
+    expect(() => rawConfig({ name: "Line", turnTaking: { minSilenceMs: 5000 } })).toThrow(
+      /the default/,
+    );
   });
 
   test("a legal window, and equality, both pass", () => {
-    expect(rawConfig({ name: "Line", minTurnSilenceMs: 1000, maxTurnSilenceMs: 4000 }).mode).toBe(
-      "pipeline",
-    );
-    expect(rawConfig({ name: "Line", minTurnSilenceMs: 2000, maxTurnSilenceMs: 2000 }).mode).toBe(
-      "pipeline",
-    );
+    expect(
+      rawConfig({ name: "Line", turnTaking: { minSilenceMs: 1000, maxSilenceMs: 4000 } }).mode,
+    ).toBe("pipeline");
+    expect(
+      rawConfig({ name: "Line", turnTaking: { minSilenceMs: 2000, maxSilenceMs: 2000 } }).mode,
+    ).toBe("pipeline");
   });
 
   test("says nothing about a stage that is not AssemblyAI STT", () => {
@@ -657,28 +651,31 @@ describe("temperature scope", () => {
     expect(rawConfig({ name: "Line" }).temperature).toBeUndefined();
   });
 
-  describe("turnDetection", () => {
+  describe("turnTaking.detection", () => {
+    const detection = (mode: string) =>
+      config({ ...pipelineFields, turnTaking: { detection: mode } }).turnTaking?.detection;
+
     test("carries either policy onto the config", () => {
-      expect(config({ ...pipelineFields, turnDetection: "manual" }).turnDetection).toBe("manual");
-      expect(config({ ...pipelineFields, turnDetection: "auto" }).turnDetection).toBe("auto");
+      expect(detection("manual")).toBe("manual");
+      expect(detection("auto")).toBe("auto");
     });
 
     test("is absent by default — the transcriber ends the turn", () => {
-      expect(config(pipelineFields)).not.toHaveProperty("turnDetection");
+      expect(config(pipelineFields)).not.toHaveProperty("turnTaking");
     });
 
     test("accepts a policy this release does not know — it is warned about, not refused", () => {
       // The vocabulary is open (`TurnDetectionMode`), so a mode a later SDK
       // implements still deploys here and runs as "auto";
       // `agentConfigWarnings` is what says so at build time.
-      expect(config({ ...pipelineFields, turnDetection: "vad" }).turnDetection).toBe("vad");
-      expect(() => config({ ...pipelineFields, turnDetection: "" })).toThrow(/turnDetection/);
+      expect(detection("vad")).toBe("vad");
+      expect(() => detection("")).toThrow(/turnTaking\.detection/);
     });
 
     test("is refused on a text agent, which has no microphone to gate", () => {
-      expect(() => rawConfig({ name: "chat", mode: "text", turnDetection: "manual" })).toThrow(
-        /`turnDetection` is .* no effect on a "text" agent/,
-      );
+      expect(() =>
+        rawConfig({ name: "chat", mode: "text", turnTaking: { detection: "manual" } }),
+      ).toThrow(/`turnTaking` is .* no effect on a "text" agent/);
     });
   });
 });

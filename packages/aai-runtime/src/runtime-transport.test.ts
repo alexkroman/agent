@@ -217,12 +217,31 @@ describe("createTransportFactory (S2S)", () => {
  * field needs an assertion at this exact seam.
  */
 describe("createTransportFactory (pipeline)", () => {
-  test.each([
-    ["preemptiveGeneration", true],
-    ["errorPhrase", ""],
-    ["resumeFalseInterruption", false],
-    ["userTurnLimit", { maxWords: 60, maxDurationMs: 20_000 }],
-  ])("forwards %s into createPipelineTransport", async (field, value) => {
+  // [transport option, the agent fields that set it, the value it must arrive as]
+  // — the GROUPS are the author's surface, the flat names the transport's.
+  test.each<[string, Record<string, unknown>, unknown]>([
+    ["preemptiveGeneration", { turnTaking: { preemptiveGeneration: true } }, true],
+    ["errorPhrase", { errorPhrase: "" }, ""],
+    ["resumeFalseInterruption", { interruption: { resumeFalseInterruption: false } }, false],
+    ["minBargeInWords", { interruption: { minWords: 3 } }, 3],
+    ["minBargeInWords", { interruption: "off" }, Number.POSITIVE_INFINITY],
+    ["interruptionMinDurationMs", { interruption: { minDurationMs: 200 } }, 200],
+    ["interruptionBackoffMs", { interruption: { backoffMs: 300 } }, 300],
+    ["turnDetection", { turnTaking: { detection: "manual" } }, "manual"],
+    ["startSpeakingFloorMs", { turnTaking: { startSpeakingFloorMs: 400 } }, 400],
+    ["deadAirCoverMs", { silence: { deadAirCoverMs: 2500 } }, 2500],
+    ["silenceTimeoutMs", { silence: { nudge: { afterMs: 8000 } } }, 8000],
+    [
+      "silencePrompt",
+      { silence: { nudge: { afterMs: 8000, prompt: "Still there?" } } },
+      "Still there?",
+    ],
+    [
+      "userTurnLimit",
+      { turnTaking: { userTurnLimit: { maxWords: 60, maxDurationMs: 20_000 } } },
+      { maxWords: 60, maxDurationMs: 20_000 },
+    ],
+  ])("forwards %s into createPipelineTransport (%j)", async (field, fields, value) => {
     const build = vi
       .spyOn(pipelineTransport, "createPipelineTransport")
       .mockReturnValue(fakeTransport());
@@ -236,7 +255,7 @@ describe("createTransportFactory (pipeline)", () => {
           stt: assemblyAIStt(),
           llm: llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL }),
           tts: assemblyAITts(),
-          [field]: value,
+          ...fields,
         }),
         env: {
           ASSEMBLYAI_API_KEY: "k",

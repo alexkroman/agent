@@ -37,7 +37,11 @@ describe("resolveAgentMode", () => {
 describe("assertModeFields", () => {
   test("a pipeline agent may carry everything a pipeline has, and no s2s descriptor", () => {
     expect(() =>
-      assertModeFields("pipeline", { deadAirCoverMs: 1, voice: "jane", temperature: 0.1 }),
+      assertModeFields("pipeline", {
+        silence: { deadAirCoverMs: 1 },
+        voice: "jane",
+        temperature: 0.1,
+      }),
     ).not.toThrow();
     // An `s2s` descriptor with no `mode` is a PIPELINE agent carrying one — the
     // spelling `mode` replaced, refused rather than silently promoted to S2S.
@@ -51,18 +55,18 @@ describe("assertModeFields", () => {
     "tts",
     "llm",
     "voice",
-    "minTurnSilenceMs",
-    "deadAirCoverMs",
-    "turnDetection",
-    "silenceTimeoutMs",
+    "turnTaking",
+    "interruption",
+    "silence",
     "errorPhrase",
+    "startFailurePhrase",
   ])("an s2s agent refuses %s, naming the field and the mode", (field) => {
     expect(() => assertModeFields("s2s", { [field]: 1 })).toThrow(
       new RegExp(`^\`${field}\` is .* no effect on a "s2s" agent`),
     );
   });
 
-  test.each(["stt", "tts", "s2s", "voice", "sttPrompt", "telephony", "userTurnLimit"])(
+  test.each(["stt", "tts", "s2s", "voice", "sttPrompt", "telephony", "turnTaking"])(
     "a text agent refuses %s",
     (field) => {
       expect(() => assertModeFields("text", { [field]: 1 })).toThrow(
@@ -73,7 +77,7 @@ describe("assertModeFields", () => {
 
   test.each([
     "voice",
-    "deadAirCoverMs",
+    "silence",
     "voicePresets",
     "toolChoice",
     "builtinTools",
@@ -118,7 +122,7 @@ describe("agent() and toAgentConfig carry the mode", () => {
       { name: "t", mode: "text", temperature: 0.2 },
       { name: "s", mode: "s2s", s2s: assemblyAIS2s() },
       { name: "a", mode: "workflow-app", workflows },
-      { name: "p", voice: "jane", maxTurnSilenceMs: 4000 },
+      { name: "p", voice: "jane", turnTaking: { maxSilenceMs: 4000, detection: "manual" } },
     ]) {
       const once = normalizeAgentParams(fields);
       expect(normalizeAgentParams(once)).toEqual(once);
@@ -126,9 +130,9 @@ describe("agent() and toAgentConfig carry the mode", () => {
   });
 
   test("an untyped caller meets the same refusals as the type", () => {
-    expect(() => untyped({ mode: "s2s", s2s: assemblyAIS2s(), deadAirCoverMs: 1 })).toThrow(
-      /`deadAirCoverMs` .* "s2s" agent/,
-    );
+    expect(() =>
+      untyped({ mode: "s2s", s2s: assemblyAIS2s(), interruption: { minWords: 1 } }),
+    ).toThrow(/`interruption` .* "s2s" agent/);
     expect(() => raw({ mode: "text", tts: { kind: "assemblyai", options: {} } })).toThrow(
       /`tts` .* "text" agent/,
     );

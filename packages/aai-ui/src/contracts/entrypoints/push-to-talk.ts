@@ -2,7 +2,7 @@
 /**
  * Capability contract: `push-to-talk`.
  *
- * Hold-to-speak for an agent that declares `turnDetection: "manual"`: the
+ * Hold-to-speak for an agent that declares `turnTaking: { detection: "manual" }`: the
  * `usePushToTalk` hook a button is built on, and the `session.userTurn`
  * sub-handle (`UserTurnControls`) underneath it.
  *
