@@ -20,13 +20,24 @@
 
 import { isKnown } from "../../is-known.ts";
 import { omitUndefined } from "../../omit-undefined.ts";
+import { defineProvider } from "../define-provider.ts";
 import type { AssemblyAIGatewayModel, AssemblyAILlmProviderOptions } from "./llm.ts";
 
+/** The gateway's registration (see `define-provider.ts`); the constants below derive from it. */
+export const ASSEMBLYAI_LLM_PROVIDER = defineProvider({
+  kind: "assemblyai",
+  stage: "llm",
+  envVar: "ASSEMBLYAI_API_KEY",
+  label: "AssemblyAI",
+  factory: 'llm({ provider: "assemblyai" })',
+  subpath: "llm",
+});
+
 /** Kind tag recognised by the host-side resolver. */
-export const ASSEMBLYAI_LLM_KIND = "assemblyai";
+export const ASSEMBLYAI_LLM_KIND = ASSEMBLYAI_LLM_PROVIDER.kind;
 
 /** Agent-env variable holding the AssemblyAI API key (same key as AssemblyAI STT). */
-export const ASSEMBLYAI_LLM_API_KEY_ENV: string = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_LLM_API_KEY_ENV: string = ASSEMBLYAI_LLM_PROVIDER.envVar;
 
 /** US (default) LLM Gateway endpoint. */
 export const ASSEMBLYAI_LLM_GATEWAY_URL: string = "https://llm-gateway.assemblyai.com/v1";

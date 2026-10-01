@@ -29,15 +29,26 @@ import {
   STT_CONNECT_TIMEOUT_MS,
 } from "../../pipeline-tuning-constants.ts";
 import type { ProviderCredentialOptions, SttProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
+
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const ASSEMBLYAI_STT_PROVIDER = defineProvider({
+  kind: "assemblyai",
+  stage: "stt",
+  envVar: "ASSEMBLYAI_API_KEY",
+  label: "AssemblyAI",
+  factory: "assemblyAIStt",
+  subpath: "stt",
+});
 
 /** Kind tag recognised by the host-side resolver. */
-export const ASSEMBLYAI_STT_KIND = "assemblyai" as const;
+export const ASSEMBLYAI_STT_KIND = ASSEMBLYAI_STT_PROVIDER.kind;
 
 /** Streaming model used when the descriptor names none. */
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 
 /** Agent-env variable holding the AssemblyAI API key. */
-export const ASSEMBLYAI_STT_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_STT_API_KEY_ENV: string = ASSEMBLYAI_STT_PROVIDER.envVar;
 
 /** EU data-residency streaming endpoint. */
 export const ASSEMBLYAI_STT_EU_URL: string = "wss://streaming.eu.assemblyai.com/v3/ws";
@@ -209,7 +220,7 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
  * {@link AssemblyAISttOptions.languages}.
  */
 export function assemblyAIStt(options: AssemblyAISttOptions = {}): SttProvider {
-  return { kind: ASSEMBLYAI_STT_KIND, options: { ...options } };
+  return describeProvider(ASSEMBLYAI_STT_PROVIDER, options);
 }
 
 /**

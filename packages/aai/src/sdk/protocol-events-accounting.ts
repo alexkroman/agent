@@ -126,3 +126,35 @@ export const UserTurnExceededEventSchema = z.object({
   /** How long the turn had run when the cap fired, in ms from its first word. */
   durationMs: z.number().int().nonnegative(),
 });
+
+/** The longest `reason` a `provider.failed-over` carries — an error body can be a page of HTML. */
+export const MAX_FAILOVER_REASON_CHARS = 500;
+
+/**
+ * A `fallback([...])` stage abandoned one provider for the next — see
+ * `fallback` on `@alexkroman1/aai/stt` (`/llm`, `/tts`) for when that happens.
+ *
+ * Its own event rather than an `error.reported`, for the reason
+ * `guardrail.blocked` is: the switch is the control WORKING, and the session
+ * carries on. An error frame would put a banner on a screen for a call the
+ * caller never noticed. What it is for is the audit trail — how often the
+ * primary fails, and why, is the one number that says whether it is the right
+ * primary.
+ *
+ * Emitted once per switch, BEFORE the next provider is tried, so a stage that
+ * walks a three-provider list to its end emits two. An LLM fallback decides
+ * per REQUEST, so it can emit one on every turn of a session whose primary is
+ * down.
+ */
+export const ProviderFailedOverEventSchema = z.object({
+  type: z.literal("provider.failed-over"),
+  meta: SessionEventMetaSchema,
+  /** Which pipeline stage failed over. */
+  stage: z.enum(["stt", "llm", "tts"]),
+  /** The `kind` of the provider abandoned. */
+  from: z.string(),
+  /** The `kind` of the provider tried next. */
+  to: z.string(),
+  /** Why `from` was abandoned — its error's message, bounded. */
+  reason: z.string().max(MAX_FAILOVER_REASON_CHARS),
+});

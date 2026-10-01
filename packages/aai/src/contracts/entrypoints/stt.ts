@@ -26,6 +26,9 @@ export {
   deepgramStt,
   type ElevenLabsSttOptions,
   elevenLabsStt,
+  // On `/llm` and `/tts` too — one declaration, owned here, the first stage
+  // subpath that publishes it.
+  fallback,
   type SonioxSttOptions,
   type SttProvider,
   sonioxStt,

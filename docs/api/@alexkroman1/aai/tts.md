@@ -609,6 +609,12 @@ Re-exports [AssemblyAITtsVoice](index.md#assemblyaittsvoice)
 
 ***
 
+### fallback
+
+Re-exports [fallback](stt.md#fallback)
+
+***
+
 ### ProviderCredentialOptions
 
 Re-exports [ProviderCredentialOptions](index.md#providercredentialoptions)

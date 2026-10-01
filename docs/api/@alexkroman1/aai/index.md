@@ -8935,6 +8935,67 @@ type: "metrics.collected";
 EventMapOf.metrics.collected
 ```
 
+##### provider.failed-over
+
+```ts
+provider.failed-over: {
+  from: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  reason: string;
+  stage: "stt" | "llm" | "tts";
+  to: string;
+  type: "provider.failed-over";
+};
+```
+
+###### from
+
+```ts
+from: string;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### reason
+
+```ts
+reason: string;
+```
+
+###### stage
+
+```ts
+stage: "stt" | "llm" | "tts";
+```
+
+###### to
+
+```ts
+to: string;
+```
+
+###### type
+
+```ts
+type: "provider.failed-over";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.provider.failed-over
+```
+
 ##### reply.cancelled
 
 ```ts
@@ -18356,6 +18417,20 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
   }, z.core.$strip>;
   type: z.ZodLiteral<"user-turn.exceeded">;
   words: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+  from: z.ZodString;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  reason: z.ZodString;
+  stage: z.ZodEnum<{
+     llm: "llm";
+     stt: "stt";
+     tts: "tts";
+  }>;
+  to: z.ZodString;
+  type: z.ZodLiteral<"provider.failed-over">;
 }, z.core.$strip>, z.ZodObject<{
   interrupted: z.ZodBoolean;
   latencyMs: z.ZodOptional<z.ZodNumber>;

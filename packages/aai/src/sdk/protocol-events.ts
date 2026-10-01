@@ -60,6 +60,7 @@ import {
 import { SessionEventMetaSchema } from "./protocol-event-meta.ts";
 import {
   GuardrailBlockedEventSchema,
+  ProviderFailedOverEventSchema,
   UsageUpdatedEventSchema,
   UserTurnExceededEventSchema,
 } from "./protocol-events-accounting.ts";
@@ -405,6 +406,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   UsageUpdatedEventSchema,
   GuardrailBlockedEventSchema,
   UserTurnExceededEventSchema,
+  ProviderFailedOverEventSchema,
   // What one reply cost, stage by stage — `protocol-events-metrics.ts`.
   MetricsCollectedEventSchema,
   /**

@@ -151,6 +151,14 @@ exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
     "tts",
     "type",
   ],
+  "provider.failed-over": [
+    "from",
+    "meta",
+    "reason",
+    "stage",
+    "to",
+    "type",
+  ],
   "reply.cancelled": [
     "meta",
     "type",

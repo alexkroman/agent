@@ -28,6 +28,8 @@ import {
   CARTESIA_KIND,
   DEEPGRAM_KIND,
   ELEVENLABS_KIND,
+  fallbackMembers,
+  isFallbackDescriptor,
   LOCAL_STT_KIND,
   RIME_KIND,
   resolveAssemblyAISttSettings,
@@ -126,6 +128,14 @@ function describe(
   descriptor: Descriptor | undefined,
 ): ProviderSettings | undefined {
   if (!descriptor) return;
+  // A fallback reports each member as that member's own stage would, in order,
+  // so the line shows what the secondary would run with too.
+  if (isFallbackDescriptor(descriptor)) {
+    return {
+      kind: descriptor.kind,
+      providers: fallbackMembers(descriptor).map((member) => describe(table, member)),
+    };
+  }
   // An unregistered kind (a `registerLlmKind` extension, or a descriptor from
   // a newer SDK than this host) still reports its own options rather than
   // dropping to a bare kind — the point is to show what the stage runs with.

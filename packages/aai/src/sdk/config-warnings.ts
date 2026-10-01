@@ -15,6 +15,7 @@
 import { KNOWN_TURN_DETECTION_MODES } from "./agent-voice-tuning.ts";
 import { isKnown } from "./is-known.ts";
 import { isRecord } from "./is-record.ts";
+import { fallbackMembers, isFallbackDescriptor } from "./providers/fallback.ts";
 import { KNOWN_LLM_PROVIDERS } from "./providers/llm/llm.ts";
 import {
   ASSEMBLYAI_TTS_HOST,
@@ -57,17 +58,25 @@ export function agentConfigWarnings(config: {
   builtinTools?: unknown;
   telephony?: unknown;
 }): string[] {
+  // A `fallback([...])` is warned about member by member: each one is a
+  // descriptor its own resolver will dial.
+  const tts = stageMembers(config.tts);
   return [
-    assemblyAIVoiceWarning(config.tts),
+    ...tts.map(assemblyAIVoiceWarning),
     assemblyAIVoiceWarning(config.s2s),
-    uncatalogedVoiceWarning(config.tts),
+    ...tts.map(uncatalogedVoiceWarning),
     euResidencyWarning(config),
-    unknownLlmProviderWarning(config.llm),
+    ...stageMembers(config.llm).map(unknownLlmProviderWarning),
     ...unknownVoicePresetWarnings(config.voicePresets),
     unknownTurnDetectionWarning(config.turnDetection),
     ...unknownBuiltinToolWarnings(config.builtinTools),
     ...unknownTelephonyCarrierWarnings(config.telephony),
   ].filter((warning): warning is string => warning !== undefined);
+}
+
+/** A stage field as the descriptors it dials: a fallback's members, else itself. */
+function stageMembers(descriptor: unknown): unknown[] {
+  return isFallbackDescriptor(descriptor) ? fallbackMembers(descriptor) : [descriptor];
 }
 
 /**

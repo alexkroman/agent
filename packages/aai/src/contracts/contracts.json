@@ -48,9 +48,11 @@
     }
   },
   "events": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "provider.failed-over joins the session event vocabulary, so an exhaustive switch over SessionEvent['type'] stops compiling until it handles it; the SDK is unreleased, so no epoch-1 consumer is kept."
+    }
   },
   "ffmpeg": {
     "current": 1,

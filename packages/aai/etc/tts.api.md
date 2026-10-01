@@ -56,6 +56,28 @@ export interface CartesiaTtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
+export function fallback(providers: readonly [SttProvider, SttProvider, ...SttProvider[]]): SttProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [LlmProvider, LlmProvider, ...LlmProvider[]]): LlmProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [TtsProvider, TtsProvider, ...TtsProvider[]]): TtsProvider;
+
+// @public
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
+    readonly __stage?: "llm";
+};
+
+// @public
 export interface ProviderCredentialOptions {
     apiKeyEnv?: string;
 }
@@ -80,6 +102,11 @@ export interface RimeTtsOptions extends ProviderCredentialOptions {
     model?: string;
     voice?: string;
 }
+
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};
 
 // @public
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {

@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 587 names
+- [Agent authoring](#agent-authoring) — 588 names
 - [Browser client](#browser-client) — 181 names
 - [Testing and evals](#testing-and-evals) — 254 names
 - [Hosting and tooling](#hosting-and-tooling) — 236 names
-- [Framework internals](#framework-internals) — 385 names
+- [Framework internals](#framework-internals) — 401 names
 
 ## Agent authoring
 
@@ -426,6 +426,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `explainSlackChannelFailure` | function | `@alexkroman1/aai/channels` | `aai:channels` | The sentence a person can act on, chosen from what the URL and the body say. |
 | `explainTextbeltChannelFailure` | function | `@alexkroman1/aai/channels` | `aai:channels` | The sentence a person can act on. |
 | `failable` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | Wrap a function whose body uses `orFail`, so a failure it hits becomes the function's return value. |
+| `fallback` | function | `@alexkroman1/aai/stt` (also `@alexkroman1/aai/llm`, `@alexkroman1/aai/tts`) | `aai:stt` | Try `providers` in order, failing over to the next when one cannot serve. |
 | `fetchJson`, `FetchJsonOptions` | function | `@alexkroman1/aai/tools` | `aai:builtins` | Request a URL (GET unless told otherwise) and return its parsed JSON. |
 | `ffmpegBaseArgs` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | The standing flags every ffmpeg invocation in a guest wants, before anything the caller is actually asking for. |
 | `fitToolResult`, `FitToolResultOptions` | function | `@alexkroman1/aai/utils` | `aai:utils` | `value` made to fit a tool result of `maxChars` characters of JSON without cutting through its structure — nulls and empties dropped, long strings clipped, the … |
@@ -1047,7 +1048,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `OTEL_METRICS_EXPORTER_ENV` | const | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The standard switch: `none` turns metric export off whatever the endpoint. |
 | `OTEL_METRIC_NAMES` | const | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The instrument names `otelMetricsSink` records, one per measurement in a `metrics.collected` frame. |
 | `OTEL_SERVICE_NAME_ENV` | const | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | The standard variable naming this service on every exported span. |
-| `OpenerRegistryEntry` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | One registry entry per STT/TTS provider kind — the kind's env var and opener factory live together, so adding a provider is one entry here and an unmapped kind … |
+| `OpenerRegistryEntry` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | One registry entry per STT/TTS provider kind — the kind's env var and opener factory live together, so an unmapped kind cannot silently resolve the wrong … |
 | `OtelMeterLike` | interface | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The slice of an OpenTelemetry `Meter` `otelMetricsSink` uses, stated structurally so this module imports no OpenTelemetry — `@opentelemetry/api` is an optional … |
 | `PROJECT_GUIDE_POINTER` | const | `@alexkroman1/aai/workspace-files` |  | The project-root `CLAUDE.md` a project gets — a POINTER at the guide inside the resolved SDK, not a copy of it. |
 | `PackageManifest` | type | `@alexkroman1/aai/workspace-files` |  | A parsed `package.json` — open-ended, since only a few fields are merged. |
@@ -1295,6 +1296,7 @@ trace or a type error can be traced back to something.
 | `ELEVENLABS_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `EMPTY_PARAMS` | const | `@alexkroman1/aai/host-internal` |  |  |
 | `Epoch` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `FALLBACK_KIND` | const | `@alexkroman1/aai/host-internal` |  | The `kind` of a fallback descriptor, reserved at every stage. |
 | `GatewayModelInfo` | type | `@alexkroman1/aai/host-internal` |  |  |
 | `GlobalSlot` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `HEARD_AUDIO_LAG_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1306,6 +1308,7 @@ trace or a type error can be traced back to something.
 | `KNOWN_LLM_PROVIDERS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `KnownGatewayModel` | type | `@alexkroman1/aai/host-internal` |  | The ids this catalog was generated with — the literal half of `AssemblyAIGatewayModel`, derived rather than listed twice. |
 | `KnownLlmProvider` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `LLM_PROVIDERS` | const | `@alexkroman1/aai/host-internal` |  | The LLM vendors with a built-in resolver, keyed by `llm({ provider })` — TOTAL over `KnownLlmProvider`, so a literal added to `LlmProviderName` is a compile … |
 | `LOCAL_STT_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `LOG_PREVIEW_CHARS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CLIENT_EVENT_NAME_LENGTH` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event` event name (`ctx.send` → client). |
@@ -1314,6 +1317,7 @@ trace or a type error can be traced back to something.
 | `MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CONSECUTIVE_SILENCE_NUDGES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_DB_RESULT_ROWS` | const | `@alexkroman1/aai/internal` |  | Max rows one `Db` query may return; queries that could exceed it should paginate with LIMIT/OFFSET. |
+| `MAX_FAILOVER_REASON_CHARS` | const | `@alexkroman1/aai/host-internal` |  | The longest `reason` a `provider.failed-over` carries — an error body can be a page of HTML. |
 | `MAX_INTERRUPTION_BACKOFF_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `MAX_MESSAGE_BUFFER_SIZE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_MISSING_READS` | const | `@alexkroman1/aai-ui/internal` |  | Consecutive "no such run" reads `useWorkflowRun` tolerates before giving up on the id. |
@@ -1351,6 +1355,7 @@ trace or a type error can be traced back to something.
 | `PLAYBACK_PROGRESS_INTERVAL_MS` | const | `@alexkroman1/aai/internal` |  | How often a client reports its unplayed agent-audio backlog to the host (`playback_progress`), while it holds any. |
 | `PREEMPTIVE_CONFIDENCE_THRESHOLD` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `PREVIEW_SLUG_SUFFIX` | const | `@alexkroman1/aai/internal` |  | Suffix the studio's auto-preview deploys own (`<project>-preview`). |
+| `PROVIDER_CATALOG` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `PUBLIC_URL_UNCONFIGURED_MESSAGE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `PinnedRequestInit` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `PlatformEndpoint` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1360,7 +1365,9 @@ trace or a type error can be traced back to something.
 | `PlatformRoute` | type | `@alexkroman1/aai-runtime/internal` |  | One of `PLATFORM_ROUTES`. |
 | `PlatformSocket` | type | `@alexkroman1/aai-runtime/internal` |  |  |
 | `PollHost` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `ProviderDefinition` | interface · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ProviderEnvVarsQuery` | type | `@alexkroman1/aai-runtime/internal` |  | What `requiredProviderEnvVars` (`resolve.ts`) reads off an agent: its four descriptor slots and its front door. |
+| `ProviderStage` | type | `@alexkroman1/aai/host-internal` |  | The four stages a provider can serve. |
 | `RESERVED_SLUGS` | const | `@alexkroman1/aai/internal` |  | Slugs that collide with top-level platform routes and can never be claimed by an agent. |
 | `RESUME_ID_RE` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `RETRYABLE_STATUS` | const | `@alexkroman1/aai/host-internal` |  | Statuses that mean "come back", as opposed to "no". |
@@ -1376,6 +1383,8 @@ trace or a type error can be traced back to something.
 | `RouteMatch` | type | `@alexkroman1/aai/host-internal` |  | One table entry a request matched. |
 | `RouteTable` | type | `@alexkroman1/aai/host-internal` |  | A keyed table, parsed once. |
 | `S2S_MAX_RESUME_ATTEMPTS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `S2S_PROVIDERS` | const | `@alexkroman1/aai/host-internal` |  | The S2S vendors. |
+| `S2sKind` | type | `@alexkroman1/aai/host-internal` |  |  |
 | `SANDBOX_ONLY_BUILTINS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `SERVER_ROUTES` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `SESSION_CLIENT_TABLE` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1396,6 +1405,7 @@ trace or a type error can be traced back to something.
 | `STT_FRAME_FLOOR_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `STT_FRAME_MAX_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `STT_FRAME_TARGET_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STT_PROVIDERS` | const | `@alexkroman1/aai/host-internal` |  | The STT vendors, in the order the docs table lists them. |
 | `SayOnClientHost` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ServerRoute` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ServerRouteMatch` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1416,6 +1426,7 @@ trace or a type error can be traced back to something.
 | `StepReporter` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StepWebhookMinter` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StoredSessionEvent` | type | `@alexkroman1/aai-runtime/internal` |  | One retained session event: its index in the session's log, and its JSON. |
+| `SttKind` | type | `@alexkroman1/aai/host-internal` |  | A catalog kind at one stage — the key set an opener table must cover. |
 | `TAIL_RESUME_MIN_UNHEARD_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `TELEPHONY_CARRIERS` | const | `@alexkroman1/aai/internal` |  | The same names as a VALUE, for the two readers that need the list at run time: `AgentConfigSchema`, which validates them because the declaration crosses the … |
 | `TELEPHONY_PATH` | const | `@alexkroman1/aai-runtime/internal` |  | Path `createRuntimeServer` serves carrier media streams on. |
@@ -1425,6 +1436,7 @@ trace or a type error can be traced back to something.
 | `TOOL_START_BLOCKING_MAX_MS` | const | `@alexkroman1/aai/host-internal` |  | Ceiling on a blocking start message's delay to the tool call. |
 | `TRANSCRIBING_PLACEHOLDER` | const · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `TTS_CANCEL_ACK_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `TTS_PROVIDERS` | const | `@alexkroman1/aai/host-internal` |  | The TTS vendors, in the order the docs table lists them. |
 | `TTS_RECONNECT_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ThemeProvider` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `ToolConfigContext` | const · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
@@ -1433,6 +1445,7 @@ trace or a type error can be traced back to something.
 | `TraceParent` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `TransportEventBody` | type | `@alexkroman1/aai-runtime/internal` |  | One reportable event, envelope-free — the session stamps `meta` when it emits. |
 | `TransportEventType` | type | `@alexkroman1/aai-runtime/internal` |  | What a transport may report: everything in the session event vocabulary except the events only the session itself can be the source of. |
+| `TtsKind` | type | `@alexkroman1/aai/host-internal` |  |  |
 | `UPLOADS_TABLE` | const | `@alexkroman1/aai-runtime/internal` |  | The table one row per upload lives in. |
 | `UPLOADS_UNAVAILABLE_MESSAGE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `UPLOAD_CHUNK_BYTES` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | How much of an upload one stored row (or one write) holds. |
@@ -1493,8 +1506,11 @@ trace or a type error can be traced back to something.
 | `createUploadStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `decideClientEvent` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `defaultProviders` | function | `@alexkroman1/aai/host-internal` |  | The default providers for the pipeline stages a config leaves unset: each missing stage of the `stt`/`llm`/`tts` triple is filled from the all-AssemblyAI … |
+| `defineProvider` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `describeProvider` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `eligibleToolMessages` | function | `@alexkroman1/aai/host-internal` |  | The eligible subset, in declaration order. |
 | `executeToolCall` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `fallbackMembers` | function | `@alexkroman1/aai/host-internal` |  | A fallback descriptor's members, in order — each a `{ kind, options }`. |
 | `firstWriteWins` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `formatSchemaIssues` | function | `@alexkroman1/aai/internal` (also `@alexkroman1/aai/host-internal`) |  | Render Standard Schema issues as one human-readable line. |
 | `freezeStorable` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1504,6 +1520,7 @@ trace or a type error can be traced back to something.
 | `handleWorkflowRequest` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `invariant` | function | `@alexkroman1/aai/internal` |  | Throw unless `condition` holds. |
 | `isConvertibleSchema` | function | `@alexkroman1/aai/host-internal` |  | True when `value` is a schema `toToolJsonSchema` can convert. |
+| `isFallbackDescriptor` | function | `@alexkroman1/aai/host-internal` |  | Is `descriptor` a `fallback`? |
 | `isInvariantViolation` | function | `@alexkroman1/aai/internal` |  | Is `value` a broken invariant of ours, however deeply wrapped? |
 | `isTextAssetPath` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `isUniversal35Pro` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

@@ -289,6 +289,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       // how a new report got forwarded without anyone classifying it.
       case "audio.completed":
       case "metrics.collected":
+      case "provider.failed-over":
       case "speech.stopped":
       case "tool.completed":
       case "user-turn.exceeded":

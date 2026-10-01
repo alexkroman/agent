@@ -863,6 +863,20 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failed-over">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
         id: z.ZodString;

@@ -2222,10 +2222,10 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL: string;
 export const ASSEMBLYAI_LLM_GATEWAY_URL: string;
 
 // @public
-export const ASSEMBLYAI_LLM_KIND = "assemblyai";
+export const ASSEMBLYAI_LLM_KIND: "assemblyai";
 
 // @public
-export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_S2S_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_S2S_KIND: "assemblyai";
@@ -2234,7 +2234,7 @@ export const ASSEMBLYAI_S2S_KIND: "assemblyai";
 export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24000;
 
 // @public
-export const ASSEMBLYAI_STT_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_STT_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
@@ -2243,7 +2243,7 @@ export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 export const ASSEMBLYAI_STT_KIND: "assemblyai";
 
 // @public
-export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_TTS_API_KEY_ENV: string;
 
 // @public
 export const ASSEMBLYAI_TTS_DEPRECATED_VOICES: readonly ["arjun", "bella", "david", "diego", "dmitri", "eleanor", "emma", "giulia", "helen", "ivy", "james", "kyle", "luca", "lucia", "martha", "mateo", "pierre", "river", "tyler", "victor", "winter"];
@@ -2333,7 +2333,7 @@ export type BuiltinToolOptions = {
 };
 
 // @public
-export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
+export const CARTESIA_API_KEY_ENV: string;
 
 // @public
 export const CARTESIA_KIND: "cartesia";
@@ -2447,7 +2447,7 @@ export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
 export const DEAD_AIR_TOOL_COVER_MS = 1200;
 
 // @public
-export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
+export const DEEPGRAM_API_KEY_ENV: string;
 
 // @public
 export const DEEPGRAM_KIND: "deepgram";
@@ -2502,6 +2502,9 @@ export function defaultProviders(config: ProviderFields): {
     tts?: TtsProvider;
 } | null;
 
+// @internal
+export function defineProvider<const Kind extends string, const Stage extends ProviderStage>(definition: ProviderDefinition<Kind, Stage>): ProviderDefinition<Kind, Stage>;
+
 // @public
 export type DelayedRung = {
     afterMs: number;
@@ -2529,10 +2532,13 @@ interface DelegateResult extends SubagentAnswer {
 }
 
 // @internal
+export function describeProvider<Kind extends string>(definition: ProviderDefinition<Kind>, options: object): ProviderDescriptor<Kind, Record<string, unknown>>;
+
+// @internal
 export const DETACHED_SESSION_SPEECH: SessionSpeech;
 
 // @public
-export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
+export const ELEVENLABS_API_KEY_ENV: string;
 
 // @public
 export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
@@ -2562,6 +2568,15 @@ export interface ExecuteToolOptions {
     // (undocumented)
     toolCallId?: string;
 }
+
+// @public
+export const FALLBACK_KIND: "fallback";
+
+// @public
+export function fallbackMembers(descriptor: unknown): {
+    kind: string;
+    options: Record<string, unknown>;
+}[];
 
 // @internal
 type FetchDispatcher = RequestInit extends {
@@ -2653,6 +2668,9 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 // @public
 export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 
+// @public
+export function isFallbackDescriptor(descriptor: unknown): boolean;
+
 // @internal
 export function isUniversal35Pro(model: string): boolean;
 
@@ -2670,6 +2688,20 @@ export type KnownLlmProvider = KnownLiterals<LlmProviderName>;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
+
+// @public
+export const LLM_PROVIDERS: {
+    readonly anthropic: ProviderDefinition<"anthropic", "llm">;
+    readonly openai: ProviderDefinition<"openai", "llm">;
+    readonly google: ProviderDefinition<"google", "llm">;
+    readonly mistral: ProviderDefinition<"mistral", "llm">;
+    readonly xai: ProviderDefinition<"xai", "llm">;
+    readonly groq: ProviderDefinition<"groq", "llm">;
+    readonly openrouter: ProviderDefinition<"openrouter", "llm">;
+    readonly cerebras: ProviderDefinition<"cerebras", "llm">;
+    readonly gateway: ProviderDefinition<"gateway", "llm">;
+    readonly assemblyai: ProviderDefinition<"assemblyai", "llm">;
+};
 
 // @public
 type LlmDescriptorOptions = {
@@ -2718,6 +2750,9 @@ export const MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES = 3;
 
 // @internal
 export const MAX_CONSECUTIVE_SILENCE_NUDGES = 3;
+
+// @public
+export const MAX_FAILOVER_REASON_CHARS = 500;
 
 // @internal (undocumented)
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
@@ -2787,7 +2822,7 @@ export function normalizeE164(raw: string): string | undefined;
 export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined;
 
 // @public
-export const OPENAI_S2S_API_KEY_ENV = "OPENAI_API_KEY";
+export const OPENAI_S2S_API_KEY_ENV: string;
 
 // @public
 export const OPENAI_S2S_KIND: "openai-realtime";
@@ -2850,9 +2885,22 @@ export function pollWorkflow<T>(host: PollHost, name: string, check: () => Promi
 // @internal
 export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
 
+// @internal
+export const PROVIDER_CATALOG: readonly ProviderDefinition[];
+
 // @public
 interface ProviderCredentialOptions {
     apiKeyEnv?: string;
+}
+
+// @internal
+export interface ProviderDefinition<Kind extends string = string, Stage extends ProviderStage = ProviderStage> {
+    readonly envVar: string;
+    readonly factory: string;
+    readonly kind: Kind;
+    readonly label: string;
+    readonly stage: Stage;
+    readonly subpath: "stt" | "llm" | "tts" | "s2s" | "experimental";
 }
 
 // @public
@@ -2876,6 +2924,9 @@ type ProviderFields = {
     s2s?: unknown;
     text?: unknown;
 };
+
+// @public
+export type ProviderStage = "stt" | "llm" | "tts" | "s2s";
 
 // @internal
 export const PUBLIC_URL_UNCONFIGURED_MESSAGE: string;
@@ -3039,7 +3090,7 @@ export function resolveSonioxSttSettings(options: SonioxSttOptions): {
 export const RETRYABLE_STATUS: Set<number>;
 
 // @public
-export const RIME_API_KEY_ENV = "RIME_API_KEY";
+export const RIME_API_KEY_ENV: string;
 
 // @public
 export const RIME_DEFAULT_LANGUAGE = "eng";
@@ -3116,6 +3167,12 @@ export type RunCodeExecutor = (code: string) => Promise<string | {
 
 // @internal
 export const S2S_MAX_RESUME_ATTEMPTS = 5;
+
+// @public
+export const S2S_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "s2s">, ProviderDefinition<"openai-realtime", "s2s">];
+
+// @public (undocumented)
+export type S2sKind = (typeof S2S_PROVIDERS)[number]["kind"];
 
 // @public
 export const safeFetch: typeof globalThis.fetch;
@@ -3219,7 +3276,7 @@ type SlotStore = {
 };
 
 // @public
-export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
+export const SONIOX_API_KEY_ENV: string;
 
 // @public
 export const SONIOX_KIND: "soniox";
@@ -3422,6 +3479,12 @@ export const STT_FRAME_MAX_MS = 1000;
 export const STT_FRAME_TARGET_MS = 100;
 
 // @public
+export const STT_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "stt">, ProviderDefinition<"deepgram", "stt">, ProviderDefinition<"elevenlabs", "stt">, ProviderDefinition<"soniox", "stt">, ProviderDefinition<"local", "stt">];
+
+// @public
+export type SttKind = (typeof STT_PROVIDERS)[number]["kind"];
+
+// @public
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
@@ -3577,8 +3640,14 @@ export function toToolJsonSchema(schema: StandardSchemaV1, io?: "input" | "outpu
 // @internal
 export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
 
+// @public
+export const TTS_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "tts">, ProviderDefinition<"cartesia", "tts">, ProviderDefinition<"rime", "tts">];
+
 // @internal
 export const TTS_RECONNECT_TIMEOUT_MS = 8000;
+
+// @public (undocumented)
+export type TtsKind = (typeof TTS_PROVIDERS)[number]["kind"];
 
 // @public
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -5052,6 +5121,20 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failed-over">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
@@ -6568,6 +6651,15 @@ export type AssemblyAILlmProviderOptions = {
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | (string & {});
 
 // @public
+export function fallback(providers: readonly [SttProvider, SttProvider, ...SttProvider[]]): SttProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [LlmProvider, LlmProvider, ...LlmProvider[]]): LlmProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [TtsProvider, TtsProvider, ...TtsProvider[]]): TtsProvider;
+
+// @public
 export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): LlmProvider;
 
 // @public
@@ -6609,6 +6701,16 @@ interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly options: Options;
 }
+
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};
+
+// @public
+type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "tts";
+};
 ```
 
 ## `@alexkroman1/aai/manifest`
@@ -7472,6 +7574,20 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failed-over">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
@@ -8592,6 +8708,20 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failed-over">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
@@ -10112,6 +10242,28 @@ export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
 }
 
 // @public
+export function fallback(providers: readonly [SttProvider, SttProvider, ...SttProvider[]]): SttProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [LlmProvider, LlmProvider, ...LlmProvider[]]): LlmProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [TtsProvider, TtsProvider, ...TtsProvider[]]): TtsProvider;
+
+// @public
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
+    readonly __stage?: "llm";
+};
+
+// @public
 export interface ProviderCredentialOptions {
     apiKeyEnv?: string;
 }
@@ -10136,6 +10288,11 @@ export interface SonioxSttOptions extends ProviderCredentialOptions {
 // @public
 export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
+};
+
+// @public
+type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "tts";
 };
 ```
 
@@ -12324,6 +12481,28 @@ export interface CartesiaTtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
+export function fallback(providers: readonly [SttProvider, SttProvider, ...SttProvider[]]): SttProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [LlmProvider, LlmProvider, ...LlmProvider[]]): LlmProvider;
+
+// @public (undocumented)
+export function fallback(providers: readonly [TtsProvider, TtsProvider, ...TtsProvider[]]): TtsProvider;
+
+// @public
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
+    readonly __stage?: "llm";
+};
+
+// @public
 export interface ProviderCredentialOptions {
     apiKeyEnv?: string;
 }
@@ -12348,6 +12527,11 @@ export interface RimeTtsOptions extends ProviderCredentialOptions {
     model?: string;
     voice?: string;
 }
+
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};
 
 // @public
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {

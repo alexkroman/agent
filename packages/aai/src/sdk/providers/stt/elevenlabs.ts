@@ -8,12 +8,23 @@
  */
 
 import type { ProviderCredentialOptions, SttProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
+
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const ELEVENLABS_STT_PROVIDER = defineProvider({
+  kind: "elevenlabs",
+  stage: "stt",
+  envVar: "ELEVENLABS_API_KEY",
+  label: "ElevenLabs",
+  factory: "elevenLabsStt",
+  subpath: "stt",
+});
 
 /** Kind tag recognised by the host-side resolver. */
-export const ELEVENLABS_KIND = "elevenlabs" as const;
+export const ELEVENLABS_KIND = ELEVENLABS_STT_PROVIDER.kind;
 
 /** Agent-env variable holding the ElevenLabs API key. */
-export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
+export const ELEVENLABS_API_KEY_ENV: string = ELEVENLABS_STT_PROVIDER.envVar;
 
 /** Options for {@link elevenLabsStt}. */
 export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
@@ -59,7 +70,7 @@ export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
  * auto-detects — which is not the same as English.
  */
 export function elevenLabsStt(options: ElevenLabsSttOptions = {}): SttProvider {
-  return { kind: ELEVENLABS_KIND, options: { ...options } };
+  return describeProvider(ELEVENLABS_STT_PROVIDER, options);
 }
 
 /** Streaming model used when the descriptor names none. */
