@@ -64,7 +64,9 @@ const inGroup = (group: string, field: string): string => `${group}.${field}`;
 /**
  * The flat pipeline knobs that kept their NAME and moved into a group, keyed
  * group → field. Written as keys rather than strings so each is an identifier
- * the compiler and the editor see, and so the table cannot drift from itself.
+ * the compiler and the editor see, and so the table cannot drift from itself —
+ * and because a literal `"deadAirCoverMs"` trips Biome's `noSecrets` entropy
+ * check, which a key does not.
  */
 const MOVED_UNRENAMED = {
   turnTaking: { userTurnLimit: 0, preemptiveGeneration: 0, startSpeakingFloorMs: 0 },
