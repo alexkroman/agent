@@ -39,9 +39,11 @@ function response(req: http.IncomingMessage) {
 function upgradeSocket() {
   const socket = new PassThrough();
   const sock = { written: "" };
-  socket.on("data", (chunk: Buffer) => {
+  // Recorded synchronously, so the refusal is readable without a yield.
+  socket.write = ((chunk: string | Uint8Array) => {
     sock.written += chunk.toString();
-  });
+    return true;
+  }) as typeof socket.write;
   return { socket, sock };
 }
 
@@ -68,8 +70,6 @@ function build(overrides: Partial<StudioServerDeps> = {}) {
   });
   return { server, acceptControl };
 }
-
-const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 describe("createStudioServer — requests", () => {
   test("before a bundle loads: /health answers 200, anything else 503", () => {
@@ -106,10 +106,9 @@ describe("createStudioServer — requests", () => {
 });
 
 describe("createStudioServer — upgrades", () => {
-  test("a non-control upgrade is the bundle's, or a 503 before one loads", async () => {
+  test("a non-control upgrade is the bundle's, or a 503 before one loads", () => {
     const none = upgradeSocket();
     build().server.emit("upgrade", request("/websocket"), none.socket, Buffer.alloc(0));
-    await flush();
     expect(none.sock.written).toContain("503");
     expect(none.socket.destroyed).toBe(true);
 
@@ -119,18 +118,16 @@ describe("createStudioServer — upgrades", () => {
     expect(seen).toEqual(["upgrade"]);
   });
 
-  test("/ws needs the bearer, and admits one host", async () => {
+  test("/ws needs the bearer, and admits one host", () => {
     const anonymous = upgradeSocket();
     const open = build();
     open.server.emit("upgrade", request("/ws"), anonymous.socket, Buffer.alloc(0));
-    await flush();
     expect(anonymous.sock.written).toContain("401");
     expect(open.acceptControl).not.toHaveBeenCalled();
 
     const second = upgradeSocket();
     const busy = build({ hostConnected: () => true });
     busy.server.emit("upgrade", request("/ws", `Bearer ${TOKEN}`), second.socket, Buffer.alloc(0));
-    await flush();
     expect(second.sock.written).toContain("409");
 
     const first = build();
