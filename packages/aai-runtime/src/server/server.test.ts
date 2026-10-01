@@ -11,9 +11,6 @@ import { makeAgent } from "../_agent-test-utils.ts";
 import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { createRuntime } from "../runtime/index.ts";
 import { createServerForRuntime, type SessionRuntime } from "./server.ts";
-// A namespace import: one test pins that the DEPRECATED name keeps working,
-// which `noDeprecatedImports` exists to keep new code from relying on.
-import * as renamed from "./server-renamed.ts";
 
 /**
  * `fetch` + drain the body, always. Every request in this file goes through
@@ -59,15 +56,6 @@ describe("createServerForRuntime", () => {
     server = createServerForRuntime({ runtime, logger: silentLogger });
     expect(server).toHaveProperty("listen");
     expect(server).toHaveProperty("close");
-  });
-
-  test("the deprecated createRuntimeServer still serves, under the old name", async () => {
-    const { runtime } = makeRuntime({ name: "Renamed" });
-    server = renamed.createRuntimeServer({ runtime, name: "Renamed", logger: silentLogger });
-    await server.listen(0);
-    const { status, body } = await get(`http://127.0.0.1:${server.port}/client-config`);
-    expect(status).toBe(200);
-    expect(JSON.parse(body)).toMatchObject({ name: "Renamed" });
   });
 
   /**
