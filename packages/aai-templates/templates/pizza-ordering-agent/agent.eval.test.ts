@@ -14,14 +14,14 @@ import type { SessionEvent } from "@alexkroman1/aai";
 // resolves `tools/`, and still executes the tool a script names — so a stub run
 // proves the wiring and proves nothing about what the agent chose.
 import {
+  describeEval,
+  evalSimulation,
   lastStateIn,
   lastToolResultIn,
   statesIn,
   toolNames,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { evalSimulation } from "@alexkroman1/aai-runtime/eval/simulate";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { MENU } from "./shared.ts";

@@ -10,13 +10,14 @@
 import type { AgentGuardrail, SessionEvent, SlotStore } from "@alexkroman1/aai";
 import { eventsOf } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
-import { makeAgent, makeClientSink, makeConfig, makeLogger } from "./_test-utils.ts";
+import { makeAgent, makeClientSink, makeConfig, makeLogger, makeSpeech } from "./_test-utils.ts";
 import { openSessionWiring } from "./runtime-session-controls.ts";
 import type { RuntimeSessionState } from "./runtime-session-state.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "./session-state/store.ts";
 import { createStateSweeps } from "./session-state/sweeps.ts";
+import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
 
 const SID = "s-1";
@@ -31,6 +32,7 @@ const SID = "s-1";
  */
 function stubTransport(): Transport {
   return {
+    capabilities: ASSEMBLYAI_S2S_CAPABILITIES,
     start: () => Promise.resolve(),
     stop: () => Promise.resolve(),
     sendUserAudio: vi.fn(),
@@ -73,6 +75,7 @@ function wire(
     limits: undefined,
     transport: stubTransport,
     logger: makeLogger(),
+    speech: makeSpeech(),
     ...overrides,
     state,
   });

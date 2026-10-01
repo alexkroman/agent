@@ -3,7 +3,7 @@
   "capability": "session",
   "epoch": 5,
   "rule": 2,
-  "sha256": "b8f6269f99456666a63a7a42567b5f549f1b8a7fa8af013dff98a936cf495dcb",
+  "sha256": "55fe32efef793ff990cff4c7a810afd56f054c636fca712f8406878d4a2b86aa",
   "exports": [
     "AGENT_STATE_LABELS",
     "AgentCustomEvent",
@@ -18,6 +18,7 @@
     "SessionErrorCode",
     "SessionIdentity",
     "SessionSnapshot",
+    "ToolCallOutcome",
     "UseConversationResult",
     "UseSessionControlsResult",
     "UseUserTranscriptResult",
@@ -37,5 +38,5 @@
     "useSessionStatus",
     "useUserTranscript"
   ],
-  "rollup": "ea072587abb72a8812e0b99b5cc768ff6d30a67810fdffdb1d7569d4e98529af"
+  "rollup": "c25c451a8cd83c2d5f561898d5b6605a7825905b7f6c46e2e7956ab59f10a871"
 }

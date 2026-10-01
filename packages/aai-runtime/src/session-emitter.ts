@@ -61,8 +61,10 @@ import type {
   SessionEventContext,
   SessionEventHandler,
   SessionEventHandlers,
+  SessionSpeech,
   SlotStore,
 } from "@alexkroman1/aai";
+import { DETACHED_SESSION_SPEECH } from "@alexkroman1/aai/host-internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
@@ -89,6 +91,8 @@ export type SessionEventHookDeps = {
    * it throws nothing and costs nothing.
    */
   slots: SlotStore;
+  /** `ctx.speech` — this session's `say`/`interrupt`, see `session-speech.ts`. */
+  speech: SessionSpeech;
 };
 
 /**
@@ -206,12 +210,14 @@ export function hookDepsFor(opts: {
   handlers: SessionEventHandlers | undefined;
   env: Readonly<Record<string, string>>;
   slots: SlotStore;
+  speech: SessionSpeech;
 }): SessionEventHookDeps | undefined {
   if (!opts.handlers) return undefined;
   return {
     handlers: opts.handlers,
     env: opts.env,
     slots: opts.slots,
+    speech: opts.speech,
   };
 }
 
@@ -285,6 +291,7 @@ export function createSessionEmitter(opts: {
     // The WATCHED view rather than `hooks.slots`, so the commit is paid by a
     // batch that wrote and by no other — see `watchWrites`.
     slots,
+    speech: hooks?.speech ?? DETACHED_SESSION_SPEECH,
   });
 
   function publish(body: SessionEventBody): SessionEvent {

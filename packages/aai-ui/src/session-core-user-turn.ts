@@ -16,7 +16,12 @@
 
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import type { SessionStateMachine } from "./session-core-state.ts";
-import type { SendTextOptions, SessionSnapshot, UserTurnControls } from "./session-core-types.ts";
+import type {
+  SendTextOptions,
+  SessionSnapshot,
+  ToolCallOutcome,
+  UserTurnControls,
+} from "./session-core-types.ts";
 
 /** What the three edges need from the session around them. @internal */
 export type UserTurnDeps = {
@@ -67,6 +72,7 @@ export function createUserInput(deps: UserTurnDeps): {
   sendText: (text: string, options?: SendTextOptions) => void;
   /** A session came up (a `config` frame): send what was typed while it was not. */
   flushQueued: () => void;
+  sendToolResult: (toolCallId: string, outcome: ToolCallOutcome) => void;
 } {
   function send(trimmed: string): void {
     // Typing over the agent means to replace what it is saying, exactly as
@@ -100,7 +106,26 @@ export function createUserInput(deps: UserTurnDeps): {
       if (!deps.connected()) return;
       for (const text of deps.queued.splice(0)) send(text);
     },
+    // Not a turn, but the same kind of frame: the page answering the agent.
+    sendToolResult(toolCallId: string, outcome: ToolCallOutcome): void {
+      if (!deps.connected()) return;
+      deps.sendJson({ type: "tool_result", toolCallId, ...encodeOutcome(outcome) });
+    },
   };
+}
+
+/**
+ * The frame's two fields. A result `JSON.stringify` cannot encode (a cycle, a
+ * `BigInt`, a bare function) fails the call naming why, rather than throwing
+ * into the handler that produced it or leaving the server waiting.
+ */
+function encodeOutcome(outcome: ToolCallOutcome): { result: string; error?: string } {
+  if ("error" in outcome) return { result: "", error: outcome.error };
+  try {
+    return { result: JSON.stringify(outcome.result ?? null) ?? "null" };
+  } catch (err: unknown) {
+    return { result: "", error: `Tool result is not JSON-serializable: ${String(err)}` };
+  }
 }
 
 /** Build the three push-to-talk edges. @internal */

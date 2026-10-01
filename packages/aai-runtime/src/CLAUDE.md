@@ -63,8 +63,8 @@ plus the two audio paths is the whole inbound surface. `guard-invariants` rule
 ## A hook's write needs a commit, and a guard
 
 `agent({ events })` handlers may WRITE session state (authoring half:
-`packages/aai/src/sdk/CLAUDE.md`, "A session event hook WRITES state, and still
-cannot SPEAK"). Both mechanics live in `session-emitter.ts`:
+`packages/aai/src/sdk/CLAUDE.md`, "A session event hook WRITES state and may
+SAY, but cannot change the turn"). Both mechanics live in `session-emitter.ts`:
 
 - **The COMMIT.** `slot.update` is synchronous and cannot flush itself, and the
   tool executor's `finally` is the only other commit point. `runHooks` runs
@@ -83,6 +83,27 @@ cannot SPEAK"). Both mechanics live in `session-emitter.ts`:
 
 `commitSessionState` is absent on the SANDBOX tool path (the runtime holds no
 state there): a hook's write still lands in the store, without the commit.
+
+## `say` and `interrupt` reach a session through ONE directory
+
+`session-speech.ts` is the host half of the SDK's `SessionSpeech`.
+`createSpeechVerbs` is one session's pair: `interrupt()` IS the client `cancel`
+command (so a cut from code and one from the client report the same
+`reply.cancelled`), and answers `false` only when `Transport.isReplying` says
+the agent is silent. `say` goes to `Transport.speakLine`, or settles
+`"dropped"` when the transport lacks the `say` capability (said once at session
+start — `transports/CLAUDE.md`, "What works on which transport").
+
+- **Every reach for a live session goes through ONE `SessionDirectory`**
+  (`session-directory.ts`, built once in `runtime.ts`), resolved per CALL: the
+  session (`session-attach.ts`'s resume takeover claims it), its emitter and
+  meter (`ctx.send`, a hook commit, `ctx.generate`), and `speech` — `of(sid)`
+  for a tool or handler context (a timer can fire after a resume swapped the
+  session), `live(sid)` for `RouteContext.speech`, `announce` for a run's
+  `notify`. Never capture a `ServerSession` in a context; `guard-invariants`
+  rule 36 refuses a session-keyed map anywhere else in the package.
+- A sessionless context (a step's `stepDelegate`, an unwired double) holds
+  `DETACHED_SESSION_SPEECH` from `/host-internal`: every line `"dropped"`.
 
 ## `createAgentServer` is the front door
 
@@ -236,11 +257,37 @@ bug; `ToolDef.onError` says which kind. `tool-error-policy.ts` decides
 - A fatal verdict stops the turn in pipeline and text mode through
   `FatalToolLatch` (the AI SDK swallows the rejection). `withFatalSignal` folds
   it into the REQUEST signal, never the turn's, or it reads as a barge-in.
-- **S2S cannot abort** and degrades to a serialized failure.
+- **S2S cannot abort** and degrades to a serialized failure — the `fatalTool`
+  capability, warned once at session start for an agent whose tools declare
+  `onError`.
 - **The wire's `fatal` stays `false` for both arms**: `fatal: true` means the
   SESSION is over and `aai-ui` ends the call.
 - The four guard rules are in
   [`../TOOL-OUTCOMES-CLAUDE.md`](../TOOL-OUTCOMES-CLAUDE.md).
+
+### A `clientTool` is answered by the PAGE, over the wire host mode already speaks
+
+`clientTool()` (SDK) is an ordinary `ToolDef` carrying a brand (its
+`timeoutMs`). The self-hosted dispatcher in `runtime-tools.ts` binds each call's
+wait on `client-tool-broker.ts`, keyed by (session, `toolCallId`), onto the
+`ToolContext` as `clientCall`; the tool's own `execute` calls it. The session
+emits `tool.called` / `tool.completed` as for any tool; the page's `tool_result`
+reaches the broker through `ServerSessionOptions.clientTools`, which
+`session-core.ts` consults only when there is no relay (`onToolResult` owns
+every `tool_result` in host mode).
+
+- **The wait rides the CONTEXT, never a swapped `execute`**: a persona gate or
+  dialog `when` wraps a tool by calling `def.execute(args, ctx)`, and replacing
+  the outer `execute` would skip that gate.
+- **`ctx.delegate` strips `clientCall`** — a subagent's tools must not wait on
+  the parent's call id.
+- **An answer may beat its wait** (neither transport orders `tool.called` after
+  the executor starts), so the broker HOLDS an unmatched answer, bounded
+  runtime-wide (`MAX_EARLY_ANSWERS`, oldest evicted), never swept per session.
+- **The brand and the per-call wait are registered boundary keys** (`clientTool`,
+  `clientToolCall` in the SDK's `_boundary.ts`): the bundle and this runtime
+  hold two SDK copies ("The bundle/runtime boundary" in
+  `packages/aai/CLAUDE.md`). Read the brand only through `clientToolBrand`.
 
 ### A tool can SPEAK, and a filler line may not open the barge-in gate
 
@@ -254,12 +301,14 @@ bug; `ToolDef.onError` says which kind. `tool-error-policy.ts` decides
   `consumeLlmStream` APPENDS it to the turn's messages; the latch is per TURN
   (`beginTurn()` clears it).
 - **Filler goes out `record: false`, and nothing here may abort anything.**
-  START/DELAYED lines use the dead-air flag that
-  `HeardTracker.spokeRecordable()` reads, so filler alone never makes a turn
-  interruptible. The runner owns no signal, cancels no TTS, flushes nothing; a
-  `blocking` wait is an ESTIMATE of spoken length bounded by `pTimeout`, never
-  a TTS acknowledgement (touching the reply's lifecycle is what once muted an
-  agent for 20+ s).
+  Every line goes through `ToolSpeechChannel.speak` → `speakInReply`
+  (`transports/pipeline-lines.ts`), the dead-air cover's placement, so it is
+  separated from the words around it. START/DELAYED lines use the dead-air
+  flag that `HeardTracker.spokeRecordable()` reads, so filler alone never
+  makes a turn interruptible. The runner owns no signal, cancels no TTS,
+  flushes nothing; a `blocking` wait is an ESTIMATE of spoken length bounded
+  by `pTimeout`, never a TTS acknowledgement (touching the reply's lifecycle
+  is what once muted an agent for 20+ s).
 - The generic dead-air cover stands down while a tool covers its own gap
   (`toolCovering` in `transports/pipeline-stream-parts.ts`).
 
@@ -400,4 +449,5 @@ producers already take (`pipeline-llm-trace.ts`, `pipeline-audio-out.ts`).
   `metrics-sink.ts` (`registerMetricsSink`, `/metrics`), `Symbol.for`-keyed for
   the two-copies reason. `startTracing` registers `otelMetricsSink`
   (`_metrics-otel.ts`); a missing metrics peer is a warning, never a throw.
-- S2S and text mode emit no frame yet.
+- S2S and text mode emit no frame yet (the `turnMetrics` capability row in
+  `transports/CLAUDE.md`).

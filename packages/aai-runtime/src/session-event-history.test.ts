@@ -1,9 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai";
-import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
+import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
+import { MAX_CLIENT_MESSAGES } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
+import { estimateConversationTokens } from "./_history-retention.ts";
 import {
+  clientHistoryFrame,
   historyFromEvents,
   MAX_SEEDED_TOOL_CALL_ID_CHARS,
   messagesFromEvents,
@@ -13,6 +15,11 @@ import {
   SEEDED_TOOL_RESULT_CHARS,
 } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
+
+/** A small retention bound, so a spec reaches it in tens of events. */
+const RETAIN = 400;
+const tokensOf = (msgs: readonly Message[]): number =>
+  msgs.reduce((n, m) => n + estimateConversationTokens(m), 0);
 
 /** Stamp a body, the way the log holds it. */
 const at = (body: SessionEventBody): SessionEvent => stampSessionEvent(body);
@@ -105,6 +112,19 @@ describe("messagesFromEvents", () => {
     ]);
   });
 
+  test("a say spoken with record: false is captioned but never part of the conversation", () => {
+    // Live, on resume and in `ctx.messages` alike: this is the one reader.
+    const unrecorded = at({
+      type: "agent-transcript.committed",
+      text: "One moment while I check.",
+      recorded: false,
+    });
+    expect(messagesFromEvents([user("hi"), unrecorded, agent("Found it.")])).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Found it." },
+    ]);
+  });
+
   test("an UNTAGGED phrase is an ordinary reply, which is what an old log holds", () => {
     // The old-reader/old-log direction: an event written before the field
     // existed carries no `recovery`, so it reads as the reply it is
@@ -114,15 +134,22 @@ describe("messagesFromEvents", () => {
     ]);
   });
 
-  test("the window is trimmed at the FRONT, like the live session's", () => {
-    const events = Array.from({ length: DEFAULT_MAX_HISTORY + 5 }, (_, i) => user(`m${i}`));
+  test("the record is retained at the FRONT, in tokens, like the live session's", () => {
+    const events = Array.from({ length: 300 }, (_, i) => user(`m${i}`));
 
-    const messages = messagesFromEvents(events);
+    const messages = messagesFromEvents(events, { retainTokens: RETAIN });
 
-    expect(messages).toHaveLength(DEFAULT_MAX_HISTORY);
     // A resumed session must not come back holding more context than it could
-    // have accumulated without dropping.
-    expect(messages[0]).toEqual({ role: "user", content: "m5" });
+    // have accumulated without dropping — and never less than the bound.
+    expect(tokensOf(messages)).toBeGreaterThanOrEqual(RETAIN);
+    expect(tokensOf(messages.slice(1))).toBeLessThan(RETAIN);
+    expect(messages.at(-1)).toEqual({ role: "user", content: "m299" });
+    expect(messages[0]).not.toEqual({ role: "user", content: "m0" });
+  });
+
+  test("has no message cap: a long ordinary log comes back whole", () => {
+    const events = Array.from({ length: 1000 }, (_, i) => user(`m${i}`));
+    expect(messagesFromEvents(events)).toHaveLength(1000);
   });
 });
 
@@ -217,18 +244,56 @@ describe("historyFromEvents", () => {
     // A raw count would over-shift by the number of tool results that came off
     // with them, which reads as every tool row sliding toward the top.
     const events: SessionEvent[] = [];
-    for (let i = 0; i < DEFAULT_MAX_HISTORY; i++) {
+    for (let i = 0; i < 200; i++) {
       events.push(user(`m${i}`));
       events.push(at({ type: "tool.completed", toolCallId: `t${i}`, result: "{}" }));
     }
     events.push(at({ type: "tool.called", toolCallId: "last", toolName: "look", args: {} }));
 
-    const { messages, toolCalls } = historyFromEvents(events);
+    const { messages, toolCalls } = historyFromEvents(events, { retainTokens: RETAIN });
 
-    expect(messages).toHaveLength(DEFAULT_MAX_HISTORY);
+    expect(messages.length).toBeLessThan(400);
     const visible = messages.filter((m) => m.role !== "tool").length;
     // The last call followed every visible message that survived the trim.
     expect(toolCalls.at(-1)?.afterMessageIndex).toBe(visible - 1);
+  });
+});
+
+describe("clientHistoryFrame — the display window a `history.restored` frame carries", () => {
+  test("carries the last MAX_CLIENT_MESSAGES visible messages, tool messages excluded", () => {
+    const messages: Message[] = [];
+    for (let i = 0; i < MAX_CLIENT_MESSAGES + 10; i++) {
+      messages.push({ role: "user", content: `m${i}` });
+      messages.push({ role: "tool", content: "{}", toolCallId: `t${i}` });
+    }
+    const frame = clientHistoryFrame(messages, []);
+    expect(frame.messages).toHaveLength(MAX_CLIENT_MESSAGES);
+    expect(frame.messages[0]).toEqual({ role: "user", content: "m10" });
+    expect(frame.messages.every((m) => m.role === "user")).toBe(true);
+  });
+
+  test("moves the anchors with the cut, and leaves the record's own calls alone", () => {
+    const messages: Message[] = Array.from({ length: MAX_CLIENT_MESSAGES + 5 }, (_, i) => ({
+      role: "user" as const,
+      content: `m${i}`,
+    }));
+    const call = (afterMessageIndex: number) => ({
+      callId: `c${afterMessageIndex}`,
+      name: "look",
+      args: {},
+      status: "done" as const,
+      afterMessageIndex,
+    });
+    const calls = [call(2), call(MAX_CLIENT_MESSAGES + 4)];
+    const frame = clientHistoryFrame(messages, calls);
+    // Slid out of the window: before every message, as the live client does.
+    expect(frame.toolCalls.map((c) => c.afterMessageIndex)).toEqual([-1, MAX_CLIENT_MESSAGES - 1]);
+    expect(calls.map((c) => c.afterMessageIndex)).toEqual([2, MAX_CLIENT_MESSAGES + 4]);
+  });
+
+  test("a short conversation is carried whole", () => {
+    const frame = clientHistoryFrame([{ role: "user", content: "hi" }], []);
+    expect(frame).toEqual({ messages: [{ role: "user", content: "hi" }], toolCalls: [] });
   });
 });
 

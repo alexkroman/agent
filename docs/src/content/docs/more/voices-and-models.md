@@ -76,23 +76,27 @@ export default agent({
 
 Each factory reads one key from the environment:
 
-| Factory                                                             | Import from            | Key it reads                   |
-| ------------------------------------------------------------------- | ---------------------- | ------------------------------ |
-| `assemblyAIStt`, `assemblyAITts`, `llm({ provider: "assemblyai" })` | `/stt`, `/tts`, `/llm` | `ASSEMBLYAI_API_KEY`           |
-| `deepgramStt`                                                       | `@alexkroman1/aai/stt` | `DEEPGRAM_API_KEY`             |
-| `elevenLabsStt`                                                     | `@alexkroman1/aai/stt` | `ELEVENLABS_API_KEY`           |
-| `sonioxStt`                                                         | `@alexkroman1/aai/stt` | `SONIOX_API_KEY`               |
-| `cartesiaTts`                                                       | `@alexkroman1/aai/tts` | `CARTESIA_API_KEY`             |
-| `rimeTts`                                                           | `@alexkroman1/aai/tts` | `RIME_API_KEY`                 |
-| `llm({ provider: "anthropic" })`                                    | `@alexkroman1/aai/llm` | `ANTHROPIC_API_KEY`            |
-| `llm({ provider: "openai" })`                                       | `@alexkroman1/aai/llm` | `OPENAI_API_KEY`               |
-| `llm({ provider: "google" })`                                       | `@alexkroman1/aai/llm` | `GOOGLE_GENERATIVE_AI_API_KEY` |
-| `llm({ provider: "mistral" })`                                      | `@alexkroman1/aai/llm` | `MISTRAL_API_KEY`              |
-| `llm({ provider: "xai" })`                                          | `@alexkroman1/aai/llm` | `XAI_API_KEY`                  |
-| `llm({ provider: "groq" })`                                         | `@alexkroman1/aai/llm` | `GROQ_API_KEY`                 |
-| `llm({ provider: "cerebras" })`                                     | `@alexkroman1/aai/llm` | `CEREBRAS_API_KEY`             |
-| `llm({ provider: "openrouter" })`                                   | `@alexkroman1/aai/llm` | `OPENROUTER_API_KEY`           |
-| `llm({ provider: "gateway" })`                                      | `@alexkroman1/aai/llm` | `AI_GATEWAY_API_KEY`           |
+<!-- provider-table:start (generated: pnpm sync:provider-table) -->
+
+| Factory                                                                              | Import from                    | Key it reads                   |
+| ------------------------------------------------------------------------------------ | ------------------------------ | ------------------------------ |
+| `assemblyAIStt`, `assemblyAITts`, `llm({ provider: "assemblyai" })`, `assemblyAIS2s` | `/stt`, `/tts`, `/llm`, `/s2s` | `ASSEMBLYAI_API_KEY`           |
+| `deepgramStt`                                                                        | `@alexkroman1/aai/stt`         | `DEEPGRAM_API_KEY`             |
+| `elevenLabsStt`                                                                      | `@alexkroman1/aai/stt`         | `ELEVENLABS_API_KEY`           |
+| `sonioxStt`                                                                          | `@alexkroman1/aai/stt`         | `SONIOX_API_KEY`               |
+| `cartesiaTts`                                                                        | `@alexkroman1/aai/tts`         | `CARTESIA_API_KEY`             |
+| `rimeTts`                                                                            | `@alexkroman1/aai/tts`         | `RIME_API_KEY`                 |
+| `llm({ provider: "anthropic" })`                                                     | `@alexkroman1/aai/llm`         | `ANTHROPIC_API_KEY`            |
+| `llm({ provider: "openai" })`, `openAIS2s`                                           | `/llm`, `/s2s`                 | `OPENAI_API_KEY`               |
+| `llm({ provider: "google" })`                                                        | `@alexkroman1/aai/llm`         | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `llm({ provider: "mistral" })`                                                       | `@alexkroman1/aai/llm`         | `MISTRAL_API_KEY`              |
+| `llm({ provider: "xai" })`                                                           | `@alexkroman1/aai/llm`         | `XAI_API_KEY`                  |
+| `llm({ provider: "groq" })`                                                          | `@alexkroman1/aai/llm`         | `GROQ_API_KEY`                 |
+| `llm({ provider: "openrouter" })`                                                    | `@alexkroman1/aai/llm`         | `OPENROUTER_API_KEY`           |
+| `llm({ provider: "cerebras" })`                                                      | `@alexkroman1/aai/llm`         | `CEREBRAS_API_KEY`             |
+| `llm({ provider: "gateway" })`                                                       | `@alexkroman1/aai/llm`         | `AI_GATEWAY_API_KEY`           |
+
+<!-- provider-table:end -->
 
 The LLM stage is one factory: `llm({ provider, model })`, where `provider` is a
 string. Any other provider name also compiles — give it a `baseUrl` (and an
@@ -102,6 +106,66 @@ Put that key in `.env` locally, and in your agent's secrets in production — se
 [Publish](/agent/deploy/publish/). It is read on the server and never reaches
 the browser. Each factory's options are in the
 [SDK reference](/agent/reference/).
+
+## A backup provider
+
+`fallback([primary, secondary])` takes two or more providers for one stage and
+tries the next when one fails. It is on `/stt`, `/llm` and `/tts`:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { llm } from "@alexkroman1/aai/llm";
+import { assemblyAIStt, deepgramStt, fallback } from "@alexkroman1/aai/stt";
+
+export default agent({
+  name: "My Agent",
+  stt: fallback([assemblyAIStt(), deepgramStt()]),
+  llm: fallback([
+    llm({ provider: "assemblyai", model: "gpt-5.6-luna" }),
+    llm({ provider: "anthropic", model: "claude-sonnet-5" }),
+  ]),
+});
+```
+
+It switches only before the stage has produced anything, so a caller never
+hears half an answer from one vendor and the rest from another:
+
+- **STT and TTS** switch when the connection fails to open, or when the session
+  reports an error before its first transcript (STT) or its first audio (TTS).
+- **The LLM** switches when a request fails, or when its stream errors before
+  the first word or tool call. It decides per request: the next turn tries the
+  primary again.
+- **Nothing** switches on an interruption or after output has started.
+
+Each switch is a `provider.failed-over` session event naming the stage, both
+providers and the reason, so an `events` handler can count them. Every
+provider in the list needs its key: `aai dev` and Publish check all of them.
+
+## Your own provider
+
+A provider this SDK does not ship is registered by the program that runs the
+agent — `aai dev` does not, but a self-hosted `server.mjs` can. Register the
+kind with `registerSttKind`, `registerTtsKind` or `registerLlmKind` from
+`@alexkroman1/aai-runtime` before the agent server starts, and the agent names
+it with a plain descriptor:
+
+```js
+// server.mjs
+import { registerSttKind } from "@alexkroman1/aai-runtime";
+
+registerSttKind("my-stt", {
+  envVar: "MY_STT_API_KEY",
+  open: ({ options }) => myStt(options), // an `SttOpener`
+});
+
+// agent.ts
+// stt: { kind: "my-stt", options: { model: "fast" } },
+```
+
+The key is read from the agent's environment like any other provider's. The
+opener is written against `SttOpener` / `TtsOpener` (also on
+`@alexkroman1/aai-runtime`); `registerLlmKind` takes a function that builds a
+Vercel AI SDK model.
 
 ## Speech-to-speech
 
@@ -136,7 +200,7 @@ for them once you have heard a specific problem, not before.
 | Field                        | What it decides                                                                                                                                                                                                                                                                                   | Default                                           |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | `turnTaking.maxSilenceMs`    | How long a caller may pause mid-sentence before the turn is force-ended. Raise it for callers who dictate addresses or confirmation numbers.                                                                                                                                                      | `3500`                                            |
-| `interruption.minWords`      | How many words of caller speech interrupt the agent's reply. `interruption: "off"` means nothing the caller says cuts the agent off.                                                                                                                                                              | `1`                                               |
+| `interruption.minWords`      | How many words of caller speech interrupt the agent's reply. The default interrupts on any word, so a one-word "Hello?" is heard; `minDurationMs` filters a short backchannel.                                                                                                                                                              | `1`                                               |
 | `interruption.minDurationMs` | How long that speech must be sustained before it counts as an interruption. `0` disables the gate.                                                                                                                                                                                                | `500`                                             |
 | `silence.deadAirCoverMs`     | How long a turn may send nothing before the agent speaks a short filler, so a long tool chain does not sound like a dropped call. `0` disables.                                                                                                                                                   | `2400`                                            |
 | `turnTaking.userTurnLimit`   | A cap on one caller turn, `{ maxWords, maxDurationMs }` — either or both. A caller who never pauses never ends a turn; past the cap the transcriber ends it as a pause would, the agent answers what it heard, and the rest opens the next turn. Each cut is a `user-turn.exceeded` event.        | unset (no cap)                                    |

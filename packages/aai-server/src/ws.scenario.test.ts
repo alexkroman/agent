@@ -10,9 +10,9 @@
  */
 import http from "node:http";
 import type { SessionEvent } from "@alexkroman1/aai";
-import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ClientSink, ReadyConfig } from "@alexkroman1/aai/protocol";
 import {
+  createSessionDirectory,
   type ServerSession,
   stampSessionEvent,
   wireSessionSocket,
@@ -50,6 +50,8 @@ function makeStubCore(
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     announce: vi.fn(() => true),
+    say: vi.fn(() => ({ done: Promise.resolve("played" as const), interrupt: vi.fn() })),
+    interrupt: vi.fn(() => true),
     configure: vi.fn((config: ReadyConfig) => {
       client?.event(stampSessionEvent({ type: "session.configured", ...config, sessionId }));
     }),
@@ -99,7 +101,7 @@ function startTestServer(): Promise<{
 
     server.on("upgrade", (req, socket, head) => {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        const sessions = createOwnedMap<string, ServerSession>();
+        const sessions = createSessionDirectory();
         wireSessionSocket(ws, {
           sessions,
           createSession: (sid, client) => {

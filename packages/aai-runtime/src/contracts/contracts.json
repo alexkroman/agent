@@ -34,7 +34,14 @@
   },
   "eval-simulate": {
     "current": 2,
-    "supported": [1, 2],
+    "supported": [2],
+    "dropped": {
+      "1": "The @alexkroman1/aai-runtime/eval/simulate subpath was removed: the eval surface has one entry point, /eval/vitest (and the runner-free /eval), which export the same declarations. This epoch's frozen template imports from the removed subpath's barrel, so it no longer compiles; an epoch-1 case importing from /eval/simulate must import from /eval/vitest."
+    }
+  },
+  "eval-stubs": {
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "keys": {

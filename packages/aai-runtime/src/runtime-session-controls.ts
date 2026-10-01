@@ -29,7 +29,7 @@
  * @module
  */
 
-import type { AgentDef, AgentSessionContext } from "@alexkroman1/aai";
+import type { AgentDef, AgentSessionContext, SessionSpeech } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout, { TimeoutError } from "p-timeout";
@@ -68,13 +68,15 @@ export function openSessionWiring(deps: {
   transport: () => Transport;
   logger: Logger;
   commitSessionState?: ((sessionId: string) => Promise<void> | void) | undefined;
+  /** A handler's `ctx.speech` — resolved through the runtime's session map. */
+  speech: SessionSpeech;
 }): SessionWiring {
   const { agent, env, sessionId, state, logger } = deps;
   // ONE view of this session's slots, shared by the hooks, the dialogs and the
   // author functions below: a resolver and a guardrail reading two views of one
   // session would be reading two caches of one value.
   const slots = state.store.viewFor(sessionId);
-  const hooks = hookDepsFor({ handlers: agent.events, env, slots });
+  const hooks = hookDepsFor({ handlers: agent.events, env, slots, speech: deps.speech });
   // Fire-and-forget: `commitSessionState` never rejects, and the emit path is
   // synchronous — a hook's write must not put a backend round trip in front of
   // the next frame on a live call.
@@ -183,16 +185,15 @@ export function openSessionWiring(deps: {
  * caller force-closes what is left. Never rejects.
  */
 export async function stopSessionsWithin(
-  sessions: { readonly size: number; values(): Iterable<ServerSession> },
+  sessions: { readonly size: number; live(): Iterable<ServerSession> },
   timeoutMs: number,
   logger: Logger,
 ): Promise<void> {
   if (sessions.size === 0) return;
   try {
-    const results = await pTimeout(
-      Promise.allSettled([...sessions.values()].map((s) => s.stop())),
-      { milliseconds: timeoutMs },
-    );
+    const results = await pTimeout(Promise.allSettled([...sessions.live()].map((s) => s.stop())), {
+      milliseconds: timeoutMs,
+    });
     for (const r of results) {
       if (r.status === "rejected") logger.warn(`Session stop failed during shutdown: ${r.reason}`);
     }

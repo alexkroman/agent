@@ -1,14 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The three ASR-steering parameters this adapter dials beyond the endpointing
- * pair — `keyterms_prompt`, `agent_context` from the descriptor, and
- * `format_turns` — plus the mid-stream keyterm update.
+ * The ASR-steering parameter this adapter dials beyond the endpointing pair
+ * and `sttPrompt`: `format_turns`. (`keyterms_prompt` and `agent_context`, and
+ * their mid-stream updates, were removed in v17 as unmeasured — see
+ * `packages/aai/DEFAULTS-CLAUDE.md`.)
  *
  * Its own file rather than a block in `assemblyai-connect-params.test.ts`:
  * that suite was written around "a default that stops reaching the wire is
- * invisible", and these are the opposite case — parameters an author has to
- * ASK for, each of which is silently ignored by the service on some model. The
- * failure they guard is a knob that appears to be set and is not.
+ * invisible", and this is the opposite case — a parameter an author has to
+ * ASK for, which the service silently ignores on some models. The
+ * failure it guards is a knob that appears to be set and is not.
  */
 
 import { type AssemblyAISttOptions, assemblyAIStt } from "@alexkroman1/aai/stt";

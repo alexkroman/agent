@@ -17,9 +17,20 @@
  */
 
 import type { ProviderCredentialOptions, S2sProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
+
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const ASSEMBLYAI_S2S_PROVIDER = defineProvider({
+  kind: "assemblyai",
+  stage: "s2s",
+  envVar: "ASSEMBLYAI_API_KEY",
+  label: "AssemblyAI",
+  factory: "assemblyAIS2s",
+  subpath: "s2s",
+});
 
 /** Kind tag recognised by the host-side resolver. */
-export const ASSEMBLYAI_S2S_KIND = "assemblyai" as const;
+export const ASSEMBLYAI_S2S_KIND = ASSEMBLYAI_S2S_PROVIDER.kind;
 
 /**
  * Env var holding this stage's credential.
@@ -29,7 +40,7 @@ export const ASSEMBLYAI_S2S_KIND = "assemblyai" as const;
  * account without moving the others (see `descriptorEnvVar` in
  * the host-side resolver).
  */
-export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_S2S_API_KEY_ENV: string = ASSEMBLYAI_S2S_PROVIDER.envVar;
 
 /**
  * Options for {@link assemblyAIS2s}.
@@ -101,5 +112,5 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
  * @public
  */
 export function assemblyAIS2s(options: AssemblyAIS2sOptions = {}): S2sProvider {
-  return { kind: ASSEMBLYAI_S2S_KIND, options: { ...options } };
+  return describeProvider(ASSEMBLYAI_S2S_PROVIDER, options);
 }

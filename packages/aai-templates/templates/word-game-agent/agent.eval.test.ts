@@ -12,9 +12,13 @@ import agentDef from "virtual:aai/agent";
 // which still boots this agent, still resolves `tools/`, still arms the dialog
 // and still executes the tool a script names — so a stub run proves the wiring
 // and proves nothing about what the agent chose.
-import { dialogResultSchema } from "@alexkroman1/aai/testing";
-import { lastStateIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeEval,
+  dialogResultSchema,
+  lastStateIn,
+  toolNames,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { isCorrectGuess } from "./guess.ts";

@@ -30,13 +30,11 @@
  * @module
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot } from "./_boundary.ts";
 import { FatalError } from "./step-error-classes.ts";
 import { CLIENT_ID_RE } from "./step-notify-client.ts";
 
-const CLIENT_TRANSCRIPT_SLOT = globalSlot<ClientTranscriptReader>(
-  "@alexkroman1/aai.clientTranscriptReader",
-);
+const CLIENT_TRANSCRIPT_SLOT = globalSlot<ClientTranscriptReader>("clientTranscriptReader");
 
 /** One committed line of a client's conversation. */
 export type ClientTranscriptMessage = {

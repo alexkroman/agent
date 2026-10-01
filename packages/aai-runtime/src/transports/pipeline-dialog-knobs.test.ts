@@ -128,3 +128,24 @@ describe("interruptionKnobs", () => {
     expect(interruptionKnobs({ backoffMs: 250 })).toEqual({ interruptionBackoffMs: 250 });
   });
 });
+
+describe("holdFloor", () => {
+  test("holds barge-in off for one reply, over whatever a dialog state declares", () => {
+    const knobs = createDialogKnobs(() => ({ minBargeInWords: 3 }), {
+      ...BASE,
+      minBargeInWords: 2,
+    });
+    knobs.holdFloor(true);
+    expect(knobs.minBargeInWords()).toBe(Number.POSITIVE_INFINITY);
+    knobs.holdFloor(false);
+    expect(knobs.minBargeInWords()).toBe(3);
+  });
+
+  test("works with no dialog source too", () => {
+    const knobs = createDialogKnobs(undefined, { ...BASE, minBargeInWords: 2 });
+    knobs.holdFloor(true);
+    expect(knobs.minBargeInWords()).toBe(Number.POSITIVE_INFINITY);
+    knobs.holdFloor(false);
+    expect(knobs.minBargeInWords()).toBe(2);
+  });
+});

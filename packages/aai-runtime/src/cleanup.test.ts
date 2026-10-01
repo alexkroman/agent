@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createOwnedMap, type OwnedMap } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger, sleep } from "./_test-utils.ts";
 import { simulateBinaryFrame } from "./_ws-handler-test-utils.ts";
 import type { ServerSession } from "./session-core.ts";
+import { createSessionDirectory, type SessionDirectory } from "./session-directory.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
@@ -19,8 +19,8 @@ function makeOpenWs(): MockWebSocket {
 function wire(
   ws: MockWebSocket,
   core: ServerSession,
-  sessions: OwnedMap<string, ServerSession> = createOwnedMap(),
-): OwnedMap<string, ServerSession> {
+  sessions: SessionDirectory = createSessionDirectory(),
+): SessionDirectory {
   wireSessionSocket(ws, {
     sessions,
     createSession: () => core,

@@ -34,6 +34,7 @@ import { AGENT_IDLE_EXIT_MS, AGENT_IDLE_POLL_MS } from "aai-guest-core/limits";
 import { bundleSourceOf, readVerifiedBundle } from "./bundle-source.ts";
 import { createAgentRequestHandler, createWorkflowActivity } from "./manage.ts";
 import { guestSdkVersion } from "./sdk-version.ts";
+import { guestSessionAuth } from "./session-tickets.ts";
 
 // ---- Boot artifacts ----------------------------------------------------------
 
@@ -231,10 +232,13 @@ export async function mainAgent(port: number, host: string, token: string): Prom
     // `agentServerEnv`, which is the runtime's now rather than a copy of the line
     // here (`createAgentServer` had this same bug and needs the same filter). A
     // deployed agent has NO host mode: `?host=1` lets a caller supply its own agent
-    // definition, this server's `/websocket` has no authentication of its own, and
+    // definition, a session ticket is all that guards `/websocket`, and
     // the sandbox tunnel URL is public — so a TENANT setting one secret would be
     // handing a stranger their own provider credentials.
     env: agentServerEnv(boot.env),
+    // Sessions open only for a ticket: the platform broker's (keyed off this
+    // sandbox's bearer) or the author's own. See `session-tickets.ts`.
+    auth: guestSessionAuth(token, boot.env),
     // The platform's own origin plus this agent's slug, translated from one `AAI_*`
     // key exactly as `ensureRuntime` translates `AAI_PUBLIC_BASE_URL` for
     // `publicWebhookUrl`. A SECOND key carrying the same value, because the two claims
@@ -258,7 +262,7 @@ export async function mainAgent(port: number, host: string, token: string): Prom
       greeting: state.agent?.greeting,
       // The workflow-app declaration, honoured identically to `aai dev`: the
       // voice surfaces are declined with a reason.
-      page: state.agent?.page,
+      page: state.agent?.mode === "workflow-app" ? "static" : undefined,
       // And the phone declaration beside it. A deployed agent serves `WS /phone`
       // only for the carriers its own definition names — the platform's TwiML
       // webhook hands a carrier this sandbox's URL, and an agent that declares

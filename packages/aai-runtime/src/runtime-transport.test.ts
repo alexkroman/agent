@@ -10,6 +10,7 @@ import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
 import { describe, expect, test, vi } from "vitest";
 import {
+  createFailingSttProvider,
   createFakeLanguageModel,
   createFakeSttProvider,
   createFakeTtsProvider,
@@ -17,8 +18,10 @@ import {
   FAKE_TTS_API_KEY_ENV,
 } from "./_pipeline-test-fakes.ts";
 import { makeAgent, makeClientSink, makeLogger, silentLogger } from "./_test-utils.ts";
+import { createFallbackSttOpener } from "./providers/fallback.ts";
 import { DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { createTransportFactory, type TransportFactoryDeps } from "./runtime-transport.ts";
+import { PIPELINE_CAPABILITIES } from "./transports/capabilities.ts";
 import * as pipelineTransport from "./transports/pipeline-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
 import type { Transport, TransportCallbacks } from "./transports/types.ts";
@@ -70,6 +73,7 @@ function buildArgs(): Parameters<ReturnType<typeof createTransportFactory>>[0] {
 /** A `Transport` double for the pipeline builder's return. */
 function fakeTransport(): Transport {
   return {
+    capabilities: PIPELINE_CAPABILITIES,
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     sendUserAudio: vi.fn(),
@@ -340,5 +344,54 @@ describe("createTransportFactory (pipeline)", () => {
       transportDeps({ agent: makeAgent({ mode: "workflow-app" }), env: {}, pipelineProviders }),
     );
     expect(pipelineProviders).not.toHaveBeenCalled();
+  });
+
+  test("routes a fallback stage's switch into THIS session as provider.failed-over", async () => {
+    const build = vi
+      .spyOn(pipelineTransport, "createPipelineTransport")
+      .mockReturnValue(fakeTransport());
+    const secondary = createFakeSttProvider();
+    const stt = createFallbackSttOpener(
+      [
+        {
+          opener: createFailingSttProvider("stt_connect_failed", "refused"),
+          envVar: "A",
+          kind: "a",
+        },
+        { opener: secondary, envVar: "B", kind: "b" },
+      ],
+      {},
+    );
+    const factory = createTransportFactory(
+      transportDeps({
+        agent: makeAgent({
+          stt: assemblyAIStt(),
+          llm: llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL }),
+          tts: assemblyAITts(),
+        }),
+        pipelineProviders: () => ({
+          stt: { opener: stt, envVar: "A" },
+          tts: { opener: createFakeTtsProvider(), envVar: FAKE_TTS_API_KEY_ENV },
+          llm: createFakeLanguageModel({ script: [] }),
+        }),
+      }),
+    );
+    const report = vi.fn();
+    const callbacks: TransportCallbacks = {
+      report,
+      onAudioChunk: vi.fn(),
+      onReplyStarted: vi.fn(),
+    };
+    factory({ ...buildArgs(), callbacks });
+    const opener = build.mock.calls[0]?.[0].stt;
+    await opener?.open({ sampleRate: 16_000, apiKey: "", signal: new AbortController().signal });
+    expect(report).toHaveBeenCalledWith({
+      type: "provider.failed-over",
+      stage: "stt",
+      from: "a",
+      to: "b",
+      reason: "refused",
+    });
+    expect(secondary.sessions).toHaveLength(1);
   });
 });

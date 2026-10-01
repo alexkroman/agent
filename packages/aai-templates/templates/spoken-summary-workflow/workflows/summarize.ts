@@ -56,12 +56,13 @@ import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
 import {
   type SpeakOptions,
   type SpokenAudio,
+  stepGenerateJson,
   stepReport,
   stepSpeak,
   stepWriteUpload,
   TRANSCRIBE_API,
 } from "@alexkroman1/aai/step";
-import { stepGenerateJsonOrFail } from "@alexkroman1/aai/step-errors";
+import { orFail } from "@alexkroman1/aai/step-errors";
 import { countWords } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import type { spokenSummary } from "../agent.ts";
@@ -197,7 +198,7 @@ export async function summarize(
   text: string,
 ): Promise<{ headline: string; points: string[]; spoken: string }> {
   await stepReport("Summarizing the transcript.");
-  const reply = await stepGenerateJsonOrFail(
+  const reply = await orFail(stepGenerateJson)(
     "Summarize this transcript of a recording.\n\n" +
       "Answer with JSON only, in this shape:\n" +
       `{"headline": "...", "points": ["..."], "spoken": "..."}\n\n` +

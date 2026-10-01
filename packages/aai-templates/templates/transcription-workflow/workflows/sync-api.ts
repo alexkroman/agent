@@ -18,7 +18,8 @@
  * the same shape). It is called FROM steps, so it inherits their environment.
  */
 
-import { stepTranscribeSyncOrFail } from "@alexkroman1/aai/step-errors";
+import { stepTranscribeSync } from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 /**
  * Time one transcription, so the progress log carries LATENCY.
@@ -57,7 +58,7 @@ export function elapsed(ms: number): string {
  * concatenated straight into the request body rather than into an intermediate
  * buffer that doubles the segment's footprint.
  *
- * `stepTranscribeSyncOrFail` — the SDK's own `stepTranscribeSync` plus
+ * `orFail(stepTranscribeSync)` — the SDK's own `stepTranscribeSync` plus
  * `throwStepError`, and nothing else — is the whole of what this adds to the SDK
  * call, and it is where the three-way call is made: a `FatalError` stops the DevKit retrying
  * something that will answer the same way, a bare `RetryableError` retries in ONE
@@ -75,6 +76,6 @@ export async function transcribeWav(
   filename: string,
   label: string,
 ): Promise<string> {
-  const { text } = await stepTranscribeSyncOrFail(bytes, { filename, label });
+  const { text } = await orFail(stepTranscribeSync)(bytes, { filename, label });
   return text;
 }

@@ -20,13 +20,14 @@ import type { Message } from "@alexkroman1/aai";
 import type { ModelMessage } from "ai";
 import { bytesToPcm16 } from "../_pcm.ts";
 import type { Logger } from "../runtime-config.ts";
+import { PIPELINE_CAPABILITIES } from "./capabilities.ts";
 import type { HeardTracker } from "./pipeline-heard.ts";
 import type { PipelineHistory } from "./pipeline-history.ts";
 import type { ManualTurn } from "./pipeline-manual-turn.ts";
 import type { PipelineProviderSessions } from "./pipeline-providers.ts";
 import type { SpeculationController } from "./pipeline-speculation.ts";
 import type { TurnGate } from "./pipeline-turn-gate.ts";
-import type { Transport } from "./types.ts";
+import type { SpokenLine, SpokenLineOutcome, Transport } from "./types.ts";
 
 /** Everything one command may reach — see this module's header. @internal */
 export interface PipelineCommandDeps {
@@ -35,6 +36,7 @@ export interface PipelineCommandDeps {
     stop: () => Promise<void>;
     audioReady: () => boolean;
     greet: () => void;
+    speakLine: (text: string, line: SpokenLine) => Promise<SpokenLineOutcome>;
   };
   providers: () => PipelineProviderSessions;
   history: PipelineHistory;
@@ -101,6 +103,7 @@ export function createPipelineCommands(deps: PipelineCommandDeps): Transport {
   const silenced = (pcm: Int16Array): Int16Array =>
     manualTurn.isOpen() ? pcm : new Int16Array(pcm.length);
   return {
+    capabilities: PIPELINE_CAPABILITIES,
     start: () => lifecycle.start(),
 
     stop: () => {
@@ -186,6 +189,12 @@ export function createPipelineCommands(deps: PipelineCommandDeps): Transport {
       // leaving it in the LLM's history where the reply is built from it.
       runChainedTurn(instruction, "Pipeline injected turn crashed", { synthetic: true });
     },
+
+    speakLine(text: string, line: SpokenLine): Promise<SpokenLineOutcome> {
+      return lifecycle.speakLine(text, line);
+    },
+
+    isReplying: () => !isTerminated() && deps.isBusy(),
 
     seedHistory(messages: readonly Message[], modelView?: readonly ModelMessage[]): void {
       // Rebuilt history on reconnect; restore both views so the resumed agent

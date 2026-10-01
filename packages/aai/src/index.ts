@@ -107,6 +107,8 @@ export type {
   SessionEndContext,
 } from "./sdk/agent-session-lifecycle.ts";
 export * from "./sdk/client-runs-routes.ts";
+// A tool the connected browser page answers — `useClientTool` in `aai-ui`.
+export { type ClientToolDef, clientTool } from "./sdk/client-tool.ts";
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
 /**
@@ -360,6 +362,7 @@ export { sessionClientPhone } from "./sdk/session-phone.ts";
 // Session state's typed seam — next to `agent()`/`tool()` because it is how a
 // multi-file agent reads and writes its own state, not an optional utility.
 export * from "./sdk/session-slot.ts";
+export * from "./sdk/session-speech.ts";
 /**
  * The two names a slot's own signatures mention, and only those.
  *

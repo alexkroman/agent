@@ -32,6 +32,7 @@ export type BrowserSession = {
     readonly userTurn: UserTurnControls;
     readonly identity: SessionIdentity;
     sendText(text: string, options?: SendTextOptions): void;
+    sendToolResult(toolCallId: string, outcome: ToolCallOutcome): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
@@ -104,6 +105,7 @@ export type SessionIdentity = {
     clientId(): string | undefined;
     holderId(): string;
     sessionId(): string | undefined;
+    ticket(): string | undefined | Promise<string | undefined>;
 };
 
 // @public
@@ -133,6 +135,13 @@ type ToolCallInfo = {
     result?: string | undefined;
     seq: number;
     afterMessageId: number;
+};
+
+// @public
+export type ToolCallOutcome = {
+    result: unknown;
+} | {
+    error: string;
 };
 
 // @public
@@ -205,6 +214,10 @@ export type VoiceSessionOptions = {
     location?: string | (() => string | undefined) | undefined;
     phone?: string | (() => string | undefined) | undefined;
     client?: string | (() => string | undefined) | undefined;
+    preConnectAudio?: boolean | undefined;
+    token?: string | ((attempt: {
+        readonly sessionId: string | undefined;
+    }) => string | undefined | Promise<string | undefined>) | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
 

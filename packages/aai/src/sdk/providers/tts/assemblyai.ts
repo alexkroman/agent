@@ -23,6 +23,7 @@ import { nearestNames } from "../../_nearest-names.ts";
 import { isRecord } from "../../is-record.ts";
 import { omitUndefined } from "../../omit-undefined.ts";
 import type { ProviderCredentialOptions, TtsProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
 import {
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
   ASSEMBLYAI_TTS_VOICES,
@@ -40,11 +41,21 @@ export {
   ttsVoiceInfo,
 } from "../tts-voices.ts";
 
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const ASSEMBLYAI_TTS_PROVIDER = defineProvider({
+  kind: "assemblyai",
+  stage: "tts",
+  envVar: "ASSEMBLYAI_API_KEY",
+  label: "AssemblyAI",
+  factory: "assemblyAITts",
+  subpath: "tts",
+});
+
 /** Kind tag recognised by the host-side resolver. */
-export const ASSEMBLYAI_TTS_KIND = "assemblyai" as const;
+export const ASSEMBLYAI_TTS_KIND = ASSEMBLYAI_TTS_PROVIDER.kind;
 
 /** Agent-env variable holding the AssemblyAI API key (same key as STT/LLM). */
-export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_TTS_API_KEY_ENV: string = ASSEMBLYAI_TTS_PROVIDER.envVar;
 
 /** Production streaming-TTS host. */
 export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
@@ -301,10 +312,10 @@ export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
  * reports ready and never speaks.
  */
 export function assemblyAITts(options: AssemblyAITtsOptions = {}): TtsProvider {
-  return {
-    kind: ASSEMBLYAI_TTS_KIND,
-    options: { ...options, voice: options.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE },
-  };
+  return describeProvider(ASSEMBLYAI_TTS_PROVIDER, {
+    ...options,
+    voice: options.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE,
+  });
 }
 
 /**

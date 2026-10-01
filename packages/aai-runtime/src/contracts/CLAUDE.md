@@ -23,10 +23,16 @@ compatible, else `--bump aai-runtime:<capability> --drop "<reason>"` or
 - **A new feature gets its own capability**, and its own subpath when a
   different reader imports it. Adding a feature to an existing capability makes
   every change to it an epoch of that capability; that is why `auth`, `metrics`,
-  `eval-simulate` and `eval-assert` are separate.
+  `eval-simulate`, `eval-assert` and `eval-stubs` are separate.
 - `tools` (one name, `withToolsDir`) is its own capability because it assembles
   the DEFINITION a runtime is handed, not any part of the engine.
-- `eval` is the only capability spanning TWO subpaths (`/eval`, `/eval/vitest`).
+- **A capability is not a subpath.** `/eval/vitest` is the ONE import an eval
+  file needs, so it re-exports every eval capability: `eval` (over `/eval` and
+  `/eval/vitest`), `eval-assert`, `eval-network`, `eval-simulate` (also on
+  `/eval`; it once had a subpath of its own) and `eval-stubs` — the SDK's
+  `aai:testing` stubs re-exported for an eval, owned HERE because dropping one
+  from the door is this package's break. A re-export never moves ownership; each
+  keeps its epoch.
 - Which barrel a name goes on, and the `@internal` rules, are in the package
   guide, "The published surface: two barrels and a rule between them".
 

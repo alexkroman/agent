@@ -17,7 +17,6 @@ import { createEpoch, RESUME_ID_RE, WS_OPEN } from "@alexkroman1/aai/internal";
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import { createSessionIdentity } from "./client-identity.ts";
 import { createAudioEffects } from "./session-core-audio-effects.ts";
-import { loadAudioModules } from "./session-core-audio-setup.ts";
 import { createAudioPath } from "./session-core-audio-state.ts";
 import { closeFailure } from "./session-core-close.ts";
 import { createDialer } from "./session-core-dial.ts";
@@ -28,6 +27,7 @@ import {
   type SessionConfigMessage,
 } from "./session-core-messages.ts";
 import { createMicSender } from "./session-core-mic.ts";
+import { createPreConnectAudio } from "./session-core-preconnect.ts";
 import { reconnectPending } from "./session-core-reconnect.ts";
 import { createSessionStateMachine } from "./session-core-state.ts";
 import {
@@ -158,7 +158,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   // session id, its storage across a RELOAD, handshake flag, broker latch). Who
   // the client IS (`client: "auto"`, the tab's inbox holder) is
   // `client-identity.ts`; the dialer sends the id the identity reports.
-  const identity = createSessionIdentity(options, () => dialer.sessionId());
+  const identity = createSessionIdentity(options, () => dialer);
   const dialer = createDialer({ ...options, client: identity.clientId }, notify);
 
   function resetState(): void {
@@ -186,8 +186,10 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
    * `ConnState` cost. `session-core-audio-effects.ts` is the other half: every
    * frame and snapshot write the machine decides on but cannot make.
    */
+  // The mic opened at `connect()`, taken over at `config` (`session-core-preconnect.ts`).
+  const preConnect = createPreConnectAudio(options.preConnectAudio !== false);
   const audio = createAudioPath(
-    createAudioEffects({ conn, updateState, agentState, sendJson, sendAudio: mic.sendAudio }),
+    createAudioEffects({ conn, updateState, agentState, sendJson, mic, preConnect }),
   );
 
   // ─── Message handling ─────────────────────────────────────────────────────
@@ -206,6 +208,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   function teardownConnection(): void {
     connectionController?.abort();
     connectionController = null;
+    preConnect.release();
     audio.teardown();
     conn.ws?.close();
     conn.ws = null;
@@ -235,14 +238,9 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
       return;
     }
     updateState(agentState.apply({ type: "CONNECT" }));
-    // Prefetch the audio module + worklet sources so the chunk fetch overlaps
-    // the WebSocket handshake instead of starting only when the server's
-    // `config` frame arrives. Failures are reported by the audio path, whose
-    // bring-up awaits the same memoized load.
-    void loadAudioModules().catch(() => {
-      /* surfaced by the audio path's bring-up */
-    });
     teardownConnection();
+    // Prefetches the audio modules and, unless opted out, opens the mic.
+    preConnect.begin();
     // A fresh connect is the user asking for a session again — clear the
     // previous one's idle retirement so THIS socket can auto-reconnect.
     conn.retiredByServer = false;
@@ -274,6 +272,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
         updateState({ ...agentState.apply({ type: "CONNECT" }), recording: false });
       },
       onExhausted: () => {
+        preConnect.release();
         audio.teardown();
         // Abort first so these listeners are detached and the close below
         // cannot re-enter them with a contradicting state.
@@ -345,6 +344,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
         // these listeners, so the close() below can't re-enter), then cancel
         // any still-scheduled partysocket retry — close() on an already-closed
         // socket is a spec-level no-op.
+        preConnect.release();
         controller.abort();
         socket.close();
         conn.ws = null;
@@ -392,8 +392,8 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     sendJson({ type: "cancel" });
   }
 
-  // Push-to-talk's three edges and the typed turn — see `session-core-user-turn.ts`.
-  const { userTurn, sendText, flushQueued } = createUserInput({
+  // Push-to-talk, typed turns, tool answers — see `session-core-user-turn.ts`.
+  const { userTurn, sendText, flushQueued, sendToolResult } = createUserInput({
     snapshot: () => currentSnapshot,
     connected: () => openSocket() !== null,
     queued: queuedText,
@@ -473,8 +473,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   }
 
   // Built WITHOUT the seal and cast once: the brand is type-only (see
-  // `browserSessionBrand`), which is what makes this the one place a
-  // `BrowserSession` exists.
+  // `browserSessionBrand`), so this is the one place a `BrowserSession` exists.
   const session: Omit<BrowserSession, typeof browserSessionBrand> = {
     getSnapshot,
     subscribe,
@@ -483,6 +482,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     userTurn: Object.freeze(userTurn),
     identity,
     sendText,
+    sendToolResult,
     setMicMuted: mic.setMicMuted,
     resetState,
     reset,

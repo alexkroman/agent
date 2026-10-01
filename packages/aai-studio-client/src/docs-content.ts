@@ -75,7 +75,8 @@ export const PAGE_ENDPOINTS: readonly DocEndpoint[] = [
     method: "GET",
     path: CLIENT_CONFIG_PATH,
     summary:
-      "Name, greeting, page kind, and — for a voice agent — the live session's WebSocket URL.",
+      "Name, greeting, page kind, and — for a voice agent — the live session's WebSocket URL " +
+      "and the one-session ticket that opens it (sent as the `aai.auth.<ticket>` subprotocol).",
   },
 ];
 

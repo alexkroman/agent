@@ -167,10 +167,10 @@ minor. Rules that follow:
   recorded on the session the server starts, and the ticket subprotocol must be
   kept out of the handshake reply.
 
-### Four subpaths are RENDERED, and the root barrel is not
+### Three subpaths are RENDERED, and the root barrel is not
 
-`typedoc.json` names only `eval-barrel`, `eval-vitest-barrel`,
-`eval-simulate-barrel` and `testing-barrel` — they are written by whoever wrote
+`typedoc.json` names only `eval-barrel`, `eval-vitest-barrel` and
+`testing-barrel` — they are written by whoever wrote
 the `agent.ts`, so they belong in the authoring reference. The root barrel,
 `/internal`, `/auth`, `/metrics` and `/tracing` stay deny-listed in
 `scripts/docs-markdown.mjs`. See [`docs/CLAUDE.md`](../../docs/CLAUDE.md),
@@ -181,8 +181,29 @@ together.
 
 In [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md): the text-agent surface, why
 a workflow app is evaluated by RUNNING it, and why a keyless run gets a
-SCRIPTED model. Which subpaths a template eval may import is konsistent's
-`template-eval-runtime-subpaths` (`/eval`, `/eval/simulate`, `/eval/vitest`).
+SCRIPTED model.
+
+### An eval file has ONE import: `/eval/vitest`
+
+`@alexkroman1/aai-runtime/eval/vitest` re-exports the runner-free `/eval` half,
+the simulated caller and judge, and the `@alexkroman1/aai/testing` stubs a case
+composes with (`stubGatewayRoute`, `routeStepFetch`, `installStubStepFetch`, …)
+as the SAME declarations, so one `*.eval.test.ts` needs one import line for its
+harness.
+
+- **Why on the runtime, and why the vitest subpath.** The SDK never imports this
+  package, so the SDK's stubs are re-exported HERE rather than the harness
+  moving there; and `/eval` must stay importable without vitest (an optional
+  peer) for a harness that is not vitest — `scripts/loadtest-stub-agent` and
+  `aai-evals`' runner import it. An eval file is always vitest.
+- **Ownership does not move with a re-export.** The SDK stubs are owned here by
+  `eval-stubs` (dropping one from the door is this package's break), and every
+  other name keeps its capability — `src/contracts/CLAUDE.md`.
+- **`/eval/simulate` is gone** (its names are on `/eval/vitest` and `/eval`);
+  `/eval` stays — it is the runner-free door, not a second author-facing one. A
+  stub an eval needs and the door lacks is a line in `eval-vitest-barrel.ts`.
+- konsistent's `template-eval-runtime-subpaths` holds a template eval to the
+  one door (it refuses `/eval` and the SDK's `/testing` subpaths there).
 
 ## A deployed guest has TWO copies of this package
 
@@ -191,8 +212,10 @@ it; the agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`
 (`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both load in one
 process, so **anything used to rendezvous between them must be keyed on
 `globalThis` (`Symbol.for`), never a module-level value.** A single-value slot is
-`globalSlot(key)` from `@alexkroman1/aai/internal`, not a hand-written
-`delete (globalThis as S)[SYM]` pair.
+`globalSlot(name)` from `@alexkroman1/aai/internal` — a name registered in the
+SDK's `BOUNDARY_KEYS` (`aai/src/sdk/_boundary.ts`) — not a hand-written
+`delete (globalThis as S)[SYM]` pair. The SDK's own two-copies seam (bundle vs
+host) is "The bundle/runtime boundary" in `packages/aai/CLAUDE.md`.
 
 The workflow run context (`workflow/run-context.ts`) and the metrics sink
 registry (`metrics-sink.ts`) are both `Symbol.for`-keyed for this reason; a

@@ -44,6 +44,7 @@ async function serve(routes: Record<string, RouteHandler> | undefined): Promise<
       env: {},
       workflows: createStubWorkflows(),
       history,
+      speech: { live: () => undefined },
       logger: silentLogger,
     }),
   };

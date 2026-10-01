@@ -55,6 +55,22 @@ entering `down`.
   `session-core-audio-effects.ts`, setup is `session-core-audio-setup.ts`, so
   `session-core-audio-state.test.ts` specs it without a browser.
 
+### Pre-connect audio (`session-core-preconnect.ts`)
+
+The mic opens on `connect()`, not on `config`, so an opener spoken while the
+agent joins is buffered (latest `PRE_CONNECT_MAX_SECONDS`) and sent ahead of
+live audio. Opt out with `preConnectAudio: false`.
+
+- **It captures at a GUESSED rate (16 kHz)**: `createVoiceIO({ preConnect })`
+  adopts the context and node whole on a match, else keeps only the grant and
+  resamples the buffer with `OfflineAudioContext` (`audio-preconnect.ts`).
+- **The buffer reaches the wire before any live frame**: the flush and the sink
+  swap are synchronous, and the burst bypasses the mic's backpressure drop
+  (`sendBuffered`) while still honouring mute.
+- **Ownership**: the holder until the bring-up `take()`s it, then the bring-up
+  (every rejection in `openAudioPath` closes it). A reconnect BEFORE `config`
+  keeps it buffering; only terminal paths `release()` it.
+
 ### Drain completion outlives the turn
 
 `done()` resolves when the worklet drains, which also happens when the
@@ -94,8 +110,9 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   `CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS` (10 s) makes a hang degrade like a failure.
 - **The session's per-attempt lookup uses `loadClientConfig`** (`null` = no
   answer), never `fetchClientConfig` (`{}`). Only an ANSWERED lookup with no
-  `sessionUrl` may latch `serverIsBroker = false`; latching on a failure pins
-  the client to `/:slug/websocket`, whose redirect browsers do not follow.
+  `sessionUrl` and no `sessionToken` may latch `configPerAttempt = false`;
+  latching on a failure pins the client to `/:slug/websocket`, whose redirect
+  browsers do not follow.
 - **The session lookup re-brokers per ATTEMPT** so a reconnect reaches a
   replacement sandbox — never memoize it across the render-time lookup.
   `mountClient()`'s render lookup is skipped when `mountClient({ name })` is set
@@ -103,6 +120,21 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   `component` ignores it.
 - **`apiUrl` (shown by `ApiUrlChip`) is the long-lived platform endpoint**
   (`wss://host/:slug/websocket`), never the sandbox tunnel URL, which rots.
+- **A session ticket is asked for per ATTEMPT** (`session-core-ticket.ts`):
+  `VoiceSessionOptions.token` (told the session the attempt resumes), else the
+  attempt's `client-config` `sessionToken`. It rides `Sec-WebSocket-Protocol`
+  as `aai.auth.<ticket>` AFTER the plain `aai.session` (both from
+  `@alexkroman1/aai/protocol`) — a browser fails a handshake that selects none
+  of its offers, and the server selects the plain one so the ticket is never
+  echoed. The URL provider STARTS an attempt and the protocol provider reads
+  the same one. A getter that throws dials without a ticket (a provider that
+  rejects leaves partysocket with no `close`, so "connecting" forever); an
+  injected `WebSocket` needs a synchronous one.
+- **The last server-issued ticket is the resume credential** on the platform:
+  stored beside the session id (`session-resume-store.ts`), presented in
+  `SESSION_TICKET_HEADER` on a lookup that resumes, dropped by `forget()`. A
+  bound ticket opens its own session, so a failed re-mint is a new session the
+  `config` frame names, never a refusal.
 - There is no text-only mode; `ChatView` always renders voice `Controls`. The
   endpoint itself is the SDK's ("Pre-connection client config" in
   `packages/aai/src/sdk/CLAUDE.md`).
@@ -139,6 +171,10 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   state → a `sessionSlot` read by `useAgentState`. If it would be a lie or a
   nuisance, it is a moment → `useEvent` / `useToolCallStart` (which never
   replays). `entertainment-picks-agent` shows both.
+- **`useClientTool(name, handler)`** is the one hook that answers BACK: built
+  on `useToolCallStart` (one run per call id; a call still pending at mount is
+  run, a completed one is not) and `session.sendToolResult`, which encodes the
+  result and turns an unencodable one into an `error` rather than a throw.
 - **Theme tokens are CSS variables** (`--aai-bg`, `--aai-surface`, `--aai-text`,
   `--aai-border`, `--aai-primary`, written by `ThemeProvider`, mapped in
   `styles.css`'s `@theme`). Additive: `useTheme()` stays. The page background is
@@ -206,6 +242,12 @@ A run reaches the page after the call through `WS /inbox?client=` (server half:
   the redelivery after a lost ack comes on the next socket, so a per-socket
   repeat memory replays it; only the half-received notice is dropped with the
   socket. A repeat is acked even while busy; a header mid-notice goes unacked.
+- **The inbox presents a ticket like the session** (a gated server checks
+  `/inbox` like `/websocket`): `createInbox({ token })`, same type and per-attempt
+  rule as `VoiceSessionOptions.token`; `useInbox` passes
+  `session.identity.ticket()` — the session's `token`, else a FRESH
+  `client-config` ticket until a lookup shows the server issues none. A
+  synchronous answer dials at once, so an ungated inbox is unchanged.
 - **`useInbox` plays through its own `AudioContext`** (`notice-player.ts`, 16
   kHz), unlocked by the first `pointerdown`/`keydown` — the session's context
   exists only mid-call, and a notice arrives when none is. Default `busy` is

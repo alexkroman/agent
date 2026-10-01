@@ -54,8 +54,8 @@ import {
 
 /**
  * What a text case body is handed: its own conversation and the mode. A
- * simulated caller is `evalSimulation({ target: agent, … })` on
- * `@alexkroman1/aai-runtime/eval/simulate`, as for a voice case.
+ * simulated caller is `evalSimulation({ target: agent, … })` (on this same
+ * `@alexkroman1/aai-runtime/eval/vitest`), as for a voice case.
  *
  * @sealed
  */

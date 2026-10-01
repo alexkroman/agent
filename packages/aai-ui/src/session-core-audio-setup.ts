@@ -13,6 +13,7 @@
  */
 
 import type { VoiceIO } from "./audio.ts";
+import type { PreConnectCapture } from "./audio-preconnect.ts";
 
 type AudioModules = [typeof import("./audio.ts"), string, string];
 
@@ -57,6 +58,11 @@ export type AudioPathCallbacks = {
   onProgress(bufferedMs: number): void;
   /** A worklet processor died after setup: the audio path is gone. */
   onFailure(message: string): void;
+  /**
+   * The audio captured before the session was configured, in order and at the
+   * STT rate — sent once, ahead of the first `onMicData` frame.
+   */
+  onPreConnectAudio(chunks: ArrayBuffer[]): void;
 };
 
 /**
@@ -71,9 +77,28 @@ export type AudioPathCallbacks = {
 export async function openAudioPath(
   config: AudioPathConfig,
   callbacks: AudioPathCallbacks,
+  preConnect?: Promise<PreConnectCapture | null> | null,
+): Promise<VoiceIO> {
+  // Owned from here until it becomes the VoiceIO the caller closes, so every
+  // way this rejects first releases it (`close()` is idempotent).
+  const pre = (await preConnect) ?? undefined;
+  try {
+    return await openVoiceIO(config, callbacks, pre);
+  } catch (err: unknown) {
+    void pre?.close();
+    throw err;
+  }
+}
+
+async function openVoiceIO(
+  config: AudioPathConfig,
+  callbacks: AudioPathCallbacks,
+  pre: PreConnectCapture | undefined,
 ): Promise<VoiceIO> {
   const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await loadAudioModules();
   return createVoiceIO({
+    preConnect: pre,
+    onPreConnectAudio: callbacks.onPreConnectAudio,
     sttSampleRate: config.sampleRate,
     ttsSampleRate: config.ttsSampleRate,
     captureWorkletSrc: captureWorklet,

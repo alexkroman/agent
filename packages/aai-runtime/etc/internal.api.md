@@ -6,6 +6,7 @@
 
 import type { AgentDef } from '@alexkroman1/aai';
 import { ClientSink } from '@alexkroman1/aai/protocol';
+import { ClientToolCall } from '@alexkroman1/aai/internal';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai/internal';
 import type { DelegateOptions } from '@alexkroman1/aai';
@@ -16,13 +17,13 @@ import type { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
-import type { OwnedMap } from '@alexkroman1/aai/internal';
 import { publishClientInboxDefaults } from '@alexkroman1/aai/host-internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
+import type { SayOptions } from '@alexkroman1/aai';
 import type { ServerResponse } from 'node:http';
 import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
@@ -30,7 +31,9 @@ import { SessionEvent } from '@alexkroman1/aai';
 import { SessionEventBody } from '@alexkroman1/aai';
 import type { SessionEventType } from '@alexkroman1/aai';
 import type { SessionSourcedEventType } from '@alexkroman1/aai';
+import type { SessionSpeech } from '@alexkroman1/aai';
 import type { SlotStore } from '@alexkroman1/aai';
+import type { SpeechHandle } from '@alexkroman1/aai';
 import type { SubagentDef } from '@alexkroman1/aai';
 import type { ToolDef } from '@alexkroman1/aai';
 import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
@@ -53,7 +56,7 @@ export function applyWorkflowJournalDdl(options: {
 
 // @public
 export type AttachSessionOptions = {
-    sessions: OwnedMap<string, ServerSession>;
+    sessions: Pick<SessionDirectory, "claim" | "session">;
     createSession: (sessionId: string, client: ClientSink) => ServerSession;
     readyConfig: ReadyConfig;
     logContext?: Record<string, string>;
@@ -145,6 +148,9 @@ export function createPostgresStateBackend(options: {
 }): SessionStateBackend;
 
 // @internal
+export function createSessionDirectory(): SessionDirectory;
+
+// @internal
 export function createSessionEventStream(options: {
     backend: SessionStateBackend;
     logger?: Logger | undefined;
@@ -187,6 +193,8 @@ type ExecuteToolCallOptions = {
         readonly fatal: boolean;
     }) => void) | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
+    clientCall?: ClientToolCall | undefined;
+    speech?: SessionSpeech | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;
     timeoutMs?: number | undefined;
@@ -315,6 +323,9 @@ export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
 // @public
 export const MAX_WORKFLOW_RUN_LABEL_CHARS = 200;
 
+// @internal
+export function mintPlatformSessionTicket(input: PlatformTicketInput): string;
+
 // @public
 export function normalizeRunLabel(value: unknown): string | undefined;
 
@@ -344,6 +355,9 @@ export const PLATFORM_ROUTES: {
 
 // @internal
 export const PLATFORM_SOCKET_PATH = "/platform-socket";
+
+// @internal
+export const PLATFORM_TICKET_RESUME_GRACE_SECONDS: number;
 
 // @internal
 export type PlatformEndpoint = {
@@ -381,6 +395,9 @@ const PlatformReplyFrameSchema: z.ZodObject<{
 // @public
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
+// @internal
+export function platformSessionSecret(guestToken: string): string;
+
 // @public
 type PlatformSessionStateOptions = PlatformEndpoint;
 
@@ -403,6 +420,14 @@ type PlatformSocketReply = {
 
 // @public
 export function platformSocketUrl(base: string): string;
+
+// @public
+export type PlatformTicketInput = {
+    guestToken: string;
+    previousGuestTokens?: readonly string[];
+    presented?: string | undefined;
+    now?: number;
+};
 
 // @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
@@ -537,6 +562,8 @@ export type ServerSession = {
     command(command: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+    interrupt(): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
     report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
@@ -551,6 +578,25 @@ export const SESSION_EVENT_TABLE = "aai_session_events";
 
 // @internal
 export const SESSION_STATE_TABLE = "aai_session_state";
+
+// @internal
+export type SessionDirectory = {
+    claim(sessionId: string, session: ServerSession): () => boolean;
+    session(sessionId: string): ServerSession | undefined;
+    claimWiring(sessionId: string, wiring: SessionWiring): () => boolean;
+    emitter(sessionId: string): SessionEmitter | undefined;
+    meter(sessionId: string): UsageMeter | undefined;
+    readonly speech: SpeechDirectory;
+    live(): IterableIterator<ServerSession>;
+    ids(): IterableIterator<string>;
+    readonly size: number;
+    clear(): void;
+};
+
+// @public
+export type SessionEmitter = {
+    emit(body: SessionEventBody): SessionEvent;
+};
 
 // @public
 type SessionEventPage = {
@@ -636,6 +682,13 @@ type SessionWebSocket = {
     }) => void): void;
 };
 
+// @internal
+export type SessionWiring = {
+    sink: ClientSink;
+    emitter: SessionEmitter;
+    meter: UsageMeter;
+};
+
 // @public
 type SleepEntry = SleepRecord & {
     key: string;
@@ -647,6 +700,13 @@ type SleepRecord = {
     woken: boolean;
     correlationId?: string | undefined;
     kind: "sleep" | "hookTimeout";
+};
+
+// @internal
+export type SpeechDirectory = {
+    of(sessionId: string): SessionSpeech;
+    live(sessionId: string): SessionSpeech | undefined;
+    announce(sessionId: string, instruction: string): boolean;
 };
 
 // @internal

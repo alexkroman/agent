@@ -106,8 +106,12 @@ function failingWith(code: string): PlatformEndpointFetch {
     Promise.reject(
       // `fetch` hands back a bare `TypeError: fetch failed` with the real code a
       // hop down — the shape `hasErrorCode`'s cause walk exists for, and the one
-      // a top-level-only recognizer misses.
-      new TypeError("fetch failed", { cause: Object.assign(new Error(code), { code }) }),
+      // a top-level-only recognizer misses. The leaf names the `syscall` that
+      // failed, as an outbound libuv error does; that is what tells an outbound
+      // `ECONNRESET` from the caller hanging up (`isCallerGone`).
+      new TypeError("fetch failed", {
+        cause: Object.assign(new Error(code), { code, syscall: "read" }),
+      }),
     );
 }
 

@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 17,
   "rule": 2,
-  "sha256": "a0136970bf3a3468e405d9d1f3f925e75c26de507154b0fe06673041d5156e7e",
+  "sha256": "8b1dfda894485fecab73024c91e4b1ae209f4b2dba062390dcb8ac4c0352900d",
   "exports": [
     "AgentClientInbox",
     "AgentDef",
@@ -46,12 +46,16 @@
     "RouteRequest",
     "RouteResponse",
     "S2sAgentParams",
+    "SayOptions",
     "SessionCall",
     "SessionContext",
     "SessionContextArgs",
     "SessionEndContext",
     "SessionEventContext",
+    "SessionSpeech",
     "SharedAgentParams",
+    "SpeechHandle",
+    "SpeechOutcome",
     "StandardWebhookOptions",
     "StaticAgentParams",
     "TelephonyAccess",
@@ -78,5 +82,5 @@
     "webhookRoute",
     "workflowApp"
   ],
-  "rollup": "ce1a28f2920ce44446ef2581bdce093ddbc4c2ddd609e3e85c13f61f1830c8e2"
+  "rollup": "565b8cf8b9fbd679a0875b7e186f99e9fa0369f51aae135cb43e3197cfa67931"
 }

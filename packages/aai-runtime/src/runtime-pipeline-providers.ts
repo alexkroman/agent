@@ -40,9 +40,9 @@ function resolvePipelineProviders(
   // The STT/TTS env vars travel with their openers, so nothing downstream has
   // to keep the raw descriptors around just to re-derive a credential.
   return {
-    stt: resolveStt(p.stt),
+    stt: resolveStt(p.stt, env),
     llm: resolveLlm(p.llm, env),
-    tts: resolveTts(p.tts),
+    tts: resolveTts(p.tts, env),
   };
 }
 

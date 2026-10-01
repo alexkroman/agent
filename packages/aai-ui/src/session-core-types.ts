@@ -212,6 +212,13 @@ export type UserTurnControls = {
 };
 
 /**
+ * How a page answers a tool call it ran — see {@link BrowserSession.sendToolResult}.
+ *
+ * @public
+ */
+export type ToolCallOutcome = { result: unknown } | { error: string };
+
+/**
  * Options for {@link BrowserSession.sendText}.
  *
  * @public
@@ -291,6 +298,15 @@ export type BrowserSession = {
    * ```
    */
   sendText(text: string, options?: SendTextOptions): void;
+  /**
+   * Answer a pending tool call the agent asked THIS PAGE to run — a
+   * `clientTool` on the server. `result` is JSON-serialized and becomes the
+   * value the model reads; `error` fails the call with that message. A no-op
+   * while disconnected, and ignored by the server for a call nothing waits on.
+   *
+   * Most pages use `useClientTool(name, handler)`, which calls this for them.
+   */
+  sendToolResult(toolCallId: string, outcome: ToolCallOutcome): void;
   /**
    * Mute or unmute the microphone WITHOUT dropping the session — the gate a
    * hold-to-talk button over an agent with automatic turn detection is built

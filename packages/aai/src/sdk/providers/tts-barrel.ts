@@ -62,6 +62,10 @@
 // down. Listing them also makes the public surface of this subpath readable in
 // one place — add new symbols here when a provider gains one.
 export type { ProviderCredentialOptions, TtsProvider } from "../providers.ts";
+// One combinator for every pipeline stage — the same declaration on `/stt`,
+// `/llm` and `/tts`, so a failover list is imported beside the factories it
+// lists.
+export { fallback } from "./fallback.ts";
 export {
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
   ASSEMBLYAI_TTS_LANGUAGES,

@@ -205,6 +205,14 @@ export interface ClientRunsRoutesOptions {
 export type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
 
 // @public
+export function clientTool<P extends ToolInputSchema = ToolInputSchema>(def: ClientToolDef<P>): ToolDef<P>;
+
+// @public
+export type ClientToolDef<P extends ToolInputSchema = ToolInputSchema> = Omit<ToolDef<P>, "execute"> & {
+    timeoutMs?: number;
+};
+
+// @public
 type ClientTranscript = {
     sessions: ClientTranscriptSession[];
 };
@@ -695,6 +703,9 @@ export function omitUndefined<T extends object>(obj: T): {
 };
 
 // @public
+export function orFail<A extends readonly unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R>;
+
+// @public
 export function orFail<T>(value: T | ToolFailure): T;
 
 // @public
@@ -866,6 +877,7 @@ export interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
     signal: AbortSignal;
+    speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;
 }
 
@@ -939,6 +951,13 @@ export type SayOnClientNotice = {
 };
 
 // @public
+export type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
+};
+
+// @public
 export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
 
 // @public
@@ -1001,6 +1020,7 @@ export type SessionEventContext = {
     sessionId: string;
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
+    speech: SessionSpeech;
 };
 
 // @public
@@ -1079,6 +1099,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
+    recorded: z.ZodOptional<z.ZodLiteral<false>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -1187,6 +1208,20 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failed-over">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -1267,6 +1302,12 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
 // @public
 export type SessionSourcedEventType = (typeof SESSION_SOURCED_EVENT_TYPES)[number];
 
+// @public @sealed
+export interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | "mode" | ProviderField | PipelineOnlyField | keyof AgentModelTuning> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     tools?: InlineToolsMisuse;
@@ -1313,6 +1354,15 @@ export type SlotStore = {
 export interface SlotToolDef<P extends ToolInputSchema, V, R> extends Omit<ToolDef<P, R>, "execute"> {
     execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
 }
+
+// @public @sealed
+export interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+export type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 // @public
 export function spokenAlphanumeric(spoken: string): string;
@@ -1509,6 +1559,7 @@ export type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;

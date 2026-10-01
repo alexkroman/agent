@@ -223,8 +223,8 @@ export function isPlatformUnavailable(err: unknown): boolean {
  * `cause` walk as its two neighbours, and for the same reason — the code is
  * almost never on the value that was thrown.
  *
- * NOT the caller hanging up: {@link isCallerGone} reads that off the TOP-level
- * value and is checked first, where this reads a wrapped cause.
+ * NOT the caller hanging up: {@link isCallerGone} is checked first, and tells an
+ * inbound reset (no `syscall`) from an outbound one on the innermost cause.
  */
 export function isTransportFailure(err: unknown): boolean {
   return hasErrorCode(err, TRANSPORT_FAILURE_CODES);
@@ -349,8 +349,8 @@ export function workflowApiErrorStatus(
     // runs this before its own `isCallerGone` branch, so without the guard an
     // inbound `ECONNRESET` would be answered 503 — into the socket that closed —
     // and the debug line that keeps 30 navigations-away out of the error log would
-    // never run. `isCallerGone` reads the TOP-level value where this walks a
-    // wrapped cause; the guard is what keeps that distinction true at the seam.
+    // never run. Both read through the `cause` chain, so wrapping depth cannot
+    // move a reset between the two; the reset's `syscall` is what decides.
     //
     // `Retry-After` is short for the reason the capacity entry's is — a reset
     // clears on the next connection, not on a human timescale — and it is the half

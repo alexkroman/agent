@@ -12,12 +12,23 @@
  */
 
 import type { ProviderCredentialOptions, TtsProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
+
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const RIME_PROVIDER = defineProvider({
+  kind: "rime",
+  stage: "tts",
+  envVar: "RIME_API_KEY",
+  label: "Rime",
+  factory: "rimeTts",
+  subpath: "tts",
+});
 
 /** Kind tag recognised by the host-side resolver. */
-export const RIME_KIND = "rime" as const;
+export const RIME_KIND = RIME_PROVIDER.kind;
 
 /** Agent-env variable holding the Rime API key. */
-export const RIME_API_KEY_ENV = "RIME_API_KEY";
+export const RIME_API_KEY_ENV: string = RIME_PROVIDER.envVar;
 
 /**
  * Default Rime speaker used when callers invoke `rimeTts()` with no `voice`.
@@ -61,10 +72,10 @@ export interface RimeTtsOptions extends ProviderCredentialOptions {
  * ```
  */
 export function rimeTts(options: RimeTtsOptions = {}): TtsProvider {
-  return {
-    kind: RIME_KIND,
-    options: { ...options, voice: options.voice ?? RIME_DEFAULT_VOICE },
-  };
+  return describeProvider(RIME_PROVIDER, {
+    ...options,
+    voice: options.voice ?? RIME_DEFAULT_VOICE,
+  });
 }
 
 /** Synthesis model used when the descriptor names none. */

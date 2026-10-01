@@ -113,8 +113,14 @@ const UNEXEMPLIFIED_SUBPATHS = {
       "the host embedding surface — `createRuntime`/`createAgentServer` and the transports. " +
       "Its consumer is a server, not an `agent.ts`, and its worked example is the scaffold's " +
       "own `server.mjs` plus this package's compatibility fixture, which is written as a " +
-      "starter a host copies. `/eval` and `/eval/vitest` are NOT here: every template ships " +
-      "an `agent.eval.test.ts` written against them.",
+      "starter a host copies. `/eval/vitest` is NOT here: every template ships an " +
+      "`agent.eval.test.ts` written against it.",
+    "/eval":
+      "the RUNNER-FREE half of the eval harness, for a harness that is not vitest (a " +
+      "load-test stub, a recording runner). An eval FILE imports `/eval/vitest`, which " +
+      "re-exports every name here as the same declaration, and konsistent's " +
+      "`template-eval-runtime-subpaths` refuses this subpath in a template eval — so a " +
+      "template exercises these names THROUGH `/eval/vitest`, where the ratchet counts them.",
     "/auth":
       "who may open a session on a self-hosted SERVER — `createSessionAuth` and the session " +
       "ticket. Split out of `.` for the same reader: a host behind its own login, never an " +

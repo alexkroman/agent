@@ -15,6 +15,7 @@
 import type { GenerateFn } from "./generate.ts";
 import type { RandomSource } from "./random.ts";
 import type { ClientEventSender } from "./session-event-map.ts";
+import type { SessionSpeech } from "./session-speech.ts";
 import type { SlotStore } from "./session-state.ts";
 import type { DelegateFn } from "./subagent.ts";
 import type { Message } from "./types.ts";
@@ -158,6 +159,34 @@ export type ToolContext = {
    * conditional signature rather than a typed overload.
    */
   send: ClientEventSender;
+  /**
+   * Say a sentence on this session's line, or stop the agent: see
+   * {@link SessionSpeech}.
+   *
+   * **Not how a tool speaks in its own reply**: that is `messages` on the tool,
+   * which is timed to the call and costs no extra reply. `speech` is for what
+   * lands LATER. A tool that arms a timer, or registers a callback that fires
+   * after it returns, speaks through it then.
+   *
+   * A `say` from inside `execute` queues behind the reply that is waiting on
+   * this very call, so the tool must NOT await `done` before it returns, or it
+   * waits until its own timeout. A sessionless context (a workflow step's
+   * `stepDelegate`) holds one that settles every line `"dropped"`.
+   *
+   * @remarks
+   * The TWELFTH field on this type, and the one that raised `guard-invariants`
+   * rule 24 from eleven. It passes the rule's test: it is per-SESSION and it
+   * cannot be reached any other way. `ctx.sessionId` names a session but
+   * reaches nothing, and a process-wide lookup keyed on it would bind to
+   * whichever runtime last published the slot (two runtimes share a process
+   * under `aai dev` and in a guest), which is why `RouteContext.clientTranscript`
+   * is bound to the context as well. The second reason is structural: an
+   * `events` handler's context carries `speech`, and a `ToolContext` has always
+   * been a superset of that context. Authors pass a `createToolContext()` to a
+   * handler in a spec (eight templates did), so leaving the field off this type
+   * would have broken every one of those specs.
+   */
+  speech: SessionSpeech;
   /**
    * Cooperative cancellation signal. Aborts when the turn that issued this
    * tool call is cancelled (barge-in, reset, or session stop), and also when

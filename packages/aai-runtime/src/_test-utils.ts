@@ -6,12 +6,13 @@ import type {
   AgentDef,
   AgentSessionContext,
   SessionEvent,
+  SessionSpeech,
   ToolContext,
   ToolDef,
   ToolErrorHandler,
 } from "@alexkroman1/aai";
 import { createSeededRandom, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
+import { createDetachedSlotStore, DETACHED_SESSION_SPEECH } from "@alexkroman1/aai/host-internal";
 import { type Db, rejectingWorkflows, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
@@ -94,6 +95,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
   return {
     env: {},
     slots: createDetachedSlotStore(),
+    speech: DETACHED_SESSION_SPEECH,
     // The SDK's own published helper rather than `{} as never`: it REJECTS
     // naming itself, so a spec that unexpectedly reaches `ctx.db` says so
     // instead of dying on a TypeError against an empty object. `as never` is
@@ -202,6 +204,8 @@ export function makeMockCore(overrides?: Partial<ServerSession>): ServerSession 
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     announce: vi.fn(() => true),
+    say: vi.fn(() => ({ done: Promise.resolve("played" as const), interrupt: vi.fn() })),
+    interrupt: vi.fn(() => true),
     restoreHistory: vi.fn(),
     command: vi.fn(),
     onAudio: vi.fn(),
@@ -341,6 +345,23 @@ export function makeUsageMeter(limits?: { totalTokens?: number } | undefined): {
   const updates: UsageSnapshot[] = [];
   const meter = createUsageMeter({ limits, onUpdate: (snapshot) => void updates.push(snapshot) });
   return { meter, updates };
+}
+
+/** A {@link SessionSpeech} that records what it was asked to say. */
+export function makeSpeech(): SessionSpeech & { said: string[]; interrupts: number } {
+  const speech = {
+    said: [] as string[],
+    interrupts: 0,
+    say(text: string) {
+      speech.said.push(text);
+      return { done: Promise.resolve("played" as const), interrupt: () => undefined };
+    },
+    interrupt() {
+      speech.interrupts += 1;
+      return true;
+    },
+  };
+  return speech;
 }
 
 /**

@@ -44,7 +44,7 @@ import { type SessionEvent, sessionClientId } from "@alexkroman1/aai";
 import { globalSlot } from "@alexkroman1/aai/internal";
 import type { InboxServerFrame } from "@alexkroman1/aai/protocol";
 
-const FEED_SLOT = globalSlot<ClientEventFeed>("@alexkroman1/aai-runtime.clientEventFeed");
+const FEED_SLOT = globalSlot<ClientEventFeed>("clientEventFeed");
 
 /**
  * The event types a client's feed carries — see the module doc.

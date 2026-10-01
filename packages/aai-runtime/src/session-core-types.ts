@@ -11,7 +11,7 @@
  * unchanged.
  */
 
-import type { Message } from "@alexkroman1/aai";
+import type { Message, SayOptions, SpeechHandle } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type {
@@ -20,6 +20,7 @@ import type {
   RestoredToolCall,
   SessionCommand,
 } from "@alexkroman1/aai/protocol";
+import type { ClientToolBroker } from "./client-tool-broker.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import type { Transport, TransportEventBody } from "./transports/types.ts";
@@ -55,6 +56,12 @@ export type ServerSessionOptions = {
    * hook could not.
    */
   onToolResult?: (message: { toolCallId: string; result: string; error?: string }) => void;
+  /**
+   * Where an inbound `tool_result` goes when there is no relay: a page answering
+   * a `clientTool` call, under this session's id. Unlike {@link onToolResult} it
+   * changes nothing about how the session emits tool calls.
+   */
+  clientTools?: Pick<ClientToolBroker, "answer">;
 };
 
 /**
@@ -120,12 +127,24 @@ export type ServerSession = {
    * caller is still on the line, and the agent has the answer with no way to
    * offer it — so the caller has to think to ask.
    *
-   * Reports FALSE rather than throwing when the transport has no such verb
-   * (S2S has none) or the session is stopped, because the caller is a run
+   * Reports FALSE rather than throwing when the transport lacks the
+   * `announce` capability (S2S) or the session is stopped, because the caller is a run
    * completing in the background: there is nobody to raise to, and the answer
    * "this session cannot be spoken to" is what a notifier needs to stop trying.
    */
   announce(instruction: string): boolean;
+  /**
+   * Speak `text` VERBATIM as a reply of its own, and hand back a handle to
+   * await its playout or take it back: the SDK's `speech.say`. See
+   * `session-speech.ts`. Never throws; a transport without the `say`
+   * capability settles `"dropped"`.
+   */
+  say(text: string, options?: SayOptions): SpeechHandle;
+  /**
+   * Stop the agent, exactly as the client's `cancel` command does. `false`
+   * when there was provably nothing to cut, or the session has stopped.
+   */
+  interrupt(): boolean;
   /**
    * Put a prior conversation back, on resume.
    *

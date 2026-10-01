@@ -13,7 +13,9 @@
  * It used to be intersected into `EvalTestContext` and the suite options, so
  * every such change was an epoch of the harness itself.
  *
- * Re-exported from `@alexkroman1/aai-runtime/eval/simulate`. This file is not
+ * Re-exported from `@alexkroman1/aai-runtime/eval/vitest` and `/eval` — a
+ * capability, not a subpath (it had `/eval/simulate` of its own until the eval
+ * surface got one door). This file is not
  * shipped and nothing imports it — it exists so `pnpm check:api-contracts` can
  * extract a report for this capability alone, hash it, and hold it to a
  * committed epoch. See `scripts/api-contracts.mjs`.
@@ -37,4 +39,4 @@ export {
   type SimulationMetrics,
   type SimulationTarget,
   simulateCall,
-} from "../../eval-simulate-barrel.ts";
+} from "../../eval-barrel.ts";

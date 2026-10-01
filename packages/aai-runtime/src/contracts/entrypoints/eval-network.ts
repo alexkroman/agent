@@ -13,7 +13,8 @@
  * `EvalCaseOptions.network`, `EvalTestContext.network`) name `EvalNetwork` and
  * stay `eval`'s; this capability owns the type they name.
  *
- * Re-exported from `@alexkroman1/aai-runtime/eval`. This file is not shipped
+ * Re-exported from `@alexkroman1/aai-runtime/eval` and `/eval/vitest`. This
+ * file is not shipped
  * and nothing imports it — it exists so `pnpm check:api-contracts` can extract
  * a report for this capability alone, hash it, and hold it to a committed
  * epoch. See `scripts/api-contracts.mjs`.

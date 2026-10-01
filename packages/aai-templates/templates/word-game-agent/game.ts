@@ -18,18 +18,20 @@
  * alone. That is the opposite of `roadside-assistance-agent`'s silence ladder, and the
  * same rule read the other way.
  *
- * **Time's up is announced a turn late, and that is a property of deadlines.** A
- * fired deadline moves the dialog and pushes the new instruction; it does not
- * make the agent speak. The describer, still describing, is answered by a
- * `relay_description` REFUSAL quoting `over`'s instruction — which is what tells
- * the host to call `final_score` and read the score. `relay_description` also
- * checks the clock itself, for the process that restarted mid-round and lost
- * the timer.
+ * **A fired deadline moves the dialog; it does not make the agent speak.** It
+ * pushes `over`'s instruction, and the describer, still describing, is answered
+ * by a `relay_description` REFUSAL quoting it, which is what tells the host to
+ * call `final_score` and read the score. So "Time's up!" itself is
+ * {@link armTimeUpLine}: their `TTSSpeakFrame`, a `ctx.speech.say` on the same
+ * two minutes that cuts the host off mid-remark, ON the clock rather than a
+ * turn after it. The deadline stays the clock that counts: the line is
+ * best-effort (a restarted process loses the timer), and `relay_description`
+ * also checks the clock itself for that process.
  */
 
-import type { AnyDialog, DialogEvent } from "@alexkroman1/aai";
+import type { AnyDialog, DialogEvent, ToolContext } from "@alexkroman1/aai";
 import { dialog } from "@alexkroman1/aai";
-import { GAME_SECONDS } from "./shared.ts";
+import { GAME_SECONDS, gameSlot, wordsPlayed } from "./shared.ts";
 
 const gameSpec = {
   initial: "lobby",
@@ -101,6 +103,30 @@ export function endsRound(result: {
   next?: GameEvent["type"] | undefined;
 }): GameEvent | undefined {
   return result.next === undefined ? undefined : { type: result.next };
+}
+
+/** What the host says, verbatim, the moment the clock runs out. */
+export const TIME_UP_LINE = "Time's up! Pens down.";
+
+/**
+ * Say {@link TIME_UP_LINE} when THIS round's two minutes are up, cutting the
+ * host off if it is mid-remark, and not to be cut off in turn: `playing`'s
+ * `bargeIn: { minWords: 1 }` lets the describer talk over every remark, which
+ * is right for a remark and wrong for the line that ends the round.
+ *
+ * The round is identified by its `startedAt`, so a timer armed by an earlier
+ * round says nothing into a later one. It stays silent when the WORDS ran out
+ * first (every word settled, `WORDS_DONE` already moved the dialog), since
+ * "time's up" would then be false, and once `final_score` has closed the round.
+ */
+export function armTimeUpLine(ctx: ToolContext): void {
+  const round = gameSlot.get(ctx).startedAt;
+  setTimeout(() => {
+    const game = gameSlot.get(ctx);
+    const clockRanOut =
+      game.startedAt === round && game.endedAt === null && wordsPlayed(game) < game.words.length;
+    if (clockRanOut) ctx.speech.say(TIME_UP_LINE, { interrupt: true, interruptible: false });
+  }, GAME_SECONDS * 1000);
 }
 
 /** Where a round can be started from: before the first, and after any. */

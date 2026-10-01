@@ -56,6 +56,36 @@ security:
 The guest harness runs **Node** inside each Modal Sandbox, loading the agent's
 ESM bundle directly; the Modal sandbox is the security boundary.
 
+## The bundle/runtime boundary: two SDK copies, one registry
+
+**An agent bundle inlines its own copy of this SDK, and a host can run it under
+a runtime holding another** — `aai dev` (`buildWorker({ runtime: false })`),
+`aai start` and every `aai build --target` entry (the deploy artifact under the
+project's `createAgentServer`), and `aai build`/`aai deploy`'s in-CLI preflight.
+So module identity is never a contract between them.
+
+- **Every cross-copy key is registered in `sdk/_boundary.ts`**
+  (`BOUNDARY_KEYS`: the brands a value carries out — `clientTool`,
+  `routeResponse`, `routeError`, `stepError`, … — and the `globalThis` slots a
+  host publishes into). Reach one by NAME: `globalSlot("stepEnv")`,
+  `setBrand`/`readBrand`. `Symbol.for` is called nowhere else in this package,
+  and no source here or in `aai-runtime` spells a registered key —
+  `_boundary.test.ts` and `aai-runtime`'s `sdk-boundary.test.ts` are the gate.
+- **What crosses is plain data the reader re-validates** (`readBrand` answers
+  `unknown`; `clientToolBrand`, `readRouteResponse`, `readRouteError`,
+  `FatalError.is` check the shape).
+- **Never `instanceof` an SDK class, or read a module-level `Map`/`WeakMap`,
+  across the boundary.** Copy-local state is fine only where each copy reading
+  its own is correct (a memo, a warn-once set, `_slot-owners.ts`' collision
+  detector, which therefore misses a collision between a host-declared and a
+  bundle-declared slot).
+- **Externalizing the SDK from the bundle was rejected**: the guest would then
+  supply the SDK (the platform drift "User-shipped runtime" in
+  `packages/aai-guest/CLAUDE.md` rules out), or the self-hosted artifact would
+  differ from the uploaded one. The runtime's own `Symbol.for` slots (two copies
+  of `aai-runtime`) are a separate seam — "A deployed guest has TWO copies of
+  this package" in `packages/aai-runtime/CLAUDE.md`.
+
 ## Package exports
 
 Twenty-three code subpaths, twenty mapped below, plus one CONFIG export:
@@ -125,7 +155,7 @@ reset to epoch 1 with nothing retained; see "Every capability restarts at epoch
 | `@alexkroman1/aai/testing/vitest`                 | `sdk/testing-vitest.ts`       | `installStubGateway` and every other `install*`/`restore`-returning helper. A helper belongs here only when its remaining content is the INSTALLATION; the fake stays framework-agnostic in `testing.ts`                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `@alexkroman1/aai/utils`                          | `sdk/utils.ts`                | Zero-dependency helpers a TOOL body reaches for (`errorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, `createKeyedLock`/`withLock`, `jsonClient`/`HttpError` for an author's own vendor API, `fitToolResult`, `normalizePhone`, …). **`formatBytes`/`formatDuration`/`countWords`/`plural` (`sdk/format.ts`) and `decodeHtmlEntities` are reachable only here** — read by a step AND a `client.tsx` without zod's graph. Non-localized (no `Intl`), pinned in `format.test.ts`. `plural` returns the WORD. `createKeyedLock`'s `p-timeout` is the one dependency |
 | `@alexkroman1/aai/step`                           | `sdk/step-barrel.ts`          | The vocabulary a workflow step is written against: `mapConcurrent`/`mapSettled`, `stepEnv`, `stepDelegate`, `stepFetch` (HTTP/1.1-pinned), `stepReport`/`stepEmit`, `stepGenerate`/`stepGenerateJson`, upload read/write, `stepSpeak`, `stepTranscribe*`, `isTransientStatus`/`retryAfter`. The module doc owns the rest                                                                                                                                                                                                                                                                                               |
-| `@alexkroman1/aai/step-errors`                    | `sdk/step-errors.ts`          | `toStepError`/`throwStepError`/`throwFatalStepError`, `FatalError`/`RetryableError`, the seven `*OrFail` callers, and `throwFfmpegStepError` — whose default is INVERTED (unrecognised = fatal). Importing from here is the opt-in to burning a step's retries. The ffmpeg guard is STRUCTURAL, not `instanceof`, because `sdk/` may not name a Node type                                                                                                                                                                                                                                                              |
+| `@alexkroman1/aai/step-errors`                    | `sdk/step-errors.ts`          | `toStepError`/`throwStepError`/`throwFatalStepError`, `FatalError`/`RetryableError`, `orFail` (the root's own, handed a function: `orFail(stepFetch)` — it replaced the eight `*OrFail` twins), and `throwFfmpegStepError` — whose default is INVERTED (unrecognised = fatal). Importing from here is the opt-in to burning a step's retries. The ffmpeg guard is STRUCTURAL, not `instanceof`, because `sdk/` may not name a Node type                                                                                                                                                                                |
 | `@alexkroman1/aai/channels`                       | `sdk/channels-barrel.ts`      | `slackChannel({ webhookUrl })` + `sendToChannel`. Descriptor is `{ kind, options }`; `text` is required; `isSlackWebhookUrl` is a SECURITY boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `@alexkroman1/aai/slugify`                        | `host/slugify.ts`             | `slugifyName` (transliterating). Separate from the dependency-free contract in `sdk/slug.ts`; nothing on the SDK hot path may import it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `@alexkroman1/aai-runtime`                        | (other package)               | The Node runtime                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

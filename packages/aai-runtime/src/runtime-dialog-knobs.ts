@@ -41,18 +41,14 @@ import { type DialogTurnKnobs, interruptionKnobs } from "./transports/pipeline-d
  * closing the socket and dialling a new one, which is a gap in the middle of
  * the agent's own sentence.
  *
- * **`keyterms` was here and is LIVE now.** What retired it is AssemblyAI's
- * `UpdateConfiguration` message, which takes `keyterms_prompt` mid-stream and
- * is documented for exactly this case ("a voice agent moves between
- * conversation stages") — so the STT side never needed a second socket.
- * `SttSession.updateKeyterms` is the seam, applied at the end of each agent
- * turn (the moment before the caller answers the question that state just
- * asked), and a provider that has no equivalent ignores the call.
+ * `keyterms` is in neither list: v17 removed it from `DialogVoiceConfig` with
+ * the rest of the pipeline's unmeasured per-turn STT steering, so no state can
+ * declare it and `sttPrompt` is the one steering input a pipeline sends.
  */
 const INERT_KNOBS = ["voice"] as const;
 
 /** The knobs a declared state may carry that the pipeline DOES apply per state. */
-const LIVE_KNOBS = ["interruption", "toolChoice", "temperature", "keyterms"] as const;
+const LIVE_KNOBS = ["interruption", "toolChoice", "temperature"] as const;
 
 /**
  * Runtimes whose dialogs have already been reported.
@@ -147,7 +143,7 @@ function warnInertKnobs(
  * interruptible barge-in. Two dialogs have no containment relation at all —
  * neither is a special case of the other — so there is no "together" to
  * preserve, and per-key is the only merge with a meaning. Last writer wins is
- * the rule `composePrepareStep` already uses one layer down.
+ * the rule `composePreparers` already uses one layer down.
  *
  * `undefined` when nothing is declared, which is the common case on a call:
  * most states carry an instruction and no knobs, and the transport's thunks

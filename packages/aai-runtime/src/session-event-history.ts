@@ -62,9 +62,14 @@
  */
 
 import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
-import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
+import { MAX_CLIENT_MESSAGES } from "@alexkroman1/aai/internal";
 import type { RestoredToolCall } from "@alexkroman1/aai/protocol";
 import type { ModelMessage } from "ai";
+import {
+  estimateConversationTokens,
+  evictBeyondRetention,
+  HISTORY_RETAIN_TOKENS,
+} from "./_history-retention.ts";
 import { toolResultMessage } from "./_tool-result-message.ts";
 
 /**
@@ -86,13 +91,15 @@ import { toolResultMessage } from "./_tool-result-message.ts";
 export function historyMessageOf(event: SessionEventBody): Message | undefined {
   if (event.type === "user-transcript.committed") return { role: "user", content: event.text };
   if (event.type !== "agent-transcript.committed") return undefined;
-  if (event.recovery !== undefined) return undefined;
+  // Spoken but deliberately unrecorded: a failure phrase, or a `say` with
+  // `record: false`. See the event's own doc in `sdk/protocol-events.ts`.
+  if (event.recovery !== undefined || event.recorded === false) return undefined;
   return { role: "assistant", content: event.text };
 }
 
 /**
- * The conversation these events record, oldest first and capped like the live
- * session's own window — {@link historyFromEvents}' messages, without its
+ * The conversation these events record, oldest first and retained like the
+ * live session's own record — {@link historyFromEvents}' messages, without its
  * anchors.
  *
  * ONE walk, not a second one that agrees with it: the two used to be separate
@@ -101,8 +108,21 @@ export function historyMessageOf(event: SessionEventBody): Message | undefined {
  *
  * @internal
  */
-export function messagesFromEvents(events: readonly SessionEvent[]): Message[] {
-  return historyFromEvents(events).messages;
+export function messagesFromEvents(
+  events: readonly SessionEvent[],
+  opts: HistoryFromEventsOptions = {},
+): Message[] {
+  return historyFromEvents(events, opts).messages;
+}
+
+/** Options for {@link historyFromEvents}. @internal */
+export interface HistoryFromEventsOptions {
+  /**
+   * Estimated tokens of conversation retained — the live record's own memory
+   * bound (`_history-retention.ts`), default `HISTORY_RETAIN_TOKENS`. A spec
+   * lowers it, as it lowers the live one, to reach the bound.
+   */
+  retainTokens?: number;
 }
 
 /**
@@ -135,7 +155,10 @@ export function messagesFromEvents(events: readonly SessionEvent[]): Message[] {
  *
  * @internal
  */
-export function historyFromEvents(events: readonly SessionEvent[]): {
+export function historyFromEvents(
+  events: readonly SessionEvent[],
+  opts: HistoryFromEventsOptions = {},
+): {
   messages: Message[];
   toolCalls: RestoredToolCall[];
 } {
@@ -200,22 +223,68 @@ export function historyFromEvents(events: readonly SessionEvent[]): {
         break;
     }
   }
-  // Trimmed at the FRONT, matching the live window (`DEFAULT_MAX_HISTORY`): a
-  // resumed session must not come back holding more context than it could have
-  // accumulated without dropping. The anchors move WITH it, by the number of
-  // VISIBLE messages that came off rather than by the raw count — they index
-  // that subsequence. A tool call whose anchor slid out of the window is not
-  // dropped: it re-anchors to `-1` and renders before all messages, which is
-  // exactly what the live client does when its own window slides past an anchor.
-  const dropped = Math.max(0, messages.length - DEFAULT_MAX_HISTORY);
-  if (dropped > 0) {
-    const removed = messages.splice(0, dropped);
-    const droppedVisible = removed.reduce((n, m) => (m.role === "tool" ? n : n + 1), 0);
-    for (const call of toolCalls) {
-      call.afterMessageIndex = Math.max(-1, call.afterMessageIndex - droppedVisible);
-    }
+  // Retained at the FRONT exactly as the live record is (`_history-retention.ts`,
+  // in TOKENS): a resumed session must not come back holding more than it could
+  // have kept without dropping. The full log stays the source of truth; this is
+  // only what a session REMEMBERS of it.
+  const removed = evictBeyondRetention(
+    messages,
+    opts.retainTokens ?? HISTORY_RETAIN_TOKENS,
+    estimateConversationTokens,
+  );
+  return { messages, toolCalls: shiftAnchors(toolCalls, removed) };
+}
+
+/**
+ * Move the anchors with a front trim, by the number of VISIBLE messages that
+ * came off rather than by the raw count — they index that subsequence. A tool
+ * call whose anchor slid out of the window is not dropped: it re-anchors to
+ * `-1` and renders before all messages, which is exactly what the live client
+ * does when its own window slides past an anchor. Mutates the calls in place,
+ * which are the walk's own.
+ */
+function shiftAnchors(
+  toolCalls: RestoredToolCall[],
+  removed: readonly Message[],
+): RestoredToolCall[] {
+  const droppedVisible = removed.reduce((n, m) => (m.role === "tool" ? n : n + 1), 0);
+  if (droppedVisible === 0) return toolCalls;
+  for (const call of toolCalls) {
+    call.afterMessageIndex = Math.max(-1, call.afterMessageIndex - droppedVisible);
   }
-  return { messages, toolCalls: toolCalls.slice(-DEFAULT_MAX_HISTORY) };
+  return toolCalls;
+}
+
+/**
+ * What a `history.restored` frame carries of a restored conversation: the last
+ * `MAX_CLIENT_MESSAGES` VISIBLE messages and tool calls, anchors moved with the
+ * trim.
+ *
+ * The one place a message COUNT survives, and it is a display/wire bound: the
+ * frame's schema caps both arrays at it, and the browser keeps no more in its
+ * snapshot. What the session remembers is the token-retained `messages` this
+ * is cut from, untouched.
+ *
+ * @internal
+ */
+export function clientHistoryFrame(
+  messages: readonly Message[],
+  toolCalls: readonly RestoredToolCall[],
+): {
+  messages: { role: "user" | "assistant"; content: string }[];
+  toolCalls: RestoredToolCall[];
+} {
+  const visible = messages.flatMap((m) =>
+    m.role === "tool" ? [] : [{ role: m.role, content: m.content }],
+  );
+  const dropped = Math.max(0, visible.length - MAX_CLIENT_MESSAGES);
+  return {
+    messages: visible.slice(dropped),
+    toolCalls: toolCalls.slice(-MAX_CLIENT_MESSAGES).map((call) => ({
+      ...call,
+      afterMessageIndex: Math.max(-1, call.afterMessageIndex - dropped),
+    })),
+  };
 }
 
 /**

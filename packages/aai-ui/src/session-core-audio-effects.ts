@@ -15,6 +15,8 @@ import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
 import { openAudioPath } from "./session-core-audio-setup.ts";
 import type { AudioPathEffects } from "./session-core-audio-state.ts";
+import type { MicSender } from "./session-core-mic.ts";
+import type { PreConnectAudio } from "./session-core-preconnect.ts";
 import type { SessionStateMachine } from "./session-core-state.ts";
 import { type ConnState, type SessionSnapshot, STOPPED } from "./session-core-types.ts";
 
@@ -25,12 +27,15 @@ export type AudioEffectsDeps = {
   /** The session's state and error, as one fact — see `session-core-state.ts`. */
   agentState: SessionStateMachine;
   sendJson: (msg: SessionCommand) => void;
-  sendAudio: (bytes: ArrayBuffer) => void;
+  /** The mic's wire half: live frames, and the pre-connect burst. */
+  mic: Pick<MicSender, "sendAudio" | "sendBuffered">;
+  /** The microphone opened at `connect()`, which the next bring-up adopts. */
+  preConnect: PreConnectAudio;
 };
 
 /** Build the effects for one session's audio path. */
 export function createAudioEffects(deps: AudioEffectsDeps): AudioPathEffects {
-  const { conn, updateState, agentState, sendJson, sendAudio } = deps;
+  const { conn, updateState, agentState, sendJson, mic, preConnect } = deps;
 
   /**
    * Wait for `io`'s playback queue to drain, then go back to listening.
@@ -54,12 +59,19 @@ export function createAudioEffects(deps: AudioEffectsDeps): AudioPathEffects {
   }
 
   return {
-    open: openAudioPath,
+    open: (config, callbacks) => openAudioPath(config, callbacks, preConnect.take()),
     sendMicAudio: (pcm16) => {
       try {
-        sendAudio(pcm16);
+        mic.sendAudio(pcm16);
       } catch {
         console.debug("[aai-ui] sendAudio dropped: connection closed");
+      }
+    },
+    sendPreConnectAudio: (chunks) => {
+      try {
+        mic.sendBuffered(chunks);
+      } catch {
+        console.debug("[aai-ui] pre-connect audio dropped: connection closed");
       }
     },
     reportProgress: (bufferedMs) => {

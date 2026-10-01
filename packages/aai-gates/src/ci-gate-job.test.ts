@@ -280,6 +280,42 @@ describe("the Postgres image pull", () => {
     );
   });
 
+  test("each attempt falls back across registries, pulling one pinned DIGEST", () => {
+    // public.ecr.aws's anonymous DATA cap is per IP per month, not per unit
+    // time, so no backoff inside a job outlasts it (2026-09-30: all four
+    // attempts refused while ghcr.io and Docker Hub served the same digest).
+    // A digest, not a tag, is what makes trying another registry safe.
+    const registries = /for registry in ([^\n]+); do/.exec(pgStep);
+    expect(registries, "the pull no longer falls back to another registry").not.toBeNull();
+    expect(
+      (registries?.[1] ?? "").trim().split(/\s+/).length,
+      "a fallback needs more than one registry",
+    ).toBeGreaterThan(1);
+    expect(pgStep, "the image is no longer pinned by digest").toMatch(
+      /PG_REF=\S+@sha256:[0-9a-f]{64}/,
+    );
+    expect(pgStep, "a data-cap refusal is no longer classified as transient").toContain(
+      "data limit",
+    );
+  });
+
+  test("the Supabase stack's retry switches registry, not only waits", () => {
+    // Same failure, other job: `supabase start` pinned to public.ecr.aws hit
+    // its data cap on every one of four attempts (2026-09-30). Only a second
+    // registry clears that, so the retry must move `SUPABASE_INTERNAL_IMAGE_REGISTRY`.
+    const stack = jobBody("platform-stack");
+    const registries = /registries=\(([^)]+)\)/.exec(stack);
+    expect(registries, "`supabase start` no longer rotates registries").not.toBeNull();
+    expect(
+      new Set((registries?.[1] ?? "").trim().split(/\s+/)).size,
+      "a rotation needs more than one distinct registry",
+    ).toBeGreaterThan(1);
+    expect(stack, "the retry no longer sets the registry per attempt").toMatch(
+      /export SUPABASE_INTERNAL_IMAGE_REGISTRY="\$\{registries\[/,
+    );
+    expect(stack, "a data-cap refusal no longer triggers the retry").toContain("data limit");
+  });
+
   test("exhausting the retries FAILS the job", () => {
     // The trap this guards is a loop that falls out and carries on, leaving
     // `docker run` to fail later with an error naming the container rather than

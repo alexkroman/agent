@@ -12,7 +12,7 @@
 
 import type { ToolContext } from "@alexkroman1/aai";
 import { createSeededRandom, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
+import { createDetachedSlotStore, DETACHED_SESSION_SPEECH } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { vi } from "vitest";
@@ -35,6 +35,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
   return {
     env: {},
     slots: createDetachedSlotStore(),
+    speech: DETACHED_SESSION_SPEECH,
     // The SDK's own published helper rather than `{} as never`: it REJECTS
     // naming itself, so a spec that unexpectedly reaches `ctx.db` says so
     // instead of dying on a TypeError against an empty object. `as never` is

@@ -3,7 +3,7 @@
   "capability": "testing",
   "epoch": 15,
   "rule": 2,
-  "sha256": "2938f11a90a307edf625ddee27657e77de20217f4b5ef3515e3aca00b76f80c0",
+  "sha256": "f6ebf1c6558c13098e00145ed498e122789a206ad17cf07351b94ac46ba7bd1d",
   "exports": [
     "DeployedConfig",
     "DeployedStage",
@@ -20,6 +20,7 @@
     "RecordingWorkflowsOptions",
     "RunSnapshotOverrides",
     "STUB_SPEECH_PCM_BYTES",
+    "SaidLine",
     "ScriptedToolContext",
     "ScriptedToolContextOptions",
     "SentEvent",
@@ -130,5 +131,5 @@
     "toolOf",
     "toolRunner"
   ],
-  "rollup": "3794055868061fd1cb752ff1ca06f8d41fc46f3af63f86a60bed89fcb03a773a"
+  "rollup": "506f2fa1a4a9f85a38314a8d2dcadc665565ef310aeb1cbb56c597138da5ecaa"
 }

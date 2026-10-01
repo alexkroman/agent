@@ -24,16 +24,16 @@
 
 /** The def a DEPLOYED agent runs — see `agent.test.ts` on why the glob is here. */
 import agentDef from "virtual:aai/agent";
-import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
 import {
+  describeEval,
   describeToolCalls,
   describeTurn,
+  dialogRefusalPattern,
   type EvalSession,
   lastStateIn,
   toolNames,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 

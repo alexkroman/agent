@@ -40,6 +40,7 @@ import type {
 } from "@alexkroman1/aai";
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 import type { ModelMessage } from "ai";
+import type { TransportCapabilities } from "./capabilities.ts";
 
 /**
  * What a transport may report: everything in the session event vocabulary except
@@ -212,6 +213,44 @@ export type TransportSessionConfig = {
 };
 
 /**
+ * The two decisions every code-initiated line states — the SDK's `SayOptions`
+ * minus `interrupt` (which acts on the reply before the line, not on the line).
+ *
+ * Every code-initiated line in pipeline mode states both — the table in
+ * `pipeline-lines.ts` lists each line and its values.
+ *
+ * @internal
+ */
+export type LineFlags = {
+  /** On the record: history, `ctx.messages`, a committed transcript. */
+  readonly record: boolean;
+  /** A caller's barge-in may cut it. */
+  readonly interruptible: boolean;
+};
+
+/**
+ * One {@link Transport.speakLine} call's controls: `signal` takes a still-queued
+ * line back, and `onStart` fires as the line takes the floor, which is what
+ * tells the session a later take-back must cut a reply rather than skip one.
+ * `interruptible: false` holds the caller's barge-in off while the line plays;
+ * `record: false` keeps it out of history — the {@link LineFlags} every
+ * code-initiated line states.
+ *
+ * @internal
+ */
+export type SpokenLine = LineFlags & {
+  readonly signal: AbortSignal;
+  readonly onStart: () => void;
+};
+
+/**
+ * How a {@link Transport.speakLine} line ended — the SDK's `SpeechOutcome`.
+ *
+ * @internal
+ */
+export type SpokenLineOutcome = "played" | "interrupted" | "dropped";
+
+/**
  * A session's greeting: the text, or a THUNK that knows it later.
  *
  * The thunk exists for the reason {@link SkipGreetingOption}'s does: the
@@ -244,6 +283,12 @@ export function resolveGreeting(greeting: GreetingOption | undefined): string | 
  * @internal
  */
 export interface Transport {
+  /**
+   * What this transport can do — read this, never a verb's presence. Each
+   * optional verb below is implemented iff its capability is `true`
+   * (`capabilities.ts`, which also renders the guide's table).
+   */
+  readonly capabilities: TransportCapabilities;
   /** Open any underlying connections and send initial session config. */
   start(): Promise<void>;
   /** Tear down, flush, close. Idempotent. */
@@ -295,6 +340,33 @@ export interface Transport {
    * `ServerSession.announce`, which reports it rather than pretending.
    */
   injectTurn?(instruction: string): void;
+  /**
+   * Speak `text` VERBATIM as a reply of its own: the SDK's `speech.say`.
+   *
+   * Queued on the turn chain like `injectTurn`, and spoken through the
+   * greeting's path (`createLineReply`): interruptible, captioned once, and
+   * written to history as what was HEARD. A line asked for before TTS is open
+   * waits for it, behind the greeting, as the greeting does. Resolves once the line is over, never
+   * rejects: `"played"` when the playback clock ran out, `"interrupted"` when it
+   * was cut after starting, `"dropped"` when it never started (taken back
+   * through `line.signal` while queued, stranded by an interrupt, or the
+   * transport ended).
+   *
+   * OPTIONAL for a sharper reason than `injectTurn`: an S2S service has no
+   * verb that speaks host text as written. OpenAI Realtime's greeting is a
+   * `response.create` INSTRUCTION ("Say exactly: …") the model may paraphrase,
+   * which is fine for a greeting and is not what "verbatim" promises —
+   * `capabilities.say` is `false` there.
+   */
+  speakLine?(text: string, line: SpokenLine): Promise<SpokenLineOutcome>;
+  /**
+   * Is a reply in flight or still playing out? What `speech.interrupt()` reads
+   * to answer `false` rather than report a `reply.cancelled` for nothing.
+   *
+   * OPTIONAL: neither S2S transport tracks playback on the client, so the
+   * session treats "unknown" as "yes" there.
+   */
+  isReplying?(): boolean;
   /**
    * Push-to-talk: the client OPENED a turn (`user_turn_start`). Answers `true`
    * when opening it interrupted the agent — a reply in flight or still playing

@@ -277,8 +277,7 @@ async function nextMove(
  * ```ts
  * import { agent } from "@alexkroman1/aai";
  * import { llm } from "@alexkroman1/aai/llm";
- * import { openEvalSession } from "@alexkroman1/aai-runtime/eval";
- * import { simulateCall } from "@alexkroman1/aai-runtime/eval/simulate";
+ * import { openEvalSession, simulateCall } from "@alexkroman1/aai-runtime/eval";
  *
  * export async function hurriedCaller(): Promise<void> {
  *   const session = await openEvalSession({ agent: agent({ name: "Order Desk" }) });

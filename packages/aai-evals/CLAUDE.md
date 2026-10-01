@@ -169,19 +169,19 @@ blocks merges is worse than an unreliable number nobody is forced to believe.
 `AAI_EVAL_MIN_SCORE` makes it assert, and it asserts `score.min` — the spread's
 LOWER bound — because a mean over a flipping suite passes on a lucky repeat.
 
-**A model-graded judge now exists, and it lives in `aai-runtime/eval/simulate`,
-not here.** `judgeCall` (and `evalSimulation(...).judge` in a `describeEval`
-case) rules on each
-criterion separately and computes the verdict itself, so a skipped criterion is
-a FAIL rather than a silent pass — see `aai-runtime/TEXT-AGENT-CLAUDE.md`,
-"A simulated caller, and a judge". The caution that kept it unbuilt still holds
-and is why it is a separate instrument rather than an assertion here: "did it
-say the right thing" is the noisiest claim available, and the tau2 numbers this
-repo quotes mix DB-state reward with NL assertions — conflating them is what made
-"the agent talked better and acted worse" hard to see (DB reward 1.00 → 0.40
-while NL assertions rose 0.60 → 0.80). Deterministic assertions first; read a
-judged case under `AAI_EVAL_REPEAT` through the spread above.
-`saidSomething(token)` is a substring/regexp check and is not a judge.
+**A model-graded judge now exists, and it lives in `aai-runtime`'s eval surface
+(`judgeCall` on `/eval` and `/eval/vitest`), not here.** `judgeCall` (and
+`evalSimulation(...).judge` in a `describeEval` case) rules on each criterion
+separately and computes the verdict itself, so a skipped criterion is a FAIL
+rather than a silent pass — see `aai-runtime/TEXT-AGENT-CLAUDE.md`, "A simulated
+caller, and a judge". The caution that kept it unbuilt still holds and is why it
+is a separate instrument rather than an assertion here: "did it say the right
+thing" is the noisiest claim available, and the tau2 numbers this repo quotes
+mix DB-state reward with NL assertions — conflating them is what made "the agent
+talked better and acted worse" hard to see (DB reward 1.00 → 0.40 while NL
+assertions rose 0.60 → 0.80). Deterministic assertions first; read a judged case
+under `AAI_EVAL_REPEAT` through the spread above. `saidSomething(token)` is a
+substring/regexp check and is not a judge.
 
 ## Measured, on the day it landed
 

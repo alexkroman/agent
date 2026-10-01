@@ -22,9 +22,11 @@ import { plural } from "./format.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { stepDelegate } from "./step-delegate.ts";
-import { stepGenerateJsonOrFail, stepGenerateOrFail } from "./step-errors.ts";
+import { stepGenerate } from "./step-generate.ts";
+import { stepGenerateJson } from "./step-generate-json.ts";
 import { stepReport } from "./step-report.ts";
 import { type SubagentDef, type SubagentToolCall, subagent } from "./subagent.ts";
+import { orFail } from "./tool-failure-flow.ts";
 import type { ToolDef } from "./types.ts";
 
 // ---- The stages ------------------------------------------------------------
@@ -45,7 +47,7 @@ export async function writeBrief(
   settings: DeepResearchSettings,
 ): Promise<DeepResearchBrief> {
   await stepReport(`Working out what "${topic}" is really asking.`);
-  const parsed = await stepGenerateJsonOrFail(`Research request, as it was asked: ${topic}`, {
+  const parsed = await orFail(stepGenerateJson)(`Research request, as it was asked: ${topic}`, {
     ...settings.generate,
     system: settings.prompts.brief,
     schema: BriefReply,
@@ -61,7 +63,7 @@ export async function planAngles(
   brief: DeepResearchBrief,
   settings: DeepResearchSettings,
 ): Promise<string[]> {
-  const parsed = await stepGenerateJsonOrFail(briefText(brief), {
+  const parsed = await orFail(stepGenerateJson)(briefText(brief), {
     ...settings.generate,
     system: settings.prompts.plan,
     schema: AnglesReply,
@@ -161,7 +163,7 @@ export async function findGaps(
   settings: DeepResearchSettings,
 ): Promise<string[]> {
   if (notes.length === 0) return [];
-  const parsed = await stepGenerateJsonOrFail(
+  const parsed = await orFail(stepGenerateJson)(
     `${briefText(brief)}\n\nWhat came back:\n${notes.map(noteText).join("\n\n")}`,
     { ...settings.generate, system: settings.prompts.gaps, schema: AnglesReply },
   );
@@ -185,11 +187,11 @@ export async function writeReport(
   settings: DeepResearchSettings,
 ): Promise<{ report: string; summary: string }> {
   await stepReport(`Writing up ${notes.length} ${plural(notes.length, "angle")}.`);
-  const report = await stepGenerateOrFail(
+  const report = await orFail(stepGenerate)(
     `${briefText(brief)}\n\n${findingsText(notes, allSources(notes))}`,
     { ...settings.generate, system: settings.prompts.report },
   );
-  const summary = await stepGenerateOrFail(`Topic: ${topic}\n\nReport:\n${report}`, {
+  const summary = await orFail(stepGenerate)(`Topic: ${topic}\n\nReport:\n${report}`, {
     ...settings.generate,
     system: settings.prompts.summary,
   });

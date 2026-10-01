@@ -10,9 +10,11 @@
  * because three copies of a context is three chances for one of them to gain a
  * capability the others were deliberately denied.
  *
- * **It is deliberately the same shape as `SessionEventContext`** and carries
- * the same omissions for the same reason: no `send`, no `generate`, no
- * `delegate`, no `messages`. None of these functions may SPEAK. A resolver
+ * **It is deliberately the same shape as `SessionEventContext`, bar that
+ * context's `speech`,** and carries the same omissions for the same reason: no
+ * `send`, no `generate`, no `delegate`, no `messages`. None of these functions
+ * may SPEAK, and unlike an event handler they may not `say` either: each runs
+ * INSIDE the reply a `say` would queue behind. A resolver
  * returns instructions and a guardrail returns a verdict; anything else they
  * could do to the turn would make a declaration into a second control path, and
  * the value of a declaration is that a reader can see what it does.

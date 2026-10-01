@@ -44,6 +44,7 @@ import { defaultClientPlugins } from "./_client-plugins.ts";
 import { ensureApiKey } from "./_config.ts";
 import { createDevLogger, devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
+import { devSessionTicketing } from "./_dev-session-ticket.ts";
 import { createDevTypecheck } from "./_dev-typecheck.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
 import { type DevWatcher, type DevWatchFn, watchDirectory } from "./_dev-watch.ts";
@@ -347,6 +348,15 @@ export async function startDevServer(
       ...omitUndefined({ runCode }),
     };
 
+    // `AAI_SESSION_SECRET` set: tickets for the client this server serves — see
+    // `_dev-session-ticket.ts`. Read from the env the gate itself reads.
+    const serverEnv = hostModeEnv(providerEnv);
+    const ticketing = devSessionTicketing(serverEnv, {
+      name: agentDef.name,
+      greeting: agentDef.greeting,
+      page: agentDef.mode === "workflow-app" ? "static" : undefined,
+    });
+
     return serve(runtimeOptions, (runtime) => ({
       runtime,
       name: agentDef.name,
@@ -359,7 +369,8 @@ export async function startDevServer(
       // is read from the shell explicitly — otherwise host mode would be
       // unreachable for anyone who exports it the usual way. Host sessions
       // open their own provider connections, so they get `providerEnv`.
-      env: hostModeEnv(providerEnv),
+      env: serverEnv,
+      ...omitUndefined({ auth: ticketing?.auth }),
       // Host sessions inherit this agent's stt/llm/tts pipeline config.
       hostBaseAgent: agentDef,
       // Served pre-connection via GET /client-config.
@@ -393,7 +404,9 @@ export async function startDevServer(
       // three mounts of this one door cannot drift. The logger matters here in
       // particular: the door's fallback is `consoleLogger`, whose `info` is
       // `console.log`, and `aai dev --json` owes stdout exactly one line.
+      // Dev ticketing's `client-config` first: this hook precedes the server's own.
       request: (req, res, url, method) =>
+        ticketing?.clientConfig(req, res, url, method) ??
         handleWorkflowRequest(req, res, url, method, {
           deliver: () => runtime.deliverWorkflow,
           logger: devLogger,

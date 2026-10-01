@@ -120,9 +120,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const history = createPipelineHistory(sessionConfig.history, { log, sid: opts.sid });
   // Bounds what each STEP sends the model, in TOKENS, and learns the request's
   // fixed cost from the provider's own reported usage — so it is built once per
-  // SESSION, and it bounds the REQUEST and never `history`. The argument for
-  // both, and what an unknown context window does instead, are in
-  // pipeline-context-budget.ts.
+  // SESSION, and it bounds the REQUEST and never `history`. It is the ONLY
+  // bound on a request — an unknown context window is budgeted too. The
+  // argument is in pipeline-context-budget.ts.
   const contextBudget = createContextBudget({ llm: opts.llm, log, sid: opts.sid });
   // Turn serializer + its queued-turn epoch check — see createTurnChain.
   const turnChain = createTurnChain({ gate, isTerminated: () => terminated });
@@ -472,6 +472,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sendTtsText,
     drainTts,
     runReply,
+    holdFloor: knobs.holdFloor,
     logTurnCrash,
   });
 

@@ -12,7 +12,7 @@
  *
  * **Every one of them is four lines, because the SDK owns the endpoint.**
  * `stepTranscribeUpload` / `stepTranscribeSubmit` / `stepTranscribePoll` on
- * `@alexkroman1/aai/step` — reached here through their `*OrFail` callers on
+ * `@alexkroman1/aai/step` — reached here through `orFail` from
  * `@alexkroman1/aai/step-errors` — carry the URL, the raw-key auth, the windowed
  * streaming upload, the PLURAL `speech_models` field and the failure
  * classification — all of which this file used to spell out, and all of which
@@ -40,12 +40,14 @@
  * the one leg that should be as boring as possible.
  */
 
-import { stepReport, stepUploadInfo } from "@alexkroman1/aai/step";
 import {
-  stepTranscribePollOrFail,
-  stepTranscribeSubmitOrFail,
-  stepTranscribeUploadOrFail,
-} from "@alexkroman1/aai/step-errors";
+  stepReport,
+  stepTranscribePoll,
+  stepTranscribeSubmit,
+  stepTranscribeUpload,
+  stepUploadInfo,
+} from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
 import { countWords, formatBytes } from "@alexkroman1/aai/utils";
 
 /**
@@ -96,12 +98,12 @@ export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: st
   await stepReport(
     `Uploading ${stored.name || uploadId} (${formatBytes(stored.size)}) for transcription.`,
   );
-  return await stepTranscribeUploadOrFail(uploadId);
+  return await orFail(stepTranscribeUpload)(uploadId);
 }
 
 /** Create the transcription job, and answer with the id that outlives this run. */
 export async function createJob(audioUrl: string): Promise<{ id: string }> {
-  const job = await stepTranscribeSubmitOrFail(audioUrl);
+  const job = await orFail(stepTranscribeSubmit)(audioUrl);
   await stepReport(`Transcribing — job ${job.id}.`);
   return job;
 }
@@ -119,7 +121,7 @@ export async function pollTranscript(
   uploadId: string,
   id: string,
 ): Promise<{ done: false } | { done: true; transcript: Transcript }> {
-  const progress = await stepTranscribePollOrFail(id);
+  const progress = await orFail(stepTranscribePoll)(id);
   if (!progress.done) return { done: false };
 
   const stored = await stepUploadInfo(uploadId);

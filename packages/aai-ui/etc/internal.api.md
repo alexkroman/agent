@@ -43,6 +43,7 @@ type BrowserSession = {
     readonly userTurn: UserTurnControls;
     readonly identity: SessionIdentity;
     sendText(text: string, options?: SendTextOptions): void;
+    sendToolResult(toolCallId: string, outcome: ToolCallOutcome): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
@@ -84,7 +85,7 @@ export const DEFAULT_PROGRESS_POLL_MS = 5000;
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
 // @internal
-export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
+export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch, presentedTicket?: string): Promise<ClientConfigResponse | null>;
 
 // @public
 export const MAX_MISSING_READS = 3;
@@ -107,6 +108,7 @@ type SessionIdentity = {
     clientId(): string | undefined;
     holderId(): string;
     sessionId(): string | undefined;
+    ticket(): string | undefined | Promise<string | undefined>;
 };
 
 // @internal
@@ -153,6 +155,13 @@ type ToolCallInfo = {
     result?: string | undefined;
     seq: number;
     afterMessageId: number;
+};
+
+// @public
+type ToolCallOutcome = {
+    result: unknown;
+} | {
+    error: string;
 };
 
 // @internal

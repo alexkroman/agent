@@ -81,7 +81,8 @@ rebuilds on save.
 A spoken conversation has failure modes a chat UI doesn't. These are on by
 default, each with a named field on `agent()` when you disagree:
 
-- A cough or a backchannel doesn't cut the agent off mid-sentence.
+- A cough or a brief "yeah" doesn't cut the agent off mid-sentence: an
+  interruption has to be half a second of sustained speech.
 - An interruption that never becomes a real turn resumes the reply from the
   last words the caller actually heard.
 - A slow tool chain speaks a short filler instead of leaving dead air.

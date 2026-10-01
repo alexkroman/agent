@@ -72,6 +72,7 @@ export function createMockSessionCore(
       clientId: () => undefined,
       holderId: () => "holder-test",
       sessionId: () => undefined,
+      ticket: () => undefined,
       ...identity,
     },
     userTurn: {
@@ -86,6 +87,9 @@ export function createMockSessionCore(
       },
     },
     sendText() {
+      /* noop */
+    },
+    sendToolResult() {
       /* noop */
     },
     setMicMuted(muted: boolean) {

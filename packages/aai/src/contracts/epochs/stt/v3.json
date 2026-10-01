@@ -3,7 +3,7 @@
   "capability": "stt",
   "epoch": 3,
   "rule": 2,
-  "sha256": "a9844ad19519fb5531e4bdbe53de574e360f9a64a168a00a5a1ed09a427db9cd",
+  "sha256": "24133d8f834c5e33cb24f18042165c20187db8582171113b06db37c5229d1f98",
   "exports": [
     "ASSEMBLYAI_STT_EU_URL",
     "AssemblyAISttOptions",
@@ -15,10 +15,11 @@
     "assemblyAIStt",
     "deepgramStt",
     "elevenLabsStt",
+    "fallback",
     "sonioxStt"
   ],
   "rollup": "aab4fdfec00cfc39f95a332f8967a9c0741a0223d956a9b2a85aab45c7cef902",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -31,6 +32,12 @@
       "rule": 2,
       "sha256": "a9844ad19519fb5531e4bdbe53de574e360f9a64a168a00a5a1ed09a427db9cd",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "24133d8f834c5e33cb24f18042165c20187db8582171113b06db37c5229d1f98",
+      "reason": "additive (checked): +fallback"
     }
   ]
 }

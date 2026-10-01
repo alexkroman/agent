@@ -283,9 +283,11 @@ describe("a tool's own filler and the generic dead-air cover", () => {
       start: [{ content: "One sec." }],
       complete: [{ role: "assistant", content: "Shipped Tuesday." }],
     });
+    // Separated, as the dead-air cover's lines always were: both now go
+    // through `speakInReply`, where they used to fuse ("sec.Shipped").
     expect(spoken).toEqual([
       { text: "One sec.", record: false },
-      { text: "Shipped Tuesday.", record: true },
+      { text: " Shipped Tuesday.", record: true },
     ]);
   });
 
@@ -335,7 +337,8 @@ describe("a tool's own filler and the generic dead-air cover", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     await turn;
     // The rung fired ONCE: the settle stops the ladder rather than leaving it
-    // re-arming into a turn that is over.
-    expect(spoken).toEqual(["Still checking.", "done"]);
+    // re-arming into a turn that is over. And the model's next words are a new
+    // segment, not fused onto the rung ("checking.done").
+    expect(spoken).toEqual(["Still checking.", " done"]);
   });
 });

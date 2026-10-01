@@ -34,15 +34,16 @@ import type { SessionEvent } from "@alexkroman1/aai";
 // What no eval here can see: anything below the audio boundary. Whether a
 // dispatcher reading a callsign in bursts lands as one turn is a property of
 // endpointing, and these fake speech stages remove it.
-import { dialogRefusalPattern, dialogResultSchema } from "@alexkroman1/aai/testing";
 import {
+  describeEval,
+  dialogRefusalPattern,
+  dialogResultSchema,
   type EvalSession,
   lastStateIn,
   toolNames,
   toolResultIn,
   turnCalling,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 

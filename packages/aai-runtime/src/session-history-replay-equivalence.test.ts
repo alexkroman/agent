@@ -28,7 +28,7 @@
  * State it plainly, because it is the difference between an oracle and a mirror.
  * `messagesFromEvents` has a THIRD copy of its own rule — `session-core.ts:203-222`,
  * whose live event dispatch appends on `*-transcript.committed`, clears on reset
- * and front-trims at `DEFAULT_MAX_HISTORY` — so "these two agree" would be a
+ * and front-trims at the token retention bound — so "these two agree" would be a
  * consistency check between two copies of one loop, and three implementations
  * agreeing is stronger evidence than two while still being no specification.
  * **A green differential is not the claim that either side is right**: two
@@ -78,9 +78,9 @@
  *
  * ## One more thing the property found, since FIXED
  *
- * `dropTrailingUser` POPPED where `pushConversation` had already CAPPED, so an
- * injected prompt rolled back while the live window was full cost the oldest
- * real turn permanently. A push records what it evicted now, and
+ * `dropTrailingUser` POPPED where `pushConversation` had already CAPPED (then at
+ * 200 messages, now at a token bound), so an injected prompt rolled back while
+ * the live window was full cost the oldest real turn permanently. A push records what it evicted now, and
  * `integration/pipeline-history-rollback.integration.test.ts` states the inverse
  * over generated depths. This property is not that claim and never was: it
  * compares TAILS because the two sides trim DIFFERENT sequences, which is true
@@ -93,7 +93,7 @@
  * claim about its own output for a hand-chosen input, and the defect is a
  * relation between the two over a whole session. The interesting inputs are the
  * ones nobody writes by hand — a barge-in whose caller heard nothing, a synthetic
- * prompt whose turn was stranded by a reset, a conversation past the 200-message
+ * prompt whose turn was stranded by a reset, a conversation past the retention
  * window.
  *
  * The driver runs the REAL emitters: `createTurnOutcome` over a real
@@ -109,11 +109,22 @@
  */
 
 import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
-import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
+import { estimateConversationTokens, HISTORY_RETAIN_TOKENS } from "./_history-retention.ts";
 import { recordingTts } from "./_pipeline-test-fakes.ts";
+import {
+  contentsOf,
+  ERROR_PHRASE,
+  INTERIM_KINDS,
+  KIND,
+  keep,
+  LIVE_ONLY_KINDS,
+  REPLAY_ONLY_KINDS,
+  SHARED_KINDS,
+  START_FAILURE_PHRASE,
+} from "./_replay-equivalence-test-utils.ts";
 import type { TtsSession } from "./providers/openers.ts";
 import { messagesFromEvents } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
@@ -122,64 +133,6 @@ import type { PipelineProviderSessions } from "./transports/pipeline-providers.t
 import { createTurnGate } from "./transports/pipeline-turn-gate.ts";
 import { createTurnOutcome } from "./transports/pipeline-turn-outcome.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
-
-/**
- * Every message this driver can produce, keyed by the first character of its
- * text, so a message's PROVENANCE is readable off the message itself.
- *
- * The classification is what makes the boundary assertable without either
- * implementation being consulted about it: a leaked `[interrupted]` reply is a
- * `k` where only `u`/`a`/`g` may appear.
- */
-const KIND = {
-  /** A committed user turn. Both sides. */
-  user: "u",
-  /** A spoken reply. Both sides. */
-  reply: "a",
-  /** The greeting. Both sides. */
-  greeting: "g",
-  /** An injected prompt (resume / nudge / `injectTurn`). LIVE ONLY. */
-  synthetic: "s",
-  /** The heard prefix of an interrupted reply. LIVE ONLY. */
-  interrupted: "k",
-  /** `errorPhrase`. NEITHER side, since the `recovery` tag. */
-  errorPhrase: "e",
-  /** `startFailurePhrase`. NEITHER side, since the `recovery` tag. */
-  startFailure: "f",
-  /** A `user-transcript.updated` partial. NEITHER side. */
-  userPartial: "p",
-  /**
-   * An `agent-transcript.updated` interim. NEITHER side.
-   *
-   * Tagged distinctly from the committed text it precedes, which is the
-   * FAITHFUL choice and not a convenience: interim snapshots "legitimately
-   * shrink and differ mid-string", and an interrupted reply's carry the dead-air
-   * filler the caller heard and the record excludes
-   * (`session-event-history.ts:16-21`).
-   */
-  agentInterim: "i",
-} as const;
-
-const SHARED_KINDS: ReadonlySet<string> = new Set([KIND.user, KIND.reply, KIND.greeting]);
-const LIVE_ONLY_KINDS: ReadonlySet<string> = new Set([KIND.synthetic, KIND.interrupted]);
-/**
- * The two recovery phrases. Named for the boundary they USED to sit on: both are
- * now spoken and captioned but enter no history, so what either reconstruction
- * contains of this set must be EMPTY. Kept as a live assertion rather than
- * deleted — an untagged phrase would land back here, which is the regression.
- */
-const REPLAY_ONLY_KINDS: ReadonlySet<string> = new Set([KIND.errorPhrase, KIND.startFailure]);
-/** The interim vocabulary, which neither reconstruction may ever contain. */
-const INTERIM_KINDS: ReadonlySet<string> = new Set([KIND.userPartial, KIND.agentInterim]);
-
-/** Fixed, because both phrases are session-scoped config rather than per-turn text. */
-const ERROR_PHRASE = `${KIND.errorPhrase} sorry, I had trouble with that`;
-const START_FAILURE_PHRASE = `${KIND.startFailure} I cannot start this call`;
-
-const kindOf = (m: Message): string => m.content.slice(0, 1);
-const contentsOf = (msgs: readonly Message[]): string[] => msgs.map((m) => m.content);
-const keep = (msgs: readonly Message[], kinds: ReadonlySet<string>): Message[] =>
-  msgs.filter((m) => kinds.has(kindOf(m)));
 
 /** One turn of a pipeline session, as the transport really ends one. */
 type Turn =
@@ -279,9 +232,13 @@ type Driven = {
  * `serial` makes every generated message text unique within a run, which is what
  * lets the comparison below be an ordered identity rather than a multiset one.
  */
-async function driveSession(turns: readonly Turn[], reached: Reached): Promise<Driven> {
+async function driveSession(
+  turns: readonly Turn[],
+  reached: Reached,
+  retainTokens?: number,
+): Promise<Driven> {
   const log: SessionEvent[] = [];
-  const history = createPipelineHistory();
+  const history = createPipelineHistory(undefined, omitUndefined({ retainTokens }));
   const gate = createTurnGate();
   const spoken: string[] = [];
   /**
@@ -308,7 +265,6 @@ async function driveSession(turns: readonly Turn[], reached: Reached): Promise<D
     errorPhrase: ERROR_PHRASE,
     startFailurePhrase: START_FAILURE_PHRASE,
     drainTts: () => Promise.resolve(),
-    // No dialog: `undefined` leaves the STT stream on its own keyterms.
     sendTtsText: (text) => spoken.push(text),
   });
 
@@ -468,7 +424,12 @@ async function driveSession(turns: readonly Turn[], reached: Reached): Promise<D
     }
   }
 
-  return { live: history.conversation, replayed: messagesFromEvents(log), spoken, ledger };
+  return {
+    live: history.conversation,
+    replayed: messagesFromEvents(log, omitUndefined({ retainTokens })),
+    spoken,
+    ledger,
+  };
 }
 
 /**
@@ -595,6 +556,16 @@ const turnArb: fc.Arbitrary<Turn> = fc.oneof(
  * prints a wall of a counterexample and shrinks to nothing readable, so the
  * grammar generates the REPERTOIRE and the driver repeats it.
  */
+/** Estimated tokens of a reconstruction — the unit the retention bound is in. */
+const tokensOf = (msgs: readonly Message[]): number =>
+  msgs.reduce((n, m) => n + estimateConversationTokens(m), 0);
+
+/**
+ * The retention bound the windowed property drives both sides at: small enough
+ * that 220 short turns overrun it, as the 200-message cap once was.
+ */
+const WINDOW_RETAIN = 1200;
+
 const cycle = (script: readonly Turn[], count: number): Turn[] =>
   Array.from({ length: count }, (_, i) => script[i % script.length] as Turn);
 
@@ -610,12 +581,13 @@ describe("a conversation read back out of its own event log", () => {
   test("diverges from the live conversation ONLY where the two modules' docs say it does", async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(turnArb, { minLength: 1, maxLength: 10 }), async (script) => {
-        // 40 turns of at most 2 messages each stays under the 200-message
-        // window, so the shared sequences are the SAME LENGTH and the suffix
-        // claim is a full ordered identity. The cap is the sibling property.
+        // 40 turns of at most 2 messages each stays far under the default
+        // retention bound, so the shared sequences are the SAME LENGTH and the
+        // suffix claim is a full ordered identity. The bound is the sibling
+        // property.
         const driven = await driveSession(cycle(script, 40), reached);
-        expect(driven.live.length).toBeLessThan(DEFAULT_MAX_HISTORY);
-        expect(driven.replayed.length).toBeLessThan(DEFAULT_MAX_HISTORY);
+        expect(tokensOf(driven.live)).toBeLessThan(HISTORY_RETAIN_TOKENS);
+        expect(tokensOf(driven.replayed)).toBeLessThan(HISTORY_RETAIN_TOKENS);
         expect(boundary(driven, "exact"), "the replay crossed the documented boundary").toEqual(
           held(driven, "exact"),
         );
@@ -667,17 +639,22 @@ describe("a conversation read back out of its own event log", () => {
     expect(reached.backToBackUsers, "two user turns never landed in a row").toBeGreaterThan(200); // 1310-1718
   });
 
-  test("agrees on the TAIL when the 200-message window has slid past the difference", async () => {
+  test("agrees on the TAIL when the retention window has slid past the difference", async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(turnArb, { minLength: 1, maxLength: 8 }), async (script) => {
-        // 220 turns: enough that a script of nothing but spoken turns overruns
-        // the window on both sides, while a reset-heavy one may never reach it —
-        // which is why the trim counters below are floored rather than asserted.
-        const driven = await driveSession(cycle(script, 220), reached);
-        if (driven.live.length >= DEFAULT_MAX_HISTORY) reached.liveTrims++;
-        if (driven.replayed.length >= DEFAULT_MAX_HISTORY) reached.replayTrims++;
-        expect(driven.live.length).toBeLessThanOrEqual(DEFAULT_MAX_HISTORY);
-        expect(driven.replayed.length).toBeLessThanOrEqual(DEFAULT_MAX_HISTORY);
+        // 220 turns against a `WINDOW_RETAIN` bound: enough that a script of
+        // nothing but spoken turns overruns the window on both sides, while a
+        // reset-heavy one may never reach it — which is why the trim counters
+        // below are floored rather than asserted. BOTH sides take the same
+        // bound, as a resumed session takes the live one's.
+        const driven = await driveSession(cycle(script, 220), reached, WINDOW_RETAIN);
+        const live = tokensOf(driven.live);
+        const replayed = tokensOf(driven.replayed);
+        if (live >= WINDOW_RETAIN) reached.liveTrims++;
+        if (replayed >= WINDOW_RETAIN) reached.replayTrims++;
+        // Retained, never beyond the bound by more than one message.
+        expect(tokensOf(driven.live.slice(1))).toBeLessThan(WINDOW_RETAIN);
+        expect(tokensOf(driven.replayed.slice(1))).toBeLessThan(WINDOW_RETAIN);
         expect(boundary(driven, "windowed"), "the replay crossed the documented boundary").toEqual(
           held(driven, "windowed"),
         );
@@ -692,7 +669,9 @@ describe("a conversation read back out of its own event log", () => {
     // reply and every injected prompt, and gains only a failure phrase per
     // failed turn, so it is the side that lags. Re-taken over 6 runs after the
     // rollback fix above (12-22 / 8-16), then over 13 more (live 11-21, replay
-    // 5-16): replay hit 5 on CI, so it is floored `> 0` (never filled).
+    // 5-16): replay hit 5 on CI, so it is floored `> 0` (never filled). Re-taken
+    // when the bound moved to tokens (`WINDOW_RETAIN = 1200`), over 4 runs:
+    // live 17-26, replay 10-17 — the same band, so the floors stand.
     expect(reached.liveTrims, "the live window never filled").toBeGreaterThan(5); // 11-21
     expect(reached.replayTrims, "the replayed window never filled").toBeGreaterThan(0); // 5-16
   });

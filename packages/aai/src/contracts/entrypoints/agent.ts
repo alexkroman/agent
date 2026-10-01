@@ -18,6 +18,11 @@
  * - personas — `persona`, which already owned the roster.
  *
  * `SessionEventContext` stays: it is the twin of `AgentSessionContext`, below.
+ * So does the `SessionSpeech` family (`SayOptions`, `SpeechHandle`,
+ * `SpeechOutcome`) that its `speech` field names, owned here rather than by
+ * `tool`, which reaches it through `ToolContext.speech` too: `RouteContext`'s
+ * `speech(sessionId)` is on this capability as well, so two of its three
+ * readers are here.
  *
  * `ProviderCredentialOptions` is here for the same reason as
  * `ProviderDescriptor`: every provider options interface on all four stages
@@ -178,12 +183,16 @@ export {
   routeError,
   routeResponse,
   type S2sAgentParams,
+  type SayOptions,
   type SessionCall,
   type SessionContext,
   type SessionContextArgs,
   type SessionEndContext,
   type SessionEventContext,
+  type SessionSpeech,
   type SharedAgentParams,
+  type SpeechHandle,
+  type SpeechOutcome,
   type StandardWebhookOptions,
   type StaticAgentParams,
   sessionCall,

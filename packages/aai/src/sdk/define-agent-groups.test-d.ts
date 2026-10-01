@@ -23,6 +23,7 @@ import { agent } from "./define.ts";
 import { type PersonaDef, type Personas, persona, personas } from "./persona.ts";
 import type { S2sProvider } from "./providers.ts";
 import type { SessionEventContext } from "./session-events.ts";
+import type { SessionSpeech } from "./session-speech.ts";
 import type { SubagentDef } from "./subagent.ts";
 import type { ToolSet } from "./tool-def.ts";
 import type { AgentDef, ToolContext } from "./types.ts";
@@ -160,12 +161,18 @@ test("an agent guardrail answers a GuardrailVerdict", () => {
  * Mutual assignability BOTH ways is the assertion: one direction alone passes
  * while the other side gains a field, which is exactly the drift to catch. A
  * capability added to one belongs on the other unless there is a reason it does
- * not — and that reason is a deliberate edit to this test.
+ * not — and that reason is a deliberate edit to this test. `speech` is the one
+ * such edit so far; the reason is in the test body.
  */
-test("AgentSessionContext and SessionEventContext are the same shape", () => {
-  expectTypeOf<AgentSessionContext>().toExtend<SessionEventContext>();
-  expectTypeOf<SessionEventContext>().toExtend<AgentSessionContext>();
-  expectTypeOf<keyof AgentSessionContext>().toEqualTypeOf<keyof SessionEventContext>();
+test("AgentSessionContext and SessionEventContext are the same shape, bar `speech`", () => {
+  // `speech` is the ONE deliberate difference. A `say` queues behind the reply
+  // in flight, and a resolver or guardrail runs INSIDE that reply, so speaking
+  // from one would queue behind itself; an event handler runs beside the turn.
+  type Twin = Omit<SessionEventContext, "speech">;
+  expectTypeOf<AgentSessionContext>().toExtend<Twin>();
+  expectTypeOf<Twin>().toExtend<AgentSessionContext>();
+  expectTypeOf<keyof AgentSessionContext>().toEqualTypeOf<keyof Twin>();
+  expectTypeOf<SessionEventContext["speech"]>().toEqualTypeOf<SessionSpeech>();
 });
 
 /**

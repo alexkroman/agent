@@ -2,7 +2,7 @@
 /**
  * The per-STATE voice knobs a `dialog()` declares, as the PIPELINE applies them.
  *
- * A dialog state may declare five (see `DialogVoiceConfig`). Four of them reach
+ * A dialog state may declare four (see `DialogVoiceConfig`). Three of them reach
  * this module and one never does, and the split is a property of where each
  * setting is fixed rather than a decision anyone made here:
  *
@@ -11,7 +11,6 @@
  * | `interruption` | the two interim gates in `pipeline-user-speech.ts`, read at the moment a partial is classified | yes |
  * | `toolChoice` | the `streamText` request | yes, per STEP |
  * | `temperature` | the `streamText` request | yes, per STEP |
- * | `keyterms` | `SttSession.updateKeyterms` — a mid-stream `UpdateConfiguration`, pushed at the END of each agent turn | yes, per TURN |
  * | `voice` | `TtsOpenOptions` — the voice is baked into the DESCRIPTOR that produced the opener, and the open happens once per session | **no** |
  *
  * The last one is refused where an author can see it rather than dropped here —
@@ -19,16 +18,6 @@
  * state and the knob. A knob that silently does nothing is worse than one that
  * is absent, and "the TTS voice changes mid-disclosure" is exactly the claim a
  * reader would believe on finding the field accepted.
- *
- * ## `keyterms` is per TURN, and the turn it belongs to is the one just ENDED
- *
- * The other three are read while a turn is being assembled. This one is pushed
- * after the agent stops speaking, because its subject is the audio that comes
- * NEXT: a state that asks "what is your order number?" wants the recognizer
- * primed for an order number before the caller answers, and priming it at the
- * start of the following turn is a turn too late — by then the words have
- * already been transcribed. `pipeline-turn-outcome.ts` owns that call site,
- * beside the agent-context push that is there for the identical reason.
  *
  * ## Per STEP, not per turn
  *
@@ -45,9 +34,10 @@
  * `resetToolChoiceAfterFirstStep` puts a DEMANDING agent-level `toolChoice`
  * back to `"auto"` once the first step has run, and it shares this preparer's
  * one key. `ToolChoice`'s scope list puts the dialog state above the agent, so
- * the reset is composed first and this preparer overwrites it — see the
- * `prepareStep` composition in `pipeline-llm-stream.ts`, which spells the whole
- * order out. Composed the other way round the reset won from step 1 on, and a
+ * the reset is composed first and this preparer overwrites it — see
+ * `PREPARER_ORDER` in `../_prepare-step.ts`, which states the whole order once
+ * and which `composePreparers` applies whatever order a call site registers
+ * in. Composed the other way round the reset won from step 1 on, and a
  * state's pin quietly stopped applying after the first step of every turn on
  * any agent that declares a demanding `toolChoice` of its own.
  */
@@ -64,7 +54,7 @@ import type { PrepareStepFunction, ToolSet } from "ai";
  * unreachable word threshold) is a fact about these gates and belongs on this
  * side of the seam. Every field is optional and an absent one means "leave the
  * agent's own setting alone" — a state that declares two knobs must not reset
- * the other three to their defaults.
+ * the other two to their defaults.
  *
  * @internal
  */
@@ -81,12 +71,6 @@ export interface DialogTurnKnobs {
   toolChoice?: ToolChoice | undefined;
   /** Sampling temperature for the steps taken while this state is active. */
   temperature?: number | undefined;
-  /**
-   * Recognition keyterms for as long as this state is active, replacing the
-   * STT descriptor's own list. Absent restores it — see
-   * {@link PipelineDialogKnobs.keyterms}.
-   */
-  keyterms?: readonly string[] | undefined;
 }
 
 /**
@@ -123,16 +107,12 @@ export interface PipelineDialogKnobs {
    */
   dialogStep: PrepareStepFunction<ToolSet> | undefined;
   /**
-   * The active state's keyterms, or `undefined` when no state declares any —
-   * which the STT session reads as "restore the set you opened with", not as
-   * "clear them".
-   *
-   * Read once per agent turn rather than per classification, because the
-   * consumer is a WIRE MESSAGE rather than a comparison: the session pushes
-   * it to the provider after each reply, which is the instant before the
-   * caller answers the question that state exists to ask.
+   * Hold the floor for one reply: while held, {@link minBargeInWords} answers
+   * `Infinity`, exactly a dialog state's `interruption: "off"`, whatever the state
+   * says. A `say` with `interruptible: false` holds it for the line and lets
+   * go when the line is over.
    */
-  keyterms: () => readonly string[] | undefined;
+  holdFloor(held: boolean): void;
 }
 
 /**
@@ -208,6 +188,24 @@ export function createDialogKnobs(
   base: InterruptionBase,
   persona?: PersonaInterruptionSource | undefined,
 ): PipelineDialogKnobs {
+  const knobs = readKnobs(source, base, persona);
+  let held = false;
+  const minBargeInWords = knobs.minBargeInWords;
+  return {
+    ...knobs,
+    minBargeInWords: () => (held ? Number.POSITIVE_INFINITY : minBargeInWords()),
+    holdFloor: (next) => {
+      held = next;
+    },
+  };
+}
+
+/** The knobs the dialog and persona sources declare, before a {@link PipelineDialogKnobs.holdFloor}. */
+function readKnobs(
+  source: DialogTurnSource | undefined,
+  base: InterruptionBase,
+  persona: PersonaInterruptionSource | undefined,
+): Omit<PipelineDialogKnobs, "holdFloor"> {
   const constant = source === undefined && persona === undefined;
   /** One knob, read dialog state → persona → agent. */
   const read =
@@ -227,13 +225,12 @@ export function createDialogKnobs(
     interruptionBackoffMs: read((k) => k.interruptionBackoffMs, base.interruptionBackoffMs),
     resumeFalseInterruption: read((k) => k.resumeFalseInterruption, base.resumeFalseInterruption),
   };
-  if (source === undefined) return { ...knobs, dialogStep: undefined, keyterms: () => undefined };
+  if (source === undefined) return { ...knobs, dialogStep: undefined };
   return {
     ...knobs,
-    keyterms: () => source()?.keyterms,
     // `undefined` rather than `{}` when the active state declares neither, so a
     // step the dialog has nothing to say about is prepared by exactly the
-    // preparers that shipped before this existed. `composePrepareStep` treats an
+    // preparers that shipped before this existed. `composePreparers` treats an
     // empty result as "no keys", so both are correct — but only one of them says
     // so at the call site.
     dialogStep: () => {

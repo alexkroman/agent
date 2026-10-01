@@ -22,18 +22,25 @@
  */
 
 import type { Message } from "@alexkroman1/aai";
-import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
+import { DEFAULT_IDLE_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import {
+  estimateConversationTokens,
+  evictBeyondRetention,
+  HISTORY_RETAIN_TOKENS,
+} from "./_history-retention.ts";
+import type { ClientToolAnswer } from "./client-tool-broker.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { createCommandDispatcher } from "./session-commands.ts";
 // Imported as well as re-exported below: a re-export does not bring the names
 // into scope, and `createSessionCore`'s signature needs both. Same trap the
 // root guide records for `ToolContext` in `sdk/types.ts`.
 import type { ServerSession, ServerSessionOptions } from "./session-core-types.ts";
-import { historyMessageOf, modelHistoryOf } from "./session-event-history.ts";
+import { clientHistoryFrame, historyMessageOf, modelHistoryOf } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createIdleWatchdog } from "./session-idle.ts";
 import { dispatchReplyDone } from "./session-reply-done.ts";
+import { createSpeechVerbs } from "./session-speech.ts";
 import { type ReplyToolState, runToolStep } from "./session-tool-steps.ts";
 import type { TransportEventBody } from "./transports/types.ts";
 
@@ -148,9 +155,8 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
 
   function pushMessages(...msgs: Message[]): void {
     history.push(...msgs);
-    if (history.length > DEFAULT_MAX_HISTORY) {
-      history.splice(0, history.length - DEFAULT_MAX_HISTORY);
-    }
+    // A MEMORY bound in tokens, never a message count — see `_history-retention.ts`.
+    evictBeyondRetention(history, HISTORY_RETAIN_TOKENS, estimateConversationTokens);
   }
 
   function beginReply(replyId: string): void {
@@ -169,6 +175,8 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
   // The client half of the inbound surface — see `session-commands.ts`, which
   // owns the five commands and the two that deliberately do less than they look
   // like they should.
+  const answerClientTool = (answer: ClientToolAnswer): void =>
+    opts.clientTools?.answer(opts.id, answer);
   const handleCommand = createCommandDispatcher({
     sessionId: opts.id,
     emit,
@@ -179,7 +187,16 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     clearHistory: () => {
       history = [];
     },
-    ...omitUndefined({ onToolResult: opts.onToolResult }),
+    // A relay owns every `tool_result`; otherwise they answer `clientTool` calls.
+    ...omitUndefined({ onToolResult: opts.onToolResult ?? answerClientTool }),
+  });
+
+  // `say`/`interrupt` for code that is not the model's turn — see
+  // `session-speech.ts`. The interrupt IS the client's cancel.
+  const speech = createSpeechVerbs({
+    transport: opts.transport,
+    stopped: () => stopped,
+    cancel: () => handleCommand({ type: "cancel" }),
   });
 
   /** One tool call the transport reported. See {@link ServerSession.report}. */
@@ -274,6 +291,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       // how a new report got forwarded without anyone classifying it.
       case "audio.completed":
       case "metrics.collected":
+      case "provider.failed-over":
       case "speech.stopped":
       case "tool.completed":
       case "user-turn.exceeded":
@@ -330,10 +348,14 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       opts.transport.sendUserAudio(bytes);
     },
     command: handleCommand,
+    say: speech.say,
+    interrupt: speech.interrupt,
     announce(instruction) {
       // A stopped session's transport may still hold sockets mid-teardown, so
       // the check is the session's own flag rather than the transport's.
-      if (stopped || !opts.transport.injectTurn) return false;
+      if (stopped || !opts.transport.capabilities.announce || !opts.transport.injectTurn) {
+        return false;
+      }
       log.info("Session announcement", { sid: opts.id });
       opts.transport.injectTurn(instruction);
       return true;
@@ -356,19 +378,14 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       // Through the SINK with its own stamp, never `emit`: the emitter RECORDS
       // first, so emitting the history just read out of the log would append it
       // back — doubling the log on every resume.
-      const visible = messages.filter(
-        (m): m is Message & { role: "user" | "assistant" } => m.role !== "tool",
-      );
+      //
+      // The frame carries a DISPLAY window of it (`clientHistoryFrame`), the
+      // one bound left in message counts — see `MAX_CLIENT_MESSAGES`.
+      const frame = clientHistoryFrame(messages, toolCalls);
       // Sent when there is EITHER to show: a conversation that was only tool
       // calls (a turn that died mid-chain) still has rows to render.
-      if ((visible.length > 0 || toolCalls.length > 0) && opts.client.open) {
-        opts.client.event(
-          stampSessionEvent({
-            type: "history.restored",
-            messages: visible.map(({ role, content }) => ({ role, content })),
-            toolCalls: [...toolCalls],
-          }),
-        );
+      if ((frame.messages.length > 0 || frame.toolCalls.length > 0) && opts.client.open) {
+        opts.client.event(stampSessionEvent({ type: "history.restored", ...frame }));
       }
     },
 

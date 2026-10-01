@@ -31,6 +31,7 @@ import type { SessionEvent } from "@alexkroman1/aai";
 import {
   createVmRunCode,
   customEventsIn,
+  describeEval,
   describeTurn,
   expectCalled,
   lastStateIn,
@@ -38,8 +39,7 @@ import {
   runCodeOutput,
   toolNames,
   toolResultIn,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 import { CATEGORIES, MOODS } from "./shared.ts";

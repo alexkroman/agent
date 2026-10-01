@@ -73,6 +73,8 @@ export {
   recordSessionIdentity,
   type SessionIdentity,
 } from "./sdk/_session-identity-store.ts";
+// A context with no live session behind it: every `say` settles `"dropped"`.
+export { DETACHED_SESSION_SPEECH } from "./sdk/_session-speech-detached.ts";
 export { serializeToolFailure } from "./sdk/_tool-failure-wire.ts";
 export { RETRYABLE_STATUS } from "./sdk/_upload-retry.ts";
 export type { ExecuteTool, ExecuteToolOptions } from "./sdk/agent-config.ts";
@@ -149,7 +151,35 @@ export {
   TTS_CANCEL_ACK_TIMEOUT_MS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./sdk/pipeline-tuning-constants.ts";
+export { MAX_FAILOVER_REASON_CHARS } from "./sdk/protocol-events-accounting.ts";
 export { defaultProviders } from "./sdk/providers/_default-providers.ts";
+/**
+ * The provider catalog: one `defineProvider` record per vendor, per stage —
+ * kind, credential variable, label and how an author spells the factory. The
+ * runtime's opener tables are keyed to it, and the docs site's provider table
+ * is generated from it (`define-provider.ts` has the design).
+ */
+export {
+  LLM_PROVIDERS,
+  PROVIDER_CATALOG,
+  S2S_PROVIDERS,
+  type S2sKind,
+  STT_PROVIDERS,
+  type SttKind,
+  TTS_PROVIDERS,
+  type TtsKind,
+} from "./sdk/providers/catalog.ts";
+export {
+  defineProvider,
+  describeProvider,
+  type ProviderDefinition,
+  type ProviderStage,
+} from "./sdk/providers/define-provider.ts";
+export {
+  FALLBACK_KIND,
+  fallbackMembers,
+  isFallbackDescriptor,
+} from "./sdk/providers/fallback.ts";
 /**
  * The LLM stage's host half: the AssemblyAI kind, key variable and gateway
  * endpoints (`stepGenerate` dials the gateway itself, so these cannot live in
@@ -157,9 +187,9 @@ export { defaultProviders } from "./sdk/providers/_default-providers.ts";
  * AssemblyAI descriptor's `providerOptions`, and the known-provider list (held
  * equal to `KnownLlmProvider` by `llm.test.ts`) plus that closed union itself —
  * the literal half of the open `LlmProviderName`, for the host registry's
- * `satisfies Record<KnownLlmProvider, …>`. Every OTHER provider's key
- * variable and base URL lives in that table (`aai-runtime`'s
- * `providers/_llm-registry.ts`), beside the client it configures.
+ * `satisfies Record<KnownLlmProvider, …>`. Every provider's key variable is in
+ * `LLM_PROVIDERS` (the catalog, above); every OTHER provider's base URL lives
+ * in `aai-runtime`'s `providers/_llm-registry.ts`, beside its client.
  */
 export {
   ASSEMBLYAI_LLM_API_KEY_ENV,
