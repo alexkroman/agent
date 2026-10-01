@@ -184,7 +184,7 @@ describe("connectS2s", () => {
   // rejected field on a session that otherwise looks healthy, so the failure
   // would present as unbiased transcription rather than a config error. Keeps
   // the HEAD — this is a standing vocabulary description, so its opening is the
-  // substantive part (unlike `agent_context`, which keeps its tail).
+  // substantive part.
   test("updateSession trims a long sttPrompt to the documented cap", async () => {
     const { raw, handle } = await setupHandle();
 

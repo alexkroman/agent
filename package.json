@@ -26,6 +26,7 @@
     "check:claude-md": "node scripts/check-claude-md.mjs",
     "check:coverage-per-file": "node scripts/check-coverage-per-file.mjs",
     "check:dedupe": "pnpm dedupe --check",
+    "check:defaults": "node scripts/check-defaults.mjs",
     "check:deploy-changeset": "node scripts/check-deploy-changeset.mjs",
     "check:doc-examples": "node scripts/check-doc-examples.mjs",
     "check:docs-md": "node scripts/docs-markdown.mjs --check",

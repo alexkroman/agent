@@ -264,12 +264,11 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
 /**
  * Is `model` one of the Universal-3.5 Pro streaming family?
  *
- * The one home for that question, because two settings turn on it in opposite
- * directions: `agent_context` is accepted ONLY by this family (connect-time is
- * rejected and mid-stream updates are stripped elsewhere), and `format_turns`
- * is accepted by everything EXCEPT it (formatting there is always on and is
- * not a parameter). Names cover both the dot- and dash-spelled literals plus
- * the SDK's rt-pro aliases.
+ * The one home for that question, which `format_turns` turns on: it is
+ * accepted by everything EXCEPT this family (formatting there is always on and
+ * is not a parameter). (`agent_context`, accepted ONLY here, was the other such
+ * setting until v17 stopped sending it.) Names cover both the dot- and
+ * dash-spelled literals plus the SDK's rt-pro aliases.
  *
  * @internal
  */

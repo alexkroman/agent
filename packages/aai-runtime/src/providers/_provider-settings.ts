@@ -100,9 +100,8 @@ const LLM_SETTINGS: Record<string, SettingsFor> = {
 /**
  * A setting too big to print, printed as its SIZE.
  *
- * One boot line has to stay readable, and two of these settings are unbounded
- * by nature: a keyterm list runs to 100 entries and an agent context to 1,500
- * characters, either of which buries the endpointing window a reader came for.
+ * One boot line has to stay readable, and a list or free-text setting is
+ * unbounded by nature — either buries the endpointing window a reader came for.
  * A count is derived from the same object the opener dials with, so it cannot
  * drift from the wire the way a second copy of the `??` chains would — what it
  * loses is the contents, which belong in the turn trace rather than in a line

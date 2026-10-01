@@ -60,8 +60,8 @@ was stated alongside it.
   STT stage reads (the S2S default is the service's 0.7, and the interferer that
   matters is background speech), and forwards `sttPrompt` as
   `input.transcription_prompt`, trimmed to that field's documented 1750-char cap
-  — keeping the HEAD, unlike `agent_context`'s tail-keeping trim, because this
-  is a standing vocabulary description rather than a trailing question.
+  — keeping the HEAD, because this is a standing vocabulary description whose
+  opening is the substantive part.
 
   `sttPrompt` was pipeline-only until 2026-08-06 — a SILENT config drop, since
   both `agent({ sttPrompt })` and `host.sttPrompt` reached the agent definition

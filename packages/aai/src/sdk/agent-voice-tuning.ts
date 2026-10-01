@@ -25,8 +25,11 @@ export interface PipelineVoiceTuning {
    * speech barges in on (aborts) the agent's in-flight reply. Set 1 to
    * interrupt on any word.
    *
-   * @defaultValue `2` (`DEFAULT_MIN_BARGE_IN_WORDS`) — so one-word
-   * backchannels ("yeah", "mm-hmm") don't cut the agent off.
+   * @defaultValue `1` (`DEFAULT_MIN_BARGE_IN_WORDS`) — any word can interrupt,
+   * so a one-word "Hello?" is heard. A word count cannot tell a backchannel
+   * ("yeah", "mm-hmm") from that probe: what keeps a short one from cutting the
+   * agent off is `interruptionMinDurationMs`, and `resumeFalseInterruption`
+   * resumes a reply one did abort.
    */
   minBargeInWords?: number;
   /**

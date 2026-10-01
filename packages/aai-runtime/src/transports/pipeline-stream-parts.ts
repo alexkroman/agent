@@ -220,8 +220,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
    * doesn't sound like a dropped call. They still go to TTS (the caller hears
    * them) and to the interim transcript built from what reaches TTS (the caption
    * matches the audio), but they are kept out of `onDelta`, which accumulates the
-   * turn's text for the conversation history, `ctx.messages`, session resume, and
-   * the STT provider's agent-context hint.
+   * turn's text for the conversation history, `ctx.messages` and session resume.
    *
    * Recording them cost twice: context spent restating "Still working on that.
    * Just a moment longer." across every later turn, and a model shown its own

@@ -204,6 +204,12 @@ const GATES = [
     why: "The third committed copy in this shape and the only one that SHIPS: it cannot say `catalog:`, so every catalogued bump is applied to it a second time. Nothing enforced that — the sync script ran only during a release, unchecked — and the catalog migration had already broken it into writing a literal `catalog:` into a manifest npm cannot resolve.",
   },
   {
+    script: "check:defaults",
+    phase: "ratchets",
+    fatal: false,
+    why: "A default is one `DEFAULT_*` constant restated in its field's @defaultValue, the docs site's tuning table and the authoring guide, and nothing tied the restatements to it: minBargeInWords moved 2 -> 1 and all three kept saying 2, and the docs table gave maxTurnSilenceMs as 3000 against a constant of 3500. It imports the constants' real values (Node strips the types), so a stated number that disagrees fails here rather than in a caller's ear.",
+  },
+  {
     script: "check:konsistent",
     phase: "ratchets",
     fatal: false,
