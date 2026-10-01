@@ -37,9 +37,9 @@ import { CliError, type CommandResult, ok } from "./_output.ts";
 import type { PreflightConfig } from "./_preflight.ts";
 import { DEPLOY_ENV_DECLARATION_FILE, declaredEnvNames } from "./_server-common.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
-import { log, notify } from "./_ui.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 import { emitVercelOutput } from "./_vercel-output.ts";
-import { classifyVitestError, runVitest } from "./_vitest-runner.ts";
+import { classifyVitestError, runVitest, type VitestDeps } from "./_vitest-runner.ts";
 import { determinismWarnings, scanWorkflowDeterminism } from "./_workflow-determinism.ts";
 import { TEST_FILES } from "./test.ts";
 
@@ -151,21 +151,25 @@ async function systemPromptSource(
  */
 function testGateError(err: unknown): CliError {
   const { code, message } = classifyVitestError(err);
-  return new CliError(code, message, "Re-run with --skipTests to build without tests", {
+  return new CliError(code, message, "Re-run with --skip-tests to build without tests", {
     cause: err,
   });
 }
 
-export async function executeBuild(opts: {
-  cwd: string;
-  skipTests?: boolean | undefined;
-  skipTypecheck?: boolean | undefined;
-  /**
-   * Which deployment shape to emit beside the worker. Absent, it is detected
-   * from the host's own build environment — see `resolveBuildTarget`.
-   */
-  target?: string | undefined;
-}): Promise<CommandResult<BuildData>> {
+export async function executeBuild(
+  opts: {
+    cwd: string;
+    skipTests?: boolean | undefined;
+    skipTypecheck?: boolean | undefined;
+    /**
+     * Which deployment shape to emit beside the worker. Absent, it is detected
+     * from the host's own build environment — see `resolveBuildTarget`.
+     */
+    target?: string | undefined;
+  },
+  deps: VitestDeps = {},
+): Promise<CommandResult<BuildData>> {
+  const ui: Ui = deps.ui ?? defaultUi;
   const { cwd } = opts;
   // Resolved BEFORE the suite and the typecheck, so an unknown `--target` fails
   // in a second rather than after a full test run.
@@ -179,13 +183,13 @@ export async function executeBuild(opts: {
       // deliberately, and a gate that reads one file out of eight is the false
       // green this whole change is about. Measured on the retail-orders-agent template:
       // adding one tool broke `registry.test.ts` and `aai build` stayed green
-      // through all of it. `--skipTests` remains the way to opt out.
-      runVitest(cwd, { candidates: TEST_FILES, all: true });
+      // through all of it. `--skip-tests` remains the way to opt out.
+      runVitest(cwd, { candidates: TEST_FILES, all: true, ...deps });
     } catch (err: unknown) {
       throw testGateError(err);
     }
   }
-  await assertTypechecks(cwd, { skip: opts.skipTypecheck });
+  await assertTypechecks(cwd, { skip: opts.skipTypecheck, ui });
 
   // `aai build` previews the deploy artifact, so build it exactly like deploy.
   const bundle = await buildAgentBundle(cwd, { minify: true });
@@ -197,13 +201,13 @@ export async function executeBuild(opts: {
   // Legal, and worth saying — today that is a voice outside the catalog, whose
   // whole failure mode is that nothing says anything until the agent is live
   // and silent. See `agentConfigWarnings`.
-  for (const warning of agentConfigWarnings(agentDef)) notify("warn", warning);
+  for (const warning of agentConfigWarnings(agentDef)) ui.notify("warn", warning);
   // Same posture, one directory over: a clock or a fetch at workflow BODY level
   // is legal code whose failure mode is a step executing twice on a replay, with
   // the run reporting `completed`. A warning rather than a gate — see
   // `_workflow-determinism.ts` on why a line scan may not stop a build.
   for (const warning of determinismWarnings(await scanWorkflowDeterminism(cwd))) {
-    notify("warn", warning);
+    ui.notify("warn", warning);
   }
 
   // Written AFTER the evaluation, which is the bundle's smoke test: a worker
@@ -242,15 +246,15 @@ export async function executeBuild(opts: {
     deployConfig || undefined,
   );
   for (const warning of missingEnvWarnings(missingEnv, target, agentDef.name)) {
-    notify("warn", warning);
+    ui.notify("warn", warning);
   }
-  if (output.dir !== undefined) log.info(`Target ${target}: wrote ${output.dir}`);
+  if (output.dir !== undefined) ui.log.info(`Target ${target}: wrote ${output.dir}`);
   // Nitro prints the same line after every build, and for the same reason: the
   // artifact is useless to somebody who does not know the command that ships
   // it, and `--target vercel` used to print only the directory.
   const deploy = resolveDeploySteps(target, { agentName: agentDef.name, missingEnv });
   if (deploy.length > 0) {
-    log.info("Deploy it with:");
+    ui.log.info("Deploy it with:");
     // The `build` step is dropped HERE and kept on the result: this reader just
     // ran one, so printing it as step 1 is noise, while a `--json` consumer may
     // be scripting a checkout where it is the step that matters. Numbered over
@@ -258,12 +262,12 @@ export async function executeBuild(opts: {
     const printed = deploy.filter((step) => step.when !== "build");
     printed.forEach((step, index) => {
       const note = step.when === "once" ? "   (first deploy only)" : "";
-      log.info(`  ${index + 1}. ${step.run}${note}`);
+      ui.log.info(`  ${index + 1}. ${step.run}${note}`);
     });
     // The footgun the `build` step exists for, stated once rather than as a
     // step the reader would read as already done. `deno deploy` and
     // `modal deploy` upload the directory as it stands.
-    log.info(`Re-run \`aai build --target ${target}\` before every deploy.`);
+    ui.log.info(`Re-run \`aai build --target ${target}\` before every deploy.`);
   }
 
   // Reported in BOTH modes, deliberately: `log` is silenced under --json, and a
@@ -274,8 +278,8 @@ export async function executeBuild(opts: {
   // as a resolver rather than inventing a value — the same thing
   // `withSystemPrompt` and `toAgentConfig` do with one.
   const systemPrompt = await systemPromptSource(cwd, agentDef.systemPrompt);
-  log.info(`System prompt: ${systemPrompt}`);
-  log.success("Build complete");
+  ui.log.info(`System prompt: ${systemPrompt}`);
+  ui.log.success("Build complete");
 
   return ok({
     name: agentDef.name,

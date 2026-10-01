@@ -6,7 +6,7 @@ import { type ApiTestSeam, apiRequest, apiTestSeam, HINT_NOT_DEPLOYED } from "./
 import { writeProjectConfig } from "./_config.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { studioProjectApiUrl } from "./_studio.ts";
-import { log } from "./_ui.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 
 export type DeleteOpts = ApiTestSeam & {
   url: string;
@@ -33,23 +33,26 @@ type DeleteData = { slug?: string; project?: string };
  * delete the studio's own Delete button runs. A directory that only knows a
  * slug (no studio link) deletes that deployed agent directly.
  */
-export async function executeDelete(opts: {
-  cwd: string;
-  server?: string | undefined;
-}): Promise<CommandResult<DeleteData>> {
+export async function executeDelete(
+  opts: {
+    cwd: string;
+    server?: string | undefined;
+  },
+  ui: Ui = defaultUi,
+): Promise<CommandResult<DeleteData>> {
   const { cwd } = opts;
   const { config, serverUrl, apiKey } = await resolveDeployTarget(cwd, opts.server);
 
   if (config?.studioProject) {
     const project = config.studioProject;
-    log.step(`Deleting studio project ${project} (and its deployed agents)`);
+    ui.log.step(`Deleting studio project ${project} (and its deployed agents)`);
     await apiRequest(studioProjectApiUrl(serverUrl, project), {
       method: "DELETE",
       apiKey,
       action: "delete",
       hints: { 404: "Run `aai list` to see your projects." },
     });
-    log.success(`Deleted ${project}`);
+    ui.log.success(`Deleted ${project}`);
     // Drop the link fields: they now point at a project that no longer
     // exists. Left in place, the next `aai push`/`publish` took the
     // "already linked" branch and sent a `baseHash` for a missing project,
@@ -68,8 +71,8 @@ export async function executeDelete(opts: {
   // `approveServer`, which takes the cross-process config lock. Everything it
   // would have returned is already in scope.
   const slug = requireDeployedSlug(config);
-  log.step(`Deleting ${slug}`);
+  ui.log.step(`Deleting ${slug}`);
   await runDelete({ url: serverUrl, slug, apiKey });
-  log.success(`Deleted ${serverUrl}/${slug}`);
+  ui.log.success(`Deleted ${serverUrl}/${slug}`);
   return ok({ slug });
 }

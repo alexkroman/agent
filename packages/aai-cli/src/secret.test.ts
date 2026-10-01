@@ -5,62 +5,49 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import { parseEnv } from "node:util";
 import { sleep } from "@alexkroman1/aai/internal";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-// Mock _agent.ts so getServerInfo returns test values without requiring
-// a real project config or API key prompt.
-vi.mock("./_agent.ts", () => ({
-  getServerInfo: vi.fn().mockResolvedValue({
+import type { PlatformDeps } from "./_slug-api.ts";
+import { createFakeUi, type FakeUi, withTempDir } from "./_test-utils.ts";
+import {
+  executeLocalSecretDelete,
+  executeLocalSecretPut,
+  executeSecretDelete,
+  executeSecretList,
+  executeSecretPut,
+  resolveSecretValue,
+} from "./secret.ts";
+
+// The platform the executors are HANDED: target resolution answers fixed
+// values, and `apiRequest` returns what each spec scripts. The response GUARDS
+// (`checkedResponse`, `isStringArray`) stay real — they are part of what these
+// specs exercise.
+const mockApiRequest = vi.fn();
+const getServerInfo = vi.fn();
+const platform = { getServerInfo, apiRequest: mockApiRequest } as unknown as PlatformDeps;
+let ui: FakeUi;
+
+beforeEach(() => {
+  ui = createFakeUi();
+  getServerInfo.mockResolvedValue({
     serverUrl: "http://localhost:9999",
     slug: "test-agent",
     apiKey: "test-api-key",
-  }),
-  isDevMode: vi.fn().mockReturnValue(false),
-  getMonorepoRoot: vi.fn().mockReturnValue(null),
-}));
-
-// Mock _ui.ts to silence log output in tests.
-vi.mock("./_ui.ts", async () => ({
-  log: (await import("./_test-utils.ts")).makeMockLog(),
-}));
-
-// Mock apiRequest to return controlled parsed responses.
-const mockApiRequest = vi.fn();
-// Only `apiRequest` is faked. The response GUARDS (`checkedResponse`,
-// `isStringArray`) stay real — they are part of what these specs exercise, and
-// a factory that omitted them would make every guarded call site undefined.
-vi.mock("./_api-client.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./_api-client.ts")>()),
-  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
-  HINT_NOT_DEPLOYED: "not-deployed-hint",
-}));
-
-const {
-  executeLocalSecretDelete,
-  executeLocalSecretPut,
-  executeSecretList,
-  executeSecretPut,
-  executeSecretDelete,
-  resolveSecretValue,
-} = await import("./secret.ts");
-const { withTempDir } = await import("./_test-utils.ts");
+  });
+});
 
 afterEach(() => {
-  // `mockApiRequest` needs its implementation dropped too, so `mockReset`
-  // rather than `mockClear`. Everything else here (the `_agent.ts` and `_ui.ts`
-  // module mocks) only needs its HISTORY cleared — and it does need it:
-  // `restoreMocks: true` registers only `vi.spyOn` mocks, so an
-  // `expect(getServerInfo).toHaveBeenCalledWith(…)` would otherwise be
-  // satisfied by any earlier test in this file that resolved a server.
-  vi.clearAllMocks();
+  // Module-level `vi.fn()`s, which `restoreMocks` does not reach: reset, or a
+  // `toHaveBeenCalledWith` is satisfied by an earlier test's call.
   mockApiRequest.mockReset();
+  getServerInfo.mockReset();
 });
 
 describe("executeSecretList", () => {
   test("returns list of secret names", async () => {
     mockApiRequest.mockResolvedValue({ vars: ["API_KEY", "DB_URL", "SECRET_TOKEN"] });
 
-    const result = await executeSecretList("/tmp", undefined);
+    const result = await executeSecretList("/tmp", undefined, ui, platform);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.secrets).toEqual(["API_KEY", "DB_URL", "SECRET_TOKEN"]);
@@ -70,7 +57,7 @@ describe("executeSecretList", () => {
   test("calls correct URL with slug and /secret path", async () => {
     mockApiRequest.mockResolvedValue({ vars: [] });
 
-    await executeSecretList("/tmp", undefined);
+    await executeSecretList("/tmp", undefined, ui, platform);
 
     expect(mockApiRequest).toHaveBeenCalledTimes(1);
     const [url] = mockApiRequest.mock.calls[0] ?? [];
@@ -80,7 +67,7 @@ describe("executeSecretList", () => {
   test("returns empty list when no secrets exist", async () => {
     mockApiRequest.mockResolvedValue({ vars: [] });
 
-    const result = await executeSecretList("/tmp", undefined);
+    const result = await executeSecretList("/tmp", undefined, ui, platform);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.secrets).toEqual([]);
@@ -90,7 +77,7 @@ describe("executeSecretList", () => {
   test("passes apiKey in request options", async () => {
     mockApiRequest.mockResolvedValue({ vars: [] });
 
-    await executeSecretList("/tmp", undefined);
+    await executeSecretList("/tmp", undefined, ui, platform);
 
     const [, init] = mockApiRequest.mock.calls[0] ?? [];
     expect(init.apiKey).toBe("test-api-key");
@@ -101,7 +88,14 @@ describe("executeSecretPut", () => {
   test("sends secret to server with PUT method", async () => {
     mockApiRequest.mockResolvedValue({ ok: true });
 
-    const result = await executeSecretPut("/tmp", "MY_SECRET", "secret-value", undefined);
+    const result = await executeSecretPut(
+      "/tmp",
+      "MY_SECRET",
+      "secret-value",
+      undefined,
+      ui,
+      platform,
+    );
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.name).toBe("MY_SECRET");
@@ -111,7 +105,7 @@ describe("executeSecretPut", () => {
   test("sends secret name and value as JSON body", async () => {
     mockApiRequest.mockResolvedValue({ ok: true });
 
-    await executeSecretPut("/tmp", "DB_PASS", "p@ssw0rd!", undefined);
+    await executeSecretPut("/tmp", "DB_PASS", "p@ssw0rd!", undefined, ui, platform);
 
     const [, init] = mockApiRequest.mock.calls[0] ?? [];
     expect(init.method).toBe("PUT");
@@ -121,7 +115,7 @@ describe("executeSecretPut", () => {
   test("calls correct URL with slug and /secret path", async () => {
     mockApiRequest.mockResolvedValue({ ok: true });
 
-    await executeSecretPut("/tmp", "KEY", "val", undefined);
+    await executeSecretPut("/tmp", "KEY", "val", undefined, ui, platform);
 
     const [url] = mockApiRequest.mock.calls[0] ?? [];
     expect(url).toBe("http://localhost:9999/test-agent/secret");
@@ -130,7 +124,7 @@ describe("executeSecretPut", () => {
   test("passes action: secret in request options", async () => {
     mockApiRequest.mockResolvedValue({ ok: true });
 
-    await executeSecretPut("/tmp", "KEY", "val", undefined);
+    await executeSecretPut("/tmp", "KEY", "val", undefined, ui, platform);
 
     const [, init] = mockApiRequest.mock.calls[0] ?? [];
     expect(init.action).toBe("secret");
@@ -141,7 +135,7 @@ describe("executeSecretDelete", () => {
   test("sends delete request to server", async () => {
     mockApiRequest.mockResolvedValue({ ok: true });
 
-    const result = await executeSecretDelete("/tmp", "OLD_KEY", undefined);
+    const result = await executeSecretDelete("/tmp", "OLD_KEY", undefined, ui, platform);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.name).toBe("OLD_KEY");
@@ -151,7 +145,7 @@ describe("executeSecretDelete", () => {
   test("uses DELETE method", async () => {
     mockApiRequest.mockResolvedValue({ ok: true });
 
-    await executeSecretDelete("/tmp", "OLD_KEY", undefined);
+    await executeSecretDelete("/tmp", "OLD_KEY", undefined, ui, platform);
 
     const [, init] = mockApiRequest.mock.calls[0] ?? [];
     expect(init.method).toBe("DELETE");
@@ -160,7 +154,7 @@ describe("executeSecretDelete", () => {
   test("includes secret name in URL path", async () => {
     mockApiRequest.mockResolvedValue({ ok: true });
 
-    await executeSecretDelete("/tmp", "MY_SECRET", undefined);
+    await executeSecretDelete("/tmp", "MY_SECRET", undefined, ui, platform);
 
     const [url] = mockApiRequest.mock.calls[0] ?? [];
     expect(url).toBe("http://localhost:9999/test-agent/secret/MY_SECRET");
@@ -169,7 +163,7 @@ describe("executeSecretDelete", () => {
   test("passes apiKey in request options", async () => {
     mockApiRequest.mockResolvedValue({ ok: true });
 
-    await executeSecretDelete("/tmp", "KEY", undefined);
+    await executeSecretDelete("/tmp", "KEY", undefined, ui, platform);
 
     const [, init] = mockApiRequest.mock.calls[0] ?? [];
     expect(init.apiKey).toBe("test-api-key");
@@ -178,10 +172,9 @@ describe("executeSecretDelete", () => {
 
 describe("secret commands with explicit server", () => {
   test("executeSecretList passes server to getServerInfo", async () => {
-    const { getServerInfo } = await import("./_agent.ts");
     mockApiRequest.mockResolvedValue({ vars: [] });
 
-    await executeSecretList("/tmp", "https://custom-server.com");
+    await executeSecretList("/tmp", "https://custom-server.com", ui, platform);
 
     expect(getServerInfo).toHaveBeenCalledWith("/tmp", "https://custom-server.com");
   });
@@ -198,7 +191,7 @@ describe("a response that is not the secret route's", () => {
   ])("%s is refused with a sentence naming the route", async (_label, body) => {
     mockApiRequest.mockResolvedValue(body);
 
-    await expect(executeSecretList("/tmp", undefined)).rejects.toThrow(
+    await expect(executeSecretList("/tmp", undefined, ui, platform)).rejects.toThrow(
       /Unexpected response from the secret list for test-agent/,
     );
   });
@@ -284,13 +277,13 @@ describe("resolveSecretValue", () => {
 describe("aai secret put/delete --local", () => {
   test("put writes <cwd>/.env and never calls the platform; delete removes it", async () => {
     await withTempDir(async (dir) => {
-      const put = await executeLocalSecretPut(dir, "MY_SECRET", "s3cret value");
+      const put = await executeLocalSecretPut(dir, "MY_SECRET", "s3cret value", ui);
       expect(put).toEqual({ ok: true, data: { name: "MY_SECRET" } });
       const text = await readFile(path.join(dir, ".env"), "utf-8");
       expect(parseEnv(text)).toMatchObject({ MY_SECRET: "s3cret value" });
       expect(mockApiRequest).not.toHaveBeenCalled();
 
-      expect(await executeLocalSecretDelete(dir, "MY_SECRET")).toEqual({
+      expect(await executeLocalSecretDelete(dir, "MY_SECRET", ui)).toEqual({
         ok: true,
         data: { name: "MY_SECRET" },
       });
@@ -302,7 +295,7 @@ describe("aai secret put/delete --local", () => {
 
   test("deleting a name that is not set is not_found", async () => {
     await withTempDir(async (dir) => {
-      const result = await executeLocalSecretDelete(dir, "NOPE");
+      const result = await executeLocalSecretDelete(dir, "NOPE", ui);
       expect(result).toMatchObject({ ok: false, code: "not_found" });
     });
   });

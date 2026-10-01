@@ -12,8 +12,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
 import { frontDoorOf } from "@alexkroman1/aai/internal";
-import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
-import { omitUndefined, plural } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 // One static import: the runtime barrel is already loaded for the helpers
 // below, so a dynamic import inside startDevServer would defer nothing.
 import {
@@ -32,17 +31,17 @@ import {
   handleWorkflowRequest,
   publishClientInboxDefaults,
   publishStepEnv,
-  requiredProviderEnvVars,
   WORKFLOW_DATA_DIR_ENV,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
-import type { ViteDevServer } from "vite";
+import type { InlineConfig, ViteDevServer } from "vite";
 import { createWorkerEvaluator } from "./_bundler.ts";
 import { defaultClientPlugins } from "./_client-plugins.ts";
 import { ensureApiKey } from "./_config.ts";
+import { resolveAgentEnv } from "./_dev-agent-env.ts";
 import { createDevLogger, devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
 import { devSessionTicketing } from "./_dev-session-ticket.ts";
@@ -50,105 +49,9 @@ import { createDevTypecheck } from "./_dev-typecheck.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
 import { type DevWatcher, type DevWatchFn, watchDirectory } from "./_dev-watch.ts";
 import { resolveDenoRunCode } from "./_run-code-deno.ts";
-import { resolveServerEnv } from "./_server-common.ts";
-import { notify, outputSilenced } from "./_ui.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 import { errorMessage } from "./_utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
-
-// ─── Env loading ────────────────────────────────────────────────────────────
-
-/**
- * Warnings about the agent's credentials, computed against the `.env`-derived
- * env and the shell. Pure so it is directly testable; `resolveAgentEnv` logs
- * each entry. Three cases, in increasing subtlety:
- *
- * - a provider key found nowhere → the first session will fail auth;
- * - a provider key found only in the shell → works here (the
- *   `withHostCredentialFallback` ergonomic) but is invisible to `aai deploy`,
- *   which uploads `.env` — the classic "works locally, dead on deploy";
- * - a declared `requiredEnv` key absent from `.env` → `ctx.env` won't contain
- *   it at all: custom keys never fall back to the shell, so a shell export
- *   can't mask one that would be missing both here and after deploy.
- */
-export function agentEnvWarnings(
-  // `mode` because a workflow app needs no provider credential at all — see
-  // `requiredProviderEnvVars`. Omitted here, every workflow app was warned
-  // about an AssemblyAI key it never dials.
-  agentDef: Pick<AgentDef, "stt" | "llm" | "tts" | "s2s" | "requiredEnv" | "mode">,
-  env: Record<string, string>,
-  shellEnv: Record<string, string | undefined> = process.env,
-): string[] {
-  // Derived from the provider registries rather than matched against hardcoded
-  // kinds, so a new provider needs no change here and nothing is missed. (The
-  // previous check looked only at `stt`/`llm` and only for AssemblyAI.)
-  const required = requiredProviderEnvVars(agentDef);
-  const warnings: string[] = [];
-
-  const missing = required.filter((name) => !(env[name] || shellEnv[name]));
-  if (missing.length > 0) {
-    warnings.push(
-      `Missing provider ${plural(missing.length, "credential")}: ${missing.join(", ")}. ` +
-        `Set ${plural(missing.length, "it", "them")} in .env or the environment.`,
-    );
-  }
-
-  const shellOnly = required.filter((name) => !env[name] && shellEnv[name]);
-  if (shellOnly.length > 0) {
-    warnings.push(
-      `${shellOnly.join(", ")} resolved from your shell, not .env — ` +
-        `deployed agents won't have ${plural(shellOnly.length, "it", "them")}. ` +
-        `Declare ${plural(shellOnly.length, "it", "them")} in .env before \`aai publish\`.`,
-    );
-  }
-
-  const declared = (agentDef.requiredEnv ?? []).filter((name) => !env[name]);
-  if (declared.length > 0) {
-    warnings.push(
-      `Missing requiredEnv ${plural(declared.length, "key")} declared by the agent: ` +
-        `${declared.join(", ")}. Set ${plural(declared.length, "it", "them")} in .env — ` +
-        `ctx.env will not contain ${plural(declared.length, "it", "them")} otherwise.`,
-    );
-  }
-  return warnings;
-}
-
-export async function resolveAgentEnv(
-  root: string,
-  agentDef: AgentDef,
-): Promise<Record<string, string>> {
-  const env = await resolveServerEnv(root);
-
-  // Only AssemblyAI's key has a setup flow of its own (it doubles as the
-  // platform credential), so that one falls back to the logged-in key.
-  //
-  // A shell-exported key is deliberately checked FIRST and left out of `env`:
-  // `withHostCredentialFallback` (below, in `buildServer`) already routes it
-  // to the provider resolvers without letting it into `ctx.env`, and
-  // `agentEnvWarnings` flags it as shell-only so the "works here, dead after
-  // deploy" case stays visible. Without this check `aai dev` would hard-fail
-  // on a missing LOGIN for a developer whose key is exported the usual way,
-  // since `ensureApiKey` reads the login key and nothing else.
-  //
-  // `"local-session"` is what keeps the FAILURE credential-shaped: nothing
-  // here needs a platform account, so the refusal names `.env` and a shell
-  // export before `aai login`. See {@link ApiKeyUse}.
-  const required = requiredProviderEnvVars(agentDef);
-  const hasShellKey = Boolean(process.env.ASSEMBLYAI_API_KEY);
-  if (required.includes("ASSEMBLYAI_API_KEY") && !env.ASSEMBLYAI_API_KEY && !hasShellKey) {
-    env.ASSEMBLYAI_API_KEY = await ensureApiKey(undefined, "local-session");
-  }
-
-  // Anything still unresolved would otherwise surface as an auth failure on
-  // the first session (or a deploy-time rejection) — warn now. Through
-  // `notify`, not `log.warn`: `aai dev` is long-running, so JSON mode (which a
-  // pipe auto-selects) has already silenced `log` and the first session then
-  // fails auth with nothing having said why. See this package's CLAUDE.md.
-  for (const warning of agentEnvWarnings(agentDef, env)) notify("warn", warning);
-  // The config's own warnings — a TTS/S2S voice outside the catalog, which is
-  // otherwise reported by nothing until the first session is silent.
-  for (const warning of agentConfigWarnings(agentDef)) notify("warn", warning);
-  return env;
-}
 
 // ─── Agent loading ──────────────────────────────────────────────────────────
 
@@ -192,13 +95,31 @@ export type DevServerOptions = {
 /** The part of an {@link AgentServer} the watch loop drives. */
 export type DevBackend = Pick<AgentServer, "listen" | "close">;
 
+/** The part of a {@link ViteDevServer} `startDevServer` drives. */
+export type DevVite = Pick<ViteDevServer, "listen" | "close"> & {
+  httpServer?: Pick<NonNullable<ViteDevServer["httpServer"]>, "on"> | null;
+};
+
 /**
- * The two collaborators `startDevServer` reaches the outside world through,
+ * The collaborators `startDevServer` reaches the outside world through,
  * injectable so its WIRING — a watcher event reaching the supervisor, one
- * journal across rebuilds, teardown closing the watcher — can be specced
- * against fakes instead of a module mock per import. `dev.ts` passes none.
+ * journal across rebuilds, teardown closing the watcher, the DDL before the
+ * runtime, the login-key fallback — is specced against fakes instead of a
+ * module mock per import. `dev.ts` passes only `ui`.
  */
 export type DevServerSeams = {
+  /** The terminal: restart/watch/credential reports, and whether JSON mode is on. */
+  ui: Ui;
+  /** The login-key read behind the AssemblyAI fallback. */
+  ensureApiKey: typeof ensureApiKey;
+  /** Session-state DDL, run once when the project declares a `DATABASE_URL`. */
+  ensureSessionStateSchema: typeof ensureSessionStateSchema;
+  /** The durable-run journal's DDL, on the same boot. */
+  ensureWorkflowJournalSchema: typeof ensureWorkflowJournalSchema;
+  /** The backend port with a `client.tsx`: the first free one in `candidates`. */
+  getPort: (candidates: Iterable<number>) => Promise<number>;
+  /** Boot Vite for a project with a `client.tsx`. Defaults to Vite's `createServer`. */
+  createViteServer: (config: InlineConfig) => Promise<DevVite>;
   /** Start the file watcher. Defaults to chokidar's `watch`. */
   watch: DevWatchFn;
   /**
@@ -213,6 +134,12 @@ export type DevServerSeams = {
 };
 
 const REAL_SEAMS: DevServerSeams = {
+  ui: defaultUi,
+  ensureApiKey,
+  ensureSessionStateSchema,
+  ensureWorkflowJournalSchema,
+  getPort: (candidates) => getPort({ port: candidates }),
+  createViteServer: async (config) => (await import("vite")).createServer(config),
   watch,
   serve: (runtimeOptions, serverOptions) =>
     createRuntimeServer(serverOptions(createRuntime(runtimeOptions))),
@@ -228,7 +155,8 @@ export async function startDevServer(
   seams: Partial<DevServerSeams> = {},
 ): Promise<() => Promise<void>> {
   const { cwd, port } = opts;
-  const { watch: watchFn, serve } = { ...REAL_SEAMS, ...seams };
+  const io: DevServerSeams = { ...REAL_SEAMS, ...seams };
+  const { watch: watchFn, serve, ui } = io;
 
   // Where this project's local workflow state lives — the uploads a databaseless
   // agent's runs read (`aai-runtime/workflow-data-dir.ts`).
@@ -251,7 +179,7 @@ export async function startDevServer(
   // With a client, Vite owns the user-requested port and proxies to the
   // backend. Prefer port+1 for the backend but fall back to any nearby free
   // port instead of failing with EADDRINUSE (the old `port + 1` was blind).
-  const backendPort = hasClient ? await getPort({ port: portNumbers(port + 1, port + 100) }) : port;
+  const backendPort = hasClient ? await io.getPort(portNumbers(port + 1, port + 100)) : port;
   const vitePort = port;
 
   // When no custom client.tsx, serve the pre-built default aai-ui client.
@@ -262,7 +190,7 @@ export async function startDevServer(
   // previously evaluated AgentDef instead of leaking another ESM module.
   const evaluateWorker = createWorkerEvaluator();
 
-  const devLogger: Logger = createDevLogger(outputSilenced());
+  const devLogger: Logger = createDevLogger(ui.silenced);
 
   // `AAI_RUN_CODE=deno`: `run_code` in a zero-permission Deno process, or
   // `undefined` and the builtin refuses as before. Resolved ONCE, before the
@@ -297,7 +225,7 @@ export async function startDevServer(
   /** Full build sequence, shared by initial startup and every restart. */
   async function buildServer(): Promise<DevBackend> {
     const agentDef = await loadWorker(cwd, evaluateWorker);
-    const env = await resolveAgentEnv(cwd, agentDef);
+    const env = await resolveAgentEnv(cwd, agentDef, ui, io);
 
     // A project with a `DATABASE_URL` puts session state in Postgres, and the
     // tables come with whoever OWNS that database — which under `aai dev` is the
@@ -308,11 +236,11 @@ export async function startDevServer(
     // cannot race the DDL.
     if (env.DATABASE_URL && !sessionSchemaEnsured) {
       sessionSchemaEnsured = true;
-      await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: devLogger });
+      await io.ensureSessionStateSchema({ url: env.DATABASE_URL, logger: devLogger });
       // And the durable-run JOURNAL, which had no creator at all: the boot line
       // said `runStore: "postgres"` and the first run died on `42P01 relation
       // "aai_workflow_runs" does not exist`.
-      await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: devLogger });
+      await io.ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: devLogger });
     }
 
     // What a `"use step"` body reads with `stepEnv()`. The AGENT env, not
@@ -414,7 +342,7 @@ export async function startDevServer(
     }));
   }
 
-  let viteServer: ViteDevServer | undefined;
+  let viteServer: DevVite | undefined;
   let watcher: DevWatcher | undefined;
 
   // The restart state machine — queueing, build-before-close ordering, listen
@@ -427,7 +355,7 @@ export async function startDevServer(
     // widen the dev server's exposure.
     listen: (server) => server.listen(backendPort, devBindHost()),
     close: (server) => server.close(),
-    notify,
+    notify: ui.notify,
     teardown: async () => {
       // Each close is best-effort: one failing must not leak the others.
       await watcher?.close().catch(() => undefined);
@@ -443,7 +371,7 @@ export async function startDevServer(
   // Typecheck at boot and on every restart, in the background. `aai dev` is the
   // only command that did not, which made every compile-time diagnostic this
   // SDK writes conditional on an editor being open — see `_dev-typecheck.ts`.
-  const devTypecheck = createDevTypecheck(cwd);
+  const devTypecheck = createDevTypecheck(cwd, ui.notify);
   devTypecheck.request();
   watcher = devWatchEnabled(opts.watch)
     ? watchDirectory(
@@ -453,6 +381,7 @@ export async function startDevServer(
           supervisor.request();
         },
         watchFn,
+        ui.notify,
       )
     : undefined;
 
@@ -469,17 +398,18 @@ export async function startDevServer(
     boundServer = initialServer;
 
     if (hasClient) {
-      const { createServer: createViteServer } = await import("vite");
       // No `vite.config.*` in the project: the React + Tailwind pair the
       // scaffold's config used to declare, from the project's own deps.
       const clientPlugins = (await defaultClientPlugins(cwd)) ?? [];
-      viteServer = await createViteServer(viteDevConfig(cwd, vitePort, backendPort, clientPlugins));
+      viteServer = await io.createViteServer(
+        viteDevConfig(cwd, vitePort, backendPort, clientPlugins),
+      );
       await viteServer.listen();
       // Post-listen socket errors would otherwise be an unhandled 'error'
       // event. (The backend AgentServer keeps its own 'error' listener from
       // listen(), and exposes no event surface to add logging here.)
       viteServer.httpServer?.on("error", (err) => {
-        notify("error", `Vite dev server error: ${errorMessage(err)}`);
+        ui.notify("error", `Vite dev server error: ${errorMessage(err)}`);
       });
     }
 

@@ -18,44 +18,14 @@
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  mockChokidarWatch,
-  mockCreateServer,
-  mockListen,
-  primeDevServerMocks,
-  writeAgentTs,
-} from "./_dev-server-test-utils.ts";
-import { withTempDir } from "./_test-utils.ts";
-
-// ─── Module mocks ───────────────────────────────────────────────────────────
-// Factories (and the mock fns/state they wire up) live in the shared harness —
-// see _dev-server-test-utils.ts. vi.mock calls must stay top-level in each test
-// file for vitest's hoisting, which is why this preamble is duplicated rather
-// than shared.
-
-vi.mock("node:fs", async () => (await import("./_dev-server-test-utils.ts")).nodeFsModule());
-vi.mock("chokidar", async () => (await import("./_dev-server-test-utils.ts")).chokidarModule());
-vi.mock("get-port", async () => (await import("./_dev-server-test-utils.ts")).getPortModule());
-vi.mock("@alexkroman1/aai-runtime", async () =>
-  (await import("./_dev-server-test-utils.ts")).aaiRuntimeModule(),
-);
-vi.mock("@alexkroman1/aai-runtime/internal", async () =>
-  (await import("./_dev-server-test-utils.ts")).aaiRuntimeInternalModule(),
-);
-vi.mock("./_config.ts", async () => (await import("./_dev-server-test-utils.ts")).configModule());
-vi.mock("./_server-common.ts", async () =>
-  (await import("./_dev-server-test-utils.ts")).serverCommonModule(),
-);
-vi.mock("./_ui.ts", async () => (await import("./_dev-server-test-utils.ts")).uiModule());
-vi.mock("./_default-html.ts", async () =>
-  (await import("./_dev-server-test-utils.ts")).defaultHtmlModule(),
-);
-vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts")).utilsModule());
-
-// ─── Imports under test (after mocks) ───────────────────────────────────────
-
 import { createDevLogger, devWatchEnabled } from "./_dev-env.ts";
 import { startDevServer } from "./_dev-server.ts";
+import { makeDevSeams, writeProject } from "./_dev-server-test-utils.ts";
+import { withTempDir } from "./_test-utils.ts";
+
+// No module mocks: `startDevServer` is handed fake seams (backend, watcher,
+// terminal, …) and everything else is real — see `_dev-server-test-utils.ts`.
+let fake: ReturnType<typeof makeDevSeams>;
 
 // 30s, not the 5s default: sibling suites run multi-second runtime-inlining
 // builds now, and CPU starvation under full-repo parallel runs was flaking
@@ -63,15 +33,16 @@ import { startDevServer } from "./_dev-server.ts";
 vi.setConfig({ testTimeout: 30_000 });
 
 beforeEach(() => {
-  primeDevServerMocks();
+  fake = makeDevSeams();
+  vi.stubEnv("AAI_WORKFLOW_DATA_DIR", undefined);
 });
 
 describe("dev server bind host", () => {
   test("binds loopback by default (no host argument)", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      expect(mockListen).toHaveBeenCalledWith(3000, undefined);
+      await writeProject(dir);
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+      expect(fake.listen).toHaveBeenCalledWith(3000, undefined);
       await cleanup();
     });
   });
@@ -79,9 +50,9 @@ describe("dev server bind host", () => {
   test("AAI_DEV_HOST exposes the server on the requested interface", async () => {
     vi.stubEnv("AAI_DEV_HOST", "0.0.0.0");
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      expect(mockListen).toHaveBeenCalledWith(3000, "0.0.0.0");
+      await writeProject(dir);
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+      expect(fake.listen).toHaveBeenCalledWith(3000, "0.0.0.0");
       await cleanup();
     });
   });
@@ -91,9 +62,9 @@ describe("dev server bind host", () => {
   test.each(["", "   "])("treats AAI_DEV_HOST=%o as unset", async (value: string) => {
     vi.stubEnv("AAI_DEV_HOST", value);
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      expect(mockListen).toHaveBeenCalledWith(3000, undefined);
+      await writeProject(dir);
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+      expect(fake.listen).toHaveBeenCalledWith(3000, undefined);
       await cleanup();
     });
   });
@@ -106,21 +77,18 @@ describe("dev server host mode gate", () => {
   test("passes AAI_ALLOW_HOST through from the shell", async () => {
     vi.stubEnv("AAI_ALLOW_HOST", "1");
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      expect(mockCreateServer).toHaveBeenCalledWith(
-        expect.objectContaining({ env: expect.objectContaining({ AAI_ALLOW_HOST: "1" }) }),
-      );
+      await writeProject(dir);
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+      expect(fake.lastBuild()?.serverOptions.env).toMatchObject({ AAI_ALLOW_HOST: "1" });
       await cleanup();
     });
   });
 
   test("omits the gate entirely when unset", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      const opts = mockCreateServer.mock.calls.at(-1)?.[0] as { env: Record<string, string> };
-      expect(opts.env).not.toHaveProperty("AAI_ALLOW_HOST");
+      await writeProject(dir);
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+      expect(fake.lastBuild()?.serverOptions.env).not.toHaveProperty("AAI_ALLOW_HOST");
       await cleanup();
     });
   });
@@ -200,9 +168,11 @@ describe("dev server file watching", () => {
   test("a TTY pair installs the watcher", async () => {
     vi.stubEnv("AAI_DEV_WATCH", "");
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await withTtys(true, true, () => startDevServer({ cwd: dir, port: 3000 }));
-      expect(mockChokidarWatch).toHaveBeenCalled();
+      await writeProject(dir);
+      const cleanup = await withTtys(true, true, () =>
+        startDevServer({ cwd: dir, port: 3000 }, fake.seams),
+      );
+      expect(fake.watch).toHaveBeenCalled();
       await cleanup();
     });
   });
@@ -212,9 +182,11 @@ describe("dev server file watching", () => {
     // "Cannot read properties of undefined (reading 'close')".
     vi.stubEnv("AAI_DEV_WATCH", "");
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      const cleanup = await withTtys(false, false, () => startDevServer({ cwd: dir, port: 3000 }));
-      expect(mockChokidarWatch).not.toHaveBeenCalled();
+      await writeProject(dir);
+      const cleanup = await withTtys(false, false, () =>
+        startDevServer({ cwd: dir, port: 3000 }, fake.seams),
+      );
+      expect(fake.watch).not.toHaveBeenCalled();
       await expect(cleanup()).resolves.toBeUndefined();
     });
   });

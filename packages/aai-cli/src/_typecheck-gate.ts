@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { CliError } from "./_output.ts";
-import { log } from "./_ui.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 import { typecheckProject } from "./typecheck.ts";
 
 /**
@@ -12,21 +12,18 @@ import { typecheckProject } from "./typecheck.ts";
  */
 export async function assertTypechecks(
   cwd: string,
-  opts: { skip?: boolean | undefined } = {},
+  opts: { skip?: boolean | undefined; ui?: Ui | undefined } = {},
 ): Promise<void> {
-  // The gate reads the flag its own remedy names. It used to be
-  // `if (!opts.skipTypecheck) await assertTypechecks(cwd)` at each of three call
-  // sites — a bypass condition spelled per caller is one a fourth caller can add
-  // without, which is the representable-mistake class `defineExec`'s `cwd` field
-  // exists to close.
+  // The gate reads the flag its own remedy names, so no caller spells the
+  // bypass condition itself.
   if (opts.skip) return;
-  log.step("Type checking…");
+  (opts.ui ?? defaultUi).log.step("Type checking…");
   const result = await typecheckProject(cwd);
   if (!result.ok) {
     throw new CliError(
       "typecheck_failed",
       result.output,
-      "Fix the type errors, or pass --skipTypecheck to build anyway",
+      "Fix the type errors, or pass --skip-typecheck to build anyway",
     );
   }
 }

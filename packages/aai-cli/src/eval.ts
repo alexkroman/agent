@@ -25,8 +25,8 @@
 
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { resolveServerEnv } from "./_server-common.ts";
-import { log } from "./_ui.ts";
-import { classifyVitestError, runVitest } from "./_vitest-runner.ts";
+import { defaultUi } from "./_ui.ts";
+import { classifyVitestError, runVitest, type VitestDeps } from "./_vitest-runner.ts";
 
 type EvalData = {
   passed: boolean;
@@ -50,8 +50,12 @@ export const EVAL_FILES = ["agent.eval.test.ts", "agent.eval.test.js"] as const;
 export const EVAL_TEST_TIMEOUT_MS = 300_000;
 
 /** Execute the agent's evals and return a structured result. */
-export async function executeEval(cwd: string): Promise<CommandResult<EvalData>> {
-  log.step("Running agent evals");
+export async function executeEval(
+  cwd: string,
+  deps: VitestDeps = {},
+): Promise<CommandResult<EvalData>> {
+  const ui = deps.ui ?? defaultUi;
+  ui.log.step("Running agent evals");
   // The project's `.env`, resolved exactly as `aai dev` resolves it (declared
   // keys only, shell wins) and handed to the child. Without it an eval sees the
   // shell alone, so a developer whose key lives in `.env` — which is where this
@@ -68,15 +72,16 @@ export async function executeEval(cwd: string): Promise<CommandResult<EvalData>>
       // in the project as skipped — true, and not this command's business.
       // `aai test` is where that set is reported and refused a green verdict.
       announceUnrun: false,
+      ...deps,
     });
     if (!ran) {
-      log.info(
+      ui.log.info(
         "No eval file found. Create agent.eval.test.ts to measure what the agent does — " +
           "see `openEvalSession` in @alexkroman1/aai-runtime/eval.",
       );
       return ok({ passed: true, skipped: true, ran: [] });
     }
-    log.success("Evals passed");
+    ui.log.success("Evals passed");
     return ok({ passed: true, ran });
   } catch (err: unknown) {
     const { code, message } = classifyVitestError(err, "Evals");

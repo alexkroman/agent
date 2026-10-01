@@ -1,36 +1,26 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-vi.mock("./_agent.ts", () => ({
-  getServerInfo: vi.fn().mockResolvedValue({
+import type { PlatformDeps } from "./_slug-api.ts";
+import { createFakeUi, type FakeUi } from "./_test-utils.ts";
+import { executeLogs, formatLine } from "./logs.ts";
+
+// Only the request is faked; `checkedResponse` stays real, because rejecting a
+// body that is not a log page is part of what these specs exercise.
+const mockApiRequest = vi.fn();
+const platform = {
+  getServerInfo: async () => ({
     serverUrl: "http://localhost:9999",
     slug: "test-agent",
     apiKey: "test-api-key",
   }),
-  isDevMode: vi.fn().mockReturnValue(false),
-  getMonorepoRoot: vi.fn().mockReturnValue(null),
-}));
-
-const mockLog = vi.hoisted(() => ({
-  info: vi.fn(),
-  success: vi.fn(),
-  error: vi.fn(),
-  warn: vi.fn(),
-  step: vi.fn(),
-  message: vi.fn(),
-}));
-vi.mock("./_ui.ts", () => ({ log: mockLog }));
-
-const mockApiRequest = vi.fn();
-// Only `apiRequest` is faked; `checkedResponse` stays real, because rejecting a
-// body that is not a log page is part of what these specs exercise.
-vi.mock("./_api-client.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./_api-client.ts")>()),
-  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
-}));
-
-const { executeLogs, formatLine } = await import("./logs.ts");
+  apiRequest: mockApiRequest,
+} as unknown as PlatformDeps;
+let ui: FakeUi;
+beforeEach(() => {
+  ui = createFakeUi();
+});
 
 function line(seq: number, text: string, stream: "stdout" | "stderr" = "stdout") {
   return { seq, at: Date.UTC(2026, 0, 1), stream, text };
@@ -41,7 +31,7 @@ function page(over: Record<string, unknown> = {}) {
 }
 
 /** Every line the command wrote, in order. */
-const written = () => mockLog.message.mock.calls.map(([m]) => String(m));
+const written = () => ui.said("message");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -51,7 +41,7 @@ describe("executeLogs", () => {
   test("reads from the oldest line held and prints what came back", async () => {
     mockApiRequest.mockResolvedValue(page({ lines: [line(0, "hello"), line(1, "world")] }));
 
-    const result = await executeLogs("/tmp/proj");
+    const result = await executeLogs("/tmp/proj", {}, ui, platform);
 
     expect(result).toMatchObject({ ok: true, data: { slug: "test-agent", lines: 2 } });
     expect(written().join("\n")).toContain("hello");
@@ -63,30 +53,30 @@ describe("executeLogs", () => {
 
   test("an agent that is up but quiet reads differently from one that is not", async () => {
     mockApiRequest.mockResolvedValue(page({ running: true }));
-    await executeLogs("/tmp/proj");
-    expect(mockLog.info.mock.calls.flat().join("\n")).toContain("printed nothing yet");
+    await executeLogs("/tmp/proj", {}, ui, platform);
+    expect(ui.said("info").join("\n")).toContain("printed nothing yet");
 
-    vi.clearAllMocks();
+    ui = createFakeUi();
     mockApiRequest.mockResolvedValue(page({ running: false }));
-    await executeLogs("/tmp/proj");
-    expect(mockLog.info.mock.calls.flat().join("\n")).toContain("isn't running");
+    await executeLogs("/tmp/proj", {}, ui, platform);
+    expect(ui.said("info").join("\n")).toContain("isn't running");
   });
 
   test("says out loud that the ring is not durable", async () => {
     mockApiRequest.mockResolvedValue(page({ lines: [line(0, "x")] }));
-    await executeLogs("/tmp/proj");
-    expect(mockLog.info.mock.calls.flat().join("\n")).toContain("Recent output only");
+    await executeLogs("/tmp/proj", {}, ui, platform);
+    expect(ui.said("info").join("\n")).toContain("Recent output only");
   });
 
   test("reports a gap rather than swallowing it", async () => {
     mockApiRequest.mockResolvedValue(page({ lines: [line(9, "after")], dropped: 3 }));
-    await executeLogs("/tmp/proj");
-    expect(mockLog.warn.mock.calls.flat().join("\n")).toContain("3 earlier line(s) dropped");
+    await executeLogs("/tmp/proj", {}, ui, platform);
+    expect(ui.said("warn").join("\n")).toContain("3 earlier line(s) dropped");
   });
 
   test("refuses a body that is not a log page", async () => {
     mockApiRequest.mockResolvedValue({ nope: true });
-    await expect(executeLogs("/tmp/proj")).rejects.toThrow(/logs route/);
+    await expect(executeLogs("/tmp/proj", {}, ui, platform)).rejects.toThrow(/logs route/);
   });
 
   describe("--follow", () => {
@@ -100,11 +90,16 @@ describe("executeLogs", () => {
           return Promise.resolve(page({ cursor: 1 }));
         });
 
-      const result = await executeLogs("/tmp/proj", {
-        follow: true,
-        pollMs: 1,
-        signal: controller.signal,
-      });
+      const result = await executeLogs(
+        "/tmp/proj",
+        {
+          follow: true,
+          pollMs: 1,
+          signal: controller.signal,
+        },
+        ui,
+        platform,
+      );
 
       expect(written().join("\n")).toContain("second");
       expect(result).toMatchObject({ ok: true, data: { lines: 2 } });
@@ -121,7 +116,12 @@ describe("executeLogs", () => {
           return Promise.resolve(page({ lines: [line(0, "recovered")], cursor: 0 }));
         });
 
-      await executeLogs("/tmp/proj", { follow: true, pollMs: 1, signal: controller.signal });
+      await executeLogs(
+        "/tmp/proj",
+        { follow: true, pollMs: 1, signal: controller.signal },
+        ui,
+        platform,
+      );
 
       expect(written().join("\n")).toContain("recovered");
     });
@@ -129,11 +129,16 @@ describe("executeLogs", () => {
     test("an already-aborted signal reads once and stops", async () => {
       mockApiRequest.mockResolvedValue(page({ lines: [line(0, "only")] }));
 
-      await executeLogs("/tmp/proj", {
-        follow: true,
-        pollMs: 1,
-        signal: AbortSignal.abort(),
-      });
+      await executeLogs(
+        "/tmp/proj",
+        {
+          follow: true,
+          pollMs: 1,
+          signal: AbortSignal.abort(),
+        },
+        ui,
+        platform,
+      );
 
       expect(mockApiRequest).toHaveBeenCalledTimes(1);
     });

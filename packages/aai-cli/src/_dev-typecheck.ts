@@ -26,7 +26,7 @@
  */
 
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
-import { notify } from "./_ui.ts";
+import { defaultUi } from "./_ui.ts";
 import { typecheckProject } from "./typecheck.ts";
 
 /** What {@link createDevTypecheck} hands back: fire-and-forget, already coalesced. */
@@ -44,7 +44,7 @@ export type DevTypecheck = {
  */
 export function createDevTypecheck(
   cwd: string,
-  report: (level: "warn" | "error", message: string) => void = notify,
+  report: (level: "warn" | "error", message: string) => void = defaultUi.notify,
 ): DevTypecheck {
   const runner = createCoalescingRunner(async (): Promise<void> => {
     const result = await typecheckProject(cwd);

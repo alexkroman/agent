@@ -67,7 +67,7 @@ const secretPut = defineExec({
     ...platformArgs,
   },
   cwd: "any",
-  async run({ args, mode, cwd }) {
+  async run({ args, mode, cwd, ui }) {
     refuseValueInArgv(args._);
     const { executeLocalSecretPut, executeSecretPut, resolveSecretValue } = await import(
       "./secret.ts"
@@ -77,8 +77,8 @@ const secretPut = defineExec({
     // stdin when it is one is what made this command block forever.
     const value = await resolveSecretValue(args.name, mode);
     return args.local
-      ? executeLocalSecretPut(cwd, args.name, value)
-      : executeSecretPut(cwd, args.name, value, args.server);
+      ? executeLocalSecretPut(cwd, args.name, value, ui)
+      : executeSecretPut(cwd, args.name, value, args.server, ui);
   },
 });
 
@@ -90,11 +90,11 @@ const secretDelete = defineExec({
     ...platformArgs,
   },
   cwd: "any",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeLocalSecretDelete, executeSecretDelete } = await import("./secret.ts");
     return args.local
-      ? executeLocalSecretDelete(cwd, args.name)
-      : executeSecretDelete(cwd, args.name, args.server);
+      ? executeLocalSecretDelete(cwd, args.name, ui)
+      : executeSecretDelete(cwd, args.name, args.server, ui);
   },
 });
 
@@ -104,9 +104,9 @@ const secretList = defineExec({
     ...platformArgs,
   },
   cwd: "any",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeSecretList } = await import("./secret.ts");
-    return executeSecretList(cwd, args.server);
+    return executeSecretList(cwd, args.server, ui);
   },
 });
 
@@ -144,11 +144,15 @@ export const logs = defineExec({
     ...platformArgs,
   },
   cwd: "any",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeLogs } = await import("./logs.ts");
-    return executeLogs(resolveDirArg(cwd, args.dir), {
-      server: args.server,
-      follow: args.follow,
-    });
+    return executeLogs(
+      resolveDirArg(cwd, args.dir),
+      {
+        server: args.server,
+        follow: args.follow,
+      },
+      ui,
+    );
   },
 });

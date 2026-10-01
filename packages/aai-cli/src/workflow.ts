@@ -33,7 +33,7 @@ import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/work
 import { getServerInfo } from "./_agent.ts";
 import { readProjectConfig } from "./_config.ts";
 import { CliError, type CommandResult, fail, ok } from "./_output.ts";
-import { log } from "./_ui.ts";
+import { defaultUi, type Ui } from "./_ui.ts";
 import { stripTrailingSlash } from "./_utils.ts";
 
 /**
@@ -58,6 +58,14 @@ const DEFAULT_RUN_LIMIT = 20;
  * workflows".
  */
 type Target = { api: WorkflowApi; name: string };
+
+/** Where a platform target comes from — the seam a spec fakes instead of mocking modules. */
+export type WorkflowDeps = {
+  getServerInfo: typeof getServerInfo;
+  readProjectConfig: typeof readProjectConfig;
+};
+
+const REAL_DEPS: WorkflowDeps = { getServerInfo, readProjectConfig };
 
 type WorkflowOptions = {
   server?: string | undefined;
@@ -134,7 +142,7 @@ function agentBaseUrl(raw: string): string {
  * cause first and lets the sentence name every way out: publish it, or point at
  * the server already running.
  */
-async function target(cwd: string, opts: WorkflowOptions): Promise<Target> {
+async function target(cwd: string, opts: WorkflowOptions, deps: WorkflowDeps): Promise<Target> {
   if (opts.agent !== undefined) {
     const baseUrl = agentBaseUrl(opts.agent);
     return {
@@ -142,9 +150,9 @@ async function target(cwd: string, opts: WorkflowOptions): Promise<Target> {
       name: baseUrl,
     };
   }
-  const config = await readProjectConfig(cwd);
+  const config = await deps.readProjectConfig(cwd);
   if (!config?.slug) throw new CliError("no_deployment", NO_DEPLOYMENT, HINT_AGENT);
-  const { serverUrl, slug } = await getServerInfo(cwd, opts.server);
+  const { serverUrl, slug } = await deps.getServerInfo(cwd, opts.server);
   return {
     api: createWorkflowApiClient({
       baseUrl: `${serverUrl}/${slug}`,
@@ -217,15 +225,18 @@ async function attempt<T>(
 export async function executeWorkflowList(
   cwd: string,
   opts: WorkflowOptions,
+  ui: Ui = defaultUi,
+  deps: WorkflowDeps = REAL_DEPS,
 ): Promise<CommandResult<{ workflows: WorkflowSummary[] }>> {
-  const { api, name } = await target(cwd, opts);
+  const { api, name } = await target(cwd, opts, deps);
   const res = await attempt("workflow_list_failed", () => api.list());
   if (!res.ok) return res;
   const workflows = res.value;
   if (workflows.length === 0) {
-    log.info(`${name} declares no workflows`);
+    ui.log.info(`${name} declares no workflows`);
   } else {
-    for (const w of workflows) log.info(`${w.name}${w.description ? ` — ${w.description}` : ""}`);
+    for (const w of workflows)
+      ui.log.info(`${w.name}${w.description ? ` — ${w.description}` : ""}`);
   }
   return ok({ workflows });
 }
@@ -240,15 +251,17 @@ export async function executeWorkflowRuns(
   cwd: string,
   workflow: string,
   opts: WorkflowOptions & { limit?: number | undefined },
+  ui: Ui = defaultUi,
+  deps: WorkflowDeps = REAL_DEPS,
 ): Promise<CommandResult<{ runs: Run[] }>> {
-  const { api } = await target(cwd, opts);
+  const { api } = await target(cwd, opts, deps);
   const res = await attempt("workflow_runs_failed", () =>
     api.recent(workflow, { limit: opts.limit ?? DEFAULT_RUN_LIMIT }),
   );
   if (!res.ok) return res;
   const runs = res.value;
-  if (runs.length === 0) log.info(`No runs of ${workflow} yet`);
-  for (const run of runs) log.info(formatRun(run));
+  if (runs.length === 0) ui.log.info(`No runs of ${workflow} yet`);
+  for (const run of runs) ui.log.info(formatRun(run));
   return ok({ runs });
 }
 
@@ -265,8 +278,10 @@ export async function executeWorkflowShow(
   cwd: string,
   runId: string,
   opts: WorkflowOptions,
+  ui: Ui = defaultUi,
+  deps: WorkflowDeps = REAL_DEPS,
 ): Promise<CommandResult<{ run: Run }>> {
-  const { api } = await target(cwd, opts);
+  const { api } = await target(cwd, opts, deps);
   const res = await attempt("workflow_show_failed", () => api.get(runId));
   if (!res.ok) return res;
   // `get` resolves undefined for a 404, which the API answers for BOTH an
@@ -279,10 +294,10 @@ export async function executeWorkflowShow(
     return fail("workflow_show_failed", `No run ${runId}`, HINT_BROKER);
   }
   const run = res.value;
-  log.info(formatRun(run));
+  ui.log.info(formatRun(run));
   // The output is the reason `show` exists next to `runs`, and it is the one
   // field a line cannot hold — printed as JSON so a shell can pipe it.
-  if (run.status === "completed") log.info(JSON.stringify(run.output, null, 2));
+  if (run.status === "completed") ui.log.info(JSON.stringify(run.output, null, 2));
   return ok({ run });
 }
 
@@ -291,14 +306,16 @@ export async function executeWorkflowCancel(
   cwd: string,
   runId: string,
   opts: WorkflowOptions,
+  ui: Ui = defaultUi,
+  deps: WorkflowDeps = REAL_DEPS,
 ): Promise<CommandResult<{ runId: string; cancelled: boolean }>> {
-  const { api } = await target(cwd, opts);
+  const { api } = await target(cwd, opts, deps);
   const res = await attempt("workflow_cancel_failed", () => api.cancel(runId));
   if (!res.ok) return res;
   const cancelled = res.value;
   // Not a failure when false: the run was already terminal, which is an ANSWER —
   // the same reason the route replies 200 either way.
-  log.info(cancelled ? `Cancelled ${runId}` : `${runId} had already finished`);
+  ui.log.info(cancelled ? `Cancelled ${runId}` : `${runId} had already finished`);
   return ok({ runId, cancelled });
 }
 
