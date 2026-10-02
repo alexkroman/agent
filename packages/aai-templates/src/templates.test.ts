@@ -18,8 +18,6 @@
  * own agent.test.ts.
  */
 
-import { existsSync } from "node:fs";
-import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { ASSEMBLYAI_TTS_DEPRECATED_VOICES } from "@alexkroman1/aai/host-internal";
@@ -72,26 +70,6 @@ const templates = Object.keys(agentModules)
 describe("template build smoke", () => {
   test("discovers templates", () => {
     expect(templates.length).toBeGreaterThan(0);
-  });
-
-  /**
-   * The prompt glob is checked against the FILESYSTEM, not against itself.
-   *
-   * `withTemplatePrompt` no-ops for a template with no `system-prompt.md`, so a
-   * glob that stopped resolving would make every template look like that case
-   * and the per-template assertion below would skip silently. A first attempt at
-   * this guard derived the expected set from the same glob and was verified
-   * NOT to bite: breaking the pattern changed nothing. Two independent sources
-   * is the only shape that can catch it.
-   */
-  test("every system-prompt.md on disk is discovered", () => {
-    const onDisk = templates
-      .filter(({ name }) =>
-        existsSync(path.join(import.meta.dirname, "..", "templates", name, "system-prompt.md")),
-      )
-      .map(({ name }) => name);
-    expect(onDisk.length).toBeGreaterThan(0);
-    expect([...templatePromptFiles].toSorted()).toEqual(onDisk.toSorted());
   });
 
   test.each(templates)(

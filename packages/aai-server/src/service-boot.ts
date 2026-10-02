@@ -36,6 +36,26 @@ const log = createLogger("service");
 const sandboxLog = createLogger("sandbox");
 
 /**
+ * The collaborators the boot check reaches past `env` — each defaults to the
+ * real one. A seam for the spec: `isModalConfigured` reads `~/.modal.toml`,
+ * and answering "yes" from a unit test would fire a real prewarm at Modal.
+ */
+export type SandboxBootDeps = {
+  isModalConfigured?: () => boolean;
+  prewarmModal?: (harnessPath?: string) => void;
+  resolveHarnessPath?: () => string;
+  /** Look up a LOCAL microVM image by reference; rejects when it is absent. */
+  getLocalImage?: (reference: string) => Promise<unknown>;
+};
+
+type ResolvedBootDeps = Required<SandboxBootDeps>;
+
+async function getMicrosandboxImage(reference: string): Promise<unknown> {
+  const { Image } = await import("microsandbox");
+  return await Image.get(reference);
+}
+
+/**
  * Boot-time sandbox-backend check, so a misconfiguration fails (or warns)
  * where the cause is obvious instead of on the first session's spawn.
  *
@@ -51,7 +71,17 @@ const sandboxLog = createLogger("sandbox");
  * the local-dev default. `modal` needs credentials: fatal in production, a
  * warning in local dev so non-sandbox surfaces stay usable.
  */
-export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
+export function assertSandboxBackendOrWarn(
+  env: NodeJS.ProcessEnv,
+  overrides: SandboxBootDeps = {},
+): void {
+  const deps: ResolvedBootDeps = {
+    isModalConfigured,
+    prewarmModal,
+    resolveHarnessPath: () => resolveHarnessPath(),
+    getLocalImage: getMicrosandboxImage,
+    ...overrides,
+  };
   const { backend, reason } = describeSandboxBackend(env);
   sandboxLog.info(`backend=${backend} (${reason})`);
 
@@ -65,11 +95,11 @@ export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
   }
 
   if (backend === "microsandbox") {
-    void warnOnMissingGuestImage();
+    void warnOnMissingGuestImage(deps);
     return;
   }
 
-  if (!isModalConfigured()) {
+  if (!deps.isModalConfigured()) {
     if (isLocalDev(env)) {
       sandboxLog.warn(
         "WARNING: Modal credentials not configured " +
@@ -84,7 +114,7 @@ export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
     // first session's cold start.
     // The harness path is resolved separately: it throws when the harness
     // isn't built, which must not take down boot for a prewarm.
-    prewarmModal(harnessPathOrWarn());
+    deps.prewarmModal(harnessPathOrWarn(deps));
   }
 }
 
@@ -103,11 +133,10 @@ export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
  * diagnostic may not fail boot, and a registry-configured dev server has no
  * local image to find in the first place.
  */
-async function warnOnMissingGuestImage(): Promise<void> {
+async function warnOnMissingGuestImage(deps: ResolvedBootDeps): Promise<void> {
   try {
     if (guestImageRegistry(process.env) !== undefined) return;
-    const { Image } = await import("microsandbox");
-    await Image.get(LOCAL_GUEST_IMAGE_TAG);
+    await deps.getLocalImage(LOCAL_GUEST_IMAGE_TAG);
   } catch (err) {
     sandboxLog.warn(
       "WARNING: no local guest image for the microsandbox backend — " +
@@ -117,7 +146,7 @@ async function warnOnMissingGuestImage(): Promise<void> {
     );
     return;
   }
-  warnOnStaleGuestImage();
+  warnOnStaleGuestImage(deps);
 }
 
 /** The stamp `scripts/build-guest-image.mjs` writes beside the harness. */
@@ -145,12 +174,12 @@ const GUEST_IMAGE_STAMP = ".guest-image-stamp.json";
  * A warning, never a throw, matching every other check here: this backend is
  * local-dev only, and the remedy is one command.
  */
-function warnOnStaleGuestImage(): void {
+function warnOnStaleGuestImage(deps: ResolvedBootDeps): void {
   const remedy =
     "rebuild it with `pnpm build:guest-image --msb`, or set " +
     "SANDBOX_BACKEND=subprocess to run the harness on disk directly.";
   try {
-    const harnessPath = resolveHarnessPath();
+    const harnessPath = deps.resolveHarnessPath();
     const stampPath = join(dirname(harnessPath), GUEST_IMAGE_STAMP);
     if (!existsSync(stampPath)) {
       sandboxLog.warn(`WARNING: the local guest image records no harness — ${remedy}`, {
@@ -175,9 +204,9 @@ function warnOnStaleGuestImage(): void {
 }
 
 /** The built harness, or undefined with a warning — a prewarm may not fail boot. */
-function harnessPathOrWarn(): string | undefined {
+function harnessPathOrWarn(deps: ResolvedBootDeps): string | undefined {
   try {
-    return resolveHarnessPath();
+    return deps.resolveHarnessPath();
   } catch (err) {
     sandboxLog.warn("guest image prewarm skipped", { error: errorMessage(err) });
   }

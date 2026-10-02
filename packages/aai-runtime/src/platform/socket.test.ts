@@ -26,11 +26,6 @@ import {
   PONG_DEADLINE_MS,
   platformSocketUrl,
 } from "./socket.ts";
-import {
-  closePlatformSockets,
-  ensurePlatformSocket,
-  platformSocketFor,
-} from "./socket-registry.ts";
 
 const BASE = "https://api.test/my-agent";
 const TOKEN = "sandbox-bearer";
@@ -120,7 +115,6 @@ function openSocket() {
 }
 
 afterEach(() => {
-  closePlatformSockets();
   vi.useRealTimers();
 });
 
@@ -286,33 +280,5 @@ describe("frames this build does not understand", () => {
     const answered = socket.send(CALL);
     peer.deliver({ t: "res", id: peer.frames().at(-1)?.id, status: 200, body: "mine" });
     await expect(answered).resolves.toMatchObject({ body: "mine" });
-  });
-});
-
-describe("the registry is what a caller consults", () => {
-  test("is empty until something opens one, so nothing dials by accident", () => {
-    // The property that keeps a unit test off the network: only
-    // `installWorkflowSupport` calls `ensurePlatformSocket`.
-    expect(platformSocketFor({ base: BASE, token: TOKEN })).toBeUndefined();
-  });
-
-  test("hands back one socket per base, and closes them all", () => {
-    const peer = fakeSocket();
-    const first = ensurePlatformSocket({ base: BASE, token: TOKEN }, { create: () => peer.socket });
-    const second = ensurePlatformSocket(
-      { base: BASE, token: TOKEN },
-      { create: () => peer.socket },
-    );
-    expect(second).toBe(first);
-    peer.open();
-    expect(platformSocketFor({ base: BASE, token: TOKEN })).toBe(first);
-    closePlatformSockets();
-    expect(platformSocketFor({ base: BASE, token: TOKEN })).toBeUndefined();
-  });
-
-  test("a socket that is not open is not offered", () => {
-    const peer = fakeSocket();
-    ensurePlatformSocket({ base: BASE, token: TOKEN }, { create: () => peer.socket });
-    expect(platformSocketFor({ base: BASE, token: TOKEN })).toBeUndefined();
   });
 });

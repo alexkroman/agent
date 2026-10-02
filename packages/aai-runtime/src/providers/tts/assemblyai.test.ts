@@ -5,15 +5,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { flush } from "../../_timing-test-utils.ts";
 import type { TtsError } from "../openers.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
-import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
+import { createFakeWebSocket, FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
 import { openAssemblyAITts } from "./assemblyai.ts";
-
-// Async factory importing an import-free module: the adapter's own "ws"
-// import must not be reachable from the factory (it would re-enter the mock).
-vi.mock("ws", async () => {
-  const { FakeWebSocket } = await import("./_fake-ws-test-utils.ts");
-  return { default: FakeWebSocket, WebSocket: FakeWebSocket };
-});
 
 beforeEach(() => {
   FakeWebSocket.reset();
@@ -88,7 +81,7 @@ describe("AssemblyAI TTS adapter", () => {
     // Fail at connect rather than let the service refuse in-band: the
     // descriptor reaches the host as unvalidated `Record<string, unknown>`
     // options, so this is the only place a bad value can be caught.
-    const opener = openAssemblyAITts({ language: "zh" as "es" });
+    const opener = openAssemblyAITts({ language: "zh" as "es" }, createFakeWebSocket);
     await expect(
       opener.open({ sampleRate: 16_000, apiKey: "k", signal: new AbortController().signal }),
     ).rejects.toMatchObject({
@@ -113,7 +106,7 @@ describe("AssemblyAI TTS adapter", () => {
   });
 
   test("open() throws tts_auth_failed when the API key is missing", async () => {
-    const opener = openAssemblyAITts({});
+    const opener = openAssemblyAITts({}, createFakeWebSocket);
     await expect(
       opener.open({ sampleRate: 16_000, apiKey: "", signal: new AbortController().signal }),
     ).rejects.toMatchObject({ code: "tts_auth_failed" });

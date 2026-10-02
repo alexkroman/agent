@@ -14,20 +14,14 @@ import { spawnedAgent } from "../_sandbox-test-utils.ts";
 import { createMemoryAgentRows } from "../agent-store.ts";
 import { createMemoryBlobStorage } from "../blob-storage.ts";
 import { createBundleStore } from "../bundle-store.ts";
+import type { SpawnAgentServer } from "../sandbox.ts";
 import { createMemorySecretStore } from "../secret-store.ts";
 import { resolveSandbox } from "./resolve.ts";
 import { createSlotCache } from "./slots.ts";
 
-const { mockSpawnAgentServer } = vi.hoisted(() => ({
-  mockSpawnAgentServer: vi.fn(),
-}));
+/** The guest spawn every sandbox here boots through (`ResolveSandboxOpts.spawnAgentServer`). */
+const mockSpawnAgentServer = vi.fn<SpawnAgentServer>();
 
-vi.mock("./vm.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./vm.ts")>()),
-  spawnAgentServer: mockSpawnAgentServer,
-}));
-
-// Armed here rather than in the `vi.hoisted` factory above — see `spawnedAgent`.
 beforeEach(() => {
   mockSpawnAgentServer.mockReset().mockResolvedValue(spawnedAgent());
 });
@@ -60,7 +54,13 @@ describe("worker source selection", () => {
         clientFiles: {},
         credential_hashes: ["hash"],
       });
-    return { store, getItem, deploy, slots: createSlotCache() };
+    return {
+      store,
+      getItem,
+      deploy,
+      slots: createSlotCache(),
+      spawnAgentServer: mockSpawnAgentServer,
+    };
   }
 
   it("hands the guest a signed URL and never reads the bytes", async () => {
@@ -101,6 +101,7 @@ describe("worker source selection", () => {
     const sandbox = await resolveSandbox("unsigned-agent", {
       store,
       slots: createSlotCache(),
+      spawnAgentServer: mockSpawnAgentServer,
     });
     expect(mockSpawnAgentServer).toHaveBeenLastCalledWith(
       expect.objectContaining({ worker: expect.objectContaining({ kind: "inline" }) }),

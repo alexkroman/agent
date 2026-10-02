@@ -16,6 +16,7 @@
 
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
+  cappedProcess,
   EXIT_DRAIN_MS,
   KILL_GRACE_MS,
   keepTail,
@@ -23,14 +24,10 @@ import {
   runCapped,
 } from "./coding-spawn.ts";
 
-const spawnMock = vi.fn();
-vi.mock("node:child_process", () => ({ spawn: (...args: unknown[]) => spawnMock(...args) }));
-
 /**
- * A child the test drives: two output emitters and the two events `runCapped`
- * listens for. Nothing is annotated as a `ChildProcess` — the mocked module's
- * value is untyped, so the fake stands in for one with no cast, which is what
- * keeps this file's escape-hatch count at zero.
+ * A child the test drives: two output emitters and the events `runCapped`
+ * listens for — the structural `CappedChild`, handed in through the module's
+ * `cappedProcess.spawn` seam, so it needs no cast.
  */
 function installChild() {
   const data = new Map<string, (chunk: Buffer) => void>();
@@ -51,8 +48,9 @@ function installChild() {
   const child = {
     stdout: stream("stdout"),
     stderr: stream("stderr"),
-    on(event: string, cb: (...args: unknown[]) => void) {
-      events.set(event, cb);
+    on<A extends unknown[]>(event: string, cb: (...args: A) => void) {
+      // The test names the event and supplies its payload.
+      events.set(event, (...args) => cb(...(args as A)));
       return child;
     },
     kill(signal: string) {
@@ -60,13 +58,11 @@ function installChild() {
       return true;
     },
   };
-  spawnMock.mockImplementation(() => child);
+  const spawn = vi.spyOn(cappedProcess, "spawn").mockImplementation(() => child);
   return {
     /** The latest spawn, as `{ cmd, args, options }`. */
     get call() {
-      const last = spawnMock.mock.lastCall as
-        | [string, string[], Record<string, unknown>]
-        | undefined;
+      const last = spawn.mock.lastCall;
       return last && { cmd: last[0], args: last[1], options: last[2] };
     },
     kills,

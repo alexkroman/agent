@@ -15,13 +15,6 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
 import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
 
-// Async factory importing an import-free module: the adapter's own "ws"
-// import must not be reachable from the factory (it would re-enter the mock).
-vi.mock("ws", async () => {
-  const { FakeWebSocket } = await import("./_fake-ws-test-utils.ts");
-  return { default: FakeWebSocket, WebSocket: FakeWebSocket };
-});
-
 beforeEach(() => {
   FakeWebSocket.reset();
 });

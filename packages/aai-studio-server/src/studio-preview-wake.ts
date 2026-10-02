@@ -9,7 +9,7 @@
  * deploys anything itself; it decides whether there is something for that loop
  * to do and hands it over through {@link forcePreviewRedeploy}. Splitting them
  * also matches how the suites were already split
- * (`studio-preview.test.ts` vs `studio-preview-deploy.test.ts`) and keeps both
+ * (`studio-preview-wake.test.ts` vs `studio-preview.test.ts`) and keeps both
  * modules under the file-length cap.
  */
 

@@ -69,6 +69,7 @@ import { errorMessage, safeJsonParse } from "@alexkroman1/aai/utils";
 import WebSocket from "ws";
 import { base64ToUint8 } from "./_base64.ts";
 import { PROVIDER_WS_OPTIONS } from "./_ws.ts";
+import type { ProviderSocket } from "./providers/_utils.ts";
 import { withWalkSignal } from "./workflow/run-context.ts";
 
 /** The frames this exchange reads. See `providers/tts/assemblyai-frames.ts`. */
@@ -189,7 +190,28 @@ function abortError(signal: AbortSignal): Error {
  *
  * @internal
  */
-export const speakOverWebSocket: SpeechSynthesizer = (request) =>
+export const speakOverWebSocket: SpeechSynthesizer = (request) => speakOver(request);
+
+/**
+ * How {@link speakOver} constructs its socket — the seam a spec hands a fake
+ * through instead of replacing the `ws` module.
+ *
+ * @internal
+ */
+export type CreateSpeechSocket = (url: string, options: WebSocket.ClientOptions) => ProviderSocket;
+
+/** The production {@link CreateSpeechSocket}: a real `ws` client, which DIALS. */
+const dialSpeech: CreateSpeechSocket = (url, options) => new WebSocket(url, options);
+
+/**
+ * {@link speakOverWebSocket} with the socket constructor as a parameter.
+ *
+ * @internal
+ */
+export const speakOver = (
+  request: Parameters<SpeechSynthesizer>[0],
+  createSocket: CreateSpeechSocket = dialSpeech,
+): Promise<Uint8Array> =>
   new Promise<Uint8Array>((resolve, reject) => {
     // Built before the socket so an unsupported language rejects without
     // dialling anything.
@@ -215,7 +237,7 @@ export const speakOverWebSocket: SpeechSynthesizer = (request) =>
     }
     const frames: Uint8Array[] = [];
     // Raw key, not `Bearer` — see the module doc.
-    const ws = new WebSocket(url, {
+    const ws = createSocket(url, {
       headers: { Authorization: request.apiKey },
       ...PROVIDER_WS_OPTIONS,
     });

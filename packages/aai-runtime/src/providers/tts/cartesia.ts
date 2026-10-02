@@ -25,7 +25,8 @@ import { CARTESIA_API_KEY_ENV, resolveCartesiaTtsSettings } from "@alexkroman1/a
 import type { CartesiaTtsOptions } from "@alexkroman1/aai/tts";
 import { errorMessage, safeJsonParse } from "@alexkroman1/aai/utils";
 import { Cartesia } from "@cartesia/cartesia-js";
-import type { TTSWSContext } from "@cartesia/cartesia-js/resources/tts/ws";
+import type { WebsocketResponse } from "@cartesia/cartesia-js/resources/tts";
+import type { ContextOptions, TTSWSContext } from "@cartesia/cartesia-js/resources/tts/ws";
 import { TTSWS } from "@cartesia/cartesia-js/resources/tts/ws";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { bytesToPcm16 } from "../../_pcm.ts";
@@ -46,16 +47,51 @@ import {
   type TtsSession,
 } from "../openers.ts";
 
+/**
+ * The slice of the SDK's `TTSWSContext` this adapter drives.
+ *
+ * @internal
+ */
+export type CartesiaContext = Pick<TTSWSContext, "contextId" | "send" | "cancel">;
+
+/**
+ * The slice of the SDK's `TTSWS` this adapter drives.
+ *
+ * @internal
+ */
+export interface CartesiaSocket {
+  on(event: "chunk", fn: (event: WebsocketResponse.Chunk) => void): unknown;
+  on(event: "done", fn: (event: WebsocketResponse.Done) => void): unknown;
+  on(event: "error", fn: (err: Error) => void): unknown;
+  connect(): Promise<unknown>;
+  close(props?: { code: number; reason: string }): void;
+  context(options: ContextOptions): CartesiaContext;
+}
+
+/**
+ * Construct the (unconnected) socket — the seam a spec hands a fake through
+ * (see {@link openCartesia}).
+ *
+ * @internal
+ */
+export type CreateCartesiaSocket = (apiKey: string) => CartesiaSocket;
+
+/** The production {@link CreateCartesiaSocket}: the real SDK socket. */
+const sdkSocket: CreateCartesiaSocket = (apiKey) => new TTSWS(new Cartesia({ apiKey }), undefined);
+
 /** Internal: TtsSession with a test-only handle to the raw SDK socket. */
 export interface CartesiaSession extends TtsSession {
   /** @internal Test-only: exposes the underlying SDK WebSocket wrapper. */
-  readonly _ws: TTSWS;
+  readonly _ws: CartesiaSocket;
   /** @internal Test-only: id of the currently-active context. */
   readonly _currentContextId: () => string;
 }
 
 /** Build a {@link TtsOpener} from resolved Cartesia descriptor options. */
-export function openCartesia(opts: CartesiaTtsOptions): TtsOpener {
+export function openCartesia(
+  opts: CartesiaTtsOptions,
+  createSocket: CreateCartesiaSocket = sdkSocket,
+): TtsOpener {
   return {
     name: "cartesia",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
@@ -68,8 +104,6 @@ export function openCartesia(opts: CartesiaTtsOptions): TtsOpener {
       );
       const { model, language, voice } = resolveCartesiaTtsSettings(opts);
 
-      const client = new Cartesia({ apiKey });
-
       // Construct the socket directly rather than via `client.tts.websocket()`,
       // which only hands back the instance *after* connect resolves. We need the
       // reference *before* connecting so we can bind an `error` listener up
@@ -79,7 +113,7 @@ export function openCartesia(opts: CartesiaTtsOptions): TtsOpener {
       // exactly what happens on a connect-time failure (e.g. Cartesia out of
       // credits). Binding first routes the failure through the safe
       // `_emit("error")` path instead of taking down the process.
-      const ws: TTSWS = new TTSWS(client, undefined);
+      const ws = createSocket(apiKey);
 
       // Real behavior is installed below, once `shell`/`context` exist. During
       // the connect phase a failure is surfaced via the `connectOrThrow`
@@ -116,7 +150,7 @@ export function openCartesia(opts: CartesiaTtsOptions): TtsOpener {
         language,
       };
 
-      const mintContext = (): TTSWSContext =>
+      const mintContext = (): CartesiaContext =>
         ws.context({ ...contextOptions, contextId: randomUUID() });
 
       let context = mintContext();

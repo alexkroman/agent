@@ -11,10 +11,10 @@
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { logs, secret } from "./_resource-commands.ts";
+import { createResourceCommands } from "./_resource-commands.ts";
 
 const ok = { ok: true, data: {} };
-const executors = vi.hoisted(() => ({
+const executors = {
   secret: {
     executeSecretPut: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     executeSecretDelete: vi.fn().mockResolvedValue({ ok: true, data: {} }),
@@ -24,9 +24,12 @@ const executors = vi.hoisted(() => ({
     resolveSecretValue: vi.fn().mockResolvedValue("s3cret"),
   },
   logs: { executeLogs: vi.fn().mockResolvedValue({ ok: true, data: {} }) },
-}));
-vi.mock("./secret.ts", () => executors.secret);
-vi.mock("./logs.ts", () => executors.logs);
+};
+/** The groups, built over the fake executors rather than `secret.ts`/`logs.ts`. */
+const { secret, logs } = createResourceCommands({
+  secret: async () => executors.secret,
+  logs: async () => executors.logs,
+});
 
 // `clearMocks` clears the module-level `vi.fn()`s' calls but not their
 // implementations, so re-prime the defaults a case may have overridden.
