@@ -29,33 +29,11 @@
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { createMemoryJournal } from "../journal/backends/memory.ts";
-import type { JournalStore, RunRecord } from "../journal/types.ts";
+import { replayOn, seedRun } from "../_replay-test-utils.ts";
+import type { JournalStore } from "../journal/types.ts";
 import { type ReplayOutcome, replayRun } from "../replay.ts";
 
 const RUN_ID = "wrun_1";
-
-/** A journal holding one `running` record, ready to replay. */
-async function seed(journal: JournalStore = createMemoryJournal()): Promise<JournalStore> {
-  const record: RunRecord = {
-    runId: RUN_ID,
-    workflow: "digest",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  };
-  await journal.createRun(record);
-  return journal;
-}
-
-/** Replay `run` against a journal, optionally as a run started under `startedUnder`. */
-function replay(
-  journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown,
-  startedUnder?: string,
-) {
-  return replayRun({ runId: RUN_ID, workflow: "digest", input: {}, run, journal, startedUnder });
-}
 
 /** The failure message, or a name for whatever else the outcome was. */
 function failureMessage(outcome: ReplayOutcome): string {
@@ -74,8 +52,8 @@ describe("ctx.waitFor({ schema })", () => {
     payload: unknown,
     body: (ctx: WorkflowContext) => Promise<unknown>,
   ): Promise<{ journal: JournalStore; outcome: ReplayOutcome }> {
-    const journal = await seed();
-    const first = await replay(journal, async (_input, ctx) => body(ctx));
+    const journal = await seedRun();
+    const first = await replayOn(journal, async (_input, ctx) => body(ctx));
     // Plain throws rather than `expect`: this is SETUP, and an assertion outside
     // a test body is a lint error here (`noMisplacedAssertion`) precisely because
     // it would not be reported as the failure it is. Each names what went wrong.
@@ -84,7 +62,7 @@ describe("ctx.waitFor({ schema })", () => {
     }
     const woke = await journal.deliverHook("approval", payload);
     if (woke !== RUN_ID) throw new Error(`the signal reached no run: ${String(woke)}`);
-    return { journal, outcome: await replay(journal, async (_input, ctx) => body(ctx)) };
+    return { journal, outcome: await replayOn(journal, async (_input, ctx) => body(ctx)) };
   }
 
   test("hands the body the value the SCHEMA produced, not what arrived", async () => {
@@ -131,7 +109,7 @@ describe("ctx.waitFor({ schema })", () => {
       ctx.waitFor("approval", { schema: Approval }),
     );
     expect(outcome.kind).toBe("failed");
-    const again = await replay(journal, async (_input, ctx) =>
+    const again = await replayOn(journal, async (_input, ctx) =>
       ctx.waitFor("approval", { schema: Approval }),
     );
     expect(failureMessage(again)).toBe(failureMessage(outcome));
@@ -143,7 +121,7 @@ describe("ctx.waitFor({ schema })", () => {
     // The schema is never consulted on a timeout: there is no payload, and
     // running it over "nobody answered" would fail every timeout a validating
     // wait ever takes.
-    const journal = await seed();
+    const journal = await seedRun();
     const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       const approval = await ctx.waitFor("approval", { schema: Approval, timeoutMs: 50 });
       return { approval: approval ?? "expired" };
@@ -170,8 +148,8 @@ describe("ctx.step({ schema }) on the WRITE", () => {
   test("journals the value the schema produced, so every replay reads the same one", async () => {
     // A/B: journaling the raw value instead leaves `"3"` in the entry, and the
     // next walk is handed a string where this one saw a number.
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) =>
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) =>
       ctx.step("count", () => ({ n: "3" }), { schema: Count }),
     );
     expect(outcome).toEqual({ kind: "completed", output: { n: 3 } });
@@ -182,9 +160,9 @@ describe("ctx.step({ schema }) on the WRITE", () => {
     // The classification: this one is the step's own failure, so it takes the
     // ordinary retry path — a body that produced a bad value once may produce a
     // good one next time.
-    const journal = await seed();
+    const journal = await seedRun();
     const body = vi.fn(() => ({ n: "not a number" }));
-    const outcome = await replay(journal, async (_input, ctx) =>
+    const outcome = await replayOn(journal, async (_input, ctx) =>
       ctx.step("count", body, { schema: Count, maxAttempts: 2 }),
     );
 
@@ -202,7 +180,7 @@ describe("ctx.step({ schema }) on the WRITE", () => {
   });
 
   test("a schema that THROWS is a failed check, not an error escaping the engine", async () => {
-    const journal = await seed();
+    const journal = await seedRun();
     const exploding = {
       "~standard": {
         version: 1,
@@ -212,7 +190,7 @@ describe("ctx.step({ schema }) on the WRITE", () => {
         },
       },
     } as const;
-    const outcome = await replay(journal, async (_input, ctx) =>
+    const outcome = await replayOn(journal, async (_input, ctx) =>
       ctx.step("count", () => ({ n: 1 }), { schema: exploding, maxAttempts: 1 }),
     );
     expect(failureMessage(outcome)).toContain("the schema itself threw: vendor exploded");
@@ -222,7 +200,7 @@ describe("ctx.step({ schema }) on the WRITE", () => {
 describe("ctx.step({ schema }) on the READ", () => {
   /** A journal in which `count#0` settled `ok` with a value from another shape. */
   async function journalHolding(output: unknown): Promise<JournalStore> {
-    const journal = await seed();
+    const journal = await seedRun();
     await journal.appendStep(RUN_ID, {
       key: "count#0",
       name: "count",
@@ -242,7 +220,7 @@ describe("ctx.step({ schema }) on the READ", () => {
     // that says `number` and the run reports `completed` — the redeploy case,
     // which the write check structurally cannot see.
     const journal = await journalHolding({ n: "3" });
-    const outcome = await replay(journal, async (_input, ctx) =>
+    const outcome = await replayOn(journal, async (_input, ctx) =>
       ctx.step("count", () => ({ n: 1 }), { schema: Count }),
     );
     const message = failureMessage(outcome);
@@ -257,7 +235,7 @@ describe("ctx.step({ schema }) on the READ", () => {
     // flips to `failed`, destroying the record of work that really happened.
     const journal = await journalHolding({ n: "3" });
     const body = vi.fn(() => ({ n: 1 }));
-    await replay(journal, async (_input, ctx) => ctx.step("count", body, { schema: Count }));
+    await replayOn(journal, async (_input, ctx) => ctx.step("count", body, { schema: Count }));
 
     expect(
       body,
@@ -271,7 +249,7 @@ describe("ctx.step({ schema }) on the READ", () => {
 
   test("the refusal survives a body that catches everything", async () => {
     const journal = await journalHolding({ n: "3" });
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       try {
         return await ctx.step("count", () => ({ n: 1 }), { schema: Count });
       } catch {
@@ -287,10 +265,10 @@ describe("ctx.step({ schema }) on the READ", () => {
     // states it as a fact when the record settles it.
     vi.stubEnv("AAI_BUNDLE_SHA256", "bundle-b");
     const journal = await journalHolding({ n: "3" });
-    const outcome = await replay(
+    const outcome = await replayOn(
       journal,
       async (_input, ctx) => ctx.step("count", () => ({ n: 1 }), { schema: Count }),
-      "bundle-a",
+      { startedUnder: "bundle-a" },
     );
     const message = failureMessage(outcome);
     expect(message).toContain("STARTED against bundle bundle-a");
@@ -302,7 +280,7 @@ describe("ctx.step({ schema }) on the READ", () => {
     // "every legal program still works".
     const journal = await journalHolding({ n: 3 });
     const body = vi.fn(() => ({ n: 1 }));
-    const outcome = await replay(journal, async (_input, ctx) =>
+    const outcome = await replayOn(journal, async (_input, ctx) =>
       ctx.step("count", body, { schema: Count }),
     );
     expect(outcome).toEqual({ kind: "completed", output: { n: 3 } });

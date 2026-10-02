@@ -45,14 +45,15 @@ describe("agentServerEnv", () => {
     expect(env.DATABASE_URL).toBe("postgres://app@db/x");
   });
 
-  test("drops it whatever spelling turns the gate ON", () => {
-    // `isHostAllowed` accepts 1/true/yes/on, so a filter keyed on the VALUE would leak
-    // three of them. Keyed on the NAME, so it cannot.
-    for (const value of ["1", "true", "yes", "on", "TRUE"]) {
+  // `isHostAllowed` accepts 1/true/yes/on, so a filter keyed on the VALUE would leak
+  // three of them. Keyed on the NAME, so it cannot.
+  test.each(["1", "true", "yes", "on", "TRUE"])(
+    "drops it whatever spelling turns the gate ON: %s",
+    (value) => {
       expect(agentServerEnv({ AAI_ALLOW_HOST: value })).toEqual({});
       expect(isHostAllowed({ AAI_ALLOW_HOST: value })).toBe(true);
-    }
-  });
+    },
+  );
 });
 
 /**

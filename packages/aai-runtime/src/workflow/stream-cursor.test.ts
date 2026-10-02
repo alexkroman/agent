@@ -401,7 +401,7 @@ describe("a poll loop over the progress cursor", () => {
             if (fromIndex !== undefined && fromIndex > 0) reached.offsetStarts += 1;
             const api = createWorkflowApiClient({ baseUrl: "https://agent.example/my-agent" });
             const collected: unknown[] = [];
-            let settled = false;
+            const settled = vi.fn();
             const finished = (async () => {
               for await (const chunk of api.followOutput(
                 RUN,
@@ -409,12 +409,14 @@ describe("a poll loop over the progress cursor", () => {
               )) {
                 collected.push(chunk);
               }
-            })().then(() => {
-              settled = true;
-            });
+            })().then(settled);
             // The re-open wait is a second of VIRTUAL time; the extra turns cover
             // the terminal poll and leave the loop nothing to wait for.
-            for (let turn = 0; turn < schedule.length + 4 && !settled; turn += 1) {
+            for (
+              let turn = 0;
+              turn < schedule.length + 4 && settled.mock.calls.length === 0;
+              turn += 1
+            ) {
               await vi.advanceTimersByTimeAsync(1000);
             }
             await finished;

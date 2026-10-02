@@ -15,8 +15,8 @@ import type { WorkflowContext } from "@alexkroman1/aai";
 import type { Mock } from "vitest";
 import { describe, expect, test, vi } from "vitest";
 import type { Logger } from "../../logger.ts";
+import { seedRun } from "../_replay-test-utils.ts";
 import { replayRun } from "../replay.ts";
-import { createMemoryJournal } from "./backends/memory.ts";
 import { journalBound, WORKFLOW_JOURNAL_MAX_STEPS, WORKFLOW_JOURNAL_WARN_STEPS } from "./bound.ts";
 import type { JournalStore, StepEntry } from "./types.ts";
 
@@ -36,14 +36,7 @@ function warnSpy(): { logger: Logger; warn: Mock } {
 
 /** A journal holding one running run, plus `steps` settled entries. */
 async function seed(steps: number): Promise<JournalStore> {
-  const journal = createMemoryJournal();
-  await journal.createRun({
-    runId: RUN_ID,
-    workflow: "grower",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  });
+  const journal = await seedRun({ runId: RUN_ID, workflow: "grower" });
   for (let n = 0; n < steps; n++) {
     await journal.appendStep(RUN_ID, entry(n));
   }

@@ -116,7 +116,7 @@ describe("withHostCredentialFallback", () => {
   });
 
   test("contains no duplicates", () => {
-    expect(PROVIDER_CREDENTIAL_ENVS.length).toBe(new Set(PROVIDER_CREDENTIAL_ENVS).size);
+    expect(PROVIDER_CREDENTIAL_ENVS).toHaveLength(new Set(PROVIDER_CREDENTIAL_ENVS).size);
   });
 
   test("every fallback name is resolvable by resolveApiKey", () => {

@@ -24,11 +24,12 @@
 
 import type http from "node:http";
 import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/internal";
+import { createRunSnapshot } from "@alexkroman1/aai/testing";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { makeLogger } from "../../_logger-test-utils.ts";
 import { createWorkflowApi } from "../api.ts";
 import type { UploadStore } from "../uploads.ts";
-import { fakeClient, type Harness, run, serve } from "./_test-utils.ts";
+import { fakeClient, type Harness, serve } from "./_test-utils.ts";
 
 let harness: Harness | undefined;
 
@@ -102,7 +103,9 @@ describe("routing", () => {
     // The ordering bug this pins reads "<id>/events" as a run id, so the
     // giveaway is a 404 for a run that exists — and an SSE content type is the
     // only thing that distinguishes the two routes from outside.
-    const engine = fakeClient({ get: vi.fn(async () => run({ status: "completed", output: 1 })) });
+    const engine = fakeClient({
+      get: vi.fn(async () => createRunSnapshot({ status: "completed", output: 1 })),
+    });
     harness = await serve({ engine: () => engine });
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1/events`, {
       headers: { Accept: "text/event-stream" },
@@ -116,7 +119,7 @@ describe("routing", () => {
     // router — see the unsafe-id cases below. The SUBJECT is unchanged and is
     // still worth pinning: an escape that decodes to something legal has to
     // reach the engine decoded, not raw.
-    const get = vi.fn(async () => run());
+    const get = vi.fn(async () => createRunSnapshot());
     harness = await serve({ engine: () => fakeClient({ get }) });
     await fetch(`${harness.url}/workflows/runs/${encodeURIComponent("wrun_café")}`);
     expect(get).toHaveBeenCalledWith("wrun_café");

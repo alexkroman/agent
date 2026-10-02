@@ -116,8 +116,8 @@ async function stopAndCheckTeardown(
   }
   mon.stopped = true;
   await sleep(30);
-  if (stt.last()?.closed.value !== true) mon.flag("STT session left open after stop()");
-  if (tts.last()?.closed.value !== true) mon.flag("TTS session left open after stop()");
+  if (!stt.last()?.close.mock.calls.length) mon.flag("STT session left open after stop()");
+  if (!tts.last()?.close.mock.calls.length) mon.flag("TTS session left open after stop()");
 }
 
 let runCounter = 0;
@@ -330,10 +330,10 @@ export async function runOne(
   const checkClosedSessionWrites = (before: { stt: number; tts: number }): void => {
     const sttSession = stt.last();
     const ttsSession = tts.last();
-    if (sttSession?.closed.value === true && sttSession.audioFrames.length > before.stt) {
+    if (sttSession?.close.mock.calls.length && sttSession.audioFrames.length > before.stt) {
       mon.flag("sendAudio reached a closed STT session");
     }
-    if (ttsSession?.closed.value === true && ttsSession.textChunks.length > before.tts) {
+    if (ttsSession?.close.mock.calls.length && ttsSession.textChunks.length > before.tts) {
       mon.flag("sendText reached a closed TTS session");
     }
   };

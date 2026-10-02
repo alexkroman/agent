@@ -17,15 +17,9 @@
 
 import { describe, expect, test } from "vitest";
 import { type ScriptedCall as Call, scriptedFetch as scripted } from "../_fetch-test-utils.ts";
+import { body, ramp } from "../_upload-store-test-utils.ts";
 import { createHttpUploadBackend, storageEndpoint } from "./blobs-http.ts";
 import { UploadTooLargeError } from "./store.ts";
-
-async function* body(...pieces: Uint8Array[]): AsyncGenerator<Uint8Array> {
-  for (const piece of pieces) yield piece;
-}
-
-const ramp = (n: number, from = 0): Uint8Array =>
-  Uint8Array.from({ length: n }, (_, at) => (from + at) % 251);
 
 describe("Storage over its REST API", () => {
   const open = (answer: (call: Call) => Response) => {
@@ -87,7 +81,7 @@ describe("Storage over its REST API", () => {
     // and must not read as "there is nothing there".
     for (const status of [404, 416]) {
       const { blobs } = open(() => new Response("", { status }));
-      expect([...(await blobs.read("uploads/upl_a/0", 0, 8))]).toEqual([]);
+      expect.soft([...(await blobs.read("uploads/upl_a/0", 0, 8))], String(status)).toEqual([]);
     }
     const { blobs } = open(() => new Response("boom", { status: 503 }));
     await expect(blobs.read("uploads/upl_a/0", 0, 8)).rejects.toThrow(/503/);

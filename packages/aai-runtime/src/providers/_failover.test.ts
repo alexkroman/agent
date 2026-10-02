@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { createFailingSttProvider, createFakeSttProvider } from "../_pipeline-test-fakes.ts";
+import { createFailingProvider, createFakeSttProvider } from "../_pipeline-test-fakes.ts";
 import type { ProviderFailover } from "./_failover.ts";
 import { failoverOf, withOpenerFailoverListener } from "./_failover.ts";
 import { createFallbackSttOpener } from "./fallback.ts";
@@ -31,7 +31,7 @@ describe("the per-session listener seam", () => {
   test("binds a fallback opener's open() to the listener", async () => {
     const opener = createFallbackSttOpener(
       [
-        { opener: createFailingSttProvider("stt_connect_failed", "x"), envVar: "A", kind: "a" },
+        { opener: createFailingProvider("stt_connect_failed", "x"), envVar: "A", kind: "a" },
         { opener: createFakeSttProvider(), envVar: "B", kind: "b" },
       ],
       {},
@@ -53,7 +53,7 @@ describe("the per-session listener seam", () => {
     const opener = createFallbackSttOpener(
       [
         {
-          opener: createFailingSttProvider("stt_connect_failed", "x".repeat(5000)),
+          opener: createFailingProvider("stt_connect_failed", "x".repeat(5000)),
           envVar: "A",
           kind: "a",
         },
@@ -63,6 +63,6 @@ describe("the per-session listener seam", () => {
     );
     const seen: ProviderFailover[] = [];
     await opener.openReporting(sttOptions(), (f) => seen.push(f));
-    expect(seen[0]?.reason.length).toBe(500);
+    expect(seen[0]?.reason).toHaveLength(500);
   });
 });

@@ -36,10 +36,7 @@ import { createRuntimeWithSeams } from "./runtime.ts";
 const AGENT_GREETING = "Hello there.";
 const CALL_GREETING = "Hi, this is an AI assistant calling on behalf of Sam. Do you have a moment?";
 
-let unregister: (() => void) | undefined;
 afterEach(() => {
-  unregister?.();
-  unregister = undefined;
   vi.useRealTimers();
 });
 
@@ -52,7 +49,6 @@ async function startSession(
   const tts = createFakeTtsProvider();
   const llm = createFakeLanguageModel({ script: [{ type: "text", text: "Sure." }] });
   const fakes = registerFakeProviders({ stt, tts, llm });
-  unregister = fakes.unregister;
   const client = makeClientSink();
   const runtime = createRuntimeWithSeams({
     agent: makeAgent({ greeting: AGENT_GREETING, ...omitUndefined({ sessionContext }) }),

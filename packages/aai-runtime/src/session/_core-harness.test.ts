@@ -5,9 +5,8 @@
  * spec reads off the sink is what the session actually emitted and recorded.
  */
 
-import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import { makeAgentConfig, makeCore, makeSink } from "./_core-harness.ts";
+import { makeCore, makeSink } from "./_core-harness.ts";
 
 describe("makeSink", () => {
   test("records events, audio and close reasons in order", () => {
@@ -19,20 +18,6 @@ describe("makeSink", () => {
     expect(events.map((e) => e.type)).toEqual(["speech.started"]);
     expect(audioChunks).toEqual([chunk]);
     expect(closeReasons).toEqual(["bye"]);
-  });
-});
-
-describe("makeAgentConfig", () => {
-  test("defaults to the shipped system prompt, with overrides merged over it", () => {
-    expect(makeAgentConfig()).toEqual({
-      name: "test",
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      greeting: "",
-    });
-    expect(makeAgentConfig({ name: "t", idleTimeoutMs: 5 })).toMatchObject({
-      name: "t",
-      idleTimeoutMs: 5,
-    });
   });
 });
 

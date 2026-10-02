@@ -12,8 +12,9 @@
  * loop itself; these assert what the routes do with its answer.
  */
 
+import { createRunSnapshot } from "@alexkroman1/aai/testing";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { fakeClient, type Harness, run, serve } from "./_test-utils.ts";
+import { fakeClient, type Harness, serve } from "./_test-utils.ts";
 
 let harness: Harness | undefined;
 
@@ -31,7 +32,9 @@ describe("wait", () => {
     let reads = 0;
     return vi.fn(async () => {
       reads += 1;
-      return reads >= nth ? run({ status: "completed", output: 7 }) : run({ status: "running" });
+      return reads >= nth
+        ? createRunSnapshot({ status: "completed", output: 7 })
+        : createRunSnapshot({ status: "running" });
     });
   }
 
@@ -54,7 +57,7 @@ describe("wait", () => {
   });
 
   test("POST with no wait still answers 202 and the id alone", async () => {
-    const get = vi.fn(async () => run({ status: "running" }));
+    const get = vi.fn(async () => createRunSnapshot({ status: "running" }));
     harness = await serve({ engine: () => fakeClient({ get }) });
 
     const res = await fetch(`${harness.url}/workflows/runs`, {
@@ -72,7 +75,7 @@ describe("wait", () => {
   test("a wait that runs out is a 202 carrying the running run, not an error", async () => {
     const engine = fakeClient({
       start: vi.fn(async () => "wrun_9"),
-      get: vi.fn(async () => run({ status: "running" })),
+      get: vi.fn(async () => createRunSnapshot({ status: "running" })),
     });
     harness = await serve({ engine: () => engine });
 
@@ -100,7 +103,7 @@ describe("wait", () => {
   });
 
   test("GET with no wait reads once", async () => {
-    const get = vi.fn(async () => run({ status: "running" }));
+    const get = vi.fn(async () => createRunSnapshot({ status: "running" }));
     harness = await serve({ engine: () => fakeClient({ get }) });
 
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1`);

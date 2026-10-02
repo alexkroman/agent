@@ -62,16 +62,14 @@ describe("checkStubReplyTools", () => {
    * the hint about `virtual:aai/agent` would be a non-sequitur.
    */
   test("a lowered agent that misses a name lists the ones it has", () => {
-    let message = "";
-    try {
+    const check = () =>
       checkStubReplyTools(deployed, "looks an order up", [{ tool: "look_up_ordr" }]);
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    }
-    expect(message).toContain("look_up_ordr");
-    expect(message).toContain("It declares: look_up_order, think.");
-    expect(message).toContain("tools/look_up_ordr.ts");
-    expect(message).not.toContain(AUTHORED_DEF_HINT);
+    expect(check).toThrow("look_up_ordr");
+    expect(check).toThrow("It declares: look_up_order, think.");
+    expect(check).toThrow("tools/look_up_ordr.ts");
+    expect(check).toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining(AUTHORED_DEF_HINT) }),
+    );
   });
 
   test("the case's own NAME is in the message — one line of a file declares many", () => {

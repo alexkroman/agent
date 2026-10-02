@@ -22,6 +22,7 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { recordingFetch } from "../_fetch-test-utils.ts";
 import { PLATFORM_UNAVAILABLE_CODE } from "../workflow/api/error-status.ts";
 import { PLATFORM_ROUTES } from "./endpoint.ts";
 import { platformBearer, platformPost, platformResult } from "./rpc.ts";
@@ -38,16 +39,6 @@ const CALL = {
   timeoutMs: 10_000,
   body: JSON.stringify({ method: "load" }),
 };
-
-function recordingPlatform(answer: () => Response = () => Response.json({ result: null })) {
-  const calls: { url: string; method: string; headers: Headers; body: string }[] = [];
-  const fetch: typeof globalThis.fetch = async (input, init) => {
-    const req = new Request(input, init);
-    calls.push({ url: req.url, method: req.method, headers: req.headers, body: await req.text() });
-    return answer();
-  };
-  return { calls, fetch };
-}
 
 const endpoint = (fetch: typeof globalThis.fetch) => ({ base: BASE, token: TOKEN, fetch });
 
@@ -79,10 +70,10 @@ function registerSocket(answer: () => Promise<{ status: number; body: string }>)
 
 describe("what crosses to the platform", () => {
   test("posts the body to the route's URL, with the bearer and a JSON content type", async () => {
-    const platform = recordingPlatform();
+    const platform = recordingFetch();
     await platformPost(endpoint(platform.fetch), CALL);
-    expect(platform.calls).toHaveLength(1);
-    const [call] = platform.calls;
+    expect(platform.fetch).toHaveBeenCalledTimes(1);
+    const [call] = platform.requests();
     expect(call?.method).toBe("POST");
     expect(call?.url).toBe("https://api.test/my-agent/session-state");
     expect(call?.headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
@@ -91,28 +82,28 @@ describe("what crosses to the platform", () => {
   });
 
   test("tolerates a trailing slash on the operator-set base", async () => {
-    const platform = recordingPlatform();
+    const platform = recordingFetch();
     await platformPost({ base: `${BASE}/`, token: TOKEN, fetch: platform.fetch }, CALL);
-    expect(platform.calls[0]?.url).toBe("https://api.test/my-agent/session-state");
+    expect(platform.requests()[0]?.url).toBe("https://api.test/my-agent/session-state");
   });
 
   test("carries a W3C traceparent, so the platform's own lines can be joined", async () => {
-    const platform = recordingPlatform();
+    const platform = recordingFetch();
     await platformPost(endpoint(platform.fetch), CALL);
     // The header the SERVER parses (`aai-server/_platform-route.ts`), asserted
     // against the grammar rather than a fixture — there is nothing to fix here,
     // and a shape the parser refuses is a correlation key that silently never
     // correlates.
-    expect(platform.calls[0]?.headers.get("traceparent")).toMatch(
+    expect(platform.requests()[0]?.headers.get("traceparent")).toMatch(
       /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/,
     );
   });
 
   test("mints a fresh trace per call — one span per RPC", async () => {
-    const platform = recordingPlatform();
+    const platform = recordingFetch();
     await platformPost(endpoint(platform.fetch), CALL);
     await platformPost(endpoint(platform.fetch), CALL);
-    const [first, second] = platform.calls;
+    const [first, second] = platform.requests();
     expect(first?.headers.get("traceparent")).not.toBe(second?.headers.get("traceparent"));
   });
 
@@ -125,14 +116,14 @@ describe("what crosses to the platform", () => {
 
 describe("a reply that is not 2xx", () => {
   test.each([400, 401, 404, 501, 503])("names the label, the status and the reply", async (s) => {
-    const platform = recordingPlatform(() => Response.json({ error: "no room" }, { status: s }));
+    const platform = recordingFetch(() => Response.json({ error: "no room" }, { status: s }));
     await expect(platformPost(endpoint(platform.fetch), CALL)).rejects.toThrow(
       new RegExp(`session-state load answered HTTP ${s}[\\s\\S]*no room`),
     );
   });
 
   test("caps the platform's reply at 500 characters", async () => {
-    const platform = recordingPlatform(() => new Response("x".repeat(900), { status: 500 }));
+    const platform = recordingFetch(() => new Response("x".repeat(900), { status: 500 }));
     await expect(platformPost(endpoint(platform.fetch), CALL)).rejects.toThrow(
       /answered HTTP 500: x{500}$/,
     );
@@ -143,7 +134,7 @@ describe("a reply that is not 2xx", () => {
     // errors is what a platform answering 503 on a dropping connection produces,
     // and the three clients that read it unguarded reported the stream error with
     // no status — which is the one fact that decides whether to retry.
-    const platform = recordingPlatform(
+    const platform = recordingFetch(
       () =>
         new Response(
           new ReadableStream({
@@ -158,7 +149,7 @@ describe("a reply that is not 2xx", () => {
   });
 
   test("a status the caller claims becomes ITS error, not the generic one", async () => {
-    const platform = recordingPlatform(() => Response.json({ error: "taken" }, { status: 409 }));
+    const platform = recordingFetch(() => Response.json({ error: "taken" }, { status: 409 }));
     await expect(
       platformPost(endpoint(platform.fetch), {
         ...CALL,
@@ -170,7 +161,7 @@ describe("a reply that is not 2xx", () => {
   test("a claimed status does not depend on the reply body being readable", async () => {
     // Decided from the status alone, before the body is touched: what the platform
     // said about a refused id does not change what a refused id means.
-    const platform = recordingPlatform(
+    const platform = recordingFetch(
       () =>
         new Response(
           new ReadableStream({ start: (controller) => controller.error(new Error("gone")) }),
@@ -188,7 +179,7 @@ describe("a reply that is not 2xx", () => {
   test("a caller's own error is handed the platform's reply, for the ones that need it", async () => {
     // Storage's 404 becomes the DevKit's `WorkflowRunNotFoundError` and carries
     // the platform's message; the upload records client's 409 ignores it.
-    const platform = recordingPlatform(() => new Response("no such run", { status: 404 }));
+    const platform = recordingFetch(() => new Response("no such run", { status: 404 }));
     await expect(
       platformPost(endpoint(platform.fetch), {
         ...CALL,
@@ -198,7 +189,7 @@ describe("a reply that is not 2xx", () => {
   });
 
   test("a status the caller does NOT claim falls through to the generic error", async () => {
-    const platform = recordingPlatform(() => Response.json({ error: "no" }, { status: 503 }));
+    const platform = recordingFetch(() => Response.json({ error: "no" }, { status: 503 }));
     await expect(
       platformPost(endpoint(platform.fetch), {
         ...CALL,
@@ -274,7 +265,7 @@ test("a transport failure propagates rather than being swallowed", async () => {
 
 describe("the `{result}` envelope", () => {
   test("unwraps result rather than handing back the envelope", async () => {
-    const platform = recordingPlatform(() => Response.json({ result: { slot: "value" } }));
+    const platform = recordingFetch(() => Response.json({ result: { slot: "value" } }));
     await expect(platformResult(endpoint(platform.fetch), CALL)).resolves.toEqual({
       slot: "value",
     });
@@ -283,7 +274,7 @@ describe("the `{result}` envelope", () => {
   test("passes a null result through, which is a legitimate answer", async () => {
     // `"result" in parsed`, not a truthiness test: `null` is "no such record", and
     // three of the routes answer it routinely.
-    const platform = recordingPlatform(() => Response.json({ result: null }));
+    const platform = recordingFetch(() => Response.json({ result: null }));
     await expect(platformResult(endpoint(platform.fetch), CALL)).resolves.toBeNull();
   });
 
@@ -292,7 +283,7 @@ describe("the `{result}` envelope", () => {
     ["a bare array", () => Response.json([1, 2])],
     ["a JSON scalar", () => Response.json(7)],
   ])("rejects a 200 with %s rather than reading as undefined", async (_label, answer) => {
-    const platform = recordingPlatform(answer);
+    const platform = recordingFetch(answer);
     await expect(platformResult(endpoint(platform.fetch), CALL)).rejects.toThrow(
       /session-state load answered 200 without a result/,
     );
@@ -306,52 +297,52 @@ describe("the `{result}` envelope", () => {
  */
 describe("socket first, HTTP as the fallback", () => {
   test("prefers a registered open socket and never touches fetch", async () => {
-    const platform = recordingPlatform();
+    const platform = recordingFetch();
     const socket = registerSocket(async () => ({ status: 200, body: '{"result":1}' }));
     await expect(platformPost(endpoint(platform.fetch), CALL)).resolves.toBe('{"result":1}');
     expect(socket.calls).toEqual([
       { route: CALL.route, body: CALL.body, traceparent: expect.stringMatching(/^00-/) },
     ]);
-    expect(platform.calls).toHaveLength(0);
+    expect(platform.fetch).not.toHaveBeenCalled();
   });
 
   test("reads a socket's non-2xx exactly as it reads an HTTP one", async () => {
     // Same error text, same 500-character slice, same `errorFor` consultation —
     // the reason the five clients needed no edit.
     registerSocket(async () => ({ status: 501, body: "queue not configured" }));
-    await expect(platformPost(endpoint(recordingPlatform().fetch), CALL)).rejects.toThrow(
+    await expect(platformPost(endpoint(recordingFetch().fetch), CALL)).rejects.toThrow(
       /session-state load answered HTTP 501: queue not configured/,
     );
   });
 
   test("falls back to HTTP when the socket REFUSES, because nothing was sent", async () => {
-    const platform = recordingPlatform();
+    const platform = recordingFetch();
     registerSocket(async () => {
       throw Object.assign(new Error("not connected"), {
         code: PLATFORM_SOCKET_UNAVAILABLE_CODE,
       });
     });
     await expect(platformPost(endpoint(platform.fetch), CALL)).resolves.toBe('{"result":null}');
-    expect(platform.calls).toHaveLength(1);
+    expect(platform.fetch).toHaveBeenCalledTimes(1);
   });
 
   test("does NOT fall back when the call was already written", async () => {
     // The correctness half: re-sending a written `appendEvents` over HTTP would
     // apply it twice. A written call that fails is retryable-CODED and rethrown,
     // so the caller's own retry decides.
-    const platform = recordingPlatform();
+    const platform = recordingFetch();
     registerSocket(async () => {
       throw Object.assign(new Error("platform socket closed with the call in flight"), {
         code: PLATFORM_UNAVAILABLE_CODE,
       });
     });
     await expect(platformPost(endpoint(platform.fetch), CALL)).rejects.toThrow(/in flight/);
-    expect(platform.calls).toHaveLength(0);
+    expect(platform.fetch).not.toHaveBeenCalled();
   });
 
   test("uses HTTP when no socket has been opened, which is every unit test", async () => {
-    const platform = recordingPlatform();
+    const platform = recordingFetch();
     await expect(platformPost(endpoint(platform.fetch), CALL)).resolves.toBe('{"result":null}');
-    expect(platform.calls).toHaveLength(1);
+    expect(platform.fetch).toHaveBeenCalledTimes(1);
   });
 });

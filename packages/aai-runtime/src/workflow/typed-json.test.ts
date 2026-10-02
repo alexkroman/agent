@@ -70,7 +70,7 @@ describe("binary, which is the whole point", () => {
   test("an empty Uint8Array survives, and is not confused with absent", () => {
     const back = roundTrip(new Uint8Array([]));
     expect(back).toBeInstanceOf(Uint8Array);
-    expect((back as Uint8Array).length).toBe(0);
+    expect(back as Uint8Array).toHaveLength(0);
   });
 
   /**

@@ -4,25 +4,18 @@
  * not taking a notice settles the step's send with.
  */
 
-import { sleep } from "@alexkroman1/aai/internal";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";
 import {
   answerNotice as answer,
   connectDevice,
-  type InboxCleanups,
-  startInbox as startOn,
+  roundTrip,
+  startInbox,
 } from "./_inbox-test-utils.ts";
 import { type ClientInbox, INBOX_FRAME_BYTES } from "./inbox.ts";
 
-const cleanups: InboxCleanups = [];
-afterEach(async () => {
-  for (const clean of cleanups.splice(0).reverse()) await clean();
-});
-
-const startInbox = (pingMs?: number) => startOn(cleanups, pingMs);
 const connect = (url: string, inbox: ClientInbox, clientId = "speaker") =>
-  connectDevice(cleanups, url, inbox, clientId);
+  connectDevice(url, inbox, clientId);
 
 describe("client inbox", () => {
   test("a notice is a header then its bytes in bounded frames, and the ack settles it", async () => {
@@ -105,7 +98,7 @@ describe("client inbox", () => {
     const second = inbox.notify("speaker", { id: "two", event: "e" }, { ackTimeoutMs: 5000 });
     expect(await device.next()).toMatchObject({ id: "one" });
     // Nothing of the second arrives while the first is unanswered.
-    await sleep(50);
+    await roundTrip(device);
     expect(device.frames).toEqual([]);
     answer(device.ws, "ack", "one");
     expect(await device.next()).toMatchObject({ id: "two" });

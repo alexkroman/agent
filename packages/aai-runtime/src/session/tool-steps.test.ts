@@ -20,7 +20,7 @@ describe("createSessionCore — tool call pending results", () => {
     await vi.waitFor(() =>
       expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "tool-output"),
     );
-    expect(sink.events.some((e) => e.type === "tool.completed")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "tool.completed" }));
   });
 
   test("the provider reads a record collection as rows; the tool.completed event keeps the tool's own string", async () => {

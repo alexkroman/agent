@@ -12,7 +12,7 @@ import { describe, expect, test, vi } from "vitest";
 import { makeAgent } from "../_agent-test-utils.ts";
 import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import {
-  createFailingSttProvider,
+  createFailingProvider,
   createFakeLanguageModel,
   createFakeSttProvider,
   createFakeTtsProvider,
@@ -356,7 +356,7 @@ describe("createTransportFactory (pipeline)", () => {
     const stt = createFallbackSttOpener(
       [
         {
-          opener: createFailingSttProvider("stt_connect_failed", "refused"),
+          opener: createFailingProvider("stt_connect_failed", "refused"),
           envVar: "A",
           kind: "a",
         },

@@ -127,16 +127,17 @@ describe("an answer this client cannot read", () => {
     expect(await keys.lookup("digest", "caller", 20)).toEqual(["wrun_a", "wrun_c", "wrun_b"]);
   });
 
-  test("a lookup answer that is not an array reads as no runs", async () => {
-    // Lax on purpose, and only here: the caller is a lookup, so the honest answer
-    // to "which runs belong to this caller" when the reply cannot be read is "none
-    // I can name". Throwing would fail a `find` over a reply shape, and inventing
-    // an entry would send `getRun` after a run id nothing can answer.
-    for (const answer of [null, 42, "wrun_1", { runId: "wrun_1" }]) {
+  // Lax on purpose, and only here: the caller is a lookup, so the honest answer
+  // to "which runs belong to this caller" when the reply cannot be read is "none
+  // I can name". Throwing would fail a `find` over a reply shape, and inventing
+  // an entry would send `getRun` after a run id nothing can answer.
+  test.each<unknown>([null, 42, "wrun_1", { runId: "wrun_1" }])(
+    "a lookup answer that is not an array reads as no runs: %j",
+    async (answer) => {
       const keys = recordingStore(() => answer).keys;
       expect(await keys.lookup("digest", "caller", 20)).toEqual([]);
-    }
-  });
+    },
+  );
 
   test("a non-string entry is dropped and its siblings still answer", async () => {
     // The half a blanket `[]` would lose. A row that will not read must not take

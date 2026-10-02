@@ -28,10 +28,8 @@ import { type AgentServer, createServerForRuntime, type SessionRuntime } from ".
 // Every server a test opens — one test serves twice, so a single slot would
 // orphan the first listener.
 const servers: AgentServer[] = [];
-let unregister: (() => void) | undefined;
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()));
-  unregister?.();
 });
 
 async function serve(routes: Record<string, RouteHandler> | undefined): Promise<string> {
@@ -168,7 +166,6 @@ describe("agent({ routes }) through createRuntime", () => {
       tts: createFakeTtsProvider(),
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
     });
-    unregister = fakes.unregister;
     const runtime = createRuntimeWithSeams({
       agent: makeAgent({ routes: { "GET /whoami": (_req, ctx) => ({ name: ctx.env.OWNER }) } }),
       env: {

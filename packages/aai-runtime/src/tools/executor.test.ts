@@ -4,7 +4,7 @@ import type { ToolDef } from "@alexkroman1/aai";
 import { toolset } from "@alexkroman1/aai/manifest";
 import { toolFailure } from "@alexkroman1/aai/utils";
 import { TimeoutError } from "p-timeout";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { makeTool, makeUsageMeter, malformedOnError } from "../_agent-test-utils.ts";
 import { makeLogger } from "../_logger-test-utils.ts";
@@ -431,18 +431,15 @@ describe("executeToolCall — onError classifies a THROW", () => {
       throw new Error("would be fatal");
     });
     const controller = new AbortController();
-    let started = false;
-    const tool = makeTool({
-      execute: () => {
-        started = true;
-        return new Promise<never>(() => {
+    const execute = vi.fn(
+      () =>
+        new Promise<never>(() => {
           /* never resolves */
-        });
-      },
-      onError,
-    });
+        }),
+    );
+    const tool = makeTool({ execute, onError });
     const promise = run("hang", {}, tool, { signal: controller.signal, onError });
-    await vi.waitFor(() => expect(started).toBe(true));
+    await vi.waitFor(() => expect(execute).toHaveBeenCalled());
     controller.abort();
     // Settles with the ordinary cancellation failure rather than rejecting.
     expect(JSON.parse(await promise)).toMatchObject({ error: expect.stringMatching(/abort/i) });
@@ -641,17 +638,10 @@ describe("executeToolCall — a result larger than MAX_TOOL_RESULT_CHARS", () =>
  * asserting on the meter directly would have passed against the broken wiring.
  */
 describe("ctx.generate spends on the session's meter", () => {
-  let unregister: (() => void) | undefined;
-  afterEach(() => {
-    unregister?.();
-    unregister = undefined;
-  });
-
   /** The real host `ctx.generate` over a fake model that reports 2 tokens a call. */
   function generating() {
     const model = createScriptedOneShotModel([{ text: "first" }, { text: "second" }]);
     const fakes = registerFakeProviders({ llm: model });
-    unregister = fakes.unregister;
     if (!fakes.llm) throw new Error("fake llm descriptor missing");
     return { model, generate: createGenerateFn({ llm: fakes.llm, env: fakes.env }) };
   }

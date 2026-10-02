@@ -71,7 +71,7 @@ describe("handleLocalFrame", () => {
   test("ignores malformed frames without throwing", () => {
     const emit = fakeEmit();
     for (const raw of ["not json", "5", "null", JSON.stringify({ type: "final", text: 7 })]) {
-      expect(() => handleLocalFrame(raw, emit)).not.toThrow();
+      expect.soft(() => handleLocalFrame(raw, emit), raw).not.toThrow();
     }
     expect(emit.final).not.toHaveBeenCalled();
   });

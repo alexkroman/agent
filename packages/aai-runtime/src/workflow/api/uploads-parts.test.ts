@@ -14,10 +14,9 @@
  */
 
 import { UPLOAD_CHUNK_BYTES, UPLOAD_CLAIM_BATCH } from "@alexkroman1/aai/host-internal";
-import { afterEach, describe, expect, test } from "vitest";
-import { closeServer, current, serve } from "./_uploads-test-utils.ts";
-
-afterEach(closeServer);
+import { describe, expect, test } from "vitest";
+import { body, memoryStore, ramp } from "../../_upload-store-test-utils.ts";
+import { serve } from "./_uploads-test-utils.ts";
 
 describe("the parts routes", () => {
   /** Declare an upload its parts will fill in, and answer what the route said. */
@@ -44,11 +43,6 @@ describe("the parts routes", () => {
       method: "PUT",
       body: bytes,
     });
-  }
-
-  /** A chunk of bytes whose CONTENT identifies where it came from. */
-  function ramp(n: number, from = 0): Uint8Array {
-    return Uint8Array.from({ length: n }, (_, at) => (from + at) % 251);
   }
 
   test("declares an upload readable before a single part has landed", async () => {
@@ -111,10 +105,10 @@ describe("the parts routes", () => {
   test("`stored=1` records a window without carrying it", async () => {
     // The direct path's write. No body: the bytes went to the platform, and the store
     // measures the object itself rather than trusting anything here.
-    const base = await serve({ directParts: true });
+    const { store, blobs } = memoryStore();
+    const base = await serve({ uploads: store, directParts: true });
     await begin(base, "abc", 8);
-    const store = current();
-    store.stored.set("abc/0", new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
+    await blobs.put("uploads/abc/0", body(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])));
     const res = await fetch(`${base}/workflows/uploads/abc/parts?offset=0&stored=1`, {
       method: "PUT",
     });
@@ -146,11 +140,11 @@ describe("the parts routes", () => {
     // The batch. The claim carries no bytes and cost about half of an upload's wall
     // clock, per part, so naming every window that landed collapses the toll — and
     // the record it leaves is the same one three separate claims would have.
-    const base = await serve({ directParts: true });
+    const { store, blobs } = memoryStore();
+    const base = await serve({ uploads: store, directParts: true });
     await begin(base, "abc", UPLOAD_CHUNK_BYTES + 4);
-    const store = current();
-    store.stored.set("abc/0", ramp(UPLOAD_CHUNK_BYTES));
-    store.stored.set(`abc/${UPLOAD_CHUNK_BYTES}`, ramp(4));
+    await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES)));
+    await blobs.put(`uploads/abc/${UPLOAD_CHUNK_BYTES}`, body(ramp(4)));
     const res = await fetch(
       `${base}/workflows/uploads/abc/parts?offset=0&offset=${UPLOAD_CHUNK_BYTES}&stored=1`,
       { method: "PUT" },

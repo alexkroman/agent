@@ -64,7 +64,7 @@ describe("waitForRun", () => {
     // the rest of the budget.
     const reads = runs.get.mock.calls.length;
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(runs.get.mock.calls.length).toBe(reads);
+    expect(runs.get).toHaveBeenCalledTimes(reads);
   });
 
   test("gives up at the deadline with the RUNNING snapshot", async () => {
@@ -108,7 +108,7 @@ describe("waitForRun", () => {
 
     const reads = runs.get.mock.calls.length;
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(runs.get.mock.calls.length).toBe(reads);
+    expect(runs.get).toHaveBeenCalledTimes(reads);
   });
 
   test("does not start at all for a caller already gone", async () => {

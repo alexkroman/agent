@@ -88,7 +88,7 @@ describe("createRunNotifier", () => {
 
     const reads = get.mock.calls.length;
     await vi.advanceTimersByTimeAsync(100);
-    expect(get.mock.calls.length).toBe(reads);
+    expect(get).toHaveBeenCalledTimes(reads);
     expect(spoken).toHaveLength(1);
   });
 
@@ -151,7 +151,7 @@ describe("createRunNotifier", () => {
     const reads = get.mock.calls.length;
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(get.mock.calls.length).toBe(reads);
+    expect(get).toHaveBeenCalledTimes(reads);
     expect(spoken).toEqual([]);
     expect(notifier.size).toBe(0);
   });

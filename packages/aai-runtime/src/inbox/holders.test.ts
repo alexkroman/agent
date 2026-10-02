@@ -6,32 +6,26 @@
 
 import type { SessionEvent } from "@alexkroman1/aai";
 import { setSessionClient } from "@alexkroman1/aai/host-internal";
-import { sleep } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";
 import { stampSessionEvent } from "../session/index.ts";
 import {
   answerNotice as answer,
   connectDevice,
-  type InboxCleanups,
+  roundTrip,
   startInbox,
 } from "./_inbox-test-utils.ts";
 import { feedClientEvent, publishClientEventFeed } from "./event-feed.ts";
 import { type ClientInbox, INBOX_EVENT_BUFFER_LIMIT_BYTES } from "./inbox.ts";
 
-const cleanups: InboxCleanups = [];
-afterEach(async () => {
-  for (const clean of cleanups.splice(0).reverse()) await clean();
-});
-
 const connect = (url: string, inbox: ClientInbox, extra = "", clientId = "speaker") =>
-  connectDevice(cleanups, url, inbox, clientId, extra);
+  connectDevice(url, inbox, clientId, extra);
 
 const notice = { id: "run-1", event: "reminder" };
 
 describe("client inbox holders", () => {
   test("different holders of one client coexist, and a notice reaches every one", async () => {
-    const { inbox, url } = await startInbox(cleanups);
+    const { inbox, url } = await startInbox();
     const speaker = await connect(url, inbox);
     const browser = await connect(url, inbox, "holder=browser-1");
     const sent = inbox.notify("speaker", notice, { ackTimeoutMs: 5000 });
@@ -45,7 +39,7 @@ describe("client inbox holders", () => {
   });
 
   test("the same holder again replaces; a missing ?holder= is the default one", async () => {
-    const { inbox, url } = await startInbox(cleanups);
+    const { inbox, url } = await startInbox();
     const firmware = await connect(url, inbox);
     const old = await connect(url, inbox, "holder=tab");
     const closed = new Promise((resolve) => old.ws.once("close", resolve));
@@ -67,7 +61,7 @@ describe("client inbox holders", () => {
     // came in and answered busy; the idle speaker acked. Settled "acked" on that first
     // ack, the page never heard it. Busy wins, the retry re-sends, and the holder that
     // already played it acks the repeat (it drops a notice id it has seen).
-    const { inbox, url } = await startInbox(cleanups);
+    const { inbox, url } = await startInbox();
     const speaker = await connect(url, inbox);
     const browser = await connect(url, inbox, "holder=b");
     const first = inbox.notify("speaker", { id: "b1", event: "e" }, { ackTimeoutMs: 5000 });
@@ -84,7 +78,7 @@ describe("client inbox holders", () => {
   });
 
   test("acked when one acks and another stays silent; no-ack when all stay silent", async () => {
-    const { inbox, url } = await startInbox(cleanups);
+    const { inbox, url } = await startInbox();
     const speaker = await connect(url, inbox);
     const browser = await connect(url, inbox, "holder=b");
     const oneSilent = inbox.notify("speaker", { id: "s1", event: "e" }, { ackTimeoutMs: 100 });
@@ -98,14 +92,14 @@ describe("client inbox holders", () => {
   });
 
   test("the per-client queue still holds across holders: one notice in flight", async () => {
-    const { inbox, url } = await startInbox(cleanups);
+    const { inbox, url } = await startInbox();
     const speaker = await connect(url, inbox);
     const browser = await connect(url, inbox, "holder=b");
     const first = inbox.notify("speaker", { id: "one", event: "e" }, { ackTimeoutMs: 5000 });
     const second = inbox.notify("speaker", { id: "two", event: "e" }, { ackTimeoutMs: 5000 });
     expect(await speaker.next()).toMatchObject({ id: "one" });
     expect(await browser.next()).toMatchObject({ id: "one" });
-    await sleep(50);
+    await Promise.all([roundTrip(speaker), roundTrip(browser)]);
     expect([speaker.frames, browser.frames]).toEqual([[], []]);
     answer(speaker.ws, "ack", "one");
     answer(browser.ws, "ack", "one");
@@ -117,7 +111,7 @@ describe("client inbox holders", () => {
   });
 
   test("a malformed ?holder= is closed with a reason", async () => {
-    const { inbox, url } = await startInbox(cleanups);
+    const { inbox, url } = await startInbox();
     const ws = new WebSocket(`${url}?client=speaker&holder=${encodeURIComponent("a b")}`);
     const [code, reason] = await new Promise<[number, string]>((resolve) =>
       ws.once("close", (c, r) => resolve([c, r.toString()])),
@@ -135,7 +129,7 @@ describe("the live event feed on /inbox?events=1", () => {
     stampSessionEvent(body);
 
   test("only an events holder is sent the frames, as { type: session_event, sessionId, event }", async () => {
-    const { inbox, url } = await startInbox(cleanups);
+    const { inbox, url } = await startInbox();
     const firmware = await connect(url, inbox);
     const browser = await connect(url, inbox, "holder=tab&events=1");
     const committed = event({ type: "userTranscript.committed", text: "what's the weather" });
@@ -145,12 +139,12 @@ describe("the live event feed on /inbox?events=1", () => {
       sessionId: "s-1",
       event: JSON.parse(JSON.stringify(committed)),
     });
-    await sleep(30);
+    await roundTrip(firmware);
     expect(firmware.frames).toEqual([]);
   });
 
   test("a session bound to the client reaches it through the published feed, results never", async () => {
-    const { inbox, url } = await startInbox(cleanups);
+    const { inbox, url } = await startInbox();
     publishClientEventFeed(inbox.feed);
     const browser = await connect(url, inbox, "holder=tab&events=1");
     setSessionClient("feed-session", "speaker");
@@ -171,15 +165,16 @@ describe("the live event feed on /inbox?events=1", () => {
   });
 
   test("a holder whose socket is backed up past the limit is skipped, not buffered", async () => {
-    const { inbox, url } = await startInbox(cleanups);
+    const { inbox, url } = await startInbox();
     const browser = await connect(url, inbox, "holder=tab&events=1");
     const frame = { type: "session_ended", sessionId: "s-2" } as const;
     // Every socket reads as backed up for one feed — the server's is the one asked.
-    const spy = vi
-      .spyOn(WebSocket.prototype, "bufferedAmount", "get")
-      .mockReturnValue(INBOX_EVENT_BUFFER_LIMIT_BYTES + 1);
-    inbox.feed("speaker", frame);
-    spy.mockRestore();
+    {
+      using _backedUp = vi
+        .spyOn(WebSocket.prototype, "bufferedAmount", "get")
+        .mockReturnValue(INBOX_EVENT_BUFFER_LIMIT_BYTES + 1);
+      inbox.feed("speaker", frame);
+    }
     inbox.feed("speaker", { ...frame, sessionId: "s-3" });
     expect(await browser.next()).toEqual({ type: "session_ended", sessionId: "s-3" });
     expect(browser.frames).toEqual([]);

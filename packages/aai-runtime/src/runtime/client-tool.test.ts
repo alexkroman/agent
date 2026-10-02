@@ -100,7 +100,7 @@ describe("clientTool over a session socket", () => {
     expect(ws.sentJson().filter((m) => m.type === "tool.called")).toEqual([
       expect.objectContaining({ toolCallId: "call-1", toolName: "get_location" }),
     ]);
-    expect(ws.sentJson().some((m) => m.type === "tool.completed")).toBe(false);
+    expect(ws.sentJson()).not.toContainEqual(expect.objectContaining({ type: "tool.completed" }));
 
     ws.simulateMessage(
       JSON.stringify({

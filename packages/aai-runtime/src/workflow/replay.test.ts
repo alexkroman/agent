@@ -15,34 +15,8 @@ import type { WorkflowContext } from "@alexkroman1/aai";
 import { publishStepReporter } from "@alexkroman1/aai/host-internal";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
-import { createMemoryJournal } from "./journal/backends/memory.ts";
-import type { JournalStore, RunRecord } from "./journal/types.ts";
-import { replayRun } from "./replay.ts";
-
-/** A run record and the journal holding it, ready to replay. */
-async function seed(
-  input: Record<string, unknown> = {},
-  journal: JournalStore = createMemoryJournal(),
-): Promise<{ journal: JournalStore; record: RunRecord }> {
-  const record: RunRecord = {
-    runId: "wrun_1",
-    workflow: "digest",
-    status: "running",
-    createdAt: Date.now(),
-    input,
-  };
-  await journal.createRun(record);
-  return { journal, record };
-}
-
-/** Replay `run` against a journal, with the seeded run's identity. */
-function replay(
-  journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown,
-  input: Record<string, unknown> = {},
-) {
-  return replayRun({ runId: "wrun_1", workflow: "digest", input, run, journal });
-}
+import { replayOn, seedRun } from "./_replay-test-utils.ts";
+import type { JournalStore } from "./journal/types.ts";
 
 /**
  * Capture what the engine NARRATES for the duration of one test.
@@ -63,24 +37,24 @@ function reportedLines(): () => string[] {
 
 describe("a first execution", () => {
   test("runs the body and reports what it returned", async () => {
-    const { journal } = await seed({ topic: "otters" });
+    const journal = await seedRun({ input: { topic: "otters" } });
     // The body is handed `unknown` — the engine does not know a def's schema —
     // so a real body narrows exactly like this one does.
-    const outcome = await replay(
+    const outcome = await replayOn(
       journal,
       async (input, ctx) => {
         const { topic } = input as { topic: string };
         const notes = await ctx.step("research", () => `notes on ${topic}`);
         return { notes };
       },
-      { topic: "otters" },
+      { input: { topic: "otters" } },
     );
     expect(outcome).toEqual({ kind: "completed", output: { notes: "notes on otters" } });
   });
 
   test("journals each settled step under `name#occurrence`", async () => {
-    const { journal } = await seed();
-    await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    await replayOn(journal, async (_input, ctx) => {
       await ctx.step("a", () => 1);
       await ctx.step("b", () => 2);
     });
@@ -90,8 +64,8 @@ describe("a first execution", () => {
   });
 
   test("gives one call site in a loop a distinct key per iteration", async () => {
-    const { journal } = await seed();
-    await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    await replayOn(journal, async (_input, ctx) => {
       for (let i = 0; i < 3; i++) await ctx.step("tick", () => i);
     });
     const steps = await journal.readSteps("wrun_1");
@@ -101,7 +75,7 @@ describe("a first execution", () => {
 
 describe("a replay", () => {
   test("answers a completed step from the journal instead of running it again", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     const body = vi.fn(async (_input: unknown, ctx: WorkflowContext) => {
       const first = await ctx.step("once", work);
       const second = await ctx.step("twice", work);
@@ -109,17 +83,17 @@ describe("a replay", () => {
     });
     const work = vi.fn(() => "done");
 
-    await replay(journal, body);
+    await replayOn(journal, body);
     expect(work).toHaveBeenCalledTimes(2);
 
     // Second delivery of the same run — the body walks again, the steps do not.
-    const again = await replay(journal, body);
+    const again = await replayOn(journal, body);
     expect(work).toHaveBeenCalledTimes(2);
     expect(again).toEqual({ kind: "completed", output: ["done", "done"] });
   });
 
   test("resumes a run that crashed midway without redoing what landed", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     const ran: string[] = [];
     const crashing = async (_input: unknown, ctx: WorkflowContext) => {
       await ctx.step("first", () => {
@@ -131,17 +105,17 @@ describe("a replay", () => {
         throw new FatalError("the process died here");
       });
     };
-    await replay(journal, crashing);
+    await replayOn(journal, crashing);
     expect(ran).toEqual(["first", "boom"]);
 
     // The completed step is journaled; the failed one is too, and stays failed.
-    const resumed = await replay(journal, crashing);
+    const resumed = await replayOn(journal, crashing);
     expect(ran).toEqual(["first", "boom"]);
     expect(resumed.kind).toBe("failed");
   });
 
   test("re-throws a journaled failure, so a body that caught it takes the same branch", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     const branches: string[] = [];
     const body = async (_input: unknown, ctx: WorkflowContext) => {
       try {
@@ -154,8 +128,8 @@ describe("a replay", () => {
       }
       return branches.length;
     };
-    await replay(journal, body);
-    await replay(journal, body);
+    await replayOn(journal, body);
+    await replayOn(journal, body);
     // Both walks took the SAME branch — the failure is deterministic on replay.
     expect(branches).toEqual(["caught", "caught"]);
   });
@@ -166,16 +140,18 @@ describe("attempts", () => {
     // Captured and discarded: this test is about the RESULT, and an
     // unpublished reporter slot sends the engine's retry lines to the console.
     reportedLines();
-    const { journal } = await seed();
-    let calls = 0;
-    const outcome = await replay(journal, async (_input, ctx) =>
-      ctx.step("flaky", () => {
-        calls++;
-        if (calls < 3) throw new RetryableError("later", { retryAfter: 0 });
-        return "eventually";
-      }),
-    );
-    expect(calls).toBe(3);
+    const journal = await seedRun();
+    const flaky = vi
+      .fn<() => string>()
+      .mockImplementationOnce(() => {
+        throw new RetryableError("later", { retryAfter: 0 });
+      })
+      .mockImplementationOnce(() => {
+        throw new RetryableError("later", { retryAfter: 0 });
+      })
+      .mockReturnValue("eventually");
+    const outcome = await replayOn(journal, async (_input, ctx) => ctx.step("flaky", flaky));
+    expect(flaky).toHaveBeenCalledTimes(3);
     expect(outcome).toEqual({ kind: "completed", output: "eventually" });
   });
 
@@ -187,15 +163,17 @@ describe("attempts", () => {
   // walking into it again. Two failures, two records.
   test("a non-final failure is recorded, not discarded", async () => {
     const lines = reportedLines();
-    const { journal } = await seed();
-    let calls = 0;
-    const outcome = await replay(journal, async (_input, ctx) =>
-      ctx.step("convert", () => {
-        calls++;
-        if (calls < 3) throw new RetryableError("no space left on device", { retryAfter: 0 });
-        return "converted";
-      }),
-    );
+    const journal = await seedRun();
+    const convert = vi
+      .fn<() => string>()
+      .mockImplementationOnce(() => {
+        throw new RetryableError("no space left on device", { retryAfter: 0 });
+      })
+      .mockImplementationOnce(() => {
+        throw new RetryableError("no space left on device", { retryAfter: 0 });
+      })
+      .mockReturnValue("converted");
+    const outcome = await replayOn(journal, async (_input, ctx) => ctx.step("convert", convert));
     expect(outcome).toEqual({ kind: "completed", output: "converted" });
     // The successful attempt is NOT one of these: a step that worked has
     // nothing to explain, and the journal entry records it.
@@ -211,8 +189,8 @@ describe("attempts", () => {
   // sentence that says which filesystem filled and how big it was.
   test("a reported failure carries what caused it", async () => {
     const lines = reportedLines();
-    const { journal } = await seed();
-    await replay(journal, async (_input, ctx) =>
+    const journal = await seedRun();
+    await replayOn(journal, async (_input, ctx) =>
       ctx.step(
         "convert",
         () => {
@@ -235,8 +213,8 @@ describe("attempts", () => {
   // that says it twice is what makes an operator stop reading these.
   test("does not repeat a cause the failure already names", async () => {
     const lines = reportedLines();
-    const { journal } = await seed();
-    await replay(journal, async (_input, ctx) =>
+    const journal = await seedRun();
+    await replayOn(journal, async (_input, ctx) =>
       ctx.step(
         "convert",
         () => {
@@ -254,68 +232,51 @@ describe("attempts", () => {
   });
 
   test("does not retry a FatalError, however many attempts remain", async () => {
-    const { journal } = await seed();
-    let calls = 0;
-    const outcome = await replay(journal, async (_input, ctx) =>
-      ctx.step(
-        "terminal",
-        () => {
-          calls++;
-          throw new FatalError("will never work");
-        },
-        { maxAttempts: 5 },
-      ),
+    const journal = await seedRun();
+    const terminal = vi.fn(() => {
+      throw new FatalError("will never work");
+    });
+    const outcome = await replayOn(journal, async (_input, ctx) =>
+      ctx.step("terminal", terminal, { maxAttempts: 5 }),
     );
-    expect(calls).toBe(1);
+    expect(terminal).toHaveBeenCalledTimes(1);
     expect(outcome).toEqual({ kind: "failed", error: { message: "will never work" } });
   });
 
   test("stops at maxAttempts and fails the run", async () => {
     reportedLines();
-    const { journal } = await seed();
-    let calls = 0;
-    const outcome = await replay(journal, async (_input, ctx) =>
-      ctx.step(
-        "doomed",
-        () => {
-          calls++;
-          throw new RetryableError("still no", { retryAfter: 0 });
-        },
-        { maxAttempts: 2 },
-      ),
+    const journal = await seedRun();
+    const doomed = vi.fn(() => {
+      throw new RetryableError("still no", { retryAfter: 0 });
+    });
+    const outcome = await replayOn(journal, async (_input, ctx) =>
+      ctx.step("doomed", doomed, { maxAttempts: 2 }),
     );
-    expect(calls).toBe(2);
+    expect(doomed).toHaveBeenCalledTimes(2);
     expect(outcome.kind).toBe("failed");
   });
 
   test("burns an attempt on a boot that never ran the body", async () => {
     // The claim happens BEFORE the step body, which is what makes a step that
     // wedges the guest reach its ceiling rather than be redelivered forever.
-    const { journal } = await seed();
+    const journal = await seedRun();
     await journal.claimAttempt("wrun_1", "wedged#0", "dead-1", 60 * 60 * 1000);
     await journal.claimAttempt("wrun_1", "wedged#0", "dead-2", 60 * 60 * 1000);
-    let calls = 0;
-    const outcome = await replay(journal, async (_input, ctx) =>
-      ctx.step(
-        "wedged",
-        () => {
-          calls++;
-          return "ok";
-        },
-        { maxAttempts: 3 },
-      ),
+    const wedged = vi.fn(() => "ok");
+    const outcome = await replayOn(journal, async (_input, ctx) =>
+      ctx.step("wedged", wedged, { maxAttempts: 3 }),
     );
     // The third and last attempt is the one this execution gets.
-    expect(calls).toBe(1);
+    expect(wedged).toHaveBeenCalledTimes(1);
     expect(outcome.kind).toBe("completed");
   });
 
   test("refuses a step whose attempts were all burned before it ran", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     for (const walk of ["dead-1", "dead-2", "dead-3"])
       await journal.claimAttempt("wrun_1", "spent#0", walk, 60 * 60 * 1000);
     const work = vi.fn(() => "ok");
-    const outcome = await replay(journal, async (_input, ctx) => ctx.step("spent", work));
+    const outcome = await replayOn(journal, async (_input, ctx) => ctx.step("spent", work));
     expect(work).not.toHaveBeenCalled();
     expect(outcome.kind).toBe("failed");
     // And JOURNALS NOTHING, which is the half that used to be a defect. The
@@ -338,16 +299,17 @@ describe("attempts", () => {
     // Aged by moving the CLOCK the store stamps with, not by waiting an hour and
     // not by making the window an option: `claimed_at` is `Date.now()` inside
     // the backend, so three charges taken two hours ago are three charges the
-    // engine's own window excludes. `restoreMocks` puts the clock back, and the
-    // replay below runs on the real one.
-    const { journal } = await seed();
-    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() - 2 * 60 * 60 * 1000);
-    for (const walk of ["dead-1", "dead-2", "dead-3"])
-      await journal.claimAttempt("wrun_1", "spent#0", walk, 60_000);
-    clock.mockRestore();
+    // engine's own window excludes. The clock is put back when the block ends,
+    // and the replay below runs on the real one.
+    const journal = await seedRun();
+    {
+      using _twoHoursAgo = vi.spyOn(Date, "now").mockReturnValue(Date.now() - 2 * 60 * 60 * 1000);
+      for (const walk of ["dead-1", "dead-2", "dead-3"])
+        await journal.claimAttempt("wrun_1", "spent#0", walk, 60_000);
+    }
     // This walk is the only live one, so the budget is untouched.
     const work = vi.fn(() => "ok");
-    const outcome = await replay(journal, async (_input, ctx) => ctx.step("spent", work));
+    const outcome = await replayOn(journal, async (_input, ctx) => ctx.step("spent", work));
     expect(work).toHaveBeenCalledOnce();
     expect(outcome.kind).toBe("completed");
   });
@@ -358,10 +320,10 @@ describe("attempts", () => {
     // then WAITS used to be recorded `suspended`: the refusal is stable, so
     // every later delivery raised it again and the run read as healthily waiting
     // forever. `classifyThrow` consults `refused` first.
-    const { journal } = await seed();
+    const journal = await seedRun();
     for (const walk of ["dead-1", "dead-2", "dead-3"])
       await journal.claimAttempt("wrun_1", "spent#0", walk, 60 * 60 * 1000);
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       try {
         await ctx.step("spent", () => "ok");
       } catch {
@@ -377,8 +339,8 @@ describe("attempts", () => {
   });
 
   test("a body may catch a step that ran out of attempts and carry on", async () => {
-    const { journal } = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       try {
         await ctx.step(
           "optional",
@@ -400,7 +362,7 @@ describe("concurrent deliveries", () => {
   test("both executions return the FIRST journaled result for a step", async () => {
     // Two workers racing on one run must not diverge: whichever appends first
     // decides, and the loser adopts that value rather than its own.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const outputs: unknown[] = [];
     let n = 0;
     const body = async (_input: unknown, ctx: WorkflowContext) => {
@@ -408,7 +370,7 @@ describe("concurrent deliveries", () => {
       outputs.push(value);
       return value;
     };
-    const [a, b] = await Promise.all([replay(journal, body), replay(journal, body)]);
+    const [a, b] = await Promise.all([replayOn(journal, body), replayOn(journal, body)]);
     expect(a).toEqual(b);
     expect(new Set(outputs).size).toBe(1);
   });
@@ -416,9 +378,9 @@ describe("concurrent deliveries", () => {
 
 describe("durable sleep", () => {
   test("suspends on a wait that has not elapsed, reporting when to come back", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     const after = vi.fn(() => "later");
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       await ctx.sleep("nap", 60_000);
       return ctx.step("after", after);
     });
@@ -428,8 +390,8 @@ describe("durable sleep", () => {
 
   test("returns immediately for a deadline already in the past", async () => {
     // Not an error: a run resuming after a long outage meets this legitimately.
-    const { journal } = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       await ctx.sleep("past", new Date(Date.now() - 1000));
       return "carried on";
     });
@@ -439,33 +401,33 @@ describe("durable sleep", () => {
   test("decides the wake time ONCE, so a replay cannot push it further out", async () => {
     // The bug this prevents: `ctx.sleep("nap", 60_000)` re-evaluated on every delivery
     // stores a deadline 60s later each time, and the run never wakes.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       await ctx.sleep("nap", 60_000);
       return "done";
     };
-    const first = await replay(journal, body);
+    const first = await replayOn(journal, body);
     const stored = await journal.claimSleep("wrun_1", "sleep!0", Date.now() + 999_999, undefined);
-    await replay(journal, body);
+    await replayOn(journal, body);
     const after = await journal.claimSleep("wrun_1", "sleep!0", Date.now() + 999_999, undefined);
     expect(first.kind).toBe("suspended");
     expect(after.wakeAt).toBe(stored.wakeAt);
   });
 
   test("continues past a wait the journal says was woken", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       await ctx.sleep("nap", 60_000);
       return ctx.step("after", () => "ran");
     };
-    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect((await replayOn(journal, body)).kind).toBe("suspended");
 
     expect(await journal.wakeSleeps("wrun_1", undefined)).toBe(1);
-    expect(await replay(journal, body)).toEqual({ kind: "completed", output: "ran" });
+    expect(await replayOn(journal, body)).toEqual({ kind: "completed", output: "ran" });
   });
 
   test("wakes only the wait a correlation id names", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     await journal.claimSleep("wrun_1", "sleep!0", Date.now() + 60_000, "review");
     await journal.claimSleep("wrun_1", "sleep!1", Date.now() + 60_000, "backoff");
     expect(await journal.wakeSleeps("wrun_1", ["review"])).toBe(1);
@@ -476,14 +438,14 @@ describe("durable sleep", () => {
 
   test("counts only the waits a wake actually stopped", async () => {
     // Not a tie between "nothing was waiting" and "woke something twice".
-    const { journal } = await seed();
+    const journal = await seedRun();
     await journal.claimSleep("wrun_1", "sleep!0", Date.now() + 60_000, undefined);
     expect(await journal.wakeSleeps("wrun_1", undefined)).toBe(1);
     expect(await journal.wakeSleeps("wrun_1", undefined)).toBe(0);
   });
 
   test("does not count a wait that had already elapsed", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     await journal.claimSleep("wrun_1", "sleep!0", Date.now() - 1, undefined);
     expect(await journal.wakeSleeps("wrun_1", undefined)).toBe(0);
   });
@@ -491,8 +453,8 @@ describe("durable sleep", () => {
   test("keeps a step named `sleep` clear of the wait key space", async () => {
     // A step's key is `sleep#0` and a wait's is `sleep!<label>#0`, so the two cannot
     // alias however the author names their steps.
-    const { journal } = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       const value = await ctx.step("sleep", () => "a step, not a wait");
       await ctx.sleep("nap", 60_000);
       return value;
@@ -502,11 +464,11 @@ describe("durable sleep", () => {
   });
 
   test("journals each wait in a loop separately", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     // Two waits, the first already elapsed: the body must reach and suspend on
     // the SECOND rather than re-reading the first.
     await journal.claimSleep("wrun_1", "sleep!0", Date.now() - 1, undefined);
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       for (let i = 0; i < 2; i++) await ctx.sleep("round", 60_000);
       return "both";
     });
@@ -520,26 +482,27 @@ describe("a hook answered while its own timeout is being read", () => {
   // the exact divergence `HookRecord.closed` is documented to prevent.
 
   test("both walks take the ANSWERED branch", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => ({
       answer: await ctx.waitFor("tok", { timeoutMs: 1000 }),
     });
 
     const claimSleep = journal.claimSleep.bind(journal);
-    const racing = vi
-      .spyOn(journal, "claimSleep")
-      .mockImplementation(async (runId, key, _wakeAt, correlationId, kind) => {
-        // The deadline is ALREADY elapsed, and the signal lands between reading
-        // it and closing the window — which is the whole race, and the only
-        // instant in which the two branches disagree.
-        const record = await claimSleep(runId, key, Date.now() - 1, correlationId, kind);
-        if (key === "hookTimeout!tok#0") await journal.deliverHook("tok", { ok: true });
-        return record;
-      });
-
-    const first = await replay(journal, body);
-    racing.mockRestore();
-    const second = await replay(journal, body);
+    let first: Awaited<ReturnType<typeof replayOn>>;
+    {
+      using _racing = vi
+        .spyOn(journal, "claimSleep")
+        .mockImplementation(async (runId, key, _wakeAt, correlationId, kind) => {
+          // The deadline is ALREADY elapsed, and the signal lands between reading
+          // it and closing the window — which is the whole race, and the only
+          // instant in which the two branches disagree.
+          const record = await claimSleep(runId, key, Date.now() - 1, correlationId, kind);
+          if (key === "hookTimeout!tok#0") await journal.deliverHook("tok", { ok: true });
+          return record;
+        });
+      first = await replayOn(journal, body);
+    }
+    const second = await replayOn(journal, body);
 
     expect(first).toEqual({ kind: "completed", output: { answer: { ok: true } } });
     // The property, stated as the comparison: two walks of one body cannot
@@ -548,11 +511,11 @@ describe("a hook answered while its own timeout is being read", () => {
   });
 
   test("still times out when nothing was delivered", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => ({
       answer: await ctx.waitFor("tok", { timeoutMs: -1 }),
     });
-    expect(await replay(journal, body)).toEqual({
+    expect(await replayOn(journal, body)).toEqual({
       kind: "completed",
       output: { answer: undefined },
     });
@@ -585,10 +548,10 @@ describe("a journal whose appendStep rejects", () => {
     // The documented contract: a failure of the JOURNAL means the run's state is
     // unknown, so the delivery fails and is retried. Marking the run `failed` on
     // the strength of a write error is what must not happen.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const broken = withBrokenAppend(journal, "connection reset");
 
-    await expect(replay(broken, (_input, ctx) => ctx.step("work", () => 1))).rejects.toThrow(
+    await expect(replayOn(broken, (_input, ctx) => ctx.step("work", () => 1))).rejects.toThrow(
       "connection reset",
     );
   });
@@ -597,12 +560,12 @@ describe("a journal whose appendStep rejects", () => {
     // With `return await`, the rejection lands in the loop's own `catch`, reads
     // as an unclassified (therefore retryable) throw, and the body runs again —
     // `maxAttempts` times, re-doing whatever the step was paid to do.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const paid = vi.fn(() => "receipt");
     const broken = withBrokenAppend(journal, "connection reset");
 
     await expect(
-      replay(broken, (_input, ctx) => ctx.step("charge", paid, { maxAttempts: 3 })),
+      replayOn(broken, (_input, ctx) => ctx.step("charge", paid, { maxAttempts: 3 })),
     ).rejects.toThrow("connection reset");
     expect(paid).toHaveBeenCalledTimes(1);
   });
@@ -611,11 +574,11 @@ describe("a journal whose appendStep rejects", () => {
     // The quieter half, and worse here than for a refusal: the body caught the
     // store's error and answered, so the run would be marked `completed`
     // carrying a step the journal never recorded.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const broken = withBrokenAppend(journal, "connection reset");
 
     await expect(
-      replay(broken, async (_input, ctx) => {
+      replayOn(broken, async (_input, ctx) => {
         try {
           await ctx.step("work", () => 1);
         } catch {
@@ -630,13 +593,13 @@ describe("a journal whose appendStep rejects", () => {
     // The reason this is a wrapper rather than a check at one call site: a
     // `claimSleep` rejection unwinds through the body exactly as an `appendStep`
     // one does, from a different file.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const broken: JournalStore = {
       ...journal,
       claimSleep: () => Promise.reject(new Error("pool exhausted")),
     };
 
-    await expect(replay(broken, (_input, ctx) => ctx.sleep("nap", 1000))).rejects.toThrow(
+    await expect(replayOn(broken, (_input, ctx) => ctx.sleep("nap", 1000))).rejects.toThrow(
       "pool exhausted",
     );
   });
@@ -645,10 +608,10 @@ describe("a journal whose appendStep rejects", () => {
     // The sharper half. A journaled `failed` is authoritative forever, so the
     // step that really returned would replay as a failure for the life of the
     // run. Asserted against the REAL journal underneath the broken facade.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const broken = withBrokenAppend(journal, "connection reset");
 
-    await expect(replay(broken, (_input, ctx) => ctx.step("work", () => 1))).rejects.toThrow();
+    await expect(replayOn(broken, (_input, ctx) => ctx.step("work", () => 1))).rejects.toThrow();
     expect(await journal.readSteps("wrun_1")).toEqual([]);
   });
 });
