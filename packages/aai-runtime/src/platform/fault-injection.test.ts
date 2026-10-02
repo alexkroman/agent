@@ -5,7 +5,7 @@
  *
  * ## Why this needs its own sweep
  *
- * `workflow/api/error-classification.test.ts` already sweeps environmental
+ * `workflow/api/error-status.test.ts` already sweeps environmental
  * CODES against `workflowApiErrorStatus`, and it is a pure-function test: it
  * mints an error carrying a code and asks what status that code maps to. What
  * it cannot see is whether anything ever ATTACHES that code — and on this hop

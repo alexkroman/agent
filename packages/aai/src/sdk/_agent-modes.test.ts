@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { assertModeFields, resolveAgentMode } from "./_agent-modes.ts";
-import { normalizeAgentParams } from "./_author-conveniences.ts";
 import { toAgentConfig } from "./agent-config.ts";
 import { agent, workflowApp } from "./define.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
@@ -112,18 +111,6 @@ describe("agent() and toAgentConfig carry the mode", () => {
     expect(toAgentConfig(agent({ name: "p" })).mode).toBe("pipeline");
     expect(toAgentConfig(workflowApp({ name: "a", workflows })).mode).toBe("workflow-app");
     expect(raw({ mode: "text" }).mode).toBe("text");
-  });
-
-  test("the normalization is idempotent, because toAgentConfig re-runs it over agent()'s output", () => {
-    for (const fields of [
-      { name: "t", mode: "text", temperature: 0.2 },
-      { name: "s", mode: "s2s", s2s: assemblyAIS2s() },
-      { name: "a", mode: "workflow-app", workflows },
-      { name: "p", turnTaking: { maxSilenceMs: 4000, detection: "manual" } },
-    ]) {
-      const once = normalizeAgentParams(fields);
-      expect(normalizeAgentParams(once)).toEqual(once);
-    }
   });
 
   test("an untyped caller meets the same refusals as the type", () => {

@@ -109,11 +109,18 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
-import { createGuardedWs, dropSocket as dropSocketShared, openGuardedWs } from "../_socket.ts";
+import {
+  type CreateProviderSocket,
+  createGuardedWs,
+  createProviderSocket,
+  dropSocket as dropSocketShared,
+  openGuardedWs,
+} from "../_socket.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
   createTtsSessionShell,
+  type ProviderSocket,
   requireApiKey,
   waitForOpen,
 } from "../_utils.ts";
@@ -132,7 +139,7 @@ import { createWordTimeline, readWordBoundaries } from "./assemblyai-words.ts";
 
 export interface AssemblyAITtsSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
-  readonly _ws: WebSocket;
+  readonly _ws: ProviderSocket;
 }
 
 function buildUrl(
@@ -166,7 +173,10 @@ function buildUrl(
   return `wss://${host}/v1/ws/?${params.toString()}`;
 }
 
-export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
+export function openAssemblyAITts(
+  opts: AssemblyAITtsOptions,
+  newSocket: CreateProviderSocket = createProviderSocket,
+): TtsOpener {
   return {
     name: "assemblyai",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
@@ -183,15 +193,15 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       const url = buildUrl(opts, sampleRate, connectError);
 
       // Raw key, not `Bearer` — see the module doc.
-      const createSocket = (): WebSocket =>
-        new WebSocket(url, {
+      const createSocket = (): ProviderSocket =>
+        newSocket(url, {
           headers: { Authorization: apiKey },
           ...PROVIDER_WS_OPTIONS,
         });
       // The guard listener protects against a late socket error with zero
       // listeners crashing the process; the RECONNECT path builds its socket
       // this way and opens it itself, because it must not block `cancel()`.
-      const connect = (): WebSocket =>
+      const connect = (): ProviderSocket =>
         createGuardedWs(createSocket, connectError, "AssemblyAI TTS");
 
       // Bounded and abort-wired: an upgrade that black-holes must not leave
@@ -219,7 +229,7 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       });
 
       /** Detach + politely close a socket without emitting anything for it. */
-      const dropSocket = (socket: WebSocket): void =>
+      const dropSocket = (socket: ProviderSocket): void =>
         dropSocketShared(socket, () => socket.send(JSON.stringify({ type: "Terminate" })));
 
       const shell = createTtsSessionShell({
@@ -282,7 +292,7 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
         if (words.length > 0) shell.emit("words", words);
       };
 
-      const attach = (socket: WebSocket): void => {
+      const attach = (socket: ProviderSocket): void => {
         socket.on("message", (raw: WebSocket.Data) => {
           if (shell.isClosed()) return;
           handleMessage(raw, shell, onSynthesisComplete, onWords, cancels);
@@ -313,7 +323,7 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
         dropSocket(ws);
         const frames: Record<string, unknown>[] = [];
         queued = frames;
-        let next: WebSocket;
+        let next: ProviderSocket;
         try {
           next = connect();
         } catch (cause) {

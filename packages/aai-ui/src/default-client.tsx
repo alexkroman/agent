@@ -20,23 +20,34 @@
  * final and skip their own lookup. An agent that declared none still costs the
  * shell its own request, which is what it cost before.
  */
-// A Vite asset (typed by `vite-env.d.ts`). At the PACKAGE root, not in `src/`: it is a published export
-// (`@alexkroman1/aai-ui/styles.css`) and a Vite asset, so it sits beside
-// `index.html` and `public/` where the exports map and `files` name it.
-import "../styles.css";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { fetchClientConfig } from "./client-config.ts";
 import { mountClient } from "./define-client.tsx";
 import { mountPage } from "./page.tsx";
 
-// `.then` rather than a top-level `await`: this is the bundle's entry, and the
-// lookup already degrades to "the agent declared nothing" on every failure path
-// — which resolves to `page: "voice"`, the front door this file can always mount.
-void fetchClientConfig().then((config) => {
+/** The two mounts the default client chooses between, injectable for a spec. */
+export type DefaultClientMounts = {
+  mountClient: (config: { name?: string }) => unknown;
+  mountPage: (config: { name?: string }) => unknown;
+};
+
+/**
+ * Look up the agent's front door and mount the matching shell.
+ *
+ * A function rather than the module's own side effect so the CHOICE can be
+ * driven with fake mounts; `default-client-entry.tsx` is the bundle entry that
+ * calls it. The lookup already degrades to "the agent declared nothing" on
+ * every failure path — which resolves to `page: "voice"`, the front door this
+ * can always mount.
+ */
+export async function bootDefaultClient(
+  mounts: DefaultClientMounts = { mountClient, mountPage },
+): Promise<void> {
+  const config = await fetchClientConfig();
   const named = omitUndefined({ name: config.name });
   if (config.page === "static") {
-    mountPage(named);
+    mounts.mountPage(named);
     return;
   }
-  mountClient(named);
-});
+  mounts.mountClient(named);
+}

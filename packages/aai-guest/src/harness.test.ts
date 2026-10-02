@@ -14,6 +14,7 @@ import { hostRequest, rejectAllPendingHostRequests, setHostSend } from "aai-gues
 import { type FakeHostChannel, installFakeHostChannel, makeState } from "aai-guest-core/test-utils";
 import type { JsonRpcMessage } from "aai-guest-core/types";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { stubProcessExit } from "./_test-utils.ts";
 import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
 
 let host: FakeHostChannel;
@@ -97,7 +98,7 @@ describe("control-channel dispatch", () => {
   });
 
   test("shutdown notification exits the process", () => {
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    const exitSpy = stubProcessExit();
     handleNotification({ jsonrpc: "2.0", method: "shutdown" });
     expect(exitSpy).toHaveBeenCalledWith(0);
   });

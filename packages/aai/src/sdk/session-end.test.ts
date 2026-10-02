@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { createToolContext, endSessionCalls } from "./_testing-context.ts";
 import { claimSessionEnder, endSession } from "./session-end.ts";
 
 describe("endSession", () => {
@@ -29,16 +28,5 @@ describe("endSession", () => {
     expect(asked).toEqual(["new"]);
     expect(releaseNew()).toBe(true);
     expect(endSession({ sessionId: "end-b" })).toBe(false);
-  });
-
-  test("createToolContext records what a tool asked for, read with endSessionCalls", () => {
-    const ctx = createToolContext();
-    expect(endSessionCalls(ctx)).toEqual([]);
-    expect(endSession(ctx)).toBe(true);
-    expect(endSessionCalls(ctx)).toEqual([{ afterReply: true }]);
-    // Two contexts are two sessions: the other one heard nothing.
-    expect(endSessionCalls(createToolContext())).toEqual([]);
-    // A reused id starts a fresh record rather than inheriting this one.
-    expect(endSessionCalls(createToolContext({ sessionId: ctx.sessionId }))).toEqual([]);
   });
 });

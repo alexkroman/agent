@@ -18,8 +18,7 @@ import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isRecord, omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { isPathInside } from "@alexkroman1/aai-runtime/internal";
-import { resolveDeployTarget } from "./_agent.ts";
-import { apiRequest, checkedResponse } from "./_api-client.ts";
+import { checkedResponse } from "./_api-client.ts";
 import { updateProjectConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { resolveServerEnv } from "./_server-common.ts";
@@ -30,6 +29,8 @@ import {
   projectNameFromDir,
   publishStudioProject,
   pushStudioSource,
+  REAL_STUDIO_DEPS,
+  type StudioDeps,
   studioProjectApiUrl,
   studioProjectUrl,
 } from "./_studio.ts";
@@ -43,9 +44,10 @@ export async function executeList(
     server?: string | undefined;
   },
   ui: Ui = defaultUi,
+  deps: StudioDeps = REAL_STUDIO_DEPS,
 ): Promise<CommandResult<{ projects: string[] }>> {
-  const { serverUrl, apiKey } = await resolveDeployTarget(opts.cwd, opts.server);
-  const projects = await listStudioProjects(serverUrl, apiKey);
+  const { serverUrl, apiKey } = await deps.resolveDeployTarget(opts.cwd, opts.server);
+  const projects = await listStudioProjects(serverUrl, apiKey, deps.apiRequest);
   if (projects.length === 0) {
     ui.log.info("No studio projects yet. Push one with `aai push`, or create one in the studio.");
   }
@@ -92,8 +94,8 @@ async function materializeFiles(dir: string, files: Record<string, string>): Pro
  * effort: the list is a second request on an already-failing path, and its
  * own failure must not replace the 404 the user needs to see.
  */
-async function notFoundHint(serverUrl: string, apiKey: string): Promise<string> {
-  const projects = await listStudioProjects(serverUrl, apiKey).catch(() => null);
+async function notFoundHint(serverUrl: string, apiKey: string, deps: StudioDeps): Promise<string> {
+  const projects = await listStudioProjects(serverUrl, apiKey, deps.apiRequest).catch(() => null);
   if (projects === null) return "Run `aai list` to see your projects.";
   if (projects.length === 0) {
     return (
@@ -114,14 +116,15 @@ export async function executePull(
     server?: string | undefined;
   },
   ui: Ui = defaultUi,
+  deps: StudioDeps = REAL_STUDIO_DEPS,
 ): Promise<CommandResult<{ project: string; dir: string; files: number }>> {
-  const { serverUrl, apiKey } = await resolveDeployTarget(opts.cwd, opts.server);
-  const remote = await fetchStudioProject(serverUrl, apiKey, opts.project);
+  const { serverUrl, apiKey } = await deps.resolveDeployTarget(opts.cwd, opts.server);
+  const remote = await fetchStudioProject(serverUrl, apiKey, opts.project, deps.apiRequest);
   if (!remote) {
     throw new CliError(
       "not_found",
       `No studio project named "${opts.project}".`,
-      await notFoundHint(serverUrl, apiKey),
+      await notFoundHint(serverUrl, apiKey, deps),
     );
   }
 
@@ -183,8 +186,9 @@ async function pushProject(
     force?: boolean | undefined;
   },
   ui: Ui,
+  deps: StudioDeps,
 ): Promise<PushOutcome> {
-  const { config, serverUrl, apiKey } = await resolveDeployTarget(opts.cwd, opts.server);
+  const { config, serverUrl, apiKey } = await deps.resolveDeployTarget(opts.cwd, opts.server);
   const { files, warnings } = await collectSourceFiles(opts.cwd);
   for (const warning of warnings) ui.log.warn(warning);
   if (Object.keys(files).length === 0) {
@@ -220,7 +224,7 @@ async function pushProject(
         `Can't derive a project name from ${path.basename(opts.cwd)} — rename the directory or run \`aai pull <project>\` to link an existing one.`,
       );
     }
-    const existing = await fetchStudioProject(serverUrl, apiKey, project);
+    const existing = await fetchStudioProject(serverUrl, apiKey, project, deps.apiRequest);
     if (existing && !opts.force) {
       throw new CliError(
         "project_exists",
@@ -232,11 +236,17 @@ async function pushProject(
     slug ??= existing?.deployedSlug;
   }
 
-  const result = await pushStudioSource(serverUrl, apiKey, project, {
-    files,
-    // `--force` overwrites, so it sends no fast-forward token at all.
-    ...omitUndefined({ baseHash: opts.force ? undefined : baseHash }),
-  });
+  const result = await pushStudioSource(
+    serverUrl,
+    apiKey,
+    project,
+    {
+      files,
+      // `--force` overwrites, so it sends no fast-forward token at all.
+      ...omitUndefined({ baseHash: opts.force ? undefined : baseHash }),
+    },
+    deps.apiRequest,
+  );
   await updateProjectConfig(opts.cwd, {
     serverUrl,
     studioProject: project,
@@ -261,8 +271,9 @@ export async function executePush(
     force?: boolean | undefined;
   },
   ui: Ui = defaultUi,
+  deps: StudioDeps = REAL_STUDIO_DEPS,
 ): Promise<CommandResult<{ project: string; created: boolean; url: string; warnings?: string[] }>> {
-  const pushed = await pushProject(opts, ui);
+  const pushed = await pushProject(opts, ui, deps);
   const url = studioProjectUrl(pushed.serverUrl, pushed.project);
   ui.log.success(
     `${pushed.created ? "Created" : "Synced"} studio project ${pushed.project} — ${fmtUrl(url)}`,
@@ -301,6 +312,7 @@ async function syncEnvSecrets(
   apiKey: string,
   project: string,
   ui: Ui,
+  request: StudioDeps["apiRequest"],
 ): Promise<string[]> {
   const env = await resolveServerEnv(cwd);
   const names = Object.keys(env);
@@ -309,7 +321,7 @@ async function syncEnvSecrets(
   // too — one this very command created — and a `.env` synced to production
   // alone leaves it failing at its first session. The server fans out over the
   // slugs that exist and records the rest against the project.
-  await apiRequest(`${studioProjectApiUrl(serverUrl, project)}/secret`, {
+  await request(`${studioProjectApiUrl(serverUrl, project)}/secret`, {
     apiKey,
     action: "secret",
     method: "PUT",
@@ -327,6 +339,7 @@ export async function executePublish(
     skipTypecheck?: boolean | undefined;
   },
   ui: Ui = defaultUi,
+  deps: StudioDeps = REAL_STUDIO_DEPS,
 ): Promise<
   CommandResult<{
     project: string;
@@ -339,7 +352,7 @@ export async function executePublish(
 > {
   const { assertTypechecks } = await import("./_typecheck-gate.ts");
   await assertTypechecks(opts.cwd, { skip: opts.skipTypecheck, ui });
-  const pushed = await pushProject(opts, ui);
+  const pushed = await pushProject(opts, ui, deps);
   const { project, serverUrl, apiKey } = pushed;
 
   // ALWAYS before the deploy, first publish included. Secrets are merged into
@@ -349,7 +362,7 @@ export async function executePublish(
   // brand-new agent's first deployment ran without its credentials and the
   // docs told the user to publish twice. `syncEnvSecrets` writes to the
   // project route, which needs only the row `pushProject` just created.
-  await syncEnvSecrets(opts.cwd, serverUrl, apiKey, project, ui);
+  await syncEnvSecrets(opts.cwd, serverUrl, apiKey, project, ui, deps.apiRequest);
 
   ui.log.step(`Publishing ${project} (builds in the project's sandbox)…`);
   // Wire data, so it is checked rather than trusted. A 200 whose body lacks
@@ -359,9 +372,13 @@ export async function executePublish(
   // incident `checkedResponse` is named after; the other four response shapes
   // now go through the same helper.
   const result = checkedResponse(
-    await publishStudioProject(serverUrl, apiKey, project, {
-      skipTypecheck: opts.skipTypecheck,
-    }),
+    await publishStudioProject(
+      serverUrl,
+      apiKey,
+      project,
+      { skipTypecheck: opts.skipTypecheck },
+      deps.apiRequest,
+    ),
     (value): value is { slug: string; output: string } =>
       isRecord(value) && typeof value.slug === "string" && typeof value.output === "string",
     `the publish route at ${serverUrl}`,

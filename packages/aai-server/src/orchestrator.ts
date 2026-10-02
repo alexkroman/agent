@@ -71,6 +71,7 @@ import { watchAgentInvalidation } from "./sandbox/invalidate.ts";
 import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 import type { SlotCache } from "./sandbox/slots.ts";
 import { currentHarnessImageTag } from "./sandbox/vm.ts";
+import type { SpawnAgentServer } from "./sandbox.ts";
 import {
   DeployBodySchema,
   SecretKeySchema,
@@ -221,6 +222,11 @@ export type OrchestratorOpts = {
    * — see `platform/socket-handler.ts`.
    */
   isDraining?: () => boolean;
+  /**
+   * How a sandbox this surface builds boots its guest — passed through to the
+   * broker and the invalidation watcher. Defaults to the selected backend.
+   */
+  spawnAgentServer?: SpawnAgentServer;
 };
 
 export type Orchestrator = {
@@ -349,6 +355,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // Same predicate `/health` reports on, so "the proxy has been told to
     // stop routing here" and "stop booting sandboxes" can never disagree.
     ...omitUndefined({ isDraining: opts.isDraining }),
+    ...omitUndefined({ spawnAgentServer: opts.spawnAgentServer }),
   };
 
   // Every process-lifetime background pass this surface owns (agent-sweeps.ts).

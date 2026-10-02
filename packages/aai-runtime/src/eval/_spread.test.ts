@@ -78,28 +78,15 @@ describe("SuiteSpread.report", () => {
   /** Run `body`, then fire the `afterAll` it registered, and return the lines. */
   async function reportedLines(body: (spread: SuiteSpread) => Promise<void>): Promise<string[]> {
     const hooks: (() => void)[] = [];
-    const afterAll = vi.fn((fn: () => void) => void hooks.push(fn));
-    vi.doMock("vitest", async () => ({
-      ...(await vi.importActual<typeof import("vitest")>("vitest")),
-      afterAll,
-    }));
-    vi.resetModules();
-    const mod = await import("./_spread.ts");
     const lines: string[] = [];
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
       lines.push(String(chunk).trimEnd());
       return true;
     });
-    try {
-      const spread = new mod.SuiteSpread("Desk");
-      await body(spread);
-      spread.report();
-      for (const fn of hooks) fn();
-    } finally {
-      stderr.mockRestore();
-      vi.doUnmock("vitest");
-      vi.resetModules();
-    }
+    const spread = new SuiteSpread("Desk");
+    await body(spread);
+    spread.report((fn) => void hooks.push(fn));
+    for (const fn of hooks) fn();
     return lines;
   }
 
@@ -132,7 +119,6 @@ describe("SuiteSpread.report", () => {
 
   test("an unstable case prints its whole message and the transcript of the failing try", async () => {
     const lines = await reportedLines(async (spread) => {
-      const mod = await import("./_spread.ts");
       let n = 0;
       await runRepeats(
         async () => {
@@ -142,7 +128,7 @@ describe("SuiteSpread.report", () => {
           const error = new Error(
             "expected 'One moment.' to match /booked/i\n\nExpected: /booked/i",
           );
-          mod.noteTranscript(error, "User: book a table\nAgent: One moment.");
+          noteTranscript(error, "User: book a table\nAgent: One moment.");
           throw error;
         },
         "books it",

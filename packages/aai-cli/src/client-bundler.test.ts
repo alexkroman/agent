@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Vite is mocked here: the point of these tests is the *config* `buildClient`
+ * Vite's build is faked here (`BuildClientOptions.viteBuild`): the point of these tests is the *config* `buildClient`
  * hands it, which is where the client build's cross-package resolution policy
  * lives. Running a real bundle would exercise Rolldown, not that policy — and
  * the one bug this guards (React resolving from the wrong `node_modules`) only
@@ -9,26 +9,27 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { InlineConfig } from "vite";
-import { build } from "vite";
 import { describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
-import { buildClient } from "./client-bundler.ts";
+import { type BuildClientOptions, buildClient as realBuildClient } from "./client-bundler.ts";
 
-vi.mock("vite", async (importOriginal) => ({
-  // The real config helpers (`mergeConfig`, the default conditions): only the
-  // BUILD is faked.
-  ...(await importOriginal<typeof import("vite")>()),
-  build: vi.fn(async (config: InlineConfig) => {
-    // Emit one artifact so the caller's read of the out dir succeeds.
-    const outDir = path.join(String(config.root), String(config.build?.outDir));
-    await fs.mkdir(outDir, { recursive: true });
-    await fs.writeFile(path.join(outDir, "index.html"), "<!doctype html>", "utf-8");
-  }),
-}));
+// The real config helpers (`mergeConfig`, the default conditions): only the
+// BUILD is faked.
+const build = vi.fn(async (config: InlineConfig) => {
+  // Emit one artifact so the caller's read of the out dir succeeds.
+  const outDir = path.join(String(config.root), String(config.build?.outDir));
+  await fs.mkdir(outDir, { recursive: true });
+  await fs.writeFile(path.join(outDir, "index.html"), "<!doctype html>", "utf-8");
+});
+
+/** `buildClient`, running its config through the fake build above. */
+function buildClient(cwd: string, options: BuildClientOptions = {}) {
+  return realBuildClient(cwd, { viteBuild: build, ...options });
+}
 
 /** The config passed to Vite by the most recent `buildClient` call. */
 function lastConfig(): InlineConfig {
-  const config = vi.mocked(build).mock.calls.at(-1)?.[0];
+  const config = build.mock.calls.at(-1)?.[0];
   if (!config) throw new Error("vite build was never called");
   return config;
 }

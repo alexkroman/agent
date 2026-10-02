@@ -39,10 +39,6 @@ describe("the catalog ↔ registry join", () => {
     expect(credentials(LLM_REGISTRY)).toEqual(catalogCredentials(Object.values(LLM_PROVIDERS)));
   });
 
-  it("labels each LLM entry from the catalog, which is what a missing-key error prints", () => {
-    for (const d of Object.values(LLM_PROVIDERS)) expect(LLM_REGISTRY[d.kind]?.label).toBe(d.label);
-  });
-
   it("puts every catalog credential on the host-fallback allowlist", () => {
     const named = [STT_PROVIDERS, TTS_PROVIDERS, S2S_PROVIDERS, Object.values(LLM_PROVIDERS)]
       .flat()

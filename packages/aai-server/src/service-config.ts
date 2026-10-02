@@ -10,7 +10,10 @@
 import { randomUUID } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { type CloseableDb, createPostgresDb } from "@alexkroman1/aai-runtime";
+import {
+  type CloseableDb,
+  createPostgresDb as createPostgresDbReal,
+} from "@alexkroman1/aai-runtime";
 import {
   assertServiceRoleKey,
   hasPlatformDb,
@@ -52,7 +55,7 @@ import {
   type SlugMutationLock,
 } from "./platform/lock.ts";
 import { buildStorage, buildUploadBytes } from "./platform/storage-config.ts";
-import { createRealtimePlatformEvents } from "./realtime-events.ts";
+import { createRealtimePlatformEvents as createRealtimePlatformEventsReal } from "./realtime-events.ts";
 import { resolveSandboxBackend } from "./sandbox/backend.ts";
 import { createSlotCache } from "./sandbox/slots.ts";
 import {
@@ -175,6 +178,16 @@ function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
 }
 
 /**
+ * The two constructors `buildPlatformDb` reaches the network through, each
+ * defaulting to the real one: a spec reads the options a pool was BUILT with,
+ * and the Realtime client would dial out on construction.
+ */
+export type PlatformDbDeps = {
+  createPostgresDb?: typeof createPostgresDbReal;
+  createRealtimePlatformEvents?: typeof createRealtimePlatformEventsReal;
+};
+
+/**
  * Platform Postgres surface: Supabase Vault for secrets, studio workspaces, the
  * durable-workflow world, session state, and the Realtime change streams — all over
  * `SUPABASE_DB_URL` (service-role connection string) plus `SUPABASE_URL` /
@@ -187,7 +200,10 @@ function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
  * memory stores beside real per-app databases, and the same failure is now
  * reachable through the workflow world and session state.
  */
-export function buildPlatformDb(env: NodeJS.ProcessEnv): {
+export function buildPlatformDb(
+  env: NodeJS.ProcessEnv,
+  deps: PlatformDbDeps = {},
+): {
   secrets: SecretStore;
   /** The agents table (deploy records). Postgres with a platform db, else memory. */
   agents: AgentRows;
@@ -218,6 +234,9 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
    */
   adminDb?: AdminDb;
 } {
+  const createPostgresDb = deps.createPostgresDb ?? createPostgresDbReal;
+  const createRealtimePlatformEvents =
+    deps.createRealtimePlatformEvents ?? createRealtimePlatformEventsReal;
   const url = env.SUPABASE_DB_URL;
   if (!url) {
     log.info(
@@ -418,7 +437,11 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
  * binding an entry can forget. This is the one function that reads the
  * environment and builds them, so anything new belongs here too.
  */
-export async function buildServiceConfig(env: NodeJS.ProcessEnv): Promise<ServiceConfig> {
+export async function buildServiceConfig(
+  env: NodeJS.ProcessEnv,
+  /** Passed through to {@link buildPlatformDb}. */
+  deps: PlatformDbDeps = {},
+): Promise<ServiceConfig> {
   // One key, two consumers that both need service-role authority (Storage
   // blobs below, the Realtime streams in buildPlatformDb) and neither of which
   // reports an anon key as a credential problem — see assertServiceRoleKey.
@@ -434,8 +457,10 @@ export async function buildServiceConfig(env: NodeJS.ProcessEnv): Promise<Servic
   assertGuestTokenSecret(env, hasPlatformDb(env));
   const storage = buildStorage(env);
   const uploadBytes = buildUploadBytes(env);
-  const { secrets, agents, workspaces, chats, events, slugLock, sql, adminDb } =
-    buildPlatformDb(env);
+  const { secrets, agents, workspaces, chats, events, slugLock, sql, adminDb } = buildPlatformDb(
+    env,
+    deps,
+  );
   const slots = createSlotCache();
   // Per-process, not per-host: Modal can run several containers of the same
   // app anywhere, and two of them sharing an identity is exactly the failure

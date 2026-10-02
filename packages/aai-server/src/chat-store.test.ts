@@ -16,7 +16,7 @@ import {
   MAX_STUDIO_CHAT_STORE_BYTES,
   trimChatToByteBudget,
 } from "./chat-store.ts";
-import { chatStoreConformance } from "./store-conformance-cases.ts";
+import { chatStoreConformance } from "./store-conformance-test-defs.ts";
 
 function msg(id: string, text = "hi"): Record<string, unknown> {
   return { id, role: "user", parts: [{ type: "text", text }] };

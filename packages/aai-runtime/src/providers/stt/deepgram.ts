@@ -27,18 +27,50 @@ import {
   type SttSession,
 } from "../openers.ts";
 
-type V1Socket = Awaited<ReturnType<InstanceType<typeof DeepgramClient>["listen"]["v1"]["connect"]>>;
-
-export interface DeepgramSession extends SttSession {
-  /** @internal Test-only: exposes the underlying SDK socket for fixture replay. */
-  readonly _connection: V1Socket;
-}
+type V1Connect = InstanceType<typeof DeepgramClient>["listen"]["v1"]["connect"];
 
 type MessagePayload =
   | listen.ListenV1Results
   | listen.ListenV1Metadata
   | listen.ListenV1UtteranceEnd
   | listen.ListenV1SpeechStarted;
+
+/**
+ * The slice of the SDK's `V1Socket` this adapter drives.
+ *
+ * @internal
+ */
+export interface DeepgramSocket {
+  on(event: "message", fn: (data: MessagePayload) => void): void;
+  on(event: "error", fn: (err: Error) => void): void;
+  on(event: "close", fn: (event: { code?: number }) => void): void;
+  connect(): unknown;
+  waitForOpen(): Promise<unknown>;
+  close(): void;
+  sendMedia(data: ArrayBufferView): void;
+  /** The underlying ws, read for its buffer; absent on a fake. */
+  readonly socket?: { readonly bufferedAmount?: number } | undefined;
+}
+
+/**
+ * Dial one socket — the seam a spec hands a fake through (see
+ * {@link openDeepgram}).
+ *
+ * @internal
+ */
+export type DeepgramConnect = (
+  apiKey: string,
+  args: Parameters<V1Connect>[0],
+) => Promise<DeepgramSocket>;
+
+/** The production {@link DeepgramConnect}: the real SDK client. */
+const sdkConnect: DeepgramConnect = (apiKey, args) =>
+  new DeepgramClient({ apiKey }).listen.v1.connect(args);
+
+export interface DeepgramSession extends SttSession {
+  /** @internal Test-only: exposes the underlying SDK socket for fixture replay. */
+  readonly _connection: DeepgramSocket;
+}
 
 // Emits through the shell, which owns the closed latch and the throw
 // containment: this fires from inside the SDK's own socket handler, where a
@@ -50,13 +82,16 @@ function handleMessage(data: MessagePayload, shell: SessionShell<SttEvents>): vo
   shell.emit(data.is_final ? "final" : "partial", text);
 }
 
-function wireSocketEvents(connection: V1Socket, shell: SessionShell<SttEvents>): void {
+function wireSocketEvents(connection: DeepgramSocket, shell: SessionShell<SttEvents>): void {
   connection.on("message", (data: MessagePayload) => handleMessage(data, shell));
   connection.on("error", (err: Error) => shell.onSocketError(err));
   connection.on("close", (event: { code?: number }) => shell.onSocketClose(event?.code));
 }
 
-export function openDeepgram(opts: DeepgramSttOptions = {}): SttOpener {
+export function openDeepgram(
+  opts: DeepgramSttOptions = {},
+  connect: DeepgramConnect = sdkConnect,
+): SttOpener {
   return {
     name: "deepgram",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
@@ -66,9 +101,8 @@ export function openDeepgram(opts: DeepgramSttOptions = {}): SttOpener {
       const connectError = (msg: string) => createSttError("stt_connect_failed", msg);
 
       const settings = resolveDeepgramSttSettings(opts);
-      const client = new DeepgramClient({ apiKey });
       const connection = await connectOrThrow("Deepgram STT", connectError, () =>
-        client.listen.v1.connect({
+        connect(apiKey, {
           model: settings.model,
           language: settings.language,
           encoding: "linear16",

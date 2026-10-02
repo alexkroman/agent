@@ -48,12 +48,13 @@
  * — it is registered as one test's teardown — and the two rules stay on for
  * every `*.test.ts` in the repo, where they catch the real thing.
  *
- * What is checked instead is the MECHANISM, in `workflow/journal/log.test.ts`:
- * that {@link harness} really registers the hook, that each derived invariant
- * fires on a log that breaks it, and that {@link rebuildJournal} really
- * reconstructs a world. Those are the things that can rot silently; the two
- * suites' run counts cannot drift to zero without their own assertions going
- * with them.
+ * What is checked instead is the MECHANISM: that {@link harness} really
+ * registers the hook (`workflow/_engine-harness.test.ts`), that each derived
+ * invariant fires on a log that breaks it (`workflow/journal/_invariants.test.ts`),
+ * and that {@link rebuildJournal} really reconstructs a world
+ * (`workflow/journal/_log.test.ts`). Those are the things that can rot
+ * silently; the two suites' run counts cannot drift to zero without their own
+ * assertions going with them.
  */
 
 import { type WorkflowContext, type WorkflowDef, workflow } from "@alexkroman1/aai";
@@ -146,7 +147,7 @@ export function harness(
 /**
  * The same world, with NO post-condition registered.
  *
- * It exists for one caller: `workflow/journal/log.test.ts`, which has to make
+ * It exists for one caller: `workflow/_engine-harness.test.ts`, which has to make
  * the post-condition FAIL on purpose. A gate that cannot be shown to fail is
  * indistinguishable from one that checks nothing, and it cannot be shown to fail
  * from inside a test whose own teardown would then also fail.
@@ -208,7 +209,7 @@ export function createdRuns(writes: readonly JournalWrite[]): string[] {
  * be re-derived from it.
  *
  * Resolves how many runs were re-derived, which is what
- * `workflow/journal/log.test.ts` reads to prove the hook is wired.
+ * `workflow/_engine-harness.test.ts` reads to prove the hook is wired.
  *
  * A run that is still parked, or one that was cancelled, is skipped and the
  * reason is stated at {@link expectReplayable} — neither has an answer this log

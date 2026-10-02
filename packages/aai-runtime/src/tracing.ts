@@ -78,6 +78,7 @@
  * @module
  */
 
+import { otelModules } from "./_otel-load.ts";
 import { setRequestTraceAdopter } from "./_request-trace.ts";
 // METRIC export rides this gate — `startTracing` arms it off the same
 // environment — but its names are `@alexkroman1/aai-runtime/metrics`
@@ -186,7 +187,7 @@ async function startMetricExport(
   serviceName: string,
 ): Promise<RuntimeTracing | undefined> {
   try {
-    const otel = await import("./_metrics-otel.ts");
+    const otel = await otelModules.metrics();
     const peers = await otel.loadOtelMetricPeers();
     return otel.startMetricsOtel(peers, serviceName, env);
   } catch {
@@ -201,7 +202,7 @@ async function startMetricExport(
 
 /** Span export — the half this module started as. */
 async function startSpanExport(serviceName: string): Promise<RuntimeTracing> {
-  const otel = await orInstallLine(() => import("./_tracing-otel.ts"));
+  const otel = await orInstallLine(otelModules.tracing);
   // The PEERS are loaded through a second gated await rather than by that
   // module's own top level, because they are the half that a self-hoster can
   // be missing — see `OtelPeers` there, and `check:optional-peers`.

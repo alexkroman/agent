@@ -5,7 +5,7 @@
 
 import type { AssemblyAITtsOptions } from "@alexkroman1/aai/tts";
 import { flush } from "../../_timing-test-utils.ts";
-import { FakeWebSocket } from "./_fake-ws-test-utils.ts";
+import { createFakeWebSocket, FakeWebSocket } from "./_fake-ws-test-utils.ts";
 import { type AssemblyAITtsSession, openAssemblyAITts } from "./assemblyai.ts";
 
 export async function openSession(
@@ -16,7 +16,7 @@ export async function openSession(
   ws: FakeWebSocket;
   controller: AbortController;
 }> {
-  const opener = openAssemblyAITts(opts);
+  const opener = openAssemblyAITts(opts, createFakeWebSocket);
   const controller = new AbortController();
   const openPromise = opener.open({
     sampleRate: 16_000,

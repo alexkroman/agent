@@ -164,6 +164,18 @@ function parseJson(path) {
       cause: err,
     });
   }
+  return parseJsonText(text, path);
+}
+
+/**
+ * `JSON.parse`, with an error that names the file — the half of `parseJson`
+ * a caller that pre-processes the text (`docs-markdown.mjs`'s JSONC) reuses.
+ *
+ * @param {string} text
+ * @param {string | URL} path - only for the message
+ * @returns {unknown}
+ */
+export function parseJsonText(text, path) {
   try {
     return JSON.parse(text);
   } catch (err) {

@@ -105,6 +105,11 @@ export type StudioAppOpts = {
   deployProject?: StudioRouteOptions["deployProject"];
   studioSessionBroker?: StudioRouteOptions["broker"];
   wakePreview?: StudioRouteOptions["wakePreview"];
+  /**
+   * Test seam: the route factory, so a spec can observe the options this app
+   * forwards to it. Defaults to {@link createStudioRoutes}.
+   */
+  createRoutes?: typeof createStudioRoutes;
   isDraining?: () => boolean;
 };
 
@@ -143,7 +148,7 @@ export function createStudioApp(opts: StudioAppOpts): {
   app.get("/favicon.ico", handleStudioFavicon);
   app.get("/robots.txt", handleStudioRobots);
   app.get("/studio-assets/:path{.+}", studioClientAssetHandler(opts.isDraining));
-  const studioRoutes = createStudioRoutes({
+  const studioRoutes = (opts.createRoutes ?? createStudioRoutes)({
     ...omitUndefined({
       rateLimiters: opts.studioRateLimiters,
       sessionRegistry: opts.studioSessionRegistry,

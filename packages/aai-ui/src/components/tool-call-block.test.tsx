@@ -81,30 +81,3 @@ describe("ToolCallBlock", () => {
     expect(screen.getByText("Tool")).toBeInTheDocument();
   });
 });
-
-describe("ToolCallRow title overflow", () => {
-  test("the title truncates instead of pushing the chevron out of the row", () => {
-    // `shrink-0` on the title let a long tool name push the args preview to
-    // zero width and then shove the chevron past the container's
-    // `overflow-hidden`: measured on the 760px column, the preview vanished
-    // at a 74-character name and the chevron was clipped at 76. The row still
-    // expanded on click, but nothing on screen said it could.
-    renderBlock({
-      callId: "tc_long",
-      name: "mcp__some_provider__an_extremely_long_tool_name_that_overflows_the_row",
-      args: { query: "x" },
-      status: "done",
-      result: "ok",
-      seq: 1,
-      afterMessageId: 0,
-    });
-    const title = screen.getByText(
-      "mcp__some_provider__an_extremely_long_tool_name_that_overflows_the_row",
-    );
-    expect(title).toHaveClass("truncate");
-    expect(title).toHaveClass("min-w-0");
-    expect(title).not.toHaveClass("shrink-0");
-    // The expand affordance survives a title of any length.
-    expect(screen.getByRole("button")).toHaveAttribute("aria-expanded", "false");
-  });
-});

@@ -12,20 +12,24 @@
  * while the connection is still pinned to the already-validated IP via an
  * undici dispatcher, which is what preserves DNS-rebinding protection.
  *
- * Lives in its own file so the `node:dns/promises` mock does not leak into
- * `ssrf.test.ts`, which exercises real resolution failures.
+ * DNS is answered through `ssrfSafeFetch`'s `lookupFn` seam, so every
+ * resolution here is the pinned address and none reaches a real resolver.
  */
 
+import { ssrfSafeFetch as realSsrfSafeFetch } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { fakeFetch } from "./_fetch-test-utils.ts";
 
 const PINNED_IP = "93.184.216.34";
 
-vi.mock("node:dns/promises", () => ({
-  lookup: vi.fn(async () => ({ address: PINNED_IP, family: 4 })),
+/** Every hostname resolves to {@link PINNED_IP}. */
+const lookup = vi.fn<NonNullable<Parameters<typeof realSsrfSafeFetch>[3]>>(async () => ({
+  address: PINNED_IP,
 }));
 
-import { ssrfSafeFetch } from "@alexkroman1/aai/host-internal";
+/** `ssrfSafeFetch` with DNS answered by {@link lookup}. */
+const ssrfSafeFetch = (url: string, init: RequestInit, fetchFn: typeof globalThis.fetch) =>
+  realSsrfSafeFetch(url, init, fetchFn, lookup);
 
 /** The undici-only `dispatcher` extension to RequestInit. */
 type MaybeDispatcher = RequestInit & { dispatcher?: unknown };
@@ -77,14 +81,12 @@ describe("ssrfSafeFetch: DNS pinning", () => {
   });
 
   test("resolves DNS exactly once per hop (single resolution closes the TOCTOU/rebinding window)", async () => {
-    const { lookup } = await import("node:dns/promises");
-    const lookupMock = vi.mocked(lookup);
-    lookupMock.mockClear();
+    lookup.mockClear();
     const mockFetch = okFetch();
     await ssrfSafeFetch("https://example.com/page", {}, mockFetch.fetch);
     // The same resolved IP must feed both the bogon check and the dispatcher
     // pin. A second resolution would reopen the rebinding window the pin closes.
-    expect(lookupMock).toHaveBeenCalledTimes(1);
+    expect(lookup).toHaveBeenCalledTimes(1);
   });
 
   test("attaches no dispatcher when the URL is already a literal IP", async () => {

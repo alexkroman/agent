@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // connectS2s connection/handle API and error/close handling specs. Server
-// event dispatch specs live in s2s-events.test.ts; shared helpers in
-// _s2s-test-utils.ts.
+// event dispatch specs live in dispatch.test.ts, reply accounting in
+// reply.test.ts; shared helpers in _s2s-test-utils.ts.
 
 import { DEFAULT_VOICE_FOCUS, DEFAULT_VOICE_FOCUS_THRESHOLD } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
@@ -356,40 +356,6 @@ describe("connectS2s", () => {
     raw.emit("message", Buffer.from("not-valid-json{{{"));
 
     expect(logger.warn).toHaveBeenCalledWith("S2S << invalid JSON", expect.any(Object));
-  });
-
-  test("unrecognized message type is logged and ignored", async () => {
-    const { raw, logger } = await setupHandle();
-
-    emitMessage(raw, { type: "totally.unknown.type" });
-
-    expect(logger.warn).toHaveBeenCalled();
-  });
-
-  test("session.updated without config.id is silently ignored (no dispatch)", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, { type: "session.updated" });
-
-    expect(callbacks.onSessionReady).not.toHaveBeenCalled();
-    expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
-    expect(callbacks.onReplyDone).not.toHaveBeenCalled();
-    expect(callbacks.onSpeechStarted).not.toHaveBeenCalled();
-    expect(callbacks.onSpeechStopped).not.toHaveBeenCalled();
-  });
-
-  test("session.updated with config.id dispatches 'onSessionReady' callback", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, {
-      type: "session.updated",
-      config: { id: "sess_from_updated", system_prompt: "x", tools: [] },
-    });
-
-    expect(callbacks.onSessionReady).toHaveBeenCalledOnce();
-    expect(callbacks.onSessionReady).toHaveBeenCalledWith("sess_from_updated");
   });
 
   test("close event dispatches 'onClose' callback with code and reason", async () => {

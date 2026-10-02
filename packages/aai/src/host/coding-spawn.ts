@@ -31,6 +31,44 @@
 import { spawn } from "node:child_process";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 
+/**
+ * The slice of a spawned child {@link runCapped} drives — structural, so a
+ * spec's fake child is one with no cast. Every real `ChildProcess` is one.
+ *
+ * @internal
+ */
+export type CappedChild = {
+  readonly pid?: number | undefined;
+  readonly stdout: { on(event: "data", cb: (chunk: Buffer) => void): unknown; destroy(): unknown };
+  readonly stderr: { on(event: "data", cb: (chunk: Buffer) => void): unknown; destroy(): unknown };
+  on(event: "error", cb: (err: Error) => void): unknown;
+  on(
+    event: "exit" | "close",
+    cb: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): unknown;
+  kill(signal: NodeJS.Signals): boolean;
+};
+
+/**
+ * What {@link runCapped} spawns through: a mutable object so a spec swaps the
+ * child in with `vi.spyOn`, its callers (`createCodingTools`'s `bash`) taking
+ * no such parameter.
+ *
+ * @internal
+ */
+export const cappedProcess = {
+  spawn: (
+    cmd: string,
+    args: string[],
+    options: {
+      cwd: string;
+      env?: NodeJS.ProcessEnv;
+      detached: boolean;
+      stdio: ["ignore", "pipe", "pipe"];
+    },
+  ): CappedChild => spawn(cmd, args, options),
+};
+
 export type SpawnCappedResult = {
   exitCode: number | null;
   /** Set when the child was killed — usually the wall-clock timeout. */
@@ -124,7 +162,7 @@ export function runCapped(
   opts: RunCappedOptions,
 ): Promise<SpawnCappedResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, {
+    const child = cappedProcess.spawn(cmd, args, {
       cwd: opts.cwd,
       ...omitUndefined({ env: opts.env }),
       detached: GROUP_KILL,
