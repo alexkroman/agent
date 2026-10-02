@@ -105,11 +105,11 @@ export const MEASUREMENT_RE =
 
 /** Every `type`d node under `node`; a visitor returning `false` skips children. */
 function walk(node, visit) {
-  // Baselined against rule 17, for the two reasons `_test-assertions-parse.mjs`
-  // records at its byte-identical guard: a `scripts/*.mjs` gate cannot import
-  // the SDK's `isRecord`, and this guard must ADMIT arrays — an AST node's
-  // children are arrays, so narrowing them away would stop the walk at the
-  // first `body` or `arguments`.
+  // Baselined against rule 17, for the two reasons `_ast-scan.mjs`'s `walk`
+  // records: `aai-gates`' `property-floor-gate.test.ts` loads this module, and
+  // `gates-package-boundary` keeps that package from resolving SDK code; and
+  // this guard must ADMIT arrays — an AST node's children are arrays, so
+  // narrowing them away would stop the walk at the first `body` or `arguments`.
   if (node === null || typeof node !== "object") return;
   if (Array.isArray(node)) {
     for (const child of node) walk(child, visit);

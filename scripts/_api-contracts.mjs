@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
+import { isRecord } from "../packages/aai/src/sdk/is-record.ts";
 import { analyzeBody } from "./_api-contracts-hash.mjs";
 import {
   authoringSubpaths,
@@ -43,7 +44,7 @@ function publishedSubpaths(pkg) {
   const manifest = readManifest(join(pkg.dir, "package.json"));
   const bySource = new Map();
   for (const [subpath, target] of Object.entries(manifest.exports ?? {})) {
-    if (typeof target !== "object" || target === null) continue;
+    if (!isRecord(target)) continue;
     const source = target["@dev/source"];
     const runtime = target.import;
     if (typeof source !== "string" || typeof runtime !== "string") continue;
