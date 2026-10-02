@@ -992,7 +992,7 @@
             "files": "aai/src/host/_test-utils.ts"
           },
           "must": {
-            "exportFunctions": ["tick", "createMockToolContext", "makeConfig", "fakeFetch"]
+            "exportFunctions": ["tick", "makeConfig", "fakeFetch", "freezeDate"]
           }
         },
         {
