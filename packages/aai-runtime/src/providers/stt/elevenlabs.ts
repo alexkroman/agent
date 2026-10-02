@@ -17,6 +17,7 @@ import {
   resolveElevenLabsSttSettings,
 } from "@alexkroman1/aai/host-internal";
 import type { ElevenLabsSttOptions } from "@alexkroman1/aai/stt";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import {
   AudioFormat,
@@ -86,7 +87,9 @@ export function openElevenLabs(opts: ElevenLabsSttOptions = {}): SttOpener {
             audioFormat: audioFormatFor(openOpts.sampleRate),
             sampleRate: openOpts.sampleRate,
             commitStrategy: CommitStrategy.VAD,
-            ...(settings.languageCode ? { languageCode: settings.languageCode } : {}),
+            // `resolveElevenLabsSttSettings` already folds an empty `language`
+            // into absent, so presence is the whole test here.
+            ...omitUndefined({ languageCode: settings.languageCode }),
           }),
       );
 

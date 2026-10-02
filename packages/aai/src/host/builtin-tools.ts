@@ -75,11 +75,10 @@ function createVisitWebpage(
         return { error: `Failed to fetch: ${page.error}`, url };
       }
       const text = htmlToText(page.text);
-      const truncated = text.length > MAX_PAGE_CHARS;
       return {
         url,
         content: text.slice(0, MAX_PAGE_CHARS),
-        ...(truncated ? { truncated: true, totalChars: text.length } : {}),
+        ...(text.length > MAX_PAGE_CHARS ? { truncated: true, totalChars: text.length } : {}),
       };
     },
   };

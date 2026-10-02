@@ -1,5 +1,5 @@
 import type { DeepReadonly } from "@alexkroman1/aai";
-import { roundMoney } from "@alexkroman1/aai/utils";
+import { omitUndefined, roundMoney } from "@alexkroman1/aai/utils";
 import type { PendingAction } from "./pending.ts";
 
 // ─── Store types ─────────────────────────────────────────────────────────────
@@ -461,7 +461,7 @@ export function storeView(state: FrozenRetailState): StoreView {
     // though its details were already withheld from `orders`/`swapOptions`.
     focus: {
       ...(focusedOrder && focusedOrderId ? { orderId: focusedOrderId } : {}),
-      ...(state.focus.productId ? { productId: state.focus.productId } : {}),
+      ...omitUndefined({ productId: state.focus.productId }),
     },
     swapOptions: swapOptionsFor(state, focusedOrder),
     pending:
