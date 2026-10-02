@@ -62,12 +62,16 @@ read_when: >-
   `vi.fn()` over a `settled` flag; `test.each` over a `for` loop of cases (a
   loop is fine when cases share expensive setup or label themselves via
   `expect.soft(value, label)`).
-- **The slow tiers share ONE config, `vitest.slow.config.ts`**, selected by
-  `VITEST_PROFILE` (`integration` 30s / `scenario` 120s / `e2e` 300s / `eval`
-  1800s) with `VITEST_INCLUDE` choosing files. Every package script sets the
-  profile explicitly and globs `src/**/*.<tier>.test.ts` (templates:
-  `templates/*/*.eval.test.ts`; aai-cli's e2e: `src/e2e*.test.ts`). `e2e` and
+- **The slow tiers share ONE config, `vitest.slow.config.ts`**, with one vitest
+  PROJECT per tier (`integration` 30s / `scenario` 120s / `e2e` 300s / `eval`
+  1800s). Every package script selects its tier with `--project <tier>`
+  (`vitest run -c ../../vitest.slow.config.ts --project scenario`); the
+  project's `include` is the naming convention, `src/**/*.<tier>.test.ts`
+  (templates: `templates/*/*.eval.test.ts`; aai-cli's e2e: `src/e2e*.test.ts`).
+  A run with no `--project` runs every tier, each under its own timeout; a
+  positional filter narrows one (`--project integration src/foo`). `e2e` and
   `eval` run one file at a time (a shared build and registry; one gateway key).
+  `vitest-setup-wiring.test.ts` fails a slow-tier script with no `--project`.
 - **Tier membership is a NAMING CONVENTION: `*.integration.test.ts`,
   `*.scenario.test.ts`, `*.eval.test.ts`, and aai-cli's `e2e*.test.ts`.**
   `defineUnitProject` excludes all four from every unit config;
@@ -141,6 +145,22 @@ read_when: >-
   real tokens and depends on a third-party service. `pnpm gen:gateway-models`
   regenerates the catalog it compares against.
 
+## Async-leak detection is an opt-in DIAGNOSTIC
+
+`pnpm test:leaks` runs every package's unit tier with vitest's
+`--detect-async-leaks` (the `detectAsyncLeaks` option): a timer, socket or
+handle a test file starts and never closes is reported against that file. It is
+OFF by default and wired into no pipeline: it slows a run substantially (async
+hooks on every resource), so its timeouts are not the tier's. A finding fails
+that package's run (`PROMISE leaking in <file>`), and it is a lead to read
+rather than a verdict — the first run reported 28 in `aai` alone, nearly all
+from `keyed-lock-property.test.ts`. For one package,
+`pnpm --filter <pkg> exec vitest run --detect-async-leaks` — a `--filter` given
+to `pnpm test:leaks` lands after its `--` and reaches vitest, not turbo. The
+listener-leak gate (`fail-on-process-warning.mjs`) stays the always-on check.
+`expect.requireAssertions` is deliberately NOT set: the `fc.assert` property
+suites assert inside the property, which it cannot see.
+
 ## Mutation score is a manual DIAGNOSTIC, not a tier and not a gate
 
 `pnpm test:mutate:sdk` mutates the schema core; read the score from
@@ -188,7 +208,7 @@ default (threads, node, vitest's 5s `testTimeout`, the four tier excludes).
 | aai               | threads   | 5s      | —                                                           | `contracts/` out of coverage                                                                 |
 | aai-ui            | threads   | 5s      | `_jsdom-setup.ts` (stubs `scrollIntoView`)                  | `globals: true`; node by default, a file opts into jsdom with `// @vitest-environment jsdom` |
 | aai-runtime       | **forks** | 5s      | —                                                           | sockets, the workflow world and process-wide dispatchers                                     |
-| aai-cli           | threads   | 5s      | `_test-setup.ts` (temp `AAI_CONFIG_DIR`, scrubs `*API_KEY`) | also passed to its scenario/e2e runs via `VITEST_SETUP`                                      |
+| aai-cli           | threads   | 5s      | `_test-setup.ts` (temp `AAI_CONFIG_DIR`, scrubs `*API_KEY`) | also loaded by its scenario/e2e runs (`PACKAGE_SETUP_FILES`)                                 |
 | aai-evals         | threads   | 5s      | —                                                           | `gate.ts` is never loaded by the unit tier                                                   |
 | aai-gates         | threads   | 5s      | —                                                           | `include: ["src/*.test.ts"]`                                                                 |
 | aai-guest-core    | threads   | 5s      | —                                                           | `src/test-utils.ts` (a subpath export) out of coverage                                       |
@@ -201,18 +221,12 @@ default (threads, node, vitest's 5s `testTimeout`, the four tier excludes).
 
 ## Test environment variables
 
-Set in package.json scripts, so not always visible from test code:
+Read by the test configs and helpers, so not always visible from test code:
 
-- `VITEST_PROFILE` — timeout profile in `vitest.slow.config.ts`: `integration`
-  (30s), `scenario` (120s), `e2e` (300s), `eval` (1800s). No profile sets a
-  `retry`.
-- `VITEST_INCLUDE` — filters which test files to include.
 - `VITEST_POOL` — `forks` forces the forks pool in a slow-tier run. Without it a
   slow tier runs in the package's own unit pool: `forks` for the packages in
   `vitest.slow.config.ts`'s `FORKS_PACKAGES` (the ones whose unit config pins
   it), `threads` otherwise. The unit configs ignore it.
-- `VITEST_SETUP` — a package's own setup file for a slow-tier run (appended
-  after `sharedSetupFiles`).
 - `AAI_FLOOR_SAMPLES` — set by `pnpm floors:sample` only; records every floor
   assertion (see the property-test rules below).
 - `AAI_TEST_PM` — package manager the e2e suite installs the scaffolded project

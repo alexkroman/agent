@@ -126,7 +126,7 @@ describe("check-property-floors parser", () => {
       'import { array } from "fast-check";',
       'import type { Arbitrary } from "fast-check";',
     ]) {
-      expect(analyze(form).importsFastCheck, form).toBe(true);
+      expect.soft(analyze(form).importsFastCheck, form).toBe(true);
     }
   });
 
@@ -169,7 +169,7 @@ export const plan = fc.commands([fc.constant(null)]);
       "asyncProperty",
     ]) {
       const src = `import fc from "fast-check";\nconst a = fc.${api}(x);\n`;
-      expect(analyze(src).statefulApis, api).toContain(api);
+      expect.soft(analyze(src).statefulApis, api).toContain(api);
     }
   });
 
@@ -204,13 +204,13 @@ test("round-trips", () => {
       "cov[key] = (cov[key] ?? 0) + 1;",
       "seen.set(what, (seen.get(what) ?? 0) + 1);",
     ]) {
-      expect(analyze(`const x = 1;\n${bump}\n`).countsStates, bump).toBe(true);
+      expect.soft(analyze(`const x = 1;\n${bump}\n`).countsStates, bump).toBe(true);
     }
   });
 
   test("an ordinary read is not a counter", () => {
     for (const line of ["const n = reached.opened;", "out.push(x);", "map.set(k, v);"]) {
-      expect(analyze(`${line}\n`).countsStates, line).toBe(false);
+      expect.soft(analyze(`${line}\n`).countsStates, line).toBe(false);
     }
   });
 
@@ -241,10 +241,12 @@ test("round-trips", () => {
       "// measured 234-273",
       "// observed 3 to 9 over 20 runs",
     ]) {
-      expect(
-        verdict(WALK(`  expect(reached.opened, "never opened").toBeGreaterThan(30); ${note}`)),
-        note,
-      ).toBe("ok");
+      expect
+        .soft(
+          verdict(WALK(`  expect(reached.opened, "never opened").toBeGreaterThan(30); ${note}`)),
+          note,
+        )
+        .toBe("ok");
     }
   });
 
@@ -253,10 +255,12 @@ test("round-trips", () => {
     // digit" would pass every floor in the tree, since a floor's neighbouring
     // JSDoc nearly always contains one.
     for (const note of ["// see above", "// the interesting state", "// re-measure me"]) {
-      expect(
-        verdict(WALK(`  expect(reached.opened, "never opened").toBeGreaterThan(30); ${note}`)),
-        note,
-      ).toBe("unmeasured");
+      expect
+        .soft(
+          verdict(WALK(`  expect(reached.opened, "never opened").toBeGreaterThan(30); ${note}`)),
+          note,
+        )
+        .toBe("unmeasured");
     }
   });
 
@@ -364,7 +368,9 @@ const missed = Object.entries(COVERAGE_FLOORS).filter(([, f]) => f > 0);
     expect(entries._description, "the baseline must explain itself").toBeTypeOf("string");
     const group = entries["unmeasured-floor"] as Record<string, number>;
     for (const [file, count] of Object.entries(group)) {
-      expect(Number.isInteger(count) && count > 0, `${file} has a non-count budget`).toBe(true);
+      expect
+        .soft(Number.isInteger(count) && count > 0, `${file} has a non-count budget`)
+        .toBe(true);
     }
   });
 
@@ -378,10 +384,10 @@ const missed = Object.entries(COVERAGE_FLOORS).filter(([, f]) => f > 0);
       1,
     );
     for (const [file, source] of Object.entries(GATE_WIRING)) {
-      expect(source, `${file} not readable`).toBeTypeOf("string");
-      expect(source ?? "", `${file} does not name check:property-floors`).toContain(
-        "check:property-floors",
-      );
+      expect.soft(source, `${file} not readable`).toBeTypeOf("string");
+      expect
+        .soft(source ?? "", `${file} does not name check:property-floors`)
+        .toContain("check:property-floors");
     }
   });
 });

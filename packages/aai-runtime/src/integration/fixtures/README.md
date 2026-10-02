@@ -38,10 +38,9 @@ before the integration job runs.
 export ASSEMBLYAI_API_KEY=...
 export OPENAI_API_KEY=...
 export CARTESIA_API_KEY=...
-VITEST_PROFILE=integration \
-  VITEST_INCLUDE='host/integration/**/*.integration.test.ts' \
-  pnpm --filter @alexkroman1/aai exec vitest run \
-    -c ../../vitest.slow.config.ts
+pnpm --filter @alexkroman1/aai-runtime exec vitest run \
+  -c ../../vitest.slow.config.ts --project integration \
+  src/integration/pipeline-reference.integration.test.ts
 ```
 
 The fixture and the three keys are ONE gate. A run missing any of them skips the

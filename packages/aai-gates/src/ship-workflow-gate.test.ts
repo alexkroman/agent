@@ -113,7 +113,7 @@ describe("the ordering is declared, not polled", () => {
     const names = jobs.names().filter((job) => job !== "version-pr");
     expect(names.length, "ship.yml parsed to no jobs").toBeGreaterThanOrEqual(5);
     for (const job of names) {
-      expect(needsOf(job), `${job} must not depend on version-pr`).not.toContain("version-pr");
+      expect.soft(needsOf(job), `${job} must not depend on version-pr`).not.toContain("version-pr");
     }
     // And the action must live there rather than in the shipping line.
     const action = source.slice(source.indexOf("changesets/action@"));
@@ -253,10 +253,9 @@ describe("what arms a deploy", () => {
       "deploy=false",
     );
     for (const glob of ["packages/aai-server/src/**", "packages/aai-studio-server/src/**"]) {
-      expect(
-        step,
-        `${glob} arms a deploy, so every server merge ships instead of every release`,
-      ).not.toContain(glob);
+      expect
+        .soft(step, `${glob} arms a deploy, so every server merge ships instead of every release`)
+        .not.toContain(glob);
     }
   });
 
@@ -621,8 +620,8 @@ describe("the migration step enforces its own rules", () => {
     expect(shipVersions, "ship.yml declares no setup-cli version").not.toHaveLength(0);
     expect(checkVersions, "check.yml declares no setup-cli version").not.toHaveLength(0);
     for (const version of [...shipVersions, ...checkVersions]) {
-      expect(version, "the Supabase CLI must be pinned, never `latest`").not.toBe("latest");
-      expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+      expect.soft(version, "the Supabase CLI must be pinned, never `latest`").not.toBe("latest");
+      expect.soft(version).toMatch(/^\d+\.\d+\.\d+$/);
     }
     expect(new Set([...shipVersions, ...checkVersions]).size).toBe(1);
   });

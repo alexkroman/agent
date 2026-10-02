@@ -176,8 +176,8 @@ describe("escape-hatch ratchet scope", () => {
     // failing every time a pattern is legitimately added.
     expect(patterns.length).toBeGreaterThanOrEqual(7);
     for (const { label, re } of patterns) {
-      expect(label, "a pattern entry parsed with an empty label").not.toBe("");
-      expect(() => new RegExp(re), `pattern ${label} is not a valid regex`).not.toThrow();
+      expect.soft(label, "a pattern entry parsed with an empty label").not.toBe("");
+      expect.soft(() => new RegExp(re), `pattern ${label} is not a valid regex`).not.toThrow();
     }
   });
 
@@ -232,7 +232,7 @@ describe("escape-hatch ratchet scope", () => {
     expect(patterns.length, "no patterns parsed").toBeGreaterThanOrEqual(7);
     for (const { label, re } of patterns) {
       for (const [construct, why] of ERE_UNSUPPORTED) {
-        expect(re, `pattern "${label}" uses ${construct} — ${why}`).not.toContain(construct);
+        expect.soft(re, `pattern "${label}" uses ${construct} — ${why}`).not.toContain(construct);
       }
     }
   });
@@ -262,7 +262,7 @@ describe("escape-hatch ratchet scope", () => {
     expect(labels.size).toBeGreaterThanOrEqual(7);
     for (const key of Object.keys(baseline)) {
       if (key.startsWith("_")) continue;
-      expect(labels, `baseline names "${key}", which is not a shipped pattern`).toContain(key);
+      expect.soft(labels, `baseline names "${key}", which is not a shipped pattern`).toContain(key);
     }
   });
 

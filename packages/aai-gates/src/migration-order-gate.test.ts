@@ -46,10 +46,10 @@ const namePattern = (): RegExp => {
 describe("the gate is wired where it is enforced", () => {
   test("both runner files name it", () => {
     for (const [path, text] of Object.entries(GATE_WIRING)) {
-      expect(text, `${path} not found`).toBeTypeOf("string");
-      expect(text, `${path} no longer references check:migration-order`).toContain(
-        "check:migration-order",
-      );
+      expect.soft(text, `${path} not found`).toBeTypeOf("string");
+      expect
+        .soft(text, `${path} no longer references check:migration-order`)
+        .toContain("check:migration-order");
     }
   });
 

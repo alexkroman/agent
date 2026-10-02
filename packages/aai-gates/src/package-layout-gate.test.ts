@@ -164,10 +164,12 @@ describe("check:package-layout", () => {
     // inherited by whatever next takes the path — and it reads as deliberate.
     for (const [pkg, dirs] of Object.entries(PRODUCT_TREES)) {
       for (const dir of dirs) {
-        expect(
-          repoFiles.some((f) => f.startsWith(`packages/${pkg}/${dir}/`)),
-          `packages/${pkg}/${dir} is exempt but holds no TypeScript`,
-        ).toBe(true);
+        expect
+          .soft(
+            repoFiles.some((f) => f.startsWith(`packages/${pkg}/${dir}/`)),
+            `packages/${pkg}/${dir} is exempt but holds no TypeScript`,
+          )
+          .toBe(true);
       }
     }
   });

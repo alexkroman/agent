@@ -125,9 +125,9 @@ describe("API-INDEX.md", () => {
         `${expectedAuthoring.size}. ${remedy}`,
     ).toEqual([...expectedAuthoring.keys()].sort(byCodeUnit));
     for (const [name, specifiers] of expectedAuthoring) {
-      expect(authoringRows.get(name), `${name} is indexed against the wrong subpath(s)`).toEqual(
-        sorted(specifiers),
-      );
+      expect
+        .soft(authoringRows.get(name), `${name} is indexed against the wrong subpath(s)`)
+        .toEqual(sorted(specifiers));
     }
   });
 
@@ -143,13 +143,13 @@ describe("API-INDEX.md", () => {
       [...expectedInternal.keys()].sort(byCodeUnit),
     );
     for (const [name, specifiers] of expectedInternal) {
-      expect(internalRows.get(name), `${name} is indexed against the wrong subpath(s)`).toEqual(
-        sorted(specifiers),
-      );
+      expect
+        .soft(internalRows.get(name), `${name} is indexed against the wrong subpath(s)`)
+        .toEqual(sorted(specifiers));
     }
     // A name in both halves would tell a reader they have a choice of import
     // where one of the two is explicitly not covered by semver.
-    for (const name of internalRows.keys()) expect(authoringRows.has(name)).toBe(false);
+    for (const name of internalRows.keys()) expect.soft(authoringRows.has(name)).toBe(false);
   });
 
   test("it answers the question it exists for", () => {

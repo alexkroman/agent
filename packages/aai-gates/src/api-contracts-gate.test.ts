@@ -348,9 +348,9 @@ describe("capability contracts", () => {
     expect(packages.map((entry) => entry.pkg)).toEqual(["aai", "aai-runtime", "aai-ui"]);
     expect(contracts.length, "no contracts parsed").toBeGreaterThanOrEqual(21);
     for (const entry of packages) {
-      expect(entry.capabilities.length, `${entry.pkg} declares nothing`).toBeGreaterThan(0);
-      expect(entry.roots.map((root) => root.capability)).toEqual(entry.capabilities);
-      expect(entry.epochs.length).toBeGreaterThanOrEqual(entry.capabilities.length);
+      expect.soft(entry.capabilities.length, `${entry.pkg} declares nothing`).toBeGreaterThan(0);
+      expect.soft(entry.roots.map((root) => root.capability)).toEqual(entry.capabilities);
+      expect.soft(entry.epochs.length).toBeGreaterThanOrEqual(entry.capabilities.length);
     }
     // The SDK's authoring surface and the client's, spot-checked by name so a
     // capability set that silently emptied out cannot pass.
@@ -436,17 +436,17 @@ describe("capability contracts", () => {
     ).toEqual(Array.from({ length: latest }, (_, index) => index + 1));
 
     for (const { version, record } of mine) {
-      expect(record.capability, `v${version}.json names the wrong capability`).toBe(
-        entry.capability,
-      );
-      expect(record.epoch, `v${version}.json names the wrong epoch`).toBe(version);
+      expect
+        .soft(record.capability, `v${version}.json names the wrong capability`)
+        .toBe(entry.capability);
+      expect.soft(record.epoch, `v${version}.json names the wrong epoch`).toBe(version);
       // A hash of nothing is still a hash, so the shape is checked and the
       // coverage assertion above is what makes it mean something.
-      expect(record.sha256, `v${version}.json has no usable hash`).toMatch(/^[0-9a-f]{64}$/);
-      expect(record.exports.length, `v${version}.json exports nothing`).toBeGreaterThan(0);
-      expect(record.exports, `v${version}.json's exports are unsorted`).toEqual(
-        [...record.exports].sort(byCodeUnit),
-      );
+      expect.soft(record.sha256, `v${version}.json has no usable hash`).toMatch(/^[0-9a-f]{64}$/);
+      expect.soft(record.exports.length, `v${version}.json exports nothing`).toBeGreaterThan(0);
+      expect
+        .soft(record.exports, `v${version}.json's exports are unsorted`)
+        .toEqual([...record.exports].sort(byCodeUnit));
     }
   });
 
@@ -494,7 +494,7 @@ describe("capability contracts", () => {
     expect(Object.keys(rollups).length).toBeGreaterThanOrEqual(contracts.length);
     for (const path of Object.keys(rollups)) {
       const json = path.replace(/\.rollup\.txt$/, ".json");
-      expect(Object.keys(epochFiles), `${path} has no epoch record beside it`).toContain(json);
+      expect.soft(Object.keys(epochFiles), `${path} has no epoch record beside it`).toContain(json);
     }
   });
 
@@ -509,19 +509,23 @@ describe("capability contracts", () => {
       if (version === current) continue;
       const where = `${entry.pkg}/src/contracts/compatibility/${entry.capability}/v${version}`;
       const fixture = entry.fixture(entry.capability, version);
-      expect(
-        fixture,
-        `${where} is missing. Advertising ${entry.id} epoch ${version} as supported without a ` +
-          `frozen example that still compiles is a claim with nothing behind it. ${remedy}`,
-      ).toBeTypeOf("string");
-      expect(
-        (fixture ?? "").includes(FIXTURE_PLACEHOLDER),
-        `${where} is still the scaffold. ${remedy}`,
-      ).toBe(false);
+      expect
+        .soft(
+          fixture,
+          `${where} is missing. Advertising ${entry.id} epoch ${version} as supported without a ` +
+            `frozen example that still compiles is a claim with nothing behind it. ${remedy}`,
+        )
+        .toBeTypeOf("string");
+      expect
+        .soft(
+          (fixture ?? "").includes(FIXTURE_PLACEHOLDER),
+          `${where} is still the scaffold. ${remedy}`,
+        )
+        .toBe(false);
       // A fixture that imports nothing compiles trivially and proves nothing.
-      expect(fixture ?? "", `${where} imports no published surface`).toMatch(
-        /^import[\s\S]*from "\.\./m,
-      );
+      expect
+        .soft(fixture ?? "", `${where} imports no published surface`)
+        .toMatch(/^import[\s\S]*from "\.\./m);
     }
   });
 
@@ -531,10 +535,12 @@ describe("capability contracts", () => {
       // vacuous-pass shape this whole file exists to refuse. Asserted per epoch
       // rather than over the union, because one empty record inside a healthy
       // capability is invisible in a total.
-      expect(
-        entry.exportsAt(version).length,
-        `${entry.id} v${version}.json promises nothing, so nothing of it can be frozen`,
-      ).toBeGreaterThan(0);
+      expect
+        .soft(
+          entry.exportsAt(version).length,
+          `${entry.id} v${version}.json promises nothing, so nothing of it can be frozen`,
+        )
+        .toBeGreaterThan(0);
     }
     expect(
       entry.owed,
@@ -588,24 +594,27 @@ describe("capability contracts", () => {
     // become true has to come OUT — otherwise it is unclaimed headroom the next
     // fixture inherits, exactly as `check:hatches` warns about.
     for (const entry of coverage) {
-      expect(
-        entry.stale,
-        `scripts/api-contracts-coverage-denylist.json exempts ${entry.stale[0]} for ${entry.id}, ` +
-          "which is now imported by a frozen example or promised by no retained epoch. Delete " +
-          "the entry — an exemption may be removed and never added.",
-      ).toEqual([]);
+      expect
+        .soft(
+          entry.stale,
+          `scripts/api-contracts-coverage-denylist.json exempts ${entry.stale[0]} for ${entry.id}, ` +
+            "which is now imported by a frozen example or promised by no retained epoch. Delete " +
+            "the entry — an exemption may be removed and never added.",
+        )
+        .toEqual([]);
     }
     // A typo'd capability id exempts nothing and reads as an exemption, which is
     // the same silent widening one level up.
     const ids = new Set(coverage.map((entry) => entry.id));
     for (const id of Object.keys(denials)) {
-      expect([...ids], `the deny-list names ${id}, which has no frozen example`).toContain(id);
-      expect(
-        Object.keys(denials[id] ?? {}).length,
-        `${id}'s deny-list entry is empty`,
-      ).toBeGreaterThan(0);
+      expect.soft([...ids], `the deny-list names ${id}, which has no frozen example`).toContain(id);
+      expect
+        .soft(Object.keys(denials[id] ?? {}).length, `${id}'s deny-list entry is empty`)
+        .toBeGreaterThan(0);
       for (const reason of Object.values(denials[id] ?? {})) {
-        expect(reason.trim().length, `${id} has an exemption with no reason`).toBeGreaterThan(20);
+        expect
+          .soft(reason.trim().length, `${id} has an exemption with no reason`)
+          .toBeGreaterThan(20);
       }
     }
   });
@@ -616,10 +625,12 @@ describe("capability contracts", () => {
     // `pnpm typecheck` rather than a recorded decision.
     for (const entry of contracts) {
       for (const version of Object.keys((entry.table[entry.capability] as Contract).dropped)) {
-        expect(
-          entry.fixture(entry.capability, Number(version)),
-          `${entry.id} epoch ${version} is dropped but still has an example. ${remedy}`,
-        ).toBeUndefined();
+        expect
+          .soft(
+            entry.fixture(entry.capability, Number(version)),
+            `${entry.id} epoch ${version} is dropped but still has an example. ${remedy}`,
+          )
+          .toBeUndefined();
       }
     }
   });
@@ -628,10 +639,10 @@ describe("capability contracts", () => {
     // It lived only in the local check script for the ratchets, and `git push --no-verify`
     // skipped every one of them. Both, or neither is enforcement.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
-      expect(text, `${path} not found`).toBeTypeOf("string");
-      expect(text, `${path} no longer references check:api-contracts`).toContain(
-        "check:api-contracts",
-      );
+      expect.soft(text, `${path} not found`).toBeTypeOf("string");
+      expect
+        .soft(text, `${path} no longer references check:api-contracts`)
+        .toContain("check:api-contracts");
     }
     // Ordering matters: the contracts read the authoring surface out of the
     // committed API reports, so a stale report would be believed. Asserted

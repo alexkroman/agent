@@ -154,8 +154,10 @@ describe("the no-check ratchet's wiring", () => {
     const wiring = Object.entries(GATE_WIRING);
     expect(wiring.length, "GATE_WIRING resolved to nothing").toBeGreaterThanOrEqual(2);
     for (const [file, source] of wiring) {
-      expect(source, `${file} not found`).toBeTypeOf("string");
-      expect(source, `${file} no longer names check:doc-examples`).toContain("check:doc-examples");
+      expect.soft(source, `${file} not found`).toBeTypeOf("string");
+      expect
+        .soft(source, `${file} no longer names check:doc-examples`)
+        .toContain("check:doc-examples");
     }
   });
 
@@ -165,7 +167,7 @@ describe("the no-check ratchet's wiring", () => {
     // only one documented why `git grep` exits 1.
     expect(ratchet).toContain('from "./_ratchet.mjs"');
     for (const symbol of ["updateBaseline", "compareToBaseline", "warnStale"]) {
-      expect(ratchet, `${RATCHET_MODULE} no longer calls ${symbol}`).toContain(symbol);
+      expect.soft(ratchet, `${RATCHET_MODULE} no longer calls ${symbol}`).toContain(symbol);
     }
     expect(ratchet, `${RATCHET_MODULE} no longer reads its baseline`).toContain(
       "no-check-baseline.json",
@@ -253,10 +255,9 @@ describe("the baseline against an independent parse", () => {
     // headroom is a WARNING in the gate on purpose, so a branch that made an
     // example compile must not redden this.
     for (const { file, skipped } of corpus) {
-      expect(
-        skipped,
-        `${file} holds more no-check fences than its baseline allows`,
-      ).toBeLessThanOrEqual(budgets[file] ?? 0);
+      expect
+        .soft(skipped, `${file} holds more no-check fences than its baseline allows`)
+        .toBeLessThanOrEqual(budgets[file] ?? 0);
     }
   });
 
@@ -264,9 +265,9 @@ describe("the baseline against an independent parse", () => {
     const withFences = corpus.filter((doc) => doc.skipped > 0).map((doc) => doc.file);
     expect(withFences.length, "no document opts out at all").toBeGreaterThan(3);
     for (const file of withFences) {
-      expect(budgets[file], `${file} opts a fence out and is absent from the baseline`).toBeTypeOf(
-        "number",
-      );
+      expect
+        .soft(budgets[file], `${file} opts a fence out and is absent from the baseline`)
+        .toBeTypeOf("number");
     }
   });
 

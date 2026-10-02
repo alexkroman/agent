@@ -72,10 +72,10 @@ const workspaceDirs = new Set(
 describe("the gate is wired where it is enforced", () => {
   test("both runner files name it", () => {
     for (const [path, text] of Object.entries(GATE_WIRING)) {
-      expect(text, `${path} not found`).toBeTypeOf("string");
-      expect(text, `${path} no longer references check:deploy-changeset`).toContain(
-        "check:deploy-changeset",
-      );
+      expect.soft(text, `${path} not found`).toBeTypeOf("string");
+      expect
+        .soft(text, `${path} no longer references check:deploy-changeset`)
+        .toContain("check:deploy-changeset");
     }
   });
 
@@ -132,13 +132,15 @@ describe("the scope decides what a deploy carries", () => {
     // fails in an ordinary test run.
     expect(scope?.DEPLOY_CARRIED.length).toBeGreaterThan(0);
     for (const pkg of scope?.DEPLOY_CARRIED ?? []) {
-      expect(workspaceDirs, `DEPLOY_CARRIED names ${pkg}, which is not a package`).toContain(pkg);
+      expect
+        .soft(workspaceDirs, `DEPLOY_CARRIED names ${pkg}, which is not a package`)
+        .toContain(pkg);
     }
   });
 
   test("every carrier is itself carried", () => {
     for (const pkg of scope?.DEPLOY_CARRIERS ?? []) {
-      expect(scope?.DEPLOY_CARRIED).toContain(pkg);
+      expect.soft(scope?.DEPLOY_CARRIED).toContain(pkg);
     }
   });
 
@@ -183,10 +185,10 @@ describe("the scope decides what a deploy carries", () => {
       "packages/aai-server/coverage/index.html",
     ];
     for (const path of shipped) {
-      expect(scope?.isShippedSource(path), `${path} should ship`).toBe(true);
+      expect.soft(scope?.isShippedSource(path), `${path} should ship`).toBe(true);
     }
     for (const path of inert) {
-      expect(scope?.isShippedSource(path), `${path} should NOT ship`).toBe(false);
+      expect.soft(scope?.isShippedSource(path), `${path} should NOT ship`).toBe(false);
     }
   });
 
@@ -260,7 +262,7 @@ describe("the SCHEMA is carried too", () => {
     const keys = (scope?.CARRIED_PREFIXES ?? []).map(([key]) => key);
     expect(keys).toEqual([...(scope?.DEPLOY_CARRIED ?? []), scope?.SCHEMA_DIR]);
     for (const [key, prefix] of scope?.CARRIED_PREFIXES ?? []) {
-      expect(prefix, `${key} prefix must end in a slash`).toMatch(/\/$/);
+      expect.soft(prefix, `${key} prefix must end in a slash`).toMatch(/\/$/);
     }
   });
 

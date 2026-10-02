@@ -124,12 +124,61 @@ describe("shared vitest setupFiles wiring", () => {
   test("the slow tiers cannot select the gate away", () => {
     const slow = rootConfigs.find(({ path }) => path === "vitest.slow.config.ts");
     expect(slow, "vitest.slow.config.ts not found").toBeTypeOf("object");
-    // `VITEST_SETUP` chooses a package's own setup file per run. Assigned rather
+    // `PACKAGE_SETUP_FILES` adds a package's own setup files. Assigned rather
     // than appended it would drop the gate from every slow tier — the suites
     // that open real sockets and run thousands of fast-check iterations against
     // one long-lived signal, i.e. where a listener leak actually lives.
-    expect(slow?.source).toMatch(/setupFiles:\s*\[\s*\.\.\.sharedSetupFiles/);
-    expect(slow?.source).toContain("VITEST_SETUP");
+    expect(slow?.source).toMatch(
+      /setupFiles:\s*\[\s*\.\.\.sharedSetupFiles,\s*\.\.\.\(PACKAGE_SETUP_FILES\[/,
+    );
+  });
+
+  test("every slow-tier script selects the project its name says", () => {
+    // Each tier is a project in `vitest.slow.config.ts`, and a run with no
+    // `--project` runs ALL of them — so a `test:scenario` that dropped the flag
+    // would also run the package's evals and e2e files, and `check:scenario`
+    // would gate on them.
+    const scripts = [...packageManifests].flatMap(([path, source]) =>
+      Object.entries((JSON.parse(source) as { scripts?: Record<string, string> }).scripts ?? {})
+        .filter(([, script]) => script.includes("vitest.slow.config.ts"))
+        .map(([name, script]) => ({ label: `${path} ${name}`, name, script })),
+    );
+    expect(scripts.length, "no package script runs vitest.slow.config.ts").toBeGreaterThanOrEqual(
+      8,
+    );
+    for (const { label, name, script } of scripts) {
+      const tier = /^test:(integration|scenario|e2e|eval)$/.exec(name)?.[1];
+      expect.soft(tier, `${label} is not a test:<tier> script`).toBeDefined();
+      expect.soft(script, label).toMatch(new RegExp(`--project ${tier}(\\s|$)`));
+    }
+  });
+
+  test("a package with its own unit setup files gets them in its slow tiers", () => {
+    // The slow config cannot load a package's own config (aai-templates' needs
+    // the SDK's `dist`), so it keys setup files by package NAME. A package that
+    // runs a slow tier without its entry runs those suites without the setup
+    // its unit tier relies on — for aai-cli, the temp `AAI_CONFIG_DIR` that
+    // keeps a scenario run off the developer's real config.
+    const slow = rootConfigs.find(({ path }) => path === "vitest.slow.config.ts");
+    const owners = packageConfigs
+      .filter(({ source }) => declaresSetupFiles(source))
+      .flatMap(({ path }) => {
+        const manifest = JSON.parse(
+          packageManifests.get(path.replace(/vitest\.config\.ts$/, "package.json")) ?? "{}",
+        ) as { name?: string; scripts?: Record<string, string> };
+        const runsSlowTier = Object.values(manifest.scripts ?? {}).some((script) =>
+          script.includes("vitest.slow.config.ts"),
+        );
+        return runsSlowTier ? [manifest.name] : [];
+      });
+    expect(owners, "no slow-tier package declares setupFiles — a glob broke").toContain(
+      "@alexkroman1/aai-cli",
+    );
+    for (const name of owners) {
+      expect
+        .soft(slow?.source, `${name} has unit setupFiles but no PACKAGE_SETUP_FILES entry`)
+        .toMatch(new RegExp(`"${name}":\\s*\\[`));
+    }
   });
 
   test("a package that pins forks for its unit tier gets forks in its slow tiers", () => {
@@ -146,9 +195,9 @@ describe("shared vitest setupFiles wiring", () => {
       });
     expect(forks.length, "no package pins forks — the glob or the regex broke").toBeGreaterThan(0);
     for (const name of forks) {
-      expect(slow?.source, `${name} pins forks but is not in FORKS_PACKAGES`).toContain(
-        `"${name}"`,
-      );
+      expect
+        .soft(slow?.source, `${name} pins forks but is not in FORKS_PACKAGES`)
+        .toContain(`"${name}"`);
     }
   });
 

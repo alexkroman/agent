@@ -157,12 +157,14 @@ describe("agent guide size", () => {
     // baseline only ever holds guides both see.
     const auto = new Set(autoEntries.map((e) => e.path));
     for (const [path, recorded] of Object.entries(baseline)) {
-      expect(auto.has(path), `${path} is baselined but is not an auto-loaded guide`).toBe(true);
-      expect(Number.isInteger(recorded)).toBe(true);
-      expect(recorded, `${path}'s entry is at or under the cap — remove it`).toBeGreaterThan(
-        AUTO_BUDGET,
-      );
-      expect(recorded).toBeLessThanOrEqual(REFERENCE_BUDGET);
+      expect
+        .soft(auto.has(path), `${path} is baselined but is not an auto-loaded guide`)
+        .toBe(true);
+      expect.soft(Number.isInteger(recorded)).toBe(true);
+      expect
+        .soft(recorded, `${path}'s entry is at or under the cap — remove it`)
+        .toBeGreaterThan(AUTO_BUDGET);
+      expect.soft(recorded).toBeLessThanOrEqual(REFERENCE_BUDGET);
     }
   });
 
@@ -189,7 +191,7 @@ describe("agent guide size", () => {
       .filter((p) => p.startsWith("packages/") && !p.includes("/scaffold/"));
     expect(packageGuides.length).toBeGreaterThan(0);
     for (const path of packageGuides) {
-      expect(index, `.agents/index.md does not mention ${path}`).toContain(path);
+      expect.soft(index, `.agents/index.md does not mention ${path}`).toContain(path);
     }
   });
 
@@ -220,8 +222,10 @@ describe("agent guide size", () => {
   test("the gate is wired into both the local check and CI", () => {
     // A gate only in the local check is skipped by `git push --no-verify`.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
-      expect(text, `${path} not found`).toBeTypeOf("string");
-      expect(text, `${path} no longer references check:claude-md`).toContain("check:claude-md");
+      expect.soft(text, `${path} not found`).toBeTypeOf("string");
+      expect
+        .soft(text, `${path} no longer references check:claude-md`)
+        .toContain("check:claude-md");
     }
   });
 });

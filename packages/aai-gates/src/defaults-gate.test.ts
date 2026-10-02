@@ -78,8 +78,8 @@ const literalTags = (): string[] =>
 describe("check:defaults", () => {
   test("is wired into both runners", () => {
     for (const [file, source] of Object.entries(GATE_WIRING)) {
-      expect(source, `${file} did not resolve`).toBeTypeOf("string");
-      expect(source, `${file} does not run check:defaults`).toContain("check:defaults");
+      expect.soft(source, `${file} did not resolve`).toBeTypeOf("string");
+      expect.soft(source, `${file} does not run check:defaults`).toContain("check:defaults");
     }
   });
 
