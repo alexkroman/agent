@@ -108,7 +108,7 @@ describe("createPostgresDb", () => {
     await opened({ url: "postgres://db.example/app" });
     const { onnotice } = clientOptions();
     for (const bad of [undefined, null, "a string", 42]) {
-      expect(() => onnotice?.(bad)).not.toThrow();
+      expect.soft(() => onnotice?.(bad), String(bad)).not.toThrow();
     }
   });
 

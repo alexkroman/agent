@@ -130,7 +130,6 @@ describe("the metrics gate", () => {
     });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     onTestFinished(() => {
-      warn.mockRestore();
       vi.doUnmock("./_metrics-otel.ts");
       vi.resetModules();
     });

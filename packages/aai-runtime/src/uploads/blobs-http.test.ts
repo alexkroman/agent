@@ -108,7 +108,7 @@ describe("Storage over its REST API", () => {
     // and must not read as "there is nothing there".
     for (const status of [404, 416]) {
       const { blobs } = open(() => new Response("", { status }));
-      expect([...(await blobs.read("uploads/upl_a/0", 0, 8))]).toEqual([]);
+      expect.soft([...(await blobs.read("uploads/upl_a/0", 0, 8))], String(status)).toEqual([]);
     }
     const { blobs } = open(() => new Response("boom", { status: 503 }));
     await expect(blobs.read("uploads/upl_a/0", 0, 8)).rejects.toThrow(/503/);
@@ -276,7 +276,7 @@ describe("brokered through the platform", () => {
   test("clamps 404 and 416, throws on anything else", async () => {
     for (const status of [404, 416]) {
       const { blobs } = open(() => new Response("", { status }));
-      expect([...(await blobs.read("uploads/upl_a/0", 0, 8))]).toEqual([]);
+      expect.soft([...(await blobs.read("uploads/upl_a/0", 0, 8))], String(status)).toEqual([]);
     }
     // A 503 is on `RETRYABLE_STATUS`, so it is re-issued before it is reported —
     // `settled` is awaited AFTER the clock so the rejection has a handler while the

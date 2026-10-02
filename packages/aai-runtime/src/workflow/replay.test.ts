@@ -299,13 +299,14 @@ describe("attempts", () => {
     // Aged by moving the CLOCK the store stamps with, not by waiting an hour and
     // not by making the window an option: `claimed_at` is `Date.now()` inside
     // the backend, so three charges taken two hours ago are three charges the
-    // engine's own window excludes. `restoreMocks` puts the clock back, and the
-    // replay below runs on the real one.
+    // engine's own window excludes. The clock is put back when the block ends,
+    // and the replay below runs on the real one.
     const journal = await seedRun();
-    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() - 2 * 60 * 60 * 1000);
-    for (const walk of ["dead-1", "dead-2", "dead-3"])
-      await journal.claimAttempt("wrun_1", "spent#0", walk, 60_000);
-    clock.mockRestore();
+    {
+      using _twoHoursAgo = vi.spyOn(Date, "now").mockReturnValue(Date.now() - 2 * 60 * 60 * 1000);
+      for (const walk of ["dead-1", "dead-2", "dead-3"])
+        await journal.claimAttempt("wrun_1", "spent#0", walk, 60_000);
+    }
     // This walk is the only live one, so the budget is untouched.
     const work = vi.fn(() => "ok");
     const outcome = await replayOn(journal, async (_input, ctx) => ctx.step("spent", work));
@@ -487,19 +488,20 @@ describe("a hook answered while its own timeout is being read", () => {
     });
 
     const claimSleep = journal.claimSleep.bind(journal);
-    const racing = vi
-      .spyOn(journal, "claimSleep")
-      .mockImplementation(async (runId, key, _wakeAt, correlationId, kind) => {
-        // The deadline is ALREADY elapsed, and the signal lands between reading
-        // it and closing the window — which is the whole race, and the only
-        // instant in which the two branches disagree.
-        const record = await claimSleep(runId, key, Date.now() - 1, correlationId, kind);
-        if (key === "hookTimeout!tok#0") await journal.deliverHook("tok", { ok: true });
-        return record;
-      });
-
-    const first = await replayOn(journal, body);
-    racing.mockRestore();
+    let first: Awaited<ReturnType<typeof replayOn>>;
+    {
+      using _racing = vi
+        .spyOn(journal, "claimSleep")
+        .mockImplementation(async (runId, key, _wakeAt, correlationId, kind) => {
+          // The deadline is ALREADY elapsed, and the signal lands between reading
+          // it and closing the window — which is the whole race, and the only
+          // instant in which the two branches disagree.
+          const record = await claimSleep(runId, key, Date.now() - 1, correlationId, kind);
+          if (key === "hookTimeout!tok#0") await journal.deliverHook("tok", { ok: true });
+          return record;
+        });
+      first = await replayOn(journal, body);
+    }
     const second = await replayOn(journal, body);
 
     expect(first).toEqual({ kind: "completed", output: { answer: { ok: true } } });

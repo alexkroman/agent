@@ -85,8 +85,8 @@ describe("isPathInside", () => {
     // `resolveInside("/a/b/", "c.ts")` threw "Path escapes the workspace" for a
     // path plainly inside the workspace.
     for (const root of ["/a/b", "/a/b/", "/a/b/.", "/a/b//", "/a/./b", "/a/x/../b"]) {
-      expect(isPathInside(root, "/a/b/c.ts")).toBe(true);
-      expect(isPathInside(root, "/a/b-evil/c.ts")).toBe(false);
+      expect.soft(isPathInside(root, "/a/b/c.ts"), root).toBe(true);
+      expect.soft(isPathInside(root, "/a/b-evil/c.ts"), root).toBe(false);
     }
   });
 
