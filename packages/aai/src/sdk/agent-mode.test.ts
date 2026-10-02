@@ -22,7 +22,7 @@ describe("frontDoorOf", () => {
   test("a workflow app is a static page; every other mode, and none, is voice", () => {
     expect(frontDoorOf("workflow-app")).toBe("static");
     for (const mode of [undefined, "pipeline", "s2s", "text"] as const) {
-      expect(frontDoorOf(mode)).toBe("voice");
+      expect(frontDoorOf(mode), String(mode)).toBe("voice");
     }
   });
 });

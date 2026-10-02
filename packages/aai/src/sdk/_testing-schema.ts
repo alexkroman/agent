@@ -33,11 +33,8 @@
  * @module _testing-schema
  */
 
-import {
-  formatSchemaIssues,
-  type StandardSchemaIssue,
-  type StandardSchemaV1,
-} from "./standard-schema.ts";
+import { validatedBy } from "./_testing-schema-check.ts";
+import type { StandardSchemaIssue, StandardSchemaV1 } from "./standard-schema.ts";
 import { type ToolBearingAgent, toolOf } from "./testing-tools.ts";
 
 /**
@@ -76,11 +73,11 @@ export async function parseSchemaInput<T = Record<string, unknown>>(
   value: unknown,
   what = "the schema",
 ): Promise<T> {
-  const result = await requireSchema(schema, what)["~standard"].validate(value);
-  if (result.issues) {
-    throw new Error(`${what} refused that input: ${formatSchemaIssues(result.issues)}`);
-  }
-  return result.value as T;
+  return (await validatedBy(
+    requireSchema(schema, what),
+    value,
+    (issues) => `${what} refused that input: ${issues}`,
+  )) as T;
 }
 
 /**

@@ -65,16 +65,19 @@ describe("the table is what makes the s2s refusal un-skippable", () => {
     });
 
     test(`${field} survives to a PIPELINE config — the rule is s2s-only`, () => {
-      expect(rawConfig({ name: "Line", [field]: SAMPLE[field] })[field]).toEqual(SAMPLE[field]);
+      expect(rawConfig({ name: "Line", [field]: SAMPLE[field] })[field], String(field)).toEqual(
+        SAMPLE[field],
+      );
     });
 
     test(`${field} survives to a TEXT config too — none of these is voice-specific`, () => {
       // The rule is "this runtime assembles the request", and a text agent
       // assembles its own — so text is the arm that tells the shared rule apart
       // from the pipeline-only voice knobs next door.
-      expect(rawConfig({ name: "Docs", mode: "text", [field]: SAMPLE[field] })[field]).toEqual(
-        SAMPLE[field],
-      );
+      expect(
+        rawConfig({ name: "Docs", mode: "text", [field]: SAMPLE[field] })[field],
+        String(field),
+      ).toEqual(SAMPLE[field]);
     });
   }
 

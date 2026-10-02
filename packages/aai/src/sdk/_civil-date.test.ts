@@ -54,7 +54,7 @@ describe("isoDateParts", () => {
       "",
       "tomorrow",
     ]) {
-      expect(isoDateParts(value)).toBeUndefined();
+      expect(isoDateParts(value), String(value)).toBeUndefined();
     }
   });
 });

@@ -16,7 +16,7 @@ import {
 describe("assemblyAIReasoningEffort", () => {
   it("fills `none` for a model that rejects tools with reasoning on", () => {
     for (const model of ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]) {
-      expect(assemblyAIReasoningEffort(model, undefined)).toBe("none");
+      expect(assemblyAIReasoningEffort(model, undefined), String(model)).toBe("none");
     }
   });
 
@@ -51,8 +51,8 @@ describe("gateway constants", () => {
     expect(ASSEMBLYAI_LLM_API_KEY_ENV).toBe("ASSEMBLYAI_API_KEY");
     for (const url of [ASSEMBLYAI_LLM_GATEWAY_URL, ASSEMBLYAI_LLM_GATEWAY_EU_URL]) {
       const parsed = new URL(url);
-      expect(parsed.protocol).toBe("https:");
-      expect(parsed.pathname).toBe("/v1");
+      expect(parsed.protocol, String(url)).toBe("https:");
+      expect(parsed.pathname, String(url)).toBe("/v1");
     }
     expect(new URL(ASSEMBLYAI_LLM_GATEWAY_EU_URL).hostname).toMatch(/\.eu\./);
     expect(new URL(ASSEMBLYAI_LLM_GATEWAY_URL).hostname).not.toMatch(/\.eu\./);

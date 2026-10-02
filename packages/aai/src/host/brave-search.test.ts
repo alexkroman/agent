@@ -1,6 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
+
+import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
+import { fakeFetch } from "./_test-utils.ts";
 import { createBraveSearch } from "./brave-search.ts";
 
 const braveBody = {
@@ -17,7 +19,7 @@ const braveBody = {
   },
 };
 
-const withKey = () => createMockToolContext({ env: { BRAVE_API_KEY: "brave-test-key" } });
+const withKey = () => createToolContext({ env: { BRAVE_API_KEY: "brave-test-key" } });
 
 function braveFetch(response: Response) {
   return vi.fn((_url: string, _init: RequestInit) => Promise.resolve(response));
@@ -64,7 +66,7 @@ describe("brave_search", () => {
     const mockFetch = braveFetch(Response.json(braveBody));
     const result = await createBraveSearch(fakeFetch(mockFetch)).execute(
       { query: "q" },
-      createMockToolContext({ env: { BRAVE_API_KEY: "  " } }),
+      createToolContext({ env: { BRAVE_API_KEY: "  " } }),
     );
     expect(result).toMatchObject({ error: expect.stringContaining("Missing BRAVE_API_KEY") });
     expect(mockFetch).not.toHaveBeenCalled();

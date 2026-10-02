@@ -8,7 +8,7 @@
  * One import serves a unit spec and an eval file alike:
  *
  * - every installer of `@alexkroman1/aai/testing/vitest` (`installStubGateway`,
- *   `installStubStepFetch`, `installFetchRoutes`, …), each of which arms a fake
+ *   `installStubStepFetch`, `installStubTranscribe`, …), each of which arms a fake
  *   and restores it with `onTestFinished`;
  * - everything `@alexkroman1/aai-runtime/eval/vitest` provides — the
  *   `describeEval` / `describeTextEval` / `describeWorkflowEval` suites, the
@@ -45,7 +45,6 @@
 // SDK's own runner-flavoured subpath for the same reason this one is
 // (`published-testing-split`).
 export {
-  installFetchRoutes,
   installStubClientInbox,
   installStubGateway,
   installStubReporter,
@@ -141,7 +140,6 @@ export {
   type RunCodeExecutor,
   resolveEvalMode,
   resolveWorkflowEvalMode,
-  routeStepFetch,
   runCodeIn,
   runCodeOutput,
   type SimulateCallOptions,
@@ -153,8 +151,6 @@ export {
   STUB_LLM_API_KEY_ENV,
   STUB_SPEECH_API_KEY_ENV,
   type StepFetch,
-  type StepRoute,
-  type StepUnmatched,
   type StepUsage,
   type SttError,
   type SttEvents,

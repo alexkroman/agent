@@ -29,17 +29,16 @@
 // endpointing, barge-in, whether two sentences merged into one turn.
 
 import agentDef from "virtual:aai/agent";
+import { stubFetchRoutes } from "@alexkroman1/aai-runtime/testing";
 import {
   describeEval,
   type EvalToolCall,
   type EvalWorkflows,
   installStubStepDelegate,
-  installStubStepFetch,
-  routeStepFetch,
   stubGatewayRoute,
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
-import { expect } from "vitest";
+import { expect, onTestFinished } from "vitest";
 import { z } from "zod";
 import { research } from "./shared.ts";
 /**
@@ -133,23 +132,31 @@ type ScriptedSteps = {
 function scriptSteps(options: { hold?: boolean } = {}): ScriptedSteps {
   const gate = Promise.withResolvers<void>();
   const model = stubGatewayRoute(MODEL_SCRIPT);
-  // Throwing on an unrecognised request is `routeStepFetch`'s default and is
-  // what this file wants: every step here is a model call.
-  const route = routeStepFetch([model.route]);
-  const stub = installStubStepFetch(async (request) => {
-    const answered = route(request);
-    // `model.calls` has already recorded this one, so a length of 1 IS the first
-    // answer — and holding after the route rather than before it keeps the reply
-    // this returns the one the script owed that call.
-    if (options.hold === true && model.calls.length === 1) await gate.promise;
-    return answered;
-  });
+  // Throwing on an unrecognised request is `stubFetchRoutes`' default and is
+  // what this file wants: every step here is a model call. The STEP fetch only:
+  // a live run's own model traffic goes over the global and must stay real.
+  const net = stubFetchRoutes(
+    [
+      async (request) => {
+        const answered = model.route(request);
+        // `model.calls` has already recorded this one, so a length of 1 IS the
+        // first answer — and holding after the route rather than before it keeps
+        // the reply this returns the one the script owed that call.
+        if (answered !== undefined && options.hold === true && model.calls.length === 1) {
+          await gate.promise;
+        }
+        return answered;
+      },
+    ],
+    { globalFetch: false },
+  );
+  onTestFinished(net.restore);
   // The researcher's own loop, which does NOT go through `stepFetch`: a subagent
   // resolves a provider client, so the seam a step reaches it through is the
   // delegate slot. Unstubbed it THROWS, which is why a converted template's eval
   // cannot silently keep passing over research that never ran.
   installStubStepDelegate({ routes: { researcher: RESEARCH_FINDINGS } });
-  return { calls: stub.calls, release: () => gate.resolve() };
+  return { calls: net.hits, release: () => gate.resolve() };
 }
 
 /** `request_research`'s answer when it really started something. */

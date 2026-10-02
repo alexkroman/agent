@@ -29,12 +29,12 @@ describe("type contracts", () => {
         return "ok";
       },
     });
-    expectTypeOf(t).toMatchTypeOf<ToolDef<typeof params>>();
+    expectTypeOf(t).toExtend<ToolDef<typeof params>>();
   });
 
   test("tool() works without parameters", () => {
     const t = tool({ description: "no params", execute: () => "ok" });
-    expectTypeOf(t).toMatchTypeOf<ToolDef>();
+    expectTypeOf(t).toExtend<ToolDef>();
   });
 
   test("withTools puts a tool on the def agent() returns", () => {

@@ -28,7 +28,10 @@ describe("TELEPHONY_CARRIERS", () => {
     // must still deploy on this one. The runtime drops a carrier it has no codec
     // for (it mounts nothing) and `agentConfigWarnings` names it at build time.
     for (const carrier of TELEPHONY_CARRIERS) {
-      expect(AgentConfigSchema.safeParse({ name: "A", telephony: [carrier] }).success).toBe(true);
+      expect(
+        AgentConfigSchema.safeParse({ name: "A", telephony: [carrier] }).success,
+        String(carrier),
+      ).toBe(true);
     }
     expect(AgentConfigSchema.safeParse({ name: "A", telephony: ["vonage"] }).success).toBe(true);
     expect(AgentConfigSchema.safeParse({ name: "A", telephony: [""] }).success).toBe(false);

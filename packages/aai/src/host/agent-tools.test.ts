@@ -238,17 +238,16 @@ describe("callable builtins", () => {
     // Without this the only way to abort a page read was a raw `fetch` — i.e.
     // giving up the screening, the header stripping and the size caps to comply
     // with "pass ctx.signal to anything slow".
-    const seen: (AbortSignal | null | undefined)[] = [];
-    const fetch = vi.fn(async (_url: unknown, init?: { signal?: AbortSignal | null }) => {
-      seen.push(init?.signal);
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    });
+    const fetch = vi.fn(
+      async (_url: unknown, _init?: { signal?: AbortSignal | null }) =>
+        new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
     const controller = new AbortController();
     await fetchJson("https://api.example.com/q", { fetch, signal: controller.signal });
     // `fetchCappedText` always sets its own FETCH_TIMEOUT_MS deadline, so what
     // arrives is the COMBINATION rather than the caller's signal — the point
     // being that aborting the caller's still aborts the request.
-    const combined = seen[0];
+    const combined = fetch.mock.calls[0]?.[1]?.signal;
     expect(combined).toBeInstanceOf(AbortSignal);
     expect(combined?.aborted).toBe(false);
     controller.abort();
@@ -274,16 +273,16 @@ describe("callable builtins", () => {
   test("the signal rides the bag form of all three", async () => {
     // The bag is the shape agents reach for first, so an option only the
     // trailing argument accepts is an option half the callers cannot find.
-    const seen: (AbortSignal | null | undefined)[] = [];
-    const fetch = vi.fn(async (_url: unknown, init?: { signal?: AbortSignal | null }) => {
-      seen.push(init?.signal);
-      return new Response("<html>ok</html>", { status: 200 });
-    });
+    const fetch = vi.fn(
+      async (_url: unknown, _init?: { signal?: AbortSignal | null }) =>
+        new Response("<html>ok</html>", { status: 200 }),
+    );
     const { signal } = new AbortController();
     await webSearch({ query: "x", fetch, signal });
     await visitWebpage({ url: "https://example.com", fetch, signal });
     await fetchJson({ url: "https://example.com", fetch, signal });
+    const seen = fetch.mock.calls.map(([, init]) => init?.signal);
     expect(seen.length).toBeGreaterThanOrEqual(3);
-    expect(seen.every((s) => s instanceof AbortSignal)).toBe(true);
+    expect(seen).toEqual(seen.map(() => expect.any(AbortSignal)));
   });
 });

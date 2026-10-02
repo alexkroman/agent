@@ -79,8 +79,6 @@
 // `testing-doors.test.ts` holds this list to that barrel's, so a helper the SDK
 // gains and this door lacks fails there rather than in an author's import.
 export {
-  commandedBuiltins,
-  createProgressStream,
   createRecordingWorkflows,
   createRunSnapshot,
   createStubWorkflows,
@@ -113,14 +111,11 @@ export {
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,
   type RunSnapshotOverrides,
-  routeStepFetch,
   runGuardrail,
   runTool,
   type SaidLine,
   type SentEvent,
   STUB_SPEECH_PCM_BYTES,
-  type StepRoute,
-  type StepUnmatched,
   type StubClientInbox,
   type StubClientInboxCall,
   type StubClientInboxOptions,

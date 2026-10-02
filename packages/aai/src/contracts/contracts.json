@@ -135,9 +135,11 @@
     "dropped": {}
   },
   "testing": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "routeStepFetch/StepRoute/StepUnmatched folded into stubFetchRoutes (a list of handlers composes step legs; globalFetch: false keeps it step-only); installFetchRoutes removed for stubFetchRoutes + onTestFinished; createProgressStream removed for ReadableStream.from; commandedBuiltins no longer exported (expectPromptBuiltinsDeclared returns the same list). A spec importing any of these no longer compiles."
+    }
   },
   "tool": {
     "current": 1,

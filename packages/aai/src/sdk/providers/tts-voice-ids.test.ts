@@ -20,7 +20,7 @@ describe("ttsVoiceIds", () => {
     const english = ttsVoiceIds("en");
     expect(english.length).toBeGreaterThan(1);
     for (const id of english) {
-      expect(ttsVoiceInfo(id)?.language).toBe("en");
+      expect(ttsVoiceInfo(id)?.language, String(id)).toBe("en");
     }
     expect(ttsVoiceIds("fr")).toEqual(["estelle"]);
   });
@@ -30,8 +30,8 @@ describe("ttsVoiceIds", () => {
     // pins that today no translated language actually reaches it.
     for (const code of Object.keys(ASSEMBLYAI_TTS_LANGUAGES) as AssemblyAITtsLanguage[]) {
       const ids = ttsVoiceIds(code);
-      expect(ids.length).toBeGreaterThan(0);
-      expect(ttsVoiceInfo(ids[0])?.language).toBe(code);
+      expect(ids.length, String(code)).toBeGreaterThan(0);
+      expect(ttsVoiceInfo(ids[0])?.language, String(code)).toBe(code);
     }
   });
 

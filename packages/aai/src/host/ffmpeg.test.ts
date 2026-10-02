@@ -10,7 +10,7 @@
  * whether the ARGV is right, and that is `ffmpeg.scenario.test.ts`.
  */
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   DEFAULT_MAX_FFMPEG_OUTPUT_BYTES,
   FFMPEG_KILL_GRACE_MS,
@@ -43,11 +43,6 @@ function installChild() {
   const dataListeners = new Map<string, (chunk: Buffer) => void>();
   let stdinErrorListener: ((err: Error) => void) | undefined;
   const state = {
-    calls: [] as {
-      binary: string;
-      args: string[];
-      options: Parameters<typeof ffmpegProcess.spawn>[2];
-    }[],
     kills: [] as (string | undefined)[],
     stdinChunks: [] as Uint8Array[],
     stdinEnded: false,
@@ -80,15 +75,14 @@ function installChild() {
       state.kills.push(signal);
     },
   };
-  vi.spyOn(ffmpegProcess, "spawn").mockImplementation((binary, args, options) => {
-    state.calls.push({ binary, args, options });
-    return child;
-  });
+  const spawn = vi.spyOn(ffmpegProcess, "spawn").mockImplementation(() => child);
   // GETTERS, not a spread of `state`: spreading copies the booleans at return
   // time, so `stdinEnded` would answer what it was before the run started.
   return {
+    /** The latest spawn, as `{ binary, args, options }`. */
     get call() {
-      return state.calls[0];
+      const last = spawn.mock.lastCall;
+      return last && { binary: last[0], args: last[1], options: last[2] };
     },
     get kills() {
       return state.kills;
@@ -282,39 +276,37 @@ describe("runFfmpeg", () => {
 
   test("SIGKILLs an aborted child that does not exit on SIGTERM", async () => {
     vi.useFakeTimers();
-    try {
-      const child = installChild();
-      const controller = new AbortController();
-      const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
-      controller.abort();
-      child.error(abortError());
-      expect(child.kills).toEqual([]);
-      vi.advanceTimersByTime(FFMPEG_KILL_GRACE_MS);
-      expect(child.kills).toEqual(["SIGKILL"]);
-      child.close(null, "SIGKILL");
-      const err = await failureOf(run);
-      expect(err.kind).toBe("aborted");
-      expect(err.signal).toBe("SIGKILL");
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const child = installChild();
+    const controller = new AbortController();
+    const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
+    controller.abort();
+    child.error(abortError());
+    expect(child.kills).toEqual([]);
+    vi.advanceTimersByTime(FFMPEG_KILL_GRACE_MS);
+    expect(child.kills).toEqual(["SIGKILL"]);
+    child.close(null, "SIGKILL");
+    const err = await failureOf(run);
+    expect(err.kind).toBe("aborted");
+    expect(err.signal).toBe("SIGKILL");
   });
 
   test("a child that exits within the grace period is never SIGKILLed", async () => {
     vi.useFakeTimers();
-    try {
-      const child = installChild();
-      const controller = new AbortController();
-      const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
-      controller.abort();
-      child.error(abortError());
-      child.close(null, "SIGTERM");
-      await failureOf(run);
-      vi.advanceTimersByTime(FFMPEG_KILL_GRACE_MS * 2);
-      expect(child.kills).toEqual([]);
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const child = installChild();
+    const controller = new AbortController();
+    const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
+    controller.abort();
+    child.error(abortError());
+    child.close(null, "SIGTERM");
+    await failureOf(run);
+    vi.advanceTimersByTime(FFMPEG_KILL_GRACE_MS * 2);
+    expect(child.kills).toEqual([]);
   });
 
   /**

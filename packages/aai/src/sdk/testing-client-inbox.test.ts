@@ -1,15 +1,13 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import { ClientUnreachableError, stepNotifyClient } from "./step-notify-client.ts";
-import { type StubClientInbox, stubClientInbox } from "./testing-client-inbox.ts";
-
-let inbox: StubClientInbox | undefined;
-afterEach(() => inbox?.restore());
+import { stubClientInbox } from "./testing-client-inbox.ts";
 
 describe("stubClientInbox", () => {
   test("records each notice a step pushes and acks it by default", async () => {
-    inbox = stubClientInbox();
+    const inbox = stubClientInbox();
+    onTestFinished(inbox.restore);
     const audio = new Uint8Array(4);
     await stepNotifyClient("porch", { id: "r", event: "reminder", audio });
     expect(inbox.calls).toEqual([
@@ -19,10 +17,11 @@ describe("stubClientInbox", () => {
 
   test("answers as told, per call when a function: busy once, then acked", async () => {
     let n = 0;
-    inbox = stubClientInbox({ answer: () => (n++ === 0 ? "busy" : "acked") });
-    const first = await stepNotifyClient("porch", { id: "r", event: "e" }).catch((e) => e);
-    expect(first).toBeInstanceOf(ClientUnreachableError);
-    expect(first).toMatchObject({ reason: "busy" });
+    const inbox = stubClientInbox({ answer: () => (n++ === 0 ? "busy" : "acked") });
+    onTestFinished(inbox.restore);
+    const first = stepNotifyClient("porch", { id: "r", event: "e" });
+    await expect(first).rejects.toBeInstanceOf(ClientUnreachableError);
+    await expect(first).rejects.toMatchObject({ reason: "busy" });
     await stepNotifyClient("porch", { id: "r", event: "e" });
     expect(inbox.calls).toHaveLength(2);
   });

@@ -10,6 +10,7 @@
  * @module
  */
 
+import { recordingSlot } from "./_testing-slot.ts";
 import {
   type ClientTranscript,
   publishClientTranscriptReader,
@@ -42,11 +43,9 @@ export type StubClientTranscript = {
 export function stubClientTranscript(
   answer: StubClientTranscriptAnswer = { sessions: [] },
 ): StubClientTranscript {
-  const calls: StubClientTranscriptCall[] = [];
-  publishClientTranscriptReader((clientId, options) => {
-    const call = { clientId, options };
-    calls.push(call);
-    return Promise.resolve(typeof answer === "function" ? answer(call) : answer);
-  });
-  return { calls, restore: () => publishClientTranscriptReader(undefined) };
+  return recordingSlot(
+    publishClientTranscriptReader,
+    (clientId, options): StubClientTranscriptCall => ({ clientId, options }),
+    (call) => Promise.resolve(typeof answer === "function" ? answer(call) : answer),
+  );
 }

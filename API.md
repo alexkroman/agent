@@ -10735,14 +10735,6 @@ type ClientTranscriptTool = {
 type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
 
 // @public
-export function commandedBuiltins(config: {
-    readonly systemPrompt: string;
-}): BuiltinTool[];
-
-// @public
-export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
-
-// @public
 export function createRecordingWorkflows(options?: RecordingWorkflowsOptions): RecordingWorkflows;
 
 // @public
@@ -10958,6 +10950,7 @@ export type FetchRoutesOptions = {
     unmatched?: "throw" | "notFound" | "passthrough" | undefined;
     passThrough?: RegExp | undefined;
     stepFetch?: boolean | undefined;
+    globalFetch?: boolean | undefined;
 };
 
 // @public
@@ -11145,11 +11138,6 @@ export type RecordingWorkflowsOptions = {
     runs?: readonly WorkflowRunSnapshot[] | undefined;
     runIdPrefix?: string | undefined;
 };
-
-// @public
-export function routeStepFetch(routes: readonly StepRoute[], options?: {
-    unmatched?: StepUnmatched;
-}): (request: StubStepRequest) => StubStepAnswer;
 
 // @public
 export function runGuardrail(def: SpeakerDef, text: string, answer?: Partial<DelegateAnswer>): GuardrailVerdict;
@@ -11595,15 +11583,9 @@ type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
 };
 
 // @public
-export type StepRoute = (request: StubStepRequest) => StubStepAnswer | undefined;
-
-// @public
 type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
     schema: S;
 };
-
-// @public
-export type StepUnmatched = "throw" | "notFound" | StepRoute;
 
 // @public
 type StreamOptions = {
@@ -12411,35 +12393,6 @@ interface DelegateToolCall {
 }
 
 // @public
-type FetchRouteHandler = (request: FetchRouteRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>;
-
-// @public
-type FetchRouteHit = FetchRouteRequest & {
-    readonly outcome: "routed" | "passthrough" | "unmatched";
-    readonly route?: string | undefined;
-    readonly via: "fetch" | "stepFetch";
-    readonly status?: number | undefined;
-};
-
-// @public
-type FetchRouteRequest = StubStepRequest & {
-    readonly host: string;
-    readonly pathname: string;
-    readonly searchParams: URLSearchParams;
-    readonly json: unknown;
-};
-
-// @public
-type FetchRoutesOptions = {
-    unmatched?: "throw" | "notFound" | "passthrough" | undefined;
-    passThrough?: RegExp | undefined;
-    stepFetch?: boolean | undefined;
-};
-
-// @public
-type FetchRouteTable = Readonly<Record<string, FetchRouteHandler | StubStepAnswer>>;
-
-// @public
 type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
@@ -12487,9 +12440,6 @@ type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
-
-// @public
-export function installFetchRoutes(routes: FetchRouteTable | readonly FetchRouteHandler[], options?: FetchRoutesOptions): StubFetchRoutes;
 
 // @public
 export function installStubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
@@ -12782,14 +12732,6 @@ type StubDelegateScript = {
 type StubEmitted = {
     namespace: string;
     chunk: unknown;
-};
-
-// @public
-type StubFetchRoutes = {
-    readonly hits: FetchRouteHit[];
-    to(filter: string | RegExp): FetchRouteHit[];
-    readonly fetch: typeof globalThis.fetch;
-    restore(): void;
 };
 
 // @public
@@ -14877,7 +14819,6 @@ import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
-import { routeStepFetch } from '@alexkroman1/aai/testing';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
@@ -14885,8 +14826,6 @@ import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import { StepFetch } from '@alexkroman1/aai/host-internal';
-import { StepRoute } from '@alexkroman1/aai/testing';
-import { StepUnmatched } from '@alexkroman1/aai/testing';
 import type { SttProvider } from '@alexkroman1/aai/stt';
 import { StubGatewayRoute } from '@alexkroman1/aai/testing';
 import { stubGatewayRoute } from '@alexkroman1/aai/testing';
@@ -15381,8 +15320,6 @@ export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string
     reason: string;
 };
 
-export { routeStepFetch }
-
 export { RunCodeExecutor }
 
 // @public
@@ -15462,10 +15399,6 @@ export function statesIn(events: readonly SessionEvent[], slot: string): readonl
 export function statesIn(events: readonly SessionEvent[]): readonly Readonly<Record<string, unknown>>[];
 
 export { StepFetch }
-
-export { StepRoute }
-
-export { StepUnmatched }
 
 // @public
 export interface StepUsage {
@@ -17608,8 +17541,6 @@ export function registerMetricsSink(sink: MetricsSink): () => void;
 ```ts
 import type { AgentDef } from '@alexkroman1/aai';
 import type { AgentEnv } from '@alexkroman1/aai/host-internal';
-import { commandedBuiltins } from '@alexkroman1/aai/testing';
-import { createProgressStream } from '@alexkroman1/aai/testing';
 import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
 import { createRunSnapshot } from '@alexkroman1/aai/testing';
 import { createStubWorkflows } from '@alexkroman1/aai/testing';
@@ -17646,7 +17577,6 @@ import { RecordedStart } from '@alexkroman1/aai/testing';
 import { RecordedStep } from '@alexkroman1/aai/testing';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
-import { routeStepFetch } from '@alexkroman1/aai/testing';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import { runGuardrail } from '@alexkroman1/aai/testing';
 import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
@@ -17656,8 +17586,6 @@ import { schemaInputIssues } from '@alexkroman1/aai/testing';
 import { SentEvent } from '@alexkroman1/aai/testing';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
-import { StepRoute } from '@alexkroman1/aai/testing';
-import { StepUnmatched } from '@alexkroman1/aai/testing';
 import { STUB_SPEECH_PCM_BYTES } from '@alexkroman1/aai/testing';
 import { StubClientInbox } from '@alexkroman1/aai/testing';
 import { stubClientInbox } from '@alexkroman1/aai/testing';
@@ -17733,10 +17661,6 @@ import { WorkflowContextOptions } from '@alexkroman1/aai/testing';
 import { WorkflowContextRecorder } from '@alexkroman1/aai/testing';
 import type { WorkflowDef } from '@alexkroman1/aai';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
-
-export { commandedBuiltins }
-
-export { createProgressStream }
 
 export { createRecordingWorkflows }
 
@@ -17880,8 +17804,6 @@ export type ResumableRun = {
     wakeAt?: number | undefined;
 };
 
-export { routeStepFetch }
-
 export { runGuardrail }
 
 // @public
@@ -17974,10 +17896,6 @@ export type StepEntry = {
     startedAt: number;
     finishedAt: number;
 };
-
-export { StepRoute }
-
-export { StepUnmatched }
 
 export { STUB_SPEECH_PCM_BYTES }
 
@@ -18213,7 +18131,6 @@ import { eventsOf } from '@alexkroman1/aai/testing';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
-import { installFetchRoutes } from '@alexkroman1/aai/testing/vitest';
 import { installStubClientInbox } from '@alexkroman1/aai/testing/vitest';
 import { installStubGateway } from '@alexkroman1/aai/testing/vitest';
 import { installStubReporter } from '@alexkroman1/aai/testing/vitest';
@@ -18228,7 +18145,6 @@ import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
-import { routeStepFetch } from '@alexkroman1/aai/testing';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
@@ -18236,8 +18152,6 @@ import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import { StepFetch } from '@alexkroman1/aai/host-internal';
-import { StepRoute } from '@alexkroman1/aai/testing';
-import { StepUnmatched } from '@alexkroman1/aai/testing';
 import type { SttProvider } from '@alexkroman1/aai/stt';
 import { StubGatewayRoute } from '@alexkroman1/aai/testing';
 import { stubGatewayRoute } from '@alexkroman1/aai/testing';
@@ -18640,8 +18554,6 @@ export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
-export { installFetchRoutes }
-
 export { installStubClientInbox }
 
 export { installStubGateway }
@@ -18743,8 +18655,6 @@ export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string
     reason: string;
 };
 
-export { routeStepFetch }
-
 export { RunCodeExecutor }
 
 // @public
@@ -18824,10 +18734,6 @@ export function statesIn(events: readonly SessionEvent[], slot: string): readonl
 export function statesIn(events: readonly SessionEvent[]): readonly Readonly<Record<string, unknown>>[];
 
 export { StepFetch }
-
-export { StepRoute }
-
-export { StepUnmatched }
 
 // @public
 export interface StepUsage {

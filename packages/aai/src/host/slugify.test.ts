@@ -114,7 +114,7 @@ describe("slugifyName", () => {
     expect(slugifyName("Ⅻ Y+-", MAX_SLUG_LENGTH)).toBe("y");
     expect(slugifyName("ab cd", 1)).toBe("a");
     for (const short of ["b", "x", "e", "y", "a"]) {
-      expect(VALID_SLUG_RE.test(short)).toBe(false);
+      expect(VALID_SLUG_RE.test(short), String(short)).toBe(false);
     }
   });
 

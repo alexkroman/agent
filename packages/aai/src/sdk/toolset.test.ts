@@ -4,7 +4,7 @@
  * def's identity is read), gating, first-wins composition, and how a dialog
  * tool refuses inside an agent's toolsets (its own execute, no layer).
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { agentToolsToSchemas } from "./_internal-types.ts";
 import { clientTool } from "./client-tool.ts";
@@ -63,15 +63,15 @@ describe("toolset", () => {
 describe("composeToolsets", () => {
   it("is first-wins, and reports each shadowed name", () => {
     const other = tool({ description: "Other echo", execute: () => "other" });
-    const shadowed: [string, ToolSource, ToolSource][] = [];
+    const shadowed = vi.fn<(name: string, kept: ToolSource, dropped: ToolSource) => void>();
     const table = composeToolsets(
       [toolset("files", { echo }), toolset("builtin", { echo: other, think: other })],
-      (name, kept, dropped) => shadowed.push([name, kept, dropped]),
+      shadowed,
     );
     expect(table.tools.map((one) => one.name)).toEqual(["echo", "think"]);
     expect(table.resolve("echo")?.entry.def).toBe(echo);
     expect(table.resolve("echo")?.toolset.source).toBe("files");
-    expect(shadowed).toEqual([["echo", "files", "builtin"]]);
+    expect(shadowed.mock.calls).toEqual([["echo", "files", "builtin"]]);
     // The advertised list is the same table: one schema per name.
     expect(
       agentToolsToSchemas([toolset("files", { echo }), toolset("builtin", { echo: other })]),

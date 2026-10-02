@@ -50,8 +50,8 @@ describe("agentConfigWarnings", () => {
       tts: cartesiaTts({ voice: "not-a-uuid" }),
     });
     expect(warnings).toHaveLength(2);
-    expect(warnings.some((line) => line.includes("Cartesia"))).toBe(true);
-    expect(warnings.some((line) => line.includes(ASSEMBLYAI_TTS_HOST))).toBe(true);
+    expect(warnings).toContainEqual(expect.stringContaining("Cartesia"));
+    expect(warnings).toContainEqual(expect.stringContaining(ASSEMBLYAI_TTS_HOST));
   });
 });
 
@@ -234,8 +234,8 @@ describe("a fallback([...]) stage", () => {
         llm({ provider: "anthropc", model: "m" }),
       ]),
     });
-    expect(warnings.some((w) => w.includes("no-such-voice"))).toBe(true);
-    expect(warnings.some((w) => w.includes('"anthropc"'))).toBe(true);
+    expect(warnings).toContainEqual(expect.stringContaining("no-such-voice"));
+    expect(warnings).toContainEqual(expect.stringContaining('"anthropc"'));
     expect(warnings.some((w) => w.includes('"fallback"'))).toBe(false);
   });
 });

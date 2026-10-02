@@ -3,7 +3,7 @@
  * Capability contract: `eval-stubs`.
  *
  * The SDK stubs an eval case COMPOSES with — the model gateway's routes
- * (`stubGatewayRoute`), the step fetch (`routeStepFetch`, `installStubStepFetch`),
+ * (`stubGatewayRoute`), the step fetch (`installStubStepFetch`),
  * a delegated loop, speech, transcription and uploads, the recording workflow
  * client, the dialog envelope and the event readers — as `/eval/vitest`
  * re-exports them, so an eval file reaches its whole harness through one
@@ -40,9 +40,6 @@ export {
   isEvent,
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,
-  routeStepFetch,
-  type StepRoute,
-  type StepUnmatched,
   type StubGatewayRoute,
   type StubSpeech,
   type StubSpeechOptions,

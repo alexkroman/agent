@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext } from "./_test-utils.ts";
+import { createToolContext } from "@alexkroman1/aai/testing";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import { readNotes, SESSION_NOTES_TTL_MS, writeNote } from "./session-notes.ts";
 
@@ -10,8 +10,8 @@ import { readNotes, SESSION_NOTES_TTL_MS, writeNote } from "./session-notes.ts";
 describe("session notes, through remember/recall", () => {
   test("remember overwrites a key and notes are isolated per session", async () => {
     const { defs } = resolveAllBuiltins(["remember", "recall"]);
-    const s1 = createMockToolContext({ sessionId: "notes-iso-1" });
-    const s2 = createMockToolContext({ sessionId: "notes-iso-2" });
+    const s1 = createToolContext({ sessionId: "notes-iso-1" });
+    const s2 = createToolContext({ sessionId: "notes-iso-2" });
 
     await defs.remember?.execute({ key: "zip", value: "19122" }, s1);
     await defs.remember?.execute({ key: "zip", value: "94103" }, s1);
@@ -21,7 +21,7 @@ describe("session notes, through remember/recall", () => {
 
   test("two concurrent remember calls both persist", async () => {
     const { defs } = resolveAllBuiltins(["remember", "recall"]);
-    const ctx = createMockToolContext({ sessionId: "notes-concurrent" });
+    const ctx = createToolContext({ sessionId: "notes-concurrent" });
 
     // One LLM step's tool calls execute concurrently (pipeline streamText runs
     // them in parallel). Map updates are synchronous, so no per-key lock is
@@ -38,19 +38,18 @@ describe("session notes, through remember/recall", () => {
 
   test("notes expire after the session-notes TTL", async () => {
     vi.useFakeTimers();
-    try {
-      const { defs } = resolveAllBuiltins(["remember", "recall"]);
-      const ctx = createMockToolContext({ sessionId: "notes-ttl" });
-
-      await defs.remember?.execute({ key: "user_id", value: "usr_123" }, ctx);
-      vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
-      expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: { user_id: "usr_123" } });
-
-      vi.advanceTimersByTime(2);
-      expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: {} });
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const { defs } = resolveAllBuiltins(["remember", "recall"]);
+    const ctx = createToolContext({ sessionId: "notes-ttl" });
+
+    await defs.remember?.execute({ key: "user_id", value: "usr_123" }, ctx);
+    vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
+    expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: { user_id: "usr_123" } });
+
+    vi.advanceTimersByTime(2);
+    expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: {} });
   });
 });
 
@@ -67,14 +66,13 @@ describe("readNotes / writeNote", () => {
 
   test("a write refreshes the TTL, so a session in use does not expire under itself", () => {
     vi.useFakeTimers();
-    try {
-      writeNote("notes-refresh", "a", "1");
-      vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
-      writeNote("notes-refresh", "b", "2");
-      vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
-      expect(readNotes({ sessionId: "notes-refresh" })).toEqual({ a: "1", b: "2" });
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    writeNote("notes-refresh", "a", "1");
+    vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
+    writeNote("notes-refresh", "b", "2");
+    vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
+    expect(readNotes({ sessionId: "notes-refresh" })).toEqual({ a: "1", b: "2" });
   });
 });

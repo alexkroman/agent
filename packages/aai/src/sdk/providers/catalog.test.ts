@@ -33,16 +33,16 @@ describe("PROVIDER_CATALOG", () => {
   it("is every stage list, and each list holds only its own stage", () => {
     const lists = [STT_PROVIDERS, Object.values(LLM_PROVIDERS), TTS_PROVIDERS, S2S_PROVIDERS];
     expect(PROVIDER_CATALOG.length).toBe(lists.reduce((n, l) => n + l.length, 0));
-    for (const d of STT_PROVIDERS) expect(d.stage).toBe("stt");
-    for (const d of TTS_PROVIDERS) expect(d.stage).toBe("tts");
-    for (const d of S2S_PROVIDERS) expect(d.stage).toBe("s2s");
+    for (const d of STT_PROVIDERS) expect(d.stage, d.kind).toBe("stt");
+    for (const d of TTS_PROVIDERS) expect(d.stage, d.kind).toBe("tts");
+    for (const d of S2S_PROVIDERS) expect(d.stage, d.kind).toBe("s2s");
   });
 
   it("keys LLM_PROVIDERS by exactly the built-in provider names", () => {
     expect(Object.keys(LLM_PROVIDERS).sort()).toEqual([...KNOWN_LLM_PROVIDERS].sort());
     for (const [key, d] of Object.entries(LLM_PROVIDERS)) {
-      expect(d.kind).toBe(key);
-      expect(d.stage).toBe("llm");
+      expect(d.kind, String(key)).toBe(key);
+      expect(d.stage, String(key)).toBe("llm");
     }
   });
 
@@ -70,7 +70,7 @@ describe("PROVIDER_CATALOG", () => {
     ]);
     expect([assemblyAIS2s().kind, openAIS2s().kind]).toEqual(S2S_PROVIDERS.map((d) => d.kind));
     for (const name of KNOWN_LLM_PROVIDERS) {
-      expect(llm({ provider: name, model: "m" }).kind).toBe(LLM_PROVIDERS[name].kind);
+      expect(llm({ provider: name, model: "m" }).kind, String(name)).toBe(LLM_PROVIDERS[name].kind);
     }
   });
 });

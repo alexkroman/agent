@@ -19,27 +19,22 @@ import {
   TRANSCRIBE_MODELS,
   TRANSCRIBE_WINDOW_BYTES,
 } from "./step-transcribe.ts";
-import { stubUploads } from "./testing-uploads.ts";
+import { installStubUploads } from "./testing-vitest.ts";
 
-/** One canned JSON reply, and the recorder of what was asked for. */
+/** One canned JSON reply per call (the last repeats), on a `vi.fn` global `fetch`. */
 function stubApi(replies: readonly { status?: number; body: unknown }[]) {
-  const calls: { url: string; init: RequestInit }[] = [];
-  let at = 0;
-  const fetchFn = vi.fn(async (url: string | URL, init: RequestInit = {}) => {
-    calls.push({ url: String(url), init });
-    const reply = replies[Math.min(at, replies.length - 1)];
-    at += 1;
-    return new Response(JSON.stringify(reply?.body ?? {}), {
-      status: reply?.status ?? 200,
-      headers: { "Content-Type": "application/json" },
-    });
+  const fetchFn = vi.fn(async (_url: string | URL, _init: RequestInit = {}) => {
+    const reply = replies[Math.min(fetchFn.mock.calls.length - 1, replies.length - 1)];
+    return Response.json(reply?.body ?? {}, { status: reply?.status ?? 200 });
   });
   vi.stubGlobal("fetch", fetchFn);
   return {
-    calls,
+    fetch: fetchFn,
+    /** The nth request's `init`. */
+    init: (n: number): RequestInit => fetchFn.mock.calls[n]?.[1] ?? {},
     /** The parsed JSON body of the nth request. */
     sent(n: number): Record<string, unknown> {
-      return JSON.parse(String(calls[n]?.init.body)) as Record<string, unknown>;
+      return JSON.parse(String(fetchFn.mock.calls[n]?.[1]?.body)) as Record<string, unknown>;
     },
   };
 }
@@ -47,63 +42,58 @@ function stubApi(replies: readonly { status?: number; body: unknown }[]) {
 describe("stepTranscribeUpload", () => {
   test("streams the stored upload and answers with the URL", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const uploads = stubUploads({ rec: new Uint8Array([1, 2, 3, 4]) });
+    installStubUploads({ rec: new Uint8Array([1, 2, 3, 4]) });
     const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
     expect(await stepTranscribeUpload("rec")).toEqual({ audioUrl: "https://cdn.example/abc" });
-    expect(api.calls[0]?.url).toBe("https://api.assemblyai.com/v2/upload");
-    uploads.restore();
+    expect(api.fetch.mock.calls[0]?.[0]).toBe("https://api.assemblyai.com/v2/upload");
   });
 
   test("sends the key RAW — a Bearer prefix is a 401 that reads like a bad key", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const uploads = stubUploads({ rec: new Uint8Array([1]) });
+    installStubUploads({ rec: new Uint8Array([1]) });
     const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
     await stepTranscribeUpload("rec");
-    const headers = api.calls[0]?.init.headers as Record<string, string>;
+    const headers = api.init(0).headers as Record<string, string>;
     expect(headers.Authorization).toBe("sk-test");
-    uploads.restore();
   });
 
   test("honours a custom apiKeyEnv", async () => {
     vi.stubEnv("OTHER_KEY", "sk-other");
-    const uploads = stubUploads({ rec: new Uint8Array([1]) });
+    installStubUploads({ rec: new Uint8Array([1]) });
     const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
     await stepTranscribeUpload("rec", { apiKeyEnv: "OTHER_KEY" });
-    const headers = api.calls[0]?.init.headers as Record<string, string> | undefined;
+    const headers = api.init(0).headers as Record<string, string> | undefined;
     expect(headers?.Authorization).toBe("sk-other");
-    uploads.restore();
   });
 
   test("the body is an async iterable, so the file is never held whole", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     // Two windows plus a byte, so the generator has to run more than once.
-    const uploads = stubUploads({ rec: new Uint8Array(TRANSCRIBE_WINDOW_BYTES * 2 + 1) });
+    installStubUploads({ rec: new Uint8Array(TRANSCRIBE_WINDOW_BYTES * 2 + 1) });
     const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
     await stepTranscribeUpload("rec");
-    const body = api.calls[0]?.init.body as AsyncIterable<Uint8Array>;
+    const body = api.init(0).body as AsyncIterable<Uint8Array>;
     expect(typeof (body as { [Symbol.asyncIterator]?: unknown })[Symbol.asyncIterator]).toBe(
       "function",
     );
     const windows: number[] = [];
     for await (const chunk of body) windows.push(chunk.length);
     expect(windows).toEqual([TRANSCRIBE_WINDOW_BYTES, TRANSCRIBE_WINDOW_BYTES, 1]);
-    uploads.restore();
   });
 
   test("a 200 that names no URL is a refusal, and not retryable", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const uploads = stubUploads({ rec: new Uint8Array([1]) });
+    installStubUploads({ rec: new Uint8Array([1]) });
     stubApi([{ body: {} }]);
 
     await expect(stepTranscribeUpload("rec")).rejects.toMatchObject({
       name: "TranscribeError",
       retryable: false,
     });
-    uploads.restore();
   });
 
   // The worst shape available: a PLAUSIBLE WRONG ANSWER. `size` is the
@@ -115,19 +105,18 @@ describe("stepTranscribeUpload", () => {
   // right one.
   test("REFUSES an upload that is still arriving rather than transcribing its prefix", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const uploads = stubUploads({ rec: { bytes: new Uint8Array([1, 2, 3, 4]), complete: false } });
+    installStubUploads({ rec: { bytes: new Uint8Array([1, 2, 3, 4]), complete: false } });
     const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
     await expect(stepTranscribeUpload("rec")).rejects.toThrow(/still arriving/);
     // Nothing went out: the refusal is BEFORE the expensive leg, so a run started
     // a moment too early does not pay for an upload it must not use.
-    expect(api.calls).toHaveLength(0);
-    uploads.restore();
+    expect(api.fetch).not.toHaveBeenCalled();
   });
 
   test("that refusal is NOT retryable — no number of attempts finishes the upload", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const uploads = stubUploads({ rec: { bytes: new Uint8Array([1]), complete: false } });
+    installStubUploads({ rec: { bytes: new Uint8Array([1]), complete: false } });
     stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
     // An upload that died stays incomplete forever, and the default backoff is
@@ -135,7 +124,6 @@ describe("stepTranscribeUpload", () => {
     // milliseconds and still cannot help. The fix is the run's ORDER, which is a
     // fatal verdict's job to say.
     await expect(stepTranscribeUpload("rec")).rejects.toMatchObject({ retryable: false });
-    uploads.restore();
   });
 });
 
@@ -226,7 +214,7 @@ describe("stepTranscribePoll", () => {
       status: "completed",
       transcript: { id: "t-1", text: "Otters use tools.", durationMs: 12_400 },
     });
-    expect(api.calls).toHaveLength(1);
+    expect(api.fetch).toHaveBeenCalledOnce();
   });
 
   test("a failed job is a refusal the DevKit must not retry", async () => {

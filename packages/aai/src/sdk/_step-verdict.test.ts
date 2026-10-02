@@ -7,6 +7,7 @@
  * shared because both files are their only readers.
  */
 import { describe, expect, test } from "vitest";
+import { freezeDate } from "../host/_test-utils.ts";
 import { throwFatalStepError, throwStepError, toStepError } from "./_step-verdict.ts";
 import { TranscribeError } from "./_transcribe-shared.ts";
 import { FatalError, RetryableError } from "./step-error-classes.ts";
@@ -110,12 +111,12 @@ describe("toStepError, given a Response", () => {
     // The other half of the same bug: transient was reachable by luck (an
     // unclassified error retries too) but the DELAY was not, so a rate limit
     // asking for 5s got the DevKit's 1s and N siblings all asked again at once.
+    const now = freezeDate();
     const err = toStepError(responseFromAnotherRealm(503, "5"), "nope");
     const verdict = stepVerdict(err);
     expect(verdict).toMatchObject({ fatal: false, retryable: true });
-    // Within the second: the header is seconds and the error carries a Date.
-    const seconds = Math.round(((verdict.retryAfter?.getTime() ?? 0) - Date.now()) / 1000);
-    expect(seconds).toBe(5);
+    // The header is seconds and the error carries a Date.
+    expect(verdict.retryAfter?.getTime()).toBe(now + 5000);
   });
 
   test.each([408, 429, 500, 503])("makes a transient %i retryable", (status) => {
@@ -128,20 +129,22 @@ describe("toStepError, given a Response", () => {
   test("carries the delay the far side asked for, rather than the class's own default", () => {
     // The point of the whole classification: N segments hit one rate limit
     // together, and on our own backoff they re-collect their 429s N at a time.
+    const now = freezeDate();
     const err = toStepError(responseWith(429, "30"), "rate limited");
 
     const verdict = stepVerdict(err);
     expect(verdict.retryable).toBe(true);
-    expect(verdict.retryAfter?.getTime()).toBeGreaterThan(Date.now() + 25_000);
+    expect(verdict.retryAfter?.getTime()).toBe(now + 30_000);
   });
 
   test("falls back to RetryableError's own one-second default when none was named", () => {
     // Not "the engine decides": the class always sets a date, and unset means
     // ONE SECOND. Worth pinning, because a fan-out that all retries a second
     // later is how a rate limit is turned into a tighter rate limit.
+    const now = freezeDate();
     const at = stepVerdict(toStepError(responseWith(429), "rate limited")).retryAfter;
 
-    expect(at?.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+    expect(at?.getTime()).toBe(now + 1000);
   });
 
   test("falls back to the status line when no message is given", () => {
@@ -290,7 +293,7 @@ describe("throwFatalStepError", () => {
     // The failure a step has DECIDED is terminal on grounds no status carries.
     const err = thrownBy(() => throwFatalStepError(new Error("ASSEMBLYAI_API_KEY is not set")));
 
-    expect(FatalError.is(err)).toBe(true);
+    expect(err).toSatisfy(FatalError.is);
     expect((err as Error).message).toMatch(/ASSEMBLYAI_API_KEY/);
   });
 

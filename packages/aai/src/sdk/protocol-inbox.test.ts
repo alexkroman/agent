@@ -11,7 +11,7 @@ describe("InboxServerFrameSchema", () => {
       { type: "session_event", sessionId: "s1", event: { type: "reply.completed", text: "hi" } },
       { type: "session_ended", sessionId: "s1" },
     ]) {
-      expect(InboxServerFrameSchema.safeParse(frame).success).toBe(true);
+      expect(InboxServerFrameSchema.safeParse(frame).success, JSON.stringify(frame)).toBe(true);
     }
   });
 
@@ -36,7 +36,7 @@ describe("InboxServerFrameSchema", () => {
       { type: "session_event", sessionId: "s1", event: {} },
       { type: "ack", id: "n" },
     ]) {
-      expect(InboxServerFrameSchema.safeParse(frame).success).toBe(false);
+      expect(InboxServerFrameSchema.safeParse(frame).success, JSON.stringify(frame)).toBe(false);
     }
   });
 });

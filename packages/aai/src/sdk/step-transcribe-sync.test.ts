@@ -18,20 +18,19 @@ import {
 import { wavHeader } from "./wav.ts";
 
 function stubSync(reply: { status?: number; body: unknown }) {
-  const calls: { url: string; init: RequestInit }[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string | URL, init: RequestInit = {}) => {
-      calls.push({ url: String(url), init });
-      return new Response(JSON.stringify(reply.body), {
+  const fetchFn = vi.fn(
+    async (_url: string | URL, _init: RequestInit = {}) =>
+      new Response(JSON.stringify(reply.body), {
         status: reply.status ?? 200,
         headers: { "Content-Type": "application/json" },
-      });
-    }),
+      }),
   );
+  vi.stubGlobal("fetch", fetchFn);
+  const init = (): RequestInit => fetchFn.mock.calls[0]?.[1] ?? {};
   return {
-    calls,
-    headers: (): Record<string, string> => calls[0]?.init.headers as Record<string, string>,
+    fetch: fetchFn,
+    init,
+    headers: (): Record<string, string> => init().headers as Record<string, string>,
   };
 }
 
@@ -43,7 +42,7 @@ describe("stepTranscribeSync", () => {
     expect(await stepTranscribeSync(new Uint8Array([1, 2, 3]))).toEqual({
       text: "Otters use tools.",
     });
-    expect(sync.calls[0]?.url).toBe(TRANSCRIBE_SYNC_ENDPOINT);
+    expect(sync.fetch.mock.calls[0]?.[0]).toBe(TRANSCRIBE_SYNC_ENDPOINT);
   });
 
   test("the model is a HEADER on this endpoint, and the key is raw", async () => {
@@ -61,7 +60,7 @@ describe("stepTranscribeSync", () => {
 
     await stepTranscribeSync(new Uint8Array([1]), { filename: "segment-04.wav" });
     expect(sync.headers()["Content-Type"]).toContain("multipart/form-data");
-    const body = new TextDecoder().decode(sync.calls[0]?.init.body as Uint8Array);
+    const body = new TextDecoder().decode(sync.init().body as Uint8Array);
     expect(body).toContain('filename="segment-04.wav"');
     expect(body).toContain("Content-Type: audio/wav");
   });
@@ -80,7 +79,7 @@ describe("stepTranscribeSync", () => {
     const samples = new Uint8Array([0x00, 0x80, 0xff, 0x7f]);
     await stepTranscribeSync([header, samples], { filename: "segment-04.wav" });
 
-    const body = sync.calls[0]?.init.body as Uint8Array;
+    const body = sync.init().body as Uint8Array;
     const boundary = /boundary=(.+)$/.exec(sync.headers()["Content-Type"] ?? "")?.[1] ?? "";
     const text = new TextDecoder("latin1").decode(body);
     const from = text.indexOf("\r\n\r\n") + 4;

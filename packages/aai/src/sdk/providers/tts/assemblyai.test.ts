@@ -69,7 +69,7 @@ describe("the voice warning is computed once, off the descriptor", () => {
 
   test("with no `language` set, which is the common shape", () => {
     const lines = warningsFor(assemblyAITts({ voice: "estele" }));
-    expect(lines.some((line) => line.includes('Did you mean "estelle"'))).toBe(true);
+    expect(lines).toContainEqual(expect.stringContaining('Did you mean "estelle"'));
   });
 
   test("toAgentConfig prints nothing — the CLI's warning list is the one channel", () => {

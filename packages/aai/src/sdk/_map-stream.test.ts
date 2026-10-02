@@ -13,11 +13,6 @@ import { describe, expect, test } from "vitest";
 import { tick } from "../host/_test-utils.ts";
 import { mapStream } from "./_map-stream.ts";
 
-/** A task that parks until the spec lets it through. */
-function gate<T>() {
-  return Promise.withResolvers<T>();
-}
-
 /**
  * One gate per index, minted on first use.
  *
@@ -30,7 +25,7 @@ function gates<T>() {
   const held = new Map<number, PromiseWithResolvers<T>>();
   return {
     at(index: number): PromiseWithResolvers<T> {
-      const found = held.get(index) ?? gate<T>();
+      const found = held.get(index) ?? Promise.withResolvers<T>();
       held.set(index, found);
       return found;
     },
@@ -97,7 +92,7 @@ describe("mapStream", () => {
 
   test("pulls the next item while earlier tasks are still running", async () => {
     // The whole reason this exists: reading the source and doing the work overlap.
-    const held = gate<string>();
+    const held = Promise.withResolvers<string>();
     const pulled: number[] = [];
     async function* source(): AsyncGenerator<number> {
       for (const at of [0, 1, 2]) {
@@ -135,7 +130,7 @@ describe("mapStream", () => {
   test("waits for the tasks still in flight before the failure escapes", async () => {
     // A rejection nobody is waiting on yet is an unhandled rejection, and an
     // in-flight task the caller cannot see is a write racing its own cleanup.
-    const slow = gate<number>();
+    const slow = Promise.withResolvers<number>();
     let settled = false;
     const stream = mapStream([0, 1], 2, async (at) => {
       if (at === 0) throw new Error("first");
@@ -158,7 +153,7 @@ describe("mapStream", () => {
     };
     process.on("unhandledRejection", record);
     try {
-      const held = gate<number>();
+      const held = Promise.withResolvers<number>();
       const stream = mapStream([0, 1], 2, async (at) => {
         if (at === 1) throw new Error("second");
         return await held.promise;
@@ -177,7 +172,7 @@ describe("mapStream", () => {
   });
 
   test("a consumer that leaves early settles what is in flight and closes the source", async () => {
-    const held = gate<number>();
+    const held = Promise.withResolvers<number>();
     let closed = false;
     let landed = false;
     async function* source(): AsyncGenerator<number> {

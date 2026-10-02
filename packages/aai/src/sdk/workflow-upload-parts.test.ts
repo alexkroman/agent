@@ -12,10 +12,9 @@
  * `host/workflow-api-uploads.test.ts` against a real router.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   client,
-  json,
   PART,
   record,
   recording,
@@ -53,7 +52,7 @@ describe("sending a file as parts", () => {
     // every part the same size but the last.
     const offsets = agent.parts.map((one) => Number(one.url.searchParams.get("offset")));
     expect(offsets.toSorted((a, b) => a - b)).toEqual([0, PART, PART * 2]);
-    expect(offsets.every((at) => at % UPLOAD_CHUNK_BYTES === 0)).toBe(true);
+    expect(offsets.filter((at) => at % UPLOAD_CHUNK_BYTES !== 0)).toEqual([]);
     expect(agent.parts.map((one) => one.bytes)).toEqual([PART, PART, PART]);
     // The record is the AGENT's, read back rather than assembled here: `complete`
     // is its claim about whether every byte landed.
@@ -86,7 +85,10 @@ describe("sending a file as parts", () => {
       parallel: { partBytes: UPLOAD_CHUNK_BYTES + 1 },
     });
     expect(agent.parts.map((one) => Number(one.url.searchParams.get("offset")))).toHaveLength(2);
-    expect(agent.parts.every((one) => one.bytes === UPLOAD_CHUNK_BYTES * 2)).toBe(true);
+    expect(agent.parts.map((one) => one.bytes)).toEqual([
+      UPLOAD_CHUNK_BYTES * 2,
+      UPLOAD_CHUNK_BYTES * 2,
+    ]);
   });
 
   test("sends the LAST part short rather than padding the file", async () => {
@@ -100,7 +102,9 @@ describe("sending a file as parts", () => {
     await client().uploadStream("chosen-id", recording(), { parallel: true });
     // The whole difference from `upload`: the id was decided before the bytes, so
     // it is already in a run input somewhere.
-    expect(agent.calls.every((one) => one.url.pathname.includes("/uploads/chosen-id"))).toBe(true);
+    expect(agent.calls.map((one) => one.url.pathname)).toEqual(
+      agent.calls.map(() => expect.stringContaining("/uploads/chosen-id")),
+    );
   });
 });
 
@@ -285,64 +289,62 @@ describe("a part that does not land", () => {
 
   test("WAITS before asking again, rather than re-colliding with the limit", async () => {
     vi.useFakeTimers();
-    try {
-      const agent = scriptAgent({ refuse: { offset: PART, status: 503, always: true } });
-      // Abandoned at the end rather than left running: this upload never finishes,
-      // and an in-flight one outlives the test that started it — issuing its
-      // remaining parts against whatever `fetch` the NEXT spec has stubbed.
-      const abandon = new AbortController();
-      const stored = client().upload(recording(), { parallel: true, signal: abandon.signal });
-      stored.catch(() => undefined);
-      // Everything that can happen without the clock moving has happened: the part
-      // was refused, and the re-send has NOT gone out. That is the whole fix — a
-      // fan-out hits a capacity limit together, so an immediate re-send is four
-      // connections asking again in unison inside the window they are waiting out.
-      await vi.advanceTimersByTimeAsync(0);
-      const sent = (): number =>
-        agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)).length;
-      expect(sent()).toBe(1);
-
-      // Still nothing a fifth of a window later — jitter draws from the window's
-      // upper half, so this is the bound a spec can state without pinning the draw
-      // or the instant the timer was armed at.
-      await vi.advanceTimersByTimeAsync(UPLOAD_RETRY_BASE_MS / 5);
-      expect(sent()).toBe(1);
-      // A whole window past that covers the first wait and cannot reach the SECOND,
-      // whose own window is twice as wide — so this pins one re-send rather than
-      // draining the budget.
-      await vi.advanceTimersByTimeAsync(UPLOAD_RETRY_BASE_MS);
-      expect(sent()).toBe(2);
-      await settle(abandon, stored);
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const agent = scriptAgent({ refuse: { offset: PART, status: 503, always: true } });
+    // Abandoned at the end rather than left running: this upload never finishes,
+    // and an in-flight one outlives the test that started it — issuing its
+    // remaining parts against whatever `fetch` the NEXT spec has stubbed.
+    const abandon = new AbortController();
+    const stored = client().upload(recording(), { parallel: true, signal: abandon.signal });
+    stored.catch(() => undefined);
+    // Everything that can happen without the clock moving has happened: the part
+    // was refused, and the re-send has NOT gone out. That is the whole fix — a
+    // fan-out hits a capacity limit together, so an immediate re-send is four
+    // connections asking again in unison inside the window they are waiting out.
+    await vi.advanceTimersByTimeAsync(0);
+    const sent = (): number =>
+      agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)).length;
+    expect(sent()).toBe(1);
+
+    // Still nothing a fifth of a window later — jitter draws from the window's
+    // upper half, so this is the bound a spec can state without pinning the draw
+    // or the instant the timer was armed at.
+    await vi.advanceTimersByTimeAsync(UPLOAD_RETRY_BASE_MS / 5);
+    expect(sent()).toBe(1);
+    // A whole window past that covers the first wait and cannot reach the SECOND,
+    // whose own window is twice as wide — so this pins one re-send rather than
+    // draining the budget.
+    await vi.advanceTimersByTimeAsync(UPLOAD_RETRY_BASE_MS);
+    expect(sent()).toBe(2);
+    await settle(abandon, stored);
   });
 
   test("waits as long as the agent ASKED, when it said", async () => {
     vi.useFakeTimers();
-    try {
-      const agent = scriptAgent({
-        refuse: { offset: PART, status: 503, always: true, retryAfter: "5" },
-      });
-      const abandon = new AbortController();
-      const stored = client().upload(recording(), { parallel: true, signal: abandon.signal });
-      stored.catch(() => undefined);
-      await vi.advanceTimersByTimeAsync(0);
-      const sent = (): number =>
-        agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)).length;
-
-      // The far side knows something the backoff does not — that is what makes a
-      // burst DRAIN instead of re-colliding — so its own number beats the schedule.
-      // Three seconds is six times the longest wait the schedule alone can produce
-      // for a first retry, so nothing but the header can explain the silence.
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(sent()).toBe(1);
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(sent()).toBe(2);
-      await settle(abandon, stored);
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const agent = scriptAgent({
+      refuse: { offset: PART, status: 503, always: true, retryAfter: "5" },
+    });
+    const abandon = new AbortController();
+    const stored = client().upload(recording(), { parallel: true, signal: abandon.signal });
+    stored.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    const sent = (): number =>
+      agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)).length;
+
+    // The far side knows something the backoff does not — that is what makes a
+    // burst DRAIN instead of re-colliding — so its own number beats the schedule.
+    // Three seconds is six times the longest wait the schedule alone can produce
+    // for a first retry, so nothing but the header can explain the silence.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(sent()).toBe(1);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(sent()).toBe(2);
+    await settle(abandon, stored);
   });
 
   test("stops the parts still in flight when one of them fails", async () => {
@@ -459,7 +461,7 @@ describe("a part that does not land", () => {
       vi.fn(async (input: string, init?: RequestInit) => {
         const url = new URL(input);
         if (url.pathname.endsWith("/parts") && init?.method === "POST") {
-          return json(201, record(0, false));
+          return Response.json(record(0, false), { status: 201 });
         }
         throw new TypeError("the upload did not reach the agent");
       }),
@@ -484,7 +486,7 @@ describe("progress over several connections", () => {
     // A bar exists from the submit, and its total is the whole file rather than a
     // part's — a bar that restarted per part would run three times to 8 MB.
     expect(seen[0]).toEqual({ loaded: 0, total: TOTAL, fraction: 0 });
-    expect(seen.every((one) => one.total === TOTAL)).toBe(true);
+    expect(seen).toEqual(seen.map(() => expect.objectContaining({ total: TOTAL })));
     // It only ever grows, which is what parts landing in any order threatens.
     expect(seen.map((one) => one.loaded).toSorted((a, b) => a - b)).toEqual(
       seen.map((one) => one.loaded),
@@ -501,7 +503,7 @@ describe("progress over several connections", () => {
     });
     // The bar may go backwards here — that is the honest report of a part being
     // resent — but it may never claim more than the file.
-    expect(seen.every((one) => one.loaded <= TOTAL)).toBe(true);
+    expect(Math.max(...seen.map((one) => one.loaded))).toBeLessThanOrEqual(TOTAL);
     expect(seen.at(-1)?.loaded).toBe(TOTAL);
   });
 });

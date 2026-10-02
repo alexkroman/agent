@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
+import { freezeDate } from "../host/_test-utils.ts";
 import {
   apiFailure,
   apiRoot,
@@ -55,16 +56,12 @@ describe("readApiJson", () => {
 
 describe("pendingRun", () => {
   test("is the snapshot of a run the agent accepted but has not reported", () => {
-    vi.useFakeTimers({ now: 1_700_000_000_000 });
-    try {
-      expect(pendingRun("wrun_1", "digest")).toEqual({
-        runId: "wrun_1",
-        workflow: "digest",
-        createdAt: 1_700_000_000_000,
-        status: "pending",
-      });
-    } finally {
-      vi.useRealTimers();
-    }
+    const now = freezeDate();
+    expect(pendingRun("wrun_1", "digest")).toEqual({
+      runId: "wrun_1",
+      workflow: "digest",
+      createdAt: now,
+      status: "pending",
+    });
   });
 });

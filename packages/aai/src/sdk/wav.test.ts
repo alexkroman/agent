@@ -108,8 +108,8 @@ describe("wavHeader", () => {
       // that hides an off-by-36.
       for (const length of [0, 1, 44, 4096]) {
         const header = wavHeader(format, length);
-        expect(header.byteLength).toBe(WAV_HEADER_BYTES);
-        expect(header).toEqual(
+        expect(header.byteLength, String(length)).toBe(WAV_HEADER_BYTES);
+        expect(header, String(length)).toEqual(
           encodeWav(new Uint8Array(length), format).subarray(0, WAV_HEADER_BYTES),
         );
       }

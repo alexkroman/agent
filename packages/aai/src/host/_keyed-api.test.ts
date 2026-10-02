@@ -45,11 +45,11 @@ describe("fetchKeyedJson", () => {
     for (const env of [{}, { EXAMPLE_KEY: "   " }]) {
       const { mockFetch, req } = request(Response.json({}));
       const result = await fetchKeyedJson({ env }, req);
-      expect(result).toMatchObject({
+      expect(result, JSON.stringify(env)).toMatchObject({
         ok: false,
         error: expect.stringContaining("Missing EXAMPLE_KEY"),
       });
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockFetch, JSON.stringify(env)).not.toHaveBeenCalled();
     }
   });
 

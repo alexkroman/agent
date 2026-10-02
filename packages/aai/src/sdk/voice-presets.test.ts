@@ -108,7 +108,7 @@ describe("VOICE_PRESETS", () => {
     // Whole-word, because "Li" is a substring of ordinary English.
     const word = new RegExp(`\\b${entity}\\b`);
     for (const name of VOICE_PRESET_NAMES) {
-      expect(VOICE_PRESETS[name]).not.toMatch(word);
+      expect(VOICE_PRESETS[name], String(name)).not.toMatch(word);
     }
   });
 
@@ -118,8 +118,8 @@ describe("VOICE_PRESETS", () => {
     // fragments themselves are instructions, so a `- ` bullet is fine, but a
     // fenced block or a heading level nothing renders is waste.
     for (const name of VOICE_PRESET_NAMES) {
-      expect(VOICE_PRESETS[name]).not.toContain("```");
-      expect(VOICE_PRESETS[name]).not.toContain("\n#");
+      expect(VOICE_PRESETS[name], String(name)).not.toContain("```");
+      expect(VOICE_PRESETS[name], String(name)).not.toContain("\n#");
     }
   });
 });
@@ -146,7 +146,7 @@ describe("echoVerification", () => {
 
   test("names the values a voice agent actually gets wrong", () => {
     for (const kind of ["names", "phone numbers", "emails", "dates", "times", "addresses"]) {
-      expect(text).toContain(kind);
+      expect(text, String(kind)).toContain(kind);
     }
   });
 });
@@ -191,7 +191,7 @@ describe("speechNormalization", () => {
       "**Codes and identifiers.**",
       "**Symbols, units and abbreviations.**",
     ]) {
-      expect(text).toContain(heading);
+      expect(text, String(heading)).toContain(heading);
     }
   });
 
@@ -236,7 +236,7 @@ describe("natoAlphabet", () => {
       "Yankee",
       "Zulu",
     ]) {
-      expect(text).toContain(word);
+      expect(text, String(word)).toContain(word);
     }
   });
 
@@ -294,7 +294,7 @@ describe("voicePresetSection", () => {
     const section = voicePresetSection(VOICE_PRESET_NAMES) ?? "";
     expect(section.split(VOICE_PRESET_PRECEDENCE)).toHaveLength(2);
     for (const name of VOICE_PRESET_NAMES) {
-      expect(section).toContain(VOICE_PRESETS[name]);
+      expect(section, String(name)).toContain(VOICE_PRESETS[name]);
     }
   });
 

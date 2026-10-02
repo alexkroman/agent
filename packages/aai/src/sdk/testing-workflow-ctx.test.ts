@@ -9,6 +9,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { freezeDate } from "../host/_test-utils.ts";
 import { createWorkflowContext, WORKFLOW_CONTEXT_NOW } from "./testing-workflow-ctx.ts";
 import type { WorkflowContext } from "./workflow-ctx.ts";
 
@@ -85,11 +86,12 @@ describe("steps", () => {
 
 describe("sleeps", () => {
   test("are RECORDED rather than taken, so a schedule is assertable in milliseconds", async () => {
-    const before = Date.now();
+    const before = freezeDate();
     const ctx = createWorkflowContext();
     await ctx.sleep("review-window", 6 * 60 * 60 * 1000);
     // Not waited out — the whole reason a case can assert a six-hour schedule.
-    expect(Date.now() - before).toBeLessThan(1000);
+    // `Date` is frozen and timers are real, so a real wait would hang here.
+    expect(Date.now()).toBe(before);
     expect(ctx.slept).toEqual([
       { label: "review-window", until: 21_600_000, correlationId: undefined },
     ]);

@@ -28,11 +28,8 @@
  * @module testing-speech
  */
 
-import {
-  keylessSynthesizer,
-  publishSpeechSynthesizer,
-  type SpeechSynthesizer,
-} from "./step-speak.ts";
+import { recordingSlot } from "./_testing-slot.ts";
+import { keylessSynthesizer, publishSpeechSynthesizer } from "./step-speak.ts";
 
 /** One `stepSpeak` call, as {@link stubSpeech} records it. */
 export type StubSpeechCall = {
@@ -110,24 +107,23 @@ export type StubSpeech = {
  * @public
  */
 export function stubSpeech(options: StubSpeechOptions = {}): StubSpeech {
-  const calls: StubSpeechCall[] = [];
-  const synthesizer: SpeechSynthesizer = (request) => {
-    calls.push({
+  return recordingSlot(
+    publishSpeechSynthesizer,
+    (request): StubSpeechCall => ({
       text: request.text,
       apiKey: request.apiKey,
       voice: request.voice,
       language: request.language,
       sampleRate: request.sampleRate,
-    });
-    if (options.error) return Promise.reject(options.error);
-    // Even, always: PCM16 is two bytes a sample, and an odd length is a
-    // half-sample the encoder would frame into a file whose last sample is
-    // garbage.
-    const bytes = Math.max(0, Math.floor((options.pcmBytes ?? STUB_SPEECH_PCM_BYTES) / 2) * 2);
-    return Promise.resolve(new Uint8Array(bytes));
-  };
-  publishSpeechSynthesizer(
-    options.requireApiKey === true ? synthesizer : keylessSynthesizer(synthesizer),
+    }),
+    () => {
+      if (options.error) return Promise.reject(options.error);
+      // Even, always: PCM16 is two bytes a sample, and an odd length is a
+      // half-sample the encoder would frame into a file whose last sample is
+      // garbage.
+      const bytes = Math.max(0, Math.floor((options.pcmBytes ?? STUB_SPEECH_PCM_BYTES) / 2) * 2);
+      return Promise.resolve(new Uint8Array(bytes));
+    },
+    options.requireApiKey === true ? undefined : keylessSynthesizer,
   );
-  return { calls, restore: () => publishSpeechSynthesizer(undefined) };
 }

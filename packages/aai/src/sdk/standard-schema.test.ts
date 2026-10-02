@@ -63,15 +63,16 @@ describe("~standard validation / formatSchemaIssues", () => {
   // The recursion crosses a vendor boundary, so it may not trust the shape it
   // finds there: a throw from a formatter runs inside every failure path that
   // reports one, including the platform's error handler.
-  test("falls back to the parent message when `errors` is not branch-shaped", () => {
-    // `errors` is typed `unknown` precisely so these need no cast: the field is
-    // a vendor extension and its shape is not ours to promise.
-    for (const errors of ["not an array", [], [[]], [{ nope: 1 }], null]) {
+  // `errors` is typed `unknown` precisely so these need no cast: the field is
+  // a vendor extension and its shape is not ours to promise.
+  test.for(["not an array", [], [[]], [{ nope: 1 }], null])(
+    "falls back to the parent message when `errors` is not branch-shaped (%j)",
+    (errors) => {
       expect(formatSchemaIssues([{ message: "Invalid input", path: ["llm"], errors }])).toBe(
         "llm: Invalid input",
       );
-    }
-  });
+    },
+  );
 
   // A record's KEY fails one level down: zod reports `invalid_key` with a
   // generic message of its own and nests the key schema's issues — the custom
@@ -112,11 +113,12 @@ describe("~standard validation / formatSchemaIssues", () => {
     expect(formatted.match(/my-docs/g)).toHaveLength(1);
   });
 
-  test("falls back to the parent message when `issues` is not issue-shaped", () => {
-    for (const issues of ["not an array", [], [{ nope: 1 }], null, 7]) {
+  test.for(["not an array", [], [{ nope: 1 }], null, 7])(
+    "falls back to the parent message when `issues` is not issue-shaped (%j)",
+    (issues) => {
       expect(
         formatSchemaIssues([{ message: "Invalid key in record", path: ["docs"], issues }]),
       ).toBe("docs: Invalid key in record");
-    }
-  });
+    },
+  );
 });

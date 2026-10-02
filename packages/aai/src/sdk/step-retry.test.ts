@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { freezeDate } from "../host/_test-utils.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
 
 describe("isTransientStatus", () => {
@@ -23,10 +24,9 @@ describe("isTransientStatus", () => {
 
 describe("retryAfter", () => {
   test("reads delta-seconds", () => {
+    const now = freezeDate();
     const at = retryAfter(new Headers({ "Retry-After": "30" }));
-    const wait = (at?.getTime() ?? 0) - Date.now();
-    expect(wait).toBeGreaterThan(25_000);
-    expect(wait).toBeLessThanOrEqual(30_000);
+    expect(at?.getTime()).toBe(now + 30_000);
   });
 
   test("reads an HTTP date", () => {

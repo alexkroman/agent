@@ -17,6 +17,8 @@
  * RETURNS.
  */
 
+import { validatedBy } from "./_testing-schema-check.ts";
+import { scriptRouter } from "./_testing-script.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
 import type {
@@ -26,10 +28,8 @@ import type {
   DelegateToolCall,
   SpeakerDef,
 } from "./speaker.ts";
-import { formatSchemaIssues } from "./standard-schema.ts";
 import { publishStepDelegate } from "./step-delegate.ts";
 import { stripJsonFence } from "./step-generate-json.ts";
-import { isRecord } from "./utils.ts";
 
 /** One `ctx.delegate` call, as recorded by {@link stubDelegate}. */
 export interface StubDelegateCall {
@@ -142,8 +142,11 @@ export interface StubDelegate {
  */
 export function stubDelegate(script: StubDelegateScript): StubDelegate {
   const calls: StubDelegateCall[] = [];
-  const routes = routeTable(script);
-  const single = "reply" in script ? script.reply : undefined;
+  const router = scriptRouter<StubDelegateReply, StubDelegateCall>(
+    script,
+    "stubDelegate: a script is `{ reply }` (one route for every delegation) or `{ routes }` " +
+      "(keyed by subagent name), exactly one of the two",
+  );
 
   // `async`, and that is load-bearing rather than a style choice: it makes a
   // route that THROWS — which is how a spec scripts a subagent run that failed —
@@ -159,14 +162,14 @@ export function stubDelegate(script: StubDelegateScript): StubDelegate {
   const run = async (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult> => {
     const call: StubDelegateCall = { subagent, task: options.task, options };
     calls.push(call);
-    const route = routes ? routes[subagent.name] : single;
-    if (route === undefined) {
+    const reply = router.answer(subagent.name, call);
+    if (reply === undefined) {
       throw new Error(
         `stubDelegate: no route for subagent ${JSON.stringify(subagent.name)}. ` +
-          `Routed subagents: ${Object.keys(routes ?? {}).join(", ") || "(none)"}.`,
+          `Routed subagents: ${router.routed.join(", ") || "(none)"}.`,
       );
     }
-    return await envelope(subagent, typeof route === "function" ? route(call) : route);
+    return await envelope(subagent, reply);
   };
 
   return { delegate: run as DelegateFn, calls };
@@ -220,25 +223,6 @@ export function stubStepDelegate(script: StubDelegateScript): StubStepDelegate {
 }
 
 /**
- * The route table a script names, or `undefined` for a `{ reply }` script — and
- * a throw for anything that is neither, which is what a script in the bare
- * shape this used to take reaches when nothing type-checked it.
- */
-function routeTable(
-  script: StubDelegateScript,
-): Readonly<Record<string, StubDelegateRoute>> | undefined {
-  const given: unknown = script;
-  if (isRecord(given) && "reply" in given !== "routes" in given) {
-    return "routes" in script ? script.routes : undefined;
-  }
-  throw new Error(
-    "stubDelegate: a script is `{ reply }` (one route for every delegation) or `{ routes }` " +
-      "(keyed by subagent name), exactly one of the two",
-  );
-}
-
-/** The full {@link DelegateResult} a route's shorthand stands for. */
-/**
  * Parse the scripted text against the subagent's schema, when it declares one.
  *
  * A spec driving a schema-declaring subagent gets the same `object` the real
@@ -249,15 +233,16 @@ function routeTable(
  */
 async function typedObject(sub: SpeakerDef, text: string): Promise<{ object: unknown } | object> {
   if (!sub.schema) return {};
-  const parsed = safeJsonParse(stripJsonFence(text));
-  const result = await sub.schema["~standard"].validate(parsed);
-  if (result.issues) {
-    throw new Error(
-      `stubDelegate: the scripted reply for subagent ${JSON.stringify(sub.name)} does not match its schema: ${formatSchemaIssues(result.issues)}`,
-    );
-  }
-  return { object: result.value };
+  const object = await validatedBy(
+    sub.schema,
+    safeJsonParse(stripJsonFence(text)),
+    (issues) =>
+      `stubDelegate: the scripted reply for subagent ${JSON.stringify(sub.name)} does not match its schema: ${issues}`,
+  );
+  return { object };
 }
+
+/** The full {@link DelegateResult} a route's shorthand stands for. */
 
 async function envelope(sub: SpeakerDef, reply: StubDelegateReply): Promise<DelegateResult> {
   if (typeof reply === "string") {

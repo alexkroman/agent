@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { tool } from "./define.ts";
-import { publishStepMcp, stepMcp, stubStepMcp } from "./step-mcp.ts";
+import { publishStepMcp, type StepMcpFn, stepMcp, stubStepMcp } from "./step-mcp.ts";
 
 afterEach(() => publishStepMcp(undefined));
 
@@ -13,13 +13,14 @@ describe("stepMcp", () => {
   });
 
   test("a published connector is handed the record and the options", async () => {
-    const seen: unknown[] = [];
-    publishStepMcp(async (servers, options) => {
-      seen.push([servers, options]);
-      return { tools: {}, servers: [], close: async () => undefined };
-    });
+    const connector = vi.fn<StepMcpFn>(async () => ({
+      tools: {},
+      servers: [],
+      close: async () => undefined,
+    }));
+    publishStepMcp(connector);
     await stepMcp(SERVERS, { clientId: "c-1" });
-    expect(seen).toEqual([[SERVERS, { clientId: "c-1" }]]);
+    expect(connector.mock.calls).toEqual([[SERVERS, { clientId: "c-1" }]]);
   });
 
   test("stubStepMcp answers its tools, records each call, and restores", async () => {
