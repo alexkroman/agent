@@ -1,5 +1,14 @@
 # aai-evals
 
+## 0.2.7
+
+### Patch Changes
+
+- Updated dependencies [d66b0c3]
+- Updated dependencies [f7c51dc]
+  - @alexkroman1/aai@0.14.2
+  - @alexkroman1/aai-runtime@0.14.2
+
 ## 0.2.6
 
 ### Patch Changes
