@@ -143,11 +143,13 @@ describe("the publishing workflow is the one npm trusts", () => {
     );
     expect(steps).toContain("registry-url: https://registry.npmjs.org");
     for (const forbidden of ["NODE_AUTH_TOKEN", "NPM_TOKEN"]) {
-      expect(
-        steps,
-        `${forbidden} on the publish step leaves an empty _authToken in .npmrc, which ` +
-          "suppresses the OIDC exchange and masks the failure as an E404 on a PUT",
-      ).not.toContain(forbidden);
+      expect
+        .soft(
+          steps,
+          `${forbidden} on the publish step leaves an empty _authToken in .npmrc, which ` +
+            "suppresses the OIDC exchange and masks the failure as an E404 on a PUT",
+        )
+        .not.toContain(forbidden);
     }
   });
 

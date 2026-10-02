@@ -96,10 +96,10 @@ const code = spans.join("\n");
 describe("check:authoring-guide", () => {
   test("is wired into both runners", () => {
     for (const [file, source] of Object.entries(GATE_WIRING)) {
-      expect(source, `${file} did not resolve`).toBeTypeOf("string");
-      expect(source, `${file} does not run check:authoring-guide`).toContain(
-        "check:authoring-guide",
-      );
+      expect.soft(source, `${file} did not resolve`).toBeTypeOf("string");
+      expect
+        .soft(source, `${file} does not run check:authoring-guide`)
+        .toContain("check:authoring-guide");
     }
   });
 
@@ -138,9 +138,9 @@ describe("check:authoring-guide", () => {
     // The gate's central choice. If this ever failed, every capability would be
     // reported undocumented for a reason that has nothing to do with the guide.
     for (const name of ["agent", "tool", "sessionSlot", "workflow", "dialog", "procedure"]) {
-      expect(code, `${name} appears in no code span of the shipped guide`).toMatch(
-        new RegExp(`(^|[^A-Za-z0-9_$])${name}([^A-Za-z0-9_$]|$)`),
-      );
+      expect
+        .soft(code, `${name} appears in no code span of the shipped guide`)
+        .toMatch(new RegExp(`(^|[^A-Za-z0-9_$])${name}([^A-Za-z0-9_$]|$)`));
     }
   });
 
@@ -151,7 +151,7 @@ describe("check:authoring-guide", () => {
     // suite must not be what stops it reaching zero.
     const known = new Set(committedCapabilities());
     for (const id of ids) {
-      expect(known, `${id} is exempt but is not a committed capability`).toContain(id);
+      expect.soft(known, `${id} is exempt but is not a committed capability`).toContain(id);
     }
     // A reason, not a bare `true`. The block is the reasons, so its length is
     // the cheap proxy — a one-word entry cannot reach it.

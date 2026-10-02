@@ -72,8 +72,8 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:integration": "VITEST_PROFILE=integration VITEST_INCLUDE=src/**/*.integration.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=src/**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:integration": "vitest run -c ../../vitest.slow.config.ts --project integration",
+    "test:scenario": "vitest run -c ../../vitest.slow.config.ts --project scenario",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

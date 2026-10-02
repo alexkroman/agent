@@ -194,9 +194,9 @@ describe("the gate table and the CI job", () => {
     const declared = rootScripts();
     expect(declared.length, "no scripts parsed out of package.json").toBeGreaterThan(20);
     for (const gate of tableGates()) {
-      expect(declared, `${gate.script} is in the GATES table but not in package.json`).toContain(
-        gate.script,
-      );
+      expect
+        .soft(declared, `${gate.script} is in the GATES table but not in package.json`)
+        .toContain(gate.script);
     }
   });
 
@@ -207,7 +207,9 @@ describe("the gate table and the CI job", () => {
     // Measured 2026-10: 17 rows carry one.
     expect(fixes.length, "no `fix` fields parsed out of the GATES table").toBeGreaterThan(8);
     for (const fix of fixes) {
-      expect(rootScripts(), `a GATES row's fix \`${fix}\` is not in package.json`).toContain(fix);
+      expect
+        .soft(rootScripts(), `a GATES row's fix \`${fix}\` is not in package.json`)
+        .toContain(fix);
     }
     expect(rootCommand("fix"), "`pnpm fix` no longer runs check.mjs --fix").toContain(
       "scripts/check.mjs --fix",
@@ -229,11 +231,11 @@ describe("the gate table and the CI job", () => {
     const phases = new Set(tableGates().map((gate) => gate.phase));
     for (const name of gateSelectionsUsed()) {
       const resolved = table[name] ?? name.split(",");
-      expect(resolved.length, `--gates ${name} resolves to no phase`).toBeGreaterThan(0);
+      expect.soft(resolved.length, `--gates ${name} resolves to no phase`).toBeGreaterThan(0);
       for (const phase of resolved) {
-        expect(phases, `--gates ${name} names phase "${phase}", which no row declares`).toContain(
-          phase,
-        );
+        expect
+          .soft(phases, `--gates ${name} names phase "${phase}", which no row declares`)
+          .toContain(phase);
       }
     }
   });
@@ -243,10 +245,12 @@ describe("the gate table and the CI job", () => {
     // fine (they are stripped above); an invocation is the drift coming back.
     const invoked = pnpmInvocations();
     for (const gate of tableGates()) {
-      expect(
-        invoked,
-        `check.yml runs ${gate.script} by hand — it is a row of the GATES table, so it is already run by \`--gates ci\``,
-      ).not.toContain(gate.script);
+      expect
+        .soft(
+          invoked,
+          `check.yml runs ${gate.script} by hand — it is a row of the GATES table, so it is already run by \`--gates ci\``,
+        )
+        .not.toContain(gate.script);
     }
   });
 
@@ -265,10 +269,12 @@ describe("the gate table and the CI job", () => {
     for (const gate of tableGates()) {
       const command = rootCommand(gate.script);
       const byCommand = command !== "" && commands.includes(command);
-      expect(
-        enforced.has(gate.phase) || byCommand,
-        `${gate.script} (phase ${gate.phase}) is run by nothing in check.yml — CI would not enforce it`,
-      ).toBe(true);
+      expect
+        .soft(
+          enforced.has(gate.phase) || byCommand,
+          `${gate.script} (phase ${gate.phase}) is run by nothing in check.yml — CI would not enforce it`,
+        )
+        .toBe(true);
     }
   });
 
@@ -303,12 +309,14 @@ describe("the gate table and the CI job", () => {
       ["check:api-report", "check:api-contracts"],
       ["check:api-contracts", "check:authoring-guide"],
     ] as const) {
-      expect(order, `${first} is gone from the table`).toContain(first);
-      expect(order, `${second} is gone from the table`).toContain(second);
-      expect(
-        order.indexOf(first),
-        `${first} must be declared before ${second}: the second reads what the first writes`,
-      ).toBeLessThan(order.indexOf(second));
+      expect.soft(order, `${first} is gone from the table`).toContain(first);
+      expect.soft(order, `${second} is gone from the table`).toContain(second);
+      expect
+        .soft(
+          order.indexOf(first),
+          `${first} must be declared before ${second}: the second reads what the first writes`,
+        )
+        .toBeLessThan(order.indexOf(second));
     }
     // And nothing between the table and the run may reorder them.
     expect(checkScript, "the phase filter no longer preserves source order").toMatch(
@@ -337,9 +345,9 @@ describe("the gate table and the CI job", () => {
     const used = flagsUsed();
     expect(used.length, "check.yml passes no flags to scripts/check.mjs").toBeGreaterThan(0);
     for (const flag of used) {
-      expect(options, `scripts/check.mjs does not accept --${flag}`).toMatch(
-        new RegExp(`"?${flag}"?:`),
-      );
+      expect
+        .soft(options, `scripts/check.mjs does not accept --${flag}`)
+        .toMatch(new RegExp(`"?${flag}"?:`));
     }
   });
 });
@@ -357,10 +365,12 @@ describe("the workflow's own pnpm invocations", () => {
     expect(invoked.length, "no pnpm script invocations parsed out of check.yml").toBeGreaterThan(0);
     const declared = rootScripts();
     for (const script of invoked) {
-      expect(
-        declared,
-        `check.yml runs \`pnpm run ${script}\`, which package.json does not declare`,
-      ).toContain(script);
+      expect
+        .soft(
+          declared,
+          `check.yml runs \`pnpm run ${script}\`, which package.json does not declare`,
+        )
+        .toContain(script);
     }
   });
 });
@@ -414,17 +424,18 @@ describe("the lint job's turbo tasks", () => {
     );
     expect(elsewhere.length, "no CI_ELSEWHERE keys parsed").toBeGreaterThan(2);
     for (const task of elsewhere) {
-      expect(
-        commands,
-        `${task} is excluded from \`--turbo ci\` as run elsewhere in CI, but check.yml never runs it`,
-      ).toContain(task);
+      expect
+        .soft(
+          commands,
+          `${task} is excluded from \`--turbo ci\` as run elsewhere in CI, but check.yml never runs it`,
+        )
+        .toContain(task);
     }
     const invoked = pnpmInvocations();
     for (const task of full.filter((t) => !elsewhere.includes(t))) {
-      expect(
-        invoked,
-        `check.yml runs ${task} by hand — it is already in \`--turbo ci\``,
-      ).not.toContain(task);
+      expect
+        .soft(invoked, `check.yml runs ${task} by hand — it is already in \`--turbo ci\``)
+        .not.toContain(task);
     }
   });
 });

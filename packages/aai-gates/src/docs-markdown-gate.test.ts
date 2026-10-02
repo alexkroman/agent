@@ -148,10 +148,12 @@ describe("the committed markdown API reference", () => {
     // file TypeDoc read rather than the specifier a consumer imports. A reader
     // looking for `@alexkroman1/aai/ffmpeg` has no reason to guess `host/`.
     for (const subpath of ["ffmpeg", "workflow-api", "tts", "stt", "llm", "s2s"]) {
-      expect(
-        committedPaths.some((path) => path.endsWith(`/${subpath}.md`)),
-        `no committed file for the ${subpath} subpath`,
-      ).toBe(true);
+      expect
+        .soft(
+          committedPaths.some((path) => path.endsWith(`/${subpath}.md`)),
+          `no committed file for the ${subpath} subpath`,
+        )
+        .toBe(true);
     }
     expect(committedPaths.some((path) => path.includes("-barrel.md"))).toBe(false);
   });
@@ -182,10 +184,12 @@ describe("the markdown config", () => {
     expect(documented.length).toBeGreaterThanOrEqual(2);
     for (const path of documented) {
       const pkg = path.split("/")[1];
-      expect(
-        committedPaths.some((committedPath) => committedPath.includes(`/${pkg}`)),
-        `${pkg} has a typedoc.json but no committed markdown under docs/api/`,
-      ).toBe(true);
+      expect
+        .soft(
+          committedPaths.some((committedPath) => committedPath.includes(`/${pkg}`)),
+          `${pkg} has a typedoc.json but no committed markdown under docs/api/`,
+        )
+        .toBe(true);
     }
   });
 
@@ -254,8 +258,8 @@ describe("the gate is enforced", () => {
     // Same reasoning as every other gate spec here: living only in check.mjs
     // means enforcement by the pre-push hook alone, which `--no-verify` skips.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
-      expect(text, `${path} not found`).toBeTypeOf("string");
-      expect(text, `${path} no longer references check:docs-md`).toContain("check:docs-md");
+      expect.soft(text, `${path} not found`).toBeTypeOf("string");
+      expect.soft(text, `${path} no longer references check:docs-md`).toContain("check:docs-md");
     }
   });
 

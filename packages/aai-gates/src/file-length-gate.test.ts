@@ -185,7 +185,7 @@ describe("check-file-length", () => {
     // Matched with the quotes, so the prose in the gate's own comment (which
     // names the broken glob in backticks) cannot satisfy these.
     for (const pattern of ['"scripts/*.mjs"', '"scripts/*.ts"']) {
-      expect(script, `check-file-length.mjs must measure ${pattern}`).toContain(pattern);
+      expect.soft(script, `check-file-length.mjs must measure ${pattern}`).toContain(pattern);
     }
     // The nested globs stay: neither shape subsumes the other.
     expect(script).toContain('"scripts/**/*.mjs"');
@@ -217,17 +217,21 @@ describe("check-file-length", () => {
       const matched = corpus.filter((file) => pattern.test(file));
       const emptyReason = EMPTY_BY_CONSTRUCTION[spec];
       if (emptyReason === undefined) {
-        expect(
-          matched.length,
-          `the gate scans "${spec}", which matches no file in the tree — either the ` +
-            "glob is wrong or it belongs in EMPTY_BY_CONSTRUCTION with a reason",
-        ).toBeGreaterThan(0);
+        expect
+          .soft(
+            matched.length,
+            `the gate scans "${spec}", which matches no file in the tree — either the ` +
+              "glob is wrong or it belongs in EMPTY_BY_CONSTRUCTION with a reason",
+          )
+          .toBeGreaterThan(0);
       } else {
-        expect(
-          matched.length,
-          `"${spec}" is recorded as empty by construction (${emptyReason}) but now ` +
-            `matches ${matched.length} file(s) — drop the entry, the glob is live`,
-        ).toBe(0);
+        expect
+          .soft(
+            matched.length,
+            `"${spec}" is recorded as empty by construction (${emptyReason}) but now ` +
+              `matches ${matched.length} file(s) — drop the entry, the glob is live`,
+          )
+          .toBe(0);
       }
     }
   });
@@ -288,8 +292,10 @@ describe("check-file-length", () => {
     // --no-verify` skipped
     // them entirely.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
-      expect(text, `${path} not found`).toBeTypeOf("string");
-      expect(text, `${path} no longer references check:file-length`).toContain("check:file-length");
+      expect.soft(text, `${path} not found`).toBeTypeOf("string");
+      expect
+        .soft(text, `${path} no longer references check:file-length`)
+        .toContain("check:file-length");
     }
   });
 });

@@ -342,8 +342,8 @@ describe("guard-invariants gate", () => {
       "no line rules parsed — has the rule shape changed?",
     ).toBeGreaterThanOrEqual(7);
     for (const { id, key, re } of shippedLineRules) {
-      expect(key, `rule ${id} parsed with an empty key`).not.toBe("");
-      expect(() => new RegExp(re), `rule ${id}'s pattern is not a valid regex`).not.toThrow();
+      expect.soft(key, `rule ${id} parsed with an empty key`).not.toBe("");
+      expect.soft(() => new RegExp(re), `rule ${id}'s pattern is not a valid regex`).not.toThrow();
     }
   });
 
@@ -354,10 +354,9 @@ describe("guard-invariants gate", () => {
     // as a line rule with a dead pattern.
     expect(shippedRules.length, "no rules parsed").toBeGreaterThanOrEqual(20);
     for (const rule of shippedRules) {
-      expect(
-        sampleFor(rule),
-        `rule ${rule.id} (${rule.key}) has no positive/negative samples`,
-      ).toBeTypeOf("object");
+      expect
+        .soft(sampleFor(rule), `rule ${rule.id} (${rule.key}) has no positive/negative samples`)
+        .toBeTypeOf("object");
     }
   });
 
@@ -373,7 +372,9 @@ describe("guard-invariants gate", () => {
     const keys = new Set(shippedRules.map((r) => r.key));
     expect(keys.size, "no rules parsed").toBeGreaterThanOrEqual(20);
     for (const key of Object.keys(SAMPLES)) {
-      expect(keys, `SAMPLES has "${key}", which is not a shipped rule — retired?`).toContain(key);
+      expect
+        .soft(keys, `SAMPLES has "${key}", which is not a shipped rule — retired?`)
+        .toContain(key);
     }
   });
 
@@ -381,10 +382,12 @@ describe("guard-invariants gate", () => {
     const samples = sampleFor(rule);
     if (samples === undefined) expect.fail(`rule ${rule.key} has no samples`);
     for (const line of samples.matches) {
-      expect(
-        new RegExp(rule.re).test(line),
-        `rule ${rule.key} does NOT match a line it must catch — the pattern is dead:\n  ${line}`,
-      ).toBe(true);
+      expect
+        .soft(
+          new RegExp(rule.re).test(line),
+          `rule ${rule.key} does NOT match a line it must catch — the pattern is dead:\n  ${line}`,
+        )
+        .toBe(true);
     }
   });
 
@@ -392,10 +395,12 @@ describe("guard-invariants gate", () => {
     const samples = sampleFor(rule);
     if (samples === undefined) expect.fail(`rule ${rule.key} has no samples`);
     for (const line of samples.ignores) {
-      expect(
-        new RegExp(rule.re).test(line),
-        `rule ${rule.key} matches a line it must NOT flag:\n  ${line}`,
-      ).toBe(false);
+      expect
+        .soft(
+          new RegExp(rule.re).test(line),
+          `rule ${rule.key} matches a line it must NOT flag:\n  ${line}`,
+        )
+        .toBe(false);
     }
   });
 
@@ -411,7 +416,7 @@ describe("guard-invariants gate", () => {
     expect(shippedLineRules.length, "no line rules parsed").toBeGreaterThanOrEqual(7);
     for (const { id, re } of shippedLineRules) {
       for (const [construct, why] of ERE_UNSUPPORTED) {
-        expect(re, `rule ${id} uses ${construct} — ${why}`).not.toContain(construct);
+        expect.soft(re, `rule ${id} uses ${construct} — ${why}`).not.toContain(construct);
       }
     }
   });
@@ -451,7 +456,7 @@ describe("guard-invariants gate", () => {
     ).toBeGreaterThanOrEqual(3);
     expect(repoFiles.size, "no package sources discovered").toBeGreaterThan(100);
     for (const { id, path } of literal) {
-      expect(repoFiles, `rule ${id} scans "${path}", which does not exist`).toContain(path);
+      expect.soft(repoFiles, `rule ${id} scans "${path}", which does not exist`).toContain(path);
     }
   });
 
@@ -459,7 +464,7 @@ describe("guard-invariants gate", () => {
     const keys = new Set(shippedRules.map((r) => r.key));
     for (const key of Object.keys(baseline)) {
       if (key.startsWith("_")) continue;
-      expect(keys, `the baseline names "${key}", which is not a shipped rule`).toContain(key);
+      expect.soft(keys, `the baseline names "${key}", which is not a shipped rule`).toContain(key);
     }
   });
 
@@ -485,15 +490,17 @@ describe("guard-invariants gate", () => {
       "no node rules parsed — has the rule shape changed?",
     ).toBeGreaterThanOrEqual(6);
     for (const rule of shippedNodeRules) {
-      expect(rule.key, `rule ${rule.id} parsed with an empty key`).not.toBe("");
-      expect(rule.match, `rule ${rule.id} has no match function`).toBeTypeOf("function");
-      expect(rule, `rule ${rule.id} carries an "re", which a node rule ignores`).not.toHaveProperty(
-        "re",
-      );
-      expect(
-        rule,
-        `rule ${rule.id} carries "skipComments", which a node rule ignores — a comment is not a node`,
-      ).not.toHaveProperty("skipComments");
+      expect.soft(rule.key, `rule ${rule.id} parsed with an empty key`).not.toBe("");
+      expect.soft(rule.match, `rule ${rule.id} has no match function`).toBeTypeOf("function");
+      expect
+        .soft(rule, `rule ${rule.id} carries an "re", which a node rule ignores`)
+        .not.toHaveProperty("re");
+      expect
+        .soft(
+          rule,
+          `rule ${rule.id} carries "skipComments", which a node rule ignores — a comment is not a node`,
+        )
+        .not.toHaveProperty("skipComments");
     }
   });
 
@@ -510,10 +517,12 @@ describe("guard-invariants gate", () => {
     const samples = sampleFor(rule);
     if (samples === undefined) expect.fail(`rule ${rule.key} has no samples`);
     for (const source of samples.matches) {
-      expect(
-        astScan?.matchesIn(rule, "sample.ts", source).length ?? 0,
-        `rule ${rule.key} does NOT match source it must catch — the rule is dead:\n${source}`,
-      ).toBeGreaterThan(0);
+      expect
+        .soft(
+          astScan?.matchesIn(rule, "sample.ts", source).length ?? 0,
+          `rule ${rule.key} does NOT match source it must catch — the rule is dead:\n${source}`,
+        )
+        .toBeGreaterThan(0);
     }
   });
 
@@ -521,10 +530,12 @@ describe("guard-invariants gate", () => {
     const samples = sampleFor(rule);
     if (samples === undefined) expect.fail(`rule ${rule.key} has no samples`);
     for (const source of samples.ignores) {
-      expect(
-        astScan?.matchesIn(rule, "sample.ts", source) ?? [],
-        `rule ${rule.key} matches source it must NOT flag:\n${source}`,
-      ).toEqual([]);
+      expect
+        .soft(
+          astScan?.matchesIn(rule, "sample.ts", source) ?? [],
+          `rule ${rule.key} matches source it must NOT flag:\n${source}`,
+        )
+        .toEqual([]);
     }
   });
 
@@ -541,8 +552,10 @@ describe("guard-invariants gate", () => {
     // the local check script, which CI never invokes, so `git push --no-verify`
     // skipped them.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
-      expect(text, `${path} not found`).toBeTypeOf("string");
-      expect(text, `${path} no longer references check:invariants`).toContain("check:invariants");
+      expect.soft(text, `${path} not found`).toBeTypeOf("string");
+      expect
+        .soft(text, `${path} no longer references check:invariants`)
+        .toContain("check:invariants");
     }
   });
 });

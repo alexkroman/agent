@@ -155,7 +155,7 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=src/**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:scenario": "vitest run -c ../../vitest.slow.config.ts --project scenario",
     "typecheck": "tsc --noEmit && tsc -p src/sdk/tsconfig.json"
   },
   "dependencies": {

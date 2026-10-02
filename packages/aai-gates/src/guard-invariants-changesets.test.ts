@@ -227,7 +227,7 @@ describe("guard-invariants rule 20 (changeset package names)", () => {
         const named = [...new Set(table.flatMap(({ name, carriers }) => [name, ...carriers]))];
         expect(named.length, "SHIPS_VIA resolved to nothing").toBeGreaterThanOrEqual(6);
         for (const name of named) {
-          expect(known, `${name} is no longer a workspace package`).toContain(name);
+          expect.soft(known, `${name} is no longer a workspace package`).toContain(name);
         }
       });
     });

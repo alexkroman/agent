@@ -111,10 +111,12 @@ describe("the ci gate job", () => {
     const others = jobNames().filter((name) => name !== "ci");
     expect(others.length, "no non-gate jobs parsed").toBeGreaterThanOrEqual(5);
     for (const job of others) {
-      expect(
-        needsOf("ci"),
-        `the ci gate does not depend on "${job}", so that job's failure cannot fail the gate`,
-      ).toContain(job);
+      expect
+        .soft(
+          needsOf("ci"),
+          `the ci gate does not depend on "${job}", so that job's failure cannot fail the gate`,
+        )
+        .toContain(job);
     }
   });
 
@@ -124,7 +126,9 @@ describe("the ci gate job", () => {
     // second route to the same green-over-a-failure outcome.
     const body = jobBody("ci");
     for (const job of needsOf("ci")) {
-      expect(body, `the ci gate never reads needs.${job}.result`).toContain(`needs.${job}.result`);
+      expect
+        .soft(body, `the ci gate never reads needs.${job}.result`)
+        .toContain(`needs.${job}.result`);
     }
   });
 

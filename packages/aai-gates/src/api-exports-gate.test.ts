@@ -47,9 +47,9 @@ describe("API-EXPORTS.json", () => {
     expect(specifiers).toContain("@alexkroman1/aai-ui");
     expect(specifiers).toContain("@alexkroman1/aai-cli/typecheck");
     for (const [specifier, names] of Object.entries(surface)) {
-      expect(names.length, `${specifier} exports nothing`).toBeGreaterThan(0);
-      expect(names, `${specifier} is unsorted`).toEqual([...names].sort(byCodeUnit));
-      expect(new Set(names).size, `${specifier} repeats a name`).toBe(names.length);
+      expect.soft(names.length, `${specifier} exports nothing`).toBeGreaterThan(0);
+      expect.soft(names, `${specifier} is unsorted`).toEqual([...names].sort(byCodeUnit));
+      expect.soft(new Set(names).size, `${specifier} repeats a name`).toBe(names.length);
     }
   });
 
@@ -71,8 +71,8 @@ describe("API-EXPORTS.json", () => {
     // …and for `GenerateFn` and `ToolDef`, which the fakes added in epoch 9 take
     // and return.
     for (const forgotten of ["GenerateFn", "ToolDef"]) {
-      expect(surface["@alexkroman1/aai"]).toContain(forgotten);
-      expect(surface["@alexkroman1/aai/testing"]).not.toContain(forgotten);
+      expect.soft(surface["@alexkroman1/aai"]).toContain(forgotten);
+      expect.soft(surface["@alexkroman1/aai/testing"]).not.toContain(forgotten);
     }
     // `WorkflowRunSnapshot` is the same shape one subpath over: `/testing`'s
     // `createRunSnapshot` returns it, and it is EXPORTED from

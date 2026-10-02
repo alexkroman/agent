@@ -93,7 +93,7 @@ describe("check-test-assertions parser", () => {
       "assert(x)",
       "assert.equal(a, b)",
     ]) {
-      expect(offenders(`test("t", async () => { ${form}; });`), form).toEqual([]);
+      expect.soft(offenders(`test("t", async () => { ${form}; });`), form).toEqual([]);
     }
   });
 
@@ -101,7 +101,7 @@ describe("check-test-assertions parser", () => {
     // `unexpected`/`expected` are ordinary identifiers in this repo's specs;
     // counting them would make the gate green on a body that asserts nothing.
     for (const form of ["const expected = 1;", "unexpectedCalls.push(x)", "const e = expect;"]) {
-      expect(offenders(`test("t", () => { ${form}; });`), form).toEqual(["t"]);
+      expect.soft(offenders(`test("t", () => { ${form}; });`), form).toEqual(["t"]);
     }
   });
 
@@ -120,7 +120,7 @@ describe("check-test-assertions parser", () => {
       'test.concurrent.for([1])("t", async () => {})',
       'test.each`a`("t", () => {})',
     ]) {
-      expect(offenders(form), form).toEqual(["t"]);
+      expect.soft(offenders(form), form).toEqual(["t"]);
     }
   });
 
@@ -191,9 +191,9 @@ describe("check-test-assertions parser", () => {
     // Declared is not enforced. Both comparisons must exist, and both must exit
     // non-zero — a floor that only warns is a floor that is not a floor.
     for (const name of ["MIN_TEST_FILES", "MIN_TESTS_SCANNED"]) {
-      expect(script, `${name} is declared but never compared against`).toMatch(
-        new RegExp(`<\\s*${name}`),
-      );
+      expect
+        .soft(script, `${name} is declared but never compared against`)
+        .toMatch(new RegExp(`<\\s*${name}`));
     }
     expect(script, "a floor breach no longer fails the process").toContain("below the floor of");
   });
@@ -203,10 +203,10 @@ describe("check-test-assertions parser", () => {
     // the local check script, which CI never invokes, so `git push --no-verify`
     // skipped them.
     for (const [path, text] of Object.entries(GATE_WIRING)) {
-      expect(text, `${path} not found`).toBeTypeOf("string");
-      expect(text, `${path} no longer references check:test-assertions`).toContain(
-        "check:test-assertions",
-      );
+      expect.soft(text, `${path} not found`).toBeTypeOf("string");
+      expect
+        .soft(text, `${path} no longer references check:test-assertions`)
+        .toContain("check:test-assertions");
     }
   });
 

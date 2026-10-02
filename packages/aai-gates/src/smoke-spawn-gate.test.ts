@@ -20,8 +20,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { sole } from "./_gate-support.ts";
 
-type Attempt = { url: string; init: RequestInit | undefined };
-
 const smoke = sole(
   import.meta.glob<{
     smokeSlug: (random?: () => string) => string;
@@ -42,25 +40,13 @@ const smoke = sole(
 );
 
 /**
- * A fake `fetch` that records what it was asked for.
- *
- * A typed seam rather than a cast per test, for the reason the spec this
- * replaced gave: `typeof fetch` is satisfiable by an ordinary arrow under
- * contextual typing, and a cast stops reporting the moment the thing it stands
- * in for changes shape. The recording is what lets a test assert the script
- * BROKERS rather than merely pings, and that it cleans up.
+ * A fake `fetch`: a `vi.fn` typed as `fetch`, so a test asserts what it was
+ * asked for (`mock.calls`) — that the script BROKERS rather than merely pings,
+ * and that it cleans up — and a change to `fetch`'s shape still reports here
+ * instead of under a cast.
  */
-function fakeFetch(handler: (url: string, init: RequestInit | undefined) => Response): {
-  fetchImpl: typeof fetch;
-  calls: Attempt[];
-} {
-  const calls: Attempt[] = [];
-  const fetchImpl: typeof fetch = async (input, init) => {
-    calls.push({ url: String(input), init });
-    return handler(String(input), init);
-  };
-  return { fetchImpl, calls };
-}
+const fakeFetch = (handler: (url: string, init: RequestInit | undefined) => Response) =>
+  vi.fn<typeof fetch>(async (input, init) => handler(String(input), init));
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -123,7 +109,7 @@ describe("the agent it deploys", () => {
 
 describe("what counts as a spawn", () => {
   test("a brokered session URL, and nothing less", async () => {
-    const { fetchImpl } = fakeFetch(() => json({ sessionUrl: "wss://sandbox/websocket" }));
+    const fetchImpl = fakeFetch(() => json({ sessionUrl: "wss://sandbox/websocket" }));
     const result = await smoke?.brokerSandbox({
       base: "https://x",
       slug: "ci-smoke-a1",
@@ -137,7 +123,7 @@ describe("what counts as a spawn", () => {
     // The handler degrades to `{ sessionUrl }` when the guest cannot answer, so
     // a 200 is cheap; the session URL is what proves a sandbox was resolved.
     // Accepting the bare 200 would pass against a platform that spawns nothing.
-    const { fetchImpl } = fakeFetch(() => json({ name: "ci-smoke" }));
+    const fetchImpl = fakeFetch(() => json({ name: "ci-smoke" }));
     const now = steppingClock(5000);
     const result = await smoke?.brokerSandbox({
       base: "https://x",
@@ -158,7 +144,7 @@ describe("what counts as a spawn", () => {
     // healthy deploy — the failure the waiter deadlines this replaced kept
     // producing.
     let attempt = 0;
-    const { fetchImpl } = fakeFetch(() =>
+    const fetchImpl = fakeFetch(() =>
       ++attempt < 3 ? new Response("booting", { status: 503 }) : json({ sessionUrl: "wss://s" }),
     );
     const result = await smoke?.brokerSandbox({
@@ -171,7 +157,7 @@ describe("what counts as a spawn", () => {
   });
 
   test("it gives up at the deadline rather than polling forever", async () => {
-    const { fetchImpl } = fakeFetch(() => new Response("no", { status: 500 }));
+    const fetchImpl = fakeFetch(() => new Response("no", { status: 500 }));
     const now = steppingClock(30_000);
     const result = await smoke?.brokerSandbox({
       base: "https://x",
@@ -192,7 +178,7 @@ describe("it cleans up after itself", () => {
     // A `finally`, not a success-path call: a leaked agent is a row, a bundle
     // and a slug in production, and the run that leaks one is exactly the run
     // that failed.
-    const { fetchImpl, calls } = fakeFetch((url) =>
+    const fetchImpl = fakeFetch((url) =>
       url.endsWith("/deploy") ? json({ slug: "ci-smoke-a1" }) : new Response("no", { status: 500 }),
     );
     vi.stubGlobal("fetch", fetchImpl);
@@ -204,6 +190,6 @@ describe("it cleans up after itself", () => {
       AAI_API_KEY: "k",
     });
     expect(code).toBe(1);
-    expect(calls.filter((call) => call.init?.method === "DELETE")).toHaveLength(1);
+    expect(fetchImpl.mock.calls.filter(([, init]) => init?.method === "DELETE")).toHaveLength(1);
   });
 });

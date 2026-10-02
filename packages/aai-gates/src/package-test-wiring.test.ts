@@ -80,11 +80,13 @@ describe("per-package test wiring", () => {
 
   test.each(manifests)("$dir declares every fan-out script", ({ source }) => {
     for (const [script, door] of REQUIRED_SCRIPTS) {
-      expect(
-        declares(source, script),
-        `declares no "${script}" script, so ${door} SKIPS this package — silently, ` +
-          "with the same output as a package that passed",
-      ).toBe(true);
+      expect
+        .soft(
+          declares(source, script),
+          `declares no "${script}" script, so ${door} SKIPS this package — silently, ` +
+            "with the same output as a package that passed",
+        )
+        .toBe(true);
     }
   });
 
@@ -97,9 +99,9 @@ describe("per-package test wiring", () => {
     expect(found, "declares no coverage `thresholds`, so its floors are unenforced").not.toBeNull();
     const body = found?.[1] ?? "";
     for (const metric of METRICS) {
-      expect(body, `the coverage thresholds name no \`${metric}\` floor`).toMatch(
-        new RegExp(`${metric}:\\s*\\d`),
-      );
+      expect
+        .soft(body, `the coverage thresholds name no \`${metric}\` floor`)
+        .toMatch(new RegExp(`${metric}:\\s*\\d`));
     }
   });
 });

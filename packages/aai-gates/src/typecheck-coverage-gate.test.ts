@@ -115,7 +115,7 @@ describe("typecheck coverage", () => {
     expect(rootConfigsPresent.length).toBeGreaterThanOrEqual(10);
     expect(layoutGate).toBeTypeOf("string");
     for (const [pkg, text] of Object.entries(packageTsconfigs)) {
-      expect(includeEntries(text), `packages/${pkg} has no include array`).not.toEqual([]);
+      expect.soft(includeEntries(text), `packages/${pkg} has no include array`).not.toEqual([]);
     }
   });
 
@@ -124,7 +124,7 @@ describe("typecheck coverage", () => {
     // the layout scope starts exempting a fourth root config, this list has to
     // learn about it or the new one becomes the next unchecked file.
     for (const name of ROOT_CONFIGS) {
-      expect(layoutGate ?? "").toContain(`"${name}"`);
+      expect.soft(layoutGate ?? "").toContain(`"${name}"`);
     }
     const declared = /ROOT_CONFIGS = new Set\(\[([^\]]*)\]\)/.exec(layoutGate ?? "")?.[1] ?? "";
     expect([...declared.matchAll(/"([^"]+)"/g)].map((m) => m[1])).toEqual(ROOT_CONFIGS);
@@ -224,9 +224,9 @@ describe("typecheck coverage", () => {
     ).map((file) => file.split("/").pop() ?? file);
     expect(shipped, "the scaffold glob matched no script file").toContain("vitest.config.ts");
     for (const name of shipped) {
-      expect(gate, `check-template-types.mjs does not check scaffold/${name}`).toContain(
-        `"${name}"`,
-      );
+      expect
+        .soft(gate, `check-template-types.mjs does not check scaffold/${name}`)
+        .toContain(`"${name}"`);
     }
   });
 });

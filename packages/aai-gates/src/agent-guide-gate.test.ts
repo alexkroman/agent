@@ -85,8 +85,8 @@ const END = "<!-- END GENERATED aai subpaths -->";
 describe("check:agent-guide", () => {
   test("is wired into both runners", () => {
     for (const [file, source] of Object.entries(GATE_WIRING)) {
-      expect(source, `${file} did not resolve`).toBeTypeOf("string");
-      expect(source, `${file} does not run check:agent-guide`).toContain("check:agent-guide");
+      expect.soft(source, `${file} did not resolve`).toBeTypeOf("string");
+      expect.soft(source, `${file} does not run check:agent-guide`).toContain("check:agent-guide");
     }
   });
 
@@ -95,16 +95,18 @@ describe("check:agent-guide", () => {
     expect(names.length).toBeGreaterThanOrEqual(5);
     expect(Object.keys(topicCopies).sort(byCodeUnit)).toEqual(names);
     for (const name of names) {
-      expect(bodyOf(topicCopies[name] ?? ""), `agent-guide/${name} copy is stale`).toBe(
-        topics[name],
-      );
+      expect
+        .soft(bodyOf(topicCopies[name] ?? ""), `agent-guide/${name} copy is stale`)
+        .toBe(topics[name]);
     }
     expect(bodyOf(coreCopy), "AGENT_GUIDE.md is stale").toBe(core);
   });
 
   test("the core's routing table names every topic file", () => {
     for (const name of Object.keys(topics)) {
-      expect(core, `the core never routes to agent-guide/${name}`).toContain(`agent-guide/${name}`);
+      expect
+        .soft(core, `the core never routes to agent-guide/${name}`)
+        .toContain(`agent-guide/${name}`);
     }
   });
 
@@ -113,8 +115,8 @@ describe("check:agent-guide", () => {
       ["scaffold/CLAUDE.md", core],
       ["skills/aai/SKILL.md", skill],
     ] as const) {
-      expect(text, `${file} lost its BEGIN marker`).toContain(BEGIN);
-      expect(text, `${file} lost its END marker`).toContain(END);
+      expect.soft(text, `${file} lost its BEGIN marker`).toContain(BEGIN);
+      expect.soft(text, `${file} lost its END marker`).toContain(END);
     }
     // The bug this replaced: a hand-kept list naming a subpath that was gone.
     expect(skill).not.toContain("`/runtime`");
@@ -141,9 +143,9 @@ describe("check:agent-guide", () => {
     expect(coreBudget).toBeLessThan(topicBudget);
     expect(core.length).toBeLessThanOrEqual(coreBudget);
     for (const [name, text] of Object.entries(topics)) {
-      expect(text.length, `agent-guide/${name} is over TOPIC_BUDGET`).toBeLessThanOrEqual(
-        topicBudget,
-      );
+      expect
+        .soft(text.length, `agent-guide/${name} is over TOPIC_BUDGET`)
+        .toBeLessThanOrEqual(topicBudget);
     }
   });
 });

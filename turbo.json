@@ -207,17 +207,15 @@
     // `vitest.slow.config.ts`). Everything that needs a real resource is
     // `check:scenario` below, which is where the env declarations moved with it.
     //
-    // VITEST_PROFILE/VITEST_INCLUDE are declared even though each package's script
-    // sets them inline: a variable that selects what a task DOES belongs in the
-    // hash, so an override from the command line cannot share a cache entry with
-    // the default run. That is the rule `AAI_TEST_PM` and `VITEST_POOL` are in
-    // `env` for.
+    // The tier is a vitest PROJECT the package script names (`--project
+    // integration`), so what the task runs lives in the hashed package.json, not
+    // in an environment variable. VITEST_POOL is the one variable
+    // `vitest.slow.config.ts` still reads, and it is in `env` because a
+    // variable that selects what a task DOES belongs in the hash — the rule
+    // `AAI_TEST_PM` is in `env` for.
     "check:integration": {
       "dependsOn": ["build"],
       "env": [
-        "VITEST_PROFILE",
-        "VITEST_INCLUDE",
-        "VITEST_SETUP",
         "VITEST_POOL",
         // `pipeline-reference.integration.test.ts` SKIPS without a reference
         // stack and this turns that skip into a hard failure. Same shape and
@@ -302,9 +300,6 @@
         // variable and a flag that silently does nothing is worse than none.
         "AAI_REQUIRE_MODAL",
         "AAI_FAULT_PROFILE",
-        "VITEST_PROFILE",
-        "VITEST_INCLUDE",
-        "VITEST_SETUP",
         "VITEST_POOL"
       ],
       "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "../../vitest.shared.ts"]
@@ -348,18 +343,7 @@
         "AAI_FAULT_PROFILE",
         "AAI_REQUIRE_REGISTRY",
         "AAI_REQUIRE_BROWSER",
-        "VITEST_POOL",
-        // `aai-cli`'s `test:e2e` sets it (`VITEST_SETUP=./_test-setup.ts`), and
-        // `vitest.slow.config.ts` reads it to pick `setupFiles` — the file that
-        // points AAI_CONFIG_DIR away from the developer's real
-        // `~/.config/aai/config.json`. Its three siblings were declared and this
-        // one was not, on all four tasks sharing that config. Not a live strip
-        // (the package script assigns it inline, downstream of strict env mode),
-        // so this is the hash half of the rule the VITEST_PROFILE note states:
-        // a variable selecting what a task DOES belongs in the hash. Found by
-        // `noUndeclaredEnvVars` the first time Biome was allowed to read a
-        // root-level file at all.
-        "VITEST_SETUP"
+        "VITEST_POOL"
       ]
     },
     // The behaviour eval tier: a live model, a live key, real tokens. NOT in
@@ -437,9 +421,6 @@
         // leg that installs the binary. Declared on BOTH tasks because the CI
         // job that sets it now runs both.
         "AAI_REQUIRE_FFMPEG",
-        "VITEST_PROFILE",
-        "VITEST_INCLUDE",
-        "VITEST_SETUP",
         "VITEST_POOL"
       ]
     },

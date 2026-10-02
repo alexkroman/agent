@@ -54,8 +54,8 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "VITEST_PROFILE=e2e VITEST_SETUP=./src/_test-setup.ts VITEST_INCLUDE=src/e2e*.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "test:scenario": "VITEST_PROFILE=scenario VITEST_SETUP=./src/_test-setup.ts VITEST_INCLUDE=src/**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:e2e": "vitest run -c ../../vitest.slow.config.ts --project e2e",
+    "test:scenario": "vitest run -c ../../vitest.slow.config.ts --project scenario",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

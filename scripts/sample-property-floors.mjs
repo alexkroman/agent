@@ -13,8 +13,10 @@
  * for every property that does not pin one (a pinned `seed` shows as a
  * zero-width range, which is what it is). The recording itself is
  * `scripts/record-floor-samples.mjs`, switched on by `AAI_FLOOR_SAMPLES`.
- * `*.integration.test.ts` files run through `vitest.slow.config.ts`, every
- * other file through the root config's projects.
+ * `*.integration.test.ts` files run through `vitest.slow.config.ts`'s
+ * `integration` project from their own package's root (its tiers' `include`
+ * globs, its pool and its setup files are all resolved there), every other
+ * file through the root config's projects.
  */
 
 import { spawnSync } from "node:child_process";
@@ -42,6 +44,20 @@ const files = positionals.map((file) => path.relative(ROOT, path.resolve(file)))
 const integration = files.filter((file) => file.includes(".integration.test."));
 const unit = files.filter((file) => !integration.includes(file));
 
+/** The integration files grouped by package (`packages/<pkg>`), package-relative. */
+const integrationByPackage = new Map();
+for (const file of integration) {
+  const pkg = file.split("/").slice(0, 2).join("/");
+  if (!pkg.startsWith("packages/")) {
+    console.error(`sample-property-floors: ${file} is not inside a package.`);
+    process.exit(2);
+  }
+  integrationByPackage.set(pkg, [
+    ...(integrationByPackage.get(pkg) ?? []),
+    path.posix.relative(pkg, file),
+  ]);
+}
+
 const dir = mkdtempSync(path.join(tmpdir(), "aai-floor-samples-"));
 const vitest = path.join(ROOT, "node_modules/.bin/vitest");
 
@@ -53,12 +69,12 @@ function runOnce(out) {
     const r = spawnSync(vitest, ["run", ...unit], { cwd: ROOT, env, stdio: "ignore" });
     failed ||= r.status !== 0;
   }
-  if (integration.length > 0) {
-    const r = spawnSync(vitest, ["run", "-c", "vitest.slow.config.ts"], {
-      cwd: ROOT,
-      env: { ...env, VITEST_PROFILE: "integration", VITEST_INCLUDE: integration.join(",") },
-      stdio: "ignore",
-    });
+  for (const [pkg, pkgFiles] of integrationByPackage) {
+    const r = spawnSync(
+      vitest,
+      ["run", "-c", "../../vitest.slow.config.ts", "--project", "integration", ...pkgFiles],
+      { cwd: path.join(ROOT, pkg), env, stdio: "ignore" },
+    );
     failed ||= r.status !== 0;
   }
   return failed;

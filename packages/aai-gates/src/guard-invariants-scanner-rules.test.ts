@@ -111,7 +111,9 @@ describe("rule 7 — every GitHub Action is SHA-pinned", () => {
     // the permissions of the job it runs in.
     for (const { file, spec } of pinnable) {
       const ref = spec.split("@")[1] ?? "";
-      expect(/^[0-9a-f]{40}$/.test(ref), `${file}: "${spec}" is not pinned to a SHA`).toBe(true);
+      expect
+        .soft(/^[0-9a-f]{40}$/.test(ref), `${file}: "${spec}" is not pinned to a SHA`)
+        .toBe(true);
     }
   });
 });

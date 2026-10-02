@@ -199,8 +199,8 @@ harder case, never a lower floor.
 
 Membership is the `.eval.` infix — `*.eval.test.ts`, excluded by this package's
 `vitest.config.ts` and selected by `test:eval`, so a new eval needs no config
-edit. `VITEST_PROFILE=eval` in `vitest.slow.config.ts` sets the timeout (30 min:
-one studio codegen turn legitimately runs for minutes).
+edit. The `eval` project in `vitest.slow.config.ts` (`--project eval`) sets the
+timeout (30 min: one studio codegen turn legitimately runs for minutes).
 
 ```sh
 pnpm test:eval                                   # the whole tier

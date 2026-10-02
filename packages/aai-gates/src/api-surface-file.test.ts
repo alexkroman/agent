@@ -125,7 +125,9 @@ describe("API.md", () => {
     // The contents list and the sections have to agree, or the list is a map of
     // a file that is not there.
     for (const { specifier } of listed) {
-      expect(api.includes(`\n## \`${specifier}\`\n`), `no section for ${specifier}`).toBe(true);
+      expect
+        .soft(api.includes(`\n## \`${specifier}\`\n`), `no section for ${specifier}`)
+        .toBe(true);
     }
   });
 

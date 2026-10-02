@@ -402,13 +402,13 @@ describe("konsistent.json", () => {
       const label = convention.name ?? `conventions[${index}]`;
       // The name is what a violation report prints, so an unnamed convention
       // fails as an anonymous `[?]` the reader cannot look up.
-      expect(convention.name, `conventions[${index}] has no name`).toMatch(/^[a-z0-9-]+$/);
+      expect.soft(convention.name, `conventions[${index}] has no name`).toMatch(/^[a-z0-9-]+$/);
       // A structural rule without a rationale is the one a later author
       // deletes to make their branch pass.
-      expect(convention.description, `${label} has no description`).toBeTypeOf("string");
-      expect(convention.description?.length, `${label}'s description is too terse`).toBeGreaterThan(
-        40,
-      );
+      expect.soft(convention.description, `${label} has no description`).toBeTypeOf("string");
+      expect
+        .soft(convention.description?.length, `${label}'s description is too terse`)
+        .toBeGreaterThan(40);
     }
   });
 
@@ -422,15 +422,19 @@ describe("konsistent.json", () => {
   test("every convention asserts something", () => {
     for (const convention of config.conventions) {
       const blocks = blocksOf(convention);
-      expect(blocks.length, `${convention.name} has no must/mustNot blocks`).toBeGreaterThan(0);
+      expect
+        .soft(blocks.length, `${convention.name} has no must/mustNot blocks`)
+        .toBeGreaterThan(0);
       for (const block of blocks) {
         const predicates = { ...block.must, ...block.mustNot };
         // A block with `if`/`for` scoping and no predicates matches files and
         // checks nothing — the silent-pass shape this suite exists to catch.
-        expect(
-          Object.keys(predicates).length,
-          `${convention.name}${block.name ? ` / ${block.name}` : ""} declares no predicates`,
-        ).toBeGreaterThan(0);
+        expect
+          .soft(
+            Object.keys(predicates).length,
+            `${convention.name}${block.name ? ` / ${block.name}` : ""} declares no predicates`,
+          )
+          .toBeGreaterThan(0);
       }
     }
   });
@@ -453,7 +457,7 @@ describe("konsistent.json", () => {
         const used = Object.keys({ ...block.must, ...block.mustNot }).filter((key) =>
           deprecated.includes(key),
         );
-        expect(used, `${convention.name}${block.name ? ` / ${block.name}` : ""}`).toEqual([]);
+        expect.soft(used, `${convention.name}${block.name ? ` / ${block.name}` : ""}`).toEqual([]);
       }
     }
   });
@@ -467,10 +471,12 @@ describe("konsistent.json", () => {
       for (const pattern of patterns) {
         const prefix = literalPrefix(pattern);
         if (prefix === "") continue; // Pattern is magic from the first segment.
-        expect(
-          allPaths.some((path) => path.startsWith(prefix)),
-          `${convention.name}: no file in the repo lives under "${prefix}" (from "${pattern}")`,
-        ).toBe(true);
+        expect
+          .soft(
+            allPaths.some((path) => path.startsWith(prefix)),
+            `${convention.name}: no file in the repo lives under "${prefix}" (from "${pattern}")`,
+          )
+          .toBe(true);
       }
     }
   });
@@ -496,18 +502,22 @@ describe("konsistent.json", () => {
       for (const pattern of patterns) {
         if (pattern.startsWith("!")) {
           const parent = literalPrefix(pattern).replace(/\/$/, "");
-          expect(
-            repoPaths,
-            `${convention.name}: exclusion "${pattern}" names "${parent}", which does not exist`,
-          ).toContain(parent);
+          expect
+            .soft(
+              repoPaths,
+              `${convention.name}: exclusion "${pattern}" names "${parent}", which does not exist`,
+            )
+            .toContain(parent);
           continue;
         }
         const matcher = patternToRegExp(pattern);
-        expect(
-          allPaths.some((path) => matcher.test(path)),
-          `${convention.name}: "${pattern}" selects NOTHING — konsistent would check zero ` +
-            'files and print "No violations found"',
-        ).toBe(true);
+        expect
+          .soft(
+            allPaths.some((path) => matcher.test(path)),
+            `${convention.name}: "${pattern}" selects NOTHING — konsistent would check zero ` +
+              'files and print "No violations found"',
+          )
+          .toBe(true);
       }
     }
   });
@@ -519,11 +529,15 @@ describe("konsistent.json", () => {
     // used to suppress it (`openai: openai`, `openrouter: openrouter`) are
     // gone with the lowercase factory spellings they kept alive.
     for (const [kebab, pascal] of Object.entries(config.kebabToPascalMap ?? {})) {
-      expect(kebab, `kebabToPascalMap key "${kebab}" is not kebab-case`).toMatch(/^[a-z0-9-]+$/);
-      expect(pascal, `kebabToPascalMap["${kebab}"] is not PascalCase`).toMatch(/^[A-Z]/);
+      expect
+        .soft(kebab, `kebabToPascalMap key "${kebab}" is not kebab-case`)
+        .toMatch(/^[a-z0-9-]+$/);
+      expect.soft(pascal, `kebabToPascalMap["${kebab}"] is not PascalCase`).toMatch(/^[A-Z]/);
     }
     for (const kebab of Object.keys(config.kebabToCamelMap ?? {})) {
-      expect(kebab, `kebabToCamelMap key "${kebab}" is not kebab-case`).toMatch(/^[a-z0-9-]+$/);
+      expect
+        .soft(kebab, `kebabToCamelMap key "${kebab}" is not kebab-case`)
+        .toMatch(/^[a-z0-9-]+$/);
     }
   });
 
@@ -538,10 +552,12 @@ describe("konsistent.json", () => {
       .filter((name) => name.endsWith("boundary"));
     expect(boundaries.length, "no boundary conventions found").toBeGreaterThan(8);
     for (const name of boundaries) {
-      expect(
-        name in BOUNDARY_OWNERS || NON_PACKAGE_BOUNDARIES.includes(name),
-        `${name} is neither in BOUNDARY_OWNERS nor declared a non-package boundary`,
-      ).toBe(true);
+      expect
+        .soft(
+          name in BOUNDARY_OWNERS || NON_PACKAGE_BOUNDARIES.includes(name),
+          `${name} is neither in BOUNDARY_OWNERS nor declared a non-package boundary`,
+        )
+        .toBe(true);
     }
   });
 
@@ -563,18 +579,16 @@ describe("konsistent.json", () => {
       for (const allowed of owner.allows) {
         // A typo'd allow-entry silently widens the matrix, which is the same
         // failure as a missing deny entry wearing a different hat.
-        expect(
-          packageNames,
-          `${name}: allows "${allowed}", which is not a workspace package`,
-        ).toContain(allowed);
+        expect
+          .soft(packageNames, `${name}: allows "${allowed}", which is not a workspace package`)
+          .toContain(allowed);
       }
-      expect(owner.allows, `${name}: the SDK is allowed everywhere, drop the entry`).not.toContain(
-        SDK_PACKAGE,
-      );
-      expect(
-        owner.allows,
-        `${name}: a package cannot need permission to import itself`,
-      ).not.toContain(owner.pkg);
+      expect
+        .soft(owner.allows, `${name}: the SDK is allowed everywhere, drop the entry`)
+        .not.toContain(SDK_PACKAGE);
+      expect
+        .soft(owner.allows, `${name}: a package cannot need permission to import itself`)
+        .not.toContain(owner.pkg);
     }
   });
 
@@ -594,25 +608,33 @@ describe("konsistent.json", () => {
     // half of "only that subpath" konsistent can express.
     for (const [name, owner] of Object.entries(BOUNDARY_OWNERS)) {
       const convention = config.conventions.find((entry) => entry.name === name);
-      expect(convention, `${name} is in BOUNDARY_OWNERS but not in konsistent.json`).toBeDefined();
+      expect
+        .soft(convention, `${name} is in BOUNDARY_OWNERS but not in konsistent.json`)
+        .toBeDefined();
       // konsistent splits import sources by kind, so a boundary forbids each:
       // a type-only import still makes the package a typecheck dependency.
       const denied = convention?.mustNot?.importValuesFrom;
-      expect(
-        Array.isArray(denied),
-        `${name} declares no mustNot.importValuesFrom, so it forbids nothing`,
-      ).toBe(true);
-      expect(
-        convention?.mustNot?.importTypesFrom,
-        `${name}: mustNot.importTypesFrom must deny the same list as importValuesFrom`,
-      ).toEqual(denied);
+      expect
+        .soft(
+          Array.isArray(denied),
+          `${name} declares no mustNot.importValuesFrom, so it forbids nothing`,
+        )
+        .toBe(true);
+      expect
+        .soft(
+          convention?.mustNot?.importTypesFrom,
+          `${name}: mustNot.importTypesFrom must deny the same list as importValuesFrom`,
+        )
+        .toEqual(denied);
       const denySet = new Set(Array.isArray(denied) ? (denied as string[]) : []);
       for (const other of packageNames) {
         if (other === owner.pkg || other === SDK_PACKAGE || owner.allows.includes(other)) continue;
-        expect(
-          denySet.has(other),
-          `${name} does not forbid "${other}" — ${owner.pkg} may import it and nothing reports it`,
-        ).toBe(true);
+        expect
+          .soft(
+            denySet.has(other),
+            `${name} does not forbid "${other}" — ${owner.pkg} may import it and nothing reports it`,
+          )
+          .toBe(true);
       }
     }
   });
@@ -626,19 +648,21 @@ describe("konsistent.json", () => {
     // guard-invariants rule 37 derives its directory list.
     for (const [root, name] of MODULE_DIR_CONVENTIONS) {
       const convention = config.conventions.find((entry) => entry.name === name);
-      expect(convention, `${name} is not in konsistent.json`).toBeDefined();
-      expect(convention?.paths).toBe(root);
+      expect.soft(convention, `${name} is not in konsistent.json`).toBeDefined();
+      expect.soft(convention?.paths).toBe(root);
       const actual = Array.isArray(convention?.must) ? convention.must : [];
       const expected = expectedModuleDirBlocks(root);
-      expect(expected.length, `no module directory under ${root}`).toBeGreaterThan(0);
-      expect(actual, `${name}: regenerate the blocks from the tree`).toEqual(expected);
+      expect.soft(expected.length, `no module directory under ${root}`).toBeGreaterThan(0);
+      expect.soft(actual, `${name}: regenerate the blocks from the tree`).toEqual(expected);
     }
   });
 
   test("the gate is wired into the local check and CI, not just one of them", () => {
     for (const [path, text] of Object.entries(GATE_WIRING)) {
-      expect(text, `${path} not found`).toBeTypeOf("string");
-      expect(text, `${path} no longer references check:konsistent`).toContain("check:konsistent");
+      expect.soft(text, `${path} not found`).toBeTypeOf("string");
+      expect
+        .soft(text, `${path} no longer references check:konsistent`)
+        .toContain("check:konsistent");
     }
   });
 });

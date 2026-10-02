@@ -191,8 +191,10 @@ describe("the ambient stripper's wiring", () => {
     const wiring = Object.entries(GATE_WIRING);
     expect(wiring.length, "GATE_WIRING resolved to nothing").toBeGreaterThanOrEqual(2);
     for (const [file, source] of wiring) {
-      expect(source, `${file} not found`).toBeTypeOf("string");
-      expect(source, `${file} no longer names check:doc-examples`).toContain("check:doc-examples");
+      expect.soft(source, `${file} not found`).toBeTypeOf("string");
+      expect
+        .soft(source, `${file} no longer names check:doc-examples`)
+        .toContain("check:doc-examples");
     }
   });
 });
@@ -275,10 +277,12 @@ describe("the harness owns the ambients, not a sibling fence", () => {
     for (const fence of corpus) {
       const result = strip(fence.code);
       total += result.stripped;
-      expect(
-        leadingDirectives(result.code),
-        `${fence.file}: a reference directive survived the harness transformation`,
-      ).toEqual([]);
+      expect
+        .soft(
+          leadingDirectives(result.code),
+          `${fence.file}: a reference directive survived the harness transformation`,
+        )
+        .toEqual([]);
     }
     // Both parsers looked at the same fences, so their counts must agree.
     const expected = corpus.reduce((sum, fence) => sum + leadingDirectives(fence.code).length, 0);

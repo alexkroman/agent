@@ -71,9 +71,9 @@ describe("check:untyped-imports", () => {
     // hole this gate was written to close, reopened one config over.
     expect(relaxed.length).toBeGreaterThanOrEqual(2);
     for (const config of relaxed) {
-      expect(source, `${config} relaxes noImplicitAny but the gate does not name it`).toContain(
-        `"${config}"`,
-      );
+      expect
+        .soft(source, `${config} relaxes noImplicitAny but the gate does not name it`)
+        .toContain(`"${config}"`);
     }
   });
 
@@ -83,12 +83,12 @@ describe("check:untyped-imports", () => {
     const named = [...source.matchAll(/config:\s*"([^"]+)"/g)].map((m) => m[1] ?? "");
     expect(named.length).toBeGreaterThanOrEqual(2);
     for (const config of named) {
-      expect(rootConfigs[config], `the gate names ${config}, which does not exist`).toBeTypeOf(
-        "string",
-      );
-      expect(relaxed, `the gate names ${config}, which does not relax noImplicitAny`).toContain(
-        config,
-      );
+      expect
+        .soft(rootConfigs[config], `the gate names ${config}, which does not exist`)
+        .toBeTypeOf("string");
+      expect
+        .soft(relaxed, `the gate names ${config}, which does not relax noImplicitAny`)
+        .toContain(config);
     }
   });
 
@@ -97,7 +97,7 @@ describe("check:untyped-imports", () => {
     // nothing — which is precisely what the floor exists to catch.
     const floors = [...source.matchAll(/minImplicitAny:\s*(\d+)/g)].map((m) => Number(m[1]));
     expect(floors.length).toBe(relaxed.length);
-    for (const floor of floors) expect(floor).toBeGreaterThan(0);
+    for (const floor of floors) expect.soft(floor).toBeGreaterThan(0);
   });
 
   test("the floor is checked BEFORE the TS7016 verdict is trusted", () => {
