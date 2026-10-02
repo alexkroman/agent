@@ -377,7 +377,7 @@ function mergeGroup(allowed, current, label, { lowered, refused }) {
  *   gate: string,
  *   baselinePath: string | URL,
  *   baseline: Record<string, unknown>,
- *   groups: { key: string, label: string }[],
+ *   groups: { key: string, label: string, keepEmpty?: boolean }[],
  *   counts: Map<string, Map<string, number>>,
  *   advice: string,
  *   describe?: (next: Record<string, unknown>) => string,
@@ -387,9 +387,11 @@ export function updateBaseline({ gate, baselinePath, baseline, groups, counts, a
   const next = {};
   const moves = { lowered: [], refused: [] };
 
-  for (const { key, label } of groups) {
+  for (const { key, label, keepEmpty } of groups) {
     const merged = mergeGroup(baseline[key] ?? {}, counts.get(key) ?? new Map(), label, moves);
-    if (Object.keys(merged).length > 0) {
+    // A group paid down to zero is dropped, unless it says otherwise: one whose
+    // spec requires the key to exist (the debt group a gate names) keeps `{}`.
+    if (keepEmpty || Object.keys(merged).length > 0) {
       next[key] = Object.fromEntries(Object.entries(merged).sort(([a], [b]) => compareNames(a, b)));
     }
   }

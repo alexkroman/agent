@@ -57,4 +57,14 @@ describe("createEgressPool", () => {
     await pool.close();
     expect(agent.closed).toBe(true);
   });
+
+  test("close is idempotent: a second call resolves instead of throwing", async () => {
+    const pool = createEgressPool(SIZING);
+    const first = pool.close();
+    // The same settlement, not a second `agent.close()` — undici rejects that
+    // one with `ClientClosedError`.
+    expect(pool.close()).toBe(first);
+    await first;
+    await expect(pool.close()).resolves.toBe(await first);
+  });
 });
