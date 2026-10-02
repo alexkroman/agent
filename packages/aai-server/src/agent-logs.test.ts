@@ -78,7 +78,7 @@ describe("parseLogPage", () => {
 
   test("a body that is not a page at all degrades to empty", () => {
     for (const body of [null, "nope", 7, {}, { lines: "no" }]) {
-      expect(parseLogPage(body, 4)).toEqual(emptyLogPage(4));
+      expect.soft(parseLogPage(body, 4), JSON.stringify(body)).toEqual(emptyLogPage(4));
     }
   });
 

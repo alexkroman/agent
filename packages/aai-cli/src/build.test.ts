@@ -6,6 +6,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect } from "vitest";
 import { linkSdkNodeModules, test } from "./_test-utils.ts";
+// `missingDeployEnv` imports this lazily (it pulls the SDK runtime barrel).
+// Loading it at collection keeps that cold import out of whichever config
+// test runs first, where it alone could exceed the 5s unit-tier budget.
+import "./_preflight.ts";
 import {
   executeBuild,
   missingDeployEnv,

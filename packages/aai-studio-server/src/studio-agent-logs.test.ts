@@ -5,7 +5,7 @@
  */
 
 import { createMemoryWorkspaceStore } from "aai-server/stores";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, type Mock, test, vi } from "vitest";
 import { readProjectLogs } from "./studio-agent-logs.ts";
 import { createWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
 
@@ -46,19 +46,20 @@ async function makeWorkspace(meta: { previewSlug?: string; deployedSlug?: string
 
 /** A fake platform that serves one page per call, in order. */
 function pagingFetch(pages: { lines: Line[]; cursor: number; dropped?: number }[]) {
-  const calls: string[] = [];
-  const fetchFn = vi.fn<FetchFn>(async (input) => {
-    calls.push(String(input));
-    const page = pages[calls.length - 1] ?? { lines: [], cursor: -1 };
+  const fetchFn: Mock<FetchFn> = vi.fn(async () => {
+    // This call is already recorded, so it reads page `length - 1`.
+    const page = pages[fetchFn.mock.calls.length - 1] ?? { lines: [], cursor: -1 };
     return pageResponse({ ...page, dropped: page.dropped ?? 0, running: true });
   });
-  return { fetchFn, calls };
+  /** The URLs asked for, in order. */
+  const urls = () => fetchFn.mock.calls.map(([input]) => String(input));
+  return { fetchFn, urls };
 }
 
 describe("readProjectLogs", () => {
   test("an environment with no deployed agent reads as empty, not as an error", async () => {
     const workspaces = await makeWorkspace();
-    const { fetchFn, calls } = pagingFetch([]);
+    const { fetchFn, urls } = pagingFetch([]);
     const result = await readProjectLogs({
       workspaces,
       scope: SCOPE,
@@ -69,7 +70,7 @@ describe("readProjectLogs", () => {
     expect(result).toEqual({ running: false, lines: [], dropped: 0, total: 0 });
     // Nothing to read means nothing is asked of the platform — the tool's own
     // prose is what tells the agent to make an edit and wait for a preview.
-    expect(calls).toEqual([]);
+    expect(urls()).toEqual([]);
   });
 
   test("the environment picks the slug, and the guest never names one", async () => {
@@ -77,14 +78,14 @@ describe("readProjectLogs", () => {
     // One line then an empty page per read, so each drain ends on its own.
     const page = { lines: [line(0, "hi")], cursor: 0 };
     const empty = { lines: [], cursor: 0 };
-    const { fetchFn, calls } = pagingFetch([page, empty, page, empty]);
+    const { fetchFn, urls } = pagingFetch([page, empty, page, empty]);
     const deps = { workspaces, scope: SCOPE, project: PROJECT, target: TARGET, fetchFn };
 
     await readProjectLogs(deps);
     await readProjectLogs(deps, { environment: "production" });
 
     // The FIRST read of each drain names the slug the environment resolved to.
-    expect(calls.filter((c) => c.endsWith("after=-1"))).toEqual([
+    expect(urls().filter((c) => c.endsWith("after=-1"))).toEqual([
       "https://platform.example/proj-preview/logs?after=-1",
       "https://platform.example/proj/logs?after=-1",
     ]);
@@ -106,7 +107,7 @@ describe("readProjectLogs", () => {
    */
   test("drains by cursor and returns the LAST lines, not the first", async () => {
     const workspaces = await makeWorkspace({ previewSlug: "proj-preview" });
-    const { fetchFn, calls } = pagingFetch([
+    const { fetchFn, urls } = pagingFetch([
       { lines: [line(0, "a"), line(1, "b")], cursor: 1 },
       { lines: [line(2, "c"), line(3, "d")], cursor: 3 },
       { lines: [], cursor: 3 },
@@ -117,7 +118,7 @@ describe("readProjectLogs", () => {
     );
     expect(result.lines.map((l) => l.text)).toEqual(["c", "d"]);
     expect(result.total).toBe(4);
-    expect(calls).toEqual([
+    expect(urls()).toEqual([
       "https://platform.example/proj-preview/logs?after=-1",
       "https://platform.example/proj-preview/logs?after=1",
       "https://platform.example/proj-preview/logs?after=3",
@@ -126,7 +127,7 @@ describe("readProjectLogs", () => {
 
   test("a cursor that does not advance ends the drain rather than spinning", async () => {
     const workspaces = await makeWorkspace({ previewSlug: "proj-preview" });
-    const { fetchFn, calls } = pagingFetch(
+    const { fetchFn, urls } = pagingFetch(
       // Every page claims the same cursor while still returning lines — a far
       // side that would otherwise be read until the page budget ran out.
       Array.from({ length: 8 }, () => ({ lines: [line(0, "stuck")], cursor: -1 })),
@@ -138,7 +139,7 @@ describe("readProjectLogs", () => {
       target: TARGET,
       fetchFn,
     });
-    expect(calls).toHaveLength(1);
+    expect(urls()).toHaveLength(1);
     expect(result.lines).toHaveLength(1);
   });
 
@@ -162,13 +163,9 @@ describe("readProjectLogs", () => {
     const refuse = vi.fn<FetchFn>(async () => new Response("nope", { status: 403 }));
     await expect(readProjectLogs({ ...deps, fetchFn: refuse })).rejects.toThrow(/403/);
 
-    let call = 0;
-    const failLater = vi.fn<FetchFn>(async () => {
-      call += 1;
-      return call === 1
-        ? pageResponse({ lines: [line(0, "a")], cursor: 0, running: true })
-        : new Response("gone", { status: 500 });
-    });
+    const failLater = vi
+      .fn<FetchFn>(async () => new Response("gone", { status: 500 }))
+      .mockResolvedValueOnce(pageResponse({ lines: [line(0, "a")], cursor: 0, running: true }));
     const result = await readProjectLogs({ ...deps, fetchFn: failLater });
     expect(result.lines.map((l) => l.text)).toEqual(["a"]);
   });

@@ -27,6 +27,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
+import { byCodeUnit } from "./_sql-test-utils.ts";
 import { platformCronJobs } from "./pg-cron.ts";
 import { AGENT_ENV_SECRET_PREFIX } from "./secret-store.ts";
 
@@ -53,16 +54,6 @@ function deleteAgentBody(): string {
   if (end <= start) throw new Error("could not find the end of deleteAgent");
   return source.slice(start, end);
 }
-
-/**
- * Code-unit order, never `localeCompare` — the repo's standing rule for anything
- * sorted before comparison: with no explicit locale that answers to the runtime's
- * ICU default, so the same input could order differently on another machine.
- */
-const byCodeUnit = (a: string, b: string): number => {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-};
 
 describe("the reap and deleteAgent delete the same things", () => {
   test("the job exists, so this guard is not passing over an absence", () => {

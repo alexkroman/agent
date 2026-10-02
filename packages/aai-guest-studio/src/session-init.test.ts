@@ -73,11 +73,9 @@ function fakeRes() {
  * runs out on a slower CI runner — which is how the first version of this
  * helper failed, as `expected +0 to be 200`.
  */
-function settled(status: () => number): Promise<void> {
-  return vi.waitFor(
-    () => {
-      if (status() === 0) throw new Error("install has not answered yet");
-    },
+async function settled(status: () => number): Promise<void> {
+  await vi.waitUntil(
+    () => status() !== 0,
     // Explicit rather than the 1s default: the budget has to be sized off the
     // slowest runner, and it costs nothing when the install answers promptly.
     { timeout: 4000, interval: 10 },

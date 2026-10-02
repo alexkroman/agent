@@ -93,7 +93,7 @@ describe("announce", () => {
     const rec = recorder((sql) => (sql.includes("insert into") ? [{ id: "m1" }] : []));
     await enqueue(rec.sql, { id: "m1", slug: "t1", queueName: "__wkf_workflow_r1", payload: {} });
     expect(WORKFLOW_QUEUE_CHANNEL).toBe("aai_workflow_queue");
-    expect(rec.statements.some((sql) => sql.includes("pg_notify"))).toBe(true);
+    expect(rec.statements).toContainEqual(expect.stringContaining("pg_notify"));
   });
 
   test("the ceiling IS the sweep's interval", async () => {

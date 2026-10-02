@@ -45,7 +45,8 @@
 
 import { expect, test } from "vitest";
 import { describeWithPg } from "./_pg-test-utils.ts";
-import { byCodeUnit, useQueueFixture } from "./_workflow-queue-test-utils.ts";
+import { byCodeUnit } from "./_sql-test-utils.ts";
+import { useQueueFixture } from "./_workflow-queue-test-utils.ts";
 import type { SqlExec } from "./sql-exec.ts";
 import {
   claimDue,

@@ -102,7 +102,9 @@ describe("guest control channel", () => {
     // Mid-turn checkpoint: files land, no preview deploy.
     await sync?.({ files: { "agent.ts": "// checkpoint" } });
     await setImmediate();
-    expect(guest.requests.some((r) => r.method === "workspace/deploy")).toBe(false);
+    expect(guest.requests).not.toContainEqual(
+      expect.objectContaining({ method: "workspace/deploy" }),
+    );
 
     // Turn-complete sync: the preview deploys to `<project>-preview`, on
     // the live session sandbox, and stamps the workspace metadata.
@@ -121,8 +123,8 @@ describe("guest control channel", () => {
     // run elsewhere (the drain resolves that user's key from Vault); a job
     // without one is ARCHIVED, so the preview silently never lands, and while
     // the broker took a bare `serverUrl` this path could not name one.
-    expect(enqueued).toEqual([
-      { scope: SCOPE, project: PROJECT, serverUrl: "https://platform.example", userId: "user-1" },
+    expect(enqueued.mock.calls).toEqual([
+      [{ scope: SCOPE, project: PROJECT, serverUrl: "https://platform.example", userId: "user-1" }],
     ]);
     await broker.dispose();
   });
@@ -134,7 +136,9 @@ describe("guest control channel", () => {
     const sync = guest.handlers.get("studio/sync-workspace");
     await sync?.({ files: { "agent.ts": "// settled" }, done: true });
     await setImmediate();
-    expect(guest.requests.some((r) => r.method === "workspace/deploy")).toBe(false);
+    expect(guest.requests).not.toContainEqual(
+      expect.objectContaining({ method: "workspace/deploy" }),
+    );
     await broker.dispose();
   });
 

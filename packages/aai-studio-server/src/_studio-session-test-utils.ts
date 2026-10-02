@@ -13,7 +13,7 @@ import type { GuestConnection } from "aai-server/config";
 import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox";
 import { createMemoryChatStore, createMemoryWorkspaceStore } from "aai-server/stores";
 import { type Mock, vi } from "vitest";
-import { createMemoryPreviewQueue, type PreviewJob } from "./studio-preview-queue.ts";
+import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
 import { createStudioSessionBroker } from "./studio-session-broker.ts";
 import { createWorkspace } from "./studio-workspace.ts";
 
@@ -95,13 +95,13 @@ export function fakeGuest(
  * same hand-out-in-order queue.
  */
 export function fakeSpawn(guests: FakeGuest[]): Mock<typeof spawnWarmHarness> {
-  let spawned = 0;
-  return vi.fn<typeof spawnWarmHarness>(async () => {
-    const guest = guests[spawned];
-    spawned += 1;
+  const spawn: Mock<typeof spawnWarmHarness> = vi.fn(async () => {
+    // This call is already recorded, so it is spawn number `length - 1`.
+    const guest = guests[spawn.mock.calls.length - 1];
     if (!guest) throw new Error("no more fake guests");
     return guest.warm;
   });
+  return spawn;
 }
 
 export async function makeBroker(
@@ -115,21 +115,15 @@ export async function makeBroker(
     files: { "agent.ts": "// v1" },
   });
   const spawn = fakeSpawn(guests);
+  const previewQueue = createMemoryPreviewQueue();
   // Every preview job enqueued: the ROW is what a redelivery elsewhere sees.
-  const enqueued: PreviewJob[] = [];
-  const inner = createMemoryPreviewQueue();
+  const enqueued = vi.spyOn(previewQueue, "enqueue");
   const broker = createStudioSessionBroker({
     workspaces,
     chats,
     spawn,
     harnessPath: "/fake/harness.mjs",
-    previewQueue: {
-      ...inner,
-      enqueue: (job) => {
-        enqueued.push(job);
-        return inner.enqueue(job);
-      },
-    },
+    previewQueue,
     ...extra,
   });
   return { broker, workspaces, chats, spawn, enqueued };

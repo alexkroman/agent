@@ -20,6 +20,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { recordingGuest } from "../_request-test-utils.ts";
 import {
   forwardToGuest,
   GUEST_API_RESPONSE_HEADERS,
@@ -322,30 +323,20 @@ describe('bound: "activity"', () => {
 });
 
 describe("the request body", () => {
-  /** A guest that records the `init` it was handed. */
-  function recordingGuest() {
-    const inits: RequestInit[] = [];
-    const fetchFn: typeof globalThis.fetch = (_url, init) => {
-      inits.push(init ?? {});
-      return Promise.resolve(new Response("{}", { status: 200 }));
-    };
-    return { fetchFn, inits };
-  }
-
   test("a null or absent body (the GET/HEAD case) sends neither `body` nor `duplex`", async () => {
-    const { fetchFn, inits } = recordingGuest();
+    const { fetchFn, calls } = recordingGuest();
     const url = "https://tunnel.test/x";
     await forwardToGuest({ fetchFn, url, body: null, timeoutMs: TIMEOUT_MS });
     await forwardToGuest({ fetchFn, url, timeoutMs: TIMEOUT_MS });
-    expect(inits).toHaveLength(2);
-    for (const init of inits) {
+    expect(calls).toHaveLength(2);
+    for (const { init } of calls) {
       expect(init).not.toHaveProperty("body");
       expect(init).not.toHaveProperty("duplex");
     }
   });
 
   test('an EMPTY body is still a body: "" is forwarded, not dropped as falsy', async () => {
-    const { fetchFn, inits } = recordingGuest();
+    const { fetchFn, calls } = recordingGuest();
     await forwardToGuest({
       fetchFn,
       url: "https://tunnel.test/x",
@@ -353,7 +344,7 @@ describe("the request body", () => {
       body: "",
       timeoutMs: TIMEOUT_MS,
     });
-    expect(inits[0]).toMatchObject({ body: "", duplex: "half" });
+    expect(calls[0]?.init).toMatchObject({ body: "", duplex: "half" });
   });
 });
 

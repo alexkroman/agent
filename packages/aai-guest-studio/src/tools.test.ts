@@ -109,15 +109,12 @@ describe("guest workspace tools", () => {
   });
 
   test("post-write diagnostics skip non-source files", async () => {
-    let calls = 0;
-    const { tools } = await makeTools({}, undefined, async () => {
-      calls++;
-      return { ok: true, skipped: false };
-    });
+    const diagnose = vi.fn<TypecheckFn>(async () => ({ ok: true, skipped: false }));
+    const { tools } = await makeTools({}, undefined, diagnose);
     await runTool(tools, "write_file", { path: "data/menu.json", content: "{}" });
-    expect(calls).toBe(0);
+    expect(diagnose).not.toHaveBeenCalled();
     await runTool(tools, "write_file", { path: "a.ts", content: "const a = 1;\n" });
-    expect(calls).toBe(1);
+    expect(diagnose).toHaveBeenCalledOnce();
   });
 
   test("snapshotWorkspace skips ignored dirs and oversized files", async () => {
@@ -181,17 +178,14 @@ describe("guest workspace tools", () => {
   });
 
   test("test_agent surfaces a build failure as-is and stops there", async () => {
-    let loads = 0;
+    const loadBundle = vi.fn(async () => ({}));
     const { tools } = await makeTools({}, undefined, undefined, {
       build: async () => ({ buildError: "Build failed:\nagent.ts:1: nope" }),
-      loadBundle: async () => {
-        loads++;
-        return {};
-      },
+      loadBundle,
     });
     const out = String(await runTool(tools, "test_agent", { tool: undefined, args: undefined }));
     expect(out).toBe("Build failed:\nagent.ts:1: nope");
-    expect(loads).toBe(0);
+    expect(loadBundle).not.toHaveBeenCalled();
   });
 
   test("test_agent reports a build that returned no worker", async () => {
