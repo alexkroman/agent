@@ -5,7 +5,6 @@ import {
   agentPlatformBaseUrl,
   agentPublicBaseUrl,
   forgetObservedPublicOrigin,
-  publicForwardedHeaders,
   rememberPublicOrigin,
   resolvePublicOrigin,
 } from "./public-origin.ts";
@@ -86,22 +85,6 @@ describe("resolvePublicOrigin", () => {
     expect(resolvePublicOrigin(behindTls(), { AAI_PUBLIC_ORIGIN: "  " })).toBe(
       "https://agent.example.modal.run",
     );
-  });
-});
-
-describe("publicForwardedHeaders", () => {
-  test("forwards what the client saw, not the cleartext hop received", () => {
-    expect(publicForwardedHeaders(behindTls("/studio/projects"), {})).toEqual({
-      host: "agent.example.modal.run",
-      proto: "https",
-    });
-  });
-
-  test("loopback proxying keeps http", () => {
-    expect(publicForwardedHeaders(new Request("http://localhost:8080/studio/x"), {})).toEqual({
-      host: "localhost:8080",
-      proto: "http",
-    });
   });
 });
 

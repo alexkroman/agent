@@ -16,13 +16,9 @@
     // from the root fine. The entry suppressed nothing, and knip reports a
     // redundant ignore as a configuration hint — which is the same
     // dead-config shape as the `.size-limit.json` nobody ran.
-    "scripts/loadtest-workflow-agent/**",
-    // Claude Code subagent worktrees (gitignored under `.claude/*`): each is a
-    // full checkout, and knip would otherwise lint their scratch files.
-    ".claude/worktrees/**"
+    "scripts/loadtest-workflow-agent/**"
   ],
   "ignoreBinaries": [
-    "safe-chain",
     // `with-test-pg.mjs` shells out to `supabase status -o env` to resolve the
     // local stack. It is a developer's own CLI (brew/npx), deliberately not a
     // dependency: this repo must not install a 100 MB binary to run its tests,
@@ -47,8 +43,9 @@
   // hiding. First run of the split found 8, including a re-export of the
   // project-environment pair that its comment claimed callers were using.
   //
-  // "types" stays excluded pending the @internal tagging pass.
-  "exclude": ["types", "optionalPeerDependencies", "duplicates"],
+  // "types" is ON too: it was excluded pending an @internal tagging pass, and
+  // the report reached zero without one.
+  "exclude": ["optionalPeerDependencies", "duplicates"],
   "workspaces": {
     ".": {
       // WHAT A PIPELINE INVOKES, and nothing else.
@@ -161,11 +158,9 @@
     // `agent.test.ts`, and `templates.test.ts` / `template-page-mount.test.ts`
     // glob the rest as text — so ignoring them suppressed nothing and knip
     // reported the pattern as redundant. Verified by removing it: the report
-    // stays empty. `scaffold/**` is genuinely different and stays: it ships to
-    // users and is compiled from here by `check:template-types`, so nothing in
-    // this package imports it.
+    // stays empty. `scaffold/**` went the same way later, on the same evidence:
+    // knip reported its ignore as redundant and the report stayed empty without it.
     "packages/aai-templates": {
-      "ignore": ["scaffold/**"],
       // NO `ignoreDependencies` for `@alexkroman1/aai-runtime` any more, and the
       // reason is worth knowing before adding one back. It sat here because
       // `scaffold/server.mjs` — ignored above, shipped to users, and compiled

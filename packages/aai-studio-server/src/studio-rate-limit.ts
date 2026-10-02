@@ -96,7 +96,7 @@ export type StudioRateLimiters = {
   githubSyncIp?: RateLimiter;
 };
 
-export type { RateLimiter, RateLimitVerdict } from "aai-server/http";
+export type { RateLimiter } from "aai-server/http";
 export { createPgRateLimiter, createRateLimiter } from "aai-server/http";
 
 /**
