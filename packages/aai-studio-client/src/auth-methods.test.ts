@@ -3,9 +3,14 @@
 // answer offers GitHub-only, never nothing (a studio nobody can sign in to)
 // and never everything (a button GoTrue refuses).
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { fetchCall, jsonResponse, stubFetch } from "./_test-utils.ts";
-import { GITHUB_ONLY, NO_PROVIDERS, readSignInMethods } from "./auth-methods.ts";
+import {
+  GITHUB_ONLY,
+  NO_PROVIDERS,
+  readSignInMethods,
+  type SignInMethods,
+} from "./auth-methods.ts";
 
 const URL_BASE = "https://proj.supabase.co";
 
@@ -72,5 +77,63 @@ describe("readSignInMethods", () => {
     const mock = stubFetch(() => jsonResponse({ external: { email: true } }));
     await expect(readSignInMethods("not a url", "pk")).resolves.toEqual(GITHUB_ONLY);
     expect(mock).not.toHaveBeenCalled();
+  });
+});
+
+// The same read as the sign-in screen depends on it, against GoTrue's settings
+// route by PATHNAME (moved from the sign-in screen's suite).
+const PASSWORD_ONLY: SignInMethods = { github: false, password: true };
+const BOTH: SignInMethods = { github: true, password: true };
+
+describe("readSignInMethods, as the sign-in screen reads it", () => {
+  // `stubFetch` routes by PATHNAME, which is also the thing worth pinning here:
+  // the endpoint is GoTrue's own, resolved against the project URL.
+  const SETTINGS = "/auth/v1/settings";
+  const PROJECT = "http://127.0.0.1:54321";
+
+  test("reads the providers GoTrue reports", async () => {
+    const fetchMock = stubFetch({
+      [SETTINGS]: () => jsonResponse({ external: { github: true, email: true, google: false } }),
+    });
+    await expect(readSignInMethods(PROJECT, "sb_publishable_x")).resolves.toEqual(BOTH);
+    // The publishable key is the whole credential for this public read.
+    expect(fetchCall(fetchMock).init.headers).toMatchObject({ apikey: "sb_publishable_x" });
+  });
+
+  test("a provider absent from the payload is OFF", async () => {
+    // Read strictly rather than coerced: GoTrue omits nothing today, and a
+    // truthiness check would turn a future `"github": "maybe"` into a button.
+    stubFetch({ [SETTINGS]: () => jsonResponse({ external: { email: true } }) });
+    await expect(readSignInMethods(PROJECT, "k")).resolves.toEqual(PASSWORD_ONLY);
+  });
+
+  test("a trailing slash on the project URL resolves to the same endpoint", async () => {
+    // The URL comes from the server's own `/studio/auth` payload, so both
+    // spellings reach here and neither may produce `/auth/v1/settings` off a
+    // truncated origin.
+    const fetchMock = stubFetch({
+      [SETTINGS]: () => jsonResponse({ external: { github: true } }),
+    });
+    await expect(readSignInMethods(`${PROJECT}/`, "k")).resolves.toEqual(GITHUB_ONLY);
+    expect(fetchCall(fetchMock).url).toBe(`${PROJECT}${SETTINGS}`);
+  });
+
+  test.each([
+    ["a non-2xx answer", () => jsonResponse({ msg: "nope" }, 500)],
+    ["an unparsable body", () => new Response("<html>", { status: 200 })],
+    ["a payload with no providers", () => jsonResponse({})],
+  ])("%s falls back to GitHub-only, never to nothing", async (_label, route) => {
+    // An UNKNOWN answer must not remove the method production actually uses —
+    // that would turn one flaky read into a studio nobody can sign in to.
+    stubFetch({ [SETTINGS]: route });
+    await expect(readSignInMethods(PROJECT, "k")).resolves.toEqual(GITHUB_ONLY);
+  });
+
+  test("a rejected fetch falls back the same way", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(() => Promise.reject(new TypeError("Failed to fetch"))),
+    );
+    await expect(readSignInMethods(PROJECT, "k")).resolves.toEqual(GITHUB_ONLY);
   });
 });

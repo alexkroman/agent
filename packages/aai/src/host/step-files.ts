@@ -79,6 +79,15 @@ import { stepRequireCompleteUpload } from "../sdk/step-uploads-complete.ts";
 import { stepWriteUpload, type WriteUploadOptions } from "../sdk/step-uploads-write.ts";
 
 /**
+ * The filesystem call this module opens its files through — a mutable object so
+ * a spec can hand back a handle whose writes fail (`ENOSPC`, which no fixture
+ * can produce portably) with `vi.spyOn`, instead of replacing `node:fs/promises`.
+ *
+ * @internal
+ */
+export const stepFilesFs = { open };
+
+/**
  * Bytes moved per store round trip, in either direction.
  *
  * 8 MiB is large enough that a two-hour recording is a few hundred round trips
@@ -267,7 +276,7 @@ export async function readUploadToFile(
   // rather than truncate it to nothing on its way out.
   const size = options.size ?? (await stepRequireCompleteUpload(uploadId)).size;
   const windowBytes = options.windowBytes ?? STEP_FILE_WINDOW_BYTES;
-  const handle = await open(path, "w");
+  const handle = await stepFilesFs.open(path, "w");
   try {
     // The presence of `size`, never its VALUE, is what picks the path — it is the
     // caller saying "I am judging completeness", and a caller who did that gets
@@ -478,7 +487,7 @@ export async function writeUploadFromFile(
  * corrupt audio in production.
  */
 async function* fileChunks(path: string, windowBytes: number): AsyncIterable<Uint8Array> {
-  const handle = await open(path, "r");
+  const handle = await stepFilesFs.open(path, "r");
   try {
     const buffer = new Uint8Array(windowBytes);
     for (;;) {

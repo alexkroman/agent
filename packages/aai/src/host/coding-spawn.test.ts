@@ -16,6 +16,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import {
+  cappedProcess,
   EXIT_DRAIN_MS,
   KILL_GRACE_MS,
   keepTail,
@@ -23,19 +24,19 @@ import {
   runCapped,
 } from "./coding-spawn.ts";
 
-const spawnMock = vi.fn();
-vi.mock("node:child_process", () => ({ spawn: (...args: unknown[]) => spawnMock(...args) }));
-
 /**
- * A child the test drives: two output emitters and the two events `runCapped`
- * listens for. Nothing is annotated as a `ChildProcess` — the mocked module's
- * value is untyped, so the fake stands in for one with no cast, which is what
- * keeps this file's escape-hatch count at zero.
+ * A child the test drives: two output emitters and the events `runCapped`
+ * listens for — the structural `CappedChild`, handed in through the module's
+ * `cappedProcess.spawn` seam, so it needs no cast.
  */
 function installChild() {
   const data = new Map<string, (chunk: Buffer) => void>();
   const events = new Map<string, (...args: unknown[]) => void>();
-  const calls: { cmd: string; args: string[]; options: Record<string, unknown> }[] = [];
+  const calls: {
+    cmd: string;
+    args: string[];
+    options: Parameters<typeof cappedProcess.spawn>[2];
+  }[] = [];
   const kills: string[] = [];
   const destroyed: string[] = [];
   const stream = (name: string) => ({
@@ -52,8 +53,9 @@ function installChild() {
   const child = {
     stdout: stream("stdout"),
     stderr: stream("stderr"),
-    on(event: string, cb: (...args: unknown[]) => void) {
-      events.set(event, cb);
+    on<A extends unknown[]>(event: string, cb: (...args: A) => void) {
+      // The test names the event and supplies its payload.
+      events.set(event, (...args) => cb(...(args as A)));
       return child;
     },
     kill(signal: string) {
@@ -61,7 +63,7 @@ function installChild() {
       return true;
     },
   };
-  spawnMock.mockImplementation((cmd: string, args: string[], options: Record<string, unknown>) => {
+  vi.spyOn(cappedProcess, "spawn").mockImplementation((cmd, args, options) => {
     calls.push({ cmd, args, options });
     return child;
   });

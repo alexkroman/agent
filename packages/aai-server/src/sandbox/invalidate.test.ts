@@ -14,22 +14,14 @@ import { captureLogs } from "../_logger-test-utils.ts";
 import { createTestStore } from "../_orchestrator-test-utils.ts";
 import { spawnedAgent } from "../_sandbox-test-utils.ts";
 import { createMemoryPlatformEvents } from "../platform/events.ts";
-import type { Sandbox } from "../sandbox.ts";
+import type { Sandbox, SpawnAgentServer } from "../sandbox.ts";
 import { watchAgentInvalidation } from "./invalidate.ts";
 import { resolveSandbox } from "./resolve.ts";
 import { createSlotCache } from "./slots.ts";
 
-const { mockSpawnAgentServer } = vi.hoisted(() => {
-  const mockSpawnAgentServer = vi.fn();
-  return { mockSpawnAgentServer };
-});
+/** The guest spawn every sandbox here boots through (`ResolveSandboxOpts.spawnAgentServer`). */
+const mockSpawnAgentServer = vi.fn<SpawnAgentServer>();
 
-vi.mock("./vm.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./vm.ts")>()),
-  spawnAgentServer: mockSpawnAgentServer,
-}));
-
-// Armed here rather than in the `vi.hoisted` factory above — see `spawnedAgent`.
 beforeEach(() => {
   mockSpawnAgentServer.mockReset().mockResolvedValue(spawnedAgent());
 });
@@ -64,7 +56,7 @@ async function seedAgent(slug: string) {
   // Spy that calls through: the watcher's cache drop must actually happen
   // for the rebuild to read the freshly deployed record.
   const invalidate = vi.spyOn(store, "invalidate");
-  const deps = { slots: createSlotCache(), store };
+  const deps = { slots: createSlotCache(), store, spawnAgentServer: mockSpawnAgentServer };
   const unwatch = watchAgentInvalidation(memory.events, deps);
   return {
     ...deps,

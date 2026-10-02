@@ -6,54 +6,37 @@
  * directory that filled, nor how much it holds, nor how much was being asked of
  * it.
  *
- * It is a file of its own because it MOCKS `open`, and `step-files.test.ts`
+ * It is a file of its own because it FAKES the write, and `step-files.test.ts`
  * deliberately does not: that suite's whole argument is that only real bytes on
- * a real filesystem catch the buffer-reuse bug behind `writeUploadFromFile`. A
- * `vi.mock` factory is hoisted to the whole module, so the two cannot share one.
+ * a real filesystem catch the buffer-reuse bug behind `writeUploadFromFile`.
+ * The handle here is a real one, opened through the module's `stepFilesFs`
+ * seam, with only its `write` replaced.
  *
- * The mock is also the only PORTABLE way to reach this branch. A full
+ * The fake is also the only PORTABLE way to reach this branch. A full
  * filesystem is `/dev/full` on Linux and nothing at all on darwin, and the real
  * trigger is a capacity — measured at **512 MiB**, the tmpfs a guest microVM
  * mounts at `/tmp` — which no fixture may reproduce by size.
  */
 
-import { afterEach, expect, test, vi } from "vitest";
+import { open } from "node:fs/promises";
+import { expect, test, vi } from "vitest";
+import { stubUploads } from "../sdk/testing-uploads.ts";
+import { readUploadToFile, stepFilesFs, withTempDir } from "./step-files.ts";
 
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const real = await importOriginal<typeof import("node:fs/promises")>();
-  return {
-    ...real,
-    async open(...args: Parameters<typeof real.open>) {
-      const handle = await real.open(...args);
-      if (!full) return handle;
-      return {
-        ...handle,
-        async write(): Promise<never> {
-          // The shape node throws: an `Error` carrying `code`, which is the only
-          // thing a caller can recognise it by.
-          throw Object.assign(new Error("ENOSPC: no space left on device, write"), {
-            code: "ENOSPC",
-          });
-        },
-        async close(): Promise<void> {
-          await handle.close();
-        },
-      };
-    },
-  };
-});
-
-/** Whether the mocked `open` hands back a handle whose every write is ENOSPC. */
-let full = false;
-
-const { readUploadToFile, withTempDir } = await import("./step-files.ts");
-const { stubUploads } = await import("../sdk/testing-uploads.ts");
+/** From here on, every file the module opens is real but refuses every write with ENOSPC. */
+function fillTheDisk(): void {
+  vi.spyOn(stepFilesFs, "open").mockImplementation(async (...args) => {
+    const handle = await open(...args);
+    // The shape node throws: an `Error` carrying `code`, which is the only
+    // thing a caller can recognise it by.
+    vi.spyOn(handle, "write").mockRejectedValue(
+      Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" }),
+    );
+    return handle;
+  });
+}
 
 const UPLOAD_ID = "upl_recording";
-
-afterEach(() => {
-  full = false;
-});
 
 test("a destination that runs out of space names the directory and the byte counts", async () => {
   const store = stubUploads({
@@ -61,7 +44,7 @@ test("a destination that runs out of space names the directory and the byte coun
   });
   try {
     await withTempDir(async (dir) => {
-      full = true;
+      fillTheDisk();
       // What the run journaled was the bare `ENOSPC` sentence, so a reader had
       // no way to learn that `os.tmpdir()` in that container is a 512 MiB RAM
       // disk while `/` had 3.9 GB free. Every one of those facts is knowable

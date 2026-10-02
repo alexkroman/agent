@@ -100,6 +100,13 @@ export function fetchFdaLabel(name: string, options?: CallOptions): Promise<FdaL
 }
 
 /**
+ * How a tool reaches a label — {@link fetchFdaLabel}'s shape, named so the two
+ * tools can take one as an argument and a spec can hand them a lookup that
+ * never leaves the process.
+ */
+export type LabelLookup = typeof fetchFdaLabel;
+
+/**
  * One openFDA lookup, through the SDK's own REST call rather than a bare
  * `fetch`.
  *

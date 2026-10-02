@@ -25,7 +25,6 @@ import { z } from "zod";
 import { makeAgent } from "../_agent-test-utils.ts";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { executeToolCall } from "../tools/index.ts";
-import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
 
 describe("toAgentConfig", () => {
@@ -544,19 +543,6 @@ describe("createRuntime sandbox mode", () => {
     expect(names).toEqual(expect.arrayContaining([...DEFAULT_BUILTIN_TOOLS]));
   });
 });
-
-// ── Shared conformance suite (same tests run against sandbox in integration) ─
-
-const directExec = createRuntimeWithSeams({
-  agent: CONFORMANCE_AGENT,
-  // ASSEMBLYAI_API_KEY: a provider-less agent now defaults to the AssemblyAI
-  // pipeline, whose LLM resolves (and requires its key) at runtime creation.
-  env: { MY_VAR: "test-value", ASSEMBLYAI_API_KEY: "test" },
-});
-
-testRuntime("direct", () => ({
-  executeTool: directExec.executeTool,
-}));
 
 describe("createRuntime — provider resolution seams", () => {
   // Providers resolve eagerly, so the runtime needs keys to construct at all.

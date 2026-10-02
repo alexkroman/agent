@@ -2,23 +2,28 @@
 /**
  * Specs for the leased app-database pool.
  *
- * `createPostgresDb` is mocked, so nothing here opens a connection: what matters
+ * A fake `createPostgresDb` is handed in, so nothing here opens a connection: what matters
  * is HOW MANY pools are built for a URL and when the last lease closes one —
  * which is the whole property, the guest's connection budget being a count of
  * pools rather than of callers.
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { APP_DB_POOL_MAX, openAppDb } from "./app-db.ts";
+import { APP_DB_POOL_MAX, openAppDb as openRealAppDb } from "./app-db.ts";
 
 const close = vi.fn(() => Promise.resolve());
 const query = vi.fn(() => Promise.resolve([]));
 const reserve = vi.fn(() => Promise.resolve({ query, release: () => undefined }));
-const createPostgresDb = vi.fn(() => ({ query, reserve, close }));
-
-vi.mock("./postgres-db.ts", () => ({
-  createPostgresDb: (...args: unknown[]) => createPostgresDb(...(args as [])),
+const listen = vi.fn(() => Promise.resolve(() => undefined));
+const createPostgresDb = vi.fn((_options: { url: string; max: number }) => ({
+  query,
+  reserve,
+  listen,
+  close,
 }));
+
+/** {@link openRealAppDb} over the fake pool factory. */
+const openAppDb = (url: string) => openRealAppDb(url, createPostgresDb);
 
 /** A URL nothing else in this file uses, so the process-wide registry cannot leak between tests. */
 let next = 0;

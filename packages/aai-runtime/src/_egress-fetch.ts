@@ -160,6 +160,20 @@ let rpcPool: EgressPool | undefined;
 let blobPool: EgressPool | undefined;
 
 /**
+ * What a pool is built from and what a request goes out through.
+ *
+ * A mutable object rather than direct calls so a spec can `vi.spyOn` either
+ * member and observe the pools the runtime's own callers build — those callers
+ * reach this module by import, so there is no parameter to hand a fake through.
+ *
+ * @internal
+ */
+export const egressDeps = {
+  createPool: createEgressPool,
+  fetch: pinnedFetch,
+};
+
+/**
  * Whether the RPC pool may multiplex, read from the process environment.
  *
  * Takes an `env` so a spec can state one — the repo's idiom for this
@@ -174,7 +188,7 @@ export function egressRpcAllowsH2(env: NodeJS.ProcessEnv = process.env): boolean
 }
 
 function rpc(): EgressPool {
-  rpcPool ??= createEgressPool({
+  rpcPool ??= egressDeps.createPool({
     connections: EGRESS_CONNECTIONS,
     keepAliveTimeout: EGRESS_KEEP_ALIVE_MS,
     // The two travel TOGETHER, and `createEgressPool` says why: under HTTP/2
@@ -198,7 +212,7 @@ function rpc(): EgressPool {
 }
 
 function blob(): EgressPool {
-  blobPool ??= createEgressPool({
+  blobPool ??= egressDeps.createPool({
     connections: EGRESS_CONNECTIONS,
     keepAliveTimeout: EGRESS_KEEP_ALIVE_MS,
     // NOT an option here, and not an oversight: this is the pool whose shape was
@@ -225,7 +239,7 @@ function through(pool: EgressPool): typeof globalThis.fetch {
     // `Blob`, `Headers` or `Request` from the global realm) is ruled out by this
     // module's contract rather than by the type.
     const request = { ...init, dispatcher: pool.dispatcher } as PinnedRequestInit;
-    return pinnedFetch(input, request);
+    return egressDeps.fetch(input, request);
   };
 }
 

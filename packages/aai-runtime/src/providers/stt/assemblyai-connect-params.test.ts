@@ -27,14 +27,9 @@ import {
   DEFAULT_STT_PROMPT,
 } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_STT_EU_URL, assemblyAIStt } from "@alexkroman1/aai/stt";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { fakeOf, openSessionWith } from "./_assemblyai-test-utils.ts";
 import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
-
-vi.mock("assemblyai", async () => {
-  const { assemblyAIModuleMock } = await import("./_assemblyai-test-utils.ts");
-  return assemblyAIModuleMock();
-});
 
 async function openSession(
   providerOpts: Parameters<typeof openAssemblyAI>[0],

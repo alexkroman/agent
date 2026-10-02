@@ -15,23 +15,17 @@ import { captureLogs } from "../_logger-test-utils.ts";
 import { createTestStore } from "../_orchestrator-test-utils.ts";
 import { spawnedAgent } from "../_sandbox-test-utils.ts";
 import { createMemoryPlatformEvents } from "../platform/events.ts";
+import type { SpawnAgentServer } from "../sandbox.ts";
+import type { AgentServerHandle } from "../warm-harness.ts";
 import { brokerSessionUrl } from "./broker.ts";
 import { createMemorySandboxDirectory, SandboxNameTakenError } from "./directory.ts";
 import { watchAgentInvalidation } from "./invalidate.ts";
 import { resolveSandbox } from "./resolve.ts";
 import { createSlotCache } from "./slots.ts";
 
-const { mockSpawnAgentServer } = vi.hoisted(() => {
-  const mockSpawnAgentServer = vi.fn();
-  return { mockSpawnAgentServer };
-});
+/** The guest spawn every sandbox here boots through (`ResolveSandboxOpts.spawnAgentServer`). */
+const mockSpawnAgentServer = vi.fn<SpawnAgentServer>();
 
-vi.mock("./vm.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./vm.ts")>()),
-  spawnAgentServer: mockSpawnAgentServer,
-}));
-
-// Armed here rather than in the `vi.hoisted` factory above — see `spawnedAgent`.
 beforeEach(() => {
   mockSpawnAgentServer.mockReset().mockResolvedValue(spawnedAgent());
 });
@@ -66,7 +60,7 @@ async function seedAgent(slug: string) {
   // Spy that calls through: the watcher's cache drop must actually happen
   // for the rebuild to read the freshly deployed record.
   const invalidate = vi.spyOn(store, "invalidate");
-  const deps = { slots: createSlotCache(), store };
+  const deps = { slots: createSlotCache(), store, spawnAgentServer: mockSpawnAgentServer };
   const unwatch = watchAgentInvalidation(memory.events, deps);
   return {
     ...deps,
@@ -132,12 +126,13 @@ describe("the agent's env reaches the guest untouched", () => {
 
     const sandbox = await resolveSandbox("stored-app", {
       slots: createSlotCache(),
+      spawnAgentServer: mockSpawnAgentServer,
       store,
     });
     expect(sandbox).not.toBeNull();
 
-    const vmOpts = mockSpawnAgentServer.mock.calls[0]?.[0] as { env: Record<string, string> };
-    expect(vmOpts.env).toEqual({ OTHER: "x", DATABASE_URL: "postgres://author-supplied/db" });
+    const vmOpts = mockSpawnAgentServer.mock.calls[0]?.[0];
+    expect(vmOpts?.env).toEqual({ OTHER: "x", DATABASE_URL: "postgres://author-supplied/db" });
   });
 });
 
@@ -254,7 +249,7 @@ describe("broker readiness cap", () => {
 
   it("answers 503 while a boot is still running, without spawning a second sandbox", async () => {
     // A spawn that never resolves — the hung-boot case.
-    let releaseBoot: ((handle: unknown) => void) | undefined;
+    let releaseBoot: ((handle: AgentServerHandle) => void) | undefined;
     mockSpawnAgentServer.mockImplementation(
       () =>
         new Promise((resolve) => {

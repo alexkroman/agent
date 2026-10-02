@@ -120,5 +120,14 @@ export function createEgressPool(opts: EgressPoolOptions): EgressPool {
     // request as no key at all.
     ...omitUndefined({ headersTimeout: opts.headersTimeout, bodyTimeout: opts.bodyTimeout }),
   });
-  return { dispatcher: asDispatcher(agent), close: () => agent.close() };
+  // Memoized, because undici's `close()` is not: a second call on a closed
+  // agent rejects with `ClientClosedError`, and the doc above promises otherwise.
+  let closing: Promise<void> | undefined;
+  return {
+    dispatcher: asDispatcher(agent),
+    close: () => {
+      closing ??= agent.close();
+      return closing;
+    },
+  };
 }

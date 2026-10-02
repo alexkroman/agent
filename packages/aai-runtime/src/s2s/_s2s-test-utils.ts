@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Shared test helpers for the connectS2s specs (split across s2s.test.ts
-// and s2s-events.test.ts): WebSocket stub, mock callbacks, and handle setup.
+// Shared test helpers for the connectS2s specs (client.test.ts,
+// dispatch.test.ts, reply.test.ts): WebSocket stub, mock callbacks, handle setup.
 
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { vi } from "vitest";
@@ -76,7 +76,7 @@ export function createTestS2s() {
   // `makeLogger()`, not `{ ...silentLogger }`: the spread LOOKS like a fresh
   // logger per call and is not — it copies the same `vi.fn()` references, so
   // every session in a file shared one accumulating call log. That is what
-  // forced `droppedTypes()` in s2s-events.test.ts to assert a type is ABSENT
+  // forced `droppedTypes()` in dispatch.test.ts to assert a type is ABSENT
   // from the accumulated warnings rather than that nothing was warned at all.
   return { raw, createWebSocket, logger: makeLogger() };
 }

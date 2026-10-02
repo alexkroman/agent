@@ -360,6 +360,10 @@ const missed = Object.entries(COVERAGE_FLOORS).filter(([, f]) => f > 0);
     // check:test-assertions having no allowlist.
     const entries = baseline ?? {};
     expect(Object.keys(entries)).toContain("unmeasured-floor");
+    // `--update` drops a group paid down to zero unless it is marked to keep
+    // its key, and this group sits at zero — so the mark is what lets the
+    // command keep the key asserted above.
+    expect(script ?? "").toMatch(/key: "unmeasured-floor",[^}]*keepEmpty: true/);
     expect(Object.keys(entries)).not.toContain("floorless");
     expect(entries._description, "the baseline must explain itself").toBeTypeOf("string");
     const group = entries["unmeasured-floor"] as Record<string, number>;

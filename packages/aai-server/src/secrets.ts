@@ -24,11 +24,19 @@ export function hashApiKey(apiKey: string): string {
   return DIGEST_PREFIX + hash("sha256", apiKey);
 }
 
-/** True when `apiKey` digests to `storedHash` (constant-time compare). */
-export function verifyApiKeyHash(apiKey: string, storedHash: string): boolean {
+/**
+ * True when `apiKey` digests to `storedHash` (constant-time compare).
+ * `compare` is the constant-time primitive — a seam so a test can observe that
+ * the compare goes through it; production never passes one.
+ */
+export function verifyApiKeyHash(
+  apiKey: string,
+  storedHash: string,
+  compare: typeof timingSafeEqual = timingSafeEqual,
+): boolean {
   const candidate = Buffer.from(hashApiKey(apiKey));
   const stored = Buffer.from(storedHash);
-  return candidate.length === stored.length && timingSafeEqual(candidate, stored);
+  return candidate.length === stored.length && compare(candidate, stored);
 }
 
 export type OwnerResult = { status: "unclaimed" | "owned" | "forbidden" };

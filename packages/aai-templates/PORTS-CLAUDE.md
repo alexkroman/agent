@@ -77,10 +77,11 @@ things are decisions:
   `{"steps": …}` when it meant to respond leaves a plan looping forever.
   `normalizeAct` then treats every malformed act as an ANSWER, because a desk
   that never stops is the failure that matters on a call.
-- **The search is real and therefore injected.** `executeStep` takes a
-  `SearchFn`; the tool passes `liveSearch` (`webSearch`, DuckDuckGo-backed, no
-  key) and the spec passes its own. A template spec that depended on the live
-  web would be a flake with a stranger's rate limit attached.
+- **The search is real and therefore injected.** `createWebTools` takes the two
+  `@alexkroman1/aai/tools` calls; the executor holds the pair built over the
+  live web (`webSearch`, DuckDuckGo-backed, no key) and the spec builds its own
+  over fakes. A template spec that depended on the live web would be a flake
+  with a stranger's rate limit attached.
 
 **`document-redline-workflow` — a loop whose exit is data, and the mixed form.**
 Two things in it are worth reading for, and neither exists elsewhere in

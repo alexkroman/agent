@@ -117,6 +117,30 @@ const SERVER_KEEPALIVE_TIMEOUT_MS = 10_000;
  * @public
  */
 export function createServerForRuntime(options: RuntimeServerOptions): AgentServer {
+  return createServerForRuntimeWithSeams(options);
+}
+
+/**
+ * The collaborators {@link createServerForRuntimeWithSeams} takes in place of
+ * its imports. Test seams, not a public type — reached by relative import.
+ *
+ * @internal
+ */
+export type ServerSeams = {
+  /** Start a host-mode session; defaults to the real one, which dials STT/TTS. */
+  startHostSession?: typeof startHostSession;
+};
+
+/**
+ * {@link createServerForRuntime} with its {@link ServerSeams}.
+ *
+ * @internal
+ */
+export function createServerForRuntimeWithSeams(
+  options: RuntimeServerOptions,
+  seams: ServerSeams = {},
+): AgentServer {
+  const startHost = seams.startHostSession ?? startHostSession;
   const { runtime, clientDir, logger = consoleLogger, env, hostBaseAgent } = options;
   const name = options.name ?? "agent";
   const isStatic = options.page === "static";
@@ -383,7 +407,7 @@ export function createServerForRuntime(options: RuntimeServerOptions): AgentServ
         // the per-connection agent. Requires `env` (for gating + secrets).
         if (wantsHost && env && isHostAllowed(env)) {
           logger.info(`WS upgrade ${url} (host mode)`);
-          startHostSession(session, {
+          startHost(session, {
             env,
             // Owner recorded here too, or a host session could never be resumed.
             startOpts: { ...startOpts, ...sessionGate?.ownership(identity) },

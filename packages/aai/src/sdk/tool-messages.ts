@@ -279,15 +279,17 @@ export const ToolMessagesSchema = z.object({
 
 function startList(input: ToolMessagesInput["start"]): ToolStartMessage[] | undefined {
   if (input === undefined || input === false) return undefined;
-  if (input === true) return DEFAULT_TOOL_START_PHRASES.map((content) => ({ content }));
-  const entries = typeof input === "string" ? [input] : input;
-  const out = entries.map((e) => (typeof e === "string" ? { content: e } : { ...e }));
-  return out.length > 0 ? out : undefined;
+  return messageList(input === true ? DEFAULT_TOOL_START_PHRASES : input);
 }
 
-function completionList(
-  input: string | readonly (string | ToolCompletionMessage)[] | undefined,
-): ToolCompletionMessage[] | undefined {
+/**
+ * A bare string or list → a fresh list of message objects, `undefined` when it
+ * comes out empty. Every field but `content` is optional on each kind, so a
+ * bare string's `{ content }` is a complete message of whichever kind it is.
+ */
+function messageList<M extends { content: string }>(
+  input: string | readonly (string | M)[] | undefined,
+): (M | { content: string })[] | undefined {
   if (input === undefined) return undefined;
   const entries = typeof input === "string" ? [input] : input;
   const out = entries.map((e) => (typeof e === "string" ? { content: e } : { ...e }));
@@ -308,8 +310,8 @@ export function normalizeToolMessages(
   if (input === undefined) return undefined;
   const start = startList(input.start);
   const delayed = input.delayed === undefined ? undefined : input.delayed.map((m) => ({ ...m }));
-  const complete = completionList(input.complete);
-  const failed = completionList(input.failed);
+  const complete = messageList(input.complete);
+  const failed = messageList(input.failed);
   const out: ToolMessages = {};
   if (start !== undefined) out.start = start;
   if (delayed !== undefined && delayed.length > 0) out.delayed = delayed;

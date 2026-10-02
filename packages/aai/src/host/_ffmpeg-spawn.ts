@@ -26,6 +26,43 @@ import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 
+/**
+ * The slice of a spawned child {@link spawnFfmpeg} drives — structural, so a
+ * spec's fake child is one with no cast. Every real `ChildProcess` is one.
+ *
+ * @internal
+ */
+export type FfmpegChild = {
+  readonly stdout: { on(event: "data", cb: (chunk: Buffer) => void): unknown } | null;
+  readonly stderr: { on(event: "data", cb: (chunk: Buffer) => void): unknown } | null;
+  readonly stdin: {
+    on(event: "error", cb: (err: Error) => void): unknown;
+    end(bytes: Uint8Array): unknown;
+  } | null;
+  on(event: "error", cb: (err: NodeJS.ErrnoException) => void): unknown;
+  on(event: "close", cb: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+  kill(signal: NodeJS.Signals): unknown;
+};
+
+/**
+ * What {@link spawnFfmpeg} spawns through: a mutable object so a spec swaps the
+ * child in with `vi.spyOn`. The public runners reach this module by import and
+ * take no such parameter, which is why it is an object and not an argument.
+ *
+ * @internal
+ */
+export const ffmpegProcess = {
+  spawn: (
+    binary: string,
+    args: string[],
+    options: {
+      cwd?: string;
+      signal: AbortSignal;
+      stdio: ["ignore" | "pipe", "pipe", "pipe"];
+    },
+  ): FfmpegChild => spawn(binary, args, options),
+};
+
 /** Overrides the `ffmpeg` binary this module spawns. */
 export const FFMPEG_PATH_ENV = "AAI_FFMPEG_PATH";
 
@@ -214,7 +251,7 @@ export function spawnFfmpeg(
   const startedAt = performance.now();
 
   return new Promise<FfmpegRunResult>((resolve, reject) => {
-    const child = spawn(binary, [...args], {
+    const child = ffmpegProcess.spawn(binary, [...args], {
       ...omitUndefined({ cwd: options.cwd }),
       signal,
       stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],

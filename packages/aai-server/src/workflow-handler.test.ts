@@ -27,14 +27,11 @@ import type { RateLimiter } from "./rate-limit.ts";
 import { notFoundMessage } from "./sandbox/broker.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import type { SpawnAgentServer } from "./sandbox.ts";
 import { GUEST_PROXY_TOKEN_HEADER } from "./workflow-proxy-constants.ts";
 
-const { mockSpawnAgentServer } = vi.hoisted(() => ({ mockSpawnAgentServer: vi.fn() }));
-
-vi.mock("./sandbox/vm.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./sandbox/vm.ts")>()),
-  spawnAgentServer: mockSpawnAgentServer,
-}));
+/** The guest spawn the orchestrator boots through (`OrchestratorOpts.spawnAgentServer`). */
+const mockSpawnAgentServer = vi.fn<SpawnAgentServer>();
 
 /** Records what the platform forwarded, and answers as the guest would. */
 function recordingGuest(answer: (req: Request) => Response | Promise<Response> = () => json({})) {
@@ -66,6 +63,7 @@ async function residentHarness(
   slots = createSlotCache(),
 ) {
   const harness = await createTestOrchestrator({
+    spawnAgentServer: mockSpawnAgentServer,
     slots,
     ...omitUndefined({ guestFetch }),
     ...omitUndefined({ workflowRateLimiter: limiters.surface }),
@@ -292,7 +290,7 @@ describe("event streams", () => {
 
 describe("availability", () => {
   test("an unknown slug is a 404", async () => {
-    const harness = await createTestOrchestrator({});
+    const harness = await createTestOrchestrator({ spawnAgentServer: mockSpawnAgentServer });
     const res = await get(harness.fetch, "/nobody/workflows");
     expect(res.status).toBe(404);
   });

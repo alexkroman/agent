@@ -15,10 +15,10 @@ beforeEach(() => {
   // Capture the listeners without registering them on the real process —
   // a real uncaughtException listener would swallow vitest's own failures.
   handlers = new Map();
-  vi.spyOn(process, "on").mockImplementation(((event: string, handler: Handler) => {
-    handlers.set(event, handler);
+  vi.spyOn(process, "on").mockImplementation((event, handler) => {
+    if (typeof event === "string") handlers.set(event, handler);
     return process;
-  }) as never);
+  });
   installCrashGuards();
 });
 

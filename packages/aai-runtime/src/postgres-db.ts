@@ -14,7 +14,7 @@ import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 // TYPE-ONLY: the driver is loaded by `loadPostgres()` on first use. The named
-// types below (`postgres.Sql`, `postgres.ReservedSql`, …) erase at compile
+// types below (`postgres.ParameterOrJSON`, `typeof postgres`) erase at compile
 // time, so this import costs nothing at runtime.
 import type postgres from "postgres";
 import { consoleLogger } from "./logger.ts";
@@ -282,10 +282,7 @@ export type CloseableDb = Db & {
  * rather than as a very large one: a pool that must never fail an acquire (the
  * slug lock's) is stating a property, not choosing a number.
  */
-async function reserveWithin(
-  sql: postgres.Sql,
-  timeoutMs: number | undefined,
-): Promise<postgres.ReservedSql> {
+async function reserveWithin(sql: PgClient, timeoutMs: number | undefined): Promise<PgReserved> {
   if (timeoutMs === undefined) return await sql.reserve();
   const pending = sql.reserve();
   return await pTimeout(pending, {
@@ -315,13 +312,44 @@ function loadPostgres(): Promise<typeof postgres> {
   return driver;
 }
 
+/** The slice of a postgres.js connection this module drives. */
+type PgQueryable = {
+  unsafe(query: string, params: postgres.ParameterOrJSON<never>[]): PromiseLike<readonly unknown[]>;
+};
+type PgReserved = PgQueryable & { release(): void };
+type PgClient = PgQueryable & {
+  reserve(): Promise<PgReserved>;
+  listen(channel: string, onNotify: () => void): Promise<{ unlisten(): Promise<unknown> }>;
+  end(): Promise<void>;
+};
+
+/**
+ * The driver as this module calls it — structural, so `postgres` itself is one
+ * and a spec's fake client is another (see {@link createPostgresDbWithDriver}).
+ *
+ * @internal
+ */
+export type PostgresDriver = (
+  url: string,
+  options: {
+    max: number;
+    prepare: boolean;
+    idle_timeout: number;
+    onnotice: (notice: unknown) => void;
+    connect_timeout?: number;
+  },
+) => PgClient;
+
 /**
  * Build the real handle. Split from {@link createPostgresDb} so that function
  * can stay SYNCHRONOUS — it is published, and every caller would otherwise
  * have to become async to buy a module load.
  */
-async function buildPostgresDb(options: CreatePostgresDbOptions): Promise<CloseableDb> {
-  const postgres = await loadPostgres();
+async function buildPostgresDb(
+  options: CreatePostgresDbOptions,
+  load: () => Promise<PostgresDriver>,
+): Promise<CloseableDb> {
+  const postgres = await load();
   const sql = postgres(options.url, {
     max: options.max ?? 4,
     prepare: false,
@@ -336,7 +364,7 @@ async function buildPostgresDb(options: CreatePostgresDbOptions): Promise<Closea
    * declares none for the reserved one — see `reservedQueryTimeoutMs`.
    */
   const queryOn =
-    (on: Pick<postgres.Sql, "unsafe">, timeoutMs?: number) =>
+    (on: PgQueryable, timeoutMs?: number) =>
     async <T = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T[]> => {
       // The driver types parameters as its serializable union; `Db` keeps
       // the caller-facing contract at `unknown[]` and lets the driver reject
@@ -404,9 +432,22 @@ async function buildPostgresDb(options: CreatePostgresDbOptions): Promise<Closea
  * @public
  */
 export function createPostgresDb(options: CreatePostgresDbOptions): CloseableDb {
+  return createPostgresDbWithDriver(options);
+}
+
+/**
+ * {@link createPostgresDb} with the driver loader as a parameter — the seam a
+ * spec hands a fake client through. Not on the barrel.
+ *
+ * @internal
+ */
+export function createPostgresDbWithDriver(
+  options: CreatePostgresDbOptions,
+  load: () => Promise<PostgresDriver> = loadPostgres,
+): CloseableDb {
   let pending: Promise<CloseableDb> | undefined;
   const db = (): Promise<CloseableDb> => {
-    pending ??= buildPostgresDb(options);
+    pending ??= buildPostgresDb(options, load);
     return pending;
   };
   return {
