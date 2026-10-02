@@ -13,8 +13,7 @@
  */
 
 import { type WorkflowContext, workflow } from "@alexkroman1/aai";
-import { sleep } from "@alexkroman1/aai/internal";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { silentLogger } from "../_logger-test-utils.ts";
 import { harness } from "./_engine-harness.ts";
 import { createWorkflowEngine } from "./engine.ts";
@@ -288,10 +287,14 @@ describe("a hook with a deadline", () => {
     // `undefined` rather than a throw: a window closing is an outcome a body
     // branches on. The deadline is let ELAPSE rather than woken, because a bare
     // wake deliberately no longer reaches a hook's deadline — see below.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const { engine } = harness(briefly);
     const runId = await engine.start("digest", [{}]);
     await engine.execute(runId);
-    await sleep(5);
+    vi.advanceTimersByTime(5);
 
     expect(await engine.execute(runId)).toBe("completed");
     expect(await engine.readOutput(runId)).toEqual({ kept: false, answered: false });
@@ -319,10 +322,14 @@ describe("a hook with a deadline", () => {
     // So a caller cannot be told their answer was taken when it was not — and,
     // more to the point, so the next replay cannot read a payload and take the
     // answered branch after the body already took the other one.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const { engine } = harness(briefly);
     const runId = await engine.start("digest", [{}]);
     await engine.execute(runId);
-    await sleep(5);
+    vi.advanceTimersByTime(5);
     await engine.execute(runId);
 
     expect(await engine.signal("tok_gate", { keep: true })).toBe(false);

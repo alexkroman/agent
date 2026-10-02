@@ -106,8 +106,6 @@ describe("API-EXPORTS.json", () => {
       "STUB_SPEECH_PCM_BYTES",
       "SaidLine",
       "SentEvent",
-      "StepRoute",
-      "StepUnmatched",
       "StubClientInbox",
       "StubClientInboxCall",
       "StubClientInboxOptions",
@@ -158,8 +156,6 @@ describe("API-EXPORTS.json", () => {
       "WORKFLOW_CONTEXT_NOW",
       "WorkflowContextOptions",
       "WorkflowContextRecorder",
-      "commandedBuiltins",
-      "createProgressStream",
       "createRecordingWorkflows",
       "createRunSnapshot",
       "createStubWorkflows",
@@ -178,7 +174,6 @@ describe("API-EXPORTS.json", () => {
       "isEvent",
       "parseSchemaInput",
       "parseToolInput",
-      "routeStepFetch",
       "runGuardrail",
       "runTool",
       "schemaInputIssues",
@@ -210,7 +205,6 @@ describe("API-EXPORTS.json", () => {
     // content. See `sdk/testing-vitest.ts`.
     expect(surface["@alexkroman1/aai/testing/vitest"]).toEqual([
       "StubWorkflowsOptions",
-      "installFetchRoutes",
       "installStubClientInbox",
       "installStubGateway",
       "installStubReporter",

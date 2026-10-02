@@ -22,8 +22,8 @@ disagree about the authoring API. Its module doc has why. Exports with no honest
 template use go in `template-api-allowlist.json` — e.g. `defaultClientDir` (its
 only caller is framework code, `aai start`),
 `TextAgentParams`/`PipelineAgentParams`/`S2sAgentParams` (union arms an author
-never names), `isFfmpegError`/`FfmpegError`, `commandedBuiltins`, `stubGateway`.
-An allowlist entry beats a contrived use.
+never names), `isFfmpegError`/`FfmpegError`, `stubGateway`. An allowlist entry
+beats a contrived use.
 
 **The last remover pays.** A cross-template migration moves coverage in a way no
 single diff shows: when parallel changes each remove one of an export's three

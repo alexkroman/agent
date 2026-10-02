@@ -18,7 +18,7 @@
  */
 
 import { type AgentDef, endSession, type SessionEndContext } from "@alexkroman1/aai";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { makeAgent } from "../_agent-test-utils.ts";
 import type { ScriptedPart } from "../_fake-llm.ts";
 import { makeLogger } from "../_logger-test-utils.ts";
@@ -33,9 +33,6 @@ import {
 import { createRuntimeWithSeams } from "../runtime/index.ts";
 import { twilioCodec } from "./carriers.ts";
 import { startTelephonySession } from "./telephony-server.ts";
-
-let unregister: (() => void) | undefined;
-afterEach(() => unregister?.());
 
 /** What the carrier socket saw, in order: an outbound media frame, or the close. */
 type CarrierLog = ("media" | { close: number | undefined })[];
@@ -93,7 +90,6 @@ function phoneRuntime(agent: Partial<AgentDef>, steps: ScriptedPart[][] = [[]]) 
   };
   const llm = createFakeLanguageModel({ steps });
   const fakes = registerFakeProviders({ stt, tts, llm });
-  unregister = fakes.unregister;
   const logger = makeLogger();
   const runtime = createRuntimeWithSeams({
     agent: makeAgent(agent),

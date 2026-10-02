@@ -8,18 +8,14 @@
  * one of those two or the transition between them.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import { TRANSCRIBING_PLACEHOLDER, useUserTranscript } from "./use-user-transcript.ts";
 
 function render(userTranscript: string | null) {
   const core = createMockSessionCore({ userTranscript, started: true });
-  const wrapper = ({ children }: { children: ReactNode }) =>
-    createElement(SessionProvider, { value: core }, children);
-  return { core, ...renderHook(() => useUserTranscript(), { wrapper }) };
+  return { core, ...renderHookWithSession(() => useUserTranscript(), core) };
 }
 
 describe("useUserTranscript", () => {

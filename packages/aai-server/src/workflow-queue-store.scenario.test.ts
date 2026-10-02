@@ -50,11 +50,8 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import { expect, test, vi } from "vitest";
 import { describeWithPg } from "./_pg-test-utils.ts";
-import {
-  byCodeUnit,
-  useQueueFixture,
-  withQueueNotifications,
-} from "./_workflow-queue-test-utils.ts";
+import { byCodeUnit } from "./_sql-test-utils.ts";
+import { listenForQueueNotifications, useQueueFixture } from "./_workflow-queue-test-utils.ts";
 import type { SqlExec } from "./sql-exec.ts";
 import { claimDue, WORKFLOW_QUEUE_STEPS_PER_RUN } from "./workflow-queue-claim.ts";
 import {
@@ -601,13 +598,12 @@ describeWithPg("workflow queue store", () => {
    * postgres.js's `listen`, so a fake proves nothing here.
    */
   test("enqueuing a DUE message notifies a listener", async () => {
-    await withQueueNotifications(fx, async (notify) => {
-      await enqueue(sql, msg("m1", "r1"));
-      // The notification is delivered on COMMIT and travels asynchronously, so
-      // this polls rather than assuming it has landed by the time `enqueue`
-      // resolves.
-      await vi.waitFor(() => expect(notify.count()).toBeGreaterThan(0));
-    });
+    const notify = await listenForQueueNotifications(fx);
+    await enqueue(sql, msg("m1", "r1"));
+    // The notification is delivered on COMMIT and travels asynchronously, so
+    // this polls rather than assuming it has landed by the time `enqueue`
+    // resolves.
+    await vi.waitFor(() => expect(notify.count()).toBeGreaterThan(0));
   });
 
   /**
@@ -629,14 +625,13 @@ describeWithPg("workflow queue store", () => {
    * would pass on a listener that never works at all.
    */
   test("a LONG-delayed message does not notify, and a SHORT park does", async () => {
-    await withQueueNotifications(fx, async (notify) => {
-      await enqueue(sql, { ...msg("m1", "r1"), delaySeconds: 30 });
-      await notify.fence();
-      expect(notify.count()).toBe(0);
+    const notify = await listenForQueueNotifications(fx);
+    await enqueue(sql, { ...msg("m1", "r1"), delaySeconds: 30 });
+    await notify.fence();
+    expect(notify.count()).toBe(0);
 
-      await enqueue(sql, { ...msg("m2", "r1"), delaySeconds: QUEUE_DUE_SOON_MS / 2000 });
-      await vi.waitFor(() => expect(notify.count()).toBe(1));
-    });
+    await enqueue(sql, { ...msg("m2", "r1"), delaySeconds: QUEUE_DUE_SOON_MS / 2000 });
+    await vi.waitFor(() => expect(notify.count()).toBe(1));
   });
 
   /**
@@ -658,14 +653,13 @@ describeWithPg("workflow queue store", () => {
     await enqueue(sql, msg("m1", "r1"));
     const [claimed] = await claimDue(sql, 1);
     const id = claimed?.id ?? "";
-    await withQueueNotifications(fx, async (notify) => {
-      await reschedule(sql, id, 30);
-      await notify.fence();
-      expect(notify.count()).toBe(0);
+    const notify = await listenForQueueNotifications(fx);
+    await reschedule(sql, id, 30);
+    await notify.fence();
+    expect(notify.count()).toBe(0);
 
-      await reschedule(sql, id, 0);
-      await vi.waitFor(() => expect(notify.count()).toBe(1));
-    });
+    await reschedule(sql, id, 0);
+    await vi.waitFor(() => expect(notify.count()).toBe(1));
   });
 
   test("deleting the agent takes its queued messages with it", async () => {

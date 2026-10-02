@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { setup } from "xstate";
 import { z } from "zod";
 import { agentToolsToSchemas } from "./_internal-types.ts";
@@ -192,17 +192,10 @@ describe("tool gating", () => {
 
   test("the body does NOT run when the gate refuses", async () => {
     const claim = dialog("claim", claimMachine());
-    let ran = false;
-    const quote = claim.tool({
-      description: "Quote the claim",
-      when: "quoting",
-      execute: () => {
-        ran = true;
-        return {};
-      },
-    });
+    const execute = vi.fn(() => ({}));
+    const quote = claim.tool({ description: "Quote the claim", when: "quoting", execute });
     await runToolDef(quote, createToolContext());
-    expect(ran).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
   });
 
   test("runs in state, and wraps the author's result in the position", async () => {
@@ -278,10 +271,7 @@ describe("tool transitions", () => {
       },
     });
     const flow = dialog("race", machine);
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
     const go = flow.tool({
       description: "Go",
       when: "open",

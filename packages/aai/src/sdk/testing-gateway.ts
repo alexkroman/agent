@@ -17,7 +17,11 @@
  * or an explicit `vi.unstubAllGlobals()`.
  */
 
-import type { StubStepAnswer, StubStepRequest } from "./_testing-step-fetch.ts";
+import {
+  type StubStepAnswer,
+  type StubStepRequest,
+  toStepResponse,
+} from "./_testing-step-fetch.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
@@ -105,33 +109,19 @@ export function stubGateway(
   replies: string | readonly string[],
   options: StubGatewayOptions = {},
 ): StubGateway {
-  const scripted = typeof replies === "string" ? [replies] : replies;
-  const status = options.status ?? 200;
-  const calls: StubGatewayCall[] = [];
-
+  const gateway = scriptedGateway(replies, options);
   return {
-    calls,
-    fetch: (url, init = {}) => {
-      const body = decodeBody(init.body);
-      const messages = readMessages(body);
-      calls.push({
-        url: String(url),
-        prompt: contentOf(messages, "user"),
-        system: messages.some((message) => message.role === "system")
-          ? contentOf(messages, "system")
-          : undefined,
-        body,
-        headers: Object.fromEntries(new Headers(init.headers).entries()),
-      });
-      // The last reply repeats — see the doc above.
-      const content = scripted.at(Math.min(calls.length - 1, scripted.length - 1)) ?? "";
-      return Promise.resolve(
-        new Response(JSON.stringify(completionBody(content, status)), {
-          status,
-          headers: { "Content-Type": "application/json", ...options.headers },
-        }),
-      );
-    },
+    calls: gateway.calls,
+    fetch: (url, init = {}) =>
+      Promise.resolve(
+        toStepResponse(
+          gateway.answer(
+            String(url),
+            typeof init.body === "string" ? init.body : undefined,
+            Object.fromEntries(new Headers(init.headers).entries()),
+          ),
+        ),
+      ),
   };
 }
 
@@ -157,9 +147,10 @@ const COMPLETIONS_PATH = "/chat/completions";
 export interface StubGatewayRoute {
   /**
    * Answers a completion request and `undefined` for anything else, so the
-   * caller composes it: `?? { body: html }` for a flow that also fetches a
-   * page, `?? someThrow()` for one where an unexpected request is a finding, or
-   * straight into `stubTranscribe`'s `otherwise`.
+   * caller composes it: as the first leg of a `stubFetchRoutes` list (where
+   * an unexpected request is a finding by default), `?? { body: html }` for a
+   * flow that also fetches a page, or straight into `stubTranscribe`'s
+   * `otherwise`.
    */
   route: (request: StubStepRequest) => StubStepAnswer | undefined;
   /** Every completion request this route answered, DECODED, in call order. */
@@ -214,15 +205,38 @@ export function stubGatewayRoute(
   replies: string | readonly string[],
   options: StubGatewayOptions = {},
 ): StubGatewayRoute {
+  const gateway = scriptedGateway(replies, options);
+  return {
+    calls: gateway.calls,
+    route: (request) =>
+      request.url.includes(COMPLETIONS_PATH)
+        ? gateway.answer(request.url, request.body, request.headers)
+        : undefined,
+  };
+}
+
+/**
+ * The one scripted gateway both fakes are: it records each request and answers
+ * the next reply, the LAST one repeating once the script runs out.
+ */
+function scriptedGateway(
+  replies: string | readonly string[],
+  options: StubGatewayOptions,
+): {
+  calls: StubGatewayCall[];
+  answer: (
+    url: string,
+    body: Uint8Array | string | undefined,
+    headers: Record<string, string>,
+  ) => StubStepAnswer;
+} {
   const scripted = typeof replies === "string" ? [replies] : replies;
   const status = options.status ?? 200;
   const calls: StubGatewayCall[] = [];
   return {
     calls,
-    route: (request) => {
-      if (!request.url.includes(COMPLETIONS_PATH)) return;
-      calls.push(recordGatewayCall(request.url, request.body, request.headers));
-      // The last reply repeats — see the doc above.
+    answer: (url, body, headers) => {
+      calls.push(recordGatewayCall(url, body, headers));
       const content = scripted.at(Math.min(calls.length - 1, scripted.length - 1)) ?? "";
       return {
         status,
@@ -233,26 +247,14 @@ export function stubGatewayRoute(
   };
 }
 
-/**
- * The response body a gateway answers with, success or failure.
- *
- * Shared by both fakes so a spec that moves from one seam to the other cannot
- * find the envelope spelled differently — the same reason `toStepResponse` is
- * shared between `stubStepFetch` and `stubTranscribe`.
- */
+/** The response body a gateway answers with, success or failure. */
 function completionBody(content: string, status: number): unknown {
   return status === 200
     ? { choices: [{ message: { content } }] }
     : { error: { message: `stub gateway: HTTP ${status}` } };
 }
 
-/**
- * One recorded request, decoded the way {@link StubGatewayCall} promises.
- *
- * Shared for the same reason: `prompt` and `system` are what a spec asserts on,
- * and the reach into `body.messages[n].content` is exactly what a caller should
- * not be re-deriving.
- */
+/** One recorded request, decoded the way {@link StubGatewayCall} promises. */
 function recordGatewayCall(
   url: string,
   body: Uint8Array | string | undefined,

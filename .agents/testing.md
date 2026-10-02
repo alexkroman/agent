@@ -91,9 +91,15 @@ read_when: >-
   `vi.waitFor()`, never a fixed delay.
 - **Helpers are split BY DOMAIN** into `_<domain>-test-utils.ts` modules
   (aai-runtime: timing, agent, session, s2s-fixture, logger, fetch, db;
-  aai-server: orchestrator, request, sandbox, sql, logger, modal). Import the
-  one whose name says what it fakes; the rosters are konsistent's
-  `test-helper-modules`.
+  aai-server: orchestrator, request, sandbox, sql, logger, modal; aai-cli:
+  mock-api, vitest-runner, dev-server). Import the one whose name says what it
+  fakes; the rosters are konsistent's `test-helper-modules`.
+- **Per-test resources are `test.extend` fixtures**, cleaned up after `use` (or
+  by `onCleanup`), not `withX(fn)` callbacks or `beforeEach`/`afterEach` pairs
+  over module-level `let`s. aai-cli's `test` (`_test-utils.ts`) carries
+  `tmpDir`; a fixture's first parameter must be a destructuring pattern, and
+  Biome rejects `{}`, so one that needs no other fixture takes
+  `{ task: _task }`.
 - **A spec that observes a TIMER runs on virtual time**, never the wall clock:
   `useVirtualTime()`
   (`aai-runtime/src/transports/_pipeline-transport-harness.ts`) installs fake

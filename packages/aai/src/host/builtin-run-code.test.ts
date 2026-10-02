@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
+import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext } from "./_test-utils.ts";
 import { createRunCode, RUN_CODE_REFUSAL } from "./builtin-run-code.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 
@@ -11,7 +11,7 @@ import { resolveAllBuiltins } from "./builtin-tools.ts";
  */
 function runCode(code: string): Promise<unknown> {
   const { defs } = resolveAllBuiltins(["run_code"]);
-  return defs.run_code?.execute({ code }, createMockToolContext()) as Promise<unknown>;
+  return defs.run_code?.execute({ code }, createToolContext()) as Promise<unknown>;
 }
 
 describe("run_code with no executor (the host-side guard)", () => {
@@ -32,7 +32,7 @@ describe("run_code with no executor (the host-side guard)", () => {
   });
 
   test("answers the exported refusal, which the eval harness reads", async () => {
-    await expect(createRunCode().execute({ code: "1" }, createMockToolContext())).resolves.toEqual({
+    await expect(createRunCode().execute({ code: "1" }, createToolContext())).resolves.toEqual({
       error: RUN_CODE_REFUSAL,
     });
   });
@@ -43,7 +43,7 @@ describe("run_code with an executor", () => {
     const executor = vi.fn(async (code: string) => `ran ${code.length} chars`);
     const result = await createRunCode(executor).execute(
       { code: "console.log(1)" },
-      createMockToolContext(),
+      createToolContext(),
     );
     expect(executor).toHaveBeenCalledWith("console.log(1)");
     expect(result).toBe("ran 14 chars");
@@ -52,7 +52,7 @@ describe("run_code with an executor", () => {
   test("passes an executor's in-band error through unchanged", async () => {
     const result = await createRunCode(async () => ({ error: "SyntaxError" })).execute(
       { code: "(" },
-      createMockToolContext(),
+      createToolContext(),
     );
     expect(result).toEqual({ error: "SyntaxError" });
   });

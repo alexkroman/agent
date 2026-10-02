@@ -25,12 +25,11 @@ import { createMemoryStateBackend } from "../session-state/store.ts";
 import { MAX_ROUTE_BODY_BYTES } from "./agent-routes-http.ts";
 import { type AgentServer, createServerForRuntime, type SessionRuntime } from "./server.ts";
 
-let server: AgentServer | undefined;
-let unregister: (() => void) | undefined;
+// Every server a test opens — one test serves twice, so a single slot would
+// orphan the first listener.
+const servers: AgentServer[] = [];
 afterEach(async () => {
-  await server?.close();
-  server = undefined;
-  unregister?.();
+  await Promise.all(servers.splice(0).map((s) => s.close()));
 });
 
 async function serve(routes: Record<string, RouteHandler> | undefined): Promise<string> {
@@ -48,7 +47,8 @@ async function serve(routes: Record<string, RouteHandler> | undefined): Promise<
       logger: silentLogger,
     }),
   };
-  server = createServerForRuntime({ runtime, logger: silentLogger });
+  const server = createServerForRuntime({ runtime, logger: silentLogger });
+  servers.push(server);
   await server.listen(0);
   return `http://127.0.0.1:${server.port}`;
 }
@@ -166,7 +166,6 @@ describe("agent({ routes }) through createRuntime", () => {
       tts: createFakeTtsProvider(),
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
     });
-    unregister = fakes.unregister;
     const runtime = createRuntimeWithSeams({
       agent: makeAgent({ routes: { "GET /whoami": (_req, ctx) => ({ name: ctx.env.OWNER }) } }),
       env: {
@@ -180,7 +179,8 @@ describe("agent({ routes }) through createRuntime", () => {
       llm: fakes.llm,
       tts: fakes.tts,
     });
-    server = createServerForRuntime({ runtime, logger: silentLogger });
+    const server = createServerForRuntime({ runtime, logger: silentLogger });
+    servers.push(server);
     await server.listen(0);
     const res = await fetch(`http://127.0.0.1:${server.port}/api/whoami`);
     expect(await res.json()).toEqual({ name: "Ana" });

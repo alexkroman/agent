@@ -16,17 +16,16 @@
  * The upload store is the other seam that makes this testable at all —
  * `stepReadUpload`/`stepWriteUpload` read a process-wide slot rather than dialling
  * anything, so a spec supplies its own bytes and the code under test is
- * unchanged. `stubUploads` is imported from its own module rather than from
- * `sdk/testing.ts`; the barrel would work equally well and this is the narrower
- * graph.
+ * unchanged. Every store is unpublished when its test finishes — one left
+ * published makes the next file's steps read this one's bytes.
  */
 
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { publishUploadReader, stepUploadInfo } from "../sdk/step-uploads.ts";
-import { stubUploads } from "../sdk/testing-uploads.ts";
+import { installStubUploads } from "../sdk/testing-vitest.ts";
 import {
   readUploadToFile,
   STEP_FILE_READ_CONCURRENCY,
@@ -36,23 +35,6 @@ import {
 } from "./step-files.ts";
 
 const UPLOAD_ID = "upl_recording";
-
-/**
- * Unpublishing the store is not optional — one left published makes the next
- * file's steps read this one's bytes, which presents as a passing test somewhere
- * else.
- */
-const restores: Array<() => void> = [];
-afterEach(() => {
-  while (restores.length > 0) restores.pop()?.();
-});
-
-/** `stubUploads`, with its `restore` queued for the `afterEach` above. */
-function uploadStore(...args: Parameters<typeof stubUploads>): ReturnType<typeof stubUploads> {
-  const store = stubUploads(...args);
-  restores.push(store.restore);
-  return store;
-}
 
 /** Bytes that differ at every offset, so a chunk pasted at the wrong one shows. */
 function pattern(length: number, step = 7): Uint8Array {
@@ -98,7 +80,7 @@ function watchedStore(
       });
     },
   });
-  restores.push(() => publishUploadReader(undefined));
+  onTestFinished(() => publishUploadReader(undefined));
   return { maxInFlight: () => peak, starts: () => [...starts] };
 }
 
@@ -124,7 +106,7 @@ function heldStore(bytes: Uint8Array): {
       return promise;
     },
   });
-  restores.push(() => publishUploadReader(undefined));
+  onTestFinished(() => publishUploadReader(undefined));
   return { pending };
 }
 
@@ -185,7 +167,7 @@ describe("withTempDir", () => {
 describe("readUploadToFile", () => {
   test("writes the stored bytes to a path, in order, across many windows", async () => {
     const bytes = pattern(4096);
-    uploadStore({ [UPLOAD_ID]: { bytes, name: "call.m4a" } });
+    installStubUploads({ [UPLOAD_ID]: { bytes, name: "call.m4a" } });
 
     await withTempDir(async (dir) => {
       const path = join(dir, "source");
@@ -202,7 +184,7 @@ describe("readUploadToFile", () => {
     // record a line earlier and threaded it, and a caller that has not is the
     // common case.
     const bytes = pattern(3000, 11);
-    uploadStore({ [UPLOAD_ID]: bytes });
+    installStubUploads({ [UPLOAD_ID]: bytes });
 
     await withTempDir(async (dir) => {
       const path = join(dir, "source");
@@ -213,7 +195,7 @@ describe("readUploadToFile", () => {
   });
 
   test("an empty upload materializes an empty file rather than failing", async () => {
-    uploadStore({ [UPLOAD_ID]: new Uint8Array(0) });
+    installStubUploads({ [UPLOAD_ID]: new Uint8Array(0) });
     await withTempDir(async (dir) => {
       const path = join(dir, "source");
       expect(await readUploadToFile(UPLOAD_ID, path)).toBe(0);
@@ -224,7 +206,7 @@ describe("readUploadToFile", () => {
   test("truncates a path that already holds something longer", async () => {
     // `open(path, "w")`, not `"a"`: a retried step writing into the leftovers of
     // its own previous attempt would produce a file with a tail nobody stored.
-    uploadStore({ [UPLOAD_ID]: pattern(64) });
+    installStubUploads({ [UPLOAD_ID]: pattern(64) });
     await withTempDir(async (dir) => {
       const path = join(dir, "source");
       await writeFile(path, pattern(4096, 3));
@@ -239,7 +221,7 @@ describe("readUploadToFile", () => {
     // that are there, so a stale size must end the walk rather than stride past
     // the short answer. The returned count is how a caller learns it was short.
     const arrived = pattern(4096, 5);
-    uploadStore({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
+    installStubUploads({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
 
     await withTempDir(async (dir) => {
       const path = join(dir, "source");
@@ -260,7 +242,7 @@ describe("readUploadToFile", () => {
   // goes to ffmpeg, and a run reports a transcript of most of a recording.
   test("REFUSES to default the size off an upload that is still arriving", async () => {
     const arrived = pattern(4096, 5);
-    uploadStore({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
+    installStubUploads({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
 
     await withTempDir(async (dir) => {
       const path = join(dir, "source");
@@ -276,7 +258,7 @@ describe("readUploadToFile", () => {
     // record", so passing one moves the completeness judgement to the caller,
     // which is what lets a polling body copy the windows that have landed.
     const arrived = pattern(2048, 5);
-    uploadStore({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
+    installStubUploads({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
 
     await withTempDir(async (dir) => {
       const path = join(dir, "source");
@@ -291,7 +273,7 @@ describe("readUploadToFile — the windows are read concurrently", () => {
     // length, whatever order the windows landed in. Both halves run against one
     // store, so nothing but the path taken differs.
     const bytes = pattern(4096, 13);
-    uploadStore({ [UPLOAD_ID]: bytes });
+    installStubUploads({ [UPLOAD_ID]: bytes });
 
     await withTempDir(async (dir) => {
       const serial = join(dir, "serial");
@@ -427,7 +409,7 @@ describe("readUploadToFile — the windows are read concurrently", () => {
     // `stepReadUpload` cuts the window to what has ARRIVED, and the walk must stop at
     // that answer instead of striding a whole window past it.
     const arrived = pattern(2500, 5);
-    uploadStore({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
+    installStubUploads({ [UPLOAD_ID]: { bytes: arrived, complete: false } });
 
     await withTempDir(async (dir) => {
       const path = join(dir, "source");
@@ -447,7 +429,7 @@ describe("writeUploadFromFile", () => {
     // instead of being re-explained wherever `stepWriteUpload(fileChunks(p), …)` is
     // written by hand. Verified to CATCH it: deleting the `.slice()` in
     // `fileChunks` fails this test.
-    uploadStore({}, { writable: true });
+    installStubUploads({}, { writable: true });
     const bytes = pattern(5000);
 
     const stored = await withTempDir(async (dir) => {
@@ -475,7 +457,7 @@ describe("writeUploadFromFile", () => {
     // `windowBytes` shares an options bag with the store's metadata, so the rest
     // spread is load-bearing: an upload whose `type` came back as a number is
     // one no browser plays.
-    uploadStore({}, { writable: true });
+    installStubUploads({}, { writable: true });
 
     const stored = await withTempDir(async (dir) => {
       const path = join(dir, "summary.mp3");
@@ -494,7 +476,7 @@ describe("writeUploadFromFile", () => {
   });
 
   test("an empty file stores an empty upload rather than one empty chunk", async () => {
-    uploadStore({}, { writable: true });
+    installStubUploads({}, { writable: true });
 
     const stored = await withTempDir(async (dir) => {
       const path = join(dir, "empty");
@@ -512,7 +494,7 @@ describe("writeUploadFromFile", () => {
     // longer describes.
     expect(STEP_FILE_WINDOW_BYTES).toBe(8 * 1024 * 1024);
 
-    uploadStore({}, { writable: true });
+    installStubUploads({}, { writable: true });
     const stored = await withTempDir(async (dir) => {
       const path = join(dir, "one-pass");
       await writeFile(path, pattern(1024));

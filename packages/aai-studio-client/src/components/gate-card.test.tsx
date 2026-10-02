@@ -12,18 +12,16 @@ import { ApiError } from "../api-error.ts";
 import { GateProblem, gateProblem, loadFailureText, SERVER_BUSY_MESSAGE } from "./gate-card.tsx";
 
 describe("loadFailureText", () => {
-  test("a server that never answered reads as busy, not as a bug in the page", () => {
-    // What a hung request and an unreachable server settle as. Neither
-    // message is worth showing the user ("signal timed out" reads as a
-    // front-end fault), so neither carries detail.
-    for (const err of [
-      new DOMException("The operation timed out", "TimeoutError"),
-      new TypeError("Failed to fetch"),
-    ]) {
-      expect(loadFailureText(err, "Could not load your account")).toEqual({
-        message: SERVER_BUSY_MESSAGE,
-      });
-    }
+  // What a hung request and an unreachable server settle as. Neither message is
+  // worth showing the user ("signal timed out" reads as a front-end fault), so
+  // neither carries detail.
+  test.each([
+    ["a timeout", new DOMException("The operation timed out", "TimeoutError")],
+    ["a rejected fetch", new TypeError("Failed to fetch")],
+  ])("a server that never answered (%s) reads as busy, not as a bug in the page", (_, err) => {
+    expect(loadFailureText(err, "Could not load your account")).toEqual({
+      message: SERVER_BUSY_MESSAGE,
+    });
   });
 
   test("a busy server's own answer is quoted as detail under the busy line", () => {
@@ -58,7 +56,10 @@ describe("loadFailureText", () => {
  * is which field a failure shows up in, and only the real thing can say.
  */
 function observeFailingQuery(queryFn: () => Promise<unknown>, retries: number) {
-  const client = new QueryClient();
+  // No GC timer on unsubscribe (see `renderWithClient`).
+  const client = new QueryClient({
+    defaultOptions: { queries: { gcTime: Number.POSITIVE_INFINITY } },
+  });
   const observer = new QueryObserver(client, {
     queryKey: ["gate"],
     queryFn,
@@ -126,8 +127,8 @@ describe("GateProblem", () => {
   test("shows the message, the detail, and a working retry", () => {
     const onRetry = vi.fn();
     render(<GateProblem message="Busy" detail="Service unavailable" onRetry={onRetry} />);
-    expect(screen.getByText("Busy")).toBeDefined();
-    expect(screen.getByText("Service unavailable")).toBeDefined();
+    expect(screen.getByText("Busy")).toBeInTheDocument();
+    expect(screen.getByText("Service unavailable")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
@@ -145,7 +146,7 @@ describe("GateProblem", () => {
 
   test("no retry offered when trying again cannot help", () => {
     render(<GateProblem message="Sign-in is not configured on this server" />);
-    expect(screen.getByText("Sign-in is not configured on this server")).toBeDefined();
+    expect(screen.getByText("Sign-in is not configured on this server")).toBeInTheDocument();
     expect(screen.queryByRole("button")).toBeNull();
   });
 });

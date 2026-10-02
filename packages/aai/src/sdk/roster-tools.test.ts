@@ -253,8 +253,9 @@ describe("the minted `delegate` tool", () => {
 describe("collisions", () => {
   it("a `tools/` file colliding with a minted or speaking-entry tool names the roster", () => {
     for (const name of [HANDOFF_TOOL_NAME, DELEGATE_TOOL_NAME, "lookup_invoice"]) {
-      expect(() =>
-        withTools(frontDesk, { [name]: { description: "x", execute: () => "x" } }),
+      expect(
+        () => withTools(frontDesk, { [name]: { description: "x", execute: () => "x" } }),
+        name,
       ).toThrow(/collides with a tool this agent's roster already declares/);
     }
   });

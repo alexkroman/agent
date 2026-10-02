@@ -8,7 +8,7 @@
 // passes BOTH slugs through, so a project with a preview and no publish still
 // has something to show.
 
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { WorkflowsPane } from "./workflows.tsx";
@@ -20,7 +20,7 @@ describe("WorkflowsPane", () => {
     });
     renderWithClient(<WorkflowsPane deployedSlug="demo" previewSlug="demo-preview" />);
 
-    await waitFor(() => expect(screen.getByText(/declares no workflows/)).toBeTruthy());
+    expect(await screen.findByText(/declares no workflows/)).toBeInTheDocument();
     // Absolute: the card reads through the SDK's client, which resolves
     // against the agent's base URL.
     const paths = fetchMock.mock.calls.map(
@@ -35,12 +35,12 @@ describe("WorkflowsPane", () => {
     // project's life.
     stubFetch({ "GET /demo-preview/workflows": () => jsonResponse({ workflows: [] }) });
     renderWithClient(<WorkflowsPane previewSlug="demo-preview" />);
-    await waitFor(() => expect(screen.getByText(/preview/)).toBeTruthy());
+    expect(await screen.findByText(/preview/)).toBeInTheDocument();
   });
 
   test("says what the pane is for when neither slug exists", () => {
     renderWithClient(<WorkflowsPane />);
-    expect(screen.getByText(/Publish this project/)).toBeTruthy();
+    expect(screen.getByText(/Publish this project/)).toBeInTheDocument();
     // Twice: the pane's own heading, and the card's eyebrow under it.
     expect(screen.getAllByText("Workflows").length).toBe(2);
   });

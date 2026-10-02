@@ -69,7 +69,7 @@ describe("PreviewPane", () => {
   test("no deploys at all: the placeholder explains auto previews", () => {
     stubHealth([]);
     render(<PreviewPane />);
-    expect(screen.getByText("Nothing to preview yet")).toBeDefined();
+    expect(screen.getByText("Nothing to preview yet")).toBeInTheDocument();
     expect(document.querySelector("iframe")).toBeNull();
   });
 
@@ -80,7 +80,7 @@ describe("PreviewPane", () => {
     );
     await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
     const first = frame(container);
-    expect(first.getAttribute("src")).toBe("/p-preview/");
+    expect(first).toHaveAttribute("src", "/p-preview/");
     // A new preview deploy (new version) remounts the frame — that is the
     // only reload path; nothing else may kill an in-progress voice session.
     rerender(<PreviewPane previewSlug="p-preview" previewVersion="h2" />);
@@ -97,7 +97,7 @@ describe("PreviewPane", () => {
         hasAgent={true}
       />,
     );
-    await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
+    expect(await screen.findByText("Starting your preview")).toBeInTheDocument();
     expect(container.querySelector("iframe")).toBeNull();
     expect(screen.queryByText("Updating preview…")).toBeNull();
   });
@@ -107,7 +107,7 @@ describe("PreviewPane", () => {
     // pane can say the build is on its way rather than "nothing to preview".
     stubHealth([]);
     render(<PreviewPane previewStale={true} hasAgent={true} />);
-    await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
+    expect(await screen.findByText("Starting your preview")).toBeInTheDocument();
   });
 
   test("an untouched project still reads as empty, not as a build in flight", () => {
@@ -115,7 +115,7 @@ describe("PreviewPane", () => {
     // that must not read as a deploy on the way.
     stubHealth([]);
     render(<PreviewPane previewStale={true} />);
-    expect(screen.getByText("Nothing to preview yet")).toBeDefined();
+    expect(screen.getByText("Nothing to preview yet")).toBeInTheDocument();
   });
 
   test("the frame comes back when the rebuild lands", async () => {
@@ -128,7 +128,7 @@ describe("PreviewPane", () => {
         hasAgent={true}
       />,
     );
-    await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
+    expect(await screen.findByText("Starting your preview")).toBeInTheDocument();
     rerender(
       <PreviewPane
         previewSlug="p-preview"
@@ -137,7 +137,7 @@ describe("PreviewPane", () => {
         hasAgent={true}
       />,
     );
-    await waitFor(() => expect(frame(container).getAttribute("src")).toBe("/p-preview/"));
+    await waitFor(() => expect(frame(container)).toHaveAttribute("src", "/p-preview/"));
   });
 
   test("a failed preview build surfaces its CLI output over the last good preview", async () => {
@@ -153,8 +153,8 @@ describe("PreviewPane", () => {
         hasAgent={true}
       />,
     );
-    await waitFor(() => expect(screen.getByText(/preview build failed/i)).toBeDefined());
-    expect(screen.getByText(/agent\.ts:1: oops/)).toBeDefined();
+    expect(await screen.findByText(/preview build failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/agent\.ts:1: oops/)).toBeInTheDocument();
     await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
     expect(screen.queryByText("Starting your preview")).toBeNull();
   });
@@ -180,7 +180,7 @@ describe("PreviewPane readiness probe", () => {
     // `{"error":"HTML not found"}` rendered as the entire pane.
     stubHealth([]);
     const { container } = render(<PreviewPane previewSlug="p-preview" previewStale={true} />);
-    await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
+    expect(await screen.findByText("Starting your preview")).toBeInTheDocument();
     expect(container.querySelector("iframe")).toBeNull();
   });
 
@@ -198,7 +198,7 @@ describe("PreviewPane readiness probe", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(PROBE_RETRY_MS);
     });
-    expect(frame(container).getAttribute("src")).toBe("/p-preview/");
+    expect(frame(container)).toHaveAttribute("src", "/p-preview/");
   });
 
   test("a page that answered once is never re-probed", async () => {

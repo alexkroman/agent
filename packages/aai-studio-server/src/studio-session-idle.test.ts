@@ -2,7 +2,7 @@
 
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { WarmHarness } from "aai-server/sandbox";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import type { SessionFleet } from "./studio-session-fleet.ts";
 import { createSessionReaper, SWEEP_INTERVAL_MS } from "./studio-session-idle.ts";
@@ -31,22 +31,30 @@ function makeWarm(): Harness {
 }
 
 function makeFleet(over: Partial<SessionFleet> = {}) {
-  const calls = { release: [] as string[], heldByUs: [] as string[] };
+  const release = vi.fn<SessionFleet["release"]>(async () => undefined);
+  const heldByUs = vi.fn<SessionFleet["heldByUs"]>(async () => false);
   const fleet: SessionFleet = {
     adopt: () => Promise.resolve(null),
     claim: () => Promise.resolve(),
-    release: (scope, project) => {
-      calls.release.push(`${scope}/${project}`);
-      return Promise.resolve();
-    },
+    release,
     touch: () => undefined,
-    heldByUs: (scope, project) => {
-      calls.heldByUs.push(`${scope}/${project}`);
-      return Promise.resolve(false);
-    },
+    heldByUs,
     ...over,
   };
-  return { fleet, calls };
+  /** The `scope/project` keys a recorder was called with, in order. */
+  const keys = (fn: typeof release | typeof heldByUs) =>
+    fn.mock.calls.map(([scope, project]) => `${scope}/${project}`);
+  return {
+    fleet,
+    calls: {
+      get release() {
+        return keys(release);
+      },
+      get heldByUs() {
+        return keys(heldByUs);
+      },
+    },
+  };
 }
 
 function setup(opts: { fleet?: Partial<SessionFleet>; idleMs?: number } = {}) {
@@ -377,14 +385,22 @@ describe("createSessionReaper", () => {
     // an unconditional call would throw at construction.
     const real = globalThis.setInterval;
     // A handle with no `unref` — the shape a fake or browser-shimmed timer
-    // returns. Cast through `unknown` rather than widening to `any`.
-    const unreflessSetInterval = ((fn: () => void, ms: number) => ({
-      id: real(fn, ms),
-    })) as unknown as typeof globalThis.setInterval;
+    // returns. Cast through `unknown` rather than widening to `any`. The
+    // reaper cannot clear the inner timer through this wrapper, so the test
+    // does.
+    const unreflessSetInterval = ((fn: () => void, ms: number) => {
+      const id = real(fn, ms);
+      onTestFinished(() => clearInterval(id));
+      return { id };
+    }) as unknown as typeof globalThis.setInterval;
     vi.spyOn(globalThis, "setInterval").mockImplementation(unreflessSetInterval);
 
     const sessions = createOwnedMap<string, SessionEntry>();
     const { fleet } = makeFleet();
-    expect(() => createSessionReaper({ sessions, fleet, idleMs: IDLE_MS })).not.toThrow();
+    let reaper: ReturnType<typeof createSessionReaper> | undefined;
+    expect(() => {
+      reaper = createSessionReaper({ sessions, fleet, idleMs: IDLE_MS });
+    }).not.toThrow();
+    reaper?.stop();
   });
 });

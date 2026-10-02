@@ -61,7 +61,7 @@ describe("the stages", () => {
   test("a rejected request is FATAL, the step-errors classification", async () => {
     installStubGateway([""], { status: 401 });
     const err = await writeBrief("otters", defaults).catch((thrown: unknown) => thrown);
-    expect(FatalError.is(err)).toBe(true);
+    expect(err).toSatisfy(FatalError.is);
   });
 
   test("planAngles caps the width at maxAngles, and researches the brief when none come back", async () => {

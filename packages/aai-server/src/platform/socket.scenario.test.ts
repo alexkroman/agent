@@ -87,9 +87,7 @@ async function connected(bearer = token) {
   const socket = createPlatformSocket({ base, token: bearer });
   // A throw rather than an `expect`: an assertion outside a `test()` body is
   // Biome's `noMisplacedAssertion`, and this helper runs inside several.
-  await vi.waitFor(() => {
-    if (!socket.isOpen()) throw new Error("platform socket has not opened");
-  });
+  await vi.waitUntil(() => socket.isOpen());
   return socket;
 }
 

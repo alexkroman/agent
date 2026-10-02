@@ -73,9 +73,9 @@ describe("WorkflowPendingNote", () => {
 
   test("renders the sentence muted, and className is added rather than replacing that", () => {
     const plain = render(<WorkflowPendingNote submission={FOUND} />).container.firstElementChild;
-    expect(plain?.className).toBe("text-sm opacity-70");
+    expect(plain).toHaveClass("text-sm opacity-70", { exact: true });
     const extra = render(<WorkflowPendingNote submission={PRESSED} className="mt-2" />).container
       .firstElementChild;
-    expect(extra?.className).toBe("text-sm opacity-70 mt-2");
+    expect(extra).toHaveClass("text-sm opacity-70 mt-2", { exact: true });
   });
 });

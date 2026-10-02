@@ -1,42 +1,24 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The shared fixture for the two real-Postgres queue suites.
+ * The shared fixture for the real-Postgres queue suites
+ * (`workflow-queue-store` and `workflow-queue-claim`): a real database, the
+ * platform tables, seeded tenants, and the enqueue route mounted over it.
  *
- * It exists because `workflow-queue-store.scenario.test.ts` hit the 700-line test
- * cap and split along the same seam its source did: one message's own lifecycle
- * (`workflow-queue-store.scenario.test.ts`) against the DELIVERY CLAIM
- * (`workflow-queue-claim.scenario.test.ts`). Both need the same ~100 lines of
- * setup — a real database, the platform tables, seeded tenants, and the enqueue
- * route mounted over that same database — and duplicating it would mean two
- * copies of every argument recorded below, drifting.
- *
- * **Each suite gets its OWN DATABASE**, which replaced per-suite SLUGS — see
- * {@link useThrowawayPlatformDb} for the two measured flakes that forced it. The
- * short version is that slugs isolate the rows a test writes and nothing about
- * the fleet-wide predicates that read them, and every predicate here is
- * fleet-wide. `beforeEach` can therefore delete the whole table, and cleanup is
- * a `drop database` rather than a per-slug delete that has to stay in step with
- * what the tests wrote.
- *
- * **A scenario test may own its ROWS and now its DATABASE; it may not own the
- * SCHEMA.** The tables come
- * from `ensurePlatformTables`, never from a `create table if not exists` here —
- * that was tried, and it was worse than useless: it invented a shape the migration
- * might not have, and a matching `drop` in `afterAll` destroyed the real table for
- * every later suite (`realtime-rls.scenario.test.ts` reported it missing). The
- * helper also verifies a CLI-built stack against its ledger and otherwise applies
- * the migrations, which is what makes these suites run on BOTH arms: a plain
- * Postgres (CI's `AAI_TEST_PG_URL` is the runner's own cluster) and the local
- * Supabase stack. An earlier draft asserted the table was already there, which
- * passed locally against a migrated stack and failed every CI run.
+ * - **Each suite gets its OWN DATABASE** ({@link useThrowawayPlatformDb}):
+ *   every queue predicate is fleet-wide, so slugs cannot isolate them.
+ * - **A suite may own its rows and its database, never the SCHEMA**: tables
+ *   come from `ensurePlatformTables`, never a hand-written `create table`, so
+ *   the fixture has the shipped shape on both arms (a plain Postgres and the
+ *   Supabase stack).
  */
 
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { createPlatformQueueSend } from "@alexkroman1/aai-runtime/internal";
 import { Hono } from "hono";
-import { afterAll, beforeAll, beforeEach, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, onTestFinished, vi } from "vitest";
 import { createTestStore, type TestFetch } from "./_orchestrator-test-utils.ts";
 import { pgUrl } from "./_pg-test-utils.ts";
+
 import type { HonoEnv } from "./context.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { createWorkflowEnqueueHandler } from "./guest-handlers/workflow-enqueue.ts";
@@ -47,114 +29,76 @@ import { agentSandboxName } from "./sandbox/directory.ts";
 import type { SqlExec } from "./sql-exec.ts";
 import { type EnqueueParams, WORKFLOW_QUEUE_CHANNEL } from "./workflow-queue-store.ts";
 
-/** What {@link withQueueNotifications} lends a test body. */
+/** What {@link listenForQueueNotifications} hands a test. */
 export type QueueNotifyProbe = {
   /** `WORKFLOW_QUEUE_CHANNEL` notifications delivered so far. */
   count: () => number;
   /**
    * Commit a sentinel on the same connection the writes use, and wait for it.
    *
-   * This is what makes an ABSENCE assertable. The obvious version — write, then
-   * `vi.waitFor(() => expect(count()).toBe(1))` — PASSES when the code is wrong,
-   * verified by making the notify unconditional: `waitFor` polls until the
-   * assertion holds, and with both writes notifying it holds transiently after
-   * the first arrives and before the second does. Postgres delivers
-   * notifications to one connection in COMMIT order, so a sentinel committed
-   * after the write arrives after anything that write would have sent: once this
-   * resolves, "no queue notification yet" is a settled fact rather than a race.
-   * A `sleep()` is the alternative and is both slower and weaker.
+   * This is what makes an ABSENCE assertable: Postgres delivers one
+   * connection's notifications in COMMIT order, so once the sentinel arrives,
+   * "no queue notification yet" is settled. A `vi.waitFor` on the count passes
+   * when the code is wrong (it holds transiently between two notifications),
+   * and a `sleep()` is slower and weaker.
    */
   fence: () => Promise<void>;
 };
 
 /**
- * Count queue notifications on this fixture's OWN database while `body` runs.
+ * Count queue notifications on this fixture's OWN database for the rest of the
+ * calling test; the listener closes when the test finishes.
  *
  * The database matters: `WORKFLOW_QUEUE_CHANNEL` carries every tenant's enqueue,
  * so a listener built from `pgUrl()` would sit on the shared database while the
  * writes announce on this one — the positive controls fail and the absences pass
  * vacuously. See {@link useThrowawayPlatformDb}.
  */
-export async function withQueueNotifications(
-  fx: QueueFixture,
-  body: (probe: QueueNotifyProbe) => Promise<void>,
-): Promise<void> {
+export async function listenForQueueNotifications(fx: QueueFixture): Promise<QueueNotifyProbe> {
   const BARRIER = "aai_test_queue_barrier";
   let count = 0;
   let fenced = 0;
   const listener = createPostgresDb({ url: fx.url(), max: 2 });
-  try {
-    const stopQueue = await listener.listen(WORKFLOW_QUEUE_CHANNEL, () => {
-      count += 1;
-    });
-    const stopBarrier = await listener.listen(BARRIER, () => {
-      fenced += 1;
-    });
-    try {
-      await body({
-        count: () => count,
-        fence: async () => {
-          const want = fenced + 1;
-          await fx.sql()("select pg_notify($1, '')", [BARRIER]);
-          // THROWS rather than asserting, and that is the lint rule rather than a
-          // preference: an `expect` outside a `test()` body is
-          // `noMisplacedAssertion`, and `vi.waitFor` retries on a throw exactly
-          // as it retries on a failed assertion. The assertions belong to the
-          // caller either way — this only waits.
-          await vi.waitFor(() => {
-            if (fenced < want) throw new Error(`barrier ${want} not delivered yet`);
-          });
-        },
-      });
-    } finally {
-      stopQueue();
-      stopBarrier();
-    }
-  } finally {
+  const stops: (() => void)[] = [];
+  // ONE callback, registered before any `listen`: unlisten, THEN close the
+  // pool, and still close it when a `listen` below throws.
+  onTestFinished(async () => {
+    for (const stop of stops) stop();
     await listener.close();
-  }
+  });
+  stops.push(
+    await listener.listen(WORKFLOW_QUEUE_CHANNEL, () => {
+      count += 1;
+    }),
+  );
+  stops.push(
+    await listener.listen(BARRIER, () => {
+      fenced += 1;
+    }),
+  );
+  return {
+    count: () => count,
+    fence: async () => {
+      const want = fenced + 1;
+      await fx.sql()("select pg_notify($1, '')", [BARRIER]);
+      await vi.waitUntil(() => fenced >= want);
+    },
+  };
 }
-
-/**
- * Code-unit order, the repo's standing rule for anything an assertion reads —
- * `localeCompare` with no explicit locale answers to the runtime's ICU default,
- * so the same rows would sort differently on another machine.
- */
-export const byCodeUnit = (a: string, b: string) => Number(a > b) - Number(a < b);
 
 /**
  * A private, migrated platform database for one suite, torn down after it.
  *
- * **Every queue predicate is FLEET-WIDE, which is what makes this necessary
- * rather than tidy.** `claimDue` takes due messages for any slug,
- * `WORKFLOW_QUEUE_CHANNEL` carries every tenant's enqueue, and
- * `findStalledRuns` scans every run in the database under an `order by
- * created_at` and a `limit`. So a per-suite SLUG isolates the rows a test
- * writes and nothing about the predicates that read them — and vitest runs
- * files in parallel.
+ * Necessary because every queue predicate is FLEET-WIDE — `claimDue` takes any
+ * slug's due messages, `WORKFLOW_QUEUE_CHANNEL` carries every tenant's enqueue,
+ * and `findStalledRuns` scans (and `limit`s) every run — while vitest runs files
+ * in parallel. Per-suite slugs isolate the rows a test writes, not the
+ * predicates that read them: a sibling's rows change counts and can push a
+ * suite's own run out of a `limit`ed answer.
  *
- * Both failures were measured on the real tier, and neither is theoretical:
- *
- * - Seeding ONE stalled run under a foreign slug fails four cases of
- *   `workflow-queue-store.scenario.test.ts` on its own, because `runQueuePass`
- *   reconciles that foreign run and every count in the suite then sees a row it
- *   did not write.
- * - `findStalledRuns`'s `limit` is fleet-wide too, so a suite's own run can be
- *   pushed out of the answer entirely by a sibling's older rows — which reads as
- *   `expected [] to deeply equal [ 'wrun_stalled' ]`, a predicate failure, in a
- *   suite that did nothing wrong.
- *
- * Full scenario runs alternated between green and one-to-seven failures across
- * these two files, never the same cases twice. A private database is the only
- * fix that matches the shape: scoping assertions by slug cannot work when the
- * fleet-wide predicate IS the subject, and a `beforeEach` cannot delete rows a
- * sibling has not written yet.
- *
- * The schema comes from `ensurePlatformTables`, never a `create table` here: it
- * replays the migrations' own statements, so the foreign keys, the cascades and
- * the unique idempotency index are the SHIPPED ones. A hand-written schema in a
- * private database would be a shape the migration might not have, which is the
- * trap `platform/_schema-test-utils.ts` records.
+ * The schema comes from `ensurePlatformTables` (the migrations' own
+ * statements), so foreign keys, cascades and the unique idempotency index are
+ * the shipped ones.
  */
 export function useThrowawayPlatformDb(label: string): {
   sql: () => SqlExec;
@@ -206,24 +150,14 @@ export function useThrowawayPlatformDb(label: string): {
 }
 
 /**
- * What a queue suite reads out of the fixture.
- *
- * Every field is a GETTER rather than a value: the fixture's `beforeAll` has not
- * run when the suite body registers its tests, so a plain value would be captured
- * as `undefined` for the whole file.
+ * What a queue suite reads out of the fixture. Every field is a GETTER: the
+ * fixture's `beforeAll` has not run when the suite body registers its tests.
  */
 export type QueueFixture = {
   sql: () => SqlExec;
   /**
-   * The fixture's OWN database URL.
-   *
-   * Exposed because the NOTIFY cases open a second connection to listen on, and
-   * a listener built from `pgUrl()` would sit on the shared database while
-   * `enqueue` announces on this one — so the notification never arrives and the
-   * positive control fails. A private channel is most of what the isolation
-   * buys: `WORKFLOW_QUEUE_CHANNEL` carries every tenant's enqueue, so the
-   * "a DELAYED message does not notify" count was previously incrementable by
-   * any sibling suite.
+   * The fixture's OWN database URL — what a NOTIFY listener must dial: one
+   * built from `pgUrl()` sits on the shared database and never hears this one.
    */
   url: () => string;
   /** The same database as {@link QueueFixture.sql}, as the reserving handle a pass needs. */
@@ -238,13 +172,6 @@ export type QueueFixture = {
    * The GUEST's own enqueue client, dialling {@link QueueFixture.platformFetch}
    * as the first tenant — the whole outbound wire, from `createPlatformQueueSend`
    * through the bearer to the real route and the real store.
-   *
-   * Here rather than in the suite because three cases need it and the wiring is
-   * twenty lines of bearer-plus-fetch adapter apiece: the enqueue-to-delivery
-   * loop, the run key SQL reads back out of the envelope, and the `kind` the
-   * store derives from the queue name. Two hand-rolled copies were already in
-   * the file and it is at the 700-line test cap, which its own doc says to
-   * answer by extracting more SETUP rather than by splitting the subject.
    */
   guestSend: () => ReturnType<typeof createPlatformQueueSend>;
   /** One ORCHESTRATION message for `runId`, on this fixture's first tenant. */
@@ -279,18 +206,11 @@ export function useQueueFixture(slugs: readonly string[]): QueueFixture {
   beforeAll(async () => {
     for (const slug of slugs) await seedAgent(slug);
 
-    // JUST the enqueue route over that same database — deliberately NOT
-    // `createTestOrchestrator`.
-    //
-    // A full orchestrator starts this surface's background sweeps and keeps no
-    // handle to stop them (`agent-sweeps.ts`), so with a real `adminDb` a suite
-    // left a 1-SECOND queue sweep running against the shared scenario database
-    // after it finished. That is exactly what it did on the first run: every test
-    // passed and `workflow-world.scenario.test.ts` failed beside it, which is the
-    // most expensive shape of test failure available — a suite breaking a sibling.
-    //
-    // The route needs a store for its `getAgentVersion` check and a slug from the
-    // path, and nothing else, so that is all this mounts.
+    // JUST the enqueue route over that same database — never
+    // `createTestOrchestrator`, which starts background sweeps it keeps no
+    // handle to stop, so a 1-second queue sweep would outlive the suite and
+    // break siblings. The route needs a store (for `getAgentVersion`) and a
+    // slug from the path, and nothing else.
     const store = createTestStore();
     await store.putAgent({
       slug: slugs[0] as string,

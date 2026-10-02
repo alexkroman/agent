@@ -68,7 +68,7 @@ describe("spokenMoney", () => {
     // form is reconstructible from the written one — including the two shapes
     // that drop a half (`0 dollars and…` and `…and 0 cents`).
     for (const amount of [0.005, 2292.371, 19.995, 1.005, -7.126, 12.344, 1, 0]) {
-      expect(spokenMoney(amount)).toBe(spokenFromWritten(formatMoney(amount)));
+      expect(spokenMoney(amount), String(amount)).toBe(spokenFromWritten(formatMoney(amount)));
     }
   });
 });
@@ -145,7 +145,7 @@ describe("mintCode", () => {
       drawn.add(mintCode("X", { random: () => at, length: 1 }).slice(2));
     }
     for (const forbidden of ["0", "1", "I", "L", "O"]) {
-      expect(drawn.has(forbidden)).toBe(false);
+      expect(drawn.has(forbidden), String(forbidden)).toBe(false);
     }
     expect(drawn.size).toBe(31);
   });

@@ -185,22 +185,19 @@ async function connect(proxy: SeveringProxy, query = ""): Promise<Client> {
   return {
     ws,
     frames,
-    waitFor: async (type, { count = 1, ms = 5000 } = {}) => {
-      const deadline = Date.now() + ms;
-      for (;;) {
-        const seen = frames.filter((frame) => frame.type === type);
-        const nth = seen[count - 1];
-        if (nth) return nth;
-        if (Date.now() > deadline) {
+    waitFor: (type, { count = 1, ms = 5000 } = {}) =>
+      vi.waitFor(
+        () => {
+          const nth = frames.filter((frame) => frame.type === type)[count - 1];
+          if (nth) return nth;
           throw new Error(
             `fewer than ${count} "${type}" frame(s) in ${ms}ms; saw [${frames
               .map((f) => f.type)
               .join(", ")}]`,
           );
-        }
-        await sleep(20);
-      }
-    },
+        },
+        { timeout: ms, interval: 20 },
+      ),
     closed: () =>
       new Promise((resolve) => {
         if (ws.readyState === WebSocket.CLOSED) resolve(1006);

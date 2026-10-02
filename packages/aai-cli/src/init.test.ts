@@ -2,9 +2,9 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { beforeEach, describe, expect, type MockInstance, test, vi } from "vitest";
+import { beforeEach, describe, expect, type MockInstance, vi } from "vitest";
 import { patchPackageJsonForWorkspace, runInit } from "./_init.ts";
-import { createFakeUi, type FakeUi, silenced, withTempDir, writeFiles } from "./_test-utils.ts";
+import { createFakeUi, type FakeUi, test, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 import { executeInit, promptTemplate } from "./init.ts";
 
@@ -80,57 +80,41 @@ async function addDepsTemplate(dir: string): Promise<void> {
 }
 
 describe("runInit", () => {
-  test("copies template and shared files to target", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "output");
-        await runInit({ targetDir: target, template: "quickstart-agent" });
-        expect(await fs.readFile(path.join(target, "agent.json"), "utf-8")).toContain(
-          "Default Name",
-        );
-        expect(await fs.readFile(path.join(target, "readme.txt"), "utf-8")).toBe("hello");
-        expect(await fs.readFile(path.join(target, "shared.txt"), "utf-8")).toBe("from shared");
-      }),
-    );
+  test("copies template and shared files to target", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "output");
+    await runInit({ targetDir: target, template: "quickstart-agent" });
+    expect(await fs.readFile(path.join(target, "agent.json"), "utf-8")).toContain("Default Name");
+    expect(await fs.readFile(path.join(target, "readme.txt"), "utf-8")).toBe("hello");
+    expect(await fs.readFile(path.join(target, "shared.txt"), "utf-8")).toBe("from shared");
   });
 
-  test("skips node_modules", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "output");
-        await runInit({ targetDir: target, template: "quickstart-agent" });
-        expect(await fileExists(path.join(target, "node_modules"))).toBe(false);
-        expect(await fileExists(path.join(target, "package.json"))).toBe(true);
-      }),
-    );
+  test("skips node_modules", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "output");
+    await runInit({ targetDir: target, template: "quickstart-agent" });
+    expect(await fileExists(path.join(target, "node_modules"))).toBe(false);
+    expect(await fileExists(path.join(target, "package.json"))).toBe(true);
   });
 
-  test("copies .env.example to .env from shared", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "output");
-        await runInit({ targetDir: target, template: "quickstart-agent" });
-        expect(await fileExists(path.join(target, ".env"))).toBe(true);
-        expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");
-      }),
-    );
+  test("copies .env.example to .env from shared", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "output");
+    await runInit({ targetDir: target, template: "quickstart-agent" });
+    expect(await fileExists(path.join(target, ".env"))).toBe(true);
+    expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");
   });
 });
 
 describe("scaffold client.tsx", () => {
-  test("scaffold does not include client.tsx (default UI served by dev server)", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "output");
-        await runInit({ targetDir: target, template: "quickstart-agent" });
-        const clientPath = path.join(target, "client.tsx");
-        expect(await fileExists(clientPath)).toBe(false);
-      }),
-    );
+  test("scaffold does not include client.tsx (default UI served by dev server)", async ({
+    tmpDir: dir,
+  }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "output");
+    await runInit({ targetDir: target, template: "quickstart-agent" });
+    const clientPath = path.join(target, "client.tsx");
+    expect(await fileExists(clientPath)).toBe(false);
   });
 });
 
@@ -141,225 +125,193 @@ describe("executeInit", () => {
     execaMock.mockReset();
   });
 
-  test("installs deps when the template declares dependencies", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        await addDepsTemplate(dir);
-        const target = path.join(dir, "with-deps");
-        stubUserAgent("pnpm/10.29.3 npm/? node/v24.10.0 linux x64");
-        // safe-chain missing, pnpm install ok. There is no `corepack enable`
-        // any more — the install only ever runs a manager that answered
-        // `--version`, which is what made that call unnecessary.
-        execaMock.mockImplementation((cmd: string) =>
-          Promise.resolve({ failed: cmd === "safe-chain" }),
-        );
-        const result = await executeInit(
-          { dir: target, template: "deps" },
-          { silent: true, ui, exec: execaMock },
-        );
+  test("installs deps when the template declares dependencies", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    await addDepsTemplate(dir);
+    const target = path.join(dir, "with-deps");
+    stubUserAgent("pnpm/10.29.3 npm/? node/v24.10.0 linux x64");
+    // safe-chain missing, pnpm install ok. There is no `corepack enable`
+    // any more — the install only ever runs a manager that answered
+    // `--version`, which is what made that call unnecessary.
+    execaMock.mockImplementation((cmd: string) =>
+      Promise.resolve({ failed: cmd === "safe-chain" }),
+    );
+    const result = await executeInit(
+      { dir: target, template: "deps" },
+      { silent: true, ui, exec: execaMock },
+    );
 
-        expect(result.ok).toBe(true);
-        expect(fetchSpy).not.toHaveBeenCalled();
-        const pnpmCall = execaMock.mock.calls.find(([cmd]) => cmd === "pnpm");
-        expect(pnpmCall?.[1]).toContain("install");
-        expect(pnpmCall?.[2]).toEqual({ cwd: target });
-      }),
+    expect(result.ok).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const pnpmCall = execaMock.mock.calls.find(([cmd]) => cmd === "pnpm");
+    expect(pnpmCall?.[1]).toContain("install");
+    expect(pnpmCall?.[2]).toEqual({ cwd: target });
+  });
+
+  test("routes the install through safe-chain when it is on PATH", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    await addDepsTemplate(dir);
+    const target = path.join(dir, "safe-chained");
+    stubUserAgent("pnpm/10.29.3 npm/? node/v24.10.0 linux x64");
+    execaMock.mockResolvedValue({ failed: false });
+
+    await executeInit({ dir: target, template: "deps" }, { silent: true, ui, exec: execaMock });
+
+    // Skip the `safe-chain --version` probe; find the actual install.
+    const installCall = execaMock.mock.calls.find(
+      ([cmd, args]) => cmd === "safe-chain" && (args as string[]).includes("install"),
+    );
+    expect(installCall?.[1]).toEqual(
+      expect.arrayContaining(["pnpm", "--safe-chain-skip-minimum-package-age", "install"]),
     );
   });
 
-  test("routes the install through safe-chain when it is on PATH", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        await addDepsTemplate(dir);
-        const target = path.join(dir, "safe-chained");
-        stubUserAgent("pnpm/10.29.3 npm/? node/v24.10.0 linux x64");
-        execaMock.mockResolvedValue({ failed: false });
-
-        await executeInit({ dir: target, template: "deps" }, { silent: true, ui, exec: execaMock });
-
-        // Skip the `safe-chain --version` probe; find the actual install.
-        const installCall = execaMock.mock.calls.find(
-          ([cmd, args]) => cmd === "safe-chain" && (args as string[]).includes("install"),
-        );
-        expect(installCall?.[1]).toEqual(
-          expect.arrayContaining(["pnpm", "--safe-chain-skip-minimum-package-age", "install"]),
-        );
-      }),
+  test("reports the diagnostics when the install fails", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    await addDepsTemplate(dir);
+    const target = path.join(dir, "broken-install");
+    stubUserAgent("pnpm/10.29.3 npm/? node/v24.10.0 linux x64");
+    execaMock.mockImplementation((cmd: string) =>
+      cmd === "pnpm"
+        ? Promise.reject(new Error("registry unreachable"))
+        : Promise.resolve({ failed: true }),
     );
+
+    const result = await executeInit(
+      { dir: target, template: "deps" },
+      { silent: true, ui, exec: execaMock },
+    );
+
+    // Both diagnostics ride the RESULT as well as `log.warn`, which JSON
+    // mode silences: without them a scripted `aai init` could not tell this
+    // outcome from a clean run, both being `{ ok: true }`.
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        dir: target,
+        template: "deps",
+        warnings: [
+          expect.stringContaining("pnpm install failed: registry unreachable"),
+          // The remedy names the manager that RAN. It used to say "Install
+          // pnpm (`npm install -g pnpm`)" whatever had failed, which for an
+          // npm user is advice to install a second manager to work around a
+          // bug in this command.
+          expect.stringContaining("pnpm install"),
+        ],
+      },
+    });
   });
 
-  test("reports the diagnostics when the install fails", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        await addDepsTemplate(dir);
-        const target = path.join(dir, "broken-install");
-        stubUserAgent("pnpm/10.29.3 npm/? node/v24.10.0 linux x64");
-        execaMock.mockImplementation((cmd: string) =>
-          cmd === "pnpm"
-            ? Promise.reject(new Error("registry unreachable"))
-            : Promise.resolve({ failed: true }),
-        );
+  test("an npm user gets npm — the install, the README and the manifest pin", async ({
+    tmpDir: dir,
+  }) => {
+    await useFakeTemplates(dir);
+    // Not dev mode: `patchPackageJsonForWorkspace` DROPS `packageManager`
+    // for a project linked into this workspace, so the stamp is only
+    // observable on the path a real `aai init` takes.
+    vi.stubEnv("AAI_NO_DEV", "1");
+    stubUserAgent("npm/10.9.2 node/v25.1.0 linux x64");
+    execaMock.mockResolvedValue({ failed: false });
+    const target = path.join(dir, "npm-user");
 
-        const result = await executeInit(
-          { dir: target, template: "deps" },
-          { silent: true, ui, exec: execaMock },
-        );
+    const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
+    expect(result.ok).toBe(true);
 
-        // Both diagnostics ride the RESULT as well as `log.warn`, which JSON
-        // mode silences: without them a scripted `aai init` could not tell this
-        // outcome from a clean run, both being `{ ok: true }`.
-        expect(result).toMatchObject({
-          ok: true,
-          data: {
-            dir: target,
-            template: "deps",
-            warnings: [
-              expect.stringContaining("pnpm install failed: registry unreachable"),
-              // The remedy names the manager that RAN. It used to say "Install
-              // pnpm (`npm install -g pnpm`)" whatever had failed, which for an
-              // npm user is advice to install a second manager to work around a
-              // bug in this command.
-              expect.stringContaining("pnpm install"),
-            ],
-          },
-        });
-      }),
-    );
+    // The install RAN npm. Node >= 25 ships no corepack, so the old
+    // `corepack enable` + pnpm path could not install this project at all.
+    expect(execaMock.mock.calls).toEqual([["npm", ["install"], { cwd: target }]]);
+    // `--ignore-workspace` is pnpm's flag; passing it to npm is an unknown
+    // argument.
+    expect(execaMock.mock.calls[0]?.[1]).not.toContain("--ignore-workspace");
+
+    const manifest = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8")) as {
+      packageManager?: string;
+    };
+    // The scaffold ships `pnpm@…`, which pnpm and Yarn both READ and refuse
+    // to run against — so a project installed with npm must not carry it.
+    expect(manifest.packageManager).toBe("npm@10.9.2");
+
+    const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
+    expect(readme).toContain("npm install");
+    expect(readme).not.toContain("pnpm");
   });
 
-  test("an npm user gets npm — the install, the README and the manifest pin", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        // Not dev mode: `patchPackageJsonForWorkspace` DROPS `packageManager`
-        // for a project linked into this workspace, so the stamp is only
-        // observable on the path a real `aai init` takes.
-        vi.stubEnv("AAI_NO_DEV", "1");
-        stubUserAgent("npm/10.9.2 node/v25.1.0 linux x64");
-        execaMock.mockResolvedValue({ failed: false });
-        const target = path.join(dir, "npm-user");
+  test("a pnpm user keeps the pnpm pin and the pnpm README", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    vi.stubEnv("AAI_NO_DEV", "1");
+    stubUserAgent("pnpm/10.29.3 npm/? node/v24.10.0 linux x64");
+    execaMock.mockResolvedValue({ failed: false });
+    const target = path.join(dir, "pnpm-user");
 
-        const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
-        expect(result.ok).toBe(true);
+    await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
 
-        // The install RAN npm. Node >= 25 ships no corepack, so the old
-        // `corepack enable` + pnpm path could not install this project at all.
-        expect(execaMock.mock.calls).toEqual([["npm", ["install"], { cwd: target }]]);
-        // `--ignore-workspace` is pnpm's flag; passing it to npm is an unknown
-        // argument.
-        expect(execaMock.mock.calls[0]?.[1]).not.toContain("--ignore-workspace");
-
-        const manifest = JSON.parse(
-          await fs.readFile(path.join(target, "package.json"), "utf-8"),
-        ) as { packageManager?: string };
-        // The scaffold ships `pnpm@…`, which pnpm and Yarn both READ and refuse
-        // to run against — so a project installed with npm must not carry it.
-        expect(manifest.packageManager).toBe("npm@10.9.2");
-
-        const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
-        expect(readme).toContain("npm install");
-        expect(readme).not.toContain("pnpm");
-      }),
-    );
+    const manifest = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8")) as {
+      packageManager?: string;
+    };
+    expect(manifest.packageManager).toBe("pnpm@10.29.3");
+    const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
+    expect(readme).toContain("pnpm install");
+    expect(readme).toContain("pnpm run dev");
   });
 
-  test("a pnpm user keeps the pnpm pin and the pnpm README", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        vi.stubEnv("AAI_NO_DEV", "1");
-        stubUserAgent("pnpm/10.29.3 npm/? node/v24.10.0 linux x64");
-        execaMock.mockResolvedValue({ failed: false });
-        const target = path.join(dir, "pnpm-user");
+  test("skips the install entirely when node_modules already exists", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    await addDepsTemplate(dir);
+    const target = path.join(dir, "preinstalled");
+    await fs.mkdir(path.join(target, "node_modules"), { recursive: true });
 
-        await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
+    await executeInit({ dir: target, template: "deps" }, { silent: true, ui, exec: execaMock });
 
-        const manifest = JSON.parse(
-          await fs.readFile(path.join(target, "package.json"), "utf-8"),
-        ) as { packageManager?: string };
-        expect(manifest.packageManager).toBe("pnpm@10.29.3");
-        const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
-        expect(readme).toContain("pnpm install");
-        expect(readme).toContain("pnpm run dev");
-      }),
-    );
+    expect(execaMock).not.toHaveBeenCalled();
   });
 
-  test("skips the install entirely when node_modules already exists", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        await addDepsTemplate(dir);
-        const target = path.join(dir, "preinstalled");
-        await fs.mkdir(path.join(target, "node_modules"), { recursive: true });
+  test("scaffolds a project without publishing it", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "my-agent");
 
-        await executeInit({ dir: target, template: "deps" }, { silent: true, ui, exec: execaMock });
+    // execa is mocked with no implementation, so the scaffold's install
+    // fails — hence the warnings; the files below are what say the scaffold
+    // itself ran.
+    const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
 
-        expect(execaMock).not.toHaveBeenCalled();
-      }),
-    );
+    expect(result).toMatchObject({
+      ok: true,
+      data: { dir: target, template: "quickstart-agent" },
+    });
+    expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
+    expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  test("scaffolds a project without publishing it", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "my-agent");
+  test("picks a template through the selector when --template is omitted", async ({
+    tmpDir: dir,
+  }) => {
+    await useFakeTemplates(dir);
+    await addDepsTemplate(dir);
+    const target = path.join(dir, "picked");
+    // The author scrolls off the pre-selected default and chooses `deps`.
+    ui.prompts.select.mockResolvedValueOnce("deps");
 
-        // execa is mocked with no implementation, so the scaffold's install
-        // fails — hence the warnings; the files below are what say the scaffold
-        // itself ran.
-        const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
+    const result = await executeInit({ dir: target }, { ui, exec: execaMock });
 
-        expect(result).toMatchObject({
-          ok: true,
-          data: { dir: target, template: "quickstart-agent" },
-        });
-        expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
-        expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
-        expect(fetchSpy).not.toHaveBeenCalled();
-      }),
-    );
+    expect(ui.prompts.select).toHaveBeenCalledTimes(1);
+    if (result.ok) expect(result.data.template).toBe("deps");
+    // The template's own file, not the scaffold's — the pick reached the copy.
+    expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
+    expect(await fileExists(path.join(target, "readme.txt"))).toBe(false);
   });
 
-  test("picks a template through the selector when --template is omitted", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        await addDepsTemplate(dir);
-        const target = path.join(dir, "picked");
-        // The author scrolls off the pre-selected default and chooses `deps`.
-        ui.prompts.select.mockResolvedValueOnce("deps");
+  test("--yes takes the default template without prompting", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    // A SECOND template, so the assertion below is about the `--yes` guard
+    // rather than about promptTemplate's "one choice is not a choice" exit.
+    await addDepsTemplate(dir);
+    const target = path.join(dir, "yes-mode");
 
-        const result = await executeInit({ dir: target }, { ui, exec: execaMock });
+    const result = await executeInit({ dir: target, yes: true }, { ui, exec: execaMock });
 
-        expect(ui.prompts.select).toHaveBeenCalledTimes(1);
-        if (result.ok) expect(result.data.template).toBe("deps");
-        // The template's own file, not the scaffold's — the pick reached the copy.
-        expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
-        expect(await fileExists(path.join(target, "readme.txt"))).toBe(false);
-      }),
-    );
-  });
-
-  test("--yes takes the default template without prompting", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        // A SECOND template, so the assertion below is about the `--yes` guard
-        // rather than about promptTemplate's "one choice is not a choice" exit.
-        await addDepsTemplate(dir);
-        const target = path.join(dir, "yes-mode");
-
-        const result = await executeInit({ dir: target, yes: true }, { ui, exec: execaMock });
-
-        expect(ui.prompts.select).not.toHaveBeenCalled();
-        if (result.ok) expect(result.data.template).toBe("quickstart-agent");
-      }),
-    );
+    expect(ui.prompts.select).not.toHaveBeenCalled();
+    if (result.ok) expect(result.data.template).toBe("quickstart-agent");
   });
 
   /**
@@ -367,53 +319,41 @@ describe("executeInit", () => {
    * prompt on this path would hang a scripted `aai init | jq` on a terminal
    * read nobody is watching.
    */
-  test("silent mode takes the default template without prompting", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        // Two templates, for the same reason as the spec above.
-        await addDepsTemplate(dir);
-        const target = path.join(dir, "silent-mode");
+  test("silent mode takes the default template without prompting", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    // Two templates, for the same reason as the spec above.
+    await addDepsTemplate(dir);
+    const target = path.join(dir, "silent-mode");
 
-        const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
+    const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
 
-        expect(ui.prompts.select).not.toHaveBeenCalled();
-        if (result.ok) expect(result.data.template).toBe("quickstart-agent");
-      }),
-    );
+    expect(ui.prompts.select).not.toHaveBeenCalled();
+    if (result.ok) expect(result.data.template).toBe("quickstart-agent");
   });
 
-  test("refuses to overwrite an existing agent.ts without --force", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "existing");
-        await fs.mkdir(target, { recursive: true });
-        await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
+  test("refuses to overwrite an existing agent.ts without --force", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "existing");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
 
-        await expect(
-          executeInit({ dir: target }, { silent: true, ui, exec: execaMock }),
-        ).rejects.toThrow("agent.ts already exists");
-      }),
-    );
+    await expect(
+      executeInit({ dir: target }, { silent: true, ui, exec: execaMock }),
+    ).rejects.toThrow("agent.ts already exists");
   });
 
-  test("--force overwrites an existing project", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "existing");
-        await fs.mkdir(target, { recursive: true });
-        await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
+  test("--force overwrites an existing project", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "existing");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
 
-        const result = await executeInit(
-          { dir: target, force: true },
-          { silent: true, ui, exec: execaMock },
-        );
-        expect(result.ok).toBe(true);
-        expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
-      }),
+    const result = await executeInit(
+      { dir: target, force: true },
+      { silent: true, ui, exec: execaMock },
     );
+    expect(result.ok).toBe(true);
+    expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
   });
 
   /**
@@ -423,91 +363,77 @@ describe("executeInit", () => {
    * nobody had run. An install that SUCCEEDS is the precondition it used to
    * need, which is why this spec lets it.
    */
-  test("never publishes, even when the install succeeds", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "not-deployed");
-        execaMock.mockResolvedValue({ failed: false });
+  test("never publishes, even when the install succeeds", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "not-deployed");
+    execaMock.mockResolvedValue({ failed: false });
 
-        const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
+    const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
 
-        expect(fetchSpy).not.toHaveBeenCalled();
-        expect(result).toEqual({ ok: true, data: { dir: target, template: "quickstart-agent" } });
-      }),
-    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: true, data: { dir: target, template: "quickstart-agent" } });
   });
 
-  test("a clean init carries no warnings field at all", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "clean");
-        execaMock.mockResolvedValue({ failed: false });
+  test("a clean init carries no warnings field at all", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "clean");
+    execaMock.mockResolvedValue({ failed: false });
 
-        const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
+    const result = await executeInit({ dir: target }, { silent: true, ui, exec: execaMock });
 
-        expect(result).toEqual({ ok: true, data: { dir: target, template: "quickstart-agent" } });
-      }),
-    );
+    expect(result).toEqual({ ok: true, data: { dir: target, template: "quickstart-agent" } });
   });
 
-  test("a scaffold failure stops the spinner instead of leaking it", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
+  test("a scaffold failure stops the spinner instead of leaking it", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
 
-        // No such template: runInit throws inside the spinner's window. The
-        // leak this guards is a clack spinner whose interval and raw-mode
-        // stdin hook outlive the throw — it is only ever started when the UI
-        // is not suppressed, so this runs without `{ silent: true }`.
-        await expect(
-          executeInit(
-            { dir: path.join(dir, "boom"), template: "no-such-template" },
-            { ui, exec: execaMock },
-          ),
-        ).rejects.toThrow();
+    // No such template: runInit throws inside the spinner's window. The
+    // leak this guards is a clack spinner whose interval and raw-mode
+    // stdin hook outlive the throw — it is only ever started when the UI
+    // is not suppressed, so this runs without `{ silent: true }`.
+    await expect(
+      executeInit(
+        { dir: path.join(dir, "boom"), template: "no-such-template" },
+        { ui, exec: execaMock },
+      ),
+    ).rejects.toThrow();
 
-        expect(ui.spinner.started).toHaveLength(1);
-        expect(ui.spinner.stopped).toEqual([expect.stringContaining("Could not create")]);
-      }),
-    );
+    expect(ui.spinner.started).toHaveLength(1);
+    expect(ui.spinner.stopped).toEqual([expect.stringContaining("Could not create")]);
   });
 });
 
 describe("patchPackageJsonForWorkspace", () => {
-  test("rewrites workspace deps to link: paths", async () => {
-    await withTempDir(async (dir) => {
-      const target = path.join(dir, "my-agent");
-      await fs.mkdir(target, { recursive: true });
-      await fs.writeFile(
-        path.join(target, "package.json"),
-        JSON.stringify({
-          packageManager: "pnpm@10.29.3",
-          dependencies: {
-            "@alexkroman1/aai": "^0.12.3",
-            "@alexkroman1/aai-ui": "^0.12.3",
-            preact: "^10.29.0",
-          },
-          devDependencies: {
-            "@alexkroman1/aai-cli": "^0.12.3",
-            vitest: "^4.1.1",
-          },
-        }),
-      );
+  test("rewrites workspace deps to link: paths", async ({ tmpDir: dir }) => {
+    const target = path.join(dir, "my-agent");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(
+      path.join(target, "package.json"),
+      JSON.stringify({
+        packageManager: "pnpm@10.29.3",
+        dependencies: {
+          "@alexkroman1/aai": "^0.12.3",
+          "@alexkroman1/aai-ui": "^0.12.3",
+          preact: "^10.29.0",
+        },
+        devDependencies: {
+          "@alexkroman1/aai-cli": "^0.12.3",
+          vitest: "^4.1.1",
+        },
+      }),
+    );
 
-      await patchPackageJsonForWorkspace(target);
+    await patchPackageJsonForWorkspace(target);
 
-      const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
-      expect(result.name).toBe("my-agent");
-      expect(result.packageManager).toBeUndefined();
-      expect(result.dependencies["@alexkroman1/aai"]).toMatch(/^link:/);
-      expect(result.dependencies["@alexkroman1/aai"]).toContain("/aai");
-      expect(result.dependencies["@alexkroman1/aai-ui"]).toMatch(/^link:/);
-      expect(result.dependencies.preact).toBe("^10.29.0");
-      expect(result.devDependencies["@alexkroman1/aai-cli"]).toMatch(/^link:/);
-      expect(result.devDependencies.vitest).toBe("^4.1.1");
-    });
+    const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
+    expect(result.name).toBe("my-agent");
+    expect(result.packageManager).toBeUndefined();
+    expect(result.dependencies["@alexkroman1/aai"]).toMatch(/^link:/);
+    expect(result.dependencies["@alexkroman1/aai"]).toContain("/aai");
+    expect(result.dependencies["@alexkroman1/aai-ui"]).toMatch(/^link:/);
+    expect(result.dependencies.preact).toBe("^10.29.0");
+    expect(result.devDependencies["@alexkroman1/aai-cli"]).toMatch(/^link:/);
+    expect(result.devDependencies.vitest).toBe("^4.1.1");
   });
 
   /**
@@ -519,7 +445,7 @@ describe("patchPackageJsonForWorkspace", () => {
    * release, and a stale published copy after it, in a project whose whole
    * point is running against the working tree.
    */
-  test("links every @alexkroman1 dependency the scaffold declares", async () => {
+  test("links every @alexkroman1 dependency the scaffold declares", async ({ tmpDir: dir }) => {
     const scaffold = JSON.parse(
       await fs.readFile(
         path.resolve(import.meta.dirname, "../../aai-templates/scaffold/package.json"),
@@ -536,31 +462,29 @@ describe("patchPackageJsonForWorkspace", () => {
     // is the shape of a spec that passes because it stopped measuring.
     expect(declared.length).toBeGreaterThanOrEqual(4);
 
-    await withTempDir(async (dir) => {
-      const target = path.join(dir, "my-agent");
-      await fs.mkdir(target, { recursive: true });
-      await fs.writeFile(
-        path.join(target, "package.json"),
-        JSON.stringify({
-          dependencies: scaffold.dependencies,
-          devDependencies: scaffold.devDependencies,
-        }),
-      );
+    const target = path.join(dir, "my-agent");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(
+      path.join(target, "package.json"),
+      JSON.stringify({
+        dependencies: scaffold.dependencies,
+        devDependencies: scaffold.devDependencies,
+      }),
+    );
 
-      await patchPackageJsonForWorkspace(target);
+    await patchPackageJsonForWorkspace(target);
 
-      const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8")) as {
-        dependencies: Record<string, string>;
-        devDependencies: Record<string, string>;
-      };
-      for (const name of declared) {
-        const range = result.dependencies[name] ?? result.devDependencies[name];
-        expect(range, `${name} must be linked to the working tree`).toMatch(/^link:/);
-        // The directory under packages/ is the package name without the scope,
-        // so a link pointing at the wrong sibling fails here too.
-        expect(range).toContain(`/${name.slice("@alexkroman1/".length)}`);
-      }
-    });
+    const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8")) as {
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    for (const name of declared) {
+      const range = result.dependencies[name] ?? result.devDependencies[name];
+      expect(range, `${name} must be linked to the working tree`).toMatch(/^link:/);
+      // The directory under packages/ is the package name without the scope,
+      // so a link pointing at the wrong sibling fails here too.
+      expect(range).toContain(`/${name.slice("@alexkroman1/".length)}`);
+    }
   });
 });
 

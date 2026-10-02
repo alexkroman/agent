@@ -153,7 +153,8 @@ export function scriptAgent(script: Script = {}): Agent {
       // `…/info` is the record a resume reads and the one read back at the end;
       // anything else is the ordinary single-request writer, which every declining
       // path falls to.
-      if (!url.pathname.endsWith("/info")) return json(201, record(call.bytes, true));
+      if (!url.pathname.endsWith("/info"))
+        return Response.json(record(call.bytes, true), { status: 201 });
       attempts.info += 1;
       return answerInfo(script, attempts.info);
     }),
@@ -178,9 +179,9 @@ function answerBytes(
   const at = Number(call.url.pathname.split("/").at(-1));
   if (script.refuse?.offset === at && stillRefusing(script, refusals, at)) {
     if (script.refuse.network) throw new TypeError("the upload did not reach the platform");
-    return json(script.refuse.status ?? 400, { error: "refused" });
+    return Response.json({ error: "refused" }, { status: script.refuse.status ?? 400 });
   }
-  return json(201, { bytes: call.bytes });
+  return Response.json({ bytes: call.bytes }, { status: 201 });
 }
 
 /**
@@ -204,17 +205,20 @@ function stillRefusing(script: Script, refusals: Map<number, number>, offset: nu
 function answerBegin(script: Script, attempt: number): Response {
   const declared = script.begin ?? 201;
   const status = typeof declared === "number" ? declared : (declared[attempt - 1] ?? 201);
-  if (status !== 201) return json(status, { error: "no such route" });
+  if (status !== 201) return Response.json({ error: "no such route" }, { status });
   // Omitted rather than false when the bytes come to the agent, exactly as the route
   // omits it — so a fake cannot make the client take a path a real agent would not.
-  return json(201, {
-    ...record(0, false),
-    directParts: script.direct ? true : undefined,
-    // Omitted unless a spec asks for it, and only on the direct path — the two
-    // capabilities shipped separately, so a fake that coupled them could not
-    // reproduce the skew the client's own default exists for.
-    claimBatch: script.direct ? script.claimBatch : undefined,
-  });
+  return Response.json(
+    {
+      ...record(0, false),
+      directParts: script.direct ? true : undefined,
+      // Omitted unless a spec asks for it, and only on the direct path — the two
+      // capabilities shipped separately, so a fake that coupled them could not
+      // reproduce the skew the client's own default exists for.
+      claimBatch: script.direct ? script.claimBatch : undefined,
+    },
+    { status: 201 },
+  );
 }
 
 /**
@@ -225,7 +229,7 @@ function answerBegin(script: Script, attempt: number): Response {
  */
 function answerInfo(script: Script, attempt: number): Response {
   const status = script.info?.[attempt - 1] ?? 200;
-  if (status !== 200) return json(status, { error: "no" });
+  if (status !== 200) return Response.json({ error: "no" }, { status });
   // The closing read, which is every read but a resume's first. `neverRecorded` is
   // what a store that acknowledged each window and recorded none answers with.
   // The same two capability fields the CLAIM answers with. The real route sends them
@@ -236,7 +240,7 @@ function answerInfo(script: Script, attempt: number): Response {
     ? { directParts: true, claimBatch: script.claimBatch }
     : undefined;
   if (!script.landed || attempt !== 1) {
-    return json(200, {
+    return Response.json({
       ...(script.neverRecorded ? record(0, false) : record(TOTAL, true)),
       ...capability,
     });
@@ -244,7 +248,7 @@ function answerInfo(script: Script, attempt: number): Response {
   const first = script.landed[0];
   // The contiguous prefix, which is what the store would publish as `size`.
   const prefix = first?.start === 0 ? first.end : 0;
-  return json(200, { ...record(prefix, false), ranges: script.landed, ...capability });
+  return Response.json({ ...record(prefix, false), ranges: script.landed, ...capability });
 }
 
 /**
@@ -289,16 +293,20 @@ async function answerPart(
     stillRefusing(script, refusals, refused.offset)
   ) {
     if (refused.network) throw new TypeError("the upload did not reach the agent");
-    return json(
-      refused.status ?? 400,
+    return Response.json(
       { error: "refused" },
-      refused.retryAfter === undefined ? undefined : { "Retry-After": refused.retryAfter },
+      {
+        status: refused.status ?? 400,
+        ...(refused.retryAfter === undefined
+          ? {}
+          : { headers: { "Retry-After": refused.retryAfter } }),
+      },
     );
   }
   // The largest window named, which for a batch is the furthest the record could
   // have reached — the real store publishes the contiguous prefix and this fake's
   // callers only read that it answered.
-  return json(200, record(Math.max(...offsets) + call.bytes, false));
+  return Response.json(record(Math.max(...offsets) + call.bytes, false));
 }
 
 /** Request headers as a plain lower-cased record, whatever shape they arrived in. */
@@ -316,13 +324,6 @@ function bodyBytes(body: unknown): number {
   if (body instanceof ArrayBuffer) return body.byteLength;
   if (ArrayBuffer.isView(body)) return body.byteLength;
   return typeof body === "string" ? body.length : 0;
-}
-
-export function json(status: number, body: unknown, headers?: Record<string, string>): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json", ...headers },
-  });
 }
 
 /**

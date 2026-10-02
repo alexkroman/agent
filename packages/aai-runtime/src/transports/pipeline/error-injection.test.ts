@@ -35,8 +35,7 @@ import { PIPELINE_FLUSH_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
 import type { LanguageModel } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import {
-  createFailingSttProvider,
-  createFailingTtsProvider,
+  createFailingProvider,
   createFakeLanguageModel,
   createFakeTtsProvider,
 } from "../../_pipeline-test-fakes.ts";
@@ -113,7 +112,7 @@ const workingReply = (): LanguageModel =>
 const DRIVERS: Record<string, () => Promise<Injection>> = {
   "stt.open-rejected": async () => {
     const { opts, tts, callbacks, stt } = makeOpts({
-      stt: createFailingSttProvider("stt_connect_failed", "STT: missing API key."),
+      stt: createFailingProvider("stt_connect_failed", "STT: missing API key."),
       llm: workingReply(),
     });
     return await open(opts, { tts, callbacks, stt });
@@ -121,7 +120,7 @@ const DRIVERS: Record<string, () => Promise<Injection>> = {
 
   "tts.open-rejected": async () => {
     const { opts, tts, callbacks, stt } = makeOpts({
-      tts: createFailingTtsProvider("tts_connect_failed", "TTS: missing API key."),
+      tts: createFailingProvider("tts_connect_failed", "TTS: missing API key."),
       llm: workingReply(),
     });
     return await open(opts, { tts, callbacks, stt });
@@ -262,7 +261,7 @@ describe("each declared site produces its declared frame and recovery", () => {
         // Every session adopted before the failure must be closed. A session
         // reported dead over a link still open is billed and still relaying.
         for (const session of [...live.stt.sessions, ...live.tts.sessions]) {
-          expect(session.closed.value, `${id} left a provider session open`).toBe(true);
+          expect(session.close, `${id} left a provider session open`).toHaveBeenCalled();
         }
       } else {
         // The conversation continues: an ordinary turn still reaches TTS. This

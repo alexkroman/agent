@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test, vi } from "vitest";
+import { captureLogs } from "./_logger-test-utils.ts";
 import {
   createTestStore,
   makeSlot,
@@ -11,6 +12,9 @@ import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createMemoryPlatformEvents } from "./platform/events.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+
+// The shutdown-failure case logs a warning; keep it out of the output.
+captureLogs();
 
 async function setup() {
   // Store + event bus are a pair: the delete route only removes the row, and
@@ -79,7 +83,6 @@ test("delete's change event shuts down the resident sandbox", async () => {
 });
 
 test("delete succeeds even if sandbox shutdown fails", async () => {
-  vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const { fetch, slots, settleEvents } = await setup();
   await deployAgent(fetch);
 

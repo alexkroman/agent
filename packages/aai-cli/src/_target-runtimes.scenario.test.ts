@@ -84,12 +84,7 @@ import { afterAll, describe, expect, onTestFinished, test, vi } from "vitest";
 import { FEATURE_DETECTED_NODE_BUILTINS, PORTABLE_NODE_BUILTINS } from "./_target-bundle.ts";
 import { longLivedEntrySource } from "./_target-entry.ts";
 import { emitSelfContainedOutput, type SelfContainedTarget } from "./_target-output.ts";
-import {
-  type BinaryGate,
-  describeWithBinary,
-  linkProjectNodeModules,
-  silenced,
-} from "./_test-utils.ts";
+import { type BinaryGate, describeWithBinary, linkProjectNodeModules } from "./_test-utils.ts";
 
 /** Never bound — every arm passes `PORT`, and the fallback is what proves it is read. */
 const UNUSED_DEFAULT_PORT = 8000;
@@ -205,9 +200,7 @@ async function deployed(): Promise<string> {
       `export default { name: "Runtime Probe", systemPrompt: "hi", greeting: "hi", tools: {} };\n`,
     );
     await fs.writeFile(path.join(project, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
-    await silenced(async (dir: string) => {
-      await emitSelfContainedOutput(dir, TARGET);
-    })(project);
+    await emitSelfContainedOutput(project, TARGET);
 
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "aai_runtimes_deployed_"));
     await fs.cp(path.join(project, TARGET.outputDir), dir, { recursive: true });

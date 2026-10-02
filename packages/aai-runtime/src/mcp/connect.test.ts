@@ -187,10 +187,23 @@ describe("a server that does not answer", () => {
   test("the connect is bounded and the failure names the server", async () => {
     // Never settles — the wedged-server case, which is the one a plain `await`
     // would turn into a session that never starts.
-    const hung = fakeFetch(() => new Promise<Response>(() => undefined));
+    // Settles only when aborted, as a real fetch on a silent socket does.
+    const signals: AbortSignal[] = [];
+    const hung = fakeFetch(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init.signal;
+          if (signal) signals.push(signal);
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
     await expect(
       openMcpSession({ key: "docs", url: ENDPOINT }, { fetch: hung, connectTimeoutMs: 20 }),
     ).rejects.toThrow(/"docs" did not complete its handshake within 20ms/);
+    // Giving up tears the wedged request down rather than leaving it to the
+    // SDK's own, much longer, request timeout.
+    expect(signals.length).toBeGreaterThan(0);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
   });
 
   test("a refused connection rejects with the transport's own reason", async () => {

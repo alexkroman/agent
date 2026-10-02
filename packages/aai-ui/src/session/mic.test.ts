@@ -20,7 +20,7 @@ import type { BrowserSession } from "./types.ts";
 
 describe("BrowserSession mic mute", () => {
   let core: BrowserSession;
-  let audio: AudioMockContext & { restore: () => void };
+  let audio: AudioMockContext;
 
   beforeEach(() => {
     resetLastSocket();
@@ -34,7 +34,6 @@ describe("BrowserSession mic mute", () => {
 
   afterEach(() => {
     core.disconnect();
-    audio.restore();
   });
 
   /** Connect, handshake, and wait for the capture worklet to be wired. */

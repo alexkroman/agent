@@ -98,7 +98,7 @@ describe("the three watching loops share one read", () => {
     // 62: one per second — the tightest deadline any live watcher asked for —
     // plus the two the three joins take between them. It was 213 (61 per stream
     // and 30 for the notifier), i.e. 3.55 reads a second on one idle run.
-    expect(runs.get.mock.calls.length).toBe(62);
+    expect(runs.get).toHaveBeenCalledTimes(62);
 
     for (const stream of streams) stream.close();
     notifier.stop();
@@ -240,13 +240,11 @@ describe("createRunReads", () => {
   });
 
   test("a failed read does not wedge the shared reader", async () => {
-    let calls = 0;
     const runs: RunReader = {
-      get: vi.fn(async () => {
-        calls += 1;
-        if (calls === 1) throw new Error("blip");
-        return snapshot({ status: "completed" });
-      }),
+      get: vi
+        .fn<RunReader["get"]>()
+        .mockRejectedValueOnce(new Error("blip"))
+        .mockResolvedValue(snapshot({ status: "completed" })),
     };
     const reads = createRunReads(runs);
     const watch = reads.watch("wrun_1");

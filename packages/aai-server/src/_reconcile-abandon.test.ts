@@ -21,10 +21,10 @@ describe("abandonStalledRun", () => {
   const logs = captureLogs();
 
   test("fails the run with the author-facing reason, compare-and-set on the live statuses", async () => {
-    const { sql, calls } = createRecordingSql(() => [{ run_id: RUN.runId }]);
+    const sql = createRecordingSql(() => [{ run_id: RUN.runId }]);
     await expect(abandonStalledRun(sql, RUN)).resolves.toBe(true);
-    expect(calls).toHaveLength(1);
-    const params = calls[0]?.params ?? [];
+    expect(sql).toHaveBeenCalledOnce();
+    const params = sql.mock.calls[0]?.[1] ?? [];
     expect(params.slice(0, 3)).toEqual([RUN.slug, RUN.runId, "failed"]);
     expect(params).toContain(ABANDONED_RUN_ERROR);
     expect(params).toContainEqual(["pending", "running"]);
@@ -32,7 +32,7 @@ describe("abandonStalledRun", () => {
   });
 
   test("a run that settled first is not reported as abandoned, and not warned about", async () => {
-    const { sql } = createRecordingSql(() => []);
+    const sql = createRecordingSql(() => []);
     await expect(abandonStalledRun(sql, RUN)).resolves.toBe(false);
     expect(logs.warns()).toEqual([]);
   });

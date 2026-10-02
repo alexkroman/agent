@@ -1,10 +1,8 @@
 // @vitest-environment jsdom
 
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import { useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
 import type { ToolCallInfo } from "./types.ts";
 
@@ -29,9 +27,7 @@ describe("useToolResult", () => {
   it("fires callback for completed tool call matching name", () => {
     const core = createMockCore([makeToolCall({ name: "add_pizza" })]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolResult("add_pizza", cb), { wrapper });
+    renderHookWithSession(() => useToolResult("add_pizza", cb), core);
     expect(cb).toHaveBeenCalledOnce();
     expect(cb.mock.calls[0]?.at(0)).toEqual({ ok: true });
   });
@@ -39,9 +35,7 @@ describe("useToolResult", () => {
   it("does not fire for non-matching tool name", () => {
     const core = createMockCore([makeToolCall({ name: "other_tool" })]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolResult("add_pizza", cb), { wrapper });
+    renderHookWithSession(() => useToolResult("add_pizza", cb), core);
     expect(cb).not.toHaveBeenCalled();
   });
 
@@ -49,9 +43,7 @@ describe("useToolResult", () => {
     const tc = makeToolCall({ callId: "tc-1" });
     const core = createMockCore([tc]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolResult("test_tool", cb), { wrapper });
+    renderHookWithSession(() => useToolResult("test_tool", cb), core);
     expect(cb).toHaveBeenCalledOnce();
     act(() => core.update({ toolCalls: [tc] }));
     expect(cb).toHaveBeenCalledOnce();
@@ -63,18 +55,14 @@ describe("useToolResult", () => {
       makeToolCall({ callId: "tc-2", name: "tool_b", seq: 2 }),
     ]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolResult(cb), { wrapper });
+    renderHookWithSession(() => useToolResult(cb), core);
     expect(cb).toHaveBeenCalledTimes(2);
   });
 
   it("does not fire for pending tool calls", () => {
     const core = createMockCore([makeToolCall({ status: "pending", result: undefined })]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolResult("test_tool", cb), { wrapper });
+    renderHookWithSession(() => useToolResult("test_tool", cb), core);
     expect(cb).not.toHaveBeenCalled();
   });
 
@@ -82,9 +70,7 @@ describe("useToolResult", () => {
     const pending = makeToolCall({ status: "pending", result: undefined });
     const core = createMockCore([pending]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolResult("test_tool", cb), { wrapper });
+    renderHookWithSession(() => useToolResult("test_tool", cb), core);
     expect(cb).not.toHaveBeenCalled();
 
     act(() => core.update({ toolCalls: [{ ...pending, status: "done", result: '{"ok":true}' }] }));
@@ -100,10 +86,8 @@ describe("useToolResult", () => {
     const second = makeToolCall({ callId: "tc-2", seq: 2, status: "done" });
     const core = createMockCore([first, second]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
     // tc-2 completed while tc-1 (inserted earlier) is still pending.
-    renderHook(() => useToolResult(cb), { wrapper });
+    renderHookWithSession(() => useToolResult(cb), core);
     expect(cb).toHaveBeenCalledTimes(1);
     expect(cb.mock.calls[0]?.at(2)).toMatchObject({ callId: "tc-2" });
 
@@ -120,9 +104,7 @@ describe("useToolResult", () => {
     const tc = makeToolCall();
     const core = createMockCore([tc]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolResult("test_tool", cb), { wrapper });
+    renderHookWithSession(() => useToolResult("test_tool", cb), core);
     expect(cb).toHaveBeenCalledOnce();
 
     act(() => core.update({ toolCalls: [] }));
@@ -137,9 +119,7 @@ describe("useToolCallStart", () => {
       makeToolCall({ callId: "tc-1", name: "search", status: "pending", result: undefined }),
     ]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolCallStart("search", cb), { wrapper });
+    renderHookWithSession(() => useToolCallStart("search", cb), core);
     expect(cb).toHaveBeenCalledOnce();
   });
 
@@ -149,18 +129,14 @@ describe("useToolCallStart", () => {
       makeToolCall({ callId: "tc-2", name: "b", status: "pending", result: undefined, seq: 2 }),
     ]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolCallStart(cb), { wrapper });
+    renderHookWithSession(() => useToolCallStart(cb), core);
     expect(cb).toHaveBeenCalledTimes(2);
   });
 
   it("does not fire for a tool call first seen already done", () => {
     const core = createMockCore([makeToolCall({ status: "done" })]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolCallStart(cb), { wrapper });
+    renderHookWithSession(() => useToolCallStart(cb), core);
     expect(cb).not.toHaveBeenCalled();
   });
 
@@ -170,9 +146,7 @@ describe("useToolCallStart", () => {
     // so the start hook must fire (exactly once).
     const core = createMockCore([]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolCallStart(cb), { wrapper });
+    renderHookWithSession(() => useToolCallStart(cb), core);
     expect(cb).not.toHaveBeenCalled();
 
     const done = makeToolCall({ status: "done" });
@@ -189,9 +163,7 @@ describe("useToolCallStart", () => {
     const pending = makeToolCall({ status: "pending", result: undefined });
     const core = createMockCore([pending]);
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolCallStart(cb), { wrapper });
+    renderHookWithSession(() => useToolCallStart(cb), core);
     expect(cb).toHaveBeenCalledOnce();
 
     act(() => core.update({ toolCalls: [{ ...pending, status: "done", result: "{}" }] }));
@@ -206,9 +178,7 @@ describe("useEvent", () => {
       core.update({ customEvents: [{ id: 1, event: "score_update", data: { score: 42 } }] }),
     );
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useEvent("score_update", cb), { wrapper });
+    renderHookWithSession(() => useEvent("score_update", cb), core);
     expect(cb).toHaveBeenCalledOnce();
     expect(cb.mock.calls[0]?.at(0)).toEqual({ score: 42 });
   });
@@ -219,9 +189,7 @@ describe("useEvent", () => {
       core.update({ customEvents: [{ id: 1, event: "other_event", data: { foo: "bar" } }] }),
     );
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useEvent("score_update", cb), { wrapper });
+    renderHookWithSession(() => useEvent("score_update", cb), core);
     expect(cb).not.toHaveBeenCalled();
   });
 
@@ -231,9 +199,7 @@ describe("useEvent", () => {
       core.update({ customEvents: [{ id: 1, event: "score_update", data: { score: 1 } }] }),
     );
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useEvent("score_update", cb), { wrapper });
+    renderHookWithSession(() => useEvent("score_update", cb), core);
     expect(cb).toHaveBeenCalledOnce();
     // Add a second event — only the new one should fire
     act(() =>
@@ -252,9 +218,7 @@ describe("useEvent", () => {
     const core = createMockCore();
     act(() => core.update({ customEvents: [{ id: 1, event: "score_update", data: { n: 1 } }] }));
     const cb = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useEvent("score_update", cb), { wrapper });
+    renderHookWithSession(() => useEvent("score_update", cb), core);
     expect(cb).toHaveBeenCalledOnce();
 
     act(() => core.update({ customEvents: [] }));

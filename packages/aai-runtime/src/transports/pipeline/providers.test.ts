@@ -5,7 +5,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "../../_logger-test-utils.ts";
 import {
-  createFailingTtsProvider,
+  createFailingProvider,
   createFakeSttProvider,
   createFakeTtsProvider,
 } from "../../_pipeline-test-fakes.ts";
@@ -76,7 +76,7 @@ describe("createPipelineProviderSessions", () => {
 
   test("a side that fails to open is reported and the open resolves failed", async () => {
     const { stt, opts, sessions } = setup({
-      tts: createFailingTtsProvider("tts_connect_failed", "no route"),
+      tts: createFailingProvider("tts_connect_failed", "no route"),
     });
     await expect(sessions.open()).resolves.toBe("failed");
     expect(opts.emitError).toHaveBeenCalledWith("tts", expect.stringContaining("no route"));
@@ -102,7 +102,7 @@ describe("createPipelineProviderSessions", () => {
     gate.resolve();
     await expect(opened).resolves.toBe("ok");
     expect(late.tts).toBeNull();
-    expect(tts.last()?.closed.value).toBe(true);
+    expect(tts.last()?.close).toHaveBeenCalled();
     expect(sessions.tts).toBeNull();
   });
 
@@ -111,6 +111,6 @@ describe("createPipelineProviderSessions", () => {
     await sessions.open();
     vi.mocked(stt.last()?.close ?? vi.fn()).mockRejectedValueOnce(new Error("already closed"));
     await expect(sessions.close()).resolves.toBeUndefined();
-    expect(tts.last()?.closed.value).toBe(true);
+    expect(tts.last()?.close).toHaveBeenCalled();
   });
 });

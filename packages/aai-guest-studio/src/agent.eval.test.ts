@@ -332,8 +332,7 @@ describeStudioEval((test) => {
       expect(await ctx.read("agent.ts")).toContain("Bella Pizza");
       // GROUND TRUTH, run by the case rather than read off a tool result.
       const tests = await ctx.runTests();
-      expect(tests.ran, "the workspace reported no tests to run").toBe(true);
-      if (!tests.ran) return;
+      expect.assert(tests.ran, "the workspace reported no tests to run");
       expect(tests.passed, `the tests still fail:\n${tests.output}`).toBe(true);
     },
     {
@@ -394,8 +393,7 @@ describeStudioEval((test) => {
       // tool result and the agent can edit neither into passing.
       await expectWorkspaceCompiles(ctx);
       const tests = await ctx.runTests();
-      expect(tests.ran, "the workspace reported no tests to run").toBe(true);
-      if (!tests.ran) return;
+      expect.assert(tests.ran, "the workspace reported no tests to run");
       expect(tests.passed, `the starter's own tests fail:\n${tests.output}`).toBe(true);
     },
     // `studioPrompt` is the whole reason this case exists: on the thin harness

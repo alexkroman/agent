@@ -122,9 +122,10 @@ describe("roster()", () => {
         /declared by two speakers/,
       );
       for (const minted of [HANDOFF_TOOL_NAME, DELEGATE_TOOL_NAME]) {
-        expect(() => roster([{ ...valid, tools: { [minted]: lookupInvoice } }])).toThrow(
-          /name of a tool the roster mints/,
-        );
+        expect(
+          () => roster([{ ...valid, tools: { [minted]: lookupInvoice } }]),
+          String(minted),
+        ).toThrow(/name of a tool the roster mints/);
       }
     });
     it("but not a tool shared by entries that run OFF the line — each has its own loop", () => {

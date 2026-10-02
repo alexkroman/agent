@@ -16,7 +16,7 @@ describe("Card", () => {
     );
     const section = container.querySelector("section");
     expect(section).not.toBeNull();
-    expect(section?.querySelector(".eyebrow")?.textContent).toBe("Secrets");
+    expect(section?.querySelector(".eyebrow")).toHaveTextContent(/^Secrets$/);
     const text = section?.textContent ?? "";
     expect(text.indexOf("Secrets are passed")).toBeGreaterThan(text.indexOf("Secrets"));
     expect(text.indexOf("Save")).toBeGreaterThan(text.indexOf("Secrets are passed"));
@@ -26,7 +26,7 @@ describe("Card", () => {
     const { container } = render(<Card title="Database" blurb="Database setup lives here." />);
     const eyebrows = container.querySelectorAll(".eyebrow");
     expect(eyebrows).toHaveLength(1);
-    expect(eyebrows[0]?.textContent).toBe("Database");
+    expect(eyebrows[0]).toHaveTextContent(/^Database$/);
   });
 
   test("a blurb may be markup, and the body is optional", () => {

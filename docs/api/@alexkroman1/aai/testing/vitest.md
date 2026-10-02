@@ -20,60 +20,6 @@ declares it. This subpath keeps working; it is where the names are declared.
 
 ## Functions
 
-### installFetchRoutes()
-
-```ts
-function installFetchRoutes(routes: 
-  | Readonly<Record<string, 
-  | FetchRouteHandler
-  | StubStepAnswer>>
-  | readonly FetchRouteHandler[], options?: FetchRoutesOptions): StubFetchRoutes;
-```
-
-Route the global `fetch` — and the step fetch — through one URL/method
-table, restored when this test finishes, and return the request log.
-
-`stubFetchRoutes` with the bookkeeping done — see it (and
-[FetchRouteTable](../testing.md#fetchroutetable)) for the key forms, which key wins, and why an
-unmatched request THROWS by default. It replaces the per-file
-`vi.stubGlobal("fetch", async (url, init) => …)` that parsed the URL and the
-body, pushed onto a `calls` array and answered anything unforeseen `200 {}`.
-
-#### Parameters
-
-##### routes
-
-  \| `Readonly`\<`Record`\<`string`, 
-  \| [`FetchRouteHandler`](../testing.md#fetchroutehandler)
-  \| [`StubStepAnswer`](../testing.md#stubstepanswer)\>\>
-  \| readonly [`FetchRouteHandler`](../testing.md#fetchroutehandler)[]
-
-##### options?
-
-[`FetchRoutesOptions`](../testing.md#fetchroutesoptions)
-
-#### Returns
-
-[`StubFetchRoutes`](../testing.md#stubfetchroutes)
-
-#### Example
-
-In a test body or a `beforeEach`:
-```ts
-import { installFetchRoutes } from "@alexkroman1/aai/testing/vitest";
-
-const net = installFetchRoutes({
-  "POST https://api.mem0.ai/v3/memories/add/": { body: { event_id: "e1" } },
-});
-await fetch("https://api.mem0.ai/v3/memories/add/", {
-  method: "POST",
-  body: JSON.stringify({ user_id: "home" }),
-});
-console.log(net.hits[0]?.json); // { user_id: "home" }
-```
-
-***
-
 ### installStubClientInbox()
 
 ```ts

@@ -1,15 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { claimSessionEnder, endSession } from "./session-end.ts";
 
 describe("endSession", () => {
   test("calls the session's ender, afterReply defaulting to true", () => {
-    const asked: { afterReply: boolean }[] = [];
-    claimSessionEnder("end-a", (options) => asked.push(options));
+    const ender = vi.fn();
+    claimSessionEnder("end-a", ender);
     expect(endSession({ sessionId: "end-a" })).toBe(true);
     expect(endSession({ sessionId: "end-a" }, { afterReply: false })).toBe(true);
-    expect(asked).toEqual([{ afterReply: true }, { afterReply: false }]);
+    expect(ender.mock.calls).toEqual([[{ afterReply: true }], [{ afterReply: false }]]);
   });
 
   test("answers false for a session nothing registered — already ended, or never connected", () => {

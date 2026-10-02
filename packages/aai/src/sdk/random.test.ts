@@ -22,11 +22,12 @@ describe("randomInt", () => {
     expect(randomInt(6, () => 1)).toBe(5);
   });
 
-  test("answers 0 for a range with nothing in it", () => {
-    for (const max of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+  test.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "answers 0 for a range with nothing in it (%s)",
+    (max) => {
       expect(randomInt(max, () => 0.5)).toBe(0);
-    }
-  });
+    },
+  );
 });
 
 describe("pickOne", () => {
@@ -109,9 +110,9 @@ describe("createSeededRandom", () => {
     for (const seed of [-1, 0, 3.7, 2 ** 33]) {
       const draws = Array.from({ length: 5 }, createSeededRandom(seed));
       for (const v of draws) {
-        expect(Number.isFinite(v)).toBe(true);
-        expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThan(1);
+        expect(Number.isFinite(v), `seed ${seed}`).toBe(true);
+        expect(v, `seed ${seed}`).toBeGreaterThanOrEqual(0);
+        expect(v, `seed ${seed}`).toBeLessThan(1);
       }
     }
   });

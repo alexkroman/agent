@@ -9,15 +9,9 @@
 // that renders an explanatory row instead would still look correct here.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import {
-  button,
-  fetchCall,
-  input,
-  jsonResponse,
-  renderWithClient,
-  stubFetch,
-} from "../_test-utils.ts";
+import { fetchCall, jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { consumeGithubResult, githubResultText } from "../github-result.ts";
 import {
   GithubCard,
@@ -118,7 +112,7 @@ describe("GithubCard", () => {
     stubFetch({ "/studio/github": () => jsonResponse({ configured: true, connected: false }) });
     renderCard();
     await screen.findByText("Sync to GitHub");
-    expect(button(/Connect GitHub/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Connect GitHub/ })).toBeInTheDocument();
     // No picker before there is an installation to pick from.
     expect(screen.queryByText("Repository")).toBeNull();
   });
@@ -147,7 +141,7 @@ describe("GithubCard", () => {
 
     renderCard();
     await screen.findByText("Sync to GitHub");
-    fireEvent.click(button(/Connect GitHub/));
+    fireEvent.click(screen.getByRole("button", { name: /Connect GitHub/ }));
 
     await waitFor(() => {
       expect(href).toBe("https://github.com/apps/aai-studio/installations/new");
@@ -166,7 +160,7 @@ describe("GithubCard", () => {
 
     await screen.findByText("acme");
     await screen.findByText("acme/voice-agent (private)");
-    expect(screen.getByText("Add or remove repositories")).toBeTruthy();
+    expect(screen.getByText("Add or remove repositories")).toBeInTheDocument();
   });
 
   test("the picker renders the newest repository first", async () => {
@@ -200,7 +194,7 @@ describe("GithubCard", () => {
       "/studio/github/repos": () => jsonResponse({ repos: [] }),
     });
     renderCard();
-    expect(await screen.findByText(/cannot write to any repository yet/)).toBeTruthy();
+    expect(await screen.findByText(/cannot write to any repository yet/)).toBeInTheDocument();
   });
 
   test("Sync is disabled until a repository is chosen", async () => {
@@ -210,7 +204,7 @@ describe("GithubCard", () => {
     });
     renderCard();
     await screen.findByText("acme/voice-agent (private)");
-    expect(button(/Sync to GitHub/).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: /Sync to GitHub/ })).toBeDisabled();
   });
 
   test("the picker defaults to where the project last synced", async () => {
@@ -223,7 +217,7 @@ describe("GithubCard", () => {
     renderCard({ githubRepo: "acme/voice-agent", githubStale: true });
 
     await screen.findByText("acme/voice-agent (private)");
-    expect(button(/Sync to GitHub/).disabled).toBe(false);
+    expect(screen.getByRole("button", { name: /Sync to GitHub/ })).toBeEnabled();
     await screen.findByText(/edits GitHub does not have yet/);
   });
 
@@ -245,11 +239,11 @@ describe("GithubCard", () => {
     renderCard({ githubRepo: "acme/voice-agent", githubStale: true });
 
     await screen.findByText("acme/voice-agent (private)");
-    fireEvent.click(button(/Sync to GitHub/));
+    fireEvent.click(screen.getByRole("button", { name: /Sync to GitHub/ }));
 
     await screen.findByText(/Pushed to/);
     const link = screen.getByText("View commit");
-    expect(link.getAttribute("href")).toBe("https://github.com/acme/voice-agent/commit/c0ffee");
+    expect(link).toHaveAttribute("href", "https://github.com/acme/voice-agent/commit/c0ffee");
   });
 
   test("a no-op sync says so rather than claiming a push", async () => {
@@ -272,8 +266,8 @@ describe("GithubCard", () => {
     renderCard({ githubRepo: "acme/voice-agent", githubStale: false });
 
     await screen.findByText("acme/voice-agent (private)");
-    fireEvent.click(button(/Sync to GitHub/));
-    expect(await screen.findByText(/Already up to date on/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Sync to GitHub/ }));
+    expect(await screen.findByText(/Already up to date on/)).toBeInTheDocument();
   });
 
   test("a cold open links the LAST synced commit from the workspace stamps", async () => {
@@ -286,7 +280,7 @@ describe("GithubCard", () => {
     renderCard({ githubRepo: "acme/voice-agent", githubCommit: "abc123", githubStale: false });
 
     const link = await screen.findByText("View last commit");
-    expect(link.getAttribute("href")).toBe("https://github.com/acme/voice-agent/commit/abc123");
+    expect(link).toHaveAttribute("href", "https://github.com/acme/voice-agent/commit/abc123");
   });
 
   test("a failed sync shows the server's own sentence", async () => {
@@ -301,8 +295,8 @@ describe("GithubCard", () => {
     renderCard({ githubRepo: "acme/voice-agent", githubStale: true });
 
     await screen.findByText("acme/voice-agent (private)");
-    fireEvent.click(button(/Sync to GitHub/));
-    expect(await screen.findByText("Grant it Contents: read and write.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Sync to GitHub/ }));
+    expect(await screen.findByText("Grant it Contents: read and write.")).toBeInTheDocument();
   });
 
   // The pair below is one contrast, split across two cases so the reporter
@@ -315,7 +309,7 @@ describe("GithubCard", () => {
       "/studio/github/repos": () => jsonResponse(REPOS),
     });
     renderCard();
-    expect(await screen.findByText("Or create a new one")).toBeTruthy();
+    expect(await screen.findByText("Or create a new one")).toBeInTheDocument();
   });
 
   test("a personal account is not offered repository creation", async () => {
@@ -332,6 +326,7 @@ describe("GithubCard", () => {
   });
 
   test("creating a repository selects it, so Sync is immediately usable", async () => {
+    const user = userEvent.setup();
     stubFetch({
       "/studio/github": () => jsonResponse(CONNECTED),
       "/studio/github/repos": () => jsonResponse(REPOS),
@@ -341,12 +336,12 @@ describe("GithubCard", () => {
     renderCard();
     await screen.findByText("Or create a new one");
 
-    fireEvent.change(input("Or create a new one"), { target: { value: "fresh" } });
-    fireEvent.click(button(/^Create$/));
+    await user.type(screen.getByLabelText("Or create a new one"), "fresh");
+    fireEvent.click(screen.getByRole("button", { name: /^Create$/ }));
 
     // Selected on success — the user named it in order to push to it.
     await waitFor(() => {
-      expect(button(/Sync to GitHub/).disabled).toBe(false);
+      expect(screen.getByRole("button", { name: /Sync to GitHub/ })).toBeEnabled();
     });
   });
 
@@ -362,7 +357,7 @@ describe("GithubCard", () => {
       "confirm",
       vi.fn(() => false),
     );
-    fireEvent.click(button(/Disconnect/));
+    fireEvent.click(screen.getByRole("button", { name: /Disconnect/ }));
     expect(mock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
   });
 

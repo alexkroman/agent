@@ -105,8 +105,8 @@ describe("a Textbelt answer", () => {
   test("advice names the fix and never the number or the key", () => {
     for (const detail of ["Out of quota", "Sending URLs requires whitelisting", "Invalid phone"]) {
       const advice = explainChannelFailure(channel, detail);
-      expect.soft(advice).not.toContain("+15555550123");
-      expect.soft(advice).not.toContain("textbelt-test-key");
+      expect.soft(advice, String(detail)).not.toContain("+15555550123");
+      expect.soft(advice, String(detail)).not.toContain("textbelt-test-key");
     }
     expect(explainChannelFailure(channel, "Out of quota")).toMatch(/top it up/);
     expect(explainChannelFailure(channel, "URL not allowed")).toContain("textbelt.com/whitelist");

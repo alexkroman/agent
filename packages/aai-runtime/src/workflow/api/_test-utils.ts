@@ -4,59 +4,35 @@
  * `node:http` server with a spying `WorkflowClient` as the engine.
  */
 
+import { once } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
+import { requestPath } from "@alexkroman1/aai/internal";
+import { createRunSnapshot, createStubWorkflows } from "@alexkroman1/aai/testing";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { vi } from "vitest";
 import { makeLogger } from "../../_logger-test-utils.ts";
 import { createWorkflowApi } from "../api.ts";
 import type { UploadStore } from "../uploads.ts";
 
-/** One run snapshot, overridable field by field. */
-export function run(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot {
-  return {
-    runId: "wrun_1",
-    workflow: "digest",
-    createdAt: 1_700_000_000_000,
-    status: "running",
-    ...over,
-  } as WorkflowRunSnapshot;
-}
-
 /**
- * A `ctx.workflows` whose every method is a spy, so a route's call is visible.
- *
- * The `rejectingWorkflows` base is load-bearing rather than tidy: this used to be
- * a literal cast with `as WorkflowClient`, and a cast keeps compiling when the
- * client GAINS a method — leaving it `undefined` here, so the route exercising it
- * fails on a `TypeError` that names nothing, or (worse) no test reaches it at all
- * and the route ships uncovered.
+ * A `ctx.workflows` whose every route-facing method is a spy, so a route's call is
+ * visible. Built on `createStubWorkflows`, so a method the client GAINS rejects by
+ * name here rather than arriving `undefined`.
  */
 export function fakeClient(over: Partial<WorkflowClient> = {}): WorkflowClient {
-  return {
-    ...rejectingWorkflows("not stubbed in this test"),
+  return createStubWorkflows({
     start: vi.fn(async () => "wrun_1"),
-    get: vi.fn(async () => run()),
-    find: vi.fn(async () => [run({ key: "caller-1" })]),
-    recent: vi.fn(async () => [run()]),
+    get: vi.fn(async () => createRunSnapshot()),
+    find: vi.fn(async () => [createRunSnapshot({ key: "caller-1" })]),
+    recent: vi.fn(async () => [createRunSnapshot()]),
     cancel: vi.fn(async () => true),
     wakeUp: vi.fn(async () => 1),
-    stream: vi.fn(async () => chunkStream([{ step: 1 }, "halfway"])),
+    stream: vi.fn(async () => ReadableStream.from<unknown>([{ step: 1 }, "halfway"])),
     streamTail: vi.fn(async () => 1),
     listing: vi.fn(() => [{ name: "digest", description: "Research a topic" }]),
     ...over,
-  };
-}
-
-/** A run's written stream, as `ctx.workflows.stream` resolves one. */
-export function chunkStream(chunks: readonly unknown[]): ReadableStream<unknown> {
-  return new ReadableStream<unknown>({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(chunk);
-      controller.close();
-    },
   });
 }
 
@@ -64,11 +40,7 @@ export type Harness = {
   url: string;
   /**
    * The logger the API was built with — FRESH per server, never a module
-   * singleton. `restoreMocks` restores `vi.spyOn` mocks and clears neither the
-   * history nor the implementation of a plain `vi.fn()`, so a shared one
-   * accumulates across the whole file: "the infrastructure cause reaches the
-   * LOG" was satisfied by the identical call the preceding test had made, and
-   * deleting the log line left it green.
+   * singleton, so a log assertion can only be satisfied by this test's call.
    */
   logger: ReturnType<typeof makeLogger>;
   close: () => Promise<void>;
@@ -116,7 +88,7 @@ export async function listenLoopback(
     if (api(req, res, url, req.method ?? "GET")) return;
     res.writeHead(404).end();
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await once(server.listen(0, "127.0.0.1"), "listening");
   const { port } = server.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${port}`,

@@ -1,6 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
+import { fakeFetch } from "./_test-utils.ts";
 import { createWebSearch } from "./web-search.ts";
 
 /** A minimal primary-endpoint (html.duckduckgo.com) results page. */
@@ -40,7 +42,7 @@ describe("web_search fallback", () => {
   test("primary results are returned without touching the lite endpoint", async () => {
     const mockFetch = fetchByHost(new Response(htmlResults), new Response(liteResults));
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(result).toEqual([
       { title: "Result 1", url: "https://example.com/1", description: "Desc & 1" },
       { title: "Result 2", url: "https://example.com/2", description: "Desc 2" },
@@ -52,7 +54,7 @@ describe("web_search fallback", () => {
   test("a primary bot challenge falls back to the lite endpoint", async () => {
     const mockFetch = fetchByHost(new Response(challenge), new Response(liteResults));
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q", max_results: 2 }, createMockToolContext());
+    const result = await tool.execute({ query: "q", max_results: 2 }, createToolContext());
     expect(result).toEqual([
       { title: "Lite 1", url: "https://lite.example/1", description: "Lite desc & 1" },
       { title: "Lite 2", url: "https://lite.example/2", description: "Lite desc 2" },
@@ -64,7 +66,7 @@ describe("web_search fallback", () => {
   test("the anomaly interstitial counts as a challenge", async () => {
     const mockFetch = fetchByHost(new Response(anomaly), new Response(liteResults));
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(Array.isArray(result)).toBe(true);
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
@@ -80,7 +82,7 @@ describe("web_search fallback", () => {
       new Response(liteResults),
     );
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(result).toEqual([
       { title: "Lite 1", url: "https://lite.example/1", description: "Lite desc & 1" },
       { title: "Lite 2", url: "https://lite.example/2", description: "Lite desc 2" },
@@ -96,7 +98,7 @@ describe("web_search fallback", () => {
         : Promise.reject(new Error("socket hang up")),
     );
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(result).toEqual([
       { title: "Lite 1", url: "https://lite.example/1", description: "Lite desc & 1" },
       { title: "Lite 2", url: "https://lite.example/2", description: "Lite desc 2" },
@@ -108,7 +110,7 @@ describe("web_search fallback", () => {
   test("both endpoints challenged returns the primary's error", async () => {
     const mockFetch = fetchByHost(new Response(challenge), new Response(anomaly));
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(result).toMatchObject({ error: expect.stringContaining("bot-detection") });
   });
 
@@ -118,7 +120,7 @@ describe("web_search fallback", () => {
       new Response("", { status: 403, statusText: "Forbidden" }),
     );
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(result).toEqual({ error: "Search request failed: 500 Internal Server Error" });
   });
 
@@ -134,7 +136,7 @@ describe("web_search fallback", () => {
       </div>`;
     const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(result).toEqual([
       {
         title: "Café guide",
@@ -155,7 +157,7 @@ describe("web_search fallback", () => {
       </div>`;
     const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(result).toEqual([
       { title: "Result 1", url: "https://example.com/1", description: "Desc 1" },
     ]);
@@ -172,7 +174,7 @@ describe("web_search fallback", () => {
       </div>`;
     const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(result).toEqual([
       { title: "Result 1", url: "https://example.com/1", description: "Desc 1" },
     ]);
@@ -190,7 +192,7 @@ describe("web_search fallback", () => {
       </div>`;
     const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(result).toEqual([
       { title: "Result 1", url: "https://example.com/1", description: "Real desc" },
     ]);
@@ -203,14 +205,14 @@ describe("web_search fallback", () => {
       </div>`;
     const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
     const tool = createWebSearch(fakeFetch(mockFetch));
-    const result = await tool.execute({ query: "q" }, createMockToolContext());
+    const result = await tool.execute({ query: "q" }, createToolContext());
     expect(result).toEqual([{ title: "Result 1", url: "https://example.com/1", description: "" }]);
   });
 
   test("requests carry browser-like headers", async () => {
     const mockFetch = fetchByHost(new Response(htmlResults), new Response(liteResults));
     const tool = createWebSearch(fakeFetch(mockFetch));
-    await tool.execute({ query: "q" }, createMockToolContext());
+    await tool.execute({ query: "q" }, createToolContext());
     const init = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
     const headers = init?.headers as Record<string, string>;
     expect(headers["User-Agent"]).toContain("Mozilla/5.0");

@@ -37,13 +37,11 @@
  */
 
 import {
-  recordRequest,
+  publishAnsweringStepFetch,
   type StubStepAnswer,
   type StubStepRequest,
-  toStepResponse,
 } from "./_testing-step-fetch.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import { publishStepFetch, type StepFetchInit } from "./step-fetch.ts";
 import { TRANSCRIBE_API } from "./step-transcribe.ts";
 import { TRANSCRIBE_SYNC_ENDPOINT } from "./step-transcribe-sync.ts";
 
@@ -279,14 +277,13 @@ export function stubTranscribe(options: StubTranscribeOptions = {}): StubTranscr
     return { body: { id: `${options.jobIdPrefix ?? "stub_transcript_"}${minted}` } };
   };
 
-  publishStepFetch(async (url: string, init: StepFetchInit = {}): Promise<Response> => {
-    const request = await recordRequest(url, init);
+  const restore = publishAnsweringStepFetch((request) => {
     const leg = legOf(request);
     calls.push({ ...request, leg });
-    return toStepResponse(await answerLeg(leg, request));
+    return answerLeg(leg, request);
   });
 
-  return { calls, restore: () => publishStepFetch(undefined) };
+  return { calls, restore };
 }
 
 /**

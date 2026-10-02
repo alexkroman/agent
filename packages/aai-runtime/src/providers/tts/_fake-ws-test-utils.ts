@@ -1,20 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Fake `ws` WebSocket shared by the TTS adapter specs (AssemblyAI and Rime)
-// and `step-speak.test.ts`. It reaches the code under test through each
-// opener's `createSocket` seam — pass {@link createFakeWebSocket} — rather than
-// by replacing the `ws` module.
-//
-// It used to be AssemblyAI's alone while `rime.test.ts` and
-// `stt/soniox.test.ts` each re-implemented it, and the copies had already
-// DIVERGED on the property that matters: soniox's starts CONNECTING and
-// flips to OPEN when it fires "open", the other two were pinned OPEN from
-// the constructor — so a write-before-open regression was catchable in one
-// suite and structurally invisible in the other two. This one matches real
-// `ws`: `readyState` is CONNECTING until the "open" event, and it is an
-// `EventEmitter`, so an `error` with no listener throws exactly as it would
-// crash the host. (Soniox's copy survives because its adapter speaks binary
-// frames, reads `bufferedAmount` and reads the close CODE, none of which this
-// fake models.)
+/**
+ * Fake `ws` WebSocket shared by every provider spec that drives a socket (the
+ * TTS adapters, `step-speak`, and the Soniox STT adapter). It reaches the code
+ * under test through each opener's `createSocket` seam — pass
+ * {@link createFakeWebSocket} — rather than by replacing the `ws` module.
+ *
+ * It matches real `ws` where an adapter can tell the difference: an
+ * `EventEmitter` (so an `error` with no listener throws as it would crash the
+ * host), `readyState` CONNECTING until "open" fires (so a send-before-open is a
+ * test failure rather than a silently accepted frame), binary as well as text
+ * frames, a `bufferedAmount` for backpressure, and a close CODE on "close".
+ */
 
 import { EventEmitter } from "node:events";
 import type WebSocket from "ws";
@@ -25,13 +21,17 @@ type WsEvent = "open" | "message" | "error" | "close";
 export class FakeWebSocket extends EventEmitter {
   static CONNECTING = 0;
   static OPEN = 1;
+  static CLOSING = 2;
   static CLOSED = 3;
   static instances: FakeWebSocket[] = [];
   /** When true, new sockets black-hole: no "open", no "error" — ever. */
   static neverOpen = false;
 
   readyState: number = FakeWebSocket.CONNECTING;
-  sent: string[] = [];
+  /** Every frame sent, text or binary, in order. */
+  sent: (string | Uint8Array)[] = [];
+  /** What the adapter reads for backpressure; a spec sets it. */
+  bufferedAmount = 0;
   readonly url: string;
   readonly options: WebSocket.ClientOptions | undefined;
 
@@ -40,13 +40,11 @@ export class FakeWebSocket extends EventEmitter {
     this.url = url;
     this.options = opts;
     FakeWebSocket.instances.push(this);
-    // Real `ws` fires "open" asynchronously and is CONNECTING until then;
-    // match both, so a send-before-open is a test failure rather than a
-    // silently accepted frame.
+    // Real `ws` fires "open" asynchronously and is CONNECTING until then.
     if (!FakeWebSocket.neverOpen) {
       queueMicrotask(() => {
         this.readyState = FakeWebSocket.OPEN;
-        this._fire("open");
+        this.emit("open");
       });
     }
   }
@@ -57,6 +55,13 @@ export class FakeWebSocket extends EventEmitter {
     FakeWebSocket.neverOpen = false;
   }
 
+  /** The most recently constructed socket; throws when none was. */
+  static latest(): FakeWebSocket {
+    const ws = FakeWebSocket.instances.at(-1);
+    if (!ws) throw new Error("no FakeWebSocket was constructed");
+    return ws;
+  }
+
   /** Every listener on every event — what `dropSocket` must leave at one. */
   listenersTotal(): number {
     let n = 0;
@@ -64,39 +69,39 @@ export class FakeWebSocket extends EventEmitter {
     return n;
   }
 
-  /** Every adapter on this fake speaks JSON text frames; a binary one is kept decoded. */
-  send(data: string | Uint8Array, _options?: { binary?: boolean }) {
-    this.sent.push(typeof data === "string" ? data : new TextDecoder().decode(data));
+  send(data: string | Uint8Array, _options?: { binary?: boolean }): void {
+    this.sent.push(data);
   }
 
-  close() {
+  /** A polite close: CLOSING, then "close" with `code`, then CLOSED. */
+  close(code = 1000): void {
+    this.readyState = FakeWebSocket.CLOSING;
+    this.emit("close", code);
     this.readyState = FakeWebSocket.CLOSED;
-    this._fire("close");
   }
 
   /**
-   * Real `ws`'s abrupt close — no close frame, no handshake.
-   *
-   * Modelled because `host/step-speak.ts` uses it for the one case where a
-   * polite close is pointless (a socket that never opened, or an exchange that
-   * already failed), and a fake without it turns that path into a TypeError
-   * that reads as a bug in the code under test.
+   * Real `ws`'s abrupt close — no close frame, no handshake. `host/step-speak.ts`
+   * uses it for a socket that never opened or an exchange that already failed.
    */
-  terminate() {
+  terminate(): void {
     this.readyState = FakeWebSocket.CLOSED;
-    this._fire("close");
+    this.emit("close", 1006);
   }
 
-  _fire(event: WsEvent, ...args: unknown[]) {
+  _fire(event: WsEvent, ...args: unknown[]): void {
     this.emit(event, ...args);
   }
 
-  _msg(payload: unknown) {
-    this._fire("message", JSON.stringify(payload));
+  _msg(payload: unknown): void {
+    this.emit("message", JSON.stringify(payload));
   }
 
+  /** The TEXT frames sent, parsed. */
   _frames(): Record<string, unknown>[] {
-    return this.sent.map((s) => JSON.parse(s) as Record<string, unknown>);
+    return this.sent
+      .filter((s): s is string => typeof s === "string")
+      .map((s) => JSON.parse(s) as Record<string, unknown>);
   }
 }
 

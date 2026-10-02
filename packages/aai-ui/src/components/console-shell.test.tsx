@@ -49,7 +49,7 @@ describe("ConsoleShell", () => {
     // silently for a screen reader.
     shell({}, { code: "audio", message: "microphone permission denied", fatal: false });
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toBe("microphone permission denied (audio)");
+    expect(alert).toHaveTextContent(/^microphone permission denied \(audio\)$/);
   });
 
   test("shows no banner when there is no error", () => {
@@ -59,9 +59,9 @@ describe("ConsoleShell", () => {
 
   test("renders the content and the footer, and the title when given one", () => {
     shell({ title: "Dispatch" });
-    expect(screen.getByText("Conversation")).not.toBeNull();
-    expect(screen.getByText("Stop")).not.toBeNull();
-    expect(screen.getByText("Dispatch")).not.toBeNull();
+    expect(screen.getByText("Conversation")).toBeInTheDocument();
+    expect(screen.getByText("Stop")).toBeInTheDocument();
+    expect(screen.getByText("Dispatch")).toBeInTheDocument();
   });
 
   test("shows the live state, and a custom icon in place of the logo", () => {
@@ -69,7 +69,7 @@ describe("ConsoleShell", () => {
       state: "thinking",
       icon: <span data-testid="mark">*</span>,
     });
-    expect(screen.getByText("thinking")).not.toBeNull();
+    expect(screen.getByText("thinking")).toBeInTheDocument();
     expect(container.querySelector("[data-testid='mark']")).not.toBeNull();
     // The stock logo is an <svg>; a custom icon replaces it rather than joining
     // it, which is what a branded chrome needs.
@@ -79,7 +79,7 @@ describe("ConsoleShell", () => {
   test("appends className rather than replacing the shell's own layout classes", () => {
     const { container } = shell({ className: "ring-2" });
     const root = container.firstElementChild;
-    expect(root?.className).toContain("ring-2");
-    expect(root?.className).toContain("flex");
+    expect(root).toHaveClass("ring-2");
+    expect(root).toHaveClass("flex");
   });
 });

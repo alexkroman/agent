@@ -62,7 +62,8 @@
  * @module testing-workflow-ctx
  */
 
-import { formatSchemaIssues, type StandardSchemaV1 } from "./standard-schema.ts";
+import { validatedBy } from "./_testing-schema-check.ts";
+import type { StandardSchemaV1 } from "./standard-schema.ts";
 import type {
   SleepOptions,
   StepOptions,
@@ -92,14 +93,11 @@ async function checkedAgainst(
   schema: StandardSchemaV1 | undefined,
 ): Promise<unknown> {
   if (schema === undefined) return value;
-  const result = await schema["~standard"].validate(value);
-  if (result.issues) {
-    throw new Error(
-      `createWorkflowContext: ${what} does not match the schema it declared: ` +
-        formatSchemaIssues(result.issues),
-    );
-  }
-  return result.value;
+  return await validatedBy(
+    schema,
+    value,
+    (issues) => `createWorkflowContext: ${what} does not match the schema it declared: ${issues}`,
+  );
 }
 
 /** One step the body reached, as the recorder saw it. */

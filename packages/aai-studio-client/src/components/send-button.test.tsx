@@ -7,7 +7,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { KeyboardEvent } from "react";
 import { describe, expect, test, vi } from "vitest";
-import { button } from "../_test-utils.ts";
 import { isEnterSubmit, SEND_BUTTON_CLASS, SendButton } from "./send-button.tsx";
 
 /** Capture what React hands a real `onKeyDown` for this keydown. */
@@ -49,25 +48,26 @@ describe("isEnterSubmit", () => {
 describe("SendButton", () => {
   test("is a labelled button carrying the shared shell and the caller's size", () => {
     render(<SendButton onClick={() => undefined} disabled={false} className="h-9 w-9" />);
-    const send = button("Send");
-    expect(send.type).toBe("button");
-    expect(send.className).toContain("h-9 w-9");
-    expect(send.className).toContain(SEND_BUTTON_CLASS);
-    expect(send.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toHaveAttribute("type", "button");
+    expect(send).toHaveClass("h-9", "w-9");
+    expect(send).toHaveClass(SEND_BUTTON_CLASS);
+    expect(send.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
   });
 
   test("clicks through when enabled", () => {
     const onClick = vi.fn();
     render(<SendButton onClick={onClick} disabled={false} className="" />);
-    fireEvent.click(button("Send"));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   test("a disabled button does not fire", () => {
     const onClick = vi.fn();
     render(<SendButton onClick={onClick} disabled className="" />);
-    expect(button("Send").disabled).toBe(true);
-    fireEvent.click(button("Send"));
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toBeDisabled();
+    fireEvent.click(send);
     expect(onClick).not.toHaveBeenCalled();
   });
 });

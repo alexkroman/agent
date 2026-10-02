@@ -139,6 +139,40 @@ describe("createTurnTracker", () => {
     expect(doneCount()).toBe(2);
   });
 
+  test("a cancel with no turn in flight keeps the pairing debt for the trailing FlushDone", () => {
+    const { turn, doneCount } = tracker();
+    turn.onTurnText();
+    turn.onFlushSent();
+    turn.closeTurn();
+    turn.onAck("is_final"); // ends the turn; its FlushDone is still on the wire
+    expect(turn.cancel()).toBe(false); // a barge-in after the reply finished
+    expect(doneCount()).toBe(1);
+
+    turn.onTurnText();
+    turn.onFlushSent();
+    turn.closeTurn();
+    turn.onAck("flush_done"); // the old turn's FlushDone — absorbed, not this turn's
+    expect(doneCount()).toBe(1); // this turn's audio is still on its way
+    turn.onAck("flush_done"); // this turn's own acknowledgement
+    expect(doneCount()).toBe(2);
+  });
+
+  test("abandonFlushes ends a closed turn, and leaves an open one to its closeTurn", () => {
+    const { turn, doneCount } = tracker();
+    turn.onTurnText();
+    turn.onFlushSent();
+    turn.closeTurn();
+    turn.abandonFlushes(); // the socket owing that ack was dropped
+    expect(doneCount()).toBe(1);
+
+    turn.onTurnText();
+    turn.onFlushSent();
+    turn.abandonFlushes();
+    expect(doneCount()).toBe(1); // still open: more text may come
+    turn.closeTurn();
+    expect(doneCount()).toBe(2);
+  });
+
   test("forceDone releases the turn unconditionally, once", () => {
     const { turn, doneCount } = tracker();
     turn.onTurnText();

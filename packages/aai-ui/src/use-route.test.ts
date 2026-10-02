@@ -6,11 +6,9 @@
  * poll.
  */
 
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import { useRoute } from "./use-route.ts";
 
 let fetchMock: Mock<(url: URL, init: RequestInit) => Promise<Response>>;
@@ -32,10 +30,10 @@ const lastUrl = () => String(fetchMock.mock.calls.at(-1)?.[0]);
 describe("useRoute", () => {
   function mount(path: string | null, pollMs?: number) {
     const core = createMockSessionCore({}, { clientId: () => "speaker-7" });
-    return renderHook(() => useRoute<{ ok: boolean }>(path, pollMs ? { pollMs } : {}), {
-      wrapper: ({ children }: { children: ReactNode }) =>
-        createElement(SessionProvider, { value: core }, children),
-    });
+    return renderHookWithSession(
+      () => useRoute<{ ok: boolean }>(path, pollMs ? { pollMs } : {}),
+      core,
+    );
   }
 
   test("reads on mount with the session's client, and reports an error without dropping data", async () => {

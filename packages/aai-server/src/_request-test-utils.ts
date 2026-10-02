@@ -95,3 +95,41 @@ export async function bearerFor(
   const version = (await store.getAgentVersion(slug)) ?? 1;
   return guestTokenFor(agentSandboxName(slug, version));
 }
+
+/** One request the platform forwarded to a {@link recordingGuest}. */
+export type GuestCall = {
+  url: string;
+  method: string;
+  headers: Headers;
+  /** The body as UTF-8 text. */
+  body: string;
+  /** The body's exact bytes. */
+  bytes: Buffer;
+  /** The `init` the platform passed, as handed over (`{}` when absent). */
+  init: RequestInit;
+};
+
+/**
+ * A guest `fetchFn` that records what the platform forwarded and answers as
+ * the guest would (`answer` defaults to a 200 `{}`).
+ */
+export function recordingGuest(
+  answer: (req: Request) => Response | Promise<Response> = () =>
+    new Response("{}", { status: 200 }),
+): { calls: GuestCall[]; fetchFn: typeof globalThis.fetch } {
+  const calls: GuestCall[] = [];
+  const fetchFn: typeof globalThis.fetch = async (input, init) => {
+    const req = new Request(input, init);
+    const bytes = Buffer.from(await req.clone().arrayBuffer());
+    calls.push({
+      url: req.url,
+      method: req.method,
+      headers: req.headers,
+      body: bytes.toString("utf8"),
+      bytes,
+      init: init ?? {},
+    });
+    return await answer(req);
+  };
+  return { calls, fetchFn };
+}

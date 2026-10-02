@@ -51,7 +51,7 @@ describe("Field", () => {
         </Field>
       </ThemeProvider>,
     );
-    expect(screen.getByLabelText("Accent").getAttribute("name")).toBe("accent");
+    expect(screen.getByLabelText("Accent")).toHaveAttribute("name", "accent");
     expect(screen.getByText("Any CSS color.").tagName).toBe("P");
   });
 
@@ -76,9 +76,9 @@ describe("the controls", () => {
       </ThemeProvider>,
     );
     const control = screen.getByLabelText("Topic");
-    expect(control.getAttribute("name")).toBe("topic");
-    expect(control.getAttribute("placeholder")).toBe("kittens");
-    expect(control.className).not.toContain("my-field");
+    expect(control).toHaveAttribute("name", "topic");
+    expect(control).toHaveAttribute("placeholder", "kittens");
+    expect(control).not.toHaveClass("my-field");
     expect(container.firstElementChild?.className).toContain("my-field");
   });
 
@@ -88,7 +88,7 @@ describe("the controls", () => {
         <TextField name="email" label="Email" type="email" />
       </ThemeProvider>,
     );
-    expect(screen.getByLabelText("Email").getAttribute("type")).toBe("email");
+    expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
   });
 
   test("a select is built from `options`, and `children` win when both are given", () => {
@@ -119,7 +119,7 @@ describe("the controls", () => {
         <CheckboxField name="redact" label="Redact" />
       </ThemeProvider>,
     );
-    expect(screen.getByLabelText("Redact").getAttribute("type")).toBe("checkbox");
+    expect(screen.getByLabelText("Redact")).toHaveAttribute("type", "checkbox");
   });
 
   test("a file field records its read mode for `collectValues`, `upload` winning", () => {
@@ -130,9 +130,9 @@ describe("the controls", () => {
         <FileField name="c" label="Upload" upload read="text" />
       </ThemeProvider>,
     );
-    expect(screen.getByLabelText("Plain").getAttribute("data-aai-read")).toBe("none");
-    expect(screen.getByLabelText("Text").getAttribute("data-aai-read")).toBe("text");
-    expect(screen.getByLabelText("Upload").getAttribute("data-aai-read")).toBe("upload");
+    expect(screen.getByLabelText("Plain")).toHaveAttribute("data-aai-read", "none");
+    expect(screen.getByLabelText("Text")).toHaveAttribute("data-aai-read", "text");
+    expect(screen.getByLabelText("Upload")).toHaveAttribute("data-aai-read", "upload");
   });
 });
 

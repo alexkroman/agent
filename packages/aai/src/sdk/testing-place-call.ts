@@ -13,19 +13,17 @@
  *
  * Publishing a `stepFetch` REPLACES any other, so a flow that also calls
  * something else over `stepFetch` (its own database, a model) routes it through
- * `otherwise` — `routeStepFetch` composes several.
+ * `otherwise`.
  *
  * @module
  */
 
 import {
-  recordRequest,
+  publishAnsweringStepFetch,
   type StubStepAnswer,
   type StubStepRequest,
-  toStepResponse,
 } from "./_testing-step-fetch.ts";
 import { parseCallTwiml, TWILIO_API } from "./_twilio-calls.ts";
-import { publishStepFetch, type StepFetchInit } from "./step-fetch.ts";
 import type { PlacedCallStatus } from "./step-place-call.ts";
 
 /** One call a step placed, as {@link stubPlaceCall} records it. */
@@ -68,7 +66,7 @@ export type StubPlaceCallOptions = {
     | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
   /**
    * Every request that is not to Twilio's Calls API. Default: throw, naming it —
-   * a request nobody set up is a finding (see `routeStepFetch`).
+   * a request nobody set up is a finding (see `stubFetchRoutes`).
    */
   otherwise?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>;
 };
@@ -150,16 +148,14 @@ export function stubPlaceCall(options: StubPlaceCallOptions = {}): StubPlaceCall
     };
   }
 
-  publishStepFetch(async (url: string, init: StepFetchInit = {}): Promise<Response> => {
-    const request = await recordRequest(url, init);
+  const restore = publishAnsweringStepFetch(async (request) => {
+    const { url } = request;
     const path = url.startsWith(TWILIO_API) ? url.slice(TWILIO_API.length) : "";
-    if (request.method === "POST" && CALLS_PATH.test(path)) {
-      return toStepResponse(answerDial(request));
-    }
+    if (request.method === "POST" && CALLS_PATH.test(path)) return answerDial(request);
     const sid = CALL_PATH.exec(path)?.[1];
-    if (sid !== undefined && request.method === "GET") return toStepResponse(answerStatus(sid));
-    if (options.otherwise) return toStepResponse(await options.otherwise(request));
+    if (sid !== undefined && request.method === "GET") return answerStatus(sid);
+    if (options.otherwise) return await options.otherwise(request);
     throw new Error(`stubPlaceCall: no route for ${request.method} ${url} (pass \`otherwise\`)`);
   });
-  return { calls, restore: () => publishStepFetch(undefined) };
+  return { calls, restore };
 }

@@ -84,7 +84,7 @@ describe("brands", () => {
     setBrand(fn, "keylessSynthesizer", true);
     expect(readBrand(fn, "keylessSynthesizer")).toBe(true);
     for (const primitive of [undefined, null, 1, "x", true]) {
-      expect(readBrand(primitive, "stepError")).toBeUndefined();
+      expect(readBrand(primitive, "stepError"), String(primitive)).toBeUndefined();
     }
   });
 });

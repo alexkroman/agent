@@ -168,11 +168,11 @@ describe("the other candidate paths already leave a paired history", () => {
   });
 
   test("a barge-in during tool execution persists no unanswered call", async () => {
-    let aborted = false;
+    const aborted = vi.fn();
     const executeTool: PipelineTransportOptions["executeTool"] = (_n, _a, _s, _m, options) =>
       new Promise<string>((_resolve, reject) => {
         options?.signal?.addEventListener("abort", () => {
-          aborted = true;
+          aborted();
           reject(new Error("aborted"));
         });
       });
@@ -185,7 +185,7 @@ describe("the other candidate paths already leave a paired history", () => {
       },
     );
     // The abort really landed INSIDE the execution, which is the window at issue.
-    expect(aborted).toBe(true);
+    expect(aborted).toHaveBeenCalled();
     expect(unansweredCalls(second)).toEqual([]);
     expect(log.warn).not.toHaveBeenCalledWith("Orphaned tool call repaired", expect.anything());
   });

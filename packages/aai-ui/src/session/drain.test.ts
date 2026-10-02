@@ -39,7 +39,6 @@ describe("late playback drain vs teardown", () => {
     vi.spyOn(console, "warn").mockImplementation(noop);
   });
   afterEach(() => {
-    audio.restore();
     vi.useRealTimers();
   });
 

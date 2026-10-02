@@ -74,108 +74,6 @@ until it is added here.
 
 ## Functions
 
-### commandedBuiltins()
-
-```ts
-function commandedBuiltins(config: {
-  systemPrompt: string;
-}): BuiltinTool[];
-```
-
-Every builtin the system prompt COMMANDS by name, in first-mention order.
-
-The prompt is scanned for snake_case tokens and each is asked of the SDK's own
-builtin schema — so `run_code` and `fetch_json` are found, and the
-`vs_currencies`, `per_person` and `annual_rate` a finance prompt names in its
-endpoints and formulas are not. A builtin whose name is one English word
-(`think`, `calculate`, `remember`, `recall`) is found only where the prose
-NAMES it — in backticks, as "the calculate tool", or as the object of
-use/call/invoke — so "think before you answer" commands nothing; the rule and
-its reasons are on `SINGLE_WORD_POSITIONS` in this module. Reading the
-CONFIG's prompt rather than a file: that is what a deploy carries, and it is
-where `system-prompt.md` lands only if the build applied it.
-
-Takes only the field it reads, so an `AgentConfig` passes and so does a
-`{ systemPrompt }` a spec assembled itself — a resolver's own text, say.
-
-A reader, not an assertion — [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) is the
-claim most specs want. This is exported for the spec that wants to say more:
-that a particular builtin is among the commanded ones, or that the prompt
-commands exactly the set the template is about.
-
-**It reads what the CONFIG carries, which for a RESOLVER is nothing.**
-`AgentDef.systemPrompt` may be a function, and `toAgentConfig` cannot
-serialize one — it drops the field and the schema fills in
-`DEFAULT_SYSTEM_PROMPT` — so a config converted from a resolver-based agent
-hands this function the FRAMEWORK's prompt and gets `[]` back, which is a
-true answer to the wrong question. Nothing here can tell that config from one
-whose author simply wrote no prompt; the def can, which is why the check that
-refuses is [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) and not this reader. To scan a
-resolver's own text, resolve it and substitute it:
-`commandedBuiltins({ systemPrompt: resolver(ctx) })`.
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { toAgentConfig } from "@alexkroman1/aai/manifest";
-import { commandedBuiltins } from "@alexkroman1/aai/testing";
-
-const config = toAgentConfig(
-  agent({ name: "Penny", systemPrompt: "Use fetch_json for rates; annual_rate is a number." }),
-);
-console.log(commandedBuiltins(config)); // ["fetch_json"]
-```
-
-#### Parameters
-
-##### config
-
-###### systemPrompt
-
-`string`
-
-#### Returns
-
-[`BuiltinTool`](../aai/index.md#builtintool)[]
-
-***
-
-### createProgressStream()
-
-```ts
-function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
-```
-
-The progress channel of a run, from the read side — what
-`ctx.workflows.stream` resolves with.
-
-Closes after the given lines, which is what makes a tool that drains it
-terminate. A run's real stream never closes (no step knows it is the last
-one), and the tool bounds itself with `streamTail` instead — so a spec that
-wants to exercise THAT bound stubs `streamTail`, not this.
-
-#### Parameters
-
-##### lines?
-
-readonly `unknown`[]
-
-#### Returns
-
-`ReadableStream`\<`unknown`\>
-
-#### Example
-
-```ts
-import { createProgressStream, createStubWorkflows } from "@alexkroman1/aai/testing";
-
-const workflows = createStubWorkflows({
-  streamTail: () => Promise.resolve(0),
-  stream: () => Promise.resolve(createProgressStream(["Reading the sources…"])),
-});
-```
-
-***
-
 ### createRunSnapshot()
 
 ```ts
@@ -765,8 +663,9 @@ empty slot store — and its answer is what gets scanned. That is enough for the
 prose half, which is a `?raw` import closed over by the function and does not
 vary with session state. A resolver that cannot answer from a bare context
 (it reads an env var, or a slot it expects seeded) THROWS, and this refuses by
-name rather than falling back to the default: seed a context and scan the text
-yourself with [commandedBuiltins](#commandedbuiltins), or assert on `builtinTools` directly.
+name rather than falling back to the default: seed a context, call the
+resolver yourself and pass its text as the `systemPrompt` of the def this
+takes, or assert on `builtinTools` directly.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -1640,8 +1539,8 @@ function stubFetchRoutes(routes:
 ```
 
 Install one router as the global `fetch` (and, by default, the published
-step fetch), and return its log. Call `restore` when the test ends — or use
-`installFetchRoutes`, which registers it for you.
+step fetch), and return its log. Call `restore` when the test ends — in a
+vitest spec, `onTestFinished(net.restore)` right after the call.
 
 #### Parameters
 
@@ -1653,7 +1552,8 @@ step fetch), and return its log. Call `restore` when the test ends — or use
   \| readonly [`FetchRouteHandler`](#fetchroutehandler)[]
 
 A [FetchRouteTable](#fetchroutetable), or a list of handlers tried in
-  order (the first that answers wins).
+  order (the first that answers wins, and later ones are not consulted; a
+  handler that throws is left alone). A catch-all leg goes LAST in a list.
 
 ##### options?
 
@@ -3257,7 +3157,8 @@ A route: answers a request with a `Response` or the `{ status, body, headers }`
 shorthand `stubStepFetch` takes — or `undefined` to DECLINE, leaving it to
 the next route (in a list) or to [FetchRoutesOptions.unmatched](#unmatched).
 
-A `StepRoute` (`routeStepFetch`'s leg, `stubGatewayRoute().route`) is one.
+`stubGatewayRoute().route` is one, so a model leg sits in a list beside a
+spec's own.
 
 #### Parameters
 
@@ -3377,6 +3278,7 @@ readonly searchParams: URLSearchParams;
 
 ```ts
 type FetchRoutesOptions = {
+  globalFetch?: boolean;
   passThrough?: RegExp;
   stepFetch?: boolean;
   unmatched?: "throw" | "notFound" | "passthrough";
@@ -3386,6 +3288,17 @@ type FetchRoutesOptions = {
 What [stubFetchRoutes](#stubfetchroutes-1) may be told.
 
 #### Properties
+
+##### globalFetch?
+
+```ts
+optional globalFetch?: boolean;
+```
+
+Install the router as the global `fetch` too (the default). Pass `false`
+to route ONLY the step fetch and leave the global untouched — for an eval
+whose live mode sends the voice model's own traffic over the global while
+its steps stay scripted.
 
 ##### passThrough?
 
@@ -5643,7 +5556,7 @@ optional otherwise?: (request: StubStepRequest) =>
 ```
 
 Every request that is not to Twilio's Calls API. Default: throw, naming it —
-a request nobody set up is a finding (see `routeStepFetch`).
+a request nobody set up is a finding (see `stubFetchRoutes`).
 
 ###### Parameters
 
@@ -7448,24 +7361,6 @@ Re-exports [RecordingWorkflows](eval/vitest.md#recordingworkflows)
 ### RecordingWorkflowsOptions
 
 Re-exports [RecordingWorkflowsOptions](eval/vitest.md#recordingworkflowsoptions)
-
-***
-
-### routeStepFetch
-
-Re-exports [routeStepFetch](eval/vitest.md#routestepfetch)
-
-***
-
-### StepRoute
-
-Re-exports [StepRoute](eval/vitest.md#steproute)
-
-***
-
-### StepUnmatched
-
-Re-exports [StepUnmatched](eval/vitest.md#stepunmatched)
 
 ***
 

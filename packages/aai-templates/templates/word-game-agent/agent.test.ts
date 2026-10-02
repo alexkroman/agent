@@ -10,7 +10,7 @@ import {
   stubGenerate,
   toolRunner,
 } from "@alexkroman1/aai-runtime/testing";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { endsRound, gameFlow, TIME_UP_LINE } from "./game.ts";
 import { containsWord, isCorrectGuess, normalizeWord } from "./guess.ts";
 import { PLAYER_SYSTEM, playerPrompt } from "./player.ts";
@@ -25,6 +25,16 @@ import {
 import { allWords, pickWords, WORD_CATEGORIES } from "./words.ts";
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
+
+// `start_game` arms a two-minute `setTimeout` (`armTimeUpLine`). Faked for every
+// test so a round a test opens and abandons leaves no real timer behind; the
+// clock itself stays real. Section 4 drives the fake clock on purpose.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 /** A tool by the name the model calls it by, bound to this agent. */
 const run = toolRunner(agentDef);

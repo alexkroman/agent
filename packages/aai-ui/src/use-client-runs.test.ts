@@ -7,11 +7,9 @@
  */
 
 import type { ClientRun } from "@alexkroman1/aai";
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import { useClientRuns } from "./use-client-runs.ts";
 
 let fetchMock: Mock<(url: URL, init: RequestInit) => Promise<Response>>;
@@ -40,10 +38,7 @@ beforeEach(() => {
 
 function mount(path?: string) {
   const core = createMockSessionCore({}, { clientId: () => "speaker-7" });
-  return renderHook(() => useClientRuns(path, { pollMs: 0 }), {
-    wrapper: ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children),
-  });
+  return renderHookWithSession(() => useClientRuns(path, { pollMs: 0 }), core);
 }
 
 const calls = () => fetchMock.mock.calls.map(([url, init]) => `${init.method} ${String(url)}`);

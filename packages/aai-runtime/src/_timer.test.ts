@@ -13,34 +13,32 @@ describe("timer callbacks are throw-contained", () => {
 
   test("createRestartableTimer survives a throwing onElapsed", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    let calls = 0;
-    const timer = createRestartableTimer(() => {
-      calls++;
+    const onElapsed = vi.fn(() => {
       throw new Error("callback boom");
     });
+    const timer = createRestartableTimer(onElapsed);
     timer.arm(10);
     // A throw from the callback runs on the timer tick — it must be contained
     // (logged), not surface as an uncaughtException.
     expect(() => vi.advanceTimersByTime(10)).not.toThrow();
-    expect(calls).toBe(1);
+    expect(onElapsed).toHaveBeenCalledTimes(1);
     expect(timer.pending()).toBe(false);
     expect(consoleError).toHaveBeenCalled();
     // The timer stays usable after the throw.
     timer.arm(10);
     vi.advanceTimersByTime(10);
-    expect(calls).toBe(2);
+    expect(onElapsed).toHaveBeenCalledTimes(2);
   });
 
   test("createCoalescingTimer survives a throwing onElapsed", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    let calls = 0;
-    const timer = createCoalescingTimer(() => {
-      calls++;
+    const onElapsed = vi.fn(() => {
       throw new Error("callback boom");
     });
+    const timer = createCoalescingTimer(onElapsed);
     timer.arm(10);
     expect(() => vi.advanceTimersByTime(10)).not.toThrow();
-    expect(calls).toBe(1);
+    expect(onElapsed).toHaveBeenCalledTimes(1);
     expect(timer.pending()).toBe(false);
   });
 });

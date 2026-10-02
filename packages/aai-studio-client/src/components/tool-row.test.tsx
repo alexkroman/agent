@@ -92,8 +92,8 @@ describe("ToolRow", () => {
     fireEvent.click(screen.getByRole("button"));
     // The collapsed row carries the summary; the expansion carries the
     // pretty-printed record.
-    expect(screen.getByText(/"command": "ls"/)).toBeTruthy();
-    expect(screen.getByText(/client\.tsx/)).toBeTruthy();
+    expect(screen.getByText(/"command": "ls"/)).toBeInTheDocument();
+    expect(screen.getByText(/client\.tsx/)).toBeInTheDocument();
     // Clicking again collapses.
     fireEvent.click(screen.getByRole("button"));
     expect(screen.queryByText(/client\.tsx/)).toBeNull();
@@ -111,7 +111,7 @@ describe("ToolRow", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button"));
-    expect(screen.getByText(/"built":true/)).toBeTruthy();
+    expect(screen.getByText(/"built":true/)).toBeInTheDocument();
   });
 
   test("an empty argument record is shown nowhere — not as `{}` twice", () => {
@@ -120,11 +120,11 @@ describe("ToolRow", () => {
         part={{ type: "tool-list_files", state: "output-available", input: {}, output: "agent.ts" }}
       />,
     );
-    expect(container.textContent).not.toContain("{}");
+    expect(container).not.toHaveTextContent("{}");
     fireEvent.click(screen.getByRole("button"));
-    expect(container.textContent).not.toContain("{}");
+    expect(container).not.toHaveTextContent("{}");
     // The output is still there — only the empty record went away.
-    expect(screen.getByText("agent.ts")).toBeTruthy();
+    expect(screen.getByText("agent.ts")).toBeInTheDocument();
   });
 
   test("an empty output says so rather than opening an empty panel", () => {
@@ -139,7 +139,7 @@ describe("ToolRow", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button"));
-    expect(screen.getByText("(no output)")).toBeTruthy();
+    expect(screen.getByText("(no output)")).toBeInTheDocument();
   });
 
   test("a clipped payload says how much was cut", () => {
@@ -154,7 +154,7 @@ describe("ToolRow", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button"));
-    expect(screen.getByText(/more characters/)).toBeTruthy();
+    expect(screen.getByText(/more characters/)).toBeInTheDocument();
   });
 
   test("an in-flight call with args expands to the args alone — no output block", () => {
@@ -162,7 +162,7 @@ describe("ToolRow", () => {
       <ToolRow part={{ type: "tool-grep", state: "input-available", input: { pattern: "x" } }} />,
     );
     fireEvent.click(screen.getByRole("button"));
-    expect(screen.getByText(/"pattern": "x"/)).toBeTruthy();
+    expect(screen.getByText(/"pattern": "x"/)).toBeInTheDocument();
     expect(container.querySelector("pre")).toBeNull();
   });
 });

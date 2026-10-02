@@ -21,6 +21,7 @@
 import { describe, expect, test } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { createTestStore } from "./_orchestrator-test-utils.ts";
+import { type GuestCall, recordingGuest } from "./_request-test-utils.ts";
 import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { GUEST_ROUTES } from "./guest/routes.ts";
 import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
@@ -66,22 +67,6 @@ function agentRow(slug: string) {
   };
 }
 
-/** Records what crossed to the guest and answers as one. */
-function recordingGuest(answer: () => Response = () => new Response("{}", { status: 200 })) {
-  const calls: { url: string; method: string; headers: Headers; body: Buffer }[] = [];
-  const fetchFn: typeof globalThis.fetch = async (input, init) => {
-    const req = new Request(input, init);
-    calls.push({
-      url: req.url,
-      method: req.method,
-      headers: req.headers,
-      body: Buffer.from(await req.arrayBuffer()),
-    });
-    return answer();
-  };
-  return { calls, fetchFn };
-}
-
 /**
  * A deployed agent with a LIVE resident sandbox, so the real broker serves
  * without spawning anything.
@@ -91,7 +76,7 @@ async function resident(
   brokerOver: Partial<ResolveSandboxOpts> = {},
 ): Promise<{
   deliver: ReturnType<typeof createQueueDeliverer>;
-  calls: ReturnType<typeof recordingGuest>["calls"];
+  calls: GuestCall[];
 }> {
   const store = createTestStore();
   const slots = createSlotCache();
@@ -153,8 +138,8 @@ describe("createQueueDeliverer", () => {
       // deserializer, several layers from the cause.
       const { deliver, calls } = await resident();
       await deliver(message());
-      expect(calls[0]?.body.toString()).toBe(BODY);
-      expect(calls[0]?.body).toEqual(Buffer.from(BODY));
+      expect(calls[0]?.body).toBe(BODY);
+      expect(calls[0]?.bytes).toEqual(Buffer.from(BODY));
     });
 
     test("carries the message's own headers without displacing the contract", async () => {

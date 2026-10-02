@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { createHmac } from "node:crypto";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { RouteContext, RouteRequest } from "./agent-routes.ts";
 import { readRouteResponse } from "./agent-routes.ts";
 import { COMPOSIO_BASE_URL } from "./composio-api.ts";
@@ -57,23 +57,19 @@ describe("composioWebhookRoute", () => {
   });
 
   test("another event type is acknowledged without calling the handler", async () => {
-    let called = false;
-    const route = composioWebhookRoute({}, () => {
-      called = true;
-    });
+    const handler = vi.fn();
+    const route = composioWebhookRoute({}, handler);
     const out = await route(
       delivery({ id: "e", type: "composio.connected_account.expired" }),
       ctx(),
     );
     expect(out).toEqual({ ignored: "composio.connected_account.expired" });
-    expect(called).toBe(false);
+    expect(handler).not.toHaveBeenCalled();
   });
 
   test("a bad signature, an unset secret and a non-event body never reach the handler", async () => {
-    let called = false;
-    const route = composioWebhookRoute({ secretEnv: "HOOK" }, () => {
-      called = true;
-    });
+    const handler = vi.fn();
+    const route = composioWebhookRoute({ secretEnv: "HOOK" }, handler);
     expect(readRouteResponse(await route(delivery(EVENT, "wrong"), ctx({ HOOK: SECRET })))).toEqual(
       { status: 401, body: { error: "Invalid webhook signature" } },
     );
@@ -85,7 +81,7 @@ describe("composioWebhookRoute", () => {
       status: 400,
       body: { error: "Not a Composio event" },
     });
-    expect(called).toBe(false);
+    expect(handler).not.toHaveBeenCalled();
   });
 });
 

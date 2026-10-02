@@ -27,6 +27,17 @@ import {
   ssrfSafeFetch,
 } from "./ssrf.ts";
 
+/** One hop's `fetch`, as the redirect walkers call it. */
+type HopFetch = (url: string, init: RequestInit) => Promise<Response>;
+
+/** A 302 to `location`. */
+const redirectTo = (location: string) =>
+  new Response("", { status: 302, headers: { Location: location } });
+
+/** The headers each hop was issued with, in order. */
+const hopHeaders = (fn: { mock: { calls: Parameters<HopFetch>[] } }) =>
+  fn.mock.calls.map(([, init]) => new Headers(init.headers));
+
 // ── IP Encoding Bypass Attempts ────────────────────────────────────────
 
 describe("SSRF: IP encoding bypass attempts", () => {
@@ -297,18 +308,15 @@ describe("SSRF: request-input normalization", () => {
   test("safeFetch forwards its init rather than replacing it", async () => {
     // Killed mutant: `init ?? {}` -> `init && {}`, which DROPS a supplied
     // init entirely — method, body and headers all silently lost.
-    const seen: RequestInit[] = [];
-    const fetchFn = vi.fn(async (_url: string, init: RequestInit) => {
-      seen.push(init);
-      return new Response("ok");
-    });
+    const fetchFn = vi.fn<HopFetch>().mockResolvedValue(new Response("ok"));
     await ssrfSafeFetch(
       "https://93.184.216.34/",
       { method: "POST", headers: { "x-probe": "1" } },
       fakeFetch(fetchFn),
     );
-    expect(seen[0]?.method).toBe("POST");
-    expect(new Headers(seen[0]?.headers).get("x-probe")).toBe("1");
+    const init = fetchFn.mock.calls[0]?.[1];
+    expect(init?.method).toBe("POST");
+    expect(new Headers(init?.headers).get("x-probe")).toBe("1");
   });
 
   test("every hop is issued with redirect: manual", async () => {
@@ -316,34 +324,22 @@ describe("SSRF: request-input normalization", () => {
     // follow redirects itself is the whole bypass — the hops never come back
     // here, so none of them is re-validated and a 302 to 127.0.0.1 is fetched
     // by undici without ever being screened.
-    const modes: (RequestInit["redirect"] | undefined)[] = [];
-    let hop = 0;
-    const fetchFn = vi.fn(async (_url: string, init: RequestInit) => {
-      modes.push(init.redirect);
-      hop++;
-      return hop === 1
-        ? new Response("", { status: 302, headers: { Location: "https://93.184.216.34/next" } })
-        : new Response("done");
-    });
+    const fetchFn = vi
+      .fn<HopFetch>()
+      .mockResolvedValueOnce(redirectTo("https://93.184.216.34/next"))
+      .mockResolvedValueOnce(new Response("done"));
     await ssrfSafeFetch("https://93.184.216.34/", {}, fakeFetch(fetchFn));
-    expect(modes).toEqual(["manual", "manual"]);
+    expect(fetchFn.mock.calls.map(([, init]) => init.redirect)).toEqual(["manual", "manual"]);
   });
 
-  /** Two same-origin hops, then one to another origin; records each hop's headers. */
+  /** Two same-origin hops, then one to another origin; `seen()` is each hop's headers. */
   function crossOriginChain() {
-    const seen: Headers[] = [];
-    let hop = 0;
-    const fetchFn = vi.fn(async (_url: string, init: RequestInit) => {
-      seen.push(new Headers(init.headers));
-      hop++;
-      if (hop === 1) {
-        return new Response("", { status: 302, headers: { Location: "https://93.184.216.34/b" } });
-      }
-      return hop === 2
-        ? new Response("", { status: 302, headers: { Location: "https://1.1.1.1/c" } })
-        : new Response("done");
-    });
-    return { seen, fetch: fakeFetch(fetchFn) };
+    const fetchFn = vi
+      .fn<HopFetch>()
+      .mockResolvedValueOnce(redirectTo("https://93.184.216.34/b"))
+      .mockResolvedValueOnce(redirectTo("https://1.1.1.1/c"))
+      .mockResolvedValueOnce(new Response("done"));
+    return { seen: () => hopHeaders(fetchFn), fetch: fakeFetch(fetchFn) };
   }
 
   const CALLER_HEADERS = {
@@ -362,8 +358,9 @@ describe("SSRF: request-input normalization", () => {
     // the key replayed to wherever an open redirect on its host points — and
     // this module cannot know every vendor's header NAME, so off-origin the
     // caller's headers are cut to a safelist rather than a deny-list.
-    const { seen, fetch } = crossOriginChain();
-    await ssrfSafeFetch("https://93.184.216.34/a", { headers: CALLER_HEADERS }, fetch);
+    const chain = crossOriginChain();
+    await ssrfSafeFetch("https://93.184.216.34/a", { headers: CALLER_HEADERS }, chain.fetch);
+    const seen = chain.seen();
     expect(seen.map((h) => h.get("x-goog-api-key"))).toEqual(["goog-secret", "goog-secret", null]);
     expect(seen.map((h) => h.get("x-api-key"))).toEqual(["k", "k", null]);
     expect(seen[1]?.get("authorization")).toBe("Bearer t");
@@ -372,9 +369,9 @@ describe("SSRF: request-input normalization", () => {
   });
 
   test("only the four descriptive headers survive a cross-origin hop", async () => {
-    const { seen, fetch } = crossOriginChain();
-    await ssrfSafeFetch("https://93.184.216.34/a", { headers: CALLER_HEADERS }, fetch);
-    expect([...(seen[2]?.keys() ?? [])].sort()).toEqual([
+    const chain = crossOriginChain();
+    await ssrfSafeFetch("https://93.184.216.34/a", { headers: CALLER_HEADERS }, chain.fetch);
+    expect([...(chain.seen()[2]?.keys() ?? [])].sort()).toEqual([
       "accept",
       "accept-language",
       "content-type",
@@ -388,24 +385,18 @@ describe("SSRF: request-input normalization", () => {
     // hops itself so undici's spec-only strip (three names) is not the rule.
     // The unscreened path must not consult DNS or the bogon list, so a private
     // target is followed rather than refused.
-    const seen: Headers[] = [];
-    let hop = 0;
-    const fetchFn = fakeFetch(
-      vi.fn(async (_url: string, init: RequestInit) => {
-        seen.push(new Headers(init.headers));
-        expect(init.redirect).toBe("manual");
-        hop++;
-        return hop === 1
-          ? new Response("", { status: 302, headers: { Location: "http://10.0.0.1/c" } })
-          : new Response("done");
-      }),
-    );
+    const spy = vi
+      .fn<HopFetch>()
+      .mockResolvedValueOnce(redirectTo("http://10.0.0.1/c"))
+      .mockResolvedValueOnce(new Response("done"));
     const res = await redirectSafeRequest(
       "https://api.example.test/a",
       { headers: CALLER_HEADERS },
-      fetchFn,
+      fakeFetch(spy),
     );
     expect(await res.text()).toBe("done");
+    expect(spy.mock.calls.map(([, init]) => init.redirect)).toEqual(["manual", "manual"]);
+    const seen = hopHeaders(spy);
     expect(seen.map((h) => h.get("x-goog-api-key"))).toEqual(["goog-secret", null]);
     expect(seen[1]?.get("accept")).toBe("application/json");
   });

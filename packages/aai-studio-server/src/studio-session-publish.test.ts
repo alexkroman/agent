@@ -11,7 +11,7 @@
 
 import type { spawnWarmHarness } from "aai-server/sandbox";
 import { createMemoryChatStore, createMemoryWorkspaceStore } from "aai-server/stores";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { fakeGuest, makeBroker, PROJECT, SCOPE } from "./_studio-session-test-utils.ts";
 import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
 import { createStudioSessionBroker } from "./studio-session-broker.ts";
@@ -120,36 +120,35 @@ describe("studio publish (workspace/deploy)", () => {
    */
   test("the idle sweeper spares a sandbox with a publish in flight", async () => {
     vi.useFakeTimers();
-    try {
-      const gate = Promise.withResolvers<void>();
-      const guest = fakeGuest("wss://tunnel.example:443", gate.promise);
-      // Idle from the moment it is brokered, so only the in-flight hold can be
-      // keeping the sweeper off it.
-      const { broker } = await makeBroker([guest], { idleMs: 0 });
-      await broker.ensureSession(SCOPE, PROJECT, "caller-key");
-
-      const publishing = broker.deployWorkspace(
-        SCOPE,
-        PROJECT,
-        { "agent.ts": "// v1" },
-        { serverUrl: "https://platform.example", apiKey: "caller-key" },
-      );
-      // Two sweep intervals inside the build.
-      await vi.advanceTimersByTimeAsync(120_000);
-      expect(guest.disposed()).toBe(false);
-
-      gate.resolve();
-      const outcome = await publishing;
-      expect(outcome.ok).toBe(true);
-
-      // And the hold is RELEASED — the sandbox is evictable again once the
-      // build is done, or the sweeper would never reach a published project.
-      await vi.advanceTimersByTimeAsync(120_000);
-      expect(guest.disposed()).toBe(true);
-      await broker.dispose();
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const gate = Promise.withResolvers<void>();
+    const guest = fakeGuest("wss://tunnel.example:443", gate.promise);
+    // Idle from the moment it is brokered, so only the in-flight hold can be
+    // keeping the sweeper off it.
+    const { broker } = await makeBroker([guest], { idleMs: 0 });
+    await broker.ensureSession(SCOPE, PROJECT, "caller-key");
+
+    const publishing = broker.deployWorkspace(
+      SCOPE,
+      PROJECT,
+      { "agent.ts": "// v1" },
+      { serverUrl: "https://platform.example", apiKey: "caller-key" },
+    );
+    // Two sweep intervals inside the build.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(guest.disposed()).toBe(false);
+
+    gate.resolve();
+    const outcome = await publishing;
+    expect(outcome.ok).toBe(true);
+
+    // And the hold is RELEASED — the sandbox is evictable again once the
+    // build is done, or the sweeper would never reach a published project.
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(guest.disposed()).toBe(true);
+    await broker.dispose();
   });
 
   test("skipTypecheck rides the workspace/deploy frame, false unless asked", async () => {

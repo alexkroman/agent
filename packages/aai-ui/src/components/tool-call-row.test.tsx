@@ -38,11 +38,11 @@ describe("ToolCallRow title overflow", () => {
     const title = screen.getByText(
       "mcp__some_provider__an_extremely_long_tool_name_that_overflows_the_row",
     );
-    expect(title.className).toContain("truncate");
-    expect(title.className).toContain("min-w-0");
-    expect(title.className).not.toContain("shrink-0");
+    expect(title).toHaveClass("truncate");
+    expect(title).toHaveClass("min-w-0");
+    expect(title).not.toHaveClass("shrink-0");
     // The expand affordance survives a title of any length.
-    expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button")).toHaveAttribute("aria-expanded", "false");
   });
 });
 
@@ -56,14 +56,14 @@ describe("ToolCallRow", () => {
       </ThemeProvider>,
     );
     const button = screen.getByRole("button");
-    expect(screen.queryByText("the result")).toBeNull();
+    expect(screen.queryByText("the result")).not.toBeInTheDocument();
 
     fireEvent.click(button);
-    expect(button.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("the result")).toBeDefined();
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("the result")).toBeInTheDocument();
 
     fireEvent.click(button);
-    expect(screen.queryByText("the result")).toBeNull();
+    expect(screen.queryByText("the result")).not.toBeInTheDocument();
   });
 
   test("without a panel the row is inert and claims no expansion", () => {
@@ -72,10 +72,10 @@ describe("ToolCallRow", () => {
         <ToolCallRow title="web_search" />
       </ThemeProvider>,
     );
-    const button = screen.getByRole("button") as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(button.hasAttribute("aria-expanded")).toBe(false);
-    expect(button.textContent).not.toContain("▶");
+    const button = screen.getByRole("button");
+    expect(button).toBeDisabled();
+    expect(button).not.toHaveAttribute("aria-expanded");
+    expect(button).not.toHaveTextContent("▶");
   });
 
   test("the TOOL chip stands in until a caller passes an icon", () => {
@@ -84,15 +84,15 @@ describe("ToolCallRow", () => {
         <ToolCallRow title="web_search" />
       </ThemeProvider>,
     );
-    expect(screen.getByText("Tool")).toBeDefined();
+    expect(screen.getByText("Tool")).toBeInTheDocument();
 
     rerender(
       <ThemeProvider>
         <ToolCallRow title="web_search" icon="🔎" />
       </ThemeProvider>,
     );
-    expect(screen.queryByText("Tool")).toBeNull();
-    expect(screen.getByText("🔎")).toBeDefined();
+    expect(screen.queryByText("Tool")).not.toBeInTheDocument();
+    expect(screen.getByText("🔎")).toBeInTheDocument();
   });
 
   test("a pending call shimmers its title, and the compact variant is denser", () => {
@@ -102,7 +102,7 @@ describe("ToolCallRow", () => {
       </ThemeProvider>,
     );
     const title = screen.getByText("web_search");
-    expect(title.className).toContain("tool-shimmer");
-    expect(title.className).toContain("text-[11px]");
+    expect(title).toHaveClass("tool-shimmer");
+    expect(title).toHaveClass("text-[11px]");
   });
 });

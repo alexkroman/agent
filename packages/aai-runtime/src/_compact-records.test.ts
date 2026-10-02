@@ -160,11 +160,12 @@ describe("compactRecordsForModel", () => {
     );
   });
 
-  test("text that is not a JSON object or array is returned untouched", () => {
-    for (const text of ["plain words", "", "42", '"quoted"', "{not json", "null", "[1, 2"]) {
+  test.each(["plain words", "", "42", '"quoted"', "{not json", "null", "[1, 2"])(
+    "text that is not a JSON object or array is returned untouched: %j",
+    (text) => {
       expect(compactRecordsForModel(text)).toBe(text);
-    }
-  });
+    },
+  );
 
   test("values stay verbatim: leading zeros, numeric-looking strings, booleans, decimals", () => {
     const result = [

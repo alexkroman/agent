@@ -7,14 +7,8 @@
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  installResizeObserver,
-  jsonResponse,
-  renderWithClient,
-  sseResponse,
-  stubFetch,
-} from "./_test-utils.ts";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { jsonResponse, renderWithClient, sseResponse, stubFetch } from "./_test-utils.ts";
 import { App } from "./app.tsx";
 
 function renderApp(
@@ -26,13 +20,8 @@ function renderApp(
 
 /** Landing always shows the hero — opening a project is a sidebar click. */
 async function openProject(name: string) {
-  await waitFor(() => expect(screen.getByRole("button", { name })).toBeDefined());
-  fireEvent.click(screen.getByRole("button", { name }));
+  fireEvent.click(await screen.findByRole("button", { name }));
 }
-
-beforeEach(() => {
-  installResizeObserver();
-});
 
 afterEach(() => {
   // Selection syncs the URL (v0-style project paths); jsdom keeps the
@@ -80,9 +69,7 @@ describe("App auth handling", () => {
           <App bearer={bearer} onSignOut={onSignOut} refreshAuth={() => Promise.resolve()} />
         </QueryClientProvider>,
       );
-      await waitFor(() =>
-        expect(screen.getByText(/No projects yet|Loading projects/)).toBeDefined(),
-      );
+      expect(await screen.findByText(/No projects yet|Loading projects/)).toBeInTheDocument();
     }
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
   });
@@ -111,8 +98,8 @@ describe("App auth handling", () => {
     });
     const onSignOut = vi.fn();
     renderApp(onSignOut);
-    await waitFor(() => expect(screen.getByText("What should your voice agent do?")).toBeDefined());
-    await waitFor(() => expect(screen.getByText(/No projects yet/)).toBeDefined());
+    expect(await screen.findByText("What should your voice agent do?")).toBeInTheDocument();
+    expect(await screen.findByText(/No projects yet/)).toBeInTheDocument();
     expect(onSignOut).not.toHaveBeenCalled();
   });
 });
@@ -136,9 +123,9 @@ describe("opening a project", () => {
       "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
     });
     renderApp(vi.fn());
-    await waitFor(() => expect(screen.getByText("What should your voice agent do?")).toBeDefined());
+    expect(await screen.findByText("What should your voice agent do?")).toBeInTheDocument();
     // The previous project waits in the sidebar instead.
-    await waitFor(() => expect(screen.getByRole("button", { name: "demo" })).toBeDefined());
+    expect(await screen.findByRole("button", { name: "demo" })).toBeInTheDocument();
   });
 
   test("opening a project syncs the v0-style URL", async () => {
@@ -159,7 +146,7 @@ describe("opening a project", () => {
     });
     renderApp(vi.fn());
     // Straight into the project chat — no hero, no sidebar click.
-    await waitFor(() => expect(screen.getByText(/Welcome to AssemblyAI Build/)).toBeDefined());
+    expect(await screen.findByText(/Welcome to AssemblyAI Build/)).toBeInTheDocument();
     const paths = fetchMock.mock.calls.map(
       (c) => new URL(String(c[0]), "http://studio.test").pathname,
     );

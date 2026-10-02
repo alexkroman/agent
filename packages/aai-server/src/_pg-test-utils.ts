@@ -2,47 +2,18 @@
 /**
  * The gate on the suites that need a REAL Postgres.
  *
- * The scenario suites here assert PostgreSQL semantics their unit tiers can
- * only assert in prose: advisory-lock ownership across sessions, the platform
- * migration and the stores over it, RLS, and the driver↔Postgres encoding seam.
- * Each of them opened with its own copy of
- * `const d = PG_URL ? describe : describe.skip`, and the comment above that
- * line usually said the suite must not become "one of the checks that exists
- * without running". Nothing made that true:
+ * Those suites assert what no in-memory fake can (advisory-lock ownership, the
+ * platform migration, RLS, the driver↔Postgres encoding seam), so a silent skip
+ * hides exactly the bugs they exist for. Hence:
  *
- * - **Locally the tier is silently absent.** `pnpm test:scenario` with no
- *   `AAI_TEST_PG_URL` prints a normal green run with those files reporting
- *   skipped tests, so the ONLY tier that can see a driver-level bug is the one
- *   nobody notices not running. That is not a hypothetical failure mode: the
- *   bug `jsonb-encoding.scenario.test.ts` exists for — a jsonb value written
- *   through both `::jsonb` and `JSON.stringify`, so it round-trips
- *   double-encoded — is invisible to every in-memory fake, because a fake holds
- *   JS values and cannot be more strict than the driver beneath it.
- * - **In CI a dropped variable is also green.** The Linux leg starts the
- *   runner's cluster and exports the URL through `$GITHUB_ENV`; if that step's
- *   plumbing broke, all five suites would skip and the job would pass. The
- *   `pg_isready` fail-fast covers the server not starting, not the variable not
- *   arriving.
- *
- * So: `describeWithPg` is the one spelling, a skip prints how to get a
- * database, and `AAI_REQUIRE_PG` turns a skip into a hard failure — which is
- * what CI's Linux leg sets, so "the wiring broke" is a red job rather than a
- * quiet one. `AAI_REQUIRE_PG` is declared in the `check:scenario` task's
- * `env` in `turbo.json`; without that, turbo's strict env mode would strip it
- * and the enforcement would silently do nothing.
- *
- * **Both gates are FUNCTIONS, and the enforcement lives inside them rather than
- * in this module's body.** It used to warn-or-throw at import time, which made
- * the gate a property of *importing this file* instead of a property of using
- * it — and the `test-utils` barrel re-exports from here, so all 49 unit test files that
- * import the package's test surface tripped it: `vitest run auth.test.ts`
- * printed the "real-Postgres suite not run" banner over a file containing no
- * such suite, and `AAI_REQUIRE_PG=1 vitest run auth.test.ts` FAILED two of
- * three files over a database none of them touches. That is the same
- * false-signal shape the gate exists to prevent, pointed the other way. The
- * "it fails the FILE" intent survives intact, because a suite calls its gate at
- * the top level of its own module: the file that asks for a database is the
- * file that fails without one.
+ * - `describeWithPg` / `describeWithStack` are the one spelling, and a skip
+ *   prints how to get a database.
+ * - `AAI_REQUIRE_PG` / `AAI_REQUIRE_STACK` turn a skip into a hard failure (CI
+ *   sets them). Both must stay declared in `check:scenario`'s `env` in
+ *   `turbo.json`, or strict env mode strips them and the enforcement is inert.
+ * - The enforcement runs when a suite CALLS its gate, never at import: the
+ *   `test-utils` barrel re-exports this module, so an import-time check would
+ *   fire in every unit file that imports the package's test surface.
  *
  * ```sh
  * pnpm test:pg                    # resolve a local database, then run the tier
@@ -52,15 +23,40 @@
 
 import { describe } from "vitest";
 
+/** A gated suite's `describe`: call it at the top level of the suite's module. */
+export type GatedDescribe = (name: string, body: () => void) => void;
+
 /**
- * `describe.skip` as a VALUE.
+ * The one gate every real-infrastructure suite is built on: `describe` when the
+ * arm is in reach, an ANNOUNCED `describe.skipIf` skip when it is not, and a
+ * THROW instead of the skip when the run declared it `required`.
  *
- * Biome's `noSkippedTests` flags the `describe.skip(…)` call form, and this
- * file is the one place in the repo where skipping is the whole product — so
- * the gates reference it the way the ternaries they replaced did
- * (`PG_URL ? describe : describe.skip`) rather than reaching for a suppression.
+ * The check runs when the returned function is CALLED — at the top level of the
+ * suite's own module — so it fails that FILE, and no file that merely imports
+ * the package's test surface is touched. The skip is announced once per gate per
+ * file, however many suites the file declares.
  */
-const skipSuite = describe.skip;
+export function gatedDescribe(gate: {
+  /** Why the arm is out of reach, or `undefined` when it is in reach. */
+  missing: string | undefined;
+  /** Whether the run declared it needs the arm (an `AAI_REQUIRE_*` variable). */
+  required: boolean;
+  /** The thrown message under `required`. */
+  failure: string;
+  /** The once-per-file warning on a skip. */
+  notice: string;
+}): GatedDescribe {
+  let announced = false;
+  return (name, body) => {
+    const skip = gate.missing !== undefined;
+    if (skip && gate.required) throw new Error(gate.failure);
+    if (skip && !announced) {
+      announced = true;
+      console.warn(gate.notice);
+    }
+    describe.skipIf(skip)(name, body);
+  };
+}
 
 /**
  * The test database, or `undefined` when none is configured.
@@ -78,43 +74,21 @@ const HOW_TO =
   "Supabase stack on 54322, or a server on 5432 — and prints how to start one\n" +
   "if there is none).";
 
-/** One announcement per gate per file, however many suites that file declares. */
-let pgAnnounced = false;
-
 /**
- * `describe` when a database is configured, `describe.skip` otherwise — with
- * the skip announced rather than folded into a green summary.
- *
- * Under `AAI_REQUIRE_PG` a skip THROWS instead. The throw happens where this is
- * called, which is the top level of the calling suite's own module, so it fails
- * that FILE — the one outcome a green-but-skipped suite cannot be confused
- * with — and no file that merely imports the package's test surface is touched.
+ * `describe` when a database is configured, an announced skip otherwise; under
+ * `AAI_REQUIRE_PG` the skip throws instead (see {@link gatedDescribe}).
  */
-export function describeWithPg(name: string, body: () => void): void {
-  if (PG_URL) {
-    describe(name, body);
-    return;
-  }
-  if (REQUIRED) {
-    throw new Error(
-      `AAI_REQUIRE_PG is set but AAI_TEST_PG_URL is not, so this suite would skip.\n${HOW_TO}`,
-    );
-  }
-  if (!pgAnnounced) {
-    pgAnnounced = true;
-    console.warn(`\n[skipped: no AAI_TEST_PG_URL] real-Postgres suite not run.\n${HOW_TO}\n`);
-  }
-  skipSuite(name, body);
-}
+export const describeWithPg: GatedDescribe = gatedDescribe({
+  missing: PG_URL ? undefined : "no AAI_TEST_PG_URL",
+  required: REQUIRED,
+  failure: `AAI_REQUIRE_PG is set but AAI_TEST_PG_URL is not, so this suite would skip.\n${HOW_TO}`,
+  notice: `\n[skipped: no AAI_TEST_PG_URL] real-Postgres suite not run.\n${HOW_TO}\n`,
+});
 
 /**
- * The database URL as a plain `string`, for use inside a `describeWithPg` body.
- *
- * This exists to delete the `PG_URL as string` that every one of these suites
- * carried at least once: the cast is correct exactly where the guard has
- * already run and unchecked everywhere else, which is what a narrowing helper
- * is for. Called outside the guard it throws naming the mistake instead of
- * handing a connection helper `undefined`.
+ * The database URL as a plain `string`, for use inside a `describeWithPg` body
+ * — in place of an unchecked `PG_URL as string`. Called outside the guard it
+ * throws naming the mistake instead of handing a connection helper `undefined`.
  */
 export function pgUrl(): string {
   if (!PG_URL) {
@@ -130,26 +104,12 @@ export type StackEnv = { url: string; serviceKey: string; anonKey: string };
  * The whole local Supabase stack, or `undefined` when only a database is
  * configured.
  *
- * **A plain Postgres is not an arm for anything in `aai_platform`**, and that is
- * the distinction this second gate exists to make. Vault, pg_cron, pg_net,
- * walrus/Realtime, Storage and Auth are all Supabase's, and nothing anywhere
- * runs the platform schema without them — so a stock server is a deployment
- * nobody has, and a suite that ran against one would be asserting about a shape
- * production never had. The stack is the ONE real arm for those contracts, which
- * is why its absence has to be loud: with no fallback arm this gate is the only
- * thing standing between "the platform tier ran" and "the platform tier was
- * absent", so it carries more weight than `describeWithPg` ever did.
- *
- * **The ANON key is part of the conjunction, not an extra.** It was optional
- * here, which put a stack missing only that key on the wrong side of the line:
- * `describeWithStack` said "the stack is in reach", the suite ran, and the one
- * spec that needs an anon authority (`realtime-rls.scenario.test.ts` — RLS is
- * only observable from a role RLS applies to) failed on an `undefined` key. A
- * gate exists to answer "can this arm run", and an arm that cannot run its own
- * assertions has to be an ANNOUNCED SKIP, never a red test. Everything that
- * resolves a stack resolves all three together — `pnpm test:pg` exports the trio
- * out of `supabase status -o env`, and `turbo.json` declares all three under
- * `check:scenario` — so requiring it costs no caller anything.
+ * A plain Postgres is not an arm for anything in `aai_platform`: Vault,
+ * pg_cron, pg_net, walrus/Realtime, Storage and Auth are Supabase's, so the
+ * stack is the ONE real arm for those contracts and its absence must be loud.
+ * The ANON key is part of the conjunction: an RLS spec needs it, and an arm that
+ * cannot run its own assertions must be an announced skip, never a red test.
+ * `pnpm test:pg` and `turbo.json` resolve and declare all three together.
  */
 const STACK = ((): StackEnv | undefined => {
   const url = process.env.AAI_TEST_SUPABASE_URL;
@@ -168,41 +128,19 @@ const HOW_TO_STACK =
   "AAI_TEST_PG_URL. Start one with `supabase start` (it applies\n" +
   "supabase/migrations on init; `supabase migration up` catches up an old one).";
 
-/** One announcement per gate per file, however many suites that file declares. */
-let stackAnnounced = false;
-
 /**
- * `describe` with the local Supabase stack in reach, `describe.skip` otherwise —
- * announced rather than folded into a green summary.
- *
- * The one spelling for this gate, in place of the hand-rolled conjunction
- * (`PG_URL && SB_URL && SB_SERVICE_KEY ? describe : describe.skip`) that
- * `realtime-rls.scenario.test.ts` carried while nothing in the repo resolved
- * those three values together.
- *
- * Same shape as {@link describeWithPg}: under `AAI_REQUIRE_STACK` a skip throws
- * from the CALL, so it fails the suite's own file and leaves every other
- * importer of the package's test surface alone.
+ * `describe` with the local Supabase stack in reach, an announced skip
+ * otherwise; under `AAI_REQUIRE_STACK` the skip throws instead (see
+ * {@link gatedDescribe}).
  */
-export function describeWithStack(name: string, body: () => void): void {
-  if (STACK) {
-    describe(name, body);
-    return;
-  }
-  if (STACK_REQUIRED) {
-    throw new Error(
-      "AAI_REQUIRE_STACK is set but the Supabase stack is not configured, so this suite " +
-        `would skip.\n${HOW_TO_STACK}`,
-    );
-  }
-  if (!stackAnnounced) {
-    stackAnnounced = true;
-    console.warn(
-      `\n[skipped: no local Supabase stack] platform-arm suite not run.\n${HOW_TO_STACK}\n`,
-    );
-  }
-  skipSuite(name, body);
-}
+export const describeWithStack: GatedDescribe = gatedDescribe({
+  missing: STACK ? undefined : "no local Supabase stack",
+  required: STACK_REQUIRED,
+  failure:
+    "AAI_REQUIRE_STACK is set but the Supabase stack is not configured, so this suite " +
+    `would skip.\n${HOW_TO_STACK}`,
+  notice: `\n[skipped: no local Supabase stack] platform-arm suite not run.\n${HOW_TO_STACK}\n`,
+});
 
 /**
  * The stack's values, for use inside a `describeWithStack` body.
@@ -221,4 +159,23 @@ export function stackEnv(): StackEnv {
     throw new Error("stackEnv() read with no Supabase stack — call it inside describeWithStack.");
   }
   return STACK;
+}
+
+const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/**
+ * A real ULID-SHAPED id: 10 characters of millisecond timestamp, then 16 of
+ * randomness — here CHOSEN rather than random, so a case can say which of two
+ * ids minted in the same millisecond was minted second. The shape is the
+ * premise of a run-id tiebreak (a ULID sorts by generation time); a uuid would
+ * tie-break to nonsense and the case would still pass.
+ */
+export function ulid(ms: number, tail: string): string {
+  let time = "";
+  let n = ms;
+  for (let i = 0; i < 10; i += 1) {
+    time = CROCKFORD.charAt(n % 32) + time;
+    n = Math.floor(n / 32);
+  }
+  return `${time}${tail.padStart(16, "0")}`;
 }

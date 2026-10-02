@@ -50,7 +50,7 @@ describe("ChatView: narrow subscriptions", () => {
     // A field ChatView does read still re-renders it.
     act(() => core.update({ state: "thinking" }));
     expect(commits).toBeGreaterThan(before);
-    expect(screen.getByText("thinking")).toBeDefined();
+    expect(screen.getByText("thinking")).toBeInTheDocument();
   });
 });
 
@@ -79,9 +79,9 @@ describe("ChatView: the shell", () => {
   test("shows the caller's title and the session state", () => {
     const core = createMockSessionCore({ started: true, state: "listening" });
     renderWithProvider(<ChatView title="Pizza Bot" />, core);
-    expect(screen.getByText("Pizza Bot")).toBeDefined();
-    expect(screen.getByText("listening")).toBeDefined();
+    expect(screen.getByText("Pizza Bot")).toBeInTheDocument();
+    expect(screen.getByText("listening")).toBeInTheDocument();
     // The voice controls are always the footer: there is no text-only mode.
-    expect(screen.getByText("Stop")).toBeDefined();
+    expect(screen.getByText("Stop")).toBeInTheDocument();
   });
 });

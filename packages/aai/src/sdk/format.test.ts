@@ -148,7 +148,7 @@ describe("roundMoney", () => {
     // that spelling answers 2.68 for 2.675 while formatMoney prints $2.67, so
     // a total compares as one number and reads as another.
     for (const amount of [19.995, 1.005, 0.005, 2.675, 1.115, -2.675, 12.344]) {
-      expect(formatMoney(roundMoney(amount))).toBe(formatMoney(amount));
+      expect(formatMoney(roundMoney(amount)), String(amount)).toBe(formatMoney(amount));
     }
     // Spelled out for the two the multiply-and-round version gets differently.
     expect(roundMoney(2.675)).toBe(2.67);

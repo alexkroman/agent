@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { createRecordingSql } from "aai-server/test-utils";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   createMemoryStudioSessionRegistry,
   createPgStudioSessionRegistry,
@@ -39,28 +39,26 @@ describe("memory studio session registry", () => {
 
   test("get resolves null once the lease expires", async () => {
     vi.useFakeTimers();
-    try {
-      const registry = createMemoryStudioSessionRegistry({ leaseMs: 1000 });
-      await registry.claim(SCOPE, PROJECT, record("replica-a"));
-      vi.advanceTimersByTime(1001);
-      expect(await registry.get(SCOPE, PROJECT)).toBeNull();
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const registry = createMemoryStudioSessionRegistry({ leaseMs: 1000 });
+    await registry.claim(SCOPE, PROJECT, record("replica-a"));
+    vi.advanceTimersByTime(1001);
+    expect(await registry.get(SCOPE, PROJECT)).toBeNull();
   });
 
   test("touch extends the lease — a peer's broker call is activity", async () => {
     vi.useFakeTimers();
-    try {
-      const registry = createMemoryStudioSessionRegistry({ leaseMs: 1000 });
-      await registry.claim(SCOPE, PROJECT, record("replica-a"));
-      vi.advanceTimersByTime(900);
-      await registry.touch(SCOPE, PROJECT);
-      vi.advanceTimersByTime(900);
-      expect(await registry.get(SCOPE, PROJECT)).not.toBeNull();
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const registry = createMemoryStudioSessionRegistry({ leaseMs: 1000 });
+    await registry.claim(SCOPE, PROJECT, record("replica-a"));
+    vi.advanceTimersByTime(900);
+    await registry.touch(SCOPE, PROJECT);
+    vi.advanceTimersByTime(900);
+    expect(await registry.get(SCOPE, PROJECT)).not.toBeNull();
   });
 
   test("release only drops the row for the CURRENT owner", async () => {
@@ -84,14 +82,20 @@ describe("memory studio session registry", () => {
 
 describe("postgres studio session registry", () => {
   function fakeSql(rows: Record<string, unknown>[] = []) {
-    return createRecordingSql((query) => (query.trimStart().startsWith("select") ? rows : []));
+    const sql = createRecordingSql((query) => (query.trimStart().startsWith("select") ? rows : []));
+    /** The first statement matching `pick`, as `{ query, params }`. */
+    const statement = (pick: (query: string) => boolean) => {
+      const call = sql.mock.calls.find(([query]) => pick(query));
+      return call && { query: call[0], params: call[1] };
+    };
+    return { sql, statement };
   }
 
   test("claim upserts every field plus the lease", async () => {
-    const { sql, calls } = fakeSql();
+    const { sql, statement } = fakeSql();
     const registry = createPgStudioSessionRegistry(sql, { leaseMs: 5000 });
     await registry.claim(SCOPE, PROJECT, record("replica-a"));
-    const insert = calls.find((c) => c.query.includes("insert into"));
+    const insert = statement((q) => q.includes("insert into"));
     expect(insert?.params).toEqual([
       SCOPE,
       PROJECT,
@@ -106,7 +110,7 @@ describe("postgres studio session registry", () => {
   });
 
   test("get filters expired leases and maps the row", async () => {
-    const { sql, calls } = fakeSql([
+    const { sql, statement } = fakeSql([
       {
         chat_url: "https://replica-a.example/studio/chat",
         chat_token: "chat-token",
@@ -117,15 +121,15 @@ describe("postgres studio session registry", () => {
     ]);
     const registry = createPgStudioSessionRegistry(sql);
     expect(await registry.get(SCOPE, PROJECT)).toEqual(record("replica-a"));
-    const select = calls.find((c) => c.query.trimStart().startsWith("select"));
+    const select = statement((q) => q.trimStart().startsWith("select"));
     expect(select?.query).toContain("expires_at > now()");
   });
 
   test("release is owner-scoped in SQL", async () => {
-    const { sql, calls } = fakeSql();
+    const { sql, statement } = fakeSql();
     const registry = createPgStudioSessionRegistry(sql);
     await registry.release(SCOPE, PROJECT, "replica-a");
-    const del = calls.find((c) => c.query.includes("delete from"));
+    const del = statement((q) => q.includes("delete from"));
     expect(del?.query).toContain("owner = $3");
     expect(del?.params).toEqual([SCOPE, PROJECT, "replica-a"]);
   });

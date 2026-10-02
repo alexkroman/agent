@@ -20,9 +20,10 @@
  * made at the 700-line test cap.
  */
 
+import { createRunSnapshot } from "@alexkroman1/aai/testing";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { WorkflowRequestError } from "./_request-error.ts";
-import { fakeClient, type Harness, run, serve } from "./api/_test-utils.ts";
+import { fakeClient, type Harness, serve } from "./api/_test-utils.ts";
 import { MAX_WORKFLOW_KEY_LENGTH } from "./api/runs.ts";
 import { MAX_WORKFLOW_INPUT_BYTES } from "./api.ts";
 
@@ -270,7 +271,7 @@ describe("POST /runs", () => {
 
 describe("GET /runs", () => {
   test("a key narrows to `find`", async () => {
-    const find = vi.fn(async () => [run({ key: "caller-1" })]);
+    const find = vi.fn(async () => [createRunSnapshot({ key: "caller-1" })]);
     const recent = vi.fn(async () => []);
     harness = await serve({ engine: () => fakeClient({ find, recent }) });
     const res = await fetch(`${harness.url}/workflows/runs?workflow=digest&key=caller-1&limit=3`);
@@ -281,7 +282,7 @@ describe("GET /runs", () => {
 
   test("no key is the KEYLESS read — `recent`, not `find` with an empty key", async () => {
     const find = vi.fn(async () => []);
-    const recent = vi.fn(async () => [run()]);
+    const recent = vi.fn(async () => [createRunSnapshot()]);
     harness = await serve({ engine: () => fakeClient({ find, recent }) });
     await fetch(`${harness.url}/workflows/runs?workflow=digest`);
     expect(recent).toHaveBeenCalledWith("digest", undefined);
@@ -332,7 +333,7 @@ describe("GET /runs", () => {
 
 describe("GET and DELETE /runs/:id", () => {
   test("reads one run", async () => {
-    const snapshot = run({ status: "completed", output: { ok: true } });
+    const snapshot = createRunSnapshot({ status: "completed", output: { ok: true } });
     harness = await serve({ engine: () => fakeClient({ get: vi.fn(async () => snapshot) }) });
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1`);
     expect(res.status).toBe(200);

@@ -1,81 +1,88 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `routeStepFetch` — the composition thirteen template sites wrote by hand.
+ * The step-fetch fake every published stub is built on: the recorder, the
+ * answer encoding, and the publish/unpublish pair.
  *
- * The subject is the UNMATCHED policy, because that is the half the thirteen
- * disagreed on and the half whose wrong answer hides a finding rather than
- * showing one.
+ * `routeStepFetch`'s spec, which used to live here, is ported into
+ * `testing-fetch-routes.test.ts` with the fold into `stubFetchRoutes`.
  */
-import { describe, expect, test } from "vitest";
-import { routeStepFetch, type StepRoute, type StubStepRequest } from "./testing.ts";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
+import { publishAnsweringStepFetch, stubStepFetch, toStepResponse } from "./_testing-step-fetch.ts";
+import { stepFetch } from "./step-fetch.ts";
 
-const ask = (url: string, method = "GET"): StubStepRequest => ({
-  url,
-  method,
-  headers: {},
-  body: undefined,
+async function* chunks(...parts: string[]): AsyncIterable<Uint8Array> {
+  for (const part of parts) yield new TextEncoder().encode(part);
+}
+
+describe("toStepResponse", () => {
+  test("a whole Response passes through as the same object", () => {
+    const res = new Response("raw", { status: 418 });
+    expect(toStepResponse(res)).toBe(res);
+  });
+
+  test("the shorthand JSON-encodes its body with a JSON content type", async () => {
+    const res = toStepResponse({ status: 201, body: { id: 1 }, headers: { "X-Trace": "t" } });
+    expect(res.status).toBe(201);
+    expect(res.headers.get("Content-Type")).toBe("application/json");
+    expect(res.headers.get("X-Trace")).toBe("t");
+    expect(await res.json()).toEqual({ id: 1 });
+  });
+
+  test("a string body is sent as written, and no body is an empty object", async () => {
+    expect(await toStepResponse({ body: "plain" }).text()).toBe("plain");
+    expect(await toStepResponse({}).json()).toEqual({});
+  });
+
+  test.for([204, 205, 304])(
+    "a null-body status %i answers with no body instead of throwing",
+    async (status) => {
+      const res = toStepResponse({ status, body: { ignored: true } });
+      expect(res.status).toBe(status);
+      expect(await res.text()).toBe("");
+    },
+  );
 });
 
-/** A leg that answers one host and declines everything else. */
-const legFor =
-  (host: string, body: unknown): StepRoute =>
-  (request) =>
-    request.url.startsWith(host) ? { body } : undefined;
+describe("stubStepFetch", () => {
+  test("records each request in order, a streaming body drained to bytes", async () => {
+    const net = stubStepFetch();
+    onTestFinished(net.restore);
 
-describe("routeStepFetch", () => {
-  test("the first leg to answer wins, and later legs are not consulted", () => {
-    const seen: string[] = [];
-    const first: StepRoute = (r) => {
-      seen.push("first");
-      return r.url.includes("model") ? { body: "m" } : undefined;
-    };
-    const second: StepRoute = () => {
-      seen.push("second");
-      return { body: "s" };
-    };
-    const handler = routeStepFetch([first, second]);
-
-    expect(handler(ask("https://x.test/model"))).toEqual({ body: "m" });
-    expect(seen).toEqual(["first"]);
-  });
-
-  test("an unmatched request THROWS by default, naming the method and URL", () => {
-    const handler = routeStepFetch([legFor("https://a.test", "a")]);
-    // The default is the strict one on purpose: the alternatives turn "the spec
-    // forgot a leg" into a run taking its own error path and passing green.
-    expect(() => handler(ask("https://b.test/thing", "POST"))).toThrow(
-      /no step route for POST https:\/\/b\.test\/thing/,
-    );
-  });
-
-  test("`notFound` answers a real 404 for a spec whose subject IS one", () => {
-    const handler = routeStepFetch([legFor("https://a.test", "a")], { unmatched: "notFound" });
-    expect(handler(ask("https://b.test/thing"))).toMatchObject({ status: 404 });
-  });
-
-  test("a fallback ROUTE catches everything the named legs declined", () => {
-    const handler = routeStepFetch([legFor("https://model.test", "m")], {
-      unmatched: () => ({ body: "<p>page</p>" }),
+    await stepFetch("https://a.test/one");
+    await stepFetch("https://a.test/two", {
+      method: "POST",
+      headers: { Authorization: "sk-test" },
+      body: chunks("he", "llo"),
     });
-    expect(handler(ask("https://model.test/v1"))).toEqual({ body: "m" });
-    expect(handler(ask("https://anywhere.test/article"))).toEqual({ body: "<p>page</p>" });
+
+    expect(net.calls.map((c) => [c.method, c.url])).toEqual([
+      ["GET", "https://a.test/one"],
+      ["POST", "https://a.test/two"],
+    ]);
+    expect(net.calls[1]?.headers).toEqual({ Authorization: "sk-test" });
+    expect(new TextDecoder().decode(net.calls[1]?.body as Uint8Array)).toBe("hello");
   });
 
-  test("a fallback that itself declines is the same finding as having none", () => {
-    // `undefined` is not a legal answer for the handler `stubStepFetch` installs,
-    // so silently encoding it would produce an empty 200 — a provider that said
-    // nothing, which is the shape hardest to debug.
-    const handler = routeStepFetch([], { unmatched: () => undefined });
-    expect(() => handler(ask("https://b.test/x"))).toThrow(/fallback step route declined/);
+  test("answers with what the handler returned", async () => {
+    const net = stubStepFetch((request) => ({ body: { echoed: request.url } }));
+    onTestFinished(net.restore);
+    expect(await (await stepFetch("https://a.test/x")).json()).toEqual({
+      echoed: "https://a.test/x",
+    });
   });
+});
 
-  test("no legs at all still throws rather than answering nothing", () => {
-    expect(() => routeStepFetch([])(ask("https://b.test/x"))).toThrow(/no step route/);
-  });
+describe("publishAnsweringStepFetch", () => {
+  test("publishes until the returned unpublish, which hands stepFetch back to the global", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("global")),
+    );
+    const unpublish = publishAnsweringStepFetch(() => ({ body: "stubbed" }));
+    onTestFinished(unpublish);
+    expect(await (await stepFetch("https://a.test/")).text()).toBe("stubbed");
 
-  test("a leg may answer a whole Response, which passes through untouched", () => {
-    const response = new Response("raw", { status: 201 });
-    const handler = routeStepFetch([() => response]);
-    expect(handler(ask("https://a.test"))).toBe(response);
+    unpublish();
+    expect(await (await stepFetch("https://a.test/")).text()).toBe("global");
   });
 });

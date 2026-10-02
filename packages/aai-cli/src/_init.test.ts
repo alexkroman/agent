@@ -2,14 +2,14 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 import {
   CLIENT_ONLY_DEPENDENCIES,
   patchPackageJsonForWorkspace,
   runInit,
   stripClientDependencies,
 } from "./_init.ts";
-import { silenced, withTempDir, writeFiles } from "./_test-utils.ts";
+import { test, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
 /** Create a fake templates root with a quickstart-agent template and scaffold, and point runInit at it. */
@@ -26,30 +26,22 @@ async function useFakeTemplates(dir: string): Promise<void> {
 }
 
 describe("runInit", () => {
-  test("creates .env from .env.example", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "my-agent");
-        await runInit({ targetDir: target, template: "quickstart-agent" });
-        expect(await fileExists(path.join(target, ".env"))).toBe(true);
-        const content = await fs.readFile(path.join(target, ".env"), "utf-8");
-        expect(content).toBe("ASSEMBLYAI_API_KEY=");
-      }),
-    );
+  test("creates .env from .env.example", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "my-agent");
+    await runInit({ targetDir: target, template: "quickstart-agent" });
+    expect(await fileExists(path.join(target, ".env"))).toBe(true);
+    const content = await fs.readFile(path.join(target, ".env"), "utf-8");
+    expect(content).toBe("ASSEMBLYAI_API_KEY=");
   });
 
-  test("creates README.md with project name", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "cool-agent");
-        await runInit({ targetDir: target, template: "quickstart-agent" });
-        expect(await fileExists(path.join(target, "README.md"))).toBe(true);
-        const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
-        expect(readme).toContain("# cool-agent");
-      }),
-    );
+  test("creates README.md with project name", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "cool-agent");
+    await runInit({ targetDir: target, template: "quickstart-agent" });
+    expect(await fileExists(path.join(target, "README.md"))).toBe(true);
+    const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
+    expect(readme).toContain("# cool-agent");
   });
 
   /**
@@ -62,67 +54,53 @@ describe("runInit", () => {
    * the account-shaped failure that followed read as "local dev needs an
    * account".
    */
-  test("the README runs the CLI through npm and names the key plus `aai login`", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "cool-agent");
-        await runInit({ targetDir: target, template: "quickstart-agent" });
-        const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
+  test("the README runs the CLI through npm and names the key plus `aai login`", async ({
+    tmpDir: dir,
+  }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "cool-agent");
+    await runInit({ targetDir: target, template: "quickstart-agent" });
+    const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
 
-        expect(readme).toContain("npm run dev");
-        expect(readme).toContain("npm run publish:agent");
-        expect(readme).toContain("aai login");
-        expect(readme).toContain("ASSEMBLYAI_API_KEY");
-        // No line may TELL the reader to type a bare `aai …` — that is the
-        // `command not found` the quickstart shipped with. A line STARTING with
-        // it is the whole family: prose mentions sit mid-sentence in backticks.
-        expect(readme.split("\n").find((line) => line.startsWith("aai "))).toBeUndefined();
-      }),
+    expect(readme).toContain("npm run dev");
+    expect(readme).toContain("npm run publish:agent");
+    expect(readme).toContain("aai login");
+    expect(readme).toContain("ASSEMBLYAI_API_KEY");
+    // No line may TELL the reader to type a bare `aai …` — that is the
+    // `command not found` the quickstart shipped with. A line STARTING with
+    // it is the whole family: prose mentions sit mid-sentence in backticks.
+    expect(readme.split("\n").find((line) => line.startsWith("aai "))).toBeUndefined();
+  });
+
+  test("does not overwrite existing README.md", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "my-agent");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(path.join(target, "README.md"), "existing content");
+    await runInit({ targetDir: target, template: "quickstart-agent" });
+    const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
+    expect(readme).toBe("existing content");
+  });
+
+  test("throws for unknown template", async ({ tmpDir: dir }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "output");
+    await expect(runInit({ targetDir: target, template: "nonexistent" })).rejects.toThrow(
+      'Unknown template "nonexistent"',
     );
   });
 
-  test("does not overwrite existing README.md", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "my-agent");
-        await fs.mkdir(target, { recursive: true });
-        await fs.writeFile(path.join(target, "README.md"), "existing content");
-        await runInit({ targetDir: target, template: "quickstart-agent" });
-        const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
-        expect(readme).toBe("existing content");
-      }),
-    );
-  });
+  test("handles missing .env.example gracefully", async ({ tmpDir: dir }) => {
+    // Create templates without .env.example
+    const rootDir = await writeFiles(path.join(dir, "fake-root"), {
+      "templates/quickstart-agent/agent.ts": "export default {};",
+    });
+    vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
 
-  test("throws for unknown template", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await useFakeTemplates(dir);
-        const target = path.join(dir, "output");
-        await expect(runInit({ targetDir: target, template: "nonexistent" })).rejects.toThrow(
-          'Unknown template "nonexistent"',
-        );
-      }),
-    );
-  });
-
-  test("handles missing .env.example gracefully", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        // Create templates without .env.example
-        const rootDir = await writeFiles(path.join(dir, "fake-root"), {
-          "templates/quickstart-agent/agent.ts": "export default {};",
-        });
-        vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
-
-        const target = path.join(dir, "output");
-        // Should not throw even without .env.example
-        await runInit({ targetDir: target, template: "quickstart-agent" });
-        expect(await fileExists(path.join(target, ".env"))).toBe(false);
-      }),
-    );
+    const target = path.join(dir, "output");
+    // Should not throw even without .env.example
+    await runInit({ targetDir: target, template: "quickstart-agent" });
+    expect(await fileExists(path.join(target, ".env"))).toBe(false);
   });
 });
 
@@ -155,162 +133,138 @@ describe("runInit stamps the package manager it was told about", () => {
     };
   }
 
-  test("pins the manager that will run, replacing the scaffold's", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await scaffoldWithPin(dir);
-        const target = path.join(dir, "bun-project");
-        await runInit({
-          targetDir: target,
-          template: "quickstart-agent",
-          packageManager: { name: "bun", version: "1.2.4" },
-        });
-        expect((await manifestOf(target)).packageManager).toBe("bun@1.2.4");
-      }),
-    );
+  test("pins the manager that will run, replacing the scaffold's", async ({ tmpDir: dir }) => {
+    await scaffoldWithPin(dir);
+    const target = path.join(dir, "bun-project");
+    await runInit({
+      targetDir: target,
+      template: "quickstart-agent",
+      packageManager: { name: "bun", version: "1.2.4" },
+    });
+    expect((await manifestOf(target)).packageManager).toBe("bun@1.2.4");
   });
 
-  test("REMOVES the pin when there is no version to pin", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await scaffoldWithPin(dir);
-        const target = path.join(dir, "unpinned");
-        // A bare name is not a valid value for that field, and leaving pnpm's
-        // is worse than leaving none.
-        await runInit({
-          targetDir: target,
-          template: "quickstart-agent",
-          packageManager: { name: "npm" },
-        });
-        expect(await manifestOf(target)).not.toHaveProperty("packageManager");
-      }),
-    );
+  test("REMOVES the pin when there is no version to pin", async ({ tmpDir: dir }) => {
+    await scaffoldWithPin(dir);
+    const target = path.join(dir, "unpinned");
+    // A bare name is not a valid value for that field, and leaving pnpm's
+    // is worse than leaving none.
+    await runInit({
+      targetDir: target,
+      template: "quickstart-agent",
+      packageManager: { name: "npm" },
+    });
+    expect(await manifestOf(target)).not.toHaveProperty("packageManager");
   });
 
-  test("the README speaks the manager's own commands", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await scaffoldWithPin(dir);
-        const target = path.join(dir, "bun-readme");
-        await runInit({
-          targetDir: target,
-          template: "quickstart-agent",
-          packageManager: { name: "bun", version: "1.2.4" },
-        });
-        const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
-        expect(readme).toContain("bun install");
-        expect(readme).toContain("bun run dev");
-        // `bunx`, not `npx`: the point of the parametrization is that the one
-        // doc a scaffolded project ships agrees with the directory it describes.
-        expect(readme).toContain("bunx aai login");
-        expect(readme).not.toContain("npm install\n");
-      }),
-    );
+  test("the README speaks the manager's own commands", async ({ tmpDir: dir }) => {
+    await scaffoldWithPin(dir);
+    const target = path.join(dir, "bun-readme");
+    await runInit({
+      targetDir: target,
+      template: "quickstart-agent",
+      packageManager: { name: "bun", version: "1.2.4" },
+    });
+    const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
+    expect(readme).toContain("bun install");
+    expect(readme).toContain("bun run dev");
+    // `bunx`, not `npx`: the point of the parametrization is that the one
+    // doc a scaffolded project ships agrees with the directory it describes.
+    expect(readme).toContain("bunx aai login");
+    expect(readme).not.toContain("npm install\n");
   });
 });
 
 describe("patchPackageJsonForWorkspace", () => {
-  test("no-ops when package.json does not exist", async () => {
-    await withTempDir(async (dir) => {
-      // "Should not throw" was a comment; now it is the assertion. The patch
-      // must also not CREATE the manifest it found missing.
-      await expect(patchPackageJsonForWorkspace(dir)).resolves.toBeUndefined();
-      await expect(fs.readdir(dir)).resolves.toEqual([]);
-    });
+  test("no-ops when package.json does not exist", async ({ tmpDir: dir }) => {
+    // "Should not throw" was a comment; now it is the assertion. The patch
+    // must also not CREATE the manifest it found missing.
+    await expect(patchPackageJsonForWorkspace(dir)).resolves.toBeUndefined();
+    await expect(fs.readdir(dir)).resolves.toEqual([]);
   });
 
-  test("sets name to basename of target directory", async () => {
-    await withTempDir(async (dir) => {
-      const target = path.join(dir, "my-cool-agent");
-      await fs.mkdir(target, { recursive: true });
-      await fs.writeFile(
-        path.join(target, "package.json"),
-        JSON.stringify({ name: "original-name" }),
-      );
-      await patchPackageJsonForWorkspace(target);
-      const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
-      expect(result.name).toBe("my-cool-agent");
-    });
+  test("sets name to basename of target directory", async ({ tmpDir: dir }) => {
+    const target = path.join(dir, "my-cool-agent");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(
+      path.join(target, "package.json"),
+      JSON.stringify({ name: "original-name" }),
+    );
+    await patchPackageJsonForWorkspace(target);
+    const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
+    expect(result.name).toBe("my-cool-agent");
   });
 
-  test("removes packageManager field", async () => {
-    await withTempDir(async (dir) => {
-      const target = path.join(dir, "agent");
-      await fs.mkdir(target, { recursive: true });
-      await fs.writeFile(
-        path.join(target, "package.json"),
-        JSON.stringify({ name: "x", packageManager: "pnpm@10.0.0" }),
-      );
-      await patchPackageJsonForWorkspace(target);
-      const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
-      expect(result.packageManager).toBeUndefined();
-    });
+  test("removes packageManager field", async ({ tmpDir: dir }) => {
+    const target = path.join(dir, "agent");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(
+      path.join(target, "package.json"),
+      JSON.stringify({ name: "x", packageManager: "pnpm@10.0.0" }),
+    );
+    await patchPackageJsonForWorkspace(target);
+    const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
+    expect(result.packageManager).toBeUndefined();
   });
 
-  test("pins a dep the project SHARES with a linked workspace package", async () => {
+  test("pins a dep the project SHARES with a linked workspace package", async ({ tmpDir: dir }) => {
     // Linking is what makes two copies possible: the SDK's types come out of the
     // workspace's `node_modules` while the project installs its own. Two copies
     // of xstate are two incompatible sets of types, and `aai init --template
     // technical-support-agent` really did fail its typecheck gate and refuse the deploy —
     // workspace 5.32.5 against the project's freshly-resolved 5.32.6.
-    await withTempDir(async (dir) => {
-      const target = path.join(dir, "agent");
-      await fs.mkdir(target, { recursive: true });
-      await fs.writeFile(
-        path.join(target, "package.json"),
-        JSON.stringify({ dependencies: { "@alexkroman1/aai": "^8.0.0", xstate: "^5.32.5" } }),
-      );
-      await fs.writeFile(path.join(target, "pnpm-workspace.yaml"), "packages: []\n");
+    const target = path.join(dir, "agent");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(
+      path.join(target, "package.json"),
+      JSON.stringify({ dependencies: { "@alexkroman1/aai": "^8.0.0", xstate: "^5.32.5" } }),
+    );
+    await fs.writeFile(path.join(target, "pnpm-workspace.yaml"), "packages: []\n");
 
-      await patchPackageJsonForWorkspace(target);
+    await patchPackageJsonForWorkspace(target);
 
-      const workspaceFile = await fs.readFile(path.join(target, "pnpm-workspace.yaml"), "utf-8");
-      expect(workspaceFile).toContain("overrides:");
-      // QUOTED: a scoped name starts with `@`, which YAML reserves — unquoted, the
-      // whole install dies on "bad indentation of a mapping entry".
-      expect(workspaceFile).toMatch(/"xstate": "\d+\.\d+\.\d+"/);
-      // The block is APPENDED: the scaffold's own copy carries the
-      // `minimumReleaseAgeExclude` argument, and a YAML round trip drops it.
-      expect(workspaceFile).toContain("packages: []");
-    });
+    const workspaceFile = await fs.readFile(path.join(target, "pnpm-workspace.yaml"), "utf-8");
+    expect(workspaceFile).toContain("overrides:");
+    // QUOTED: a scoped name starts with `@`, which YAML reserves — unquoted, the
+    // whole install dies on "bad indentation of a mapping entry".
+    expect(workspaceFile).toMatch(/"xstate": "\d+\.\d+\.\d+"/);
+    // The block is APPENDED: the scaffold's own copy carries the
+    // `minimumReleaseAgeExclude` argument, and a YAML round trip drops it.
+    expect(workspaceFile).toContain("packages: []");
   });
 
-  test("pins nothing when the project links no workspace package", async () => {
+  test("pins nothing when the project links no workspace package", async ({ tmpDir: dir }) => {
     // Outside the monorepo there is one copy of everything, which is the whole
     // reason this is dev-mode only — a published install needs no overrides and
     // must not be handed any.
-    await withTempDir(async (dir) => {
-      const target = path.join(dir, "agent");
-      await fs.mkdir(target, { recursive: true });
-      await fs.writeFile(
-        path.join(target, "package.json"),
-        JSON.stringify({ dependencies: { xstate: "^5.32.5" } }),
-      );
-      await fs.writeFile(path.join(target, "pnpm-workspace.yaml"), "packages: []\n");
+    const target = path.join(dir, "agent");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(
+      path.join(target, "package.json"),
+      JSON.stringify({ dependencies: { xstate: "^5.32.5" } }),
+    );
+    await fs.writeFile(path.join(target, "pnpm-workspace.yaml"), "packages: []\n");
 
-      await patchPackageJsonForWorkspace(target);
+    await patchPackageJsonForWorkspace(target);
 
-      expect(await fs.readFile(path.join(target, "pnpm-workspace.yaml"), "utf-8")).not.toContain(
-        "overrides:",
-      );
-    });
+    expect(await fs.readFile(path.join(target, "pnpm-workspace.yaml"), "utf-8")).not.toContain(
+      "overrides:",
+    );
   });
 
-  test("preserves non-workspace dependencies", async () => {
-    await withTempDir(async (dir) => {
-      const target = path.join(dir, "agent");
-      await fs.mkdir(target, { recursive: true });
-      await fs.writeFile(
-        path.join(target, "package.json"),
-        JSON.stringify({
-          dependencies: { preact: "^10.0.0", zod: "^3.0.0" },
-        }),
-      );
-      await patchPackageJsonForWorkspace(target);
-      const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
-      expect(result.dependencies.preact).toBe("^10.0.0");
-      expect(result.dependencies.zod).toBe("^3.0.0");
-    });
+  test("preserves non-workspace dependencies", async ({ tmpDir: dir }) => {
+    const target = path.join(dir, "agent");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(
+      path.join(target, "package.json"),
+      JSON.stringify({
+        dependencies: { preact: "^10.0.0", zod: "^3.0.0" },
+      }),
+    );
+    await patchPackageJsonForWorkspace(target);
+    const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
+    expect(result.dependencies.preact).toBe("^10.0.0");
+    expect(result.dependencies.zod).toBe("^3.0.0");
   });
 });
 
@@ -334,26 +288,24 @@ describe("stripClientDependencies", () => {
     },
   };
 
-  test("a headless project keeps its agent and test toolchain, and no UI kit", async () => {
-    await withTempDir(async (dir) => {
-      await writeFiles(dir, { "agent.ts": "", "package.json": JSON.stringify(manifest) });
-      await stripClientDependencies(dir);
-      const after = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf-8"));
-      expect(Object.keys(after.dependencies)).toEqual(["@alexkroman1/aai", "zod"]);
-      // `vite` stays: vitest's base, and where the preset's `vite/client` types come from.
-      expect(Object.keys(after.devDependencies)).toEqual(["vite", "vitest"]);
-      for (const name of CLIENT_ONLY_DEPENDENCIES) {
-        expect({ ...after.dependencies, ...after.devDependencies }).not.toHaveProperty(name);
-      }
-    });
+  test("a headless project keeps its agent and test toolchain, and no UI kit", async ({
+    tmpDir: dir,
+  }) => {
+    await writeFiles(dir, { "agent.ts": "", "package.json": JSON.stringify(manifest) });
+    await stripClientDependencies(dir);
+    const after = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf-8"));
+    expect(Object.keys(after.dependencies)).toEqual(["@alexkroman1/aai", "zod"]);
+    // `vite` stays: vitest's base, and where the preset's `vite/client` types come from.
+    expect(Object.keys(after.devDependencies)).toEqual(["vite", "vitest"]);
+    for (const name of CLIENT_ONLY_DEPENDENCIES) {
+      expect({ ...after.dependencies, ...after.devDependencies }).not.toHaveProperty(name);
+    }
   });
 
-  test("a project with a client.tsx is left exactly as scaffolded", async () => {
-    await withTempDir(async (dir) => {
-      const text = JSON.stringify(manifest);
-      await writeFiles(dir, { "client.tsx": "", "package.json": text });
-      await stripClientDependencies(dir);
-      expect(await fs.readFile(path.join(dir, "package.json"), "utf-8")).toBe(text);
-    });
+  test("a project with a client.tsx is left exactly as scaffolded", async ({ tmpDir: dir }) => {
+    const text = JSON.stringify(manifest);
+    await writeFiles(dir, { "client.tsx": "", "package.json": text });
+    await stripClientDependencies(dir);
+    expect(await fs.readFile(path.join(dir, "package.json"), "utf-8")).toBe(text);
   });
 });

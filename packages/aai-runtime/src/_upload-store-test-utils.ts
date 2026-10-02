@@ -2,17 +2,13 @@
 /**
  * The things every upload-store spec needs, and no single test file may own.
  *
- * `workflow/uploads.test.ts` hit the 700-line test cap when the parts specs grew, so
- * the PARTS block moved to `workflow/uploads-parts.test.ts` — and a helper copied
- * into both files is the drift this repo keeps paying for. `recordingDb` in
- * particular has had to keep up with the store's statements three times now, and the
- * failure mode every time was a fake silently answering `[]`, i.e. a green suite
- * over a store that reads nothing back. It exists ONCE.
+ * One copy, because a fake that falls behind the store's statements answers `[]`
+ * silently — a green suite over a store that reads nothing back.
  */
 
 import { createHash } from "node:crypto";
-import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { recordingDb as recordingBaseDb } from "./_db-test-utils.ts";
 import type { UploadBackend, UploadPart } from "./uploads/index.ts";
 import { createMemoryUploadBackend, createUploadStore, UPLOADS_TABLE } from "./workflow/uploads.ts";
 
@@ -24,18 +20,10 @@ export async function* body(...pieces: Uint8Array[]): AsyncGenerator<Uint8Array>
 /**
  * `n` bytes counting up, so a window's CONTENT identifies its offset.
  *
- * **Tiled from one period, not built per element.** This was
- * `Uint8Array.from({ length: n }, (_, at) => (from + at) % 251)`, which invokes
- * a JS callback once per byte — and the two specs that cross a part boundary
- * ask for `UPLOAD_PART_BYTES` (8 MiB) two or three times each. Measured: 179ms
- * per 8 MiB call against 2ms here, a 72x difference, which is what put those two
- * over the unit tier's 5s budget under a full-workspace `pnpm test` while both
- * passed when the file ran alone. A flake whose cause is a test HELPER is the
- * worst kind to chase, because every suspicion lands on the code under test.
- *
- * Byte-identical, and not approximately: `(from + at) % 251` has period 251, so
- * every tile at a multiple of 251 repeats the same values — verified against the
- * old implementation over 8 MiB and at a non-zero `from`.
+ * **Tiled from one period, not built per element**: a callback per byte is too slow
+ * for the multi-megabyte bodies the part-boundary specs ask for under the unit
+ * tier's budget. Equal to `(from + at) % 251` at every byte, since that has
+ * period 251.
  */
 export function ramp(n: number, from = 0): Uint8Array {
   const out = new Uint8Array(n);
@@ -74,23 +62,16 @@ type FakeRow = {
  * matched by a SUBSTRING of the real SQL — which is what has to keep up when the
  * store's statements change.
  *
- * It is much smaller than the version it replaced, and the shrinkage IS the change
- * being made: the store used to hold bytes in a second table and derive a parts
- * upload's coverage with two window functions, so the fake had to reimplement an
- * islands walk and a contiguous-prefix query to answer them. Bytes are objects now
- * (`createMemoryUploadBackend`) and coverage is one `jsonb` column the store merges
- * in JavaScript, so there is nothing left here but rows.
+ * Only rows: bytes are objects (`createMemoryUploadBackend`) and coverage is one
+ * `jsonb` column the store merges in JavaScript. Built over `_db-test-utils`'
+ * `recordingDb`, answering by statement through its `answer` hook.
  */
 export function recordingDb(options: { refuse?: string } = {}) {
   const sql: string[] = [];
   /**
    * Every statement's PARAMETERS, so a spec can assert what the database was asked
-   * to hold rather than only what it was asked to do.
-   *
-   * The one claim this whole change is about is checkable from here and nowhere
-   * else: no parameter is ever a `Uint8Array`. The store used to send a megabyte per
-   * `bytea` row, and the spec that pinned the batching could only count statements —
-   * a strictly weaker assertion, since a batched write is still a write.
+   * to hold rather than only what it was asked to do — in particular that no
+   * parameter is ever a `Uint8Array` (bytes never go to the record's home).
    */
   const params: unknown[][] = [];
   const uploads = new Map<string, FakeRow>();
@@ -105,7 +86,7 @@ export function recordingDb(options: { refuse?: string } = {}) {
     name: row.name,
     type: row.type,
     // `bigint` comes back from the driver as a STRING, which is the shape the store
-    // has to cope with — and did not, once.
+    // has to cope with.
     size: String(row.size),
     complete: row.complete,
     // NULL rather than absent, which is what the driver answers for a column that
@@ -113,12 +94,10 @@ export function recordingDb(options: { refuse?: string } = {}) {
     // streamed one. Left `undefined`, every streamed upload reads as a parts upload
     // here and nowhere else.
     expected: row.expected === undefined ? null : String(row.expected),
-    // The ARRAY, which is what postgres.js really hands back for a `jsonb` column
-    // holding one — measured, after this comment twice asserted something else and the
-    // store twice believed it. `partsOf` is what makes the store not care, and the
-    // reason it exists: a fake can only hold the shape its author believed in, so the
-    // shape is exactly the thing a fake must not be the authority on. `jsonb_typeof`
-    // in `workflow-uploads.scenario.test.ts` is the authority.
+    // The ARRAY, which is what postgres.js hands back for a `jsonb` column holding
+    // one. `partsOf` makes the store not care: a fake can only hold the shape its
+    // author believed in, so it must not be the authority — `jsonb_typeof` in
+    // `workflow-uploads.scenario.test.ts` is.
     parts: row.parts,
   });
 
@@ -194,8 +173,8 @@ export function recordingDb(options: { refuse?: string } = {}) {
     },
   ];
 
-  const db: Db = {
-    query: async <T = Record<string, unknown>>(text: string, params_: unknown[] = []) => {
+  const db = recordingBaseDb([], {
+    answer: (text, params_) => {
       sql.push(text.replace(/\s+/g, " ").trim());
       params.push(params_);
       // One statement the store is allowed to lose — see the spec that names it.
@@ -203,21 +182,18 @@ export function recordingDb(options: { refuse?: string } = {}) {
         throw new Error(`refused: ${options.refuse}`);
       // First match wins, so the handlers are ordered narrowest-first wherever one
       // statement's text contains another's.
-      return (handlers.find((handler) => text.includes(handler.when))?.run(params_) ?? []) as T[];
+      return handlers.find((handler) => text.includes(handler.when))?.run(params_) ?? [];
     },
-  };
+  });
   return { db, sql, params, uploads };
 }
 
 /**
  * The store as every spec builds it: recorded rows, in-memory objects.
  *
- * One arm rather than the `describe.each` pair this replaced. The old suites ran
- * every case twice — once over Postgres chunk rows, once over a temp directory —
- * because those were two BYTE backends behind one record contract, and the pair was
- * what made either trustworthy. The seam moved down a level: `UploadBackend` is a
- * window read and a length, so `createMemoryUploadBackend` is equivalent to a bucket
- * by construction, and the record has exactly one implementation to test.
+ * One arm: `UploadBackend` is a window read and a length, so
+ * `createMemoryUploadBackend` is equivalent to a bucket by construction, and the
+ * record has exactly one implementation to test.
  */
 export function memoryStore(options: { refuse?: string; maxBytes?: number } = {}) {
   const recorder = recordingDb(omitUndefined({ refuse: options.refuse }));

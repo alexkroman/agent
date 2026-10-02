@@ -1,12 +1,13 @@
 import type { Message } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
+import { makeConfig } from "../_agent-test-utils.ts";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { makeEmitter } from "../_session-test-utils.ts";
 import { flush } from "../_timing-test-utils.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "../transports/capabilities.ts";
 import type { Transport, TransportEventBody, TransportEventType } from "../transports/types.ts";
-import { makeAgentConfig, makeCore, makeSink } from "./_core-harness.ts";
+import { makeCore, makeSink } from "./_core-harness.ts";
 import { createSessionCore } from "./core.ts";
 
 describe("createSessionCore — lifecycle", () => {
@@ -45,7 +46,7 @@ describe("createSessionCore — lifecycle", () => {
       agent: "test-agent",
       client: sink.sink,
       emitter: makeEmitter(sink.sink, { sessionId: "s-test" }).emitter,
-      agentConfig: makeAgentConfig(),
+      agentConfig: makeConfig(),
       executeTool,
       transport,
     });
@@ -64,13 +65,13 @@ describe("createSessionCore — lifecycle", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: makeAgentConfig({ idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ idleTimeoutMs: 1000 }),
       });
       await core.start();
       await core.stop();
       core.onAudio(new Uint8Array([1]));
       vi.advanceTimersByTime(5000);
-      expect(sink.events.some((e) => e.type === "session.timedOut")).toBe(false);
+      expect(sink.events).not.toContainEqual(expect.objectContaining({ type: "session.timedOut" }));
     } finally {
       vi.useRealTimers();
     }
@@ -126,7 +127,7 @@ describe("createSessionCore — client inbound", () => {
     await core.start();
     core.command({ type: "cancel" });
     expect(transport.cancelReply).toHaveBeenCalledOnce();
-    expect(sink.events.some((e) => e.type === "reply.cancelled")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "reply.cancelled" }));
   });
   test("onCancel aborts an in-flight tool's signal", async () => {
     // A user cancel must stop the tool's actual work — without the abort the
@@ -167,7 +168,7 @@ describe("createSessionCore — client inbound", () => {
     const { core, sink } = makeCore();
     await core.start();
     core.command({ type: "reset" });
-    expect(sink.events.some((e) => e.type === "session.reset")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "session.reset" }));
   });
 });
 
@@ -183,7 +184,9 @@ describe("createSessionCore — transport inbound (basic)", () => {
     const { core, sink } = makeCore();
     await core.start();
     core.report({ type: "userTranscript.committed", text: "hello" });
-    expect(sink.events.some((e) => e.type === "userTranscript.committed")).toBe(true);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ type: "userTranscript.committed" }),
+    );
   });
 });
 

@@ -7,11 +7,9 @@
  * cannot overwrite a newer one's outcome, and nothing after unmount.
  */
 
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import { type UseRouteMutationOptions, useRouteMutation } from "./use-route-mutation.ts";
 
 let fetchMock: Mock<(url: URL, init: RequestInit) => Promise<Response>>;
@@ -39,10 +37,7 @@ function deferred() {
 
 function mount(options: UseRouteMutationOptions = {}) {
   const core = createMockSessionCore({}, { clientId: () => "speaker-7" });
-  return renderHook(() => useRouteMutation(options), {
-    wrapper: ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children),
-  });
+  return renderHookWithSession(() => useRouteMutation(options), core);
 }
 
 describe("useRouteMutation", () => {

@@ -10,6 +10,7 @@
  * @module
  */
 
+import { recordingSlot } from "./_testing-slot.ts";
 import {
   type ClientNotice,
   type ClientUnreachableReason,
@@ -47,12 +48,12 @@ export type StubClientInbox = {
  * @public
  */
 export function stubClientInbox(options: StubClientInboxOptions = {}): StubClientInbox {
-  const calls: StubClientInboxCall[] = [];
-  publishClientNotifier((clientId, notice) => {
-    const call = { clientId, notice };
-    calls.push(call);
-    const { answer = "acked" } = options;
-    return Promise.resolve(typeof answer === "function" ? answer(call) : answer);
-  });
-  return { calls, restore: () => publishClientNotifier(undefined) };
+  return recordingSlot(
+    publishClientNotifier,
+    (clientId, notice): StubClientInboxCall => ({ clientId, notice }),
+    (call) => {
+      const { answer = "acked" } = options;
+      return Promise.resolve(typeof answer === "function" ? answer(call) : answer);
+    },
+  );
 }

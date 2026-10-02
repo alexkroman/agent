@@ -31,7 +31,7 @@ import {
   installStubStepFetch,
   stubGatewayRoute,
 } from "@alexkroman1/aai-runtime/testing/vitest";
-import { expect, onTestFinished } from "vitest";
+import { assert, expect, onTestFinished } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import { SETTLE_MS } from "./workflows/digest.ts";
 
@@ -212,7 +212,7 @@ describeWorkflowEval(agentDef, (test) => {
     expect(run.status).toBe("completed");
 
     const asked = model.calls[0];
-    if (asked === undefined) expect.fail("the run must have shown the article to the model");
+    assert(asked !== undefined, "the run must have shown the article to the model");
     expect(asked.prompt).toContain("Sea otters are one of the few mammals that use tools");
     // The page's OWN abstract, labelled — it comes off the `<meta>` the head
     // declares, which `pageMetadata` reads and `htmlToText` (rightly) does not.

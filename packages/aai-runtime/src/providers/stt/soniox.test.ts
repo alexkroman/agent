@@ -1,66 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 /** Unit test for the Soniox real-time STT adapter (a fake WebSocket through its seam). */
 
-import { EventEmitter } from "node:events";
-import { describe, expect, test, vi } from "vitest";
-import type WebSocket from "ws";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { flush } from "../../_timing-test-utils.ts";
-import { type CreateProviderSocket, WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
+import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
+import { createFakeWebSocket, FakeWebSocket } from "../tts/_fake-ws-test-utils.ts";
 import { openSoniox } from "./soniox.ts";
 
-// A local fake rather than `tts/_fake-ws-test-utils.ts`: this adapter speaks
-// BINARY frames, reads `bufferedAmount` for backpressure, and reads the close
-// CODE — none of which that fake models. It does share the property that
-// matters, and the shared one was fixed to match it: `readyState` is
-// CONNECTING until "open" fires, so a send-before-open is catchable here.
-//
-// An `EventEmitter`, as `ws` is, so a late `error` with no listener throws
-// here exactly as it would crash the host. It reaches the adapter through
-// `openSoniox`'s `createSocket` seam ({@link fakeSocket}).
-class FakeWS extends EventEmitter {
-  /** When true, new sockets black-hole: no "open", no "error" — ever. */
-  static neverOpen = false;
-  readyState = 0;
-  bufferedAmount: number | undefined;
-  sent: Array<string | Uint8Array> = [];
-  readonly options: WebSocket.ClientOptions;
-  constructor(_url: string, opts: WebSocket.ClientOptions) {
-    super();
-    this.options = opts;
-    if (!FakeWS.neverOpen) {
-      setImmediate(() => {
-        this.readyState = 1;
-        this.emit("open");
-      });
-    }
-    latest.ws = this;
-  }
-  /** Every listener on every event — what `dropSocket` must leave at one. */
-  listenersTotal(): number {
-    let n = 0;
-    for (const ev of this.eventNames()) n += this.listenerCount(ev);
-    return n;
-  }
-  send(data: string | Uint8Array, _opts?: unknown): void {
-    this.sent.push(data);
-  }
-  close(): void {
-    this.readyState = 2;
-    this.emit("close", 1000);
-    this.readyState = 3;
-  }
-  terminate(): void {
-    this.close();
-  }
-  _fire(ev: string, payload?: unknown): void {
-    this.emit(ev, payload);
-  }
-}
-
-const latest: { ws: FakeWS | undefined } = { ws: undefined };
-
-/** The `createSocket` every session in this file opens through. */
-const fakeSocket: CreateProviderSocket = (url, options) => new FakeWS(url, options);
+beforeEach(() => {
+  FakeWebSocket.reset();
+});
 
 interface OpenSessionOpts {
   apiKey?: string;
@@ -69,28 +18,29 @@ interface OpenSessionOpts {
 }
 
 function openOpener(signal: AbortSignal): Promise<unknown> {
-  return openSoniox({}, fakeSocket).open({ sampleRate: 16_000, apiKey: "test-key", signal });
+  return openSoniox({}, createFakeWebSocket).open({
+    sampleRate: 16_000,
+    apiKey: "test-key",
+    signal,
+  });
 }
 
 async function openSession(opts: OpenSessionOpts = {}): Promise<{
   session: import("../openers.ts").SttSession;
-  ws: FakeWS;
+  ws: FakeWebSocket;
   controller: AbortController;
 }> {
-  latest.ws = undefined;
   const openerOpts: { model?: string; languages?: string[] } = {};
   if (opts.model) openerOpts.model = opts.model;
   if (opts.languages) openerOpts.languages = opts.languages;
-  const opener = openSoniox(openerOpts, fakeSocket);
+  const opener = openSoniox(openerOpts, createFakeWebSocket);
   const controller = new AbortController();
   const session = await opener.open({
     sampleRate: 16_000,
     apiKey: opts.apiKey ?? "test-key",
     signal: controller.signal,
   });
-  const ws = latest.ws;
-  if (!ws) throw new Error("no fake ws captured");
-  return { session, ws, controller };
+  return { session, ws: FakeWebSocket.latest(), controller };
 }
 
 function frame(payload: unknown): Buffer {
@@ -127,7 +77,7 @@ describe("Soniox real-time STT adapter", () => {
     // resolved: the ws-handler rejected the SESSION at its own timeout without
     // cancelling this connect, leaving the socket held by a pending listener
     // with no owner.
-    FakeWS.neverOpen = true;
+    FakeWebSocket.neverOpen = true;
     vi.useFakeTimers();
     try {
       const controller = new AbortController();
@@ -138,26 +88,21 @@ describe("Soniox real-time STT adapter", () => {
       const rejected = expect(openPromise).rejects.toMatchObject({ code: "stt_connect_failed" });
       await vi.advanceTimersByTimeAsync(WS_OPEN_TIMEOUT_MS + 1);
       await rejected;
-      expect(latest.ws?.readyState).toBe(3);
+      expect(FakeWebSocket.latest().readyState).toBe(3);
     } finally {
       vi.useRealTimers();
-      FakeWS.neverOpen = false;
     }
   });
 
   test("an abort during the connect abandons the socket rather than waiting it out", async () => {
     // `closeOnAbort` is registered only AFTER the connect resolves, so before
     // this the session's own hang-up could not reach a socket still connecting.
-    FakeWS.neverOpen = true;
-    try {
-      const controller = new AbortController();
-      const openPromise = openOpener(controller.signal);
-      controller.abort();
-      await expect(openPromise).rejects.toMatchObject({ code: "stt_connect_failed" });
-      expect(latest.ws?.readyState).toBe(3);
-    } finally {
-      FakeWS.neverOpen = false;
-    }
+    FakeWebSocket.neverOpen = true;
+    const controller = new AbortController();
+    const openPromise = openOpener(controller.signal);
+    controller.abort();
+    await expect(openPromise).rejects.toMatchObject({ code: "stt_connect_failed" });
+    expect(FakeWebSocket.latest().readyState).toBe(3);
   });
 
   test("first frame sent is the JSON config with api_key, model, audio_format, sample_rate", async () => {
@@ -388,7 +333,7 @@ describe("Soniox real-time STT adapter", () => {
     const pcm = new Int16Array([1, 2, 3, 4]);
     session.sendAudio(pcm);
 
-    expect(ws.sent.length).toBe(before + 1);
+    expect(ws.sent).toHaveLength(before + 1);
     const sent = ws.sent.at(-1);
     expect(sent).toBeInstanceOf(Uint8Array);
     const sentView = sent as Uint8Array;
@@ -404,11 +349,11 @@ describe("Soniox real-time STT adapter", () => {
 
     ws.bufferedAmount = 8 * 1024 * 1024;
     session.sendAudio(new Int16Array([1, 2, 3]));
-    expect(ws.sent.length).toBe(before);
+    expect(ws.sent).toHaveLength(before);
 
     ws.bufferedAmount = 0;
     session.sendAudio(new Int16Array([1, 2, 3]));
-    expect(ws.sent.length).toBe(before + 1);
+    expect(ws.sent).toHaveLength(before + 1);
     await session.close();
   });
 

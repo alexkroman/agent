@@ -24,19 +24,21 @@ describe("isIsoDate", () => {
     expect(isIsoDate("2026-00-10")).toBe(false);
   });
 
-  test("rejects anything that is not YYYY-MM-DD", () => {
-    for (const value of ["6/8/2026", "2026-6-8", "2026-06-08T00:00:00Z", "", "tomorrow"]) {
+  test.each(["6/8/2026", "2026-6-8", "2026-06-08T00:00:00Z", "", "tomorrow"])(
+    "rejects anything that is not YYYY-MM-DD (%s)",
+    (value) => {
       expect(isIsoDate(value)).toBe(false);
-    }
-  });
+    },
+  );
 });
 
 describe("isClockTime", () => {
-  test("accepts a zero-padded 24-hour time", () => {
-    for (const value of ["00:00", "04:45", "19:30", "23:59"]) {
+  test.each(["00:00", "04:45", "19:30", "23:59"])(
+    "accepts a zero-padded 24-hour time (%s)",
+    (value) => {
       expect(isClockTime(value)).toBe(true);
-    }
-  });
+    },
+  );
 
   test("rejects an unpadded hour", () => {
     // Padding is required because "9:05" and "09:05" sort differently, so a
@@ -44,11 +46,12 @@ describe("isClockTime", () => {
     expect(isClockTime("9:05")).toBe(false);
   });
 
-  test("rejects out-of-range and over-precise values", () => {
-    for (const value of ["24:00", "19:60", "19:30:00", "7 PM", ""]) {
+  test.each(["24:00", "19:60", "19:30:00", "7 PM", ""])(
+    "rejects out-of-range and over-precise values (%s)",
+    (value) => {
       expect(isClockTime(value)).toBe(false);
-    }
-  });
+    },
+  );
 });
 
 describe("addDays", () => {

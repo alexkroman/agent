@@ -1,12 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import {
   MAX_DESIGN_CSS_CHARS,
   MAX_DESIGN_HTML_CHARS,
   MAX_DESIGN_STYLESHEETS,
 } from "../sdk/constants.ts";
-import { createMockToolContext } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import { createGetPageDesign, parsePage } from "./page-design.ts";
 
@@ -33,7 +33,7 @@ function routedFetch(routes: Record<string, string | Response | Error>): typeof 
 
 function run(routes: Record<string, string | Response | Error>, url = PAGE_URL) {
   const def = createGetPageDesign(routedFetch(routes));
-  return def.execute({ url }, createMockToolContext()) as Promise<Record<string, unknown>>;
+  return def.execute({ url }, createToolContext()) as Promise<Record<string, unknown>>;
 }
 
 describe("parsePage", () => {
@@ -230,6 +230,6 @@ describe("get_page_design", () => {
     const { defs, schemas, guidance } = resolveAllBuiltins(["get_page_design"]);
     expect(defs.get_page_design?.execute).toBeTypeOf("function");
     expect(schemas.map((s) => s.name)).toEqual(["get_page_design"]);
-    expect(guidance.some((g) => g.includes("get_page_design"))).toBe(true);
+    expect(guidance).toContainEqual(expect.stringContaining("get_page_design"));
   });
 });

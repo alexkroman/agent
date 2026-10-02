@@ -379,7 +379,7 @@ describe("createRuntime createSession", () => {
       ...sessionOpts,
     });
     await session.start();
-    return { tts, stop: () => session.stop().finally(fakes.unregister) };
+    return { tts, stop: () => session.stop() };
   }
 
   test("createSession's skipGreeting reaches the transport", async () => {
@@ -574,7 +574,6 @@ describe("Runtime — session routing", () => {
     expect(tts.last()?.options.apiKey).toBe("tts-key");
 
     await session.stop();
-    fakes.unregister();
   });
 
   test("manifest without stt/llm/tts routes to S2sSession (createWebSocket IS called)", async () => {

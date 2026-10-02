@@ -45,9 +45,9 @@ describe("stepNotifyClient", () => {
   );
 
   test("with nothing published it is FATAL, naming the fix — retrying cannot conjure an inbox", async () => {
-    const err = await stepNotifyClient("speaker", { id: "r", event: "e" }).catch((e) => e);
-    expect(err).toBeInstanceOf(FatalError);
-    expect(err.message).toBe(CLIENT_INBOX_UNAVAILABLE_MESSAGE);
+    const err = stepNotifyClient("speaker", { id: "r", event: "e" });
+    await expect(err).rejects.toBeInstanceOf(FatalError);
+    await expect(err).rejects.toMatchObject({ message: CLIENT_INBOX_UNAVAILABLE_MESSAGE });
   });
 
   test("a malformed client id or notice id is refused before anything is sent", async () => {

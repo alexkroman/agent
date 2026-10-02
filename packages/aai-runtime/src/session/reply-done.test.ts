@@ -13,11 +13,11 @@ describe("createSessionCore — reply dedup", () => {
     await core.start();
     core.onReplyStarted("r1");
     core.report({ type: "reply.completed" });
-    expect(sink.events.some((e) => e.type === "reply.completed")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "reply.completed" }));
     // `audio.completed` is an EVENT now, not a `playAudioDone()` on the sink —
     // which is what put it in the retained stream. The sink is what keeps it
     // behind held audio, by type.
-    expect(sink.events.some((e) => e.type === "audio.completed")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "audio.completed" }));
   });
   test("duplicate reply_done is dropped", async () => {
     const { core, sink } = makeCore();

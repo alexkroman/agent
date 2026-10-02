@@ -121,7 +121,6 @@ describe("createHandshakeGuard", () => {
 // with no mic (no `config` means no initAudioCapture), no error and no retry.
 describe("session-core handshake deadline", () => {
   let core: BrowserSession;
-  let audio: ReturnType<typeof installAudioMocks>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -130,14 +129,13 @@ describe("session-core handshake deadline", () => {
     // The healthy case below receives a real `config`, which starts the audio
     // path — without the mocks it would fail on getUserMedia and error for a
     // reason that has nothing to do with the handshake.
-    audio = installAudioMocks();
+    installAudioMocks();
     vi.stubGlobal("WebSocket", TrackingWebSocket);
     core = createBrowserSession({ platformUrl: "ws://localhost:3000" });
   });
 
   afterEach(() => {
     core.disconnect();
-    audio.restore();
     vi.useRealTimers();
   });
 

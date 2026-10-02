@@ -61,7 +61,7 @@ describe("session commands — push-to-talk", () => {
 
     core.command({ type: "user_turn_start" });
     expect(seenSignal?.aborted).toBe(true);
-    expect(sink.events.some((e) => e.type === "reply.cancelled")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "reply.cancelled" }));
     await flush();
   });
 
@@ -70,7 +70,7 @@ describe("session commands — push-to-talk", () => {
     withTurnVerbs(transport, false);
     await core.start();
     core.command({ type: "user_turn_start" });
-    expect(sink.events.some((e) => e.type === "reply.cancelled")).toBe(false);
+    expect(sink.events).not.toContainEqual(expect.objectContaining({ type: "reply.cancelled" }));
   });
 
   test("a transport with no turn verbs ignores all three and says so once", async () => {
@@ -86,7 +86,7 @@ describe("session commands — push-to-talk", () => {
     core.command({ type: "user_turn_start" });
     expect(logger.warn).toHaveBeenCalledOnce();
     expect(logger.warn.mock.calls[0]?.[0]).toMatch(/push-to-talk needs a pipeline agent/);
-    expect(sink.events.some((e) => e.type === "reply.cancelled")).toBe(false);
+    expect(sink.events).not.toContainEqual(expect.objectContaining({ type: "reply.cancelled" }));
   });
 });
 
@@ -119,7 +119,7 @@ describe("session commands — a typed turn", () => {
     await core.start();
     core.onReplyStarted("r1");
     core.command({ type: "user_text", text: "stop" });
-    expect(sink.events.some((e) => e.type === "reply.cancelled")).toBe(false);
+    expect(sink.events).not.toContainEqual(expect.objectContaining({ type: "reply.cancelled" }));
   });
 
   test("a transport that cannot take text ignores it and says so once", async () => {

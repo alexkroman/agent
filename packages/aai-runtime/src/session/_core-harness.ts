@@ -2,20 +2,15 @@
 /**
  * The `ServerSession` test harness — one sink, one transport, one core.
  *
- * Its own module because TWO suites need it (`core.test.ts` and
- * `core-history.test.ts`, split when the first crossed the 700-line test
- * cap) and `host/_test-utils.ts` sits at 493 of its own 500-line SOURCE cap, with
- * no room for sixty more. The alternative — a second copy beside the second suite
- * — is the shape this package's own testing notes call out: a harness written
- * twice is a harness that drifts, and here it stands in for the session's whole
- * inbound surface.
+ * Its own module because two suites need it (`core.test.ts` and
+ * `core-history.test.ts`), and a harness written twice drifts — here it stands in
+ * for the session's whole inbound surface.
  */
 
 import type { SessionEvent } from "@alexkroman1/aai";
-import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { vi } from "vitest";
+import { makeConfig } from "../_agent-test-utils.ts";
 import { makeEmitter } from "../_session-test-utils.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "../transports/capabilities.ts";
 import type { Transport } from "../transports/types.ts";
@@ -66,10 +61,6 @@ export function makeTransport(): Transport {
   };
 }
 
-export function makeAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
-  return { name: "test", systemPrompt: DEFAULT_SYSTEM_PROMPT, greeting: "", ...overrides };
-}
-
 export function makeCore(overrides: Partial<ServerSessionOptions> = {}): {
   core: ServerSession;
   sink: ReturnType<typeof makeSink>;
@@ -90,7 +81,7 @@ export function makeCore(overrides: Partial<ServerSessionOptions> = {}): {
     agent: "test-agent",
     client,
     emitter,
-    agentConfig: makeAgentConfig(),
+    agentConfig: makeConfig(),
     executeTool: vi.fn(async () => "ok"),
     transport,
     ...overrides,

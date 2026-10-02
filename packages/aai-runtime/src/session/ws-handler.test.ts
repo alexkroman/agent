@@ -6,13 +6,7 @@ import { describe, expect, test, vi } from "vitest";
 import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import { MockWebSocket } from "../_mock-ws.ts";
 import { makeMockCore } from "../_session-test-utils.ts";
-import {
-  defaultConfig,
-  openSocket,
-  simulateBinaryFrame,
-  simulateTextFrame,
-  waitForSessionReady,
-} from "./_ws-handler-test-utils.ts";
+import { defaultConfig, openSocket, simulateFrame } from "./_ws-handler-test-utils.ts";
 import { createSessionDirectory } from "./directory.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
@@ -189,10 +183,12 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    await waitForSessionReady(logger);
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith("Session ready", expect.anything()),
+    );
 
     const pcm = new Uint8Array([1, 2, 3, 4]);
-    simulateBinaryFrame(ws, pcm);
+    simulateFrame(ws, pcm);
 
     expect(core.onAudio).toHaveBeenCalledOnce();
     const passed = (core.onAudio as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
@@ -216,13 +212,15 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    await waitForSessionReady(logger);
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith("Session ready", expect.anything()),
+    );
 
-    simulateBinaryFrame(ws, new Uint8Array(0));
+    simulateFrame(ws, new Uint8Array(0));
     expect(core.onAudio).not.toHaveBeenCalled();
 
     // A frame with actual samples still gets through.
-    simulateBinaryFrame(ws, new Uint8Array([1, 2]));
+    simulateFrame(ws, new Uint8Array([1, 2]));
     expect(core.onAudio).toHaveBeenCalledOnce();
   });
 
@@ -238,8 +236,10 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    await waitForSessionReady(logger);
-    simulateTextFrame(ws, JSON.stringify({ type: "audio_ready" }));
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith("Session ready", expect.anything()),
+    );
+    simulateFrame(ws, JSON.stringify({ type: "audio_ready" }));
     expect(core.command).toHaveBeenCalledWith({ type: "audio_ready" });
   });
 
@@ -255,8 +255,10 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    await waitForSessionReady(logger);
-    simulateTextFrame(ws, JSON.stringify({ type: "cancel" }));
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith("Session ready", expect.anything()),
+    );
+    simulateFrame(ws, JSON.stringify({ type: "cancel" }));
     expect(core.command).toHaveBeenCalledWith({ type: "cancel" });
   });
 
@@ -272,8 +274,10 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    await waitForSessionReady(logger);
-    simulateTextFrame(ws, JSON.stringify({ type: "reset" }));
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith("Session ready", expect.anything()),
+    );
+    simulateFrame(ws, JSON.stringify({ type: "reset" }));
     expect(core.command).toHaveBeenCalledWith({ type: "reset" });
   });
 
@@ -289,9 +293,11 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    await waitForSessionReady(logger);
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith("Session ready", expect.anything()),
+    );
 
-    simulateTextFrame(ws, "this is not json{{{");
+    simulateFrame(ws, "this is not json{{{");
     expect(logger.warn).toHaveBeenCalledWith("ws: invalid JSON; dropping", expect.any(Object));
     expect(core.command).not.toHaveBeenCalledWith({ type: "audio_ready" });
     expect(ws.readyState).toBe(MockWebSocket.OPEN);
@@ -309,10 +315,12 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    await waitForSessionReady(logger);
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith("Session ready", expect.anything()),
+    );
 
     // Valid envelope but unknown type — lenientParse returns ok:false, malformed:false; must NOT warn (rolling-upgrade tolerance)
-    simulateTextFrame(ws, JSON.stringify({ type: "some_future_message_type" }));
+    simulateFrame(ws, JSON.stringify({ type: "some_future_message_type" }));
     expect(logger.warn).not.toHaveBeenCalled();
     expect(core.command).not.toHaveBeenCalledWith({ type: "audio_ready" });
     expect(ws.readyState).toBe(MockWebSocket.OPEN);
@@ -331,11 +339,13 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    simulateTextFrame(ws, JSON.stringify({ type: "cancel" }));
+    simulateFrame(ws, JSON.stringify({ type: "cancel" }));
     expect(core.command).not.toHaveBeenCalledWith({ type: "cancel" });
 
     startGate.resolve();
-    await waitForSessionReady(logger);
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith("Session ready", expect.anything()),
+    );
 
     expect(core.command).toHaveBeenCalledWith({ type: "cancel" });
   });
@@ -357,12 +367,14 @@ describe("wireSessionSocket", () => {
     // upload arriving before session.start() resolves must survive intact.
     const frames = 300;
     for (let i = 0; i < frames; i++) {
-      simulateBinaryFrame(ws, new Uint8Array(1024));
+      simulateFrame(ws, new Uint8Array(1024));
     }
     expect(logger.warn).not.toHaveBeenCalled();
 
     startGate.resolve();
-    await waitForSessionReady(logger);
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith("Session ready", expect.anything()),
+    );
     expect(core.onAudio).toHaveBeenCalledTimes(frames);
   });
 
@@ -382,17 +394,19 @@ describe("wireSessionSocket", () => {
     // Budget is MAX_WS_PAYLOAD_BYTES = 1 MiB; fill it with 256 KiB frames,
     // then one more must be dropped (and logged).
     for (let i = 0; i < 4; i++) {
-      simulateBinaryFrame(ws, new Uint8Array(256 * 1024));
+      simulateFrame(ws, new Uint8Array(256 * 1024));
     }
     expect(logger.warn).not.toHaveBeenCalled();
-    simulateBinaryFrame(ws, new Uint8Array(256 * 1024));
+    simulateFrame(ws, new Uint8Array(256 * 1024));
     expect(logger.warn).toHaveBeenCalledWith(
       "ws: pre-ready message buffer full; dropping frame",
       expect.any(Object),
     );
 
     startGate.resolve();
-    await waitForSessionReady(logger);
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith("Session ready", expect.anything()),
+    );
     expect(core.onAudio).toHaveBeenCalledTimes(4);
   });
 
@@ -408,7 +422,7 @@ describe("wireSessionSocket", () => {
       logger: silentLogger,
     });
 
-    simulateTextFrame(ws, JSON.stringify({ type: "audio_ready" }));
+    simulateFrame(ws, JSON.stringify({ type: "audio_ready" }));
 
     // "Ignored" has to be asserted against something. A frame arriving before
     // 'open' must neither conjure a session nor reach one: not-throwing is

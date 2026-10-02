@@ -20,10 +20,10 @@ describe("FileNav", () => {
     render(<FileNav paths={paths} currentFile="tools/tool_3.ts" onSelectFile={onSelectFile} />);
     const nav = screen.getByRole("navigation", { name: "Workspace files" });
     // One directory header, entries shown by basename.
-    expect(nav.textContent).toContain("tools/");
+    expect(nav).toHaveTextContent("tools/");
     const active = screen.getByRole("button", { name: "tool_3.ts" });
-    expect(active.getAttribute("aria-current")).toBe("true");
-    expect(active.getAttribute("title")).toBe("tools/tool_3.ts");
+    expect(active).toHaveAttribute("aria-current", "true");
+    expect(active).toHaveAttribute("title", "tools/tool_3.ts");
     screen.getByRole("button", { name: "tool_1.ts" }).click();
     expect(onSelectFile).toHaveBeenCalledWith("tools/tool_1.ts");
   });
@@ -32,6 +32,6 @@ describe("FileNav", () => {
     const paths = [...Array.from({ length: 8 }, (_, i) => `tools/tool_${i}.ts`), "agent.ts"].sort();
     render(<FileNav paths={paths} currentFile={null} onSelectFile={vi.fn()} />);
     const buttons = screen.getAllByRole("button");
-    expect(buttons[0]?.textContent).toBe("agent.ts");
+    expect(buttons[0]).toHaveTextContent(/^agent\.ts$/);
   });
 });

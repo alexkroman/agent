@@ -137,6 +137,6 @@ describe("the post-condition over the runtime's own suites", () => {
     // the flaky body again, which is the exactly-once claim seen from outside.
     const calls = flaky.mock.calls.length;
     await expectReplayable(world, runId);
-    expect(flaky.mock.calls.length).toBe(calls);
+    expect(flaky).toHaveBeenCalledTimes(calls);
   });
 });

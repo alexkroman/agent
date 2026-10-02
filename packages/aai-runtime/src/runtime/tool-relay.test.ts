@@ -77,7 +77,6 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
       { timeout: 4000 },
     );
     await core.stop();
-    fakes.unregister();
 
     expect(toolCallEmits(client)).toHaveLength(0);
   });
@@ -115,7 +114,6 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
       { timeout: 4000 },
     );
     await core.stop();
-    fakes.unregister();
 
     const emits = toolCallEmits(client);
     expect(emits).toHaveLength(1);

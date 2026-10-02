@@ -57,20 +57,19 @@ describe("isResumableFailure", () => {
     expect(isResumableFailure(dropped())).toBe(true);
   });
 
-  test("a COME BACK status comes back", () => {
-    for (const status of [408, 425, 429, 500, 502, 503, 504]) {
-      expect(isResumableFailure(answered(status))).toBe(true);
-    }
+  test.each([408, 425, 429, 500, 502, 503, 504])("a COME BACK status comes back (%s)", (status) => {
+    expect(isResumableFailure(answered(status))).toBe(true);
   });
 
-  test("a refusal is an answer, and will be the same answer next time", () => {
-    // 413 is the file being over the agent's cap and 400 is an offset that
-    // contradicts the declared total: re-sending either spends the whole budget
-    // to reach the sentence the person could have had immediately.
-    for (const status of [400, 401, 403, 404, 409, 413]) {
+  // 413 is the file being over the agent's cap and 400 is an offset that
+  // contradicts the declared total: re-sending either spends the whole budget
+  // to reach the sentence the person could have had immediately.
+  test.each([400, 401, 403, 404, 409, 413])(
+    "a refusal is an answer, and will be the same answer next time (%s)",
+    (status) => {
       expect(isResumableFailure(answered(status))).toBe(false);
-    }
-  });
+    },
+  );
 
   test("an abort is the caller's decision, including a person's PAUSE", () => {
     expect(isResumableFailure(aborted())).toBe(false);

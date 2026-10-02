@@ -18,48 +18,46 @@ describe("SecretStore conformance: memory", () => {
 
 describe("createVaultSecretStore", () => {
   test("get reads decrypted_secrets by name", async () => {
-    const { sql, calls } = fakeSql((query) =>
+    const sql = fakeSql((query) =>
       query.includes("decrypted_secrets") ? [{ decrypted_secret: "s3cret" }] : [],
     );
     const store = createVaultSecretStore(sql);
     expect(await store.get("agent-env:my-agent")).toBe("s3cret");
-    expect(calls).toEqual([
-      {
-        query: "select decrypted_secret from vault.decrypted_secrets where name = $1",
-        params: ["agent-env:my-agent"],
-      },
+    expect(sql.mock.calls).toEqual([
+      [
+        "select decrypted_secret from vault.decrypted_secrets where name = $1",
+        ["agent-env:my-agent"],
+      ],
     ]);
   });
 
   test("get returns null when the name is absent", async () => {
-    const { sql } = fakeSql(() => []);
+    const sql = fakeSql(() => []);
     const store = createVaultSecretStore(sql);
     expect(await store.get("missing")).toBeNull();
   });
 
   test("put creates a new secret when the name is absent", async () => {
-    const { sql, calls } = fakeSql(() => []);
+    const sql = fakeSql(() => []);
     const store = createVaultSecretStore(sql);
     await store.put("agent-env:a", '{"K":"v"}');
-    expect(calls.map((c) => c.query)).toEqual([
+    expect(sql.mock.calls.map(([query]) => query)).toEqual([
       "select id from vault.secrets where name = $1",
       "select vault.create_secret($1, $2)",
     ]);
     // create_secret takes (value, name) — in that order.
-    expect(calls[1]?.params).toEqual(['{"K":"v"}', "agent-env:a"]);
+    expect(sql.mock.calls[1]?.[1]).toEqual(['{"K":"v"}', "agent-env:a"]);
   });
 
   test("put updates by id when the name already exists", async () => {
-    const { sql, calls } = fakeSql((query) =>
-      query.startsWith("select id") ? [{ id: "uuid-123" }] : [],
-    );
+    const sql = fakeSql((query) => (query.startsWith("select id") ? [{ id: "uuid-123" }] : []));
     const store = createVaultSecretStore(sql);
     await store.put("agent-env:a", "new-value");
-    expect(calls.map((c) => c.query)).toEqual([
+    expect(sql.mock.calls.map(([query]) => query)).toEqual([
       "select id from vault.secrets where name = $1",
       "select vault.update_secret($1, $2)",
     ]);
-    expect(calls[1]?.params).toEqual(["uuid-123", "new-value"]);
+    expect(sql.mock.calls[1]?.[1]).toEqual(["uuid-123", "new-value"]);
   });
 
   /**
@@ -108,12 +106,10 @@ describe("createVaultSecretStore", () => {
   });
 
   test("delete removes the row by name", async () => {
-    const { sql, calls } = fakeSql(() => []);
+    const sql = fakeSql(() => []);
     const store = createVaultSecretStore(sql);
     await store.delete("app-db:a");
-    expect(calls).toEqual([
-      { query: "delete from vault.secrets where name = $1", params: ["app-db:a"] },
-    ]);
+    expect(sql.mock.calls).toEqual([["delete from vault.secrets where name = $1", ["app-db:a"]]]);
   });
 });
 

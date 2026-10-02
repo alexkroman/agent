@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, test } from "vitest";
 import { toStepError } from "./_step-verdict.ts";
-import { type StubStepFetch, stubStepFetch } from "./_testing-step-fetch.ts";
+
 import { callTwiml } from "./_twilio-calls.ts";
 import { publishStepEnv } from "./step-env.ts";
 import { FatalError, RetryableError } from "./step-error-classes.ts";
@@ -16,6 +16,7 @@ import {
   stepCallStatus,
   stepPlaceCall,
 } from "./step-place-call.ts";
+import { installStubStepFetch } from "./testing-vitest.ts";
 
 // Fictional values throughout: 555-01xx numbers, a made-up SID and token.
 const TOKEN = "tok-secret-9f2c";
@@ -29,15 +30,10 @@ const dial = {
   credentials,
 };
 
-let twilio: StubStepFetch | undefined;
-afterEach(() => {
-  twilio?.restore();
-  twilio = undefined;
-  publishStepEnv(undefined);
-});
+afterEach(() => publishStepEnv(undefined));
 
 async function refusedWith(status: number, body: object): Promise<PlaceCallError> {
-  twilio = stubStepFetch(() => ({ status, body }));
+  installStubStepFetch(() => ({ status, body }));
   const err = await stepPlaceCall(dial).catch((e: unknown) => e);
   if (!(err instanceof PlaceCallError))
     throw new Error(`expected a PlaceCallError, got ${String(err)}`);
@@ -46,7 +42,10 @@ async function refusedWith(status: number, body: object): Promise<PlaceCallError
 
 describe("stepPlaceCall", () => {
   test("posts the form to the account's Calls.json, streaming the answered call to /phone", async () => {
-    twilio = stubStepFetch(() => ({ status: 201, body: { sid: "CA123", status: "queued" } }));
+    const twilio = installStubStepFetch(() => ({
+      status: 201,
+      body: { sid: "CA123", status: "queued" },
+    }));
     expect(await stepPlaceCall({ ...dial, parameters: { call: "call_1" } })).toEqual({
       callId: "CA123",
     });
@@ -66,7 +65,7 @@ describe("stepPlaceCall", () => {
 
   test("reads the credentials from the step env when none are passed", async () => {
     publishStepEnv({ TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: TOKEN });
-    twilio = stubStepFetch(() => ({ status: 201, body: { sid: "CA9" } }));
+    const twilio = installStubStepFetch(() => ({ status: 201, body: { sid: "CA9" } }));
     const { credentials: _, ...fromEnv } = dial;
     await stepPlaceCall(fromEnv);
     expect(twilio.calls[0]?.headers.Authorization).toBe(`Basic ${btoa(`${SID}:${TOKEN}`)}`);
@@ -80,22 +79,21 @@ describe("stepPlaceCall", () => {
     expect(String(err)).toMatch(/TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN/);
   });
 
-  test("advice per Twilio code; retryable only for 429 and 5xx", async () => {
-    const cases: [number, number, RegExp][] = [
-      [401, 20_003, /account SID or auth token/],
-      [400, 21_211, /isn't a phone number/],
-      [400, 21_217, /isn't a phone number/],
-      [400, 21_210, /number to call from/],
-      [400, 21_212, /number to call from/],
-      [400, 21_219, /trial account/],
-      [400, 21_215, /geographic permissions/],
-    ];
-    for (const [status, code, advice] of cases) {
-      const err = await refusedWith(status, { code, message: "raw" });
-      expect(err.message).toMatch(advice);
-      expect(err).toMatchObject({ status, code, retryable: false });
-      twilio?.restore();
-    }
+  test.each<[number, number, RegExp]>([
+    [401, 20_003, /account SID or auth token/],
+    [400, 21_211, /isn't a phone number/],
+    [400, 21_217, /isn't a phone number/],
+    [400, 21_210, /number to call from/],
+    [400, 21_212, /number to call from/],
+    [400, 21_219, /trial account/],
+    [400, 21_215, /geographic permissions/],
+  ])("HTTP %i with Twilio code %i advises %s, not retryable", async (status, code, advice) => {
+    const err = await refusedWith(status, { code, message: "raw" });
+    expect(err.message).toMatch(advice);
+    expect(err).toMatchObject({ status, code, retryable: false });
+  });
+
+  test("an unknown code quotes Twilio; retryable only for 429 and 5xx", async () => {
     const other = await refusedWith(400, { code: 13_224, message: "Invalid timeout" });
     expect(other.message).toContain("Invalid timeout");
     expect((await refusedWith(429, {})).retryable).toBe(true);
@@ -112,7 +110,7 @@ describe("stepPlaceCall", () => {
   });
 
   test("a request that never got an answer is retryable, and the verdicts classify", async () => {
-    twilio = stubStepFetch(() => {
+    installStubStepFetch(() => {
       throw new Error(`socket hang up ${TOKEN}`);
     });
     const lost = await stepPlaceCall(dial).catch((e: unknown) => e);
@@ -124,12 +122,12 @@ describe("stepPlaceCall", () => {
   });
 
   test("an accepted dial with no SID is not retried, since the phone may be ringing", async () => {
-    twilio = stubStepFetch(() => ({ status: 201, body: {} }));
+    installStubStepFetch(() => ({ status: 201, body: {} }));
     await expect(stepPlaceCall(dial)).rejects.toMatchObject({ retryable: false });
   });
 
   test("refuses a malformed request before dialling", async () => {
-    twilio = stubStepFetch(() => ({ status: 201, body: { sid: "CA1" } }));
+    const twilio = installStubStepFetch(() => ({ status: 201, body: { sid: "CA1" } }));
     const bad = [
       { ...dial, agentUrl: "ftp://x.test" },
       { ...dial, agentUrl: "https://x.test/?token=1" },
@@ -143,21 +141,25 @@ describe("stepPlaceCall", () => {
       },
     ];
     for (const options of bad) {
-      await expect(stepPlaceCall(options)).rejects.toMatchObject({ retryable: false });
+      await expect(stepPlaceCall(options), JSON.stringify(options)).rejects.toMatchObject({
+        retryable: false,
+      });
     }
     expect(twilio.calls).toHaveLength(0);
   });
 
   test("Telnyx is refused by name: twilio only for now", async () => {
-    const err = await stepPlaceCall({ ...dial, carrier: "telnyx" as "twilio" }).catch((e) => e);
-    expect(err).toMatchObject({ retryable: false, carrier: "telnyx" });
-    expect(String(err)).toMatch(/Twilio only for now/);
+    await expect(stepPlaceCall({ ...dial, carrier: "telnyx" as "twilio" })).rejects.toMatchObject({
+      retryable: false,
+      carrier: "telnyx",
+      message: expect.stringMatching(/Twilio only for now/),
+    });
   });
 });
 
 describe("stepCallStatus", () => {
   test("reads the call and normalizes its status", async () => {
-    twilio = stubStepFetch(() => ({ body: { sid: "CA1", status: "no-answer" } }));
+    const twilio = installStubStepFetch(() => ({ body: { sid: "CA1", status: "no-answer" } }));
     expect(await stepCallStatus({ carrier: "twilio", callId: "CA1", credentials })).toBe(
       "no-answer",
     );
@@ -165,13 +167,12 @@ describe("stepCallStatus", () => {
       method: "GET",
       url: `https://api.twilio.com/2010-04-01/Accounts/${SID}/Calls/CA1.json`,
     });
-    twilio.restore();
-    twilio = stubStepFetch(() => ({ body: { status: "initiated" } }));
+    installStubStepFetch(() => ({ body: { status: "initiated" } }));
     expect(await stepCallStatus({ carrier: "twilio", callId: "CA1", credentials })).toBe("queued");
   });
 
   test("a status this SDK does not know is a refusal naming it", async () => {
-    twilio = stubStepFetch(() => ({ body: { status: "teleported" } }));
+    installStubStepFetch(() => ({ body: { status: "teleported" } }));
     await expect(stepCallStatus({ carrier: "twilio", callId: "CA1", credentials })).rejects.toThrow(
       /teleported/,
     );
@@ -184,8 +185,8 @@ describe("isCallOver", () => {
       ["busy", "canceled", "completed", "failed", "no-answer"].sort(),
     );
     const live: PlacedCallStatus[] = ["queued", "ringing", "in-progress"];
-    for (const status of live) expect(isCallOver(status)).toBe(false);
-    for (const status of CALL_OVER_STATUSES) expect(isCallOver(status)).toBe(true);
+    for (const status of live) expect(isCallOver(status), String(status)).toBe(false);
+    for (const status of CALL_OVER_STATUSES) expect(isCallOver(status), String(status)).toBe(true);
   });
 
   test("an unknown status is not over", () => {

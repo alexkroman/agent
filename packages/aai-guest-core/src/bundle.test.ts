@@ -228,19 +228,13 @@ describe("lazyRuntime", () => {
   });
 
   test("builds the runtime on the FIRST session, delegates, and counts live sessions", () => {
-    const started: unknown[] = [];
-    let builds = 0;
-    const state = makeState({
-      agent: makeAgent(),
-      createRuntime: factory(() => {
-        builds++;
-        return {
-          startSession: (ws) => started.push(ws),
-          shutdown: () => Promise.resolve(),
-          ...NO_HOOKS,
-        };
-      }),
-    });
+    const startSession = vi.fn();
+    const build = vi.fn(() => ({
+      startSession,
+      shutdown: () => Promise.resolve(),
+      ...NO_HOOKS,
+    }));
+    const state = makeState({ agent: makeAgent(), createRuntime: factory(build) });
     const runtime = lazyRuntime(state);
     const first = fakeSocket();
     const second = fakeSocket();
@@ -248,8 +242,8 @@ describe("lazyRuntime", () => {
     runtime.startSession(first);
     runtime.startSession(second);
 
-    expect(builds).toBe(1); // lazy AND memoized — one runtime for all sessions
-    expect(started).toEqual([first, second]);
+    expect(build).toHaveBeenCalledOnce(); // lazy AND memoized — one runtime for all sessions
+    expect(startSession.mock.calls.map(([ws]) => ws)).toEqual([first, second]);
     expect(state.activeSessions).toBe(2);
 
     first.emit("close");

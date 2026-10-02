@@ -44,7 +44,9 @@ describe("parseBearer, as this package consumes it", () => {
 describe("bearerFailureMessage", () => {
   test("says MISSING only when nothing was sent", () => {
     for (const header of [null, undefined, "", "   "]) {
-      expect(bearerFailureMessage(header)).toBe("Missing Authorization header (Bearer <API_KEY>)");
+      expect
+        .soft(bearerFailureMessage(header), JSON.stringify(header))
+        .toBe("Missing Authorization header (Bearer <API_KEY>)");
     }
   });
 
@@ -52,9 +54,9 @@ describe("bearerFailureMessage", () => {
     // The half that was wrong: a present, well-formed-looking header answered
     // "Missing Authorization header", naming a cause that is not the cause.
     for (const header of ["Basic abc123", "Bearerabc123", "Bearer", "Token abc123"]) {
-      expect(bearerFailureMessage(header)).toBe(
-        "Malformed Authorization header (expected `Bearer <API_KEY>`)",
-      );
+      expect
+        .soft(bearerFailureMessage(header), header)
+        .toBe("Malformed Authorization header (expected `Bearer <API_KEY>`)");
     }
   });
 

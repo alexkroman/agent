@@ -15,6 +15,6 @@ test("a Db is the Postgres store: every operation is a statement against it", as
   const db = recordingDb();
   const store = resolveKeyStore(db);
   await store.record("intake", "caller-7", "wrun_1");
-  expect(db.sql.some((sql) => sql.includes("create table if not exists"))).toBe(true);
+  expect(db.sql).toContainEqual(expect.stringContaining("create table if not exists"));
   expect(db.issued.some((statement) => statement.params.includes("wrun_1"))).toBe(true);
 });

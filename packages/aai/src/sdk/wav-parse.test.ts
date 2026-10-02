@@ -94,7 +94,7 @@ describe("parseWav", () => {
   test("treats a streaming encoder's unknown length as the file's length", () => {
     for (const declaredDataSize of [0, 0xff_ff_ff_ff]) {
       const head = wavFile(MONO_16K, 64_000, { declaredDataSize });
-      expect(parseWav(head, 44 + 64_000).dataEnd).toBe(44 + 64_000);
+      expect(parseWav(head, 44 + 64_000).dataEnd, String(declaredDataSize)).toBe(44 + 64_000);
     }
   });
 
@@ -126,9 +126,10 @@ describe("parseWav", () => {
     );
     // A fractional frame: found by the any-bytes property below.
     for (const bitsPerSample of [1, 4, 12]) {
-      expect(() => parseWav(wavFile({ ...MONO_16K, bitsPerSample }, 1000), 1044)).toThrow(
-        /whole-byte depths/,
-      );
+      expect(
+        () => parseWav(wavFile({ ...MONO_16K, bitsPerSample }, 1000), 1044),
+        String(bitsPerSample),
+      ).toThrow(/whole-byte depths/);
     }
   });
 

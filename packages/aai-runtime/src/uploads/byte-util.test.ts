@@ -173,8 +173,8 @@ describe("chunked", () => {
         const chunks = await collect(chunked(iterate(arriving), total));
 
         expect(sameBytes(join(chunks), SOURCE.subarray(0, total))).toBe(true);
-        expect(chunks.length).toBe(Math.ceil(total / UPLOAD_CHUNK_BYTES));
-        for (const chunk of chunks.slice(0, -1)) expect(chunk.length).toBe(UPLOAD_CHUNK_BYTES);
+        expect(chunks).toHaveLength(Math.ceil(total / UPLOAD_CHUNK_BYTES));
+        for (const chunk of chunks.slice(0, -1)) expect(chunk).toHaveLength(UPLOAD_CHUNK_BYTES);
         const last = chunks.at(-1);
         if (last) {
           expect(last.length).toBeGreaterThan(0);
@@ -295,10 +295,10 @@ describe("windows", () => {
         // The declared size, and the count the documented ramp predicts — which
         // is what catches a cut that stopped doubling even when the body is too
         // small to have a non-final window at all.
-        expect(cut.length).toBe(windowCount(total, grow));
+        expect(cut).toHaveLength(windowCount(total, grow));
         cut.forEach((window, index) => {
           const target = windowTarget(index, grow);
-          if (index < cut.length - 1) expect(window.bytes.length).toBe(target);
+          if (index < cut.length - 1) expect(window.bytes).toHaveLength(target);
           else expect(window.bytes.length).toBeLessThanOrEqual(target);
         });
 

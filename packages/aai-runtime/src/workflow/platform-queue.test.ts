@@ -15,26 +15,15 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { recordingFetch } from "../_fetch-test-utils.ts";
 import { createPlatformQueueSend, enqueueToPlatform, payloadRunId } from "./platform-queue.ts";
 
 const BASE = "https://api.test/my-agent";
 const TOKEN = "sandbox-bearer";
 
 /** Records what crossed and answers as the platform would. */
-function recordingPlatform(answer: () => Response = () => Response.json({ messageId: "wfq_1" })) {
-  const calls: { url: string; method: string; headers: Headers; body: string }[] = [];
-  const fetch: typeof globalThis.fetch = async (input, init) => {
-    const req = new Request(input, init);
-    calls.push({
-      url: req.url,
-      method: req.method,
-      headers: req.headers,
-      body: await req.text(),
-    });
-    return answer();
-  };
-  return { calls, fetch };
-}
+const recordingPlatform = (answer: () => Response = () => Response.json({ messageId: "wfq_1" })) =>
+  recordingFetch(answer);
 
 const sendWith = (answer?: () => Response) => {
   const platform = recordingPlatform(answer);
@@ -79,12 +68,12 @@ describe("payloadRunId", () => {
 
 describe("createPlatformQueueSend", () => {
   test("posts to the agent's own enqueue route with its bearer", async () => {
-    const { send, calls } = sendWith();
+    const { send, fetch, requests } = sendWith();
     await send("__wkf_step_r1", { runId: "r1" });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.method).toBe("POST");
-    expect(calls[0]?.url).toBe(`${BASE}/workflow-enqueue`);
-    expect(calls[0]?.headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(requests()[0]?.method).toBe("POST");
+    expect(requests()[0]?.url).toBe(`${BASE}/workflow-enqueue`);
+    expect(requests()[0]?.headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
   });
 
   test("tolerates a trailing slash on the base, which is operator-set", async () => {
@@ -95,19 +84,19 @@ describe("createPlatformQueueSend", () => {
       fetch: platform.fetch,
     });
     await send("__wkf_step_r1", { runId: "r1" });
-    expect(platform.calls[0]?.url).toBe(`${BASE}/workflow-enqueue`);
+    expect(platform.requests()[0]?.url).toBe(`${BASE}/workflow-enqueue`);
   });
 
   test("sends the run id the claim orders on, alongside the queue name", async () => {
-    const { send, calls } = sendWith();
+    const { send, requests } = sendWith();
     await send("__wkf_workflow_r9", { runId: "r9" });
-    const body = sentBody(calls[0]?.body);
+    const body = sentBody(requests()[0]?.body);
     expect(body.queueName).toBe("__wkf_workflow_r9");
     expect(body.runId).toBe("r9");
   });
 
   test("passes the DevKit's queue options through untouched", async () => {
-    const { send, calls } = sendWith();
+    const { send, requests } = sendWith();
     await send(
       "__wkf_step_r1",
       { runId: "r1" },
@@ -119,7 +108,7 @@ describe("createPlatformQueueSend", () => {
         delaySeconds: 90,
       },
     );
-    const body = sentBody(calls[0]?.body);
+    const body = sentBody(requests()[0]?.body);
     expect(body.deploymentId).toBe("dpl_1");
     expect(body.idempotencyKey).toBe("idem-1");
     expect(body.headers).toEqual({ "x-trace": "abc" });
@@ -153,10 +142,10 @@ describe("createPlatformQueueSend", () => {
       JSON.parse(Buffer.from(String(base64), "base64").toString(), devKitReviver);
 
     test("survives the DevKit's own reviver unchanged", async () => {
-      const { send, calls } = sendWith();
+      const { send, requests } = sendWith();
       const message = { runId: "r1", nested: { list: [1, "two", null], flag: true } };
       await send("__wkf_workflow_r1", message);
-      expect(deserialize(sentBody(calls[0]?.body).data)).toEqual(message);
+      expect(deserialize(sentBody(requests()[0]?.body).data)).toEqual(message);
     });
 
     /**
@@ -167,10 +156,10 @@ describe("createPlatformQueueSend", () => {
      * reviver leaves alone, so the run starts with garbage instead of its input.
      */
     test("carries a Uint8Array through as a Uint8Array, not an index map", async () => {
-      const { send, calls } = sendWith();
+      const { send, requests } = sendWith();
       const input = new Uint8Array([0, 1, 127, 128, 255]);
       await send("__wkf_workflow_r1", { runId: "r1", runInput: { input } });
-      const revived = deserialize(sentBody(calls[0]?.body).data) as {
+      const revived = deserialize(sentBody(requests()[0]?.body).data) as {
         runInput: { input: unknown };
       };
       expect(revived.runInput.input).toBeInstanceOf(Uint8Array);
@@ -180,9 +169,9 @@ describe("createPlatformQueueSend", () => {
     test("sends the payload as base64, because the platform column is jsonb", async () => {
       // The claim reads `payload->>'runId'`, so the envelope has to be JSON — which
       // is why the bytes cannot simply be the body.
-      const { send, calls } = sendWith();
+      const { send, requests } = sendWith();
       await send("__wkf_step_r1", { runId: "r1" });
-      const data = sentBody(calls[0]?.body).data;
+      const data = sentBody(requests()[0]?.body).data;
       expect(typeof data).toBe("string");
       expect(String(data)).toMatch(/^[A-Za-z0-9+/]+={0,2}$/);
     });
@@ -201,9 +190,9 @@ describe("createPlatformQueueSend", () => {
     test("rejects a payload with no run id instead of inventing one", async () => {
       // Per-run ordering is the one guarantee the platform's claim provides, and a
       // message ordered against nothing silently loses it.
-      const { send, calls } = sendWith();
+      const { send, fetch } = sendWith();
       await expect(send("__wkf_step_r1", { stepId: "s1" })).rejects.toThrow(/no run id/);
-      expect(calls).toEqual([]);
+      expect(fetch).not.toHaveBeenCalled();
     });
 
     test.each([

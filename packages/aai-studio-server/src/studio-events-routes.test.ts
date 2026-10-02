@@ -13,6 +13,7 @@
 import { MAX_LIVE_STREAMS_PER_SCOPE } from "aai-server/config";
 import { reservedLiveStreams, reserveLiveStream, resetLiveStreams } from "aai-server/platform";
 import { authHeaders, type TestFetch } from "aai-server/test-utils";
+import pTimeout from "p-timeout";
 import { afterEach, expect, test, vi } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
 import {
@@ -62,15 +63,21 @@ function frameReader(res: Response) {
   const reader = body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
   return {
-    async take(event: string, count: number): Promise<unknown[]> {
-      const deadline = Date.now() + 5000;
-      while (payloadsOf(buffer, event).length < count) {
-        if (Date.now() > deadline) throw new Error("Timed out waiting for SSE frames");
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += value;
-      }
-      return payloadsOf(buffer, event);
+    take(event: string, count: number): Promise<unknown[]> {
+      // Bounded as a WHOLE: a deadline checked between reads never fires
+      // while one `read()` waits on a frame that is not coming.
+      const fill = async () => {
+        while (payloadsOf(buffer, event).length < count) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += value;
+        }
+        return payloadsOf(buffer, event);
+      };
+      return pTimeout(fill(), {
+        milliseconds: 5000,
+        message: "Timed out waiting for SSE frames",
+      });
     },
     close: () => reader.cancel().catch(() => undefined),
   };
@@ -300,15 +307,9 @@ test("another caller's projects never leak into the list stream", async () => {
  */
 test("streams on one project share a fixed number of reads per change", async () => {
   const base = await createTestCombined();
-  let reads = 0;
+  const get = vi.fn<typeof base.workspaces.get>((s, p) => base.workspaces.get(s, p));
   const harness = await createTestCombined({
-    workspaces: {
-      ...base.workspaces,
-      get: (s, p) => {
-        reads += 1;
-        return base.workspaces.get(s, p);
-      },
-    },
+    workspaces: { ...base.workspaces, get },
     chats: base.chats,
     events: base.events,
   });
@@ -333,8 +334,8 @@ test("streams on one project share a fixed number of reads per change", async ()
   const readers = streams.map(frameReader);
   await Promise.all(readers.map((reader) => reader.take("project", 1)));
 
-  reads = 0;
-  // Written straight to the underlying store — so `reads` counts what the
+  get.mockClear();
+  // Written straight to the underlying store — so `get` counts what the
   // STREAMS did, not the write's own read-modify-write.
   await mutateWorkspace(base.workspaces, studioScope("key1"), "proj", (current) => ({
     ...current,
@@ -349,7 +350,7 @@ test("streams on one project share a fixed number of reads per change", async ()
   }
   // ...off two queries between the three of them, where they used to make
   // three — one each.
-  expect(reads).toBe(2);
+  expect(get).toHaveBeenCalledTimes(2);
   await Promise.all(readers.map((reader) => reader.close()));
 });
 
@@ -369,7 +370,10 @@ test("a scope at its stream cap is refused with 429, not served a stream", async
   expect(list.status).toBe(429);
 
   // Another caller is unaffected — one abusive scope must not close the studio.
-  expect((await fetch("/studio/events", { headers: authHeaders("key2") })).status).toBe(200);
+  const other = await fetch("/studio/events", { headers: authHeaders("key2") });
+  expect(other.status).toBe(200);
+  // A served stream holds its heartbeat until the reader goes away.
+  await other.body?.cancel();
 });
 
 test("closing a stream gives its slot back", async () => {

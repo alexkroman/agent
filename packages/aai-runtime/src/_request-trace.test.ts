@@ -12,7 +12,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { adoptRequestTrace, setRequestTraceAdopter } from "./_request-trace.ts";
 
 describe("the adoption seam", () => {
@@ -33,14 +33,12 @@ describe("the adoption seam", () => {
   });
 
   test("uninstalling stops delivery, so a shut-down tracer holds nothing open", () => {
-    let calls = 0;
-    setRequestTraceAdopter(() => {
-      calls += 1;
-    });
+    const adopter = vi.fn();
+    setRequestTraceAdopter(adopter);
     adoptRequestTrace({});
     setRequestTraceAdopter(undefined);
     adoptRequestTrace({});
-    expect(calls).toBe(1);
+    expect(adopter).toHaveBeenCalledTimes(1);
   });
 });
 
