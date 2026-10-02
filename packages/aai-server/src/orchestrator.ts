@@ -232,6 +232,12 @@ export type OrchestratorOpts = {
 export type Orchestrator = {
   app: Hono<HonoEnv>;
   injectWebSocket: (server: import("node:http").Server) => void;
+  /**
+   * Stop the background sweeps this orchestrator started. Production never
+   * calls it (they live for the process); a test that builds an orchestrator
+   * per case does, or each one's sweep keeps ticking for the rest of the file.
+   */
+  stopSweeps: () => void;
 };
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
@@ -361,7 +367,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // Every process-lifetime background pass this surface owns (agent-sweeps.ts).
   // Wired here for the same reason `watchAgentInvalidation` is: an entry point
   // that has to remember to start one is an entry point that will not.
-  startAgentSweeps({
+  const stopSweeps = startAgentSweeps({
     store: opts.store,
     broker: brokerOpts,
     ...omitUndefined({ adminDb: opts.adminDb }),
@@ -471,5 +477,5 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     },
   });
 
-  return { app, injectWebSocket };
+  return { app, injectWebSocket, stopSweeps };
 }
