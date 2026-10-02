@@ -53,7 +53,7 @@ import type {
 } from "@alexkroman1/aai/workflow-api";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../logger.ts";
-import { isRunWatchClosed, type RunWatch, watchRun } from "./run-reads.ts";
+import { isRunWatchClosed, type RunReader, type RunWatch, watchRun } from "./run-reads.ts";
 
 /**
  * How long a watched run may go unread.
@@ -114,7 +114,7 @@ export type RunNotifier = {
 /** Options for {@link createRunNotifier}. */
 export type RunNotifierOptions = {
   /** Read runs with the same client `ctx.workflows` is. */
-  client: Pick<WorkflowClient, "get">;
+  client: RunReader;
   announcer: SessionAnnouncer;
   logger: Logger;
   /** Poll interval. Tests pass a small one; nothing else should. */

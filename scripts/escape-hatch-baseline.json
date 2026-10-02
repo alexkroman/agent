@@ -58,9 +58,6 @@
   "as never": {
     "packages/aai-cli/src/studio.test.ts": 1,
     "packages/aai-guest/src/_test-utils.ts": 1,
-    "packages/aai-guest/src/harness.test.ts": 1,
-    "packages/aai-guest/src/harness/crash-guards.test.ts": 1,
-    "packages/aai-runtime/src/workflow/notify.test.ts": 2,
     "packages/aai-studio-client/src/chat-queue.test.ts": 1,
     "packages/aai/src/host/agent-tools.ts": 2,
     "packages/aai/src/sdk/define.test.ts": 1,
