@@ -62,9 +62,6 @@ export {
 } from "./_testing-schema.ts";
 export type { SaidLine } from "./_testing-session-speech.ts";
 export {
-  routeStepFetch,
-  type StepRoute,
-  type StepUnmatched,
   type StubStepAnswer,
   type StubStepFetch,
   type StubStepRequest,
@@ -157,10 +154,7 @@ export {
   type StubPlacedCall,
   stubPlaceCall,
 } from "./testing-place-call.ts";
-export {
-  commandedBuiltins,
-  expectPromptBuiltinsDeclared,
-} from "./testing-prompt-builtins.ts";
+export { expectPromptBuiltinsDeclared } from "./testing-prompt-builtins.ts";
 // A `ctx.workflows` that records starts and runs nothing — an eval's client.
 export {
   createRecordingWorkflows,
@@ -202,7 +196,6 @@ export {
   type WorkflowContextRecorder,
 } from "./testing-workflow-ctx.ts";
 export {
-  createProgressStream,
   createRunSnapshot,
   createStubWorkflows,
   type RunSnapshotOverrides,

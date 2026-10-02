@@ -13,7 +13,7 @@
  *
  * Publishing a `stepFetch` REPLACES any other, so a flow that also calls
  * something else over `stepFetch` (its own database, a model) routes it through
- * `otherwise` — `routeStepFetch` composes several.
+ * `otherwise`.
  *
  * @module
  */
@@ -66,7 +66,7 @@ export type StubPlaceCallOptions = {
     | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
   /**
    * Every request that is not to Twilio's Calls API. Default: throw, naming it —
-   * a request nobody set up is a finding (see `routeStepFetch`).
+   * a request nobody set up is a finding (see `stubFetchRoutes`).
    */
   otherwise?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>;
 };

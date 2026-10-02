@@ -28,9 +28,9 @@ import { type FeedItem, parseFeed } from "@alexkroman1/aai/html";
 import {
   createWorkflowContext,
   parseSchemaInput,
-  routeStepFetch,
   runWorkflow,
   schemaInputIssues,
+  stubFetchRoutes,
   stubGatewayRoute,
   type WorkflowContextRecorder,
 } from "@alexkroman1/aai-runtime/testing";
@@ -39,7 +39,7 @@ import {
   installStubStepFetch,
   installStubTranscribe,
 } from "@alexkroman1/aai-runtime/testing/vitest";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
 import {
   dailyDigestFlow,
@@ -465,25 +465,25 @@ const THREE_EPISODES = feedXml(
 /**
  * Route by URL, so one stub can answer a whole resolution chain.
  *
- * `installStubStepFetch` unpublishes on `onTestFinished`, which is why no
+ * Its `restore` is registered with `onTestFinished` here, which is why no
  * describe block below keeps a `restore` of its own — a hand-kept registry is
  * the thing that forgets, and a step fetch left published reaches the next file.
  */
 function stubRoutes(routes: Record<string, { status?: number; body?: unknown }>) {
-  return installStubStepFetch(
-    routeStepFetch(
-      Object.entries(routes).map(
-        ([fragment, answer]) =>
-          (request) =>
-            request.url.includes(fragment) ? answer : undefined,
-      ),
-      // A 404 rather than the default throw, and this one is deliberate: several
-      // cases below are ABOUT a feed the run cannot reach, and they express that
-      // by leaving it out of `routes`. Where an unrecognised request would be a
-      // finding instead, the default is what says so at the call.
-      { unmatched: "notFound" },
+  const net = stubFetchRoutes(
+    Object.entries(routes).map(
+      ([fragment, answer]) =>
+        (request) =>
+          request.url.includes(fragment) ? answer : undefined,
     ),
+    // A 404 rather than the default throw, and this one is deliberate: several
+    // cases below are ABOUT a feed the run cannot reach, and they express that
+    // by leaving it out of `routes`. Where an unrecognised request would be a
+    // finding instead, the default is what says so at the call.
+    { unmatched: "notFound" },
   );
+  onTestFinished(net.restore);
+  return net;
 }
 
 describe("discoverEpisodes", () => {
@@ -495,7 +495,7 @@ describe("discoverEpisodes", () => {
     const episodes = await discoverEpisodes("https://show.test/feed.xml", 10);
 
     // Once. Deciding it is a feed and reading it are the same download.
-    expect(stubbed.calls).toHaveLength(1);
+    expect(stubbed.hits).toHaveLength(1);
 
     expect(episodes.map((episode) => episode.title)).toEqual(["newest", "middle", "oldest"]);
     expect(episodes[0]?.podcastTitle).toBe("Example Show");
@@ -535,7 +535,7 @@ describe("discoverEpisodes", () => {
     // Verified, not trusted — the advertised URL is fetched before it is used.
     // And fetched ONCE: the verified body is carried into the reader rather
     // than the identical document being downloaded again.
-    expect(stubbed.calls.map((call) => call.url)).toEqual([
+    expect(stubbed.hits.map((call) => call.url)).toEqual([
       "https://show.test/home",
       "https://show.test/feed.xml",
     ]);

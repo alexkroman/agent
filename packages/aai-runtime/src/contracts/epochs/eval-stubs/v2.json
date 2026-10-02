@@ -1,0 +1,32 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "eval-stubs",
+  "epoch": 2,
+  "rule": 2,
+  "sha256": "75ea9e9cb4c8d0af19089547f84d86aa2c44038df1c3c03582d335f8c6b2428c",
+  "exports": [
+    "RecordingWorkflows",
+    "RecordingWorkflowsOptions",
+    "StubGatewayRoute",
+    "StubSpeech",
+    "StubSpeechOptions",
+    "StubStepDelegate",
+    "StubStepFetch",
+    "StubTranscribe",
+    "StubTranscribeOptions",
+    "StubUploads",
+    "StubUploadsOptions",
+    "createRecordingWorkflows",
+    "dialogRefusalPattern",
+    "dialogResultSchema",
+    "eventsOf",
+    "installStubSpeech",
+    "installStubStepDelegate",
+    "installStubStepFetch",
+    "installStubTranscribe",
+    "installStubUploads",
+    "isEvent",
+    "stubGatewayRoute"
+  ],
+  "rollup": "1f34c4ee15ee9dd3b7bca964dca53329d4284f4f8a2e959d1da2048edca8a363"
+}

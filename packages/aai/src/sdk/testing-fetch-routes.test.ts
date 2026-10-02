@@ -1,8 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test } from "vitest";
 import { stepFetch } from "./step-fetch.ts";
-import { type StubFetchRoutes, stubFetchRoutes } from "./testing-fetch-routes.ts";
-import { installFetchRoutes } from "./testing-vitest.ts";
+import {
+  type FetchRouteHandler,
+  type StubFetchRoutes,
+  stubFetchRoutes,
+} from "./testing-fetch-routes.ts";
+import { stubGatewayRoute } from "./testing-gateway.ts";
 
 /** A stand-in for "the real network", so a passthrough is observable offline. */
 const realCalls: string[] = [];
@@ -148,9 +152,67 @@ describe("stubFetchRoutes", () => {
   });
 });
 
-describe("installFetchRoutes", () => {
-  test("installs for this test", async () => {
-    const routed = installFetchRoutes({ "a.test": { body: { ok: true } } });
+/**
+ * Composing step fakes — what `routeStepFetch` was before it folded in here:
+ * an ordered list of legs, one publish, and an unmatched request a finding.
+ */
+describe("stubFetchRoutes as a composition of step legs", () => {
+  test("the first leg to answer wins, and later legs are not consulted", async () => {
+    const seen: string[] = [];
+    const first: FetchRouteHandler = (req) => {
+      seen.push("first");
+      return req.host === "model.test" ? { body: "m" } : undefined;
+    };
+    const second: FetchRouteHandler = () => {
+      seen.push("second");
+      return { body: "page" };
+    };
+    net = stubFetchRoutes([first, second]);
+    expect(await (await stepFetch("https://model.test/")).text()).toBe("m");
+    expect(seen).toEqual(["first"]);
+    expect(await (await stepFetch("https://page.test/")).text()).toBe("page");
+    expect(seen).toEqual(["first", "first", "second"]);
+  });
+
+  test("a model leg from stubGatewayRoute sits in the list beside a spec's own", async () => {
+    const model = stubGatewayRoute(["hello"]);
+    net = stubFetchRoutes([
+      model.route,
+      (req) => (req.host === "page.test" ? { body: "<p>hi</p>" } : undefined),
+    ]);
+    const completion = await stepFetch("https://llm.test/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
+    });
+    expect(completion.status).toBe(200);
+    expect(model.calls).toHaveLength(1);
+    expect(await (await stepFetch("https://page.test/")).text()).toBe("<p>hi</p>");
+    await expect(stepFetch("https://other.test/")).rejects.toThrow(/other\.test/);
+  });
+
+  test("a leg answering a whole Response hands it through as it is", async () => {
+    const response = new Response("raw", { status: 418 });
+    net = stubFetchRoutes([() => response]);
+    const got = await stepFetch("https://a.test/");
+    expect(got.status).toBe(418);
+    expect(await got.text()).toBe("raw");
+  });
+
+  test("`globalFetch: false` routes the step fetch only and leaves the global alone", async () => {
+    net = stubFetchRoutes([() => ({ body: "step" })], { globalFetch: false });
+    expect(globalThis.fetch).toBe(realFetch);
+    expect(await (await fetch("https://a.test/")).text()).toBe("real");
+    expect(await (await stepFetch("https://a.test/")).text()).toBe("step");
+    expect(net.hits.map((hit) => hit.via)).toEqual(["stepFetch"]);
+    net.restore();
+    expect(globalThis.fetch).toBe(realFetch);
+  });
+});
+
+describe("stubFetchRoutes with onTestFinished", () => {
+  test("restores when the test that installed it finishes", async () => {
+    const routed = stubFetchRoutes({ "a.test": { body: { ok: true } } });
+    onTestFinished(routed.restore);
     expect(await (await fetch("https://a.test/")).json()).toEqual({ ok: true });
     expect(routed.hits).toHaveLength(1);
   });

@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { createProgressStream, createRunSnapshot } from "./testing-workflows.ts";
+import { createRunSnapshot } from "./testing-workflows.ts";
 import { isTerminal } from "./workflow-run.ts";
 
 describe("createRunSnapshot", () => {
@@ -56,19 +56,5 @@ describe("createRunSnapshot", () => {
 
   test("an explicitly pending run stays pending", () => {
     expect(createRunSnapshot({ status: "pending" }).status).toBe("pending");
-  });
-});
-
-describe("createProgressStream", () => {
-  test("yields the lines and then closes, so a drain terminates", async () => {
-    const seen: unknown[] = [];
-    for await (const line of createProgressStream(["one", "two"])) seen.push(line);
-    expect(seen).toEqual(["one", "two"]);
-  });
-
-  test("an empty stream closes immediately", async () => {
-    const seen: unknown[] = [];
-    for await (const line of createProgressStream()) seen.push(line);
-    expect(seen).toEqual([]);
   });
 });

@@ -14,11 +14,18 @@
  * This is that function, written once: routes keyed by where they answer (the
  * key vocabulary `evalNetwork` uses, METHOD prefix included — one matcher,
  * `_route-keys.ts`, serves both), an unmatched
- * request that THROWS by default (the finding `routeStepFetch` argues for), and
- * every request recorded with its URL and body already parsed.
+ * request that THROWS by default, and every request recorded with its URL and
+ * body already parsed.
  *
- * `installFetchRoutes` (`@alexkroman1/aai/testing/vitest`) is the same fake,
- * restored when the test that installed it finishes.
+ * It is also the one way to COMPOSE several fakes of a step's outside world.
+ * Publishing a `stepFetch` replaces, so a flow that calls a model AND fetches a
+ * page AND polls a provider installs one fake and routes inside it: a list of
+ * handlers (the model's `stubGatewayRoute().route` first, then each leg) is
+ * that composition. Template sites that wrote it by hand disagreed on the
+ * unmatched case — some threw, some answered 404, some fell through to a second
+ * fake — which is why the default here is a throw: a 404 for a request nobody
+ * set up reads to the run as a provider that refused, the flow takes its own
+ * error path, and the spec passes having tested the wrong branch.
  *
  * @module testing-fetch-routes
  */
@@ -60,7 +67,8 @@ export type FetchRouteRequest = StubStepRequest & {
  * shorthand `stubStepFetch` takes — or `undefined` to DECLINE, leaving it to
  * the next route (in a list) or to {@link FetchRoutesOptions.unmatched}.
  *
- * A `StepRoute` (`routeStepFetch`'s leg, `stubGatewayRoute().route`) is one.
+ * `stubGatewayRoute().route` is one, so a model leg sits in a list beside a
+ * spec's own.
  *
  * @public
  */
@@ -111,6 +119,13 @@ export type FetchRoutesOptions = {
    * `fetch`. Pass `false` for a spec that installs its own step fetch.
    */
   stepFetch?: boolean | undefined;
+  /**
+   * Install the router as the global `fetch` too (the default). Pass `false`
+   * to route ONLY the step fetch and leave the global untouched — for an eval
+   * whose live mode sends the voice model's own traffic over the global while
+   * its steps stay scripted.
+   */
+  globalFetch?: boolean | undefined;
 };
 
 /**
@@ -192,8 +207,8 @@ function resolverFor(routes: FetchRouteTable | readonly FetchRouteHandler[]): Re
 
 /**
  * Install one router as the global `fetch` (and, by default, the published
- * step fetch), and return its log. Call `restore` when the test ends — or use
- * `installFetchRoutes`, which registers it for you.
+ * step fetch), and return its log. Call `restore` when the test ends — in a
+ * vitest spec, `onTestFinished(net.restore)` right after the call.
  *
  * @example
  * ```ts
@@ -210,7 +225,8 @@ function resolverFor(routes: FetchRouteTable | readonly FetchRouteHandler[]): Re
  * ```
  *
  * @param routes - A {@link FetchRouteTable}, or a list of handlers tried in
- *   order (the first that answers wins).
+ *   order (the first that answers wins, and later ones are not consulted; a
+ *   handler that throws is left alone). A catch-all leg goes LAST in a list.
  * @public
  */
 export function stubFetchRoutes(
@@ -257,7 +273,8 @@ export function stubFetchRoutes(
     return dispatch(await recordGlobal(request), "fetch", () => original(request));
   }) as typeof globalThis.fetch;
 
-  globalThis.fetch = routed;
+  const ownsGlobal = options.globalFetch ?? true;
+  if (ownsGlobal) globalThis.fetch = routed;
   const unpublishStep =
     (options.stepFetch ?? true)
       ? publishAnsweringStepFetch((recorded) =>
@@ -284,7 +301,7 @@ export function stubFetchRoutes(
     restore() {
       // Only if it is still ours: a later stub replaced it and owns putting
       // the global back.
-      if (globalThis.fetch === routed) globalThis.fetch = original;
+      if (ownsGlobal && globalThis.fetch === routed) globalThis.fetch = original;
       unpublishStep?.();
     },
   };
