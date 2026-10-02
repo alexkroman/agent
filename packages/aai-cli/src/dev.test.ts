@@ -22,25 +22,21 @@ function baseDeps(): DevDeps {
  * Run executeDev with process.on intercepted, so signal/error handlers are
  * captured instead of registered on the real test process (an actual
  * uncaughtException handler would swallow other tests' failures).
+ * `restoreMocks` puts both spies back after the test.
  */
 async function withCapturedHandlers(
   fn: (handlers: Map<string, (...args: unknown[]) => void>) => Promise<void>,
 ): Promise<void> {
   const handlers = new Map<string, (...args: unknown[]) => void>();
-  const onSpy = vi.spyOn(process, "on").mockImplementation(((
+  vi.spyOn(process, "on").mockImplementation(((
     event: string,
     handler: (...args: unknown[]) => void,
   ) => {
     handlers.set(event, handler);
     return process;
   }) as typeof process.on);
-  const exitSpy = stubProcessExit();
-  try {
-    await fn(handlers);
-  } finally {
-    onSpy.mockRestore();
-    exitSpy.mockRestore();
-  }
+  stubProcessExit();
+  await fn(handlers);
 }
 
 describe("executeDev", () => {
