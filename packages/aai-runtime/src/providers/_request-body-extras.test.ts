@@ -72,6 +72,17 @@ describe("mergeRequestBody", () => {
     await wrapped("https://x");
     expect(seen).toEqual(["[1]", "not json", undefined]);
   });
+
+  it("sends through the fetch it was given, never the global", async () => {
+    const global = vi.fn<FetchLike>(async () => {
+      throw new Error("the global fetch must not be reached");
+    });
+    vi.stubGlobal("fetch", global);
+    const { fetch, bodies } = recordingFetch();
+    await mergeRequestBody({ top_k: 5 }, fetch)("https://x", { body: JSON.stringify({}) });
+    expect(bodies).toEqual([{ top_k: 5 }]);
+    expect(global).not.toHaveBeenCalled();
+  });
 });
 
 describe("an OpenAI-compatible descriptor's providerOptions reach the request body", () => {
@@ -104,5 +115,18 @@ describe("an OpenAI-compatible descriptor's providerOptions reach the request bo
       temperature: 0.2,
       model: base.options.model,
     });
+  });
+
+  it("reads the global per CALL, so one installed after the model is built is used", async () => {
+    const descriptor = llm({ provider: "openrouter", model: "a/b" });
+    const model = resolveLlm(
+      { ...descriptor, options: { ...descriptor.options, providerOptions: { top_k: 5 } } },
+      { OPENROUTER_API_KEY: "k" },
+    );
+    const { fetch, bodies } = recordingFetch();
+    vi.stubGlobal("fetch", fetch);
+    await generateText({ model, prompt: "hi" });
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ top_k: 5 });
   });
 });
