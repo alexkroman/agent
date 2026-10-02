@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 2, rule 3, rule 5, rule 7, rule 8, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 26, rule 28, rule 31, rule 32, rule 33, rule 35, rule 36, rule 37, rule 38.",
+  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 2, rule 3, rule 5, rule 7, rule 8, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 22, rule 26, rule 28, rule 31, rule 32, rule 33, rule 35, rule 36, rule 37, rule 38.",
   "rule4_inlineTickPromise": {
     "packages/aai-runtime/src/tools/executor.ts": 1,
     "packages/aai-studio-client/src/_test-utils.ts": 1
@@ -28,18 +28,6 @@
   },
   "rule19_handRolledSleep": {
     "scripts/loadtest-runs.mjs": 1
-  },
-  "rule22_truthySpread": {
-    "packages/aai-runtime/src/providers/stt/elevenlabs.ts": 1,
-    "packages/aai-runtime/src/transports/pipeline/llm/trace.ts": 1,
-    "packages/aai-runtime/src/workflow/report.ts": 2,
-    "packages/aai-server/src/guest/forward.ts": 1,
-    "packages/aai-studio-server/src/studio-session-ensure.ts": 1,
-    "packages/aai-studio-server/src/studio-session-publish.ts": 1,
-    "packages/aai-templates/templates/retail-orders-agent/shared.ts": 1,
-    "packages/aai-templates/templates/retail-orders-agent/tools/get_order_details.ts": 1,
-    "packages/aai/src/host/builtin-tools.ts": 1,
-    "scripts/with-test-pg.mjs": 1
   },
   "rule24_toolContextField": {
     "packages/aai/src/sdk/tool-context.ts": 12

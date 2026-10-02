@@ -132,7 +132,7 @@ async function requestDeploy(
       serverUrl: target.serverUrl,
       apiKey: target.apiKey,
       ...omitUndefined({ slug: target.slug }),
-      ...(target.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
+      ...(target.allowPreviewSlug === true ? { allowPreviewSlug: true } : {}),
       skipTypecheck: target.skipTypecheck === true,
     },
     WORKSPACE_DEPLOY_TIMEOUT_MS,

@@ -174,7 +174,8 @@ export function createTurnTrace(deps: {
         ...omitUndefined({ firstPartMs, firstToolMs }),
         totalMs,
         steps,
-        ...(aborted ? { aborted: true } : {}),
+        // Only the abnormal case: `aborted: false` on every ordinary turn is noise.
+        ...(aborted === true ? { aborted: true } : {}),
         ...tools.summary(),
       });
       if (tools.unexecuted().length > 0) {

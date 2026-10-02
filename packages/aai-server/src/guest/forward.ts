@@ -378,7 +378,7 @@ export async function forwardToGuest(opts: GuestForwardOptions): Promise<Respons
       // `duplex: "half"` is REQUIRED whenever the body is a stream — undici
       // rejects the request outright rather than buffering it, which is the
       // trade we want but not one it may assume.
-      ...(body ? { body, duplex: "half" } : {}),
+      ...(body != null ? { body, duplex: "half" } : {}),
       signal: controller?.signal ?? AbortSignal.timeout(opts.timeoutMs),
     });
   } finally {

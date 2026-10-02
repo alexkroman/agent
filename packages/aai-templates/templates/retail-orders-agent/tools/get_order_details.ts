@@ -30,7 +30,7 @@ export default retailTool({
       })),
       payment_history: order.payment_history,
       ...omitUndefined({ fulfillments: order.fulfillments }),
-      ...(order.cancel_reason ? { cancel_reason: order.cancel_reason } : {}),
+      ...omitUndefined({ cancel_reason: order.cancel_reason }),
     };
   },
   summary: (_args, result) => `read ${result.order_id}`,

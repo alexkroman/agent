@@ -268,11 +268,12 @@ if (command.length === 0) {
 // verified nothing, and reporting it as a pass is how a Ctrl-C during
 // `pnpm test:pg` becomes a green branch. The wrapper still waits for the child
 // rather than dying with it — see `_run-child.mjs`.
+const stackEnv = stack?.env === undefined ? {} : { ...stack.env, AAI_REQUIRE_STACK: "1" };
 runChild(command, {
   env: {
     AAI_TEST_PG_URL: resolved.url,
     AAI_REQUIRE_PG: "1",
-    ...(stack?.env ? { ...stack.env, AAI_REQUIRE_STACK: "1" } : {}),
+    ...stackEnv,
   },
   label: "with-test-pg",
   interruptExitCode: 1,

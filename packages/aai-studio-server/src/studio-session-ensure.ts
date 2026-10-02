@@ -17,7 +17,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { errorMessage } from "@alexkroman1/aai";
+import { errorMessage, omitUndefined } from "@alexkroman1/aai";
 import type { createOwnedMap } from "@alexkroman1/aai/internal";
 import { resolveHarnessPath } from "aai-server/config";
 import { createLogger } from "aai-server/logger";
@@ -302,7 +302,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
         lastUsed: Date.now(),
         chatToken: token,
         inFlight: 0,
-        ...(preview ? { previewTarget: { ...preview, apiKey } } : {}),
+        ...omitUndefined({ previewTarget: preview && { ...preview, apiKey } }),
         release: () => false,
       };
       entry.release = sessions.claim(key, entry);

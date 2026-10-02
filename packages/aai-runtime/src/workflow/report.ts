@@ -72,7 +72,7 @@ export function createStepReporter(logger: Logger): StepReporter {
     // it sits beside.
     if (options?.log !== false) {
       logger.info(`Workflow: ${String(written)}`, {
-        ...(step ? { step: step.name, stepId: step.key, attempt: step.attempt } : {}),
+        ...omitUndefined({ step: step?.name, stepId: step?.key, attempt: step?.attempt }),
       });
     }
     try {
@@ -81,11 +81,11 @@ export function createStepReporter(logger: Logger): StepReporter {
       // Not `logger.warn`: a page that closed mid-run makes this the ordinary
       // case, and a warn per step would bury the narration it sits beside.
       logger.debug?.("Workflow progress not streamed", {
-        // Truthiness, not `omitUndefined`, and `guard-invariants` rule 22 has a
-        // baseline entry for it: an ABSENT namespace IS the default stream (see
+        // Not `omitUndefined`: an ABSENT namespace IS the default stream (see
         // `writeChunk` below), so `namespace: ""` would claim a namespace where
-        // there is none. `omitUndefined` keeps `""`; dropping it is the point.
-        ...(namespace ? { namespace } : {}),
+        // there is none. `omitUndefined` keeps `""`; dropping it is the point,
+        // which is why the `""` test is spelled out rather than left to truthiness.
+        ...(namespace !== undefined && namespace !== "" ? { namespace } : {}),
         error: errorMessage(err),
       });
     }
