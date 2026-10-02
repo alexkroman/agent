@@ -77,7 +77,9 @@ describe("network failure", () => {
 // ── Missing project config ───────────────────────────────────────────────────
 
 describe("missing project config", () => {
-  test("delete with no .aai/project.json throws", async ({ tmpDir: dir }) => {
+  // `api` logs in: without it the key check fires first, and the test passed
+  // only when an earlier test's `api` had left a key in the file's config dir.
+  test("delete with no .aai/project.json throws", async ({ api: _api, tmpDir: dir }) => {
     const { getServerInfo } = await import("./_agent.ts");
     await expect(getServerInfo(dir)).rejects.toThrow("no deployed agent");
   });

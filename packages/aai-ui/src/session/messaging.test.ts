@@ -6,7 +6,7 @@
  * State-machine and event-handling tests live in session/browser-session.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type AudioMockContext, findWorkletNode, installAudioMocks } from "../_react-test-utils.ts";
+import { type AudioMockContext, installAudioMocks } from "../_react-test-utils.ts";
 import {
   assertValidClientFrames,
   lastSocket,
@@ -54,6 +54,22 @@ describe("createBrowserSession", () => {
       audio = installAudioMocks();
     });
 
+    /**
+     * Every write into a playback worklet, across nodes. An earlier test's
+     * bring-up can still finish against this test's mocks after its session
+     * was disconnected, so the first playback node need not be ours — but a
+     * dead session receives no audio, so only ours is written to.
+     */
+    const playbackWrites = () =>
+      audio
+        .workletNodes()
+        .filter((n) => n.name === "playback-processor")
+        .flatMap((n) => n.port.posted)
+        .filter(
+          (p): p is { event: "write"; buffer: Uint8Array } =>
+            (p as { event?: string }).event === "write",
+        );
+
     it("replays chunks that arrive before voiceIO is initialized", async () => {
       core.connect();
       lastSocket?.simulateOpen();
@@ -68,17 +84,13 @@ describe("createBrowserSession", () => {
       lastSocket?.simulateMessage(chunk1.buffer);
       lastSocket?.simulateMessage(chunk2.buffer);
 
-      // initAudioCapture creates the playback worklet lazily on first enqueue.
-      // Wait until it appears, which confirms the buffer was drained.
+      // initAudioCapture creates the playback worklet lazily on first enqueue;
+      // the drain writes the buffered chunks into it in one go.
       await vi.waitFor(() => {
-        expect(audio.workletNodes().some((n) => n.name === "playback-processor")).toBe(true);
+        expect(playbackWrites().length).toBeGreaterThan(0);
       });
 
-      const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
-      const writes = playNode.port.posted.filter(
-        (p): p is { event: "write"; buffer: Uint8Array } =>
-          (p as { event?: string }).event === "write",
-      );
+      const writes = playbackWrites();
       expect(writes.length).toBe(2);
       const buffers = writes.map((w) => Array.from(w.buffer));
       expect(buffers).toEqual([
@@ -101,14 +113,9 @@ describe("createBrowserSession", () => {
       }
 
       await vi.waitFor(() => {
-        expect(audio.workletNodes().some((n) => n.name === "playback-processor")).toBe(true);
+        expect(playbackWrites().length).toBeGreaterThan(0);
       });
-      const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
-      const writes = playNode.port.posted.filter(
-        (p): p is { event: "write"; buffer: Uint8Array } =>
-          (p as { event?: string }).event === "write",
-      );
-      expect(writes).toHaveLength(MAX_PREINIT_AUDIO_CHUNKS);
+      expect(playbackWrites()).toHaveLength(MAX_PREINIT_AUDIO_CHUNKS);
     });
   });
 
@@ -581,24 +588,30 @@ describe("createBrowserSession", () => {
       socket?.simulateOpen();
       socket?.simulateMessage(makeConfig());
 
-      // Wait for initAudioCapture to wire the capture worklet's onmessage.
+      // Wait for THIS session's audio path. An earlier test's bring-up can still
+      // finish against this test's audio mocks after its session was
+      // disconnected, so the first capture node need not be ours: say every
+      // chunk into every wired node, and count only what reaches our socket.
       await vi.waitFor(() => {
-        expect(audio.workletNodes().some((n) => n.name === "capture-processor")).toBe(true);
-        expect(
-          findWorkletNode(audio.workletNodes(), "capture-processor").port.onmessage,
-        ).not.toBeNull();
+        expect(core.getSnapshot().recording).toBe(true);
       });
-      const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
+      const say = () => {
+        for (const node of audio.workletNodes()) {
+          if (node.name === "capture-processor" && node.port.onmessage) {
+            node.port.simulateMessage({ event: "chunk", buffer: new ArrayBuffer(320) });
+          }
+        }
+      };
       const binarySends = () =>
         (socket?.send.mock.calls ?? []).filter((c) => typeof c[0] !== "string");
 
       if (socket) socket.bufferedAmount = MIC_SEND_MAX_BUFFERED_BYTES + 1;
-      capNode.port.simulateMessage({ event: "chunk", buffer: new ArrayBuffer(320) });
+      say();
       expect(binarySends()).toHaveLength(0);
 
       // Once the queue drains below the threshold, frames flow again.
       if (socket) socket.bufferedAmount = 0;
-      capNode.port.simulateMessage({ event: "chunk", buffer: new ArrayBuffer(320) });
+      say();
       expect(binarySends()).toHaveLength(1);
     });
   });

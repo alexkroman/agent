@@ -54,6 +54,10 @@ export type PreConnectAudio = {
 /** Build one session's pre-connect capture holder. @internal */
 export function createPreConnectAudio(enabled: boolean): PreConnectAudio {
   let held: Promise<PreConnectCapture | null> | null = null;
+  // The attempt `held` belongs to. Released before the module loads settle, it
+  // never opens the mic: closing a capture after it opens would still light the
+  // browser's recording indicator for a session that is already over.
+  let attempt: { released: boolean } | null = null;
   return {
     begin() {
       // The prefetch runs even when opted out: it overlaps the chunk fetch
@@ -63,13 +67,17 @@ export function createPreConnectAudio(enabled: boolean): PreConnectAudio {
         /* surfaced by the audio path's bring-up */
       });
       if (!enabled || held !== null) return;
+      const current = { released: false };
+      attempt = current;
       held = Promise.all([import("../audio/index.ts"), loadAudioModules()])
         .then(([{ openPreConnectCapture }, [, captureWorklet]]) =>
-          openPreConnectCapture({
-            sampleRate: PRE_CONNECT_SAMPLE_RATE,
-            captureWorkletSrc: captureWorklet,
-            maxSeconds: PRE_CONNECT_MAX_SECONDS,
-          }),
+          current.released
+            ? null
+            : openPreConnectCapture({
+                sampleRate: PRE_CONNECT_SAMPLE_RATE,
+                captureWorkletSrc: captureWorklet,
+                maxSeconds: PRE_CONNECT_MAX_SECONDS,
+              }),
         )
         // A failure here is not reported: the bring-up at `config` opens the
         // path the ordinary way and reports its own.
@@ -78,11 +86,14 @@ export function createPreConnectAudio(enabled: boolean): PreConnectAudio {
     take() {
       const taken = held;
       held = null;
+      attempt = null;
       return taken;
     },
     release() {
       const taken = held;
       held = null;
+      if (attempt) attempt.released = true;
+      attempt = null;
       void taken?.then((capture) => capture?.close());
     },
   };

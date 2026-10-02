@@ -69,6 +69,11 @@ export const sharedConfig = {
     // CI semantics locally: an obsolete snapshot fails and a new one needs
     // `vitest -u` (the default, `new`, only reports it outside CI).
     update: "none" as const,
+    // Files and the tests within them run in a fresh random order every run, so
+    // a test that leans on a sibling's leftovers fails instead of passing by
+    // position. The run prints `Running tests with seed "N"`; reproduce a
+    // failure with `--sequence.seed=N`.
+    sequence: { shuffle: true },
     maxWorkers: workerBudget(),
   },
 };
