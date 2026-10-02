@@ -31,7 +31,7 @@
 // run is `aai-cli`'s `dev-workflow.scenario.test.ts`.
 import { stubFetchRoutes } from "@alexkroman1/aai-runtime/testing";
 import { describeWorkflowEval, stubGatewayRoute } from "@alexkroman1/aai-runtime/testing/vitest";
-import { expect, onTestFinished } from "vitest";
+import { assert, expect, onTestFinished } from "vitest";
 import agentDef, { MAX_ROUNDS, redline } from "./agent.ts";
 
 /** A brief with a word in it nothing else would produce, so the draft is checkable. */
@@ -109,12 +109,12 @@ describeWorkflowEval(agentDef, (test) => {
     expect(run.status).toBe("completed");
 
     const output = run.output;
-    if (output === undefined) expect.fail("a completed run must carry an output");
+    assert(output !== undefined, "a completed run must carry an output");
     expect(output.roundsRun).toBe(1);
     expect(output.rounds).toHaveLength(1);
 
     const last = output.rounds.at(-1);
-    if (last === undefined) expect.fail("a run of one round must record it");
+    assert(last !== undefined, "a run of one round must record it");
     // THE INVARIANT the template exists for: `shipped` is true exactly when the
     // critic said so, and a shipped round revised nothing after it. Get either
     // half wrong and the loop spends a model call it did not need, or stops one
@@ -166,7 +166,7 @@ describeWorkflowEval(agentDef, (test) => {
 
     expect(run.error).toBeUndefined();
     const output = run.output;
-    if (output === undefined) expect.fail("a completed run must carry an output");
+    assert(output !== undefined, "a completed run must carry an output");
 
     // The BUDGET stopped it, not the critic — which is the field a page reads to
     // say "this is as good as it got" rather than "this is finished".
@@ -215,7 +215,7 @@ describeWorkflowEval(agentDef, (test) => {
 
     expect(run.error).toBeUndefined();
     const output = run.output;
-    if (output === undefined) expect.fail("a completed run must carry an output");
+    assert(output !== undefined, "a completed run must carry an output");
 
     // ONE call — the critique. A desk that wrote a first draft anyway would make
     // two, and the page would show a piece nobody attached.

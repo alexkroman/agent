@@ -11,7 +11,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { UPLOAD_PART_BYTES } from "@alexkroman1/aai-runtime/internal";
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import { createTestStore, NO_CLIENT_DIR } from "./_orchestrator-test-utils.ts";
 import { fakeAdminDbOver } from "./_sql-test-utils.ts";
 import { createOrchestrator } from "./orchestrator.ts";
@@ -40,13 +40,15 @@ async function serve(
       : fakeAdminDbOver((sql) =>
           sql.includes("from aai_platform.workflow_uploads") ? [record] : [],
         );
-  const { app } = createOrchestrator({
+  const { app, stopSweeps } = createOrchestrator({
     slots: createSlotCache(),
     store,
     clientDir: NO_CLIENT_DIR,
     uploadBytes: bytes,
     ...omitUndefined({ adminDb }),
   });
+  // An `adminDb` starts the 1s queue sweep, which would outlive the case.
+  onTestFinished(stopSweeps);
   for (const slug of DEPLOYED) {
     await store.putAgent({
       slug,

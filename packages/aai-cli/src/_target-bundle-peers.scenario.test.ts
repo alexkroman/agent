@@ -44,9 +44,9 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import { bundleTargetEntry } from "./_target-bundle.ts";
-import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
+import { linkSdkNodeModules, test } from "./_test-utils.ts";
 import { VERCEL_ENTRY_SOURCE } from "./_vercel-target.ts";
 
 const PACKAGES = path.resolve(import.meta.dirname, "../..");
@@ -106,22 +106,20 @@ await startTracing();
 ${VERCEL_ENTRY_SOURCE}`;
 
 describe("a deployment target's entry, built without the optional peers", () => {
-  test("builds, and carries Vite's stub rather than a MISSING_EXPORT failure", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await projectWithoutOptionalPeers(dir);
+  test("builds, and carries Vite's stub rather than a MISSING_EXPORT failure", async ({
+    tmpDir: dir,
+  }) => {
+    await projectWithoutOptionalPeers(dir);
 
-        // The whole assertion is that this RESOLVES: the shipped failure was a
-        // build error, so a rejection here is the regression.
-        const code = await bundleTargetEntry(dir, ENTRY_ARMING_TRACING, "vercel");
+    // The whole assertion is that this RESOLVES: the shipped failure was a
+    // build error, so a rejection here is the regression.
+    const code = await bundleTargetEntry(dir, ENTRY_ARMING_TRACING, "vercel");
 
-        // LIVENESS, and the load-bearing half. Vite emits its optional-peer
-        // stub only for a peer it could not resolve, so this line is proof the
-        // fixture really is missing them — a project that quietly resolved the
-        // peers would build clean and assert nothing at all.
-        expect(code).toContain('Could not resolve "@opentelemetry/api"');
-        expect(code).toContain("export { handler as default }");
-      }),
-    );
+    // LIVENESS, and the load-bearing half. Vite emits its optional-peer
+    // stub only for a peer it could not resolve, so this line is proof the
+    // fixture really is missing them — a project that quietly resolved the
+    // peers would build clean and assert nothing at all.
+    expect(code).toContain('Could not resolve "@opentelemetry/api"');
+    expect(code).toContain("export { handler as default }");
   }, 120_000);
 });

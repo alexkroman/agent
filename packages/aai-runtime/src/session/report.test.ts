@@ -34,6 +34,7 @@ function harness(opts: { hosted?: boolean; relayed?: boolean; stopped?: boolean 
         messages: () => [],
         recordToolResult: vi.fn(),
       },
+      conversation: () => 0,
       emit,
       log,
       relayed: opts.relayed === true,

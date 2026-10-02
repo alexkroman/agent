@@ -36,7 +36,7 @@ import {
   installStubTranscribe,
   installStubUploads,
 } from "@alexkroman1/aai-runtime/testing/vitest";
-import { expect } from "vitest";
+import { assert, expect } from "vitest";
 import agentDef, { transcribe } from "./agent.ts";
 import { TRANSCRIPT_STREAM } from "./workflows/stitch.ts";
 import { SEGMENT_SECONDS } from "./workflows/wav.ts";
@@ -122,7 +122,7 @@ describeWorkflowEval(agentDef, (test) => {
     expect(run.error).toBeUndefined();
     expect(run.status).toBe("completed");
     const output = run.output;
-    if (output === undefined) expect.fail("a completed run must carry an output");
+    assert(output !== undefined, "a completed run must carry an output");
 
     // Three segments over 200 seconds at a 90-second stride, and the durations
     // are the plan: each segment carries the 2-second OVERLAP that stops a cut
@@ -203,7 +203,7 @@ describeWorkflowEval(agentDef, (test) => {
       expect(run.error).toBeUndefined();
       expect(run.status).toBe("completed");
       const output = run.output;
-      if (output === undefined) expect.fail("a completed run must carry an output");
+      assert(output !== undefined, "a completed run must carry an output");
 
       // ffmpeg ran, and the run said so before spending minutes on it.
       expect(run.reported.some((line) => line.startsWith("Converting wildfires.mp3"))).toBe(true);

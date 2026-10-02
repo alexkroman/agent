@@ -18,14 +18,12 @@ import type { CallOptions } from "@alexkroman1/aai/tools";
 import { describe, expect, test, vi } from "vitest";
 import { fetchFdaLabel, first, sectionText, toDrugInfo } from "./fda.ts";
 
-/** A fetch that answers one JSON body and records the requests it was given. */
+/** `CallOptions` whose `fetch` answers one JSON body; its `mock.calls` are the requests. */
 function stubFetch(body: unknown, status = 200) {
-  const calls: { url: string; signal: AbortSignal | null | undefined }[] = [];
-  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    calls.push({ url: String(input), signal: init?.signal });
-    return new Response(JSON.stringify(body), { status });
-  });
-  return { calls, options: { fetch } satisfies CallOptions };
+  const fetch = vi.fn<typeof globalThis.fetch>(
+    async () => new Response(JSON.stringify(body), { status }),
+  );
+  return { fetch } satisfies CallOptions;
 }
 
 const ASPIRIN = {
@@ -39,22 +37,23 @@ const ASPIRIN = {
 
 describe("fetchFdaLabel", () => {
   test("asks openFDA for the generic OR brand match and answers the first result", async () => {
-    const { calls, options } = stubFetch(ASPIRIN);
+    const options = stubFetch(ASPIRIN);
 
     const label = await fetchFdaLabel("Aspirin", options);
+    const url = String(options.fetch.mock.calls[0]?.[0]);
 
     expect(label).toMatchObject({ purpose: ["Pain reliever"] });
     // Lowercased and URL-encoded, and BOTH fields searched — a caller who says
     // "Advil" has to reach the same label as one who says "ibuprofen".
-    expect(calls[0]?.url).toContain('openfda.generic_name:"aspirin"');
-    expect(calls[0]?.url).toContain('openfda.brand_name:"aspirin"');
+    expect(url).toContain('openfda.generic_name:"aspirin"');
+    expect(url).toContain('openfda.brand_name:"aspirin"');
   });
 
   test("a second question about the same drug does not go back to the network", async () => {
     // The whole reason the cache is in this module rather than in either tool:
     // a session that looks a drug up and then checks it for interactions would
     // otherwise pay the round-trip twice.
-    const { options } = stubFetch({ results: [{ purpose: ["Anticoagulant"] }] });
+    const options = stubFetch({ results: [{ purpose: ["Anticoagulant"] }] });
 
     await fetchFdaLabel("dabigatran", options);
     await fetchFdaLabel("DABIGATRAN", options);
@@ -66,7 +65,7 @@ describe("fetchFdaLabel", () => {
     // openFDA answers 404 for a search that matches nothing, which `fetchJson`
     // reports as a `ToolFailure` rather than throwing. Caching it would pin a
     // transient outage for the rest of the call.
-    const { options } = stubFetch({ error: { code: "NOT_FOUND" } }, 404);
+    const options = stubFetch({ error: { code: "NOT_FOUND" } }, 404);
 
     expect(await fetchFdaLabel("sparkleforin", options)).toBeNull();
     expect(await fetchFdaLabel("sparkleforin", options)).toBeNull();
@@ -79,11 +78,11 @@ describe("fetchFdaLabel", () => {
     // fires one of these per drug, and a hang-up mid-check has to take them all
     // down. The signal the request sees is a COMBINED one — `fetchJson` folds
     // its own deadline in — so the claim is that aborting the caller's aborts it.
-    const { calls, options } = stubFetch({ results: [{ purpose: ["Statin"] }] });
+    const options = stubFetch({ results: [{ purpose: ["Statin"] }] });
     const controller = new AbortController();
 
     await fetchFdaLabel("rosuvastatin", { ...options, signal: controller.signal });
-    const seen = calls[0]?.signal;
+    const seen = options.fetch.mock.calls[0]?.[1]?.signal;
     expect(seen?.aborted).toBe(false);
 
     controller.abort();

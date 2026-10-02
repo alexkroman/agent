@@ -58,7 +58,7 @@ import {
   installStubUploads,
   stubGatewayRoute,
 } from "@alexkroman1/aai-runtime/testing/vitest";
-import { describe, expect, test } from "vitest";
+import { assert, describe, expect, test } from "vitest";
 import agentDef, { audit } from "./agent.ts";
 import { ANALYSIS_FORMAT, BYTES_PER_SECOND, MAX_SEGMENT_SECONDS } from "./workflows/media.ts";
 
@@ -261,7 +261,7 @@ describeWorkflowEvalWithFfmpeg(
       expect(run.error).toBeUndefined();
       expect(run.status).toBe("completed");
       const output = run.output;
-      if (output === undefined) expect.fail("a completed run must carry an output");
+      assert(output !== undefined, "a completed run must carry an output");
 
       // ffmpeg really ran: this is ffprobe's reading of the file, and the
       // duration is the normalized PCM's own byte count rather than anything a
@@ -334,7 +334,7 @@ describeWorkflowEvalWithFfmpeg(
 
       expect(run.error).toBeUndefined();
       const output = run.output;
-      if (output === undefined) expect.fail("a completed run must carry an output");
+      assert(output !== undefined, "a completed run must carry an output");
 
       expect(output.segments).toBe(2);
       // ONE blind cut — the first segment's end. The recording's own end is
@@ -372,7 +372,7 @@ describeWorkflowEvalWithFfmpeg(
 
       expect(run.error).toBeUndefined();
       const output = run.output;
-      if (output === undefined) expect.fail("a completed run must carry an output");
+      assert(output !== undefined, "a completed run must carry an output");
       // Under the cap, so no cut at all.
       expect(output.segments).toBe(1);
       expect(output.blindCuts).toBe(0);
@@ -382,7 +382,7 @@ describeWorkflowEvalWithFfmpeg(
       // file nothing can play.
       expect(uploads.writes).toHaveLength(2);
       const [pcm, mp3] = uploads.writes;
-      if (pcm === undefined || mp3 === undefined) expect.fail("both files must be written");
+      assert(pcm !== undefined && mp3 !== undefined, "both files must be written");
       // Named after the recording, and typed HONESTLY: raw samples with no
       // container, so not `audio/wav` and not `audio/L16` either.
       expect(pcm.name).toBe("quick.pcm");
@@ -445,7 +445,7 @@ describeWorkflowEvalWithFfmpeg(
         expect(run.error).toBeUndefined();
         expect(run.status).toBe("completed");
         const output = run.output;
-        if (output === undefined) expect.fail("a completed run must carry an output");
+        assert(output !== undefined, "a completed run must carry an output");
 
         // ffprobe read the container it really was, and the FILENAME a reader
         // sees is the one they uploaded rather than the converted artifact's.

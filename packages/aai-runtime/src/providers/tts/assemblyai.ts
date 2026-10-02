@@ -226,6 +226,11 @@ export function openAssemblyAITts(
       const cancels = createCancelBarrier(() => {
         if (shell.isClosed()) return;
         reconnect();
+        // A turn begun since the `Cancel` sent its flushes on the socket just
+        // dropped, and the shut window filtered their acks: none will ever
+        // arrive, so without this its `done` never fires and the pipeline's
+        // flush-wait hangs (`assemblyai-cancel-race.test.ts`).
+        turn.abandonFlushes();
       });
 
       /** Detach + politely close a socket without emitting anything for it. */

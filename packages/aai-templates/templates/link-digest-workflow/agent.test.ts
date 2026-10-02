@@ -531,15 +531,9 @@ function frame(event: string, data: unknown): string {
  * answering `client-config` differently.
  */
 function stubAgent(options: { page?: string; runs?: unknown[]; events?: string } = {}) {
-  const calls: { method: string; url: string; body?: unknown }[] = [];
-  const fetchStub = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+  const fetchStub = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
     const method = init?.method ?? "GET";
-    calls.push({
-      method,
-      url,
-      ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
-    });
     if (url === `${BASE}/client-config`) {
       return Response.json({ name: "Link Digest", page: options.page ?? "static" });
     }
@@ -558,14 +552,22 @@ function stubAgent(options: { page?: string; runs?: unknown[]; events?: string }
   });
   // `unstubGlobals` (set by `defineAgentTestConfig`) puts `fetch` back.
   vi.stubGlobal("fetch", fetchStub);
-  return calls;
+  return fetchStub;
+}
+
+/** The JSON body of the first POST the stub received. */
+function postedBody(fetchStub: ReturnType<typeof stubAgent>): unknown {
+  const post = fetchStub.mock.calls.find(([, init]) => init?.method === "POST");
+  return JSON.parse(String(post?.[1]?.body));
 }
 
 test("connect reads the agent's own description before anything else", async () => {
-  const calls = stubAgent();
+  const fetchStub = stubAgent();
   const agent = await connect({ baseUrl: BASE });
 
-  expect(calls[0]).toMatchObject({ method: "GET", url: `${BASE}/client-config` });
+  const [url, init] = fetchStub.mock.calls[0] ?? [];
+  expect(String(url)).toBe(`${BASE}/client-config`);
+  expect(init?.method ?? "GET").toBe("GET");
   // The normalized base is on the client, which is what the error messages quote
   // — a caller should never have to keep the string it was built from.
   expect(agent.baseUrl).toBe(BASE);
@@ -583,13 +585,13 @@ test("connect refuses a base URL pointing at a VOICE agent, naming it", async ()
 test("connect drops a trailing slash rather than asking for //client-config", async () => {
   // A platform routing `/:slug/client-config` answers the doubled path with a
   // 404, so the normalization is load-bearing rather than cosmetic.
-  const calls = stubAgent();
+  const fetchStub = stubAgent();
   await connect({ baseUrl: `${BASE}/` });
-  expect(calls[0]?.url).toBe(`${BASE}/client-config`);
+  expect(String(fetchStub.mock.calls[0]?.[0])).toBe(`${BASE}/client-config`);
 });
 
 test("digestLink starts the run under the caller's key and follows it to the end", async () => {
-  const calls = stubAgent();
+  const fetchStub = stubAgent();
   const agent = await connect({ baseUrl: BASE });
 
   const run = await digestLink(agent, "https://example.com/otters", "nightly-job");
@@ -602,8 +604,7 @@ test("digestLink starts the run under the caller's key and follows it to the end
   expect(run.output.headline).toBe("Otters use stones");
   expect(run.output.filedAt).toBeTruthy();
 
-  const started = calls.find((call) => call.method === "POST");
-  expect(started?.body).toEqual({
+  expect(postedBody(fetchStub)).toEqual({
     workflow: "digest",
     input: { url: "https://example.com/otters" },
     key: "nightly-job",
@@ -613,12 +614,11 @@ test("digestLink starts the run under the caller's key and follows it to the end
 test("digestLink sends NO key when the caller named none", async () => {
   // `omitUndefined` rather than `{ key: undefined }`: the request body is what
   // the agent indexes the run under, and a null key is not the same as no key.
-  const calls = stubAgent();
+  const fetchStub = stubAgent();
   const agent = await connect({ baseUrl: BASE });
   await digestLink(agent, "https://example.com/otters");
 
-  const started = calls.find((call) => call.method === "POST");
-  expect(started?.body).not.toHaveProperty("key");
+  expect(postedBody(fetchStub)).not.toHaveProperty("key");
 });
 
 test("digestLink refuses to answer for a run the agent never knew", async () => {
@@ -631,15 +631,15 @@ test("digestLink refuses to answer for a run the agent never knew", async () => 
 });
 
 test("pastDigests asks for this caller's runs by KEY, with the limit it was given", async () => {
-  const calls = stubAgent({ runs: [COMPLETED] });
+  const fetchStub = stubAgent({ runs: [COMPLETED] });
   const agent = await connect({ baseUrl: BASE });
 
   const runs = await pastDigests(agent, "nightly-job", { limit: 5 });
 
   expect(runs).toHaveLength(1);
   expect(runs[0]?.status).toBe("completed");
-  const listed = calls.find((call) => call.url.includes("/runs?"));
-  const query = new URL(listed?.url ?? "").searchParams;
+  const listed = fetchStub.mock.calls.find(([url]) => String(url).includes("/runs?"));
+  const query = new URL(String(listed?.[0])).searchParams;
   expect(query.get("workflow")).toBe("digest");
   expect(query.get("key")).toBe("nightly-job");
   expect(query.get("limit")).toBe("5");

@@ -64,6 +64,15 @@ glob, and grep cannot see them. They are ground truth, ahead of memory:
 let installedFor: { scope: string; project: string } | null = null;
 
 /**
+ * The identity of an install that holds the claim but has not finished. It
+ * pins like `installedFor` while it runs — otherwise a session-init for a
+ * DIFFERENT project arriving mid-install finds no pin, cannot take the claim,
+ * and is handed a session over the first project's tree (found by
+ * `session-fuzz.test.ts`) — yet it never outlives a failed install.
+ */
+let installingFor: { scope: string; project: string } | null = null;
+
+/**
  * A guest pins its own identity rather than trusting the caller's key.
  *
  * Every host caller is supposed to route (scope, project) correctly — the
@@ -92,6 +101,7 @@ export class SessionIdentityError extends Error {
 /** Test seam: forget the pinned identity (one harness per test process). */
 export function resetSessionIdentity(): void {
   installedFor = null;
+  installingFor = null;
 }
 
 /**
@@ -126,11 +136,9 @@ export function resetSessionIdentity(): void {
  */
 export async function initStudioSession(params: StudioSessionParams): Promise<StudioSession> {
   const identity = { scope: params.scope, project: params.project };
-  if (
-    installedFor &&
-    (installedFor.scope !== identity.scope || installedFor.project !== identity.project)
-  ) {
-    throw new SessionIdentityError(installedFor, identity);
+  const pinned = installedFor ?? installingFor;
+  if (pinned && (pinned.scope !== identity.scope || pinned.project !== identity.project)) {
+    throw new SessionIdentityError(pinned, identity);
   }
   // Under the workspaces root, NOT os.tmpdir(): builds run in-guest through
   // the aai CLI bundlers, and only this root has the toolchain's
@@ -144,6 +152,7 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
     console.error("studio session-init: a turn is in flight — keeping the live workspace");
     return session;
   }
+  installingFor = identity;
   try {
     await materializeWorkspace(dir, params.files);
     // Complete the workspace into a real project (package.json, tsconfig,
@@ -165,6 +174,7 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
     });
     if (depWarning !== null) console.error(`studio workspace dependencies: ${depWarning}`);
   } finally {
+    installingFor = null;
     release();
   }
   // Pinned only once the install actually succeeded: a rejected first install
