@@ -4,8 +4,7 @@
  * (turn events, fixture replay, frame coalescing) and
  * `assemblyai-connect-params.test.ts` (everything that goes on the connect URL).
  *
- * The split exists because the combined file crossed the 700-line test cap; the
- * seam is "what the adapter does with a live stream" against "what it dials
+ * The seam is "what the adapter does with a live stream" against "what it dials
  * with", and both halves need the same fake transcriber.
  *
  * `vi.mock` is hoisted above imports, so a suite cannot hand

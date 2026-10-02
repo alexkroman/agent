@@ -2,13 +2,9 @@
 /**
  * The `ServerSession` test harness — one sink, one transport, one core.
  *
- * Its own module because TWO suites need it (`core.test.ts` and
- * `core-history.test.ts`, split when the first crossed the 700-line test
- * cap) and `host/_test-utils.ts` sits at 493 of its own 500-line SOURCE cap, with
- * no room for sixty more. The alternative — a second copy beside the second suite
- * — is the shape this package's own testing notes call out: a harness written
- * twice is a harness that drifts, and here it stands in for the session's whole
- * inbound surface.
+ * Its own module because two suites need it (`core.test.ts` and
+ * `core-history.test.ts`), and a harness written twice drifts — here it stands in
+ * for the session's whole inbound surface.
  */
 
 import type { SessionEvent } from "@alexkroman1/aai";

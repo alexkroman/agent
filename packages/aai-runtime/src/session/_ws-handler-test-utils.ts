@@ -1,19 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Shared scaffolding for the five `ws-handler-*.test.ts` suites.
- *
- * Each of them had defined `openSocket` and `defaultConfig` itself — five
- * copies, and one had already drifted (`ws-handler-close-race.test.ts` lost
- * the `readyState` parameter, so that file could not open a CONNECTING
- * socket at all). Duplicated fixtures are the same failure the root guide
- * records for the vitest configs: they diverge silently, and the copy that
- * rots is the one nobody is looking at.
- *
- * `defaultConfig` additionally bound the sample rates to LITERALS — 16_000
- * and 24_000, written out in all five files. Those are `DEFAULT_STT_SAMPLE_RATE`
- * and `DEFAULT_TTS_SAMPLE_RATE`, so the fixture named "default" would have
- * kept its old values after a constant changed and gone on testing a config
- * the product no longer produces.
+ * Shared scaffolding for the `ws-handler-*.test.ts` suites, held once so the
+ * copies cannot diverge.
  */
 
 import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "@alexkroman1/aai/host-internal";

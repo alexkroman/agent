@@ -292,11 +292,9 @@ const FAKE_LLM_KIND = "fake-llm";
  * resolve to them, so a test can drive `createRuntime` through exactly the
  * descriptor path production uses.
  *
- * `RuntimeOptions.stt/llm/tts` used to accept a pre-resolved opener as a test
- * escape hatch. That union was why API-key routing had to sniff `opener.name`
- * and guess a registry entry — a kindless value carries no kind — which in turn
- * needed a wrong-vendor fallback. Registering a kind removes the need for any of
- * that: a fake resolves with its own env var like any other provider.
+ * A registered kind resolves with its own env var like any other provider, so
+ * `RuntimeOptions.stt/llm/tts` take descriptors only — no pre-resolved opener for
+ * API-key routing to guess a vendor for.
  *
  * Call it inside a test (or a `beforeEach`): the registry is module-level, so
  * the registration is released by `onTestFinished`. `unregister` is idempotent,
