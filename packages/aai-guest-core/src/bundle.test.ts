@@ -140,6 +140,57 @@ describe("loadBundle", () => {
     expect(state.runtime).toBeNull();
   });
 
+  // The runtime used to be torn down BEFORE the new bundle was validated, so a
+  // rejected reload left `agent`/`createRuntime`/`host` naming the OLD bundle
+  // with no runtime — and the next session quietly rebuilt the old one. Build,
+  // then swap: a failed reload changes nothing, and the old runtime keeps serving.
+  test.each([
+    ["not an object", `${FAKE_RUNTIME_EXPORT}\nexport default 42;`, "must export an object"],
+    [
+      "no __aaiCreateRuntime",
+      "export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };",
+      "__aaiCreateRuntime",
+    ],
+    [
+      "a host surface of the wrong version",
+      "export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };\n" +
+        "export const __aaiCreateRuntime = Object.assign(() => ({}), { host: { version: 999 } });",
+      "version 999",
+    ],
+  ])(
+    "a reload rejected for %s leaves the previous bundle and its runtime serving",
+    async (_, code, error) => {
+      const state = makeState();
+      await loadBundle(state, {
+        code: `${FAKE_RUNTIME_EXPORT}
+        export default { name: 'old', systemPrompt: 'p', greeting: 'g', tools: {} };`,
+        env: { WHO: "old" },
+      });
+      const shutdown = vi.fn().mockResolvedValue(undefined);
+      const liveRuntime = { startSession: () => undefined, shutdown, ...NO_HOOKS };
+      state.runtime = liveRuntime;
+      const before = {
+        agent: state.agent,
+        createRuntime: state.createRuntime,
+        host: state.host,
+        env: state.env,
+      };
+
+      await expect(loadBundle(state, { code, env: { WHO: "new" } })).rejects.toThrow(error);
+
+      expect(shutdown).not.toHaveBeenCalled();
+      expect(state.runtime).toBe(liveRuntime);
+      expect({
+        agent: state.agent,
+        createRuntime: state.createRuntime,
+        host: state.host,
+        env: state.env,
+      }).toEqual(before);
+      expect(state.agent?.name).toBe("old");
+      expect(ensureRuntime(state)).toBe(liveRuntime);
+    },
+  );
+
   // Each load wrote ~8 MB into tmpdir under a unique name and nothing ever
   // removed it, while the tool description tells the coding agent to run
   // `test_agent` after every meaningful change — in a sandbox that lives for

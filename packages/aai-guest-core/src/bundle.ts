@@ -211,12 +211,17 @@ export async function loadBundle(
   state: HarnessState,
   params: { code: string; env: Record<string, string> },
 ): Promise<{ config?: unknown }> {
-  // A repeat load replaces the loaded agent; any live runtime ran the OLD
-  // code — tear it down so the next session runs the new bundle.
-  const oldRuntime = state.runtime;
-  state.runtime = null;
-  if (oldRuntime) void oldRuntime.shutdown().catch(() => undefined);
-
+  // Build, THEN swap: nothing below touches `state` until the new bundle has
+  // imported and validated. A FAILED reload leaves the previous bundle — and its
+  // live runtime — serving, untouched: the same rule as `aai dev`'s "a failed
+  // build must leave the old server serving" (`aai-cli/_dev-restart.ts`). The
+  // studio's `test_agent` reports the failure to the coding agent, which is
+  // mid-edit; tearing down the last good bundle would leave the preview pane
+  // dead for no gain. Agent mode loads once at boot, where there is no old
+  // bundle and a throw ends the process. What must never happen is the half-swap
+  // this ordering used to allow: the runtime torn down while `agent`/
+  // `createRuntime`/`host` still named the old bundle, so the next session
+  // quietly rebuilt the OLD runtime.
   const mod = await importBundleModule(params.code);
   // `unknown`, not `as AgentDef`: this is a tenant's bundle exporting whatever
   // it likes, so the assertion has to come AFTER the check rather than instead
@@ -249,6 +254,12 @@ export async function loadBundle(
         "@alexkroman1/aai-cli",
     );
   }
+
+  // Validated: swap. A repeat load replaces the loaded agent; any live runtime
+  // ran the OLD code — tear it down so the next session runs the new bundle.
+  const oldRuntime = state.runtime;
+  state.runtime = null;
+  if (oldRuntime) void oldRuntime.shutdown().catch(() => undefined);
 
   state.agent = agent;
   state.createRuntime = createRuntime as CreateGuestRuntime;
