@@ -6,9 +6,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import { startMockRegistry } from "./_mock-registry.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { test } from "./_test-utils.ts";
 
 describe("startMockRegistry", { timeout: 60_000 }, () => {
   test("serves a local registry and points npm at it, then cleans up", async () => {
@@ -30,13 +30,11 @@ describe("startMockRegistry", { timeout: 60_000 }, () => {
     expect(existsSync(path.dirname(npmrc))).toBe(false);
   });
 
-  test("an unparseable package.json fails the start, naming the file", async () => {
-    await withTempDir(async (dir) => {
-      await mkdir(path.join(dir, "broken"));
-      await writeFile(path.join(dir, "broken", "package.json"), "{ not json");
-      await expect(startMockRegistry(dir, ["broken"])).rejects.toThrow(
-        `Invalid JSON in ${path.join(dir, "broken", "package.json")}`,
-      );
-    });
+  test("an unparseable package.json fails the start, naming the file", async ({ tmpDir: dir }) => {
+    await mkdir(path.join(dir, "broken"));
+    await writeFile(path.join(dir, "broken", "package.json"), "{ not json");
+    await expect(startMockRegistry(dir, ["broken"])).rejects.toThrow(
+      `Invalid JSON in ${path.join(dir, "broken", "package.json")}`,
+    );
   });
 });

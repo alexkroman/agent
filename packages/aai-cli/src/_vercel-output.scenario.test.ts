@@ -23,9 +23,9 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import { bundleTargetEntry } from "./_target-bundle.ts";
-import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
+import { linkSdkNodeModules, test } from "./_test-utils.ts";
 import { emitVercelOutput } from "./_vercel-output.ts";
 import { VERCEL_ENTRY_SOURCE, VERCEL_FUNCTION_DIR } from "./_vercel-target.ts";
 
@@ -70,37 +70,33 @@ async function builtProject(dir: string): Promise<void> {
 }
 
 describe("the bundled Vercel function", () => {
-  test("carries no build toolchain, and no native binding it could not bundle", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await builtProject(dir);
-        const code = await bundleTargetEntry(dir, VERCEL_ENTRY_SOURCE, "vercel");
+  test("carries no build toolchain, and no native binding it could not bundle", async ({
+    tmpDir: dir,
+  }) => {
+    await builtProject(dir);
+    const code = await bundleTargetEntry(dir, VERCEL_ENTRY_SOURCE, "vercel");
 
-        // The failure this pins is not a size regression, it is an import-time
-        // crash: a `.node` binding cannot be inlined, so reaching one at all
-        // means the bundle does not load.
-        expect(code).not.toContain("@rolldown/binding");
-        expect(code).toContain("export { handler as default }");
-        // Resolved from the module, not the process: `.aai/` was copied in
-        // beside it, and the working directory belongs to the platform.
-        expect(code).toContain("import.meta.dirname");
-      }),
-    );
+    // The failure this pins is not a size regression, it is an import-time
+    // crash: a `.node` binding cannot be inlined, so reaching one at all
+    // means the bundle does not load.
+    expect(code).not.toContain("@rolldown/binding");
+    expect(code).toContain("export { handler as default }");
+    // Resolved from the module, not the process: `.aai/` was copied in
+    // beside it, and the working directory belongs to the platform.
+    expect(code).toContain("import.meta.dirname");
   }, 120_000);
 
-  test("boots from the emitted directory and serves the HTTP surface", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await builtProject(dir);
-        await emitVercelOutput(dir);
+  test("boots from the emitted directory and serves the HTTP surface", async ({ tmpDir: dir }) => {
+    await builtProject(dir);
+    await emitVercelOutput(dir);
 
-        // Stands in for Vercel's Node launcher, which invokes the module's
-        // default export per request. Run from the function directory, since
-        // that is the layout the entry resolves `.aai/worker.mjs` against.
-        const driver = path.join(dir, VERCEL_FUNCTION_DIR, "driver.mjs");
-        await fs.writeFile(
-          driver,
-          `import http from "node:http";
+    // Stands in for Vercel's Node launcher, which invokes the module's
+    // default export per request. Run from the function directory, since
+    // that is the layout the entry resolves `.aai/worker.mjs` against.
+    const driver = path.join(dir, VERCEL_FUNCTION_DIR, "driver.mjs");
+    await fs.writeFile(
+      driver,
+      `import http from "node:http";
 const { default: handler } = await import("./index.mjs");
 const s = http.createServer(handler);
 s.listen(0, "127.0.0.1", async () => {
@@ -109,19 +105,17 @@ s.listen(0, "127.0.0.1", async () => {
   process.exit(0);
 });
 `,
-        );
-
-        const { stdout } = await run(process.execPath, [driver], {
-          cwd: path.dirname(driver),
-          // The value a Vercel project supplies. `.env.example` is what
-          // DECLARES the name; without the declaration this never reaches the
-          // agent, which is the packaging bug the unit tests cover.
-          env: { ...process.env, ASSEMBLYAI_API_KEY: "scenario-test-key" },
-        });
-
-        expect(stdout).toContain("200");
-        expect(stdout).toContain("Bundle Probe");
-      }),
     );
+
+    const { stdout } = await run(process.execPath, [driver], {
+      cwd: path.dirname(driver),
+      // The value a Vercel project supplies. `.env.example` is what
+      // DECLARES the name; without the declaration this never reaches the
+      // agent, which is the packaging bug the unit tests cover.
+      env: { ...process.env, ASSEMBLYAI_API_KEY: "scenario-test-key" },
+    });
+
+    expect(stdout).toContain("200");
+    expect(stdout).toContain("Bundle Probe");
   }, 120_000);
 });

@@ -162,6 +162,12 @@ taken by a chat turn AND by `initStudioSession`.
   the running one ends (`aai-studio-client/src/resilient-fetch.ts`).
 - **Take the claim; never read a busy flag** — holding it across preparation
   also closes the race of a turn starting on a half-materialized tree.
+- **An install in flight pins identity too** (`installingFor` in `session.ts`):
+  a session-init for another project during the FIRST install is refused, not
+  handed the live tree (`session-fuzz.test.ts`).
+- **The TURN-COMPLETE sync is the last word**: `settleTurn` drains the turn's
+  checkpointer before walking, so a stale checkpoint never lands after
+  `done: true` (`turn-settle-fuzz.test.ts`).
 
 ## A workspace's own package.json is REIFIED, not just read
 

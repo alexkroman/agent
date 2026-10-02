@@ -192,17 +192,14 @@ describe("apiRequest", () => {
     const cause = new Error("ECONNREFUSED");
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(cause);
 
-    try {
-      await apiRequest("https://api.example.com/deploy", {
+    await expect(
+      apiRequest("https://api.example.com/deploy", {
         apiKey: "my-key",
         action: "deploy",
         retryDelay: 0,
         fetch,
-      });
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      expect((err as Error).cause).toBe(cause);
-    }
+      }),
+    ).rejects.toHaveProperty("cause", cause);
   });
 });
 

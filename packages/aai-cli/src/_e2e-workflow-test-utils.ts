@@ -35,8 +35,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { sleep } from "@alexkroman1/aai/internal";
 import { ofetch } from "ofetch";
+import { vi } from "vitest";
 
 /**
  * The lab's bodies — two flows and two steps, no provider.
@@ -220,16 +220,18 @@ export async function waitForRun(
   runId: string,
   timeoutMs = 90_000,
 ): Promise<RunSnapshot> {
-  const deadline = Date.now() + timeoutMs;
-  let last: RunSnapshot | undefined;
-  while (Date.now() < deadline) {
-    last = await readRun(url, runId);
-    if (TERMINAL.has(last.status)) return last;
-    await sleep(POLL_INTERVAL_MS);
-  }
-  throw new Error(
-    `run ${runId} never reached a terminal status within ${timeoutMs}ms ` +
-      `(last: ${last?.status ?? "unread"})`,
+  return await vi.waitFor(
+    async () => {
+      const run = await readRun(url, runId);
+      if (!TERMINAL.has(run.status)) {
+        throw new Error(
+          `run ${runId} never reached a terminal status within ${timeoutMs}ms ` +
+            `(last: ${run.status})`,
+        );
+      }
+      return run;
+    },
+    { timeout: timeoutMs, interval: POLL_INTERVAL_MS },
   );
 }
 

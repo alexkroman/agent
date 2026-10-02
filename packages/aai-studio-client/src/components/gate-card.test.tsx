@@ -56,7 +56,10 @@ describe("loadFailureText", () => {
  * is which field a failure shows up in, and only the real thing can say.
  */
 function observeFailingQuery(queryFn: () => Promise<unknown>, retries: number) {
-  const client = new QueryClient();
+  // No GC timer on unsubscribe (see `renderWithClient`).
+  const client = new QueryClient({
+    defaultOptions: { queries: { gcTime: Number.POSITIVE_INFINITY } },
+  });
   const observer = new QueryObserver(client, {
     queryKey: ["gate"],
     queryFn,

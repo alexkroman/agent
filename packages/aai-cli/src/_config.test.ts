@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import path from "node:path";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, vi } from "vitest";
 import { readProjectConfig, writeProjectConfig } from "./_config.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { test } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
 /**
@@ -18,50 +18,42 @@ test("_config.ts has no way to prompt", async () => {
 });
 
 describe("readProjectConfig / writeProjectConfig", () => {
-  test("returns null when no config exists", async () => {
-    await withTempDir(async (dir) => {
-      const result = await readProjectConfig(dir);
-      expect(result).toBeNull();
-    });
+  test("returns null when no config exists", async ({ tmpDir: dir }) => {
+    const result = await readProjectConfig(dir);
+    expect(result).toBeNull();
   });
 
-  test("round-trips config data", async () => {
-    await withTempDir(async (dir) => {
-      const config = { slug: "test-slug", serverUrl: "https://example.com" };
-      await writeProjectConfig(dir, config);
-      const result = await readProjectConfig(dir);
-      expect(result).toEqual(config);
-    });
+  test("round-trips config data", async ({ tmpDir: dir }) => {
+    const config = { slug: "test-slug", serverUrl: "https://example.com" };
+    await writeProjectConfig(dir, config);
+    const result = await readProjectConfig(dir);
+    expect(result).toEqual(config);
   });
 
-  test("creates .aai directory if missing", async () => {
-    await withTempDir(async (dir) => {
-      const config = { slug: "slug", serverUrl: "https://example.com" };
-      await writeProjectConfig(dir, config);
-      const aaiDir = path.join(dir, ".aai");
-      expect(await fileExists(aaiDir)).toBe(true);
-    });
+  test("creates .aai directory if missing", async ({ tmpDir: dir }) => {
+    const config = { slug: "slug", serverUrl: "https://example.com" };
+    await writeProjectConfig(dir, config);
+    const aaiDir = path.join(dir, ".aai");
+    expect(await fileExists(aaiDir)).toBe(true);
   });
 
-  test("overwrites existing config", async () => {
-    await withTempDir(async (dir) => {
-      await writeProjectConfig(dir, { slug: "old", serverUrl: "https://old.com" });
-      await writeProjectConfig(dir, { slug: "new", serverUrl: "https://new.com" });
-      const result = await readProjectConfig(dir);
-      expect(result?.slug).toBe("new");
-    });
+  test("overwrites existing config", async ({ tmpDir: dir }) => {
+    await writeProjectConfig(dir, { slug: "old", serverUrl: "https://old.com" });
+    await writeProjectConfig(dir, { slug: "new", serverUrl: "https://new.com" });
+    const result = await readProjectConfig(dir);
+    expect(result?.slug).toBe("new");
   });
 
-  test("throws a clear error for a corrupted project.json (never null)", async () => {
-    await withTempDir(async (dir) => {
-      // Returning null here would make deploy generate a NEW slug and orphan
-      // the live deployment — corruption must be loud.
-      const fsp = await import("node:fs/promises");
-      const file = path.join(dir, ".aai", "project.json");
-      await fsp.mkdir(path.dirname(file), { recursive: true });
-      await fsp.writeFile(file, "{ definitely not json");
-      await expect(readProjectConfig(dir)).rejects.toThrow(`project.json is corrupted at ${file}`);
-    });
+  test("throws a clear error for a corrupted project.json (never null)", async ({
+    tmpDir: dir,
+  }) => {
+    // Returning null here would make deploy generate a NEW slug and orphan
+    // the live deployment — corruption must be loud.
+    const fsp = await import("node:fs/promises");
+    const file = path.join(dir, ".aai", "project.json");
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    await fsp.writeFile(file, "{ definitely not json");
+    await expect(readProjectConfig(dir)).rejects.toThrow(`project.json is corrupted at ${file}`);
   });
 });
 
@@ -111,32 +103,26 @@ describe("getConfigDir", () => {
 });
 
 describe("readGlobalConfig / writeGlobalConfig", () => {
-  test("returns empty object when no config exists", async () => {
-    await withTempDir(async (dir) => {
-      const { readGlobalConfig } = await import("./_config.ts");
-      const result = await readGlobalConfig(dir);
-      expect(result).toEqual({});
-    });
+  test("returns empty object when no config exists", async ({ tmpDir: dir }) => {
+    const { readGlobalConfig } = await import("./_config.ts");
+    const result = await readGlobalConfig(dir);
+    expect(result).toEqual({});
   });
 
-  test("round-trips config data", async () => {
-    await withTempDir(async (dir) => {
-      const { readGlobalConfig, writeGlobalConfig } = await import("./_config.ts");
-      await writeGlobalConfig(dir, { apiKey: "test-key-123" });
-      const result = await readGlobalConfig(dir);
-      expect(result).toEqual({ apiKey: "test-key-123" });
-    });
+  test("round-trips config data", async ({ tmpDir: dir }) => {
+    const { readGlobalConfig, writeGlobalConfig } = await import("./_config.ts");
+    await writeGlobalConfig(dir, { apiKey: "test-key-123" });
+    const result = await readGlobalConfig(dir);
+    expect(result).toEqual({ apiKey: "test-key-123" });
   });
 
-  test("creates config directory if missing (nested path)", async () => {
-    await withTempDir(async (dir) => {
-      const { readGlobalConfig, writeGlobalConfig } = await import("./_config.ts");
-      const nested = path.join(dir, "deep", "nested", "config");
-      await writeGlobalConfig(nested, { apiKey: "nested-key" });
-      const result = await readGlobalConfig(nested);
-      expect(result).toEqual({ apiKey: "nested-key" });
-      expect(await fileExists(nested)).toBe(true);
-    });
+  test("creates config directory if missing (nested path)", async ({ tmpDir: dir }) => {
+    const { readGlobalConfig, writeGlobalConfig } = await import("./_config.ts");
+    const nested = path.join(dir, "deep", "nested", "config");
+    await writeGlobalConfig(nested, { apiKey: "nested-key" });
+    const result = await readGlobalConfig(nested);
+    expect(result).toEqual({ apiKey: "nested-key" });
+    expect(await fileExists(nested)).toBe(true);
   });
 });
 
@@ -144,13 +130,11 @@ describe("ensureApiKey", () => {
   // Several tests below export ASSEMBLYAI_API_KEY to prove it is ignored;
   // `unstubEnvs` in vitest.shared.ts is what keeps that out of later tests.
 
-  test("returns saved key without prompting", async () => {
-    await withTempDir(async (dir) => {
-      const { writeGlobalConfig, ensureApiKey } = await import("./_config.ts");
-      await writeGlobalConfig(dir, { apiKey: "existing-key" });
-      const key = await ensureApiKey(dir);
-      expect(key).toBe("existing-key");
-    });
+  test("returns saved key without prompting", async ({ tmpDir: dir }) => {
+    const { writeGlobalConfig, ensureApiKey } = await import("./_config.ts");
+    await writeGlobalConfig(dir, { apiKey: "existing-key" });
+    const key = await ensureApiKey(dir);
+    expect(key).toBe("existing-key");
   });
 
   /**
@@ -169,29 +153,29 @@ describe("ensureApiKey", () => {
     }
   }
 
-  test("directs an unauthenticated user to `aai login` instead of prompting", async () => {
+  test("directs an unauthenticated user to `aai login` instead of prompting", async ({
+    tmpDir: dir,
+  }) => {
     // Pasting a raw key is no longer an authentication path. `aai login`
     // links a real account (and is what the studio's own onboarding sets up),
     // so a pasted key produced a half-configured CLI that could push and
     // publish while belonging to no account the user could see.
-    await withTtyStdin(() =>
-      withTempDir(async (dir) => {
-        const { ensureApiKey } = await import("./_config.ts");
-        await expect(ensureApiKey(dir)).rejects.toMatchObject({
-          code: "not_logged_in",
-          hint: expect.stringContaining("aai login"),
-        });
-      }),
-    );
-  });
-
-  test("refuses the same way with no TTY — the failure is not about prompting", async () => {
-    await withTempDir(async (dir) => {
+    await withTtyStdin(async () => {
       const { ensureApiKey } = await import("./_config.ts");
       await expect(ensureApiKey(dir)).rejects.toMatchObject({
         code: "not_logged_in",
         hint: expect.stringContaining("aai login"),
       });
+    });
+  });
+
+  test("refuses the same way with no TTY — the failure is not about prompting", async ({
+    tmpDir: dir,
+  }) => {
+    const { ensureApiKey } = await import("./_config.ts");
+    await expect(ensureApiKey(dir)).rejects.toMatchObject({
+      code: "not_logged_in",
+      hint: expect.stringContaining("aai login"),
     });
   });
 
@@ -204,28 +188,24 @@ describe("ensureApiKey", () => {
    * credential in `.env` (see `aai dev`), which is why an export must not
    * quietly become a platform identity.
    */
-  test("ignores an exported ASSEMBLYAI_API_KEY", async () => {
+  test("ignores an exported ASSEMBLYAI_API_KEY", async ({ tmpDir: dir }) => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "env-var-key");
 
-    await withTempDir(async (dir) => {
-      const { ensureApiKey } = await import("./_config.ts");
-      await expect(ensureApiKey(dir)).rejects.toMatchObject({
-        code: "not_logged_in",
-        hint: expect.stringContaining("aai login"),
-      });
+    const { ensureApiKey } = await import("./_config.ts");
+    await expect(ensureApiKey(dir)).rejects.toMatchObject({
+      code: "not_logged_in",
+      hint: expect.stringContaining("aai login"),
     });
   });
 
-  test("does not write the exported key into the global config", async () => {
+  test("does not write the exported key into the global config", async ({ tmpDir: dir }) => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "env-var-key");
 
-    await withTempDir(async (dir) => {
-      const { readGlobalConfig, ensureApiKey } = await import("./_config.ts");
-      await expect(ensureApiKey(dir)).rejects.toThrow();
-      // A refusal must leave no credential behind: a persisted env key would
-      // authenticate every LATER invocation, export or not.
-      expect((await readGlobalConfig(dir)).apiKey).toBeUndefined();
-    });
+    const { readGlobalConfig, ensureApiKey } = await import("./_config.ts");
+    await expect(ensureApiKey(dir)).rejects.toThrow();
+    // A refusal must leave no credential behind: a persisted env key would
+    // authenticate every LATER invocation, export or not.
+    expect((await readGlobalConfig(dir)).apiKey).toBeUndefined();
   });
 
   /**
@@ -237,56 +217,50 @@ describe("ensureApiKey", () => {
    * `aai dev` altogether.
    */
   describe('use: "local-session"', () => {
-    test("names .env and a shell export BEFORE `aai login`", async () => {
-      await withTempDir(async (dir) => {
-        const { ensureApiKey } = await import("./_config.ts");
-        const err = await ensureApiKey(dir, "local-session").catch((e: unknown) => e);
-        expect(err).toMatchObject({
-          code: "missing_assemblyai_key",
-          message: expect.stringContaining("ASSEMBLYAI_API_KEY"),
-        });
-        const hint = (err as { hint: string }).hint;
-        // ORDER is the assertion, not mere presence: the two remedies that need
-        // no account have to come first, or the message reads as an account
-        // requirement with a workaround appended.
-        expect(hint).toContain(".env");
-        expect(hint).toContain("export ASSEMBLYAI_API_KEY=");
-        expect(hint).toContain("aai login");
-        expect(hint.indexOf(".env")).toBeLessThan(hint.indexOf("aai login"));
-        expect(hint.indexOf("export ASSEMBLYAI_API_KEY=")).toBeLessThan(hint.indexOf("aai login"));
+    test("names .env and a shell export BEFORE `aai login`", async ({ tmpDir: dir }) => {
+      const { ensureApiKey } = await import("./_config.ts");
+      const err = await ensureApiKey(dir, "local-session").catch((e: unknown) => e);
+      expect(err).toMatchObject({
+        code: "missing_assemblyai_key",
+        message: expect.stringContaining("ASSEMBLYAI_API_KEY"),
       });
+      const hint = (err as { hint: string }).hint;
+      // ORDER is the assertion, not mere presence: the two remedies that need
+      // no account have to come first, or the message reads as an account
+      // requirement with a workaround appended.
+      expect(hint).toContain(".env");
+      expect(hint).toContain("export ASSEMBLYAI_API_KEY=");
+      expect(hint).toContain("aai login");
+      expect(hint.indexOf(".env")).toBeLessThan(hint.indexOf("aai login"));
+      expect(hint.indexOf("export ASSEMBLYAI_API_KEY=")).toBeLessThan(hint.indexOf("aai login"));
     });
 
-    test("still returns the logged-in key when there is one", async () => {
+    test("still returns the logged-in key when there is one", async ({ tmpDir: dir }) => {
       // The login key stays a FALLBACK for `aai dev` — the new message is about
       // the failure, not about removing the convenience.
-      await withTempDir(async (dir) => {
-        const { writeGlobalConfig, ensureApiKey } = await import("./_config.ts");
-        await writeGlobalConfig(dir, { apiKey: "logged-in-key" });
-        await expect(ensureApiKey(dir, "local-session")).resolves.toBe("logged-in-key");
-      });
+      const { writeGlobalConfig, ensureApiKey } = await import("./_config.ts");
+      await writeGlobalConfig(dir, { apiKey: "logged-in-key" });
+      await expect(ensureApiKey(dir, "local-session")).resolves.toBe("logged-in-key");
     });
 
-    test("the platform default is untouched — an account IS the requirement there", async () => {
+    test("the platform default is untouched — an account IS the requirement there", async ({
+      tmpDir: dir,
+    }) => {
       // `publish`/`push`/`logs`/`secret` reach the platform, so their refusal
       // must keep pointing at `aai login` and must NOT offer a local key.
-      await withTempDir(async (dir) => {
-        const { ensureApiKey } = await import("./_config.ts");
-        const err = await ensureApiKey(dir).catch((e: unknown) => e);
-        expect(err).toMatchObject({ code: "not_logged_in" });
-        expect((err as { hint: string }).hint).not.toContain(".env");
-      });
+      const { ensureApiKey } = await import("./_config.ts");
+      const err = await ensureApiKey(dir).catch((e: unknown) => e);
+      expect(err).toMatchObject({ code: "not_logged_in" });
+      expect((err as { hint: string }).hint).not.toContain(".env");
     });
   });
 
-  test("the saved login key wins even with a different key exported", async () => {
+  test("the saved login key wins even with a different key exported", async ({ tmpDir: dir }) => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "env-var-key");
 
-    await withTempDir(async (dir) => {
-      const { writeGlobalConfig, ensureApiKey } = await import("./_config.ts");
-      await writeGlobalConfig(dir, { apiKey: "logged-in-key" });
-      await expect(ensureApiKey(dir)).resolves.toBe("logged-in-key");
-    });
+    const { writeGlobalConfig, ensureApiKey } = await import("./_config.ts");
+    await writeGlobalConfig(dir, { apiKey: "logged-in-key" });
+    await expect(ensureApiKey(dir)).resolves.toBe("logged-in-key");
   });
 });
 
@@ -303,146 +277,135 @@ describe("ensureApiKey", () => {
  * login that reported success.
  */
 describe("global config concurrent updates", () => {
-  test("concurrent approveServer calls do not lose approvals", async () => {
-    await withTempDir(async (dir) => {
-      const { approveServer, readGlobalConfig, writeGlobalConfig } = await import("./_config.ts");
+  test("concurrent approveServer calls do not lose approvals", async ({ tmpDir: dir }) => {
+    const { approveServer, readGlobalConfig, writeGlobalConfig } = await import("./_config.ts");
+    await writeGlobalConfig(dir, { approvedServers: [] });
+
+    const origins = Array.from({ length: 8 }, (_, i) => `http://127.0.0.1:900${i}`);
+    await Promise.all(origins.map((origin) => approveServer(origin, dir)));
+
+    const approved = (await readGlobalConfig(dir)).approvedServers ?? [];
+    expect([...approved].sort()).toEqual([...origins].sort());
+  });
+
+  test("a concurrent approveServer cannot discard the login key", async ({ tmpDir: dir }) => {
+    const { approveServer, readGlobalConfig, updateGlobalConfig, writeGlobalConfig } = await import(
+      "./_config.ts"
+    );
+
+    // Repeat: the lost update depends on interleaving, so a single pass can
+    // pass by luck even with the serialization removed.
+    for (let i = 0; i < 20; i++) {
       await writeGlobalConfig(dir, { approvedServers: [] });
-
-      const origins = Array.from({ length: 8 }, (_, i) => `http://127.0.0.1:900${i}`);
-      await Promise.all(origins.map((origin) => approveServer(origin, dir)));
-
-      const approved = (await readGlobalConfig(dir)).approvedServers ?? [];
-      expect([...approved].sort()).toEqual([...origins].sort());
-    });
+      await Promise.all([
+        approveServer(`http://127.0.0.1:9${String(i).padStart(3, "0")}`, dir),
+        updateGlobalConfig((config) => ({ ...config, apiKey: "key-from-login" }), dir),
+      ]);
+      const after = await readGlobalConfig(dir);
+      expect(after.apiKey).toBe("key-from-login");
+      expect(after.approvedServers).toHaveLength(1);
+    }
   });
 
-  test("a concurrent approveServer cannot discard the login key", async () => {
-    await withTempDir(async (dir) => {
-      const { approveServer, readGlobalConfig, updateGlobalConfig, writeGlobalConfig } =
-        await import("./_config.ts");
-
-      // Repeat: the lost update depends on interleaving, so a single pass can
-      // pass by luck even with the serialization removed.
-      for (let i = 0; i < 20; i++) {
-        await writeGlobalConfig(dir, { approvedServers: [] });
-        await Promise.all([
-          approveServer(`http://127.0.0.1:9${String(i).padStart(3, "0")}`, dir),
-          updateGlobalConfig((config) => ({ ...config, apiKey: "key-from-login" }), dir),
-        ]);
-        const after = await readGlobalConfig(dir);
-        expect(after.apiKey).toBe("key-from-login");
-        expect(after.approvedServers).toHaveLength(1);
-      }
-    });
+  test("leaves no lock file behind", async ({ tmpDir: dir }) => {
+    const { approveServer } = await import("./_config.ts");
+    await approveServer("https://example.com", dir);
+    expect(await fileExists(path.join(dir, "config.lock"))).toBe(false);
   });
 
-  test("leaves no lock file behind", async () => {
-    await withTempDir(async (dir) => {
-      const { approveServer } = await import("./_config.ts");
-      await approveServer("https://example.com", dir);
-      expect(await fileExists(path.join(dir, "config.lock"))).toBe(false);
-    });
+  test("a stale lock file is broken rather than blocking forever", async ({ tmpDir: dir }) => {
+    const { approveServer, readGlobalConfig } = await import("./_config.ts");
+    const fs = await import("node:fs/promises");
+    const lockPath = path.join(dir, "config.lock");
+    await fs.writeFile(lockPath, "");
+    // Backdate well past the staleness window — a process killed mid-update
+    // must not make every later config write take the unlocked path forever.
+    const old = new Date(Date.now() - 60_000);
+    await fs.utimes(lockPath, old, old);
+
+    await approveServer("https://example.com", dir);
+    expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
   });
 
-  test("a stale lock file is broken rather than blocking forever", async () => {
-    await withTempDir(async (dir) => {
-      const { approveServer, readGlobalConfig } = await import("./_config.ts");
-      const fs = await import("node:fs/promises");
-      const lockPath = path.join(dir, "config.lock");
-      await fs.writeFile(lockPath, "");
-      // Backdate well past the staleness window — a process killed mid-update
-      // must not make every later config write take the unlocked path forever.
-      const old = new Date(Date.now() - 60_000);
-      await fs.utimes(lockPath, old, old);
+  test("an UNBREAKABLE stale lock proceeds unlocked instead of spinning forever", async ({
+    tmpDir: dir,
+  }) => {
+    const { approveServer, readGlobalConfig } = await import("./_config.ts");
+    const fs = await import("node:fs/promises");
+    const lockPath = path.join(dir, "config.lock");
+    // A DIRECTORY at the lock path. `fs.rm`'s `force` masks only ENOENT and
+    // there is no `recursive`, so breaking it throws every time — and the
+    // throw used to be swallowed by a `continue` that restarted the loop
+    // ABOVE the deadline check. `aai login` then spun in a tight async loop
+    // with no output and no exit; this test hung rather than failing.
+    await fs.mkdir(lockPath);
+    const old = new Date(Date.now() - 60_000);
+    await fs.utimes(lockPath, old, old);
 
-      await approveServer("https://example.com", dir);
-      expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
-    });
+    const started = Date.now();
+    await approveServer("https://example.com", dir);
+
+    // Bounded acquisition, then the documented degrade-to-unlocked path.
+    // An unbreakable lock is detected on the FIRST turn, so this must come
+    // back well inside the 2s acquisition budget — the old `< 10_000` bound
+    // could not tell "returned at once" from "spun until the vitest timeout
+    // was nearly up", which is the bug the test exists for.
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
+    // The directory is not ours, so teardown must leave it alone.
+    expect((await fs.stat(lockPath)).isDirectory()).toBe(true);
   });
 
-  test("an UNBREAKABLE stale lock proceeds unlocked instead of spinning forever", async () => {
-    await withTempDir(async (dir) => {
-      const { approveServer, readGlobalConfig } = await import("./_config.ts");
-      const fs = await import("node:fs/promises");
-      const lockPath = path.join(dir, "config.lock");
-      // A DIRECTORY at the lock path. `fs.rm`'s `force` masks only ENOENT and
-      // there is no `recursive`, so breaking it throws every time — and the
-      // throw used to be swallowed by a `continue` that restarted the loop
-      // ABOVE the deadline check. `aai login` then spun in a tight async loop
-      // with no output and no exit; this test hung rather than failing.
-      await fs.mkdir(lockPath);
-      const old = new Date(Date.now() - 60_000);
-      await fs.utimes(lockPath, old, old);
+  test("a lock held by someone else is waited out, then the update still lands", async ({
+    tmpDir: dir,
+  }) => {
+    const { approveServer, readGlobalConfig } = await import("./_config.ts");
+    const fs = await import("node:fs/promises");
+    const lockPath = path.join(dir, "config.lock");
+    // Fresh, so not stale: acquisition waits out its 2s budget and then
+    // proceeds unlocked rather than throwing — failing `aai login` over a
+    // stuck lockfile would be worse than the lost update.
+    await fs.writeFile(lockPath, "");
 
-      const started = Date.now();
-      await approveServer("https://example.com", dir);
+    const started = Date.now();
+    await approveServer("https://example.com", dir);
 
-      // Bounded acquisition, then the documented degrade-to-unlocked path.
-      // An unbreakable lock is detected on the FIRST turn, so this must come
-      // back well inside the 2s acquisition budget — the old `< 10_000` bound
-      // could not tell "returned at once" from "spun until the vitest timeout
-      // was nearly up", which is the bug the test exists for.
-      expect(Date.now() - started).toBeLessThan(1000);
-      expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
-      // The directory is not ours, so teardown must leave it alone.
-      expect((await fs.stat(lockPath)).isDirectory()).toBe(true);
-    });
-  });
-
-  test("a lock held by someone else is waited out, then the update still lands", async () => {
-    await withTempDir(async (dir) => {
-      const { approveServer, readGlobalConfig } = await import("./_config.ts");
-      const fs = await import("node:fs/promises");
-      const lockPath = path.join(dir, "config.lock");
-      // Fresh, so not stale: acquisition waits out its 2s budget and then
-      // proceeds unlocked rather than throwing — failing `aai login` over a
-      // stuck lockfile would be worse than the lost update.
-      await fs.writeFile(lockPath, "");
-
-      const started = Date.now();
-      await approveServer("https://example.com", dir);
-
-      // The behaviour is "wait out the 2s budget, THEN proceed unlocked", so
-      // the bound is two-sided: `< 10_000` alone passed for an implementation
-      // that gave up instantly as well as for one that nearly hit the runner's
-      // 5s timeout. This is the one test in the file that deliberately spends
-      // real wall clock; the budget is a module constant with no injection
-      // seam, so shortening it would mean a production knob that exists only
-      // for a test.
-      const elapsed = Date.now() - started;
-      expect(elapsed).toBeGreaterThanOrEqual(1500);
-      expect(elapsed).toBeLessThan(4000);
-      expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
-    });
+    // The behaviour is "wait out the 2s budget, THEN proceed unlocked", so
+    // the bound is two-sided: `< 10_000` alone passed for an implementation
+    // that gave up instantly as well as for one that nearly hit the runner's
+    // 5s timeout. This is the one test in the file that deliberately spends
+    // real wall clock; the budget is a module constant with no injection
+    // seam, so shortening it would mean a production knob that exists only
+    // for a test.
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(1500);
+    expect(elapsed).toBeLessThan(4000);
+    expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
   });
 });
 
 describe("updateGlobalConfig", () => {
-  test("an unchanged return skips the write", async () => {
-    await withTempDir(async (dir) => {
-      const { updateGlobalConfig, writeGlobalConfig } = await import("./_config.ts");
-      const file = path.join(dir, "config.json");
-      await writeGlobalConfig(dir, { apiKey: "k" });
-      const { stat } = await import("node:fs/promises");
-      const mtimeBefore = (await stat(file)).mtimeMs;
+  test("an unchanged return skips the write", async ({ tmpDir: dir }) => {
+    const { updateGlobalConfig, writeGlobalConfig } = await import("./_config.ts");
+    const file = path.join(dir, "config.json");
+    await writeGlobalConfig(dir, { apiKey: "k" });
+    const { stat } = await import("node:fs/promises");
+    const mtimeBefore = (await stat(file)).mtimeMs;
 
-      // Identity return = "nothing to do": most `--server` invocations pass an
-      // already-approved origin, and rewriting the file there is pure churn.
-      await updateGlobalConfig((config) => config, dir);
-      expect((await stat(file)).mtimeMs).toBe(mtimeBefore);
-    });
+    // Identity return = "nothing to do": most `--server` invocations pass an
+    // already-approved origin, and rewriting the file there is pure churn.
+    await updateGlobalConfig((config) => config, dir);
+    expect((await stat(file)).mtimeMs).toBe(mtimeBefore);
   });
 
-  test("merges against contents read inside the lock", async () => {
-    await withTempDir(async (dir) => {
-      const { updateGlobalConfig, readGlobalConfig, writeGlobalConfig } = await import(
-        "./_config.ts"
-      );
-      await writeGlobalConfig(dir, { approvedServers: ["https://a.example"] });
-      await updateGlobalConfig((config) => ({ ...config, apiKey: "k" }), dir);
+  test("merges against contents read inside the lock", async ({ tmpDir: dir }) => {
+    const { updateGlobalConfig, readGlobalConfig, writeGlobalConfig } = await import(
+      "./_config.ts"
+    );
+    await writeGlobalConfig(dir, { approvedServers: ["https://a.example"] });
+    await updateGlobalConfig((config) => ({ ...config, apiKey: "k" }), dir);
 
-      const after = await readGlobalConfig(dir);
-      expect(after).toEqual({ approvedServers: ["https://a.example"], apiKey: "k" });
-    });
+    const after = await readGlobalConfig(dir);
+    expect(after).toEqual({ approvedServers: ["https://a.example"], apiKey: "k" });
   });
 });

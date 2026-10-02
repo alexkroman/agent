@@ -5,9 +5,9 @@
 
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import { CliError } from "./_output.ts";
-import { createFakeUi, withTempDir } from "./_test-utils.ts";
+import { createFakeUi, test } from "./_test-utils.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 
 describe("assertTypechecks", () => {
@@ -18,26 +18,26 @@ describe("assertTypechecks", () => {
     expect(ui.all()).toEqual([]);
   });
 
-  test("announces the step, and passes a project with no tsconfig.json", async () => {
+  test("announces the step, and passes a project with no tsconfig.json", async ({
+    tmpDir: dir,
+  }) => {
     const ui = createFakeUi();
-    await withTempDir(async (dir) => {
-      await expect(assertTypechecks(dir, { ui })).resolves.toBeUndefined();
-    });
+    await expect(assertTypechecks(dir, { ui })).resolves.toBeUndefined();
     expect(ui.said("step")).toEqual(["Type checking…"]);
   });
 
-  test("a failed check is a typecheck_failed CliError naming the opt-out", async () => {
+  test("a failed check is a typecheck_failed CliError naming the opt-out", async ({
+    tmpDir: dir,
+  }) => {
     // A tsconfig with no TypeScript installed beside it fails without
     // spawning a compiler (see typecheck.test.ts for why that is loud).
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, "tsconfig.json"), "{}");
-      const error = await assertTypechecks(dir, { ui: createFakeUi() }).catch((err) => err);
-      expect(error).toBeInstanceOf(CliError);
-      expect(error).toMatchObject({
-        code: "typecheck_failed",
-        hint: expect.stringContaining("--skip-typecheck"),
-      });
-      expect(String(error.message)).toContain("TypeScript is not installed");
+    await writeFile(path.join(dir, "tsconfig.json"), "{}");
+    const error = await assertTypechecks(dir, { ui: createFakeUi() }).catch((err) => err);
+    expect(error).toBeInstanceOf(CliError);
+    expect(error).toMatchObject({
+      code: "typecheck_failed",
+      hint: expect.stringContaining("--skip-typecheck"),
     });
+    expect(String(error.message)).toContain("TypeScript is not installed");
   });
 });

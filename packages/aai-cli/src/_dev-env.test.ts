@@ -17,11 +17,11 @@
  * cases below assert the answer really reaches chokidar.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, vi } from "vitest";
 import { createDevLogger, devWatchEnabled } from "./_dev-env.ts";
 import { startDevServer } from "./_dev-server.ts";
 import { makeDevSeams, writeProject } from "./_dev-server-test-utils.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { test } from "./_test-utils.ts";
 
 // No module mocks: `startDevServer` is handed fake seams (backend, watcher,
 // terminal, …) and everything else is real — see `_dev-server-test-utils.ts`.
@@ -38,35 +38,29 @@ beforeEach(() => {
 });
 
 describe("dev server bind host", () => {
-  test("binds loopback by default (no host argument)", async () => {
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
-      expect(fake.listen).toHaveBeenCalledWith(3000, undefined);
-      await cleanup();
-    });
+  test("binds loopback by default (no host argument)", async ({ tmpDir: dir }) => {
+    await writeProject(dir);
+    const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+    expect(fake.listen).toHaveBeenCalledWith(3000, undefined);
+    await cleanup();
   });
 
-  test("AAI_DEV_HOST exposes the server on the requested interface", async () => {
+  test("AAI_DEV_HOST exposes the server on the requested interface", async ({ tmpDir: dir }) => {
     vi.stubEnv("AAI_DEV_HOST", "0.0.0.0");
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
-      expect(fake.listen).toHaveBeenCalledWith(3000, "0.0.0.0");
-      await cleanup();
-    });
+    await writeProject(dir);
+    const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+    expect(fake.listen).toHaveBeenCalledWith(3000, "0.0.0.0");
+    await cleanup();
   });
 
   // Node treats listen(port, "") as 0.0.0.0, so an empty value must read as
   // "unset" rather than silently undoing the loopback default.
-  test.each(["", "   "])("treats AAI_DEV_HOST=%o as unset", async (value: string) => {
+  test.for(["", "   "])("treats AAI_DEV_HOST=%o as unset", async (value, { tmpDir: dir }) => {
     vi.stubEnv("AAI_DEV_HOST", value);
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
-      expect(fake.listen).toHaveBeenCalledWith(3000, undefined);
-      await cleanup();
-    });
+    await writeProject(dir);
+    const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+    expect(fake.listen).toHaveBeenCalledWith(3000, undefined);
+    await cleanup();
   });
 });
 
@@ -74,23 +68,19 @@ describe("dev server host mode gate", () => {
   // resolveServerEnv only surfaces keys declared in `.env`, so without an
   // explicit pass-through the shell-exported gate would never reach
   // isHostAllowed and host mode would be unreachable in `aai dev`.
-  test("passes AAI_ALLOW_HOST through from the shell", async () => {
+  test("passes AAI_ALLOW_HOST through from the shell", async ({ tmpDir: dir }) => {
     vi.stubEnv("AAI_ALLOW_HOST", "1");
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
-      expect(fake.lastBuild()?.serverOptions.env).toMatchObject({ AAI_ALLOW_HOST: "1" });
-      await cleanup();
-    });
+    await writeProject(dir);
+    const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+    expect(fake.lastBuild()?.serverOptions.env).toMatchObject({ AAI_ALLOW_HOST: "1" });
+    await cleanup();
   });
 
-  test("omits the gate entirely when unset", async () => {
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
-      expect(fake.lastBuild()?.serverOptions.env).not.toHaveProperty("AAI_ALLOW_HOST");
-      await cleanup();
-    });
+  test("omits the gate entirely when unset", async ({ tmpDir: dir }) => {
+    await writeProject(dir);
+    const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+    expect(fake.lastBuild()?.serverOptions.env).not.toHaveProperty("AAI_ALLOW_HOST");
+    await cleanup();
   });
 });
 
@@ -165,30 +155,26 @@ describe("devWatchEnabled", () => {
 describe("dev server file watching", () => {
   // The wiring, not the decision: an env var (or a TTY) has to reach chokidar
   // to matter, and `startDevServer` is where that happens.
-  test("a TTY pair installs the watcher", async () => {
+  test("a TTY pair installs the watcher", async ({ tmpDir: dir }) => {
     vi.stubEnv("AAI_DEV_WATCH", "");
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const cleanup = await withTtys(true, true, () =>
-        startDevServer({ cwd: dir, port: 3000 }, fake.seams),
-      );
-      expect(fake.watch).toHaveBeenCalled();
-      await cleanup();
-    });
+    await writeProject(dir);
+    const cleanup = await withTtys(true, true, () =>
+      startDevServer({ cwd: dir, port: 3000 }, fake.seams),
+    );
+    expect(fake.watch).toHaveBeenCalled();
+    await cleanup();
   });
 
-  test("no terminal installs none, and teardown survives its absence", async () => {
+  test("no terminal installs none, and teardown survives its absence", async ({ tmpDir: dir }) => {
     // `watcher?.close()` — without the optional call every shutdown threw
     // "Cannot read properties of undefined (reading 'close')".
     vi.stubEnv("AAI_DEV_WATCH", "");
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const cleanup = await withTtys(false, false, () =>
-        startDevServer({ cwd: dir, port: 3000 }, fake.seams),
-      );
-      expect(fake.watch).not.toHaveBeenCalled();
-      await expect(cleanup()).resolves.toBeUndefined();
-    });
+    await writeProject(dir);
+    const cleanup = await withTtys(false, false, () =>
+      startDevServer({ cwd: dir, port: 3000 }, fake.seams),
+    );
+    expect(fake.watch).not.toHaveBeenCalled();
+    await expect(cleanup()).resolves.toBeUndefined();
   });
 });
 

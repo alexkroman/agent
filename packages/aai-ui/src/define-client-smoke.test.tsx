@@ -9,7 +9,7 @@
 // opens or errors on its own, so the socket stays CONNECTING throughout.
 
 import { act } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type MockWebSocket, recordingWebSocketClass } from "./_session-core-test-utils.ts";
 import { mountClient } from "./define-client.tsx";
 
@@ -18,6 +18,12 @@ describe("mountClient (unmocked session core)", () => {
   let sockets: MockWebSocket[];
 
   beforeEach(() => {
+    // A mount with no `name` looks the display name up from `platformUrl`;
+    // answered here so the lookup never dials `test.local` for real.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 200 })),
+    );
     sockets = [];
     container = document.createElement("div");
     container.id = "app";

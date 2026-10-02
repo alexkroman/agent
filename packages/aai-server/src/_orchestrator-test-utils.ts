@@ -6,6 +6,7 @@
  */
 
 import path from "node:path";
+import { afterAll, onTestFinished } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
@@ -64,6 +65,27 @@ export type TestFetch = (input: string | Request, init?: RequestInit) => Promise
  */
 export const NO_CLIENT_DIR = path.join(import.meta.dirname, "no-default-client");
 
+// Orchestrators built OUTSIDE a test (a `beforeAll` — the conformance suites
+// share one and need its sweep across cases) are stopped with the file.
+const fileScopedSweeps: (() => void)[] = [];
+afterAll(() => {
+  for (const stop of fileScopedSweeps.splice(0)) stop();
+});
+
+/**
+ * Stop `stop` when whatever built it ends: the test, or else the file. An
+ * orchestrator handed an `adminDb` runs a real queue pass every second, so one
+ * left running ticks into the next test's fake and its recorded statements.
+ */
+function stopWithScope(stop: () => void): void {
+  try {
+    onTestFinished(stop);
+  } catch {
+    // Thrown outside a running test, which is exactly the file-scoped case.
+    fileScopedSweeps.push(stop);
+  }
+}
+
 export async function createTestOrchestrator(
   overrides: Partial<Parameters<typeof createOrchestrator>[0]> = {},
 ): Promise<{
@@ -80,13 +102,14 @@ export async function createTestOrchestrator(
   const store = createTestStore(overrides.secrets, memoryEvents);
   const workspaces = withWorkspaceEvents(createMemoryWorkspaceStore(), memoryEvents.emitWorkspace);
   const chats = withChatEvents(createMemoryChatStore(), memoryEvents.emitChat);
-  const { app } = createOrchestrator({
+  const { app, stopSweeps } = createOrchestrator({
     slots: createSlotCache(),
     store,
     events: memoryEvents.events,
     clientDir: NO_CLIENT_DIR,
     ...overrides,
   });
+  stopWithScope(stopSweeps);
   const fetch: TestFetch = async (input, init) => app.request(input, init);
   return { fetch, store, workspaces, chats, events: memoryEvents.events };
 }

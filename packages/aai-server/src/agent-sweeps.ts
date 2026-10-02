@@ -38,12 +38,13 @@ export type AgentSweepOptions = {
 };
 
 /**
- * Start them. Fire-and-forget: each returns its own stop and none is kept, because
- * these live exactly as long as the process does.
+ * Start them. They live exactly as long as the process does, so production
+ * never calls the returned stop; it is for a composition that does NOT own the
+ * process — a test, which builds an orchestrator per case.
  *
  * @internal
  */
-export function startAgentSweeps(opts: AgentSweepOptions): void {
+export function startAgentSweeps(opts: AgentSweepOptions): () => void {
   // The WAKE sweep used to run here, reading a per-app `wake_at` hint to learn when
   // to boot a guest for a run whose sandbox was gone. It is retired: the delivery
   // sweep below IS the wake — it claims due messages and brokers a sandbox to
@@ -59,7 +60,7 @@ export function startAgentSweeps(opts: AgentSweepOptions): void {
   // path unexercised until the change that most needs it to already work. A tick
   // over an empty queue is one indexed lookup against a partial index that
   // covers exactly its predicate.
-  startWorkflowQueueSweep({
+  const stopQueueSweep = startWorkflowQueueSweep({
     ...omitUndefined({ adminDb: opts.adminDb }),
     deliver: createQueueDeliverer({ store: opts.store, broker: opts.broker }),
     ...omitUndefined({ isDraining: opts.isDraining }),
@@ -69,4 +70,5 @@ export function startAgentSweeps(opts: AgentSweepOptions): void {
   // (`aai-sweep-orphan-previews`), not from here. With no per-app database to
   // drop, a reap is a Vault row and an agents row — see that job's doc in
   // `pg-cron.ts` for why the move back is safe and what guards it.
+  return stopQueueSweep;
 }

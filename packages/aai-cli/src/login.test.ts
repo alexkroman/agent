@@ -1,6 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { readGlobalConfig } from "./_config.ts";
 import { CliError } from "./_output.ts";
@@ -23,7 +22,6 @@ const spawnMock = vi.fn<OpenerSpawn>(() => {
   return child;
 });
 
-/** Route-keyed fake fetch; records every call. */
 /**
  * Narrow a partial `fetch` mock to `typeof fetch` — this file's ONE seam.
  *
@@ -31,26 +29,24 @@ const spawnMock = vi.fn<OpenerSpawn>(() => {
  * at all) and return `Promise<Response>` or a rejection, which is not
  * assignable to `typeof fetch`'s full overloaded signature. Widening once
  * here keeps the escape-hatch count at 1 for the file rather than one per
- * call site; `fakeFetch` above needs no cast because it is written to the
+ * call site; `fakeFetch` below needs no cast because it is written to the
  * real signature.
  */
 function asFetch(fn: (...args: never[]) => unknown): typeof fetch {
   return fn as unknown as typeof fetch;
 }
 
+/** Route-keyed fake fetch; `mock.calls` records every request. */
 function fakeFetch(
   routes: Record<string, (init?: RequestInit) => { status?: number; body: unknown }>,
 ) {
-  const calls: { url: string; init?: RequestInit }[] = [];
-  const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+  return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
-    calls.push({ url, ...omitUndefined({ init }) });
     const route = Object.entries(routes).find(([suffixOrPath]) => url.includes(suffixOrPath));
     if (!route) return new Response(JSON.stringify({ error: `no route: ${url}` }), { status: 404 });
     const { status = 200, body } = route[1](init);
     return new Response(JSON.stringify(body), { status });
-  }) as typeof fetch;
-  return { fetchFn, calls };
+  });
 }
 
 const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
@@ -66,7 +62,7 @@ afterEach(() => {
 describe("aai login", () => {
   test("links a signed-in browser account: opens the studio and polls exchange", async () => {
     let exchanges = 0;
-    const { fetchFn, calls } = fakeFetch({
+    const fetchFn = fakeFetch({
       "/studio/auth": () => ({ body: { mode: "supabase" } }),
       "/studio/cli-link/exchange": () =>
         // Pending until the (simulated) browser approval lands.
@@ -90,15 +86,17 @@ describe("aai login", () => {
     const linkUrl = new URL(openBrowser.mock.calls[0]?.[0] as string);
     const code = linkUrl.searchParams.get("cli-link");
     expect(code).toMatch(/^[\w-]{40,}$/);
-    const exchange = calls.find((c) => c.url.endsWith("/studio/cli-link/exchange"));
-    expect(JSON.parse(String(exchange?.init?.body))).toEqual({ code });
+    const exchange = fetchFn.mock.calls.find(([input]) =>
+      String(input).endsWith("/studio/cli-link/exchange"),
+    );
+    expect(JSON.parse(String(exchange?.[1]?.body))).toEqual({ code });
     // The CLI never signs in: no Supabase, account, or key routes are hit.
-    const urls = calls.map((c) => c.url);
+    const urls = fetchFn.mock.calls.map(([input]) => String(input));
     expect(urls.some((u) => u.includes("/auth/v1/") || u.includes("/studio/account"))).toBe(false);
   });
 
   test("dev mode links the same way (the browser handles sign-in)", async () => {
-    const { fetchFn } = fakeFetch({
+    const fetchFn = fakeFetch({
       "/studio/auth": () => ({ body: { mode: "dev" } }),
       "/studio/cli-link/exchange": () => ({ body: { apiKey: "dev-linked-key" } }),
     });
@@ -177,7 +175,7 @@ describe("aai login", () => {
   });
 
   test("fails when the exchange returns no API key", async () => {
-    const { fetchFn } = fakeFetch({
+    const fetchFn = fakeFetch({
       "/studio/auth": () => ({ body: { mode: "supabase" } }),
       "/studio/cli-link/exchange": () => ({ body: { ok: true } }),
     });
@@ -187,7 +185,7 @@ describe("aai login", () => {
   });
 
   test("times out when the link is never approved", async () => {
-    const { fetchFn } = fakeFetch({
+    const fetchFn = fakeFetch({
       "/studio/auth": () => ({ body: { mode: "supabase" } }),
       "/studio/cli-link/exchange": () => ({ status: 404, body: { pending: true } }),
     });
@@ -200,7 +198,7 @@ describe("aai login", () => {
   });
 
   test("surfaces an expired approval as a login failure", async () => {
-    const { fetchFn } = fakeFetch({
+    const fetchFn = fakeFetch({
       "/studio/auth": () => ({ body: { mode: "supabase" } }),
       "/studio/cli-link/exchange": () => ({
         status: 410,
@@ -213,7 +211,7 @@ describe("aai login", () => {
   });
 
   test("fails cleanly when the server has no login configured", async () => {
-    const { fetchFn } = fakeFetch({ "/studio/auth": () => ({ body: { mode: "none" } }) });
+    const fetchFn = fakeFetch({ "/studio/auth": () => ({ body: { mode: "none" } }) });
     await expect(executeLogin({}, { ui: createFakeUi(), fetchFn })).rejects.toMatchObject({
       code: "login_unavailable",
     });
@@ -221,6 +219,6 @@ describe("aai login", () => {
 
   test("refuses without a TTY", async () => {
     Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
-    await expect(executeLogin({}, fakeFetch({}))).rejects.toBeInstanceOf(CliError);
+    await expect(executeLogin({}, { fetchFn: fakeFetch({}) })).rejects.toBeInstanceOf(CliError);
   });
 });

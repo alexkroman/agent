@@ -31,8 +31,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { describe, expect, test } from "vitest";
-import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
+import { describe, expect } from "vitest";
+import { linkSdkNodeModules, test } from "./_test-utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
 
 /**
@@ -61,206 +61,192 @@ async function loadWorker(
 }
 
 describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
-  test("a file in tools/ becomes a tool named for the file", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
-      await fs.mkdir(path.join(dir, "tools"));
-      await fs.writeFile(path.join(dir, "tools", "roll_dice.ts"), toolSource("Roll"), "utf-8");
-      await fs.writeFile(path.join(dir, "tools", "read_menu.ts"), toolSource("Menu"), "utf-8");
+  test("a file in tools/ becomes a tool named for the file", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+    await fs.mkdir(path.join(dir, "tools"));
+    await fs.writeFile(path.join(dir, "tools", "roll_dice.ts"), toolSource("Roll"), "utf-8");
+    await fs.writeFile(path.join(dir, "tools", "read_menu.ts"), toolSource("Menu"), "utf-8");
 
-      const agentDef = await loadWorker(dir);
-      // Registered under the FILE name, with nothing in agent.ts saying so.
-      expect(Object.keys(agentDef.tools).sort()).toEqual(["read_menu", "roll_dice"]);
-    });
+    const agentDef = await loadWorker(dir);
+    // Registered under the FILE name, with nothing in agent.ts saying so.
+    expect(Object.keys(agentDef.tools).sort()).toEqual(["read_menu", "roll_dice"]);
   });
 
-  test("a project with no tools/ directory builds and declares none", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+  test("a project with no tools/ directory builds and declares none", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
 
-      // The ENOENT path: a workflow app has no tools/, and a missing directory
-      // is normal rather than a build failure.
-      const agentDef = await loadWorker(dir);
-      expect(agentDef.tools).toEqual({});
-    });
+    // The ENOENT path: a workflow app has no tools/, and a missing directory
+    // is normal rather than a build failure.
+    const agentDef = await loadWorker(dir);
+    expect(agentDef.tools).toEqual({});
   });
 
-  test("a co-located spec in tools/ is not a tool", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
-      await fs.mkdir(path.join(dir, "tools"));
-      await fs.writeFile(path.join(dir, "tools", "roll_dice.ts"), toolSource("Roll"), "utf-8");
-      // Would otherwise register as `roll_dice.test`, and would be bundled.
-      await fs.writeFile(
-        path.join(dir, "tools", "roll_dice.test.ts"),
-        "export default { nope: true };\n",
-        "utf-8",
-      );
+  test("a co-located spec in tools/ is not a tool", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+    await fs.mkdir(path.join(dir, "tools"));
+    await fs.writeFile(path.join(dir, "tools", "roll_dice.ts"), toolSource("Roll"), "utf-8");
+    // Would otherwise register as `roll_dice.test`, and would be bundled.
+    await fs.writeFile(
+      path.join(dir, "tools", "roll_dice.test.ts"),
+      "export default { nope: true };\n",
+      "utf-8",
+    );
 
-      const agentDef = await loadWorker(dir);
-      expect(Object.keys(agentDef.tools)).toEqual(["roll_dice"]);
-    });
+    const agentDef = await loadWorker(dir);
+    expect(Object.keys(agentDef.tools)).toEqual(["roll_dice"]);
   });
 
-  test("a NESTED file fails the build, naming it, rather than being skipped", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
-      await fs.mkdir(path.join(dir, "tools", "billing"), { recursive: true });
-      await fs.writeFile(
-        path.join(dir, "tools", "billing", "refund.ts"),
-        toolSource("Refund"),
-        "utf-8",
-      );
+  test("a NESTED file fails the build, naming it, rather than being skipped", async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+    await fs.mkdir(path.join(dir, "tools", "billing"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "tools", "billing", "refund.ts"),
+      toolSource("Refund"),
+      "utf-8",
+    );
 
-      // "`tools/` is flat" was a documented rule that nothing enforced: a
-      // one-level readdir skipped the subdirectory, so this project built an
-      // agent with NO tools and no error — the silent absence discovery exists
-      // to kill. Discovery is recursive now, and `toolRegistry` owns the
-      // rejection, so the rule has one implementation rather than two.
-      await expect(loadWorker(dir)).rejects.toThrow(/billing\/refund\.ts/);
-    });
+    // "`tools/` is flat" was a documented rule that nothing enforced: a
+    // one-level readdir skipped the subdirectory, so this project built an
+    // agent with NO tools and no error — the silent absence discovery exists
+    // to kill. Discovery is recursive now, and `toolRegistry` owns the
+    // rejection, so the rule has one implementation rather than two.
+    await expect(loadWorker(dir)).rejects.toThrow(/billing\/refund\.ts/);
   });
 
-  test("a file that does not default-export a tool fails the build, naming it", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
-      await fs.mkdir(path.join(dir, "tools"));
-      await fs.writeFile(
-        path.join(dir, "tools", "broken.ts"),
-        `export const notDefault = 1;\nexport default { description: "no execute" };\n`,
-        "utf-8",
-      );
+  test("a file that does not default-export a tool fails the build, naming it", async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+    await fs.mkdir(path.join(dir, "tools"));
+    await fs.writeFile(
+      path.join(dir, "tools", "broken.ts"),
+      `export const notDefault = 1;\nexport default { description: "no execute" };\n`,
+      "utf-8",
+    );
 
-      // The whole point of discovery: this class of mistake is named at build
-      // time instead of becoming a tool that fails on every turn.
-      await expect(loadWorker(dir)).rejects.toThrow(/broken\.ts/);
-    });
+    // The whole point of discovery: this class of mistake is named at build
+    // time instead of becoming a tool that fails on every turn.
+    await expect(loadWorker(dir)).rejects.toThrow(/broken\.ts/);
   });
 });
 
 describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
   const PROMPT = "You are a terse assistant.\n\n- One sentence.\n";
 
-  test("the file becomes the agent's systemPrompt, with nothing in agent.ts", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
-      await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
+  test("the file becomes the agent's systemPrompt, with nothing in agent.ts", async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+    await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
 
-      const agentDef = await loadWorker(dir);
-      expect(agentDef.systemPrompt).toBe(PROMPT);
-    });
+    const agentDef = await loadWorker(dir);
+    expect(agentDef.systemPrompt).toBe(PROMPT);
   });
 
-  test("no file leaves the framework default in place", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+  test("no file leaves the framework default in place", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
 
-      // Five templates deliberately run on DEFAULT_SYSTEM_PROMPT, so an absent
-      // file is a normal shape rather than a build failure.
-      const agentDef = await loadWorker(dir);
-      expect(agentDef.systemPrompt).toContain("voice agent");
-    });
+    // Five templates deliberately run on DEFAULT_SYSTEM_PROMPT, so an absent
+    // file is a normal shape rather than a build failure.
+    const agentDef = await loadWorker(dir);
+    expect(agentDef.systemPrompt).toContain("voice agent");
   });
 
-  test("a COMPOSED prompt keeps what the author built", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(
-        path.join(dir, "agent.ts"),
-        `import { agent } from "@alexkroman1/aai";\n` +
-          `import prompt from "./system-prompt.md?raw";\n` +
-          `export default agent({ name: "T", systemPrompt: \`\${prompt}\\nTODAY: fish\` });\n`,
-        "utf-8",
-      );
-      await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
+  test("a COMPOSED prompt keeps what the author built", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(
+      path.join(dir, "agent.ts"),
+      `import { agent } from "@alexkroman1/aai";\n` +
+        `import prompt from "./system-prompt.md?raw";\n` +
+        `export default agent({ name: "T", systemPrompt: \`\${prompt}\\nTODAY: fish\` });\n`,
+      "utf-8",
+    );
+    await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
 
-      // `pizza-ordering-agent`'s shape — the file plus a computed suffix. Discovery
-      // must not apply the file a second time, and must not call this a mistake.
-      const agentDef = await loadWorker(dir);
-      expect(agentDef.systemPrompt).toBe(`${PROMPT}\nTODAY: fish`);
-    });
+    // `pizza-ordering-agent`'s shape — the file plus a computed suffix. Discovery
+    // must not apply the file a second time, and must not call this a mistake.
+    const agentDef = await loadWorker(dir);
+    expect(agentDef.systemPrompt).toBe(`${PROMPT}\nTODAY: fish`);
   });
 
-  test("a RESOLVER survives the build, and puts nothing on the wire", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(
-        path.join(dir, "agent.ts"),
-        `import { agent } from "@alexkroman1/aai";\n` +
-          `import prompt from "./system-prompt.md?raw";\n` +
-          'export default agent({ name: "T", systemPrompt: (ctx) => `${prompt}\\nSession ${ctx.sessionId}.` });\n',
-        "utf-8",
-      );
-      await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
+  test("a RESOLVER survives the build, and puts nothing on the wire", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(
+      path.join(dir, "agent.ts"),
+      `import { agent } from "@alexkroman1/aai";\n` +
+        `import prompt from "./system-prompt.md?raw";\n` +
+        'export default agent({ name: "T", systemPrompt: (ctx) => `${prompt}\\nSession ${ctx.sessionId}.` });\n',
+      "utf-8",
+    );
+    await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
 
-      // `text-adventure-agent`'s shape: the file, plus something only a live
-      // session knows. Discovery must not apply the file a second time and must
-      // not call the function a mistake — it used to THROW here, which made
-      // dynamic instructions unreachable from any project with a prompt file.
-      const code = await buildWorker(dir, { runtime: false });
-      const out = path.join(dir, "worker-resolver.mjs");
-      await fs.writeFile(out, code, "utf-8");
-      const mod = (await import(pathToFileURL(out).href)) as {
-        default: { systemPrompt: (ctx: { sessionId: string }) => string };
-        __aaiConfig: Record<string, unknown>;
-      };
+    // `text-adventure-agent`'s shape: the file, plus something only a live
+    // session knows. Discovery must not apply the file a second time and must
+    // not call the function a mistake — it used to THROW here, which made
+    // dynamic instructions unreachable from any project with a prompt file.
+    const code = await buildWorker(dir, { runtime: false });
+    const out = path.join(dir, "worker-resolver.mjs");
+    await fs.writeFile(out, code, "utf-8");
+    const mod = (await import(pathToFileURL(out).href)) as {
+      default: { systemPrompt: (ctx: { sessionId: string }) => string };
+      __aaiConfig: Record<string, unknown>;
+    };
 
-      expect(typeof mod.default.systemPrompt).toBe("function");
-      expect(mod.default.systemPrompt({ sessionId: "s_1" })).toBe(`${PROMPT}\nSession s_1.`);
-      // A function cannot be serialized, so `toAgentConfig` drops it and the
-      // schema fills the framework default in its place — what a resolver adds
-      // is APPENDED to that, by the runtime, which is the side that can call it.
-      // What this pins against is a config carrying the resolver's SOURCE TEXT,
-      // which nothing downstream rejects.
-      expect(mod.__aaiConfig.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
-    });
+    expect(typeof mod.default.systemPrompt).toBe("function");
+    expect(mod.default.systemPrompt({ sessionId: "s_1" })).toBe(`${PROMPT}\nSession s_1.`);
+    // A function cannot be serialized, so `toAgentConfig` drops it and the
+    // schema fills the framework default in its place — what a resolver adds
+    // is APPENDED to that, by the runtime, which is the side that can call it.
+    // What this pins against is a config carrying the resolver's SOURCE TEXT,
+    // which nothing downstream rejects.
+    expect(mod.__aaiConfig.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
   });
 
-  test("a file nothing reads fails the build, rather than being ignored", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(
-        path.join(dir, "agent.ts"),
-        `import { agent } from "@alexkroman1/aai";\n` +
-          `export default agent({ name: "T", systemPrompt: "Inline, and not the file." });\n`,
-        "utf-8",
-      );
-      await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
+  test("a file nothing reads fails the build, rather than being ignored", async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(
+      path.join(dir, "agent.ts"),
+      `import { agent } from "@alexkroman1/aai";\n` +
+        `export default agent({ name: "T", systemPrompt: "Inline, and not the file." });\n`,
+      "utf-8",
+    );
+    await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
 
-      // "I edited system-prompt.md and nothing changed" is the silent-absence
-      // failure discovery exists to kill, pointing the other way.
-      await expect(loadWorker(dir)).rejects.toThrow(/nothing reads it/);
-    });
+    // "I edited system-prompt.md and nothing changed" is the silent-absence
+    // failure discovery exists to kill, pointing the other way.
+    await expect(loadWorker(dir)).rejects.toThrow(/nothing reads it/);
   });
 
-  test("a system-prompt/ DIRECTORY is rejected, not ignored", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
-      await fs.mkdir(path.join(dir, "system-prompt"));
-      await fs.writeFile(path.join(dir, "system-prompt", "intro.md"), PROMPT, "utf-8");
+  test("a system-prompt/ DIRECTORY is rejected, not ignored", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+    await fs.mkdir(path.join(dir, "system-prompt"));
+    await fs.writeFile(path.join(dir, "system-prompt", "intro.md"), PROMPT, "utf-8");
 
-      // Declining a directory is the decision; declining it SILENTLY is not.
-      // Before this was checked, the author got DEFAULT_SYSTEM_PROMPT with
-      // nothing saying why their prompt had no effect.
-      await expect(loadWorker(dir)).rejects.toThrow(/is a directory/);
-    });
+    // Declining a directory is the decision; declining it SILENTLY is not.
+    // Before this was checked, the author got DEFAULT_SYSTEM_PROMPT with
+    // nothing saying why their prompt had no effect.
+    await expect(loadWorker(dir)).rejects.toThrow(/is a directory/);
   });
 
-  test("an empty file is an error, not a silent fall-through to the default", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
-      await fs.writeFile(path.join(dir, "system-prompt.md"), "   \n\n", "utf-8");
+  test("an empty file is an error, not a silent fall-through to the default", async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+    await fs.writeFile(path.join(dir, "system-prompt.md"), "   \n\n", "utf-8");
 
-      await expect(loadWorker(dir)).rejects.toThrow(/is empty/);
-    });
+    await expect(loadWorker(dir)).rejects.toThrow(/is empty/);
   });
 });

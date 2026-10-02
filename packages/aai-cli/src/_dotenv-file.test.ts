@@ -9,7 +9,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseEnv } from "node:util";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import {
   deleteLocalSecret,
   formatEnvValue,
@@ -17,7 +17,7 @@ import {
   removeEnv,
   upsertEnv,
 } from "./_dotenv-file.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { test } from "./_test-utils.ts";
 
 const parsed = (text: string) => parseEnv(text) as Record<string, string>;
 
@@ -95,27 +95,25 @@ describe("removeEnv", () => {
 });
 
 describe("putLocalSecret / deleteLocalSecret", () => {
-  test("creates .env 0600, then keeps the mode an existing file has", async () => {
-    await withTempDir(async (dir) => {
-      const file = await putLocalSecret(dir, "KEY", "v1");
-      expect(file).toBe(path.join(dir, ".env"));
-      expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+  test("creates .env 0600, then keeps the mode an existing file has", async ({ tmpDir: dir }) => {
+    const file = await putLocalSecret(dir, "KEY", "v1");
+    expect(file).toBe(path.join(dir, ".env"));
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
 
-      await fs.chmod(file, 0o640);
-      await putLocalSecret(dir, "KEY", "v2");
-      expect((await fs.stat(file)).mode & 0o777).toBe(0o640);
-      expect(parsed(await fs.readFile(file, "utf-8"))).toEqual({ KEY: "v2" });
-      expect(await fs.readdir(dir)).toEqual([".env"]);
-    });
+    await fs.chmod(file, 0o640);
+    await putLocalSecret(dir, "KEY", "v2");
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o640);
+    expect(parsed(await fs.readFile(file, "utf-8"))).toEqual({ KEY: "v2" });
+    expect(await fs.readdir(dir)).toEqual([".env"]);
   });
 
-  test("delete removes the key, and says false for a key or file that is not there", async () => {
-    await withTempDir(async (dir) => {
-      expect(await deleteLocalSecret(dir, "KEY")).toBe(false);
-      await fs.writeFile(path.join(dir, ".env"), "A=1\nKEY=x\n");
-      expect(await deleteLocalSecret(dir, "KEY")).toBe(true);
-      expect(await fs.readFile(path.join(dir, ".env"), "utf-8")).toBe("A=1\n");
-      expect(await deleteLocalSecret(dir, "KEY")).toBe(false);
-    });
+  test("delete removes the key, and says false for a key or file that is not there", async ({
+    tmpDir: dir,
+  }) => {
+    expect(await deleteLocalSecret(dir, "KEY")).toBe(false);
+    await fs.writeFile(path.join(dir, ".env"), "A=1\nKEY=x\n");
+    expect(await deleteLocalSecret(dir, "KEY")).toBe(true);
+    expect(await fs.readFile(path.join(dir, ".env"), "utf-8")).toBe("A=1\n");
+    expect(await deleteLocalSecret(dir, "KEY")).toBe(false);
   });
 });
