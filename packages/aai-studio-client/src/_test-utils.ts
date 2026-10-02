@@ -1,10 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Shared helpers for the studio client's test suites: fetch mocking, the
-// TanStack wrapper every card is rendered under, and the DOM seams that keep
-// `as HTML*Element` out of the assertions.
+// Shared helpers for the studio client's test suites: fetch mocking and the
+// TanStack wrapper every card is rendered under. DOM state is asserted with
+// jest-dom's matchers (`toBeDisabled`, `toHaveValue`, …), wired in
+// `_test-setup.ts`, so no helper narrows an element to read a property off it.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type RenderResult, render, screen } from "@testing-library/react";
+import { type RenderResult, render } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { type Mock, vi } from "vitest";
 
@@ -148,63 +149,4 @@ export function renderWithClient(ui: ReactNode): RenderResult & { client: QueryC
     defaultOptions: { queries: { retry: false, gcTime: Number.POSITIVE_INFINITY } },
   });
   return { ...render(createElement(QueryClientProvider, { client }, ui)), client };
-}
-
-/**
- * The one button with this accessible name, typed — so `.disabled` reads off
- * it without an `as HTMLButtonElement` at each assertion. The `instanceof` is
- * the check that cast skipped: a role that resolved to an `<a>` or a `<div
- * role="button">` has no `disabled`, and `undefined === true` is a quiet
- * false rather than a failure that names the reason.
- */
-export function button(name: string | RegExp): HTMLButtonElement {
-  const found = screen.getByRole("button", { name });
-  if (!(found instanceof HTMLButtonElement)) {
-    throw new Error(`Expected a <button> named ${String(name)}, got <${found.localName}>`);
-  }
-  return found;
-}
-
-/**
- * The `<input>` with this accessible name, typed so `.value` / `.checked`
- * read off it without a cast. `by` picks how it is named — a labelled field
- * ("label", the default) or a role's accessible name, which is how the
- * segmented control's radios are found.
- */
-export function input(name: string, by: "label" | "radio" = "label"): HTMLInputElement {
-  const found = by === "label" ? screen.getByLabelText(name) : screen.getByRole("radio", { name });
-  if (!(found instanceof HTMLInputElement)) {
-    throw new Error(`Expected an <input> named ${name}, got <${found.localName}>`);
-  }
-  return found;
-}
-
-/** The textarea carrying this placeholder, typed so `.value` needs no cast. */
-export function textarea(placeholder: string | RegExp): HTMLTextAreaElement {
-  const found = screen.getByPlaceholderText(placeholder);
-  if (!(found instanceof HTMLTextAreaElement)) {
-    throw new Error(`Expected a <textarea> placeholdered ${String(placeholder)}`);
-  }
-  return found;
-}
-
-/**
- * jsdom has no `ResizeObserver`, and `aai-ui`'s `<AutoScroll>` — mounted by the
- * chat transcript and the Logs pane — constructs one. Layout never changes
- * here, so every method is a no-op; what matters is that the constructor
- * exists.
- */
-export function installResizeObserver(): void {
-  class ResizeObserverStub {
-    observe(): void {
-      // jsdom stub — layout never changes.
-    }
-    unobserve(): void {
-      // jsdom stub.
-    }
-    disconnect(): void {
-      // jsdom stub.
-    }
-  }
-  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
 }

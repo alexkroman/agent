@@ -122,8 +122,8 @@ describe("MessageList: messages + tool calls interleaved", () => {
       }),
     );
     expect(screen.getByText("second")).toBe(secondBubbleBefore);
-    expect(container.textContent).not.toContain("first");
-    expect(screen.getByText("third")).toBeDefined();
+    expect(container).not.toHaveTextContent("first");
+    expect(screen.getByText("third")).toBeInTheDocument();
   });
 
   test("shows thinking indicator when state is thinking and no pending tool", () => {
@@ -139,7 +139,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
     // when any sibling row gained a round badge (wrong behaviour, green test).
     // The class-assertion argument this package makes elsewhere is about
     // cascade and layout, which does not apply to element presence.
-    expect(screen.getByRole("status", { name: "Thinking" })).toBeDefined();
+    expect(screen.getByRole("status", { name: "Thinking" })).toBeInTheDocument();
   });
 
   test("hides thinking indicator when a tool call is pending", () => {
@@ -184,7 +184,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
 
     const { container } = renderWithProvider(<MessageList />, core);
     expect(container.innerHTML).toContain("tool-shimmer");
-    expect(screen.getByText("web_search")).toBeDefined();
+    expect(screen.getByText("web_search")).toBeInTheDocument();
   });
 
   test("shows streaming agent utterance as bubble", () => {
@@ -195,7 +195,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
     });
 
     renderWithProvider(<MessageList />, core);
-    expect(screen.getByText("I'm thinking about...")).toBeDefined();
+    expect(screen.getByText("I'm thinking about...")).toBeInTheDocument();
   });
 
   test("shows user transcript while speaking", () => {
@@ -206,7 +206,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
     });
 
     renderWithProvider(<MessageList />, core);
-    expect(screen.getByText("hello wor")).toBeDefined();
+    expect(screen.getByText("hello wor")).toBeInTheDocument();
   });
 });
 
@@ -221,17 +221,17 @@ describe("MessageList: stick-to-bottom scroll container", () => {
     renderWithProvider(<MessageList className="custom-class" />, core);
 
     const log = screen.getByRole("log");
-    expect(log.className).toContain("flex-1");
-    expect(log.className).toContain("custom-class");
+    expect(log).toHaveClass("flex-1");
+    expect(log).toHaveClass("custom-class");
 
     const scroller = log.firstElementChild as HTMLElement;
-    expect(scroller.className).toContain("overflow-y-auto");
+    expect(scroller).toHaveClass("overflow-y-auto");
 
     const content = scroller.firstElementChild as HTMLElement;
-    expect(content.className).toContain("flex-col");
+    expect(content).toHaveClass("flex-col");
 
     // New content renders inside the observed content element.
     act(() => core.update({ messages: [{ id: 1, role: "user", content: "one" }] }));
-    expect(content.textContent).toContain("one");
+    expect(content).toHaveTextContent("one");
   });
 });

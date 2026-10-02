@@ -47,7 +47,7 @@ describe("DocsPane", () => {
     // With no slug there is no base URL, so every snippet would be a
     // placeholder somebody could paste and wonder about.
     renderPane();
-    expect(screen.getByText(/Publish this project/)).toBeTruthy();
+    expect(screen.getByText(/Publish this project/)).toBeInTheDocument();
   });
 
   test("falls back to the PREVIEW agent, and says which one it is showing", async () => {
@@ -59,7 +59,7 @@ describe("DocsPane", () => {
     renderPane({ previewSlug: "demo-preview" });
     // A project has a preview long before a first publish, so documenting
     // nothing until then would leave the pane empty for its whole early life.
-    await waitFor(() => expect(screen.getByText(/preview agent/)).toBeTruthy());
+    expect(await screen.findByText(/preview agent/)).toBeInTheDocument();
   });
 
   test("names the bearer only when the agent's env closes the API", async () => {
@@ -77,14 +77,14 @@ describe("DocsPane", () => {
     stubFetch(listing());
     renderPane({ deployedSlug: "demo" });
 
-    await waitFor(() => expect(screen.getByText("digest")).toBeTruthy());
+    expect(await screen.findByText("digest")).toBeInTheDocument();
     const origin = window.location.origin;
     expect(screen.queryByText(`${origin}/demo/workflows`)).toBeNull();
     expect(screen.queryByText(`${origin}/demo/workflows/runs`)).toBeNull();
     expect(screen.queryByText(`${origin}/demo/workflows/uploads?name=`)).toBeNull();
     // The front door's OWN table stays: it is three rows about this agent's
     // shape, not a reference for a subsystem with a tab of its own.
-    expect(screen.getByText(`${origin}/demo/client-config`)).toBeTruthy();
+    expect(screen.getByText(`${origin}/demo/client-config`)).toBeInTheDocument();
   });
 
   test("and the openness sentence follows the reader rather than the table", async () => {
@@ -93,7 +93,7 @@ describe("DocsPane", () => {
     // table it normally sits on must not drop it.
     stubFetch(listing());
     renderPane({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText(/open by default/)).toBeTruthy());
+    expect(await screen.findByText(/open by default/)).toBeInTheDocument();
   });
 
   test("hands out the PUBLIC link for this agent's API", async () => {
@@ -106,9 +106,9 @@ describe("DocsPane", () => {
     renderPane({ deployedSlug: "demo" });
 
     const url = `${window.location.origin}/studio/api/demo`;
-    await waitFor(() => expect(screen.getByText(url)).toBeTruthy());
+    expect(await screen.findByText(url)).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /Open the public page/ });
-    expect(link.getAttribute("href")).toBe(url);
+    expect(link).toHaveAttribute("href", url);
   });
 
   test("and says the link is the PREVIEW's before a first publish", async () => {
@@ -123,19 +123,17 @@ describe("DocsPane", () => {
     });
     renderPane({ previewSlug: "demo-preview" });
 
-    await waitFor(() =>
-      expect(screen.getByText(`${window.location.origin}/studio/api/demo-preview`)).toBeTruthy(),
-    );
-    expect(screen.getByText(/points at the PREVIEW agent/)).toBeTruthy();
+    expect(
+      await screen.findByText(`${window.location.origin}/studio/api/demo-preview`),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/points at the PREVIEW agent/)).toBeInTheDocument();
   });
 
   test("carries the carrier webhook URLs, which moved off Settings", async () => {
     stubFetch(listing());
     renderPane({ deployedSlug: "demo" });
     const origin = window.location.origin;
-    await waitFor(() =>
-      expect(screen.getByText(`${origin}/demo/phone?carrier=twilio`)).toBeTruthy(),
-    );
-    expect(screen.getByText(`${origin}/demo/phone?carrier=telnyx`)).toBeTruthy();
+    expect(await screen.findByText(`${origin}/demo/phone?carrier=twilio`)).toBeInTheDocument();
+    expect(screen.getByText(`${origin}/demo/phone?carrier=telnyx`)).toBeInTheDocument();
   });
 });

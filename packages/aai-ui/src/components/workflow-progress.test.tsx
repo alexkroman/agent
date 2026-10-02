@@ -139,7 +139,7 @@ describe("WorkflowProgress", () => {
 
     await consumed;
     await flushEffects();
-    expect(screen.getByText("Starting…")).not.toBeNull();
+    expect(screen.getByText("Starting…")).toBeInTheDocument();
   });
 
   test("the narration is a LIVE REGION, so a run is audible while it happens", async () => {
@@ -156,8 +156,8 @@ describe("WorkflowProgress", () => {
 
     const log = await screen.findByRole("log");
     expect(log.tagName).toBe("PRE");
-    expect(log.getAttribute("aria-live")).toBe("polite");
-    expect(log.getAttribute("aria-atomic")).toBe("false");
+    expect(log).toHaveAttribute("aria-live", "polite");
+    expect(log).toHaveAttribute("aria-atomic", "false");
     expect(log.textContent).toBe("Fetching…\nSummarising…");
   });
 
@@ -166,7 +166,7 @@ describe("WorkflowProgress", () => {
     const { container } = render(<WorkflowProgress runId="wrun_1" className="font-mono" />);
 
     await waitFor(() => expect(container.querySelector("pre")).not.toBeNull());
-    expect(container.querySelector("pre")?.className).toBe("font-mono");
+    expect(container.querySelector("pre")).toHaveClass("font-mono", { exact: true });
   });
   test("`lines` shows only the newest N, which is what the two raw pages hand-rolled", async () => {
     fetchMock.mockImplementation(() =>
@@ -175,7 +175,7 @@ describe("WorkflowProgress", () => {
     const { container } = render(<WorkflowProgress runId="wrun_1" lines={1} />);
 
     await waitFor(() => expect(container.querySelector("pre")).not.toBeNull());
-    expect(container.querySelector("pre")?.textContent).toBe("Summarising…");
+    expect(container.querySelector("pre")).toHaveTextContent(/^Summarising…$/);
   });
 
   test("`lines` larger than the log shows the whole log rather than padding it", async () => {
@@ -192,7 +192,7 @@ describe("WorkflowProgress", () => {
     fetchMock.mockImplementation(() => Promise.resolve(sse(["Reading…"])));
     render(<WorkflowProgress runId="wrun_1" lines={0} placeholder={<p>Starting…</p>} />);
 
-    await waitFor(() => expect(screen.getByText("Starting…")).not.toBeNull());
+    expect(await screen.findByText("Starting…")).toBeInTheDocument();
   });
 
   test("`lines` still respects `supported` — an older agent stays blank, not windowed", async () => {

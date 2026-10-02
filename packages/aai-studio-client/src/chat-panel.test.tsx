@@ -8,8 +8,9 @@
 // The ordering rules themselves are unit-tested in chat-queue.test.ts.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import { installResizeObserver, stubFetch, textarea } from "./_test-utils.ts";
+import { userEvent } from "@testing-library/user-event";
+import { describe, expect, test, vi } from "vitest";
+import { stubFetch } from "./_test-utils.ts";
 import type { ChatSession } from "./api.ts";
 import { ChatPanel } from "./panes/chat.tsx";
 
@@ -107,36 +108,31 @@ function renderPanel(
   );
 }
 
-function composer(): HTMLTextAreaElement {
-  return textarea(/Describe your agent|Queue a follow-up/);
+function composer(): HTMLElement {
+  return screen.getByPlaceholderText(/Describe your agent|Queue a follow-up/);
 }
 
-function type(text: string) {
-  const input = composer();
-  fireEvent.change(input, { target: { value: text } });
-  fireEvent.keyDown(input, { key: "Enter" });
+/** Type a message into the composer and send it with Enter. */
+async function send(text: string): Promise<void> {
+  await userEvent.type(composer(), `${text}{Enter}`);
 }
-
-beforeEach(() => {
-  installResizeObserver();
-});
 
 describe("queued follow-ups", () => {
   test("a message typed mid-turn waits, then sends when the turn settles", async () => {
     const { turn, sent, fetchMock } = stubChatTurns(2);
     renderPanel();
 
-    type("build a greeter");
+    await send("build a greeter");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     turn(0).speak("on it");
 
-    type("also add tests");
+    await send("also add tests");
     // Queued, not sent: the sandbox is still streaming the first turn.
-    await waitFor(() => expect(screen.getByLabelText("Queued messages")).toBeDefined());
-    expect(screen.getByText("also add tests")).toBeDefined();
+    expect(await screen.findByLabelText("Queued messages")).toBeInTheDocument();
+    expect(screen.getByText("also add tests")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     // The composer is cleared, so the next thought can be typed too.
-    expect(composer().value).toBe("");
+    expect(composer()).toHaveValue("");
 
     turn(0).finish();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -149,19 +145,19 @@ describe("queued follow-ups", () => {
     const { turn, sent, fetchMock } = stubChatTurns(3);
     renderPanel();
 
-    type("first");
+    await send("first");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     turn(0).speak("working");
-    type("second");
-    type("third");
-    await waitFor(() => expect(screen.getByText("third")).toBeDefined());
+    await send("second");
+    await send("third");
+    expect(await screen.findByText("third")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     turn(0).finish();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     // Only ONE of the two queued messages went out — the other is still shown.
     expect(sent[1]?.at(-1)).toBe("second");
-    expect(screen.getByText("third")).toBeDefined();
+    expect(screen.getByText("third")).toBeInTheDocument();
 
     turn(1).speak("still working");
     turn(1).finish();
@@ -174,11 +170,11 @@ describe("queued follow-ups", () => {
     const { turn, fetchMock } = stubChatTurns(1);
     renderPanel();
 
-    type("first");
+    await send("first");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     turn(0).speak("working");
-    type("never mind this");
-    await waitFor(() => expect(screen.getByText("never mind this")).toBeDefined());
+    await send("never mind this");
+    expect(await screen.findByText("never mind this")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Remove queued message 1"));
     await waitFor(() => expect(screen.queryByText("never mind this")).toBeNull());
@@ -194,16 +190,16 @@ describe("queued follow-ups", () => {
     const { turn, fetchMock } = stubChatTurns(1);
     renderPanel();
 
-    type("first");
+    await send("first");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     turn(0).speak("working");
-    type("queued one");
-    type("queued two");
-    await waitFor(() => expect(screen.getByText("queued two")).toBeDefined());
+    await send("queued one");
+    await send("queued two");
+    expect(await screen.findByText("queued two")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Stop"));
 
-    await waitFor(() => expect(composer().value).toBe("queued one\n\nqueued two"));
+    await waitFor(() => expect(composer()).toHaveValue("queued one\n\nqueued two"));
     expect(screen.queryByLabelText("Queued messages")).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -214,15 +210,15 @@ describe("queued follow-ups", () => {
     const { turn, fetchMock } = stubChatTurns(1);
     renderPanel();
 
-    type("first");
+    await send("first");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     turn(0).speak("working");
-    type("and then this");
-    await waitFor(() => expect(screen.getByText("and then this")).toBeDefined());
+    await send("and then this");
+    expect(await screen.findByText("and then this")).toBeInTheDocument();
 
     turn(0).fail();
 
-    await waitFor(() => expect(composer().value).toBe("and then this"));
+    await waitFor(() => expect(composer()).toHaveValue("and then this"));
     expect(screen.queryByLabelText("Queued messages")).toBeNull();
     // Not auto-sent over the failure: the error is what the user needs to see.
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -243,7 +239,7 @@ describe("queued follow-ups", () => {
     const onSessionStale = vi.fn(() => Promise.resolve(replacement));
     renderPanel({ chatSession: dead, onSessionStale });
 
-    type("build a greeter");
+    await send("build a greeter");
 
     // One request to the dead sandbox, one re-broker, one to the replacement.
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -252,7 +248,7 @@ describe("queued follow-ups", () => {
 
     live.speak("on it");
     live.finish();
-    await waitFor(() => expect(screen.getByText("on it")).toBeDefined());
+    expect(await screen.findByText("on it")).toBeInTheDocument();
     // The user is never shown the failure the studio recovered from.
     expect(screen.queryByText(/Lost the connection/)).toBeNull();
   });
@@ -270,14 +266,14 @@ describe("queued follow-ups", () => {
     const broker = Promise.withResolvers<ChatSession>();
     renderPanel({ chatSession: dead, onSessionStale: () => broker.promise });
 
-    type("build a greeter");
+    await send("build a greeter");
 
-    await waitFor(() => expect(screen.getByText("Restarting the sandbox…")).toBeDefined());
+    expect(await screen.findByText("Restarting the sandbox…")).toBeInTheDocument();
     expect(screen.queryByText("Working…")).toBeNull();
 
     broker.resolve({ url: SANDBOX_URL, token: "fresh-token" });
     await waitFor(() => expect(screen.queryByText("Restarting the sandbox…")).toBeNull());
-    expect(screen.getByText("Working…")).toBeDefined();
+    expect(screen.getByText("Working…")).toBeInTheDocument();
   });
 
   test("Publish stays locked between queued turns", async () => {
@@ -288,11 +284,11 @@ describe("queued follow-ups", () => {
     const { turn, fetchMock } = stubChatTurns(2);
     renderPanel({ onBusyChange });
 
-    type("first");
+    await send("first");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     turn(0).speak("working");
-    type("second");
-    await waitFor(() => expect(screen.getByText("second")).toBeDefined());
+    await send("second");
+    expect(await screen.findByText("second")).toBeInTheDocument();
 
     onBusyChange.mockClear();
     turn(0).finish();

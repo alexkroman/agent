@@ -21,8 +21,8 @@ function renderLayout(props?: Partial<Parameters<typeof SidebarLayout>[0]>) {
 describe("SidebarLayout", () => {
   test("renders sidebar and main content", () => {
     const { getByTestId } = renderLayout();
-    expect(getByTestId("sidebar-content").textContent).toBe("cart");
-    expect(getByTestId("main-content").textContent).toBe("chat");
+    expect(getByTestId("sidebar-content")).toHaveTextContent(/^cart$/);
+    expect(getByTestId("main-content")).toHaveTextContent(/^chat$/);
   });
 
   test("sidebar defaults to the left, with the divider on its right edge", () => {
@@ -31,8 +31,8 @@ describe("SidebarLayout", () => {
     // Left placement: sidebar column comes before the main column.
     const root = container.firstElementChild as HTMLElement;
     expect(root.firstElementChild).toBe(sidebar);
-    expect(sidebar.className).toContain("md:border-r");
-    expect(sidebar.className).not.toContain("md:border-l");
+    expect(sidebar).toHaveClass("md:border-r");
+    expect(sidebar).not.toHaveClass("md:border-l");
     expect(sidebar.style.borderColor).not.toBe("");
   });
 
@@ -41,8 +41,8 @@ describe("SidebarLayout", () => {
     const sidebar = getByTestId("sidebar-content").parentElement as HTMLElement;
     const root = container.firstElementChild as HTMLElement;
     expect(root.lastElementChild).toBe(sidebar);
-    expect(sidebar.className).toContain("md:border-l");
-    expect(sidebar.className).not.toContain("md:border-r");
+    expect(sidebar).toHaveClass("md:border-l");
+    expect(sidebar).not.toHaveClass("md:border-r");
   });
 
   test("honors a custom sidebarWidth and extra className", () => {
@@ -54,9 +54,9 @@ describe("SidebarLayout", () => {
     const sidebar = getByTestId("sidebar-content").parentElement as HTMLElement;
     // The width reaches the sidebar as a custom property so a media query can
     // drop it when the panes stack — an inline `width` could not be overridden.
-    expect(root.style.getPropertyValue("--aai-sidebar-w")).toBe("24rem");
-    expect(sidebar.className).toContain("md:w-(--aai-sidebar-w)");
-    expect(root.className).toContain("custom-shell");
+    expect(root).toHaveStyle({ "--aai-sidebar-w": "24rem" });
+    expect(sidebar).toHaveClass("md:w-(--aai-sidebar-w)");
+    expect(root).toHaveClass("custom-shell");
   });
 
   // Regression guard for the layout this component shipped with: the sidebar
@@ -67,13 +67,13 @@ describe("SidebarLayout", () => {
     const { getByTestId, container } = renderLayout();
     const root = container.firstElementChild as HTMLElement;
     const sidebar = getByTestId("sidebar-content").parentElement as HTMLElement;
-    expect(root.className).toContain("flex-col");
-    expect(root.className).toContain("md:flex-row");
+    expect(root).toHaveClass("flex-col");
+    expect(root).toHaveClass("md:flex-row");
     // Full width when stacked; the fixed width only applies from md up.
-    expect(sidebar.className).toContain("w-full");
-    expect(sidebar.className).toContain("md:w-(--aai-sidebar-w)");
+    expect(sidebar).toHaveClass("w-full");
+    expect(sidebar).toHaveClass("md:w-(--aai-sidebar-w)");
     // And capped in height when stacked, so the main pane is still reachable.
-    expect(sidebar.className).toContain("max-h-[40vh]");
-    expect(sidebar.className).toContain("md:max-h-none");
+    expect(sidebar).toHaveClass("max-h-[40vh]");
+    expect(sidebar).toHaveClass("md:max-h-none");
   });
 });

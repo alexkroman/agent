@@ -4,18 +4,15 @@
 // is WHEN the field clears: on a successful store only — a failed one keeps
 // the draft and says why.
 
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
-import {
-  button,
-  fetchCallsWith,
-  input,
-  jsonResponse,
-  renderWithClient,
-  stubFetch,
-} from "../_test-utils.ts";
+import { fetchCallsWith, jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { queryKeys } from "../query-keys.ts";
 import { ApiKeyField } from "./api-key-field.tsx";
+
+const field = () => screen.getByLabelText("API key");
+const save = () => screen.getByRole("button", { name: "Save key" });
 
 function renderField(onSaved?: () => void) {
   return renderWithClient(
@@ -31,44 +28,47 @@ function renderField(onSaved?: () => void) {
 }
 
 describe("ApiKeyField", () => {
-  test("the button is disabled until there is a non-blank draft", () => {
+  test("the button is disabled until there is a non-blank draft", async () => {
+    const user = userEvent.setup();
     renderField();
-    expect(button("Save key").disabled).toBe(true);
-    fireEvent.change(input("API key"), { target: { value: "   " } });
-    expect(button("Save key").disabled).toBe(true);
-    fireEvent.change(input("API key"), { target: { value: "k" } });
-    expect(button("Save key").disabled).toBe(false);
+    expect(save()).toBeDisabled();
+    await user.type(field(), "   ");
+    expect(save()).toBeDisabled();
+    await user.clear(field());
+    await user.type(field(), "k");
+    expect(save()).toBeEnabled();
   });
 
   test("the field is a password input with no autocomplete", () => {
     renderField();
-    expect(input("API key").type).toBe("password");
-    expect(input("API key").getAttribute("autocomplete")).toBe("off");
+    expect(field()).toHaveAttribute("type", "password");
+    expect(field()).toHaveAttribute("autocomplete", "off");
   });
 
   test("stores the TRIMMED key with the bearer, clears, notes it, and invalidates the account", async () => {
+    const user = userEvent.setup();
     const mock = stubFetch({ "PUT /studio/account/key": () => jsonResponse({ ok: true }) });
     const onSaved = vi.fn();
     const { client } = renderField(onSaved);
     const invalidate = vi.spyOn(client, "invalidateQueries");
 
-    fireEvent.change(input("API key"), { target: { value: "  aai_key_123  " } });
-    fireEvent.click(button("Save key"));
+    await user.type(field(), "  aai_key_123  ");
+    await user.click(save());
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     const [put] = fetchCallsWith(mock, "PUT");
     expect(put?.init.body).toBe(JSON.stringify({ apiKey: "aai_key_123" }));
     expect(new Headers(put?.init.headers).get("Authorization")).toBe("Bearer bearer-1");
-    expect(input("API key").value).toBe("");
-    expect(screen.getByText("Key saved.")).toBeTruthy();
+    expect(field()).toHaveValue("");
+    expect(screen.getByText("Key saved.")).toBeInTheDocument();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.accounts });
   });
 
   test("Enter submits the same way the button does", async () => {
+    const user = userEvent.setup();
     const mock = stubFetch({ "PUT /studio/account/key": () => jsonResponse({ ok: true }) });
     renderField();
-    fireEvent.change(input("API key"), { target: { value: "k2" } });
-    fireEvent.keyDown(input("API key"), { key: "Enter" });
+    await user.type(field(), "k2{Enter}");
     await waitFor(() => expect(fetchCallsWith(mock, "PUT")).toHaveLength(1));
   });
 
@@ -76,24 +76,26 @@ describe("ApiKeyField", () => {
     stubFetch({
       "PUT /studio/account/key": () => jsonResponse({ error: "That key was rejected" }, 400),
     });
+    const user = userEvent.setup();
     const onSaved = vi.fn();
     renderField(onSaved);
-    fireEvent.change(input("API key"), { target: { value: "bad-key" } });
-    fireEvent.click(button("Save key"));
+    await user.type(field(), "bad-key");
+    await user.click(save());
 
-    expect(await screen.findByText("That key was rejected")).toBeTruthy();
-    expect(input("API key").value).toBe("bad-key");
+    expect(await screen.findByText("That key was rejected")).toBeInTheDocument();
+    expect(field()).toHaveValue("bad-key");
     expect(onSaved).not.toHaveBeenCalled();
     expect(screen.queryByText("Key saved.")).toBeNull();
   });
 
   test("the saved note goes away on the next edit", async () => {
+    const user = userEvent.setup();
     stubFetch({ "PUT /studio/account/key": () => jsonResponse({ ok: true }) });
     renderField();
-    fireEvent.change(input("API key"), { target: { value: "k" } });
-    fireEvent.click(button("Save key"));
-    expect(await screen.findByText("Key saved.")).toBeTruthy();
-    fireEvent.change(input("API key"), { target: { value: "n" } });
+    await user.type(field(), "k");
+    await user.click(save());
+    expect(await screen.findByText("Key saved.")).toBeInTheDocument();
+    await user.type(field(), "n");
     expect(screen.queryByText("Key saved.")).toBeNull();
   });
 });

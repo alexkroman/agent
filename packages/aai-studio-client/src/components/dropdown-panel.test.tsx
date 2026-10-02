@@ -40,7 +40,7 @@ describe("DropdownPanel", () => {
     renderPanel(true);
     const dialog = screen.getByRole("dialog", { name: "Account" });
     expect(dialog.id).toBe("account-panel");
-    expect(dialog.textContent).toContain("Sign out");
+    expect(dialog).toHaveTextContent("Sign out");
   });
 
   test("Escape and a click away close it", () => {

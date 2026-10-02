@@ -130,11 +130,11 @@ describe("<ConversationView log>", () => {
       />,
       { wrapper },
     );
-    expect(screen.getByText("session s1")).toBeTruthy();
+    expect(screen.getByText("session s1")).toBeInTheDocument();
     // Once each: the log carries the live session, which is not rendered twice.
     expect(screen.getAllByText("user:hi")).toHaveLength(1);
-    expect(screen.getByText("Continuing")).toBeTruthy();
-    expect(screen.getByText("assistant:Reminder: plants")).toBeTruthy();
+    expect(screen.getByText("Continuing")).toBeInTheDocument();
+    expect(screen.getByText("assistant:Reminder: plants")).toBeInTheDocument();
     expect(screen.queryByText("nothing yet")).toBeNull();
   });
 
@@ -149,7 +149,7 @@ describe("<ConversationView log>", () => {
       />,
       { wrapper },
     );
-    expect(screen.getByText("nothing yet")).toBeTruthy();
+    expect(screen.getByText("nothing yet")).toBeInTheDocument();
     expect(screen.queryByText("live only")).toBeNull();
   });
 });

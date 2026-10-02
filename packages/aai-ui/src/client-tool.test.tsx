@@ -4,10 +4,9 @@
  * handler run, one `tool_result` frame out — the page's half of a `clientTool`.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installAudioMocks } from "./_react-test-utils.ts";
+import { installAudioMocks, renderHookWithSession } from "./_react-test-utils.ts";
 import {
   assertValidClientFrames,
   type MockWebSocket,
@@ -15,7 +14,6 @@ import {
   recordingWebSocketClass,
 } from "./_session-core-test-utils.ts";
 import { useClientTool } from "./client-tool.ts";
-import { SessionProvider } from "./context.ts";
 import type { BrowserSession } from "./session/index.ts";
 import { createBrowserSession, loadAudioModules } from "./session/index.ts";
 
@@ -24,7 +22,6 @@ function noop(): void {
 }
 
 describe("useClientTool", () => {
-  let audio: ReturnType<typeof installAudioMocks>;
   let socket: MockWebSocket | null = null;
   const WS = recordingWebSocketClass((s) => {
     socket = s;
@@ -33,13 +30,12 @@ describe("useClientTool", () => {
   beforeEach(async () => {
     await loadAudioModules();
     vi.useFakeTimers();
-    audio = installAudioMocks();
+    installAudioMocks();
     socket = null;
     sessionStorage.clear();
     vi.spyOn(console, "warn").mockImplementation(noop);
   });
   afterEach(() => {
-    audio.restore();
     vi.useRealTimers();
   });
 
@@ -50,11 +46,6 @@ describe("useClientTool", () => {
     socket?.simulateMessage(makeConfig());
     await vi.advanceTimersByTimeAsync(0);
     return core;
-  }
-
-  function wrapperFor(core: BrowserSession) {
-    return ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
   }
 
   function called(toolCallId: string, toolName: string, args: unknown = {}): void {
@@ -75,7 +66,7 @@ describe("useClientTool", () => {
   it("runs the handler with the call's args and answers with its JSON result", async () => {
     const core = await live();
     const handler = vi.fn(async (args: { city: string }) => ({ temp: 21, city: args.city }));
-    renderHook(() => useClientTool("get_weather", handler), { wrapper: wrapperFor(core) });
+    renderHookWithSession(() => useClientTool("get_weather", handler), core);
 
     called("tc-1", "get_weather", { city: "Oslo" });
     await vi.advanceTimersByTimeAsync(0);
@@ -96,9 +87,7 @@ describe("useClientTool", () => {
   it("ignores other tools, and runs each call once however often it re-renders", async () => {
     const core = await live();
     const handler = vi.fn(() => "ok");
-    const { rerender } = renderHook(() => useClientTool("pick", handler), {
-      wrapper: wrapperFor(core),
-    });
+    const { rerender } = renderHookWithSession(() => useClientTool("pick", handler), core);
 
     called("tc-1", "web_search");
     called("tc-2", "pick");
@@ -112,15 +101,12 @@ describe("useClientTool", () => {
 
   it("fails the call with the message when the handler throws or rejects", async () => {
     const core = await live();
-    renderHook(
-      () => {
-        useClientTool("sync_fail", () => {
-          throw new Error("no camera");
-        });
-        useClientTool("async_fail", () => Promise.reject(new Error("denied")));
-      },
-      { wrapper: wrapperFor(core) },
-    );
+    renderHookWithSession(() => {
+      useClientTool("sync_fail", () => {
+        throw new Error("no camera");
+      });
+      useClientTool("async_fail", () => Promise.reject(new Error("denied")));
+    }, core);
 
     called("tc-1", "sync_fail");
     called("tc-2", "async_fail");
@@ -138,7 +124,7 @@ describe("useClientTool", () => {
     const core = await live();
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
-    renderHook(() => useClientTool("loop", () => cyclic), { wrapper: wrapperFor(core) });
+    renderHookWithSession(() => useClientTool("loop", () => cyclic), core);
 
     called("tc-1", "loop");
     await vi.advanceTimersByTimeAsync(0);

@@ -31,9 +31,32 @@
  * restores timers or globals in its own hook wants.
  */
 
+// jest-dom's DOM matchers (`toBeInTheDocument`, `toHaveAttribute`, …) on
+// vitest's `expect`, plus their type augmentation — this file is in the
+// typecheck program, so the side-effect import is what makes them type.
+import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 
 configure({ asyncUtilTimeout: 10_000 });
 
 afterEach(cleanup);
+
+// jsdom has no `ResizeObserver`, and `aai-ui`'s `<AutoScroll>` — mounted by the
+// chat transcript and the Logs pane — constructs one. Layout never changes
+// here, so every method is a no-op; what matters is that the constructor
+// exists. Guarded, as `aai-ui`'s `_jsdom-setup.ts` is: this file also runs for
+// the node-environment suites, and a jsdom that grows one keeps its own.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserverStub {
+    observe(): void {
+      // jsdom stub — layout never changes.
+    }
+    unobserve(): void {
+      // jsdom stub.
+    }
+    disconnect(): void {
+      // jsdom stub.
+    }
+  };
+}

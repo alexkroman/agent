@@ -17,7 +17,7 @@ describe("WorkflowRunError", () => {
     // looked away, and `<Form>` announces only the submit error.
     const run: WorkflowRun = { ...BASE, status: "failed", error: "page returned no text" };
     render(<WorkflowRunError run={run} />);
-    expect(screen.getByRole("alert").textContent).toBe("That run failed: page returned no text");
+    expect(screen.getByRole("alert")).toHaveTextContent(/^That run failed: page returned no text$/);
   });
 
   test("renders nothing for a run in any other status, or no run at all", () => {
@@ -36,6 +36,6 @@ describe("WorkflowRunError", () => {
 
   test("className is added rather than replacing the colour", () => {
     render(<WorkflowRunError run={{ ...BASE, status: "failed", error: "x" }} className="mt-2" />);
-    expect(screen.getByRole("alert").className).toBe("text-red-600 mt-2");
+    expect(screen.getByRole("alert")).toHaveClass("text-red-600 mt-2", { exact: true });
   });
 });

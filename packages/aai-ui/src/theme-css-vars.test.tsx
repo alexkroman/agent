@@ -75,7 +75,7 @@ describe("the theme as CSS custom properties", () => {
     const view = mount({ primary: "#000000" });
     expect(varsOnRoot()["--aai-primary"]).toBe("#000000");
     view.unmount();
-    expect(document.documentElement.style.getPropertyValue("--aai-primary")).toBe("#abcdef");
+    expect(document.documentElement).toHaveStyle({ "--aai-primary": "#abcdef" });
     // One it did NOT find is removed, not left behind as a stale token.
     expect(document.documentElement.style.getPropertyValue("--aai-border")).toBe("");
     document.documentElement.style.removeProperty("--aai-primary");
@@ -85,8 +85,8 @@ describe("the theme as CSS custom properties", () => {
     // The regression this guards is invisible in a unit render and obvious on a
     // 2560px monitor. It has happened once.
     mount({ bg: "#123456" });
-    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
-    expect(document.documentElement.style.background).toBe("rgb(18, 52, 86)");
+    expect(document.body).toHaveStyle({ background: "rgb(18, 52, 86)" });
+    expect(document.documentElement).toHaveStyle({ background: "rgb(18, 52, 86)" });
   });
 });
 

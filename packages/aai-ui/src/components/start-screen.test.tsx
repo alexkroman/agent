@@ -37,7 +37,7 @@ describe("StartScreen: start flow", () => {
     );
 
     // Shows start button, not children
-    expect(screen.getByText("Start Conversation")).toBeDefined();
+    expect(screen.getByText("Start Conversation")).toBeInTheDocument();
     expect(screen.queryByTestId("chat")).toBeNull();
 
     // Click start
@@ -45,7 +45,7 @@ describe("StartScreen: start flow", () => {
 
     // start() sets started=true, which notifies subscribers and triggers re-render
     expect(screen.queryByText("Start Conversation")).toBeNull();
-    expect(screen.getByTestId("chat")).toBeDefined();
+    expect(screen.getByTestId("chat")).toBeInTheDocument();
   });
 
   test("renders custom button text", () => {
@@ -56,7 +56,7 @@ describe("StartScreen: start flow", () => {
       </StartScreen>,
       core,
     );
-    expect(screen.getByText("Begin Session")).toBeDefined();
+    expect(screen.getByText("Begin Session")).toBeInTheDocument();
   });
 
   test("renders title and subtitle", () => {
@@ -67,8 +67,8 @@ describe("StartScreen: start flow", () => {
       </StartScreen>,
       core,
     );
-    expect(screen.getByText("Pizza Bot")).toBeDefined();
-    expect(screen.getByText("Order by voice")).toBeDefined();
+    expect(screen.getByText("Pizza Bot")).toBeInTheDocument();
+    expect(screen.getByText("Order by voice")).toBeInTheDocument();
   });
 });
 
@@ -82,9 +82,9 @@ describe("StartScreen: the card", () => {
       </StartScreen>,
       core,
     );
-    expect(screen.getByText("Voice Agent")).toBeDefined();
+    expect(screen.getByText("Voice Agent")).toBeInTheDocument();
     // The default mark stands in until a caller passes its own icon.
-    expect(screen.getByRole("img", { name: "AssemblyAI" })).toBeDefined();
+    expect(screen.getByRole("img", { name: "AssemblyAI" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Start Conversation" }));
     expect(start).toHaveBeenCalledOnce();
@@ -98,7 +98,7 @@ describe("StartScreen: the card", () => {
       </StartScreen>,
       core,
     );
-    expect(screen.getByTestId("icon")).toBeDefined();
+    expect(screen.getByTestId("icon")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "AssemblyAI" })).toBeNull();
   });
 

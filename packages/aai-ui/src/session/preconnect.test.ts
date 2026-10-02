@@ -26,7 +26,7 @@ import type { BrowserSession } from "./types.ts";
 
 describe("BrowserSession pre-connect audio", () => {
   let core: BrowserSession;
-  let audio: AudioMockContext & { restore: () => void };
+  let audio: AudioMockContext;
   let trackStops: ReturnType<typeof vi.fn>;
   let getUserMedia: ReturnType<typeof vi.fn<() => Promise<unknown>>>;
 
@@ -44,7 +44,6 @@ describe("BrowserSession pre-connect audio", () => {
 
   afterEach(() => {
     core.disconnect();
-    audio.restore();
   });
 
   function session(preConnectAudio?: boolean): BrowserSession {

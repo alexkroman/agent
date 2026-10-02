@@ -12,7 +12,7 @@ import {
   SESSION_PROTOCOL,
   SESSION_TICKET_HEADER,
 } from "@alexkroman1/aai/protocol";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   lastSocket,
   MockWebSocket,
@@ -150,22 +150,19 @@ describe("createDialer over partysocket", () => {
       },
     });
     const ws = dialer.open();
-    try {
-      const first = await nextSocket(0);
-      expect(first.protocols).toEqual(offer("ticket-1"));
-      expect(new URL(first.url).searchParams.has("token")).toBe(false);
+    onTestFinished(() => ws.close());
+    const first = await nextSocket(0);
+    expect(first.protocols).toEqual(offer("ticket-1"));
+    expect(new URL(first.url).searchParams.has("token")).toBe(false);
 
-      first.simulateOpen();
-      dialer.configured("sess-1");
-      first.simulateClose(1006);
+    first.simulateOpen();
+    dialer.configured("sess-1");
+    first.simulateClose(1006);
 
-      const second = await nextSocket(1);
-      expect(second.protocols).toEqual(offer("ticket-2"));
-      expect(new URL(second.url).searchParams.get("sessionId")).toBe("sess-1");
-      expect(asked).toEqual([undefined, "sess-1"]);
-    } finally {
-      ws.close();
-    }
+    const second = await nextSocket(1);
+    expect(second.protocols).toEqual(offer("ticket-2"));
+    expect(new URL(second.url).searchParams.get("sessionId")).toBe("sess-1");
+    expect(asked).toEqual([undefined, "sess-1"]);
   });
 
   test("with no token option, the ticket client-config issued is used — re-fetched per attempt", async () => {
@@ -175,28 +172,22 @@ describe("createDialer over partysocket", () => {
     ];
     const dialer = createDialer({ platformUrl: "http://test.local" });
     const ws = dialer.open();
-    try {
-      const first = await nextSocket(0);
-      expect(first.protocols).toEqual(offer("cfg-1"));
-      first.simulateClose(1006);
-      // A config that issues tickets is NOT latched as "nothing per attempt".
-      const second = await nextSocket(1);
-      expect(second.protocols).toEqual(offer("cfg-2"));
-      expect(lookups).toBe(2);
-    } finally {
-      ws.close();
-    }
+    onTestFinished(() => ws.close());
+    const first = await nextSocket(0);
+    expect(first.protocols).toEqual(offer("cfg-1"));
+    first.simulateClose(1006);
+    // A config that issues tickets is NOT latched as "nothing per attempt".
+    const second = await nextSocket(1);
+    expect(second.protocols).toEqual(offer("cfg-2"));
+    expect(lookups).toBe(2);
   });
 
   test("the caller's own ticket wins over one client-config issued", async () => {
     configs = [{ page: "voice", sessionToken: "from-server" }];
     const dialer = createDialer({ platformUrl: "http://test.local", token: () => "mine" });
     const ws = dialer.open();
-    try {
-      expect((await nextSocket(0)).protocols).toEqual(offer("mine"));
-    } finally {
-      ws.close();
-    }
+    onTestFinished(() => ws.close());
+    expect((await nextSocket(0)).protocols).toEqual(offer("mine"));
   });
 
   test("a getter that rejects still dials, with no ticket", async () => {
@@ -206,26 +197,20 @@ describe("createDialer over partysocket", () => {
       token: () => Promise.reject(new Error("backend down")),
     });
     const ws = dialer.open();
-    try {
-      const first = await nextSocket(0);
-      expect(first.protocols).toBeUndefined();
-    } finally {
-      ws.close();
-    }
+    onTestFinished(() => ws.close());
+    const first = await nextSocket(0);
+    expect(first.protocols).toBeUndefined();
   });
 
   test("a config that names neither a broker nor a ticket is latched, as before", async () => {
     const dialer = createDialer({ platformUrl: "http://test.local", token: "t" });
     const ws = dialer.open();
-    try {
-      const first = await nextSocket(0);
-      first.simulateClose(1006);
-      const second = await nextSocket(1);
-      expect(second.protocols).toEqual(offer("t"));
-      expect(lookups).toBe(1);
-    } finally {
-      ws.close();
-    }
+    onTestFinished(() => ws.close());
+    const first = await nextSocket(0);
+    first.simulateClose(1006);
+    const second = await nextSocket(1);
+    expect(second.protocols).toEqual(offer("t"));
+    expect(lookups).toBe(1);
   });
   describe("ticket() — the ticket another socket (the inbox) presents", () => {
     test("is the token option when there is one", async () => {
@@ -264,18 +249,15 @@ describe("createDialer over partysocket", () => {
       configs = [broker(1), broker(2)];
       const dialer = createDialer({ platformUrl: "https://platform.test/agent/" });
       const ws = dialer.open();
-      try {
-        const first = await nextSocket(0);
-        expect(first.protocols).toEqual(offer("minted-1"));
-        first.simulateOpen();
-        dialer.configured("sess-1");
-        first.simulateClose(1006);
-        const second = await nextSocket(1);
-        expect(second.protocols).toEqual(offer("minted-2"));
-        expect(presented).toEqual([null, "minted-1"]);
-      } finally {
-        ws.close();
-      }
+      onTestFinished(() => ws.close());
+      const first = await nextSocket(0);
+      expect(first.protocols).toEqual(offer("minted-1"));
+      first.simulateOpen();
+      dialer.configured("sess-1");
+      first.simulateClose(1006);
+      const second = await nextSocket(1);
+      expect(second.protocols).toEqual(offer("minted-2"));
+      expect(presented).toEqual([null, "minted-1"]);
     });
 
     test("a reload presents the stored ticket beside the stored session id", async () => {
@@ -290,12 +272,9 @@ describe("createDialer over partysocket", () => {
 
       const after = createDialer({ platformUrl });
       const ws2 = after.open();
-      try {
-        await nextSocket(1);
-        expect(presented.at(-1)).toBe("minted-1");
-      } finally {
-        ws2.close();
-      }
+      onTestFinished(() => ws2.close());
+      await nextSocket(1);
+      expect(presented.at(-1)).toBe("minted-1");
     });
 
     test("forget() drops the ticket with the session", async () => {
@@ -312,12 +291,9 @@ describe("createDialer over partysocket", () => {
       // Even resuming that id by hand: the ticket that proved it is gone.
       const fresh = createDialer({ platformUrl, resumeSessionId: "sess-1" });
       const ws2 = fresh.open();
-      try {
-        await nextSocket(1);
-        expect(presented.at(-1)).toBeNull();
-      } finally {
-        ws2.close();
-      }
+      onTestFinished(() => ws2.close());
+      await nextSocket(1);
+      expect(presented.at(-1)).toBeNull();
     });
   });
 });

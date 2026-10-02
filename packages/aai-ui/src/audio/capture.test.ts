@@ -3,7 +3,7 @@
  * The capture primitives both capture paths share: the rate assertion, the
  * failed-init release, and the capture node's start/stop/chunk protocol.
  */
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   type AudioMockContext,
   fakeMediaStream,
@@ -57,12 +57,9 @@ describe("workletCrash", () => {
 });
 
 describe("createCaptureNode", () => {
-  let audio: AudioMockContext & { restore: () => void };
+  let audio: AudioMockContext;
   beforeEach(() => {
     audio = installAudioMocks();
-  });
-  afterEach(() => {
-    audio.restore();
   });
 
   test("relays chunks and the dead-mic report, and stop() waits for the ack", async () => {

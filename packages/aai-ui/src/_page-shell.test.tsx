@@ -85,14 +85,14 @@ describe("DefaultPageShell", () => {
     // these itself — which is why the shell is what fetches them now.
     stubAgent();
     const { container } = render(<DefaultPageShell />);
-    await waitFor(() => expect(container.textContent).toContain("Paste a link."));
-    expect(container.querySelector("h1")?.textContent).toBe("Link Digest");
+    await waitFor(() => expect(container).toHaveTextContent("Paste a link."));
+    expect(container.querySelector("h1")).toHaveTextContent(/^Link Digest$/);
   });
 
   test("an explicit name beats the agent's own", async () => {
     stubAgent();
     const { container } = render(<DefaultPageShell name="Digests" />);
-    await waitFor(() => expect(container.querySelector("h1")?.textContent).toBe("Digests"));
+    await waitFor(() => expect(container.querySelector("h1")).toHaveTextContent(/^Digests$/));
   });
 
   test("renders a control per declared schema property", async () => {
@@ -102,13 +102,13 @@ describe("DefaultPageShell", () => {
     stubAgent();
     const { container } = render(<DefaultPageShell />);
     await waitFor(() => expect(container.querySelector("input[name='url']")).not.toBeNull());
-    expect(container.textContent).toContain("The link to digest");
+    expect(container).toHaveTextContent("The link to digest");
     // Awaited rather than read at that instant: `pending` covers the
     // mount-time recovery lookup too — `useWorkflowSubmit` asks whether this
     // page already started a run — so the button reads "Working…" until that
     // answer lands, which is the honest label for it.
     await waitFor(() =>
-      expect(container.querySelector("button[type='submit']")?.textContent).toBe("Start"),
+      expect(container.querySelector("button[type='submit']")).toHaveTextContent(/^Start$/),
     );
   });
 
@@ -141,7 +141,7 @@ describe("DefaultPageShell", () => {
     // separately, which is why this sentence can be about a real answer.
     stubAgent({ workflows: [] });
     const { container } = render(<DefaultPageShell />);
-    await waitFor(() => expect(container.textContent).toContain("declares no workflows"));
+    await waitFor(() => expect(container).toHaveTextContent("declares no workflows"));
   });
 
   test("offers a picker only when there is more than one workflow", async () => {

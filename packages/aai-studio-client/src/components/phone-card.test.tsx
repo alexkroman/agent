@@ -47,28 +47,28 @@ describe("PhoneCard", () => {
   test("shows a webhook URL per carrier, built from the published slug", () => {
     render(<PhoneCard deployedSlug="demo-x7k2mq" {...props} />);
     const origin = window.location.origin;
-    expect(screen.getByText(`${origin}/demo-x7k2mq/phone?carrier=twilio`)).toBeTruthy();
-    expect(screen.getByText(`${origin}/demo-x7k2mq/phone?carrier=telnyx`)).toBeTruthy();
+    expect(screen.getByText(`${origin}/demo-x7k2mq/phone?carrier=twilio`)).toBeInTheDocument();
+    expect(screen.getByText(`${origin}/demo-x7k2mq/phone?carrier=telnyx`)).toBeInTheDocument();
   });
 
   test("names each carrier's signing secret when it is not set", () => {
     render(<PhoneCard deployedSlug="demo" {...props} />);
-    expect(screen.getByText("TWILIO_AUTH_TOKEN")).toBeTruthy();
-    expect(screen.getByText("TELNYX_PUBLIC_KEY")).toBeTruthy();
+    expect(screen.getByText("TWILIO_AUTH_TOKEN")).toBeInTheDocument();
+    expect(screen.getByText("TELNYX_PUBLIC_KEY")).toBeInTheDocument();
     expect(screen.getAllByText(/Add/).length).toBe(2);
   });
 
   test("says where to find the value, so the hint is actionable", () => {
     render(<PhoneCard deployedSlug="demo" {...props} />);
-    expect(screen.getByText(/Twilio Console/)).toBeTruthy();
-    expect(screen.getByText(/Telnyx Portal/)).toBeTruthy();
+    expect(screen.getByText(/Twilio Console/)).toBeInTheDocument();
+    expect(screen.getByText(/Telnyx Portal/)).toBeInTheDocument();
   });
 
   test("reports a configured secret as verifying calls", () => {
     render(
       <PhoneCard deployedSlug="demo" secretNames={["TWILIO_AUTH_TOKEN"]} pendingSecrets={[]} />,
     );
-    expect(screen.getByText(/is set — calls are verified/)).toBeTruthy();
+    expect(screen.getByText(/is set — calls are verified/)).toBeInTheDocument();
   });
 
   test("reports a saved-but-undelivered secret as not yet verifying", () => {
@@ -79,7 +79,7 @@ describe("PhoneCard", () => {
         pendingSecrets={["TWILIO_AUTH_TOKEN"]}
       />,
     );
-    expect(screen.getByText(/next publish/)).toBeTruthy();
+    expect(screen.getByText(/next publish/)).toBeInTheDocument();
     expect(screen.queryByText(/is set — calls are verified/)).toBeNull();
   });
 
@@ -87,7 +87,7 @@ describe("PhoneCard", () => {
     // An unpublished slug resolves to nothing: the caller hears the
     // agent-not-found message. No URL is a better answer than a dead one.
     render(<PhoneCard {...props} />);
-    expect(screen.getByText(/Publish this project/)).toBeTruthy();
+    expect(screen.getByText(/Publish this project/)).toBeInTheDocument();
     expect(screen.queryByText(/carrier=twilio/)).toBeNull();
   });
 
@@ -97,11 +97,11 @@ describe("PhoneCard", () => {
     render(<PhoneCard deployedSlug="demo" {...props} />);
 
     fireEvent.click(screen.getByLabelText("Copy the Twilio webhook URL"));
-    await vi.waitFor(() => expect(screen.getByText("Copied")).toBeTruthy());
+    await vi.waitFor(() => expect(screen.getByText("Copied")).toBeInTheDocument());
 
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/demo/phone?carrier=twilio`);
     // The other carrier's button is untouched — the flash is keyed by text.
-    expect(screen.getByLabelText("Copy the Telnyx webhook URL").textContent).toBe("Copy");
+    expect(screen.getByLabelText("Copy the Telnyx webhook URL")).toHaveTextContent(/^Copy$/);
   });
 
   test("a clipboard-less context flashes a failure rather than throwing", () => {
@@ -110,6 +110,6 @@ describe("PhoneCard", () => {
     expect(() =>
       fireEvent.click(screen.getByLabelText("Copy the Twilio webhook URL")),
     ).not.toThrow();
-    expect(screen.getByText("Failed")).toBeTruthy();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
   });
 });

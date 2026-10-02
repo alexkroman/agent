@@ -349,7 +349,6 @@ function checkInvariants(snap: SessionSnapshot, prev: SessionSnapshot, log: stri
 }
 
 describe("fuzz: session-core interleavings", () => {
-  let audio: ReturnType<typeof installAudioMocks>;
   const rejections: unknown[] = [];
   // Named, so afterEach can remove exactly THIS listener. The teardown used
   // `process.removeAllListeners("unhandledRejection")`, which strips every
@@ -364,7 +363,7 @@ describe("fuzz: session-core interleavings", () => {
     // would never exercise the playback/teardown interactions.
     await loadAudioModules();
     vi.useFakeTimers();
-    audio = installAudioMocks();
+    installAudioMocks();
     rejections.length = 0;
     process.on("unhandledRejection", onUnhandledRejection);
     vi.spyOn(console, "error").mockImplementation(noop);
@@ -373,7 +372,6 @@ describe("fuzz: session-core interleavings", () => {
   });
 
   afterEach(() => {
-    audio.restore();
     vi.useRealTimers();
     process.off("unhandledRejection", onUnhandledRejection);
   });

@@ -34,7 +34,7 @@ describe("SessionErrorBanner", () => {
     // the half a user can quote. One template's banner dropped it.
     mount({ code: "connection", message: "the session ended", fatal: false });
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toBe("the session ended (connection)");
+    expect(alert).toHaveTextContent(/^the session ended \(connection\)$/);
   });
 
   test("renders nothing at all when the session is fine", () => {
@@ -51,7 +51,7 @@ describe("SessionErrorBanner", () => {
     act(() => {
       core.update({ error: { code: "stt", message: "transcriber refused", fatal: true } });
     });
-    expect(screen.getByRole("alert").textContent).toBe("transcriber refused (stt)");
+    expect(screen.getByRole("alert")).toHaveTextContent(/^transcriber refused \(stt\)$/);
   });
 
   test("appends className rather than replacing its own classes", () => {
@@ -59,7 +59,7 @@ describe("SessionErrorBanner", () => {
     // without losing the padding and the colour that make it a banner.
     mount({ code: "internal", message: "boom", fatal: true }, "col-span-2");
     const alert = screen.getByRole("alert");
-    expect(alert.className).toContain("col-span-2");
-    expect(alert.className).toContain("rounded-aai");
+    expect(alert).toHaveClass("col-span-2");
+    expect(alert).toHaveClass("rounded-aai");
   });
 });

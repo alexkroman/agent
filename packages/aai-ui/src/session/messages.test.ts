@@ -367,10 +367,6 @@ describe("session-core server events", () => {
       audio = installAudioMocks();
     });
 
-    afterEach(() => {
-      audio.restore();
-    });
-
     const chunk = () => new ArrayBuffer(8);
 
     it("plays audio while a non-fatal error banner is showing", () => {
@@ -461,21 +457,17 @@ describe("session-core server events", () => {
     });
 
     it("a second audio chunk in the same turn does not re-announce speaking", () => {
-      const audio = installAudioMocks();
-      try {
-        const socket = connect();
-        socket.simulateMessage(new ArrayBuffer(8));
-        expect(core.getSnapshot().state).toBe("speaking");
+      installAudioMocks();
+      const socket = connect();
+      socket.simulateMessage(new ArrayBuffer(8));
+      expect(core.getSnapshot().state).toBe("speaking");
 
-        const listener = vi.fn();
-        const unsubscribe = core.subscribe(listener);
-        socket.simulateMessage(new ArrayBuffer(8));
+      const listener = vi.fn();
+      const unsubscribe = core.subscribe(listener);
+      socket.simulateMessage(new ArrayBuffer(8));
 
-        expect(listener).not.toHaveBeenCalled();
-        unsubscribe();
-      } finally {
-        audio.restore();
-      }
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
     });
   });
 

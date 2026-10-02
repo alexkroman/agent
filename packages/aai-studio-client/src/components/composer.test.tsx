@@ -9,10 +9,10 @@
 // not the composer's — it only hands the text up.
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import { button, textarea } from "../_test-utils.ts";
 import { Composer } from "./composer.tsx";
 
 const noop = (): void => undefined;
@@ -101,36 +101,40 @@ function Controlled(props: {
 }
 
 describe("Composer interaction", () => {
-  test("Enter sends the TRIMMED text and clears the field", () => {
+  test("Enter sends the TRIMMED text and clears the field", async () => {
+    const user = userEvent.setup();
     const onSend = vi.fn();
     render(<Controlled onSend={onSend} />);
-    const field = textarea("Describe your agent…");
-    fireEvent.change(field, { target: { value: "  build a pizza bot  " } });
+    const field = screen.getByPlaceholderText("Describe your agent…");
+    await user.type(field, "  build a pizza bot  ");
     fireEvent.keyDown(field, { key: "Enter" });
     expect(onSend).toHaveBeenCalledExactlyOnceWith("build a pizza bot");
-    expect(field.value).toBe("");
+    expect(field).toHaveValue("");
   });
 
   test("Shift+Enter is a newline, not a send", () => {
     const onSend = vi.fn();
     render(<Controlled onSend={onSend} initial="line one" />);
-    fireEvent.keyDown(textarea("Describe your agent…"), { key: "Enter", shiftKey: true });
+    fireEvent.keyDown(screen.getByPlaceholderText("Describe your agent…"), {
+      key: "Enter",
+      shiftKey: true,
+    });
     expect(onSend).not.toHaveBeenCalled();
   });
 
   test("a blank field sends nothing", () => {
     const onSend = vi.fn();
     render(<Controlled onSend={onSend} initial="   " />);
-    fireEvent.click(button("Send"));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(onSend).not.toHaveBeenCalled();
   });
 
   test("a send held back by a starting sandbox KEEPS the text", () => {
     const onSend = vi.fn();
     render(<Controlled onSend={onSend} sendDisabled initial="make it italian" />);
-    fireEvent.keyDown(textarea("Describe your agent…"), { key: "Enter" });
+    fireEvent.keyDown(screen.getByPlaceholderText("Describe your agent…"), { key: "Enter" });
     expect(onSend).not.toHaveBeenCalled();
-    expect(textarea("Describe your agent…").value).toBe("make it italian");
+    expect(screen.getByPlaceholderText("Describe your agent…")).toHaveValue("make it italian");
   });
 
   test("Stop calls onStop and sends nothing, even with text in the field", () => {
@@ -147,7 +151,7 @@ describe("Composer interaction", () => {
         onStop={onStop}
       />,
     );
-    fireEvent.click(button("Stop"));
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     expect(onStop).toHaveBeenCalledOnce();
     expect(onSend).not.toHaveBeenCalled();
   });
@@ -168,8 +172,8 @@ describe("Composer interaction", () => {
         onRemoveQueued={onRemoveQueued}
       />,
     );
-    expect(screen.getByRole("list", { name: "Queued messages" })).toBeTruthy();
-    fireEvent.click(button("Remove queued message 2"));
+    expect(screen.getByRole("list", { name: "Queued messages" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove queued message 2" }));
     expect(onRemoveQueued).toHaveBeenCalledExactlyOnceWith("q1");
   });
 });

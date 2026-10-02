@@ -11,12 +11,10 @@
  * of reporting a seed and a 40-line op log to read by hand.
  */
 
-import { act, renderHook } from "@testing-library/react";
+import { act } from "@testing-library/react";
 import fc from "fast-check";
-import { createElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import { useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
 import type { AgentCustomEvent } from "./session/index.ts";
 import type { ToolCallInfo } from "./types.ts";
@@ -205,16 +203,11 @@ function runScript(script: Mutation[][]): Run {
   const fired: Run["fired"] = { start: [], done: [], events: [] };
   const expected: Run["expected"] = { start: new Set(), done: new Set(), events: new Set() };
 
-  const wrapper = ({ children }: { children: ReactNode }) =>
-    createElement(SessionProvider, { value: core }, children);
-  renderHook(
-    () => {
-      useToolCallStart((tc) => fired.start.push(tc.callId));
-      useToolResult((_name, _result, tc) => fired.done.push(tc.callId));
-      useEvent<{ n: number }>("ping", (data) => fired.events.push(data.n));
-    },
-    { wrapper },
-  );
+  renderHookWithSession(() => {
+    useToolCallStart((tc) => fired.start.push(tc.callId));
+    useToolResult((_name, _result, tc) => fired.done.push(tc.callId));
+    useEvent<{ n: number }>("ping", (data) => fired.events.push(data.n));
+  }, core);
 
   const c: Collections = { toolCalls: [], customEvents: [] };
   const seqs: Seqs = { tool: 0, event: 0 };
@@ -260,9 +253,7 @@ function runOverflow(settles: readonly { at: number; pick: number }[]): {
 } {
   const core = createMockSessionCore({ state: "ready", started: true });
   const fired: string[] = [];
-  const wrapper = ({ children }: { children: ReactNode }) =>
-    createElement(SessionProvider, { value: core }, children);
-  renderHook(() => useToolResult((_n, _res, tc) => fired.push(tc.callId)), { wrapper });
+  renderHookWithSession(() => useToolResult((_n, _res, tc) => fired.push(tc.callId)), core);
 
   const byStep = new Map<number, number[]>();
   for (const { at, pick } of settles) byStep.set(at, [...(byStep.get(at) ?? []), pick]);

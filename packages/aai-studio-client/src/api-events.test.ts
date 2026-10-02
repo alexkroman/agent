@@ -24,7 +24,11 @@ function recorder() {
   };
 }
 
-/** Let the subscription's async body run to its `finally`. */
+/**
+ * Let the subscription's async body run to its `finally`. Only for a NEGATIVE
+ * claim, which has nothing to wait for: a positive one waits on the report it
+ * expects with `vi.waitFor`, so a slower body is not a flake.
+ */
 async function drain(): Promise<void> {
   for (let i = 0; i < 5; i++) await tick();
 }
@@ -34,7 +38,7 @@ describe("watchEventStream", () => {
     const mock = stubFetch(() => sseResponse([]));
     const rec = recorder();
     watchEventStream("tok-1", "/studio/projects/p/events", rec.handlers);
-    await drain();
+    await vi.waitFor(() => expect(mock).toHaveBeenCalledOnce());
     const { url, init } = fetchCall(mock);
     expect(url).toBe("/studio/projects/p/events");
     expect(init.headers).toEqual({
@@ -53,21 +57,21 @@ describe("watchEventStream", () => {
     );
     const rec = recorder();
     watchEventStream("k", "/e", rec.handlers);
-    await drain();
+    // The server ended a stream it had accepted: reconnecting fixes that. The
+    // report comes once the whole body is read, so it is what to wait on.
+    await vi.waitFor(() => expect(rec.downs).toEqual(["transport"]));
     expect(rec.onOpen).toHaveBeenCalledTimes(1);
     expect(rec.frames).toEqual([
       { event: "project", data: { name: "p" } },
       { event: "ping", data: undefined },
     ]);
-    // The server ended a stream it had accepted: reconnecting fixes that.
-    expect(rec.downs).toEqual(["transport"]);
   });
 
   test("reassembles a frame split across chunks", async () => {
     stubFetch(() => sseResponse(["event: pro", 'ject\ndata: {"n":', "1}\n\n"]));
     const rec = recorder();
     watchEventStream("k", "/e", rec.handlers);
-    await drain();
+    await vi.waitFor(() => expect(rec.downs).toEqual(["transport"]));
     expect(rec.frames).toEqual([{ event: "project", data: { n: 1 } }]);
   });
 
@@ -75,35 +79,31 @@ describe("watchEventStream", () => {
     stubFetch(() => jsonResponse({ error: "no" }, status));
     const rec = recorder();
     watchEventStream("dead", "/e", rec.handlers);
-    await drain();
+    await vi.waitFor(() => expect(rec.downs).toEqual(["auth"]));
     expect(rec.onOpen).not.toHaveBeenCalled();
-    expect(rec.downs).toEqual(["auth"]);
   });
 
   test.each([404, 500, 503])("a %i is a TRANSPORT failure", async (status) => {
     stubFetch(() => jsonResponse({ error: "no" }, status));
     const rec = recorder();
     watchEventStream("k", "/e", rec.handlers);
-    await drain();
+    await vi.waitFor(() => expect(rec.downs).toEqual(["transport"]));
     expect(rec.onOpen).not.toHaveBeenCalled();
-    expect(rec.downs).toEqual(["transport"]);
   });
 
   test("a rejected fetch is a TRANSPORT failure", async () => {
     stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
     const rec = recorder();
     watchEventStream("k", "/e", rec.handlers);
-    await drain();
-    expect(rec.downs).toEqual(["transport"]);
+    await vi.waitFor(() => expect(rec.downs).toEqual(["transport"]));
   });
 
   test("a 200 with no body is a TRANSPORT failure and never opens", async () => {
     stubFetch(() => new Response(null, { status: 200 }));
     const rec = recorder();
     watchEventStream("k", "/e", rec.handlers);
-    await drain();
+    await vi.waitFor(() => expect(rec.downs).toEqual(["transport"]));
     expect(rec.onOpen).not.toHaveBeenCalled();
-    expect(rec.downs).toEqual(["transport"]);
   });
 
   test("the caller's own abort reports nothing, and aborts the request", async () => {
@@ -120,10 +120,10 @@ describe("watchEventStream", () => {
     );
     const rec = recorder();
     const stop = watchEventStream("k", "/e", rec.handlers);
-    await drain();
-    expect(rec.onOpen).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(rec.onOpen).toHaveBeenCalledOnce());
     stop();
     end();
+    // The claim is that NO report comes, so there is nothing to wait on: one settle.
     await drain();
     expect(fetchCall(mock).init.signal?.aborted).toBe(true);
     expect(rec.downs).toEqual([]);
@@ -139,9 +139,8 @@ describe("watchEventStream", () => {
     stubFetch(() => new Response(body, { headers: { "Content-Type": "text/event-stream" } }));
     const rec = recorder();
     watchEventStream("k", "/e", rec.handlers);
-    await drain();
+    await vi.waitFor(() => expect(rec.onOpen).toHaveBeenCalledOnce());
     end();
-    await drain();
-    expect(rec.downs).toEqual(["transport"]);
+    await vi.waitFor(() => expect(rec.downs).toEqual(["transport"]));
   });
 });

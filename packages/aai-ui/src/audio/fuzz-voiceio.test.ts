@@ -178,7 +178,7 @@ async function createWorld(): Promise<World> {
     },
     restore: () => {
       warn.mockRestore();
-      audio.restore();
+      vi.unstubAllGlobals();
     },
   };
   return world;

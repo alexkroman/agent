@@ -11,11 +11,9 @@
  * now exercises this hook transitively — the point of building the list on it.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import type { ChatMessage, ToolCallInfo } from "./types.ts";
 import { type ConversationItem, useConversation } from "./use-conversation.ts";
 
@@ -28,9 +26,7 @@ function toolCall(callId: string, afterMessageId: number, seq: number): ToolCall
 }
 
 function mount(core: ReturnType<typeof createMockSessionCore>) {
-  const wrapper = ({ children }: { children: ReactNode }) =>
-    createElement(SessionProvider, { value: core }, children);
-  return renderHook(() => useConversation(), { wrapper });
+  return renderHookWithSession(() => useConversation(), core);
 }
 
 /** The union collapsed to something a failure message can print. */
@@ -155,15 +151,10 @@ describe("useConversation: the subscription", () => {
     // landing is the cheapest proof — nothing in the conversation reads it.
     const core = createMockSessionCore({ messages: [message(1, "user", "hi")] });
     const renders = vi.fn();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(
-      () => {
-        renders();
-        return useConversation();
-      },
-      { wrapper },
-    );
+    renderHookWithSession(() => {
+      renders();
+      return useConversation();
+    }, core);
     const before = renders.mock.calls.length;
     act(() => core.update({ apiUrl: "ws://elsewhere/websocket", recording: true }));
     expect(renders.mock.calls.length).toBe(before);

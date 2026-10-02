@@ -80,11 +80,13 @@ describe("AgentApiDocs", () => {
       expect(screen.getByText(/agent\.startAndWait\("digest", \{"topic"/)).toBeTruthy(),
     );
     // The client the snippets are written against is offered before the routes.
-    expect(screen.getByText("npm i @alexkroman1/aai")).toBeTruthy();
+    expect(screen.getByText("npm i @alexkroman1/aai")).toBeInTheDocument();
     expect(screen.getAllByText(/createAgentClient\(/).length).toBeGreaterThan(1);
     // The reads a caller reaches for next, in the same client.
-    expect(screen.getByText(/agent\.get\("<run id>"/)).toBeTruthy();
-    expect(screen.getByText(/for await \(const run of agent\.follow\("<run id>"\)\)/)).toBeTruthy();
+    expect(screen.getByText(/agent\.get\("<run id>"/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/for await \(const run of agent\.follow\("<run id>"\)\)/),
+    ).toBeInTheDocument();
     // `agent.list()` is a ROUTE TABLE line, and this pane no longer carries
     // one — see the route-table test below, and public-api.test.tsx for the
     // page that keeps it.
@@ -166,11 +168,11 @@ describe("AgentApiDocs", () => {
     // The URL alone: each row's method sits in a `<span>` of its own, so the
     // matchable text on the row is the URL.
     await waitFor(() => expect(screen.getByText(`${origin}/demo/phone`)).toBeTruthy());
-    expect(screen.getByText(`${origin}/demo/client-config`)).toBeTruthy();
+    expect(screen.getByText(`${origin}/demo/client-config`)).toBeInTheDocument();
     // The workflow half, which on THIS pane is the run examples rather than a
     // route table — see below.
-    expect(screen.getByText("digest")).toBeTruthy();
-    expect(screen.getByText("Twilio")).toBeTruthy();
+    expect(screen.getByText("digest")).toBeInTheDocument();
+    expect(screen.getByText("Twilio")).toBeInTheDocument();
   });
 
   test("quotes the agent's own sentence when the listing cannot be read", async () => {

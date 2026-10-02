@@ -57,7 +57,7 @@ describe("WorkflowRunPanel", () => {
 
   test("a partial `statusLabels` replaces the named lines and keeps the rest", () => {
     render(<WorkflowRunPanel run={RUNNING} statusLabels={{ running: "Writing…" }} />);
-    expect(screen.getByRole("heading").textContent).toBe("Writing…");
+    expect(screen.getByRole("heading")).toHaveTextContent(/^Writing…$/);
     render(<WorkflowRunPanel run={DONE} statusLabels={{ running: "Writing…" }} />);
     expect(screen.getAllByRole("heading")[1]?.textContent).toBe(WORKFLOW_STATUS_LABELS.completed);
   });
@@ -80,7 +80,7 @@ describe("WorkflowRunPanel", () => {
 
     render(<WorkflowRunPanel run={DONE}>{body}</WorkflowRunPanel>);
     expect(body).toHaveBeenCalledWith(DONE.output);
-    expect(screen.getByTestId("body").textContent).toBe("The piece.");
+    expect(screen.getByTestId("body")).toHaveTextContent(/^The piece\.$/);
   });
 
   test("a plain node as children is rendered as it is, and also only once completed", () => {
@@ -95,13 +95,13 @@ describe("WorkflowRunPanel", () => {
         <p data-testid="node">done</p>
       </WorkflowRunPanel>,
     );
-    expect(screen.getByTestId("node")).toBeDefined();
+    expect(screen.getByTestId("node")).toBeInTheDocument();
   });
 
   test("the `live` slot shows while the run is not terminal and goes away when it is", () => {
     const live = <p data-testid="live">so far…</p>;
     render(<WorkflowRunPanel run={RUNNING} live={live} />);
-    expect(screen.getByTestId("live")).toBeDefined();
+    expect(screen.getByTestId("live")).toBeInTheDocument();
     for (const run of [DONE, FAILED, { ...BASE, status: "cancelled" as const }]) {
       const { container } = render(<WorkflowRunPanel run={run} live={live} />);
       expect(container.querySelector("[data-testid='live']")).toBeNull();
@@ -110,7 +110,7 @@ describe("WorkflowRunPanel", () => {
 
   test("composes the announced error for a failed run, and no error otherwise", () => {
     render(<WorkflowRunPanel run={FAILED} />);
-    expect(screen.getByRole("alert").textContent).toBe("That run failed: critic refused");
+    expect(screen.getByRole("alert")).toHaveTextContent(/^That run failed: critic refused$/);
     const { container } = render(<WorkflowRunPanel run={DONE} />);
     expect(container.querySelector("[role='alert']")).toBeNull();
   });
@@ -141,7 +141,7 @@ describe("WorkflowRunPanel", () => {
     const { container } = render(<WorkflowRunPanel run={RUNNING} className="gap-3" />);
     const section = container.firstElementChild as HTMLElement;
     expect(section.tagName).toBe("SECTION");
-    expect(section.className).toContain("rounded-md border p-5");
-    expect(section.className).toContain("gap-3");
+    expect(section).toHaveClass("rounded-md", "border", "p-5");
+    expect(section).toHaveClass("gap-3");
   });
 });

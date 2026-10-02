@@ -35,7 +35,7 @@ describe("mountClient (unmocked session core)", () => {
   });
 
   it("clicking the start button opens a socket to the /websocket endpoint", () => {
-    const handle = mountClient({
+    using _handle = mountClient({
       name: "Smoke Test",
       target: "#app",
       platformUrl: "http://test.local",
@@ -43,27 +43,23 @@ describe("mountClient (unmocked session core)", () => {
         sockets.push(socket);
       }),
     });
-    try {
-      // The default shell mounts on the StartScreen; no socket yet.
-      expect(sockets).toHaveLength(0);
-      const button = container.querySelector("button");
-      expect(button?.textContent).toBe("Start Conversation");
+    // The default shell mounts on the StartScreen; no socket yet.
+    expect(sockets).toHaveLength(0);
+    const button = container.querySelector("button");
+    expect(button).toHaveTextContent(/^Start Conversation$/);
 
-      act(() => {
-        button?.click();
-      });
+    act(() => {
+      button?.click();
+    });
 
-      expect(sockets).toHaveLength(1);
-      expect(sockets[0]?.url).toBe("ws://test.local/websocket");
-    } finally {
-      handle.dispose();
-    }
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]?.url).toBe("ws://test.local/websocket");
   });
 
   it("forwards `location` to the session, so the socket URL carries it", () => {
     // Picked through `ClientConfig` like `resumeSessionId`: a field declared on
     // the options and dropped at the mount would compile and send nothing.
-    const handle = mountClient({
+    using handle = mountClient({
       target: "#app",
       platformUrl: "http://test.local",
       location: "Portland, Oregon",
@@ -71,18 +67,14 @@ describe("mountClient (unmocked session core)", () => {
         sockets.push(socket);
       }),
     });
-    try {
-      act(() => {
-        handle.session.start();
-      });
-      expect(new URL(sockets[0]?.url ?? "").searchParams.get("location")).toBe("Portland, Oregon");
-    } finally {
-      handle.dispose();
-    }
+    act(() => {
+      handle.session.start();
+    });
+    expect(new URL(sockets[0]?.url ?? "").searchParams.get("location")).toBe("Portland, Oregon");
   });
 
   it("forwards `phone` to the session, so the socket URL carries it", () => {
-    const handle = mountClient({
+    using handle = mountClient({
       target: "#app",
       platformUrl: "http://test.local",
       phone: "+15035550123",
@@ -90,18 +82,14 @@ describe("mountClient (unmocked session core)", () => {
         sockets.push(socket);
       }),
     });
-    try {
-      act(() => {
-        handle.session.start();
-      });
-      expect(new URL(sockets[0]?.url ?? "").searchParams.get("phone")).toBe("+15035550123");
-    } finally {
-      handle.dispose();
-    }
+    act(() => {
+      handle.session.start();
+    });
+    expect(new URL(sockets[0]?.url ?? "").searchParams.get("phone")).toBe("+15035550123");
   });
 
   it("forwards `client` to the session, so the socket URL carries it", () => {
-    const handle = mountClient({
+    using handle = mountClient({
       target: "#app",
       platformUrl: "http://test.local",
       client: "kitchen-speaker",
@@ -109,13 +97,9 @@ describe("mountClient (unmocked session core)", () => {
         sockets.push(socket);
       }),
     });
-    try {
-      act(() => {
-        handle.session.start();
-      });
-      expect(new URL(sockets[0]?.url ?? "").searchParams.get("client")).toBe("kitchen-speaker");
-    } finally {
-      handle.dispose();
-    }
+    act(() => {
+      handle.session.start();
+    });
+    expect(new URL(sockets[0]?.url ?? "").searchParams.get("client")).toBe("kitchen-speaker");
   });
 });

@@ -47,7 +47,7 @@ describe("Controls: click interactions", () => {
 
     expect(toggle).toHaveBeenCalledOnce();
     expect(core.getSnapshot().running).toBe(false);
-    expect(screen.getByText("Resume")).toBeDefined();
+    expect(screen.getByText("Resume")).toBeInTheDocument();
   });
 
   test("clicking New Conversation restarts the SESSION, it does not reset it", () => {
@@ -95,7 +95,7 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     );
 
     // 1. Start screen
-    expect(screen.getByText("Start Conversation")).toBeDefined();
+    expect(screen.getByText("Start Conversation")).toBeInTheDocument();
 
     // 2. Click start -> chat view
     fireEvent.click(screen.getByText("Start Conversation"));
@@ -103,8 +103,8 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     // The start() call sets started=true and running=true
     // We also need to update state to "listening"
     act(() => core.update({ state: "listening" }));
-    expect(screen.getByText("listening")).toBeDefined();
-    expect(screen.getByText("Stop")).toBeDefined();
+    expect(screen.getByText("listening")).toBeInTheDocument();
+    expect(screen.getByText("Stop")).toBeInTheDocument();
 
     // 3. User message
     act(() =>
@@ -113,8 +113,8 @@ describe("ChatView + StartScreen: full component tree integration", () => {
         state: "thinking",
       }),
     );
-    expect(screen.getByText("What time is it?")).toBeDefined();
-    expect(screen.getByText("thinking")).toBeDefined();
+    expect(screen.getByText("What time is it?")).toBeInTheDocument();
+    expect(screen.getByText("thinking")).toBeInTheDocument();
 
     // 4. Assistant responds
     act(() =>
@@ -126,7 +126,7 @@ describe("ChatView + StartScreen: full component tree integration", () => {
         state: "listening",
       }),
     );
-    expect(screen.getByText("It's 3pm.")).toBeDefined();
+    expect(screen.getByText("It's 3pm.")).toBeInTheDocument();
 
     // 5. Error occurs
     act(() =>
@@ -138,7 +138,7 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     );
     // The banner is one element holding message AND code, so it is read off
     // the alert rather than matched as a text node.
-    expect(screen.getByRole("alert").textContent).toBe("Lost connection (connection)");
-    expect(screen.getByText("Resume")).toBeDefined();
+    expect(screen.getByRole("alert")).toHaveTextContent(/^Lost connection \(connection\)$/);
+    expect(screen.getByText("Resume")).toBeInTheDocument();
   });
 });

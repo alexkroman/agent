@@ -9,11 +9,9 @@
  * in particular is the `end(); start()` pair and not `reset()`.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import { useSessionControls } from "./use-session-controls.ts";
 
 /**
@@ -28,16 +26,10 @@ function mount(
   const core = createMockSessionCore(overrides);
   prepare?.(core);
   let renders = 0;
-  const hook = renderHook(
-    () => {
-      renders++;
-      return useSessionControls();
-    },
-    {
-      wrapper: ({ children }: { children: ReactNode }) =>
-        createElement(SessionProvider, { value: core }, children),
-    },
-  );
+  const hook = renderHookWithSession(() => {
+    renders++;
+    return useSessionControls();
+  }, core);
   return { core, hook, renders: () => renders };
 }
 
@@ -67,20 +59,16 @@ describe("useSessionControls", () => {
   test("`restart` is end() then start(), never reset()", () => {
     // The whole reason three chromes wrote the pair by hand: `reset()` keeps
     // the session id, so every server-side slot survives a "new conversation".
-    const calls: string[] = [];
-    let reset: ReturnType<typeof vi.spyOn> | undefined;
-    const { hook } = mount({ started: true, running: true }, (core) => {
-      vi.spyOn(core, "end").mockImplementation(() => {
-        calls.push("end");
-      });
-      vi.spyOn(core, "start").mockImplementation(() => {
-        calls.push("start");
-      });
-      reset = vi.spyOn(core, "reset");
+    const { core, hook } = mount({ started: true, running: true }, (c) => {
+      vi.spyOn(c, "end").mockImplementation(() => undefined);
+      vi.spyOn(c, "start").mockImplementation(() => undefined);
+      vi.spyOn(c, "reset");
     });
     act(() => hook.result.current.restart());
-    expect(calls).toEqual(["end", "start"]);
-    expect(reset).not.toHaveBeenCalled();
+    expect(core.end).toHaveBeenCalledOnce();
+    expect(core.start).toHaveBeenCalledOnce();
+    expect(vi.mocked(core.end)).toHaveBeenCalledBefore(vi.mocked(core.start));
+    expect(core.reset).not.toHaveBeenCalled();
   });
 
   test("re-renders when a flag flips, and the result is a new object then", () => {

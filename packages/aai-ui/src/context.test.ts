@@ -4,9 +4,8 @@
 import { act, renderHook } from "@testing-library/react";
 import React, { type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import {
-  SessionProvider,
   ThemeProvider,
   useSession,
   useSessionActions,
@@ -20,9 +19,7 @@ import type { ClientTheme } from "./types.ts";
 describe("useSession", () => {
   it("returns session snapshot from context", () => {
     const core = createMockSessionCore({ state: "listening", started: true });
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      React.createElement(SessionProvider, { value: core }, children);
-    const { result } = renderHook(() => useSession(), { wrapper });
+    const { result } = renderHookWithSession(() => useSession(), core);
     expect(result.current.state).toBe("listening");
     expect(result.current.started).toBe(true);
   });
@@ -37,9 +34,7 @@ describe("useSession", () => {
 
   it("exposes session methods", () => {
     const core = createMockSessionCore();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      React.createElement(SessionProvider, { value: core }, children);
-    const { result } = renderHook(() => useSession(), { wrapper });
+    const { result } = renderHookWithSession(() => useSession(), core);
     expect(result.current.start).toBeTypeOf("function");
     expect(result.current.cancel).toBeTypeOf("function");
     expect(result.current.reset).toBeTypeOf("function");
@@ -51,9 +46,7 @@ describe("useSession", () => {
     // Parent re-renders must not mint a fresh 15-property Session object —
     // consumers may put it in hook deps.
     const core = createMockSessionCore();
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      React.createElement(SessionProvider, { value: core }, children);
-    const { result, rerender } = renderHook(() => useSession(), { wrapper });
+    const { result, rerender } = renderHookWithSession(() => useSession(), core);
     const first = result.current;
     rerender();
     expect(result.current).toBe(first);
@@ -65,15 +58,10 @@ describe("useSession", () => {
   });
 });
 
-function wrap(core: ReturnType<typeof createMockSessionCore>) {
-  return ({ children }: { children: ReactNode }) =>
-    React.createElement(SessionProvider, { value: core }, children);
-}
-
 describe("useSessionActions", () => {
   it("hands back the core's own control methods", () => {
     const core = createMockSessionCore();
-    const { result } = renderHook(() => useSessionActions(), { wrapper: wrap(core) });
+    const { result } = renderHookWithSession(() => useSessionActions(), core);
     // Identity, not `toBeTypeOf("function")`: a hook that wrapped each method
     // would still be a function per key and would break `memo()` children.
     expect(result.current.start).toBe(core.start);
@@ -97,13 +85,10 @@ describe("useSessionActions", () => {
     // are present would pass straight over that.
     const core = createMockSessionCore();
     const renderSpy = vi.fn();
-    const { result } = renderHook(
-      () => {
-        renderSpy();
-        return useSessionActions();
-      },
-      { wrapper: wrap(core) },
-    );
+    const { result } = renderHookWithSession(() => {
+      renderSpy();
+      return useSessionActions();
+    }, core);
     const rendersBefore = renderSpy.mock.calls.length;
     const first = result.current;
 
@@ -118,7 +103,7 @@ describe("useSessionActions", () => {
 
   it("keeps one object for the life of the core, so it is safe in a dep array", () => {
     const core = createMockSessionCore();
-    const { result, rerender } = renderHook(() => useSessionActions(), { wrapper: wrap(core) });
+    const { result, rerender } = renderHookWithSession(() => useSessionActions(), core);
     const first = result.current;
     rerender();
     expect(result.current).toBe(first);
@@ -130,7 +115,7 @@ describe("useSessionActions", () => {
     // returning it from here (typed to the narrower Pick) would leave every one
     // of those reachable by widening the type back.
     const core = createMockSessionCore();
-    const { result } = renderHook(() => useSessionActions(), { wrapper: wrap(core) });
+    const { result } = renderHookWithSession(() => useSessionActions(), core);
     expect(Object.keys(result.current).toSorted()).toEqual([
       "cancel",
       "disconnect",
@@ -149,7 +134,7 @@ describe("useSessionActions", () => {
 
   it("really drives the session — the methods are live, not a shape", () => {
     const core = createMockSessionCore();
-    const { result } = renderHook(() => useSessionActions(), { wrapper: wrap(core) });
+    const { result } = renderHookWithSession(() => useSessionActions(), core);
     act(() => result.current.start());
     expect(core.getSnapshot().started).toBe(true);
     act(() => result.current.end());
@@ -169,9 +154,10 @@ describe("useSessionStatus / useSessionError", () => {
       state: "listening",
       error: { code: "stt", message: "transcriber refused", fatal: true },
     });
-    const { result } = renderHook(() => [useSessionStatus(), useSessionError()] as const, {
-      wrapper: wrap(core),
-    });
+    const { result } = renderHookWithSession(
+      () => [useSessionStatus(), useSessionError()] as const,
+      core,
+    );
     expect(result.current[0]).toBe("listening");
     expect(result.current[1]).toEqual({ code: "stt", message: "transcriber refused", fatal: true });
   });
@@ -180,7 +166,7 @@ describe("useSessionStatus / useSessionError", () => {
     // A chrome spelling `error === null` predates the hook; `undefined` here
     // would make that check silently false forever.
     const core = createMockSessionCore();
-    const { result } = renderHook(() => useSessionError(), { wrapper: wrap(core) });
+    const { result } = renderHookWithSession(() => useSessionError(), core);
     expect(result.current).toBeNull();
   });
 
@@ -191,20 +177,14 @@ describe("useSessionStatus / useSessionError", () => {
     const core = createMockSessionCore();
     const statusSpy = vi.fn();
     const errorSpy = vi.fn();
-    const status = renderHook(
-      () => {
-        statusSpy();
-        return useSessionStatus();
-      },
-      { wrapper: wrap(core) },
-    );
-    const error = renderHook(
-      () => {
-        errorSpy();
-        return useSessionError();
-      },
-      { wrapper: wrap(core) },
-    );
+    const status = renderHookWithSession(() => {
+      statusSpy();
+      return useSessionStatus();
+    }, core);
+    const error = renderHookWithSession(() => {
+      errorSpy();
+      return useSessionError();
+    }, core);
     const statusRenders = statusSpy.mock.calls.length;
     const errorRenders = errorSpy.mock.calls.length;
 
@@ -235,26 +215,19 @@ describe("useSessionStatus / useSessionError", () => {
 });
 
 describe("useSessionSelector", () => {
-  const makeWrapper = wrap;
-
   it("returns the selected slice of the snapshot", () => {
     const core = createMockSessionCore({ running: true });
-    const { result } = renderHook(() => useSessionSelector((s) => s.running), {
-      wrapper: makeWrapper(core),
-    });
+    const { result } = renderHookWithSession(() => useSessionSelector((s) => s.running), core);
     expect(result.current).toBe(true);
   });
 
   it("re-renders only when the selected value changes", () => {
     const core = createMockSessionCore({ running: true });
     const renderSpy = vi.fn();
-    const { result } = renderHook(
-      () => {
-        renderSpy();
-        return useSessionSelector((s) => s.running);
-      },
-      { wrapper: makeWrapper(core) },
-    );
+    const { result } = renderHookWithSession(() => {
+      renderSpy();
+      return useSessionSelector((s) => s.running);
+    }, core);
     const rendersBefore = renderSpy.mock.calls.length;
 
     // Unrelated snapshot changes: no re-render.
@@ -273,16 +246,13 @@ describe("useSessionSelector", () => {
       messages: [{ id: 1, role: "user", content: "hi" }],
     });
     const renderSpy = vi.fn();
-    renderHook(
-      () => {
-        renderSpy();
-        return useSessionSelector(
-          (s) => ({ count: s.messages.length }),
-          (a, b) => a.count === b.count,
-        );
-      },
-      { wrapper: makeWrapper(core) },
-    );
+    renderHookWithSession(() => {
+      renderSpy();
+      return useSessionSelector(
+        (s) => ({ count: s.messages.length }),
+        (a, b) => a.count === b.count,
+      );
+    }, core);
     const rendersBefore = renderSpy.mock.calls.length;
 
     // New array reference, same length: custom isEqual suppresses the re-render.
@@ -345,8 +315,8 @@ describe("useTheme", () => {
       wrapper: ({ children }: { children: ReactNode }) =>
         React.createElement(ThemeProvider, { value: undefined }, children),
     });
-    expect(document.body.style.background).toBe("rgb(251, 248, 242)");
-    expect(document.documentElement.style.background).toBe("rgb(251, 248, 242)");
+    expect(document.body).toHaveStyle({ background: "rgb(251, 248, 242)" });
+    expect(document.documentElement).toHaveStyle({ background: "rgb(251, 248, 242)" });
   });
 
   it("a custom theme repaints the page too", () => {
@@ -354,7 +324,7 @@ describe("useTheme", () => {
       wrapper: ({ children }: { children: ReactNode }) =>
         React.createElement(ThemeProvider, { value: { bg: "#123456" } }, children),
     });
-    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+    expect(document.body).toHaveStyle({ background: "rgb(18, 52, 86)" });
   });
 
   it("keeps merged theme identity stable across re-renders", () => {
@@ -388,11 +358,11 @@ describe("useTheme", () => {
     const wrapper = ({ children }: { children: ReactNode }) =>
       React.createElement(ThemeProvider, { value }, children);
     const { rerender } = renderHook(() => useTheme(), { wrapper });
-    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+    expect(document.body).toHaveStyle({ background: "rgb(18, 52, 86)" });
 
     value = { bg: "#654321" };
     rerender();
-    expect(document.body.style.background).toBe("rgb(101, 67, 33)");
+    expect(document.body).toHaveStyle({ background: "rgb(101, 67, 33)" });
   });
 
   it("restores the page background it found on unmount", () => {
@@ -406,11 +376,11 @@ describe("useTheme", () => {
       wrapper: ({ children }: { children: ReactNode }) =>
         React.createElement(ThemeProvider, { value: { bg: "#123456" } }, children),
     });
-    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+    expect(document.body).toHaveStyle({ background: "rgb(18, 52, 86)" });
 
     unmount();
-    expect(document.body.style.background).toBe("rgb(1, 2, 3)");
-    expect(document.documentElement.style.background).toBe("rgb(4, 5, 6)");
+    expect(document.body).toHaveStyle({ background: "rgb(1, 2, 3)" });
+    expect(document.documentElement).toHaveStyle({ background: "rgb(4, 5, 6)" });
   });
 
   it("fills missing theme fields with defaults", () => {

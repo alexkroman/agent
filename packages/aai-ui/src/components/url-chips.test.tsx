@@ -5,6 +5,7 @@
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { flushEffects } from "../_react-test-utils.ts";
 import { ThemeProvider } from "../context.ts";
 import { UiUrlChip } from "./url-chips.tsx";
 
@@ -27,15 +28,13 @@ describe("UrlChip copy feedback", () => {
 
     fireEvent.click(screen.getByTestId("ui-url-chip"));
     // Flush the clipboard promise so the .then() runs.
-    await act(async () => {
-      /* flush the clipboard promise */
-    });
-    expect(screen.getByText("Copied")).toBeDefined();
+    await flushEffects();
+    expect(screen.getByText("Copied")).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(1500);
     });
-    expect(screen.getByText("UI")).toBeDefined();
+    expect(screen.getByText("UI")).toBeInTheDocument();
   });
 
   test("clears the feedback timer on unmount", async () => {
@@ -44,9 +43,7 @@ describe("UrlChip copy feedback", () => {
     const { unmount } = render(<UiUrlChip />);
 
     fireEvent.click(screen.getByTestId("ui-url-chip"));
-    await act(async () => {
-      /* flush the clipboard promise */
-    });
+    await flushEffects();
     expect(vi.getTimerCount()).toBe(1);
 
     // A live timer here would fire setState on an unmounted component.
@@ -65,10 +62,8 @@ describe("UrlChip copy feedback", () => {
     installClipboard(() => Promise.reject(new Error("denied")));
     render(<UiUrlChip />);
     fireEvent.click(screen.getByTestId("ui-url-chip"));
-    await act(async () => {
-      /* flush the clipboard promise */
-    });
-    expect(screen.getByText("Failed")).toBeDefined();
+    await flushEffects();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
     expect(screen.getByTestId("ui-url-chip-url").textContent).not.toBe("");
   });
 });
@@ -83,7 +78,7 @@ describe("UrlChip focus", () => {
       </ThemeProvider>,
     );
     const chip = screen.getByTestId("ui-url-chip");
-    expect(chip.className).toContain("focus-visible:[outline:2px_solid]");
+    expect(chip).toHaveClass("focus-visible:[outline:2px_solid]");
     expect(chip.style.outlineColor).not.toBe("");
   });
 });
