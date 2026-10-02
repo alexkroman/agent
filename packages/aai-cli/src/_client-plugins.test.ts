@@ -6,14 +6,14 @@
  */
 
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import {
   CLIENT_PLUGIN_PACKAGES,
   defaultClientPlugins,
   hasViteConfig,
   REACT_REFRESH_EXCLUDE,
 } from "./_client-plugins.ts";
-import { withTempDir, writeFiles } from "./_test-utils.ts";
+import { test, writeFiles } from "./_test-utils.ts";
 
 /** A package whose default export returns `{ name, options }`. */
 function fakePlugin(name: string): Record<string, string> {
@@ -32,50 +32,45 @@ function fakePlugin(name: string): Record<string, string> {
 const PROJECT = { "package.json": '{"type":"module"}', "client.tsx": "" };
 
 describe("hasViteConfig", () => {
-  test.each(["vite.config.ts", "vite.config.mjs", "vite.config.cjs"])("sees %s", async (name) => {
-    await withTempDir(async (dir) => {
+  test.for(["vite.config.ts", "vite.config.mjs", "vite.config.cjs"])(
+    "sees %s",
+    async (name, { tmpDir: dir }) => {
       await writeFiles(dir, { [name]: "export default {};" });
       expect(hasViteConfig(dir)).toBe(true);
-    });
-  });
+    },
+  );
 
-  test("a directory with none has none", async () => {
-    await withTempDir(async (dir) => {
-      expect(hasViteConfig(dir)).toBe(false);
-    });
+  test("a directory with none has none", async ({ tmpDir: dir }) => {
+    expect(hasViteConfig(dir)).toBe(false);
   });
 });
 
 describe("defaultClientPlugins", () => {
-  test("yields to a project's own vite.config.ts", async () => {
-    await withTempDir(async (dir) => {
-      await writeFiles(dir, { ...PROJECT, "vite.config.ts": "export default {};" });
-      expect(await defaultClientPlugins(dir)).toBeUndefined();
-    });
+  test("yields to a project's own vite.config.ts", async ({ tmpDir: dir }) => {
+    await writeFiles(dir, { ...PROJECT, "vite.config.ts": "export default {};" });
+    expect(await defaultClientPlugins(dir)).toBeUndefined();
   });
 
-  test("loads React (with the refresh exclude) and Tailwind from the project", async () => {
-    await withTempDir(async (dir) => {
-      await writeFiles(dir, {
-        ...PROJECT,
-        ...fakePlugin(CLIENT_PLUGIN_PACKAGES.react),
-        ...fakePlugin(CLIENT_PLUGIN_PACKAGES.tailwind),
-      });
-      expect(await defaultClientPlugins(dir)).toEqual([
-        { name: "@vitejs/plugin-react", options: { exclude: REACT_REFRESH_EXCLUDE } },
-        { name: "@tailwindcss/vite", options: undefined },
-      ]);
+  test("loads React (with the refresh exclude) and Tailwind from the project", async ({
+    tmpDir: dir,
+  }) => {
+    await writeFiles(dir, {
+      ...PROJECT,
+      ...fakePlugin(CLIENT_PLUGIN_PACKAGES.react),
+      ...fakePlugin(CLIENT_PLUGIN_PACKAGES.tailwind),
     });
+    expect(await defaultClientPlugins(dir)).toEqual([
+      { name: "@vitejs/plugin-react", options: { exclude: REACT_REFRESH_EXCLUDE } },
+      { name: "@tailwindcss/vite", options: undefined },
+    ]);
   });
 
-  test("names every missing package, and how to fix it", async () => {
-    await withTempDir(async (dir) => {
-      await writeFiles(dir, { ...PROJECT, ...fakePlugin(CLIENT_PLUGIN_PACKAGES.react) });
-      await expect(defaultClientPlugins(dir)).rejects.toMatchObject({
-        code: "client_plugins_missing",
-        message: expect.stringContaining("@tailwindcss/vite"),
-        hint: expect.stringContaining("npm i -D @tailwindcss/vite"),
-      });
+  test("names every missing package, and how to fix it", async ({ tmpDir: dir }) => {
+    await writeFiles(dir, { ...PROJECT, ...fakePlugin(CLIENT_PLUGIN_PACKAGES.react) });
+    await expect(defaultClientPlugins(dir)).rejects.toMatchObject({
+      code: "client_plugins_missing",
+      message: expect.stringContaining("@tailwindcss/vite"),
+      hint: expect.stringContaining("npm i -D @tailwindcss/vite"),
     });
   });
 });

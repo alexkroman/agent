@@ -11,69 +11,27 @@
  */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 import { readProjectConfig, updateGlobalConfig, writeProjectConfig } from "./_config.ts";
 import { runDeploy } from "./_deploy.ts";
 import type { MockApi } from "./_mock-api.ts";
-import { startMockApi } from "./_mock-api.ts";
+import { test } from "./_mock-api-test-utils.ts";
 import { projectNameFromDir } from "./_studio.ts";
-import {
-  createFakeUi,
-  type FakeUi,
-  linkSdkNodeModules,
-  makeBundle,
-  silenced,
-  withTempDir,
-} from "./_test-utils.ts";
+import { linkSdkNodeModules, makeBundle } from "./_test-utils.ts";
 import { runDelete } from "./delete.ts";
 import { executeSecretDelete, executeSecretList, executeSecretPut } from "./secret.ts";
 
-// The terminal the commands are handed: its masked prompt answers a fixed
-// value, so `secret put` with no stdin value has something to store.
-let ui: FakeUi;
-beforeEach(() => {
-  ui = createFakeUi();
-  ui.prompts.password.mockResolvedValue("super-secret");
-});
-
-// A REAL login key in this run's config dir (`_test-setup.ts` points
-// AAI_CONFIG_DIR at a temp dir), so `ensureApiKey` runs unmocked.
-beforeAll(async () => {
-  await updateGlobalConfig((config) => ({ ...config, apiKey: "test-key" }));
-});
-
 /** Get a request from the recorded list, throwing if it doesn't exist. */
-function getReq(index: number) {
+function getReq(api: MockApi, index: number) {
   const r = api.requests[index];
   if (!r) throw new Error(`No request at index ${index}`);
   return r;
 }
 
-async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void> {
-  await withTempDir(async (dir) => {
-    await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-    await fn(dir);
-  });
-}
-
-let api: MockApi;
-
-beforeAll(async () => {
-  api = await startMockApi();
-});
-
-afterEach(() => {
-  api.clear();
-});
-
-afterAll(async () => {
-  await api.stop();
-});
-
 // ── Deploy ───────────────────────────────────────────────────────────────────
 
 describe("deploy against mock API", () => {
-  test("successful deploy sends POST /deploy with auth and body", async () => {
+  test("successful deploy sends POST /deploy with auth and body", async ({ api }) => {
     const result = await runDeploy({
       url: api.url,
       bundle: makeBundle(),
@@ -85,7 +43,7 @@ describe("deploy against mock API", () => {
     expect(result.slug).toBe("my-agent");
     expect(api.requests).toHaveLength(1);
 
-    const req = getReq(0);
+    const req = getReq(api, 0);
     expect(req.method).toBe("POST");
     expect(req.path).toBe("/deploy");
     expect(req.headers.authorization).toBe("Bearer test-key");
@@ -99,7 +57,7 @@ describe("deploy against mock API", () => {
     expect((body.env as Record<string, string>).ASSEMBLYAI_API_KEY).toBe("key-123");
   });
 
-  test("first deploy without slug gets server-generated slug", async () => {
+  test("first deploy without slug gets server-generated slug", async ({ api }) => {
     const result = await runDeploy({
       url: api.url,
       bundle: makeBundle(),
@@ -109,11 +67,11 @@ describe("deploy against mock API", () => {
 
     // Server generates a slug when none provided
     expect(result.slug).toMatch(/^generated-/);
-    const body = JSON.parse(getReq(0).body) as Record<string, unknown>;
+    const body = JSON.parse(getReq(api, 0).body) as Record<string, unknown>;
     expect(body.slug).toBeUndefined();
   });
 
-  test("401 throws with API key hint", async () => {
+  test("401 throws with API key hint", async ({ api }) => {
     await expect(
       runDeploy({
         url: api.url,
@@ -125,7 +83,7 @@ describe("deploy against mock API", () => {
     ).rejects.toThrow("API key may be invalid");
   });
 
-  test("413 throws with bundle size hint", async () => {
+  test("413 throws with bundle size hint", async ({ api }) => {
     api.override("POST", "/deploy", 413, "payload too large");
     await expect(
       runDeploy({
@@ -138,7 +96,7 @@ describe("deploy against mock API", () => {
     ).rejects.toThrow("bundle is too large");
   });
 
-  test("500 throws with status and body", async () => {
+  test("500 throws with status and body", async ({ api }) => {
     api.override("POST", "/deploy", 500, "internal error");
     await expect(
       runDeploy({
@@ -156,7 +114,7 @@ describe("deploy against mock API", () => {
 // ── Delete ───────────────────────────────────────────────────────────────────
 
 describe("delete against mock API", () => {
-  test("successful delete sends DELETE with auth", async () => {
+  test("successful delete sends DELETE with auth", async ({ api }) => {
     await runDelete({
       url: api.url,
       slug: "my-agent",
@@ -164,19 +122,19 @@ describe("delete against mock API", () => {
     });
 
     expect(api.requests).toHaveLength(1);
-    const req = getReq(0);
+    const req = getReq(api, 0);
     expect(req.method).toBe("DELETE");
     expect(req.path).toBe("/my-agent");
     expect(req.headers.authorization).toBe("Bearer test-key");
   });
 
-  test("401 throws with API key hint", async () => {
+  test("401 throws with API key hint", async ({ api }) => {
     await expect(
       runDelete({ url: api.url, slug: "my-agent", apiKey: "invalid-key" }),
     ).rejects.toThrow("API key may be invalid");
   });
 
-  test("404 throws with not-deployed hint", async () => {
+  test("404 throws with not-deployed hint", async ({ api }) => {
     api.override("DELETE", "/ghost-agent", 404, "not found");
     await expect(
       runDelete({ url: api.url, slug: "ghost-agent", apiKey: "test-key" }),
@@ -190,21 +148,19 @@ describe("secrets against mock API", () => {
   // Secret commands use getServerInfo which reads .aai/project.json.
   // We need a real temp directory with a project config pointing at the mock API.
 
-  test("secret put sends PUT with name/value body", async () => {
-    await withProjectDir(async (dir) => {
-      await executeSecretPut(dir, "MY_KEY", undefined, api.url, ui);
+  test("secret put sends PUT with name/value body", async ({ api, ui, projectDir: dir }) => {
+    await executeSecretPut(dir, "MY_KEY", undefined, api.url, ui);
 
-      const putReq = api.requests.find((r) => r.method === "PUT" && r.path.includes("/secret"));
-      expect(putReq).toBeDefined();
-      const body = JSON.parse(putReq?.body ?? "{}") as Record<string, string>;
-      expect(body.MY_KEY).toBe("super-secret");
-    });
+    const putReq = api.requests.find((r) => r.method === "PUT" && r.path.includes("/secret"));
+    expect(putReq).toBeDefined();
+    const body = JSON.parse(putReq?.body ?? "{}") as Record<string, string>;
+    expect(body.MY_KEY).toBe("super-secret");
 
     // Verify it was stored in the mock
     expect(api.secrets.MY_KEY).toBe("super-secret");
   });
 
-  test("secret list returns stored secrets", async () => {
+  test("secret list returns stored secrets", async ({ api, ui, projectDir: dir }) => {
     // Pre-populate secrets
     api.secrets.SECRET_A = "a";
     api.secrets.SECRET_B = "b";
@@ -212,27 +168,20 @@ describe("secrets against mock API", () => {
     // The RESULT is the subject, not the request: a regression that answered
     // `{ secrets: [] }` still sends a GET, so asserting only that a GET
     // happened is a test of the mock server rather than of the command.
-    let result: Awaited<ReturnType<typeof executeSecretList>> | undefined;
-    await withProjectDir(
-      silenced(async (dir) => {
-        result = await executeSecretList(dir, api.url, ui);
-      }),
-    );
+    const result = await executeSecretList(dir, api.url, ui);
 
     const listReq = api.requests.find((r) => r.method === "GET" && r.path.includes("/secret"));
     expect(listReq).toBeDefined();
-    expect(result?.ok).toBe(true);
-    expect(result?.ok === true ? result.data.secrets : undefined).toEqual(
+    expect(result.ok).toBe(true);
+    expect(result.ok === true ? result.data.secrets : undefined).toEqual(
       expect.arrayContaining(["SECRET_A", "SECRET_B"]),
     );
   });
 
-  test("secret delete sends DELETE with name in path", async () => {
+  test("secret delete sends DELETE with name in path", async ({ api, ui, projectDir: dir }) => {
     api.secrets.TO_DELETE = "value";
 
-    await withProjectDir(async (dir) => {
-      await executeSecretDelete(dir, "TO_DELETE", api.url, ui);
-    });
+    await executeSecretDelete(dir, "TO_DELETE", api.url, ui);
 
     const delReq = api.requests.find(
       (r) => r.method === "DELETE" && r.path.includes("/secret/TO_DELETE"),
@@ -241,35 +190,34 @@ describe("secrets against mock API", () => {
     expect(api.secrets.TO_DELETE).toBeUndefined();
   });
 
-  test("secret delete URL-encodes hostile names", async () => {
-    await withProjectDir(async (dir) => {
-      // A name containing `/` must not become extra path segments.
-      await executeSecretDelete(dir, "A/B", api.url, ui).catch(() => undefined);
-      const delReq = api.requests.find((r) => r.method === "DELETE");
-      expect(delReq?.path).toBe("/my-agent/secret/A%2FB");
-    });
+  test("secret delete URL-encodes hostile names", async ({ api, ui, projectDir: dir }) => {
+    // A name containing `/` must not become extra path segments.
+    await executeSecretDelete(dir, "A/B", api.url, ui).catch(() => undefined);
+    const delReq = api.requests.find((r) => r.method === "DELETE");
+    expect(delReq?.path).toBe("/my-agent/secret/A%2FB");
   });
 
-  test("a hostile slug from .aai/project.json is rejected before any request", async () => {
-    await withTempDir(async (dir) => {
-      // Repo-controlled input: `..`/`/` shaped slugs would otherwise steer a
-      // credentialed request to an arbitrary path on an approved origin.
-      await writeProjectConfig(dir, { slug: "x/../admin", serverUrl: api.url });
-      await expect(executeSecretList(dir, api.url, ui)).rejects.toThrow(/Invalid slug/);
-      expect(api.requests).toHaveLength(0);
-    });
+  test("a hostile slug from .aai/project.json is rejected before any request", async ({
+    api,
+    ui,
+    tmpDir: dir,
+  }) => {
+    // Repo-controlled input: `..`/`/` shaped slugs would otherwise steer a
+    // credentialed request to an arbitrary path on an approved origin.
+    await writeProjectConfig(dir, { slug: "x/../admin", serverUrl: api.url });
+    await expect(executeSecretList(dir, api.url, ui)).rejects.toThrow(/Invalid slug/);
+    expect(api.requests).toHaveLength(0);
   });
 
-  test("secret with 401 throws API key hint", async () => {
+  test("secret with 401 throws API key hint", async ({
+    api,
+    ui,
+    projectDir: dir,
+    onTestFinished,
+  }) => {
     await updateGlobalConfig((config) => ({ ...config, apiKey: "invalid-key" }));
-    try {
-      await withTempDir(async (dir) => {
-        await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-        await expect(executeSecretList(dir, api.url, ui)).rejects.toThrow("API key may be invalid");
-      });
-    } finally {
-      await updateGlobalConfig((config) => ({ ...config, apiKey: "test-key" }));
-    }
+    onTestFinished(() => updateGlobalConfig((config) => ({ ...config, apiKey: "test-key" })));
+    await expect(executeSecretList(dir, api.url, ui)).rejects.toThrow("API key may be invalid");
   });
 });
 
@@ -292,79 +240,75 @@ describe("executeDeploy end to end", { timeout: 120_000 }, () => {
     );
   }
 
-  test("names a first deploy after the directory and records the slug", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await writeAgentProject(dir);
-        const { executeDeploy } = await import("./deploy.ts");
-        const result = await executeDeploy({ cwd: dir, server: api.url }, ui);
+  test("names a first deploy after the directory and records the slug", async ({
+    api,
+    ui,
+    tmpDir: dir,
+  }) => {
+    await writeAgentProject(dir);
+    const { executeDeploy } = await import("./deploy.ts");
+    const result = await executeDeploy({ cwd: dir, server: api.url }, ui);
 
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
-        // First deploy: the directory names the agent, through the same
-        // `projectNameFromDir` rule `aai push` uses for a project name. That
-        // is the platform's slugifier, so the assertion goes through it too
-        // rather than re-deriving the transform — the temp dir is
-        // `aai_test_<random>`, and its `_`s collapse to `-`.
-        expect(result.data.slug).toBe(projectNameFromDir(dir));
-        expect(result.data.slug).toBe(path.basename(dir).toLowerCase().replaceAll("_", "-"));
-        // It MUST be recorded, or the next deploy would mint a fresh
-        // slug and orphan this agent.
-        const config = await readProjectConfig(dir);
-        expect(config?.slug).toBe(result.data.slug);
-        expect(config?.serverUrl).toBe(api.url);
-      }),
-    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // First deploy: the directory names the agent, through the same
+    // `projectNameFromDir` rule `aai push` uses for a project name. That
+    // is the platform's slugifier, so the assertion goes through it too
+    // rather than re-deriving the transform — the temp dir is
+    // `aai_test_<random>`, and its `_`s collapse to `-`.
+    expect(result.data.slug).toBe(projectNameFromDir(dir));
+    expect(result.data.slug).toBe(path.basename(dir).toLowerCase().replaceAll("_", "-"));
+    // It MUST be recorded, or the next deploy would mint a fresh
+    // slug and orphan this agent.
+    const config = await readProjectConfig(dir);
+    expect(config?.slug).toBe(result.data.slug);
+    expect(config?.serverUrl).toBe(api.url);
   });
 
-  test("redeploy reuses the recorded slug", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await writeAgentProject(dir);
-        const { executeDeploy } = await import("./deploy.ts");
-        const first = await executeDeploy({ cwd: dir, server: api.url }, ui);
-        if (!first.ok) throw new Error("first deploy failed");
-        api.clear();
+  test("redeploy reuses the recorded slug", async ({ api, ui, tmpDir: dir }) => {
+    await writeAgentProject(dir);
+    const { executeDeploy } = await import("./deploy.ts");
+    const first = await executeDeploy({ cwd: dir, server: api.url }, ui);
+    if (!first.ok) throw new Error("first deploy failed");
+    api.clear();
 
-        const second = await executeDeploy({ cwd: dir, server: api.url }, ui);
-        if (!second.ok) throw new Error("second deploy failed");
-        expect(second.data.slug).toBe(first.data.slug);
-        const body = JSON.parse(getReq(0).body) as Record<string, unknown>;
-        expect(body.slug).toBe(first.data.slug);
-      }),
-    );
+    const second = await executeDeploy({ cwd: dir, server: api.url }, ui);
+    if (!second.ok) throw new Error("second deploy failed");
+    expect(second.data.slug).toBe(first.data.slug);
+    const body = JSON.parse(getReq(api, 0).body) as Record<string, unknown>;
+    expect(body.slug).toBe(first.data.slug);
   });
 
-  test("an ASSEMBLYAI_API_KEY declared in .env wins over the login key", async () => {
+  test("an ASSEMBLYAI_API_KEY declared in .env wins over the login key", async ({
+    api,
+    ui,
+    tmpDir: dir,
+  }) => {
     // Shell env would take precedence over the .env file value — isolate
     // from a developer machine's exported key.
     vi.stubEnv("ASSEMBLYAI_API_KEY", undefined);
-    await withTempDir(
-      silenced(async (dir) => {
-        await writeAgentProject(dir);
-        // The user deliberately targets a different account in .env; the
-        // login key is a floor, not an override.
-        await writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=user-dot-env-key\n");
-        const { executeDeploy } = await import("./deploy.ts");
-        const result = await executeDeploy({ cwd: dir, server: api.url }, ui);
+    await writeAgentProject(dir);
+    // The user deliberately targets a different account in .env; the
+    // login key is a floor, not an override.
+    await writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=user-dot-env-key\n");
+    const { executeDeploy } = await import("./deploy.ts");
+    const result = await executeDeploy({ cwd: dir, server: api.url }, ui);
 
-        expect(result.ok).toBe(true);
-        const body = JSON.parse(getReq(0).body) as { env: Record<string, string> };
-        expect(body.env.ASSEMBLYAI_API_KEY).toBe("user-dot-env-key");
-      }),
-    );
+    expect(result.ok).toBe(true);
+    const body = JSON.parse(getReq(api, 0).body) as { env: Record<string, string> };
+    expect(body.env.ASSEMBLYAI_API_KEY).toBe("user-dot-env-key");
   });
 
-  test("without .env the login key is seeded as ASSEMBLYAI_API_KEY", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await writeAgentProject(dir);
-        const { executeDeploy } = await import("./deploy.ts");
-        await executeDeploy({ cwd: dir, server: api.url }, ui);
+  test("without .env the login key is seeded as ASSEMBLYAI_API_KEY", async ({
+    api,
+    ui,
+    tmpDir: dir,
+  }) => {
+    await writeAgentProject(dir);
+    const { executeDeploy } = await import("./deploy.ts");
+    await executeDeploy({ cwd: dir, server: api.url }, ui);
 
-        const body = JSON.parse(getReq(0).body) as { env: Record<string, string> };
-        expect(body.env.ASSEMBLYAI_API_KEY).toBe("test-key");
-      }),
-    );
+    const body = JSON.parse(getReq(api, 0).body) as { env: Record<string, string> };
+    expect(body.env.ASSEMBLYAI_API_KEY).toBe("test-key");
   });
 });

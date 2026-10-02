@@ -15,11 +15,11 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, vi } from "vitest";
 import { type DevBackend, type DevServerSeams, startDevServer } from "./_dev-server.ts";
 import { writeAgentTs } from "./_dev-server-test-utils.ts";
 import type { DevWatchFn } from "./_dev-watch.ts";
-import { createFakeUi, withTempDir } from "./_test-utils.ts";
+import { createFakeUi, test } from "./_test-utils.ts";
 
 // 30s, not the 5s default: sibling suites run multi-second runtime-inlining
 // builds now, and CPU starvation under full-repo parallel runs was flaking
@@ -86,31 +86,29 @@ beforeEach(() => {
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe("startDevServer watch wiring", () => {
-  test("a watcher change event drives a full rebuild and re-listen", async () => {
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const fake = makeSeams();
+  test("a watcher change event drives a full rebuild and re-listen", async ({ tmpDir: dir }) => {
+    await writeProject(dir);
+    const fake = makeSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+    const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
 
-      fake.close.mockClear();
-      fake.serve.mockClear();
-      fake.listen.mockClear();
+    fake.close.mockClear();
+    fake.serve.mockClear();
+    fake.listen.mockClear();
 
-      fake.fireChange();
+    fake.fireChange();
 
-      // Wait for the 300ms debounce + full async restart sequence
-      await vi.waitFor(
-        () => {
-          expect(fake.close).toHaveBeenCalled();
-          expect(fake.serve).toHaveBeenCalled();
-          expect(fake.listen).toHaveBeenCalled();
-        },
-        { timeout: 15_000 },
-      );
+    // Wait for the 300ms debounce + full async restart sequence
+    await vi.waitFor(
+      () => {
+        expect(fake.close).toHaveBeenCalled();
+        expect(fake.serve).toHaveBeenCalled();
+        expect(fake.listen).toHaveBeenCalled();
+      },
+      { timeout: 15_000 },
+    );
 
-      await cleanup();
-    });
+    await cleanup();
   });
 
   /**
@@ -128,64 +126,60 @@ describe("startDevServer watch wiring", () => {
    * property — a second journal is the bug whether or not the first one is
    * still reachable.
    */
-  test("every rebuild's runtime gets the SAME journal, so a run survives a save", async () => {
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const fake = makeSeams();
+  test("every rebuild's runtime gets the SAME journal, so a run survives a save", async ({
+    tmpDir: dir,
+  }) => {
+    await writeProject(dir);
+    const fake = makeSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
-      fake.fireChange();
-      await vi.waitFor(() => expect(fake.serve.mock.calls.length).toBeGreaterThan(1), {
-        timeout: 15_000,
-      });
-
-      const journals = fake.serve.mock.calls.map(([runtimeOptions]) => runtimeOptions.journal);
-      expect(journals[0]).toBeDefined();
-      for (const journal of journals) expect(journal).toBe(journals[0]);
-
-      await cleanup();
+    const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+    fake.fireChange();
+    await vi.waitFor(() => expect(fake.serve.mock.calls.length).toBeGreaterThan(1), {
+      timeout: 15_000,
     });
+
+    const journals = fake.serve.mock.calls.map(([runtimeOptions]) => runtimeOptions.journal);
+    expect(journals[0]).toBeDefined();
+    for (const journal of journals) expect(journal).toBe(journals[0]);
+
+    await cleanup();
   });
 
-  test("the watcher is installed before the initial listen", async () => {
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const fake = makeSeams();
+  test("the watcher is installed before the initial listen", async ({ tmpDir: dir }) => {
+    await writeProject(dir);
+    const fake = makeSeams();
 
-      // Block startup at the initial listen and check the watcher is already
-      // up: `ignoreInitial` means an edit saved during boot would otherwise
-      // fire no event at all, and the dev server would serve stale code until
-      // the next save. (That the event is then QUEUED rather than raced is the
-      // supervisor's invariant, specced in _dev-restart.test.ts.)
-      const initialListen = Promise.withResolvers<void>();
-      fake.listen.mockImplementationOnce(() => initialListen.promise);
+    // Block startup at the initial listen and check the watcher is already
+    // up: `ignoreInitial` means an edit saved during boot would otherwise
+    // fire no event at all, and the dev server would serve stale code until
+    // the next save. (That the event is then QUEUED rather than raced is the
+    // supervisor's invariant, specced in _dev-restart.test.ts.)
+    const initialListen = Promise.withResolvers<void>();
+    fake.listen.mockImplementationOnce(() => initialListen.promise);
 
-      const startPromise = startDevServer({ cwd: dir, port: 3000 }, fake.seams);
-      // Reaching the initial listen runs a REAL bundler build, so the 1s
-      // default holds standalone but flakes under a contended full-repo run.
-      // Measured 2 failures in 5 five-project runs on the 1s bound versus 0
-      // in 3 on the same commit's parent.
-      await vi.waitFor(() => expect(fake.listen).toHaveBeenCalled(), { timeout: 15_000 });
-      expect(fake.watching()).toBe(true);
+    const startPromise = startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+    // Reaching the initial listen runs a REAL bundler build, so the 1s
+    // default holds standalone but flakes under a contended full-repo run.
+    // Measured 2 failures in 5 five-project runs on the 1s bound versus 0
+    // in 3 on the same commit's parent.
+    await vi.waitFor(() => expect(fake.listen).toHaveBeenCalled(), { timeout: 15_000 });
+    expect(fake.watching()).toBe(true);
 
-      initialListen.resolve();
-      await (await startPromise)();
-    });
+    initialListen.resolve();
+    await (await startPromise)();
   });
 
-  test("cleanup closes the watcher alongside the server, once", async () => {
-    await withTempDir(async (dir) => {
-      await writeProject(dir);
-      const fake = makeSeams();
+  test("cleanup closes the watcher alongside the server, once", async ({ tmpDir: dir }) => {
+    await writeProject(dir);
+    const fake = makeSeams();
 
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
-      fake.close.mockClear();
+    const cleanup = await startDevServer({ cwd: dir, port: 3000 }, fake.seams);
+    fake.close.mockClear();
 
-      await cleanup();
-      await cleanup();
+    await cleanup();
+    await cleanup();
 
-      expect(fake.close).toHaveBeenCalledTimes(1);
-      expect(fake.watcherClose).toHaveBeenCalledTimes(1);
-    });
+    expect(fake.close).toHaveBeenCalledTimes(1);
+    expect(fake.watcherClose).toHaveBeenCalledTimes(1);
   });
 });

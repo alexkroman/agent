@@ -10,8 +10,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { InlineConfig } from "vite";
 import { build } from "vite";
-import { describe, expect, test, vi } from "vitest";
-import { withTempDir } from "./_test-utils.ts";
+import { describe, expect, vi } from "vitest";
+import { test as baseTest } from "./_test-utils.ts";
 import { buildClient } from "./client-bundler.ts";
 
 vi.mock("vite", async (importOriginal) => ({
@@ -43,35 +43,29 @@ async function uiManifest(): Promise<{
 }
 
 /**
- * Write the minimum a client build needs: an entry point, and a
- * `vite.config.ts` so the build leaves plugins to it rather than loading the
- * default pair from a `node_modules` a temp dir does not have (that path is
- * `_client-plugins.test.ts`'s).
+ * A `project` fixture: a temp dir holding the minimum a client build needs — an
+ * entry point, and a `vite.config.ts` so the build leaves plugins to it rather
+ * than loading the default pair from a `node_modules` a temp dir does not have
+ * (that path is `_client-plugins.test.ts`'s).
  */
-async function withClientProject(fn: (dir: string) => Promise<void>): Promise<void> {
-  await withTempDir(async (dir) => {
-    await fs.writeFile(path.join(dir, "client.tsx"), "export {};", "utf-8");
-    await fs.writeFile(path.join(dir, "vite.config.ts"), "export default {};", "utf-8");
-    await fn(dir);
-  });
-}
+const test = baseTest.extend("project", async ({ tmpDir }) => {
+  await fs.writeFile(path.join(tmpDir, "client.tsx"), "export {};", "utf-8");
+  await fs.writeFile(path.join(tmpDir, "vite.config.ts"), "export default {};", "utf-8");
+  return tmpDir;
+});
 
 describe("buildClient", () => {
-  test("skips the build entirely when the project has no client.tsx", async () => {
-    await withTempDir(async (dir) => {
-      expect(await buildClient(dir)).toEqual({});
-      expect(build).not.toHaveBeenCalled();
-    });
+  test("skips the build entirely when the project has no client.tsx", async ({ tmpDir: dir }) => {
+    expect(await buildClient(dir)).toEqual({});
+    expect(build).not.toHaveBeenCalled();
   });
 
-  test("returns the built artifacts keyed by relative path", async () => {
-    await withClientProject(async (dir) => {
-      expect(await buildClient(dir)).toEqual({ "index.html": "<!doctype html>" });
-      expect(lastConfig().root).toBe(dir);
-    });
+  test("returns the built artifacts keyed by relative path", async ({ project: dir }) => {
+    expect(await buildClient(dir)).toEqual({ "index.html": "<!doctype html>" });
+    expect(lastConfig().root).toBe(dir);
   });
 
-  test("dedupes every non-optional peer dependency of aai-ui", async () => {
+  test("dedupes every non-optional peer dependency of aai-ui", async ({ project: dir }) => {
     // aai-ui's peers are resolved from the build root, not from the copy of
     // `node_modules` above `aai-ui/dist` — which in the studio's production
     // image holds no React at all (see the DEDUPED_PEERS comment). A peer
@@ -82,42 +76,38 @@ describe("buildClient", () => {
       (name) => !peerDependenciesMeta?.[name]?.optional,
     );
 
-    await withClientProject(async (dir) => {
-      await buildClient(dir);
-      expect(required.length).toBeGreaterThan(0);
-      expect(lastConfig().resolve?.dedupe).toEqual(expect.arrayContaining(required));
-    });
+    await buildClient(dir);
+    expect(required.length).toBeGreaterThan(0);
+    expect(lastConfig().resolve?.dedupe).toEqual(expect.arrayContaining(required));
   });
 
-  test("passes the studio's plugins through and ignores its vite.config.ts", async () => {
+  test("passes the studio's plugins through and ignores its vite.config.ts", async ({
+    project: dir,
+  }) => {
     // Workspace files are untrusted, so a vite.config.ts the coding agent
     // writes must never be loaded as host code.
     const plugins = [{ name: "test-plugin" }];
-    await withClientProject(async (dir) => {
-      await fs.writeFile(path.join(dir, "vite.config.ts"), "export default {};", "utf-8");
-      await buildClient(dir, { configFile: false, plugins, outDir: "out" });
+    await fs.writeFile(path.join(dir, "vite.config.ts"), "export default {};", "utf-8");
+    await buildClient(dir, { configFile: false, plugins, outDir: "out" });
 
-      const config = lastConfig();
-      expect(config.configFile).toBe(false);
-      expect(config.plugins).toEqual(plugins);
-      expect(config.build?.outDir).toBe("out");
-    });
+    const config = lastConfig();
+    expect(config.configFile).toBe(false);
+    expect(config.plugins).toEqual(plugins);
+    expect(config.build?.outDir).toBe("out");
   });
 
-  test("leaves the project's vite.config.ts in charge by default", async () => {
-    await withClientProject(async (dir) => {
-      await buildClient(dir);
-      const config = lastConfig();
-      expect(config.configFile).toBeUndefined();
-      expect(config.plugins).toBeUndefined();
-    });
+  test("leaves the project's vite.config.ts in charge by default", async ({ project: dir }) => {
+    await buildClient(dir);
+    const config = lastConfig();
+    expect(config.configFile).toBeUndefined();
+    expect(config.plugins).toBeUndefined();
   });
 
-  test("with no vite.config.*, the default plugins are REQUIRED of the project", async () => {
-    await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "client.tsx"), "export {};", "utf-8");
-      await expect(buildClient(dir)).rejects.toMatchObject({ code: "client_plugins_missing" });
-      expect(build).not.toHaveBeenCalled();
-    });
+  test("with no vite.config.*, the default plugins are REQUIRED of the project", async ({
+    tmpDir: dir,
+  }) => {
+    await fs.writeFile(path.join(dir, "client.tsx"), "export {};", "utf-8");
+    await expect(buildClient(dir)).rejects.toMatchObject({ code: "client_plugins_missing" });
+    expect(build).not.toHaveBeenCalled();
   });
 });

@@ -55,7 +55,7 @@ import {
   installStubUploads,
   stubGatewayRoute,
 } from "@alexkroman1/aai-runtime/testing/vitest";
-import { expect } from "vitest";
+import { assert, expect } from "vitest";
 import agentDef, { spokenSummary } from "./agent.ts";
 import { POLL_INTERVAL_MS } from "./workflows/transcribe.ts";
 
@@ -162,7 +162,7 @@ describeWorkflowEval(
       expect(run.error).toBeUndefined();
       expect(run.status).toBe("completed");
       const output = run.output;
-      if (output === undefined) expect.fail("a completed run must carry an output");
+      assert(output !== undefined, "a completed run must carry an output");
 
       // EXACTLY one write. Two would mean the synthesis and the store had come
       // apart into two steps, which is the mistake this template exists to argue
@@ -170,7 +170,7 @@ describeWorkflowEval(
       // bytes do not.
       expect(uploads.writes).toHaveLength(1);
       const written = uploads.writes[0];
-      if (written === undefined) expect.fail("the speaking step must have stored a file");
+      assert(written !== undefined, "the speaking step must have stored a file");
       // The output carries the ID of that write, and an id is a string — not the
       // audio. A run's output is read back as JSON.
       expect(output.audio).toBe(written.id);
@@ -235,7 +235,7 @@ describeWorkflowEval(
       // And the model was ASKED for both, over the transcript it was given. A
       // prompt that stopped asking for a script is how the field goes missing.
       const asked = model.calls[0];
-      if (asked === undefined) expect.fail("the run must have asked the model for a summary");
+      assert(asked !== undefined, "the run must have asked the model for a summary");
       expect(asked.prompt).toContain("READ ALOUD");
       expect(asked.prompt).toContain("The launch is on for Tuesday the fourth");
     });
@@ -316,7 +316,7 @@ describeWorkflowEval(
         expect(run.error).toBeUndefined();
         expect(run.status).toBe("completed");
         const output = run.output;
-        if (output === undefined) expect.fail("a completed run must carry an output");
+        assert(output !== undefined, "a completed run must carry an output");
 
         // The transcript is of THIS recording — a news segment about smoke from
         // Canadian wildfires reaching the US east coast.
@@ -344,7 +344,7 @@ describeWorkflowEval(
         // The store really holds what the output names.
         expect(uploads.writes).toHaveLength(1);
         const stored = uploads.read(output.audio);
-        if (stored === undefined) expect.fail("the run's `audio` id must name a stored file");
+        assert(stored !== undefined, "the run's `audio` id must name a stored file");
         expect(String.fromCharCode(...stored.bytes.subarray(0, 4))).toBe("RIFF");
       },
       { live: true },

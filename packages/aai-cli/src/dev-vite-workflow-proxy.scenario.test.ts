@@ -31,9 +31,9 @@ import fs from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
 import path from "node:path";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import { viteDevConfig } from "./_dev-vite-config.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { test as baseTest } from "./_test-utils.ts";
 
 /** What the browser asks for, and what a module answer has to look like. */
 const SOURCE_MODULE_URL = "/workflows/stitch.ts";
@@ -87,109 +87,102 @@ async function writeProject(dir: string): Promise<void> {
 type Booted = { origin: string; vite: ViteDevServer };
 
 /**
- * A temp project, a Vite server over it, and a stub backend behind the proxy —
- * torn down INSIDE the temp directory's lifetime.
+ * A `booted` fixture: a temp project, a Vite server over it, and a stub backend
+ * behind the proxy — torn down INSIDE the temp directory's lifetime.
  *
  * The order matters and cost a failure to learn: Vite's dependency scan keeps
  * reading the root (and writing its cache into it) after `listen()` resolves, so
- * a teardown in `afterEach` runs after `withTempDir` has already removed the
- * directory — which surfaced as `ENOTEMPTY` on cleanup and an `ENOENT` on
- * `index.html` from inside rolldown, i.e. as two errors about the harness in a
- * test whose subject is routing.
+ * a teardown that runs after the directory is removed surfaced as `ENOTEMPTY` on
+ * cleanup and an `ENOENT` on `index.html` from inside rolldown, i.e. as two
+ * errors about the harness in a test whose subject is routing. This fixture
+ * depends on `tmpDir`, so vitest runs its cleanups first.
  */
-async function withBootedProject(run: (booted: Booted) => Promise<void>): Promise<void> {
-  await withTempDir(async (dir) => {
-    await writeProject(dir);
-    const backend = await startBackend();
-    const vite = await createViteServer(viteDevConfig(dir, 0, boundPort(backend)));
-    try {
-      await vite.listen();
-      const vitePort = boundPort(vite.httpServer);
-      // The IPv4 literal, not `localhost`: this suite is also the only place the
-      // bind host is observable, and dialling a hostname would pass against a
-      // server bound to `::1` alone.
-      await run({ origin: `http://127.0.0.1:${vitePort}`, vite });
-    } finally {
-      await vite.close();
-      backend.close();
-    }
+const test = baseTest.extend("booted", async ({ tmpDir }, { onCleanup }): Promise<Booted> => {
+  await writeProject(tmpDir);
+  const backend = await startBackend();
+  const vite = await createViteServer(viteDevConfig(tmpDir, 0, boundPort(backend)));
+  onCleanup(async () => {
+    await vite.close();
+    backend.close();
   });
-}
+  await vite.listen();
+  const vitePort = boundPort(vite.httpServer);
+  // The IPv4 literal, not `localhost`: this suite is also the only place the
+  // bind host is observable, and dialling a hostname would pass against a
+  // server bound to `::1` alone.
+  return { origin: `http://127.0.0.1:${vitePort}`, vite };
+});
 
 describe("aai dev's workflow prefix", () => {
-  test("serves a workflows/ source module as a MODULE, not as the API's 404", async () => {
-    await withBootedProject(async ({ origin }) => {
-      const res = await fetch(`${origin}${SOURCE_MODULE_URL}`);
+  test("serves a workflows/ source module as a MODULE, not as the API's 404", async ({
+    booted: { origin },
+  }) => {
+    const res = await fetch(`${origin}${SOURCE_MODULE_URL}`);
 
-      // The three independent halves of "the browser can run this".
-      expect(res.status).toBe(200);
-      expect(res.headers.get("x-served-by")).toBe(null);
-      // A module script is refused outright for any other content type, which
-      // is what turned a 200 from the API into a blank page rather than an error.
-      expect(res.headers.get("content-type")).toContain("javascript");
-      expect(await res.text()).toContain("stitchChunks");
-    });
+    // The three independent halves of "the browser can run this".
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-served-by")).toBe(null);
+    // A module script is refused outright for any other content type, which
+    // is what turned a 200 from the API into a blank page rather than an error.
+    expect(res.headers.get("content-type")).toContain("javascript");
+    expect(await res.text()).toContain("stitchChunks");
   });
 
-  test("the client's own import of that module resolves to a path Vite serves", async () => {
+  test("the client's own import of that module resolves to a path Vite serves", async ({
+    booted: { origin },
+  }) => {
     // The URL under test is not one anybody types — it is what Vite's import
     // analysis rewrites `./workflows/stitch.ts` to. Asserting the rewrite is
     // what keeps the test above pointed at the request a browser really makes,
     // including if Vite's specifier handling ever changes.
-    await withBootedProject(async ({ origin }) => {
-      const res = await fetch(`${origin}/client.tsx`);
+    const res = await fetch(`${origin}/client.tsx`);
 
-      expect(res.status).toBe(200);
-      expect(await res.text()).toContain(`"${SOURCE_MODULE_URL}"`);
-    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(`"${SOURCE_MODULE_URL}"`);
   });
 
-  test("HMR's own query does not put the module back behind the proxy", async () => {
+  test("HMR's own query does not put the module back behind the proxy", async ({
+    booted: { origin },
+  }) => {
     // Vite re-requests a changed module as `?import&t=<ts>`. The bypass reads a
     // request TARGET, not a path, so a query it failed to cut would send every
     // post-edit request for a workflow body to the agent server — i.e. the page
     // works until the author saves the file.
-    await withBootedProject(async ({ origin }) => {
-      const res = await fetch(`${origin}${SOURCE_MODULE_URL}?import&t=1750000000000`);
+    const res = await fetch(`${origin}${SOURCE_MODULE_URL}?import&t=1750000000000`);
 
-      expect(res.headers.get("x-served-by")).toBe(null);
-      expect(res.headers.get("content-type")).toContain("javascript");
-    });
+    expect(res.headers.get("x-served-by")).toBe(null);
+    expect(res.headers.get("content-type")).toContain("javascript");
   });
 
-  test.each([
+  test.for([
     ["the listing route", "/workflows"],
     ["the runs collection", "/workflows/runs"],
     ["a run's events stream", "/workflows/runs/run_123/events"],
     ["an uploads part", "/workflows/uploads/up_1/parts"],
     ["a path with no file behind it", "/workflows/never-written.ts"],
-  ])("still proxies %s to the agent server", async (_label, url) => {
+  ])("still proxies %s to the agent server", async ([, url], { booted: { origin } }) => {
     // The other half of the fix, and the one a naive "let Vite win" would break:
     // a `mode: "workflow-app"` app's entire front door is these routes, and the last
     // case is why the filesystem is the discriminator rather than an extension
     // or a query — an unknown path belongs to the API, which is the end that can
     // say what is wrong with it.
-    await withBootedProject(async ({ origin }) => {
-      const res = await fetch(`${origin}${url}`);
+    const res = await fetch(`${origin}${url}`);
 
-      expect(res.headers.get("x-served-by")).toBe("backend");
-      expect(await res.json()).toEqual({ saw: url });
-    });
+    expect(res.headers.get("x-served-by")).toBe("backend");
+    expect(await res.json()).toEqual({ saw: url });
   });
 
-  test("binds a loopback address the IPv4 literal can reach", async () => {
+  test("binds a loopback address the IPv4 literal can reach", async ({ booted: { vite } }) => {
     // Vite's default `server.host` is the HOSTNAME `localhost`, so Node binds
     // whatever `getaddrinfo` answers first — measured `::1` on macOS, where
     // `http://127.0.0.1:<port>` was then ECONNREFUSED against a healthy server
     // whose URL `aai dev` prints as `http://localhost:<port>`. Every fetch above
     // dials the literal, so this suite would fail wholesale on a regression;
     // this asserts the address directly so the failure names the cause.
-    await withBootedProject(async ({ vite }) => {
-      // `address()` answers `string | AddressInfo | null`, and the field that
-      // matters is the one every fetch above depends on — so this asserts the
-      // bound address itself rather than the shape of the reply.
-      const address = vite.httpServer?.address();
-      expect(address).toMatchObject({ address: "127.0.0.1", family: "IPv4" });
-    });
+    // `address()` answers `string | AddressInfo | null`, and the field that
+    // matters is the one every fetch above depends on — so this asserts the
+    // bound address itself rather than the shape of the reply.
+    const address = vite.httpServer?.address();
+    expect(address).toMatchObject({ address: "127.0.0.1", family: "IPv4" });
   });
 });

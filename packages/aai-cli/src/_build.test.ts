@@ -2,9 +2,9 @@
 import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
-import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
+import { linkSdkNodeModules, test } from "./_test-utils.ts";
 import {
   executeBuild,
   missingDeployEnv,
@@ -26,41 +26,33 @@ async function extractConfig(worker: string): Promise<Record<string, unknown>> {
  * and `executeBuild`, each with an explicit timeout.
  */
 describe("buildAgentBundle", () => {
-  test("throws when no agent.ts found", async () => {
-    await withTempDir(async (dir) => {
-      await linkSdkNodeModules(dir);
-      await expect(silenced(() => buildAgentBundle(dir))(dir)).rejects.toThrow("agent.ts");
-    });
+  test("throws when no agent.ts found", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await expect(buildAgentBundle(dir)).rejects.toThrow("agent.ts");
   });
 
-  test("bundles minimal agent with a self-describing config export", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await linkSdkNodeModules(dir);
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `export default { name: "build-test-agent", systemPrompt: "Test prompt", greeting: "Hello", maxSteps: 5, tools: {} };`,
-        );
-        const bundle = await buildAgentBundle(dir, { runtime: false });
-        const config = await extractConfig(bundle.worker);
-        expect(config.name).toBe("build-test-agent");
-        expect(config.systemPrompt).toBe("Test prompt");
-        expect(config.greeting).toBe("Hello");
-        expect(config.maxSteps).toBe(5);
-        expect(config.toolSchemas).toEqual([]);
-        expect(bundle.worker).toContain("export");
-        expect(bundle.clientFiles).toEqual({});
-      }),
+  test("bundles minimal agent with a self-describing config export", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `export default { name: "build-test-agent", systemPrompt: "Test prompt", greeting: "Hello", maxSteps: 5, tools: {} };`,
     );
+    const bundle = await buildAgentBundle(dir, { runtime: false });
+    const config = await extractConfig(bundle.worker);
+    expect(config.name).toBe("build-test-agent");
+    expect(config.systemPrompt).toBe("Test prompt");
+    expect(config.greeting).toBe("Hello");
+    expect(config.maxSteps).toBe(5);
+    expect(config.toolSchemas).toEqual([]);
+    expect(bundle.worker).toContain("export");
+    expect(bundle.clientFiles).toEqual({});
   });
 
-  test("bundles agent with tools and self-describes their schemas", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await linkSdkNodeModules(dir);
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `
+  test("bundles agent with tools and self-describes their schemas", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `
 import { z } from "zod";
 
 const greetTool = {
@@ -77,146 +69,126 @@ export default {
   tools: { greet: greetTool },
 };
 `,
-        );
-        const bundle = await buildAgentBundle(dir, { runtime: false });
-        const config = await extractConfig(bundle.worker);
-        expect(config.name).toBe("tool-test-agent");
-        expect(config.toolSchemas).toEqual([
-          {
-            type: "function",
-            name: "greet",
-            description: "Greet someone by name",
-            parameters: expect.objectContaining({ type: "object" }),
-          },
-        ]);
-        // Worker should contain the tool code
-        expect(bundle.worker).toContain("greet");
-        expect(bundle.worker.length).toBeGreaterThan(50);
-      }),
     );
+    const bundle = await buildAgentBundle(dir, { runtime: false });
+    const config = await extractConfig(bundle.worker);
+    expect(config.name).toBe("tool-test-agent");
+    expect(config.toolSchemas).toEqual([
+      {
+        type: "function",
+        name: "greet",
+        description: "Greet someone by name",
+        parameters: expect.objectContaining({ type: "object" }),
+      },
+    ]);
+    // Worker should contain the tool code
+    expect(bundle.worker).toContain("greet");
+    expect(bundle.worker.length).toBeGreaterThan(50);
   });
 
-  test("minify option produces a smaller worker that still evaluates", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await linkSdkNodeModules(dir);
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `const longDescriptiveVariableName = "Test prompt";
+  test("minify option produces a smaller worker that still evaluates", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `const longDescriptiveVariableName = "Test prompt";
 export default { name: "minify-test-agent", systemPrompt: longDescriptiveVariableName, greeting: "Hello", maxSteps: 5, tools: {} };`,
-        );
-        const plain = await buildAgentBundle(dir, { runtime: false });
-        const minified = await buildAgentBundle(dir, { minify: true, runtime: false });
-        // Minified bundle still evaluates to the same agent config.
-        const config = await extractConfig(minified.worker);
-        expect(config.name).toBe("minify-test-agent");
-        expect(config.systemPrompt).toBe("Test prompt");
-        // And it is no larger than the unminified build.
-        expect(minified.worker.length).toBeLessThanOrEqual(plain.worker.length);
-      }),
     );
+    const plain = await buildAgentBundle(dir, { runtime: false });
+    const minified = await buildAgentBundle(dir, { minify: true, runtime: false });
+    // Minified bundle still evaluates to the same agent config.
+    const config = await extractConfig(minified.worker);
+    expect(config.name).toBe("minify-test-agent");
+    expect(config.systemPrompt).toBe("Test prompt");
+    // And it is no larger than the unminified build.
+    expect(minified.worker.length).toBeLessThanOrEqual(plain.worker.length);
   });
 
-  test("Vite-bundled worker is valid ESM with default export", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await linkSdkNodeModules(dir);
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `export default { name: "vite-test", systemPrompt: "Test", greeting: "Hi", maxSteps: 5, tools: {} };`,
-        );
-        const bundle = await buildAgentBundle(dir, { runtime: false });
-        // Worker must be valid ESM — check for export syntax
-        expect(bundle.worker).toMatch(/export/);
-        // Must be a non-trivial bundle
-        expect(bundle.worker.length).toBeGreaterThan(20);
-      }),
+  test("Vite-bundled worker is valid ESM with default export", async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `export default { name: "vite-test", systemPrompt: "Test", greeting: "Hi", maxSteps: 5, tools: {} };`,
     );
+    const bundle = await buildAgentBundle(dir, { runtime: false });
+    // Worker must be valid ESM — check for export syntax
+    expect(bundle.worker).toMatch(/export/);
+    // Must be a non-trivial bundle
+    expect(bundle.worker.length).toBeGreaterThan(20);
   });
 });
 
 describe("deploy-shaped build (runtime included)", () => {
-  test("ships a working __aaiCreateRuntime factory", { timeout: 120_000 }, async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await linkSdkNodeModules(dir);
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `export default { name: "runtime-ship", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
-        );
-        const bundle = await buildAgentBundle(dir);
-        // Evaluate exactly as the guest harness does: a real file import
-        // (the bundled runtime's CJS interop rejects data: URLs).
-        const agentDef = await evalWorkerBundle(bundle.worker);
-        expect(agentDef.name).toBe("runtime-ship");
-
-        const workerPath = path.join(dir, "worker-under-test.mjs");
-        await writeFile(workerPath, bundle.worker, "utf-8");
-        const mod = await import(pathToFileURL(workerPath).href);
-        const factory = mod.__aaiCreateRuntime as (opts: Record<string, unknown>) => {
-          startSession: unknown;
-          shutdown: () => Promise<void>;
-        };
-        expect(typeof factory).toBe("function");
-        // The factory builds a real runtime from the BUNDLED SDK — the
-        // harness↔bundle contract: { env, db?, runCode? } in,
-        // { startSession, shutdown } out.
-        const runtime = factory({ env: { ASSEMBLYAI_API_KEY: "test-key" } });
-        expect(typeof runtime.startSession).toBe("function");
-        await runtime.shutdown();
-      }),
+  test("ships a working __aaiCreateRuntime factory", { timeout: 120_000 }, async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `export default { name: "runtime-ship", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
     );
+    const bundle = await buildAgentBundle(dir);
+    // Evaluate exactly as the guest harness does: a real file import
+    // (the bundled runtime's CJS interop rejects data: URLs).
+    const agentDef = await evalWorkerBundle(bundle.worker);
+    expect(agentDef.name).toBe("runtime-ship");
+
+    const workerPath = path.join(dir, "worker-under-test.mjs");
+    await writeFile(workerPath, bundle.worker, "utf-8");
+    const mod = await import(pathToFileURL(workerPath).href);
+    const factory = mod.__aaiCreateRuntime as (opts: Record<string, unknown>) => {
+      startSession: unknown;
+      shutdown: () => Promise<void>;
+    };
+    expect(typeof factory).toBe("function");
+    // The factory builds a real runtime from the BUNDLED SDK — the
+    // harness↔bundle contract: { env, db?, runCode? } in,
+    // { startSession, shutdown } out.
+    const runtime = factory({ env: { ASSEMBLYAI_API_KEY: "test-key" } });
+    expect(typeof runtime.startSession).toBe("function");
+    await runtime.shutdown();
   });
 });
 
 describe("executeBuild", () => {
-  test("returns the agent name and worker size", { timeout: 120_000 }, async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await linkSdkNodeModules(dir);
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `export default { name: "exec-build", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
-        );
-        // Skip the gates — this test covers the bundle+eval step, and the
-        // temp project has no test file or tsconfig anyway.
-        const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          expect(result.data.name).toBe("exec-build");
-          expect(result.data.workerBytes).toBeGreaterThan(20);
-        }
-      }),
+  test("returns the agent name and worker size", { timeout: 120_000 }, async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `export default { name: "exec-build", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
     );
+    // Skip the gates — this test covers the bundle+eval step, and the
+    // temp project has no test file or tsconfig anyway.
+    const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.name).toBe("exec-build");
+      expect(result.data.workerBytes).toBeGreaterThan(20);
+    }
   });
 
   test("leaves the built worker on disk, importable, where `aai start` looks for it", {
     timeout: 120_000,
-  }, async () => {
+  }, async ({ tmpDir: dir }) => {
     // The self-hosting contract: `npm start` runs `aai build` and then
     // imports this exact path. The scaffold's `server.mjs` hardcodes it (it
     // cannot import from the CLI), so nothing but a test holds the two ends
     // together in-tree — the `npm start` leg of e2e.test.ts is the only tier
     // that runs both as a user does.
-    await withTempDir(
-      silenced(async (dir) => {
-        await linkSdkNodeModules(dir);
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `export default { name: "on-disk", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
-        );
-
-        const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
-
-        const written = path.join(dir, WORKER_ARTIFACT_REL);
-        expect(result.ok && result.data.worker).toBe(written);
-        // Importable, not merely present: this is the module `npm start`
-        // boots, and its default export is the agent with its tools already
-        // attached by the generated entry.
-        const mod = await import(pathToFileURL(written).href);
-        expect((mod.default as { name: string }).name).toBe("on-disk");
-      }),
+    await linkSdkNodeModules(dir);
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `export default { name: "on-disk", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
     );
+
+    const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
+
+    const written = path.join(dir, WORKER_ARTIFACT_REL);
+    expect(result.ok && result.data.worker).toBe(written);
+    // Importable, not merely present: this is the module `npm start`
+    // boots, and its default export is the agent with its tools already
+    // attached by the generated entry.
+    const mod = await import(pathToFileURL(written).href);
+    expect((mod.default as { name: string }).name).toBe("on-disk");
   });
 });
 
@@ -229,38 +201,32 @@ describe("executeBuild reports WHICH prompt shipped", () => {
   // file name against `worker-bundler.ts`'s, the two being unshareable.
   test("names the file, then the framework default once it is gone", {
     timeout: 240_000,
-  }, async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await linkSdkNodeModules(dir);
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "prompt-source" });`,
-        );
-        await writeFile(path.join(dir, "system-prompt.md"), "You are a pirate. Always say arrr.\n");
-
-        const withFile = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
-        expect(withFile.ok && withFile.data.systemPrompt).toBe("system-prompt.md");
-
-        await rm(path.join(dir, "system-prompt.md"));
-        const without = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
-        expect(without.ok && without.data.systemPrompt).toContain("framework default");
-      }),
+  }, async ({ tmpDir: dir }) => {
+    await linkSdkNodeModules(dir);
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "prompt-source" });`,
     );
+    await writeFile(path.join(dir, "system-prompt.md"), "You are a pirate. Always say arrr.\n");
+
+    const withFile = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
+    expect(withFile.ok && withFile.data.systemPrompt).toBe("system-prompt.md");
+
+    await rm(path.join(dir, "system-prompt.md"));
+    const without = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
+    expect(without.ok && without.data.systemPrompt).toContain("framework default");
   });
 
-  test("names agent.ts when the prompt is declared there", { timeout: 120_000 }, async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await linkSdkNodeModules(dir);
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "inline", systemPrompt: "Be brief." });`,
-        );
-        const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
-        expect(result.ok && result.data.systemPrompt).toBe("agent.ts");
-      }),
+  test("names agent.ts when the prompt is declared there", { timeout: 120_000 }, async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "inline", systemPrompt: "Be brief." });`,
     );
+    const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
+    expect(result.ok && result.data.systemPrompt).toBe("agent.ts");
   });
 });
 
@@ -281,14 +247,16 @@ describe("evalWorkerBundle", () => {
 });
 
 describe("missingDeployEnv", () => {
-  test("reports a variable the declaration names and the host has no value for", async () => {
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
-      expect(await missingDeployEnv(dir, "vercel", {})).toEqual(["ASSEMBLYAI_API_KEY"]);
-    });
+  test("reports a variable the declaration names and the host has no value for", async ({
+    tmpDir: dir,
+  }) => {
+    await writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
+    expect(await missingDeployEnv(dir, "vercel", {})).toEqual(["ASSEMBLYAI_API_KEY"]);
   });
 
-  test("a value in .env does NOT suppress it — .env never reaches the deployment", async () => {
+  test("a value in .env does NOT suppress it — .env never reaches the deployment", async ({
+    tmpDir: dir,
+  }) => {
     // The case this check exists for, and the one a `resolveServerEnv`-based
     // implementation gets wrong. `.env` IS uploaded into a host's build
     // workspace (Vercel filters uploads by `.vercelignore`, not by
@@ -296,115 +264,99 @@ describe("missingDeployEnv", () => {
     // artifact — `RUNTIME_FILES` in `_vercel-output.ts`, where shipping it was
     // a credential leak. So a resolver would find this key, report nothing,
     // and the deployed function would still see no value.
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
-      await writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=a-real-local-key\n");
-      expect(await missingDeployEnv(dir, "vercel", {})).toEqual(["ASSEMBLYAI_API_KEY"]);
-    });
+    await writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
+    await writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=a-real-local-key\n");
+    expect(await missingDeployEnv(dir, "vercel", {})).toEqual(["ASSEMBLYAI_API_KEY"]);
   });
 
-  test("stays quiet for the node target, which deploys nowhere", async () => {
+  test("stays quiet for the node target, which deploys nowhere", async ({ tmpDir: dir }) => {
     // `aai start` reads `.env` at boot and a provider credential still arrives
     // through `withHostCredentialFallback`, so a blank declaration is a
     // developer mid-setup. Warning here would fire on every local build.
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
-      expect(await missingDeployEnv(dir, "node", {})).toEqual([]);
-    });
+    await writeFile(path.join(dir, ".env.example"), "ASSEMBLYAI_API_KEY=\n");
+    expect(await missingDeployEnv(dir, "node", {})).toEqual([]);
   });
 
-  test("a value on the host clears it, and an empty string does not", async () => {
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, ".env.example"), "SET_KEY=\nBLANK_KEY=\n");
-      expect(await missingDeployEnv(dir, "vercel", { SET_KEY: "v", BLANK_KEY: "" })).toEqual([
-        "BLANK_KEY",
-      ]);
-    });
+  test("a value on the host clears it, and an empty string does not", async ({ tmpDir: dir }) => {
+    await writeFile(path.join(dir, ".env.example"), "SET_KEY=\nBLANK_KEY=\n");
+    expect(await missingDeployEnv(dir, "vercel", { SET_KEY: "v", BLANK_KEY: "" })).toEqual([
+      "BLANK_KEY",
+    ]);
   });
 
-  test("declares nothing when the project has no .env.example", async () => {
-    await withTempDir(async (dir) => {
-      expect(await missingDeployEnv(dir, "vercel", {})).toEqual([]);
-    });
+  test("declares nothing when the project has no .env.example", async ({ tmpDir: dir }) => {
+    expect(await missingDeployEnv(dir, "vercel", {})).toEqual([]);
   });
 
-  test("names a requiredEnv key with no .env.example entry behind it", async () => {
+  test("names a requiredEnv key with no .env.example entry behind it", async ({ tmpDir: dir }) => {
     // The bug: `anywhere.md` promised "list what your tools read in
     // `requiredEnv` … the build warns by name about anything the deployment
     // will be missing", and this path derived from `.env.example` ALONE. So an
     // agent declaring ORDERS_API_KEY and nothing else got neither the warning
     // nor the `env add` step the printed `perSecret` sequence expands from this
     // same list — while the managed path (`_preflight.ts`) saw both sources.
-    await withTempDir(async (dir) => {
-      expect(
-        await missingDeployEnv(
-          dir,
-          "vercel",
-          {},
-          {
-            mode: "workflow-app",
-            requiredEnv: ["ORDERS_API_KEY"],
-          },
-        ),
-      ).toEqual(["ORDERS_API_KEY"]);
-    });
+    expect(
+      await missingDeployEnv(
+        dir,
+        "vercel",
+        {},
+        {
+          mode: "workflow-app",
+          requiredEnv: ["ORDERS_API_KEY"],
+        },
+      ),
+    ).toEqual(["ORDERS_API_KEY"]);
   });
 
-  test("names a provider credential the normalized config implies", async () => {
+  test("names a provider credential the normalized config implies", async ({ tmpDir: dir }) => {
     // Derived from the descriptors rather than declared anywhere by the author,
     // which is why the config has to be the NORMALIZED one (`__aaiConfig`) and
     // not the raw def — see `_preflight.ts`.
-    await withTempDir(async (dir) => {
-      expect(
-        await missingDeployEnv(dir, "vercel", {}, { llm: { kind: "anthropic", options: {} } }),
-      ).toContain("ANTHROPIC_API_KEY");
-    });
+    expect(
+      await missingDeployEnv(dir, "vercel", {}, { llm: { kind: "anthropic", options: {} } }),
+    ).toContain("ANTHROPIC_API_KEY");
   });
 
-  test("unions the two sources and de-duplicates a name in both", async () => {
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, ".env.example"), "FROM_EXAMPLE=\nIN_BOTH=\n");
-      expect(
-        await missingDeployEnv(
-          dir,
-          "vercel",
-          {},
-          {
-            mode: "workflow-app",
-            requiredEnv: ["IN_BOTH", "FROM_CONFIG"],
-          },
-        ),
-      ).toEqual(["FROM_EXAMPLE", "IN_BOTH", "FROM_CONFIG"]);
-    });
+  test("unions the two sources and de-duplicates a name in both", async ({ tmpDir: dir }) => {
+    await writeFile(path.join(dir, ".env.example"), "FROM_EXAMPLE=\nIN_BOTH=\n");
+    expect(
+      await missingDeployEnv(
+        dir,
+        "vercel",
+        {},
+        {
+          mode: "workflow-app",
+          requiredEnv: ["IN_BOTH", "FROM_CONFIG"],
+        },
+      ),
+    ).toEqual(["FROM_EXAMPLE", "IN_BOTH", "FROM_CONFIG"]);
   });
 
-  test("a host value clears a config-derived name exactly as it clears a declared one", async () => {
-    await withTempDir(async (dir) => {
-      expect(
-        await missingDeployEnv(
-          dir,
-          "vercel",
-          { ORDERS_API_KEY: "v" },
-          { mode: "workflow-app", requiredEnv: ["ORDERS_API_KEY"] },
-        ),
-      ).toEqual([]);
-    });
+  test("a host value clears a config-derived name exactly as it clears a declared one", async ({
+    tmpDir: dir,
+  }) => {
+    expect(
+      await missingDeployEnv(
+        dir,
+        "vercel",
+        { ORDERS_API_KEY: "v" },
+        { mode: "workflow-app", requiredEnv: ["ORDERS_API_KEY"] },
+      ),
+    ).toEqual([]);
   });
 
-  test("stays quiet for the node target even with a config in hand", async () => {
+  test("stays quiet for the node target even with a config in hand", async ({ tmpDir: dir }) => {
     // The early return is what makes `build.ts` skip the second bundle
     // evaluation on every ordinary local build, so it must not be reachable
     // past the config argument.
-    await withTempDir(async (dir) => {
-      expect(
-        await missingDeployEnv(
-          dir,
-          "node",
-          {},
-          { mode: "workflow-app", requiredEnv: ["ORDERS_API_KEY"] },
-        ),
-      ).toEqual([]);
-    });
+    expect(
+      await missingDeployEnv(
+        dir,
+        "node",
+        {},
+        { mode: "workflow-app", requiredEnv: ["ORDERS_API_KEY"] },
+      ),
+    ).toEqual([]);
   });
 });
 

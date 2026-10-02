@@ -8,10 +8,10 @@
  * config must be refused rather than silently trusted.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, vi } from "vitest";
 import { DEFAULT_SERVER, resolveServerUrl } from "./_agent.ts";
 import { readProjectConfig, serverOrigin, writeProjectConfig } from "./_config.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { test } from "./_test-utils.ts";
 
 // resolveServerUrl short-circuits to the dev server when running inside this
 // monorepo, which would mask the config path these tests exercise. Stubbed
@@ -110,12 +110,10 @@ describe("readProjectConfig", () => {
   // A malformed serverUrl must not invalidate the whole file: returning null
   // would discard the slug, and a deploy with no slug generates a fresh one —
   // silently creating a duplicate agent and overwriting project.json.
-  test("keeps the slug when serverUrl is unusable", async () => {
-    await withTempDir(async (dir) => {
-      await writeProjectConfig(dir, { slug: "my-agent", serverUrl: "not a url" });
-      const config = await readProjectConfig(dir);
-      expect(config?.slug).toBe("my-agent");
-    });
+  test("keeps the slug when serverUrl is unusable", async ({ tmpDir: dir }) => {
+    await writeProjectConfig(dir, { slug: "my-agent", serverUrl: "not a url" });
+    const config = await readProjectConfig(dir);
+    expect(config?.slug).toBe("my-agent");
   });
 
   test("the unusable serverUrl is then rejected at use time", () => {
