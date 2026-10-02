@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { freezeDate } from "../host/_test-utils.ts";
 import { BOUNDARY_KEYS } from "./_boundary.ts";
 import { DEFAULT_RETRY_DELAY_MS, FatalError, RetryableError } from "./step-error-classes.ts";
 
@@ -39,16 +40,15 @@ describe("RetryableError", () => {
     // "No delay" does NOT mean "let the engine decide" — it means one second,
     // which is what a rate limit punishes. A caller with the far side's own
     // `Retry-After` should pass it.
-    const before = Date.now();
+    const now = freezeDate();
     const at = new RetryableError("later").retryAfter.getTime();
-    expect(at).toBeGreaterThanOrEqual(before + DEFAULT_RETRY_DELAY_MS);
+    expect(at).toBe(now + DEFAULT_RETRY_DELAY_MS);
   });
 
   test("resolves a numeric delay against the clock at construction", () => {
-    const before = Date.now();
+    const now = freezeDate();
     const at = new RetryableError("later", { retryAfter: 5000 }).retryAfter.getTime();
-    expect(at).toBeGreaterThanOrEqual(before + 5000);
-    expect(at).toBeLessThan(before + 6000);
+    expect(at).toBe(now + 5000);
   });
 
   test("takes an absolute Date as given", () => {

@@ -16,7 +16,7 @@
  * intermediary may.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { readEventStream } from "./event-stream.ts";
 import { followRun, followRunOutput, type RunStreamOpener } from "./workflow-api-follow.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
@@ -114,7 +114,9 @@ describe("followRun", () => {
 describe("followRunOutput", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    return () => void vi.useRealTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
   });
 
   test("yields chunks and ends when the RUN is complete", async () => {

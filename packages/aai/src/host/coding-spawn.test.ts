@@ -14,7 +14,7 @@
  * `coding-spawn.scenario.test.ts`.
  */
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   EXIT_DRAIN_MS,
   KILL_GRACE_MS,
@@ -168,18 +168,17 @@ describe("runCapped", () => {
 
   test("the deadline sends SIGTERM, then SIGKILL after the grace period", async () => {
     vi.useFakeTimers();
-    try {
-      const child = installChild();
-      const run = runCapped("bash", [], { cwd: "/work", timeoutMs: 100, cap: 100 });
-      vi.advanceTimersByTime(100);
-      expect(child.kills).toEqual(["SIGTERM"]);
-      vi.advanceTimersByTime(KILL_GRACE_MS);
-      expect(child.kills).toEqual(["SIGTERM", "SIGKILL"]);
-      child.close(null, "SIGKILL");
-      await expect(run).resolves.toMatchObject({ timedOut: true, signal: "SIGKILL" });
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const child = installChild();
+    const run = runCapped("bash", [], { cwd: "/work", timeoutMs: 100, cap: 100 });
+    vi.advanceTimersByTime(100);
+    expect(child.kills).toEqual(["SIGTERM"]);
+    vi.advanceTimersByTime(KILL_GRACE_MS);
+    expect(child.kills).toEqual(["SIGTERM", "SIGKILL"]);
+    child.close(null, "SIGKILL");
+    await expect(run).resolves.toMatchObject({ timedOut: true, signal: "SIGKILL" });
   });
 
   /**
@@ -189,35 +188,33 @@ describe("runCapped", () => {
    */
   test("a child that exits cleanly after the deadline is still reported as timed out", async () => {
     vi.useFakeTimers();
-    try {
-      const child = installChild();
-      const run = runCapped("bash", [], { cwd: "/work", timeoutMs: 100, cap: 100 });
-      vi.advanceTimersByTime(100);
-      child.close(0, null);
-      const result = await run;
-      expect(result).toMatchObject({ exitCode: 0, signal: null, timedOut: true });
-      expect(outputWithKillNote(result, 100)).toContain("[killed by SIGTERM after 100ms]");
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const child = installChild();
+    const run = runCapped("bash", [], { cwd: "/work", timeoutMs: 100, cap: 100 });
+    vi.advanceTimersByTime(100);
+    child.close(0, null);
+    const result = await run;
+    expect(result).toMatchObject({ exitCode: 0, signal: null, timedOut: true });
+    expect(outputWithKillNote(result, 100)).toContain("[killed by SIGTERM after 100ms]");
   });
 
   test("settles shortly after EXIT when something else still holds the pipes", async () => {
     vi.useFakeTimers();
-    try {
-      const child = installChild();
-      const run = runCapped("bash", [], { cwd: "/work", timeoutMs: 60_000, cap: 100 });
-      child.emit("stdout", "started\n");
-      child.exit(0);
-      vi.advanceTimersByTime(EXIT_DRAIN_MS);
-      await expect(run).resolves.toMatchObject({ exitCode: 0, stdout: "started\n" });
-      // No `close` ever came: the runner stopped reading pipes a background
-      // job still holds, and killed nothing — `&` asked for it to keep running.
-      expect(child.destroyed).toEqual(["stdout", "stderr"]);
-      expect(child.kills).toEqual([]);
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const child = installChild();
+    const run = runCapped("bash", [], { cwd: "/work", timeoutMs: 60_000, cap: 100 });
+    child.emit("stdout", "started\n");
+    child.exit(0);
+    vi.advanceTimersByTime(EXIT_DRAIN_MS);
+    await expect(run).resolves.toMatchObject({ exitCode: 0, stdout: "started\n" });
+    // No `close` ever came: the runner stopped reading pipes a background
+    // job still holds, and killed nothing — `&` asked for it to keep running.
+    expect(child.destroyed).toEqual(["stdout", "stderr"]);
+    expect(child.kills).toEqual([]);
   });
 
   test("rejects only when the process could not be spawned at all", async () => {

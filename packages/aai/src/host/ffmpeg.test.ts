@@ -10,7 +10,7 @@
  * whether the ARGV is right, and that is `ffmpeg.scenario.test.ts`.
  */
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   DEFAULT_MAX_FFMPEG_OUTPUT_BYTES,
   FFMPEG_KILL_GRACE_MS,
@@ -281,39 +281,37 @@ describe("runFfmpeg", () => {
 
   test("SIGKILLs an aborted child that does not exit on SIGTERM", async () => {
     vi.useFakeTimers();
-    try {
-      const child = installChild();
-      const controller = new AbortController();
-      const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
-      controller.abort();
-      child.error(abortError());
-      expect(child.kills).toEqual([]);
-      vi.advanceTimersByTime(FFMPEG_KILL_GRACE_MS);
-      expect(child.kills).toEqual(["SIGKILL"]);
-      child.close(null, "SIGKILL");
-      const err = await failureOf(run);
-      expect(err.kind).toBe("aborted");
-      expect(err.signal).toBe("SIGKILL");
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const child = installChild();
+    const controller = new AbortController();
+    const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
+    controller.abort();
+    child.error(abortError());
+    expect(child.kills).toEqual([]);
+    vi.advanceTimersByTime(FFMPEG_KILL_GRACE_MS);
+    expect(child.kills).toEqual(["SIGKILL"]);
+    child.close(null, "SIGKILL");
+    const err = await failureOf(run);
+    expect(err.kind).toBe("aborted");
+    expect(err.signal).toBe("SIGKILL");
   });
 
   test("a child that exits within the grace period is never SIGKILLed", async () => {
     vi.useFakeTimers();
-    try {
-      const child = installChild();
-      const controller = new AbortController();
-      const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
-      controller.abort();
-      child.error(abortError());
-      child.close(null, "SIGTERM");
-      await failureOf(run);
-      vi.advanceTimersByTime(FFMPEG_KILL_GRACE_MS * 2);
-      expect(child.kills).toEqual([]);
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const child = installChild();
+    const controller = new AbortController();
+    const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
+    controller.abort();
+    child.error(abortError());
+    child.close(null, "SIGTERM");
+    await failureOf(run);
+    vi.advanceTimersByTime(FFMPEG_KILL_GRACE_MS * 2);
+    expect(child.kills).toEqual([]);
   });
 
   /**

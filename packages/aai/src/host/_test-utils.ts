@@ -6,6 +6,7 @@
 
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
+import { onTestFinished, vi } from "vitest";
 
 /**
  * Yield a full MACROTASK — drains microtasks and also lets already-scheduled
@@ -35,4 +36,17 @@ export function fakeFetch(
   fn: (url: string, init: RequestInit) => Promise<Response>,
 ): typeof globalThis.fetch {
   return fn as unknown as typeof globalThis.fetch;
+}
+
+/**
+ * Fake `Date` (and nothing else) for the rest of this test, frozen at `at`, so
+ * a wall-clock assertion can be exact. Timers stay real.
+ */
+export function freezeDate(at = 1_800_000_000_000): number {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(at);
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  return at;
 }

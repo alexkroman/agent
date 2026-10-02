@@ -12,7 +12,7 @@
  * `host/workflow-api-uploads.test.ts` against a real router.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   client,
   PART,
@@ -284,64 +284,62 @@ describe("a part that does not land", () => {
 
   test("WAITS before asking again, rather than re-colliding with the limit", async () => {
     vi.useFakeTimers();
-    try {
-      const agent = scriptAgent({ refuse: { offset: PART, status: 503, always: true } });
-      // Abandoned at the end rather than left running: this upload never finishes,
-      // and an in-flight one outlives the test that started it — issuing its
-      // remaining parts against whatever `fetch` the NEXT spec has stubbed.
-      const abandon = new AbortController();
-      const stored = client().upload(recording(), { parallel: true, signal: abandon.signal });
-      stored.catch(() => undefined);
-      // Everything that can happen without the clock moving has happened: the part
-      // was refused, and the re-send has NOT gone out. That is the whole fix — a
-      // fan-out hits a capacity limit together, so an immediate re-send is four
-      // connections asking again in unison inside the window they are waiting out.
-      await vi.advanceTimersByTimeAsync(0);
-      const sent = (): number =>
-        agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)).length;
-      expect(sent()).toBe(1);
-
-      // Still nothing a fifth of a window later — jitter draws from the window's
-      // upper half, so this is the bound a spec can state without pinning the draw
-      // or the instant the timer was armed at.
-      await vi.advanceTimersByTimeAsync(UPLOAD_RETRY_BASE_MS / 5);
-      expect(sent()).toBe(1);
-      // A whole window past that covers the first wait and cannot reach the SECOND,
-      // whose own window is twice as wide — so this pins one re-send rather than
-      // draining the budget.
-      await vi.advanceTimersByTimeAsync(UPLOAD_RETRY_BASE_MS);
-      expect(sent()).toBe(2);
-      await settle(abandon, stored);
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const agent = scriptAgent({ refuse: { offset: PART, status: 503, always: true } });
+    // Abandoned at the end rather than left running: this upload never finishes,
+    // and an in-flight one outlives the test that started it — issuing its
+    // remaining parts against whatever `fetch` the NEXT spec has stubbed.
+    const abandon = new AbortController();
+    const stored = client().upload(recording(), { parallel: true, signal: abandon.signal });
+    stored.catch(() => undefined);
+    // Everything that can happen without the clock moving has happened: the part
+    // was refused, and the re-send has NOT gone out. That is the whole fix — a
+    // fan-out hits a capacity limit together, so an immediate re-send is four
+    // connections asking again in unison inside the window they are waiting out.
+    await vi.advanceTimersByTimeAsync(0);
+    const sent = (): number =>
+      agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)).length;
+    expect(sent()).toBe(1);
+
+    // Still nothing a fifth of a window later — jitter draws from the window's
+    // upper half, so this is the bound a spec can state without pinning the draw
+    // or the instant the timer was armed at.
+    await vi.advanceTimersByTimeAsync(UPLOAD_RETRY_BASE_MS / 5);
+    expect(sent()).toBe(1);
+    // A whole window past that covers the first wait and cannot reach the SECOND,
+    // whose own window is twice as wide — so this pins one re-send rather than
+    // draining the budget.
+    await vi.advanceTimersByTimeAsync(UPLOAD_RETRY_BASE_MS);
+    expect(sent()).toBe(2);
+    await settle(abandon, stored);
   });
 
   test("waits as long as the agent ASKED, when it said", async () => {
     vi.useFakeTimers();
-    try {
-      const agent = scriptAgent({
-        refuse: { offset: PART, status: 503, always: true, retryAfter: "5" },
-      });
-      const abandon = new AbortController();
-      const stored = client().upload(recording(), { parallel: true, signal: abandon.signal });
-      stored.catch(() => undefined);
-      await vi.advanceTimersByTimeAsync(0);
-      const sent = (): number =>
-        agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)).length;
-
-      // The far side knows something the backoff does not — that is what makes a
-      // burst DRAIN instead of re-colliding — so its own number beats the schedule.
-      // Three seconds is six times the longest wait the schedule alone can produce
-      // for a first retry, so nothing but the header can explain the silence.
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(sent()).toBe(1);
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(sent()).toBe(2);
-      await settle(abandon, stored);
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const agent = scriptAgent({
+      refuse: { offset: PART, status: 503, always: true, retryAfter: "5" },
+    });
+    const abandon = new AbortController();
+    const stored = client().upload(recording(), { parallel: true, signal: abandon.signal });
+    stored.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    const sent = (): number =>
+      agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)).length;
+
+    // The far side knows something the backoff does not — that is what makes a
+    // burst DRAIN instead of re-colliding — so its own number beats the schedule.
+    // Three seconds is six times the longest wait the schedule alone can produce
+    // for a first retry, so nothing but the header can explain the silence.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(sent()).toBe(1);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(sent()).toBe(2);
+    await settle(abandon, stored);
   });
 
   test("stops the parts still in flight when one of them fails", async () => {

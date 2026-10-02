@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createToolContext } from "@alexkroman1/aai/testing";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { fakeFetch } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import { SESSION_NOTES_TTL_MS } from "./session-notes.ts";
@@ -456,19 +456,18 @@ describe("resolveAllBuiltins defs", () => {
 
   test("notes expire after the session-notes TTL", async () => {
     vi.useFakeTimers();
-    try {
-      const { defs } = resolveAllBuiltins(["remember", "recall"]);
-      const ctx = createToolContext({ sessionId: "notes-ttl" });
-
-      await defs.remember?.execute({ key: "user_id", value: "usr_123" }, ctx);
-      vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
-      expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: { user_id: "usr_123" } });
-
-      vi.advanceTimersByTime(2);
-      expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: {} });
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const { defs } = resolveAllBuiltins(["remember", "recall"]);
+    const ctx = createToolContext({ sessionId: "notes-ttl" });
+
+    await defs.remember?.execute({ key: "user_id", value: "usr_123" }, ctx);
+    vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
+    expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: { user_id: "usr_123" } });
+
+    vi.advanceTimersByTime(2);
+    expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: {} });
   });
 
   // ─── calculate ─────────────────────────────────────────────────────────
