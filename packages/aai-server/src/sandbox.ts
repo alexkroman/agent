@@ -17,12 +17,15 @@ import pTimeout from "p-timeout";
 import { emptyLogPage, LOGS_READY_TIMEOUT_MS } from "./agent-logs.ts";
 import { resolveHarnessPath, SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
 import { createLogger } from "./logger.ts";
-import { spawnAgentServer, type WorkerSource } from "./sandbox/vm.ts";
+import { type AgentSpawnOptions, spawnAgentServer, type WorkerSource } from "./sandbox/vm.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
 const log = createLogger("sandbox");
 
 // ── Types ───────────────────────────────────────────────────────────────
+
+/** Boots one agent guest — {@link spawnAgentServer} on the selected backend. */
+export type SpawnAgentServer = (opts: AgentSpawnOptions) => Promise<AgentServerHandle>;
 
 export type SandboxOptions = {
   /** The bundle bytes, or a signed URL the guest pulls them from. */
@@ -53,6 +56,11 @@ export type SandboxOptions = {
    * Fires at most once.
    */
   onSandboxLost?: (err?: unknown) => void;
+  /**
+   * The spawn this sandbox boots through. Defaults to {@link spawnAgentServer}
+   * (the process's selected backend); a test hands a fake guest in here.
+   */
+  spawnAgentServer?: SpawnAgentServer | undefined;
 };
 
 export type Sandbox = {
@@ -128,7 +136,8 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
    */
   let terminateUnready: (() => Promise<void>) | undefined;
 
-  const vmReady = spawnAgentServer({
+  const spawn = opts.spawnAgentServer ?? spawnAgentServer;
+  const vmReady = spawn({
     slug,
     onSpawned: (terminate) => {
       terminateUnready = terminate;

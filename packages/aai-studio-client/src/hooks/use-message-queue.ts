@@ -103,7 +103,7 @@ export type QueueIo = {
  * interesting states a test has to drive renders, a live `useChat`, and a
  * transport that fails at a chosen moment. Pulled out, the same states are a
  * sequence of calls, which is what lets
- * `message-queue-conservation.test.ts` assert the module's conservation law
+ * `use-message-queue.test.ts` assert the module's conservation law
  * over generated interleavings rather than over the handful anybody thought
  * to write down. `chat-queue.test.ts` pins twenty transitions in ISOLATION
  * and every one of them passes over the wedge that suite found.
@@ -180,7 +180,7 @@ function unhandledEvent(event: never): never {
  * the queue, the flush effect returns at `nextToFlush` before it can flush
  * one, `clear` preserves the latch, and Publish never unlocks. The composer
  * becomes a field you can type in and never send, until a reload. The
- * property in `message-queue-conservation.test.ts` shrinks that to four steps
+ * property in `use-message-queue.test.ts` shrinks that to four steps
  * and needs no failure of any kind to get there.
  *
  * A handover ENDING is a fact about this module's own call, not an inference

@@ -1,5 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, vi } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { beforeEach, describe, expect, onTestFinished, vi } from "vitest";
 import {
   DEFAULT_SERVER,
   getServerInfo,
@@ -7,16 +10,18 @@ import {
   resolveDeployTarget,
   resolveServerUrl,
 } from "./_agent.ts";
-import { writeProjectConfig } from "./_config.ts";
+import { writeGlobalConfig, writeProjectConfig } from "./_config.ts";
 import { test } from "./_test-utils.ts";
 
-// Avoid the interactive API key prompt — getServerInfo resolves keys via ensureApiKey.
-vi.mock("./_config.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./_config.ts")>();
-  return {
-    ...actual,
-    ensureApiKey: vi.fn(() => Promise.resolve("test-key-123")),
-  };
+// getServerInfo resolves its key through ensureApiKey, which reads the global
+// config. Authenticate the way a non-interactive caller does: AAI_CONFIG_DIR
+// pointed at a config dir holding a logged-in key — fresh per test, so an
+// `approveServer` from one case is never another's trust anchor.
+beforeEach(async () => {
+  const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai-agent-config-"));
+  onTestFinished(() => fs.rm(configDir, { recursive: true, force: true }));
+  await writeGlobalConfig(configDir, { apiKey: "test-key-123" });
+  vi.stubEnv("AAI_CONFIG_DIR", configDir);
 });
 
 test("DEFAULT_SERVER", () => {

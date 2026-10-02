@@ -4,10 +4,16 @@ import { resolveSonioxSttSettings, SONIOX_API_KEY_ENV } from "@alexkroman1/aai/h
 import type { SonioxSttOptions } from "@alexkroman1/aai/stt";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
-import WebSocket from "ws";
+import type WebSocket from "ws";
 import { createRestartableTimer } from "../../_timer.ts";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
-import { dropSocket, openGuardedWs, wireSttPcmSocket } from "../_socket.ts";
+import {
+  type CreateProviderSocket,
+  createProviderSocket,
+  dropSocket,
+  openGuardedWs,
+  wireSttPcmSocket,
+} from "../_socket.ts";
 import { createSttSessionShell, requireApiKey } from "../_utils.ts";
 import {
   createSttError,
@@ -129,7 +135,10 @@ function handleResponse(res: SonioxResponse, emit: SonioxEmit, finalBuf: { value
   }
 }
 
-export function openSoniox(opts: SonioxSttOptions = {}): SttOpener {
+export function openSoniox(
+  opts: SonioxSttOptions = {},
+  createSocket: CreateProviderSocket = createProviderSocket,
+): SttOpener {
   return {
     name: "soniox",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
@@ -145,7 +154,7 @@ export function openSoniox(opts: SonioxSttOptions = {}): SttOpener {
       // config frame goes out inside the same guarded window, since a failed
       // first send is a failed open.
       const ws = await openGuardedWs({
-        create: () => new WebSocket(SONIOX_WS_URL, PROVIDER_WS_OPTIONS),
+        create: () => createSocket(SONIOX_WS_URL, PROVIDER_WS_OPTIONS),
         label: "Soniox STT",
         makeConnectError: (msg) => createSttError("stt_connect_failed", msg),
         signal: openOpts.signal,

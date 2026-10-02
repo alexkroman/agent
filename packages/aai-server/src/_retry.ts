@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Transient-network-error retry helper for upstream storage / HTTP reads.
 
-import { isRecord } from "@alexkroman1/aai/utils";
 import isNetworkError from "is-network-error";
 import pRetry from "p-retry";
+import { causes } from "./_causes.ts";
 
 /**
  * Node/undici error codes we treat as transient in addition to the standard
@@ -28,14 +28,9 @@ const TRANSIENT_ERROR_CODES = new Set([
  * carry the real error in `cause`.
  */
 export function isTransientNetworkError(err: unknown): boolean {
-  const seen = new Set<unknown>();
-  let cur: unknown = err;
-  while (isRecord(cur) && !seen.has(cur)) {
-    seen.add(cur);
+  for (const cur of causes(err)) {
     if (isNetworkError(cur)) return true;
-    const code = cur.code;
-    if (typeof code === "string" && TRANSIENT_ERROR_CODES.has(code)) return true;
-    cur = cur.cause;
+    if (typeof cur.code === "string" && TRANSIENT_ERROR_CODES.has(cur.code)) return true;
   }
   return false;
 }

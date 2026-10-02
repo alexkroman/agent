@@ -17,6 +17,7 @@ import {
   snapshotWorkspaceFiles,
   type WorkspaceSnapshot,
 } from "@alexkroman1/aai/workspace-files";
+import { resolveDeployTarget } from "./_agent.ts";
 import { apiRequest, checkedResponse, isStringArray } from "./_api-client.ts";
 
 /**
@@ -77,6 +78,18 @@ export function studioProjectApiUrl(serverUrl: string, project: string): string 
   return `${serverUrl}/studio/projects/${encodeURIComponent(project)}`;
 }
 
+/**
+ * What the studio commands (`aai list/pull/push/publish/delete`) reach the
+ * platform through: the target resolver and the one request function. The
+ * seam a spec hands fakes through; every command defaults to the real pair.
+ */
+export type StudioDeps = {
+  resolveDeployTarget: typeof resolveDeployTarget;
+  apiRequest: typeof apiRequest;
+};
+
+export const REAL_STUDIO_DEPS: StudioDeps = { resolveDeployTarget, apiRequest };
+
 /** `GET /studio/projects/:project` — see `projectPayload` server-side. */
 export type StudioProject = {
   files: Record<string, string>;
@@ -85,8 +98,12 @@ export type StudioProject = {
   unpublished?: boolean;
 };
 
-export function listStudioProjects(serverUrl: string, apiKey: string): Promise<string[]> {
-  return apiRequest(`${serverUrl}/studio/projects`, {
+export function listStudioProjects(
+  serverUrl: string,
+  apiKey: string,
+  request: typeof apiRequest = apiRequest,
+): Promise<string[]> {
+  return request(`${serverUrl}/studio/projects`, {
     apiKey,
     action: "list",
     // Checked rather than cast: a 200 without `projects` made `aai list` die on
@@ -109,8 +126,9 @@ export function fetchStudioProject(
   serverUrl: string,
   apiKey: string,
   project: string,
+  request: typeof apiRequest = apiRequest,
 ): Promise<StudioProject | null> {
-  return apiRequest(studioProjectApiUrl(serverUrl, project), {
+  return request(studioProjectApiUrl(serverUrl, project), {
     apiKey,
     action: "pull",
     allow404: true,
@@ -142,8 +160,9 @@ export function pushStudioSource(
   apiKey: string,
   project: string,
   body: { files: Record<string, string>; baseHash?: string | undefined },
+  request: typeof apiRequest = apiRequest,
 ): Promise<{ sourceHash: string; created: boolean }> {
-  return apiRequest(`${studioProjectApiUrl(serverUrl, project)}/source`, {
+  return request(`${studioProjectApiUrl(serverUrl, project)}/source`, {
     apiKey,
     action: "push",
     method: "PUT",
@@ -178,8 +197,9 @@ export function publishStudioProject(
   apiKey: string,
   project: string,
   opts: { skipTypecheck?: boolean | undefined } = {},
+  request: typeof apiRequest = apiRequest,
 ): Promise<{ ok: true; slug: string; url: string; output: string }> {
-  return apiRequest(`${studioProjectApiUrl(serverUrl, project)}/deploy`, {
+  return request(`${studioProjectApiUrl(serverUrl, project)}/deploy`, {
     apiKey,
     action: "publish",
     method: "POST",

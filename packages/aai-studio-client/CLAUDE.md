@@ -117,9 +117,9 @@ OAuth app. Four rules:
 - **The email is trimmed and the password is not** (spaces are legal in it).
 
 `readSignInMethods` lives outside `auth.tsx` so the coverage floors govern it:
-the hook in `auth.tsx` (supabase-js, an auth subscription, an OAuth redirect) is
-deliberately never LOADED by a test, and importing a value from `auth.tsx` in a
-spec drops package coverage ~11 points.
+`auth.tsx` is excluded from coverage (`vitest.config.ts`), because its spec
+drives only the flows with no third party (the config read, `none`, `dev`) and
+the rest is supabase-js wiring (an auth subscription, an OAuth redirect).
 
 **The session lives in `localStorage`, and the origin split is owed**
 (`auth.tsx`, and the threat-model note in `main.tsx`). Tenant agent pages are

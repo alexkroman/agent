@@ -36,11 +36,17 @@ export function bundledTemplatesDir(): string {
   return import.meta.dirname;
 }
 
-/** Resolve the templates root — env override, then monorepo, then bundled. */
-function resolveTemplatesDir(): string {
+/**
+ * Resolve the templates root — env override, then monorepo, then bundled.
+ * `findMonorepoRoot` is injectable so a spec, which always runs inside the
+ * monorepo, can stand outside it.
+ */
+export function resolveTemplatesDir(
+  findMonorepoRoot: () => string | null = getMonorepoRoot,
+): string {
   const override = process.env.AAI_TEMPLATES_DIR;
   if (override) return override;
-  const monorepoRoot = getMonorepoRoot();
+  const monorepoRoot = findMonorepoRoot();
   if (monorepoRoot) return path.join(monorepoRoot, "packages", "aai-templates");
   return bundledTemplatesDir();
 }
@@ -154,10 +160,14 @@ export function templateCopyFilter(src: string): boolean {
 }
 
 /**
- * Copy a template into targetDir, merging scaffold files underneath.
+ * Copy a template into targetDir, merging scaffold files underneath. `root` is
+ * the templates root, resolved by {@link resolveTemplatesDir} unless given.
  */
-export async function downloadAndMergeTemplate(template: string, targetDir: string): Promise<void> {
-  const root = resolveTemplatesDir();
+export async function downloadAndMergeTemplate(
+  template: string,
+  targetDir: string,
+  root: string = resolveTemplatesDir(),
+): Promise<void> {
   const templatesDir = path.join(root, "templates");
 
   const names = await listTemplates(root);

@@ -49,7 +49,7 @@ function harness(reads: (WorkflowRunSnapshot | undefined)[], opts: { spoke?: boo
   let at = 0;
   const get = vi.fn(async () => reads[Math.min(at++, reads.length - 1)]);
   const notifier = createRunNotifier({
-    client: { get } as never,
+    client: { get },
     announcer: {
       announce: (sessionId, instruction) => {
         spoken.push({ sessionId, instruction });
@@ -126,7 +126,7 @@ describe("createRunNotifier", () => {
           if (call === 1) throw new Error("connection reset");
           return run({ status: "completed" });
         },
-      } as never,
+      },
       announcer: {
         announce: (_sid, instruction) => {
           spoken.push(instruction);

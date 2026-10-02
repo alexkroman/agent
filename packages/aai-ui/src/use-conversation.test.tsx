@@ -7,7 +7,7 @@
  * is a boolean a custom chrome can read, and that reading the conversation does
  * not buy a whole-snapshot subscription.
  *
- * The rendered half stays covered by `components/integration.test.tsx`, which
+ * The rendered half stays covered by `components/message-list.test.tsx`, which
  * now exercises this hook transitively — the point of building the list on it.
  */
 

@@ -43,78 +43,6 @@ const localArg = {
   description: "Edit this project's .env instead of the platform's secrets (no login needed)",
 } as const;
 
-const secretPut = defineExec({
-  // The stdin contract belongs in `--help` — that is where someone looks when
-  // a command appears to hang, and it said only "NAME". It is split across
-  // the two slots citty renders: `description` is repeated in the GROUP
-  // listing (`aai secret --help`), so it stays one line, and the positional's
-  // description carries the copy-pasteable form plus the fact that the value
-  // is not an argument at all.
-  meta: {
-    name: "put",
-    description: "Create or update a secret (value read from stdin, or prompted on a terminal)",
-  },
-  args: {
-    name: {
-      type: "positional",
-      description:
-        "Secret name. The VALUE is not an argument — pipe it in " +
-        '(`printf %s "$VALUE" | aai secret put NAME`), or be prompted, masked, ' +
-        "when stdin is a terminal",
-      required: true,
-    },
-    local: localArg,
-    ...platformArgs,
-  },
-  cwd: "any",
-  async run({ args, mode, cwd, ui }) {
-    refuseValueInArgv(args._);
-    const { executeLocalSecretPut, executeSecretPut, resolveSecretValue } = await import(
-      "./secret.ts"
-    );
-    // Resolved here, not inside the executor: which SOURCE a value comes from
-    // is a property of the invocation (is stdin a terminal?), and reading
-    // stdin when it is one is what made this command block forever.
-    const value = await resolveSecretValue(args.name, mode);
-    return args.local
-      ? executeLocalSecretPut(cwd, args.name, value, ui)
-      : executeSecretPut(cwd, args.name, value, args.server, ui);
-  },
-});
-
-const secretDelete = defineExec({
-  meta: { name: "delete", description: "Delete a secret" },
-  args: {
-    name: { type: "positional", description: "Secret name", required: true },
-    local: localArg,
-    ...platformArgs,
-  },
-  cwd: "any",
-  async run({ args, cwd, ui }) {
-    const { executeLocalSecretDelete, executeSecretDelete } = await import("./secret.ts");
-    return args.local
-      ? executeLocalSecretDelete(cwd, args.name, ui)
-      : executeSecretDelete(cwd, args.name, args.server, ui);
-  },
-});
-
-const secretList = defineExec({
-  meta: { name: "list", description: "List all secrets" },
-  args: {
-    ...platformArgs,
-  },
-  cwd: "any",
-  async run({ args, cwd, ui }) {
-    const { executeSecretList } = await import("./secret.ts");
-    return executeSecretList(cwd, args.server, ui);
-  },
-});
-
-export const secret = defineCommand({
-  meta: { name: "secret", description: "Manage agent secrets" },
-  subCommands: { put: secretPut, delete: secretDelete, list: secretList },
-});
-
 /** An optional `[dir]` positional, resolved against the working directory. */
 function resolveDirArg(cwd: string, dir: string | undefined): string {
   return dir ? path.resolve(cwd, dir) : cwd;
@@ -133,26 +61,131 @@ const dirArg = {
   required: false,
 } as const;
 
-export const logs = defineExec({
-  meta: {
-    name: "logs",
-    description: "Show what the deployed agent has printed",
-  },
-  args: {
-    dir: dirArg,
-    follow: { type: "boolean", alias: "f", description: "Keep printing new output" },
-    ...platformArgs,
-  },
-  cwd: "any",
-  async run({ args, cwd, ui }) {
-    const { executeLogs } = await import("./logs.ts");
-    return executeLogs(
-      resolveDirArg(cwd, args.dir),
-      {
-        server: args.server,
-        follow: args.follow,
+/** The executors these groups dispatch to, each module loaded on first use. */
+export type ResourceExecutors = {
+  secret: () => Promise<
+    Pick<
+      typeof import("./secret.ts"),
+      | "executeSecretPut"
+      | "executeSecretDelete"
+      | "executeSecretList"
+      | "executeLocalSecretPut"
+      | "executeLocalSecretDelete"
+      | "resolveSecretValue"
+    >
+  >;
+  logs: () => Promise<Pick<typeof import("./logs.ts"), "executeLogs">>;
+};
+
+/**
+ * The real executors, imported lazily — the CLI's startup path must not pay for
+ * a command nobody invoked.
+ */
+const REAL_EXECUTORS: ResourceExecutors = {
+  secret: () => import("./secret.ts"),
+  logs: () => import("./logs.ts"),
+};
+
+/**
+ * Build `aai secret` and `aai logs` over `load`. The seam a spec hands fake
+ * executors through; the CLI uses the exported `secret`/`logs` below.
+ */
+export function createResourceCommands(load: ResourceExecutors = REAL_EXECUTORS) {
+  const secretPut = defineExec({
+    // The stdin contract belongs in `--help` — that is where someone looks when
+    // a command appears to hang, and it said only "NAME". It is split across
+    // the two slots citty renders: `description` is repeated in the GROUP
+    // listing (`aai secret --help`), so it stays one line, and the positional's
+    // description carries the copy-pasteable form plus the fact that the value
+    // is not an argument at all.
+    meta: {
+      name: "put",
+      description: "Create or update a secret (value read from stdin, or prompted on a terminal)",
+    },
+    args: {
+      name: {
+        type: "positional",
+        description:
+          "Secret name. The VALUE is not an argument — pipe it in " +
+          '(`printf %s "$VALUE" | aai secret put NAME`), or be prompted, masked, ' +
+          "when stdin is a terminal",
+        required: true,
       },
-      ui,
-    );
-  },
-});
+      local: localArg,
+      ...platformArgs,
+    },
+    cwd: "any",
+    async run({ args, mode, cwd, ui }) {
+      refuseValueInArgv(args._);
+      const { executeLocalSecretPut, executeSecretPut, resolveSecretValue } = await load.secret();
+      // Resolved here, not inside the executor: which SOURCE a value comes from
+      // is a property of the invocation (is stdin a terminal?), and reading
+      // stdin when it is one is what made this command block forever.
+      const value = await resolveSecretValue(args.name, mode);
+      return args.local
+        ? executeLocalSecretPut(cwd, args.name, value, ui)
+        : executeSecretPut(cwd, args.name, value, args.server, ui);
+    },
+  });
+
+  const secretDelete = defineExec({
+    meta: { name: "delete", description: "Delete a secret" },
+    args: {
+      name: { type: "positional", description: "Secret name", required: true },
+      local: localArg,
+      ...platformArgs,
+    },
+    cwd: "any",
+    async run({ args, cwd, ui }) {
+      const { executeLocalSecretDelete, executeSecretDelete } = await load.secret();
+      return args.local
+        ? executeLocalSecretDelete(cwd, args.name, ui)
+        : executeSecretDelete(cwd, args.name, args.server, ui);
+    },
+  });
+
+  const secretList = defineExec({
+    meta: { name: "list", description: "List all secrets" },
+    args: {
+      ...platformArgs,
+    },
+    cwd: "any",
+    async run({ args, cwd, ui }) {
+      const { executeSecretList } = await load.secret();
+      return executeSecretList(cwd, args.server, ui);
+    },
+  });
+
+  const secret = defineCommand({
+    meta: { name: "secret", description: "Manage agent secrets" },
+    subCommands: { put: secretPut, delete: secretDelete, list: secretList },
+  });
+
+  const logs = defineExec({
+    meta: {
+      name: "logs",
+      description: "Show what the deployed agent has printed",
+    },
+    args: {
+      dir: dirArg,
+      follow: { type: "boolean", alias: "f", description: "Keep printing new output" },
+      ...platformArgs,
+    },
+    cwd: "any",
+    async run({ args, cwd, ui }) {
+      const { executeLogs } = await load.logs();
+      return executeLogs(
+        resolveDirArg(cwd, args.dir),
+        {
+          server: args.server,
+          follow: args.follow,
+        },
+        ui,
+      );
+    },
+  });
+
+  return { secret, logs };
+}
+
+export const { secret, logs } = createResourceCommands();

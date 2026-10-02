@@ -21,7 +21,9 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import {
   AudioFormat,
+  type AudioOptions,
   CommitStrategy,
+  type RealtimeConnection,
   RealtimeEvents,
 } from "@elevenlabs/elevenlabs-js/wrapper/realtime/index.js";
 import { createNanoEvents, type Emitter } from "nanoevents";
@@ -63,8 +65,33 @@ function audioFormatFor(sampleRate: number): AudioFormat {
   ];
 }
 
+/**
+ * The slice of the SDK's `RealtimeConnection` this adapter drives.
+ *
+ * @internal
+ */
+export type ElevenLabsConnection = Pick<RealtimeConnection, "on" | "send" | "close">;
+
+/**
+ * Dial one realtime connection — the seam a spec hands a fake through (see
+ * {@link openElevenLabs}).
+ *
+ * @internal
+ */
+export type ElevenLabsConnect = (
+  apiKey: string,
+  options: AudioOptions,
+) => Promise<ElevenLabsConnection>;
+
+/** The production {@link ElevenLabsConnect}: the real SDK client. */
+const sdkConnect: ElevenLabsConnect = (apiKey, options) =>
+  new ElevenLabsClient({ apiKey }).speechToText.realtime.connect(options);
+
 /** Build an {@link SttOpener} from resolved ElevenLabs descriptor options. */
-export function openElevenLabs(opts: ElevenLabsSttOptions = {}): SttOpener {
+export function openElevenLabs(
+  opts: ElevenLabsSttOptions = {},
+  connect: ElevenLabsConnect = sdkConnect,
+): SttOpener {
   return {
     name: "elevenlabs",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
@@ -76,13 +103,11 @@ export function openElevenLabs(opts: ElevenLabsSttOptions = {}): SttOpener {
       );
 
       const settings = resolveElevenLabsSttSettings(opts);
-      const client = new ElevenLabsClient({ apiKey });
-
       const connection = await connectOrThrow(
         "ElevenLabs STT",
         (msg) => createSttError("stt_connect_failed", msg),
         () =>
-          client.speechToText.realtime.connect({
+          connect(apiKey, {
             modelId: settings.model,
             audioFormat: audioFormatFor(openOpts.sampleRate),
             sampleRate: openOpts.sampleRate,

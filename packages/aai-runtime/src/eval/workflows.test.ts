@@ -1,6 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `openEvalWorkflows`, the credential gate under it, and both suites it serves.
+ * `openEvalWorkflows` and the credential gate under it. The suites it serves are
+ * registered in `describe-workflows.test.ts`, and the drain in
+ * `_workflow-drain.test.ts`.
  *
  * Three things are asserted rather than assumed:
  *
@@ -15,10 +17,9 @@
  */
 
 import { type AgentDef, agent, tool, workflow } from "@alexkroman1/aai";
-import { stepEnv, stepReport } from "@alexkroman1/aai/step";
+import { stepReport } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { describeWorkflowEval } from "./describe-workflows.ts";
 import { openEvalSession } from "./session.ts";
 import { installStubLlm } from "./stub-llm.ts";
 import {
@@ -40,12 +41,6 @@ const digest = workflow({
     await ctx.sleep("nap", SLEEP_MS);
     return { headline: `about ${input.url}` };
   },
-});
-
-/** Reads a DECLARED credential from inside the body, through the published slot. */
-const keyReader = workflow({
-  input: z.object({}),
-  run: async () => ({ key: stepEnv("A_KEY_NOBODY_HAS") }),
 });
 
 const failing = workflow({
@@ -202,105 +197,6 @@ describe("openEvalWorkflows", () => {
   });
 });
 
-describe("draining a run that is still in flight", () => {
-  /** A body held open by the case, which is the only way to observe one live. */
-  function heldApp(): { active: EvalWorkflows; release: () => void } {
-    const gate = Promise.withResolvers<void>();
-    const held = workflow({
-      input: z.object({}),
-      run: async () => {
-        await gate.promise;
-        return { ok: true };
-      },
-    });
-    const active = openEvalWorkflows({
-      agent: agent({ name: "Held", mode: "workflow-app", workflows: { held } }),
-      env: {},
-    });
-    open = active;
-    return { active, release: () => gate.resolve() };
-  }
-
-  test("`settleAll` waits for a run nothing else was waiting for", async () => {
-    const { active, release } = heldApp();
-    const runId = await active.client.start("held", {});
-    // The state a case is in while it holds a provider response: the run is
-    // live, and `run()` never saw it because a tool started it.
-    expect((await active.runs())[0]?.status).toBe("running");
-    release();
-    const settled = await active.settleAll();
-    expect(settled.map((one) => one.runId)).toEqual([runId]);
-    expect(settled[0]?.completed).toBe(true);
-  });
-
-  test("a run started WHILE draining is drained too", async () => {
-    let spawner: EvalWorkflows | undefined;
-    const child = workflow({ input: z.object({}), run: async () => ({ child: true }) });
-    const parent = workflow({
-      input: z.object({}),
-      run: async () => {
-        await spawner?.client.start("child", {});
-        return { parent: true };
-      },
-    });
-    const active = openEvalWorkflows({
-      agent: agent({ name: "Spawner", mode: "workflow-app", workflows: { parent, child } }),
-      env: {},
-    });
-    open = active;
-    spawner = active;
-    await active.client.start("parent", {});
-    // The child does not exist when the walk begins, and it is exactly the run
-    // a snapshot of `records()` would abandon.
-    const settled = await active.settleAll();
-    expect(settled.map((one) => one.workflow)).toEqual(["parent", "child"]);
-  });
-
-  test("`close()` after a drain is SILENT — the warning is about a real leak", async () => {
-    const { active, release } = heldApp();
-    await active.client.start("held", {});
-    release();
-    await active.settleAll();
-    const warned = vi.spyOn(process, "emitWarning").mockReturnValue(undefined);
-    await active.close();
-    open = undefined;
-    expect(warned).not.toHaveBeenCalled();
-  });
-
-  test("`close()` NAMES the abandoned run and what it was last doing", async () => {
-    const gate = Promise.withResolvers<void>();
-    const narrating = workflow({
-      input: z.object({}),
-      run: async () => {
-        await stepReport("halfway through");
-        await gate.promise;
-        return { ok: true };
-      },
-    });
-    const active = openEvalWorkflows({
-      agent: agent({ name: "Narrating", mode: "workflow-app", workflows: { narrating } }),
-      env: {},
-    });
-    const runId = await active.client.start("narrating", {});
-    await vi.waitFor(async () => {
-      expect((await active.runs())[0]?.reported).toEqual(["halfway through"]);
-    });
-    const warned = vi.spyOn(process, "emitWarning").mockReturnValue(undefined);
-    await active.close();
-    const [message] = warned.mock.calls[0] ?? [];
-    expect(message).toContain(runId);
-    expect(message).toContain("narrating");
-    // The last progress line, because it is the only part of an abandoned run
-    // that says where it got to.
-    expect(message).toContain("halfway through");
-    expect(message).toContain("settleAll");
-    // Released so the body cannot outlive this file's other cases — the very
-    // leak the warning is about.
-    gate.resolve();
-    await active.settleAll();
-  });
-});
-
 describe("openEvalSession with a workflow client", () => {
   test("a tool that starts a run works, and the case can read what the run did", async () => {
     // The gap this closes: without the seam the runtime builds the real DevKit
@@ -346,56 +242,6 @@ describe("openEvalSession with a workflow client", () => {
     }
   });
 });
-
-// Read at COLLECTION time by `describeWorkflowEval` below, which is why it is
-// stubbed here rather than in a hook — the same rule `describe.test.ts` follows.
-vi.stubEnv("AAI_EVAL_STUB", "1");
-
-describeWorkflowEval(
-  app,
-  (test) => {
-    test("drives a real run of the real body", async ({ app: opened, mode }) => {
-      expect(mode).toBe("stub");
-      const run = await opened.run(digest, { url: "https://example.test/x" });
-      expect(run.output).toEqual({ headline: "about https://example.test/x" });
-    });
-
-    test(
-      "a live-only case does not run when the providers are faked",
-      async () => {
-        expect.fail("a { live: true } case must be skipped in stub mode");
-      },
-      { live: true },
-    );
-  },
-  { env: { ASSEMBLYAI_API_KEY: "k" } },
-);
-
-// A SECOND suite, with no `env` of its own, so the placeholder path is covered:
-// a step reads its credential with `requireStepEnv`, which throws by name for a
-// key nothing published — and CI's scripted run has no key at all, so without a
-// placeholder every workflow template's stub gate would fail on the credential
-// rather than on anything a case wrote.
-describeWorkflowEval(
-  agent({
-    name: "Keyless App",
-    mode: "workflow-app",
-    workflows: { keyReader },
-    requiredEnv: ["A_KEY_NOBODY_HAS"],
-  }),
-  (test) => {
-    test("fills a missing declared key with a placeholder in stub mode", async ({
-      app: opened,
-    }) => {
-      const run = await opened.run(keyReader, {});
-      expect(run.status).toBe("completed");
-      // Read from inside the body through the PUBLISHED slot, so this is the
-      // value `requireStepEnv` would have thrown over.
-      expect(run.output).toEqual({ key: "aai-eval-stub-credential" });
-    });
-  },
-  {},
-);
 
 describe("completedOutput", () => {
   /** The fields this reader looks at; the rest of a run is not its business. */

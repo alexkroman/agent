@@ -48,7 +48,7 @@ import {
   rateLimiterConformance,
   secretStoreConformance,
   workspaceStoreConformance,
-} from "./store-conformance-cases.ts";
+} from "./store-conformance-test-defs.ts";
 import { createPgWorkspaceStore } from "./workspace-store.ts";
 
 describeWithStack("store conformance: the Supabase stack arm", () => {

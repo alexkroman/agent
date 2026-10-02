@@ -84,62 +84,78 @@ const workflowOpts = (args: {
   agent: args.agent,
 });
 
-const workflowList = defineExec({
-  meta: { name: "list", description: "List the workflows this agent declares" },
-  args: workflowArgs,
-  cwd: WORKFLOW_CWD,
-  async run({ args, cwd, ui }) {
-    const { executeWorkflowList } = await import("./workflow.ts");
-    return executeWorkflowList(cwd, workflowOpts(args), ui);
-  },
-});
+/** The executors this group dispatches to — `workflow.ts`'s, loaded on first use. */
+export type WorkflowExecutors = Pick<
+  typeof import("./workflow.ts"),
+  "executeWorkflowList" | "executeWorkflowRuns" | "executeWorkflowShow" | "executeWorkflowCancel"
+>;
 
-const workflowRuns = defineExec({
-  meta: { name: "runs", description: "List recent runs of one workflow, newest first" },
-  args: {
-    workflow: { type: "positional", description: "Workflow name", required: true },
-    limit: { type: "string", description: "How many runs to list" },
-    ...workflowArgs,
-  },
-  cwd: WORKFLOW_CWD,
-  async run({ args, cwd, ui }) {
-    const { executeWorkflowRuns } = await import("./workflow.ts");
-    // Parsed here rather than in the executor so a non-numeric value fails as a
-    // CLI error naming the flag, not as a query the server rejects.
-    const limit = args.limit === undefined ? undefined : Number(args.limit);
-    if (limit !== undefined && !Number.isFinite(limit)) {
-      throw new CliError("bad_limit", "--limit must be a number");
-    }
-    return executeWorkflowRuns(cwd, args.workflow, { ...workflowOpts(args), limit }, ui);
-  },
-});
+/**
+ * Build the group over `load`, which resolves the executors only when a verb
+ * runs (the lazy import above). The seam a spec hands fake executors through.
+ */
+export function createWorkflowCommand(
+  load: () => Promise<WorkflowExecutors> = () => import("./workflow.ts"),
+) {
+  const workflowList = defineExec({
+    meta: { name: "list", description: "List the workflows this agent declares" },
+    args: workflowArgs,
+    cwd: WORKFLOW_CWD,
+    async run({ args, cwd, ui }) {
+      const { executeWorkflowList } = await load();
+      return executeWorkflowList(cwd, workflowOpts(args), ui);
+    },
+  });
 
-const workflowShow = defineExec({
-  meta: { name: "show", description: "Show one run, including its output" },
-  args: { runId: runIdArg, ...workflowArgs },
-  cwd: WORKFLOW_CWD,
-  async run({ args, cwd, ui }) {
-    const { executeWorkflowShow } = await import("./workflow.ts");
-    return executeWorkflowShow(cwd, args.runId, workflowOpts(args), ui);
-  },
-});
+  const workflowRuns = defineExec({
+    meta: { name: "runs", description: "List recent runs of one workflow, newest first" },
+    args: {
+      workflow: { type: "positional", description: "Workflow name", required: true },
+      limit: { type: "string", description: "How many runs to list" },
+      ...workflowArgs,
+    },
+    cwd: WORKFLOW_CWD,
+    async run({ args, cwd, ui }) {
+      const { executeWorkflowRuns } = await load();
+      // Parsed here rather than in the executor so a non-numeric value fails as a
+      // CLI error naming the flag, not as a query the server rejects.
+      const limit = args.limit === undefined ? undefined : Number(args.limit);
+      if (limit !== undefined && !Number.isFinite(limit)) {
+        throw new CliError("bad_limit", "--limit must be a number");
+      }
+      return executeWorkflowRuns(cwd, args.workflow, { ...workflowOpts(args), limit }, ui);
+    },
+  });
 
-const workflowCancel = defineExec({
-  meta: { name: "cancel", description: "Stop a running workflow run" },
-  args: { runId: runIdArg, ...workflowArgs },
-  cwd: WORKFLOW_CWD,
-  async run({ args, cwd, ui }) {
-    const { executeWorkflowCancel } = await import("./workflow.ts");
-    return executeWorkflowCancel(cwd, args.runId, workflowOpts(args), ui);
-  },
-});
+  const workflowShow = defineExec({
+    meta: { name: "show", description: "Show one run, including its output" },
+    args: { runId: runIdArg, ...workflowArgs },
+    cwd: WORKFLOW_CWD,
+    async run({ args, cwd, ui }) {
+      const { executeWorkflowShow } = await load();
+      return executeWorkflowShow(cwd, args.runId, workflowOpts(args), ui);
+    },
+  });
 
-export const workflow = defineCommand({
-  meta: { name: "workflow", description: "Inspect and steer durable workflow runs" },
-  subCommands: {
-    list: workflowList,
-    runs: workflowRuns,
-    show: workflowShow,
-    cancel: workflowCancel,
-  },
-});
+  const workflowCancel = defineExec({
+    meta: { name: "cancel", description: "Stop a running workflow run" },
+    args: { runId: runIdArg, ...workflowArgs },
+    cwd: WORKFLOW_CWD,
+    async run({ args, cwd, ui }) {
+      const { executeWorkflowCancel } = await load();
+      return executeWorkflowCancel(cwd, args.runId, workflowOpts(args), ui);
+    },
+  });
+
+  return defineCommand({
+    meta: { name: "workflow", description: "Inspect and steer durable workflow runs" },
+    subCommands: {
+      list: workflowList,
+      runs: workflowRuns,
+      show: workflowShow,
+      cancel: workflowCancel,
+    },
+  });
+}
+
+export const workflow = createWorkflowCommand();

@@ -5,7 +5,7 @@
  * around `useConversation()` and the ones a render slot cannot get wrong for
  * it: the order of the rows, the empty-state guard, the keys, the announced
  * thinking row, where the transcript goes, and what each slot defaults to.
- * `integration.test.tsx` keeps covering the stock bubbles through
+ * `message-list.test.tsx` keeps covering the stock bubbles through
  * `<MessageList>`, which is built on this.
  */
 

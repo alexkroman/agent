@@ -29,8 +29,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
-import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
-import { bundleTargetEntry, targetPathExists } from "./_target-bundle.ts";
+import { CLIENT_ARTIFACT_REL } from "./_artifacts.ts";
+import { bundleTargetEntry, copyRuntimeFiles, targetPathExists } from "./_target-bundle.ts";
 import {
   VERCEL_BUILD_CONFIG_SOURCE,
   VERCEL_ENTRY_SOURCE,
@@ -39,21 +39,6 @@ import {
   VERCEL_STATIC_DIR,
   vercelFunctionConfigSource,
 } from "./_vercel-target.ts";
-
-/**
- * Files copied verbatim into the function, each one read at RUNTIME by a path
- * no bundler can see. A missing one is skipped rather than fatal.
- *
- * **`.env` is deliberately NOT here.** `resolveServerEnv` reads
- * {@link DEPLOY_ENV_FILES} — `.env.example` then `.env` — but only the first is
- * a DECLARATION; the second holds a developer's own keys, and copying it would
- * bake them into a deployment artifact and let them silently win over the
- * values set in the Vercel project. Declarations ship, values come from the
- * platform environment. Verified by building the `quickstart-agent` template: a local
- * `.env` with live credentials landed in the function until this list dropped
- * it.
- */
-const RUNTIME_FILES: readonly string[] = [WORKER_ARTIFACT_REL, ".env.example"];
 
 /** Options for {@link emitVercelOutput}. */
 export interface EmitVercelOutputOptions {
@@ -98,13 +83,7 @@ export async function emitVercelOutput(
     options.bundle ?? ((dir: string) => bundleTargetEntry(dir, VERCEL_ENTRY_SOURCE, "vercel"));
   await fs.writeFile(path.join(functionDir, "index.mjs"), await bundle(cwd), "utf-8");
 
-  for (const rel of RUNTIME_FILES) {
-    const from = path.join(cwd, rel);
-    if (!(await targetPathExists(from))) continue;
-    const to = path.join(functionDir, rel);
-    await fs.mkdir(path.dirname(to), { recursive: true });
-    await fs.copyFile(from, to);
-  }
+  await copyRuntimeFiles(cwd, functionDir);
 
   // This project's own built UI when it has one, otherwise the prebuilt default
   // that ships inside `@alexkroman1/aai-ui` — the same choice `resolveClientDir`

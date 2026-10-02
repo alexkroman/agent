@@ -38,6 +38,7 @@
 // Global `fetch` and `WebSocket` (Node 22+), so this has no dependencies.
 
 import { valueReader } from "./_args.mjs";
+import { percentile } from "./_upload-sweep-report.mjs";
 
 const arg = valueReader(process.argv.slice(2));
 
@@ -49,12 +50,8 @@ const DURATION_MS = Number(arg("duration", "6")) * 1000;
 const COLD = Number(arg("cold", "0"));
 const SESSIONS = Number(arg("sessions", "0"));
 
-const pct = (sorted, p) =>
-  sorted.length > 0
-    ? Number(
-        sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)].toFixed(1),
-      )
-    : 0;
+/** Nearest-rank, to 0.1ms — the one `percentile` `upload-sweep.mjs` reports with too. */
+const pct = (sorted, p) => Number(percentile(sorted, p).toFixed(1));
 
 /** One closed-loop run against `url`: CONCURRENCY workers until the deadline. */
 async function drive(url) {

@@ -64,6 +64,17 @@ type StepFetchHandle = {
 };
 
 /**
+ * What {@link createStepFetch} builds on, each defaulting to the real one — the
+ * seam a spec records the pool's options and the outgoing requests through.
+ *
+ * @internal
+ */
+export type StepFetchDeps = {
+  createPool?: typeof createEgressPool;
+  fetch?: typeof pinnedFetch;
+};
+
+/**
  * Build the fetch `createServerForRuntime` publishes for this process's steps.
  *
  * One dispatcher per call and one call per server, so a fan-out's segments share
@@ -73,8 +84,9 @@ type StepFetchHandle = {
  *
  * @internal
  */
-export function createStepFetch(): StepFetchHandle {
-  const pool = createEgressPool({
+export function createStepFetch(deps: StepFetchDeps = {}): StepFetchHandle {
+  const { createPool = createEgressPool, fetch: send = pinnedFetch } = deps;
+  const pool = createPool({
     // Stated rather than defaulted: this is the pool the measurement below was
     // taken on, so it is the one caller for which HTTP/1.1 is a finding.
     allowH2: false,
@@ -117,7 +129,7 @@ export function createStepFetch(): StepFetchHandle {
         duplex: isStreamingBody(init.body) ? "half" : undefined,
       }),
     };
-    return pinnedFetch(url, request);
+    return send(url, request);
   };
   // `close`, not `destroy` — see `createEgressPool`. A request already in flight
   // when the server shuts down is a step's, and cutting it off would fail a run

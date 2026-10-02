@@ -3,18 +3,19 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, vi } from "vitest";
+import {
+  bundledTemplatesDir,
+  downloadAndMergeTemplate,
+  layerScaffold,
+  resolveTemplatesDir,
+  templateCopyFilter,
+} from "./_templates.ts";
 import { test, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
-// Mock isDevMode — default to false so it resolves via AAI_TEMPLATES_DIR,
-// which we point at our fake templates root.
-vi.mock("./_agent.ts", () => ({
-  isDevMode: vi.fn().mockReturnValue(false),
-  getMonorepoRoot: vi.fn().mockReturnValue(null),
-}));
-
-const { bundledTemplatesDir, downloadAndMergeTemplate, layerScaffold, templateCopyFilter } =
-  await import("./_templates.ts");
+// Cases point resolution at a fake templates root through AAI_TEMPLATES_DIR,
+// which wins over the monorepo the suite runs inside; the last-resort case
+// injects a monorepo lookup that finds nothing instead.
 
 /** Create a fake templates root with scaffold + two templates, and point resolution at it. */
 async function useFakeRoot(dir: string): Promise<void> {
@@ -47,10 +48,12 @@ describe("bundled templates", () => {
   });
 
   test("is the last resort, after the env override and the monorepo", async ({ tmpDir: dir }) => {
-    // No AAI_TEMPLATES_DIR, getMonorepoRoot() mocked to null: nothing left
-    // but the bundled dir, which has no templates/ when running source.
+    // No AAI_TEMPLATES_DIR, and no monorepo found: nothing left but the
+    // bundled dir, which has no templates/ when running source.
+    const root = resolveTemplatesDir(() => null);
+    expect(root).toBe(bundledTemplatesDir());
     await expect(
-      downloadAndMergeTemplate("quickstart-agent", path.join(dir, "out")),
+      downloadAndMergeTemplate("quickstart-agent", path.join(dir, "out"), root),
     ).rejects.toThrow("Templates directory is missing or unreadable");
   });
 });

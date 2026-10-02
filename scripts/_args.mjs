@@ -99,6 +99,18 @@ export function parseScriptArgs({ script, options, allowPositionals = false, arg
 }
 
 /**
+ * The whole argument surface of a generator whose one flag is `--check`
+ * (report drift, exit 1, write nothing): `true` when it was passed.
+ *
+ * @param {string} script `import.meta.url` of the caller.
+ * @returns {boolean}
+ */
+export function parseCheckFlag(script) {
+  const { values } = parseScriptArgs({ script, options: { check: { type: "boolean" } } });
+  return values.check === true;
+}
+
+/**
  * A string flag that must be present AND non-empty.
  *
  * `parseArgs` rejects `--package` with nothing after it, but `--package ""` is a

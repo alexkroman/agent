@@ -135,10 +135,10 @@ export class SuiteSpread {
    *
    * Registered as an `afterAll` from inside `describe`, so it prints after the
    * cases and not after their REGISTRATION — the whole map is empty at
-   * definition time.
+   * definition time. `register` is that hook, a parameter so a spec can fire it.
    */
-  report(): void {
-    afterAll(() => {
+  report(register: (fn: () => void) => void = afterAll): void {
+    register(() => {
       const repeated = [...this.cases.values()].filter((one) => one.ran > 1);
       if (repeated.length === 0) return;
       const unstable = repeated.filter((one) => one.failed > 0 && one.failed < one.ran);

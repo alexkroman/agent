@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Fixtures shared by the two preview suites — `studio-preview.test.ts` (the
- * "landing on a project" half: slug derivation, sandbox warm-up, the wake) and
- * `studio-preview-deploy.test.ts` (the deploy loop and its durable queue).
+ * Fixtures shared by the two preview suites — `studio-preview-wake.test.ts`
+ * (the "landing on a project" half: slug derivation, sandbox warm-up, the
+ * wake) and `studio-preview.test.ts` (the deploy loop and its durable queue).
  *
  * Shared rather than duplicated because both halves talk about the same
  * project: a drifting SCOPE/PROJECT pair between them would make the two files
