@@ -206,14 +206,7 @@ describe("it cleans up after itself", () => {
     // seconds here would make a unit-tier test wait out the real broker
     // loop. The deadline expiring is the point; how long it took is not.
     const code = await smoke?.main(
-      [
-        "--worker",
-        ANY_WORKER_FILE,
-        "--timeout-seconds",
-        "0.001",
-        "--interval-seconds",
-        "0.001",
-      ],
+      ["--worker", ANY_WORKER_FILE, "--timeout-seconds", "0.001", "--interval-seconds", "0.001"],
       { AAI_PLATFORM_URL: "https://x", AAI_API_KEY: "k" },
     );
     expect(code).toBe(1);
