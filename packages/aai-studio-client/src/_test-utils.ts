@@ -139,10 +139,14 @@ export function fetchLines(mock: Mock<typeof fetch>): string[] {
  * One client per render (never a module-level one) so no test inherits
  * another's cache, and `retry: false` so a test asserting an error state gets
  * it on the first answer rather than waiting out three backoffs. Five suites
- * had rebuilt this same pair by hand.
+ * had rebuilt this same pair by hand. `gcTime: Infinity` because a finite one
+ * arms a real five-minute timer per query the moment its last observer
+ * unmounts, and every test ends by unmounting.
  */
 export function renderWithClient(ui: ReactNode): RenderResult & { client: QueryClient } {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Number.POSITIVE_INFINITY } },
+  });
   return { ...render(createElement(QueryClientProvider, { client }, ui)), client };
 }
 

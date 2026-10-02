@@ -284,12 +284,21 @@ export async function openMcpSession(
   // safelist once a redirect leaves the server's origin, so none is replayed.
   const budget = options.connectTimeoutMs ?? MCP_CONNECT_TIMEOUT_MS;
   const createMCPClient = await loadCreateMcpClient();
+  // Aborted when the handshake loses its race, so a wedged server's fetch is
+  // torn down at once instead of holding its socket (and the SDK's request
+  // timer) until the SDK's own, much longer, timeout fires.
+  const abandon = new AbortController();
+  const baseFetch = options.fetch ?? safeFetch;
   const connecting = createMCPClient({
     transport: {
       type: "http",
       url: server.url,
       headers,
-      fetch: options.fetch ?? safeFetch,
+      fetch: (input, init) =>
+        baseFetch(input, {
+          ...init,
+          signal: init?.signal ? AbortSignal.any([init.signal, abandon.signal]) : abandon.signal,
+        }),
     },
     clientName: MCP_CLIENT_NAME,
     version: MCP_CLIENT_VERSION,
@@ -306,6 +315,7 @@ export async function openMcpSession(
       message: `MCP server "${server.key}" did not complete its handshake within ${budget}ms`,
     });
   } catch (cause) {
+    abandon.abort(cause);
     void discardLateConnect(connecting);
     throw cause;
   }

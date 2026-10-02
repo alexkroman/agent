@@ -95,6 +95,10 @@ function fakeSocket() {
   };
 }
 
+// `openSocket` builds outside any registry, so each one is closed here — an
+// open socket holds its heartbeat timer.
+const opened: { close(): void }[] = [];
+
 /** One socket over one fake peer, opened and ready to answer. */
 function openSocket() {
   const peer = fakeSocket();
@@ -110,11 +114,13 @@ function openSocket() {
       return next.socket;
     },
   });
+  opened.push(socket);
   peer.open();
   return { socket, peer, sockets };
 }
 
 afterEach(() => {
+  for (const socket of opened.splice(0)) socket.close();
   vi.useRealTimers();
 });
 
