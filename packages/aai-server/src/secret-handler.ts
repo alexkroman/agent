@@ -17,6 +17,8 @@
  * ownership verification for platform auth — not agent secrets.
  */
 
+import { bodyLimit } from "hono/body-limit";
+import { MAX_ENV_SIZE } from "./constants.ts";
 import type { AppContext, ValidatedAppContext, ValidatedParamContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { SlugMutationLock } from "./platform/lock.ts";
@@ -38,12 +40,34 @@ export type SecretEnv = {
   slugLock: SlugMutationLock;
 };
 
+/**
+ * The largest secret-PUT body read at all: four envs' worth.
+ *
+ * Defence in depth, NOT the cap. The cap is `MAX_ENV_SIZE` on the merged
+ * record (env-size.ts), which a body can blow through or stay under at any
+ * length — JSON escapes and whitespace make wire bytes and record bytes
+ * differ both ways. This only stops a huge body being buffered and parsed
+ * before that check gets to say no; a body this large cannot fit anyway.
+ */
+export const MAX_SECRET_BODY_BYTES = 4 * MAX_ENV_SIZE;
+
+/** {@link MAX_SECRET_BODY_BYTES} as a route middleware: a 413 with a body. */
+export const secretBodyLimit = bodyLimit({
+  maxSize: MAX_SECRET_BODY_BYTES,
+  onError: (c) => c.json({ error: "Request body too large" }, 413),
+});
+
 /** The names of a slug's stored secrets (values never leave the platform). */
 export async function listSlugSecrets(env: SecretEnv, slug: string): Promise<string[]> {
   return Object.keys((await env.store.getEnv(slug)) ?? {});
 }
 
-/** Merge `updates` into a slug's stored env. Returns every name it then holds. */
+/**
+ * Merge `updates` into a slug's stored env. Returns every name it then holds.
+ *
+ * @throws {EnvTooLargeError} when the merge is over `MAX_ENV_SIZE` — thrown by
+ *   the store before anything is written, and answered 413.
+ */
 export function setSlugSecrets(
   env: SecretEnv,
   slug: string,

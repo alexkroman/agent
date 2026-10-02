@@ -9,10 +9,11 @@ import type { BundleStore } from "aai-server/stores";
 import {
   createMemorySecretStore,
   createMemoryWorkspaceStore,
+  MAX_ENV_SIZE,
   type SecretStore,
   type WorkspaceStore,
 } from "aai-server/stores";
-import { createTestStore } from "aai-server/test-utils";
+import { captureLogs, createTestStore } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { claimSlug } from "./_studio-agents-test-utils.ts";
 import { secretsDeployHook } from "./studio-secret-routes.ts";
@@ -228,6 +229,51 @@ describe("reconcileProjectSecrets", () => {
     await store.putEnv(PROJECT, { EXISTING: "1" });
     await reconcileProjectSecrets(env, { scope: SCOPE, project: PROJECT, slug: PROJECT });
     expect(await store.getEnv(PROJECT)).toEqual({ EXISTING: "1" });
+  });
+
+  describe("a record over the env size limit", () => {
+    const logs = captureLogs();
+    // A value no name or number in the log could contain by accident.
+    const HUGE = `MARK-huge-value-${"x".repeat(70 * 1024)}`;
+    const reconcile = () =>
+      reconcileProjectSecrets(env, { scope: SCOPE, project: PROJECT, slug: PROJECT });
+
+    test("an already-oversized record applies the names that fit and warns about the rest", async () => {
+      // Written straight to Vault: what a record stored before the size check
+      // existed looks like.
+      await secrets.put(
+        projectEnvSecretName(SCOPE, PROJECT),
+        JSON.stringify({ SMALL: "s", HUGE, OTHER: "o" }),
+      );
+      await expect(reconcile()).resolves.toBeUndefined();
+      expect(await store.getEnv(PROJECT)).toEqual({ SMALL: "s", OTHER: "o" });
+      expect(logs.warns()).toHaveLength(1);
+      const line = JSON.stringify(logs.all());
+      expect(line).toContain(PROJECT);
+      expect(line).toContain('"HUGE"');
+      expect(line).toContain(String(MAX_ENV_SIZE));
+      expect(line).not.toContain("MARK-huge-value");
+    });
+
+    test("a record that fits but overflows THIS slug's env skips only what does not fit", async () => {
+      const own = "z".repeat(40 * 1024);
+      await store.putEnv(PROJECT, { OWN: own });
+      await secrets.put(
+        projectEnvSecretName(SCOPE, PROJECT),
+        JSON.stringify({ BIG: "b".repeat(30 * 1024), SMALL: "s" }),
+      );
+      await reconcile();
+      expect(await store.getEnv(PROJECT)).toEqual({ OWN: own, SMALL: "s" });
+      expect(logs.warns()).toHaveLength(1);
+    });
+
+    test("a record that fits writes everything and warns about nothing", async () => {
+      await setProjectSecrets(env, { ...params, updates: { A: "1" } });
+      await store.putEnv(PROJECT, {});
+      await reconcile();
+      expect(await store.getEnv(PROJECT)).toEqual({ A: "1" });
+      expect(logs.warns()).toEqual([]);
+    });
   });
 });
 

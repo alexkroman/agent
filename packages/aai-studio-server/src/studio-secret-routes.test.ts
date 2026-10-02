@@ -5,7 +5,12 @@
 // before fan-out) are studio-secrets.test.ts's; this suite owns who may reach
 // the routes, what they accept, and what they say back.
 
-import { createMemorySecretStore, type SecretStore } from "aai-server/stores";
+import {
+  createMemorySecretStore,
+  envSize,
+  MAX_ENV_SIZE,
+  type SecretStore,
+} from "aai-server/stores";
 import type { TestFetch } from "aai-server/test-utils";
 import { authFetch, captureLogs } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test } from "vitest";
@@ -293,45 +298,97 @@ describe("project secret routes", () => {
   });
 
   /**
-   * KNOWN BUG — the size cap is enforced in the wrong place, AFTER the project
-   * record is written.
-   *
-   * `SecretUpdatesSchema` (aai-server/schemas.ts) caps neither a value nor the
-   * number of names, and the studio app mounts no `bodyLimit`. The only cap is
-   * `MAX_ENV_SIZE` (64 KiB) inside the bundle store's `writeEnv`, which throws
-   * a plain Error. `mutateProjectSecrets` writes the project's Vault record
-   * FIRST and only then fans out to the agents, so an over-limit PUT:
-   *
-   * 1. answers 500 instead of a 4xx naming the limit;
-   * 2. has already stored the oversized value in the project record, which
-   *    nothing rolls back;
-   * 3. is accepted outright (200) on a project that has deployed nothing yet.
-   *
-   * From then on every deploy's `reconcileProjectSecrets` merges that record,
-   * trips the same cap and throws — which `createAfterDeploy` swallows by
-   * design — so NONE of the project's secrets (not just the oversized one)
-   * reach a newly claimed slug, silently. Remove each `.fails` as a fix lands.
+   * The 64 KiB cap (`MAX_ENV_SIZE`) is checked on the MERGED result before
+   * anything is written — the project record and each agent's env — and an
+   * over-size PUT is a 413. It used to surface only from the agent write, as a
+   * 500, after the record had already taken the value; every later deploy then
+   * tripped it merging the record in, and no secret reached the new slug.
    */
   describe("over the 64 KiB env cap", () => {
     const HUGE = "x".repeat(70 * 1024);
+    const record = async (project: string): Promise<unknown> => {
+      const raw = await h.secrets.get(projectEnvSecretName(studioScope(OWNER), project));
+      return raw === null ? null : JSON.parse(raw);
+    };
 
-    test.fails("a PUT on a deployed project answers 4xx, not 500", async () => {
+    test("a PUT on a deployed project answers 413 naming the byte counts", async () => {
       const res = await put(h.fetch, "proj", { A: HUGE });
-      expect(res.status).toBeGreaterThanOrEqual(400);
-      expect(res.status).toBeLessThan(500);
+      expect(res.status).toBe(413);
+      const { error } = (await res.json()) as { error: string };
+      expect(error).toMatch(/\d+ bytes, over the 65536-byte limit/);
     });
 
-    test.fails("a refused PUT leaves the project record as it was", async () => {
+    test("a refused PUT leaves the record and both agents as they were", async () => {
       await put(h.fetch, "proj", { KEEP: "k" });
-      await put(h.fetch, "proj", { A: HUGE });
-      const record = await h.secrets.get(projectEnvSecretName(studioScope(OWNER), "proj"));
-      expect(JSON.parse(record ?? "{}")).toEqual({ KEEP: "k" });
+      schedulePreviewMock.mockClear();
+      expect((await put(h.fetch, "proj", { A: HUGE })).status).toBe(413);
+      expect(await record("proj")).toEqual({ KEEP: "k" });
+      expect(await h.store.getEnv("proj")).toEqual({ KEEP: "k" });
+      expect(await h.store.getEnv("proj-preview")).toEqual({ KEEP: "k" });
+      expect(schedulePreviewMock).not.toHaveBeenCalled();
     });
 
-    test.fails("a PUT on a project with no agents yet is refused too", async () => {
+    test("a PUT on a project with no agents yet is refused too, and stores nothing", async () => {
       expect((await createProject(h.fetch, "fresh")).status).toBe(201);
       const res = await put(h.fetch, "fresh", { A: HUGE });
-      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.status).toBe(413);
+      expect(await record("fresh")).toBeNull();
+    });
+
+    test("the cap is on the record MERGED with this update, not the update alone", async () => {
+      const half = "y".repeat(MAX_ENV_SIZE / 2);
+      expect((await createProject(h.fetch, "fresh")).status).toBe(201);
+      expect((await put(h.fetch, "fresh", { A: half })).status).toBe(200);
+      expect((await put(h.fetch, "fresh", { B: half })).status).toBe(413);
+      expect(await record("fresh")).toEqual({ A: half });
+    });
+
+    test("an agent's own names can overflow a record that fits: 413, nothing written", async () => {
+      // Set straight on the production slug, as `aai secret put` would.
+      const own = "z".repeat(40 * 1024);
+      await h.store.putEnv("proj", { OWN: own });
+      const res = await put(h.fetch, "proj", { A: "a".repeat(30 * 1024) });
+      expect(res.status).toBe(413);
+      expect(((await res.json()) as { error: string }).error).toContain("agent proj ");
+      expect(await record("proj")).toBeNull();
+      expect(await h.store.getEnv("proj")).toEqual({ OWN: own });
+      expect(await h.store.getEnv("proj-preview")).toEqual({});
+    });
+
+    test("an update that lands every env exactly at the cap is accepted", async () => {
+      const update = { A: "x".repeat(MAX_ENV_SIZE - envSize({ A: "" })) };
+      expect(envSize(update)).toBe(MAX_ENV_SIZE);
+      expect((await put(h.fetch, "proj", update)).status).toBe(200);
+      expect(await record("proj")).toEqual(update);
+      expect(await h.store.getEnv("proj")).toEqual(update);
+      expect(await h.store.getEnv("proj-preview")).toEqual(update);
+    });
+
+    test("one byte over the cap is refused", async () => {
+      const update = { A: "x".repeat(MAX_ENV_SIZE + 1 - envSize({ A: "" })) };
+      const res = await put(h.fetch, "proj", update);
+      expect(res.status).toBe(413);
+      expect(((await res.json()) as { error: string }).error).toContain(
+        `${MAX_ENV_SIZE + 1} bytes`,
+      );
+      expect(await record("proj")).toBeNull();
+    });
+
+    test("a body past the body limit is 413 before it is parsed", async () => {
+      const res = await put(h.fetch, "proj", { A: "x".repeat(4 * MAX_ENV_SIZE) });
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({ error: "Request body too large" });
+    });
+
+    test("the per-slug PUT /:slug/secret is a 413 too, env untouched", async () => {
+      await h.store.putEnv("proj", { KEEP: "k" });
+      const res = await authFetch(h.fetch, "/proj/secret", {
+        method: "PUT",
+        body: { A: HUGE },
+        key: OWNER,
+      });
+      expect(res.status).toBe(413);
+      expect(await h.store.getEnv("proj")).toEqual({ KEEP: "k" });
     });
 
     test("the failure echoes no value, in the response or the logs", async () => {

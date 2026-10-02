@@ -34,8 +34,11 @@
 import { createLogger } from "aai-server/logger";
 import type { BundleStore, SecretStore, WorkspaceStore } from "aai-server/stores";
 import {
+  assertEnvFits,
   deleteSlugSecret,
+  envSize,
   listSlugSecrets,
+  MAX_ENV_SIZE,
   type SecretEnv,
   setSlugSecrets,
 } from "aai-server/stores";
@@ -248,6 +251,48 @@ export async function projectSecretsState(
   return { vars, environments, pending };
 }
 
+type SecretRecord = Record<string, string>;
+
+/**
+ * Refuse a change that cannot be applied everywhere it is owed, before ANY of
+ * it is written.
+ *
+ * The store's own cap (`writeEnv`) is the last line, but it fires per write —
+ * and the project record is written first, so a refusal from an agent's write
+ * came after the record had taken the oversized value, with nothing to roll
+ * it back, and every later deploy tripped the same cap merging it in.
+ *
+ * Two measures, both through `assertEnvFits` so they are the store's own: the
+ * record itself (what an UNDEPLOYED project's first deploy will merge), and
+ * per agent what that agent's env would become — the record can fit while an
+ * agent's own extra names push the merge over.
+ *
+ * A pre-check outside the per-slug locks, so a concurrent `aai secret put` can
+ * still grow an agent past it in between; the store then refuses that agent's
+ * write, as before. Closing that window would need the record written under
+ * every slug's lock.
+ *
+ * @throws {EnvTooLargeError} naming the record and the byte counts, never a value.
+ */
+async function assertChangeFits(
+  env: ProjectSecretsEnv,
+  project: string,
+  resolved: ResolvedProject,
+  record: SecretRecord,
+  projected: (existing: SecretRecord, record: SecretRecord) => SecretRecord,
+): Promise<void> {
+  assertEnvFits(record, `Secrets for project ${project}`);
+  const envs = await Promise.all(
+    resolved.targets.map(async ({ slug }) => ({
+      slug,
+      existing: (await env.store.getEnv(slug)) ?? {},
+    })),
+  );
+  for (const { slug, existing } of envs) {
+    assertEnvFits(projected(existing, record), `Secrets for agent ${slug}`);
+  }
+}
+
 /**
  * The sequence EVERY secret mutation runs, spelled once — because the order is
  * the invariant, and both of its steps are a hazard that was got wrong before.
@@ -280,6 +325,12 @@ async function mutateProjectSecrets(
     record: (held: Record<string, string>) => Record<string, string>;
     /** The same change applied to one of the project's deployed agents. */
     perAgent: (slug: string) => Promise<unknown>;
+    /**
+     * What one agent's env could become, given its current env and the
+     * project's record after the change — measured against `MAX_ENV_SIZE`
+     * BEFORE anything is written. Absent for a change that only shrinks.
+     */
+    projected?: (existing: SecretRecord, record: SecretRecord) => SecretRecord;
   },
 ): Promise<ProjectSecretsState | null> {
   const { scope, project } = params;
@@ -293,6 +344,7 @@ async function mutateProjectSecrets(
   ]);
   if (resolved === null) return null;
   const record = change.record(held);
+  if (change.projected) await assertChangeFits(env, project, resolved, record, change.projected);
   await writeProjectSecrets(env, scope, project, record);
   await overProjectAgents(resolved, change.perAgent);
   await redeployPreview(env, params, resolved);
@@ -310,6 +362,11 @@ export function setProjectSecrets(
   return mutateProjectSecrets(env, params, {
     record: (held) => ({ ...held, ...params.updates }),
     perAgent: (slug) => setSlugSecrets(env, slug, params.updates),
+    // Every name the agent holds after this PUT OR after its next deploy: the
+    // PUT writes `updates` over its env, and `reconcileProjectSecrets` then
+    // fills in any record name it lacks. Measuring only the first would accept
+    // an update whose next deploy overflows.
+    projected: (existing, record) => ({ ...record, ...existing, ...params.updates }),
   });
 }
 
@@ -350,14 +407,54 @@ export async function reconcileProjectSecrets(
   if (Object.keys(held).length === 0) return;
   await env.slugLock(params.slug, async () => {
     const existing = (await env.store.getEnv(params.slug)) ?? {};
-    const merged = { ...held, ...existing };
+    const { merged, skipped } = fillWithinCap(existing, held);
+    if (skipped.length > 0) {
+      // A record stored before the size check existed can be over the cap on
+      // its own, or overflow this slug's env. Throwing would apply NONE of it —
+      // and the publisher swallows a hook's failure by design — so the names
+      // that fit go in and the ones that don't are said aloud, names only.
+      log.warn("project secrets over the env size limit; names skipped", {
+        project: params.project,
+        slug: params.slug,
+        bytes: envSize({ ...held, ...existing }),
+        limit: MAX_ENV_SIZE,
+        skipped,
+      });
+    }
     // Nothing to write when the slug already carries every name — a deploy of
     // an unchanged project is the common case.
-    if (Object.keys(merged).length === Object.keys(existing).length) return;
+    const added = Object.keys(merged).length - Object.keys(existing).length;
+    if (added === 0) return;
     await env.store.putEnv(params.slug, merged);
-    log.info("applied to a newly deployed slug", {
-      slug: params.slug,
-      keyCount: Object.keys(merged).length - Object.keys(existing).length,
-    });
+    log.info("applied to a newly deployed slug", { slug: params.slug, keyCount: added });
   });
+}
+
+/**
+ * `existing` plus every name of `held` it lacks, as far as `MAX_ENV_SIZE`
+ * allows — the floor-not-override merge of {@link reconcileProjectSecrets}.
+ *
+ * When the whole floor does not fit, the missing names go in SMALLEST first:
+ * an overflowing record is in practice one huge value, and this skips exactly
+ * that one rather than whichever happened to come first. `existing` is never
+ * trimmed. Sizes come from `envSize`, the store's own measure.
+ */
+function fillWithinCap(
+  existing: SecretRecord,
+  held: SecretRecord,
+): { merged: SecretRecord; skipped: string[] } {
+  const merged = { ...held, ...existing };
+  if (envSize(merged) <= MAX_ENV_SIZE) return { merged, skipped: [] };
+  const missing = Object.entries(held)
+    .filter(([name]) => !Object.hasOwn(existing, name))
+    .sort(([, a], [, b]) => a.length - b.length);
+  let fitted: SecretRecord = { ...existing };
+  const skipped: string[] = [];
+  for (const [name, value] of missing) {
+    // Spread, not `fitted[name] = value`: a name may be `__proto__`.
+    const next = { ...fitted, [name]: value };
+    if (envSize(next) <= MAX_ENV_SIZE) fitted = next;
+    else skipped.push(name);
+  }
+  return { merged: fitted, skipped: skipped.sort((a, b) => a.localeCompare(b)) };
 }

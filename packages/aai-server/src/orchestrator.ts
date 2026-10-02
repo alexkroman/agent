@@ -77,7 +77,12 @@ import {
   SecretUpdatesSchema,
   SLUG_PATTERN_SOURCE,
 } from "./schemas.ts";
-import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
+import {
+  handleSecretDelete,
+  handleSecretList,
+  handleSecretSet,
+  secretBodyLimit,
+} from "./secret-handler.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import type { StudioAuth } from "./supabase-auth.ts";
@@ -364,7 +369,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // uses existingOwnerMw, which rejects unclaimed slugs.
   agents.delete("/", existingOwnerMw, handleDelete);
   agents.get("/secret", existingOwnerMw, handleSecretList);
-  agents.put("/secret", existingOwnerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);
+  agents.put(
+    "/secret",
+    existingOwnerMw,
+    secretBodyLimit,
+    zValidator("json", SecretUpdatesSchema),
+    handleSecretSet,
+  );
   agents.delete(
     "/secret/:key",
     existingOwnerMw,

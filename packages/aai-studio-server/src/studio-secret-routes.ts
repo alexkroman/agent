@@ -20,6 +20,7 @@
 
 import { zValidator } from "@hono/zod-validator";
 import { SecretKeySchema, SecretUpdatesSchema } from "aai-server/config";
+import { secretBodyLimit } from "aai-server/http";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
 import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";
@@ -75,18 +76,26 @@ export function registerSecretRoutes(
     return c.json(state);
   });
 
-  studio.put("/projects/:project/secret", zValidator("json", SecretUpdatesSchema), async (c) => {
-    const { scope, project, apiKey } = c.var;
-    const state = await setProjectSecrets(secretsEnvFor(c), {
-      scope,
-      project,
-      apiKey,
-      updates: c.req.valid("json"),
-      schedulePreview: () => redeployPreview(c, scope, project),
-    });
-    if (!state) return projectNotFound(c);
-    return c.json(state);
-  });
+  // Over-size updates answer 413 through `createErrorHandler`: the cap is on
+  // the MERGED record, checked before anything is written (studio-secrets.ts),
+  // and `secretBodyLimit` stops a huge body before it is even parsed.
+  studio.put(
+    "/projects/:project/secret",
+    secretBodyLimit,
+    zValidator("json", SecretUpdatesSchema),
+    async (c) => {
+      const { scope, project, apiKey } = c.var;
+      const state = await setProjectSecrets(secretsEnvFor(c), {
+        scope,
+        project,
+        apiKey,
+        updates: c.req.valid("json"),
+        schedulePreview: () => redeployPreview(c, scope, project),
+      });
+      if (!state) return projectNotFound(c);
+      return c.json(state);
+    },
+  );
 
   studio.delete(
     "/projects/:project/secret/:key",

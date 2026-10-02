@@ -4,6 +4,9 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { expect, test } from "vitest";
 import { createTestOrchestrator, type TestFetch } from "./_orchestrator-test-utils.ts";
 import { authFetch, deployAgent } from "./_request-test-utils.ts";
+import { MAX_ENV_SIZE } from "./constants.ts";
+import { envSize } from "./env-size.ts";
+import { MAX_SECRET_BODY_BYTES } from "./secret-handler.ts";
 
 async function deployAndAuth() {
   const orch = await createTestOrchestrator();
@@ -105,4 +108,54 @@ test("secret delete returns 404 for unknown agent", async () => {
   const { fetch } = await deployAndAuth();
   const res = await authFetch(fetch, "/nonexistent/secret/KEY", { method: "DELETE" });
   expect(res.status).toBe(404);
+});
+
+// ── the MAX_ENV_SIZE cap ───────────────────────────────────────────────────
+// The store refuses an over-size merge before writing anything; the refusal
+// is a typed error the error handler answers 413 (it was a 500).
+
+/** A one-name update whose merge onto the deployed env is exactly `size` bytes. */
+async function updateMergingTo(
+  store: { getEnv(slug: string): Promise<Record<string, string> | null> },
+  size: number,
+): Promise<Record<string, string>> {
+  const existing = (await store.getEnv("my-agent")) ?? {};
+  return { BIG: "x".repeat(size - envSize({ ...existing, BIG: "" })) };
+}
+
+test("secret set whose merge is exactly MAX_ENV_SIZE is stored", async () => {
+  const { fetch, store } = await deployAndAuth();
+  const update = await updateMergingTo(store, MAX_ENV_SIZE);
+  expect((await secretReq(fetch, "PUT", update)).status).toBe(200);
+  expect((await store.getEnv("my-agent"))?.BIG).toBe(update.BIG);
+});
+
+test("secret set one byte over MAX_ENV_SIZE is 413 with the byte counts, env untouched", async () => {
+  const { fetch, store } = await deployAndAuth();
+  const before = await store.getEnv("my-agent");
+  const res = await secretReq(fetch, "PUT", await updateMergingTo(store, MAX_ENV_SIZE + 1));
+  expect(res.status).toBe(413);
+  const { error } = (await res.json()) as { error: string };
+  expect(error).toContain(`${MAX_ENV_SIZE + 1} bytes`);
+  expect(error).toContain(`${MAX_ENV_SIZE}-byte limit`);
+  expect(error).not.toContain("xxxx");
+  expect(await store.getEnv("my-agent")).toEqual(before);
+});
+
+test("secret set measures the MERGE: an update that fits alone but not onto the env is 413", async () => {
+  const { fetch, store } = await deployAndAuth();
+  const half = "y".repeat(MAX_ENV_SIZE / 2);
+  expect((await secretReq(fetch, "PUT", { A: half })).status).toBe(200);
+  expect((await secretReq(fetch, "PUT", { B: half })).status).toBe(413);
+  expect(Object.keys((await store.getEnv("my-agent")) ?? {}).sort()).toEqual([
+    "A",
+    "ASSEMBLYAI_API_KEY",
+  ]);
+});
+
+test("a secret-set body past the body limit is 413 before it is parsed", async () => {
+  const { fetch } = await deployAndAuth();
+  const res = await secretReq(fetch, "PUT", { A: "z".repeat(MAX_SECRET_BODY_BYTES) });
+  expect(res.status).toBe(413);
+  expect(await res.json()).toEqual({ error: "Request body too large" });
 });

@@ -4,6 +4,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { createTestOrchestrator, createTestStore, VALID_ENV } from "./_orchestrator-test-utils.ts";
 import { authHeaders, deploy, deployAgent, deployBody } from "./_request-test-utils.ts";
+import { MAX_ENV_SIZE } from "./constants.ts";
 import { deployAgentBundle } from "./deploy.ts";
 import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
 
@@ -69,6 +70,15 @@ describe("POST /deploy body handling", () => {
     const env = await store.getEnv("my-agent");
     expect(env?.EXISTING).toBe("new-value");
     expect(env?.EXTRA).toBe("stored-value");
+  });
+
+  test("a deploy whose merged env is over the env size limit is 413 and publishes nothing", async () => {
+    const { fetch, store } = await createTestOrchestrator();
+    const res = await deploy(fetch, {
+      body: { slug: "too-big", env: { ...VALID_ENV, BIG: "x".repeat(MAX_ENV_SIZE) } },
+    });
+    expect(res.status).toBe(413);
+    expect(await store.getAgent("too-big")).toBeNull();
   });
 
   test("replaces existing sandbox on redeploy", async () => {
