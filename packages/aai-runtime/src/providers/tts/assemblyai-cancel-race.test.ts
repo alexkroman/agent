@@ -112,7 +112,8 @@ type Far = {
   s: fc.Scheduler;
   behavior: ServerBehavior;
   cursor: { ack: number; frames: number; cancel: number };
-  servers: Map<FakeWebSocket, Server>;
+  /** Keyed by socket identity: the session holds its socket as `WebSocket`. */
+  servers: Map<object, Server>;
 };
 
 function nextOf<T>(far: Far, list: readonly T[], key: keyof Far["cursor"]): T {
@@ -231,7 +232,7 @@ const flag = (near: Near, what: string): void => {
 };
 
 function liveServer(near: Near): Server | undefined {
-  return near.far.servers.get(near.session._ws as unknown as FakeWebSocket);
+  return near.far.servers.get(near.session._ws);
 }
 
 function onAudio(near: Near, pcm: Int16Array): void {
