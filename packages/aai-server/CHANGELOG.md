@@ -1,5 +1,13 @@
 # aai-server
 
+## 0.1.2
+
+### Patch Changes
+
+- aai-guest@0.6.11
+  - @alexkroman1/aai@0.14.1
+  - @alexkroman1/aai-runtime@0.14.1
+
 ## 0.1.1
 
 ### Patch Changes
