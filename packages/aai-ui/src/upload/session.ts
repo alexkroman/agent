@@ -46,6 +46,12 @@
  * pause unless the gate was cancelled outright.
  */
 
+/**
+ * Where a gate is. `cancelled` is terminal — nothing leaves it, which is what
+ * "a cancelled gate never opens again" means.
+ */
+type UploadGatePhase = "running" | "paused" | "cancelled";
+
 /** A person's pause, as the uploader sees it. */
 export type UploadGate = {
   /** Whether the gate is currently closed. For rendering, not for control flow. */
@@ -127,24 +133,34 @@ export async function sendThroughGate(
  */
 export function createUploadGate(): UploadGate {
   let controller = new AbortController();
-  let paused = false;
-  let cancelled = false;
+  // ONE field rather than a `paused` and a `cancelled` boolean: two booleans
+  // admit a fourth combination (both) that nothing means, and `cancel()` had to
+  // clear `paused` by hand to stay out of it. Cancelling is now just where the
+  // phase goes.
+  let phase: UploadGatePhase = "running";
   let open: (() => void) | undefined;
   let closed: Promise<void> | undefined;
 
+  /** Wake an uploader parked on `settle()`, whichever way the gate is opening. */
+  const release = (): void => {
+    open?.();
+    open = undefined;
+    closed = undefined;
+  };
+
   return {
     get paused() {
-      return paused;
+      return phase === "paused";
     },
     get cancelled() {
-      return cancelled;
+      return phase === "cancelled";
     },
     get signal() {
       return controller.signal;
     },
     pause() {
-      if (paused || cancelled) return;
-      paused = true;
+      if (phase !== "running") return;
+      phase = "paused";
       // `Promise.withResolvers` rather than a captured `resolve` out of a `new
       // Promise` — the repo's rule, and here it is also the whole of the state.
       const gate = Promise.withResolvers<void>();
@@ -153,23 +169,18 @@ export function createUploadGate(): UploadGate {
       controller.abort();
     },
     resume() {
-      if (!paused || cancelled) return;
-      paused = false;
+      if (phase !== "paused") return;
+      phase = "running";
       // A fresh controller, because the old one is aborted for good.
       controller = new AbortController();
-      open?.();
-      open = undefined;
-      closed = undefined;
+      release();
     },
     cancel() {
-      if (cancelled) return;
-      cancelled = true;
-      paused = false;
+      if (phase === "cancelled") return;
+      phase = "cancelled";
       controller.abort();
       // Released rather than held — see the doc on `cancel` above.
-      open?.();
-      open = undefined;
-      closed = undefined;
+      release();
     },
     async settle() {
       if (closed) await closed;
