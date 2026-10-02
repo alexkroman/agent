@@ -7,12 +7,10 @@
  * and reads its callbacks at call time rather than reconnecting for new ones.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import { type MockWebSocket, recordingWebSocketClass } from "./_session-core-test-utils.ts";
-import { SessionProvider } from "./context.ts";
 import type { NoticeBuffer } from "./notice-player.ts";
 import { type UseInboxOptions, useInbox } from "./use-inbox.ts";
 
@@ -69,10 +67,8 @@ function mount(options: UseInboxOptions = {}, running = false) {
       holderId: () => "kitchen-tab1",
     },
   );
-  const hook = renderHook((opts: UseInboxOptions) => useInbox(opts), {
+  const hook = renderHookWithSession((opts: UseInboxOptions) => useInbox(opts), core, {
     initialProps: options,
-    wrapper: ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children),
   });
   return { core, hook };
 }
@@ -122,10 +118,7 @@ describe("useInbox", () => {
         ticket: () => "session-ticket",
       },
     );
-    const hook = renderHook(() => useInbox(), {
-      wrapper: ({ children }: { children: ReactNode }) =>
-        createElement(SessionProvider, { value: core }, children),
-    });
+    const hook = renderHookWithSession(() => useInbox(), core);
     expect(last()?.protocols).toEqual(["aai.session", "aai.auth.session-ticket"]);
     hook.unmount();
   });

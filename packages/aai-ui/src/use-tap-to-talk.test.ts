@@ -7,11 +7,9 @@
  * the hook feeds the machine session activity.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import type { SessionSnapshot } from "./session/index.ts";
 import { type UseTapToTalkOptions, useTapToTalk } from "./use-tap-to-talk.ts";
 
@@ -24,10 +22,7 @@ function mount(options?: UseTapToTalkOptions, snapshot: Partial<SessionSnapshot>
   const sendText = vi.spyOn(core, "sendText");
   const start = vi.spyOn(core, "start");
   const toggle = vi.spyOn(core, "toggle");
-  const hook = renderHook(() => useTapToTalk(options), {
-    wrapper: ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children),
-  });
+  const hook = renderHookWithSession(() => useTapToTalk(options), core);
   return { core, hook, disconnect, cancel, sendText, start, toggle };
 }
 
@@ -109,16 +104,10 @@ describe("useTapToTalk", () => {
     const core = createMockSessionCore({ running: false });
     const disconnect = vi.spyOn(core, "disconnect");
     let renders = 0;
-    renderHook(
-      () => {
-        renders++;
-        return useTapToTalk({ idleHangupMs: 1000 });
-      },
-      {
-        wrapper: ({ children }: { children: ReactNode }) =>
-          createElement(SessionProvider, { value: core }, children),
-      },
-    );
+    renderHookWithSession(() => {
+      renders++;
+      return useTapToTalk({ idleHangupMs: 1000 });
+    }, core);
     act(() => core.update({ running: true, state: "connecting" }));
     act(() => core.update({ state: "listening" }));
     const before = renders;

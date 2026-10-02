@@ -5,9 +5,11 @@
  * No dependency on @preact/signals.
  */
 
-import { act } from "react";
+import { type RenderHookOptions, type RenderHookResult, renderHook } from "@testing-library/react";
+import { act, createElement, type ReactNode } from "react";
 import { vi } from "vitest";
 import type { SessionIdentity } from "./client-identity.ts";
+import { SessionProvider } from "./context.ts";
 import type { BrowserSession, browserSessionBrand, SessionSnapshot } from "./session/index.ts";
 import { CLEARED_SESSION_STATE } from "./session/index.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -144,6 +146,23 @@ export function createMockSessionCore(
 }
 
 /**
+ * `renderHook` under a `<SessionProvider>` for `core` — the wrapper some twenty
+ * hook specs had each spelled out by hand. `options` is everything else
+ * `renderHook` takes (`initialProps`, …); the wrapper is this helper's.
+ */
+export function renderHookWithSession<Result, Props>(
+  hook: (props: Props) => Result,
+  core: BrowserSession,
+  options: Omit<RenderHookOptions<Props>, "wrapper"> = {},
+): RenderHookResult<Result, Props> {
+  return renderHook(hook, {
+    ...options,
+    wrapper: ({ children }: { children: ReactNode }) =>
+      createElement(SessionProvider, { value: core }, children),
+  });
+}
+
+/**
  * Flush pending effects and microtasks inside React's `act()` window.
  *
  * The idiom is `await act(async () => {})`, and a bare empty block is
@@ -159,8 +178,10 @@ export function createMockSessionCore(
  * budget is zero.)
  *
  * `act` comes from `react`, not `@testing-library/react`: this module is
- * imported by the node-environment session specs too, and only the DOM
- * renderer's entry point belongs behind jsdom.
+ * imported by the node-environment session specs too, so nothing here may need
+ * a DOM to be CALLED. (Importing Testing Library is fine in node — it touches
+ * `document` only when something renders — which is why
+ * {@link renderHookWithSession} can live beside it.)
  *
  * Use it where an assertion must land on the SETTLED frame rather than the one
  * an effect renders optimistically before its first `await` resolves.

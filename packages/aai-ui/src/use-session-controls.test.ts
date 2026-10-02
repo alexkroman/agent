@@ -9,11 +9,9 @@
  * in particular is the `end(); start()` pair and not `reset()`.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import { useSessionControls } from "./use-session-controls.ts";
 
 /**
@@ -28,16 +26,10 @@ function mount(
   const core = createMockSessionCore(overrides);
   prepare?.(core);
   let renders = 0;
-  const hook = renderHook(
-    () => {
-      renders++;
-      return useSessionControls();
-    },
-    {
-      wrapper: ({ children }: { children: ReactNode }) =>
-        createElement(SessionProvider, { value: core }, children),
-    },
-  );
+  const hook = renderHookWithSession(() => {
+    renders++;
+    return useSessionControls();
+  }, core);
   return { core, hook, renders: () => renders };
 }
 

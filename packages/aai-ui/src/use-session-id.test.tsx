@@ -7,9 +7,9 @@
  * the client id is what the session sends, `"auto"` included.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, test } from "vitest";
+import { renderHookWithSession } from "./_react-test-utils.ts";
 import {
   lastSocket,
   MockWebSocketConstructor,
@@ -17,7 +17,6 @@ import {
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
 import { browserClientId } from "./client-identity.ts";
-import { SessionProvider } from "./context.ts";
 import { createBrowserSession } from "./session/index.ts";
 import type { VoiceSessionOptions } from "./types.ts";
 import { useClientId, useSessionId } from "./use-session-id.ts";
@@ -30,10 +29,7 @@ function mount<T>(hook: () => T, options: Partial<VoiceSessionOptions> = {}) {
     WebSocket: MockWebSocketConstructor,
     ...options,
   });
-  const rendered = renderHook(hook, {
-    wrapper: ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: session }, children),
-  });
+  const rendered = renderHookWithSession(hook, session);
   return { session, rendered };
 }
 
