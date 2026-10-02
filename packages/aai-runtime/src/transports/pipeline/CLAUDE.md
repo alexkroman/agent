@@ -103,9 +103,10 @@ a VERBATIM line on the turn chain and speaks it through `createLineReply`, so a
 written as HEARD once playback ends. It resolves `"played"`, `"interrupted"` or
 `"dropped"` and never rejects.
 
-- **A line asked for before TTS is adopted is HELD** and queued by
-  `onAudioReady` behind the greeting; teardown drops held lines. Without the
-  hold a webhook's line on a fresh call "played" into no socket.
+- **A line asked for before TTS is adopted is HELD** and queued behind the
+  greeting when audio becomes ready; entering `terminated` drops held lines
+  (`lifecycle.ts`'s phase machine, which is also the one `isTerminated`).
+  Without the hold a webhook's line on a fresh call "played" into no socket.
 - **The queue epoch is read when the line is ASKED for**, not when it reaches
   the chain, so an interrupt drops a held line as it drops a queued one.
   `TurnChain.chain`'s `onStranded` answers for a line the gate stranded.
