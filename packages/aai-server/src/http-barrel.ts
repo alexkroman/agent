@@ -52,6 +52,7 @@ export {
   createRateLimiter,
   type RateLimiter,
 } from "./rate-limit.ts";
+export { secretBodyLimit } from "./secret-handler.ts";
 export { startService } from "./serve-lifecycle.ts";
 export {
   apiKeyOwnerSecretName,

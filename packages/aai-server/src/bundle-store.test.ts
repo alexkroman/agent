@@ -11,6 +11,7 @@ import {
   createBundleStore,
 } from "./bundle-store.ts";
 import { MAX_ENV_SIZE } from "./constants.ts";
+import { EnvTooLargeError } from "./env-size.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 
 function makeStore(secrets = createMemorySecretStore()) {
@@ -87,11 +88,11 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     const oversized = { BIG: "x".repeat(MAX_ENV_SIZE) };
 
     await expect(store.putAgent({ ...BASE_BUNDLE, env: oversized })).rejects.toThrow(
-      /exceeds the .*limit/,
+      EnvTooLargeError,
     );
 
     await store.putAgent({ ...BASE_BUNDLE, env: { OK: "1" } });
-    await expect(store.putEnv("test-agent", oversized)).rejects.toThrow(/exceeds the .*limit/);
+    await expect(store.putEnv("test-agent", oversized)).rejects.toThrow(EnvTooLargeError);
     // The rejected write must not have clobbered the stored env.
     await expect(store.getEnv("test-agent")).resolves.toEqual({ OK: "1" });
   });

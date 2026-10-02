@@ -31,6 +31,8 @@ export {
   type ChatStore,
   createMemoryChatStore,
 } from "./chat-store.ts";
+export { MAX_ENV_SIZE } from "./constants.ts";
+export { assertEnvFits, envSize } from "./env-size.ts";
 export {
   deleteSlugSecret,
   listSlugSecrets,

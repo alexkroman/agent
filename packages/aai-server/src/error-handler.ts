@@ -6,6 +6,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
+import { EnvTooLargeError } from "./env-size.ts";
 import { createLogger } from "./logger.ts";
 import { PlatformDbUnavailableError } from "./platform/db-errors.ts";
 import { SlugLockTimeoutError } from "./platform/lock.ts";
@@ -122,6 +123,31 @@ function reportUnavailable(err: unknown, path: string): string | undefined {
 }
 
 /**
+ * The 4xx an error is answered with when its own message is the answer, or
+ * `undefined` when it is not one of them.
+ */
+function callerFaultStatus(err: unknown): 400 | 409 | 413 | undefined {
+  if (err instanceof SyntaxError) return 400;
+  // Secrets over `MAX_ENV_SIZE`: the request was well-formed and too big, which
+  // is a 413 wherever it surfaces — the per-slug secret PUT, the studio's
+  // project PUT, or a deploy carrying an env (env-size.ts). The message carries
+  // byte counts and never a value.
+  if (err instanceof EnvTooLargeError) return 413;
+  // ANOTHER WRITER WON — a retryable conflict, not a server fault. Two
+  // shapes: cross-replica slug-lock contention, and an optimistic-concurrency
+  // loss on a workspace row.
+  //
+  // `WorkspaceConflictError` is thrown by this package (`workspace-store.ts`)
+  // and was classified only by three `instanceof` chains in `aai-studio-server`
+  // — so an uncaught one reached the catch-all as `500 Internal server
+  // error`, for an ordinary version mismatch, and the studio client retries
+  // 5xx. Choosing the status here rather than per route is the property this
+  // module's own doc is about.
+  if (err instanceof SlugLockTimeoutError || err instanceof WorkspaceConflictError) return 409;
+  return undefined;
+}
+
+/**
  * Shared Hono error handler for the platform services. Unhandled errors are
  * logged with full detail but answered with an opaque 500 — raw messages
  * can leak internals to unauthenticated callers.
@@ -152,22 +178,8 @@ export function createErrorHandler(): ErrorHandler {
     if (err instanceof z.ZodError) {
       return c.json({ error: formatSchemaIssues(err.issues) }, 400);
     }
-    if (err instanceof SyntaxError) {
-      return c.json({ error: err.message }, 400);
-    }
-    // ANOTHER WRITER WON — a retryable conflict, not a server fault. Two
-    // shapes: cross-replica slug-lock contention, and an optimistic-concurrency
-    // loss on a workspace row.
-    //
-    // `WorkspaceConflictError` is thrown by this package (`workspace-store.ts`)
-    // and was classified only by three `instanceof` chains in `aai-studio-server`
-    // — so an uncaught one reached the catch-all below as `500 Internal server
-    // error`, for an ordinary version mismatch, and the studio client retries
-    // 5xx. Choosing the status here rather than per route is the property this
-    // module's own doc is about.
-    if (err instanceof SlugLockTimeoutError || err instanceof WorkspaceConflictError) {
-      return c.json({ error: err.message }, 409);
-    }
+    const status = callerFaultStatus(err);
+    if (status !== undefined) return c.json({ error: err.message }, status);
     // A DEPENDENCY was unavailable — every one of them is a retryable 503, and
     // they share one branch so a fourth cannot arrive with a different status.
     const unavailable = reportUnavailable(err, c.req.path);

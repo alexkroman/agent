@@ -277,6 +277,12 @@ it and the only surface for an agent in no project. Never fan out in the client
   broker's `afterDeploy`, `studio-deploy-hooks.ts`).
 - **Resolve the project and its owned slugs BEFORE writing** — a 404 must not
   leave a Vault record under a name a later project could take.
+- **Size-check the MERGED result before the first write** (`assertChangeFits`):
+  the record, and per owned slug its env plus the record, via `aai-server`'s
+  `assertEnvFits` (the store's own measure). An over-size PUT is a 413
+  (`EnvTooLargeError`, mapped in `createErrorHandler`); checking only at the
+  agent write left the value in the record. A record already over the cap is
+  applied smallest-name-first at deploy, and the skipped names are warned.
 - The record is a **floor, never an override** (a name already on the slug wins,
   so `aai secret put` is not reverted). A mutation redeploys the preview (a
   secret reaches env only when the sandbox is built); production waits for
