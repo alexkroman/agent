@@ -30,6 +30,26 @@ describe("memoAsync", () => {
     await memoized();
     expect(build).toHaveBeenCalledTimes(2);
   });
+
+  test("a rejection settling after reset() does not evict the successor", async () => {
+    // The shrunk counterexample from `_memo-property.test.ts`: call (fails
+    // later), reset, call (succeeds), the FIRST build rejects, call again. The
+    // last call must join the second build, not start a third.
+    const first = Promise.withResolvers<string>();
+    const builds = [() => first.promise, async () => "successor", async () => "third"];
+    const build = vi.fn(() => (builds.shift() as () => Promise<string>)());
+    const memoized = memoAsync(build);
+
+    const failing = memoized();
+    memoized.reset();
+    await expect(memoized()).resolves.toBe("successor");
+
+    first.reject(new Error("boom"));
+    await expect(failing).rejects.toThrow("boom");
+
+    await expect(memoized()).resolves.toBe("successor");
+    expect(build).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("keyedMemoAsync", () => {
