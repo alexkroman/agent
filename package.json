@@ -41,7 +41,7 @@
     "check:guide-index": "node scripts/docs-list.mjs --check",
     "check:hatches": "node scripts/check-escape-hatches.mjs",
     "check:invariants": "node scripts/guard-invariants.mjs",
-    "check:knip": "knip",
+    "check:knip": "node --conditions=@dev/source node_modules/knip/bin/knip.js",
     "check:konsistent": "konsistent check",
     "check:local": "node scripts/check.mjs --local",
     "check:markdown": "markdownlint-cli2 '**/*.{md,mdx}' '#**/node_modules' '#.aai' '#.claude' '#.superpowers'",

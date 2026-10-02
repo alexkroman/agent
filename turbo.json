@@ -474,6 +474,12 @@
     "//#check:sherif": {
       "inputs": ["package.json", "packages/*/package.json", "pnpm-workspace.yaml"]
     },
+    // `check:knip` runs knip under `node --conditions=@dev/source`: knip LOADS
+    // config files (e.g. aai-templates' `vitest.config.ts`, which imports
+    // `@alexkroman1/aai/testing/vite`) through jiti, which otherwise resolves
+    // the `import` target in `dist/`. With no `dist/` yet — a fresh checkout,
+    // where this task runs beside the `build` it does not depend on — Node
+    // reports the missing file as "subpath not defined by exports", exit 2.
     "//#check:knip": {
       "inputs": [
         "packages/**/*.ts",
