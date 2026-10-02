@@ -139,6 +139,52 @@ describe("createManualTurn", () => {
     expect(committed).toEqual([]);
   });
 
+  test("a deadline that lands after the session ended answers nothing", async () => {
+    const committed: string[] = [];
+    let active = true;
+    const turn = createManualTurn("manual", {
+      forceEndOfTurn: () => undefined,
+      commitUserTurn: (text) => committed.push(text),
+      isActive: () => active,
+      log: silentLogger,
+      sid: "s1",
+    });
+    turn.start();
+    turn.onPartial("are you");
+    turn.commit();
+    active = false;
+    await vi.advanceTimersByTimeAsync(MANUAL_COMMIT_FINAL_TIMEOUT_MS);
+    expect(committed).toEqual([]);
+  });
+
+  test("an owed final is forgotten by a partial of the next utterance, and by a reset", async () => {
+    const { turn, committed } = makeTurn();
+    turn.start();
+    turn.onPartial("one");
+    turn.commit();
+    await vi.advanceTimersByTimeAsync(MANUAL_COMMIT_FINAL_TIMEOUT_MS);
+    expect(committed).toEqual(["one"]);
+
+    // A partial of the NEW utterance: the owed final is not coming, so the
+    // next final is the new utterance's own and is held.
+    turn.start();
+    turn.onPartial("two");
+    turn.onFinal("Two.");
+    turn.commit();
+    expect(committed).toEqual(["one", "Two."]);
+
+    // Owed again, then a reset: the next turn starts owing nothing.
+    turn.start();
+    turn.onPartial("three");
+    turn.commit();
+    await vi.advanceTimersByTimeAsync(MANUAL_COMMIT_FINAL_TIMEOUT_MS);
+    turn.reset();
+    turn.start();
+    turn.onFinal("Four.");
+    turn.commit();
+    expect(committed).toEqual(["one", "Two.", "three", "Four."]);
+  });
+
   test("pressing again while a commit waits answers the first turn rather than merging them", () => {
     const { turn, committed } = makeTurn();
     turn.start();

@@ -44,13 +44,13 @@ the string to `start`.
 ## Push-to-talk holds the turn in the TRANSPORT
 
 `agent({ turnTaking: { detection: "manual" } })` moves the end of turn to the
-client. `manual-turn.ts` owns it: finals are HELD while a turn is open and
-answered as one on `user_turn_commit`; the mic is SILENCED with zeros outside a
-turn (the transcriber's clock keeps pace); a final with no turn open is dropped.
-Opening a turn is the barge-in — `startUserTurn()` reports whether it
-interrupted and `../../../session/commands.ts` then acts like a client `cancel`
-(`manualTurn` in the table). The eval harness's `say()` presses and releases for
-a manual agent.
+client. `manual-turn.ts` owns it (a statechart: `closed`/`open`/`committing`,
+plus an owed-final region): finals are HELD while a turn is open and answered as
+one on `user_turn_commit`; the mic is SILENCED with zeros outside a turn (the
+transcriber's clock keeps pace); a final with no turn open is dropped. Opening a
+turn is the barge-in — `startUserTurn()` reports whether it interrupted and
+`../../../session/commands.ts` then acts like a client `cancel` (`manualTurn` in
+the table). The eval harness's `say()` presses and releases for a manual agent.
 
 **A typed turn (`user_text`) is a committed transcript with no transcriber.**
 `Transport.sendUserText` → `commitTypedTurn` in `user-speech.ts` cuts a reply in
