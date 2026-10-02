@@ -446,7 +446,7 @@ type PollResult<T> = {
 
 // @public
 export type ProjectFiles = {
-    readonly tools?: ToolModules;
+    readonly tools?: Readonly<Record<string, unknown>>;
     readonly systemPrompt?: string;
 };
 
@@ -1426,9 +1426,6 @@ type ToolMessagesInput = {
     complete?: string | readonly (string | ToolCompletionMessage)[];
     failed?: string | readonly (string | ToolCompletionMessage)[];
 };
-
-// @public
-type ToolModules = Readonly<Record<string, unknown>>;
 
 // @public
 export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>;
