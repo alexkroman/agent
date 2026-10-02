@@ -109,8 +109,9 @@ const extensionOf = (file) => {
 export function walk(node, visit) {
   // A guard that must ADMIT arrays: an AST node's children are arrays, so
   // narrowing them away would stop the walk at the first `body` or `arguments`.
-  // (Baselined against rule 17 for the reason `_test-assertions-parse.mjs` is —
-  // a `scripts/*.mjs` gate cannot import the SDK's `isRecord`.)
+  // Baselined against rule 17 rather than importing the SDK's `isRecord` by
+  // path: `aai-gates`' `guard-invariants-gate.test.ts` loads this module, and
+  // `gates-package-boundary` keeps that package from resolving SDK code.
   if (node === null || typeof node !== "object") return;
   if (Array.isArray(node)) {
     for (const child of node) walk(child, visit);

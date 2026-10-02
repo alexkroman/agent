@@ -19,10 +19,7 @@
     "packages/aai-runtime/src/transports/types.ts": 3
   },
   "rule17_openCodedRecordGuard": {
-    "packages/aai-evals/src/assertions.ts": 1,
     "packages/aai-gates/src/published-files-gate.test.ts": 1,
-    "packages/aai/src/sdk/standard-schema.ts": 1,
-    "scripts/_api-contracts.mjs": 1,
     "scripts/_ast-scan.mjs": 1,
     "scripts/_property-floors-parse.mjs": 1
   },

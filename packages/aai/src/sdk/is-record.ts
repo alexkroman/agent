@@ -7,10 +7,10 @@
  * module, re-exporting thirteen others (`step-fetch.ts`, `step-generate.ts`,
  * `step-generate-json.ts`, `map-in-batches.ts`, …). So none of those thirteen
  * could import the guard without closing a cycle, and neither could anything
- * they import — `sdk/standard-schema.ts` says so in a comment and hand-rolls the
- * check instead. Nine open-coded guards across this package were the result,
- * each paying for the narrow a second time with a cast, which is exactly what
- * `guard-invariants` rule 17 exists to stop.
+ * they import, `sdk/standard-schema.ts` among them. Nine open-coded guards
+ * across this package were the result, each paying for the narrow a second
+ * time with a cast, which is exactly what `guard-invariants` rule 17 exists to
+ * stop.
  *
  * The same move `safe-json-parse.ts` and `omit-undefined.ts` already document:
  * the definition lives in a leaf module, and `utils.ts` re-exports it so the

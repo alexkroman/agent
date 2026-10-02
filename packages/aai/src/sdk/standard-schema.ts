@@ -115,9 +115,7 @@ function renderIssue(issue: StandardSchemaIssue, parentPath: PathSegments, depth
   // A nested issue's path is RELATIVE to the union that holds it, so a branch
   // renders `llm.model` only if the parent's own path is carried down.
   const path: PathSegments = [...parentPath, ...(issue.path ?? [])];
-  const label = path
-    .map((seg) => String(typeof seg === "object" && seg !== null ? seg.key : seg))
-    .join(".");
+  const label = path.map((seg) => String(isRecord(seg) ? seg.key : seg)).join(".");
   if (depth < MAX_ISSUE_DEPTH) {
     const branches = unionBranches(issue);
     if (branches) {

@@ -168,11 +168,8 @@ function turnsOf(events: readonly SessionEvent[]): SessionEvent[][] {
 
 /** Deep PARTIAL match: every key of `expected` present and equal in `actual`. */
 function matchesPartial(actual: unknown, expected: unknown): boolean {
-  // Not `isRecord`, deliberately: this branch must let an ARRAY through to the
-  // one below it, and `isRecord` excludes arrays. It is the "any non-null
-  // object, arrays included" case `guard-invariants` rule 17's remedy says to
-  // write out and baseline.
-  if (expected === null || typeof expected !== "object") return actual === expected;
+  // Arrays first: `isRecord` excludes them, so the scalar test below sees only
+  // what is left — `null` and the primitives, compared by identity.
   if (Array.isArray(expected)) {
     return (
       Array.isArray(actual) &&
@@ -180,9 +177,10 @@ function matchesPartial(actual: unknown, expected: unknown): boolean {
       expected.every((item, i) => matchesPartial(actual[i], item))
     );
   }
+  if (!isRecord(expected)) return actual === expected;
   if (!isRecord(actual)) return false;
   const seen = actual;
-  return Object.entries(expected as Record<string, unknown>).every(
+  return Object.entries(expected).every(
     ([key, value]) => key in seen && matchesPartial(seen[key], value),
   );
 }
