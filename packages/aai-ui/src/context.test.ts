@@ -345,8 +345,8 @@ describe("useTheme", () => {
       wrapper: ({ children }: { children: ReactNode }) =>
         React.createElement(ThemeProvider, { value: undefined }, children),
     });
-    expect(document.body.style.background).toBe("rgb(251, 248, 242)");
-    expect(document.documentElement.style.background).toBe("rgb(251, 248, 242)");
+    expect(document.body).toHaveStyle({ background: "rgb(251, 248, 242)" });
+    expect(document.documentElement).toHaveStyle({ background: "rgb(251, 248, 242)" });
   });
 
   it("a custom theme repaints the page too", () => {
@@ -354,7 +354,7 @@ describe("useTheme", () => {
       wrapper: ({ children }: { children: ReactNode }) =>
         React.createElement(ThemeProvider, { value: { bg: "#123456" } }, children),
     });
-    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+    expect(document.body).toHaveStyle({ background: "rgb(18, 52, 86)" });
   });
 
   it("keeps merged theme identity stable across re-renders", () => {
@@ -388,11 +388,11 @@ describe("useTheme", () => {
     const wrapper = ({ children }: { children: ReactNode }) =>
       React.createElement(ThemeProvider, { value }, children);
     const { rerender } = renderHook(() => useTheme(), { wrapper });
-    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+    expect(document.body).toHaveStyle({ background: "rgb(18, 52, 86)" });
 
     value = { bg: "#654321" };
     rerender();
-    expect(document.body.style.background).toBe("rgb(101, 67, 33)");
+    expect(document.body).toHaveStyle({ background: "rgb(101, 67, 33)" });
   });
 
   it("restores the page background it found on unmount", () => {
@@ -406,11 +406,11 @@ describe("useTheme", () => {
       wrapper: ({ children }: { children: ReactNode }) =>
         React.createElement(ThemeProvider, { value: { bg: "#123456" } }, children),
     });
-    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+    expect(document.body).toHaveStyle({ background: "rgb(18, 52, 86)" });
 
     unmount();
-    expect(document.body.style.background).toBe("rgb(1, 2, 3)");
-    expect(document.documentElement.style.background).toBe("rgb(4, 5, 6)");
+    expect(document.body).toHaveStyle({ background: "rgb(1, 2, 3)" });
+    expect(document.documentElement).toHaveStyle({ background: "rgb(4, 5, 6)" });
   });
 
   it("fills missing theme fields with defaults", () => {

@@ -120,9 +120,9 @@ describe("ToolRow", () => {
         part={{ type: "tool-list_files", state: "output-available", input: {}, output: "agent.ts" }}
       />,
     );
-    expect(container.textContent).not.toContain("{}");
+    expect(container).not.toHaveTextContent("{}");
     fireEvent.click(screen.getByRole("button"));
-    expect(container.textContent).not.toContain("{}");
+    expect(container).not.toHaveTextContent("{}");
     // The output is still there — only the empty record went away.
     expect(screen.getByText("agent.ts")).toBeInTheDocument();
   });

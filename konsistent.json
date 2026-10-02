@@ -983,7 +983,7 @@
     },
     {
       "name": "test-helper-modules",
-      "description": "Each package's test-helper modules are its OWN and they are not interchangeable: the helpers are named for that package's domain, so a spec reaches for the module beside it rather than importing another package's. A package whose helpers outgrew one file splits them BY DOMAIN into `_<domain>-test-utils.ts` modules (the `*-test-utils.ts` grammar is what the coverage excludes, `tsconfig.build.json`, biome and the guard scopes key on), so a spec imports the module whose name says what it fakes. This pins where each helper lives and the roster it owes; a rename or a move fails the gate instead of quietly making a guide wrong. The rosters: aai/src/host/_test-utils.ts - tick() (a full macrotask yield), createMockToolContext(), makeConfig(), fakeFetch(). aai-runtime/src: _timing-test-utils.ts - flush() (MICROTASK-only; the one to reach for instead of `await new Promise(r => setTimeout(r, 0))`), tick(), withDeadline(); _agent-test-utils.ts - makeTool(), makeAgent(), makeConfig(), createMockToolContext(); _session-test-utils.ts - makeMockCore(), makeTrackingClient(); _s2s-fixture-test-utils.ts - loadFixture(), createFixtureSession() (fixture replay, incl. S2S mocking); _logger-test-utils.ts - makeLogger(); _db-test-utils.ts - recordingDb(). aai-cli/src/_test-utils.ts - withTempDir() (temp dir + cleanup), silenced(), makeBundle(); the dev-server specs additionally share their fake chokidar and runtime/server mocks via _dev-server-test-utils.ts, and a _test-setup.ts setup file points AAI_CONFIG_DIR at a per-run temp dir so a CLI spec can never touch the developer's real ~/.config/aai/config.json (API key + approved servers). aai-ui/src/_react-test-utils.ts - createMockSessionCore(), installAudioMocks(), and the MockAudioContext class. aai-studio-client/src/_test-utils.ts - stubFetch() and its readers, renderWithClient(), the button/input/textarea element seams, installResizeObserver(). aai-server/src: _orchestrator-test-utils.ts - createTestStore() (in-memory BundleStore), createTestOrchestrator(), makeSlot(); _request-test-utils.ts - authHeaders()/authFetch()/deploy()/deployAgent()/deployBody(); _logger-test-utils.ts - captureLogs(); _sql-test-utils.ts - createDispatchingSql(), createRecordingSql(), fakeAdminDbOver(); _sandbox-test-utils.ts - fakeSandbox(), spawnedAgent(). Build a platform request with authFetch/deploy, never a header literal - see \"Building a platform request in a test\" in packages/aai-server/CLAUDE.md. Two helper SUBPATHS keep the un-underscored `test-utils` name because they cross a package boundary and `_*.ts` is package-private (Biome's noPrivateImports): `aai-server/test-utils` (a barrel, `test-utils-barrel.ts`, over the private modules above, for aai-studio-server) and `aai-guest-core/test-utils` (`src/test-utils.ts` itself, shared by the three guest packages). Each roster is a FLOOR: a module may export more, and several do.",
+      "description": "Each package's test-helper modules are its OWN and they are not interchangeable: the helpers are named for that package's domain, so a spec reaches for the module beside it rather than importing another package's. A package whose helpers outgrew one file splits them BY DOMAIN into `_<domain>-test-utils.ts` modules (the `*-test-utils.ts` grammar is what the coverage excludes, `tsconfig.build.json`, biome and the guard scopes key on), so a spec imports the module whose name says what it fakes. This pins where each helper lives and the roster it owes; a rename or a move fails the gate instead of quietly making a guide wrong. The rosters: aai/src/host/_test-utils.ts - tick() (a full macrotask yield), createMockToolContext(), makeConfig(), fakeFetch(). aai-runtime/src: _timing-test-utils.ts - flush() (MICROTASK-only; the one to reach for instead of `await new Promise(r => setTimeout(r, 0))`), tick(), withDeadline(); _agent-test-utils.ts - makeTool(), makeAgent(), makeConfig(), createMockToolContext(); _session-test-utils.ts - makeMockCore(), makeTrackingClient(); _s2s-fixture-test-utils.ts - loadFixture(), createFixtureSession() (fixture replay, incl. S2S mocking); _logger-test-utils.ts - makeLogger(); _db-test-utils.ts - recordingDb(). aai-cli/src/_test-utils.ts - withTempDir() (temp dir + cleanup), silenced(), makeBundle(); the dev-server specs additionally share their fake chokidar and runtime/server mocks via _dev-server-test-utils.ts, and a _test-setup.ts setup file points AAI_CONFIG_DIR at a per-run temp dir so a CLI spec can never touch the developer's real ~/.config/aai/config.json (API key + approved servers). aai-ui/src/_react-test-utils.ts - createMockSessionCore(), installAudioMocks(), and the MockAudioContext class. aai-studio-client/src/_test-utils.ts - stubFetch() and its readers, renderWithClient(); its DOM assertions are jest-dom matchers and its ResizeObserver stub lives in _test-setup.ts. aai-server/src: _orchestrator-test-utils.ts - createTestStore() (in-memory BundleStore), createTestOrchestrator(), makeSlot(); _request-test-utils.ts - authHeaders()/authFetch()/deploy()/deployAgent()/deployBody(); _logger-test-utils.ts - captureLogs(); _sql-test-utils.ts - createDispatchingSql(), createRecordingSql(), fakeAdminDbOver(); _sandbox-test-utils.ts - fakeSandbox(), spawnedAgent(). Build a platform request with authFetch/deploy, never a header literal - see \"Building a platform request in a test\" in packages/aai-server/CLAUDE.md. Two helper SUBPATHS keep the un-underscored `test-utils` name because they cross a package boundary and `_*.ts` is package-private (Biome's noPrivateImports): `aai-server/test-utils` (a barrel, `test-utils-barrel.ts`, over the private modules above, for aai-studio-server) and `aai-guest-core/test-utils` (`src/test-utils.ts` itself, shared by the three guest packages). Each roster is a FLOOR: a module may export more, and several do.",
       "paths": "packages",
       "must": [
         {
@@ -1076,11 +1076,7 @@
           "must": {
             "exportFunctions": [
               "stubFetch",
-              "renderWithClient",
-              "button",
-              "input",
-              "textarea",
-              "installResizeObserver"
+              "renderWithClient"
             ]
           }
         },
@@ -2108,7 +2104,7 @@
     },
     {
       "name": "studio-client-test-seam",
-      "description": "`src/_test-utils.ts` is this package's one test seam, and these are the helpers it owes. Each replaced a shape that had been rebuilt per suite \u2014 the QueryClient pair in five files, the `ResizeObserver` stub in two, and 21 `as HTML*Element` casts, a cast that also silently answers `undefined === true` when the query resolves to something with no `.disabled`. The inventory is asserted rather than described because the guide's copy of it is the thing that rots: a helper renamed or folded into a call site leaves a documented seam that is not there, and the next suite rebuilds the shape instead of importing it. Existence only \u2014 konsistent cannot see that a suite reached PAST the seam, which stays a review question.",
+      "description": "`src/_test-utils.ts` is this package's one test seam, and these are the helpers it owes. Each replaced a shape that had been rebuilt per suite \u2014 the QueryClient pair in five files, the fetch stub and its readers in most. Element state is NOT read off a typed helper here: jest-dom's `toBeDisabled`/`toHaveValue`/`toBeChecked` (wired in `_test-setup.ts`, which also holds the `ResizeObserver` stub) replaced the old `button`/`input`/`textarea` seams, and they fail naming the reason where `undefined === true` was a quiet false. The inventory is asserted rather than described because the guide's copy of it is the thing that rots: a helper renamed or folded into a call site leaves a documented seam that is not there, and the next suite rebuilds the shape instead of importing it. Existence only \u2014 konsistent cannot see that a suite reached PAST the seam, which stays a review question.",
       "paths": "packages/aai-studio-client/src/_test-utils.ts",
       "must": {
         "exportFunctions": [
@@ -2118,11 +2114,7 @@
           "tick",
           "fetchCall",
           "fetchLines",
-          "renderWithClient",
-          "button",
-          "input",
-          "textarea",
-          "installResizeObserver"
+          "renderWithClient"
         ]
       }
     },

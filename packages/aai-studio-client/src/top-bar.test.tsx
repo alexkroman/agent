@@ -5,7 +5,6 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { button } from "./_test-utils.ts";
 import { agentUrl } from "./platform-origin.ts";
 import { PublishMenu, TopBar } from "./top-bar.tsx";
 
@@ -60,7 +59,7 @@ describe("TopBar", () => {
   ])("the switcher moves to the %s pane", (label, id) => {
     const onSelectTab = vi.fn();
     render(<TopBar {...barProps} onSelectTab={onSelectTab} />);
-    fireEvent.click(button(label));
+    fireEvent.click(screen.getByRole("button", { name: label }));
     expect(onSelectTab).toHaveBeenCalledWith(id);
   });
 
@@ -98,10 +97,11 @@ describe("TopBar", () => {
 
   test("the open pane is the current one", () => {
     render(<TopBar {...barProps} tab="settings" />);
-    expect(screen.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBe(
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
+      "aria-current",
       "page",
     );
-    expect(screen.getByRole("button", { name: "UI" }).getAttribute("aria-current")).toBeNull();
+    expect(screen.getByRole("button", { name: "UI" })).not.toHaveAttribute("aria-current");
   });
 
   test("Publish locks until there is a build; the project panes stay reachable", () => {
@@ -109,29 +109,29 @@ describe("TopBar", () => {
     // Delete project button, which has to work before anything is published —
     // and neither must Secrets: a provider key is what the FIRST build needs.
     render(<TopBar {...barProps} hasBuild={false} />);
-    expect(button("Publish").disabled).toBe(true);
-    expect(button("Settings").disabled).toBe(false);
-    expect(button("Secrets").disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Publish" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Secrets" })).toBeEnabled();
   });
 
   test("Publish locks while a chat turn streams, even with a build", () => {
     render(<TopBar {...barProps} chatBusy={true} />);
-    const publish = button("Publish");
-    expect(publish.disabled).toBe(true);
-    expect(publish.getAttribute("title")).toContain("finishes its turn");
+    const publish = screen.getByRole("button", { name: "Publish" });
+    expect(publish).toBeDisabled();
+    expect(publish).toHaveAttribute("title", expect.stringContaining("finishes its turn"));
   });
 
   test("Publish unlocks once the turn settles", () => {
     render(<TopBar {...barProps} chatBusy={false} />);
-    expect(button("Publish").disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Publish" })).toBeEnabled();
   });
 
   test("Publish reads as a closed toggle by default", () => {
     render(<TopBar {...barProps} />);
     const publish = screen.getByRole("button", { name: "Publish" });
-    expect(publish.getAttribute("aria-expanded")).toBe("false");
-    expect(publish.getAttribute("aria-haspopup")).toBe("dialog");
-    expect(publish.getAttribute("aria-controls")).toBeNull();
+    expect(publish).toHaveAttribute("aria-expanded", "false");
+    expect(publish).toHaveAttribute("aria-haspopup", "dialog");
+    expect(publish).not.toHaveAttribute("aria-controls");
   });
 
   test("an open menu shows on the button, so pressing again reads as 'hide'", () => {
@@ -139,10 +139,10 @@ describe("TopBar", () => {
     // has no Close button.
     render(<TopBar {...barProps} publishOpen={true} />);
     const publish = screen.getByRole("button", { name: "Publish" });
-    expect(publish.getAttribute("aria-expanded")).toBe("true");
-    expect(publish.getAttribute("aria-controls")).toBe("publish-menu");
-    expect(publish.getAttribute("title")).toContain("Hide");
-    expect(publish.className).toContain("bg-indigo-hover");
+    expect(publish).toHaveAttribute("aria-expanded", "true");
+    expect(publish).toHaveAttribute("aria-controls", "publish-menu");
+    expect(publish).toHaveAttribute("title", expect.stringContaining("Hide"));
+    expect(publish).toHaveClass("bg-indigo-hover");
   });
 
   test("the toggle fires on press whether the menu is open or closed", () => {
@@ -158,8 +158,8 @@ describe("TopBar", () => {
     render(<TopBar {...barProps} deployedSlug="my-agent" />);
     // The production URL is a plain link that opens in a new tab.
     const link = screen.getByRole("link");
-    expect(link.getAttribute("href")).toBe(agentUrl("my-agent"));
-    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link).toHaveAttribute("href", agentUrl("my-agent"));
+    expect(link).toHaveAttribute("target", "_blank");
   });
 
   test("Log out is wired to the sign-out handler", () => {
@@ -175,7 +175,7 @@ describe("TopBar", () => {
     const onToggleAccount = vi.fn();
     render(<TopBar {...barProps} project={project} onToggleAccount={onToggleAccount} />);
     const toggle = screen.getByRole("button", { name: "Account" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(toggle);
     expect(onToggleAccount).toHaveBeenCalled();
   });
@@ -183,8 +183,8 @@ describe("TopBar", () => {
   test("an open account panel marks the toggle expanded and owning it", () => {
     render(<TopBar {...barProps} accountOpen />);
     const toggle = screen.getByRole("button", { name: "Account" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(toggle.getAttribute("aria-controls")).toBe("account-menu");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveAttribute("aria-controls", "account-menu");
   });
 });
 
@@ -242,14 +242,14 @@ describe("PublishMenu", () => {
 
   test("busy shows progress and disables the button", () => {
     render(<PublishMenu {...menuProps} open={true} busy={true} />);
-    expect(button("Publishing…").disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Publishing…" })).toBeDisabled();
   });
 
   test("a streaming chat turn disables Publish inside an already-open menu", () => {
     render(<PublishMenu {...menuProps} open={true} chatBusy={true} />);
-    const publish = button("Publish");
-    expect(publish.disabled).toBe(true);
-    expect(publish.getAttribute("title")).toContain("finishes its turn");
+    const publish = screen.getByRole("button", { name: "Publish" });
+    expect(publish).toBeDisabled();
+    expect(publish).toHaveAttribute("title", expect.stringContaining("finishes its turn"));
   });
 
   test("an error renders as CLI output and suppresses the live link", () => {
@@ -264,20 +264,20 @@ describe("PublishMenu", () => {
     const { container } = render(
       <PublishMenu {...menuProps} open={true} output="deployed" deployedSlug="my-agent" />,
     );
-    expect(screen.getByRole("link").getAttribute("href")).toBe(agentUrl("my-agent"));
+    expect(screen.getByRole("link")).toHaveAttribute("href", agentUrl("my-agent"));
     // `querySelector("details")` is already typed HTMLDetailsElement | null by
     // the tag map, so `.open` needs no cast — only the null check the cast
     // was standing in for.
     const details = container.querySelector("details");
     expect(details).not.toBeNull();
     expect(details?.open).toBe(false);
-    expect(details?.textContent).toContain("deployed");
+    expect(details).toHaveTextContent("deployed");
   });
 
   test("the panel names itself once — no eyebrow repeating the toggle's label", () => {
     render(<PublishMenu {...menuProps} open={true} />);
     // Exactly one thing in the panel says "Publish": the action button.
     expect(screen.getAllByText("Publish")).toHaveLength(1);
-    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("Publish");
+    expect(screen.getByRole("dialog")).toHaveAttribute("aria-label", "Publish");
   });
 });

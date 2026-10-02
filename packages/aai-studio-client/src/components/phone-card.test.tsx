@@ -101,7 +101,7 @@ describe("PhoneCard", () => {
 
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/demo/phone?carrier=twilio`);
     // The other carrier's button is untouched — the flash is keyed by text.
-    expect(screen.getByLabelText("Copy the Telnyx webhook URL").textContent).toBe("Copy");
+    expect(screen.getByLabelText("Copy the Telnyx webhook URL")).toHaveTextContent(/^Copy$/);
   });
 
   test("a clipboard-less context flashes a failure rather than throwing", () => {

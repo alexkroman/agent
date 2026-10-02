@@ -67,8 +67,8 @@ describe("WorkflowsCard", () => {
     // slug `demo-preview` and the fallback copy both contain it, so the
     // previous shape (`getByText(/preview/).textContent` contains "preview")
     // could not fail once the query returned, whatever the note said.
-    expect(screen.getByText(/Showing the/).textContent).toBe(
-      "Showing the preview agent — it has its own runs, separate from production.",
+    expect(screen.getByText(/Showing the/)).toHaveTextContent(
+      /^Showing the preview agent — it has its own runs, separate from production\.$/,
     );
   });
 
@@ -95,8 +95,8 @@ describe("WorkflowsCard", () => {
     // render the raw body (`503: {"error":"agent unavailable, retry shortly"}`),
     // which CONTAINS that sentence — so this test passed over the bug it exists
     // to catch until `responseErrorMessage` replaced the hand-written reader.
-    expect(line.textContent).not.toContain('{"error"');
-    expect(line.textContent).toContain("Could not read the workflows: agent unavailable");
+    expect(line).not.toHaveTextContent('{"error"');
+    expect(line).toHaveTextContent("Could not read the workflows: agent unavailable");
   });
 
   test("shows a failed run's MESSAGE, not just its status", async () => {

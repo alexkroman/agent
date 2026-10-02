@@ -115,7 +115,7 @@ describe("WorkflowFields", () => {
     // `["string", "null"]` is how an optional-and-nullable field converts, and
     // the control the non-null half wants is the right one.
     renderFields({ type: "object", properties: { note: { type: ["string", "null"] } } });
-    expect(document.querySelector("input[name=note]")?.getAttribute("type")).toBe("text");
+    expect(document.querySelector("input[name=note]")).toHaveAttribute("type", "text");
   });
 
   test("skips a property with no honest default control", () => {

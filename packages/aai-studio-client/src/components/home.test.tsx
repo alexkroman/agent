@@ -7,9 +7,9 @@
 // coding agent runs under, so it has to reach `onStart` with every submit.
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import { input } from "../_test-utils.ts";
 import { AGENT_STARTERS, WORKFLOW_STARTERS } from "../starters.ts";
 import { HomeHero, HomeSidebar } from "./home.tsx";
 
@@ -80,24 +80,25 @@ describe("HomeHero states", () => {
 });
 
 describe("HomeHero submit", () => {
-  test("Enter sends the trimmed prompt; Shift+Enter is a newline, not a send", () => {
+  test("Enter sends the trimmed prompt; Shift+Enter is a newline, not a send", async () => {
+    const user = userEvent.setup();
     const onStart = vi.fn();
     render(<HomeHero creating={false} status={status} onStart={onStart} />);
     const box = screen.getByRole("textbox");
-    fireEvent.change(box, { target: { value: "  build a pizza bot  " } });
-    fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
+    await user.type(box, "  build a pizza bot  {Shift>}{Enter}{/Shift}");
     expect(onStart).not.toHaveBeenCalled();
-    fireEvent.keyDown(box, { key: "Enter" });
+    await user.keyboard("{Enter}");
     expect(onStart).toHaveBeenCalledWith("build a pizza bot", "agent");
   });
 
-  test("the send button submits, but never an empty prompt", () => {
+  test("the send button submits, but never an empty prompt", async () => {
+    const user = userEvent.setup();
     const onStart = vi.fn();
     render(<HomeHero creating={false} status={status} onStart={onStart} />);
     const send = screen.getByRole("button", { name: "Send" });
     fireEvent.click(send);
     expect(onStart).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "an FAQ bot" } });
+    await user.type(screen.getByRole("textbox"), "an FAQ bot");
     fireEvent.click(send);
     expect(onStart).toHaveBeenCalledWith("an FAQ bot", "agent");
   });
@@ -115,24 +116,27 @@ describe("HomeHero submit", () => {
 
 describe("HomeHero kind switcher", () => {
   /** The switcher's radios, by label. */
-  const radio = (name: string) => input(name, "radio");
+  const radio = (name: string) => screen.getByRole("radio", { name: name });
 
   /** Flip the switcher to Workflow. */
   const chooseWorkflow = () => fireEvent.click(radio("Workflow"));
 
   test("starts on Voice agent — the default and the common case", () => {
     render(<HomeHero {...heroProps} status={status} />);
-    expect(radio("Voice agent").checked).toBe(true);
-    expect(radio("Workflow").checked).toBe(false);
+    expect(radio("Voice agent")).toBeChecked();
+    expect(radio("Workflow")).not.toBeChecked();
   });
 
   test("Workflow swaps the heading, the blurb, and the placeholder", () => {
     render(<HomeHero {...heroProps} status={status} />);
     chooseWorkflow();
-    expect(screen.getByRole("heading").textContent).toContain("workflow");
+    expect(screen.getByRole("heading")).toHaveTextContent("workflow");
     // The distinguishing promise of the mode: a form and a page, not a call.
-    expect(document.body.textContent).toContain("a form that submits it");
-    expect(screen.getByRole("textbox").getAttribute("placeholder")).toContain("uploaded recording");
+    expect(document.body).toHaveTextContent("a form that submits it");
+    expect(screen.getByRole("textbox")).toHaveAttribute(
+      "placeholder",
+      expect.stringContaining("uploaded recording"),
+    );
   });
 
   test("Workflow swaps the starter chips for the workflow catalog", () => {
@@ -144,15 +148,15 @@ describe("HomeHero kind switcher", () => {
     for (const label of labels) expect(workflowLabels).toContain(label);
   });
 
-  test("the chosen kind rides along with every submit path", () => {
+  test("the chosen kind rides along with every submit path", async () => {
+    const user = userEvent.setup();
     // The whole point of the switcher: the server stamps this on the workspace
     // and it selects the coding agent's system prompt. A hero that changed its
     // copy and sent "agent" anyway would look right and build the wrong thing.
     const onStart = vi.fn();
     render(<HomeHero creating={false} status={status} onStart={onStart} />);
     chooseWorkflow();
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "transcribe uploads" } });
-    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    await user.type(screen.getByRole("textbox"), "transcribe uploads{Enter}");
     expect(onStart).toHaveBeenLastCalledWith("transcribe uploads", "workflow");
 
     fireEvent.click(starterChip());
@@ -199,28 +203,31 @@ describe("HomeSidebar with a long list", () => {
     expect(screen.queryByLabelText("Filter projects")).toBeNull();
   });
 
-  test("filters the list down, matching anywhere in the name", () => {
+  test("filters the list down, matching anywhere in the name", async () => {
+    const user = userEvent.setup();
     render(<HomeSidebar projects={[...many(20), "bedtime-story-reader"]} onSelectProject={noop} />);
-    fireEvent.change(input("Filter projects"), { target: { value: "bedtime" } });
+    await user.type(screen.getByLabelText("Filter projects"), "bedtime");
 
     expect(screen.getByRole("button", { name: "bedtime-story-reader" })).toBeInTheDocument();
     // The 20 that do not match are gone, not merely reordered.
     expect(screen.queryByRole("button", { name: "use-transcript-workflow-00" })).toBeNull();
   });
 
-  test("says so when the filter matches nothing", () => {
+  test("says so when the filter matches nothing", async () => {
+    const user = userEvent.setup();
     render(<HomeSidebar projects={many(20)} onSelectProject={noop} />);
-    fireEvent.change(input("Filter projects"), { target: { value: "nothing-matches-this" } });
+    await user.type(screen.getByLabelText("Filter projects"), "nothing-matches-this");
 
     expect(screen.getByText(/No project matches/)).toBeInTheDocument();
   });
 
-  test("a filtered row still selects the project it names", () => {
+  test("a filtered row still selects the project it names", async () => {
+    const user = userEvent.setup();
     const onSelectProject = vi.fn();
     render(
       <HomeSidebar projects={[...many(20), "sweep-agent"]} onSelectProject={onSelectProject} />,
     );
-    fireEvent.change(input("Filter projects"), { target: { value: "sweep" } });
+    await user.type(screen.getByLabelText("Filter projects"), "sweep");
     fireEvent.click(screen.getByRole("button", { name: "sweep-agent" }));
 
     expect(onSelectProject).toHaveBeenCalledWith("sweep-agent");

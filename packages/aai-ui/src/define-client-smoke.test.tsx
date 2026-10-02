@@ -41,7 +41,7 @@ describe("mountClient (unmocked session core)", () => {
       // The default shell mounts on the StartScreen; no socket yet.
       expect(sockets).toHaveLength(0);
       const button = container.querySelector("button");
-      expect(button?.textContent).toBe("Start Conversation");
+      expect(button).toHaveTextContent(/^Start Conversation$/);
 
       act(() => {
         button?.click();

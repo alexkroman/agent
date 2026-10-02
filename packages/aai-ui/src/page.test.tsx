@@ -71,7 +71,7 @@ describe("mountPage", () => {
     // `flushSync`, so the mount is observable to the caller's next statement
     // rather than scheduled — the same reason `mountClient()` uses it.
     const handle = mountPage({ component: () => <p>Digest</p> });
-    expect(document.querySelector("#app")?.textContent).toBe("Digest");
+    expect(document.querySelector("#app")).toHaveTextContent(/^Digest$/);
     handle.dispose();
   });
 
@@ -86,7 +86,7 @@ describe("mountPage", () => {
     const el = document.createElement("section");
     document.body.append(el);
     const handle = mountPage({ component: () => <p>ok</p>, target: el });
-    expect(el.textContent).toBe("ok");
+    expect(el).toHaveTextContent(/^ok$/);
     handle.dispose();
   });
 
@@ -111,7 +111,7 @@ describe("mountPage", () => {
   test("dispose unmounts, and `using` reaches the same path", () => {
     const el = mount();
     const handle = mountPage({ component: () => <p>ok</p> });
-    expect(el.textContent).toBe("ok");
+    expect(el).toHaveTextContent(/^ok$/);
     handle[Symbol.dispose]();
     expect(el.textContent).toBe("");
   });
@@ -125,7 +125,7 @@ describe("mountPage's default shell", () => {
     const el = mount();
     stubAgent();
     const handle = mountPage();
-    await vi.waitFor(() => expect(el.textContent).toContain("Link Digest"));
+    await vi.waitFor(() => expect(el).toHaveTextContent("Link Digest"));
     handle.dispose();
   });
 
@@ -133,7 +133,7 @@ describe("mountPage's default shell", () => {
     const el = mount();
     stubAgent();
     const handle = mountPage({ name: "Digests" });
-    await vi.waitFor(() => expect(el.querySelector("h1")?.textContent).toBe("Digests"));
+    await vi.waitFor(() => expect(el.querySelector("h1")).toHaveTextContent(/^Digests$/));
     expect(document.title).toBe("Digests");
     handle.dispose();
   });
@@ -144,7 +144,7 @@ describe("mountPage's default shell", () => {
     const el = mount();
     stubAgent();
     const handle = mountPage();
-    await vi.waitFor(() => expect(el.textContent).toContain("Link Digest"));
+    await vi.waitFor(() => expect(el).toHaveTextContent("Link Digest"));
     expect(vi.mocked(createBrowserSession)).not.toHaveBeenCalled();
     handle.dispose();
   });

@@ -56,8 +56,8 @@ describe("UploadProgressBar", () => {
     // Found BY ITS LABEL, which is the visible text rather than a second copy
     // of it in an `aria-label`.
     const bar = screen.getByRole("progressbar", { name: "Uploading standup.wav" });
-    expect(bar.getAttribute("aria-valuenow")).toBe("25");
-    expect(fill(bar).style.width).toBe("25%");
+    expect(bar).toHaveAttribute("aria-valuenow", "25");
+    expect(fill(bar)).toHaveStyle({ width: "25%" });
   });
 
   test("reads the sizes in the units the file was chosen in", () => {
@@ -72,7 +72,7 @@ describe("UploadProgressBar", () => {
     render(<UploadProgressBar upload={status({ total: undefined, fraction: undefined })} />);
     const bar = screen.getByRole("progressbar");
     expect(bar.hasAttribute("aria-valuenow")).toBe(false);
-    expect(fill(bar).style.width).toBe("100%");
+    expect(fill(bar)).toHaveStyle({ width: "100%" });
     // The loaded count is still worth showing — it is the only evidence of
     // movement an indeterminate bar has.
     expect(screen.getByText("512 KB")).toBeInTheDocument();
@@ -90,7 +90,7 @@ describe("UploadProgressBar", () => {
     expect(screen.getByText("7 B of 40 B")).toBeInTheDocument();
     // Rounded, because a bar's width is a percentage and 17.5% of a track is a
     // subpixel argument nobody can see.
-    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("18");
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "18");
   });
 
   test("no pause control without handlers, because a dead button is worse than none", () => {
@@ -129,7 +129,7 @@ describe("UploadProgressBar", () => {
     expect(screen.getByText("Paused standup.wav")).toBeInTheDocument();
     // The width is still where it got to: a pause keeps its bytes, and a bar that
     // reset to zero would be describing a cancel.
-    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("25");
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "25");
   });
 
   test("a paused INDETERMINATE bar stops pulsing, which is all it had to say", () => {
@@ -140,9 +140,9 @@ describe("UploadProgressBar", () => {
         upload={status({ total: undefined, fraction: undefined, paused: true })}
       />,
     );
-    expect(fill(screen.getByRole("progressbar")).className).not.toContain("animate-pulse");
+    expect(fill(screen.getByRole("progressbar"))).not.toHaveClass("animate-pulse");
     render(<UploadProgressBar upload={status({ total: undefined, fraction: undefined })} />);
     const running = screen.getAllByRole("progressbar")[1];
-    expect(running && fill(running).className).toContain("animate-pulse");
+    expect(running && fill(running)).toHaveClass("animate-pulse");
   });
 });

@@ -14,6 +14,7 @@
  */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 import { ThemeProvider } from "../context.ts";
 import {
@@ -52,8 +53,9 @@ async function submitted(onSubmit: ReturnType<typeof vi.fn>): Promise<Record<str
 
 describe("collected values", () => {
   test("a text field contributes its string", async () => {
+    const user = userEvent.setup();
     const { onSubmit, submit } = renderForm(<TextField name="topic" label="Topic" />);
-    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "kittens" } });
+    await user.type(screen.getByLabelText("Topic"), "kittens");
     submit();
     expect(await submitted(onSubmit)).toEqual({ topic: "kittens" });
   });
@@ -62,8 +64,9 @@ describe("collected values", () => {
     // The reason values come off the DOM rather than out of `FormData`: only
     // the element still knows it was `type="number"`, and `"3"` against
     // `z.number()` is a rejected run.
+    const user = userEvent.setup();
     const { onSubmit, submit } = renderForm(<NumberField name="limit" label="Limit" />);
-    fireEvent.change(screen.getByLabelText("Limit"), { target: { value: "3" } });
+    await user.type(screen.getByLabelText("Limit"), "3");
     submit();
     expect(await submitted(onSubmit)).toEqual({ limit: 3 });
   });
@@ -136,11 +139,7 @@ describe("collected values", () => {
     const { onSubmit, submit } = renderForm(
       <SelectField name="langs" label="Languages" options={["en", "fr", "de"]} multiple />,
     );
-    const select = screen.getByLabelText("Languages") as HTMLSelectElement;
-    for (const option of Array.from(select.options)) {
-      option.selected = option.value !== "fr";
-    }
-    fireEvent.change(select);
+    await userEvent.selectOptions(screen.getByLabelText("Languages"), ["en", "de"]);
     submit();
     expect(await submitted(onSubmit)).toEqual({ langs: ["en", "de"] });
   });
@@ -249,7 +248,7 @@ describe("submitting", () => {
         <Form onSubmit={vi.fn()} error="agent unavailable, retry shortly" />
       </ThemeProvider>,
     );
-    expect(screen.getByRole("alert").textContent).toContain("agent unavailable");
+    expect(screen.getByRole("alert")).toHaveTextContent("agent unavailable");
   });
 
   test("a pending SubmitButton is disabled and says what it is doing", () => {
@@ -263,7 +262,7 @@ describe("submitting", () => {
     // Pending is the WORK, not the submit: a run outlives its POST, so the
     // button stays busy until the run is done.
     const button = screen.getByRole("button") as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(button.textContent).toContain("Working…");
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent("Working…");
   });
 });

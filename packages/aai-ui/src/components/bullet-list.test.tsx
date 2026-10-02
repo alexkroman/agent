@@ -22,7 +22,7 @@ describe("BulletList", () => {
     const { container } = render(<BulletList items={["alpha", "beta"]} />);
     const items = [...container.querySelectorAll("li")].map((li) => li.textContent);
     expect(items).toEqual(["alpha", "beta"]);
-    expect(container.querySelector("ul")?.className).toContain("list-disc");
+    expect(container.querySelector("ul")).toHaveClass("list-disc");
   });
 
   test("renders nothing at all when there are no items", () => {
@@ -39,7 +39,7 @@ describe("BulletList", () => {
 
   test("wraps in a section with a heading when titled, and does not when not", () => {
     const titled = render(<BulletList title="Risks" items={["one"]} />).container;
-    expect(titled.querySelector("section > h3")?.textContent).toBe("Risks");
+    expect(titled.querySelector("section > h3")).toHaveTextContent(/^Risks$/);
     expect(titled.querySelector("section > ul")).not.toBeNull();
 
     const bare = render(<BulletList items={["one"]} />).container;
@@ -58,9 +58,9 @@ describe("BulletList", () => {
 
   test("size=sm adds text-sm and the default adds nothing", () => {
     const small = render(<BulletList items={["one"]} size="sm" />).container;
-    expect(small.querySelector("ul")?.className).toContain("text-sm");
+    expect(small.querySelector("ul")).toHaveClass("text-sm");
     const base = render(<BulletList items={["one"]} />).container;
-    expect(base.querySelector("ul")?.className).not.toContain("text-sm");
+    expect(base.querySelector("ul")).not.toHaveClass("text-sm");
   });
 
   test("className is added to the list's own classes, not swapped for them", () => {

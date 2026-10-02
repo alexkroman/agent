@@ -17,7 +17,7 @@ describe("PaneShell", () => {
     );
     const heading = screen.getByRole("heading", { level: 1, name: "Secrets" });
     const header = heading.closest("header");
-    expect(header?.textContent).toContain("demo-project");
+    expect(header).toHaveTextContent("demo-project");
     expect(screen.getByText("body").closest("header")).toBeNull();
   });
 

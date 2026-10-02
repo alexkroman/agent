@@ -25,14 +25,14 @@ describe("AudioResult", () => {
   test("renders the player over the object URL, labelled, with a download link naming the file", () => {
     const { container } = mount(READY);
     const audio = container.querySelector("audio") as HTMLAudioElement;
-    expect(audio.getAttribute("src")).toBe(READY.url);
-    expect(audio.getAttribute("aria-label")).toBe("Summary read aloud");
+    expect(audio).toHaveAttribute("src", READY.url);
+    expect(audio).toHaveAttribute("aria-label", "Summary read aloud");
     expect(audio.hasAttribute("controls")).toBe(true);
     const link = screen.getByText("Download summary.wav") as HTMLAnchorElement;
-    expect(link.getAttribute("href")).toBe(READY.url);
+    expect(link).toHaveAttribute("href", READY.url);
     // `download` works on an object URL because the bytes are already in the
     // tab; it was the href that could not carry the bearer, not this.
-    expect(link.getAttribute("download")).toBe("summary.wav");
+    expect(link).toHaveAttribute("download", "summary.wav");
   });
 
   test("says it is fetching while the bytes are in flight, with no player yet", () => {
@@ -44,8 +44,8 @@ describe("AudioResult", () => {
 
   test("announces a failed read", () => {
     const { container } = mount({ pending: false, error: "upload not found" });
-    expect(screen.getByRole("alert").textContent).toBe(
-      "Could not load the audio: upload not found",
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /^Could not load the audio: upload not found$/,
     );
     expect(container.querySelector("audio")).toBeNull();
   });
@@ -78,11 +78,11 @@ describe("AudioResult", () => {
       captions: { text: "Hello, world.", durationMs: 61_500 },
     });
     const track = container.querySelector("track") as HTMLTrackElement;
-    expect(track.getAttribute("kind")).toBe("captions");
+    expect(track).toHaveAttribute("kind", "captions");
     expect(track.hasAttribute("default")).toBe(true);
-    expect(track.getAttribute("srclang")).toBe("en");
+    expect(track).toHaveAttribute("srclang", "en");
     // The track's label defaults to the player's.
-    expect(track.getAttribute("label")).toBe("Summary read aloud");
+    expect(track).toHaveAttribute("label", "Summary read aloud");
     const src = track.getAttribute("src") ?? "";
     expect(src.startsWith("data:text/vtt;charset=utf-8,")).toBe(true);
     const vtt = decodeURIComponent(src.slice("data:text/vtt;charset=utf-8,".length));
@@ -95,14 +95,14 @@ describe("AudioResult", () => {
       captions: { text: "Hola", durationMs: 1000, label: "Resumen", srcLang: "es" },
     });
     const track = container.querySelector("track") as HTMLTrackElement;
-    expect(track.getAttribute("label")).toBe("Resumen");
-    expect(track.getAttribute("srclang")).toBe("es");
+    expect(track).toHaveAttribute("label", "Resumen");
+    expect(track).toHaveAttribute("srclang", "es");
   });
 
   test("className is appended to the section's own classes", () => {
     const { container } = mount(READY, { className: "mt-4" });
     const section = container.firstElementChild as HTMLElement;
     expect(section.tagName).toBe("SECTION");
-    expect(section.className).toBe("flex flex-col gap-2 mt-4");
+    expect(section).toHaveClass("flex flex-col gap-2 mt-4", { exact: true });
   });
 });

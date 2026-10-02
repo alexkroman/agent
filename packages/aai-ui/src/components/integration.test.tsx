@@ -223,7 +223,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
       }),
     );
     expect(screen.getByText("second")).toBe(secondBubbleBefore);
-    expect(container.textContent).not.toContain("first");
+    expect(container).not.toHaveTextContent("first");
     expect(screen.getByText("third")).toBeInTheDocument();
   });
 
@@ -324,18 +324,18 @@ describe("MessageList: stick-to-bottom scroll container", () => {
     renderWithProvider(<MessageList className="custom-class" />, core);
 
     const log = screen.getByRole("log");
-    expect(log.className).toContain("flex-1");
-    expect(log.className).toContain("custom-class");
+    expect(log).toHaveClass("flex-1");
+    expect(log).toHaveClass("custom-class");
 
     const scroller = log.firstElementChild as HTMLElement;
-    expect(scroller.className).toContain("overflow-y-auto");
+    expect(scroller).toHaveClass("overflow-y-auto");
 
     const content = scroller.firstElementChild as HTMLElement;
-    expect(content.className).toContain("flex-col");
+    expect(content).toHaveClass("flex-col");
 
     // New content renders inside the observed content element.
     act(() => core.update({ messages: [{ id: 1, role: "user", content: "one" }] }));
-    expect(content.textContent).toContain("one");
+    expect(content).toHaveTextContent("one");
   });
 });
 
@@ -429,7 +429,7 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     );
     // The banner is one element holding message AND code, so it is read off
     // the alert rather than matched as a text node.
-    expect(screen.getByRole("alert").textContent).toBe("Lost connection (connection)");
+    expect(screen.getByRole("alert")).toHaveTextContent(/^Lost connection \(connection\)$/);
     expect(screen.getByText("Resume")).toBeInTheDocument();
   });
 
@@ -451,6 +451,8 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     // Message AND code: the shell composes `<SessionErrorBanner>`, which shows
     // the code because it is the stable half of an error and the half a user
     // can quote back.
-    expect(screen.getByRole("alert").textContent).toBe("Cartesia TTS: missing API key. (tts)");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /^Cartesia TTS: missing API key\. \(tts\)$/,
+    );
   });
 });

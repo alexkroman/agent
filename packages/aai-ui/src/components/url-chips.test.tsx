@@ -83,7 +83,7 @@ describe("UrlChip focus", () => {
       </ThemeProvider>,
     );
     const chip = screen.getByTestId("ui-url-chip");
-    expect(chip.className).toContain("focus-visible:[outline:2px_solid]");
+    expect(chip).toHaveClass("focus-visible:[outline:2px_solid]");
     expect(chip.style.outlineColor).not.toBe("");
   });
 });

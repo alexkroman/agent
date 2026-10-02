@@ -101,10 +101,10 @@ describe("ToolCallRow title overflow", () => {
     const title = screen.getByText(
       "mcp__some_provider__an_extremely_long_tool_name_that_overflows_the_row",
     );
-    expect(title.className).toContain("truncate");
-    expect(title.className).toContain("min-w-0");
-    expect(title.className).not.toContain("shrink-0");
+    expect(title).toHaveClass("truncate");
+    expect(title).toHaveClass("min-w-0");
+    expect(title).not.toHaveClass("shrink-0");
     // The expand affordance survives a title of any length.
-    expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button")).toHaveAttribute("aria-expanded", "false");
   });
 });

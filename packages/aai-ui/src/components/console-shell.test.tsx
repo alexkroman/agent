@@ -49,7 +49,7 @@ describe("ConsoleShell", () => {
     // silently for a screen reader.
     shell({}, { code: "audio", message: "microphone permission denied", fatal: false });
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toBe("microphone permission denied (audio)");
+    expect(alert).toHaveTextContent(/^microphone permission denied \(audio\)$/);
   });
 
   test("shows no banner when there is no error", () => {
@@ -79,7 +79,7 @@ describe("ConsoleShell", () => {
   test("appends className rather than replacing the shell's own layout classes", () => {
     const { container } = shell({ className: "ring-2" });
     const root = container.firstElementChild;
-    expect(root?.className).toContain("ring-2");
-    expect(root?.className).toContain("flex");
+    expect(root).toHaveClass("ring-2");
+    expect(root).toHaveClass("flex");
   });
 });

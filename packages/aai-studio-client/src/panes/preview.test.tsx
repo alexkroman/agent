@@ -80,7 +80,7 @@ describe("PreviewPane", () => {
     );
     await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
     const first = frame(container);
-    expect(first.getAttribute("src")).toBe("/p-preview/");
+    expect(first).toHaveAttribute("src", "/p-preview/");
     // A new preview deploy (new version) remounts the frame — that is the
     // only reload path; nothing else may kill an in-progress voice session.
     rerender(<PreviewPane previewSlug="p-preview" previewVersion="h2" />);
@@ -137,7 +137,7 @@ describe("PreviewPane", () => {
         hasAgent={true}
       />,
     );
-    await waitFor(() => expect(frame(container).getAttribute("src")).toBe("/p-preview/"));
+    await waitFor(() => expect(frame(container)).toHaveAttribute("src", "/p-preview/"));
   });
 
   test("a failed preview build surfaces its CLI output over the last good preview", async () => {
@@ -198,7 +198,7 @@ describe("PreviewPane readiness probe", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(PROBE_RETRY_MS);
     });
-    expect(frame(container).getAttribute("src")).toBe("/p-preview/");
+    expect(frame(container)).toHaveAttribute("src", "/p-preview/");
   });
 
   test("a page that answered once is never re-probed", async () => {

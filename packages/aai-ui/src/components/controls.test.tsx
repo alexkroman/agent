@@ -42,7 +42,7 @@ describe("Controls", () => {
   test("wraps rather than overflowing a narrow container", () => {
     const { container } = renderControls();
     const row = container.firstElementChild as HTMLElement;
-    expect(row.className).toContain("flex-wrap");
+    expect(row).toHaveClass("flex-wrap");
   });
 
   test("gives the URL chips their own line below the sm breakpoint", () => {
@@ -50,8 +50,8 @@ describe("Controls", () => {
     // Sharing the buttons' row, the chips truncated to their bare labels and
     // dropped the URL they exist to show.
     const chips = screen.getByTestId("ui-url-chip").parentElement as HTMLElement;
-    expect(chips.className).toContain("basis-full");
-    expect(chips.className).toContain("sm:basis-auto");
-    expect(chips.className).toContain("sm:ml-auto");
+    expect(chips).toHaveClass("basis-full");
+    expect(chips).toHaveClass("sm:basis-auto");
+    expect(chips).toHaveClass("sm:ml-auto");
   });
 });

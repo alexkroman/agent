@@ -80,7 +80,7 @@ describe("ConversationView", () => {
 
   test("a pending tool call shimmers in the default row", () => {
     mount({ messages: MESSAGES, toolCalls: [{ ...TOOL, status: "pending" }] });
-    expect(screen.getByText("web_search").className).toContain("tool-shimmer");
+    expect(screen.getByText("web_search")).toHaveClass("tool-shimmer");
   });
 
   test("`renderTool` replaces the default row", () => {
@@ -88,7 +88,7 @@ describe("ConversationView", () => {
       { messages: MESSAGES, toolCalls: [TOOL] },
       { renderTool: (call) => <code data-testid="tool">[{call.name}]</code> },
     );
-    expect(screen.getByTestId("tool").textContent).toBe("[web_search]");
+    expect(screen.getByTestId("tool")).toHaveTextContent(/^\[web_search\]$/);
   });
 
   test("shows `empty` only while there is nothing at all — no items and no streaming text", () => {
@@ -125,14 +125,14 @@ describe("ConversationView", () => {
       },
     );
     const row = screen.getByRole("status", { name: "Dispatch is thinking" });
-    expect(row.className).toBe("px-3");
-    expect(row.querySelector("b")?.textContent).toBe("…");
+    expect(row).toHaveClass("px-3", { exact: true });
+    expect(row.querySelector("b")).toHaveTextContent(/^…$/);
   });
 
   test("the thinking row is `Thinking` with pulsing dots by default", () => {
     mount({ state: "thinking", messages: [MESSAGES[0] as ChatMessage] });
     const row = screen.getByRole("status", { name: "Thinking" });
-    expect(row.textContent).toBe("· · ·");
+    expect(row).toHaveTextContent(/^· · ·$/);
   });
 
   test("obeys the suppression rule — no thinking row behind a pending tool call", () => {
@@ -158,14 +158,14 @@ describe("ConversationView", () => {
     expect(screen.getByTestId("transcript").textContent).not.toBe("");
 
     act(() => core.update({ userTranscript: "hel" }));
-    expect(screen.getByTestId("transcript").textContent).toBe("hel");
+    expect(screen.getByTestId("transcript")).toHaveTextContent(/^hel$/);
   });
 
   test("the default transcript row is a muted italic line", () => {
     mount({ userTranscript: "so far" });
     const row = screen.getByText("so far");
     expect(row.tagName).toBe("P");
-    expect(row.className).toContain("italic");
+    expect(row).toHaveClass("italic");
   });
 
   test("`transcriptPosition` puts the row inside the scroll region by default, and after it when `below`", () => {
@@ -232,8 +232,8 @@ describe("ConversationView", () => {
       },
     );
     const log = view.container.querySelector("[role='log']") as HTMLElement;
-    expect(log.className).toContain("ring-1");
-    expect(log.style.background).toBe("rgb(1, 2, 3)");
+    expect(log).toHaveClass("ring-1");
+    expect(log).toHaveStyle({ background: "rgb(1, 2, 3)" });
     expect(view.container.querySelector(".aai-scroll")).not.toBeNull();
     expect(view.container.querySelector(".p-4")).not.toBeNull();
   });

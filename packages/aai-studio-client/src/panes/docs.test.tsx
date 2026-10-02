@@ -319,7 +319,7 @@ describe("DocsPane", () => {
     const url = `${window.location.origin}/studio/api/demo`;
     expect(await screen.findByText(url)).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /Open the public page/ });
-    expect(link.getAttribute("href")).toBe(url);
+    expect(link).toHaveAttribute("href", url);
   });
 
   test("and says the link is the PREVIEW's before a first publish", async () => {
@@ -447,12 +447,12 @@ describe("DocsPane", () => {
     // library normalizes whitespace before matching, so a newline-anchored
     // pattern cannot see the line break this snippet's whole shape depends on.
     const annotated = screen.getByText(/topic: "<topic>", +\/\/ <TextField>/);
-    expect(annotated.textContent).toContain('agent.startAndWait("publish", {');
-    expect(annotated.textContent).toContain("// <NumberField>");
+    expect(annotated).toHaveTextContent('agent.startAndWait("publish", {');
+    expect(annotated).toHaveTextContent("// <NumberField>");
     // The upload renders as the EXPRESSION reading the id off the upload the
     // lines above made — not as a string a caller cannot produce.
-    expect(annotated.textContent).toContain("cover: coverUpload.id,");
-    expect(annotated.textContent).toContain("await agent.upload(file,");
+    expect(annotated).toHaveTextContent("cover: coverUpload.id,");
+    expect(annotated).toHaveTextContent("await agent.upload(file,");
     // The shell alternate carries the mapping as comments, the body being one
     // single-quoted line with nowhere to put them. Read off `textContent`
     // rather than matched: the columns are aligned, and testing library's

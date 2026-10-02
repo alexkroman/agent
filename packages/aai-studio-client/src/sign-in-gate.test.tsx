@@ -9,16 +9,9 @@
 // user cannot reach at all.
 
 import { fireEvent, screen } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
-import {
-  button,
-  fetchCall,
-  input,
-  jsonResponse,
-  renderWithClient,
-  stubFetch,
-  tick,
-} from "./_test-utils.ts";
+import { fetchCall, jsonResponse, renderWithClient, stubFetch, tick } from "./_test-utils.ts";
 import type { SignInCredentials } from "./auth.tsx";
 import { readSignInMethods, type SignInMethods } from "./auth-methods.ts";
 import { SignInGate } from "./components/gates.tsx";
@@ -37,7 +30,7 @@ function mount(methods: SignInMethods, mode: "supabase" | "dev" = "supabase") {
 describe("SignInGate", () => {
   test("offers only GitHub when only GitHub is enabled", () => {
     mount(GITHUB_ONLY);
-    expect(button(/Continue with GitHub/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Continue with GitHub/ })).toBeInTheDocument();
     expect(screen.queryByLabelText("Password")).toBeNull();
     // No divider to draw: there is one method.
     expect(screen.queryByText("or")).toBeNull();
@@ -46,16 +39,16 @@ describe("SignInGate", () => {
   test("offers only the email form when only email is enabled", () => {
     mount(PASSWORD_ONLY);
     expect(screen.queryByRole("button", { name: /GitHub/ })).toBeNull();
-    expect(input("Email")).toBeTruthy();
-    expect(input("Password")).toBeTruthy();
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
     // The blurb may not name a button that is not on the screen.
     expect(screen.getByText(/Sign in with your email/)).toBeInTheDocument();
   });
 
   test("offers both, separated, when both are enabled", () => {
     mount(BOTH);
-    expect(button(/Continue with GitHub/)).toBeTruthy();
-    expect(input("Password")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Continue with GitHub/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
     expect(screen.getByText("or")).toBeInTheDocument();
   });
 
@@ -66,10 +59,11 @@ describe("SignInGate", () => {
   });
 
   test("signing in dispatches the password credentials", async () => {
+    const user = userEvent.setup();
     const onSignIn = mount(PASSWORD_ONLY);
-    fireEvent.change(input("Email"), { target: { value: "  dev@local.test  " } });
-    fireEvent.change(input("Password"), { target: { value: "devdevdev" } });
-    fireEvent.click(button("Sign in"));
+    await user.type(screen.getByLabelText("Email"), "  dev@local.test  ");
+    await user.type(screen.getByLabelText("Password"), "devdevdev");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await tick();
     // The email is TRIMMED (a pasted address routinely carries whitespace) and
     // the password is NOT — leading/trailing spaces are legitimate characters in
@@ -83,12 +77,13 @@ describe("SignInGate", () => {
   });
 
   test("creating an account is its own action, never a fallback from sign-in", async () => {
+    const user = userEvent.setup();
     // Signing up because a password was MISTYPED leaves the user authenticated
     // as somebody new with an empty project list, which reads as data loss.
     const onSignIn = mount(PASSWORD_ONLY);
-    fireEvent.change(input("Email"), { target: { value: "new@local.test" } });
-    fireEvent.change(input("Password"), { target: { value: "hunter2hunter2" } });
-    fireEvent.click(button("Create account"));
+    await user.type(screen.getByLabelText("Email"), "new@local.test");
+    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
     await tick();
     expect(onSignIn).toHaveBeenCalledWith({
       kind: "signup",
@@ -98,41 +93,44 @@ describe("SignInGate", () => {
   });
 
   test("an incomplete email form dispatches nothing", async () => {
+    const user = userEvent.setup();
     const onSignIn = mount(PASSWORD_ONLY);
-    fireEvent.click(button("Sign in"));
-    fireEvent.change(input("Email"), { target: { value: "dev@local.test" } });
-    fireEvent.click(button("Sign in"));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.type(screen.getByLabelText("Email"), "dev@local.test");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await tick();
     expect(onSignIn).not.toHaveBeenCalled();
   });
 
   test("the GitHub button needs no field filled", async () => {
     const onSignIn = mount(BOTH);
-    fireEvent.click(button(/Continue with GitHub/));
+    fireEvent.click(screen.getByRole("button", { name: /Continue with GitHub/ }));
     await tick();
     expect(onSignIn).toHaveBeenCalledWith({ kind: "github" });
   });
 
   test("dev mode keeps its own one-field sign-in", async () => {
+    const user = userEvent.setup();
     // Its method is not GoTrue's, so it is offered on the mode rather than on
     // `methods` — which is why both flags are false here.
     const onSignIn = mount(NEITHER, "dev");
     expect(screen.getByText(/Local dev mode/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Password")).toBeNull();
-    fireEvent.change(input("Email"), { target: { value: "me@local.test" } });
-    fireEvent.click(button("Sign in"));
+    await user.type(screen.getByLabelText("Email"), "me@local.test");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await tick();
     expect(onSignIn).toHaveBeenCalledWith({ kind: "dev", email: "me@local.test" });
   });
 
   test("a failed attempt shows the backend's own words", async () => {
+    const user = userEvent.setup();
     const onSignIn = vi.fn<(creds: SignInCredentials) => Promise<void>>(() =>
       Promise.reject(new Error("Invalid login credentials")),
     );
     renderWithClient(<SignInGate mode="supabase" methods={PASSWORD_ONLY} onSignIn={onSignIn} />);
-    fireEvent.change(input("Email"), { target: { value: "dev@local.test" } });
-    fireEvent.change(input("Password"), { target: { value: "wrong" } });
-    fireEvent.click(button("Sign in"));
+    await user.type(screen.getByLabelText("Email"), "dev@local.test");
+    await user.type(screen.getByLabelText("Password"), "wrong");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     // That sentence is the whole difference between a typo and an account that
     // does not exist yet, so it is quoted rather than replaced.
     expect(await screen.findByText("Invalid login credentials")).toBeInTheDocument();

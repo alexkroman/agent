@@ -6,16 +6,9 @@
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  button,
-  installResizeObserver,
-  jsonResponse,
-  renderWithClient,
-  sseResponse,
-  stubFetch,
-  textarea,
-} from "./_test-utils.ts";
+import { userEvent } from "@testing-library/user-event";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { jsonResponse, renderWithClient, sseResponse, stubFetch } from "./_test-utils.ts";
 import { App } from "./app.tsx";
 
 function renderApp(
@@ -29,10 +22,6 @@ function renderApp(
 async function openProject(name: string) {
   fireEvent.click(await screen.findByRole("button", { name }));
 }
-
-beforeEach(() => {
-  installResizeObserver();
-});
 
 afterEach(() => {
   // Selection syncs the URL (v0-style project paths); jsdom keeps the
@@ -295,7 +284,7 @@ describe("chat history hydration", () => {
     expect(await screen.findByText("build a pizza bot")).toBeInTheDocument();
     // The wait is said under the last message, and it is SENDING that waits.
     expect(screen.getByText("Starting sandbox…")).toBeInTheDocument();
-    expect(button("Send").disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 
   test("a message typed while the sandbox starts is held, then handed to the live composer", async () => {
@@ -311,15 +300,17 @@ describe("chat history hydration", () => {
           ? jsonResponse({ error: "service unavailable" }, 503)
           : jsonResponse({ url: "http://studio.test/sandbox/studio/chat" }),
     });
+    const user = userEvent.setup();
     renderApp(vi.fn());
     await openProject("demo");
-    const waiting = await waitFor(() => textarea(/Starting sandbox/));
-    fireEvent.change(waiting, { target: { value: "make it italian" } });
-    fireEvent.keyDown(waiting, { key: "Enter" });
+    const waiting = await screen.findByPlaceholderText(/Starting sandbox/);
+    await user.type(waiting, "make it italian{Enter}");
     // Submitting early neither sends nor clears: there is nothing to send to.
-    expect(waiting.value).toBe("make it italian");
+    expect(waiting).toHaveValue("make it italian");
 
-    const live = await waitFor(() => textarea("Describe your agent…"), { timeout: 4000 });
-    expect(live.value).toBe("make it italian");
+    const live = await screen.findByPlaceholderText("Describe your agent…", undefined, {
+      timeout: 4000,
+    });
+    expect(live).toHaveValue("make it italian");
   });
 });

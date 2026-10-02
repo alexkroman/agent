@@ -56,7 +56,7 @@ describe("CopyLine", () => {
     render(<TwoLines />);
     fireEvent.click(screen.getByLabelText("Copy one"));
     expect(await screen.findByText("Copied")).toBeInTheDocument();
-    expect(screen.getByLabelText("Copy one").textContent).toBe("Copied");
+    expect(screen.getByLabelText("Copy one")).toHaveTextContent(/^Copied$/);
     expect(screen.getByLabelText("Copy two").textContent).not.toBe("Copied");
   });
 });
