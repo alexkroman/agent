@@ -448,8 +448,8 @@ Four things to know before reaching for it:
 - **The guest image tag is computed AT BOOT, not on the first spawn**
   (`prewarmModal(harnessPath)` in modal/context.ts) — otherwise the Modal app
   lookup and the ~13 MB harness hash land on one unlucky user's first voice
-  session or studio chat. A spawn racing the prewarm joins the same memo. Details in
-  [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
+  session or studio chat. A spawn racing the prewarm joins the same memo.
+  Details in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 - **Readiness is Modal's readiness PROBE**, not host-side polling
   (`GUEST_READINESS_PROBE` in modal/context.ts): every guest sandbox is
   created with `readinessProbe: Probe.withTcp(8080)` and the spawn awaits

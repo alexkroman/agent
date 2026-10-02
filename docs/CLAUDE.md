@@ -246,10 +246,10 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
   as supported only while its example stays quiet about that name.
 - **Every capability restarts at epoch 1** is a pre-release reset (`--init`
   after deleting each package's `contracts.json` and its epochs and
-  compatibility directories), done twice — the second with the package versions reset
-  to `0.13.0`: an epoch is a promise to a consumer, and none existed yet. Do it
-  again only for that reason and only before release — once a consumer exists,
-  deleting a dropped epoch's record hides a broken promise.
+  compatibility directories), done twice — the second with the package versions
+  reset to `0.13.0`: an epoch is a promise to a consumer, and none existed yet.
+  Do it again only for that reason and only before release — once a consumer
+  exists, deleting a dropped epoch's record hides a broken promise.
 - **Old epoch metadata is immutable**; only the current epoch's record moves,
   by revision.
 - **The export-list delta suggests the bump type** (removed name a break, added
