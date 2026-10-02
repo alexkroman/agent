@@ -1,5 +1,5 @@
 {
-  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 285 left. The value is always 1 — see scripts/check-module-tests.mjs.",
+  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 284 left. The value is always 1 — see scripts/check-module-tests.mjs.",
   "modules-without-tests": {
     "packages/aai-cli/src/_deploy.ts": 1,
     "packages/aai-cli/src/_mock-api.ts": 1,
@@ -180,7 +180,6 @@
     "packages/aai-studio-server/src/studio-preview-wake.ts": 1,
     "packages/aai-studio-server/src/studio-project-kind.ts": 1,
     "packages/aai-studio-server/src/studio-secret-record.ts": 1,
-    "packages/aai-studio-server/src/studio-secret-routes.ts": 1,
     "packages/aai-studio-server/src/studio-session-ensure.ts": 1,
     "packages/aai-studio-server/src/studio-session-wire.ts": 1,
     "packages/aai-studio-server/src/studio-settled-edit.ts": 1,
