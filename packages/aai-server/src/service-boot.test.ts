@@ -22,7 +22,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sleep } from "@alexkroman1/aai/internal";
-import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { registerLiveStream } from "./live-streams.ts";
 import { LOCAL_GUEST_IMAGE_TAG } from "./microsandbox/sandbox.ts";
@@ -53,16 +53,6 @@ function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
 
 /** `AAI_LOCAL_DEV=1` and nothing else — what selects the microVM backend. */
 const LOCAL_DEV: NodeJS.ProcessEnv = { AAI_LOCAL_DEV: "1" };
-
-// The one piece of per-test bookkeeping the shared config does not cover:
-// `restoreMocks` restores SPIES, and every fake above is a `vi.fn()` created
-// once per FILE, so its call history is cumulative. Verified
-// by A/B — without this, "prewarmModal was not called" passed only in whichever
-// test ran first, and every later assertion on a call count was really an
-// assertion about test order.
-beforeEach(() => {
-  vi.clearAllMocks();
-});
 
 describe("assertSandboxBackendOrWarn", () => {
   const logs = captureLogs();

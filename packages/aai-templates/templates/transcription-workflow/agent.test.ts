@@ -1392,7 +1392,8 @@ describe("normalizing the recording", () => {
   // a unit test that spawns no binary. Without it a developer with ffmpeg
   // installed runs a different test from CI, which has none — and the one
   // assertion below that reaches `normalizeRecording` is about a reporter line
-  // emitted BEFORE the spawn. `unstubEnvs` is repo-wide, so there is no teardown.
+  // emitted BEFORE the spawn. `unstubEnvs` is in the agent test preset, so
+  // there is no teardown.
   beforeEach(() => {
     vi.stubEnv("AAI_FFMPEG_PATH", "/nonexistent/ffmpeg");
     vi.stubEnv("AAI_FFPROBE_PATH", "/nonexistent/ffprobe");

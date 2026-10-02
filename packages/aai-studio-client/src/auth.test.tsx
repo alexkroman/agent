@@ -11,14 +11,13 @@
 // its lines are mostly that client's wiring, which no unit spec drives.
 
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { jsonResponse, stubFetch } from "./_test-utils.ts";
 import { type StudioAuthState, useStudioAuth } from "./auth.tsx";
 
 const DEV_TOKEN_STORAGE = "aai-studio-dev-token";
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   localStorage.clear();
 });
 

@@ -4,7 +4,7 @@
 // studio.test.ts. `apiRequest` reads the global `fetch` per call, so the
 // network is stubbed there rather than by a module mock.
 
-import { afterEach, beforeEach, describe, expect, type Mock, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import {
   fetchStudioProject,
   listStudioProjects,
@@ -28,10 +28,6 @@ function json(body: unknown, status = 200): Response {
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 /** The URL and init of the nth request. */

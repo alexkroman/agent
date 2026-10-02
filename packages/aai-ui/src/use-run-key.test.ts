@@ -22,7 +22,7 @@
  */
 
 import { renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { useRunKey } from "./use-run-key.ts";
 
 /** The bound `POST /workflows/runs` puts on a correlation key. */
@@ -69,13 +69,6 @@ function noStorage() {
   vi.stubGlobal("sessionStorage", undefined);
   vi.stubGlobal("localStorage", undefined);
 }
-
-afterEach(() => {
-  // `restoreMocks` covers `vi.spyOn` and `unstubEnvs` covers `vi.stubEnv`;
-  // neither covers a stubbed global, so this is the one teardown these specs
-  // owe. Without it the first test to stub storage decides every later one.
-  vi.unstubAllGlobals();
-});
 
 describe("useRunKey", () => {
   test("mints one key and keeps answering with it across re-renders", () => {

@@ -9,7 +9,7 @@
 // how each read failing or hanging reaches the screen, is this component's.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   button,
   installResizeObserver,
@@ -43,10 +43,6 @@ function renderProject() {
 
 beforeEach(() => {
   installResizeObserver();
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 describe("ProjectView workspace", () => {

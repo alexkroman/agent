@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { PlatformDeps } from "./_slug-api.ts";
 import { createFakeUi, type FakeUi } from "./_test-utils.ts";
@@ -33,10 +33,6 @@ function page(over: Record<string, unknown> = {}) {
 
 /** Every line the command wrote, in order. */
 const written = () => ui.said("message");
-
-afterEach(() => {
-  vi.clearAllMocks();
-});
 
 describe("executeLogs", () => {
   test("reads from the oldest line held and prints what came back", async () => {

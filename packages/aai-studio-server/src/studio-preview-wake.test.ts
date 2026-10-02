@@ -9,10 +9,10 @@
  * splitting them keeps each under the file-length cap.
  */
 
+import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/stores";
 import { describe, expect, test, vi } from "vitest";
 import { answering, fakeFetch } from "./_studio-fetch-test-utils.ts";
 import {
-  makeStore,
   PROJECT,
   SCOPE,
   seededStore,
@@ -61,7 +61,7 @@ describe("wakeProjectPreview", () => {
   const scheduleFn = () =>
     vi.fn<(scope: string, project: string, target: WorkspaceDeployTarget) => void>();
   const wake = (
-    workspaces: ReturnType<typeof makeStore>,
+    workspaces: WorkspaceStore,
     schedule: ReturnType<typeof scheduleFn>,
     fetchImpl: ReturnType<typeof fakeFetch>,
   ) =>
@@ -288,7 +288,7 @@ describe("wakeProjectPreview", () => {
   });
 
   test("a missing project is a silent no-op", async () => {
-    const workspaces = makeStore();
+    const workspaces = createMemoryWorkspaceStore();
     const schedule = scheduleFn();
     const fetchImpl = fakeFetch();
     expect(() => wake(workspaces, schedule, fetchImpl)).not.toThrow();
@@ -302,7 +302,7 @@ describe("wakeProjectPreview containment", () => {
   test("a failing workspace read is swallowed — the wake is only an accelerator", async () => {
     // Hung off the once-per-open session broker call, whose response must not
     // depend on it. The pane's own iframe fetch remains the functional path.
-    const workspaces = makeStore();
+    const workspaces = createMemoryWorkspaceStore();
     workspaces.get = () => Promise.reject(new Error("database unreachable"));
     const schedule = vi.fn();
     expect(() =>

@@ -27,29 +27,36 @@ read_when: >-
   in the package config). Never re-declare a suite at the root — copies drift.
 - **Every package config is `export default defineUnitProject({ … })`**
   (`vitest.shared.ts`). The factory owns the shared options (`restoreMocks`,
-  `unstubEnvs`, `TZ=UTC`, the CI `reporters`, the worker budget), the unit-tier
-  excludes, and the MERGES a hand-written `test: { … }` gets wrong: `setupFiles`
-  is appended to `sharedSetupFiles`, `env` merged over the shared one,
-  `coverageExclude` appended to `sharedCoverageExclude`. Anything else (`pool`,
-  `testTimeout`, `globalSetup`) goes in its `test` option. konsistent
-  `package-vitest-config` and `aai-gates/src/vitest-setup-wiring.test.ts`
-  enforce it.
+  `clearMocks`, `unstubEnvs`, `unstubGlobals`, `TZ=UTC`, the CI `reporters`, the
+  worker budget), the unit-tier excludes, and the MERGES a hand-written
+  `test: { … }` gets wrong: `setupFiles` is appended to `sharedSetupFiles`,
+  `env` merged over the shared one, `coverageExclude` appended to
+  `sharedCoverageExclude`. Anything else (`pool`, `testTimeout`, `globalSetup`)
+  goes in its `test` option. konsistent `package-vitest-config` and
+  `aai-gates/src/vitest-setup-wiring.test.ts` enforce it.
 - **A listener LEAK fails the run** via `scripts/fail-on-process-warning.mjs`,
   loaded by every project through `sharedSetupFiles`.
 - **Snapshots are pinned to CI semantics (`update: "none"`)**, so an obsolete
   snapshot fails locally as it does in CI. Adding or changing one needs
   `vitest -u`.
-- **Do not hand-roll teardown for spies or env vars.** `restoreMocks` and
-  `unstubEnvs` undo every `vi.spyOn` and `vi.stubEnv` before each test, so a
-  trailing `mockRestore()` / `vi.unstubAllEnvs()` or a wrapping `try`/`finally`
-  is dead code. Unset a var with `vi.stubEnv(name, undefined)`, never
-  `delete process.env.X` or a manual save-and-restore (a restored `undefined`
-  becomes the string `"undefined"`). Exception: a helper or fast-check run
-  invoked repeatedly within ONE test needs its own restore.
+- **Do not hand-roll teardown for spies, mocks, env vars or globals.**
+  `restoreMocks`, `clearMocks`, `unstubEnvs` and `unstubGlobals` restore every
+  `vi.spyOn`, clear every `vi.fn()`'s calls, and undo every `vi.stubEnv` and
+  `vi.stubGlobal` before each test, so a trailing `mockRestore()` /
+  `vi.unstubAllEnvs()` / `vi.unstubAllGlobals()`, a
+  `beforeEach(vi.clearAllMocks)` or a wrapping `try`/`finally` is dead code.
+  Stub a global with `vi.stubGlobal`, never a hand-rolled save-and-assign; and
+  stub per test (`beforeEach` or the body), because one made in `beforeAll` or
+  at module scope is undone before the first test. Unset a var with
+  `vi.stubEnv(name, undefined)`, never `delete process.env.X` or a manual
+  save-and-restore (a restored `undefined` becomes the string `"undefined"`).
+  Exception: a helper or fast-check run invoked repeatedly within ONE test needs
+  its own restore.
 - **A `vi.fn()` from a `vi.mock` factory or `vi.hoisted` is not a spy** —
-  `restoreMocks` never resets it, so its call history accumulates across the
-  file and "was not called" assertions depend on test order. Such a file needs
-  `beforeEach(() => vi.clearAllMocks())`, with a comment saying why.
+  `restoreMocks` never resets it; `clearMocks` clears its call history, but an
+  implementation set with `mockImplementation`/`mockReturnValue` survives into
+  the next test. A file that sets one per test needs
+  `beforeEach(() => fn.mockReset())`, with a comment saying why.
 - **Prefer the tool's bookkeeping to a local variable**:
   `Promise.withResolvers()` over `let resolve!` or a local `deferred()`;
   `vi.fn()` over a `settled` flag; `test.each` over a `for` loop of cases (a
@@ -172,7 +179,7 @@ default (threads, node, vitest's 5s `testTimeout`, the four tier excludes).
 
 | Package           | Pool      | Timeout | Setup / plugins                                             | Notes                                                                                        |
 | ----------------- | --------- | ------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| aai               | threads   | 5s      | `src/host/_test-matchers.ts`                                | `contracts/` out of coverage                                                                 |
+| aai               | threads   | 5s      | —                                                           | `contracts/` out of coverage                                                                 |
 | aai-ui            | threads   | 5s      | `_jsdom-setup.ts` (stubs `scrollIntoView`)                  | `globals: true`; node by default, a file opts into jsdom with `// @vitest-environment jsdom` |
 | aai-runtime       | **forks** | 5s      | —                                                           | sockets, the workflow world and process-wide dispatchers                                     |
 | aai-cli           | threads   | 5s      | `_test-setup.ts` (temp `AAI_CONFIG_DIR`, scrubs `*API_KEY`) | also passed to its scenario/e2e runs via `VITEST_SETUP`                                      |
@@ -194,7 +201,10 @@ Set in package.json scripts, so not always visible from test code:
   (30s), `scenario` (120s), `e2e` (300s), `eval` (1800s). No profile sets a
   `retry`.
 - `VITEST_INCLUDE` — filters which test files to include.
-- `VITEST_POOL` — overrides the pool strategy at runtime.
+- `VITEST_POOL` — `forks` forces the forks pool in a slow-tier run. Without it a
+  slow tier runs in the package's own unit pool: `forks` for the packages in
+  `vitest.slow.config.ts`'s `FORKS_PACKAGES` (the ones whose unit config pins
+  it), `threads` otherwise. The unit configs ignore it.
 - `VITEST_SETUP` — a package's own setup file for a slow-tier run (appended
   after `sharedSetupFiles`).
 - `AAI_FLOOR_SAMPLES` — set by `pnpm floors:sample` only; records every floor

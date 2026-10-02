@@ -168,17 +168,15 @@ describe("assertGuestBearer", () => {
     // on hono's exception handling for the reply, so a version that returned a
     // boolean would leave every route to remember the refusal.
     const app = new Hono<HonoEnv>();
-    let caught: unknown;
+    let gate: Promise<void> | undefined;
     app.get("/", async (c) => {
-      try {
-        await assertGuestBearer(c, SLUG);
-      } catch (err) {
-        caught = err;
-      }
+      gate = assertGuestBearer(c, SLUG);
+      // Swallowed here so hono never answers it; the assertions read `gate`.
+      await gate.catch(() => undefined);
       return c.text("done");
     });
     await app.fetch(new Request("http://platform.test/"), bindings(VERSION));
-    expect(caught).toBeInstanceOf(HTTPException);
-    expect((caught as HTTPException).status).toBe(401);
+    await expect(gate).rejects.toBeInstanceOf(HTTPException);
+    await expect(gate).rejects.toThrow(expect.objectContaining({ status: 401 }));
   });
 });

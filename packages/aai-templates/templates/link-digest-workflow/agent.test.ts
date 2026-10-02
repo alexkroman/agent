@@ -245,7 +245,8 @@ describe("summarize", () => {
 
   beforeEach(() => {
     // `stepEnv` falls back to the process env when no host has published one,
-    // which is exactly the case a spec is. `unstubEnvs` clears it per test.
+    // which is exactly the case a spec is. `unstubEnvs` (set by
+    // `defineAgentTestConfig`) clears it after each test.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
@@ -555,10 +556,8 @@ function stubAgent(options: { page?: string; runs?: unknown[]; events?: string }
     }
     return Response.json({ error: `no route for ${method} ${url}` }, { status: 404 });
   });
+  // `unstubGlobals` (set by `defineAgentTestConfig`) puts `fetch` back.
   vi.stubGlobal("fetch", fetchStub);
-  onTestFinished(() => {
-    vi.unstubAllGlobals();
-  });
   return calls;
 }
 

@@ -6,7 +6,7 @@
  * never renders the real error).
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { tick } from "./_test-utils.ts";
 import { installStaleBuildRecovery, lazyRetry, reloadForStaleBuild } from "./stale-build.ts";
 
@@ -32,10 +32,6 @@ beforeEach(() => {
   reload = vi.fn();
   vi.stubGlobal("sessionStorage", fakeStorage());
   vi.stubGlobal("location", { reload });
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 describe("reloadForStaleBuild", () => {

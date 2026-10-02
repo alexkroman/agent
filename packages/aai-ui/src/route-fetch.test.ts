@@ -6,7 +6,7 @@
  * `{ error }` sentence on failure, and a non-JSON failure.
  */
 
-import { afterEach, beforeEach, describe, expect, type Mock, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { routeFetch } from "./route-fetch.ts";
 
 let fetchMock: Mock<(url: URL, init: RequestInit) => Promise<Response>>;
@@ -21,9 +21,6 @@ beforeEach(() => {
     pathname: "/kitchen/",
     href: "https://h/kitchen/",
   });
-});
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 const lastUrl = () => String(fetchMock.mock.calls.at(-1)?.[0]);

@@ -111,13 +111,9 @@ describe("stepEnvContext", () => {
 
   test("falls back to a frozen COPY of the process env when nothing published", () => {
     vi.stubEnv("AAI_STEP_ENV_CONTEXT_PROBE", "from-process");
-    try {
-      const ctx = stepEnvContext();
-      expect(ctx.env.AAI_STEP_ENV_CONTEXT_PROBE).toBe("from-process");
-      expect(Object.isFrozen(ctx.env)).toBe(true);
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    const ctx = stepEnvContext();
+    expect(ctx.env.AAI_STEP_ENV_CONTEXT_PROBE).toBe("from-process");
+    expect(Object.isFrozen(ctx.env)).toBe(true);
   });
 
   test("carries the running step's signal, and none outside a step", () => {

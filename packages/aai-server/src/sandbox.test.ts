@@ -52,9 +52,6 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
 
 describe("createSandbox", () => {
   const logs = captureLogs();
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
 
   it("creates a sandbox with the server-handle shape", async () => {
     const sandbox = createSandbox(makeSandboxOptions());

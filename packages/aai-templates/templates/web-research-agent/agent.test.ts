@@ -123,9 +123,10 @@ const ARCHIVE_URL = "https://archive.example.com/mcp";
  */
 describe("the archive MCP server", () => {
   afterEach(() => {
-    vi.unstubAllEnvs();
-    // The next spec file to load `agent.ts` must not inherit a stubbed env, and
-    // this file's own top-level `agentDef` was evaluated before any stubbing.
+    // `unstubEnvs` puts the env back; the module registry is this file's to
+    // reset: the next spec file to load `agent.ts` must not inherit a module
+    // evaluated under a stubbed env, and this file's own top-level `agentDef`
+    // was evaluated before any stubbing.
     vi.resetModules();
   });
 

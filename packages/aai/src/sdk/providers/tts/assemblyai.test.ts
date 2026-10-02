@@ -76,7 +76,6 @@ describe("the voice warning is computed once, off the descriptor", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     configTts(assemblyAITts({ voice: "michal" }));
     expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
   });
 
   test("a WARNING and never a throw — a voice shipped after this release still runs", () => {

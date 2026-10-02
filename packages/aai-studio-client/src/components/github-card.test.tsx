@@ -42,7 +42,6 @@ function renderCard(data?: GithubSyncState) {
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/");
 });
 

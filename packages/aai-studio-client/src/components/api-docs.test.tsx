@@ -16,7 +16,7 @@
 // differences are public-api.test.tsx's.
 
 import { screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { DocsPane } from "../panes/docs.tsx";
 
@@ -43,10 +43,6 @@ function listing(secretNames: string[] = []) {
 function renderPane(props: { deployedSlug?: string; previewSlug?: string } = {}) {
   renderWithClient(<DocsPane bearer="sk-test" project="demo" {...props} />);
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("AgentApiDocs", () => {
   test("generates the request body from the agent's own input schema", async () => {

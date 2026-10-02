@@ -367,7 +367,6 @@ describe("createBrowserSession", () => {
     afterEach(() => {
       core.disconnect();
       vi.useRealTimers();
-      vi.unstubAllGlobals();
     });
 
     it("server-initiated close reconnects with the resume URL", async () => {

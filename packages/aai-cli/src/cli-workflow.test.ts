@@ -9,7 +9,7 @@
  * away.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createWorkflowCommand } from "./cli-workflow.ts";
 
 const executors = {
@@ -20,15 +20,6 @@ const executors = {
 };
 /** The group, built over the fake executors rather than `workflow.ts`. */
 const workflow = createWorkflowCommand(async () => executors);
-
-// The executor mocks are module-level `vi.fn()`s, and `restoreMocks: true`
-// registers only `vi.spyOn` mocks — it clears neither their history nor their
-// implementation. Uncleared, `not.toHaveBeenCalled()` below is a statement
-// about file order rather than about the case, and a `toHaveBeenCalledWith`
-// can be satisfied by an earlier test's call.
-beforeEach(() => {
-  vi.clearAllMocks();
-});
 
 const subs = workflow.subCommands as Record<
   string,

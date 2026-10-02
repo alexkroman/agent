@@ -72,12 +72,6 @@ function post(fetch: TestFetch, path: string, init: RequestInit = {}): Promise<R
 describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   const logs = captureLogs();
   beforeEach(() => {
-    // `restoreMocks` (vitest.shared.ts) registers `vi.spyOn` mocks only — it
-    // clears neither the history nor the implementation of a plain `vi.fn()`.
-    // So the call history has to be cleared HERE, or the spawn count below is
-    // a statement about how many earlier tests in this file spawned rather
-    // than about the case making the assertion.
-    mockSpawnAgentServer.mockClear();
     mockSpawnAgentServer.mockResolvedValue(spawnedAgent());
   });
 

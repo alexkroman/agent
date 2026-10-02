@@ -11,7 +11,6 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/stores";
-import { captureLogs } from "aai-server/test-utils";
 import { vi } from "vitest";
 import {
   createWorkspace,
@@ -24,10 +23,6 @@ export const SCOPE = "scope";
 export const PROJECT = "contact-form-x7k2mq";
 export const TARGET = { serverUrl: "https://platform.example", apiKey: "caller-key" };
 
-export function makeStore() {
-  return createMemoryWorkspaceStore();
-}
-
 /**
  * A store holding THE shared project, seeded with `files`.
  *
@@ -39,7 +34,7 @@ export function makeStore() {
 export async function seededStore(
   files: Record<string, string> = { "agent.ts": "// v1" },
 ): Promise<WorkspaceStore> {
-  const workspaces = makeStore();
+  const workspaces = createMemoryWorkspaceStore();
   await createWorkspace(workspaces, SCOPE, PROJECT, { kind: "agent", files });
   return workspaces;
 }
@@ -79,20 +74,6 @@ export function previewStamped(workspaces: WorkspaceStore): Promise<StudioWorksp
     if (workspace?.previewHash === undefined) throw new Error("no previewHash stamped yet");
     return workspace;
   });
-}
-
-/**
- * Keep the EXPECTED warnings out of the test output, and hand back the reader
- * for the cases that assert on them.
- *
- * Through the package's log SEAM (`captureLogs`) rather than
- * `spyOn(console, "warn")` — a silencing spy is test scaffolding standing in
- * for the abstraction `aai-server/logger.ts` exists to provide. It registers
- * its own `beforeEach`/`afterEach`, so call it at DESCRIBE scope, once, rather
- * than inside a test body.
- */
-export function previewLogs(): ReturnType<typeof captureLogs> {
-  return captureLogs();
 }
 
 /**

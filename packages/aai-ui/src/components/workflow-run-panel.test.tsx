@@ -9,7 +9,7 @@
  */
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { WorkflowRun } from "../workflow-client.ts";
 import { WORKFLOW_STATUS_LABELS } from "../workflow-status-labels.ts";
 import { WorkflowRunPanel } from "./workflow-run-panel.tsx";
@@ -48,10 +48,6 @@ function stubProgress(lines: readonly string[]): ReturnType<typeof vi.fn> {
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("WorkflowRunPanel", () => {
   test("heads the panel with the SDK's status line by default", () => {

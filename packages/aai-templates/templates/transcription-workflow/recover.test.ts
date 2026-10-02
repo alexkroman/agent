@@ -21,7 +21,7 @@
  * `recover.ts` matters — a page that cannot reach storage still has to render.
  */
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { type PendingNoteInput, pendingNote, recalledMode, rememberMode } from "./recover.ts";
 
 /** The modes the page offers, in the page's own order. */
@@ -56,12 +56,9 @@ function refusingStorage() {
   });
 }
 
-afterEach(() => {
-  // `restoreMocks` covers `vi.spyOn` and `unstubEnvs` covers `vi.stubEnv`;
-  // neither covers a stubbed global, so this is the one teardown these specs
-  // owe. Without it the first file to stub storage decides every later one.
-  vi.unstubAllGlobals();
-});
+// No teardown: `unstubGlobals` (set by `defineAgentTestConfig`) undoes every
+// stubbed storage after its test, so the first file to stub it cannot decide
+// every later one.
 
 describe("recalledMode", () => {
   test("opens on the mode the last submission used", () => {

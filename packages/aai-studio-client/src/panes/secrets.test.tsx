@@ -12,9 +12,8 @@
 // would then be absent from, and reports its failure in one place.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, type Mock, test, vi } from "vitest";
 import {
-  type FetchMock,
   fetchCallsWith,
   input,
   jsonResponse,
@@ -25,7 +24,7 @@ import {
 import { SecretsPane } from "./secrets.tsx";
 
 /** How many requests this mock saw for one path. */
-function callsTo(fetchMock: FetchMock, path: string): number {
+function callsTo(fetchMock: Mock<typeof fetch>, path: string): number {
   return fetchMock.mock.calls.filter(([secret]) => String(secret) === path).length;
 }
 
@@ -45,10 +44,6 @@ function typePair(name: string, value: string): void {
 }
 
 const LIST = "/studio/projects/demo/secret";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("SecretsPane", () => {
   test("the pane leads with adding a key, then what is attached, then the paste box", async () => {

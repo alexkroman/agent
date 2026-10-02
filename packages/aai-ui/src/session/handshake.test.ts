@@ -139,7 +139,6 @@ describe("session-core handshake deadline", () => {
     core.disconnect();
     audio.restore();
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it("re-dials a peer that opens the socket and never sends config", async () => {

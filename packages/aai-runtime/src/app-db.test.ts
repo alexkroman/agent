@@ -8,7 +8,7 @@
  * pools rather than of callers.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { APP_DB_POOL_MAX, openAppDb as openRealAppDb } from "./app-db.ts";
 
 const close = vi.fn(() => Promise.resolve());
@@ -31,10 +31,6 @@ function freshUrl(): string {
   next += 1;
   return `postgres://user:pw@127.0.0.1:1/app-db-spec-${next}`;
 }
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
 
 describe("openAppDb", () => {
   test("builds one pool per url, at the budget's size, however many leases are taken", async () => {

@@ -88,15 +88,10 @@ describe("spokenDate", () => {
     // does. (`process.env.TZ` would not: Node caches the zone at startup.)
     const locale = vi.spyOn(Date.prototype, "toLocaleDateString");
     const intl = vi.spyOn(Intl, "DateTimeFormat");
-    try {
-      expect(spokenDate("2026-06-08")).toBe("Monday, June 8");
-      expect(spokenTime("18:30")).toBe("6:30 PM");
-      expect(locale).not.toHaveBeenCalled();
-      expect(intl).not.toHaveBeenCalled();
-    } finally {
-      locale.mockRestore();
-      intl.mockRestore();
-    }
+    expect(spokenDate("2026-06-08")).toBe("Monday, June 8");
+    expect(spokenTime("18:30")).toBe("6:30 PM");
+    expect(locale).not.toHaveBeenCalled();
+    expect(intl).not.toHaveBeenCalled();
   });
 
   test("returns a value it cannot read unchanged", () => {

@@ -5,7 +5,7 @@
 // key back, so the panel shows `hasKey` and nothing else about it.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   button,
   fetchCallsWith,
@@ -24,10 +24,6 @@ function renderMenu(open: boolean, onClose = vi.fn()) {
 }
 
 const ACCOUNT = () => jsonResponse({ email: "a@b.c", hasKey: true });
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("AccountMenu", () => {
   test("renders nothing while closed, and asks the server nothing", () => {

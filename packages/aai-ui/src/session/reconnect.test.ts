@@ -62,7 +62,6 @@ describe("session-core automatic reconnection (partysocket)", () => {
   afterEach(() => {
     core.disconnect();
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it("exhausting all retries ends the session terminally and stops reconnecting", async () => {

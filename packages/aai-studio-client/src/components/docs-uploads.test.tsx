@@ -8,7 +8,7 @@
 // workflow and property the examples name are read off a stubbed agent.
 
 import { screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { DocsPane } from "../panes/docs.tsx";
 
@@ -53,10 +53,6 @@ function uploadListing() {
 function renderPane(props: { deployedSlug?: string; previewSlug?: string } = {}) {
   renderWithClient(<DocsPane bearer="sk-test" project="demo" {...props} />);
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("UploadApi", () => {
   test("documents how to actually SEND the file a workflow declares", async () => {

@@ -68,8 +68,8 @@ beforeEach(() => {
     { writable: true },
   );
   // The step env, which is where `requireStepEnv` and `stepSpeak` read the key.
-  // `vi.stubEnv` rather than an assignment: `unstubEnvs` undoes it before every
-  // test, so nothing here has to remember to put it back.
+  // `vi.stubEnv` rather than an assignment: `unstubEnvs` (set by
+  // `defineAgentTestConfig`) undoes it after every test, so nothing here has to remember to put it back.
   vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
 });
 

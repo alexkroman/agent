@@ -17,7 +17,7 @@
  * and touches neither the network nor the clock.
  */
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { sole } from "./_gate-support.ts";
 
 type Attempt = { url: string; init: RequestInit | undefined };
@@ -195,23 +195,15 @@ describe("it cleans up after itself", () => {
     const { fetchImpl, calls } = fakeFetch((url) =>
       url.endsWith("/deploy") ? json({ slug: "ci-smoke-a1" }) : new Response("no", { status: 500 }),
     );
-    const globalFetch = globalThis.fetch;
-    globalThis.fetch = fetchImpl;
-    try {
-      // Sub-millisecond, because `main` takes no `sleep`/`now` seam: whole
-      // seconds here would make a unit-tier test wait out the real broker
-      // loop. The deadline expiring is the point; how long it took is not.
-      const code = await smoke?.main(
-        ["--timeout-seconds", "0.001", "--interval-seconds", "0.001"],
-        {
-          AAI_PLATFORM_URL: "https://x",
-          AAI_API_KEY: "k",
-        },
-      );
-      expect(code).toBe(1);
-    } finally {
-      globalThis.fetch = globalFetch;
-    }
+    vi.stubGlobal("fetch", fetchImpl);
+    // Sub-millisecond, because `main` takes no `sleep`/`now` seam: whole
+    // seconds here would make a unit-tier test wait out the real broker
+    // loop. The deadline expiring is the point; how long it took is not.
+    const code = await smoke?.main(["--timeout-seconds", "0.001", "--interval-seconds", "0.001"], {
+      AAI_PLATFORM_URL: "https://x",
+      AAI_API_KEY: "k",
+    });
+    expect(code).toBe(1);
     expect(calls.filter((call) => call.init?.method === "DELETE")).toHaveLength(1);
   });
 });

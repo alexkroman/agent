@@ -7,7 +7,7 @@
 // property it names is read off a stubbed agent.
 
 import { screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { DocsPane } from "../panes/docs.tsx";
 
@@ -47,10 +47,6 @@ function formListing() {
 function renderPane(props: { deployedSlug?: string; previewSlug?: string } = {}) {
   renderWithClient(<DocsPane bearer="sk-test" project="demo" {...props} />);
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("FormFieldsApi", () => {
   test("maps every form control to the JSON that sets it", async () => {

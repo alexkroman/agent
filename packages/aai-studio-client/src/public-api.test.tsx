@@ -12,7 +12,7 @@
 // carrier webhook card those secrets feed) are absent.
 
 import { screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
 import { PublicApiPage } from "./public-api.tsx";
 
@@ -32,10 +32,6 @@ function agent() {
     "GET /demo/client-config": () => jsonResponse({ name: "Demo", page: "voice" }),
   };
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("PublicApiPage", () => {
   test("documents the agent the path names, from the agent's own listing", async () => {

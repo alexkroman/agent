@@ -79,7 +79,6 @@ describe("fetchClientConfig", () => {
       page: "static",
     });
     expect(fetchFn).toHaveBeenCalledWith("https://h/my-agent/client-config", expect.anything());
-    vi.unstubAllGlobals();
   });
 });
 

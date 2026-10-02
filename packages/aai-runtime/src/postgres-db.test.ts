@@ -64,10 +64,6 @@ async function opened(options: Parameters<typeof createPostgresDb>[0]) {
 /** A query the driver never answers — the shape a silent partition produces. */
 const pending = (): Promise<never> => new Promise<never>(() => undefined);
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
 describe("createPostgresDb", () => {
   test("builds the client with the url, a bounded pool, and prepare disabled", async () => {
     await opened({ url: "postgres://db.example/app" });

@@ -59,7 +59,6 @@ describe("initAudioCapture races", () => {
   beforeEach(() => {
     resetLastSocket();
     pendingInits.length = 0;
-    openAudioMock.mockClear();
     core = createBrowserSessionWith(
       { platformUrl: "ws://localhost:3000", WebSocket: MockWebSocketConstructor },
       { openAudioPath: openAudioMock },

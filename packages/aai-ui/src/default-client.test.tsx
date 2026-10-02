@@ -17,7 +17,7 @@
  * in production, which is the only good news about it.
  */
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { bootDefaultClient, type DefaultClientMounts } from "./default-client.tsx";
 
 /** Fake mounts, recording which one the boot chose. */
@@ -44,10 +44,6 @@ async function bootWith(config: unknown): Promise<ReturnType<typeof fakeMounts>>
   await bootDefaultClient(mounts);
   return mounts;
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("the prebuilt default client", () => {
   test("mounts the PAGE for an agent whose front door is static", async () => {

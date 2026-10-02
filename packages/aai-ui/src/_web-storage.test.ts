@@ -8,12 +8,8 @@
  * iframe) — and neither is a state jsdom's real store can be put in.
  */
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { storageGet, storageRemove, storageSet, urlSlot } from "./_web-storage.ts";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 /** A working in-memory `Storage`. */
 function memoryStore(): Storage {

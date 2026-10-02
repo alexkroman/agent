@@ -11,7 +11,7 @@
 // that decides what is on it is auth-methods.test.ts's.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   button,
   fetchCall,
@@ -26,10 +26,6 @@ import type { SignInCredentials } from "../auth.tsx";
 import type { SignInMethods } from "../auth-methods.ts";
 import { linkConfirmationCode } from "../cli-link.ts";
 import { CliLinkGate, KeyGate, SignInGate } from "./gates.tsx";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 const GITHUB_ONLY: SignInMethods = { github: true, password: false };
 const PASSWORD_ONLY: SignInMethods = { github: false, password: true };

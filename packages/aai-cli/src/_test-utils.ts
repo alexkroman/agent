@@ -349,23 +349,17 @@ function atLeast(a: readonly number[], b: readonly number[]): boolean {
   return true;
 }
 
-/**
- * Whether {@link BinaryGate.bin} answers on PATH.
- *
- * `spawnSync` rather than an `await`, and callers must call it at MODULE scope:
- * a probe awaited in a test BODY can only produce a pass or a fail, never a
- * skip, so the gate has to be decided at COLLECTION time to be a gate at all.
- */
-export function hasBinary(gate: BinaryGate): boolean {
-  return binaryState(gate).kind === "ok";
-}
-
 /** What is on PATH: nothing, something too old, or a usable binary. */
 export type BinaryState =
   | { kind: "ok"; version?: string }
   | { kind: "absent" }
   | { kind: "old"; version: string };
 
+/**
+ * Probe {@link BinaryGate.bin}. `spawnSync` rather than an `await`, because a
+ * gate must be decided at COLLECTION time: a probe awaited in a test BODY can
+ * only produce a pass or a fail, never a skip.
+ */
 export function binaryState(gate: BinaryGate): BinaryState {
   const args = [...(gate.versionArgs ?? ["--version"])];
   const probe = spawnSync(gate.bin, args, { encoding: "utf-8" });

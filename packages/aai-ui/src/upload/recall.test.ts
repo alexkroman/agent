@@ -34,8 +34,9 @@ function unavailableStorage(boom: () => never): Storage {
 }
 
 afterEach(() => {
-  // Unstubbed FIRST: one spec replaces the global with a hostile `Storage`, and
-  // `restoreMocks`/`unstubEnvs` cover spies and env vars, not globals.
+  // Unstubbed HERE, not left to `unstubGlobals`: one spec replaces the global
+  // with a hostile `Storage`, and `unstubGlobals` only undoes it before the
+  // next test, after this `clear()` has already thrown on it.
   vi.unstubAllGlobals();
   sessionStorage.clear();
 });

@@ -4,13 +4,9 @@
 // everything else is `transport`, and the caller's own abort reports nothing.
 
 import type { EventStreamFrame } from "@alexkroman1/aai/workflow-api";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { fetchCall, jsonResponse, sseResponse, stubFetch, tick } from "./_test-utils.ts";
 import { type StreamDownReason, watchEventStream } from "./api-events.ts";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 function recorder() {
   const frames: EventStreamFrame[] = [];

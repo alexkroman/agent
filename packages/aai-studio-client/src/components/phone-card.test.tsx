@@ -6,12 +6,8 @@
 // pane's subject.
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { PhoneCard, phoneWebhookUrl, secretState } from "./phone-card.tsx";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("phoneWebhookUrl", () => {
   test("names the carrier explicitly rather than relying on the default", () => {

@@ -63,7 +63,6 @@ describe("assemblyAIStt STT adapter — formatTurns", () => {
       expect.anything(),
       expect.stringContaining("universal-3-5-pro"),
     );
-    warn.mockRestore();
     await session.close();
   });
 

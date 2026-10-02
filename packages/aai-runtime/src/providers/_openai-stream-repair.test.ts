@@ -255,16 +255,12 @@ describe("repairOpenAiStream", () => {
       throw new Error("the global fetch must not be reached");
     });
     vi.stubGlobal("fetch", global);
-    try {
-      const base = sseFetch(sse(chunk({ content: "hi" })));
-      const wrapped = repairOpenAiStream(base, { generateId: seqIds() });
-      const init = { method: "POST", body: "{}" };
-      await readPayloads(await wrapped("https://example.test/v1/chat/completions", init));
-      expect(base).toHaveBeenCalledWith("https://example.test/v1/chat/completions", init);
-      expect(global).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    const base = sseFetch(sse(chunk({ content: "hi" })));
+    const wrapped = repairOpenAiStream(base, { generateId: seqIds() });
+    const init = { method: "POST", body: "{}" };
+    await readPayloads(await wrapped("https://example.test/v1/chat/completions", init));
+    expect(base).toHaveBeenCalledWith("https://example.test/v1/chat/completions", init);
+    expect(global).not.toHaveBeenCalled();
   });
 });
 
@@ -292,20 +288,11 @@ describe("assemblyai LLM gateway wiring", () => {
   }
 
   it("streams an id-less gateway tool call through resolveLlm without throwing", async () => {
-    // `unstubAllGlobals` in a `finally`, not left to the end of the file:
-    // `restoreMocks`/`unstubEnvs` do not cover globals, so a stub left in
-    // place leaks the fake `fetch` into every later test — harmless here only
-    // because this happens to be the second-to-last one. `resolve.test.ts`
-    // carries the same try/finally.
     vi.stubGlobal("fetch", sseFetch(toolCallStream));
-    try {
-      const calls = await collectToolCalls();
-      expect(calls).toHaveLength(1);
-      expect(calls[0]?.toolName).toBe("list_files");
-      expect(calls[0]?.toolCallId).toBeTruthy();
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    const calls = await collectToolCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.toolName).toBe("list_files");
+    expect(calls[0]?.toolCallId).toBeTruthy();
   });
 
   it("reads the global per CALL, so one installed after the model is built is used", async () => {
@@ -318,15 +305,11 @@ describe("assemblyai LLM gateway wiring", () => {
     );
     const installed = sseFetch(toolCallStream);
     vi.stubGlobal("fetch", installed);
-    try {
-      const result = streamText({ model, prompt: "list the files" });
-      for await (const part of result.fullStream) {
-        if (part.type === "error") throw part.error;
-      }
-      expect(installed).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.unstubAllGlobals();
+    const result = streamText({ model, prompt: "list the files" });
+    for await (const part of result.fullStream) {
+      if (part.type === "error") throw part.error;
     }
+    expect(installed).toHaveBeenCalledTimes(1);
   });
 
   it("documents the raw SDK failure the wrapper exists to fix", async () => {

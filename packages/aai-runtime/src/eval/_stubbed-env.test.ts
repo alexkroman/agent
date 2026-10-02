@@ -1,14 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { agent } from "@alexkroman1/aai";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { STUB_ENV_VALUE, stubbedEnv } from "./_stubbed-env.ts";
 
 /** An agent declaring one key, under a name no machine running this has. */
 const app = agent({ name: "Keyless", requiredEnv: ["A_KEY_NOBODY_HAS"] });
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
 
 describe("stubbedEnv", () => {
   test("in stub mode a declared key nobody has is the placeholder", () => {

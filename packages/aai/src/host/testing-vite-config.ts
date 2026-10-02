@@ -19,6 +19,10 @@
  *   file's console output nowhere — so `aai test` run by a coding agent
  *   swallowed every `console.log` in a passing spec. Measured on vitest
  *   4.1.10 with and without the agent markers in the environment.
+ * - **`restoreMocks`, `unstubEnvs`, `unstubGlobals`** undo every `vi.spyOn`,
+ *   `vi.stubEnv` and `vi.stubGlobal` after its test, so a spec needs no
+ *   `afterEach` to put `fetch` or `process.env` back. A test that needs the
+ *   original mid-test still calls `vi.unstubAllEnvs()` itself.
  *
  * A separate file from `vite.config.ts` on purpose: Vitest prefers
  * `vitest.config.ts`, and a spec run that loads the client build's React and
@@ -46,7 +50,14 @@ import { aaiAgentPlugin } from "./testing-vite.ts";
  */
 export type AgentTestConfig = {
   plugins: unknown[];
-  test: { globals: boolean; reporters: string[]; [option: string]: unknown };
+  test: {
+    globals: boolean;
+    reporters: string[];
+    restoreMocks: boolean;
+    unstubEnvs: boolean;
+    unstubGlobals: boolean;
+    [option: string]: unknown;
+  };
   [option: string]: unknown;
 };
 
@@ -104,6 +115,13 @@ export function defineAgentTestConfig(overrides: AgentTestConfigOverrides = {}):
     ...devSource,
     ...rest,
     plugins: [aaiAgentPlugin(), ...plugins],
-    test: { globals: true, reporters: ["default"], ...test },
+    test: {
+      globals: true,
+      reporters: ["default"],
+      restoreMocks: true,
+      unstubEnvs: true,
+      unstubGlobals: true,
+      ...test,
+    },
   };
 }

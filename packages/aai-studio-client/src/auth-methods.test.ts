@@ -3,7 +3,7 @@
 // answer offers GitHub-only, never nothing (a studio nobody can sign in to)
 // and never everything (a button GoTrue refuses).
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { fetchCall, jsonResponse, stubFetch } from "./_test-utils.ts";
 import {
   GITHUB_ONLY,
@@ -11,10 +11,6 @@ import {
   readSignInMethods,
   type SignInMethods,
 } from "./auth-methods.ts";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 const URL_BASE = "https://proj.supabase.co";
 

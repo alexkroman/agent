@@ -51,9 +51,9 @@ function message(over: Partial<QueuedMessage> = {}): QueuedMessage {
 /**
  * The minimum a deployed agent row needs.
  *
- * `deployPayload` is the HTTP route's BODY shape (`Record<string, unknown>`,
- * stringified by `deployBody`), and these specs write through the store instead —
- * a real broker needs a row and a version, not a deploy request.
+ * `deployBody` is the HTTP route's BODY (the default payload, stringified),
+ * and these specs write through the store instead — a real broker needs a row
+ * and a version, not a deploy request.
  */
 function agentRow(slug: string) {
   return {

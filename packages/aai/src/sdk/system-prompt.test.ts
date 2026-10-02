@@ -553,7 +553,6 @@ describe("an author's prompt that interpolates DEFAULT_SYSTEM_PROMPT", () => {
     // Once per prompt: the runtime rebuilds this string every calendar day.
     buildSystemPrompt(makeConfig({ systemPrompt: mine }), { hasTools: true });
     expect(warn).toHaveBeenCalledTimes(1);
-    warn.mockRestore();
   });
 
   test("a MID-STRING copy is warned about — the shape the old advice's own rationale produced", () => {
@@ -570,14 +569,12 @@ describe("an author's prompt that interpolates DEFAULT_SYSTEM_PROMPT", () => {
     // Still not STRIPPED — the warning is the whole change, and the scope
     // boundary (drop a duplicate prefix, never edit prose) is unmoved.
     expect(result.endsWith(`${AGENT_HEADER}\n${computed}`)).toBe(true);
-    warn.mockRestore();
   });
 
   test("a prompt that names none of it says nothing", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     buildSystemPrompt(makeConfig({ systemPrompt: "Only discuss pizza." }), { hasTools: true });
     expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
   });
 
   test("only a LEADING copy is stripped — a prompt that merely mentions it is untouched", () => {

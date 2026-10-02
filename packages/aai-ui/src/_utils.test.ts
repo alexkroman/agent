@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { pageBaseUrl, truncate, tryParseJSON } from "./_utils.ts";
 
 describe("tryParseJSON", () => {
@@ -68,10 +68,6 @@ describe("truncate", () => {
 });
 
 describe("pageBaseUrl", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   test("joins the page origin and path", () => {
     vi.stubGlobal("location", { origin: "https://agent.example", pathname: "/demo/" });
     expect(pageBaseUrl()).toBe("https://agent.example/demo/");

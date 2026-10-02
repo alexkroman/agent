@@ -1,28 +1,37 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { defineAgentTestConfig } from "./testing-vite-config.ts";
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
+const PRESET = {
+  globals: true,
+  reporters: ["default"],
+  restoreMocks: true,
+  unstubEnvs: true,
+  unstubGlobals: true,
+};
 
 describe("defineAgentTestConfig", () => {
-  test("is the scaffold's config: the agent plugin, globals, the pinned reporter", () => {
+  test("is the scaffold's config: the agent plugin, globals, the pinned reporter, mock restore", () => {
     const config = defineAgentTestConfig();
     expect(config.plugins).toHaveLength(1);
     expect(config.plugins[0]).toMatchObject({ name: "aai:agent", enforce: "pre" });
-    expect(config.test).toEqual({ globals: true, reporters: ["default"] });
+    expect(config.test).toEqual(PRESET);
   });
 
   test("appends plugins, merges test key by key, and passes other keys through", () => {
     const extra = { name: "extra" };
     const config = defineAgentTestConfig({
       plugins: [extra],
-      test: { testTimeout: 10_000, reporters: ["verbose"] },
+      test: { testTimeout: 10_000, reporters: ["verbose"], unstubGlobals: false },
       define: { X: "1" },
     });
     expect(config.plugins.map((p) => (p as { name: string }).name)).toEqual(["aai:agent", "extra"]);
-    expect(config.test).toEqual({ globals: true, reporters: ["verbose"], testTimeout: 10_000 });
+    expect(config.test).toEqual({
+      ...PRESET,
+      reporters: ["verbose"],
+      unstubGlobals: false,
+      testTimeout: 10_000,
+    });
     expect(config.define).toEqual({ X: "1" });
   });
 

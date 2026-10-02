@@ -67,11 +67,8 @@ function json(body: unknown, status = 200): Response {
 }
 
 beforeEach(() => {
-  // Module-level `vi.fn()`s, which `restoreMocks` does not reach.
-  vi.clearAllMocks();
   ui = createFakeUi();
   primeServerInfo();
-  // After the clear, so the default survives it.
   mockReadProjectConfig.mockResolvedValue({ slug: "digest-x7k2mq" });
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
