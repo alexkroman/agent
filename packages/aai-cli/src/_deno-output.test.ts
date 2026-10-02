@@ -18,12 +18,12 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { emitDenoOutput } from "./_deno-output.ts";
 import { DENO_CONFIG_FILE, DENO_ENTRY_FILE, DENO_OUTPUT_DIR } from "./_deno-target.ts";
 import { MODAL_APP_FILE } from "./_modal-target.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { test } from "./_test-utils.ts";
 
 const STUB = "// bundled entry\n";
 const stubBundle = () => Promise.resolve(STUB);
@@ -51,49 +51,43 @@ const exists = (p: string) =>
   );
 
 describe("emitDenoOutput", () => {
-  test("the entry sits at the path Deploy is pointed at, under Deno's own directory", async () => {
-    await withTempDir(async (dir) => {
-      await project(dir);
-      await emitDenoOutput(dir, { bundle: stubBundle });
-      // Both constants are contracts with the `deno deploy` invocation a user
-      // runs, so neither may drift from what the emit actually writes.
-      expect(await read(out(dir, DENO_ENTRY_FILE))).toBe(STUB);
-    });
+  test("the entry sits at the path Deploy is pointed at, under Deno's own directory", async ({
+    tmpDir: dir,
+  }) => {
+    await project(dir);
+    await emitDenoOutput(dir, { bundle: stubBundle });
+    // Both constants are contracts with the `deno deploy` invocation a user
+    // runs, so neither may drift from what the emit actually writes.
+    expect(await read(out(dir, DENO_ENTRY_FILE))).toBe(STUB);
   });
 
-  test("a `deno.json` describes how to run the directory", async () => {
-    await withTempDir(async (dir) => {
-      await project(dir);
-      await emitDenoOutput(dir, { bundle: stubBundle });
-      // The point is that no command against this directory has to re-supply
-      // the entrypoint, so the task has to NAME the entry this emit wrote —
-      // a `deno.json` pointing at a file that is not there is worse than none.
-      const config: unknown = JSON.parse(await read(out(dir, DENO_CONFIG_FILE)));
-      expect(config).toEqual({ tasks: { start: `deno run -A ./${DENO_ENTRY_FILE}` } });
-      expect(await exists(out(dir, DENO_ENTRY_FILE))).toBe(true);
-    });
+  test("a `deno.json` describes how to run the directory", async ({ tmpDir: dir }) => {
+    await project(dir);
+    await emitDenoOutput(dir, { bundle: stubBundle });
+    // The point is that no command against this directory has to re-supply
+    // the entrypoint, so the task has to NAME the entry this emit wrote —
+    // a `deno.json` pointing at a file that is not there is worse than none.
+    const config: unknown = JSON.parse(await read(out(dir, DENO_CONFIG_FILE)));
+    expect(config).toEqual({ tasks: { start: `deno run -A ./${DENO_ENTRY_FILE}` } });
+    expect(await exists(out(dir, DENO_ENTRY_FILE))).toBe(true);
   });
 
-  test("the descriptor it writes is Deno's own, and no other host's", async () => {
-    await withTempDir(async (dir) => {
-      await project(dir);
-      await emitDenoOutput(dir, { bundle: stubBundle });
-      // Both self-contained targets say what to RUN, and the two hosts take it
-      // differently — a config Deno already understands, against a generated
-      // Python module for Modal. A stray `app.py` here would mean the two emits
-      // had been collapsed too far.
-      const written = await fs.readdir(out(dir));
-      expect(written).toContain(DENO_CONFIG_FILE);
-      expect(written).not.toContain(MODAL_APP_FILE);
-      expect(written.some((name) => name.endsWith(".py"))).toBe(false);
-      expect(written).not.toContain("vercel.json");
-    });
+  test("the descriptor it writes is Deno's own, and no other host's", async ({ tmpDir: dir }) => {
+    await project(dir);
+    await emitDenoOutput(dir, { bundle: stubBundle });
+    // Both self-contained targets say what to RUN, and the two hosts take it
+    // differently — a config Deno already understands, against a generated
+    // Python module for Modal. A stray `app.py` here would mean the two emits
+    // had been collapsed too far.
+    const written = await fs.readdir(out(dir));
+    expect(written).toContain(DENO_CONFIG_FILE);
+    expect(written).not.toContain(MODAL_APP_FILE);
+    expect(written.some((name) => name.endsWith(".py"))).toBe(false);
+    expect(written).not.toContain("vercel.json");
   });
 
-  test("a project with no `.env` at all still emits", async () => {
-    await withTempDir(async (dir) => {
-      await project(dir);
-      await expect(emitDenoOutput(dir, { bundle: stubBundle })).resolves.toBeUndefined();
-    });
+  test("a project with no `.env` at all still emits", async ({ tmpDir: dir }) => {
+    await project(dir);
+    await expect(emitDenoOutput(dir, { bundle: stubBundle })).resolves.toBeUndefined();
   });
 });

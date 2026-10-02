@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { type ArgsDef, type CommandDef, runCommand as runCittyCommand } from "citty";
-import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, vi } from "vitest";
 import {
   defineExec,
   findUnknownFlags,
@@ -13,7 +13,7 @@ import {
   sharedArgs,
 } from "./_cli-common.ts";
 import { CliError, fail, ok } from "./_output.ts";
-import { createFakeUi, type FakeUi, stubProcessExit, withTempDir } from "./_test-utils.ts";
+import { createFakeUi, type FakeUi, stubProcessExit, test } from "./_test-utils.ts";
 
 // A fresh fake terminal per test, handed to `runCommand`/`defineExec` — no
 // module mock, and no call history for one case to inherit from another.
@@ -153,15 +153,13 @@ describe("unknown flags, resolved against the real command tree", () => {
 });
 
 describe("setup", () => {
-  test("resolves the cwd; requires agent.ts only when asked", async () => {
-    await withTempDir(async (dir) => {
-      vi.stubEnv("INIT_CWD", dir);
-      // No agent.ts: plain setup passes, agent-gated setup refuses.
-      expect(await setup()).toBe(dir);
-      await expect(setup({ agent: true })).rejects.toThrow("No agent.ts found");
-      await fs.writeFile(path.join(dir, "agent.ts"), "export {};");
-      expect(await setup({ agent: true })).toBe(dir);
-    });
+  test("resolves the cwd; requires agent.ts only when asked", async ({ tmpDir: dir }) => {
+    vi.stubEnv("INIT_CWD", dir);
+    // No agent.ts: plain setup passes, agent-gated setup refuses.
+    expect(await setup()).toBe(dir);
+    await expect(setup({ agent: true })).rejects.toThrow("No agent.ts found");
+    await fs.writeFile(path.join(dir, "agent.ts"), "export {};");
+    expect(await setup({ agent: true })).toBe(dir);
   });
 });
 
@@ -307,72 +305,70 @@ describe("defineExec", () => {
     await runCittyCommand(cmd, { rawArgs });
   };
 
-  test('cwd: "agent" refuses a directory with no agent.ts, through the one emitter', async () => {
+  test('cwd: "agent" refuses a directory with no agent.ts, through the one emitter', async ({
+    tmpDir: dir,
+  }) => {
     // The policy is the whole reason this wrapper exists: `aai test` shipped
     // without it and reported a green skipped suite in an empty directory.
-    await withTempDir(async (dir) => {
-      vi.stubEnv("INIT_CWD", dir);
-      const body = vi.fn();
-      const cmd = defineExec(
-        {
-          meta: { name: "needs-agent" },
-          args: { json: sharedArgs.json },
-          cwd: "agent",
-          run: body,
-        },
-        { ui },
-      );
+    vi.stubEnv("INIT_CWD", dir);
+    const body = vi.fn();
+    const cmd = defineExec(
+      {
+        meta: { name: "needs-agent" },
+        args: { json: sharedArgs.json },
+        cwd: "agent",
+        run: body,
+      },
+      { ui },
+    );
 
-      await invoke(cmd, ["--json=false"]);
+    await invoke(cmd, ["--json=false"]);
 
-      expect(body).not.toHaveBeenCalled();
-      // The refusal converges on the same emitter as everything else rather
-      // than escaping the command as an unhandled rejection.
-      expect(ui.said("error")).toContainEqual(expect.stringContaining("No agent.ts found"));
-      expect(exitSpy).toHaveBeenCalledWith(1);
-    });
+    expect(body).not.toHaveBeenCalled();
+    // The refusal converges on the same emitter as everything else rather
+    // than escaping the command as an unhandled rejection.
+    expect(ui.said("error")).toContainEqual(expect.stringContaining("No agent.ts found"));
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
-  test('cwd: "agent" hands the body the directory once agent.ts is there', async () => {
-    await withTempDir(async (dir) => {
-      vi.stubEnv("INIT_CWD", dir);
-      await fs.writeFile(path.join(dir, "agent.ts"), "export {};");
-      const body = vi.fn().mockResolvedValue(ok({}));
-      const cmd = defineExec(
-        {
-          meta: { name: "needs-agent" },
-          args: { json: sharedArgs.json },
-          cwd: "agent",
-          run: body,
-        },
-        { ui },
-      );
+  test('cwd: "agent" hands the body the directory once agent.ts is there', async ({
+    tmpDir: dir,
+  }) => {
+    vi.stubEnv("INIT_CWD", dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), "export {};");
+    const body = vi.fn().mockResolvedValue(ok({}));
+    const cmd = defineExec(
+      {
+        meta: { name: "needs-agent" },
+        args: { json: sharedArgs.json },
+        cwd: "agent",
+        run: body,
+      },
+      { ui },
+    );
 
-      await invoke(cmd, ["--json=false"]);
+    await invoke(cmd, ["--json=false"]);
 
-      expect(body).toHaveBeenCalledWith(expect.objectContaining({ cwd: dir, mode: "human" }));
-    });
+    expect(body).toHaveBeenCalledWith(expect.objectContaining({ cwd: dir, mode: "human" }));
   });
 
-  test('cwd: "any" runs in a directory with no agent.ts', async () => {
-    await withTempDir(async (dir) => {
-      vi.stubEnv("INIT_CWD", dir);
-      const body = vi.fn().mockResolvedValue(ok({}));
-      const cmd = defineExec(
-        {
-          meta: { name: "anywhere" },
-          args: { json: sharedArgs.json },
-          cwd: "any",
-          run: body,
-        },
-        { ui },
-      );
+  test('cwd: "any" runs in a directory with no agent.ts', async ({ tmpDir: dir }) => {
+    vi.stubEnv("INIT_CWD", dir);
+    const body = vi.fn().mockResolvedValue(ok({}));
+    const cmd = defineExec(
+      {
+        meta: { name: "anywhere" },
+        args: { json: sharedArgs.json },
+        cwd: "any",
+        run: body,
+      },
+      { ui },
+    );
 
-      await invoke(cmd, ["--json=false"]);
+    await invoke(cmd, ["--json=false"]);
 
-      expect(body).toHaveBeenCalledWith(expect.objectContaining({ cwd: dir }));
-      expect(exitSpy).not.toHaveBeenCalled();
-    });
+    expect(body).toHaveBeenCalledWith(expect.objectContaining({ cwd: dir }));
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 
   test('cwd: "none" hands the body no directory at all', async () => {

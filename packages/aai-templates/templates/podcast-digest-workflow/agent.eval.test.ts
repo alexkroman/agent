@@ -43,7 +43,7 @@ import {
   describeWorkflowEval,
   installStubStepFetch,
 } from "@alexkroman1/aai-runtime/testing/vitest";
-import { expect } from "vitest";
+import { assert, expect } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
 import { MAX_POLL_ATTEMPTS, POLL_DELAY_MS, scheduleIntervalMs } from "./workflows/digest.ts";
 
@@ -245,7 +245,7 @@ describeWorkflowEval(agentDef, (test) => {
     expect(run.error).toBeUndefined();
     expect(run.status).toBe("completed");
     const output = run.output;
-    if (output === undefined) expect.fail("a completed run must carry an output");
+    assert(output !== undefined, "a completed run must carry an output");
 
     // THE INVARIANT: one sleep BETWEEN digests and none after the last, because
     // a run that has delivered everything it owes should end rather than sleep
@@ -321,7 +321,7 @@ describeWorkflowEval(agentDef, (test) => {
 
     expect(run.error).toBeUndefined();
     const output = run.output;
-    if (output === undefined) expect.fail("a completed run must carry an output");
+    assert(output !== undefined, "a completed run must carry an output");
 
     // The fast episode was polled ONCE and then dropped out of `pending`; the
     // slow one took four rounds. Five polls, not eight.

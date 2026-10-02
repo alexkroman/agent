@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { type ArgsDef, renderUsage } from "citty";
 import { execa } from "execa";
-import { describe, expect, test } from "vitest";
+import { describe, expect } from "vitest";
 import { findUnknownFlags } from "./_cli-common.ts";
 import { HELP_SECTIONS, rootHelp } from "./_help.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { test } from "./_test-utils.ts";
 import { mainCommand } from "./cli.ts";
 
 const BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), "../bin.mjs");
@@ -122,14 +122,12 @@ describe("aai --help is grouped", () => {
     expect(normalize(await rootHelp(mainCommand))).not.toContain("OTHER");
   });
 
-  test("the real bin prints the grouped help", async () => {
-    await withTempDir(async (dir) => {
-      const { exitCode, stdout } = await runBin(["--help"], dir);
-      expect(exitCode).toBe(0);
-      expect(normalize(stdout)).toContain("STUDIO ROUND-TRIP");
-      // `deploy` is hidden (in-guest Publish is its only caller).
-      expect(normalize(stdout)).not.toMatch(/^\s+deploy\s/m);
-    });
+  test("the real bin prints the grouped help", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(["--help"], dir);
+    expect(exitCode).toBe(0);
+    expect(normalize(stdout)).toContain("STUDIO ROUND-TRIP");
+    // `deploy` is hidden (in-guest Publish is its only caller).
+    expect(normalize(stdout)).not.toMatch(/^\s+deploy\s/m);
   });
 });
 
@@ -192,24 +190,20 @@ describe("JSON mode keeps stdout to one result line", () => {
   // put a usage block where a script's parser expected a result and emitted
   // no JSON at all. JSON mode is auto-detected on a pipe, so this is the
   // normal scripted case rather than an opt-in one.
-  test("a missing positional emits a JSON result, not a usage block", async () => {
-    await withTempDir(async (dir) => {
-      const { exitCode, stdout, stderr } = await runBin(["secret", "put"], dir);
-      expect(exitCode).toBe(1);
-      const parsed: unknown = JSON.parse(stdout.trim());
-      expect(parsed).toMatchObject({ ok: false, code: "usage" });
-      // The specific reason is still there for a human — on stderr, where it
-      // does not corrupt the result line.
-      expect(stderr).toContain("NAME");
-    });
+  test("a missing positional emits a JSON result, not a usage block", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout, stderr } = await runBin(["secret", "put"], dir);
+    expect(exitCode).toBe(1);
+    const parsed: unknown = JSON.parse(stdout.trim());
+    expect(parsed).toMatchObject({ ok: false, code: "usage" });
+    // The specific reason is still there for a human — on stderr, where it
+    // does not corrupt the result line.
+    expect(stderr).toContain("NAME");
   });
 
-  test("an unknown subcommand emits a JSON result too", async () => {
-    await withTempDir(async (dir) => {
-      const { exitCode, stdout } = await runBin(["no-such-command"], dir);
-      expect(exitCode).toBe(1);
-      expect(JSON.parse(stdout.trim())).toMatchObject({ ok: false, code: "usage" });
-    });
+  test("an unknown subcommand emits a JSON result too", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(["no-such-command"], dir);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.trim())).toMatchObject({ ok: false, code: "usage" });
   });
 
   // The sibling failure path, ten lines below `usageForMode` in cli.ts and
@@ -217,50 +211,44 @@ describe("JSON mode keeps stdout to one result line", () => {
   // `--serverr=…` cannot silently retarget the server), but it reported that
   // through clack — a human block on STDOUT and no JSON at all, which is the
   // exact contract break the tests above cover for citty's own usage block.
-  test("an unknown option emits a JSON result, not a clack block", async () => {
-    await withTempDir(async (dir) => {
-      const { exitCode, stdout } = await runBin(["push", "--serverr=http://evil.test"], dir);
-      expect(exitCode).toBe(1);
-      expect(JSON.parse(stdout.trim())).toMatchObject({
-        ok: false,
-        code: "usage",
-        error: expect.stringContaining("--serverr"),
-      });
+  test("an unknown option emits a JSON result, not a clack block", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(["push", "--serverr=http://evil.test"], dir);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.trim())).toMatchObject({
+      ok: false,
+      code: "usage",
+      error: expect.stringContaining("--serverr"),
     });
   });
 
-  test("--help is still the human usage block when piped", async () => {
-    await withTempDir(async (dir) => {
-      const { exitCode, stdout } = await runBin(["secret", "put", "--help"], dir);
-      expect(exitCode).toBe(0);
-      expect(stdout).toContain("USAGE");
-      expect(() => JSON.parse(stdout.trim())).toThrow();
-    });
+  test("--help is still the human usage block when piped", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(["secret", "put", "--help"], dir);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("USAGE");
+    expect(() => JSON.parse(stdout.trim())).toThrow();
   });
 });
 
 describe("aai test's flags", () => {
-  test("--only is accepted rather than refused as unknown", async () => {
-    await withTempDir(async (dir) => {
-      const { exitCode, stdout } = await runBin(["test", "--only"], dir);
-      // It fails here, but on the agent gate — not on the flag.
-      expect(exitCode).toBe(1);
-      const parsed = JSON.parse(stdout.trim()) as { code?: string; error?: string };
-      expect(parsed.code).not.toBe("usage");
-      expect(parsed.error).toContain("No agent.ts found");
-    });
+  test("--only is accepted rather than refused as unknown", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(["test", "--only"], dir);
+    // It fails here, but on the agent gate — not on the flag.
+    expect(exitCode).toBe(1);
+    const parsed = JSON.parse(stdout.trim()) as { code?: string; error?: string };
+    expect(parsed.code).not.toBe("usage");
+    expect(parsed.error).toContain("No agent.ts found");
   });
 });
 
 describe("aai test --all is gone", () => {
-  test("is refused as an unknown flag — every spec already runs by default", async () => {
-    await withTempDir(async (dir) => {
-      const { writeFile } = await import("node:fs/promises");
-      await writeFile(path.join(dir, "agent.ts"), "export default {};\n");
-      const { exitCode, stdout } = await runBin(["test", "--all"], dir);
-      expect(exitCode).toBe(1);
-      expect(JSON.parse(stdout.trim())).toMatchObject({ ok: false, code: "usage" });
-    });
+  test("is refused as an unknown flag — every spec already runs by default", async ({
+    tmpDir: dir,
+  }) => {
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(path.join(dir, "agent.ts"), "export default {};\n");
+    const { exitCode, stdout } = await runBin(["test", "--all"], dir);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.trim())).toMatchObject({ ok: false, code: "usage" });
   });
 });
 
@@ -269,14 +257,14 @@ describe("aai test requires an agent project", () => {
   // `setup({ agent: true })`. With no agent.ts it found no test file, reported
   // `{ passed: true, skipped: true }` and exited 0 — a green result for a
   // project that is not there, which in CI reads exactly like a passing suite.
-  test("refuses a directory with no agent.ts instead of reporting success", async () => {
-    await withTempDir(async (dir) => {
-      const { exitCode, stdout } = await runBin(["test"], dir);
-      expect(exitCode).toBe(1);
-      expect(JSON.parse(stdout.trim())).toMatchObject({
-        ok: false,
-        error: expect.stringContaining("No agent.ts found"),
-      });
+  test("refuses a directory with no agent.ts instead of reporting success", async ({
+    tmpDir: dir,
+  }) => {
+    const { exitCode, stdout } = await runBin(["test"], dir);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.trim())).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("No agent.ts found"),
     });
   });
 });

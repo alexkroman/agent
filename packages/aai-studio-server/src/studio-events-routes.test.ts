@@ -370,7 +370,10 @@ test("a scope at its stream cap is refused with 429, not served a stream", async
   expect(list.status).toBe(429);
 
   // Another caller is unaffected — one abusive scope must not close the studio.
-  expect((await fetch("/studio/events", { headers: authHeaders("key2") })).status).toBe(200);
+  const other = await fetch("/studio/events", { headers: authHeaders("key2") });
+  expect(other.status).toBe(200);
+  // A served stream holds its heartbeat until the reader goes away.
+  await other.body?.cancel();
 });
 
 test("closing a stream gives its slot back", async () => {

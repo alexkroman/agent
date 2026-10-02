@@ -11,10 +11,10 @@ import path from "node:path";
 import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
 import { SERVER_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import getPort from "get-port";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 import { startDevServer } from "./_dev-server.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
-import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
+import { linkSdkNodeModules, test } from "./_test-utils.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
 
 describe("viteDevConfig", () => {
@@ -147,33 +147,34 @@ describe("viteDevConfig", () => {
 });
 
 describe("startDevServer (real serving path)", () => {
-  test("boots a real agent dir and answers /health", { timeout: 30_000 }, async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await linkSdkNodeModules(dir);
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `export default { name: "serve-test-agent", systemPrompt: "hi", tools: {} };`,
-        );
-        // A real key value is not needed — nothing connects until a session
-        // starts — but its presence keeps resolveAgentEnv from prompting.
-        await writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=test-key\n");
-
-        const port = await getPort();
-        const cleanup = await startDevServer({ cwd: dir, port });
-        try {
-          const res = await fetch(`http://127.0.0.1:${port}/health`);
-          expect(res.ok).toBe(true);
-          // Pre-connection client config: the agent's display name.
-          const cfg = await fetch(`http://127.0.0.1:${port}/client-config`);
-          expect(cfg.ok).toBe(true);
-          expect(await cfg.json()).toMatchObject({
-            name: "serve-test-agent",
-          });
-        } finally {
-          await cleanup();
-        }
-      }),
+  test("boots a real agent dir and answers /health", { timeout: 30_000 }, async ({
+    tmpDir: dir,
+  }) => {
+    // The runtime's default logger writes the session-mode resolution to
+    // `console.log`; keep it out of the run's output.
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    await linkSdkNodeModules(dir);
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `export default { name: "serve-test-agent", systemPrompt: "hi", tools: {} };`,
     );
+    // A real key value is not needed — nothing connects until a session
+    // starts — but its presence keeps resolveAgentEnv from prompting.
+    await writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=test-key\n");
+
+    const port = await getPort();
+    const cleanup = await startDevServer({ cwd: dir, port });
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(res.ok).toBe(true);
+      // Pre-connection client config: the agent's display name.
+      const cfg = await fetch(`http://127.0.0.1:${port}/client-config`);
+      expect(cfg.ok).toBe(true);
+      expect(await cfg.json()).toMatchObject({
+        name: "serve-test-agent",
+      });
+    } finally {
+      await cleanup();
+    }
   });
 });

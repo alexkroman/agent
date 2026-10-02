@@ -29,7 +29,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, onTestFinished, test } from "vitest";
+import { describe, expect, onTestFinished } from "vitest";
 import { emitDenoOutput } from "./_deno-output.ts";
 import {
   DENO_CONFIG_FILE,
@@ -42,8 +42,7 @@ import {
   type BinaryGate,
   describeWithBinary,
   linkProjectNodeModules,
-  silenced,
-  withTempDir,
+  test,
 } from "./_test-utils.ts";
 
 const run = promisify(execFile);
@@ -76,61 +75,53 @@ async function builtProject(dir: string): Promise<void> {
 }
 
 describe("the bundled Deno entry", () => {
-  test("carries no build toolchain, and no native binding it could not bundle", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await builtProject(dir);
-        const code = await bundleTargetEntry(dir, DENO_ENTRY_SOURCE, "deno");
+  test("carries no build toolchain, and no native binding it could not bundle", async ({
+    tmpDir: dir,
+  }) => {
+    await builtProject(dir);
+    const code = await bundleTargetEntry(dir, DENO_ENTRY_SOURCE, "deno");
 
-        // The reason this target bundles at all: unbundled, Deno Deploy caches
-        // the dependency graph of `@alexkroman1/aai-cli` — a build toolchain —
-        // and the build died at its 1024 MiB limit before reaching our code.
-        expect(code).not.toContain("@rolldown/binding");
-        expect(code).toMatch(/await server\.listen\(/);
-      }),
-    );
+    // The reason this target bundles at all: unbundled, Deno Deploy caches
+    // the dependency graph of `@alexkroman1/aai-cli` — a build toolchain —
+    // and the build died at its 1024 MiB limit before reaching our code.
+    expect(code).not.toContain("@rolldown/binding");
+    expect(code).toMatch(/await server\.listen\(/);
   }, 120_000);
 
-  test("carries no JSDoc, because a commented import() is a real dependency", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await builtProject(dir);
-        const code = await bundleTargetEntry(dir, DENO_ENTRY_SOURCE, "deno");
+  test("carries no JSDoc, because a commented import() is a real dependency", async ({
+    tmpDir: dir,
+  }) => {
+    await builtProject(dir);
+    const code = await bundleTargetEntry(dir, DENO_ENTRY_SOURCE, "deno");
 
-        // A text assertion beside the graph one below, and it earns its place
-        // by being the one that runs with no `deno` on PATH — this is the
-        // cheap half of `JSDOC_FREE_COMMENTS`.
-        expect(code).not.toContain("/**");
+    // A text assertion beside the graph one below, and it earns its place
+    // by being the one that runs with no `deno` on PATH — this is the
+    // cheap half of `JSDOC_FREE_COMMENTS`.
+    expect(code).not.toContain("/**");
 
-        // The two classes that STAY, asserted because dropping either is a
-        // behaviour change rather than a cosmetic one: `@__PURE__` is an
-        // instruction to the tree-shaker, and a legal comment is a licensing
-        // obligation to the packages inlined here.
-        expect(code).toContain("@__PURE__");
-      }),
-    );
+    // The two classes that STAY, asserted because dropping either is a
+    // behaviour change rather than a cosmetic one: `@__PURE__` is an
+    // instruction to the tree-shaker, and a legal comment is a licensing
+    // obligation to the packages inlined here.
+    expect(code).toContain("@__PURE__");
   }, 120_000);
 
-  test("lands where `deno.json`'s task says it will", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await builtProject(dir);
-        await emitDenoOutput(dir);
+  test("lands where `deno.json`'s task says it will", async ({ tmpDir: dir }) => {
+    await builtProject(dir);
+    await emitDenoOutput(dir);
 
-        // `deno task start` has to work in the directory that gets uploaded,
-        // which is the only reason the config is emitted at all — so the task
-        // has to name a file the BUNDLER really wrote. `_deno-output.test.ts`
-        // asserts the same pairing over a stubbed bundle, which cannot tell you
-        // that a real rolldown pass writes where the task looks; this needs no
-        // `deno` and so runs on every machine.
-        const config = JSON.parse(
-          await fs.readFile(path.join(dir, DENO_OUTPUT_DIR, DENO_CONFIG_FILE), "utf-8"),
-        ) as { tasks?: Record<string, string> };
-        expect(config.tasks?.start).toContain(DENO_ENTRY_FILE);
-        const entry = await fs.stat(path.join(dir, DENO_OUTPUT_DIR, DENO_ENTRY_FILE));
-        expect(entry.size).toBeGreaterThan(1_000_000);
-      }),
-    );
+    // `deno task start` has to work in the directory that gets uploaded,
+    // which is the only reason the config is emitted at all — so the task
+    // has to name a file the BUNDLER really wrote. `_deno-output.test.ts`
+    // asserts the same pairing over a stubbed bundle, which cannot tell you
+    // that a real rolldown pass writes where the task looks; this needs no
+    // `deno` and so runs on every machine.
+    const config = JSON.parse(
+      await fs.readFile(path.join(dir, DENO_OUTPUT_DIR, DENO_CONFIG_FILE), "utf-8"),
+    ) as { tasks?: Record<string, string> };
+    expect(config.tasks?.start).toContain(DENO_ENTRY_FILE);
+    const entry = await fs.stat(path.join(dir, DENO_OUTPUT_DIR, DENO_ENTRY_FILE));
+    expect(entry.size).toBeGreaterThan(1_000_000);
   }, 120_000);
 });
 
@@ -171,35 +162,31 @@ describeWithBinary(DENO, "the emitted Deno output, read by Deno", () => {
    * against a three-line file whose only `import()` was inside a `@type`), so a
    * gate written as "the command succeeded" would assert nothing at all.
    */
-  test("has a module graph with nothing left to resolve", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        await builtProject(dir);
-        await emitDenoOutput(dir);
-        const deployed = await deployedCopy(dir);
+  test("has a module graph with nothing left to resolve", async ({ tmpDir: dir }) => {
+    await builtProject(dir);
+    await emitDenoOutput(dir);
+    const deployed = await deployedCopy(dir);
 
-        const { stdout } = await run("deno", ["info", "--json", DENO_ENTRY_FILE], {
-          cwd: deployed,
-          // 12MB of bundle, and the graph is the whole point of the call.
-          maxBuffer: 64 * 1024 * 1024,
-        });
-        const graph = JSON.parse(stdout) as {
-          modules: { specifier: string; error?: string }[];
-        };
+    const { stdout } = await run("deno", ["info", "--json", DENO_ENTRY_FILE], {
+      cwd: deployed,
+      // 12MB of bundle, and the graph is the whole point of the call.
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    const graph = JSON.parse(stdout) as {
+      modules: { specifier: string; error?: string }[];
+    };
 
-        // Named rather than counted: the failure this exists for arrived as
-        // nine specifiers from three sources (undici's JSDoc, html-to-text's,
-        // and our OWN workflow docs' `{@link import("./step-generate-json.ts")}`),
-        // and a bare `toBe(0)` would have said none of that.
-        const unresolved = graph.modules
-          .filter((m) => m.error !== undefined)
-          .map((m) => `${m.specifier}: ${m.error}`);
-        expect(unresolved).toEqual([]);
+    // Named rather than counted: the failure this exists for arrived as
+    // nine specifiers from three sources (undici's JSDoc, html-to-text's,
+    // and our OWN workflow docs' `{@link import("./step-generate-json.ts")}`),
+    // and a bare `toBe(0)` would have said none of that.
+    const unresolved = graph.modules
+      .filter((m) => m.error !== undefined)
+      .map((m) => `${m.specifier}: ${m.error}`);
+    expect(unresolved).toEqual([]);
 
-        // The graph was really walked, so an empty `modules` cannot pass as a
-        // clean one.
-        expect(graph.modules.length).toBeGreaterThan(1);
-      }),
-    );
+    // The graph was really walked, so an empty `modules` cannot pass as a
+    // clean one.
+    expect(graph.modules.length).toBeGreaterThan(1);
   }, 120_000);
 });

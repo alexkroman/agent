@@ -7,9 +7,9 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { agent } from "@alexkroman1/aai";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, vi } from "vitest";
 import { type AgentEnvDeps, agentEnvWarnings, resolveAgentEnv } from "./_dev-agent-env.ts";
-import { createFakeUi, withTempDir } from "./_test-utils.ts";
+import { createFakeUi, test } from "./_test-utils.ts";
 
 describe("agentEnvWarnings", () => {
   const DEFAULT_AGENT = {}; // no descriptors → default AssemblyAI pipeline → needs ASSEMBLYAI_API_KEY
@@ -93,53 +93,51 @@ describe("resolveAgentEnv", () => {
     ensureApiKey: vi.fn<AgentEnvDeps["ensureApiKey"]>(async () => key),
   });
 
-  test("returns the .env keys and does not reach for the login key when .env has one", async () => {
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=from-env\nOTHER=1\n");
-      const d = deps();
-      const env = await resolveAgentEnv(dir, agent({ name: "a" }), createFakeUi(), d);
-      expect(env).toEqual({ ASSEMBLYAI_API_KEY: "from-env", OTHER: "1" });
-      expect(d.ensureApiKey).not.toHaveBeenCalled();
-    });
+  test("returns the .env keys and does not reach for the login key when .env has one", async ({
+    tmpDir: dir,
+  }) => {
+    await writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=from-env\nOTHER=1\n");
+    const d = deps();
+    const env = await resolveAgentEnv(dir, agent({ name: "a" }), createFakeUi(), d);
+    expect(env).toEqual({ ASSEMBLYAI_API_KEY: "from-env", OTHER: "1" });
+    expect(d.ensureApiKey).not.toHaveBeenCalled();
   });
 
-  test("falls back to the login key, asking for it as a LOCAL-SESSION credential", async () => {
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, ".env"), "OTHER=1\n");
-      const d = deps("fallback");
-      const env = await resolveAgentEnv(dir, agent({ name: "a" }), createFakeUi(), d);
-      expect(env.ASSEMBLYAI_API_KEY).toBe("fallback");
-      expect(d.ensureApiKey).toHaveBeenCalledWith(undefined, "local-session");
-    });
+  test("falls back to the login key, asking for it as a LOCAL-SESSION credential", async ({
+    tmpDir: dir,
+  }) => {
+    await writeFile(path.join(dir, ".env"), "OTHER=1\n");
+    const d = deps("fallback");
+    const env = await resolveAgentEnv(dir, agent({ name: "a" }), createFakeUi(), d);
+    expect(env.ASSEMBLYAI_API_KEY).toBe("fallback");
+    expect(d.ensureApiKey).toHaveBeenCalledWith(undefined, "local-session");
   });
 
-  test("a shell-exported key skips the login, stays out of the env, and is flagged via notify", async () => {
+  test("a shell-exported key skips the login, stays out of the env, and is flagged via notify", async ({
+    tmpDir: dir,
+  }) => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "shell-key");
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, ".env"), "OTHER=1\n");
-      const d = deps();
-      const ui = createFakeUi();
-      const env = await resolveAgentEnv(dir, agent({ name: "a" }), ui, d);
-      expect(d.ensureApiKey).not.toHaveBeenCalled();
-      expect(env).not.toHaveProperty("ASSEMBLYAI_API_KEY");
-      // `notify`, so a piped (JSON-mode, silenced) `aai dev` still says it.
-      ui.silence();
-      await resolveAgentEnv(dir, agent({ name: "a" }), ui, d);
-      expect(ui.stderr.join("\n")).toContain("resolved from your shell, not .env");
-    });
+    await writeFile(path.join(dir, ".env"), "OTHER=1\n");
+    const d = deps();
+    const ui = createFakeUi();
+    const env = await resolveAgentEnv(dir, agent({ name: "a" }), ui, d);
+    expect(d.ensureApiKey).not.toHaveBeenCalled();
+    expect(env).not.toHaveProperty("ASSEMBLYAI_API_KEY");
+    // `notify`, so a piped (JSON-mode, silenced) `aai dev` still says it.
+    ui.silence();
+    await resolveAgentEnv(dir, agent({ name: "a" }), ui, d);
+    expect(ui.stderr.join("\n")).toContain("resolved from your shell, not .env");
   });
 
-  test("a workflow app never asks for the login key", async () => {
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, ".env"), "");
-      const d = deps();
-      await resolveAgentEnv(
-        dir,
-        { ...agent({ name: "a" }), mode: "workflow-app" },
-        createFakeUi(),
-        d,
-      );
-      expect(d.ensureApiKey).not.toHaveBeenCalled();
-    });
+  test("a workflow app never asks for the login key", async ({ tmpDir: dir }) => {
+    await writeFile(path.join(dir, ".env"), "");
+    const d = deps();
+    await resolveAgentEnv(
+      dir,
+      { ...agent({ name: "a" }), mode: "workflow-app" },
+      createFakeUi(),
+      d,
+    );
+    expect(d.ensureApiKey).not.toHaveBeenCalled();
   });
 });

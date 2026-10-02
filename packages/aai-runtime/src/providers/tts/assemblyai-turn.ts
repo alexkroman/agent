@@ -47,9 +47,16 @@ export interface TurnTracker {
   /**
    * Barge-in. Abandons the turn's outstanding flushes (their acks will never
    * arrive — the socket is dropped or the queued frames discarded) and emits
-   * `done` synchronously. Returns whether a turn was actually in flight.
+   * `done` synchronously. Returns whether a turn was actually in flight; when
+   * none was, it changes nothing.
    */
   cancel(): boolean;
+  /**
+   * The socket carrying this turn's flushes was replaced: their
+   * acknowledgements will never arrive. Forget them, keeping the turn open —
+   * an already-closed turn ends here, an open one when it closes.
+   */
+  abandonFlushes(): void;
   /** Unexpected server-side close: release the turn unconditionally. */
   forceDone(): void;
   /**
@@ -122,12 +129,23 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
     },
 
     cancel(): boolean {
-      const turnInFlight = !doneEmitted;
+      // With no turn in flight the adapter sends no `Cancel` and the socket
+      // keeps its frames — including the last turn's trailing `FlushDone`,
+      // which the debt still has to absorb. Zeroing it here let that frame
+      // retire one of the NEXT turn's flushes, ending it mid-reply
+      // (`assemblyai-cancel-race.test.ts`).
+      if (doneEmitted) return false;
       outstandingFlushes = 0;
       flushDoneDebt = 0;
       turnClosed = false;
       emitDoneOnce();
-      return turnInFlight;
+      return true;
+    },
+
+    abandonFlushes(): void {
+      outstandingFlushes = 0;
+      flushDoneDebt = 0;
+      if (turnClosed) emitDoneOnce();
     },
 
     forceDone: emitDoneOnce,
