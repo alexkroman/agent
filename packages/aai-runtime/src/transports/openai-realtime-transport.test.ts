@@ -62,6 +62,19 @@ function startedTransport() {
   return { fake, cbs, transport, ready };
 }
 
+/**
+ * A started transport with a reply in flight: response content is dispatched
+ * only while one is (see `openai-realtime-events.ts`, "owned").
+ */
+async function replyingTransport() {
+  const started = startedTransport();
+  await started.ready;
+  started.fake.fire("message", {
+    data: JSON.stringify({ type: "response.created", response: { id: "resp_1" } }),
+  });
+  return started;
+}
+
 describe("openai-realtime-transport: connect and session.update", () => {
   test("a close before the open rejects start() instead of hanging", async () => {
     // Regression guard: this transport used to reject the connect only on
@@ -325,8 +338,7 @@ describe("audio in/out", () => {
 
   test("response.output_audio.delta calls onAudioChunk with decoded bytes", async () => {
     const type = "response.output_audio.delta";
-    const { fake, cbs, ready } = startedTransport();
-    await ready;
+    const { fake, cbs } = await replyingTransport();
     const audio = Buffer.from([5, 6, 7, 8]).toString("base64");
     fake.fire("message", { data: JSON.stringify({ type, delta: audio }) });
     expect(cbs.onAudioChunk).toHaveBeenCalledTimes(1);
@@ -335,8 +347,7 @@ describe("audio in/out", () => {
 
   test("response.output_audio.done reports audio.completed", async () => {
     const type = "response.output_audio.done";
-    const { fake, cbs, ready } = startedTransport();
-    await ready;
+    const { fake, cbs } = await replyingTransport();
     fake.fire("message", { data: JSON.stringify({ type }) });
     expect(cbs.reported("audio.completed")).toHaveBeenCalledTimes(1);
   });
@@ -384,8 +395,7 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
 
   test("agent transcript: deltas accumulated, emitted on done", async () => {
     const prefix = "response.output_audio_transcript";
-    const { fake, cbs, ready } = startedTransport();
-    await ready;
+    const { fake, cbs } = await replyingTransport();
     const item_id = "item_x";
     fake.fire("message", {
       data: JSON.stringify({ type: `${prefix}.delta`, item_id, delta: "Hi " }),
@@ -418,8 +428,7 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
 
 describe("tool calls", () => {
   test("function_call_arguments deltas accumulate; .done reports tool.called", async () => {
-    const { fake, cbs, ready } = startedTransport();
-    await ready;
+    const { fake, cbs } = await replyingTransport();
     const item_id = "item_t";
     fake.fire("message", {
       data: JSON.stringify({
@@ -459,8 +468,7 @@ describe("tool calls", () => {
   });
 
   test("done with empty/invalid args still calls onToolCall with {}", async () => {
-    const { fake, cbs, ready } = startedTransport();
-    await ready;
+    const { fake, cbs } = await replyingTransport();
     const item_id = "item_e";
     fake.fire("message", {
       data: JSON.stringify({

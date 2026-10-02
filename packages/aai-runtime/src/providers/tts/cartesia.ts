@@ -11,9 +11,12 @@
  * onto the {@link TtsEvents} contract consumed by the pipeline orchestrator.
  *
  * **Per-turn context lifecycle.** Each `sendText(...)` within the same turn
- * appends to the same Cartesia context. On `flush()` or `cancel()`, a new
- * context is minted for the next turn — so concurrent `cancel({ contextId })`
- * only targets the in-flight turn, never the one that follows.
+ * appends to the same Cartesia context. After `flush()` or `cancel()`, the
+ * next turn's first text mints a new context — so concurrent
+ * `cancel({ contextId })` only targets the in-flight turn, never the one that
+ * follows. The turn is one explicit state, {@link TurnState}, advanced only by
+ * `stepTurn`; its context id is the generation token every frame is checked
+ * against (`cartesia-cancel-race.test.ts` explores the interleavings).
  *
  * **Audio format.** The adapter requests `raw` / `pcm_s16le` at the
  * negotiated `sampleRate` so it can forward chunks as `Int16Array` with no
@@ -34,7 +37,6 @@ import {
   assertPcm16Rate,
   closeOnAbort,
   connectOrThrow,
-  createDoneLatch,
   createTtsSessionShell,
   type Pcm16Rate,
   requireApiKey,
@@ -86,6 +88,89 @@ export interface CartesiaSession extends TtsSession {
   /** @internal Test-only: id of the currently-active context. */
   readonly _currentContextId: () => string;
 }
+
+/**
+ * One turn's lifecycle on the shared socket. Every phase holds the context its
+ * frames are tagged with: the context id is the turn's GENERATION TOKEN, and a
+ * frame tagged with any other id belongs to a turn that is over.
+ *
+ * - `idle`: nothing sent yet this session. There is no turn, so `cancel()` and
+ *   `flush()` change nothing (and Cartesia is never asked about a context it
+ *   has not seen).
+ * - `speaking`: text went out on `context`; more text appends to it.
+ * - `draining`: `flush()` sent the finalize; the turn ends on Cartesia's own
+ *   `done`, so its remaining audio still plays.
+ * - `ended`: `done` was emitted, by Cartesia or by `cancel()`. The context is
+ *   KEPT until the next text mints a fresh one, but nothing it carries plays:
+ *   audio already on the wire when barge-in fired must not resume the
+ *   interrupted reply after its `done`.
+ */
+type TurnState = {
+  phase: "idle" | "speaking" | "draining" | "ended";
+  context: CartesiaContext;
+};
+
+type TurnEvent =
+  | { type: "text" }
+  | { type: "flush" }
+  | { type: "cancel" }
+  | { type: "provider-done"; contextId: string };
+
+/** What a transition asks of the socket and the session, in order. */
+type TurnEffect = "send-finalize" | "send-cancel" | "emit-done";
+
+/** Does a frame tagged `contextId` belong to the live turn? */
+function ownsFrame(state: TurnState, contextId: string): boolean {
+  return (
+    (state.phase === "speaking" || state.phase === "draining") &&
+    contextId === state.context.contextId
+  );
+}
+
+/**
+ * The one transition function. Pure but for `mint`, which is called only when
+ * a new turn starts after another has ended.
+ */
+function stepTurn(
+  state: TurnState,
+  event: TurnEvent,
+  mint: () => CartesiaContext,
+): { next: TurnState; effects: readonly TurnEffect[] } {
+  const stay = { next: state, effects: [] };
+  switch (event.type) {
+    case "text":
+      if (state.phase === "speaking") return stay;
+      // A turn after another one gets a fresh context, so a late frame of the
+      // old turn — and a `cancel` aimed at it — can never touch this one.
+      // Rotation waits for this text rather than happening at `done`/`cancel`,
+      // which is what lets a draining turn's late audio and real `done` pass.
+      return {
+        next: { phase: "speaking", context: state.phase === "idle" ? state.context : mint() },
+        effects: [],
+      };
+    case "flush":
+      if (state.phase !== "speaking") return stay;
+      return { next: { phase: "draining", context: state.context }, effects: ["send-finalize"] };
+    case "cancel":
+      // Cancelling a context already final on Cartesia's side returns a 400
+      // ("context ID does not exist"), so an ended turn sends nothing.
+      if (state.phase !== "speaking" && state.phase !== "draining") return stay;
+      // `done` is emitted synchronously: barge-in advances the orchestrator
+      // on it, and delaying would audibly stall subsequent turns.
+      return {
+        next: { phase: "ended", context: state.context },
+        effects: ["send-cancel", "emit-done"],
+      };
+    default:
+      // `provider-done`: Cartesia's own end of a context.
+      if (!ownsFrame(state, event.contextId)) return stay;
+      return { next: { phase: "ended", context: state.context }, effects: ["emit-done"] };
+  }
+}
+
+const ignoreRejection = (_err: unknown): void => {
+  /* no-op */
+};
 
 /** Build a {@link TtsOpener} from resolved Cartesia descriptor options. */
 export function openCartesia(
@@ -153,48 +238,45 @@ export function openCartesia(
       const mintContext = (): CartesiaContext =>
         ws.context({ ...contextOptions, contextId: randomUUID() });
 
-      let context = mintContext();
-      const doneLatch = createDoneLatch(shell, () => shell.emit("done"));
-      // Defer minting after flush/cancel until next sendText so late audio
-      // chunks + Cartesia's real `done` (tagged with the flushed context's id)
-      // still pass the filter. Rotating eagerly would drop in-flight audio.
-      let rotatePending = false;
-      // Set by `cancel()` only: the active context is still `context` until the
-      // next `sendText` rotates it, so its id still matches the chunk filter —
-      // without this flag, audio already on the wire when barge-in fired would
-      // emit *after* `done`, audibly resuming the interrupted reply. `flush()`
-      // does NOT set it: there we want the remaining audio and the real `done`.
-      let activeContextCancelled = false;
-      const rotateIfPending = () => {
-        if (!rotatePending) return;
-        context = mintContext();
-        doneLatch.rearm();
-        rotatePending = false;
-        activeContextCancelled = false;
+      // Minted up front so the first turn needs no rotation (and a spec can
+      // read the id before it sends).
+      let turn: TurnState = { phase: "idle", context: mintContext() };
+      const dispatch = (event: TurnEvent): void => {
+        const step = stepTurn(turn, event, mintContext);
+        turn = step.next;
+        for (const effect of step.effects) {
+          if (effect === "send-finalize") {
+            // Empty transcript + `continue: false` is the canonical end-of-turn
+            // signal. Cartesia finishes synthesizing what's queued and emits
+            // `done` tagged with the same context_id.
+            void turn.context.send({ transcript: "", continue: false }).catch(ignoreRejection);
+          } else if (effect === "send-cancel") {
+            void turn.context.cancel().catch(ignoreRejection);
+          } else {
+            // Through the shell: this can fire from inside the SDK's own event
+            // handler, so a listener that throws would escape as an
+            // uncaughtException.
+            shell.emit("done");
+          }
+        }
       };
 
       // TTSWS fires events globally across all contexts on the shared
-      // socket; filter by the currently-active context_id.
+      // socket; only the live turn's frames pass (see `ownsFrame`).
       ws.on("chunk", (event) => {
-        if (shell.isClosed() || event.context_id !== context.contextId) return;
-        // Drop chunks for a context that was cancelled but not yet rotated —
-        // they were in flight when barge-in fired and must not play past `done`.
-        if (activeContextCancelled) return;
+        if (shell.isClosed() || !ownsFrame(turn, event.context_id)) return;
         const buf = event.audio;
         if (!buf || buf.byteLength === 0) return;
         // Zero-copy view when aligned; drops a trailing odd byte instead of
         // throwing on a misaligned length.
         const pcm = bytesToPcm16(buf);
         if (pcm.length === 0) return;
-        // Through the shell: this fires from inside the SDK's own event
-        // handler, so a listener that throws would escape as an
-        // uncaughtException.
         shell.emit("audio", pcm);
       });
 
       ws.on("done", (event) => {
-        if (shell.isClosed() || event.context_id !== context.contextId) return;
-        doneLatch.emitOnce();
+        if (shell.isClosed()) return;
+        dispatch({ type: "provider-done", contextId: event.context_id });
       });
 
       // Cartesia streams per-context error frames over the shared socket. A
@@ -210,7 +292,9 @@ export function openCartesia(
           return true;
         }
         const parsed = safeJsonParse(raw) as { context_id?: unknown } | undefined;
-        return typeof parsed?.context_id === "string" && parsed.context_id !== context.contextId;
+        return (
+          typeof parsed?.context_id === "string" && parsed.context_id !== turn.context.contextId
+        );
       };
 
       handleSocketError = (err) => {
@@ -220,48 +304,24 @@ export function openCartesia(
 
       closeOnAbort(openOpts.signal, shell.close);
 
-      const ignoreRejection = (_err: unknown): void => {
-        /* no-op */
-      };
-
       const session: CartesiaSession = {
         sendText(text: string) {
           if (shell.isClosed() || text.length === 0) return;
-          // First sendText after flush/cancel starts a fresh context so we
-          // don't append to one that's already been finalized.
-          rotateIfPending();
-          void context.send({ transcript: text, continue: true }).catch(ignoreRejection);
+          dispatch({ type: "text" });
+          void turn.context.send({ transcript: text, continue: true }).catch(ignoreRejection);
         },
         flush() {
-          if (shell.isClosed() || rotatePending) return;
-          // Empty transcript + `continue: false` is the canonical end-of-turn
-          // signal. Cartesia finishes synthesizing what's queued and emits
-          // `done` tagged with the same context_id; rotation is deferred so
-          // in-flight audio chunks and the real `done` still pass the filter.
-          void context.send({ transcript: "", continue: false }).catch(ignoreRejection);
-          rotatePending = true;
+          if (shell.isClosed()) return;
+          dispatch({ type: "flush" });
         },
         cancel() {
           if (shell.isClosed()) return;
-          // Skip the wire cancel if the context is already final on
-          // Cartesia's side: cancelling a retired context returns a 400
-          // ("context ID does not exist") which surfaces as a fatal
-          // tts_stream_error for a benign race.
-          if (!doneLatch.emitted()) {
-            void context.cancel().catch(ignoreRejection);
-          }
-          // Emit synchronously: barge-in advances the orchestrator on `done`;
-          // delaying would audibly stall subsequent turns. Mark the context
-          // cancelled so any chunks already on the wire are dropped rather than
-          // emitted after `done`.
-          activeContextCancelled = true;
-          doneLatch.emitOnce();
-          rotatePending = true;
+          dispatch({ type: "cancel" });
         },
         on: shell.on,
         close: shell.close,
         _ws: ws,
-        _currentContextId: () => context.contextId,
+        _currentContextId: () => turn.context.contextId,
       };
       return session;
     },

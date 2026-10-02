@@ -223,6 +223,23 @@ const openaiRealtimeLifecycleMachine = setup({
   },
 });
 
+/**
+ * The frames that carry a response's content: owned only by the reply in
+ * flight. Each carries the `response_id` of the response it belongs to.
+ */
+const RESPONSE_CONTENT: ReadonlySet<unknown> = new Set([
+  "response.output_audio.delta",
+  "response.output_audio.done",
+  "response.output_audio_transcript.delta",
+  "response.output_audio_transcript.done",
+  "response.output_item.added",
+  "response.function_call_arguments.delta",
+  "response.function_call_arguments.done",
+]);
+
+/** The two fields of a server frame that say who it belongs to. */
+export type OpenaiRealtimeFrame = { type?: unknown; response_id?: unknown };
+
 /** The transport's handle on its own lifecycle. */
 export type OpenaiRealtimeLifecycle = {
   /** Where the connection is. */
@@ -241,6 +258,26 @@ export type OpenaiRealtimeLifecycle = {
    * for a call it ended itself.
    */
   reportsErrors(): boolean;
+  /**
+   * Does this server frame still belong to someone — should it be dispatched?
+   *
+   * A socket keeps delivering what is already on the wire after the reply or
+   * the session it belongs to is over: the trailing deltas of a response the
+   * session cancelled or the caller barged in on (OpenAI stops producing only
+   * when the `response.cancel` reaches it), and anything at all once `stop()`
+   * has closed a socket that is still CLOSING. Dispatched, those reached the
+   * session as audio after the client was told to flush, a tool call of the
+   * abandoned turn, and — because `replying`'s exit cleared the buffers — a
+   * transcript FRAGMENT committed to history.
+   *
+   * So a terminal phase owns no frame, and response content is owned only in
+   * `live.replying`, by the reply it names: the held reply id is the
+   * generation token. A frame with no `response_id`, or a reply whose
+   * `response.created` carried no id, falls back to the position alone — one
+   * socket delivers a response's frames between its `response.created` and its
+   * `response.done`, so that is still sound.
+   */
+  owns(frame: OpenaiRealtimeFrame): boolean;
   send(event: OpenaiRealtimeLifecycleEvent): void;
 };
 
@@ -265,6 +302,15 @@ export function createOpenaiRealtimeLifecycle(
     reportsErrors: () => {
       const at = phase();
       return at !== "ended" && at !== "closed";
+    },
+    owns: (frame) => {
+      const at = actor.getSnapshot();
+      if (at.matches("ended") || at.matches("closed")) return false;
+      if (!RESPONSE_CONTENT.has(frame.type)) return true;
+      if (!at.matches({ live: "replying" })) return false;
+      const live = at.context.replyId;
+      const named = frame.response_id;
+      return typeof named !== "string" || !live || named === live;
     },
     send: (event) => actor.send(event),
   };

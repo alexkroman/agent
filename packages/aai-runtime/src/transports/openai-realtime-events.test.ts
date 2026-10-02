@@ -12,7 +12,9 @@ function harness() {
     onAudioChunk: vi.fn(),
     onReplyStarted: vi.fn(),
   };
-  const lifecycle = { send: vi.fn() };
+  // A reply in flight, so response content is dispatched; the gate itself is
+  // held end-to-end by `openai-realtime-lifecycle-race.test.ts`.
+  const lifecycle = { send: vi.fn(), owns: () => true };
   const buffers = createRealtimeTurnBuffers();
   const log = makeLogger();
   const reportError = vi.fn();

@@ -45,7 +45,7 @@ export function createRealtimeTurnBuffers(): RealtimeTurnBuffers {
 
 export type RealtimeMessageDeps = {
   callbacks: TransportCallbacks;
-  lifecycle: Pick<OpenaiRealtimeLifecycle, "send">;
+  lifecycle: Pick<OpenaiRealtimeLifecycle, "send" | "owns">;
   buffers: RealtimeTurnBuffers;
   log: Logger;
   /** A TURN-level, non-fatal error report (the socket stays open). */
@@ -188,6 +188,13 @@ export function createRealtimeMessageHandler(deps: RealtimeMessageDeps): (data: 
     }
     if (!isRecord(raw)) return;
     const obj = raw;
+    // Frame ownership is the lifecycle's: see `owns` in openai-realtime-lifecycle.ts.
+    if (!lifecycle.owns(obj)) {
+      log.debug("OpenAI Realtime: frame of a finished reply or session dropped", {
+        type: obj.type,
+      });
+      return;
+    }
     switch (obj.type) {
       case "response.output_audio.delta":
         on.audioDelta(obj);
