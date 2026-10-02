@@ -70,6 +70,12 @@ type MessageHandlerDeps = {
    * module's.
    */
   audio: AudioPath;
+  /**
+   * The server retired the session for idleness: the close that follows is
+   * EXPECTED and must not be retried (the `retired` region of
+   * `session/connection.ts`).
+   */
+  retire: () => void;
 };
 
 type MessageHandlers = {
@@ -95,7 +101,7 @@ type MessageHandlers = {
  * `ConnState.turn`).
  */
 export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers {
-  const { getSnapshot, updateState, conn, agentState, audio } = deps;
+  const { getSnapshot, updateState, conn, agentState, audio, retire } = deps;
 
   /** Monotonically increasing counter for custom events -- used by useEvent to deduplicate. */
   let customEventSeq = 0;
@@ -351,7 +357,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "session.timedOut":
         // The server closes the socket itself; this only marks the close as
         // expected so the automatic reconnect doesn't undo the reclamation.
-        conn.retiredByServer = true;
+        retire();
         break;
       default:
         break;

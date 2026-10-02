@@ -107,17 +107,27 @@ The server side paces audio at a bounded lead
 `PLAYBACK_JITTER_MS`**; `audio_done` is queued BEHIND held audio;
 `cancelled`/`reset` DISCARD held audio.
 
-## A handshake is not a session (`handshake.ts`)
+## The connection is a statechart (`connection.ts`)
+
+`link`: `closed` / `open` (`dialing → awaitingHandshake → live`), plus a
+`retired` region (the server's `session.timedOut`; cleared only by the next
+`connect()`). `open`'s ENTRY dials and its EXIT is the one teardown (detach,
+pre-connect release, audio teardown, socket close) — exit, not an invoke's
+cleanup, because XState defers that past the transition's actions and the
+teardown must precede the snapshot write reporting the end. partysocket owns the
+backoff: a close it will retry (`reconnectPending`, read inside the `close`
+listener) goes back to `dialing` unless the session is fatal or retired.
+
+### A handshake is not a session (`handshake.ts`)
 
 An open socket proves only a `101`; the server sends `config` at zero RTT, and
-partysocket's `connectionTimeout` stops at `open`. Without a guard a wedged peer
-leaves the session on `"ready"` (painted as live) forever.
-`createHandshakeGuard` arms per `open`, disarms on `config` or close, re-dials
-on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
+partysocket's `connectionTimeout` stops at `open`. Without a deadline a wedged
+peer leaves the session on `"ready"` (painted as live) forever. The deadline is
+`awaitingHandshake`'s `after`: leaving the state disarms it. On expiry it
+re-dials (`forceReconnect`); after `MAX_HANDSHAKE_TIMEOUTS` it surfaces a
+`connection` error.
 
 - **Its budget is its own** — `reconnect()` resets partysocket's retry count, so
   `RECONNECT_OPTIONS.maxRetries` cannot bound this.
-- **The budget is CONSECUTIVE**: `succeeded()` (a completed handshake) resets
-  it; `disarm()` (a socket closing) must NOT, or a wedged peer re-dials forever.
-- **The timer is a bare `setTimeout`**: disarm on `abort` explicitly, or a user
-  disconnect gets re-dialled.
+- **The budget is CONSECUTIVE**: a `config` frame resets it; a close must NOT,
+  or a wedged peer re-dials forever.

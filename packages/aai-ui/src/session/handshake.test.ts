@@ -2,18 +2,18 @@
 /**
  * The handshake deadline — a socket that opened but never became a session.
  *
- * Two halves. The guard on its own, over virtual time, for what it decides
- * without a reconnecting socket: when it fires, what disarms it, and that a
- * socket with no reconnect machinery gives up at once. Then the deadline as
- * the session lives it over partysocket's real reconnecting socket (moved from
- * `reconnect.test.ts`): the re-dial, the bound, the CONSECUTIVE budget.
+ * The deadline as the session lives it over partysocket's real reconnecting
+ * socket (moved from `reconnect.test.ts`): the re-dial, the bound, the
+ * CONSECUTIVE budget. The deadline on its own — when it fires, what disarms
+ * it, a socket with no reconnect machinery — is the `awaitingHandshake` state's
+ * `after`, specced in `connection.test.ts`.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installAudioMocks } from "../_react-test-utils.ts";
 import { MockWebSocket, makeConfig, resetLastSocket } from "../_session-core-test-utils.ts";
 import { createBrowserSession } from "./browser-session.ts";
-import { createHandshakeGuard, HANDSHAKE_ERROR } from "./handshake.ts";
+import { HANDSHAKE_ERROR } from "./handshake.ts";
 import type { BrowserSession } from "./types.ts";
 
 /** Every socket partysocket constructed, in order. */
@@ -43,69 +43,7 @@ async function waitForNextSocket(prevCount: number): Promise<MockWebSocket> {
   return socket;
 }
 
-describe("createHandshakeGuard", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  /** A guard over a socket with NO reconnect machinery (an injected WebSocket). */
-  function guard() {
-    const controller = new AbortController();
-    const onRetry = vi.fn();
-    const onExhausted = vi.fn();
-    const g = createHandshakeGuard({
-      socket: {},
-      signal: controller.signal,
-      onRetry,
-      onExhausted,
-    });
-    return { g, controller, onRetry, onExhausted };
-  }
-
-  it("fires ten seconds after an attempt opens, and not before", async () => {
-    const { g, onExhausted } = guard();
-    g.arm();
-    await vi.advanceTimersByTimeAsync(9999);
-    expect(onExhausted).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    expect(onExhausted).toHaveBeenCalledOnce();
-  });
-
-  it("a socket that cannot re-dial is exhausted on the first timeout", async () => {
-    const { g, onRetry, onExhausted } = guard();
-    g.arm();
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(onRetry).not.toHaveBeenCalled();
-    expect(onExhausted).toHaveBeenCalledOnce();
-  });
-
-  it("re-arming restarts the deadline rather than stacking a second", async () => {
-    const { g, onExhausted } = guard();
-    g.arm();
-    await vi.advanceTimersByTimeAsync(6000);
-    g.arm();
-    await vi.advanceTimersByTimeAsync(6000);
-    expect(onExhausted).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(4000);
-    expect(onExhausted).toHaveBeenCalledOnce();
-  });
-
-  it.each([
-    ["disarm()", (g: ReturnType<typeof guard>) => g.g.disarm()],
-    ["succeeded()", (g: ReturnType<typeof guard>) => g.g.succeeded()],
-    ["the teardown signal", (g: ReturnType<typeof guard>) => g.controller.abort()],
-  ])("%s stops an armed deadline", async (_label, stop) => {
-    const g = guard();
-    g.g.arm();
-    stop(g);
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(g.onExhausted).not.toHaveBeenCalled();
-  });
-
+describe("HANDSHAKE_ERROR", () => {
   it("reports a connection error the statechart may recover from", () => {
     expect(HANDSHAKE_ERROR).toMatchObject({ code: "connection", fatal: false });
   });

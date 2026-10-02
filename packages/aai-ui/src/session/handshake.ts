@@ -19,10 +19,13 @@
  * nothing on screen to say so. Measured against a server that accepts and
  * then says nothing: `ready` at 34ms, still `ready` and errorless when the
  * probe gave up.
+ *
+ * The deadline itself is the `awaitingHandshake` state's `after` delay in
+ * `session/connection.ts`, so leaving the state — a `config` frame, a close, a
+ * teardown — is what disarms it. This module holds its numbers and its error.
  */
 
 import type { SessionError } from "../types.ts";
-import { forceReconnect } from "./reconnect.ts";
 
 /** What the session reports once the budget below is spent. */
 export const HANDSHAKE_ERROR: SessionError = {
@@ -35,7 +38,7 @@ export const HANDSHAKE_ERROR: SessionError = {
 };
 
 /** How long an OPEN socket may go without a `config` frame. */
-const HANDSHAKE_TIMEOUT_MS = 10_000;
+export const HANDSHAKE_TIMEOUT_MS = 10_000;
 
 /**
  * How many consecutive handshake timeouts to ride out before giving up.
@@ -45,84 +48,13 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
  * be re-dialed every ~10s forever, which is the unbounded retry loop
  * `RECONNECT_OPTIONS.maxRetries` exists to prevent.
  *
- * CONSECUTIVE is the whole of it, and only `succeeded()` says so — see its doc.
+ * CONSECUTIVE is the whole of it: only a completed handshake resets the count.
+ * One `connect()` spans partysocket's retries, so a count that survived a
+ * successful session in between turned an hour-long call whose socket dropped
+ * three times — each drop timing out once before the next attempt succeeded —
+ * into the permanent "did not complete the session handshake" error against a
+ * peer that had answered every time. A close must NOT reset it: a wedged peer
+ * closes and reopens on its own, and resetting there is the unbounded re-dial
+ * loop the budget exists to bound.
  */
-const MAX_HANDSHAKE_TIMEOUTS = 3;
-
-export type HandshakeGuard = {
-  /** Start the deadline for the attempt that just opened. */
-  arm(): void;
-  /** Stop it — this socket is closing, or the connection is being torn down. */
-  disarm(): void;
-  /**
-   * The `config` frame arrived: stop the deadline AND spend nothing.
-   *
-   * Separate from {@link HandshakeGuard.disarm} because the budget is
-   * CONSECUTIVE, and only a completed handshake proves the peer is healthy. One
-   * guard covers a whole `connect()`, partysocket's retries included, so with a
-   * plain disarm the count survived every successful session in between: an
-   * hour-long call whose socket dropped three times, each drop timing out once
-   * before the next attempt succeeded, surfaced the permanent
-   * "Agent did not complete the session handshake" error against a peer that
-   * had answered every time. A close must NOT reset it — a wedged peer closes
-   * and reopens on its own, and resetting there is the unbounded re-dial loop
-   * the budget exists to bound.
-   */
-  succeeded(): void;
-};
-
-/**
- * Watch one connection's handshake.
- *
- * `onRetry` fires when a timed-out attempt has been re-dialed (the sandbox
- * behind the endpoint may have been replaced, and the URL provider re-brokers
- * on the next attempt); `onExhausted` when the budget is spent, or when the
- * socket has no reconnect machinery at all (an injected `options.WebSocket`).
- *
- * @internal
- */
-export function createHandshakeGuard(opts: {
-  socket: unknown;
-  signal: AbortSignal;
-  onRetry: () => void;
-  onExhausted: () => void;
-}): HandshakeGuard {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let timeouts = 0;
-
-  function disarm(): void {
-    if (timer === undefined) return;
-    clearTimeout(timer);
-    timer = undefined;
-  }
-
-  function fire(): void {
-    timer = undefined;
-    timeouts += 1;
-    if (timeouts < MAX_HANDSHAKE_TIMEOUTS && forceReconnect(opts.socket)) {
-      opts.onRetry();
-      return;
-    }
-    opts.onExhausted();
-  }
-
-  // The timer is a bare setTimeout, so unlike the socket listeners it does NOT
-  // come off with the signal. Teardown (an explicit disconnect, a reconnect,
-  // end()) would otherwise leave it armed and it would re-dial a session the
-  // user has already closed — which the "user disconnect does not reconnect"
-  // spec catches.
-  opts.signal.addEventListener("abort", disarm);
-
-  return {
-    arm(): void {
-      // `open` fires again on every partysocket retry, so re-arm per attempt.
-      disarm();
-      timer = setTimeout(fire, HANDSHAKE_TIMEOUT_MS);
-    },
-    disarm,
-    succeeded(): void {
-      disarm();
-      timeouts = 0;
-    },
-  };
-}
+export const MAX_HANDSHAKE_TIMEOUTS = 3;

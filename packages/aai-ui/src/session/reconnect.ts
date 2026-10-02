@@ -50,6 +50,14 @@ export function openReconnectingSocket(
 }
 
 /**
+ * Does `socket` have reconnect machinery? False for an injected
+ * `options.WebSocket` (tests), which a failure then ends for good.
+ */
+export function canReconnect(socket: unknown): boolean {
+  return socket instanceof ReconnectingWebSocket;
+}
+
+/**
  * Force a fresh connection attempt on a reconnecting socket, reporting
  * whether it was one. Used for a failure partysocket cannot see: a socket it
  * considers open and healthy, whose peer never completed OUR handshake.

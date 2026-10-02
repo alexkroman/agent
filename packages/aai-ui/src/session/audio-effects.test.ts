@@ -20,7 +20,7 @@ import { createSessionStateMachine } from "./state.ts";
 import type { ConnState, SessionSnapshot } from "./types.ts";
 
 function harness() {
-  const conn: ConnState = { ws: null, retiredByServer: false, turn: createEpoch() };
+  const conn: ConnState = { ws: null, turn: createEpoch() };
   const agentState = createSessionStateMachine();
   const writes: Partial<SessionSnapshot>[] = [];
   const sent: SessionCommand[] = [];
