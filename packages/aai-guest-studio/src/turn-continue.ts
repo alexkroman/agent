@@ -44,10 +44,10 @@
  *   and always available: marking the rest `completed` or `cancelled` drops
  *   the count to zero and the next step is free. The notice says so, because
  *   a constraint a model cannot see the exit from is one it fights.
- * - **{@link MAX_FORCED_STEPS}, and the caller's wrap-up gate.** `chat.ts`
- *   stops consulting this module once the soft deadline has fired, because
- *   the wrap-up notice asks for a spoken report and forcing a tool call would
- *   contradict it.
+ * - **{@link MAX_FORCED_STEPS}, and the wrap-up gate.** {@link stepTurn}
+ *   stops forcing once the soft deadline has passed, because the wrap-up
+ *   notice asks for a spoken report and forcing a tool call would contradict
+ *   it.
  *
  * Past those, the runtime still guarantees a final answer regardless: the
  * reserved step at `maxSteps` sets `toolChoice: "none"` and composes LAST, so
@@ -59,7 +59,7 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { ModelMessage } from "ai";
 
-import type { TurnBudget } from "./turn-budget.ts";
+import { closingNotice, HARD_TURN_MS, SOFT_TURN_MS, wrapUpNotice } from "./turn-budget.ts";
 
 /**
  * How many steps one turn may be held open this way.
@@ -116,42 +116,110 @@ export function keepGoingNotice(pending: number): string {
   );
 }
 
-export type KeepGoing = {
-  /**
-   * Decide one step. `force` obliges a tool call; `notice` is the explanation,
-   * returned at most once per turn.
-   */
-  consider: (messages: readonly ModelMessage[]) => { force: boolean; notice: string | null };
+// ---- The turn's step policy -------------------------------------------------
+
+/**
+ * Where one chat turn is, as ONE field.
+ *
+ * - `working` — inside the soft deadline; the keep-going force may apply.
+ * - `wrapUpSent` — the soft deadline's wrap-up notice has been delivered. The
+ *   force stands down from the soft deadline on, because the notice asks for a
+ *   spoken report and obliging a tool call would contradict it.
+ * - `finalSent` — the hard deadline's tool-free closing step has been handed
+ *   out. Terminal: the loop stops after that step ({@link turnExpired}).
+ *
+ * The time thresholds are observations, not phases: a turn in `working` past
+ * the soft deadline is one whose wrap-up notice is about to be sent.
+ */
+export type TurnPhase = "working" | "wrapUpSent" | "finalSent";
+
+/**
+ * The phase plus how many steps have been held open. `forced` is a count
+ * because {@link MAX_FORCED_STEPS} caps it; the keep-going notice fires on the
+ * first forced step, so "already explained" is `forced > 0`, not a flag.
+ */
+export type TurnState = { readonly phase: TurnPhase; readonly forced: number };
+
+export const INITIAL_TURN_STATE: TurnState = { phase: "working", forced: 0 };
+
+/** What one step sees: the turn's clock and the model's own plan. */
+export type TurnObservation = {
+  readonly elapsedMs: number;
+  /** Outstanding items in the latest `todo_write` ({@link pendingTodoCount}). */
+  readonly pending: number;
 };
 
-export function createKeepGoing(maxForced = MAX_FORCED_STEPS): KeepGoing {
-  let forced = 0;
-  let noticed = false;
+export type TurnLimits = {
+  readonly softMs: number;
+  readonly hardMs: number;
+  readonly maxForced: number;
+};
+
+export const DEFAULT_TURN_LIMITS: TurnLimits = {
+  softMs: SOFT_TURN_MS,
+  hardMs: HARD_TURN_MS,
+  maxForced: MAX_FORCED_STEPS,
+};
+
+/**
+ * What a step does about the turn policy.
+ *
+ * - `close` — append the closing notice, `toolChoice: "none"`.
+ * - `wrapUp` — append the wrap-up notice; no `toolChoice`.
+ * - `force` — `toolChoice: "required"`, with the keep-going notice appended when
+ *   `explain` (the first forced step of the turn only: repeating it would crowd
+ *   the context it is protecting, the same reason the deadline notices fire once).
+ * - `pass` — nothing.
+ */
+export type TurnAction =
+  | { readonly kind: "close" }
+  | { readonly kind: "wrapUp" }
+  | { readonly kind: "force"; readonly explain: boolean }
+  | { readonly kind: "pass" };
+
+/**
+ * The per-step decision as a pure reducer: `(state, observation) → { state, action }`.
+ *
+ * Three rules share one key (`toolChoice`), and the order of the branches below
+ * IS the behaviour: the hard deadline's closing step takes tools away and wins
+ * outright; the soft deadline's wrap-up must not be overridden by a forced tool
+ * call; and only inside the soft deadline does the keep-going force apply.
+ */
+export function stepTurn(
+  state: TurnState,
+  { elapsedMs, pending }: TurnObservation,
+  limits: TurnLimits = DEFAULT_TURN_LIMITS,
+): { state: TurnState; action: TurnAction } {
+  const pass = { state, action: { kind: "pass" } } as const;
+  if (state.phase === "finalSent") return pass;
+  // Past the hard deadline the turn gets exactly one more step, with tools
+  // off, so it ends on something the user can read rather than on whatever
+  // tool call happened to be in flight.
+  if (elapsedMs >= limits.hardMs) {
+    return { state: { ...state, phase: "finalSent" }, action: { kind: "close" } };
+  }
+  if (state.phase === "working" && elapsedMs >= limits.softMs) {
+    return { state: { ...state, phase: "wrapUpSent" }, action: { kind: "wrapUp" } };
+  }
+  // From the soft deadline on the force stands down — read off the clock, not
+  // the phase, so it holds on every step past the deadline.
+  if (elapsedMs >= limits.softMs) return pass;
+  // Still inside the soft deadline: hold the turn open while the model's own
+  // todo list says there is work left, up to the cap.
+  if (pending === 0 || state.forced >= limits.maxForced) return pass;
   return {
-    consider: (messages) => {
-      if (forced >= maxForced) return { force: false, notice: null };
-      const pending = pendingTodoCount(messages);
-      if (pending === 0) return { force: false, notice: null };
-      forced++;
-      // Once only: repeating it every step would crowd the context it is
-      // protecting, the same reason the budget's notices fire once.
-      if (noticed) return { force: true, notice: null };
-      noticed = true;
-      return { force: true, notice: keepGoingNotice(pending) };
-    },
+    state: { ...state, forced: state.forced + 1 },
+    action: { kind: "force", explain: state.forced === 0 },
   };
 }
 
+/** True once the loop must stop: after the closing step was handed out. */
+export function turnExpired(state: TurnState): boolean {
+  return state.phase === "finalSent";
+}
+
 /**
- * The whole per-step decision for one chat turn, as a pure function.
- *
- * Three rules share one key (`toolChoice`) and their ORDER is the behaviour,
- * so they are decided here rather than inline in `chat.ts`'s `prepareStep`:
- * the hard deadline's closing step takes tools away, the soft deadline's
- * wrap-up asks for a spoken report and therefore must not be overridden by a
- * forced tool call, and only inside both does the keep-going force apply.
- * Written as a branch chain in an HTTP handler that also does compaction, the
- * ordering was the one part with no test and the most ways to be wrong.
+ * An action, applied to one step's messages.
  *
  * `base` is the possibly-compacted list and `stepMessages` the original:
  * returning `{}` rather than `{ messages }` when nothing changed is what keeps
@@ -160,28 +228,51 @@ export function createKeepGoing(maxForced = MAX_FORCED_STEPS): KeepGoing {
 export function prepareTurnStep(options: {
   readonly base: readonly ModelMessage[];
   readonly stepMessages: readonly ModelMessage[];
-  readonly budget: Pick<TurnBudget, "takeFinalNotice" | "takeWrapUpNotice" | "wrappingUp">;
-  readonly keepGoing: KeepGoing;
+  readonly action: TurnAction;
+  readonly observation: TurnObservation;
 }): { messages?: ModelMessage[]; toolChoice?: "none" | "required" } {
-  const { base, stepMessages, budget, keepGoing } = options;
+  const { base, stepMessages, action, observation } = options;
   const say = (content: string): ModelMessage => ({ role: "user", content });
-
-  // Past the hard deadline the turn gets exactly one more step, with tools
-  // off, so it ends on something the user can read rather than on whatever
-  // tool call happened to be in flight.
-  const final = budget.takeFinalNotice();
-  if (final) return { messages: [...base, say(final)], toolChoice: "none" };
-
-  const wrapUp = budget.takeWrapUpNotice();
-  if (wrapUp) return { messages: [...base, say(wrapUp)] };
-
-  // Still inside the soft deadline: hold the turn open while the model's own
-  // todo list says there is work left.
-  if (!budget.wrappingUp()) {
-    const { force, notice } = keepGoing.consider(base);
-    if (force) {
-      return { messages: notice ? [...base, say(notice)] : [...base], toolChoice: "required" };
-    }
+  if (action.kind === "close") {
+    return { messages: [...base, say(closingNotice(observation.elapsedMs))], toolChoice: "none" };
+  }
+  if (action.kind === "wrapUp") {
+    return { messages: [...base, say(wrapUpNotice(observation.elapsedMs))] };
+  }
+  if (action.kind === "force") {
+    return {
+      messages: action.explain ? [...base, say(keepGoingNotice(observation.pending))] : [...base],
+      toolChoice: "required",
+    };
   }
   return base === stepMessages ? {} : { messages: [...base] };
+}
+
+/** One turn's policy: the reducer's state, the clock, and the step hook. */
+export type TurnPolicy = {
+  /** The turn policy's `prepareStep` contribution for this step. */
+  prepare: (
+    base: readonly ModelMessage[],
+    stepMessages: readonly ModelMessage[],
+  ) => ReturnType<typeof prepareTurnStep>;
+  /** The extra `stopWhen` — see {@link turnExpired}. */
+  expired: () => boolean;
+};
+
+/** The thin stateful shell over {@link stepTurn}: one turn, one clock. */
+export function createTurnPolicy(
+  now: () => number = Date.now,
+  limits: TurnLimits = DEFAULT_TURN_LIMITS,
+): TurnPolicy {
+  const started = now();
+  let state = INITIAL_TURN_STATE;
+  return {
+    prepare: (base, stepMessages) => {
+      const observation = { elapsedMs: now() - started, pending: pendingTodoCount(base) };
+      const next = stepTurn(state, observation, limits);
+      state = next.state;
+      return prepareTurnStep({ base, stepMessages, action: next.action, observation });
+    },
+    expired: () => turnExpired(state),
+  };
 }

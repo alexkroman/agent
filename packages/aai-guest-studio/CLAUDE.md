@@ -77,7 +77,10 @@ here — every piece of that is `agent()` plus `createTextAgent`
   `packages/aai/DEFAULTS-CLAUDE.md`).
 - **Studio-owned:** the wall-clock turn budget (`turn-budget.ts`, an extra
   `stopWhen` alongside the step cap) and compaction (`compaction.ts`, in
-  `prepareStep`; the SDK composes its reserved final step over it).
+  `prepareStep`; the SDK composes its reserved final step over it). The budget's
+  deadlines and the keep-going force are ONE pure reducer, `stepTurn` in
+  `turn-continue.ts`, over one phase (`working` → `wrapUpSent` → `finalSent`);
+  add a per-step rule there, never as another flag in a closure.
 
 **Compaction is two tiers.** Tier 1 is the SDK's `pruneMessages` — drops old
 tool RESULTS in call/result pairs by `toolCallId`, free and deterministic, and

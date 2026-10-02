@@ -44,8 +44,7 @@ import {
 } from "./compaction.ts";
 import { CORS_HEADERS, readBody, sendJson } from "./http.ts";
 import { STUDIO_TOOL_LABELS } from "./tools.ts";
-import { createTurnBudget } from "./turn-budget.ts";
-import { createKeepGoing, prepareTurnStep } from "./turn-continue.ts";
+import { createTurnPolicy } from "./turn-continue.ts";
 import {
   createWorkspaceCheckpointer,
   MUTATING_TOOLS,
@@ -108,13 +107,11 @@ async function runTurn(
   });
 
   // Wall clock, not just steps: the step cap says nothing about how long a
-  // user waits, and turns were reaching fifteen minutes.
-  const budget = createTurnBudget();
-
-  // A bare narration must not be able to end a turn the agent's own plan says
-  // is unfinished — see turn-continue.ts for the loop condition that makes
-  // that possible and the three ways out of the force.
-  const keepGoing = createKeepGoing();
+  // user waits, and turns were reaching fifteen minutes (turn-budget.ts). And a
+  // bare narration must not be able to end a turn the agent's own plan says is
+  // unfinished — see turn-continue.ts for the loop condition that makes that
+  // possible and the three ways out of the force. One reducer decides both.
+  const turnPolicy = createTurnPolicy();
 
   // Persist the conversation as it stands BEFORE the turn runs, so a guest
   // that dies mid-turn still leaves the user's prompt and the history behind
@@ -181,7 +178,7 @@ async function runTurn(
       }
     },
     // Alongside the agent's own step cap, never instead of it.
-    stopWhen: [() => budget.expired()],
+    stopWhen: [() => turnPolicy.expired()],
     // A long repair loop accumulates bulky tool results (tsc dumps, build
     // logs) — one per attempt. Without this the raised step cap would just
     // trade a step-cap failure for a context-overflow one.
@@ -194,7 +191,7 @@ async function runTurn(
         : stepMessages;
       // The deadline notices and the keep-going force all write `toolChoice`,
       // and their order is the behaviour — decided in one tested place.
-      return prepareTurnStep({ base, stepMessages, budget, keepGoing });
+      return turnPolicy.prepare(base, stepMessages);
     },
   });
 

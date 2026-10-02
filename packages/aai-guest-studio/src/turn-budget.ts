@@ -31,78 +31,48 @@ export const SOFT_TURN_MS = 5 * 60_000;
 /** Stop the loop regardless. */
 export const HARD_TURN_MS = 12 * 60_000;
 
-export type TurnBudget = {
-  /**
-   * True once the loop must stop — which is one step AFTER the hard deadline,
-   * not at it. Stopping cold at the deadline ends the turn wherever the agent
-   * happened to be, and if that was a tool call the reply carries no text at
-   * all: the user gets a stopped spinner and no account of what happened,
-   * which is the failure this whole module exists to prevent. So the deadline
-   * buys one final tool-free step (see {@link TurnBudget.takeFinalNotice}) and
-   * the loop ends after it.
-   */
-  expired: () => boolean;
-  /**
-   * True from the soft deadline onward, whether or not the notice has been
-   * taken yet.
-   *
-   * A time predicate rather than a flag, so it answers the same on every
-   * reader. `chat.ts` uses it to stand DOWN the keep-going force
-   * (`turn-continue.ts`): past this point the agent has been asked to land
-   * what it has and report, and obliging it to call a tool would contradict
-   * the very notice it was just handed.
-   */
-  wrappingUp: () => boolean;
-  /**
-   * The wrap-up instruction, returned exactly once, else null. Once only
-   * because repeating it every step would crowd the context it is trying to
-   * save — and an agent told to hurry on every step stops making progress.
-   */
-  takeWrapUpNotice: () => string | null;
-  /**
-   * The closing instruction for the one step past the hard deadline, returned
-   * exactly once. The caller must run this step with tools disabled, so the
-   * turn is guaranteed to end on a message the user can read.
-   */
-  takeFinalNotice: () => string | null;
-};
+/**
+ * Both notices open with the same clock reading; one spelling of it.
+ *
+ * Which notice fires, and when, is not decided here: the thresholds are read by
+ * the turn's step reducer (`stepTurn` in `turn-continue.ts`), which owns the
+ * once-only rule for each. This module holds the numbers and the words.
+ */
+const stamp = (elapsedMs: number) => `[${Math.round(elapsedMs / 60_000)} minutes into this turn]`;
 
-export function createTurnBudget(
-  now: () => number = Date.now,
-  soft = SOFT_TURN_MS,
-  hard = HARD_TURN_MS,
-): TurnBudget {
-  const started = now();
-  let warned = false;
-  let closing = false;
-  const elapsed = () => now() - started;
-  /** Both notices open with the same clock reading; one spelling of it. */
-  const stamp = () => `[${Math.round(elapsed() / 60_000)} minutes into this turn]`;
-  return {
-    expired: () => closing && elapsed() >= hard,
-    wrappingUp: () => elapsed() >= soft,
-    takeWrapUpNotice: () => {
-      if (warned || elapsed() < soft) return null;
-      warned = true;
-      return (
-        `${stamp()} Wrap up now. ` +
-        "Do not start new features or refactors. Finish the change you are on, " +
-        "run test_agent once, and reply with what works and what does not. " +
-        "A verified partial agent is worth more than an unverified complete one — " +
-        "the user cannot tell the difference and will publish either. If something " +
-        "is still broken, say so plainly instead of implying it is done."
-      );
-    },
-    takeFinalNotice: () => {
-      if (closing || elapsed() < hard) return null;
-      closing = true;
-      return (
-        `${stamp()} Out of time — ` +
-        "this is your last message and you cannot call any more tools. Tell the " +
-        "user plainly what you built, what you verified, and what is still " +
-        "unfinished or broken, so they know where to pick it up. Do not claim " +
-        "anything works that you did not test."
-      );
-    },
-  };
+/**
+ * The wrap-up instruction, sent once at the soft deadline. Once only because
+ * repeating it every step would crowd the context it is trying to save — and an
+ * agent told to hurry on every step stops making progress.
+ */
+export function wrapUpNotice(elapsedMs: number): string {
+  return (
+    `${stamp(elapsedMs)} Wrap up now. ` +
+    "Do not start new features or refactors. Finish the change you are on, " +
+    "run test_agent once, and reply with what works and what does not. " +
+    "A verified partial agent is worth more than an unverified complete one — " +
+    "the user cannot tell the difference and will publish either. If something " +
+    "is still broken, say so plainly instead of implying it is done."
+  );
+}
+
+/**
+ * The closing instruction for the one step past the hard deadline. That step
+ * runs with tools disabled, so the turn is guaranteed to end on a message the
+ * user can read.
+ *
+ * The loop stops one step AFTER the hard deadline, not at it. Stopping cold at
+ * the deadline ends the turn wherever the agent happened to be, and if that was
+ * a tool call the reply carries no text at all: the user gets a stopped spinner
+ * and no account of what happened, which is the failure this whole module exists
+ * to prevent.
+ */
+export function closingNotice(elapsedMs: number): string {
+  return (
+    `${stamp(elapsedMs)} Out of time — ` +
+    "this is your last message and you cannot call any more tools. Tell the " +
+    "user plainly what you built, what you verified, and what is still " +
+    "unfinished or broken, so they know where to pick it up. Do not claim " +
+    "anything works that you did not test."
+  );
 }
