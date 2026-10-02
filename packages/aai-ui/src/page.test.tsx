@@ -9,8 +9,9 @@
  * The property worth pinning is what it does NOT do: no `BrowserSession`, no audio
  * graph, no microphone request. That is the whole reason it is a separate entry
  * from `mountClient()` rather than a flag on it, and it is invisible to a rendering
- * assertion — so `session/browser-session.ts` is mocked and the spec asserts it was never
- * touched.
+ * assertion — so the spec stands in for the two things a session would open (a
+ * `WebSocket`, an `AudioContext`) and asserts neither was constructed, and reads
+ * the session context from inside the tree to see that none was installed.
  *
  * The second half is the DEFAULT SHELL — what a workflow app gets with no
  * `component` at all, which is what makes "you do not need a `client.tsx`" true
@@ -21,13 +22,23 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { useOptionalSessionCore } from "./context.ts";
 import { mountPage } from "./page.tsx";
-import { createBrowserSession } from "./session/index.ts";
 
-vi.mock(import("./session/index.ts"), async (importOriginal) => ({
-  ...(await importOriginal()),
-  createBrowserSession: vi.fn(),
-}));
+/**
+ * Stand in for the socket and the audio graph a session would open, and count
+ * the constructions — `mountPage()` must make none of either.
+ */
+function watchSessionResources(): { sockets: () => number; audioContexts: () => number } {
+  const WebSocketSpy = vi.fn();
+  const AudioContextSpy = vi.fn();
+  vi.stubGlobal("WebSocket", WebSocketSpy);
+  vi.stubGlobal("AudioContext", AudioContextSpy);
+  return {
+    sockets: () => WebSocketSpy.mock.calls.length,
+    audioContexts: () => AudioContextSpy.mock.calls.length,
+  };
+}
 
 function mount(id = "app"): HTMLElement {
   const el = document.createElement("div");
@@ -78,8 +89,16 @@ describe("mountPage", () => {
 
   test("constructs NO session — no socket, no audio graph, no microphone", () => {
     mount();
-    const handle = mountPage({ component: () => <p>ok</p> });
-    expect(vi.mocked(createBrowserSession)).not.toHaveBeenCalled();
+    const watched = watchSessionResources();
+    let session: unknown = "unread";
+    function Probe() {
+      session = useOptionalSessionCore();
+      return <p>ok</p>;
+    }
+    const handle = mountPage({ component: Probe });
+    expect(session).toBeNull();
+    expect(watched.sockets()).toBe(0);
+    expect(watched.audioContexts()).toBe(0);
     handle.dispose();
   });
 
@@ -144,9 +163,11 @@ describe("mountPage's default shell", () => {
     // place a session could creep back in.
     const el = mount();
     stubAgent();
+    const watched = watchSessionResources();
     const handle = mountPage();
     await vi.waitFor(() => expect(el.textContent).toContain("Link Digest"));
-    expect(vi.mocked(createBrowserSession)).not.toHaveBeenCalled();
+    expect(watched.sockets()).toBe(0);
+    expect(watched.audioContexts()).toBe(0);
     handle.dispose();
   });
 });

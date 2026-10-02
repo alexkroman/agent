@@ -10,10 +10,11 @@
  * where a warning belongs is a dev server that will not start over a missing
  * local artifact. So each branch is asserted on which one it picks.
  *
- * Modal is mocked out entirely: `isModalConfigured` builds a real client, which
- * reads `~/.modal.toml`, so the unmocked version answers differently on a
- * developer's machine than in CI — and answering "yes" there would fire a real
- * prewarm at Modal's control plane from a unit test.
+ * Modal is faked out entirely, through `assertSandboxBackendOrWarn`'s deps
+ * argument: `isModalConfigured` builds a real client, which reads
+ * `~/.modal.toml`, so the real one answers differently on a developer's machine
+ * than in CI — and answering "yes" there would fire a real prewarm at Modal's
+ * control plane from a unit test.
  */
 
 import { createHash } from "node:crypto";
@@ -23,44 +24,39 @@ import { join } from "node:path";
 import { sleep } from "@alexkroman1/aai/internal";
 import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
-import { resolveHarnessPath } from "./constants.ts";
 import { registerLiveStream } from "./live-streams.ts";
 import { LOCAL_GUEST_IMAGE_TAG } from "./microsandbox/sandbox.ts";
-import { isModalConfigured, prewarmModal } from "./modal/context.ts";
-import { assertSandboxBackendOrWarn, installProcessSafetyNets } from "./service-boot.ts";
+import {
+  assertSandboxBackendOrWarn as assertBackend,
+  installProcessSafetyNets,
+} from "./service-boot.ts";
 
 /**
  * The microVM image lookup, typed by what the CALLER does with it: the boot
  * check only awaits it, so a fake needs no `ImageHandle` and therefore no cast
  * to stand in for one.
- *
- * `microsandbox` is imported dynamically and nowhere else at run time (the one
- * static import of it in this package is type-only), so this factory replaces
- * the whole module rather than spreading the original.
  */
-const { imageGet } = vi.hoisted(() => ({
-  imageGet: vi.fn<(reference: string) => Promise<void>>(),
-}));
+const imageGet = vi.fn<(reference: string) => Promise<void>>();
+const isModalConfigured = vi.fn<() => boolean>();
+const prewarmModal = vi.fn<(harnessPath?: string) => void>();
+const resolveHarnessPath = vi.fn<() => string>();
 
-vi.mock("microsandbox", () => ({ Image: { get: imageGet } }));
-
-vi.mock("./modal/context.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./modal/context.ts")>()),
-  isModalConfigured: vi.fn<() => boolean>(),
-  prewarmModal: vi.fn<(harnessPath?: string) => void>(),
-}));
-
-vi.mock("./constants.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./constants.ts")>()),
-  resolveHarnessPath: vi.fn<() => string>(),
-}));
+/** The boot check under test, wired to the fakes above. */
+function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
+  assertBackend(env, {
+    isModalConfigured,
+    prewarmModal,
+    resolveHarnessPath,
+    getLocalImage: imageGet,
+  });
+}
 
 /** `AAI_LOCAL_DEV=1` and nothing else — what selects the microVM backend. */
 const LOCAL_DEV: NodeJS.ProcessEnv = { AAI_LOCAL_DEV: "1" };
 
 // The one piece of per-test bookkeeping the shared config does not cover:
-// `restoreMocks` restores SPIES, and every mock above is a `vi.fn()` created
-// once per FILE by a module factory, so its call history is cumulative. Verified
+// `restoreMocks` restores SPIES, and every fake above is a `vi.fn()` created
+// once per FILE, so its call history is cumulative. Verified
 // by A/B — without this, "prewarmModal was not called" passed only in whichever
 // test ran first, and every later assertion on a call count was really an
 // assertion about test order.
@@ -72,8 +68,8 @@ describe("assertSandboxBackendOrWarn", () => {
   const logs = captureLogs();
 
   test("names the selected backend and WHY, unconditionally", () => {
-    vi.mocked(isModalConfigured).mockReturnValue(true);
-    vi.mocked(resolveHarnessPath).mockReturnValue("/built/harness.mjs");
+    isModalConfigured.mockReturnValue(true);
+    resolveHarnessPath.mockReturnValue("/built/harness.mjs");
 
     assertSandboxBackendOrWarn({});
 
@@ -93,7 +89,7 @@ describe("assertSandboxBackendOrWarn", () => {
   });
 
   test("production without Modal credentials REFUSES to boot", () => {
-    vi.mocked(isModalConfigured).mockReturnValue(false);
+    isModalConfigured.mockReturnValue(false);
 
     // Fatal, not a warning: the alternative is a server that accepts traffic
     // and fails every session's spawn. `modal` is the DEFAULT, so this is what
@@ -103,7 +99,7 @@ describe("assertSandboxBackendOrWarn", () => {
   });
 
   test("local dev without them warns, so non-sandbox surfaces stay usable", () => {
-    vi.mocked(isModalConfigured).mockReturnValue(false);
+    isModalConfigured.mockReturnValue(false);
 
     // `AAI_LOCAL_DEV=1` alone selects microsandbox, so reaching the Modal branch
     // locally takes the explicit override — which is the case a developer hits
@@ -116,8 +112,8 @@ describe("assertSandboxBackendOrWarn", () => {
   });
 
   test("with credentials it prewarms Modal AND the guest image at boot", () => {
-    vi.mocked(isModalConfigured).mockReturnValue(true);
-    vi.mocked(resolveHarnessPath).mockReturnValue("/built/harness.mjs");
+    isModalConfigured.mockReturnValue(true);
+    resolveHarnessPath.mockReturnValue("/built/harness.mjs");
 
     assertSandboxBackendOrWarn({});
 
@@ -129,8 +125,8 @@ describe("assertSandboxBackendOrWarn", () => {
   });
 
   test("an unbuilt harness warns and prewarms WITHOUT one", () => {
-    vi.mocked(isModalConfigured).mockReturnValue(true);
-    vi.mocked(resolveHarnessPath).mockImplementation(() => {
+    isModalConfigured.mockReturnValue(true);
+    resolveHarnessPath.mockImplementation(() => {
       throw new Error("Guest harness not built");
     });
 
@@ -208,7 +204,7 @@ describe("the local guest image's staleness stamp", () => {
    */
   async function checkStamp(harnessPath: string): Promise<void> {
     imageGet.mockResolvedValue(undefined);
-    vi.mocked(resolveHarnessPath).mockReturnValue(harnessPath);
+    resolveHarnessPath.mockReturnValue(harnessPath);
     assertSandboxBackendOrWarn(LOCAL_DEV);
     await vi.waitUntil(() => imageGet.mock.calls.length === 1);
     await sleep(0);

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Reifying a workspace manifest: the missing-check (pure) and the install
-// itself with the spawn mocked out — the same split
+// itself with a fake npm runner handed in — the same split
 // studio/project-tools.test.ts / studio/project-tools-mocked.test.ts uses.
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -8,31 +8,26 @@ import path from "node:path";
 import { useTempDir } from "aai-guest-core/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { npmResult } from "./_test-utils.ts";
-import { runNpm } from "./spawn.ts";
+import type { runNpm } from "./spawn.ts";
 import {
   ensureWorkspaceDependencies,
   missingDependencies,
   withDependencyWarning,
 } from "./workspace-deps.ts";
 
-vi.mock("./spawn.ts", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("./spawn.ts")>();
-  return { ...mod, runNpm: vi.fn() };
-});
-
-const runNpmMock = vi.mocked(runNpm);
+const runNpmMock = vi.fn<typeof runNpm>();
 
 const workspace = useTempDir("aai-workspace-");
 const toolchainDir = useTempDir("aai-toolchain-");
 
 beforeEach(() => {
-  // `restoreMocks` covers `vi.spyOn`, not a `vi.fn()` installed by a module
-  // mock factory — without this, a previous test's implementation and call
-  // count leak into the ones asserting npm was never spawned.
+  // `restoreMocks` covers `vi.spyOn`, not a module-level `vi.fn()` — without
+  // this, a previous test's implementation and call count leak into the ones
+  // asserting npm was never spawned.
   runNpmMock.mockReset();
 });
 
-const opts = () => ({ toolchainModules: toolchainDir() });
+const opts = () => ({ toolchainModules: toolchainDir(), runNpm: runNpmMock });
 
 /** Write the workspace manifest. */
 const manifest = (contents: unknown): Promise<void> =>
@@ -122,7 +117,7 @@ describe("ensureWorkspaceDependencies", () => {
     await manifest({ dependencies: { react: "19.2.8" } });
     runNpmMock.mockResolvedValue(npmResult());
 
-    await ensureWorkspaceDependencies(workspace(), { toolchainModules: null });
+    await ensureWorkspaceDependencies(workspace(), { toolchainModules: null, runNpm: runNpmMock });
 
     expect(runNpmMock).toHaveBeenCalledOnce();
   });

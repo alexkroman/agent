@@ -11,11 +11,10 @@ read_when: >-
 
 ## Every environmental error is classified
 
-`error-status.ts` maps a thrown value to a status, and
-`error-classification.test.ts` requires no THIRD state: every environmental code
-a Node service here can meet is either mapped or named in
-`DELIBERATELY_INTERNAL` with a reason a 500 is right. A client cannot back off
-on a 500 and a load balancer cannot shed on it.
+`error-status.ts` maps a thrown value to a status, and `error-status.test.ts`
+requires no THIRD state: every environmental code a Node service here can meet
+is either mapped or named in `DELIBERATELY_INTERNAL` with a reason a 500 is
+right. A client cannot back off on a 500 and a load balancer cannot shed on it.
 
 - **Resource exhaustion** (`EMFILE`, `ENFILE`, `ENOBUFS`, `ENOMEM`) →
   `isResourceExhausted`, 503, ordered BEFORE the transport entry (it surfaces on
@@ -27,7 +26,7 @@ on a 500 and a load balancer cannot shed on it.
   `ECONNRESET` with no `syscall` is Node's inbound `aborted` (the caller hung
   up: dropped, logged at debug), one naming a `syscall` is an outbound libuv
   reset (`fetch`'s cause, a `postgres` socket error: 503). Measured on Node 24;
-  `error-classification.test.ts` pins both at every depth.
+  `error-status.test.ts` pins both at every depth.
 
 ### A transport failure is a 503
 

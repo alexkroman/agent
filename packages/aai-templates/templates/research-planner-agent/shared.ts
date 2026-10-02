@@ -173,11 +173,6 @@ export interface SearchHit {
 /**
  * The executor's search.
  *
- * It was an INJECTED function, so a spec could drive the executor without the
- * live web. That seam is gone with the loop it served — the executor is a
- * subagent now, and a spec fakes the whole delegation with `stubDelegate` — so
- * what is left is the type {@link searchTool} is written against.
- *
  * **A refusal is a RETURN, not a throw**, which is the `@alexkroman1/aai/tools`
  * contract read straight through: `webSearch` answers `{ error }` and so does
  * this, so a caller either narrows it or `orFail`s it and cannot ignore it.
@@ -186,106 +181,140 @@ export interface SearchHit {
  */
 export type SearchFn = (query: string, options?: CallOptions) => Promise<SearchHit[] | ToolFailure>;
 
+/**
+ * The two `@alexkroman1/aai/tools` calls the executor's tools make — the one
+ * place this template leaves the process.
+ *
+ * Taken as an argument by {@link createWebTools} so a spec can hand in fakes:
+ * both screen a URL and then really fetch it, through an undici dispatcher a
+ * `globalThis.fetch` stub cannot reach. Everything between the call and the
+ * model — the filtering, the rendering, the refusal handling — stays real.
+ */
+export type WebAccess = {
+  webSearch: (
+    spec: { query: string; maxResults?: number } & CallOptions,
+  ) => Promise<{ results?: { title?: string; url?: string }[] } | ToolFailure>;
+  visitWebpage: (
+    url: string,
+    options?: CallOptions,
+  ) => Promise<{ content?: string; text?: string } | ToolFailure>;
+};
+
 /** How many results one search reads. Enough to compare, short enough to hear. */
 export const SEARCH_RESULTS = 4;
-
-/**
- * A REFUSED search is not an empty web, and `webSearch` answers with `{ error }`
- * rather than throwing — so an unnarrowed `?? []` below would tell the executor
- * there is nothing out there. Measured: DuckDuckGo answers `403` often enough
- * that this is the ordinary case, not an edge one.
- *
- * `failable` + `orFail` is that narrowing: the refusal becomes this function's
- * return value with the provider's own words intact. What it replaced was an
- * `isToolFailure` check throwing a re-worded `Error`, and the rewording was the
- * smaller half of the cost — a thrown tool error is logged by the runtime as an
- * UNCAUGHT tool bug on its way to the model, which a 403 from a free search
- * endpoint is not.
- */
-export const liveSearch: SearchFn = failable(
-  async (query: string, options: CallOptions = {}): Promise<SearchHit[]> => {
-    const results = orFail(
-      await webSearch<{ results?: { title?: string; url?: string }[] }>({
-        query,
-        maxResults: SEARCH_RESULTS,
-        ...options,
-      }),
-    );
-    return (results.results ?? [])
-      .filter(
-        (one): one is { title?: string; url: string } =>
-          typeof one.url === "string" && one.url.length > 0,
-      )
-      .map((one) => ({ title: one.title || one.url, url: one.url }));
-  },
-);
-
-/** {@link liveSearch}, rendered for a model to reason over. */
-const runSearch = failable(async (query: string, options: CallOptions = {}): Promise<string> => {
-  const hits = orFail(await liveSearch(query, options));
-  if (hits.length === 0) return "No results.";
-  return hits.map((hit) => `- ${hit.title} (${hit.url})`).join("\n");
-});
-
-/**
- * `search` — {@link liveSearch} as a tool the EXECUTOR may call.
- *
- * The search is REAL: `webSearch` from `@alexkroman1/aai/tools` is the same
- * DuckDuckGo-backed implementation behind the model-facing `web_search` builtin,
- * with the same URL screening and size caps, and it needs no API key. Giving the
- * subagent this rather than the builtin is what keeps that worked example alive
- * — a subagent's `tools` are ordinary `ToolDef`s, so an agent's own code is as
- * reachable from one as a framework builtin is.
- *
- * **`ctx.signal` goes down to the fetch.** A tool body gets one, `CallOptions`
- * takes one, and until they were joined a caller who hung up mid-step left a
- * search running against a third party — the runtime settles the tool's await
- * on barge-in or reset, but the underlying request keeps going unless the body
- * hands the signal on.
- */
-export const searchTool = tool({
-  description:
-    "Search the web. Use it when the step turns on a current fact — a price, a " +
-    "date, an availability — that you do not reliably know.",
-  inputSchema: z.object({
-    query: z.string().max(120).describe("What to search for"),
-  }),
-  execute: ({ query }, ctx) => runSearch(query, { signal: ctx.signal }),
-});
 
 /** Characters of a page the executor is given. A step is answered from a page's
  *  substance, not from its whole text, and the rest is context it pays for. */
 export const MAX_PAGE_CHARS = 4000;
 
-/** One page's substance, or the refusal that stopped it being read. */
-const readPage = failable(async (url: string, options: CallOptions = {}): Promise<string> => {
-  const page = orFail(await visitWebpage<{ content?: string; text?: string }>(url, options));
-  const body = String(page.content ?? page.text ?? "").slice(0, MAX_PAGE_CHARS);
-  return body.length > 0 ? body : "That page had no readable text.";
-});
-
 /**
- * `read` — open one page the search turned up.
+ * The executor's `search` and `read` tools, over the web they are handed — the
+ * real one unless told otherwise.
  *
- * `visitWebpage` is the second half of `@alexkroman1/aai/tools`, and the
- * executor's prompt has always assumed it: "search once, READ what comes back"
- * was in there while the loop offered no way to do it, so the executor answered
- * every step from a list of titles. A subagent can hold both tools, so the
- * instruction and the capability finally agree.
- *
- * Answers a `ToolFailure` on a refusal for the same reason {@link searchTool}
- * does — a page that would not load is not a page that said nothing — and takes
- * the same `CallOptions`, so a hung-up caller cancels the fetch.
+ * A function rather than two bare `tool()` constants for the reason
+ * {@link WebAccess} gives; the pair exported below it is what the executor
+ * holds.
  */
-export const readTool = tool({
-  description:
-    "Open one page from a search result and read it. Prefer this over a second " +
-    "search when a result looks like it answers the step.",
-  inputSchema: z.object({
-    url: z.url().describe("The page to open, from a search result"),
-  }),
-  execute: ({ url }, ctx) => readPage(url, { signal: ctx.signal }),
-});
+export function createWebTools(web: WebAccess = { webSearch, visitWebpage }) {
+  /**
+   * A REFUSED search is not an empty web, and `webSearch` answers with
+   * `{ error }` rather than throwing — so an unnarrowed `?? []` below would
+   * tell the executor there is nothing out there. Measured: DuckDuckGo answers
+   * `403` often enough that this is the ordinary case, not an edge one.
+   *
+   * `failable` + `orFail` is that narrowing: the refusal becomes this
+   * function's return value with the provider's own words intact. What it
+   * replaced was an `isToolFailure` check throwing a re-worded `Error`, and the
+   * rewording was the smaller half of the cost — a thrown tool error is logged
+   * by the runtime as an UNCAUGHT tool bug on its way to the model, which a 403
+   * from a free search endpoint is not.
+   */
+  const search: SearchFn = failable(
+    async (query: string, options: CallOptions = {}): Promise<SearchHit[]> => {
+      const results = orFail(
+        await web.webSearch({
+          query,
+          maxResults: SEARCH_RESULTS,
+          ...options,
+        }),
+      );
+      return (results.results ?? [])
+        .filter(
+          (one): one is { title?: string; url: string } =>
+            typeof one.url === "string" && one.url.length > 0,
+        )
+        .map((one) => ({ title: one.title || one.url, url: one.url }));
+    },
+  );
+
+  /** {@link search}, rendered for a model to reason over. */
+  const runSearch = failable(async (query: string, options: CallOptions = {}): Promise<string> => {
+    const hits = orFail(await search(query, options));
+    if (hits.length === 0) return "No results.";
+    return hits.map((hit) => `- ${hit.title} (${hit.url})`).join("\n");
+  });
+
+  /** One page's substance, or the refusal that stopped it being read. */
+  const readPage = failable(async (url: string, options: CallOptions = {}): Promise<string> => {
+    const page = orFail(await web.visitWebpage(url, options));
+    const body = String(page.content ?? page.text ?? "").slice(0, MAX_PAGE_CHARS);
+    return body.length > 0 ? body : "That page had no readable text.";
+  });
+
+  return {
+    /**
+     * `search` — the web search as a tool the EXECUTOR may call.
+     *
+     * The search is REAL: `webSearch` from `@alexkroman1/aai/tools` is the same
+     * DuckDuckGo-backed implementation behind the model-facing `web_search`
+     * builtin, with the same URL screening and size caps, and it needs no API
+     * key. Giving the subagent this rather than the builtin is what keeps that
+     * worked example alive — a subagent's `tools` are ordinary `ToolDef`s, so an
+     * agent's own code is as reachable from one as a framework builtin is.
+     *
+     * **`ctx.signal` goes down to the fetch.** A tool body gets one,
+     * `CallOptions` takes one, and until they were joined a caller who hung up
+     * mid-step left a search running against a third party — the runtime
+     * settles the tool's await on barge-in or reset, but the underlying request
+     * keeps going unless the body hands the signal on.
+     */
+    searchTool: tool({
+      description:
+        "Search the web. Use it when the step turns on a current fact — a price, a " +
+        "date, an availability — that you do not reliably know.",
+      inputSchema: z.object({
+        query: z.string().max(120).describe("What to search for"),
+      }),
+      execute: ({ query }, ctx) => runSearch(query, { signal: ctx.signal }),
+    }),
+
+    /**
+     * `read` — open one page the search turned up.
+     *
+     * `visitWebpage` is the second half of `@alexkroman1/aai/tools`, and the
+     * executor's prompt has always assumed it: "search once, READ what comes
+     * back" was in there while the loop offered no way to do it, so the
+     * executor answered every step from a list of titles. A subagent can hold
+     * both tools, so the instruction and the capability finally agree.
+     *
+     * Answers a `ToolFailure` on a refusal for the same reason `search` does —
+     * a page that would not load is not a page that said nothing — and takes
+     * the same `CallOptions`, so a hung-up caller cancels the fetch.
+     */
+    readTool: tool({
+      description:
+        "Open one page from a search result and read it. Prefer this over a second " +
+        "search when a result looks like it answers the step.",
+      inputSchema: z.object({
+        url: z.url().describe("The page to open, from a search result"),
+      }),
+      execute: ({ url }, ctx) => readPage(url, { signal: ctx.signal }),
+    }),
+  };
+}
+
+/** The executor's two web tools, over the live web. */
+export const { searchTool, readTool } = createWebTools();
 
 // ─── The projection ──────────────────────────────────────────────────────────
 

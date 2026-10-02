@@ -1,32 +1,22 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The npm and download paths BEHIND the validation gate, with the process
-// spawn and the SSRF fetch mocked out. The sibling studio/project-tools.test.ts
+// The npm and download paths BEHIND the validation gate, with fakes for the
+// process spawn and the SSRF fetch handed in through `createProjectTools`. The sibling studio/project-tools.test.ts
 // covers the gates themselves with the real collaborators; this file covers
 // what each tool does with a success, a failure, a kill, and a bad body.
 
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ToolDef } from "@alexkroman1/aai";
-import { safeFetch } from "@alexkroman1/aai/host-internal";
+import type { safeFetch } from "@alexkroman1/aai/host-internal";
 import { MAX_STUDIO_FILE_BYTES } from "aai-guest-core/limits";
 import { runTool, useTempDir } from "aai-guest-core/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { npmResult } from "./_test-utils.ts";
 import { createDesignInspirationTool, createProjectTools } from "./project-tools.ts";
-import { runNpm } from "./spawn.ts";
+import type { runNpm } from "./spawn.ts";
 
-vi.mock("./spawn.ts", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("./spawn.ts")>();
-  return { ...mod, runNpm: vi.fn() };
-});
-
-vi.mock("@alexkroman1/aai/host-internal", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@alexkroman1/aai/host-internal")>();
-  return { ...mod, safeFetch: vi.fn() };
-});
-
-const runNpmMock = vi.mocked(runNpm);
-const safeFetchMock = vi.mocked(safeFetch);
+const runNpmMock = vi.fn<typeof runNpm>();
+const safeFetchMock = vi.fn<typeof safeFetch>();
 
 const tempDir = useTempDir("studio-project-tools-mocked-");
 let dir: string;
@@ -34,7 +24,7 @@ let tools: Record<string, ToolDef>;
 
 beforeEach(() => {
   dir = tempDir();
-  tools = createProjectTools({ dir });
+  tools = createProjectTools({ dir, runNpm: runNpmMock, safeFetch: safeFetchMock });
 });
 
 const execute = (name: string, args: Record<string, unknown>): Promise<string> =>

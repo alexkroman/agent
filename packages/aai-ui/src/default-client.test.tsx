@@ -6,10 +6,9 @@
 /**
  * The prebuilt page an agent with no `client.tsx` gets, and WHICH mount it uses.
  *
- * The whole module is a side effect at import, so each case resets the module
- * registry and imports it again — which is also what makes the two mounts worth
- * mocking rather than driving: what is asserted here is the CHOICE, and both
- * mounts have their own suites.
+ * The two mounts are handed in as fakes rather than driven: what is asserted
+ * here is the CHOICE, and both mounts have their own suites. The lookup is the
+ * real `fetchClientConfig` over a stubbed `fetch`.
  *
  * The failure this exists to catch is silent in the direction that matters: a
  * workflow app mounted with `mountClient()` renders a start screen and then
@@ -18,13 +17,19 @@
  * in production, which is the only good news about it.
  */
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { bootDefaultClient, type DefaultClientMounts } from "./default-client.tsx";
 
-vi.mock("./define-client.tsx", () => ({ mountClient: vi.fn() }));
-vi.mock("./page.tsx", () => ({ mountPage: vi.fn() }));
+/** Fake mounts, recording which one the boot chose. */
+function fakeMounts() {
+  return {
+    mountClient: vi.fn<DefaultClientMounts["mountClient"]>(),
+    mountPage: vi.fn<DefaultClientMounts["mountPage"]>(),
+  };
+}
 
-/** Answer the client-config lookup with `config`, and load the entry again. */
-async function loadWith(config: unknown): Promise<void> {
+/** Answer the client-config lookup with `config`, and boot against fake mounts. */
+async function bootWith(config: unknown): Promise<ReturnType<typeof fakeMounts>> {
   vi.stubGlobal(
     "fetch",
     vi.fn(
@@ -35,13 +40,10 @@ async function loadWith(config: unknown): Promise<void> {
         }),
     ),
   );
-  vi.resetModules();
-  await import("./default-client.tsx");
+  const mounts = fakeMounts();
+  await bootDefaultClient(mounts);
+  return mounts;
 }
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -49,32 +51,23 @@ afterEach(() => {
 
 describe("the prebuilt default client", () => {
   test("mounts the PAGE for an agent whose front door is static", async () => {
-    await loadWith({ name: "Link Digest", page: "static" });
-    const { mountPage } = await import("./page.tsx");
-    const { mountClient } = await import("./define-client.tsx");
-    await vi.waitFor(() =>
-      expect(vi.mocked(mountPage)).toHaveBeenCalledWith({ name: "Link Digest" }),
-    );
-    expect(vi.mocked(mountClient)).not.toHaveBeenCalled();
+    const { mountPage, mountClient } = await bootWith({ name: "Link Digest", page: "static" });
+    expect(mountPage).toHaveBeenCalledWith({ name: "Link Digest" });
+    expect(mountClient).not.toHaveBeenCalled();
   });
 
   test("mounts the voice CLIENT for every other agent", async () => {
-    await loadWith({ name: "Support", page: "voice" });
-    const { mountPage } = await import("./page.tsx");
-    const { mountClient } = await import("./define-client.tsx");
-    await vi.waitFor(() =>
-      expect(vi.mocked(mountClient)).toHaveBeenCalledWith({ name: "Support" }),
-    );
-    expect(vi.mocked(mountPage)).not.toHaveBeenCalled();
+    const { mountPage, mountClient } = await bootWith({ name: "Support", page: "voice" });
+    expect(mountClient).toHaveBeenCalledWith({ name: "Support" });
+    expect(mountPage).not.toHaveBeenCalled();
   });
 
   test("names no agent when the agent named none, so the shell asks for itself", async () => {
     // `mountClient({ name })` treats an explicit name as final and skips its own
     // lookup — so passing `undefined` through would leave the header blank
     // forever rather than falling back on the shell's own request.
-    await loadWith({ page: "voice" });
-    const { mountClient } = await import("./define-client.tsx");
-    await vi.waitFor(() => expect(vi.mocked(mountClient)).toHaveBeenCalledWith({}));
+    const { mountClient } = await bootWith({ page: "voice" });
+    expect(mountClient).toHaveBeenCalledWith({});
   });
 
   test("a failed lookup mounts the voice client — the front door it can always mount", async () => {
@@ -84,11 +77,10 @@ describe("the prebuilt default client", () => {
         throw new Error("network down");
       }),
     );
-    vi.resetModules();
-    await import("./default-client.tsx");
-    const { mountClient } = await import("./define-client.tsx");
+    const mounts = fakeMounts();
+    await bootDefaultClient(mounts);
     // `fetchClientConfig` degrades every failure to the agent default, which
     // names `page: "voice"`.
-    await vi.waitFor(() => expect(vi.mocked(mountClient)).toHaveBeenCalledWith({}));
+    expect(mounts.mountClient).toHaveBeenCalledWith({});
   });
 });

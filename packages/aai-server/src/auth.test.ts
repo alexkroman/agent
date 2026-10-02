@@ -1,17 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { timingSafeEqual } from "node:crypto";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { createTestStore } from "./_orchestrator-test-utils.ts";
 import { hashApiKey, verifyApiKeyHash, verifySlugOwner } from "./secrets.ts";
-
-// Everything except the compare primitive stays real. Wrapping
-// `timingSafeEqual` is the only way to assert the constant-time claim without a
-// wall-clock measurement, and the claim needs asserting: the suite that used to
-// carry it checked digest FORMATTING, which a plain `===` satisfies.
-vi.mock("node:crypto", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:crypto")>();
-  return { ...actual, timingSafeEqual: vi.fn(actual.timingSafeEqual) };
-});
 
 test("hashApiKey produces a deterministic sha256 digest", () => {
   const h = hashApiKey("key");
@@ -89,21 +80,25 @@ test("verifySlugOwner rejects when credential_hashes is empty", async () => {
 });
 
 describe("auth timing safety", () => {
+  // Everything except the compare primitive stays real. Wrapping
+  // `timingSafeEqual` is the only way to assert the constant-time claim without
+  // a wall-clock measurement, and the claim needs asserting: the suite that used
+  // to carry it checked digest FORMATTING, which a plain `===` satisfies.
+  // Handed through `verifyApiKeyHash`'s `compare` seam, fresh per test.
+  let compare: Mock<typeof timingSafeEqual>;
   beforeEach(() => {
-    // `restoreMocks` restores `vi.spyOn` mocks and does NOT clear a `vi.fn()`'s
-    // call history, so without this an earlier test's call satisfies the next.
-    vi.mocked(timingSafeEqual).mockClear();
+    compare = vi.fn(timingSafeEqual);
   });
 
   test("verifyApiKeyHash compares through timingSafeEqual, not ===", () => {
     const stored = hashApiKey("key1");
 
-    expect(verifyApiKeyHash("key1", stored)).toBe(true);
-    expect(verifyApiKeyHash("key2", stored)).toBe(false);
+    expect(verifyApiKeyHash("key1", stored, compare)).toBe(true);
+    expect(verifyApiKeyHash("key2", stored, compare)).toBe(false);
     // One compare per call, both of them constant-time. An implementation that
     // short-circuits on `candidate === stored` passes every other assertion in
     // this file and fails here, which is the point of the suite.
-    expect(timingSafeEqual).toHaveBeenCalledTimes(2);
+    expect(compare).toHaveBeenCalledTimes(2);
   });
 
   test("a stored digest of the wrong length is false, never a throw", () => {
@@ -111,9 +106,9 @@ describe("auth timing safety", () => {
     // the length guard in front of it is load-bearing: a truncated or
     // corrupted stored digest has to be a `false`, not a 500 on every
     // owner-scoped route.
-    expect(verifyApiKeyHash("key1", "sha256:deadbeef")).toBe(false);
-    expect(verifyApiKeyHash("key1", "")).toBe(false);
-    expect(timingSafeEqual).not.toHaveBeenCalled();
+    expect(verifyApiKeyHash("key1", "sha256:deadbeef", compare)).toBe(false);
+    expect(verifyApiKeyHash("key1", "", compare)).toBe(false);
+    expect(compare).not.toHaveBeenCalled();
   });
 
   test("digests are one fixed length whatever the key, which is what makes that work", () => {
@@ -129,8 +124,8 @@ describe("auth timing safety", () => {
     expect(emptyKey).toMatch(pattern);
     expect(new Set([shortKey.length, longKey.length, emptyKey.length]).size).toBe(1);
 
-    expect(verifyApiKeyHash("a", shortKey)).toBe(true);
-    expect(verifyApiKeyHash("a".repeat(1000), longKey)).toBe(true);
-    expect(verifyApiKeyHash("", emptyKey)).toBe(true);
+    expect(verifyApiKeyHash("a", shortKey, compare)).toBe(true);
+    expect(verifyApiKeyHash("a".repeat(1000), longKey, compare)).toBe(true);
+    expect(verifyApiKeyHash("", emptyKey, compare)).toBe(true);
   });
 });

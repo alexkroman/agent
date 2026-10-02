@@ -375,11 +375,23 @@ function rootFor(config: ClientConfig, platformUrl: string) {
  * @public
  */
 export function mountClient(config: ClientConfig): ClientHandle {
+  return mountClientWith(config, createBrowserSession);
+}
+
+/**
+ * {@link mountClient} with the session factory handed in. Not on the barrel:
+ * it is the seam a spec drives with a fake core rather than replacing the
+ * session module.
+ */
+export function mountClientWith(
+  config: ClientConfig,
+  createSession: typeof createBrowserSession,
+): ClientHandle {
   const container = resolveContainer(config.target);
 
   const platformUrl = config.platformUrl ?? pageBaseUrl();
 
-  const session = createBrowserSession({
+  const session = createSession({
     platformUrl,
     onSessionId: config.onSessionId,
     resumeSessionId: config.resumeSessionId,

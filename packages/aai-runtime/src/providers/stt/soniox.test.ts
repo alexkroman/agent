@@ -1,27 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
-/** Unit test for the Soniox real-time STT adapter (mocked WebSocket). */
+/** Unit test for the Soniox real-time STT adapter (a fake WebSocket through its seam). */
 
+import { EventEmitter } from "node:events";
 import { describe, expect, test, vi } from "vitest";
+import type WebSocket from "ws";
 import { flush } from "../../_timing-test-utils.ts";
-import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
+import { type CreateProviderSocket, WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
 import { openSoniox } from "./soniox.ts";
-
-interface FakeWSInstance {
-  readyState: number;
-  options?: { perMessageDeflate?: boolean } | undefined;
-  bufferedAmount?: number;
-  sent: Array<string | Uint8Array>;
-  send(data: string | Uint8Array, opts?: unknown): void;
-  close(): void;
-  on(ev: string, fn: (...args: unknown[]) => void): void;
-  off(ev: string, fn: (...args: unknown[]) => void): void;
-  once(ev: string, fn: (...args: unknown[]) => void): void;
-  removeAllListeners(): void;
-  listenerCount(): number;
-  _fire(ev: string, payload?: unknown): void;
-}
-
-type Listener = (...args: unknown[]) => void;
 
 // A local fake rather than `tts/_fake-ws-test-utils.ts`: this adapter speaks
 // BINARY frames, reads `bufferedAmount` for backpressure, and reads the close
@@ -29,75 +14,53 @@ type Listener = (...args: unknown[]) => void;
 // matters, and the shared one was fixed to match it: `readyState` is
 // CONNECTING until "open" fires, so a send-before-open is catchable here.
 //
-// `vi.mock` is hoisted above top-level decls, so share state via `vi.hoisted`.
-const { latest, FakeWS } = vi.hoisted(() => {
-  const latestRef: { ws: FakeWSInstance | undefined } = { ws: undefined };
-  class FakeWSImpl implements FakeWSInstance {
-    static OPEN = 1;
-    static CLOSED = 3;
-    /** When true, new sockets black-hole: no "open", no "error" — ever. */
-    static neverOpen = false;
-    readyState = 0;
-    sent: Array<string | Uint8Array> = [];
-    private listeners = new Map<string, Listener[]>();
-    options: { perMessageDeflate?: boolean } | undefined;
-    constructor(_url: string, opts?: { perMessageDeflate?: boolean }) {
-      this.options = opts;
-      if (!FakeWSImpl.neverOpen) {
-        setImmediate(() => {
-          this.readyState = 1;
-          this.emit("open");
-        });
-      }
-      latestRef.ws = this;
+// An `EventEmitter`, as `ws` is, so a late `error` with no listener throws
+// here exactly as it would crash the host. It reaches the adapter through
+// `openSoniox`'s `createSocket` seam ({@link fakeSocket}).
+class FakeWS extends EventEmitter {
+  /** When true, new sockets black-hole: no "open", no "error" — ever. */
+  static neverOpen = false;
+  readyState = 0;
+  bufferedAmount: number | undefined;
+  sent: Array<string | Uint8Array> = [];
+  readonly options: WebSocket.ClientOptions;
+  constructor(_url: string, opts: WebSocket.ClientOptions) {
+    super();
+    this.options = opts;
+    if (!FakeWS.neverOpen) {
+      setImmediate(() => {
+        this.readyState = 1;
+        this.emit("open");
+      });
     }
-    on(ev: string, fn: Listener): void {
-      const arr = this.listeners.get(ev) ?? [];
-      arr.push(fn);
-      this.listeners.set(ev, arr);
-    }
-    once(ev: string, fn: Listener): void {
-      const wrapped: Listener = (...args) => {
-        this.off(ev, wrapped);
-        fn(...args);
-      };
-      this.on(ev, wrapped);
-    }
-    off(ev: string, fn: Listener): void {
-      const arr = this.listeners.get(ev);
-      if (!arr) return;
-      const idx = arr.indexOf(fn);
-      if (idx !== -1) arr.splice(idx, 1);
-    }
-    removeAllListeners(): void {
-      this.listeners.clear();
-    }
-    listenerCount(): number {
-      let n = 0;
-      for (const arr of this.listeners.values()) n += arr.length;
-      return n;
-    }
-    private emit(ev: string, ...args: unknown[]): void {
-      const arr = this.listeners.get(ev)?.slice();
-      if (!arr) return;
-      for (const fn of arr) fn(...args);
-    }
-    send(data: string | Uint8Array, _opts?: unknown): void {
-      this.sent.push(data);
-    }
-    close(): void {
-      this.readyState = 2;
-      this.emit("close", 1000);
-      this.readyState = 3;
-    }
-    _fire(ev: string, payload?: unknown): void {
-      this.emit(ev, payload);
-    }
+    latest.ws = this;
   }
-  return { latest: latestRef, FakeWS: FakeWSImpl };
-});
+  /** Every listener on every event — what `dropSocket` must leave at one. */
+  listenersTotal(): number {
+    let n = 0;
+    for (const ev of this.eventNames()) n += this.listenerCount(ev);
+    return n;
+  }
+  send(data: string | Uint8Array, _opts?: unknown): void {
+    this.sent.push(data);
+  }
+  close(): void {
+    this.readyState = 2;
+    this.emit("close", 1000);
+    this.readyState = 3;
+  }
+  terminate(): void {
+    this.close();
+  }
+  _fire(ev: string, payload?: unknown): void {
+    this.emit(ev, payload);
+  }
+}
 
-vi.mock("ws", () => ({ default: FakeWS, WebSocket: FakeWS }));
+const latest: { ws: FakeWS | undefined } = { ws: undefined };
+
+/** The `createSocket` every session in this file opens through. */
+const fakeSocket: CreateProviderSocket = (url, options) => new FakeWS(url, options);
 
 interface OpenSessionOpts {
   apiKey?: string;
@@ -106,19 +69,19 @@ interface OpenSessionOpts {
 }
 
 function openOpener(signal: AbortSignal): Promise<unknown> {
-  return openSoniox({}).open({ sampleRate: 16_000, apiKey: "test-key", signal });
+  return openSoniox({}, fakeSocket).open({ sampleRate: 16_000, apiKey: "test-key", signal });
 }
 
 async function openSession(opts: OpenSessionOpts = {}): Promise<{
   session: import("../openers.ts").SttSession;
-  ws: FakeWSInstance;
+  ws: FakeWS;
   controller: AbortController;
 }> {
   latest.ws = undefined;
   const openerOpts: { model?: string; languages?: string[] } = {};
   if (opts.model) openerOpts.model = opts.model;
   if (opts.languages) openerOpts.languages = opts.languages;
-  const opener = openSoniox(openerOpts);
+  const opener = openSoniox(openerOpts, fakeSocket);
   const controller = new AbortController();
   const session = await opener.open({
     sampleRate: 16_000,
@@ -313,12 +276,12 @@ describe("Soniox real-time STT adapter", () => {
 
   test("close() drops the session listeners but leaves a no-op error guard", async () => {
     const { session, ws } = await openSession();
-    expect(ws.listenerCount()).toBeGreaterThan(1);
+    expect(ws.listenersTotal()).toBeGreaterThan(1);
     await session.close();
     // The session's message/close/error handlers (which capture emitter,
     // finalBuf, shell) are gone; only a single no-op `error` guard remains so
     // a late error during the close handshake can't crash the process.
-    expect(ws.listenerCount()).toBe(1);
+    expect(ws.listenersTotal()).toBe(1);
     expect(() => ws._fire("error", new Error("late reset"))).not.toThrow();
   });
 

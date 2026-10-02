@@ -2,11 +2,11 @@
 /**
  * ONE contract, asserted ONCE, over every arm something really runs.
  *
- * Each `*Conformance` function in `store-conformance-cases.ts` is a contract's
+ * Each `*Conformance` function in `store-conformance-test-defs.ts` is a contract's
  * whole behavioural spec as a list of `test()` declarations over a factory.
  * Callers supply the arm:
  *
- * The case lists themselves are `store-conformance-cases.ts`; this module is the
+ * The case lists themselves are `store-conformance-test-defs.ts`; this module is the
  * REGISTRY plus the two helpers every case list needs. The split is the file-length
  * cap's doing and lands on a real seam: the registry is metadata about which
  * contracts exist and which have two arms — which is all

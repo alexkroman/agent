@@ -20,17 +20,23 @@ import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { RimeTtsOptions } from "@alexkroman1/aai/tts";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
-import WebSocket from "ws";
+import type WebSocket from "ws";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import { createRestartableTimer } from "../../_timer.ts";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
-import { dropSocket, openGuardedWs } from "../_socket.ts";
+import {
+  type CreateProviderSocket,
+  createProviderSocket,
+  dropSocket,
+  openGuardedWs,
+} from "../_socket.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
   createDoneLatch,
   createTtsSessionShell,
+  type ProviderSocket,
   requireApiKey,
   type SessionShell,
 } from "../_utils.ts";
@@ -44,7 +50,7 @@ import {
 
 export interface RimeSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
-  readonly _ws: WebSocket;
+  readonly _ws: ProviderSocket;
 }
 
 interface RimeMessage {
@@ -94,7 +100,10 @@ function handleRimeMessage(
   }
 }
 
-export function openRime(opts: RimeTtsOptions): TtsOpener {
+export function openRime(
+  opts: RimeTtsOptions,
+  createSocket: CreateProviderSocket = createProviderSocket,
+): TtsOpener {
   return {
     name: "rime",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
@@ -113,7 +122,7 @@ export function openRime(opts: RimeTtsOptions): TtsOpener {
       // also owns registering the pre-connect zero-listener error guard.
       const ws = await openGuardedWs({
         create: () =>
-          new WebSocket(url, {
+          createSocket(url, {
             headers: { Authorization: `Bearer ${apiKey}` },
             ...PROVIDER_WS_OPTIONS,
           }),

@@ -86,7 +86,16 @@ export type WorkspaceDependencyOptions = {
    * session-install path passes {@link SESSION_INSTALL_BUDGET_MS}.
    */
   budgetMs?: number | undefined;
+  /** Test seam: the npm runner. Defaults to {@link runNpm}. */
+  runNpm?: typeof runNpm | undefined;
 };
+
+/**
+ * The shape of {@link ensureWorkspaceDependencies} once its options are bound —
+ * what a build or a publish takes as a seam, so a spec can drive the warning
+ * path without spawning npm.
+ */
+export type EnsureDependencies = (dir: string) => Promise<string | null>;
 
 /** A manifest's `dependencies` as a plain record — `{}` for any other shape. */
 function dependenciesOf(manifest: unknown): Record<string, string> {
@@ -153,7 +162,7 @@ export async function ensureWorkspaceDependencies(
         // Re-checked inside the lock: an overlapping build may have installed
         // exactly these while this one waited.
         if (missingDependencies(manifest, isResolvable).length === 0) return "";
-        const result = await runNpm(
+        const result = await (opts.runNpm ?? runNpm)(
           dir,
           ["install", "--omit=dev"],
           opts.budgetMs ?? NPM_TIMEOUT_MS,

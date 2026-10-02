@@ -363,6 +363,6 @@ sink: `_ui.ts`'s `silenced` flag (`silenceOutput()`, flipped once for JSON mode)
 and `_output.ts`'s direct `process.stdout` writes and process-wide
 `installStdoutGuard`. A command is therefore testable only by stubbing the
 process; route it through a passed `Logger`/writer as `aai-server` does
-(`logger.ts`, `captureLogs()`). `guard-invariants` rule 34 baselines every
-`vi.mock`/`vi.doMock` — each marks a unit with no seam for a fake;
-`pnpm debt:report` lists them.
+(`logger.ts`, `captureLogs()`). `guard-invariants` rule 34 holds
+`vi.mock`/`vi.doMock` at zero: give the unit a seam (an optional injected
+collaborator defaulting to the real one) and pass a typed fake through it.
