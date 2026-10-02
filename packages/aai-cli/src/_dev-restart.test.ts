@@ -234,6 +234,46 @@ describe("createRestartSupervisor", () => {
     expect(h.messages("success")).toEqual([]);
   });
 
+  test("close during the swap closes the replacement instead of binding it", async () => {
+    // The old `restartOnce` went on to `listen` the replacement after a
+    // teardown that landed while the old server was closing, then closed it.
+    // As a state machine the swap step disposes of it and nothing binds.
+    const gate = Promise.withResolvers<void>();
+    const h = makeHarness({
+      close: vi.fn(async (server: Server) => {
+        if (server.id === "v0") await gate.promise;
+      }),
+    });
+    started(h);
+
+    h.supervisor.request();
+    await vi.waitFor(() => expect(h.closed()).toEqual(["v0"]));
+    await h.supervisor.close();
+    gate.resolve();
+
+    await vi.waitFor(() => expect(h.closed()).toEqual(["v0", "v1"]));
+    expect(h.listen).not.toHaveBeenCalled();
+    expect(h.supervisor.current()).toBeUndefined();
+  });
+
+  test("close during the listen backoff stops retrying and closes the replacement", async () => {
+    const gate = Promise.withResolvers<void>();
+    const listen = vi
+      .fn<(server: Server) => Promise<void>>()
+      .mockRejectedValue(new Error("EADDRINUSE"));
+    const h = makeHarness({ listen, sleep: () => gate.promise });
+    started(h);
+
+    h.supervisor.request();
+    await vi.waitFor(() => expect(listen).toHaveBeenCalledTimes(1));
+    await h.supervisor.close();
+    gate.resolve();
+
+    await vi.waitFor(() => expect(h.closed()).toEqual(["v0", "v1"]));
+    expect(listen).toHaveBeenCalledTimes(1);
+    expect(h.messages("error")).toEqual([]);
+  });
+
   test("close is idempotent: later calls join the in-flight teardown", async () => {
     const h = makeHarness();
     started(h);
