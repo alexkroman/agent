@@ -53,13 +53,6 @@ import type { StubClientInbox, StubClientInboxOptions } from "./testing-client-i
 import { stubClientInbox } from "./testing-client-inbox.ts";
 import type { StubDelegateScript, StubStepDelegate } from "./testing-delegate.ts";
 import { stubStepDelegate } from "./testing-delegate.ts";
-import type {
-  FetchRouteHandler,
-  FetchRoutesOptions,
-  FetchRouteTable,
-  StubFetchRoutes,
-} from "./testing-fetch-routes.ts";
-import { stubFetchRoutes } from "./testing-fetch-routes.ts";
 import type { StubGatewayCall, StubGatewayOptions } from "./testing-gateway.ts";
 import { stubGateway } from "./testing-gateway.ts";
 import type { StubSpeech, StubSpeechOptions } from "./testing-speech.ts";
@@ -114,42 +107,6 @@ export function installStubGateway(
   const gateway = stubGateway(replies, options);
   vi.stubGlobal("fetch", gateway.fetch);
   return gateway.calls;
-}
-
-/**
- * Route the global `fetch` — and the step fetch — through one URL/method
- * table, restored when this test finishes, and return the request log.
- *
- * `stubFetchRoutes` with the bookkeeping done — see it (and
- * {@link FetchRouteTable}) for the key forms, which key wins, and why an
- * unmatched request THROWS by default. It replaces the per-file
- * `vi.stubGlobal("fetch", async (url, init) => …)` that parsed the URL and the
- * body, pushed onto a `calls` array and answered anything unforeseen `200 {}`.
- *
- * @example
- * In a test body or a `beforeEach`:
- * ```ts
- * import { installFetchRoutes } from "@alexkroman1/aai/testing/vitest";
- *
- * const net = installFetchRoutes({
- *   "POST https://api.mem0.ai/v3/memories/add/": { body: { event_id: "e1" } },
- * });
- * await fetch("https://api.mem0.ai/v3/memories/add/", {
- *   method: "POST",
- *   body: JSON.stringify({ user_id: "home" }),
- * });
- * console.log(net.hits[0]?.json); // { user_id: "home" }
- * ```
- *
- * @public
- */
-export function installFetchRoutes(
-  routes: FetchRouteTable | readonly FetchRouteHandler[],
-  options: FetchRoutesOptions = {},
-): StubFetchRoutes {
-  const routed = stubFetchRoutes(routes, options);
-  onTestFinished(routed.restore);
-  return routed;
 }
 
 /**

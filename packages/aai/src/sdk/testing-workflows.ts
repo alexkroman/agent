@@ -85,36 +85,6 @@ export function createRunSnapshot<R = unknown>(
 }
 
 /**
- * The progress channel of a run, from the read side — what
- * `ctx.workflows.stream` resolves with.
- *
- * Closes after the given lines, which is what makes a tool that drains it
- * terminate. A run's real stream never closes (no step knows it is the last
- * one), and the tool bounds itself with `streamTail` instead — so a spec that
- * wants to exercise THAT bound stubs `streamTail`, not this.
- *
- * @example
- * ```ts
- * import { createProgressStream, createStubWorkflows } from "@alexkroman1/aai/testing";
- *
- * const workflows = createStubWorkflows({
- *   streamTail: () => Promise.resolve(0),
- *   stream: () => Promise.resolve(createProgressStream(["Reading the sources…"])),
- * });
- * ```
- *
- * @public
- */
-export function createProgressStream(lines: readonly unknown[] = []): ReadableStream<unknown> {
-  return new ReadableStream<unknown>({
-    start(controller) {
-      for (const line of lines) controller.enqueue(line);
-      controller.close();
-    },
-  });
-}
-
-/**
  * A `ctx.workflows` for testing a tool that starts or reads durable runs: every
  * method rejects by default, and `overrides` replaces the ones the test drives.
  *

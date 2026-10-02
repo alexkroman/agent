@@ -151,12 +151,14 @@ detail; the rules:
 - **`stubSpeech` needs no credential** — it marks its synthesizer
   `keylessSynthesizer` (`step-speak.ts`), so `stepSpeak` hands it `""` rather
   than refusing; `requireApiKey: true` restores the refusal.
-- **`stubFetchRoutes`/`installFetchRoutes`** — ONE table for the global fetch
-  AND the step fetch (published unless `stepFetch: false`), keys matched by
-  `_route-keys.ts` — the one matcher `evalNetwork` imports too (via
-  `/host-internal`), METHOD prefix included; unmatched THROWS by default, for
-  `routeStepFetch`'s reason. `toStepResponse` drops the body of a null-body
-  status (`{ status: 204 }` threw in the `Response` constructor).
+- **`stubFetchRoutes`** — ONE table (or ordered handler list, which is how step
+  fakes COMPOSE) for the global fetch AND the step fetch (`stepFetch: false` /
+  `globalFetch: false` drop one), keys matched by `_route-keys.ts` — the one
+  matcher `evalNetwork` imports too (via `/host-internal`), METHOD prefix
+  included; unmatched THROWS by default, because a 404 nobody set up sends the
+  flow down its error path and the spec passes green. A vitest spec pairs it
+  with `onTestFinished(net.restore)`. `toStepResponse` drops the body of a
+  null-body status (`{ status: 204 }` threw in the `Response` constructor).
 - **`createRecordingWorkflows`** records starts and runs nothing; a start is
   readable back as `running`, seeded runs answer `find`/`get`/`recent`. The
   eval's recording client:
@@ -165,11 +167,11 @@ detail; the rules:
   describeEval(…, { workflows: () => createRecordingWorkflows({ workflows: def.workflows }) })
   ```
 
-- **`commandedBuiltins`/`expectPromptBuiltinsDeclared`**
-  (`testing-prompt-builtins.ts`) — a single-word builtin (`think`, `calculate`)
-  counts only where the prose NAMES it: backticks, "the X tool", or the object
-  of use/call/invoke. A custom tool of a builtin's name declares it. The rule
-  and its misses are on `SINGLE_WORD_POSITIONS`.
+- **`expectPromptBuiltinsDeclared`** (`testing-prompt-builtins.ts`) — a
+  single-word builtin (`think`, `calculate`) counts only where the prose NAMES
+  it: backticks, "the X tool", or the object of use/call/invoke. A custom tool
+  of a builtin's name declares it. The rule and its misses are on
+  `SINGLE_WORD_POSITIONS`.
 - **`runGuardrail(def, text, answer?)`** THROWS on a def with none or a promise
   verdict.
 - `createStubWorkflows()` is a flat override map over `rejectingWorkflows`.

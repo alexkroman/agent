@@ -28,8 +28,6 @@
  */
 
 export {
-  commandedBuiltins,
-  createProgressStream,
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
@@ -121,7 +119,6 @@ export {
   type WorkflowContextRecorder,
 } from "../../testing-barrel.ts";
 export {
-  installFetchRoutes,
   installStubClientInbox,
   installStubGateway,
   installStubReporter,

@@ -6,8 +6,6 @@
 
 import type { AgentDef } from '@alexkroman1/aai';
 import type { AgentEnv } from '@alexkroman1/aai/host-internal';
-import { commandedBuiltins } from '@alexkroman1/aai/testing';
-import { createProgressStream } from '@alexkroman1/aai/testing';
 import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
 import { createRunSnapshot } from '@alexkroman1/aai/testing';
 import { createStubWorkflows } from '@alexkroman1/aai/testing';
@@ -44,7 +42,6 @@ import { RecordedStart } from '@alexkroman1/aai/testing';
 import { RecordedStep } from '@alexkroman1/aai/testing';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
-import { routeStepFetch } from '@alexkroman1/aai/testing';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import { runGuardrail } from '@alexkroman1/aai/testing';
 import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
@@ -54,8 +51,6 @@ import { schemaInputIssues } from '@alexkroman1/aai/testing';
 import { SentEvent } from '@alexkroman1/aai/testing';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
-import { StepRoute } from '@alexkroman1/aai/testing';
-import { StepUnmatched } from '@alexkroman1/aai/testing';
 import { STUB_SPEECH_PCM_BYTES } from '@alexkroman1/aai/testing';
 import { StubClientInbox } from '@alexkroman1/aai/testing';
 import { stubClientInbox } from '@alexkroman1/aai/testing';
@@ -131,10 +126,6 @@ import { WorkflowContextOptions } from '@alexkroman1/aai/testing';
 import { WorkflowContextRecorder } from '@alexkroman1/aai/testing';
 import type { WorkflowDef } from '@alexkroman1/aai';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
-
-export { commandedBuiltins }
-
-export { createProgressStream }
 
 export { createRecordingWorkflows }
 
@@ -278,8 +269,6 @@ export type ResumableRun = {
     wakeAt?: number | undefined;
 };
 
-export { routeStepFetch }
-
 export { runGuardrail }
 
 // @public
@@ -372,10 +361,6 @@ export type StepEntry = {
     startedAt: number;
     finishedAt: number;
 };
-
-export { StepRoute }
-
-export { StepUnmatched }
 
 export { STUB_SPEECH_PCM_BYTES }
 

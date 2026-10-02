@@ -53,14 +53,18 @@ Its steps reach a model, a transcription endpoint, an upload store, a stranger's
 web server — and each of those has a published fake on
 `@alexkroman1/aai-runtime/testing/vitest`:
 
-| Fake                     | Stands in for                                                 |
-| ------------------------ | ------------------------------------------------------------- |
-| `installStubUploads`     | the upload store a step reads bytes from                      |
-| `installStubTranscribe`  | transcription                                                 |
-| `installStubSpeech`      | speech synthesis                                              |
-| `installStubStepFetch`   | a step's outbound `fetch`                                     |
-| `installFetchRoutes`     | the global `fetch` and a step's, through one URL/method table |
-| `installStubClientInbox` | the device `stepNotifyClient` pushes to                       |
+| Fake                     | Stands in for                            |
+| ------------------------ | ---------------------------------------- |
+| `installStubUploads`     | the upload store a step reads bytes from |
+| `installStubTranscribe`  | transcription                            |
+| `installStubSpeech`      | speech synthesis                         |
+| `installStubStepFetch`   | a step's outbound `fetch`                |
+| `installStubClientInbox` | the device `stepNotifyClient` pushes to  |
+
+To route the global `fetch` and a step's through one URL/method table, or to
+compose several legs (a model, a page, a provider) into the one step fetch a
+flow can publish, use `stubFetchRoutes` from `@alexkroman1/aai-runtime/testing`
+and register its `restore` with `onTestFinished`.
 
 `installStubUploads` takes a map of upload id to bytes. The bare form is the
 common case; the object form adds a filename and content type:

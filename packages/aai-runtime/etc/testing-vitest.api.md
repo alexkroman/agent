@@ -13,7 +13,6 @@ import { eventsOf } from '@alexkroman1/aai/testing';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
-import { installFetchRoutes } from '@alexkroman1/aai/testing/vitest';
 import { installStubClientInbox } from '@alexkroman1/aai/testing/vitest';
 import { installStubGateway } from '@alexkroman1/aai/testing/vitest';
 import { installStubReporter } from '@alexkroman1/aai/testing/vitest';
@@ -28,7 +27,6 @@ import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
-import { routeStepFetch } from '@alexkroman1/aai/testing';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
@@ -36,8 +34,6 @@ import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import { StepFetch } from '@alexkroman1/aai/host-internal';
-import { StepRoute } from '@alexkroman1/aai/testing';
-import { StepUnmatched } from '@alexkroman1/aai/testing';
 import type { SttProvider } from '@alexkroman1/aai/stt';
 import { StubGatewayRoute } from '@alexkroman1/aai/testing';
 import { stubGatewayRoute } from '@alexkroman1/aai/testing';
@@ -440,8 +436,6 @@ export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
-export { installFetchRoutes }
-
 export { installStubClientInbox }
 
 export { installStubGateway }
@@ -543,8 +537,6 @@ export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string
     reason: string;
 };
 
-export { routeStepFetch }
-
 export { RunCodeExecutor }
 
 // @public
@@ -624,10 +616,6 @@ export function statesIn(events: readonly SessionEvent[], slot: string): readonl
 export function statesIn(events: readonly SessionEvent[]): readonly Readonly<Record<string, unknown>>[];
 
 export { StepFetch }
-
-export { StepRoute }
-
-export { StepUnmatched }
 
 // @public
 export interface StepUsage {

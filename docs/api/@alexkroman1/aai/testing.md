@@ -20,108 +20,6 @@ declares it. This subpath keeps working; it is where the names are declared.
 
 ## Functions
 
-### commandedBuiltins()
-
-```ts
-function commandedBuiltins(config: {
-  systemPrompt: string;
-}): BuiltinTool[];
-```
-
-Every builtin the system prompt COMMANDS by name, in first-mention order.
-
-The prompt is scanned for snake_case tokens and each is asked of the SDK's own
-builtin schema — so `run_code` and `fetch_json` are found, and the
-`vs_currencies`, `per_person` and `annual_rate` a finance prompt names in its
-endpoints and formulas are not. A builtin whose name is one English word
-(`think`, `calculate`, `remember`, `recall`) is found only where the prose
-NAMES it — in backticks, as "the calculate tool", or as the object of
-use/call/invoke — so "think before you answer" commands nothing; the rule and
-its reasons are on `SINGLE_WORD_POSITIONS` in this module. Reading the
-CONFIG's prompt rather than a file: that is what a deploy carries, and it is
-where `system-prompt.md` lands only if the build applied it.
-
-Takes only the field it reads, so an `AgentConfig` passes and so does a
-`{ systemPrompt }` a spec assembled itself — a resolver's own text, say.
-
-A reader, not an assertion — [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) is the
-claim most specs want. This is exported for the spec that wants to say more:
-that a particular builtin is among the commanded ones, or that the prompt
-commands exactly the set the template is about.
-
-**It reads what the CONFIG carries, which for a RESOLVER is nothing.**
-`AgentDef.systemPrompt` may be a function, and `toAgentConfig` cannot
-serialize one — it drops the field and the schema fills in
-`DEFAULT_SYSTEM_PROMPT` — so a config converted from a resolver-based agent
-hands this function the FRAMEWORK's prompt and gets `[]` back, which is a
-true answer to the wrong question. Nothing here can tell that config from one
-whose author simply wrote no prompt; the def can, which is why the check that
-refuses is [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) and not this reader. To scan a
-resolver's own text, resolve it and substitute it:
-`commandedBuiltins({ systemPrompt: resolver(ctx) })`.
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { toAgentConfig } from "@alexkroman1/aai/manifest";
-import { commandedBuiltins } from "@alexkroman1/aai/testing";
-
-const config = toAgentConfig(
-  agent({ name: "Penny", systemPrompt: "Use fetch_json for rates; annual_rate is a number." }),
-);
-console.log(commandedBuiltins(config)); // ["fetch_json"]
-```
-
-#### Parameters
-
-##### config
-
-###### systemPrompt
-
-`string`
-
-#### Returns
-
-[`BuiltinTool`](index.md#builtintool)[]
-
-***
-
-### createProgressStream()
-
-```ts
-function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
-```
-
-The progress channel of a run, from the read side — what
-`ctx.workflows.stream` resolves with.
-
-Closes after the given lines, which is what makes a tool that drains it
-terminate. A run's real stream never closes (no step knows it is the last
-one), and the tool bounds itself with `streamTail` instead — so a spec that
-wants to exercise THAT bound stubs `streamTail`, not this.
-
-#### Parameters
-
-##### lines?
-
-readonly `unknown`[]
-
-#### Returns
-
-`ReadableStream`\<`unknown`\>
-
-#### Example
-
-```ts
-import { createProgressStream, createStubWorkflows } from "@alexkroman1/aai/testing";
-
-const workflows = createStubWorkflows({
-  streamTail: () => Promise.resolve(0),
-  stream: () => Promise.resolve(createProgressStream(["Reading the sources…"])),
-});
-```
-
-***
-
 ### createRecordingWorkflows()
 
 ```ts
@@ -914,8 +812,9 @@ empty slot store — and its answer is what gets scanned. That is enough for the
 prose half, which is a `?raw` import closed over by the function and does not
 vary with session state. A resolver that cannot answer from a bare context
 (it reads an env var, or a slot it expects seeded) THROWS, and this refuses by
-name rather than falling back to the default: seed a context and scan the text
-yourself with [commandedBuiltins](#commandedbuiltins), or assert on `builtinTools` directly.
+name rather than falling back to the default: seed a context, call the
+resolver yourself and pass its text as the `systemPrompt` of the def this
+takes, or assert on `builtinTools` directly.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -1257,63 +1156,6 @@ const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza",
 });
 // The schema's own default, which is the thing worth asserting here.
 expect(parsed.quantity).toBe(1);
-```
-
-***
-
-### routeStepFetch()
-
-```ts
-function routeStepFetch(routes: readonly StepRoute[], options?: {
-  unmatched?: StepUnmatched;
-}): (request: StubStepRequest) => StubStepAnswer;
-```
-
-Compose several [StepRoute](#steproute)s into the one handler `stubStepFetch`
-takes.
-
-Publishing a `stepFetch` REPLACES, so a flow that calls a model AND fetches a
-page AND transcribes can install exactly one fake and has to route inside it.
-Thirteen sites across seven templates wrote that composition by hand, and
-they did not agree on the part that matters — the unmatched case. Three threw
-(with a byte-identical message), two answered 404, and six fell through to a
-second fake.
-
-**The default is `"throw"` because the alternatives HIDE a finding.** A 404
-for a request nobody set up reads to the run as a provider that refused, so
-the flow takes its own error path and the spec passes green having tested the
-wrong branch. A spec that really is about a 404 says so.
-
-Order matters: the first route to answer wins, so put the most specific leg
-first. A route that throws is left alone — this only decides what happens
-when every leg answers `undefined`.
-
-#### Parameters
-
-##### routes
-
-readonly [`StepRoute`](#steproute)[]
-
-##### options?
-
-###### unmatched?
-
-[`StepUnmatched`](#stepunmatched)
-
-#### Returns
-
-(`request`: [`StubStepRequest`](#stubsteprequest)) => [`StubStepAnswer`](#stubstepanswer)
-
-#### Example
-
-```ts
-import { routeStepFetch, stubGatewayRoute } from "@alexkroman1/aai/testing";
-
-const model = stubGatewayRoute(['{"summary":"ok"}']);
-// Model first, then the page; anything else is a finding.
-const handler = routeStepFetch([model.route, (req) =>
-  req.url.startsWith("https://example.test") ? { body: "<p>hi</p>" } : undefined,
-]);
 ```
 
 ***
@@ -1694,8 +1536,8 @@ function stubFetchRoutes(routes:
 ```
 
 Install one router as the global `fetch` (and, by default, the published
-step fetch), and return its log. Call `restore` when the test ends — or use
-`installFetchRoutes`, which registers it for you.
+step fetch), and return its log. Call `restore` when the test ends — in a
+vitest spec, `onTestFinished(net.restore)` right after the call.
 
 #### Parameters
 
@@ -1707,7 +1549,8 @@ step fetch), and return its log. Call `restore` when the test ends — or use
   \| readonly [`FetchRouteHandler`](#fetchroutehandler)[]
 
 A [FetchRouteTable](#fetchroutetable), or a list of handlers tried in
-  order (the first that answers wins).
+  order (the first that answers wins, and later ones are not consulted; a
+  handler that throws is left alone). A catch-all leg goes LAST in a list.
 
 ##### options?
 
@@ -2896,9 +2739,10 @@ route: (request: StubStepRequest) => StubStepAnswer | undefined;
 ```
 
 Answers a completion request and `undefined` for anything else, so the
-caller composes it: `?? { body: html }` for a flow that also fetches a
-page, `?? someThrow()` for one where an unexpected request is a finding, or
-straight into `stubTranscribe`'s `otherwise`.
+caller composes it: as the first leg of a `stubFetchRoutes` list (where
+an unexpected request is a finding by default), `?? { body: html }` for a
+flow that also fetches a page, or straight into `stubTranscribe`'s
+`otherwise`.
 
 ###### Parameters
 
@@ -3015,7 +2859,8 @@ A route: answers a request with a `Response` or the `{ status, body, headers }`
 shorthand `stubStepFetch` takes — or `undefined` to DECLINE, leaving it to
 the next route (in a list) or to [FetchRoutesOptions.unmatched](#unmatched).
 
-A `StepRoute` (`routeStepFetch`'s leg, `stubGatewayRoute().route`) is one.
+`stubGatewayRoute().route` is one, so a model leg sits in a list beside a
+spec's own.
 
 #### Parameters
 
@@ -3135,6 +2980,7 @@ readonly searchParams: URLSearchParams;
 
 ```ts
 type FetchRoutesOptions = {
+  globalFetch?: boolean;
   passThrough?: RegExp;
   stepFetch?: boolean;
   unmatched?: "throw" | "notFound" | "passthrough";
@@ -3144,6 +2990,17 @@ type FetchRoutesOptions = {
 What [stubFetchRoutes](#stubfetchroutes-1) may be told.
 
 #### Properties
+
+##### globalFetch?
+
+```ts
+optional globalFetch?: boolean;
+```
+
+Install the router as the global `fetch` too (the default). Pass `false`
+to route ONLY the step fetch and leave the global untouched — for an eval
+whose live mode sends the voice model's own traffic over the global while
+its steps stay scripted.
 
 ##### passThrough?
 
@@ -3540,46 +3397,6 @@ than a fixture that lies.
 `R` = `unknown`
 
 The workflow's return type, when the caller names it.
-
-***
-
-### StepRoute
-
-```ts
-type StepRoute = (request: StubStepRequest) => StubStepAnswer | undefined;
-```
-
-One leg of a step's outside world: answers the requests it recognises and
-`undefined` for everything else, so legs compose.
-
-The shape `stubGatewayRoute` already hands back, named so a spec writing its
-own leg (a page fetch, a provider's job API) writes the same thing.
-
-#### Parameters
-
-##### request
-
-[`StubStepRequest`](#stubsteprequest)
-
-#### Returns
-
-[`StubStepAnswer`](#stubstepanswer) \| `undefined`
-
-***
-
-### StepUnmatched
-
-```ts
-type StepUnmatched = "throw" | "notFound" | StepRoute;
-```
-
-What an unrecognised request means.
-
-- `"throw"` (the default) — a finding. A step asked for something the spec
-  did not set up, and the test should say so at the call.
-- `"notFound"` — a real 404, for a spec whose subject IS how a flow handles
-  one.
-- a [StepRoute](#steproute) — the fallback leg, for "anything else is this page".
 
 ***
 
@@ -4227,7 +4044,7 @@ optional otherwise?: (request: StubStepRequest) =>
 ```
 
 Every request that is not to Twilio's Calls API. Default: throw, naming it —
-a request nobody set up is a finding (see `routeStepFetch`).
+a request nobody set up is a finding (see `stubFetchRoutes`).
 
 ###### Parameters
 

@@ -20,7 +20,7 @@ of it — and want the import.
 
 - [Agent authoring](#agent-authoring) — 592 names
 - [Browser client](#browser-client) — 183 names
-- [Testing and evals](#testing-and-evals) — 251 names
+- [Testing and evals](#testing-and-evals) — 245 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
 - [Framework internals](#framework-internals) — 434 names
 
@@ -813,8 +813,6 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `SleepRecord` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One durable WAIT, as stored. |
 | `StepEntry` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One journal entry: a step that reached a verdict. |
 | `StepFetch` | type · `@internal` | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` |  |
-| `StepRoute` | type | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing` | One leg of a step's outside world: answers the requests it recognises and `undefined` for everything else, so legs compose. |
-| `StepUnmatched` | type | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing` | What an unrecognised request means. |
 | `StepUsage` | interface | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | What one completed step reported. |
 | `StubClientInbox`, `StubClientInboxOptions` | type | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | What `stubClientInbox` returns: the call log, and how to put the slot back. |
 | `StubClientInboxCall` | type | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | One pushed notice, as `stubClientInbox` records it. |
@@ -876,9 +874,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `WorkflowTestRun` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | The run, as it stands after the last thing the driver did. |
 | `WorkflowTestStep` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One step the run journaled. |
 | `aaiAgentPlugin` | function | `@alexkroman1/aai/testing/vite` |  | Serve `AAI_AGENT_MODULE` for the agent project a spec sits in. |
-| `commandedBuiltins` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | Every builtin the system prompt COMMANDS by name, in first-mention order. |
 | `completedOutput` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | The output of a run that COMPLETED, or a throw naming what actually happened. |
-| `createProgressStream` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | The progress channel of a run, from the read side — what `ctx.workflows.stream` resolves with. |
 | `createRecordingWorkflows` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing` | Build a `RecordingWorkflows`. |
 | `createRunSnapshot` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | Build a `WorkflowRunSnapshot` — the right arm of the union, without a cast. |
 | `createStubSttOpener` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | One fake STT stage, and the last stream it opened. |
@@ -912,7 +908,6 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `expectPromptBuiltinsDeclared` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | Every builtin the prompt commands is one `builtinTools` declares — or a throw naming the ones that are not. |
 | `expectToolBeforeSpeech` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | The agent ACTED before it spoke: this turn's first `tool.called` precedes its first committed reply. |
 | `expectToolOk` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | What a tool answered, minus the refusal — or a throw quoting the refusal. |
-| `installFetchRoutes` | function | `@alexkroman1/aai/testing/vitest` (also `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing` | Route the global `fetch` — and the step fetch — through one URL/method table, restored when this test finishes, and return the request log. |
 | `installStubClientInbox` | function | `@alexkroman1/aai/testing/vitest` (also `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing` | Publish a device inbox for `stepNotifyClient`, restored when this test finishes. |
 | `installStubGateway` | function | `@alexkroman1/aai/testing/vitest` (also `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing` | Install a fake LLM gateway as the global `fetch`, and return its call log. |
 | `installStubLlm` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | Register a model that answers with `replies`, one per model call, repeating the last for as long as it is asked. |
@@ -935,7 +930,6 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `parseToolInput` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | Validate `value` against the input schema of the tool `name`. |
 | `resolveEvalMode` | function | `@alexkroman1/aai-runtime/eval/vitest` (also `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | Live if this machine can be, stub if it cannot — unless a caller has said which it wants. |
 | `resolveWorkflowEvalMode` | function | `@alexkroman1/aai-runtime/eval/vitest` (also `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | `resolveEvalMode` for a WORKFLOW app, whose credentials are a different question. |
-| `routeStepFetch` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing` | Compose several `StepRoute`s into the one handler `stubStepFetch` takes. |
 | `runCodeIn` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | The code every `run_code` call in `calls` carried, joined with newlines — the recipe the agent wrote. |
 | `runCodeOutput` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | What every `run_code` call in `calls` PRINTED, joined with newlines — the results as the model was handed them, verbatim. |
 | `runGuardrail` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | Run `def`'s guardrail over one answer and return its verdict. |

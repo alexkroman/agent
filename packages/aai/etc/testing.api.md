@@ -87,14 +87,6 @@ type ClientTranscriptTool = {
 type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
 
 // @public
-export function commandedBuiltins(config: {
-    readonly systemPrompt: string;
-}): BuiltinTool[];
-
-// @public
-export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
-
-// @public
 export function createRecordingWorkflows(options?: RecordingWorkflowsOptions): RecordingWorkflows;
 
 // @public
@@ -310,6 +302,7 @@ export type FetchRoutesOptions = {
     unmatched?: "throw" | "notFound" | "passthrough" | undefined;
     passThrough?: RegExp | undefined;
     stepFetch?: boolean | undefined;
+    globalFetch?: boolean | undefined;
 };
 
 // @public
@@ -497,11 +490,6 @@ export type RecordingWorkflowsOptions = {
     runs?: readonly WorkflowRunSnapshot[] | undefined;
     runIdPrefix?: string | undefined;
 };
-
-// @public
-export function routeStepFetch(routes: readonly StepRoute[], options?: {
-    unmatched?: StepUnmatched;
-}): (request: StubStepRequest) => StubStepAnswer;
 
 // @public
 export function runGuardrail(def: SpeakerDef, text: string, answer?: Partial<DelegateAnswer>): GuardrailVerdict;
@@ -947,15 +935,9 @@ type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
 };
 
 // @public
-export type StepRoute = (request: StubStepRequest) => StubStepAnswer | undefined;
-
-// @public
 type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
     schema: S;
 };
-
-// @public
-export type StepUnmatched = "throw" | "notFound" | StepRoute;
 
 // @public
 type StreamOptions = {

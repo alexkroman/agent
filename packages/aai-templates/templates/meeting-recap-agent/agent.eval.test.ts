@@ -63,18 +63,20 @@
  */
 import agentDef from "virtual:aai/agent";
 import {
+  type FetchRouteHandler,
+  type FetchRouteRequest,
+  stubFetchRoutes,
+} from "@alexkroman1/aai-runtime/testing";
+import {
   describeEval,
   describeToolCalls,
   type EvalToolCall,
   type EvalWorkflows,
-  installStubStepFetch,
-  routeStepFetch,
-  type StepRoute,
   stubGatewayRoute,
   toolResultIn,
   toolResultsIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
-import { expect } from "vitest";
+import { expect, onTestFinished } from "vitest";
 import { z } from "zod";
 import { recap, SAMPLE_RECORDING } from "./shared.ts";
 
@@ -128,12 +130,16 @@ function stubProvider(options: { hold?: boolean; ending?: Ending } = {}): Script
   const gate = Promise.withResolvers<void>();
   const model = stubGatewayRoute(RECAP_JSON);
   let polls = 0;
+  // Logged as each request ARRIVES, not when it is answered: a held poll is in
+  // flight, and "the run is waiting on the provider" is a claim about it.
+  const calls: FetchRouteRequest[] = [];
   // Two legs: the model, then the provider's job API. Anything neither answers is a
-  // finding, which is `routeStepFetch`'s default rather than this file's throw.
+  // finding, which is `stubFetchRoutes`' default rather than this file's throw.
   // Annotated, so the leg's contract is visible where it is written: answer the
   // requests you recognise, `undefined` for everything else, and let
-  // `routeStepFetch` decide what an unrecognised one means.
-  const provider: StepRoute = (request) => {
+  // `stubFetchRoutes` decide what an unrecognised one means.
+  const provider: FetchRouteHandler = (request) => {
+    calls.push(request);
     if (request.method === "POST") return { body: { id: TRANSCRIPT_ID, status: "queued" } };
     // The compensation. A real DELETE removes the transcript from the account,
     // which is what makes "a failed run leaves nothing behind" a claim rather
@@ -145,15 +151,22 @@ function stubProvider(options: { hold?: boolean; ending?: Ending } = {}): Script
       ? { body: { status: "error", error: "that recording could not be decoded" } }
       : { body: { status: "completed", text: TRANSCRIPT_TEXT, audio_duration: 254 } };
   };
-  const route = routeStepFetch([model.route, provider]);
-  const stub = installStubStepFetch(async (request) => {
-    const answered = route(request);
-    // Held AFTER routing, so the poll this returns is the one the script owed
-    // it — and `polls` has already counted this request.
-    if (options.hold === true && request.method === "GET" && polls === 1) await gate.promise;
-    return answered;
-  });
-  return { calls: stub.calls, release: () => gate.resolve() };
+  // The STEP fetch only: a live run's own model traffic goes over the global.
+  const net = stubFetchRoutes(
+    [
+      model.route,
+      async (request) => {
+        const answered = await provider(request);
+        // Held AFTER routing, so the poll this returns is the one the script owed
+        // it — and `polls` has already counted this request.
+        if (options.hold === true && request.method === "GET" && polls === 1) await gate.promise;
+        return answered;
+      },
+    ],
+    { globalFetch: false },
+  );
+  onTestFinished(net.restore);
+  return { calls, release: () => gate.resolve() };
 }
 
 /** `request_recap`'s two answers — it started one, or it found the live one. */
