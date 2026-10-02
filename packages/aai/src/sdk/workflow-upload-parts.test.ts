@@ -52,7 +52,7 @@ describe("sending a file as parts", () => {
     // every part the same size but the last.
     const offsets = agent.parts.map((one) => Number(one.url.searchParams.get("offset")));
     expect(offsets.toSorted((a, b) => a - b)).toEqual([0, PART, PART * 2]);
-    expect(offsets.every((at) => at % UPLOAD_CHUNK_BYTES === 0)).toBe(true);
+    expect(offsets.filter((at) => at % UPLOAD_CHUNK_BYTES !== 0)).toEqual([]);
     expect(agent.parts.map((one) => one.bytes)).toEqual([PART, PART, PART]);
     // The record is the AGENT's, read back rather than assembled here: `complete`
     // is its claim about whether every byte landed.
@@ -85,7 +85,10 @@ describe("sending a file as parts", () => {
       parallel: { partBytes: UPLOAD_CHUNK_BYTES + 1 },
     });
     expect(agent.parts.map((one) => Number(one.url.searchParams.get("offset")))).toHaveLength(2);
-    expect(agent.parts.every((one) => one.bytes === UPLOAD_CHUNK_BYTES * 2)).toBe(true);
+    expect(agent.parts.map((one) => one.bytes)).toEqual([
+      UPLOAD_CHUNK_BYTES * 2,
+      UPLOAD_CHUNK_BYTES * 2,
+    ]);
   });
 
   test("sends the LAST part short rather than padding the file", async () => {
@@ -99,7 +102,9 @@ describe("sending a file as parts", () => {
     await client().uploadStream("chosen-id", recording(), { parallel: true });
     // The whole difference from `upload`: the id was decided before the bytes, so
     // it is already in a run input somewhere.
-    expect(agent.calls.every((one) => one.url.pathname.includes("/uploads/chosen-id"))).toBe(true);
+    expect(agent.calls.map((one) => one.url.pathname)).toEqual(
+      agent.calls.map(() => expect.stringContaining("/uploads/chosen-id")),
+    );
   });
 });
 
@@ -481,7 +486,7 @@ describe("progress over several connections", () => {
     // A bar exists from the submit, and its total is the whole file rather than a
     // part's — a bar that restarted per part would run three times to 8 MB.
     expect(seen[0]).toEqual({ loaded: 0, total: TOTAL, fraction: 0 });
-    expect(seen.every((one) => one.total === TOTAL)).toBe(true);
+    expect(seen).toEqual(seen.map(() => expect.objectContaining({ total: TOTAL })));
     // It only ever grows, which is what parts landing in any order threatens.
     expect(seen.map((one) => one.loaded).toSorted((a, b) => a - b)).toEqual(
       seen.map((one) => one.loaded),
@@ -498,7 +503,7 @@ describe("progress over several connections", () => {
     });
     // The bar may go backwards here — that is the honest report of a part being
     // resent — but it may never claim more than the file.
-    expect(seen.every((one) => one.loaded <= TOTAL)).toBe(true);
+    expect(Math.max(...seen.map((one) => one.loaded))).toBeLessThanOrEqual(TOTAL);
     expect(seen.at(-1)?.loaded).toBe(TOTAL);
   });
 });

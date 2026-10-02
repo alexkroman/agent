@@ -35,16 +35,12 @@ describe("invariant", () => {
     // (TS7027). That the signature does this is the point of the last test in
     // this block — here it just has to not fight the spec.
     const broken: boolean = false;
-    try {
-      invariant(broken, "page.tail", () => ({ tail: 0, got: 4 }));
-      expect.fail("should have thrown");
-    } catch (err) {
-      expect(err).toBeInstanceOf(InvariantViolation);
-      expect((err as InvariantViolation).invariant).toBe("page.tail");
-      // And the detail is IN the message, which is the half a bare assertion loses.
-      expect((err as InvariantViolation).message).toContain('"tail":0');
-      expect((err as InvariantViolation).message).toContain('"got":4');
-    }
+    const run = () => invariant(broken, "page.tail", () => ({ tail: 0, got: 4 }));
+    expect(run).toThrow(InvariantViolation);
+    expect(run).toThrow(expect.objectContaining({ invariant: "page.tail" }));
+    // And the detail is IN the message, which is the half a bare assertion loses.
+    expect(run).toThrow('"tail":0');
+    expect(run).toThrow('"got":4');
   });
 
   /**
@@ -54,18 +50,17 @@ describe("invariant", () => {
    * prevent.
    */
   test("a detail thunk that throws does not replace the violation", () => {
-    const err = (() => {
-      try {
-        invariant(false, "page.tail", () => {
-          throw new TypeError("cannot read properties of undefined");
-        });
-      } catch (e) {
-        return e;
-      }
-    })();
-    expect(err).toBeInstanceOf(InvariantViolation);
-    expect((err as InvariantViolation).invariant).toBe("page.tail");
-    expect((err as InvariantViolation).message).toContain("detail unavailable");
+    const run = () =>
+      invariant(false, "page.tail", () => {
+        throw new TypeError("cannot read properties of undefined");
+      });
+    expect(run).toThrow(InvariantViolation);
+    expect(run).toThrow(
+      expect.objectContaining({
+        invariant: "page.tail",
+        message: expect.stringContaining("detail unavailable"),
+      }),
+    );
   });
 
   test("a detail that will not serialize does not either", () => {

@@ -110,7 +110,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs, schemas, guidance } = resolveAllBuiltins(["run_code"]);
     expect(defs.run_code?.execute).toBeTypeOf("function");
     expect(schemas.map((s) => s.name)).toContain("run_code");
-    expect(guidance.some((g) => g.includes("run_code"))).toBe(true);
+    expect(guidance).toContainEqual(expect.stringContaining("run_code"));
   });
 
   test("run_code does not execute code on the host", async () => {
@@ -388,7 +388,7 @@ describe("resolveAllBuiltins defs", () => {
   test("think is a no-op that returns ok and never touches db or fetch", async () => {
     const { defs, schemas, guidance } = resolveAllBuiltins(["think"]);
     expect(schemas.map((s) => s.name)).toContain("think");
-    expect(guidance.some((g) => g.includes("think"))).toBe(true);
+    expect(guidance).toContainEqual(expect.stringContaining("think"));
     // db is a throwing stub in the mock context — a no-op must not touch it.
     const result = await defs.think?.execute(
       { thought: "check the policy first" },
@@ -475,7 +475,7 @@ describe("resolveAllBuiltins defs", () => {
   test("calculate evaluates expressions and reports errors in-band", async () => {
     const { defs, guidance } = resolveAllBuiltins(["calculate"]);
     const ctx = createToolContext();
-    expect(guidance.some((g) => g.includes("calculate"))).toBe(true);
+    expect(guidance).toContainEqual(expect.stringContaining("calculate"));
     expect(await defs.calculate?.execute({ expression: "(75 + 120.40) * 1.0725" }, ctx)).toEqual({
       expression: "(75 + 120.40) * 1.0725",
       result: 209.5665,

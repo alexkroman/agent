@@ -58,7 +58,7 @@ describe("stepTextOwner", () => {
   test("a recipient but no key is FATAL, naming the key", async () => {
     publishStepEnv({ SMS_TO_PHONE: OWNER });
     const err = await stepTextOwner("hi").catch((e: unknown) => e);
-    expect(FatalError.is(err)).toBe(true);
+    expect(err).toSatisfy(FatalError.is);
     expect(String(err)).toContain("TEXTBELT_KEY");
   });
 
@@ -77,7 +77,7 @@ describe("stepTextOwner", () => {
     publishStepEnv(env);
     textbelt = stubStepFetch(() => ({ status: 503, body: { error: "busy" } }));
     const err = await stepTextOwner("hi").catch((e: unknown) => e);
-    expect(RetryableError.is(err)).toBe(true);
+    expect(err).toSatisfy(RetryableError.is);
   });
 
   test("links follow TEXTBELT_LINKS unless the call says otherwise", async () => {

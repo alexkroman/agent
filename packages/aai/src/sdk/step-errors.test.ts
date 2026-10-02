@@ -305,7 +305,7 @@ describe("throwFatalStepError", () => {
     // The failure a step has DECIDED is terminal on grounds no status carries.
     const err = thrownBy(() => throwFatalStepError(new Error("ASSEMBLYAI_API_KEY is not set")));
 
-    expect(FatalError.is(err)).toBe(true);
+    expect(err).toSatisfy(FatalError.is);
     expect((err as Error).message).toMatch(/ASSEMBLYAI_API_KEY/);
   });
 
@@ -458,7 +458,7 @@ describe("throwFfmpegStepError", () => {
   test.each<FfmpegFailureKind>(["exit", "missing-binary", "output-too-large"])(
     "stops on %s — every retry reaches the same conclusion",
     (kind) => {
-      expect(FatalError.is(thrownBy(() => throwFfmpegStepError(ffmpegFailure(kind))))).toBe(true);
+      expect(thrownBy(() => throwFfmpegStepError(ffmpegFailure(kind)))).toSatisfy(FatalError.is);
     },
   );
 
@@ -468,13 +468,13 @@ describe("throwFfmpegStepError", () => {
     // decided that anything but the two named transients is terminal.
     const err = thrownBy(() => throwFfmpegStepError(new Error("stepReadUpload: no such upload")));
 
-    expect(FatalError.is(err)).toBe(true);
+    expect(err).toSatisfy(FatalError.is);
     expect((err as Error).message).toMatch(/no such upload/);
     expect(toStepError(new Error("stepReadUpload: no such upload"))).not.toSatisfy(FatalError.is);
   });
 
   test("a non-Error cause is fatal too, rather than reaching the retryable default", () => {
-    expect(FatalError.is(thrownBy(() => throwFfmpegStepError("ffmpeg blew up")))).toBe(true);
+    expect(thrownBy(() => throwFfmpegStepError("ffmpeg blew up"))).toSatisfy(FatalError.is);
   });
 
   test("both the name and the kind are checked, so a look-alike does not retry", () => {
@@ -483,8 +483,8 @@ describe("throwFfmpegStepError", () => {
     const wrongName = Object.assign(new Error("nope"), { kind: "timeout" });
     const noKind = Object.assign(new Error("nope"), { name: "FfmpegError" });
 
-    expect(FatalError.is(thrownBy(() => throwFfmpegStepError(wrongName)))).toBe(true);
-    expect(FatalError.is(thrownBy(() => throwFfmpegStepError(noKind)))).toBe(true);
+    expect(thrownBy(() => throwFfmpegStepError(wrongName))).toSatisfy(FatalError.is);
+    expect(thrownBy(() => throwFfmpegStepError(noKind))).toSatisfy(FatalError.is);
   });
 
   test("prefers an explicit message over ffmpeg's own", () => {
@@ -587,7 +587,7 @@ describe("the pre-classified callers", () => {
     stubTranscribe(503, { error: "upstream unavailable" });
 
     const err = await orFail(stepTranscribeSubmit)("https://x/a.wav").catch((e: unknown) => e);
-    expect(RetryableError.is(err)).toBe(true);
+    expect(err).toSatisfy(RetryableError.is);
   });
 
   test("orFail(stepTranscribeSubmit) returns the id on the happy path", async () => {

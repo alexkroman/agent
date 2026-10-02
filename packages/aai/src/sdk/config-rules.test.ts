@@ -219,16 +219,18 @@ describe("toAgentConfig — a shape mistake reads as a sentence", () => {
     // author sees at `aai build`. A `ZodError`'s own message is the JSON of its
     // issue objects — twelve lines of `origin`/`code`/`path` for one wrong
     // number, and the only authoring error in this SDK that was not a sentence.
-    let message = "";
-    try {
-      config({ ...pipelineFields, maxSteps: 0 });
-    } catch (err) {
-      message = err instanceof Error ? err.message : String(err);
-    }
-    expect(message).toContain("This agent's configuration is invalid");
-    expect(message).toContain("maxSteps");
-    expect(message).not.toContain('"code"');
-    expect(message.split("\n")).toHaveLength(1);
+    const run = () => config({ ...pipelineFields, maxSteps: 0 });
+    expect(run).toThrow(
+      expect.objectContaining({
+        message: expect.stringContaining("This agent's configuration is invalid"),
+      }),
+    );
+    expect(run).toThrow("maxSteps");
+    expect(run).toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining('"code"') }),
+    );
+    // One line: no newline anywhere in the message.
+    expect(run).toThrow(expect.objectContaining({ message: expect.not.stringContaining("\n") }));
   });
 
   test("every bad field is named, not just the first", () => {

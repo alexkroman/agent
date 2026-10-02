@@ -15,7 +15,7 @@ import { DEFAULT_RETRY_DELAY_MS, FatalError, RetryableError } from "./step-error
 
 describe("FatalError", () => {
   test("is recognised by its own static", () => {
-    expect(FatalError.is(new FatalError("no"))).toBe(true);
+    expect(new FatalError("no")).toSatisfy(FatalError.is);
     expect(RetryableError.is(new FatalError("no"))).toBe(false);
   });
 
@@ -32,7 +32,7 @@ describe("FatalError", () => {
 
 describe("RetryableError", () => {
   test("is recognised by its own static", () => {
-    expect(RetryableError.is(new RetryableError("later"))).toBe(true);
+    expect(new RetryableError("later")).toSatisfy(RetryableError.is);
     expect(FatalError.is(new RetryableError("later"))).toBe(false);
   });
 
@@ -69,7 +69,7 @@ describe("the brand", () => {
       value: "fatal",
       enumerable: false,
     });
-    expect(FatalError.is(fromElsewhere)).toBe(true);
+    expect(fromElsewhere).toSatisfy(FatalError.is);
   });
 
   test("is non-enumerable, so it survives neither a spread nor JSON", () => {

@@ -230,6 +230,6 @@ describe("get_page_design", () => {
     const { defs, schemas, guidance } = resolveAllBuiltins(["get_page_design"]);
     expect(defs.get_page_design?.execute).toBeTypeOf("function");
     expect(schemas.map((s) => s.name)).toEqual(["get_page_design"]);
-    expect(guidance.some((g) => g.includes("get_page_design"))).toBe(true);
+    expect(guidance).toContainEqual(expect.stringContaining("get_page_design"));
   });
 });

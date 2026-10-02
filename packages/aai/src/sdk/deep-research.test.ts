@@ -113,7 +113,7 @@ describe("the body", () => {
     const err = await Promise.resolve(def.run({ topic: "t", who: "Ada" }, ctx)).catch(
       (thrown: unknown) => thrown,
     );
-    expect(FatalError.is(err)).toBe(true);
+    expect(err).toSatisfy(FatalError.is);
     expect(seen).toEqual([err, "Ada"]);
     expect(ctx.steps.map((step) => step.name)).toContain("announceFailure");
   });
