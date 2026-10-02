@@ -60,6 +60,17 @@ export type ToolStepDeps = {
    * history rather than two nearly-equal ones.
    */
   toolCall: ToolCallContext & { recordToolResult: (message: Message) => void };
+  /**
+   * Which CONVERSATION is live — a counter the client's `reset` bumps. A call
+   * that settles into a different conversation from the one it was issued in
+   * neither records nor publishes its result. `reset` aborts the call, but the
+   * aborted result still settles a few microtasks later: recording it put a
+   * tool result from the dropped conversation into the fresh one (the next
+   * call's `ctx.messages` read it), and its `tool.completed` landed after
+   * `session.reset` in the log, where a resume rebuilds it into the new
+   * conversation too (`core-cancel-race.test.ts`).
+   */
+  conversation: () => number;
   emit: SessionEmitter["emit"];
   log: Logger;
   /** True in relay/host mode, where the relay executor emits `tool.called` itself. */
@@ -106,6 +117,15 @@ export function runToolStep(
     );
     return undefined;
   }
+  // Bound to the conversation this call was issued in — see `conversation`.
+  const issuedIn = deps.conversation();
+  const dropped = (): boolean => deps.conversation() !== issuedIn;
+  const toolCall: ToolStepDeps["toolCall"] = {
+    ...deps.toolCall,
+    recordToolResult: (message) => {
+      if (!dropped()) deps.toolCall.recordToolResult(message);
+    },
+  };
   return (async () => {
     try {
       // The call itself — coercion, the history snapshot, execution and the
@@ -114,7 +134,7 @@ export function runToolStep(
       // the call.
       const { result, forModel } = await runToolCall(
         { name, args, toolCallId: callId, signal: reply.abort.signal },
-        deps.toolCall,
+        toolCall,
       );
       // Full result goes to the provider; the client `tool.completed` event is
       // capped by the wire schema (MAX_TOOL_RESULT_CHARS), so truncate it or the
@@ -126,6 +146,7 @@ export function runToolStep(
       //
       // The PROVIDER's copy renders record collections as rows; the event and
       // the history keep the tool's own.
+      if (dropped()) return;
       reply.pendingTools.push({ callId, result: forModel });
       emit({ type: "tool.completed", toolCallId: callId, result: capToolResult(result) });
     } catch (err) {
@@ -133,6 +154,7 @@ export function runToolStep(
       // cannot be stopped mid-reply (the `fatalTool` capability), so a fatal
       // verdict and an executor failure alike answer the call with a failure
       // the model reads, and the history records it.
+      if (dropped()) return;
       const message = errorMessage(err);
       reply.pendingTools.push({ callId, result: serializeToolFailure(message) });
       emit({ type: "tool.completed", toolCallId: callId, result: capToolResult(message) });
