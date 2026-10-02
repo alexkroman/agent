@@ -17,11 +17,6 @@ import { describe, expect, test, vi } from "vitest";
 import { fakeOf, openSessionWith } from "./_assemblyai-test-utils.ts";
 import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
 
-vi.mock("assemblyai", async () => {
-  const { assemblyAIModuleMock } = await import("./_assemblyai-test-utils.ts");
-  return assemblyAIModuleMock();
-});
-
 async function openSession(
   providerOpts: AssemblyAISttOptions,
   openOpts: Partial<Parameters<ReturnType<typeof openAssemblyAI>["open"]>[0]> = {},

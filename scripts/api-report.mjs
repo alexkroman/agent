@@ -97,18 +97,14 @@ import {
 } from "./_api-derived.mjs";
 import { capabilityOwners, INDEX_FILE, indexFile, packageDirsOf } from "./_api-index.mjs";
 import { collectExports, typedEntryPoints } from "./_api-surface.mjs";
-import { parseScriptArgs } from "./_args.mjs";
+import { parseCheckFlag } from "./_args.mjs";
 import { publishablePackages, readManifest, repoRoot } from "./_fs.mjs";
 
 const require = createRequire(import.meta.url);
 const { Extractor, ExtractorConfig, ExtractorLogLevel } = require("@microsoft/api-extractor");
 
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
-const { values: FLAGS } = parseScriptArgs({
-  script: import.meta.url,
-  options: { check: { type: "boolean" } },
-});
-const CHECK = FLAGS.check === true;
+const CHECK = parseCheckFlag(import.meta.url);
 
 // The `.d.ts` entry points of a package's `exports` map — and their SLUGS —
 // live in `_api-surface.mjs` as `typedEntryPoints`. The scan and the slug rule

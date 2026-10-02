@@ -14,10 +14,16 @@
 import { DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type WebSocket from "ws";
+import WebSocket from "ws";
 import { createAudioSendGate } from "../_audio-gate.ts";
 import { pcm16ToBytes } from "../_pcm.ts";
-import { closeOnAbort, connectOrThrow, type SessionShell, waitForOpen } from "./_utils.ts";
+import {
+  closeOnAbort,
+  connectOrThrow,
+  type ProviderSocket,
+  type SessionShell,
+  waitForOpen,
+} from "./_utils.ts";
 import type { SttEvents } from "./openers.ts";
 
 /**
@@ -45,6 +51,19 @@ import type { SttEvents } from "./openers.ts";
 export const WS_OPEN_TIMEOUT_MS = 8000;
 
 /**
+ * How an opener constructs its socket — the seam a spec hands a fake through
+ * instead of replacing the `ws` module.
+ */
+export type CreateProviderSocket = (
+  url: string,
+  options: WebSocket.ClientOptions,
+) => ProviderSocket;
+
+/** The production {@link CreateProviderSocket}: a real `ws` client. */
+export const createProviderSocket: CreateProviderSocket = (url, options) =>
+  new WebSocket(url, options);
+
+/**
  * Construct a raw provider WebSocket, wrapping a constructor throw as a connect
  * error, and bind the pre-connect zero-listener `error` guard.
  *
@@ -54,12 +73,12 @@ export const WS_OPEN_TIMEOUT_MS = 8000;
  * This is the one place that invariant now lives; openers call it instead of
  * repeating the try/catch + placeholder-listener dance.
  */
-export function createGuardedWs(
-  create: () => WebSocket,
+export function createGuardedWs<S extends ProviderSocket>(
+  create: () => S,
   makeConnectError: (msg: string) => Error,
   label: string,
-): WebSocket {
-  let socket: WebSocket;
+): S {
+  let socket: S;
   try {
     socket = create();
   } catch (cause) {
@@ -76,7 +95,7 @@ export function createGuardedWs(
  * on its own strips that guard — the bug this centralizes away from the
  * openers. Pass `terminate` to send a graceful shutdown frame when still open.
  */
-export function dropSocket(ws: WebSocket, terminate?: () => void): void {
+export function dropSocket(ws: ProviderSocket, terminate?: () => void): void {
   ws.removeAllListeners();
   ws.on("error", () => undefined);
   if (terminate && ws.readyState === WS_OPEN) {
@@ -93,9 +112,9 @@ export function dropSocket(ws: WebSocket, terminate?: () => void): void {
   }
 }
 /** The whole raw-`ws` open, in one call — see {@link openGuardedWs}. */
-export interface OpenGuardedWsOptions {
+export interface OpenGuardedWsOptions<S extends ProviderSocket = ProviderSocket> {
   /** Construct the socket. A constructor throw becomes a connect error. */
-  create: () => WebSocket;
+  create: () => S;
   /** Provider label prefixing every error message (e.g. `"Rime TTS"`). */
   label: string;
   /** Build the provider's connect-error variant (e.g. `tts_connect_failed`). */
@@ -107,7 +126,7 @@ export interface OpenGuardedWsOptions {
    * frame that must precede any other traffic. A throw here drops the socket
    * and rejects, exactly as a failed open does.
    */
-  onOpen?: ((ws: WebSocket) => void) | undefined;
+  onOpen?: ((ws: S) => void) | undefined;
 }
 
 /**
@@ -124,7 +143,9 @@ export interface OpenGuardedWsOptions {
  * left held by a pending listener with no owner. The reconnect paths already
  * passed a deadline; only the initial opens did not.
  */
-export async function openGuardedWs(opts: OpenGuardedWsOptions): Promise<WebSocket> {
+export async function openGuardedWs<S extends ProviderSocket>(
+  opts: OpenGuardedWsOptions<S>,
+): Promise<S> {
   const ws = createGuardedWs(opts.create, opts.makeConnectError, opts.label);
   try {
     await connectOrThrow(opts.label, opts.makeConnectError, async () => {
@@ -149,7 +170,7 @@ export async function openGuardedWs(opts: OpenGuardedWsOptions): Promise<WebSock
  * stalled gate and the closed/open checks are written once.
  */
 export function wireSttPcmSocket(
-  ws: WebSocket,
+  ws: ProviderSocket,
   shell: SessionShell<SttEvents>,
   signal: AbortSignal,
   label: string,

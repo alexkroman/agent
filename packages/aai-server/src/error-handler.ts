@@ -2,10 +2,10 @@
 
 import { errorDetail, errorMessage } from "@alexkroman1/aai";
 import { formatSchemaIssues } from "@alexkroman1/aai/internal";
-import { isRecord } from "@alexkroman1/aai/utils";
 import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
+import { causes } from "./_causes.ts";
 import { EnvTooLargeError } from "./env-size.ts";
 import { createLogger } from "./logger.ts";
 import { PlatformDbUnavailableError } from "./platform/db-errors.ts";
@@ -61,18 +61,13 @@ export const PLATFORM_SERVICE_UNAVAILABLE_MESSAGE =
  * `workflow-handler.ts` attaches the real one; without walking to it the log would
  * print the caller-facing sentence and call that a diagnosis.
  *
- * Cycle-guarded, because a `cause` chain is not required to be one.
+ * Cycle-guarded by `causes`, because a `cause` chain is not required to be one.
  */
 function causeChain(err: unknown): string {
-  const parts: string[] = [errorDetail(err)];
-  const seen = new Set<unknown>([err]);
-  let cur: unknown = isRecord(err) ? err.cause : undefined;
-  while (isRecord(cur) && !seen.has(cur)) {
-    seen.add(cur);
-    parts.push(errorMessage(cur));
-    cur = cur.cause;
-  }
-  return parts.join(" <- ");
+  // `causes` yields `err` itself first when it is a record; it is described by
+  // `errorDetail` above rather than by its bare message.
+  const [, ...below] = causes(err);
+  return [errorDetail(err), ...below.map((cause) => errorMessage(cause))].join(" <- ");
 }
 
 /**

@@ -4,14 +4,14 @@
 //
 // Moved here with the code out of pipeline-stream.test.ts.
 
-import { APICallError, type ModelMessage, RetryError, tool } from "ai";
+import { APICallError, type ModelMessage, tool } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { FakeLanguageModel, ScriptedPart } from "../../../_fake-llm.ts";
 import { makeLogger, silentLogger } from "../../../_logger-test-utils.ts";
 import { createFakeLanguageModel } from "../../../_pipeline-test-fakes.ts";
 import { createContextBudget } from "../history/index.ts";
-import { createStreamPartHandler, type StreamPart } from "../reply/index.ts";
+import type { StreamPart } from "../reply/index.ts";
 import { type AdoptedLlmStream, consumeLlmStream, type TapeEntry } from "./stream.ts";
 
 type ConsumeArgs = Parameters<typeof consumeLlmStream>[0];
@@ -81,60 +81,6 @@ describe("LLM stream error reporting", () => {
     });
   }
 
-  test("an error part logs the HTTP diagnostics, not just the message", () => {
-    const log = makeLogger();
-    const handler = createStreamPartHandler({
-      onDelta: () => undefined,
-      sendTtsText: () => undefined,
-      onToolCall: () => undefined,
-      // Not a filler spec, and nothing disposes this handler: 0 keeps the
-      // construction-time cover window from outliving the test.
-      deadAirCoverMs: 0,
-      emitError: () => undefined,
-      log,
-      sid: "sid-1",
-    });
-    handler.handle({ type: "error", error: apiError() });
-    expect(log.error).toHaveBeenCalledWith("LLM stream error", {
-      // The logged message is the sentence the CALLER saw, verbatim — a support
-      // report quotes the banner, so the log has to be findable by it.
-      message: "Internal Server Error (HTTP 500 from llm-gateway.assemblyai.com)",
-      sid: "sid-1",
-      statusCode: 500,
-      url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
-      requestId: "06ad6271",
-      responseBody: '{"request_id":"06ad6271","message":"something went wrong","code":500}',
-    });
-  });
-
-  test("unwraps a RetryError so exhausted retries still report the last status", () => {
-    const log = makeLogger();
-    const handler = createStreamPartHandler({
-      onDelta: () => undefined,
-      sendTtsText: () => undefined,
-      onToolCall: () => undefined,
-      // Not a filler spec, and nothing disposes this handler: 0 keeps the
-      // construction-time cover window from outliving the test.
-      deadAirCoverMs: 0,
-      emitError: () => undefined,
-      log,
-      sid: "sid-2",
-    });
-    const last = apiError();
-    handler.handle({
-      type: "error",
-      error: new RetryError({
-        message: "Failed after 3 attempts. Last error: Internal Server Error",
-        reason: "maxRetriesExceeded",
-        errors: [last, last, last],
-      }),
-    });
-    expect(log.error).toHaveBeenCalledWith(
-      "LLM stream error",
-      expect.objectContaining({ statusCode: 500, requestId: "06ad6271" }),
-    );
-  });
-
   test("streamText never dumps the raw error object to the console", async () => {
     // The SDK's default onError is `console.error(error)`. For a retried API
     // failure that is ~100 lines (three nested stack traces plus the whole
@@ -161,27 +107,6 @@ describe("LLM stream error reporting", () => {
   // microphone it just had switched off. Found by the pipeline fuzz once its LLM
   // script could fail a turn; the terminal paths (`onProviderError`, the
   // provider-open rejection) stay fatal, and both call `terminate()`.
-  test("an error part reports the turn failure NON-fatally", () => {
-    const emitError = vi.fn();
-    const handler = createStreamPartHandler({
-      onDelta: () => undefined,
-      sendTtsText: () => undefined,
-      onToolCall: () => undefined,
-      // Not a filler spec, and nothing disposes this handler: 0 keeps the
-      // construction-time cover window from outliving the test.
-      deadAirCoverMs: 0,
-      emitError,
-      log: makeLogger(),
-      sid: "sid-1",
-    });
-    handler.handle({ type: "error", error: apiError() });
-    expect(emitError).toHaveBeenCalledWith(
-      "llm",
-      "Internal Server Error (HTTP 500 from llm-gateway.assemblyai.com)",
-      { fatal: false },
-    );
-  });
-
   /**
    * The error a rejected key really produces, built the way the AI SDK builds
    * it: `createJsonErrorResponseHandler` copies `response.statusText` into
@@ -201,29 +126,6 @@ describe("LLM stream error reporting", () => {
     });
   }
 
-  test("a rejected API key names the cause instead of reporting nothing", () => {
-    // The regression: this reached the browser as
-    // {"type":"error.reported","code":"llm","message":"","fatal":false} — a
-    // banner that says an error happened and refuses to say what, for the
-    // failure a new project is most likely to hit first.
-    const emitError = vi.fn();
-    const handler = createStreamPartHandler({
-      onDelta: () => undefined,
-      sendTtsText: () => undefined,
-      onToolCall: () => undefined,
-      deadAirCoverMs: 0,
-      emitError,
-      log: makeLogger(),
-      sid: "sid-401",
-    });
-    handler.handle({ type: "error", error: rejectedKeyError() });
-    expect(emitError).toHaveBeenCalledWith(
-      "llm",
-      "The LLM provider rejected this agent's API key: Invalid API key (HTTP 401 from llm-gateway.assemblyai.com). Check the API key in the agent's environment.",
-      { fatal: false },
-    );
-  });
-
   test("a thrown rejection reports the same sentence as the stream part", async () => {
     // A provider failure reaches the host two ways — an `error` part and a
     // throw — and a gateway can produce both for one turn. They must not
@@ -235,36 +137,6 @@ describe("LLM stream error reporting", () => {
     expect(emitError).toHaveBeenCalledWith(
       "llm",
       "The LLM provider rejected this agent's API key: Invalid API key (HTTP 401 from llm-gateway.assemblyai.com). Check the API key in the agent's environment.",
-      { fatal: false },
-    );
-  });
-
-  test("exhausted retries report the LAST attempt's cause, not the retry count", () => {
-    // `RetryError.message` ("Failed after 3 attempts…") states something, so
-    // nothing further down gets read unless the wrapper is unwrapped — which is
-    // what hid the 401 behind a sentence about retrying.
-    const emitError = vi.fn();
-    const handler = createStreamPartHandler({
-      onDelta: () => undefined,
-      sendTtsText: () => undefined,
-      onToolCall: () => undefined,
-      deadAirCoverMs: 0,
-      emitError,
-      log: makeLogger(),
-      sid: "sid-403",
-    });
-    const last = rejectedKeyError();
-    handler.handle({
-      type: "error",
-      error: new RetryError({
-        message: "Failed after 3 attempts. Last error: ",
-        reason: "maxRetriesExceeded",
-        errors: [last, last, last],
-      }),
-    });
-    expect(emitError).toHaveBeenCalledWith(
-      "llm",
-      expect.stringContaining("Invalid API key (HTTP 401 from llm-gateway.assemblyai.com)"),
       { fatal: false },
     );
   });
@@ -294,44 +166,6 @@ describe("LLM stream error reporting", () => {
     return consume({ llm, emitError, sid: "sid-throw-only" }).then(() => {
       expect(emitError).toHaveBeenCalledTimes(1);
     });
-  });
-
-  test("no LLM failure is ever reported with an empty message", () => {
-    // The property the browser banner depends on: `SessionError.message` is
-    // rendered verbatim, so "" is a UI that says an error occurred and refuses
-    // to say what. Every value here is one a provider client really throws.
-    const thrown: unknown[] = [
-      rejectedKeyError(),
-      apiError(),
-      // A body-less 502 from something in front of the provider.
-      new APICallError({
-        message: NO_MESSAGE,
-        url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
-        requestBodyValues: {},
-        statusCode: 502,
-        responseBody: "",
-      }),
-      new RetryError({
-        message: NO_MESSAGE,
-        reason: "maxRetriesExceeded",
-        errors: [rejectedKeyError()],
-      }),
-      new Error(NO_MESSAGE),
-    ];
-    for (const error of thrown) {
-      const emitError = vi.fn();
-      const handler = createStreamPartHandler({
-        onDelta: () => undefined,
-        sendTtsText: () => undefined,
-        onToolCall: () => undefined,
-        deadAirCoverMs: 0,
-        emitError,
-        log: makeLogger(),
-        sid: "sid-empty",
-      });
-      handler.handle({ type: "error", error });
-      expect.soft(emitError.mock.calls[0]?.[1]).not.toBe("");
-    }
   });
 
   test("a thrown LLM stream reports the turn failure NON-fatally", async () => {

@@ -44,6 +44,7 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { CloseableDb, ReservedDb } from "@alexkroman1/aai-runtime";
+import { causes } from "../_causes.ts";
 
 /**
  * Seconds the platform pools wait for a NEW connection before failing. Bounds
@@ -207,18 +208,13 @@ export function sqlState(err: unknown): string | undefined {
  * Whether `err` (or anything in its `cause` chain) means the platform database
  * could not be reached.
  *
- * Cycle-guarded, for the same reason `causeChain` in `error-handler.ts` is: a
- * `cause` chain is not required to be one.
+ * Cycle-guarded by `causes`, for the same reason `causeChain` in
+ * `error-handler.ts` is: a `cause` chain is not required to be one.
  */
 export function isPlatformDbUnreachable(err: unknown): boolean {
-  const seen = new Set<unknown>();
-  let cur: unknown = err;
-  while (isRecord(cur) && !seen.has(cur)) {
-    seen.add(cur);
+  for (const cur of causes(err)) {
     if (cur instanceof PlatformDbUnavailableError) return true;
-    const code = cur.code;
-    if (typeof code === "string" && UNREACHABLE_CODES.has(code)) return true;
-    cur = cur.cause;
+    if (typeof cur.code === "string" && UNREACHABLE_CODES.has(cur.code)) return true;
   }
   return false;
 }

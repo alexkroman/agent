@@ -8,11 +8,13 @@ export default defineUnitProject({
   setupFiles: ["./src/_test-setup.ts"],
   // Above the setup file's 10s ceiling, so a slow `waitFor` keeps its message.
   test: { testTimeout: 20_000 },
-  // Browser-heavy panes whose extracted logic is tested elsewhere. `auth.tsx`
-  // is deliberately never loaded by a test (supabase-js and an OAuth redirect).
+  // Browser-heavy panes whose extracted logic is tested elsewhere. `auth.tsx`'s
+  // spec drives only the flows with no third party; the rest is supabase-js
+  // wiring (an auth subscription, an OAuth redirect) no unit spec reaches.
   coverageExclude: [
     "src/main.tsx",
     "src/app.tsx",
+    "src/auth.tsx",
     "src/project-view.tsx",
     "src/components/gates.tsx",
     "src/panes/chat.tsx",

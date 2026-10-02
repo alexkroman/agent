@@ -1,11 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { flush } from "../../_timing-test-utils.ts";
-import { type DeepgramSession, openDeepgram } from "./deepgram.ts";
+import { type DeepgramConnect, type DeepgramSession, openDeepgram } from "./deepgram.ts";
 
 interface FakeSocket {
-  on(ev: string, fn: (...args: unknown[]) => void): void;
+  /** Generic so it fits each of the adapter's typed `on` overloads. */
+  on<A extends unknown[]>(ev: string, fn: (...args: A) => void): void;
   connect(): FakeSocket;
   waitForOpen(): Promise<void>;
   close(): void;
@@ -13,50 +14,36 @@ interface FakeSocket {
   _fire(ev: string, ...args: unknown[]): void;
 }
 
-const captured = vi.hoisted(() => ({
-  connectArgs: undefined as Record<string, unknown> | undefined,
-}));
+const captured: { connectArgs: Parameters<DeepgramConnect>[1] | undefined } = {
+  connectArgs: undefined,
+};
 
-vi.mock("@deepgram/sdk", () => {
-  const makeFakeSocket = (): FakeSocket => {
-    // V1Socket replaces — not appends — the listener per event.
-    const listeners = new Map<string, (...args: unknown[]) => void>();
-    const fake: FakeSocket = {
-      on(ev, fn) {
-        listeners.set(ev, fn);
-      },
-      connect() {
-        return fake;
-      },
-      async waitForOpen() {
-        /* no-op */
-      },
-      close() {
-        /* no-op */
-      },
-      sendMedia(_data: ArrayBufferView) {
-        /* no-op */
-      },
-      _fire(ev, ...args) {
-        listeners.get(ev)?.(...args);
-      },
-    };
-    return fake;
-  };
-
-  return {
-    DeepgramClient: class {
-      listen = {
-        v1: {
-          connect: (args: unknown): Promise<FakeSocket> => {
-            captured.connectArgs = args as Record<string, unknown>;
-            return Promise.resolve(makeFakeSocket());
-          },
-        },
-      };
+function makeFakeSocket(): FakeSocket {
+  // V1Socket replaces — not appends — the listener per event.
+  const listeners = new Map<string, (...args: unknown[]) => void>();
+  const fake: FakeSocket = {
+    on<A extends unknown[]>(ev: string, fn: (...args: A) => void) {
+      // The test names the event and supplies its payload.
+      listeners.set(ev, (...args) => fn(...(args as A)));
+    },
+    connect() {
+      return fake;
+    },
+    async waitForOpen() {
+      /* no-op */
+    },
+    close() {
+      /* no-op */
+    },
+    sendMedia(_data: ArrayBufferView) {
+      /* no-op */
+    },
+    _fire(ev, ...args) {
+      listeners.get(ev)?.(...args);
     },
   };
-});
+  return fake;
+}
 
 function makeResult(transcript: string, isFinal: boolean) {
   return {
@@ -73,13 +60,17 @@ function makeResult(transcript: string, isFinal: boolean) {
 async function openSession(
   args: Parameters<typeof openDeepgram>[0] = {},
 ): Promise<{ session: DeepgramSession; fake: FakeSocket }> {
-  const opener = openDeepgram(args);
+  const fake = makeFakeSocket();
+  const opener = openDeepgram(args, async (_apiKey, connectArgs) => {
+    captured.connectArgs = connectArgs;
+    return fake;
+  });
   const session = (await opener.open({
     sampleRate: 16_000,
     apiKey: "test-key",
     signal: new AbortController().signal,
   })) as DeepgramSession;
-  return { session, fake: session._connection as unknown as FakeSocket };
+  return { session, fake };
 }
 
 describe("Deepgram STT adapter", () => {

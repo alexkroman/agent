@@ -95,7 +95,7 @@ type BuildData = {
 /**
  * The prose slot, named by convention. Mirrors `worker-bundler.ts`'s constant of
  * the same name — the two cannot share one without an import cycle
- * (`build.ts` → `_bundler.ts` → `worker-bundler.ts`), so `_build.test.ts` pins
+ * (`build.ts` → `_bundler.ts` → `worker-bundler.ts`), so `build.test.ts` pins
  * the pair end to end instead: a build whose prompt really came from the file
  * has to report the file.
  */

@@ -19,18 +19,15 @@ import { deployAgent } from "./_request-test-utils.ts";
 import { fakeSandbox, spawnedAgent } from "./_sandbox-test-utils.ts";
 import { GUEST_ROUTE_EXPOSURE } from "./guest/routes.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import type { SpawnAgentServer } from "./sandbox.ts";
 
-const { mockSpawnAgentServer } = vi.hoisted(() => ({
-  // A cold broker must reach a real spawn for the "the guest exited" case to
-  // mean anything, so the backend is faked one level down rather than the
-  // sandbox being parked in the slot.
-  mockSpawnAgentServer: vi.fn(),
-}));
-
-vi.mock("./sandbox/vm.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./sandbox/vm.ts")>()),
-  spawnAgentServer: mockSpawnAgentServer,
-}));
+/**
+ * The guest spawn the orchestrator boots through
+ * (`OrchestratorOpts.spawnAgentServer`). A cold broker must reach a real spawn
+ * for the "the guest exited" case to mean anything, so the backend is faked one
+ * level down rather than the sandbox being parked in the slot.
+ */
+const mockSpawnAgentServer = vi.fn<SpawnAgentServer>();
 
 const TOKEN = "wh_abc123";
 const WEBHOOK_PATH = `/my-agent/.well-known/workflow/v1/webhook/${TOKEN}`;
@@ -55,6 +52,7 @@ function recordingGuest(answer: () => Response = () => new Response(null, { stat
 async function residentHarness(guestFetch?: typeof globalThis.fetch) {
   const slots = createSlotCache();
   const harness = await createTestOrchestrator({
+    spawnAgentServer: mockSpawnAgentServer,
     slots,
     ...omitUndefined({ guestFetch }),
   });
@@ -232,7 +230,11 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
     // until someone dialled the agent by hand.
     const guest = recordingGuest();
     const slots = createSlotCache();
-    const harness = await createTestOrchestrator({ slots, guestFetch: guest.fetchFn });
+    const harness = await createTestOrchestrator({
+      spawnAgentServer: mockSpawnAgentServer,
+      slots,
+      guestFetch: guest.fetchFn,
+    });
     await deployAgent(harness.fetch, "my-agent");
     expect(slots.get("my-agent")?.sandbox).toBeUndefined();
 
@@ -245,7 +247,10 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
 
   test("404s an unknown slug", async () => {
     const guest = recordingGuest();
-    const harness = await createTestOrchestrator({ guestFetch: guest.fetchFn });
+    const harness = await createTestOrchestrator({
+      spawnAgentServer: mockSpawnAgentServer,
+      guestFetch: guest.fetchFn,
+    });
 
     const res = await post(harness.fetch, "/no-such-agent/.well-known/workflow/v1/webhook/tok");
 
@@ -258,7 +263,11 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
     // same deal a browser gets for free by re-brokering.
     const guest = recordingGuest();
     const slots = createSlotCache();
-    const harness = await createTestOrchestrator({ slots, guestFetch: guest.fetchFn });
+    const harness = await createTestOrchestrator({
+      spawnAgentServer: mockSpawnAgentServer,
+      slots,
+      guestFetch: guest.fetchFn,
+    });
     await deployAgent(harness.fetch, "my-agent");
     setSlot(slots, {
       slug: "my-agent",

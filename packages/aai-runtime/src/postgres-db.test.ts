@@ -2,10 +2,10 @@
 
 import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai/internal";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createPostgresDb } from "./postgres-db.ts";
+import { type CreatePostgresDbOptions, createPostgresDbWithDriver } from "./postgres-db.ts";
 
-// Shape-only tests: the `postgres` module is mocked so no connection is ever
-// opened — what matters is the options the client is built with and how the
+// Shape-only tests: a fake driver is handed in through the loader seam so no
+// connection is ever opened — what matters is the options the client is built with and how the
 // Db contract maps onto `unsafe`/`end`.
 const unsafeMock = vi.fn();
 const endMock = vi.fn(() => Promise.resolve());
@@ -14,8 +14,14 @@ const reserveMock = vi.fn(() => Promise.resolve({ unsafe: unsafeMock, release: r
 const postgresMock = vi.fn((..._args: unknown[]) => ({
   unsafe: unsafeMock,
   reserve: reserveMock,
+  listen: vi.fn(),
   end: endMock,
 }));
+
+/** `createPostgresDb`, with {@link postgresMock} as the driver it loads. */
+function createPostgresDb(options: CreatePostgresDbOptions) {
+  return createPostgresDbWithDriver(options, async () => postgresMock);
+}
 
 /**
  * The options `createPostgresDb` built its client with.
@@ -35,8 +41,6 @@ function clientOptions(): {
   const [, options] = postgresMock.mock.calls[0] ?? [];
   return (options ?? {}) as ReturnType<typeof clientOptions>;
 }
-
-vi.mock("postgres", () => ({ default: (...args: unknown[]) => postgresMock(...args) }));
 
 /**
  * Construct a handle AND force the deferred driver load.

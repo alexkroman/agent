@@ -11,12 +11,10 @@
  *
  * The first two specs are what this file exists for now that recovery is the
  * DEFAULT: a page that passes nothing at all still records its runs under a key
- * the next load produces again, and still gets the live one back. `recover:
- * false` is the control that used to be "no key" — it is the only way left to
- * reach the old behaviour, and its assertions are the ones the defect had.
- * Everything after that is the four decisions the lookup makes rather than the
- * request itself — `find` is `workflow-client.test.ts`'s subject, and the watch
- * that follows the adopted id is `use-workflow-run.test.ts`'s.
+ * the next load produces again, and still gets the live one back. The four
+ * decisions the lookup itself makes (and `recover: false`, which skips it) are
+ * `_recover-run.test.ts`'s subject; `find` is `workflow-client.test.ts`'s, and
+ * the watch that follows the adopted id is `use-workflow-run.test.ts`'s.
  *
  * Its own file rather than more of `use-workflow-form.test.ts`, on that file's
  * own precedent (`use-workflow-form-recall.test.ts`, the upload half of the
@@ -101,116 +99,6 @@ describe("useWorkflowSubmit — the run after a reload", () => {
     // Nothing was passed: no key, no `recover`. This is the reload a person
     // actually performs, and what they get back is the run they left.
     await waitFor(() => expect(result.current.run?.runId).toBe("wrun_9"));
-  });
-
-  test("`recover: false` looks nothing up, and the run is lost with the page", async () => {
-    const api = fakeApi({ find: vi.fn(async () => [run({ runId: "wrun_9" })]) });
-    const first = renderSubmit(api, { recover: false });
-    await act(() => first.result.current.submit({ url: "u" }));
-    await waitFor(() => expect(first.result.current.run?.runId).toBe("wrun_1"));
-
-    first.unmount();
-    const second = renderSubmit(api, { recover: false });
-
-    await waitFor(() => expect(second.result.current.pending).toBe(false));
-    expect(second.result.current.run).toBeUndefined();
-    // The opt-out is about the LOOKUP, and this is what it costs: the run is
-    // still there and still recorded under the key, and this page will not ask.
-    expect(api.find).not.toHaveBeenCalled();
-    expect(vi.mocked(api.start).mock.calls[0]?.[2]?.key).toEqual(expect.any(String));
-  });
-
-  test("adopts the key's newest run on mount, so the reload finds it again", async () => {
-    const api = fakeApi({
-      find: vi.fn(async () => [run({ runId: "wrun_9", status: "running" })]),
-    });
-    const { result } = renderSubmit(api, { key: KEY, recover: true });
-
-    await waitFor(() => expect(result.current.run?.runId).toBe("wrun_9"));
-    // `limit: 1` because the newest run of this key is the only one a form can
-    // show; the rest are `useWorkflowRuns`' subject.
-    expect(api.find).toHaveBeenCalledWith("digest", KEY, { limit: 1 });
-  });
-
-  test("stays pending while it looks, so the form cannot start a second run", async () => {
-    const found = Promise.withResolvers<WorkflowRun[]>();
-    const api = fakeApi({ find: vi.fn(() => found.promise) });
-    const { result } = renderSubmit(api, { key: KEY, recover: true });
-
-    // The first frame, before any effect has settled: a page whose submit
-    // button reads `pending` must not offer it while a live run is arriving.
-    expect(result.current.pending).toBe(true);
-    expect(result.current.run).toBeUndefined();
-
-    await act(async () => {
-      found.resolve([]);
-      await found.promise;
-    });
-    await waitFor(() => expect(result.current.pending).toBe(false));
-  });
-
-  test("a key with no runs leaves an ordinary empty form", async () => {
-    const api = fakeApi({ find: vi.fn(async () => []) });
-    const { result } = renderSubmit(api, { key: KEY, recover: true });
-
-    await waitFor(() => expect(result.current.pending).toBe(false));
-    expect(result.current.run).toBeUndefined();
-    expect(result.current.error).toBeUndefined();
-  });
-
-  test("does not overwrite a run started before the lookup landed", async () => {
-    const found = Promise.withResolvers<WorkflowRun[]>();
-    const api = fakeApi({
-      find: vi.fn(() => found.promise),
-      get: vi.fn(async (runId: string) => run({ runId, status: "running" })),
-    });
-    const { result } = renderSubmit(api, { key: KEY, recover: true });
-
-    await act(() => result.current.submit({ url: "u" }));
-    await waitFor(() => expect(result.current.run?.runId).toBe("wrun_1"));
-
-    // A slow lookup answering with an OLDER run of the same key must not
-    // replace the one the person just started — the newest run is the one they
-    // are looking at, and it is not the one this answer names.
-    await act(async () => {
-      found.resolve([run({ runId: "wrun_old" })]);
-      await found.promise;
-    });
-    expect(result.current.run?.runId).toBe("wrun_1");
-  });
-
-  test("reports a failed lookup rather than showing a form with no run", async () => {
-    // Swallowing it is the worse half of the trade: a person with a live run
-    // sees an empty form and starts a second one, which is the duplicated work
-    // the key exists to prevent. A page that has never run anything pays a
-    // banner it can ignore.
-    const api = fakeApi({
-      find: vi.fn(async () => {
-        throw new Error("agent unavailable");
-      }),
-    });
-    const { result } = renderSubmit(api, { key: KEY, recover: true });
-
-    await waitFor(() => expect(result.current.error).toBe("agent unavailable"));
-    expect(result.current.pending).toBe(false);
-  });
-
-  test("reset() is not undone by a second lookup", async () => {
-    const api = fakeApi({
-      find: vi.fn(async () => [run({ runId: "wrun_9", status: "running" })]),
-    });
-    const { result } = renderSubmit(api, { key: KEY, recover: true });
-    await waitFor(() => expect(result.current.run?.runId).toBe("wrun_9"));
-
-    act(() => {
-      result.current.reset();
-    });
-
-    // The recovery is a MOUNT-time act. Re-running it whenever the hook holds
-    // no run would re-adopt the run the person had just dismissed, which is a
-    // Clear button that clears nothing.
-    await waitFor(() => expect(result.current.run).toBeUndefined());
-    expect(api.find).toHaveBeenCalledTimes(1);
   });
 
   test("a caller's key displaces the minted one, and nothing is stored for it", async () => {

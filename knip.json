@@ -24,7 +24,11 @@
     // dependency: this repo must not install a 100 MB binary to run its tests,
     // and the script treats an absent one as "no stack resolved" with a printed
     // reason rather than a failure.
-    "supabase"
+    "supabase",
+    // The ffmpeg scenario specs probe for the system binary and skip without
+    // it (`AAI_REQUIRE_FFMPEG` makes that a failure). Like `supabase`, it is a
+    // host tool, never a dependency.
+    "ffmpeg"
   ],
   "ignoreExportsUsedInFile": true,
   // The "exports" check is ON. It was off repo-wide for a long time because

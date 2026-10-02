@@ -4,7 +4,8 @@
  * newest init when a stale generation's init settles late, a resolved
  * VoiceIO must never orphan a previous instance (live mic tracks), and the
  * pre-init greeting replay must respect turn boundaries (barge-in). The
- * audio module is mocked so tests control exactly when each init resolves.
+ * audio bring-up is handed in (`createBrowserSessionWith`) so tests control
+ * exactly when each init resolves.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tick } from "../_react-test-utils.ts";
@@ -15,7 +16,9 @@ import {
   makeConfig,
   resetLastSocket,
 } from "../_session-core-test-utils.ts";
-import { createBrowserSession } from "./browser-session.ts";
+import type { VoiceIO } from "../audio/index.ts";
+import type { openAudioPath } from "./audio-setup.ts";
+import { createBrowserSessionWith } from "./browser-session.ts";
 import type { BrowserSession } from "./types.ts";
 
 type FakeVoiceIO = {
@@ -39,19 +42,16 @@ function makeFakeIO(done?: () => Promise<void>): FakeVoiceIO {
   return io;
 }
 
-/** Resolvers for in-flight mock inits, in call order — tests pop/shift to release. */
-const pendingInits: ((io: FakeVoiceIO) => void)[] = [];
+/** Resolvers for in-flight fake inits, in call order — tests pop/shift to release. */
+const pendingInits: ((io: VoiceIO) => void)[] = [];
 
-const createVoiceIOMock = vi.fn(
-  (_opts: unknown) =>
-    new Promise<FakeVoiceIO>((resolve) => {
+/** The audio bring-up, settled by hand through {@link pendingInits}. */
+const openAudioMock = vi.fn<typeof openAudioPath>(
+  () =>
+    new Promise<VoiceIO>((resolve) => {
       pendingInits.push(resolve);
     }),
 );
-
-vi.mock("../audio/index.ts", () => ({
-  createVoiceIO: (opts: unknown) => createVoiceIOMock(opts),
-}));
 
 describe("initAudioCapture races", () => {
   let core: BrowserSession;
@@ -59,11 +59,11 @@ describe("initAudioCapture races", () => {
   beforeEach(() => {
     resetLastSocket();
     pendingInits.length = 0;
-    createVoiceIOMock.mockClear();
-    core = createBrowserSession({
-      platformUrl: "ws://localhost:3000",
-      WebSocket: MockWebSocketConstructor,
-    });
+    openAudioMock.mockClear();
+    core = createBrowserSessionWith(
+      { platformUrl: "ws://localhost:3000", WebSocket: MockWebSocketConstructor },
+      { openAudioPath: openAudioMock },
+    );
   });
 
   afterEach(() => {
@@ -83,14 +83,14 @@ describe("initAudioCapture races", () => {
     core.connect();
     lastSocket?.simulateOpen();
     lastSocket?.simulateMessage(makeConfig());
-    await vi.waitFor(() => expect(createVoiceIOMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(openAudioMock).toHaveBeenCalledTimes(1));
 
     // Reconnect (gen N+1): init2 starts and is also pending.
     core.connect();
     const socket2 = lastSocket;
     socket2?.simulateOpen();
     socket2?.simulateMessage(makeConfig());
-    await vi.waitFor(() => expect(createVoiceIOMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(openAudioMock).toHaveBeenCalledTimes(2));
 
     // init1 settles: stale generation, so it closes its own io — and must
     // NOT clear the in-flight flag init2 owns.
@@ -106,7 +106,7 @@ describe("initAudioCapture races", () => {
     pendingInits.shift()?.(io2);
     await vi.waitFor(() => expect(core.getSnapshot().recording).toBe(true));
 
-    expect(createVoiceIOMock).toHaveBeenCalledTimes(2);
+    expect(openAudioMock).toHaveBeenCalledTimes(2);
     expect(io2.close).not.toHaveBeenCalled();
     expect(sentJsonTypes(socket2).filter((t) => t === "audio_ready")).toHaveLength(1);
   });
@@ -115,7 +115,7 @@ describe("initAudioCapture races", () => {
     core.connect();
     lastSocket?.simulateOpen();
     lastSocket?.simulateMessage(makeConfig());
-    await vi.waitFor(() => expect(createVoiceIOMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(openAudioMock).toHaveBeenCalledTimes(1));
     const io1 = makeFakeIO();
     pendingInits.shift()?.(io1);
     await vi.waitFor(() => expect(core.getSnapshot().recording).toBe(true));
@@ -124,7 +124,7 @@ describe("initAudioCapture races", () => {
     // A second same-connection init (repeated config) must not leave io1
     // orphaned with live mic tracks when io2 takes the slot.
     lastSocket?.simulateMessage(makeConfig());
-    await vi.waitFor(() => expect(createVoiceIOMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(openAudioMock).toHaveBeenCalledTimes(2));
     const io2 = makeFakeIO();
     pendingInits.shift()?.(io2);
     await vi.waitFor(() => expect(io1.close).toHaveBeenCalled());
@@ -135,7 +135,7 @@ describe("initAudioCapture races", () => {
     core.connect();
     lastSocket?.simulateOpen();
     lastSocket?.simulateMessage(makeConfig());
-    await vi.waitFor(() => expect(createVoiceIOMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(openAudioMock).toHaveBeenCalledTimes(1));
 
     // Greeting audio and its audio_done arrive before init completes.
     lastSocket?.simulateMessage(new Uint8Array([1, 2, 3, 4]).buffer);

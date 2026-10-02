@@ -427,10 +427,7 @@ export class CancelThenStrayAudio implements Cmd {
   }
 
   async run(m: ServiceModel, h: Harness): Promise<void> {
-    hit(h, "clientCancel");
-    h.audioSuppressed = true;
-    h.session.command({ type: "cancel" });
-    await drain();
+    await sendCancel(h);
     if (h.audioSuppressed) hit(h, "audioDuringSuppression");
     h.link.current()?.deliver({ type: "reply.audio", data: "AAECAwQF" });
     await drain();
@@ -440,6 +437,14 @@ export class CancelThenStrayAudio implements Cmd {
   toString(): string {
     return "cancel + stray audio";
   }
+}
+
+/** A client `cancel`, and the suppression window it opens. */
+async function sendCancel(h: Harness): Promise<void> {
+  hit(h, "clientCancel");
+  h.audioSuppressed = true;
+  h.session.command({ type: "cancel" });
+  await drain();
 }
 
 /**
@@ -454,10 +459,7 @@ export class ClientCancel implements Cmd {
     return true;
   }
   async run(m: ServiceModel, h: Harness): Promise<void> {
-    hit(h, "clientCancel");
-    h.audioSuppressed = true;
-    h.session.command({ type: "cancel" });
-    await drain();
+    await sendCancel(h);
     syncFromReality(m, h);
   }
   toString(): string {

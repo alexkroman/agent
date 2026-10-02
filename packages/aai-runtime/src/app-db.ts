@@ -72,11 +72,17 @@ const pools = new Map<string, PoolEntry>();
  * Close the lease when you are done with it, exactly as you would a handle of
  * your own; the pool outlives it if anybody else still holds one.
  *
+ * `create` builds a pool on a miss — a seam for specs, defaulting to the real
+ * {@link createPostgresDb}.
+ *
  * @internal
  */
-export function openAppDb(url: string): CloseableDb {
+export function openAppDb(
+  url: string,
+  create: (options: { url: string; max: number }) => CloseableDb = createPostgresDb,
+): CloseableDb {
   const entry: PoolEntry = pools.get(url) ?? {
-    db: createPostgresDb({ url, max: APP_DB_POOL_MAX }),
+    db: create({ url, max: APP_DB_POOL_MAX }),
     leases: 0,
   };
   entry.leases += 1;

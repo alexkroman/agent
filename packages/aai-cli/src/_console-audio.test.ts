@@ -7,36 +7,36 @@
 
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
+import { createSoxAudio, missingSoxMessage, type SoxSpawn } from "./_console-audio.ts";
 
 type FakeChild = EventEmitter & {
   stdin: PassThrough;
   stdout: PassThrough;
   exitCode: number | null;
   killed: boolean;
-  kill: ReturnType<typeof vi.fn>;
+  kill: Mock<(signal?: NodeJS.Signals) => boolean>;
 };
 
 const children: { cmd: string; args: string[]; child: FakeChild }[] = [];
 
-vi.mock("node:child_process", () => ({
-  spawn: vi.fn((cmd: string, args: string[]) => {
-    const child = Object.assign(new EventEmitter(), {
-      stdin: new PassThrough(),
-      stdout: new PassThrough(),
-      exitCode: null,
-      killed: false,
-    }) as FakeChild;
-    child.kill = vi.fn(() => {
+/** The `spawn` the devices are built with: records each process it starts. */
+const fakeSpawn: SoxSpawn = (cmd, args) => {
+  const child: FakeChild = Object.assign(new EventEmitter(), {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    exitCode: null,
+    killed: false,
+    kill: vi.fn((_signal?: NodeJS.Signals) => {
       child.killed = true;
       return true;
-    });
-    children.push({ cmd, args, child });
-    return child;
-  }),
-}));
+    }),
+  });
+  children.push({ cmd, args, child });
+  return child;
+};
 
-const { missingSoxMessage, soxAudio } = await import("./_console-audio.ts");
+const soxAudio = createSoxAudio(fakeSpawn);
 
 const RAW_PCM16_ARGS = ["-t", "raw", "-b", "16", "-e", "signed-integer", "-c", "1", "-L"];
 

@@ -16,6 +16,7 @@
 
 import { trace } from "@opentelemetry/api";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
+import { otelModules } from "./_otel-load.ts";
 import {
   OTEL_ENDPOINT_ENVS,
   startTracing,
@@ -98,18 +99,12 @@ describe("the env gate", () => {
     // exporter never installed. Simulated by failing the dynamic import, since
     // this workspace HAS the peers — what is asserted is the message, because a
     // bare ERR_MODULE_NOT_FOUND names an internal chunk the reader never wrote.
-    vi.doMock("./_tracing-otel.ts", () => {
-      throw new Error("Cannot find package '@opentelemetry/api'");
-    });
-    onTestFinished(() => {
-      vi.doUnmock("./_tracing-otel.ts");
-      vi.resetModules();
-    });
-    vi.resetModules();
-    const { startTracing: fresh } = await import("./tracing.ts");
-    await expect(fresh({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318" })).rejects.toThrow(
-      /optional OpenTelemetry peers[\s\S]*npm i @opentelemetry\/api/,
+    vi.spyOn(otelModules, "tracing").mockRejectedValue(
+      new Error("Cannot find package '@opentelemetry/api'"),
     );
+    await expect(
+      startTracing({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318" }),
+    ).rejects.toThrow(/optional OpenTelemetry peers[\s\S]*npm i @opentelemetry\/api/);
   });
 
   test("the detached start does nothing at all when unconfigured", async () => {
@@ -125,19 +120,12 @@ describe("the metrics gate", () => {
   test("missing METRICS peers are one warning, and the start still resolves", async () => {
     // A deployment that installed only the trace peers keeps its traces: the
     // metrics half answers with the install line and steps aside.
-    vi.doMock("./_metrics-otel.ts", () => {
-      throw new Error("Cannot find package '@opentelemetry/sdk-metrics'");
-    });
+    vi.spyOn(otelModules, "metrics").mockRejectedValue(
+      new Error("Cannot find package '@opentelemetry/sdk-metrics'"),
+    );
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    onTestFinished(() => {
-      warn.mockRestore();
-      vi.doUnmock("./_metrics-otel.ts");
-      vi.resetModules();
-    });
-    vi.resetModules();
-    const { startTracing: fresh } = await import("./tracing.ts");
     await expect(
-      fresh({ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://m:4318" }),
+      startTracing({ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://m:4318" }),
     ).resolves.toBeUndefined();
     // Only OUR line is counted: a spy on the global also sees whatever else the
     // process warns about while the module graph loads (coverage runs do).
