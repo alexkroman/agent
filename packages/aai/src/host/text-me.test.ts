@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
+
+import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { setSessionPhone } from "../sdk/session-phone.ts";
-import { createToolContext } from "@alexkroman1/aai/testing";
 import { fakeFetch } from "./_test-utils.ts";
 import { createTextMe } from "./text-me.ts";
 
@@ -56,10 +57,7 @@ describe("text_me", () => {
     const mockFetch = textbelt();
     const tool = createTextMe(fakeFetch(mockFetch));
     expect(
-      await tool.execute(
-        { message: "hi" },
-        createToolContext({ env: { SMS_TO_PHONE: OWNER } }),
-      ),
+      await tool.execute({ message: "hi" }, createToolContext({ env: { SMS_TO_PHONE: OWNER } })),
     ).toEqual({ error: expect.stringContaining("TEXTBELT_KEY") });
     expect(
       await tool.execute(

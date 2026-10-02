@@ -23,8 +23,8 @@
  * multi-call tool through one path.
  */
 
+import { scriptRouter } from "./_testing-script.ts";
 import type { GenerateFn, GenerateOptions } from "./generate.ts";
-import { isRecord } from "./utils.ts";
 
 /** One `ctx.generate` call, as recorded by {@link stubGenerate}. */
 export interface StubGenerateCall {
@@ -147,11 +147,11 @@ export interface StubGenerate {
  */
 export function stubGenerate(script: StubGenerateScript): StubGenerate {
   const calls: StubGenerateCall[] = [];
-  // Checked at BIND, for a caller with no compiler: a script in the old bare
-  // shape would otherwise read as a table with no routes and reject every call
-  // with a sentence about system prompts.
-  const routes = routeTable(script);
-  const single = "reply" in script ? script.reply : undefined;
+  const router = scriptRouter<StubGenerateReply, StubGenerateCall>(
+    script,
+    "stubGenerate: a script is `{ reply }` (one route for every call) or `{ routes }` " +
+      "(keyed by system prompt), exactly one of the two",
+  );
 
   // Annotated rather than inferred, and the implementation returns `object` on
   // every path: that is what makes one function inhabit both of `GenerateFn`'s
@@ -159,8 +159,8 @@ export function stubGenerate(script: StubGenerateScript): StubGenerate {
   const generate = ((options: GenerateOptions) => {
     const call: StubGenerateCall = { prompt: options.prompt, system: options.system, options };
     calls.push(call);
-    const route = routes ? routes[options.system ?? ""] : single;
-    if (route === undefined) {
+    const reply = router.answer(options.system ?? "", call);
+    if (reply === undefined) {
       // REJECTS rather than throws: `ctx.generate` returns a promise, so a
       // synchronous throw would surface in a different place from every real
       // failure — and a tool that catches its own model errors would not catch
@@ -169,37 +169,14 @@ export function stubGenerate(script: StubGenerateScript): StubGenerate {
         new Error(
           `stubGenerate: no route for this call's system prompt. It carried: ${
             options.system === undefined ? "(none)" : JSON.stringify(options.system)
-          }. Routed systems: ${
-            Object.keys(routes ?? {})
-              .map(shorten)
-              .join(", ") || "(none)"
-          }.`,
+          }. Routed systems: ${router.routed.map(shorten).join(", ") || "(none)"}.`,
         ),
       );
     }
-    return Promise.resolve(envelope(typeof route === "function" ? route(call) : route));
+    return Promise.resolve(envelope(reply));
   }) as GenerateFn;
 
   return { generate, calls };
-}
-
-/**
- * The route table a script names, or `undefined` for a `{ reply }` script — and
- * a throw for anything that is neither, which is what a script in the bare
- * shape `stubGenerate` used to take (a string, a lone reply, an unwrapped table)
- * reaches when nothing type-checked it.
- */
-function routeTable(
-  script: StubGenerateScript,
-): Readonly<Record<string, StubGenerateRoute>> | undefined {
-  const given: unknown = script;
-  if (isRecord(given) && "reply" in given !== "routes" in given) {
-    return "routes" in script ? script.routes : undefined;
-  }
-  throw new Error(
-    "stubGenerate: a script is `{ reply }` (one route for every call) or `{ routes }` " +
-      "(keyed by system prompt), exactly one of the two",
-  );
 }
 
 /** The `{ text, object }` shape both `GenerateFn` overloads are satisfied by. */

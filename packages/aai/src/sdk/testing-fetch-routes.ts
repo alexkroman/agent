@@ -31,12 +31,11 @@ import {
   routeTable,
 } from "./_route-keys.ts";
 import {
-  recordRequest,
+  publishAnsweringStepFetch,
   type StubStepAnswer,
   type StubStepRequest,
   toStepResponse,
 } from "./_testing-step-fetch.ts";
-import { publishStepFetch, type StepFetchInit } from "./step-fetch.ts";
 
 /**
  * One request as a route sees it: the recorded request (`url`, `method`,
@@ -259,21 +258,20 @@ export function stubFetchRoutes(
   }) as typeof globalThis.fetch;
 
   globalThis.fetch = routed;
-  const publishStep = options.stepFetch ?? true;
-  if (publishStep) {
-    publishStepFetch(async (url: string, init: StepFetchInit = {}) => {
-      const recorded = await recordRequest(url, init);
-      return dispatch(recorded, "stepFetch", () =>
-        original(url, {
-          method: recorded.method,
-          headers: recorded.headers,
-          ...(recorded.body === undefined
-            ? {}
-            : { body: recorded.body as string | Uint8Array<ArrayBuffer> }),
-        }),
-      );
-    });
-  }
+  const unpublishStep =
+    (options.stepFetch ?? true)
+      ? publishAnsweringStepFetch((recorded) =>
+          dispatch(recorded, "stepFetch", () =>
+            original(recorded.url, {
+              method: recorded.method,
+              headers: recorded.headers,
+              ...(recorded.body === undefined
+                ? {}
+                : { body: recorded.body as string | Uint8Array<ArrayBuffer> }),
+            }),
+          ),
+        )
+      : undefined;
 
   return {
     hits,
@@ -287,7 +285,7 @@ export function stubFetchRoutes(
       // Only if it is still ours: a later stub replaced it and owns putting
       // the global back.
       if (globalThis.fetch === routed) globalThis.fetch = original;
-      if (publishStep) publishStepFetch(undefined);
+      unpublishStep?.();
     },
   };
 }

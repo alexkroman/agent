@@ -38,6 +38,10 @@
  * @module testing/vitest
  */
 
+// Each `install*` registers its `restore` with `onTestFinished`, not `afterEach`:
+// `afterEach` may only be called while a suite is COLLECTED, so a helper called
+// from a test body could not register one. Outside a test or hook vitest throws;
+// a fake with module lifetime uses `@alexkroman1/aai/testing`'s `restore` form.
 import { onTestFinished, vi } from "vitest";
 import type { StubStepAnswer, StubStepFetch, StubStepRequest } from "./_testing-step-fetch.ts";
 import { stubStepFetch } from "./_testing-step-fetch.ts";
@@ -113,30 +117,6 @@ export function installStubGateway(
 }
 
 /**
- * Register a fake's `restore` with the test that installed it.
- *
- * `onTestFinished` rather than `afterEach`, and the difference is what makes the
- * whole `install*` family possible: `afterEach` may only be called while a suite
- * is being COLLECTED, so a helper called from inside a test body cannot register
- * one — which is exactly where every template's stub is created, in a
- * `stubProvider()` called by the test that needs it. `onTestFinished` registers
- * against the test currently running, and runs in reverse order, so a spec that
- * installs three fakes unwinds them in the order it would have written by hand.
- *
- * The registry those specs kept instead — `const restores: (() => void)[]` plus
- * an `afterEach` that splices it — is the thing this replaces; one file had
- * three of them.
- *
- * Called from a hook or a test body. Outside both there is no test to attach to,
- * and vitest says so; a fake installed at module scope has module lifetime and
- * belongs in `sdk/testing.ts`'s framework-agnostic form, where the caller owns
- * the `restore` explicitly.
- */
-function restoreAfterThisTest(restore: () => void): void {
-  onTestFinished(restore);
-}
-
-/**
  * Route the global `fetch` — and the step fetch — through one URL/method
  * table, restored when this test finishes, and return the request log.
  *
@@ -168,7 +148,7 @@ export function installFetchRoutes(
   options: FetchRoutesOptions = {},
 ): StubFetchRoutes {
   const routed = stubFetchRoutes(routes, options);
-  restoreAfterThisTest(routed.restore);
+  onTestFinished(routed.restore);
   return routed;
 }
 
@@ -196,7 +176,7 @@ export function installStubUploads(
   options: StubUploadsOptions = {},
 ): StubUploads {
   const uploads = stubUploads(files, options);
-  restoreAfterThisTest(uploads.restore);
+  onTestFinished(uploads.restore);
   return uploads;
 }
 
@@ -215,7 +195,7 @@ export function installStubStepFetch(
   answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>,
 ): StubStepFetch {
   const fetched = answer ? stubStepFetch(answer) : stubStepFetch();
-  restoreAfterThisTest(fetched.restore);
+  onTestFinished(fetched.restore);
   return fetched;
 }
 
@@ -230,7 +210,7 @@ export function installStubStepFetch(
  */
 export function installStubReporter(): StubReporter {
   const reported = stubReporter();
-  restoreAfterThisTest(reported.restore);
+  onTestFinished(reported.restore);
   return reported;
 }
 
@@ -246,7 +226,7 @@ export function installStubReporter(): StubReporter {
  */
 export function installStubStepDelegate(script: StubDelegateScript): StubStepDelegate {
   const delegated = stubStepDelegate(script);
-  restoreAfterThisTest(delegated.restore);
+  onTestFinished(delegated.restore);
   return delegated;
 }
 
@@ -261,7 +241,7 @@ export function installStubStepDelegate(script: StubDelegateScript): StubStepDel
  */
 export function installStubSpeech(options: StubSpeechOptions = {}): StubSpeech {
   const speech = stubSpeech(options);
-  restoreAfterThisTest(speech.restore);
+  onTestFinished(speech.restore);
   return speech;
 }
 
@@ -289,7 +269,7 @@ export function installStubSpeech(options: StubSpeechOptions = {}): StubSpeech {
  */
 export function installStubClientInbox(options: StubClientInboxOptions = {}): StubClientInbox {
   const inbox = stubClientInbox(options);
-  restoreAfterThisTest(inbox.restore);
+  onTestFinished(inbox.restore);
   return inbox;
 }
 
@@ -305,7 +285,7 @@ export function installStubClientInbox(options: StubClientInboxOptions = {}): St
  */
 export function installStubTranscribe(options: StubTranscribeOptions = {}): StubTranscribe {
   const provider = stubTranscribe(options);
-  restoreAfterThisTest(provider.restore);
+  onTestFinished(provider.restore);
   return provider;
 }
 

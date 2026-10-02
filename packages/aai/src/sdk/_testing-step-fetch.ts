@@ -156,14 +156,7 @@ export type StubStepFetch = {
 /** Statuses a `Response` may not carry a body with. */
 const NULL_BODY_STATUSES = new Set([204, 205, 304]);
 
-/**
- * Turn a {@link StubStepAnswer} into the `Response` a step will read.
- *
- * Shared with `stubTranscribe`, which routes the transcription endpoints itself
- * and hands everything else to the caller's own handler — both have to encode
- * the shorthand the same way or a spec's `otherwise` would behave differently
- * from its `stubStepFetch`.
- */
+/** Turn a {@link StubStepAnswer} into the `Response` a step will read. */
 export function toStepResponse(answered: StubStepAnswer): Response {
   if (answered instanceof Response) return answered;
   // A JSON body is what nearly every endpoint a step calls answers with, so
@@ -222,21 +215,30 @@ export function stubStepFetch(
   answer: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer> = () => ({}),
 ): StubStepFetch {
   const calls: StubStepRequest[] = [];
-  publishStepFetch(async (url: string, init: StepFetchInit = {}): Promise<Response> => {
-    const request = await recordRequest(url, init);
+  const restore = publishAnsweringStepFetch((request) => {
     calls.push(request);
-    return toStepResponse(await answer(request));
+    return answer(request);
   });
-  return { calls, restore: () => publishStepFetch(undefined) };
+  return { calls, restore };
 }
 
 /**
- * The recorded form of one outbound step request.
- *
- * Its own function because `stubTranscribe` records the same way — a spec that
- * moves from one fake to the other must not find the body drained differently.
+ * Publish a `stepFetch` that records each request (body drained) and encodes
+ * whatever `answer` returns with {@link toStepResponse} — every step-fetch fake
+ * here is this plus its own routing. Returns the unpublish.
  */
-export async function recordRequest(url: string, init: StepFetchInit): Promise<StubStepRequest> {
+export function publishAnsweringStepFetch(
+  answer: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>,
+): () => void {
+  publishStepFetch(
+    async (url: string, init: StepFetchInit = {}): Promise<Response> =>
+      toStepResponse(await answer(await recordRequest(url, init))),
+  );
+  return () => publishStepFetch(undefined);
+}
+
+/** The recorded form of one outbound step request. */
+async function recordRequest(url: string, init: StepFetchInit): Promise<StubStepRequest> {
   return {
     url,
     method: init.method ?? "GET",

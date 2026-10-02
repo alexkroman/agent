@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { describe, expect, test, vi } from "vitest";
 import { createToolContext } from "@alexkroman1/aai/testing";
+import { describe, expect, test, vi } from "vitest";
 import { fakeFetch } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import { SESSION_NOTES_TTL_MS } from "./session-notes.ts";

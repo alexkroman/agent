@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
+
 import { createToolContext } from "@alexkroman1/aai/testing";
+import { describe, expect, test, vi } from "vitest";
 import { fakeFetch } from "./_test-utils.ts";
 import { createOpenMeteo } from "./open-meteo.ts";
 import { setSessionLocation } from "./session-location.ts";

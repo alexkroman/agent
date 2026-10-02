@@ -41,6 +41,7 @@
  * @module testing
  */
 
+import { recordingSlot } from "./_testing-slot.ts";
 import { publishStepInfoReader } from "./step-attempt.ts";
 import { publishStepReporter } from "./step-report.ts";
 import { DEFAULT_STEP_MAX_ATTEMPTS } from "./workflow-ctx-options.ts";
@@ -312,12 +313,16 @@ export function stubStepInfo(step: {
 export function stubReporter(): StubReporter {
   const lines: string[] = [];
   const emitted: StubEmitted[] = [];
-  publishStepReporter((chunk, options) => {
-    // The namespace is what tells the two apart, and it is the SAME test
-    // `stepEmit()`'s own contract rests on: an absent one is the default stream,
-    // which is `stepReport()`'s.
-    if (options?.namespace === undefined) lines.push(String(chunk));
-    else emitted.push({ namespace: options.namespace, chunk });
-  });
-  return { lines, emitted, restore: () => publishStepReporter(undefined) };
+  const { restore } = recordingSlot(
+    publishStepReporter,
+    (chunk, options) => ({ chunk, namespace: options?.namespace }),
+    ({ chunk, namespace }) => {
+      // The namespace is what tells the two apart, and it is the SAME test
+      // `stepEmit()`'s own contract rests on: an absent one is the default
+      // stream, which is `stepReport()`'s.
+      if (namespace === undefined) lines.push(String(chunk));
+      else emitted.push({ namespace, chunk });
+    },
+  );
+  return { lines, emitted, restore };
 }
