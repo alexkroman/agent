@@ -202,3 +202,59 @@ describe("reportsErrors", () => {
     expect(lifecycle.reportsErrors()).toBe(false);
   });
 });
+
+describe("owns: which server frames are still dispatched", () => {
+  const delta = "response.output_audio.delta";
+
+  test("a reply's content is owned in replying, and by the reply it names", () => {
+    const { lifecycle } = replying();
+    expect(lifecycle.owns({ type: delta })).toBe(true);
+    expect(lifecycle.owns({ type: delta, response_id: "resp_1" })).toBe(true);
+    // The generation token: a frame of another response is stale.
+    expect(lifecycle.owns({ type: delta, response_id: "resp_0" })).toBe(false);
+  });
+
+  test("a rename moves the token to the new id", () => {
+    const { lifecycle } = replying();
+    lifecycle.send({ type: "REPLY_STARTED", replyId: "resp_2" });
+    expect(lifecycle.owns({ type: delta, response_id: "resp_1" })).toBe(false);
+    expect(lifecycle.owns({ type: delta, response_id: "resp_2" })).toBe(true);
+  });
+
+  test("a reply that came with no id is owned by position alone", () => {
+    const { lifecycle } = makeLifecycle();
+    lifecycle.send({ type: "OPEN" });
+    lifecycle.send({ type: "REPLY_STARTED", replyId: "" });
+    expect(lifecycle.owns({ type: delta, response_id: "resp_9" })).toBe(true);
+  });
+
+  test("content is not owned once the reply ends, however it ends", () => {
+    for (const end of [
+      { type: "REPLY_DONE" },
+      { type: "SPEECH_STARTED" },
+      { type: "CANCEL" },
+    ] as const) {
+      const { lifecycle } = replying();
+      lifecycle.send(end);
+      expect(lifecycle.owns({ type: delta, response_id: "resp_1" }), end.type).toBe(false);
+    }
+  });
+
+  test("frames outside a response are owned while live, whatever the reply state", () => {
+    const { lifecycle } = makeLifecycle();
+    lifecycle.send({ type: "OPEN" });
+    expect(lifecycle.owns({ type: "input_audio_buffer.speech_started" })).toBe(true);
+    expect(lifecycle.owns({ type: "response.created", response_id: "x" })).toBe(true);
+    expect(lifecycle.owns({ type: "error" })).toBe(true);
+  });
+
+  test("a terminal phase owns no frame", () => {
+    const hungUp = replying();
+    hungUp.lifecycle.send({ type: "STOP" });
+    expect(hungUp.lifecycle.owns({ type: "error" })).toBe(false);
+    expect(hungUp.lifecycle.owns({ type: delta, response_id: "resp_1" })).toBe(false);
+    const died = replying();
+    died.lifecycle.send({ type: "CLOSED", code: 1006, reason: "" });
+    expect(died.lifecycle.owns({ type: "input_audio_buffer.speech_started" })).toBe(false);
+  });
+});

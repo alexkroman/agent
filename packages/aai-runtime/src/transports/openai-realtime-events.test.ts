@@ -14,7 +14,7 @@ function harness() {
   };
   // A reply in flight, so response content is dispatched; the gate itself is
   // held end-to-end by `openai-realtime-lifecycle-race.test.ts`.
-  const lifecycle = { send: vi.fn(), phase: () => "live" as const, replying: () => true };
+  const lifecycle = { send: vi.fn(), owns: () => true };
   const buffers = createRealtimeTurnBuffers();
   const log = makeLogger();
   const reportError = vi.fn();
