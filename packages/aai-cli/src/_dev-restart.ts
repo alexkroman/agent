@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Restart supervision for `aai dev`.
+ * Restart supervision for `aai dev`, as a statechart.
  *
  * The dev server's subtlest logic is not the wiring (chokidar, Vite, the
  * bundler) but the small state machine that decides WHEN to rebuild and in
@@ -15,9 +15,46 @@
  *
  * The supervised server is opaque (`S`): the supervisor never touches it
  * except through `ops`, so a test can use a plain label.
+ *
+ * ## Teardown is LEAVING `rebuilding`, which is what deletes the `closed` checks
+ *
+ * This was a `booting`/`queuedDuringBoot`/`closed` latch set plus a
+ * `createCoalescingRunner` over an async `restartOnce`, which re-read `closed`
+ * after every `await` — after the build, after the listen, between listen
+ * attempts — because a teardown could land at any of them. Each step is now an
+ * invoked actor of its own state, so `CLOSE` exits the step and stops it, and
+ * its outcome is never delivered: the re-check is the machine.
+ *
+ * Stopping an actor does not cancel the operation under it, though, and the
+ * step that was in flight is holding a server nobody else knows about — the
+ * one just built, or the one half-way through binding. So every step that
+ * holds the REPLACEMENT disposes of it when its signal aborts, after its own
+ * operation settles: closing a server whose `listen` is still in flight would
+ * let the bind complete afterwards and leak the port. That disposal is
+ * fire-and-forget, as the old early returns were — `close()` awaits teardown
+ * and the CURRENT server, never an in-flight rebuild.
+ *
+ * ## Coalescing is a flag in context, not a runner
+ *
+ * At most one rebuild runs; every `REQUEST` landing during one (or during
+ * boot) sets `queued`, and the rebuild's end — success, failed build, failed
+ * listen — re-enters `rebuilding` once if it is set. That is the
+ * `createCoalescingRunner` contract restated as a transition, and the policy
+ * is the same: a rebuild reads the files as they are WHEN IT RUNS, so N queued
+ * rebuilds would do the trailing one's work N times, while dropping the
+ * trigger would leave the newest save unserved.
+ *
+ * ## Actions never throw
+ *
+ * A throwing action ERRORS an XState actor for good, which would wedge
+ * watching — the old runner's "a rejection never wedges" property. The one
+ * effect that can throw on an ordinary path is `notify` (stderr closed by
+ * `aai dev | head`), so it goes through {@link report}, which falls back to
+ * reporting the throw itself and then swallows.
  */
 
-import { createCoalescingRunner, sleep } from "@alexkroman1/aai/internal";
+import { sleep } from "@alexkroman1/aai/internal";
+import { assign, createActor, fromPromise, setup, waitFor } from "xstate";
 import { errorMessage } from "./_utils.ts";
 
 /** Attempts to bind the port during the close→listen swap. */
@@ -68,6 +105,293 @@ export type RestartSupervisor<S> = {
   close(): Promise<void>;
 };
 
+/** Best-effort close: a synchronous throw is swallowed alongside a rejection. */
+async function closeQuietly<S>(ops: RestartOps<S>, server: S): Promise<void> {
+  try {
+    await ops.close(server);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Notify without ever throwing. A failing notifier is reported as a failed
+ * restart (what reached the old `request()` catch), and a second failure is
+ * dropped — there is nowhere left to say it.
+ */
+function report<S>(ops: RestartOps<S>, level: NotifyLevel, message: string): void {
+  try {
+    ops.notify(level, message);
+  } catch (err) {
+    try {
+      ops.notify("error", `Restart failed: ${errorMessage(err)}`);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Run `step`, then — if the owning state was left meanwhile — close `server`,
+ * which nothing else will. Waiting for `step` first is the point: see the
+ * module comment on closing a server mid-`listen`.
+ */
+async function disposingOnAbort<S, T>(
+  signal: AbortSignal,
+  ops: RestartOps<S>,
+  server: S,
+  step: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await step();
+  } finally {
+    if (signal.aborted) await closeQuietly(ops, server);
+  }
+}
+
+/** The supervisor's events. `CLOSE` is sent by `close()`, before anything awaits. */
+type RestartEvent<S> = { type: "REQUEST" } | { type: "ADOPT"; server: S } | { type: "CLOSE" };
+
+type RestartContext<S> = {
+  ops: RestartOps<S>;
+  /** The server serving the port, cleared across the close→listen swap. */
+  current: S | undefined;
+  /** The replacement this rebuild is building / swapping in. */
+  next: S | undefined;
+  /** The server `swapping` is closing; out of `current` for the swap. */
+  old: S | undefined;
+  /** A change landed during boot or the in-flight rebuild: run one more. */
+  queued: boolean;
+  /** The listen attempt in flight, 1-based. */
+  attempt: number;
+};
+
+type Step<S> = { ops: RestartOps<S>; server: S };
+
+function restartMachine<S>() {
+  return setup({
+    types: {} as {
+      context: RestartContext<S>;
+      input: RestartOps<S>;
+      events: RestartEvent<S>;
+    },
+    actors: {
+      /** A server built after its state was left is closed rather than orphaned. */
+      build: fromPromise(
+        async ({ input, signal }: { input: RestartOps<S>; signal: AbortSignal }) => {
+          const server = await input.build();
+          if (signal.aborted) await closeQuietly(input, server);
+          return server;
+        },
+      ),
+      /** Close the OLD server so the replacement can bind its port. */
+      swap: fromPromise(({ input, signal }: { input: Step<S> & { old: S }; signal: AbortSignal }) =>
+        disposingOnAbort(signal, input.ops, input.server, () => closeQuietly(input.ops, input.old)),
+      ),
+      listen: fromPromise(({ input, signal }: { input: Step<S>; signal: AbortSignal }) =>
+        disposingOnAbort(signal, input.ops, input.server, () => input.ops.listen(input.server)),
+      ),
+      backoff: fromPromise(({ input, signal }: { input: Step<S>; signal: AbortSignal }) =>
+        disposingOnAbort(signal, input.ops, input.server, () =>
+          (input.ops.sleep ?? sleep)(LISTEN_RETRY_DELAY_MS),
+        ),
+      ),
+      /** Close a replacement that never bound. Not interruptible: it IS the cleanup. */
+      discard: fromPromise(({ input }: { input: Step<S> }) =>
+        closeQuietly(input.ops, input.server),
+      ),
+      /** Teardown first, then the serving server; each best-effort. */
+      shutdown: fromPromise(
+        async ({ input }: { input: { ops: RestartOps<S>; current: S | undefined } }) => {
+          try {
+            await input.ops.teardown?.();
+          } catch {
+            /* one leak must not strand the others */
+          }
+          if (input.current !== undefined) await closeQuietly(input.ops, input.current);
+        },
+      ),
+    },
+    guards: {
+      queued: ({ context }) => context.queued,
+      hasCurrent: ({ context }) => context.current !== undefined,
+      canRetry: ({ context }) => context.attempt < LISTEN_ATTEMPTS,
+    },
+    actions: {
+      queue: assign({ queued: true }),
+      /**
+       * Refused after a teardown, rather than orphaning the server the caller
+       * just built: `CLOSE` during boot found no current server and closed
+       * nothing, so without this the freshly listening server would keep its
+       * port bound for the life of the process.
+       */
+      refuseAdopt: ({ context, event }) => {
+        if (event.type === "ADOPT") void closeQuietly(context.ops, event.server);
+      },
+    },
+  }).createMachine({
+    id: "devRestart",
+    context: ({ input }) => ({
+      ops: input,
+      current: undefined,
+      next: undefined,
+      old: undefined,
+      queued: false,
+      attempt: 1,
+    }),
+    // Startup is not a restart, but it is a window in which a change must
+    // QUEUE rather than race the initial build — which runs outside the
+    // machine, and is released by `adopt`.
+    initial: "booting",
+    on: { CLOSE: { target: ".closed" } },
+    states: {
+      booting: {
+        on: {
+          REQUEST: { actions: "queue" },
+          ADOPT: [
+            {
+              guard: "queued",
+              target: "rebuilding",
+              actions: assign({ current: ({ event }) => event.server }),
+            },
+            { target: "idle", actions: assign({ current: ({ event }) => event.server }) },
+          ],
+        },
+      },
+      idle: { on: { REQUEST: { target: "rebuilding" } } },
+      rebuilding: {
+        entry: assign({ queued: false, attempt: 1, next: undefined }),
+        on: { REQUEST: { actions: "queue" } },
+        // Every way a rebuild ends lands in `done`, and the trailing rebuild
+        // starts from here whatever the outcome: the newest save still needs
+        // serving, and after a failed listen it is the only way back up.
+        onDone: [{ guard: "queued", target: "rebuilding", reenter: true }, { target: "idle" }],
+        initial: "building",
+        states: {
+          // The slow part (full bundle + runtime construction), done FIRST:
+          // the old server keeps serving the whole time, and a failed build (a
+          // mid-edit syntax error) leaves it running.
+          building: {
+            invoke: {
+              src: "build",
+              input: ({ context }) => context.ops,
+              onDone: [
+                {
+                  guard: "hasCurrent",
+                  target: "swapping",
+                  actions: assign({
+                    next: ({ event }) => event.output,
+                    old: ({ context }) => context.current,
+                    current: undefined,
+                  }),
+                },
+                { target: "listening", actions: assign({ next: ({ event }) => event.output }) },
+              ],
+              onError: {
+                target: "done",
+                actions: ({ context, event }) =>
+                  report(
+                    context.ops,
+                    "error",
+                    `Restart failed: ${errorMessage(event.error)} (previous server still running)`,
+                  ),
+              },
+            },
+          },
+          // The old server holds the port, so it closes before the new one
+          // listens — the down-window is just this swap. Clearing `current`
+          // on the way in (the transition above) keeps a concurrent close() (or a listen that never
+          // succeeds) from closing the old server a second time, which is the
+          // ERR_SERVER_NOT_RUNNING noise the idempotent teardown avoids.
+          swapping: {
+            invoke: {
+              src: "swap",
+              input: ({ context }) => ({
+                ops: context.ops,
+                server: context.next as S,
+                old: context.old as S,
+              }),
+              onDone: { target: "listening", actions: assign({ old: undefined }) },
+            },
+          },
+          // During the swap the port is momentarily free, so another process
+          // can snatch it (or the OS hold it in TIME_WAIT); one blind attempt
+          // would leave the dev server down until the next save.
+          listening: {
+            invoke: {
+              src: "listen",
+              input: ({ context }) => ({ ops: context.ops, server: context.next as S }),
+              // Reporting success is an action of the transition, not inside
+              // the listen step: a notifier that throws must not be read as a
+              // failed listen and tear down a server that already bound.
+              onDone: {
+                target: "done",
+                actions: [
+                  assign({ current: ({ context }) => context.next, next: undefined }),
+                  ({ context }) => report(context.ops, "success", "Restarted"),
+                ],
+              },
+              onError: [
+                {
+                  guard: "canRetry",
+                  target: "backoff",
+                  actions: assign({ attempt: ({ context }) => context.attempt + 1 }),
+                },
+                {
+                  target: "discarding",
+                  actions: ({ context, event }) =>
+                    report(
+                      context.ops,
+                      "error",
+                      `Restart failed: ${errorMessage(event.error)} — dev server is down; save a file to retry.`,
+                    ),
+                },
+              ],
+            },
+          },
+          backoff: {
+            invoke: {
+              src: "backoff",
+              input: ({ context }) => ({ ops: context.ops, server: context.next as S }),
+              onDone: { target: "listening" },
+            },
+          },
+          discarding: {
+            invoke: {
+              src: "discard",
+              input: ({ context }) => ({ ops: context.ops, server: context.next as S }),
+              onDone: { target: "done", actions: assign({ next: undefined }) },
+            },
+          },
+          done: { type: "final" },
+        },
+      },
+      /**
+       * Torn down. Deliberately NOT `type: "final"`: a final actor stops, and
+       * this one still has a job — an `ADOPT` from a boot that finished after
+       * Ctrl-C must close that server — and xstate warns on a send to a
+       * stopped actor, which `request()` after teardown would trigger.
+       * `REQUEST` and a second `CLOSE` are simply unhandled here.
+       */
+      closed: {
+        initial: "shuttingDown",
+        on: { ADOPT: { actions: "refuseAdopt" }, CLOSE: {} },
+        states: {
+          shuttingDown: {
+            invoke: {
+              src: "shutdown",
+              input: ({ context }) => ({ ops: context.ops, current: context.current }),
+              onDone: { target: "down" },
+              onError: { target: "down" },
+            },
+          },
+          down: {},
+        },
+      },
+    },
+  });
+}
+
 /**
  * Create a {@link RestartSupervisor}. It starts in the "restarting" state:
  * callers install their watcher and call {@link RestartSupervisor.request}
@@ -75,158 +399,24 @@ export type RestartSupervisor<S> = {
  * the built server (or {@link RestartSupervisor.close} on startup failure).
  */
 export function createRestartSupervisor<S>(ops: RestartOps<S>): RestartSupervisor<S> {
-  const wait = ops.sleep ?? sleep;
-  // Startup is not a restart, but it is a window in which a change event must
-  // QUEUE rather than race the initial build — so it is tracked separately
-  // from the in-flight bookkeeping the runner below owns, and released by
-  // `adopt`. That difference is why this is not simply the runner's first run:
-  // the boot has no promise for it to coalesce against.
-  let booting = true;
-  let queuedDuringBoot = false;
-  let closed = false;
-  let current: S | undefined;
+  const actor = createActor(restartMachine<S>(), { input: ops }).start();
   let cleanupPromise: Promise<void> | undefined;
-
-  /**
-   * At most one rebuild in flight; every change landing during one collapses
-   * into a SINGLE trailing rebuild started after it settles.
-   *
-   * That is exactly the repo's `createCoalescingRunner` contract, and this
-   * module used to re-derive it with a `restarting` flag, a `pendingRestart`
-   * flag and a `do/while` loop. Coalescing is the right policy for the same
-   * reason it is there: a rebuild reads the files as they are WHEN IT RUNS, so
-   * N queued rebuilds would do the trailing one's work N times, while dropping
-   * the trigger outright would leave the newest save unserved (or, when the
-   * in-flight rebuild died on a mid-edit syntax error, leave the server down).
-   */
-  const rebuilds = createCoalescingRunner(() => restartOnce());
-
-  function request(): void {
-    if (booting) {
-      queuedDuringBoot = true;
-      return;
-    }
-    // restartOnce catches its own build/listen failures, but a throw from an
-    // unexpected path — a notifier writing to a stderr closed by
-    // `aai dev | head` — must still be logged. A rejection never wedges the
-    // runner, so the next request starts fresh.
-    void rebuilds.trigger().catch((err: unknown) => {
-      ops.notify("error", `Restart failed: ${errorMessage(err)}`);
-    });
-  }
-
-  async function restartOnce(): Promise<void> {
-    // A trailing rebuild queued before teardown must not build after it: the
-    // old `while (pendingRestart && !closed)` said this at the loop, and here
-    // it also covers the run the runner starts on its own.
-    if (closed) return;
-    // Build the replacement server FIRST (the slow part — full bundle +
-    // runtime construction). The old server keeps serving live sessions the
-    // whole time, and a failed build (e.g. a mid-edit syntax error) leaves it
-    // running instead of leaving the port dead until the next save.
-    let newServer: S;
-    try {
-      newServer = await ops.build();
-    } catch (err) {
-      ops.notify("error", `Restart failed: ${errorMessage(err)} (previous server still running)`);
-      return;
-    }
-    // close() may have run while we were rebuilding — don't leave a freshly
-    // built server orphaned (leaked port / hung event loop).
-    if (closed) {
-      await closeQuietly(newServer);
-      return;
-    }
-    // The old server holds the port, so it must close before the new one
-    // listens — the down-window is now just this close+listen swap. Clearing
-    // `current` across the window keeps a concurrent close() (or a listen that
-    // never succeeds) from closing the old server a second time, which is the
-    // ERR_SERVER_NOT_RUNNING noise the idempotent teardown exists to avoid.
-    if (current !== undefined) {
-      const old = current;
-      current = undefined;
-      await closeQuietly(old);
-    }
-    // Only the bind is guarded here. Reporting the success sits AFTER the
-    // catch on purpose: inside it, a notifier that throws (stderr closed by
-    // `aai dev | head`) was reported as a failed listen and tore down a server
-    // that had already bound — logging must not be able to take the dev server
-    // down. Such a throw escapes to request()'s catch instead.
-    try {
-      await listenWithRetry(newServer);
-    } catch (err) {
-      ops.notify(
-        "error",
-        `Restart failed: ${errorMessage(err)} — dev server is down; save a file to retry.`,
-      );
-      await closeQuietly(newServer);
-      return;
-    }
-    current = newServer;
-    if (closed) {
-      // Teardown raced with the swap: it closed the old server, so shut the
-      // new one down too rather than leaving it listening forever.
-      await closeQuietly(newServer);
-      return;
-    }
-    ops.notify("success", "Restarted");
-  }
-
-  /**
-   * Listen with a few short-backoff retries. During the close→listen swap the
-   * port is momentarily free, so another process can snatch it (or the OS can
-   * hold it in TIME_WAIT); one blind attempt would leave the dev server down
-   * until the next file change.
-   */
-  async function listenWithRetry(server: S): Promise<void> {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await ops.listen(server);
-        return;
-      } catch (err) {
-        if (attempt >= LISTEN_ATTEMPTS || closed) throw err;
-        await wait(LISTEN_RETRY_DELAY_MS);
-      }
-    }
-  }
-
-  /** Best-effort close: a synchronous throw is swallowed alongside a rejection. */
-  async function closeQuietly(server: S): Promise<void> {
-    try {
-      await ops.close(server);
-    } catch {
-      /* ignore */
-    }
-  }
-
   return {
-    request,
-    adopt(server: S): void {
-      // Refused after a teardown, rather than orphaning the server the caller
-      // just built. `close()` during boot finds `current` still undefined and
-      // closes nothing, so without this the freshly listening server is
-      // assigned to a supervisor with no teardown left to run and the port
-      // stays bound for the life of the process. `restartOnce` guards the same
-      // race for a REBUILD, in as many words; the boot path had no equivalent.
-      if (closed) {
-        void closeQuietly(server);
-        return;
-      }
-      current = server;
-      booting = false;
-      if (queuedDuringBoot) request();
-    },
-    current: () => current,
+    request: () => actor.send({ type: "REQUEST" }),
+    adopt: (server) => actor.send({ type: "ADOPT", server }),
+    current: () => actor.getSnapshot().context.current,
     // Idempotent: SIGINT followed by SIGTERM must not run the teardown twice
     // concurrently (double server close → ERR_SERVER_NOT_RUNNING noise, double
-    // runtime shutdown). The second call joins the in-flight teardown.
+    // runtime shutdown). The second call joins the in-flight teardown. A plain
+    // closure, not a method: `_dev-server.ts` hands `supervisor.close` on
+    // unbound.
     close(): Promise<void> {
-      cleanupPromise ??= (async () => {
-        closed = true;
-        // Each close is best-effort: one failing must not leak the others.
-        await ops.teardown?.().catch(() => undefined);
-        if (current !== undefined) await closeQuietly(current);
-      })();
+      if (cleanupPromise === undefined) {
+        // Sent synchronously, so an `adopt` or `request` in the same tick
+        // already finds the supervisor closed.
+        actor.send({ type: "CLOSE" });
+        cleanupPromise = waitFor(actor, (s) => s.matches({ closed: "down" })).then(() => undefined);
+      }
       return cleanupPromise;
     },
   };

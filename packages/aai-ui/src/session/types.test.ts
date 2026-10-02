@@ -40,7 +40,7 @@ describe("bargeIn", () => {
         epoch.bump();
       },
     };
-    const conn: ConnState = { ws: null, retiredByServer: false, turn };
+    const conn: ConnState = { ws: null, turn };
 
     bargeIn(conn, audio);
 
@@ -51,7 +51,7 @@ describe("bargeIn", () => {
 
   it("touches nothing else on the path", () => {
     const audio = recordingPath();
-    bargeIn({ ws: null, retiredByServer: false, turn: createEpoch() }, audio);
+    bargeIn({ ws: null, turn: createEpoch() }, audio);
     expect(audio.teardown).not.toHaveBeenCalled();
     expect(audio.done).not.toHaveBeenCalled();
   });

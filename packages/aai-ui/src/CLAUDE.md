@@ -300,7 +300,7 @@ saves brokered reads). Every stream failure degrades to polling, and
 - **A 404 is stable**: stop after `MAX_MISSING_READS`.
 - **Read `polling`, never re-derive it** from the snapshot — a gave-up watch
   leaves `run` undefined. `useWorkflowSubmit`'s `pending` is
-  `starting || tracked.polling` for this reason.
+  `busy || tracked.polling` for this reason.
 - **Every stream ending is named** (`done`, `missing`, `idle`); only `idle`
   hands back to the poll.
 - `WorkflowOutputOf<typeof wf>` narrows `run.output` on `"completed"` via a
@@ -337,6 +337,14 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   its run (`_run-controls.ts`, shared because `WorkflowStreamSubmission` aliases
   `WorkflowSubmission`); both answer (`0`/`false`) when there is no run.
   `reset()` puts the FORM back and leaves the run running.
+- **The state between submit and run is a statechart**
+  (`_workflow-form-state.ts`:
+  `idle | recovering | submitting{active,paused} | following | failed`), bridged
+  by `_submission-state.ts` for both hooks. The lookup and each submission BODY
+  are `fromPromise` invokes, so a superseding `SUBMIT` or a `RESET` stops them —
+  no tokens, no `current ?? found`. A body reports through `progress`/`started`,
+  refused once its signal aborts; leaving `submitting` (unmount included)
+  cancels its gate. Never add a flag beside it.
 - **Files**: every `File` in the values is stored via `api.uploadStream()` under
   an id the hook MINTS (so an interrupted upload can resume), then the id is
   substituted and the run started. `WorkflowSubmission.upload` reports bytes and

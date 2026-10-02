@@ -9,7 +9,8 @@
  * half is `aai-runtime`'s `aai-runtime/src/inbox/inbox.ts`.
  *
  * - **Held from creation, reconnected until `close()`**, on a jittered backoff
- *   from 1 s doubling to 30 s (`jitteredBackoff`), reset by every open. The
+ *   from 1 s doubling to 30 s (`createBackoffLoop` with `jitter`), reset by
+ *   every open. The
  *   jitter matters here more than for most loops: an agent restart drops every
  *   open inbox at once, and every tab of every user comes back together.
  * - **Its own socket, not partysocket.** The session's reconnecting socket
@@ -36,7 +37,7 @@
  * @module
  */
 
-import { CLIENT_ID_RE, jitteredBackoff } from "@alexkroman1/aai/internal";
+import { CLIENT_ID_RE, createBackoffLoop } from "@alexkroman1/aai/internal";
 import { buildAgentUrl } from "./client-config.ts";
 import { resolveReported } from "./client-identity.ts";
 import {
@@ -154,9 +155,6 @@ export function createInbox(options: CreateInboxOptions): Inbox {
   const subscribers = new Set<() => void>();
   let socket: InstanceType<WebSocketConstructor> | undefined;
   let open = false;
-  let closed = false;
-  let failures = 0;
-  let retry: ReturnType<typeof setTimeout> | undefined;
   // ONE assembler for the inbox's life, not one per socket: the repeat it must
   // recognise is the redelivery after a LOST ACK, and the commonest way to lose
   // an ack is the socket dropping just after the notice played — a fresh memory
@@ -169,18 +167,6 @@ export function createInbox(options: CreateInboxOptions): Inbox {
     if (open === next) return;
     open = next;
     for (const callback of subscribers) callback();
-  }
-
-  function scheduleRetry(): void {
-    if (closed) return;
-    failures++;
-    retry = setTimeout(
-      connect,
-      jitteredBackoff(failures, {
-        baseMs: INBOX_RECONNECT_BASE_MS,
-        maxMs: INBOX_RECONNECT_MAX_MS,
-      }),
-    );
   }
 
   function url(client: string, queryToken: string | undefined): string {
@@ -215,11 +201,9 @@ export function createInbox(options: CreateInboxOptions): Inbox {
   }
 
   function connect(): void {
-    retry = undefined;
-    if (closed) return;
     const client = resolveReported(options.client);
     if (!(client && CLIENT_ID_RE.test(client))) {
-      scheduleRetry();
+      loop.retry();
       return;
     }
     const token = askToken();
@@ -228,7 +212,7 @@ export function createInbox(options: CreateInboxOptions): Inbox {
       return;
     }
     void token.then((answer) => {
-      if (!closed) dial(client, answer);
+      if (!loop.stopped()) dial(client, answer);
     });
   }
 
@@ -244,7 +228,7 @@ export function createInbox(options: CreateInboxOptions): Inbox {
       ws.send(JSON.stringify(out.reply));
     };
     ws.addEventListener("open", () => {
-      failures = 0;
+      loop.reset();
       setOpen(true);
     });
     ws.addEventListener("message", (e: MessageEvent) => {
@@ -261,11 +245,16 @@ export function createInbox(options: CreateInboxOptions): Inbox {
       socket = undefined;
       setOpen(false);
       assembler.reset();
-      scheduleRetry();
+      loop.retry();
     });
   }
 
-  connect();
+  const loop = createBackoffLoop(connect, {
+    baseMs: INBOX_RECONNECT_BASE_MS,
+    maxMs: INBOX_RECONNECT_MAX_MS,
+    jitter: true,
+  });
+  loop.start();
 
   return {
     connected: () => open,
@@ -276,8 +265,7 @@ export function createInbox(options: CreateInboxOptions): Inbox {
       };
     },
     close() {
-      closed = true;
-      clearTimeout(retry);
+      loop.stop();
       const ws = socket;
       socket = undefined;
       ws?.close();

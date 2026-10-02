@@ -33,7 +33,6 @@
  * followed from the same id either way.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type {
   AnyWorkflowDef,
@@ -41,18 +40,12 @@ import type {
   UploadProgress,
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
-import { useCallback, useState } from "react";
-import { useRecoveredRun } from "./_recover-run.ts";
+import { useCallback } from "react";
 import { useRunControls } from "./_run-controls.ts";
 import { useSubmissionState } from "./_submission-state.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { FormValues } from "./components/form-types.ts";
-import {
-  coalesceUploadReports,
-  createUploadSession,
-  type UploadSession,
-  uploadFiles,
-} from "./upload/index.ts";
+import { coalesceUploadReports, createUploadSession, uploadFiles } from "./upload/index.ts";
 import { useDefaultRunKey } from "./use-run-key.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -318,46 +311,27 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   // opting out of the LOOKUP still leaves the run findable — by the next load
   // that turns recovery back on, and by anything else holding the key.
   const key = useDefaultRunKey(options.key);
-  // The four states, the live-submission ref, the supersede rule, `reset` and
-  // the pause pair — shared with `useWorkflowStream`, which had a copy of every
-  // one of them. See `_submission-state.ts`.
-  const state = useSubmissionState<UploadSession>();
-  const { runId, actions } = state;
 
   // The caller's client through a ref — see `_workflow-api-ref.ts`.
   const getClient = useWorkflowApiRef(api);
 
+  // The run id, the submission's failure, the bar, `startedHere`, the supersede
+  // rule, `reset` and the pause pair — the form's statechart, shared with
+  // `useWorkflowStream`. See `_submission-state.ts`. The other half of "a run
+  // outlives the page" rides along: `key` records the handle, and the lookup
+  // reads it back once per mount — see `_recover-run.ts` for why, and why the
+  // answer can never displace a run the person has already started.
+  const form = useSubmissionState({ workflow, key, enabled: recover, getClient });
+  const { runId, actions } = form;
+
   const tracked = useWorkflowRun<WorkflowOutputOf<D>>(runId, omitUndefined({ api, intervalMs }));
   const { wake, cancel } = useRunControls(runId, getClient);
 
-  // The other half of "a run outlives the page": `key` records the handle, this
-  // reads it back. See `_recover-run.ts` for why it happens once per mount and
-  // why the answer can never displace a run the person has already started.
-  // Whether a `submit()` on THIS mount is what produced the current run. A ref
-  // would do for the value, but it is read during render and has to re-render
-  // the page when it flips, so it is state.
-  const [startedHere, setStartedHere] = useState(false);
-
-  const recovering = useRecoveredRun({
-    workflow,
-    key,
-    enabled: recover,
-    getClient,
-    onFound: (found) => {
-      actions.setRunId((current) => current ?? found);
-    },
-    onError: actions.setStartError,
-  });
-
   const submit = useCallback(
-    async (input: unknown) => {
+    (input: unknown) => {
       const client = getClient();
-      const current = createUploadSession(workflow);
-      // Before the await, so the flag is already true by the time a run exists
-      // — a page must never read a run it started as one it adopted.
-      setStartedHere(true);
-      actions.begin(current);
-      try {
+      const session = createUploadSession(workflow);
+      return actions.submit(session.gate, async ({ progress, started }) => {
         const options = omitUndefined({ key });
         // Files first: a run input carries an upload ID, never bytes, and this
         // is the one place that knows both the chosen file and the client that
@@ -367,46 +341,35 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
         // Coalesced: the parts uploader reports per XHR progress event across
         // eight concurrent requests, which is far more often than the bar can
         // render. See `upload/report.ts`.
-        const report = coalesceUploadReports(actions.setUpload);
-        const started = await uploadFiles(client, input, report, parallel, current);
+        const report = coalesceUploadReports(progress);
+        const stored = await uploadFiles(client, input, report, parallel, session);
         // Both paths end in a run id — the difference is only whether the agent
         // held the request open — so the watch below is identical either way.
-        actions.setRunId(
+        // A failure simply rejects; an abandoned submission (`reset()`, the
+        // next `submit()`) reaches nobody, because leaving it stopped it.
+        started(
           wait === undefined
-            ? await client.start(workflow, started, options)
-            : (await client.startAndWait(workflow, started, { ...options, wait })).runId,
+            ? await client.start(workflow, stored, options)
+            : (await client.startAndWait(workflow, stored, { ...options, wait })).runId,
         );
-      } catch (err: unknown) {
-        // An abandoned upload is not a failure to report: `reset()` and the next
-        // `submit()` both cancel, and both are the person's own doing.
-        if (!current.gate.cancelled) actions.setStartError(errorMessage(err));
-      } finally {
-        actions.end(current);
-      }
+      });
     },
     [workflow, key, wait, parallel, getClient, actions],
   );
 
-  // Wrapped rather than passed through: `reset()` puts the form back to its
-  // initial state, and "did this page start the run" is part of that state. The
-  // six templates that kept this by hand each had to remember the mirror, and a
-  // page adding a second clear path and forgetting it would print the
-  // adopted-run sentence for a run it had just started.
-  const reset = useCallback(() => {
-    setStartedHere(false);
-    actions.reset();
-  }, [actions]);
-
   return {
     submit,
     submitForm: submit,
-    reset,
+    // `startedHere` is part of the state `reset()` puts back, and the machine
+    // clears it on the same edge — the six templates that kept it by hand each
+    // had to remember the mirror.
+    reset: actions.reset,
     wake,
     cancel,
     pauseUpload: actions.pauseUpload,
     resumeUpload: actions.resumeUpload,
     run: tracked.run,
-    startedHere,
+    startedHere: form.startedHere,
     // `tracked.polling` rather than a second derivation from the snapshot, and
     // that is the whole of it: `useWorkflowRun` gives up on an id the agent
     // keeps reporting as unknown (`MAX_MISSING_READS`), which leaves `run`
@@ -414,13 +377,12 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
     // pinned the submit button disabled and reading "Working…" for the life of
     // the page, with the correct error shown directly above it. That stop is
     // exactly what `polling` exists to report, per its own doc: it cannot be
-    // derived from the snapshot. `starting` still covers the gap between the
-    // POST returning and the first read landing, which is otherwise a frame
-    // with no run and no spinner. `recovering` is the same gap on a RELOAD,
-    // where there is no submit to have set `starting`: a form that offered
-    // Submit while a live run was arriving would invite a second one.
-    pending: recovering || state.starting || tracked.polling,
-    upload: state.upload,
-    error: state.startError ?? tracked.error,
+    // derived from the snapshot. `busy` — submitting or looking the run up —
+    // covers the gap between the POST returning and the first read landing,
+    // and the same gap on a RELOAD, where a form that offered Submit while a
+    // live run was arriving would invite a second one.
+    pending: form.busy || tracked.polling,
+    upload: form.upload,
+    error: form.startError ?? tracked.error,
   };
 }

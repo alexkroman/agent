@@ -11,7 +11,7 @@ import { authFetch, deployAgent } from "./_request-test-utils.ts";
 import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createMemoryPlatformEvents } from "./platform/events.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import { createSlotCache } from "./sandbox/slots.ts";
 
 // The shutdown-failure case logs a warning; keep it out of the output.
 captureLogs();
@@ -72,7 +72,7 @@ test("delete's change event shuts down the resident sandbox", async () => {
   await deployAgent(fetch);
 
   const shutdown = vi.fn().mockResolvedValue(undefined);
-  setSlot(slots, { ...makeSlot({ slug: "my-agent" }), sandbox: fakeSandbox({ shutdown }) });
+  makeSlot(slots, fakeSandbox({ shutdown }), { slug: "my-agent" });
 
   const resp = await authFetch(fetch, "/my-agent", { method: "DELETE" });
   expect(resp.status).toBe(200);
@@ -87,7 +87,7 @@ test("delete succeeds even if sandbox shutdown fails", async () => {
   await deployAgent(fetch);
 
   const shutdown = vi.fn().mockRejectedValue(new Error("shutdown failed"));
-  setSlot(slots, { ...makeSlot({ slug: "my-agent" }), sandbox: fakeSandbox({ shutdown }) });
+  makeSlot(slots, fakeSandbox({ shutdown }), { slug: "my-agent" });
 
   const resp = await authFetch(fetch, "/my-agent", { method: "DELETE" });
 

@@ -3,7 +3,7 @@
  * Property test: a barge-in (`cancel()`) racing the AssemblyAI TTS socket's
  * trailing frames, a server-side close and the next turn's start.
  *
- * `assemblyai-cancel.test.ts`, `assemblyai-turn.test.ts` and
+ * `assemblyai-lifecycle.test.ts`, `assemblyai-turn.test.ts` and
  * `assemblyai-reconnect.test.ts` each pin ONE ordering. Here a fake SERVER sits
  * behind the fake socket and `fc.scheduler` decides when it reads each client
  * frame, when synthesis produces each output frame, and when each one is

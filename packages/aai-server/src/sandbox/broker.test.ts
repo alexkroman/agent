@@ -19,7 +19,7 @@ import {
 } from "./broker.ts";
 import { createMemorySandboxDirectory, SandboxNameTakenError } from "./directory.ts";
 import type { ResolveSandboxOpts } from "./resolve.ts";
-import { createSlotCache, setSlot } from "./slots.ts";
+import { attachSandbox, claimSlot, createSlotCache } from "./slots.ts";
 
 const PEER = { sessionUrl: "wss://peer.test/websocket", guestOrigin: "wss://peer.test" };
 
@@ -33,7 +33,7 @@ async function resident(
   const { fetch, store } = await createTestOrchestrator({ slots });
   await deployAgent(fetch, slug);
   const version = (await store.getAgentVersion(slug)) ?? 1;
-  setSlot(slots, { slug, sandbox: sandbox(version), version });
+  attachSandbox(claimSlot(slots, slug), sandbox(version), version);
   return { slots, store, version, ...extra };
 }
 

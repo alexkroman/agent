@@ -30,11 +30,28 @@
  * push-to-talk barge-in, and aborting a reply belongs to the transport, which
  * owns the turn it would abort (`../commands.ts`).
  *
+ * ## A statechart, with the owed final as a REGION
+ *
+ * The three phases above are the `turn` region; the commit deadline is an
+ * `after` on `committing`, so leaving that state cancels it and the callback no
+ * longer re-checks the phase it was armed in. Beside them sat `owedFinal`, a
+ * flag with six write sites cutting across all three phases: set when a turn
+ * was answered on its partial (or cleared mid-utterance) while that
+ * utterance's final was still owed, so the final — the same words — is dropped
+ * rather than opening the next turn with them. It outlives the turn it belongs
+ * to (it is set on the way INTO `closed`, and survives a press), which is why
+ * it is a parallel `owed` region (`none` / `expectingFinal`) rather than a
+ * substate. The turn region tells it what is owed by raising `OWE_FINAL` /
+ * `OWE_NOTHING`; a final, held or dropped, always settles it.
+ *
+ * The text — the held finals and the live partial — is context: the machine
+ * decides WHEN it is answered, held or dropped, and the guards read it.
+ *
  * @module
  */
 
 import type { TurnDetectionMode } from "@alexkroman1/aai";
-import { createRestartableTimer } from "../../../_timer.ts";
+import { assign, createActor, enqueueActions, raise, setup, stateIn } from "xstate";
 import type { Logger } from "../../../logger.ts";
 
 /**
@@ -91,7 +108,207 @@ export const AUTO_TURN_DETECTION: ManualTurn = {
   reset: () => undefined,
 };
 
-type ManualTurnPhase = "closed" | "open" | "committing";
+/** What one session's push-to-talk turn needs from the transport. */
+type ManualTurnDeps = {
+  /** Ask the transcriber to end the utterance it has open, now. */
+  forceEndOfTurn(): void;
+  /** Answer `text` as the caller's turn — report it and run the reply. */
+  commitUserTurn(text: string): void;
+  /** False once the transport terminated: a late deadline answers nothing. */
+  isActive(): boolean;
+  log: Logger;
+  sid: string;
+  /** Override {@link MANUAL_COMMIT_FINAL_TIMEOUT_MS} — specs only. */
+  finalTimeoutMs?: number | undefined;
+};
+
+/** Everything that happens to a push-to-talk turn. */
+type ManualTurnEvent =
+  /** `user_turn_start` — the button went down. */
+  | { type: "PRESS" }
+  /** `user_turn_commit` — the button came up. */
+  | { type: "RELEASE" }
+  /** `user_turn_clear` — throw the turn away. */
+  | { type: "CLEAR" }
+  | { type: "PARTIAL"; text: string }
+  | { type: "FINAL"; text: string }
+  /** A conversation reset, or the session ending. */
+  | { type: "RESET" }
+  /** Raised by the `turn` region: the open utterance's final is (not) owed. */
+  | { type: "OWE_FINAL" }
+  | { type: "OWE_NOTHING" };
+
+type ManualTurnContext = {
+  deps: ManualTurnDeps;
+  /** Finals already committed inside the open turn, in order. */
+  held: string[];
+  /**
+   * The transcriber's open utterance, if it has reported one since the last
+   * final — the fallback transcript when a commit's final never arrives.
+   */
+  partial: string;
+};
+
+const manualTurnMachine = setup({
+  types: {} as {
+    context: ManualTurnContext;
+    input: ManualTurnDeps;
+    events: ManualTurnEvent;
+  },
+  delays: {
+    finalTimeout: ({ context }) => context.deps.finalTimeoutMs ?? MANUAL_COMMIT_FINAL_TIMEOUT_MS,
+  },
+  guards: {
+    /** Every word is already held: nothing is outstanding in the transcriber. */
+    nothingOutstanding: ({ context }) => context.partial === "",
+    /** The final arriving is one already answered on its partial, or binned. */
+    owesFinal: stateIn({ owed: "expectingFinal" }),
+    isActive: ({ context }) => context.deps.isActive(),
+  },
+  actions: {
+    /** Ask the transcriber to end its open utterance now. */
+    forceEnd: ({ context }) => context.deps.forceEndOfTurn(),
+    beginTurn: assign({ held: [], partial: "" }),
+    setPartial: assign({
+      partial: ({ context, event }) => (event.type === "PARTIAL" ? event.text : context.partial),
+    }),
+    hold: assign({
+      held: ({ context, event }) =>
+        event.type === "FINAL" ? [...context.held, event.text] : context.held,
+      partial: "",
+    }),
+    /**
+     * Close the turn and answer what it holds — plus the partial when
+     * `withPartial`, in which case that utterance's final is now OWED.
+     */
+    answer: enqueueActions(({ context, enqueue }, params: { withPartial: boolean }) => {
+      const { deps, held, partial } = context;
+      const owes = params.withPartial && partial !== "";
+      const text = (owes ? [...held, partial] : held).join(" ").trim();
+      enqueue.assign({ held: [], partial: "" });
+      enqueue.raise({ type: owes ? "OWE_FINAL" : "OWE_NOTHING" });
+      enqueue(() => {
+        if (text === "") {
+          deps.log.info("Push-to-talk turn committed with nothing said", { sid: deps.sid });
+          return;
+        }
+        deps.commitUserTurn(text);
+      });
+    }),
+    /**
+     * Throw the turn away. End the utterance the transcriber is still building,
+     * and owe its final to the bin — so it is dropped even if the caller presses
+     * again before it lands, rather than opening the next turn with discarded
+     * words.
+     */
+    discard: enqueueActions(({ context, enqueue }) => {
+      const outstanding = context.partial !== "";
+      enqueue.assign({ held: [], partial: "" });
+      enqueue.raise({ type: outstanding ? "OWE_FINAL" : "OWE_NOTHING" });
+      if (outstanding) enqueue(() => context.deps.forceEndOfTurn());
+    }),
+    forget: enqueueActions(({ enqueue }) => {
+      enqueue.assign({ held: [], partial: "" });
+      enqueue.raise({ type: "OWE_NOTHING" });
+    }),
+    /**
+     * The transcriber reports in order, so a partial of the NEW utterance means
+     * an owed final from the last one is not coming.
+     */
+    owedNotComing: raise({ type: "OWE_NOTHING" }),
+    logDropped: ({ context, event }) =>
+      context.deps.log.debug("Push-to-talk final outside a turn dropped", {
+        sid: context.deps.sid,
+        text: event.type === "FINAL" ? event.text : "",
+      }),
+    logNoFinal: ({ context }) =>
+      context.deps.log.info("Push-to-talk commit answered without a final", {
+        sid: context.deps.sid,
+      }),
+  },
+}).createMachine({
+  id: "manualTurn",
+  type: "parallel",
+  context: ({ input }) => ({ deps: input, held: [], partial: "" }),
+  states: {
+    /** The three phases in this module's doc. */
+    turn: {
+      initial: "closed",
+      on: { RESET: { target: ".closed", actions: "forget" } },
+      states: {
+        /**
+         * The microphone is silenced. A final here is DROPPED (the module doc's
+         * one rule), and a partial is not captioned.
+         */
+        closed: {
+          on: {
+            PRESS: { target: "open", actions: "beginTurn" },
+            FINAL: { actions: "logDropped" },
+          },
+        },
+        /** The window is held: finals are HELD rather than answered. */
+        open: {
+          on: {
+            // Pressed while already held: the turn starts over.
+            PRESS: { actions: "beginTurn" },
+            RELEASE: [
+              {
+                guard: "nothingOutstanding",
+                target: "closed",
+                actions: { type: "answer", params: { withPartial: false } },
+              },
+              { target: "committing", actions: "forceEnd" },
+            ],
+            CLEAR: { target: "closed", actions: "discard" },
+            PARTIAL: { actions: ["setPartial", "owedNotComing"] },
+            FINAL: [{ guard: "owesFinal", actions: "logDropped" }, { actions: "hold" }],
+          },
+        },
+        /**
+         * Released mid-utterance: waiting on the final the transcriber was asked
+         * for. The deadline is this state's — leaving it, however, cancels it.
+         */
+        committing: {
+          after: {
+            finalTimeout: {
+              // A session that ended meanwhile answers nothing.
+              guard: "isActive",
+              target: "closed",
+              actions: ["logNoFinal", { type: "answer", params: { withPartial: true } }],
+            },
+          },
+          on: {
+            // Pressed again before the last release was answered: answer it now
+            // on what it has, rather than folding two turns into one.
+            PRESS: {
+              target: "open",
+              actions: [{ type: "answer", params: { withPartial: true } }, "beginTurn"],
+            },
+            CLEAR: { target: "closed", actions: "discard" },
+            PARTIAL: { actions: ["setPartial", "owedNotComing"] },
+            FINAL: [
+              { guard: "owesFinal", actions: "logDropped" },
+              {
+                target: "closed",
+                actions: ["hold", { type: "answer", params: { withPartial: false } }],
+              },
+            ],
+          },
+        },
+      },
+    },
+    /**
+     * Whether the transcriber still owes the final of an utterance that was
+     * already answered on its partial (or discarded). A final — held or
+     * dropped — always settles it.
+     */
+    owed: {
+      initial: "none",
+      on: { OWE_FINAL: ".expectingFinal", OWE_NOTHING: ".none", FINAL: ".none" },
+      states: { none: {}, expectingFinal: {} },
+    },
+  },
+});
 
 /**
  * Bind push-to-talk to one session, or answer {@link AUTO_TURN_DETECTION} for
@@ -101,112 +318,22 @@ type ManualTurnPhase = "closed" | "open" | "committing";
  */
 export function createManualTurn(
   policy: TurnDetectionMode | undefined,
-  deps: {
-    /** Ask the transcriber to end the utterance it has open, now. */
-    forceEndOfTurn(): void;
-    /** Answer `text` as the caller's turn — report it and run the reply. */
-    commitUserTurn(text: string): void;
-    /** False once the transport terminated: a late timer answers nothing. */
-    isActive(): boolean;
-    log: Logger;
-    sid: string;
-    /** Override {@link MANUAL_COMMIT_FINAL_TIMEOUT_MS} — specs only. */
-    finalTimeoutMs?: number | undefined;
-  },
+  deps: ManualTurnDeps,
 ): ManualTurn {
   if (policy !== "manual") return AUTO_TURN_DETECTION;
-  const { log, sid } = deps;
-  let phase: ManualTurnPhase = "closed";
-  // Finals already committed inside the open turn, in order.
-  let held: string[] = [];
-  // The transcriber's open utterance, if it has reported one since the last
-  // final — the fallback transcript when a commit's final never arrives.
-  let partial = "";
-  // Set when a turn was answered on its partial while that utterance's final
-  // was still owed: the final is the same words, so the next one is dropped
-  // rather than opening the following turn with them.
-  let owedFinal = false;
-
-  const deadline = createRestartableTimer(() => {
-    if (phase !== "committing" || !deps.isActive()) return;
-    log.info("Push-to-talk commit answered without a final", { sid });
-    answer(true);
-  });
-
-  /** Close the turn and answer what it holds (plus the partial, if asked). */
-  function answer(withPartial: boolean): void {
-    deadline.clear();
-    const parts = withPartial && partial !== "" ? [...held, partial] : held;
-    owedFinal = withPartial && partial !== "";
-    const text = parts.join(" ").trim();
-    phase = "closed";
-    held = [];
-    partial = "";
-    if (text === "") {
-      log.info("Push-to-talk turn committed with nothing said", { sid });
-      return;
-    }
-    deps.commitUserTurn(text);
-  }
-
-  function forget(): void {
-    deadline.clear();
-    phase = "closed";
-    held = [];
-    partial = "";
-    owedFinal = false;
-  }
-
+  const actor = createActor(manualTurnMachine, { input: deps }).start();
   return {
     enabled: true,
-    isOpen: () => phase === "open",
-    start(): void {
-      // Pressed again before the last release was answered: answer it now on
-      // what it has, rather than folding two turns into one.
-      if (phase === "committing") answer(true);
-      phase = "open";
-      held = [];
-      partial = "";
-    },
-    commit(): void {
-      if (phase !== "open") return;
-      // Nothing outstanding in the transcriber: every word is already held.
-      if (partial === "") {
-        answer(false);
-        return;
-      }
-      phase = "committing";
-      deps.forceEndOfTurn();
-      deadline.arm(deps.finalTimeoutMs ?? MANUAL_COMMIT_FINAL_TIMEOUT_MS);
-    },
-    clear(): void {
-      if (phase === "closed") return;
-      const outstanding = partial !== "";
-      forget();
-      // End the utterance the transcriber is still building, and owe its final
-      // to the bin — so it is dropped even if the caller presses again before
-      // it lands, rather than opening the next turn with discarded words.
-      owedFinal = outstanding;
-      if (outstanding) deps.forceEndOfTurn();
-    },
+    isOpen: () => actor.getSnapshot().matches({ turn: "open" }),
+    start: () => actor.send({ type: "PRESS" }),
+    commit: () => actor.send({ type: "RELEASE" }),
+    clear: () => actor.send({ type: "CLEAR" }),
     onPartial(text: string): string | undefined {
-      if (phase === "closed") return undefined;
-      // The transcriber reports in order, so a partial of the NEW utterance
-      // means an owed final from the last one is not coming.
-      owedFinal = false;
-      partial = text;
-      return [...held, text].join(" ");
+      if (actor.getSnapshot().matches({ turn: "closed" })) return undefined;
+      actor.send({ type: "PARTIAL", text });
+      return [...actor.getSnapshot().context.held, text].join(" ");
     },
-    onFinal(text: string): void {
-      if (phase === "closed" || owedFinal) {
-        owedFinal = false;
-        log.debug("Push-to-talk final outside a turn dropped", { sid, text });
-        return;
-      }
-      held.push(text);
-      partial = "";
-      if (phase === "committing") answer(false);
-    },
-    reset: forget,
+    onFinal: (text: string) => actor.send({ type: "FINAL", text }),
+    reset: () => actor.send({ type: "RESET" }),
   };
 }

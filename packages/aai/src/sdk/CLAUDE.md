@@ -192,6 +192,10 @@ in `packages/aai-runtime/CLAUDE.md`.
   mutations (rule 8).
 - **`createCoalescingRunner()`** (`coalescing-runner.ts`, `/internal`) — one run
   in flight, triggers share ONE trailing re-run, rejections never wedge it.
+- **`createBackoffLoop(attempt, { baseMs, maxMs, jitter })`**
+  (`backoff-loop.ts`, `/internal`) — a reconnect loop: `retry()` counts a
+  failure and schedules, `reset()` is the caller's "it worked", `stop()` ends
+  it. `jitter: true` waits via `jitteredBackoff` (rule 31).
 - **`createTurnMachine()`** — in `aai-runtime`'s
   `transports/pipeline/turn/state.ts`; turn state goes through its transitions.
 - **`createKeyedLock()`/`withLock`** (`keyed-lock.ts`, PUBLIC) — per-key

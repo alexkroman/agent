@@ -6,7 +6,7 @@ import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { emptyLogPage, parseLogPage, readAgentLogs, readGuestLogs } from "./agent-logs.ts";
 import { GUEST_TOKEN_SECRET_ENV, guestTokenFor } from "./guest/token.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import { attachSandbox, claimSlot, createSlotCache } from "./sandbox/slots.ts";
 
 const ORIGIN = "wss://tunnel.test:443";
 const LINE = { seq: 0, at: 1, stream: "stdout" as const, text: "hello" };
@@ -94,7 +94,7 @@ describe("readAgentLogs", () => {
   test("reads this replica's resident and reports it running", async () => {
     const slots = createSlotCache();
     const logs = vi.fn(() => Promise.resolve(page));
-    setSlot(slots, { slug: "mine", sandbox: fakeSandbox({ logs }) });
+    attachSandbox(claimSlot(slots, "mine"), fakeSandbox({ logs }), 1);
 
     await expect(
       readAgentLogs({ slots, store: createTestStore() }, "mine", { after: 3 }),
@@ -110,10 +110,11 @@ describe("readAgentLogs", () => {
 
   test("a dead resident is not treated as running", async () => {
     const slots = createSlotCache();
-    setSlot(slots, {
-      slug: "dead",
-      sandbox: fakeSandbox({ alive: () => false, logs: () => Promise.resolve(page) }),
-    });
+    attachSandbox(
+      claimSlot(slots, "dead"),
+      fakeSandbox({ alive: () => false, logs: () => Promise.resolve(page) }),
+      1,
+    );
 
     await expect(
       readAgentLogs({ slots, store: createTestStore() }, "dead", {}),

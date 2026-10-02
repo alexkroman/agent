@@ -423,22 +423,12 @@ export type BrowserSession = {
  * from anywhere. They are the audio path's own statechart now — see
  * `session/audio-state.ts`.
  *
- * What is left is what the CONNECTION really owns: the socket, the server's
- * idle retirement, and the turn boundary.
+ * What is left is the socket the senders write to and the turn boundary. The
+ * socket's lifecycle and the server's idle retirement are the connection's own
+ * statechart (`session/connection.ts`), which is the only writer of `ws`.
  */
 export type ConnState = {
   ws: InstanceType<WebSocketConstructor> | null;
-  /**
-   * The server retired this session for idleness (`idle_timeout`), so the
-   * close that follows is EXPECTED and must not be retried.
-   *
-   * Without this the automatic reconnect would immediately re-open the
-   * session the server just reclaimed — a tab left open would cycle forever
-   * and the guest would never see zero sessions, which is the whole point of
-   * the timeout. Reconnecting is the user's call from here (the controls
-   * reconnect on demand).
-   */
-  retiredByServer: boolean;
   /**
    * Turn epoch, bumped at every turn boundary — a committed user turn, a
    * barge-in, a reset, AND every audio-path teardown (`cleanupAudio`).

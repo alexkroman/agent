@@ -1,20 +1,25 @@
 // Copyright 2026 the AAI authors. MIT license.
 // @vitest-environment jsdom
 /**
- * `useSubmissionState` — the scaffold both submit hooks share.
+ * `useSubmissionState` — the facade both submit hooks share over the form's
+ * statechart.
  *
- * Driven directly, with real upload gates as the tokens, because the rule this
- * module exists for is the one a hook-level spec reaches only by racing two
- * submits: a SUPERSEDED submission's `end` must not clear the live one's
- * state. The hooks' own walks are specced in `use-workflow-form.test.ts` and
- * `use-workflow-stream.test.ts`.
+ * What is asserted is the BRIDGE, not the decisions (those are
+ * `_workflow-form-state.test.ts`'s): that the lookup is busy from the first
+ * frame and asked once per key, that `submit` resolves when its submission is
+ * over, that unmounting abandons one in flight, and that the actions keep
+ * their identity. The hooks' own walks are specced in
+ * `use-workflow-form.test.ts` and `use-workflow-stream.test.ts`.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
-import { type SubmissionToken, useSubmissionState } from "./_submission-state.ts";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
+import { createMockWorkflowApi, workflowRun as run } from "./_react-test-utils.ts";
+import type { RecoverRunOptions } from "./_recover-run.ts";
+import { useSubmissionState } from "./_submission-state.ts";
 import { createUploadGate } from "./upload/index.ts";
 import type { UploadStatus } from "./use-workflow-form.ts";
+import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
 const BAR: UploadStatus = {
   name: "standup.wav",
@@ -26,121 +31,148 @@ const BAR: UploadStatus = {
   paused: false,
 };
 
-function token(): SubmissionToken {
-  return { gate: createUploadGate() };
+const KEY = "7f3ad2c0-8b41-4d2e-9c15-6a0e3f5b1d77";
+
+/** The facade with a lookup over `api`, re-rendered with a new key on demand. */
+function renderRecovering(api: WorkflowApi, over: Partial<RecoverRunOptions> = {}) {
+  const getClient = () => api;
+  return renderHook(
+    ({ key }: { key: string }) =>
+      useSubmissionState({ workflow: "digest", key, enabled: true, getClient, ...over }),
+    { initialProps: { key: KEY } },
+  );
 }
 
-function renderState() {
-  return renderHook(() => useSubmissionState<SubmissionToken>());
-}
+describe("useSubmissionState — the lookup", () => {
+  test("is busy from the FIRST frame, and adopts the run it finds", async () => {
+    const found = Promise.withResolvers<WorkflowRun[]>();
+    const api = createMockWorkflowApi({ find: vi.fn(() => found.promise) });
+    const { result } = renderRecovering(api);
 
-describe("useSubmissionState", () => {
-  test("starts idle, with nothing to report", () => {
-    const { result } = renderState();
+    // No frame in which a page about to adopt a run reads as idle.
+    expect(result.current.busy).toBe(true);
+    await act(async () => {
+      found.resolve([run({ runId: "wrun_9" })]);
+      await found.promise;
+    });
+    await waitFor(() => expect(result.current.runId).toBe("wrun_9"));
+    expect(result.current.busy).toBe(false);
+    expect(api.find).toHaveBeenCalledExactlyOnceWith("digest", KEY, { limit: 1 });
+  });
+
+  test("`enabled: false` asks nothing and is never busy", () => {
+    const api = createMockWorkflowApi();
+    const { result } = renderRecovering(api, { enabled: false });
+    expect(result.current.busy).toBe(false);
+    expect(api.find).not.toHaveBeenCalled();
+  });
+
+  test("no lookup at all, for a hook that refuses one", () => {
+    const { result } = renderHook(() => useSubmissionState());
+    expect(result.current).toMatchObject({ busy: false, runId: undefined, startedHere: false });
+  });
+
+  test("a new KEY is a different person's run, and is asked about", async () => {
+    const api = createMockWorkflowApi({ find: vi.fn(async () => []) });
+    const { result, rerender } = renderRecovering(api);
+    await waitFor(() => expect(result.current.busy).toBe(false));
+
+    rerender({ key: "another-key" });
+    await waitFor(() =>
+      expect(api.find).toHaveBeenLastCalledWith("digest", "another-key", { limit: 1 }),
+    );
+    expect(api.find).toHaveBeenCalledTimes(2);
+  });
+
+  test("a re-render with the same key asks nothing more", async () => {
+    const api = createMockWorkflowApi({ find: vi.fn(async () => []) });
+    const { result, rerender } = renderRecovering(api);
+    await waitFor(() => expect(result.current.busy).toBe(false));
+    rerender({ key: KEY });
+    rerender({ key: KEY });
+    expect(api.find).toHaveBeenCalledOnce();
+  });
+});
+
+describe("useSubmissionState — a submission", () => {
+  test("submit runs the body and resolves once the submission is over", async () => {
+    const { result } = renderHook(() => useSubmissionState());
+    await act(() =>
+      result.current.actions.submit(createUploadGate(), async ({ progress, started }) => {
+        progress(BAR);
+        started("wrun_1");
+      }),
+    );
     expect(result.current).toMatchObject({
-      runId: undefined,
-      starting: false,
-      startError: undefined,
+      runId: "wrun_1",
       upload: undefined,
+      startedHere: true,
+      busy: false,
     });
   });
 
-  test("begin opens a submission and clears the previous result FIRST", () => {
-    const { result } = renderState();
-    act(() => {
-      result.current.actions.setRunId("wrun_old");
-      result.current.actions.setStartError("old failure");
-    });
-
-    act(() => result.current.actions.begin(token()));
-    // A finished result under a form that is submitting again is the one wrong
-    // answer this can give, and it looks like a right one.
-    expect(result.current.starting).toBe(true);
-    expect(result.current.runId).toBeUndefined();
-    expect(result.current.startError).toBeUndefined();
+  test("a failed body is reported, and submit still resolves", async () => {
+    const { result } = renderHook(() => useSubmissionState());
+    await act(() =>
+      result.current.actions.submit(createUploadGate(), async () => {
+        throw new Error("url: invalid");
+      }),
+    );
+    expect(result.current.startError).toBe("url: invalid");
   });
 
-  test("begin cancels the gate of the submission it supersedes", () => {
-    const { result } = renderState();
-    const first = token();
-    act(() => result.current.actions.begin(first));
-    act(() => result.current.actions.begin(token()));
-    expect(first.gate.cancelled).toBe(true);
-  });
-
-  test("end closes the live submission and drops the bar", () => {
-    const { result } = renderState();
-    const live = token();
+  test("pause and resume reach the LIVE submission's gate and the bar", async () => {
+    const { result } = renderHook(() => useSubmissionState());
+    const gate = createUploadGate();
+    const end = Promise.withResolvers<void>();
+    let submitted: Promise<void> = Promise.resolve();
     act(() => {
-      result.current.actions.begin(live);
-      result.current.actions.setUpload(BAR);
-    });
-
-    act(() => result.current.actions.end(live));
-    expect(result.current.starting).toBe(false);
-    expect(result.current.upload).toBeUndefined();
-  });
-
-  test("a SUPERSEDED submission's end changes nothing", () => {
-    // Its walk unwinds after the next one has already set `starting`; clearing
-    // there would report the live submission as finished and drop its bar.
-    const { result } = renderState();
-    const stale = token();
-    const live = token();
-    act(() => result.current.actions.begin(stale));
-    act(() => {
-      result.current.actions.begin(live);
-      result.current.actions.setUpload(BAR);
-    });
-
-    act(() => result.current.actions.end(stale));
-    expect(result.current.starting).toBe(true);
-    expect(result.current.upload).toEqual(BAR);
-  });
-
-  test("reset abandons the bytes and drops the result, without reporting an error", () => {
-    const { result } = renderState();
-    const live = token();
-    act(() => {
-      result.current.actions.begin(live);
-      result.current.actions.setRunId("wrun_1");
-      result.current.actions.setUpload(BAR);
-    });
-
-    act(() => result.current.actions.reset());
-    expect(live.gate.cancelled).toBe(true);
-    expect(result.current.runId).toBeUndefined();
-    expect(result.current.upload).toBeUndefined();
-    expect(result.current.startError).toBeUndefined();
-  });
-
-  test("pause and resume reach the LIVE submission's gate", () => {
-    const { result } = renderState();
-    const live = token();
-    act(() => {
-      result.current.actions.begin(live);
-      result.current.actions.setUpload(BAR);
+      submitted = result.current.actions.submit(gate, async ({ progress }) => {
+        progress(BAR);
+        await end.promise;
+      });
     });
 
     act(() => result.current.actions.pauseUpload());
-    expect(live.gate.paused).toBe(true);
+    expect(gate.paused).toBe(true);
     expect(result.current.upload?.paused).toBe(true);
 
     act(() => result.current.actions.resumeUpload());
-    expect(live.gate.paused).toBe(false);
+    expect(gate.paused).toBe(false);
     expect(result.current.upload?.paused).toBe(false);
+
+    end.resolve();
+    await act(() => submitted);
   });
 
-  test("the actions bag keeps its identity through state changes", () => {
+  test("unmounting abandons a submission in flight, and settles it", async () => {
+    const { result, unmount } = renderHook(() => useSubmissionState());
+    const gate = createUploadGate();
+    let submitted: Promise<void> = Promise.resolve();
+    act(() => {
+      submitted = result.current.actions.submit(gate, async () => {
+        await gate.settle();
+        if (gate.cancelled) throw new Error("Upload cancelled.");
+      });
+    });
+    act(() => result.current.actions.pauseUpload());
+
+    unmount();
+    expect(gate.cancelled).toBe(true);
+    await expect(submitted).resolves.toBeUndefined();
+  });
+
+  test("the actions bag keeps its identity through state changes", async () => {
     // It is a dependency of each hook's `submit`; a bag that moved on every
     // progress report would rebuild the form's `onSubmit` with it.
-    const { result } = renderState();
+    const { result } = renderHook(() => useSubmissionState());
     const actions = result.current.actions;
-    act(() => {
-      actions.begin(token());
-      actions.setUpload(BAR);
-      actions.setRunId("wrun_1");
-    });
+    await act(() =>
+      actions.submit(createUploadGate(), async ({ progress, started }) => {
+        progress(BAR);
+        started("wrun_1");
+      }),
+    );
     expect(result.current.actions).toBe(actions);
   });
 });

@@ -22,10 +22,13 @@ import type { BundleStore } from "../store-types.ts";
 import type { SandboxDirectory } from "./directory.ts";
 import {
   type AgentSlot,
+  attachSandbox,
+  claimSlot,
   deleteSlot,
+  holdsSandbox,
   isLive,
   type SlotCache,
-  setSlot,
+  slotSandbox,
   terminateSlot,
   withSlugLock,
 } from "./slots.ts";
@@ -217,8 +220,8 @@ function buildSandboxFromParts(
  *
  * The SLOT goes too, not just its sandbox. An agent-mode guest self-exiting
  * on idle is the normal end of a sandbox's life, and `terminateSlot` only
- * clears the `sandbox` field — so every slug this replica ever brokered left
- * a `{ slug }` shell behind, and the map grew monotonically for the life of
+ * empties the slot — so every slug this replica ever brokered left an
+ * `empty` shell behind, and the map grew monotonically for the life of
  * the container (`MIN_CONTAINERS=1`, so the floor replica spans every
  * deploy). Deleting is the same rule `rebuildSlot` already applies to a slug
  * with no bundle ("must not leave an empty slot behind") and the reason
@@ -234,7 +237,9 @@ export function buildSlotSandbox(
   return buildSandboxFromParts(slug, parts, opts, (sandbox) => {
     void withSlugLock(slug, async () => {
       const current = opts.slots.get(slug);
-      if (current?.sandbox !== sandbox) return;
+      // Stale callback: see `holdsSandbox` for the three ways this sandbox can
+      // already be someone else's past by the time it holds the lock.
+      if (!holdsSandbox(current, sandbox)) return;
       await terminateSlot(current);
       // Safe to key-delete: the identity check above ran under this lock, so
       // `current` is still the mapped slot and no successor can have claimed
@@ -261,12 +266,8 @@ async function rebuildSlot(
   // only be for a write the fresh read below already observes. (The
   // artifact reads resolve through the same freshly cached row, and blobs
   // are content-addressed, so a torn mix of two deploys is impossible.)
-  let slot = existingSlot;
-  const created = !slot;
-  if (!slot) {
-    slot = { slug };
-    setSlot(slots, slot);
-  }
+  const created = !existingSlot;
+  const slot = existingSlot ?? claimSlot(slots, slug);
   try {
     store.invalidate?.(slug);
     const parts = await loadBundleParts(slug, opts);
@@ -279,7 +280,7 @@ async function rebuildSlot(
       // a slot mid-rebuild never had one), so the shell it leaves is the same
       // shell for the same reason. It was reachable — a rebuild for a slug
       // whose agent was deleted in the meantime — and permanent, because
-      // `reconcileSlug` returns early on `!slot?.sandbox`, so nothing else ever
+      // `reconcileSlug` returns early on an `empty` slot, so nothing else ever
       // looks at it again. The claim/identity discipline still holds: this runs
       // under the slug lock, and the entry is either the one this call claimed
       // or the one it read under the same lock.
@@ -290,8 +291,7 @@ async function rebuildSlot(
 
     const sandbox = buildSlotSandbox(slug, parts, opts);
 
-    slot.version = parts.version;
-    slot.sandbox = sandbox;
+    attachSandbox(slot, sandbox, parts.version);
     return sandbox;
   } catch (err) {
     // Same rule as the no-bundle branch above: the slot has no sandbox
@@ -317,9 +317,9 @@ export async function resolveSandbox(
   const { slots } = opts;
 
   // Fast path: a live resident sandbox needs no locking.
-  const resident = slots.get(slug);
-  if (resident?.sandbox && isLive(resident.sandbox)) {
-    return resident.sandbox as Sandbox;
+  const resident = slotSandbox(slots.get(slug));
+  if (resident && isLive(resident)) {
+    return resident as Sandbox;
   }
 
   // Serialize per-slug so concurrent cold upgrades don't each spawn a
@@ -328,9 +328,10 @@ export async function resolveSandbox(
   // mutating the same slot (deploy/delete/secret all take this lock too).
   return withSlugLock(slug, async () => {
     const slot = slots.get(slug);
-    if (slot?.sandbox) {
+    const current = slotSandbox(slot);
+    if (slot && current) {
       // Re-check under the lock — another waiter may have already rebuilt.
-      if (isLive(slot.sandbox)) return slot.sandbox as Sandbox;
+      if (isLive(current)) return current as Sandbox;
       // Dead guest: nothing to drain, and the bundle is unchanged so the
       // caches stay warm — only the sandbox is replaced. Reached when the
       // guest died between the exit notification and its async detach.

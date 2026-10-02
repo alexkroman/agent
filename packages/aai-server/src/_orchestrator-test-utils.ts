@@ -20,7 +20,14 @@ import {
   withChatEvents,
   withWorkspaceEvents,
 } from "./platform/events.ts";
-import { type AgentSlot, createSlotCache } from "./sandbox/slots.ts";
+import {
+  type AgentSlot,
+  attachSandbox,
+  claimSlot,
+  createSlotCache,
+  type SlotCache,
+  type SlotSandbox,
+} from "./sandbox/slots.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "./workspace-store.ts";
@@ -47,11 +54,19 @@ export function createTestStore(secrets?: SecretStore, events?: MemoryPlatformEv
   });
 }
 
-export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
-  return {
-    slug: "test-agent",
-    ...overrides,
-  };
+/**
+ * Install a `ready` slot holding `sandbox` (slug defaults to "test-agent",
+ * version to 1) through the same transitions production uses, so a test seeds
+ * a resident without hand-building a slot state.
+ */
+export function makeSlot(
+  slots: SlotCache,
+  sandbox: SlotSandbox,
+  opts: { slug?: string; version?: number } = {},
+): AgentSlot {
+  const slot = claimSlot(slots, opts.slug ?? "test-agent");
+  attachSandbox(slot, sandbox, opts.version ?? 1);
+  return slot;
 }
 
 export type TestFetch = (input: string | Request, init?: RequestInit) => Promise<Response>;

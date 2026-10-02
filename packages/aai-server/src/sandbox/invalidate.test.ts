@@ -17,7 +17,7 @@ import { createMemoryPlatformEvents } from "../platform/events.ts";
 import type { Sandbox, SpawnAgentServer } from "../sandbox.ts";
 import { watchAgentInvalidation } from "./invalidate.ts";
 import { resolveSandbox } from "./resolve.ts";
-import { createSlotCache } from "./slots.ts";
+import { createSlotCache, slotSandbox } from "./slots.ts";
 
 /** The guest spawn every sandbox here boots through (`ResolveSandboxOpts.spawnAgentServer`). */
 const mockSpawnAgentServer = vi.fn<SpawnAgentServer>();
@@ -120,7 +120,7 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     // the slot is never empty, so the next caller pays no cold start.
     await deps.redeploy();
 
-    const replacement = deps.slots.get("redeployed")?.sandbox;
+    const replacement = slotSandbox(deps.slots.get("redeployed"));
     expect(replacement).toBeDefined();
     expect(replacement).not.toBe(first);
     // The rebuild read a fresh row, not a pre-mutation cached one.
@@ -148,7 +148,7 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     await deps.redeploy();
 
     await vi.waitFor(() => {
-      expect(deps.slots.get("bad-redeploy")?.sandbox).toBeUndefined();
+      expect(slotSandbox(deps.slots.get("bad-redeploy"))).toBeUndefined();
     });
     // RETIRED, not killed. An empty slot on its own says nothing about how the
     // old guest went — a straight `shutdown()` empties it identically — and
@@ -169,7 +169,7 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     // A duplicated (or reordered) event re-reads the version, compares it
     // against the slot's stamp, and leaves the current resident alone.
     await deps.reEmit();
-    expect(deps.slots.get("self-echo")?.sandbox).toBe(sandbox);
+    expect(slotSandbox(deps.slots.get("self-echo"))).toBe(sandbox);
     await sandbox?.shutdown();
     deps.unwatch();
   });
@@ -194,13 +194,13 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     deps.setStreamDown(true);
     await deps.commitDeploy();
     await deps.settleEvents();
-    expect(deps.slots.get("missed-deploy")?.sandbox).toBe(first);
+    expect(slotSandbox(deps.slots.get("missed-deploy"))).toBe(first);
 
     // The rejoin is the only notification that will ever come.
     deps.setStreamDown(false);
     await deps.rejoin();
 
-    const replacement = deps.slots.get("missed-deploy")?.sandbox;
+    const replacement = slotSandbox(deps.slots.get("missed-deploy"));
     expect(replacement).toBeDefined();
     expect(replacement).not.toBe(first);
     await (replacement as Sandbox).shutdown();
@@ -235,7 +235,7 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     // that changes nothing — not a respawn of every resident on the replica.
     await deps.rejoin();
 
-    expect(deps.slots.get("still-current")?.sandbox).toBe(sandbox);
+    expect(slotSandbox(deps.slots.get("still-current"))).toBe(sandbox);
     await sandbox?.shutdown();
     deps.unwatch();
   });
@@ -281,7 +281,7 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     // parked rebuild to reach its slot claim, which happens before any read,
     // so the event pre-filter below sees a slot with no sandbox attached.
     await vi.waitFor(() => expect(deps.slots.get("mid-rebuild")).toBeDefined());
-    expect(deps.slots.get("mid-rebuild")?.sandbox).toBeUndefined();
+    expect(slotSandbox(deps.slots.get("mid-rebuild"))).toBeUndefined();
 
     // A deploy elsewhere commits while the rebuild is in flight. Its change
     // event queues behind the rebuild's slug lock instead of being skipped —
@@ -294,7 +294,7 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     // The queued handler ran after the attach: version mismatch → blue-green
     // handover to a replacement at the row's current version.
     await deps.settleEvents();
-    const fresh = deps.slots.get("mid-rebuild")?.sandbox;
+    const fresh = slotSandbox(deps.slots.get("mid-rebuild"));
     expect(fresh).toBeDefined();
     expect(fresh).not.toBe(stale);
     await expect(resolveSandbox("mid-rebuild", deps)).resolves.toBe(fresh);
@@ -313,7 +313,7 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     // The half the `created` guard missed: a slot that ALREADY existed and has
     // no sandbox (its guest exited, or the delete event tore the sandbox off)
     // takes the same no-bundle branch, and leaving it there is permanent —
-    // `reconcileSlug` returns early on `!slot?.sandbox`, so nothing looks at
+    // `reconcileSlug` returns early on an `empty` slot, so nothing looks at
     // that shell again for the life of the container.
     const deps = await seedAgent("deleted-later");
     const first = await resolveSandbox("deleted-later", deps);
@@ -324,7 +324,7 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     const slot = deps.slots.get("deleted-later");
     expect(slot).toBeDefined();
     await first?.shutdown();
-    delete slot?.sandbox;
+    if (slot) slot.state = { kind: "empty" };
 
     await deps.store.deleteAgent("deleted-later");
     await expect(resolveSandbox("deleted-later", deps)).resolves.toBeNull();
@@ -371,8 +371,8 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     // Handed over: the slot holds the READY replacement (no new session
     // can reach the old sandbox), and the old one was told to drain — the
     // GUEST finishes its calls and exits itself; the host never hangs up.
-    expect(deps.slots.get("draining")?.sandbox).toBeDefined();
-    expect(deps.slots.get("draining")?.sandbox).not.toBe(sandbox);
+    expect(slotSandbox(deps.slots.get("draining"))).toBeDefined();
+    expect(slotSandbox(deps.slots.get("draining"))).not.toBe(sandbox);
     await vi.waitFor(() => {
       expect(drain).toHaveBeenCalledWith(expect.any(Number));
     });

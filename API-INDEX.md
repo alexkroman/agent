@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 245 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
-- [Framework internals](#framework-internals) — 435 names
+- [Framework internals](#framework-internals) — 438 names
 
 ## Agent authoring
 
@@ -1228,6 +1228,7 @@ trace or a type error can be traced back to something.
 | `AttachSessionOptions` | type | `@alexkroman1/aai-runtime/internal` |  | Options for `attachSession`. |
 | `BOUNDARY_KEYS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `BUILTIN_TOOL_ENV` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `BackoffLoop`, `BackoffLoopOptions` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `BuiltinToolOptions` | type | `@alexkroman1/aai/host-internal` |  | Options for creating built-in tool definitions. |
 | `CAPTURE_STOP_ACK_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `CARRIER_PARAM` | const | `@alexkroman1/aai-runtime/internal` |  | Query parameter naming the carrier — see `carrierByName`. |
@@ -1509,6 +1510,7 @@ trace or a type error can be traced back to something.
 | `clientToolBrand` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `consoleLogger` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `constantTimeEquals` | function | `@alexkroman1/aai/host-internal` |  | True when `a` and `b` are equal, without a data-dependent early exit — the one constant-time string comparison every host-side gate shares. |
+| `createBackoffLoop` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `createCoalescingRunner` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `createDetachedSlotStore` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `createEpoch` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |

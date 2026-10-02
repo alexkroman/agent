@@ -2,14 +2,15 @@
 // @vitest-environment jsdom
 
 /**
- * `useRecoveredRun` — the mount-time lookup that finds a run again after the
- * page lost its id.
+ * `findRecoveredRun` — the lookup that finds a run again after the page lost
+ * its id.
  *
- * Two halves. The first drives the hook directly, for what only it decides:
- * that it is `recovering` from the FIRST frame, that `enabled: false` asks
- * nothing, that an answer landing after unmount is dropped, and that a new KEY
- * re-asks. The second is the four decisions its module doc lists, as a page
- * sees them through `useWorkflowSubmit` — moved here from
+ * Two halves. The first drives the lookup directly, for the question it asks
+ * and the shape of its answer. WHEN it is asked — busy from the first frame,
+ * `enabled: false`, a new KEY, an answer after unmount — is the form's
+ * statechart's and its facade's (`_workflow-form-state.test.ts`,
+ * `_submission-state.test.ts`). The second is the four decisions the module
+ * doc lists, as a page sees them through `useWorkflowSubmit` — moved here from
  * `use-workflow-form-recover.test.ts`, which keeps the default-key specs.
  *
  * Every spec clears `sessionStorage` after it, because `useWorkflowSubmit`'s
@@ -19,7 +20,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMockWorkflowApi, refuseNetwork, workflowRun as run } from "./_react-test-utils.ts";
-import { type RecoverRunOptions, useRecoveredRun } from "./_recover-run.ts";
+import { findRecoveredRun } from "./_recover-run.ts";
 import type { TestWorkflow } from "./_workflow-test-defs.ts";
 import { useWorkflowSubmit } from "./use-workflow-form.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -49,27 +50,6 @@ function renderSubmit(api: WorkflowApi, opts: { key?: string; recover?: boolean 
   );
 }
 
-/** `useRecoveredRun` on its own, with spies for both reports. */
-function renderRecover(api: WorkflowApi, over: Partial<RecoverRunOptions> = {}) {
-  const onFound = vi.fn<(runId: string) => void>();
-  const onError = vi.fn<(message: string) => void>();
-  const getClient = () => api;
-  const hook = renderHook(
-    ({ key }: { key: string }) =>
-      useRecoveredRun({
-        workflow: "digest",
-        key,
-        enabled: true,
-        getClient,
-        onFound,
-        onError,
-        ...over,
-      }),
-    { initialProps: { key: KEY } },
-  );
-  return { ...hook, onFound, onError };
-}
-
 beforeEach(refuseNetwork);
 
 afterEach(() => {
@@ -77,78 +57,28 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-describe("useRecoveredRun", () => {
-  test("is recovering from the first frame, and reports the newest run", async () => {
+describe("findRecoveredRun", () => {
+  test("asks for the key's NEWEST run and answers its id", async () => {
     const api = fakeApi({ find: vi.fn(async () => [run({ runId: "wrun_9" })]) });
-    const { result, onFound, onError } = renderRecover(api);
-
-    // No frame in which a page about to adopt a run reads as idle.
-    expect(result.current).toBe(true);
-    await waitFor(() => expect(result.current).toBe(false));
-    expect(onFound).toHaveBeenCalledExactlyOnceWith("wrun_9");
-    expect(onError).not.toHaveBeenCalled();
-    expect(api.find).toHaveBeenCalledWith("digest", KEY, { limit: 1 });
+    await expect(findRecoveredRun(api, "digest", KEY)).resolves.toBe("wrun_9");
+    // `limit: 1` because the newest run is the only one a form can show.
+    expect(api.find).toHaveBeenCalledExactlyOnceWith("digest", KEY, { limit: 1 });
   });
 
-  test("`enabled: false` asks nothing and is never recovering", () => {
-    const api = fakeApi();
-    const { result, onFound } = renderRecover(api, { enabled: false });
-    expect(result.current).toBe(false);
-    expect(api.find).not.toHaveBeenCalled();
-    expect(onFound).not.toHaveBeenCalled();
-  });
-
-  test("an empty answer adopts nothing and reports nothing", async () => {
+  test("an empty answer is `undefined`, not a failure", async () => {
     const api = fakeApi({ find: vi.fn(async () => []) });
-    const { result, onFound, onError } = renderRecover(api);
-    await waitFor(() => expect(result.current).toBe(false));
-    expect(onFound).not.toHaveBeenCalled();
-    expect(onError).not.toHaveBeenCalled();
+    await expect(findRecoveredRun(api, "digest", KEY)).resolves.toBeUndefined();
   });
 
-  test("a failed lookup is reported with its message", async () => {
+  test("a failed lookup REJECTS, so the page can say so", async () => {
     const api = fakeApi({
       find: vi.fn(async () => {
         throw new Error("agent unavailable");
       }),
     });
-    const { result, onError } = renderRecover(api);
-    await waitFor(() => expect(result.current).toBe(false));
-    expect(onError).toHaveBeenCalledExactlyOnceWith("agent unavailable");
-  });
-
-  test("an answer that lands after unmount is dropped", async () => {
-    const found = Promise.withResolvers<WorkflowRun[]>();
-    const api = fakeApi({ find: vi.fn(() => found.promise) });
-    const { unmount, onFound } = renderRecover(api);
-
-    unmount();
-    await act(async () => {
-      found.resolve([run({ runId: "wrun_9" })]);
-      await found.promise;
+    await expect(findRecoveredRun(api, "digest", KEY)).rejects.toMatchObject({
+      message: "agent unavailable",
     });
-    expect(onFound).not.toHaveBeenCalled();
-  });
-
-  test("a new KEY is a different person's run, and is asked about", async () => {
-    const api = fakeApi({ find: vi.fn(async () => []) });
-    const { result, rerender } = renderRecover(api);
-    await waitFor(() => expect(result.current).toBe(false));
-
-    rerender({ key: "another-key" });
-    await waitFor(() =>
-      expect(api.find).toHaveBeenLastCalledWith("digest", "another-key", { limit: 1 }),
-    );
-    expect(api.find).toHaveBeenCalledTimes(2);
-  });
-
-  test("a re-render with the same key asks nothing more", async () => {
-    const api = fakeApi({ find: vi.fn(async () => []) });
-    const { result, rerender } = renderRecover(api);
-    await waitFor(() => expect(result.current).toBe(false));
-    rerender({ key: KEY });
-    rerender({ key: KEY });
-    expect(api.find).toHaveBeenCalledOnce();
   });
 });
 

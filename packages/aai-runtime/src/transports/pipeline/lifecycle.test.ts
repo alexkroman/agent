@@ -4,14 +4,122 @@
 // session still connecting, and a provider failure — at open or mid-session —
 // reports the session over and detaches every listener. The greeting, the
 // lifecycle's other half, is greeting.test.ts's.
+//
+// The phase machine underneath (`createPipelinePhase`) is driven directly
+// first, over spied effects: there a phase is one `send` away, so orderings
+// that need a whole transport to stage — a stop landing mid-open, TTS adopted
+// before `open()` settles — are cheap.
 
 import { describe, expect, test, vi } from "vitest";
 import { createFailingProvider, createFakeTtsProvider } from "../../_pipeline-test-fakes.ts";
 import type { SttOpener, SttSession } from "../../providers/openers.ts";
 import { makeOpts, useVirtualTime } from "../_pipeline-transport-harness.ts";
+import { createPipelinePhase, type PipelinePhaseEffects } from "./lifecycle.ts";
 import { createPipelineTransport } from "./transport.ts";
 
 useVirtualTime();
+
+/** A phase machine over spied effects, with `open()` held until the spec settles it. */
+function makePhase() {
+  const open = Promise.withResolvers<"ok" | "failed">();
+  const order: string[] = [];
+  const spies = {
+    open: vi.fn(() => open.promise),
+    becomeAudible: vi.fn(() => order.push("becomeAudible")),
+    armNudger: vi.fn(() => order.push("armNudger")),
+    // Never settles: the failure line is "still being spoken" unless a spec
+    // sends FAILURE_SPOKEN itself, as the real effect does when it finishes.
+    speakStartFailure: vi.fn(() => new Promise<void>(() => undefined)),
+    dropHeld: vi.fn(() => order.push("dropHeld")),
+  } satisfies PipelinePhaseEffects;
+  return { spies, open, order, phase: createPipelinePhase(spies) };
+}
+
+describe("the phase machine", () => {
+  test("idle until started; START invokes the open, and nothing is audible yet", () => {
+    const { spies, phase } = makePhase();
+    expect(phase.phase()).toBe("idle");
+    phase.send({ type: "START" });
+    expect(phase.phase()).toBe("opening");
+    expect(spies.open).toHaveBeenCalledTimes(1);
+    expect(phase.audible()).toBe(false);
+    expect(phase.isTerminated()).toBe(false);
+  });
+
+  test("TTS adopted mid-open makes audio flow once; the open settling arms the nudger", async () => {
+    const { spies, open, phase } = makePhase();
+    phase.send({ type: "START" });
+    phase.send({ type: "AUDIO_READY" });
+    expect(phase.audible()).toBe(true);
+    expect(spies.becomeAudible).toHaveBeenCalledTimes(1);
+    // Audio becomes ready ONCE; a repeated announcement is inert.
+    phase.send({ type: "AUDIO_READY" });
+
+    open.resolve("ok");
+    await phase.settled();
+    expect(phase.phase()).toBe("ready");
+    expect(spies.becomeAudible).toHaveBeenCalledTimes(1);
+    expect(spies.armNudger).toHaveBeenCalledTimes(1);
+  });
+
+  test("an open that settles before TTS announced itself greets, THEN arms the nudger", async () => {
+    const { open, order, phase } = makePhase();
+    phase.send({ type: "START" });
+    open.resolve("ok");
+    await phase.settled();
+    expect(phase.phase()).toBe("ready");
+    expect(order).toEqual(["becomeAudible", "armNudger"]);
+  });
+
+  test("a failed open speaks the failure, never arms the nudger, and holds lines until it ends", async () => {
+    const { spies, open, order, phase } = makePhase();
+    phase.send({ type: "START" });
+    open.resolve("failed");
+    await vi.waitFor(() => expect(phase.phase()).toBe("failing"));
+    expect(spies.speakStartFailure).toHaveBeenCalledTimes(1);
+    expect(phase.audible()).toBe(false);
+    expect(phase.isTerminated()).toBe(false);
+
+    phase.send({ type: "FAILURE_SPOKEN" });
+    expect(phase.isTerminated()).toBe(true);
+    expect(order).toEqual(["dropHeld"]);
+  });
+
+  test("a stop mid-open LEAVES opening, so the open's completion is never delivered", async () => {
+    // What deletes the nudger's re-check: start() used to arm it after
+    // `await startPromise`, safe only because the nudger re-read isActive().
+    const { spies, open, phase } = makePhase();
+    phase.send({ type: "START" });
+    phase.send({ type: "STOP" });
+    expect(phase.isTerminated()).toBe(true);
+    expect(spies.dropHeld).toHaveBeenCalledTimes(1);
+
+    open.resolve("ok");
+    await phase.settled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(spies.armNudger).not.toHaveBeenCalled();
+    expect(spies.becomeAudible).not.toHaveBeenCalled();
+    // A late TTS adoption cannot make a terminated session audible.
+    phase.send({ type: "AUDIO_READY" });
+    expect(phase.audible()).toBe(false);
+  });
+
+  test("a provider error ends a live session, and a stop before start ends an idle one", () => {
+    const live = makePhase();
+    live.phase.send({ type: "START" });
+    live.phase.send({ type: "AUDIO_READY" });
+    live.phase.send({ type: "PROVIDER_ERROR" });
+    expect(live.phase.phase()).toBe("terminated");
+    expect(live.phase.audible()).toBe(false);
+
+    const idle = makePhase();
+    idle.phase.send({ type: "STOP" });
+    expect(idle.phase.phase()).toBe("terminated");
+    // START after the end is ignored: no provider is opened for a dead session.
+    idle.phase.send({ type: "START" });
+    expect(idle.spies.open).not.toHaveBeenCalled();
+  });
+});
 
 describe("pipeline lifecycle", () => {
   describe("start()", () => {

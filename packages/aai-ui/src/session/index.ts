@@ -4,7 +4,7 @@
  *
  * `createBrowserSession` and the types its handle is described by are what the
  * package builds on; every other module in `session/` (the dialer, the
- * reconnecting socket, the handshake guard, the two statecharts, the message
+ * reconnecting socket, the handshake deadline, the three statecharts, the message
  * handlers, the audio path's bring-up) is private to this directory. Private
  * means NOT re-exported here: guard-invariants rule 37 fails an import from
  * outside `session/` that names any module but this one.

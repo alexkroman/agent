@@ -36,14 +36,15 @@
  * `Response`, which the other two callers do not have — one of them is
  * re-entering after an error with no response at all.
  *
- * **One place computes this window WITHOUT jitter, on purpose.**
- * `aai-studio-client/src/use-event-stream.ts` reconnects the studio's SSE
- * subscription on the same `min(base * 2 ** (n - 1), max)` and stops there. It
+ * **One caller takes this window WITHOUT jitter, on purpose.**
+ * `aai-studio-client/src/hooks/use-event-stream.ts` reconnects the studio's
+ * SSE subscription through `createBackoffLoop({ jitter: false })`
+ * (`backoff-loop.ts`), on the same `min(base * 2 ** (n - 1), max)`. It
  * is a real candidate — a server restart brings every open studio tab back in
  * unison, which is exactly the herd this spreads — but its spec asserts the
  * gaps EXACTLY (`[3000, 6000, 12_000]`), and trading that for a range
- * assertion is a bigger change than the one it buys. Convert it deliberately
- * or not at all; do not let it drift into a fourth copy of the jitter.
+ * assertion is a bigger change than the one it buys. Converting it is flipping
+ * that flag, deliberately; do not let it drift into a fourth copy of the jitter.
  *
  * On `@alexkroman1/aai/internal` rather than a published subpath: it is
  * infrastructure the sibling packages share, not something an `agent.ts`

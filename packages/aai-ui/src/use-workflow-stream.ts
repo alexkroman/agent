@@ -78,16 +78,15 @@
  * pause has become an abandonment.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type {
   AnyWorkflowDef,
   UploadParallelOption,
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useRunControls } from "./_run-controls.ts";
-import { type SubmissionToken, useSubmissionState } from "./_submission-state.ts";
+import { useSubmissionState } from "./_submission-state.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { fileFields, filesOf } from "./_workflow-files.ts";
 import {
@@ -185,92 +184,79 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
   options: UseWorkflowStreamOptions = {},
 ): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
   const { api, key, intervalMs, parallel } = options;
-  // The four states, the live-submission ref, the supersede rule, `reset` and
-  // the pause pair — shared with `useWorkflowSubmit`. See
-  // `_submission-state.ts`.
-  const state = useSubmissionState<SubmissionToken>();
-  const { runId, actions } = state;
-
   const getClient = useWorkflowApiRef(api);
+
+  // The form's statechart, shared with `useWorkflowSubmit` — see
+  // `_submission-state.ts`. No lookup: this hook REFUSES `recover` (see
+  // `UseWorkflowStreamOptions`), so every run it reports is one this mount
+  // started, and `startedHere` still moves with `submit`/`reset` rather than
+  // being a constant `true`, because a page shares its markup with
+  // `useWorkflowSubmit` pages that read the same field.
+  const form = useSubmissionState();
+  const { runId, actions } = form;
 
   const tracked = useWorkflowRun<WorkflowOutputOf<D>>(runId, omitUndefined({ api, intervalMs }));
   // Same two controls as `useWorkflowSubmit` — this hook returns an ALIAS of
   // that hook's type, so a field missing here is a lie in the shared type.
   const { wake, cancel } = useRunControls(runId, getClient);
 
-  // This hook REFUSES `recover` (see `UseWorkflowStreamOptions`), so every run
-  // it reports is one this mount started — but the flag still has to move with
-  // `submit`/`reset` rather than being a constant `true`, because it is false
-  // before the first submission and again after a clear, and a page shares its
-  // markup with `useWorkflowSubmit` pages that read the same field.
-  const [startedHere, setStartedHere] = useState(false);
-
   const submit = useCallback(
-    async (input: unknown) => {
+    (input: unknown) => {
       const client = getClient();
-      const current: SubmissionToken = { gate: createUploadGate() };
-      const { gate } = current;
-      setStartedHere(true);
-      actions.begin(current);
-      let started: string | undefined;
-      try {
-        // The declaration decides which property is an upload, and it is READ
-        // rather than taken as an option so the page cannot disagree with the
-        // workflow — see `beginRun`.
-        const id = randomUploadId();
-        const begun = await beginRun({ client, workflow, input, id, ...omitUndefined({ key }) });
-        started = begun.runId;
-        const chosen = begun.file;
-        actions.setRunId(started);
-        if (!chosen) return;
-        // Coalesced for the reason `useWorkflowSubmit` coalesces — see
-        // `upload/report.ts`.
-        await streamFile({
-          client,
-          gate,
-          id,
-          file: chosen,
-          parallel,
-          report: coalesceUploadReports(actions.setUpload),
-        });
-        // See the module doc: the run is asleep between polls, so without this it
-        // learns the upload is complete a poll interval late. Best-effort.
-        await client.wake(started).catch(() => undefined);
-      } catch (err: unknown) {
-        // An abandoned upload is not a failure to report — `reset()` and the next
-        // `submit()` both cancel — but the RUN still has to go, for the reason
-        // below: it is waiting on bytes that are not coming either way.
-        if (!gate.cancelled) actions.setStartError(errorMessage(err));
-        // A run left behind waits for bytes that will never come, until its own
-        // abandonment bound — failing long after the page said so. Best-effort: the
-        // submission has already failed, and a failing cancel must not replace the
-        // error that caused it.
-        if (started) await client.cancel(started).catch(() => undefined);
-      } finally {
-        actions.end(current);
-      }
+      const gate = createUploadGate();
+      return actions.submit(gate, async ({ progress, started: adopt }) => {
+        let started: string | undefined;
+        try {
+          // The declaration decides which property is an upload, and it is READ
+          // rather than taken as an option so the page cannot disagree with the
+          // workflow — see `beginRun`.
+          const id = randomUploadId();
+          const begun = await beginRun({ client, workflow, input, id, ...omitUndefined({ key }) });
+          started = begun.runId;
+          const chosen = begun.file;
+          adopt(started);
+          if (!chosen) return;
+          // Coalesced for the reason `useWorkflowSubmit` coalesces — see
+          // `upload/report.ts`.
+          await streamFile({
+            client,
+            gate,
+            id,
+            file: chosen,
+            parallel,
+            report: coalesceUploadReports(progress),
+          });
+          // See the module doc: the run is asleep between polls, so without this it
+          // learns the upload is complete a poll interval late. Best-effort.
+          await client.wake(started).catch(() => undefined);
+        } catch (err: unknown) {
+          // Whether this submission FAILED or was ABANDONED (`reset()`, the next
+          // `submit()` — the machine reports only the former), the RUN has to
+          // go: a run left behind waits for bytes that will never come, until
+          // its own abandonment bound — failing long after the page said so.
+          // Best-effort: a failing cancel must not replace the error that
+          // caused it.
+          if (started) await client.cancel(started).catch(() => undefined);
+          throw err;
+        }
+      });
     },
     [workflow, key, parallel, getClient, actions],
   );
 
-  const reset = useCallback(() => {
-    setStartedHere(false);
-    actions.reset();
-  }, [actions]);
-
   return {
     submit,
     submitForm: submit,
-    reset,
+    reset: actions.reset,
     wake,
     cancel,
     pauseUpload: actions.pauseUpload,
     resumeUpload: actions.resumeUpload,
     run: tracked.run,
-    startedHere,
-    pending: state.starting || tracked.polling,
-    upload: state.upload,
-    error: state.startError ?? tracked.error,
+    startedHere: form.startedHere,
+    pending: form.busy || tracked.polling,
+    upload: form.upload,
+    error: form.startError ?? tracked.error,
   };
 }
 

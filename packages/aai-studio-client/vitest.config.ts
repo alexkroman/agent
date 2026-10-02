@@ -9,8 +9,9 @@ export default defineUnitProject({
   // Above the setup file's 10s ceiling, so a slow `waitFor` keeps its message.
   test: { testTimeout: 20_000 },
   // Browser-heavy panes whose extracted logic is tested elsewhere. `auth.tsx`'s
-  // spec drives only the flows with no third party; the rest is supabase-js
-  // wiring (an auth subscription, an OAuth redirect) no unit spec reaches.
+  // decisions are `auth-state.ts`'s (covered); what is left is the React bridge
+  // and supabase-js wiring (an auth subscription, an OAuth redirect) no unit
+  // spec reaches.
   coverageExclude: [
     "src/main.tsx",
     "src/app.tsx",

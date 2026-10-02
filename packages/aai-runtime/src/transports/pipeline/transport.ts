@@ -127,7 +127,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sessionAbort = createSessionSignal();
   // Turn-crash handler for turnChain.chain call sites — see turnCrashLogger.
   const logTurnCrash = turnCrashLogger(log, opts.sid);
-  let terminated = false;
+  // The ONE spelling of "stopped": the lifecycle's phase machine, read by every
+  // collaborator below. A thunk because `lifecycle` is built last, and none of
+  // them reads it before then.
+  const isTerminated = (): boolean => lifecycle.isTerminated();
   // Invalidation epochs for queued turns and an aborted turn's deferred
   // persistence — see pipeline-turn-gate.ts.
   const gate = createTurnGate();
@@ -153,7 +156,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // argument is in pipeline-context-budget.ts.
   const contextBudget = createContextBudget({ llm: opts.llm, log, sid: opts.sid });
   // Turn serializer + its queued-turn epoch check — see createTurnChain.
-  const turnChain = createTurnChain({ gate, isTerminated: () => terminated });
+  const turnChain = createTurnChain({ gate, isTerminated });
   // What the caller has actually HEARD of the current reply: the barge-in
   // gate, the cut point history is truncated to, and the resume anchor, all
   // from one cursor — see createHeardTracker.
@@ -239,8 +242,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         log,
         sid: opts.sid,
       }),
-      isTerminated: () => terminated,
-      isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
+      isTerminated,
+      isSessionActive: () => !isTerminated(),
       isTurnInFlight: () => turns.inFlight(),
       isTurnDraining: () => turns.draining(),
       isResumeTurnInFlight: () => turns.resumeInFlight(),
@@ -426,9 +429,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     recovery,
     speechEdges,
     providers: () => providers,
-    isTerminated: () => terminated,
-    markTerminated: () => {
-      terminated = true;
+    onTerminated: () => {
       // A pending flush timer keeps the event loop alive and would fire into
       // a session whose providers are closed — the same rule the dialog
       // deadlines follow.
@@ -458,7 +459,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isBusy: () => turns.inFlight() || heard.pending(),
     abortInFlightTurn,
     runChainedTurn,
-    isTerminated: () => terminated,
+    isTerminated,
     log,
     sid: opts.sid,
   });

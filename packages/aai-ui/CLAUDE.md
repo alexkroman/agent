@@ -79,7 +79,8 @@ otherwise.
 - `session/` — `createBrowserSession` (`browser-session.ts`), WebSocket
   session + reactive snapshot, split across the directory (dial, reconnect,
   ticket, messages, state machine, audio state/effects/setup, pre-connect,
-  handshake, mic, user turn, types). Entered through `session/index.ts` only.
+  connection, handshake, mic, user turn, types). Entered through
+  `session/index.ts` only.
 - `context.ts` — `SessionProvider`, `useSession`, `useSessionCore`,
   `useSessionSelector`, `ThemeProvider`, `useTheme`.
 - `hooks.ts` — `useToolResult`, `useToolCallStart`, `useEvent`, re-exporting

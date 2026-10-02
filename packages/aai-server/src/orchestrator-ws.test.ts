@@ -19,7 +19,7 @@ import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import type { HonoEnv } from "./context.ts";
 import { createWsUpgrades, wsSlugFromPath } from "./orchestrator-ws.ts";
 import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import { attachSandbox, claimSlot, createSlotCache } from "./sandbox/slots.ts";
 import type { Sandbox } from "./sandbox.ts";
 
 /** Emit one upgrade for `url` and collect what was written before the socket closed. */
@@ -45,7 +45,7 @@ async function residentBroker(slug: string, sandbox: Sandbox): Promise<ResolveSa
   const slots = createSlotCache();
   const { fetch, store } = await createTestOrchestrator({ slots });
   await deployAgent(fetch, slug);
-  setSlot(slots, { slug, sandbox, version: (await store.getAgentVersion(slug)) ?? 1 });
+  attachSandbox(claimSlot(slots, slug), sandbox, (await store.getAgentVersion(slug)) ?? 1);
   return { slots, store };
 }
 

@@ -199,16 +199,21 @@ production comes from Publish.
 
 ## `aai dev`
 
-- **The restart state machine is `_dev-restart.ts`**, behind injected
-  `build`/`listen`/`close`: an edit mid-boot queues, a change mid-restart loops
-  once more, a failed build keeps the old server, the new server is built before
-  the old one closes, a lost port race retries, and teardown is idempotent and
-  beats an in-flight rebuild. Spec new logic in `_dev-restart.test.ts` (no
-  mocks). The wiring specs take fakes through `DevServerSeams` (`makeDevSeams`,
-  `_dev-server-test-utils.ts`), not module mocks.
-- **Coalescing is `createCoalescingRunner`**, not a local flag pump. The boot
-  window is a separate flag released by `adopt`; `restartOnce` returns early
-  once `closed`.
+- **The restart supervisor is an XState machine in `_dev-restart.ts`**
+  (`booting`, `idle`, `rebuilding` with one substate per step, `closed`), behind
+  injected `build`/`listen`/`close`: an edit mid-boot queues, a change
+  mid-restart loops once more, a failed build keeps the old server, the new
+  server is built before the old one closes, a lost port race retries, and
+  teardown is idempotent and beats an in-flight rebuild. Spec new logic in
+  `_dev-restart.test.ts` (no mocks). The wiring specs take fakes through
+  `DevServerSeams` (`makeDevSeams`, `_dev-server-test-utils.ts`), not module
+  mocks.
+- **Each rebuild step is an invoked actor, so `CLOSE` stops it** — no `closed`
+  re-check after an await. A step holding the replacement closes it when its
+  signal aborts, AFTER its own op settles (closing mid-`listen` leaks the port).
+  Coalescing is a `queued` flag re-entering `rebuilding` once, in every state
+  that queues (boot included). Actions never throw (`report`): a throwing action
+  kills the actor and wedges watching.
 - **Reporting success sits outside the `listen` try/catch** — a throwing
   notifier (`aai dev | head`) must not tear down a bound server.
 - **`viteDevConfig`'s proxy table (`_dev-vite-config.ts`) is the whole agent API
@@ -526,8 +531,8 @@ The scenario/integration tiers are Linux-by-design.
 - `studio.ts` / `_studio.ts` — pull/push/publish over `/studio/projects`
 - `_dev-server.ts` — `aai dev`: loads the agent, builds the runtime, watches,
   optionally runs Vite; `_dev-vite-config.ts` — `viteDevConfig`;
-  `_dev-restart.ts` — restart state machine; `_dev-watch.ts` — `watchDirectory`,
-  `isIgnoredPath`, the `DevWatchFn` seam
+  `_dev-restart.ts` — restart supervisor (XState); `_dev-watch.ts` —
+  `watchDirectory`, `isIgnoredPath`, the `DevWatchFn` seam
 - `_bundler.ts` — bundles `agent.ts` (and `client.tsx`)
 - `_api-client.ts` — `apiRequest`, `apiRequestOrThrow`, `checkedResponse`
 - `_config.ts` — auth/project config, API key. `project-config.ts` re-exports

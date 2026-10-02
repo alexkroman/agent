@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import { attachSandbox, claimSlot, createSlotCache, slotSandbox } from "./sandbox/slots.ts";
 import { SHUTDOWN_GRACE_MS, shutdownGraceMs, teardownSandboxes } from "./teardown-sandboxes.ts";
 
 const fakeSandbox = () => ({
@@ -21,8 +21,8 @@ describe("teardownSandboxes", () => {
     const slots = createSlotCache();
     const a = fakeSandbox();
     const b = fakeSandbox();
-    setSlot(slots, { slug: "a", sandbox: a });
-    setSlot(slots, { slug: "b", sandbox: b });
+    attachSandbox(claimSlot(slots, "a"), a, 1);
+    attachSandbox(claimSlot(slots, "b"), b, 1);
 
     await teardownSandboxes({ slots, graceMs: 0 });
 
@@ -31,8 +31,8 @@ describe("teardownSandboxes", () => {
     expect(a.shutdown).not.toHaveBeenCalled();
     expect(b.shutdown).not.toHaveBeenCalled();
     // Detached, so nothing else can route to or double-release them.
-    expect(slots.get("a")?.sandbox).toBeUndefined();
-    expect(slots.get("b")?.sandbox).toBeUndefined();
+    expect(slotSandbox(slots.get("a"))).toBeUndefined();
+    expect(slotSandbox(slots.get("b"))).toBeUndefined();
   });
 
   it("terminates a guest that is unreachable for the drain", async () => {
@@ -41,7 +41,7 @@ describe("teardownSandboxes", () => {
       shutdown: vi.fn().mockResolvedValue(undefined),
       drain: vi.fn().mockRejectedValue(new Error("guest gone")),
     };
-    setSlot(slots, { slug: "dead", sandbox: dead });
+    attachSandbox(claimSlot(slots, "dead"), dead, 1);
 
     await teardownSandboxes({ slots, graceMs: 0 });
 
@@ -66,8 +66,8 @@ describe("teardownSandboxes", () => {
       drain: vi.fn().mockRejectedValue(new Error("guest gone")),
     };
     const good = fakeSandbox();
-    setSlot(slots, { slug: "bad", sandbox: bad });
-    setSlot(slots, { slug: "good", sandbox: good });
+    attachSandbox(claimSlot(slots, "bad"), bad, 1);
+    attachSandbox(claimSlot(slots, "good"), good, 1);
     const broker = { dispose: vi.fn().mockResolvedValue(undefined) };
 
     await expect(teardownSandboxes({ graceMs: 0, slots, broker })).resolves.toBeUndefined();
@@ -100,10 +100,10 @@ describe("teardownSandboxes", () => {
   it("waits for the proxy to notice before emptying the slots", async () => {
     const slots = createSlotCache();
     const sandbox = fakeSandbox();
-    setSlot(slots, { slug: "a", sandbox });
+    attachSandbox(claimSlot(slots, "a"), sandbox, 1);
     const done = teardownSandboxes({ slots, graceMs: 50 });
     // Still serving: the resident is attached and drains have not started.
-    expect(slots.get("a")?.sandbox).toBe(sandbox);
+    expect(slotSandbox(slots.get("a"))).toBe(sandbox);
     expect(sandbox.drain).not.toHaveBeenCalled();
     await done;
     expect(sandbox.drain).toHaveBeenCalledOnce();

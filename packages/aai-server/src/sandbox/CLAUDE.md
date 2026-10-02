@@ -25,10 +25,13 @@ servers").
   `AAI_LOCAL_DEV=1` → `microsandbox`, `subprocess` opt-in only. The safe branch
   is the default: `backend.test.ts` asserts an empty env `{}` resolves to
   isolation. The boot log prints which backend and why.
-- `slots.ts` — per-slug slot cache `{ slug, version?, sandbox? }`. A plain
-  `Map`; `withSlugLock` is the exclusion (`SlotCache`'s doc). No idle machinery
-  — the guest self-exits, and its exit drops the whole SLOT via `onSandboxLost`,
-  not just its sandbox.
+- `slots.ts` — per-slug slot cache `{ slug, state }`, `state` being
+  `{ kind: "empty" }` or `{ kind: "ready", sandbox, version }` (`SlotState`'s
+  doc). **Every state change goes through its transition functions**
+  (`claimSlot`, `attachSandbox`, `terminateSlot`, `retireSlot`, `deleteSlot`);
+  read a resident with `slotSandbox`. A plain `Map`; `withSlugLock` is the
+  exclusion (`SlotCache`'s doc). No idle machinery — the guest self-exits, and
+  its exit drops the whole SLOT via `onSandboxLost`, not just its sandbox.
 - `resolve.ts` — slot-based slug→sandbox resolution and `watchAgentInvalidation`
   (driven by the agents row's change stream).
 - `broker.ts` — `brokerSessionUrl`: slug → public session URL with one failure
