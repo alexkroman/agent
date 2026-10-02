@@ -49,14 +49,11 @@
  *   running total, which is the number that separates one bad frame from a dead
  *   stream. The window is per LOGGER rather than per module, so one session's
  *   burst cannot silence another's first line.
- * - **{@link base64DropCount} is the reading with no log line in it**, for a
- *   spec and for an operator who has the process but not its stdout.
  *
  * An `undefined`-returning sibling (`tryBase64ToUint8`) was the other candidate.
  * It puts the decision at each call site, which is where the context is — and
  * then three of the six sites have nothing to decide WITH, so what it buys is
- * the same silence behind more ceremony. A counter alone was the cheapest and
- * says nothing while a call is live.
+ * the same silence behind more ceremony.
  *
  * Two things stay ACCEPTED, and `lastChunkHandling` is left at its default to
  * keep them: an unpadded final chunk (`"aGVsbG8"`) and a final chunk with
@@ -88,21 +85,8 @@ export const BASE64_DROP_REPORT_MS = 10_000;
 type DropState = { count: number; nextReportAt: number };
 
 const dropsByLogger = new WeakMap<Logger, DropState>();
-let totalDrops = 0;
-
-/**
- * Malformed payloads this module has dropped, since the process started.
- *
- * The observation that needs no log reader. Note a deployed guest holds TWO
- * copies of this package (see the package guide), and each counts its own
- * decodes — which is what it should report, since each also logs its own.
- */
-export function base64DropCount(): number {
-  return totalDrops;
-}
 
 function reportDrop(chars: number, logger: Logger): void {
-  totalDrops += 1;
   const state = dropsByLogger.get(logger) ?? { count: 0, nextReportAt: 0 };
   state.count += 1;
   dropsByLogger.set(logger, state);

@@ -6,7 +6,7 @@
  */
 import fc from "fast-check";
 import { describe, expect, type Mock, test, vi } from "vitest";
-import { BASE64_DROP_REPORT_MS, base64DropCount, base64ToUint8, uint8ToBase64 } from "./_base64.ts";
+import { BASE64_DROP_REPORT_MS, base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import { makeLogger } from "./_logger-test-utils.ts";
 
 /** Byte arrays, plus the windowed views a socket frame and a decode hand over. */
@@ -105,17 +105,6 @@ describe("a dropped frame is OBSERVABLE", () => {
     expect([...base64ToUint8("not base64 at all!!", logger)]).toEqual([]);
     expect(logger.warn).toHaveBeenCalledOnce();
     expect((logger.warn as Mock).mock.calls[0]?.[0]).toMatch(/malformed/i);
-  });
-
-  test("the count is readable without a log line at all", () => {
-    // The reader an OPERATOR gets, and the one a caller with no logger in
-    // scope leaves behind: three of the six call sites are provider openers
-    // whose options bag carries no `Logger` (`TtsOpenOptions` is published on
-    // two packages), so the count is what says a live call lost frames.
-    const before = base64DropCount();
-    base64ToUint8("!!!!");
-    base64ToUint8("-_8=");
-    expect(base64DropCount()).toBe(before + 2);
   });
 
   test("a garbage STREAM is one line per window, carrying the total", () => {
