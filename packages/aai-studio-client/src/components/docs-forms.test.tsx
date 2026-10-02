@@ -67,7 +67,7 @@ describe("FormFieldsApi", () => {
       "<CheckboxField>",
       "<FileField upload>",
     ]) {
-      expect(screen.getByText(control)).toBeTruthy();
+      expect(screen.getByText(control)).toBeInTheDocument();
     }
     // A nested shape gets no generated control and the API takes it anyway,
     // which is a different sentence from "the API will not accept this". Its
@@ -86,17 +86,17 @@ describe("FormFieldsApi", () => {
     await waitFor(() => expect(screen.getByText(/Every form field, over HTTP/)).toBeTruthy());
     // A `SelectField` sends one member of the declared enum — a REAL value,
     // and the only row whose sample is not a placeholder.
-    expect(screen.getByText('tone: "formal"')).toBeTruthy();
-    expect(screen.getByText("draft: false")).toBeTruthy();
-    expect(screen.getByText("count: 0")).toBeTruthy();
+    expect(screen.getByText('tone: "formal"')).toBeInTheDocument();
+    expect(screen.getByText("draft: false")).toBeInTheDocument();
+    expect(screen.getByText("count: 0")).toBeInTheDocument();
     // An upload property is a plain string in the schema, so this is the row
     // inference gets wrong: the value is a handle, not the file.
-    expect(screen.getByText('cover: "<upload id>"')).toBeTruthy();
+    expect(screen.getByText('cover: "<upload id>"')).toBeInTheDocument();
     expect(screen.getAllByText(/Declared by publish\./).length).toBeGreaterThan(4);
     // The one control no schema selects: a textarea and a text field are the
     // same string over the wire, so matching a property to it would put one
     // property on two rows claiming to be two controls.
-    expect(screen.getByText(/Example — this agent declares none/)).toBeTruthy();
+    expect(screen.getByText(/Example — this agent declares none/)).toBeInTheDocument();
   });
 
   test("and the annotated call labels each property with its control", async () => {
@@ -112,12 +112,12 @@ describe("FormFieldsApi", () => {
     // library normalizes whitespace before matching, so a newline-anchored
     // pattern cannot see the line break this snippet's whole shape depends on.
     const annotated = screen.getByText(/topic: "<topic>", +\/\/ <TextField>/);
-    expect(annotated.textContent).toContain('agent.startAndWait("publish", {');
-    expect(annotated.textContent).toContain("// <NumberField>");
+    expect(annotated).toHaveTextContent('agent.startAndWait("publish", {');
+    expect(annotated).toHaveTextContent("// <NumberField>");
     // The upload renders as the EXPRESSION reading the id off the upload the
     // lines above made — not as a string a caller cannot produce.
-    expect(annotated.textContent).toContain("cover: coverUpload.id,");
-    expect(annotated.textContent).toContain("await agent.upload(file,");
+    expect(annotated).toHaveTextContent("cover: coverUpload.id,");
+    expect(annotated).toHaveTextContent("await agent.upload(file,");
     // The shell alternate carries the mapping as comments, the body being one
     // single-quoted line with nowhere to put them. Read off `textContent`
     // rather than matched: the columns are aligned, and testing library's
@@ -139,7 +139,7 @@ describe("FormFieldsApi", () => {
     renderPane({ deployedSlug: "demo" });
 
     await waitFor(() => expect(screen.getByText(/Every form field, over HTTP/)).toBeTruthy());
-    expect(screen.getByText("<CheckboxField>")).toBeTruthy();
+    expect(screen.getByText("<CheckboxField>")).toBeInTheDocument();
     expect(screen.getAllByText(/Example — this agent declares none/).length).toBe(7);
     expect(screen.queryByText(/each property labelled by the control it is/)).toBeNull();
   });

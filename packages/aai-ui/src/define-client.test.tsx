@@ -123,7 +123,7 @@ describe("mountClient", () => {
       ),
     );
     const handle = mountClient({ target: "#app", platformUrl: "http://localhost:3000" });
-    await vi.waitFor(() => expect(container.textContent).toContain("Server Name"));
+    await vi.waitFor(() => expect(container).toHaveTextContent("Server Name"));
     handle.dispose();
   });
 
@@ -140,7 +140,7 @@ describe("mountClient", () => {
     // resolves to `{}` and commits it, so flushing to that commit is the gate.
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
     await flushEffects();
-    expect(container.textContent).toContain("Start Conversation");
+    expect(container).toHaveTextContent("Start Conversation");
     // A failed lookup contributes no title — `StartScreen` renders one only
     // when it has one — which is what "degrades to the empty default" means
     // here, as against the sibling above where the server names the agent.
@@ -162,7 +162,7 @@ describe("mountClient", () => {
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("Test"));
+    await vi.waitFor(() => expect(container).toHaveTextContent("Test"));
     expect(fetchSpy).not.toHaveBeenCalled();
     handle.dispose();
   });
@@ -281,10 +281,10 @@ describe("mountClient", () => {
       target: container,
     });
     expect(container.querySelector("[data-testid='mark']")).not.toBeNull();
-    expect(container.textContent).toContain("A Narrative Solo-RPG Engine");
-    expect(container.textContent).toContain("Begin Your Story");
+    expect(container).toHaveTextContent("A Narrative Solo-RPG Engine");
+    expect(container).toHaveTextContent("Begin Your Story");
     // And NOT the stock CTA it replaced.
-    expect(container.textContent).not.toContain("Start Conversation");
+    expect(container).not.toHaveTextContent("Start Conversation");
     handle.dispose();
   });
 
@@ -306,7 +306,7 @@ describe("mountClient", () => {
     // asserting it is what distinguishes "routed through" from "silently
     // dropped", which is what the field did before it was forwarded.
     const pane = container.querySelector("[data-testid='aside']")?.parentElement;
-    expect(pane?.className).toContain("order-last");
+    expect(pane).toHaveClass("order-last");
     handle.dispose();
   });
 
@@ -326,7 +326,7 @@ describe("mountClient", () => {
       target: container,
     });
     const pane = container.querySelector("[data-testid='aside']")?.parentElement;
-    expect(pane?.className).toContain("order-last");
+    expect(pane).toHaveClass("order-last");
     handle.dispose();
   });
 });

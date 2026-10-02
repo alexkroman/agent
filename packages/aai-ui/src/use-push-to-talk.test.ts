@@ -7,11 +7,9 @@
  * because those frames are the whole of what the server sees.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
+import { act } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { createMockSessionCore } from "./_react-test-utils.ts";
-import { SessionProvider } from "./context.ts";
+import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
 import { type UsePushToTalkOptions, usePushToTalk } from "./use-push-to-talk.ts";
 
 function mount(options?: UsePushToTalkOptions, snapshot = { running: true }) {
@@ -20,10 +18,7 @@ function mount(options?: UsePushToTalkOptions, snapshot = { running: true }) {
   const start = vi.spyOn(core.userTurn, "start");
   const commit = vi.spyOn(core.userTurn, "commit");
   const clear = vi.spyOn(core.userTurn, "clear");
-  const hook = renderHook(() => usePushToTalk(options), {
-    wrapper: ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children),
-  });
+  const hook = renderHookWithSession(() => usePushToTalk(options), core);
   return { core, hook, start, commit, clear };
 }
 

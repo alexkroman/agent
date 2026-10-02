@@ -36,7 +36,6 @@ function sentTypes(socket: MockWebSocket | null): string[] {
 }
 
 describe("BrowserSession push-to-talk", () => {
-  let audio: ReturnType<typeof installAudioMocks>;
   let socket: MockWebSocket | null = null;
   const WS = recordingWebSocketClass((s) => {
     socket = s;
@@ -45,13 +44,12 @@ describe("BrowserSession push-to-talk", () => {
   beforeEach(async () => {
     await loadAudioModules();
     vi.useFakeTimers();
-    audio = installAudioMocks();
+    installAudioMocks();
     socket = null;
     sessionStorage.clear();
     vi.spyOn(console, "warn").mockImplementation(noop);
   });
   afterEach(() => {
-    audio.restore();
     vi.useRealTimers();
   });
 
@@ -119,7 +117,6 @@ describe("BrowserSession push-to-talk", () => {
 });
 
 describe("BrowserSession sendText", () => {
-  let audio: ReturnType<typeof installAudioMocks>;
   let socket: MockWebSocket | null = null;
   const WS = recordingWebSocketClass((s) => {
     socket = s;
@@ -128,13 +125,12 @@ describe("BrowserSession sendText", () => {
   beforeEach(async () => {
     await loadAudioModules();
     vi.useFakeTimers();
-    audio = installAudioMocks();
+    installAudioMocks();
     socket = null;
     sessionStorage.clear();
     vi.spyOn(console, "warn").mockImplementation(noop);
   });
   afterEach(() => {
-    audio.restore();
     vi.useRealTimers();
   });
 

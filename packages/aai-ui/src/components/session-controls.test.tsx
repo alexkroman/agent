@@ -98,7 +98,7 @@ describe("SessionControls", () => {
     mount({ started: true, running: true }, { labels: { pause: "Hold", end: "Hang up" } });
     expect(labels()).toEqual(["Hold", "New Conversation", "Hang up"]);
     mount({ started: false }, { labels: { start: "Begin Adventure" } });
-    expect(screen.getByText("Begin Adventure")).toBeDefined();
+    expect(screen.getByText("Begin Adventure")).toBeInTheDocument();
   });
 
   test("`renderButton` gets every button with its action, label, handler and the running flag", () => {
@@ -129,8 +129,8 @@ describe("SessionControls", () => {
       { className: "px-4", children: <span data-testid="count">3 incidents</span> },
     );
     const row = view.container.firstElementChild as HTMLElement;
-    expect(row.className).toContain("flex-wrap");
-    expect(row.className).toContain("px-4");
-    expect(row.lastElementChild?.getAttribute("data-testid")).toBe("count");
+    expect(row).toHaveClass("flex-wrap");
+    expect(row).toHaveClass("px-4");
+    expect(row.lastElementChild).toHaveAttribute("data-testid", "count");
   });
 });

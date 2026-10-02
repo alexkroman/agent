@@ -43,7 +43,7 @@ describe("submitting", () => {
         <Form onSubmit={vi.fn()} error="agent unavailable, retry shortly" />
       </ThemeProvider>,
     );
-    expect(screen.getByRole("alert").textContent).toContain("agent unavailable");
+    expect(screen.getByRole("alert")).toHaveTextContent("agent unavailable");
   });
 
   test("a pending SubmitButton is disabled and says what it is doing", () => {
@@ -57,7 +57,7 @@ describe("submitting", () => {
     // Pending is the WORK, not the submit: a run outlives its POST, so the
     // button stays busy until the run is done.
     const button = screen.getByRole("button") as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(button.textContent).toContain("Working…");
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent("Working…");
   });
 });

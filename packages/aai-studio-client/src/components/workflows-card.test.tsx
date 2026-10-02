@@ -36,7 +36,7 @@ describe("WorkflowsCard", () => {
   test("asks for a publish or an edit when the project has neither slug", () => {
     // Nothing to read from: no deployed agent and no preview.
     renderCard();
-    expect(screen.getByText(/Publish this project/)).toBeTruthy();
+    expect(screen.getByText(/Publish this project/)).toBeInTheDocument();
   });
 
   test("reads the agent's own brokered API, workflow by workflow", async () => {
@@ -47,8 +47,8 @@ describe("WorkflowsCard", () => {
     });
     renderCard({ deployedSlug: "demo" });
 
-    await waitFor(() => expect(screen.getByText("digest")).toBeTruthy());
-    expect(screen.getByText("Nightly")).toBeTruthy();
+    expect(await screen.findByText("digest")).toBeInTheDocument();
+    expect(screen.getByText("Nightly")).toBeInTheDocument();
     // The runs read carries no `key`: a console has no correlation key to ask
     // about, and most runs carry none at all.
     const runsUrl = new URL(String(fetchMock.mock.calls[1]?.[0]), "http://studio.test");
@@ -62,13 +62,13 @@ describe("WorkflowsCard", () => {
       "GET /demo-preview/workflows": () => jsonResponse({ workflows: [] }),
     });
     renderCard({ previewSlug: "demo-preview" });
-    await waitFor(() => expect(screen.getByText(/declares no workflows/)).toBeTruthy());
+    expect(await screen.findByText(/declares no workflows/)).toBeInTheDocument();
     // The whole sentence, not "an element containing the word preview" — the
     // slug `demo-preview` and the fallback copy both contain it, so the
     // previous shape (`getByText(/preview/).textContent` contains "preview")
     // could not fail once the query returned, whatever the note said.
-    expect(screen.getByText(/Showing the/).textContent).toBe(
-      "Showing the preview agent — it has its own runs, separate from production.",
+    expect(screen.getByText(/Showing the/)).toHaveTextContent(
+      /^Showing the preview agent — it has its own runs, separate from production\.$/,
     );
   });
 
@@ -90,13 +90,13 @@ describe("WorkflowsCard", () => {
       [`GET ${LIST}`]: () => jsonResponse({ error: "agent unavailable, retry shortly" }, 503),
     });
     renderCard({ deployedSlug: "demo" });
-    const line = await waitFor(() => screen.getByText(/agent unavailable, retry shortly/));
+    const line = await screen.findByText(/agent unavailable, retry shortly/);
     // UNWRAPPED, which a substring match alone does not prove: the card used to
     // render the raw body (`503: {"error":"agent unavailable, retry shortly"}`),
     // which CONTAINS that sentence — so this test passed over the bug it exists
     // to catch until `responseErrorMessage` replaced the hand-written reader.
-    expect(line.textContent).not.toContain('{"error"');
-    expect(line.textContent).toContain("Could not read the workflows: agent unavailable");
+    expect(line).not.toHaveTextContent('{"error"');
+    expect(line).toHaveTextContent("Could not read the workflows: agent unavailable");
   });
 
   test("shows a failed run's MESSAGE, not just its status", async () => {
@@ -106,8 +106,8 @@ describe("WorkflowsCard", () => {
         jsonResponse({ runs: [run({ status: "failed", error: "topic not found" })] }),
     });
     renderCard({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText("topic not found")).toBeTruthy());
-    expect(screen.getByText("failed")).toBeTruthy();
+    expect(await screen.findByText("topic not found")).toBeInTheDocument();
+    expect(screen.getByText("failed")).toBeInTheDocument();
   });
 
   test("offers Stop for a live run and nothing for a terminal one", async () => {
@@ -119,7 +119,7 @@ describe("WorkflowsCard", () => {
         }),
     });
     renderCard({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText("completed")).toBeTruthy());
+    expect(await screen.findByText("completed")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /^Stop run/ })).toHaveLength(1);
   });
 
@@ -138,10 +138,10 @@ describe("WorkflowsCard", () => {
     });
     renderCard({ deployedSlug: "demo" });
 
-    const stop = await waitFor(() => screen.getByRole("button", { name: /^Stop run/ }));
+    const stop = await screen.findByRole("button", { name: /^Stop run/ });
     fireEvent.click(stop);
 
-    await waitFor(() => expect(screen.getByText("cancelled")).toBeTruthy());
+    expect(await screen.findByText("cancelled")).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(
         ([, init]) => (init as RequestInit | undefined)?.method === "DELETE",
@@ -156,9 +156,9 @@ describe("WorkflowsCard", () => {
       [`DELETE ${RUNS}/wrun_1abcdef9`]: () => jsonResponse({ error: "gone" }, 503),
     });
     renderCard({ deployedSlug: "demo" });
-    fireEvent.click(await waitFor(() => screen.getByRole("button", { name: /^Stop run/ })));
-    await waitFor(() => expect(screen.getByText(/Could not stop the run/)).toBeTruthy());
-    expect(screen.getByText("digest")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /^Stop run/ }));
+    expect(await screen.findByText(/Could not stop the run/)).toBeInTheDocument();
+    expect(screen.getByText("digest")).toBeInTheDocument();
   });
 
   test("refresh re-reads, since the numbers are as old as the last fetch", async () => {
@@ -166,7 +166,7 @@ describe("WorkflowsCard", () => {
       [`GET ${LIST}`]: () => jsonResponse({ workflows: [] }),
     });
     renderCard({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText("Refresh runs")).toBeTruthy());
+    expect(await screen.findByText("Refresh runs")).toBeInTheDocument();
     const before = fetchMock.mock.calls.length;
     fireEvent.click(screen.getByText("Refresh runs"));
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(before));

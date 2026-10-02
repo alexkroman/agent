@@ -37,6 +37,7 @@
     "**/_test-utils.ts",
     "**/*-test-utils.ts",
     "**/_react-test-utils.ts",
+    "**/_jsdom-setup.ts",
     "vitest*.config.ts"
   ]
 }

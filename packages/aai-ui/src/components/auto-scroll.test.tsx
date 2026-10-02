@@ -25,9 +25,9 @@ describe("AutoScroll", () => {
       </AutoScroll>,
     );
     const log = screen.getByRole("log");
-    expect(log.className).toContain("flex-1");
-    expect(log.className).toContain("min-h-0");
-    expect(log.className).toContain("outer");
+    expect(log).toHaveClass("flex-1");
+    expect(log).toHaveClass("min-h-0");
+    expect(log).toHaveClass("outer");
     expect(log.style.height).toBe("100px");
 
     const scroller = log.firstElementChild;

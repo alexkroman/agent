@@ -11,7 +11,6 @@
 import ReconnectingWebSocket from "partysocket/ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  type AudioMockContext,
   type FakeTrack,
   fakeMediaStream,
   fakeTrack,
@@ -175,7 +174,6 @@ describe("session-core automatic reconnection (partysocket)", () => {
   });
 
   describe("voice reconnect with a parked audio init", () => {
-    let audio: AudioMockContext & { restore: () => void };
     /** Resolvers for parked getUserMedia calls, in call order. */
     let gumResolvers: ((stream: MediaStream) => void)[] = [];
     let tracks: FakeTrack[] = [];
@@ -187,17 +185,13 @@ describe("session-core automatic reconnection (partysocket)", () => {
     }
 
     beforeEach(() => {
-      audio = installAudioMocks();
+      installAudioMocks();
       gumResolvers = [];
       tracks = [];
       navigator.mediaDevices.getUserMedia = () =>
         new Promise<MediaStream>((resolve) => {
           gumResolvers.push(resolve);
         });
-    });
-
-    afterEach(() => {
-      audio.restore();
     });
 
     function audioReadyCount(socket: MockWebSocket | undefined): number {

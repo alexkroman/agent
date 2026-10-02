@@ -66,12 +66,14 @@ describe("UploadApi", () => {
     renderPane({ deployedSlug: "demo" });
 
     await waitFor(() => expect(screen.getByText(/Sending a file/)).toBeTruthy());
-    expect(screen.getByText(/audio_file property carries an upload id/)).toBeTruthy();
-    expect(screen.getByText(/const stored = await agent\.upload\(file, \{/)).toBeTruthy();
+    expect(screen.getByText(/audio_file property carries an upload id/)).toBeInTheDocument();
+    expect(screen.getByText(/const stored = await agent\.upload\(file, \{/)).toBeInTheDocument();
     // The start-first shape, on an id the caller minted — the reason the PUT
     // route exists beside the POST.
-    expect(screen.getByText(/await agent\.uploadStream\(audioFileUploadId, file/)).toBeTruthy();
-    expect(screen.getByText(/await agent\.uploadInfo\("<upload id>"\)/)).toBeTruthy();
+    expect(
+      screen.getByText(/await agent\.uploadStream\(audioFileUploadId, file/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/await agent\.uploadInfo\("<upload id>"\)/)).toBeInTheDocument();
   });
 
   test("and the shell alternate really uploads, rather than naming a placeholder id", async () => {

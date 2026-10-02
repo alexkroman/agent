@@ -14,7 +14,7 @@
  * replay — the branches the happy-path suites never enter.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { crashWorklet, findWorkletNode, g, installAudioMocks } from "../_react-test-utils.ts";
 import {
   type MockWebSocket,
@@ -37,10 +37,6 @@ describe("openAudioPath", () => {
     // The dynamic imports are real I/O; warm the memo before faking anything.
     await loadAudioModules();
     audio = installAudioMocks();
-  });
-
-  afterEach(() => {
-    audio.restore();
   });
 
   const callbacks = () => ({
@@ -86,10 +82,6 @@ describe("audio bring-up failures", () => {
     audio = installAudioMocks();
     socket = null;
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    audio.restore();
   });
 
   /** Start a session and deliver the config frame that kicks off audio init. */
@@ -208,10 +200,6 @@ describe("buffered greeting replay", () => {
     await loadAudioModules();
     audio = installAudioMocks();
     socket = null;
-  });
-
-  afterEach(() => {
-    audio.restore();
   });
 
   it("replays a greeting whose audio_done beat the worklet", async () => {

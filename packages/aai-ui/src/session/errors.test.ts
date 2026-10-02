@@ -7,12 +7,7 @@
  * non-fatal audio failure paths (mic release vs. survivable banner).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  type AudioMockContext,
-  fakeMediaStream,
-  fakeTrack,
-  installAudioMocks,
-} from "../_react-test-utils.ts";
+import { fakeMediaStream, fakeTrack, installAudioMocks } from "../_react-test-utils.ts";
 import {
   lastSocket,
   MockWebSocketConstructor,
@@ -77,14 +72,8 @@ describe("session-core error handling", () => {
   // ─── Terminal close state ─────────────────────────────────────────────────
 
   describe("terminal close state", () => {
-    let audio: { restore: () => void };
-
     beforeEach(() => {
-      audio = installAudioMocks();
-    });
-
-    afterEach(() => {
-      audio.restore();
+      installAudioMocks();
     });
 
     it("a clean close retires a lingering non-fatal error banner", async () => {
@@ -278,14 +267,8 @@ describe("session-core error handling", () => {
   // ─── Audio failure paths ──────────────────────────────────────────────────
 
   describe("audio failure paths", () => {
-    let audio: AudioMockContext & { restore: () => void };
-
     beforeEach(() => {
-      audio = installAudioMocks();
-    });
-
-    afterEach(() => {
-      audio.restore();
+      installAudioMocks();
     });
 
     it("a fatal error event releases the microphone", async () => {

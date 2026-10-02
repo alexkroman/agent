@@ -12,7 +12,7 @@ describe("Examples", () => {
     const { container } = render(<Examples code="agent.list()" label="List workflows" />);
     expect(container.querySelectorAll("pre")).toHaveLength(1);
     expect(container.querySelector("details")).toBeNull();
-    expect(screen.getByLabelText("Copy: List workflows")).toBeTruthy();
+    expect(screen.getByLabelText("Copy: List workflows")).toBeInTheDocument();
   });
 
   test("the SDK leads and each alternate is a closed disclosure, still in the DOM", () => {
@@ -46,8 +46,8 @@ describe("Examples", () => {
         alternates={[{ language: "curl", code: "curl -X POST" }]}
       />,
     );
-    expect(screen.getByLabelText("Copy: Start a run")).toBeTruthy();
-    expect(screen.getByLabelText("Copy: Start a run with curl")).toBeTruthy();
+    expect(screen.getByLabelText("Copy: Start a run")).toBeInTheDocument();
+    expect(screen.getByLabelText("Copy: Start a run with curl")).toBeInTheDocument();
   });
 });
 

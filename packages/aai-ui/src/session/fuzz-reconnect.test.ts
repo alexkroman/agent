@@ -341,15 +341,13 @@ async function runScript(steps: readonly ReconnectStep[]): Promise<void> {
 }
 
 describe("fuzz: reconnect + broker resolution", () => {
-  let audio: ReturnType<typeof installAudioMocks>;
-
   beforeEach(async () => {
     // Warm the memoized audio imports on real timers — module loading is real
     // I/O that fake timers cannot pump.
     await loadAudioModules();
     vi.useFakeTimers();
     created = [];
-    audio = installAudioMocks();
+    installAudioMocks();
     vi.stubGlobal("WebSocket", TrackingWebSocket);
     vi.spyOn(console, "warn").mockImplementation(noop);
     vi.spyOn(console, "error").mockImplementation(noop);
@@ -357,7 +355,6 @@ describe("fuzz: reconnect + broker resolution", () => {
   });
 
   afterEach(() => {
-    audio.restore();
     vi.useRealTimers();
   });
 

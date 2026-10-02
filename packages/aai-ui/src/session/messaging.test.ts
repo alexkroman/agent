@@ -48,14 +48,10 @@ describe("createBrowserSession", () => {
   // ─── Pre-init audio buffering ─────────────────────────────────────────────
 
   describe("audio chunk buffering during audio init", () => {
-    let audio: AudioMockContext & { restore: () => void };
+    let audio: AudioMockContext;
 
     beforeEach(() => {
       audio = installAudioMocks();
-    });
-
-    afterEach(() => {
-      audio.restore();
     });
 
     it("replays chunks that arrive before voiceIO is initialized", async () => {
@@ -573,14 +569,10 @@ describe("createBrowserSession", () => {
   // ─── Mic send backpressure ──────────────────────────────────────────────
 
   describe("mic send backpressure", () => {
-    let audio: AudioMockContext & { restore: () => void };
+    let audio: AudioMockContext;
 
     beforeEach(() => {
       audio = installAudioMocks();
-    });
-
-    afterEach(() => {
-      audio.restore();
     });
 
     it("drops mic frames while ws.bufferedAmount exceeds the threshold", async () => {

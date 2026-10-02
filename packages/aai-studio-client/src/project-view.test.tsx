@@ -9,16 +9,9 @@
 // how each read failing or hanging reaches the screen, is this component's.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  button,
-  installResizeObserver,
-  jsonResponse,
-  renderWithClient,
-  sseResponse,
-  stubFetch,
-  textarea,
-} from "./_test-utils.ts";
+import { userEvent } from "@testing-library/user-event";
+import { describe, expect, test, vi } from "vitest";
+import { jsonResponse, renderWithClient, sseResponse, stubFetch } from "./_test-utils.ts";
 import { ProjectView } from "./project-view.tsx";
 
 /** The `demo` project open, with the chat status already in hand. */
@@ -41,10 +34,6 @@ function renderProject() {
   return { onLogOut };
 }
 
-beforeEach(() => {
-  installResizeObserver();
-});
-
 describe("ProjectView workspace", () => {
   test("a failed workspace fetch surfaces an error banner instead of an empty project", async () => {
     stubFetch({
@@ -59,7 +48,7 @@ describe("ProjectView workspace", () => {
       "/sandbox/studio/tools": () => jsonResponse({ tools: [] }),
     });
     const { onLogOut } = renderProject();
-    await waitFor(() => expect(screen.getByText(/storage exploded/)).toBeDefined());
+    expect(await screen.findByText(/storage exploded/)).toBeInTheDocument();
     expect(onLogOut).not.toHaveBeenCalled();
   });
 });
@@ -89,8 +78,8 @@ describe("ProjectView chat history and sandbox", () => {
         }),
     });
     renderProject();
-    await waitFor(() => expect(screen.getByText("build a pizza bot")).toBeDefined());
-    expect(screen.getByText(/Done — pizza bot/)).toBeDefined();
+    expect(await screen.findByText("build a pizza bot")).toBeInTheDocument();
+    expect(screen.getByText(/Done — pizza bot/)).toBeInTheDocument();
     // Hydrated history means no "new chat" welcome bubble.
     expect(screen.queryByText(/Welcome to AssemblyAI Build/)).toBeNull();
   });
@@ -101,7 +90,7 @@ describe("ProjectView chat history and sandbox", () => {
       "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
     });
     renderProject();
-    await waitFor(() => expect(screen.getByText(/Welcome to AssemblyAI Build/)).toBeDefined());
+    expect(await screen.findByText(/Welcome to AssemblyAI Build/)).toBeInTheDocument();
     expect(screen.queryByText("Loading conversation…")).toBeNull();
   });
 
@@ -120,14 +109,14 @@ describe("ProjectView chat history and sandbox", () => {
     });
     renderProject();
     // Holds on the boot note while the retry rides out the restart…
-    await waitFor(() => expect(screen.getByText("Starting sandbox…")).toBeDefined());
+    expect(await screen.findByText("Starting sandbox…")).toBeInTheDocument();
     // …then connects on its own once the broker answers (first retry ~1s).
     // The note going away is the signal, not the welcome bubble: that renders
     // over the restored (here empty) history from the first paint.
     await waitFor(() => expect(screen.queryByText("Starting sandbox…")).toBeNull(), {
       timeout: 4000,
     });
-    expect(screen.getByPlaceholderText("Describe your agent…")).toBeDefined();
+    expect(screen.getByPlaceholderText("Describe your agent…")).toBeInTheDocument();
     expect(calls).toBe(2);
   });
 
@@ -142,14 +131,12 @@ describe("ProjectView chat history and sandbox", () => {
           : jsonResponse({ url: "http://studio.test/sandbox/studio/chat" }),
     });
     renderProject();
-    await waitFor(() =>
-      expect(screen.getByText(/Could not start the project's sandbox/)).toBeDefined(),
-    );
+    expect(await screen.findByText(/Could not start the project's sandbox/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() =>
       expect(screen.queryByText(/Could not start the project's sandbox/)).toBeNull(),
     );
-    expect(screen.getByPlaceholderText("Describe your agent…")).toBeDefined();
+    expect(screen.getByPlaceholderText("Describe your agent…")).toBeInTheDocument();
     expect(calls).toBe(2);
   });
 
@@ -161,7 +148,7 @@ describe("ProjectView chat history and sandbox", () => {
         new Response(new ReadableStream(), { headers: { "Content-Type": "application/json" } }),
     });
     renderProject();
-    await waitFor(() => expect(screen.getByText("Loading conversation…")).toBeDefined());
+    expect(await screen.findByText("Loading conversation…")).toBeInTheDocument();
     expect(screen.queryByText(/Welcome to AssemblyAI Build/)).toBeNull();
   });
 
@@ -182,10 +169,10 @@ describe("ProjectView chat history and sandbox", () => {
         new Response(new ReadableStream(), { headers: { "Content-Type": "application/json" } }),
     });
     renderProject();
-    await waitFor(() => expect(screen.getByText("build a pizza bot")).toBeDefined());
+    expect(await screen.findByText("build a pizza bot")).toBeInTheDocument();
     // The wait is said under the last message, and it is SENDING that waits.
-    expect(screen.getByText("Starting sandbox…")).toBeDefined();
-    expect(button("Send").disabled).toBe(true);
+    expect(screen.getByText("Starting sandbox…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 
   test("a message typed while the sandbox starts is held, then handed to the live composer", async () => {
@@ -201,14 +188,16 @@ describe("ProjectView chat history and sandbox", () => {
           ? jsonResponse({ error: "service unavailable" }, 503)
           : jsonResponse({ url: "http://studio.test/sandbox/studio/chat" }),
     });
+    const user = userEvent.setup();
     renderProject();
-    const waiting = await waitFor(() => textarea(/Starting sandbox/));
-    fireEvent.change(waiting, { target: { value: "make it italian" } });
-    fireEvent.keyDown(waiting, { key: "Enter" });
+    const waiting = await screen.findByPlaceholderText(/Starting sandbox/);
+    await user.type(waiting, "make it italian{Enter}");
     // Submitting early neither sends nor clears: there is nothing to send to.
-    expect(waiting.value).toBe("make it italian");
+    expect(waiting).toHaveValue("make it italian");
 
-    const live = await waitFor(() => textarea("Describe your agent…"), { timeout: 4000 });
-    expect(live.value).toBe("make it italian");
+    const live = await screen.findByPlaceholderText("Describe your agent…", undefined, {
+      timeout: 4000,
+    });
+    expect(live).toHaveValue("make it italian");
   });
 });

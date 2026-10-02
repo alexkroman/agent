@@ -12,12 +12,12 @@ describe("Facts", () => {
     const { container } = render(<Facts items={["6 segments", "12:04 of audio", "1,840 words"]} />);
     // The whole point of the component: the caller never writes `·` or the
     // space beside it, so neither can be missing and neither can be doubled.
-    expect(container.textContent).toBe("6 segments · 12:04 of audio · 1,840 words");
+    expect(container).toHaveTextContent(/^6 segments · 12:04 of audio · 1,840 words$/);
   });
 
   test("a single fact gets no separator at all", () => {
     const { container } = render(<Facts items={["alone"]} />);
-    expect(container.textContent).toBe("alone");
+    expect(container).toHaveTextContent(/^alone$/);
   });
 
   test("false, null, undefined and the empty string are dropped", () => {
@@ -28,13 +28,13 @@ describe("Facts", () => {
       />,
     );
     // Not "grounded ·  ·  · useful": a dropped fact takes its separator with it.
-    expect(container.textContent).toBe("grounded · useful");
+    expect(container).toHaveTextContent(/^grounded · useful$/);
   });
 
   test("zero is a fact, not an absence", () => {
     // The bug a plain truthiness filter ships. `0` prints; `""` does not.
     const { container } = render(<Facts items={[0, "blind cuts"]} />);
-    expect(container.textContent).toBe("0 · blind cuts");
+    expect(container).toHaveTextContent(/^0 · blind cuts$/);
   });
 
   test("renders nothing when every fact was dropped", () => {
@@ -49,9 +49,9 @@ describe("Facts", () => {
 
   test("size picks the size AND the muting together", () => {
     const sm = render(<Facts items={["a"]} />).container.firstElementChild;
-    expect(sm?.className).toBe("text-sm opacity-70");
+    expect(sm).toHaveClass("text-sm opacity-70", { exact: true });
     const xs = render(<Facts items={["a"]} size="xs" />).container.firstElementChild;
-    expect(xs?.className).toBe("text-xs opacity-60");
+    expect(xs).toHaveClass("text-xs opacity-60", { exact: true });
   });
 
   test("className is added, so a page can reach the other two typographies", () => {

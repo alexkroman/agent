@@ -31,8 +31,8 @@ describe("Button", () => {
   describe.each(VARIANTS)("variant %s", (variant) => {
     test("declares a focus-visible ring, since outline-none alone hid focus entirely", () => {
       const button = renderButton(variant);
-      expect(button.className).toContain("focus-visible:[outline:2px_solid]");
-      expect(button.className).toContain("focus-visible:[outline-offset:2px]");
+      expect(button).toHaveClass("focus-visible:[outline:2px_solid]");
+      expect(button).toHaveClass("focus-visible:[outline-offset:2px]");
       // The ring has to be visible against the page, so it takes the theme
       // accent rather than the button's own foreground.
       expect(button.style.outlineColor).not.toBe("");
@@ -47,7 +47,7 @@ describe("Button", () => {
       // `transition-colors` was on this button from the start with nothing to
       // transition: rest and hover computed byte-identically in every variant.
       expect(hover).not.toBe(rest);
-      expect(button.className).toContain("enabled:hover:bg-(--aai-btn-bg-hover)");
+      expect(button).toHaveClass("enabled:hover:bg-(--aai-btn-bg-hover)");
     });
 
     test("hover is suppressed while disabled", () => {
@@ -62,6 +62,6 @@ describe("Button", () => {
     const button = renderButton("default", { style: { background: "rebeccapurple" } });
     // The colors moved to custom properties so a :hover rule could reach them
     // at all; an explicit inline background must still beat that class.
-    expect(button.style.background).toBe("rebeccapurple");
+    expect(button).toHaveStyle({ background: "rebeccapurple" });
   });
 });

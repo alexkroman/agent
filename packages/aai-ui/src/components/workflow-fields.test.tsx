@@ -90,8 +90,8 @@ describe("WorkflowFields", () => {
     });
     // `recordingId` → `Recording id`: a default, which is why a schema whose
     // labels matter should carry a description.
-    expect(screen.getByLabelText("Requested by")).toBeTruthy();
-    expect(screen.getByText("Who it is filed under")).toBeTruthy();
+    expect(screen.getByLabelText("Requested by")).toBeInTheDocument();
+    expect(screen.getByText("Who it is filed under")).toBeInTheDocument();
   });
 
   test("marks a required property required, so the browser blocks the submit", () => {
@@ -115,7 +115,7 @@ describe("WorkflowFields", () => {
     // `["string", "null"]` is how an optional-and-nullable field converts, and
     // the control the non-null half wants is the right one.
     renderFields({ type: "object", properties: { note: { type: ["string", "null"] } } });
-    expect(document.querySelector("input[name=note]")?.getAttribute("type")).toBe("text");
+    expect(document.querySelector("input[name=note]")).toHaveAttribute("type", "text");
   });
 
   test("skips a property with no honest default control", () => {
@@ -166,19 +166,16 @@ describe("WorkflowFields", () => {
  * that lookup's error into the form's.
  */
 describe("WorkflowFields resolving by name", () => {
-  /** A `fetch` answering `GET /workflows`, counting how often it was called. */
+  /** A `fetch` answering `GET /workflows`; the mock records every call. */
   function stubListing(workflows: WorkflowSummary[]) {
-    const calls: string[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        calls.push(String(url));
-        return new Response(JSON.stringify({ workflows }), {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ workflows }), {
           headers: { "Content-Type": "application/json" },
-        });
-      }),
+        }),
     );
-    return calls;
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
   }
 
   test("reads the listing and renders the named workflow's schema", async () => {
@@ -203,7 +200,7 @@ describe("WorkflowFields resolving by name", () => {
   test("requests nothing when it is handed a summary it already has", () => {
     // The reason the hook takes a `skip`: a page holding its own listing must
     // not make this component fetch a second copy of it.
-    const calls = stubListing([]);
+    const fetchMock = stubListing([]);
     render(
       <ThemeProvider>
         <form>
@@ -211,7 +208,7 @@ describe("WorkflowFields resolving by name", () => {
         </form>
       </ThemeProvider>,
     );
-    expect(calls).toEqual([]);
+    expect(fetchMock.mock.calls).toEqual([]);
   });
 
   test("cannot be submitted before the fields it validates exist", async () => {

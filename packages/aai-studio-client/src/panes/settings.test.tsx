@@ -11,7 +11,7 @@
 // is gone because GitHub sync is the one way out of the studio the product
 // points at.
 
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { renderWithClient, stubFetch } from "../_test-utils.ts";
 import { SettingsPane } from "./settings.tsx";
@@ -107,8 +107,6 @@ describe("SettingsPane", () => {
   test("Delete project is available even on published projects", async () => {
     stubFetch({});
     renderPanel();
-    await waitFor(() => {
-      expect(screen.getByText("Delete project")).toBeTruthy();
-    });
+    expect(await screen.findByText("Delete project")).toBeInTheDocument();
   });
 });

@@ -11,7 +11,7 @@
 // account-scoped things the studio pane adds (the project's secrets, and the
 // carrier webhook card those secrets feed) are absent.
 
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
 import { PublicApiPage } from "./public-api.tsx";
@@ -38,7 +38,7 @@ describe("PublicApiPage", () => {
     stubFetch(agent());
     renderWithClient(<PublicApiPage slug="demo" />);
 
-    await waitFor(() => expect(screen.getByText("digest")).toBeTruthy());
+    expect(await screen.findByText("digest")).toBeInTheDocument();
     // Generated, so the field name is this deployment's — the same guarantee
     // the studio pane makes, which is the point of sharing the body. Three
     // copies: the run card's SDK call and its `curl` alternate, plus the form
@@ -47,14 +47,14 @@ describe("PublicApiPage", () => {
     // The slug is the heading: it is known without a fetch, where the agent's
     // own name arrives with `client-config` and would leave the page titleless
     // for as long as a sandbox takes to boot.
-    expect(screen.getByRole("heading", { name: "demo" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "demo" })).toBeInTheDocument();
   });
 
   test("asks nothing of the studio — every request is the agent's own", async () => {
     const fetchMock = stubFetch(agent());
     renderWithClient(<PublicApiPage slug="demo" />);
 
-    await waitFor(() => expect(screen.getByText("digest")).toBeTruthy());
+    expect(await screen.findByText("digest")).toBeInTheDocument();
     // The whole feature, as one assertion: a reader with no account must
     // trigger no account-scoped read. `/studio/projects/demo/secret` is the
     // one the studio pane makes, and a 401 from it would be invisible on
@@ -74,8 +74,8 @@ describe("PublicApiPage", () => {
     stubFetch(agent());
     renderWithClient(<PublicApiPage slug="demo" />);
 
-    await waitFor(() => expect(screen.getByText("digest")).toBeTruthy());
-    expect(screen.getByText(`${window.location.origin}/demo/phone`)).toBeTruthy();
+    expect(await screen.findByText("digest")).toBeInTheDocument();
+    expect(screen.getByText(`${window.location.origin}/demo/phone`)).toBeInTheDocument();
     expect(screen.queryByText("Twilio")).toBeNull();
     expect(screen.queryByText("Telnyx")).toBeNull();
   });
@@ -90,15 +90,15 @@ describe("PublicApiPage", () => {
     renderWithClient(<PublicApiPage slug="demo" />);
 
     const origin = window.location.origin;
-    await waitFor(() => expect(screen.getByText(`${origin}/demo/workflows`)).toBeTruthy());
+    expect(await screen.findByText(`${origin}/demo/workflows`)).toBeInTheDocument();
     // Rows nothing else on the page spells. `/workflows/runs` is deliberately
     // NOT one to assert (two rows: the POST that starts a run and the GET that
     // lists recent ones), nor `/runs/:runId` (the GET and the DELETE).
-    expect(screen.getByText(`${origin}/demo/workflows/runs/:runId/events`)).toBeTruthy();
-    expect(screen.getByText(`${origin}/demo/workflows/uploads/:id/info`)).toBeTruthy();
+    expect(screen.getByText(`${origin}/demo/workflows/runs/:runId/events`)).toBeInTheDocument();
+    expect(screen.getByText(`${origin}/demo/workflows/uploads/:id/info`)).toBeInTheDocument();
     // Each row indexes into the client the page is written against, rather
     // than only naming a URL.
-    expect(screen.getByText("agent.list()")).toBeTruthy();
+    expect(screen.getByText("agent.list()")).toBeInTheDocument();
   });
 
   test("names the agent's own sentence when the workflow listing is refused", async () => {
@@ -112,9 +112,9 @@ describe("PublicApiPage", () => {
     });
     renderWithClient(<PublicApiPage slug="demo" />);
 
-    await waitFor(() => expect(screen.getByText(/Unauthorized/)).toBeTruthy());
+    expect(await screen.findByText(/Unauthorized/)).toBeInTheDocument();
     // The rest of the page is still there: the routes a caller can reach do
     // not stop existing because one read was refused.
-    expect(screen.getByText(`${window.location.origin}/demo/client-config`)).toBeTruthy();
+    expect(screen.getByText(`${window.location.origin}/demo/client-config`)).toBeInTheDocument();
   });
 });

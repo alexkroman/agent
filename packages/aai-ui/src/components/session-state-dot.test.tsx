@@ -53,49 +53,52 @@ function mount(state: AgentState, props: Partial<SessionStateDotProps> = {}) {
 }
 
 describe("SessionStateDot", () => {
-  test("paints the dot from the palette for every state, and titles it with the raw state", () => {
-    for (const state of STATES) {
+  test.each(STATES)(
+    "paints the %s dot from the palette, and titles it with the raw state",
+    (state) => {
       const { dot } = mount(state);
-      expect(dot.style.background).toBe(hex(COLORS[state]));
-      expect(dot.title).toBe(state);
-    }
-  });
+      expect(dot).toHaveStyle({ background: hex(COLORS[state]) });
+      expect(dot).toHaveAttribute("title", state);
+    },
+  );
 
   test("writes the colour to `color` too, so a currentColor glow needs no palette restated", () => {
     const { dot } = mount("listening");
-    expect(dot.style.color).toBe(hex(COLORS.listening));
+    expect(dot).toHaveStyle({ color: hex(COLORS.listening) });
   });
 
-  test("labels every state from AGENT_STATE_LABELS when given no words of its own", () => {
-    for (const state of STATES) {
-      expect(mount(state).label.textContent).toBe(AGENT_STATE_LABELS[state]);
-    }
+  test.each(STATES)("labels %s from AGENT_STATE_LABELS when given no words of its own", (state) => {
+    expect(mount(state).label.textContent).toBe(AGENT_STATE_LABELS[state]);
   });
 
   test("a partial `labels` overrides the named states and leaves the rest to the defaults", () => {
     const labels = { speaking: "Narrating", thinking: "PROCESSING" };
-    expect(mount("speaking", { labels }).label.textContent).toBe("Narrating");
-    expect(mount("thinking", { labels }).label.textContent).toBe("PROCESSING");
+    expect(mount("speaking", { labels }).label).toHaveTextContent(/^Narrating$/);
+    expect(mount("thinking", { labels }).label).toHaveTextContent(/^PROCESSING$/);
     expect(mount("listening", { labels }).label.textContent).toBe(AGENT_STATE_LABELS.listening);
   });
 
-  test("pulses while listening and (faster) while thinking, and is still otherwise", () => {
+  test("pulses while listening and (faster) while thinking", () => {
     expect(mount("listening").dot.style.animation).toMatch(/aai-pulse 1500ms/);
     expect(mount("thinking").dot.style.animation).toMatch(/aai-pulse 800ms/);
-    for (const state of ["disconnected", "connecting", "ready", "speaking", "error"] as const) {
-      expect(mount(state).dot.style.animation).toBe("none");
-    }
   });
 
+  test.each(["disconnected", "connecting", "ready", "speaking", "error"] as const)(
+    "is still while %s",
+    (state) => {
+      expect(mount(state).dot).toHaveStyle({ animation: "none" });
+    },
+  );
+
   test("pulse={false} keeps every state still", () => {
-    expect(mount("listening", { pulse: false }).dot.style.animation).toBe("none");
-    expect(mount("thinking", { pulse: false }).dot.style.animation).toBe("none");
+    expect(mount("listening", { pulse: false }).dot).toHaveStyle({ animation: "none" });
+    expect(mount("thinking", { pulse: false }).dot).toHaveStyle({ animation: "none" });
   });
 
   test("follows the session: a state change repaints without a re-mount", () => {
     const { core, dot, label } = mount("ready");
     act(() => core.update({ state: "thinking" }));
-    expect(dot.style.background).toBe(hex(COLORS.thinking));
+    expect(dot).toHaveStyle({ background: hex(COLORS.thinking) });
     expect(label.textContent).toBe(AGENT_STATE_LABELS.thinking);
   });
 
@@ -105,20 +108,21 @@ describe("SessionStateDot", () => {
 
   test("dotClassName REPLACES the default size; className and labelClassName are appended", () => {
     const plain = mount("ready");
-    expect(plain.dot.className).toContain("w-2 h-2");
-    expect(plain.dot.className).toContain("rounded-full");
+    expect(plain.dot).toHaveClass("w-2", "h-2");
+    expect(plain.dot).toHaveClass("rounded-full");
 
     const sized = mount("ready", {
       dotClassName: "w-2.5 h-2.5",
       className: "text-xs",
       labelClassName: "uppercase",
     });
-    expect(sized.dot.className).toContain("w-2.5 h-2.5");
-    expect(sized.dot.className).not.toContain("w-2 h-2");
-    expect(sized.dot.className).toContain("rounded-full");
-    expect(sized.wrapper.className).toContain("inline-flex");
-    expect(sized.wrapper.className).toContain("text-xs");
-    expect(sized.label.className).toBe("uppercase");
+    expect(sized.dot).toHaveClass("w-2.5", "h-2.5");
+    expect(sized.dot).not.toHaveClass("w-2");
+    expect(sized.dot).not.toHaveClass("h-2");
+    expect(sized.dot).toHaveClass("rounded-full");
+    expect(sized.wrapper).toHaveClass("inline-flex");
+    expect(sized.wrapper).toHaveClass("text-xs");
+    expect(sized.label).toHaveClass("uppercase", { exact: true });
   });
 });
 
@@ -126,14 +130,16 @@ describe("StateDot", () => {
   test("is the shared dot: a colour and a pulse length, nothing read from a session", () => {
     const { container } = render(<StateDot color="#abcdef" pulseMs={1600} className="w-1 h-1" />);
     const dot = container.firstElementChild as HTMLElement;
-    expect(dot.style.background).toBe(hex("#abcdef"));
-    expect(dot.style.animation).toBe("aai-pulse 1600ms ease-in-out infinite");
-    expect(dot.className).toContain("w-1 h-1");
+    expect(dot).toHaveStyle({
+      background: hex("#abcdef"),
+      animation: "aai-pulse 1600ms ease-in-out infinite",
+    });
+    expect(dot).toHaveClass("w-1", "h-1");
   });
 
   test("a null pulse is a still dot", () => {
     const { container } = render(<StateDot color="#abcdef" pulseMs={null} />);
-    expect((container.firstElementChild as HTMLElement).style.animation).toBe("none");
+    expect(container.firstElementChild).toHaveStyle({ animation: "none" });
   });
 });
 

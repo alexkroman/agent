@@ -2,8 +2,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { button, installResizeObserver } from "../_test-utils.ts";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AgentLogsPage } from "../api-types.ts";
 import { LogsView } from "./logs-view.tsx";
 
@@ -29,12 +28,6 @@ function serve(pages: AgentLogsPage[]): { calls: string[] } {
   return { calls };
 }
 
-beforeEach(() => {
-  // jsdom has no ResizeObserver, and `<AutoScroll>` — which owns this pane's
-  // follow-the-bottom behaviour — constructs one on mount.
-  installResizeObserver();
-});
-
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -45,7 +38,7 @@ describe("LogsView", () => {
 
     render(<LogsView bearer="k" previewSlug="proj-preview" deployedSlug="proj" />);
 
-    expect(await screen.findByText("hello from a tool")).toBeTruthy();
+    expect(await screen.findByText("hello from a tool")).toBeInTheDocument();
     expect(calls[0]).toContain("/proj-preview/logs?after=-1");
   });
 
@@ -66,19 +59,19 @@ describe("LogsView", () => {
 
     render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
 
-    expect(await screen.findByText(/4 earlier lines dropped/)).toBeTruthy();
+    expect(await screen.findByText(/4 earlier lines dropped/)).toBeInTheDocument();
   });
 
   test("an agent that is up but quiet reads differently from one that is not running", async () => {
     serve([page({ running: true })]);
     const up = render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
-    expect(await screen.findByText("No output yet")).toBeTruthy();
+    expect(await screen.findByText("No output yet")).toBeInTheDocument();
     up.unmount();
 
     vi.restoreAllMocks();
     serve([page({ running: false })]);
     render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
-    expect(await screen.findByText("Nothing running")).toBeTruthy();
+    expect(await screen.findByText("Nothing running")).toBeInTheDocument();
   });
 
   test("a project with no preview says so instead of polling", async () => {
@@ -86,7 +79,7 @@ describe("LogsView", () => {
 
     render(<LogsView bearer="k" previewSlug={undefined} deployedSlug="proj" />);
 
-    expect(await screen.findByText("No preview yet")).toBeTruthy();
+    expect(await screen.findByText("No preview yet")).toBeInTheDocument();
     expect(calls).toEqual([]);
   });
 
@@ -95,7 +88,7 @@ describe("LogsView", () => {
     render(<LogsView bearer="k" previewSlug="proj-preview" deployedSlug="proj" />);
     await screen.findByText("preview line");
 
-    button(/Production/).click();
+    screen.getByRole("button", { name: /Production/ }).click();
 
     await waitFor(() => {
       expect(calls.some((url) => url.includes("/proj/logs?after=-1"))).toBe(true);
@@ -106,8 +99,8 @@ describe("LogsView", () => {
     serve([page()]);
     render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
 
-    expect(button(/Production/).disabled).toBe(true);
-    expect(button(/Preview/).disabled).toBe(false);
+    expect(screen.getByRole("button", { name: /Production/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Preview/ })).toBeEnabled();
   });
 
   test("a failed poll shows the reason and keeps polling", async () => {
@@ -125,8 +118,8 @@ describe("LogsView", () => {
 
     render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
 
-    expect(await screen.findByText(/network down/)).toBeTruthy();
-    expect(await screen.findByText("recovered")).toBeTruthy();
+    expect(await screen.findByText(/network down/)).toBeInTheDocument();
+    expect(await screen.findByText("recovered")).toBeInTheDocument();
   });
 
   test("stderr is distinguishable from stdout", async () => {
@@ -135,14 +128,14 @@ describe("LogsView", () => {
     render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
 
     const el = await screen.findByText("boom");
-    expect(el.className).toContain("text-err");
+    expect(el).toHaveClass("text-err");
   });
 
   test("says out loud that the log is not durable", async () => {
     serve([page()]);
     render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
 
-    expect(await screen.findByText(/goes when the sandbox does/)).toBeTruthy();
+    expect(await screen.findByText(/goes when the sandbox does/)).toBeInTheDocument();
   });
 });
 
@@ -185,19 +178,19 @@ test("one dropped line is not reported as lines", async () => {
 
   render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
 
-  expect(await screen.findByText(/1 earlier line dropped/)).toBeTruthy();
+  expect(await screen.findByText(/1 earlier line dropped/)).toBeInTheDocument();
 });
 
 test("a production agent that goes away mid-view says it is not published", async () => {
   serve([page({ lines: [line(0, "prod line")], cursor: 0 })]);
   const view = render(<LogsView bearer="k" previewSlug="p" deployedSlug="proj" />);
   await screen.findByText("prod line");
-  button(/Production/).click();
+  screen.getByRole("button", { name: /Production/ }).click();
   await screen.findByText("prod line");
 
   view.rerender(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
 
-  expect(screen.getByText("Not published yet")).toBeTruthy();
+  expect(screen.getByText("Not published yet")).toBeInTheDocument();
 });
 
 describe("a poll that lands after the pane closes", () => {
