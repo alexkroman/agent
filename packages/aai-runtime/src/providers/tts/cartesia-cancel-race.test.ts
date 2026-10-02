@@ -372,7 +372,7 @@ async function openNear(far: Far): Promise<Near> {
 
 /** Liveness: end the open turn the way the pipeline does; it must then end. */
 async function checkEveryTurnEnds(near: Near, s: fc.Scheduler): Promise<void> {
-  if (!near.ended && near.open && !near.closed) ACTIONS.flush(near);
+  if (!near.ended && near.open && !near.closed) await ACTIONS.flush(near);
   await s.waitIdle();
   if (!near.ended && near.open) flag(near, `turn ${near.turn} never ended — done never fired`);
   for (const [t, n] of near.doneCount) {
