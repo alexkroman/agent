@@ -9,11 +9,17 @@ function slowMachine(delayMs: number, onRan?: () => void) {
   return setup({
     types: {} as { input: { topic: string }; output: { verdict: string } },
     actors: {
-      work: fromPromise(async ({ input }: { input: { topic: string } }) => {
-        await sleep(delayMs);
-        onRan?.();
-        return `looked at ${input.topic}`;
-      }),
+      work: fromPromise(
+        async ({ input, signal }: { input: { topic: string }; signal: AbortSignal }) => {
+          // xstate aborts `signal` when the run is stopped; honoured so an
+          // aborted run leaves no timer behind. `sleep` resolves on abort, so
+          // the check is what keeps `onRan` from firing for it.
+          await sleep(delayMs, { signal });
+          signal.throwIfAborted();
+          onRan?.();
+          return `looked at ${input.topic}`;
+        },
+      ),
     },
   }).createMachine({
     id: "triage",

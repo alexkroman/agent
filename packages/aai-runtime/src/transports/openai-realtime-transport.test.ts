@@ -133,7 +133,7 @@ describe("openai-realtime-transport: connect and session.update", () => {
       }),
     );
 
-    expect(fake.sent.length).toBe(1);
+    expect(fake.sent).toHaveLength(1);
     const first = fake.sent[0];
     if (first === undefined) throw new Error("expected one send");
     const msg = JSON.parse(first);
@@ -181,7 +181,7 @@ describe("greeting", () => {
   test("sends response.create with quoted greeting after session.update", async () => {
     const { fake, ready } = makeWithGreeting({ greeting: 'Hello, "friend".' });
     await ready;
-    expect(fake.sent.length).toBe(2);
+    expect(fake.sent).toHaveLength(2);
     expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("session.update");
     const greetingMsg = JSON.parse(fake.sent[1] ?? "{}");
     expect(greetingMsg.type).toBe("response.create");
@@ -202,14 +202,14 @@ describe("greeting", () => {
   test("no greeting send when greeting is undefined", async () => {
     const { fake, ready } = makeWithGreeting({});
     await ready;
-    expect(fake.sent.length).toBe(1);
+    expect(fake.sent).toHaveLength(1);
     expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("session.update");
   });
 
   test("skipGreeting suppresses the greeting send", async () => {
     const { fake, ready } = makeWithGreeting({ greeting: "Hi.", skipGreeting: true });
     await ready;
-    expect(fake.sent.length).toBe(1);
+    expect(fake.sent).toHaveLength(1);
     expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("session.update");
   });
 });
@@ -266,7 +266,7 @@ describe("refreshSystemPrompt", () => {
     setPhase("collecting the shipping address");
     transport.refreshSystemPrompt?.();
     transport.refreshSystemPrompt?.();
-    expect(fake.sent.length).toBe(1);
+    expect(fake.sent).toHaveLength(1);
     const msg = JSON.parse(fake.sent[0] ?? "{}");
     expect(msg.type).toBe("session.update");
     expect(msg.session.instructions).toBe("Be terse. Phase: collecting the shipping address.");
@@ -300,7 +300,7 @@ describe("audio in/out", () => {
     await ready;
     fake.sent.length = 0;
     transport.sendUserAudio(new Uint8Array([1, 2, 3, 4]));
-    expect(fake.sent.length).toBe(1);
+    expect(fake.sent).toHaveLength(1);
     const first = fake.sent[0];
     if (first === undefined) throw new Error("expected one send");
     const msg = JSON.parse(first);
@@ -316,11 +316,11 @@ describe("audio in/out", () => {
 
     Object.assign(fake, { bufferedAmount: 8 * 1024 * 1024 });
     transport.sendUserAudio(new Uint8Array([1, 2, 3, 4]));
-    expect(fake.sent.length).toBe(0);
+    expect(fake.sent).toHaveLength(0);
 
     Object.assign(fake, { bufferedAmount: 0 });
     transport.sendUserAudio(new Uint8Array([1, 2, 3, 4]));
-    expect(fake.sent.length).toBe(1);
+    expect(fake.sent).toHaveLength(1);
   });
 
   test("response.output_audio.delta calls onAudioChunk with decoded bytes", async () => {
@@ -491,14 +491,14 @@ describe("tool calls", () => {
     fake.sent.length = 0; // drop session.update
     transport.sendToolResult("call_1", '{"ok":true}');
     // function_call_output is sent immediately; response.create is queued.
-    expect(fake.sent.length).toBe(1);
+    expect(fake.sent).toHaveLength(1);
     const m1 = JSON.parse(fake.sent[0] ?? "{}");
     expect(m1.type).toBe("conversation.item.create");
     expect(m1.item.type).toBe("function_call_output");
     expect(m1.item.call_id).toBe("call_1");
     expect(m1.item.output).toBe('{"ok":true}');
     await flush();
-    expect(fake.sent.length).toBe(2);
+    expect(fake.sent).toHaveLength(2);
     const m2 = JSON.parse(fake.sent[1] ?? "{}");
     expect(m2.type).toBe("response.create");
   });
@@ -512,12 +512,12 @@ describe("tool calls", () => {
     transport.sendToolResult("call_2", '{"b":2}');
     transport.sendToolResult("call_3", '{"c":3}');
     // Three function_call_outputs sent immediately, no response.create yet.
-    expect(fake.sent.length).toBe(3);
+    expect(fake.sent).toHaveLength(3);
     expect(fake.sent.every((s) => JSON.parse(s).type === "conversation.item.create")).toBe(true);
     await flush();
     // After the microtask, exactly one response.create — second one would be
     // rejected as `conversation_already_has_active_response`.
-    expect(fake.sent.length).toBe(4);
+    expect(fake.sent).toHaveLength(4);
     expect(JSON.parse(fake.sent[3] ?? "{}").type).toBe("response.create");
   });
 });
@@ -529,13 +529,13 @@ describe("cancel, error, close", () => {
     fake.sent.length = 0;
     // No reply yet — cancel should be a no-op
     transport.cancelReply();
-    expect(fake.sent.length).toBe(0);
+    expect(fake.sent).toHaveLength(0);
 
     fake.fire("message", {
       data: JSON.stringify({ type: "response.created", response: { id: "r1" } }),
     });
     transport.cancelReply();
-    expect(fake.sent.length).toBe(1);
+    expect(fake.sent).toHaveLength(1);
     expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("response.cancel");
   });
 

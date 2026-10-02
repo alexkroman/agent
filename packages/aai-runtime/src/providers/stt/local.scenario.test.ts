@@ -39,11 +39,6 @@ async function startServer(): Promise<{
   return { url: `ws://127.0.0.1:${port}`, received, headers, client };
 }
 
-const until = (cond: () => boolean): Promise<void> =>
-  vi.waitFor(() => {
-    if (!cond()) throw new Error("condition not yet met");
-  });
-
 test("sends config then audio, and forwards the server's partial and final", async () => {
   const server = await startServer();
   const session = await openLocalStt({ url: server.url }).open({
@@ -60,7 +55,7 @@ test("sends config then audio, and forwards the server's partial and final", asy
   session.sendAudio(new Int16Array([1, 2, 3]));
   session.updateEndpointing?.(400);
   session.forceEndOfTurn?.();
-  await until(() => server.received.length >= 4);
+  await vi.waitUntil(() => server.received.length >= 4);
 
   expect(JSON.parse(server.received[0] as string)).toMatchObject({
     type: "config",
@@ -76,7 +71,7 @@ test("sends config then audio, and forwards the server's partial and final", asy
 
   ws.send(JSON.stringify({ type: "partial", text: "change my" }));
   ws.send(JSON.stringify({ type: "final", text: "Change my address.", end_of_turn_confidence: 1 }));
-  await until(() => finals.length > 0);
+  await vi.waitUntil(() => finals.length > 0);
   expect(partials).toEqual(["change my"]);
   expect(finals).toEqual(["Change my address."]);
   await session.close();
@@ -94,6 +89,6 @@ test("a server that closes mid-call is a stream error, not a silent deafness", a
   const ws = await server.client;
   expect(server.headers[0]?.authorization).toBe("Bearer secret");
   ws.close(1000);
-  await until(() => errors.length > 0);
+  await vi.waitUntil(() => errors.length > 0);
   expect(errors).toEqual(["stt_stream_error"]);
 });

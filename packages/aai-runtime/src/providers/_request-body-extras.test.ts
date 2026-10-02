@@ -10,6 +10,7 @@
 import { llm } from "@alexkroman1/aai/llm";
 import { generateText } from "ai";
 import { describe, expect, it, vi } from "vitest";
+import { recordingFetch } from "../_fetch-test-utils.ts";
 import { type FetchLike, mergeRequestBody } from "./_request-body-extras.ts";
 import { resolveLlm } from "./resolve.ts";
 
@@ -27,33 +28,29 @@ function completion(): Response {
   );
 }
 
-/** A stub fetch recording each request body it receives, parsed. */
-function recordingFetch(): { fetch: FetchLike; bodies: Record<string, unknown>[] } {
-  const bodies: Record<string, unknown>[] = [];
-  const fetch: FetchLike = async (_input, init) => {
-    bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-    return completion();
-  };
-  return { fetch, bodies };
+/** A stub fetch answering a completion; `bodies()` is what it was sent, parsed. */
+function completionFetch() {
+  const { fetch, requests } = recordingFetch(completion);
+  return { fetch, bodies: () => requests().map((request) => request.json()) };
 }
 
 describe("mergeRequestBody", () => {
   it("adds an extra the body does not carry", async () => {
-    const { fetch, bodies } = recordingFetch();
+    const { fetch, bodies } = completionFetch();
     await mergeRequestBody({ top_k: 5 }, fetch)("https://x/v1", {
       method: "POST",
       body: JSON.stringify({ model: "m" }),
     });
-    expect(bodies).toEqual([{ top_k: 5, model: "m" }]);
+    expect(bodies()).toEqual([{ top_k: 5, model: "m" }]);
   });
 
   it("lets the SDK-built body win a collision", async () => {
-    const { fetch, bodies } = recordingFetch();
+    const { fetch, bodies } = completionFetch();
     await mergeRequestBody({ model: "evil", stream: true, temperature: 1 }, fetch)("https://x", {
       method: "POST",
       body: JSON.stringify({ model: "m", stream: false }),
     });
-    expect(bodies).toEqual([{ model: "m", stream: false, temperature: 1 }]);
+    expect(bodies()).toEqual([{ model: "m", stream: false, temperature: 1 }]);
   });
 
   it("passes a body that is not a JSON object through untouched", async () => {
@@ -74,9 +71,9 @@ describe("mergeRequestBody", () => {
       throw new Error("the global fetch must not be reached");
     });
     vi.stubGlobal("fetch", global);
-    const { fetch, bodies } = recordingFetch();
+    const { fetch, bodies } = completionFetch();
     await mergeRequestBody({ top_k: 5 }, fetch)("https://x", { body: JSON.stringify({}) });
-    expect(bodies).toEqual([{ top_k: 5 }]);
+    expect(bodies()).toEqual([{ top_k: 5 }]);
     expect(global).not.toHaveBeenCalled();
   });
 });
@@ -93,7 +90,7 @@ describe("an OpenAI-compatible descriptor's providerOptions reach the request bo
   ] as const;
 
   it.each(cases)("%s", async (_name, base, envVar) => {
-    const { fetch, bodies } = recordingFetch();
+    const { fetch, bodies } = completionFetch();
     vi.stubGlobal("fetch", fetch);
     const descriptor = {
       ...base,
@@ -104,8 +101,8 @@ describe("an OpenAI-compatible descriptor's providerOptions reach the request bo
     };
     const model = resolveLlm(descriptor, { [envVar]: "k" });
     await generateText({ model, prompt: "hi", temperature: 0.2 });
-    expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toMatchObject({
+    expect(bodies()).toHaveLength(1);
+    expect(bodies()[0]).toMatchObject({
       provider: { order: ["groq"] },
       top_k: 5,
       temperature: 0.2,
@@ -119,10 +116,10 @@ describe("an OpenAI-compatible descriptor's providerOptions reach the request bo
       { ...descriptor, options: { ...descriptor.options, providerOptions: { top_k: 5 } } },
       { OPENROUTER_API_KEY: "k" },
     );
-    const { fetch, bodies } = recordingFetch();
+    const { fetch, bodies } = completionFetch();
     vi.stubGlobal("fetch", fetch);
     await generateText({ model, prompt: "hi" });
-    expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toMatchObject({ top_k: 5 });
+    expect(bodies()).toHaveLength(1);
+    expect(bodies()[0]).toMatchObject({ top_k: 5 });
   });
 });

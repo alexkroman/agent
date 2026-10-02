@@ -15,63 +15,36 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { type CloseableDb, createPostgresDb } from "@alexkroman1/aai-runtime";
+import { afterAll, beforeAll } from "vitest";
+import { pgUrl } from "../_pg-test-utils.ts";
 import type { SqlExec } from "../sql-exec.ts";
 
 /**
- * Create the `aai_platform` tables on the database under test, if it has none.
+ * A pool over the shared test database with the platform tables in place, for
+ * one `describeWithPg` / `describeWithStack` suite: opened (and
+ * {@link ensurePlatformTables} run) in `beforeAll`, closed in `afterAll`.
  *
- * The integration tier's Postgres is the CI runner's own cluster
- * (`.github/workflows/check.yml` starts it), which carries no `aai_platform`
- * schema. That was fine while the only suites needing a database were
- * `platform-lock` (advisory locks need no schema) and `schema-drift` (it reads
- * `pg_class`, and an empty schema satisfies "every table present is declared"
- * vacuously). A suite that reads and writes real rows needs the tables.
- *
- * **The DDL is EXTRACTED from `supabase/migrations`, never restated here.** A
- * hand-copy of a schema in a test util is the same class of bug as the one
- * these suites exist to catch: it passes forever against a shape production
- * does not have. The extraction is deliberately partial — `create table` plus
- * column-level `alter table` — because the migrations also install `pg_cron`
- * and `pgmq`, and neither extension exists on a stock cluster. Nothing here
- * needs them.
- *
- * **The `alter table` half is what keeps a create-table-only replay from
- * drifting into fiction.** A column added or dropped after its table's
- * migration exists only in an `alter`, so replaying the creates alone builds
- * the schema as it stood on day one: `agents.config` back from the dead (NOT
- * NULL, and no store writes it any more) and no `studio_workspaces.
- * preview_slug` for the orphan-preview sweep to join on. Only `add column` /
- * `drop column` are replayed — constraint and index DDL lives inside `do $$`
- * blocks that a statement-level regex cannot safely split, and no suite here
- * depends on one.
- *
- * **On a CLI-built database it VERIFIES instead of assuming.** This used to
- * return early whenever `aai_platform` existed at all, so pointing the suite at
- * the local Supabase stack or at staging ran no DDL — and asserted nothing about
- * the schema being CURRENT, only that *some* `aai_platform` was there. That is
- * not hypothetical: the stack on this machine held three of nine migrations
- * (`supabase start` applies them on INIT and nothing since had run
- * `migration up`), so a suite died on `column w.preview_slug does not exist` —
- * a `PostgresError` naming a column, whose first reading is "the code is
- * broken". `supabase_migrations.schema_migrations` is an exact oracle for it,
- * and cheaper than a column comparison: when the CLI built this database its own
- * ledger says what it applied, so the check is a set difference against
- * `readdirSync(supabase/migrations)` and the failure names the pending files and
- * the command that applies them. When there is no ledger the database was built
- * by this helper's own DDL, and the replay below is right — which also makes
- * that replay (a THIRD thing that applies this schema, after `supabase db push`
- * and `supabase start`) honest about which of the three it is looking at.
- *
- * CI is unaffected either way: a fresh container per run cannot drift.
+ * Call it FIRST in the suite body. Hooks run in registration order and
+ * `afterAll`s in reverse, so the suite's own setup sees the tables and its own
+ * row cleanup runs before the pool closes. `pgUrl()` is read inside the hook,
+ * never during collection. The returned `sql` forwards to the pool, so it is
+ * safe to capture at describe scope.
  */
-/**
- * The repo's migration files, sorted, plus their concatenated text.
- *
- * Both readers below (the DDL replay and {@link platformMigrationSql}) had
- * written the same listing, the same `.sql` filter, the same sort and the same
- * join — and only one of them refused an empty directory, which is the one
- * outcome that makes either of them silently do nothing.
- */
+export function usePlatformDb(): SqlExec {
+  let db: CloseableDb | undefined;
+  beforeAll(async () => {
+    db = createPostgresDb({ url: pgUrl(), max: 4 });
+    await ensurePlatformTables((query, params) => db?.query(query, params) ?? Promise.resolve([]));
+  });
+  afterAll(async () => {
+    await db?.close();
+  });
+  return (query, params) =>
+    db ? db.query(query, params) : Promise.reject(new Error("usePlatformDb: no pool yet"));
+}
+
+/** The repo's migration files, sorted, plus their concatenated text; refuses an empty directory. */
 function readMigrations(): { dir: string; files: string[]; raw: string } {
   const dir = path.resolve(import.meta.dirname, "../../../../supabase/migrations");
   const files = readdirSync(dir)
@@ -104,6 +77,19 @@ async function applyTolerantly(sql: SqlExec, statements: readonly string[]): Pro
   }
 }
 
+/**
+ * Create the `aai_platform` tables on the database under test, if it has none.
+ *
+ * - **The DDL is EXTRACTED from `supabase/migrations`, never restated**, so the
+ *   fixture cannot drift from the shipped shape. The extraction is partial —
+ *   `create table`, column-level `alter table`, indexes and `drop table` — since
+ *   `pg_cron`/`pgmq` do not exist on a stock cluster and constraint DDL lives in
+ *   `do $$` blocks a statement regex cannot split.
+ * - **On a CLI-built database it VERIFIES instead**: the
+ *   `supabase_migrations.schema_migrations` ledger is diffed against the repo,
+ *   and a stale stack fails naming the pending files rather than as a column
+ *   error several suites deep.
+ */
 export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
   const { dir, files: repoMigrations, raw } = readMigrations();
 
@@ -116,34 +102,20 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
     return;
   }
 
-  // The sentinel is a marker this function creates LAST — never one of the
-  // migrated tables. Under the `forks` pool every test FILE builds this schema
-  // against the same database at once, and `aai_platform.studio_workspaces` is
-  // created EARLY, so it went true partway through another worker's build: the
-  // second worker returned and started inserting into a schema whose remaining
-  // statements had not run. Measured on a fresh database — a seed insert failed
-  // with `null value in column "config" of relation "agents"` because
-  // `alter table ... drop column config` was still pending in the other worker,
-  // and a sibling suite read `aai_platform.session_slots does not exist`. A
-  // marker written after the last statement cannot be true early.
-  //
-  // A transaction would be the other way to get atomicity and is NOT available:
-  // `SqlExec` is a POOL, so postgres.js refuses a bare `begin` outright
-  // (`UNSAFE_TRANSACTION: Only use sql.begin, sql.reserved or max: 1`) — it
-  // cannot promise the next statement lands on the same connection. Every
-  // statement below is `if [not] exists`, so each worker completing the whole
-  // list itself is the cheaper equivalent.
+  // The sentinel is a marker this function creates LAST, never a migrated
+  // table: under the `forks` pool every file builds this schema at once, and a
+  // table created early would read "ready" mid-build in another worker. A
+  // transaction is not available (`SqlExec` is a POOL; postgres.js refuses a
+  // bare `begin`), so every statement is `if [not] exists` and each worker
+  // completes the whole list itself.
   const [existing] = await sql(
     "select to_regclass('public.aai_test_schema_ready') is not null as present",
   );
   if (existing?.present) return;
 
   const sqlText = raw
-    // COMMENTS FIRST, or prose becomes DDL. These migrations explain
-    // themselves at length and quote statements while doing it — the expand
-    // half of the `agents.config` retirement names its own contract half
-    // (`alter table … drop column config;`) in a comment, which this happily
-    // executed: a `drop` with no `if exists`, extracted from a sentence.
+    // COMMENTS FIRST, or prose becomes DDL: migrations quote statements
+    // (e.g. a `drop column` with no `if exists`) in their comments.
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/--.*$/gm, "");
 
@@ -164,39 +136,20 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
     ...(sqlText.match(/alter table\s+aai_platform\.\w+\s+(?:add|drop) column[\s\S]*?;/g) ?? []),
   );
 
-  // INDEXES, and a unique one is a CONSTRAINT rather than an optimization —
-  // which is why they cannot be skipped here. `workflow_queue`'s idempotency key
-  // is enforced by a unique partial index, so a database built without it accepts
-  // a duplicate `on conflict do nothing` silently: the fixture then behaves
-  // DIFFERENTLY from production, which is the one thing this replay must not do.
-  // Found by running the queue suite against a bare Postgres, where the
-  // duplicate-collapse case was the only failure.
-  //
-  // Every one is `if not exists`, so this is as re-runnable as the creates.
+  // INDEXES, because a unique one is a CONSTRAINT: `workflow_queue`'s
+  // idempotency key is a unique partial index, and without it a duplicate
+  // `on conflict do nothing` is silently accepted. All `if not exists`.
   script.push(...(sqlText.match(/create\s+(?:unique\s+)?index if not exists[\s\S]*?;/g) ?? []));
 
-  // DROPPED TABLES, last. A fixture that ignores a drop builds a schema
-  // production does not have, which is the trap every comment above is about:
-  // `schema-drift.scenario.test.ts` rightly fails any `aai_platform` table no
-  // migration declares, so a retired table left standing here fails it over a
-  // database that is only wrong because this replay is.
-  //
-  // `20261001010000_workflow_journal_contract.sql` drops `workflow_attempts`,
-  // which is what this replays; without it, `schema-drift` would find a table
-  // the migrations retired.
-  //
-  // Last rather than in migration order, which is a stated assumption rather
-  // than a subtlety nobody noticed: no migration re-creates a table it dropped,
-  // and if one ever does, this list has to become ordered instead of grouped.
-  // Every statement is `if exists`, so this is as re-runnable as the creates.
+  // DROPPED TABLES, last: a retired table left standing fails
+  // `schema-drift.scenario.test.ts`. Grouped rather than ordered because no
+  // migration re-creates a table it dropped; if one ever does, this must
+  // become ordered. All `if exists`.
   script.push(...(sqlText.match(/drop table if exists aai_platform\.\w+[\s\S]*?;/g) ?? []));
 
   await applyTolerantly(sql, script);
-  // LAST, and that is the whole point of it — see the sentinel above. It lives
-  // in `public` rather than `aai_platform` deliberately: this marker is test
-  // scaffolding, not platform schema, and `schema-drift.scenario.test.ts`
-  // rightly fails any `aai_platform` table no migration declares. Putting it
-  // there traded one red suite for another.
+  // LAST — see the sentinel above. In `public`, not `aai_platform`: it is test
+  // scaffolding, and `schema-drift` fails any undeclared `aai_platform` table.
   await applyTolerantly(sql, ["create table if not exists public.aai_test_schema_ready ()"]);
 
   const [created] = await sql(
@@ -206,25 +159,12 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
 }
 
 /**
- * The migrations as they ship, minus the one line a throwaway database cannot
- * run — with the omission COUNTED.
+ * The migrations as they ship, minus `create extension pg_cron` — with the
+ * omission COUNTED. pg_cron is single-database (`cron.database_name`), so it
+ * cannot be created in a throwaway database; everything else runs verbatim.
  *
- * pg_cron is single-database by design: its background worker reads job
- * descriptions from `cron.database_name` (`postgres`), so `create extension
- * pg_cron` anywhere else raises `can only create extension in database
- * postgres`. Everything else executes verbatim against the real extensions.
- *
- * This is not the `create extension`-stripping regex that used to live in
- * `platform/schema.scenario.test.ts`. That one removed THREE lines, because the
- * arm was a stock server on which none of the Supabase extensions could be
- * installed, and it came with a hand-written plpgsql `pgmq.create` stub — a
- * fourth implementation of a contract, in SQL. Both are gone; the stack has the
- * real extensions, and what is left is one structural property of pg_cron.
- *
- * Note `supabase_vault` is created by NO migration (Supabase pre-installs it), so
- * a database built from these files alone has no Vault. A caller that needs it —
- * anything touching `vault.secrets`, which includes the orphan-preview sweep —
- * must create it itself.
+ * No migration creates `supabase_vault` (Supabase pre-installs it), so a caller
+ * touching `vault.secrets` must create it itself.
  */
 export function platformMigrationSql(): { sql: string; skipped: number } {
   const { raw } = readMigrations();
@@ -247,15 +187,9 @@ export function migrationVersion(filename: string): string {
 }
 
 /**
- * Fail naming the pending migrations, when the CLI's ledger is behind the repo.
- *
- * The failure a stale database actually produces is a `PostgresError` about a
- * column, several suites deep, which reads as a code bug — so this trades it for
- * one sentence naming the files and the command. Deliberately does NOT apply
- * them: a fixture that migrates the developer's stack would be a FOURTH thing
- * that applies this schema, and it would do it to a database the developer may
- * have data in. Fail with the exact command; that is the only outcome that
- * cannot surprise anybody.
+ * Fail naming the pending migrations when the CLI's ledger is behind the repo.
+ * Deliberately does NOT apply them: that would migrate a developer's own stack,
+ * which may hold data.
  */
 async function assertMigrationsApplied(sql: SqlExec, repoMigrations: string[]): Promise<void> {
   const rows = await sql("select version from supabase_migrations.schema_migrations");

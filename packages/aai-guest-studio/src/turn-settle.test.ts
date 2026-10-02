@@ -57,7 +57,7 @@ describe("settleTurn", () => {
       // `done: true` is what the host keys auto preview deploys off — a
       // checkpoint shares the method and must never carry it.
       expect(sync?.params).toMatchObject({ files: { "agent.ts": "// x" }, done: true });
-      expect(calls.some((c) => c.method === "studio/persist-chat")).toBe(true);
+      expect(calls).toContainEqual(expect.objectContaining({ method: "studio/persist-chat" }));
       expect(snapshotWorkspace).toHaveBeenCalledWith("/workspace");
     } finally {
       setHostSend(null);
@@ -72,7 +72,9 @@ describe("settleTurn", () => {
       await settleTurn(session, [], snapshotWorkspace);
       expect(errors).toHaveBeenCalledWith(expect.stringContaining("skipped huge.bin"));
       // And the sync still goes out: a warning is about one FILE, not the turn.
-      expect(requestsOf(channel).some((c) => c.method === "studio/sync-workspace")).toBe(true);
+      expect(requestsOf(channel)).toContainEqual(
+        expect.objectContaining({ method: "studio/sync-workspace" }),
+      );
     } finally {
       setHostSend(null);
     }

@@ -15,36 +15,11 @@
  * really run twice.
  */
 
-import type { WorkflowContext } from "@alexkroman1/aai";
 import { publishStepInfoReader } from "@alexkroman1/aai/host-internal";
 import { type StepInfo, stepInfo } from "@alexkroman1/aai/step";
 import { describe, expect, onTestFinished, test } from "vitest";
-import { createMemoryJournal } from "../journal/backends/memory.ts";
-import type { JournalStore, RunRecord } from "../journal/types.ts";
-import { replayRun } from "../replay.ts";
+import { replayOn, seedRun } from "../_replay-test-utils.ts";
 import { createStepInfoReader } from "../report.ts";
-
-/** A run record and the journal holding it, ready to replay. */
-async function seed(): Promise<{ journal: JournalStore }> {
-  const journal = createMemoryJournal();
-  const record: RunRecord = {
-    runId: "wrun_1",
-    workflow: "digest",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  };
-  await journal.createRun(record);
-  return { journal };
-}
-
-/** Replay `run` against a journal, with the seeded run's identity. */
-function replay(
-  journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown,
-) {
-  return replayRun({ runId: "wrun_1", workflow: "digest", input: {}, run, journal });
-}
 
 /** Publish the real reader for this test, and take it back down after. */
 function withReader(): void {
@@ -54,11 +29,11 @@ function withReader(): void {
 
 describe("a step body reading its own attempt", () => {
   test("sees 1, then 2, across a retry, with the ceiling it was given", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     withReader();
     const seen: (StepInfo | undefined)[] = [];
 
-    const outcome = await replay(journal, (_input, ctx) =>
+    const outcome = await replayOn(journal, (_input, ctx) =>
       ctx.step(
         "flaky",
         () => {
@@ -83,11 +58,11 @@ describe("a step body reading its own attempt", () => {
 
   test("reports isLastAttempt on the try whose throw ends the step", async () => {
     // The branch the whole surface exists for: degrade rather than fail.
-    const { journal } = await seed();
+    const journal = await seedRun();
     withReader();
     const last: boolean[] = [];
 
-    await replay(journal, (_input, ctx) =>
+    await replayOn(journal, (_input, ctx) =>
       ctx.step(
         "flaky",
         () => {
@@ -102,11 +77,11 @@ describe("a step body reading its own attempt", () => {
   });
 
   test("answers undefined in the BODY, which is not a step", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     withReader();
     let inBody: StepInfo | undefined;
 
-    await replay(journal, async (_input, ctx) => {
+    await replayOn(journal, async (_input, ctx) => {
       inBody = stepInfo();
       return await ctx.step("work", () => 1);
     });
@@ -115,11 +90,11 @@ describe("a step body reading its own attempt", () => {
   });
 
   test("separates a loop's rounds by key while every round is attempt 1", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     withReader();
     const keys: string[] = [];
 
-    await replay(journal, async (_input, ctx) => {
+    await replayOn(journal, async (_input, ctx) => {
       for (let round = 0; round < 3; round++) {
         await ctx.step("tick", () => {
           keys.push(`${stepInfo()?.key}@${stepInfo()?.attempt}`);

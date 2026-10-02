@@ -202,7 +202,7 @@ describe("wireSessionSocket lifecycle", () => {
     // Without this the client, which already got `config`, streams audio into a
     // dead session forever with no retry signal.
     await vi.waitFor(() => {
-      expect(ws.sentJson().some((f) => f.type === "error.reported")).toBe(true);
+      expect(ws.sentJson()).toContainEqual(expect.objectContaining({ type: "error.reported" }));
     });
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
   });
@@ -224,7 +224,7 @@ describe("wireSessionSocket lifecycle", () => {
       }),
     ).not.toThrow();
 
-    expect(ws.sentJson().some((f) => f.type === "error.reported")).toBe(true);
+    expect(ws.sentJson()).toContainEqual(expect.objectContaining({ type: "error.reported" }));
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
     expect(sessions.size).toBe(0);
   });

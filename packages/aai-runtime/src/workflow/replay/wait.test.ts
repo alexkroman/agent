@@ -10,31 +10,11 @@
 
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createMemoryJournal } from "../journal/backends/memory.ts";
-import type { JournalStore, RunRecord } from "../journal/types.ts";
-import { replayRun } from "../replay.ts";
+import { replayOn, seedRun } from "../_replay-test-utils.ts";
+import type { JournalStore } from "../journal/types.ts";
+import type { replayRun } from "../replay.ts";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-async function seed(): Promise<JournalStore> {
-  const journal = createMemoryJournal();
-  const record: RunRecord = {
-    runId: "wrun_1",
-    workflow: "digest",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  };
-  await journal.createRun(record);
-  return journal;
-}
-
-function replay(
-  journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown,
-) {
-  return replayRun({ runId: "wrun_1", workflow: "digest", input: {}, run, journal });
-}
 
 /** The failure message, or a name for whatever else the outcome was. */
 function failureMessage(outcome: Awaited<ReturnType<typeof replayRun>>): string {
@@ -47,8 +27,8 @@ afterEach(() => {
 
 describe("a wait reached inside a step", () => {
   test("fails the run naming the step, the reason and the fix", async () => {
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) =>
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) =>
       ctx.step("napper", async () => {
         await ctx.sleep("nap", 2000);
         return "x";
@@ -66,7 +46,7 @@ describe("a wait reached inside a step", () => {
     // two deliveries and reported `completed` — so a step calling a paid
     // provider was charged once per suspend.
     vi.useFakeTimers();
-    const journal = await seed();
+    const journal = await seedRun();
     const enters: string[] = [];
     const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) =>
       ctx.step("napper", async () => {
@@ -75,9 +55,9 @@ describe("a wait reached inside a step", () => {
         return "x";
       });
 
-    const first = await replay(journal, body);
+    const first = await replayOn(journal, body);
     vi.advanceTimersByTime(3000);
-    const second = await replay(journal, body);
+    const second = await replayOn(journal, body);
 
     expect(enters).toEqual(["napper"]);
     expect(first.kind).toBe("failed");
@@ -106,7 +86,7 @@ describe("a wait reached inside a step", () => {
     // duplicate execution above and for liveness, and because a regression that
     // un-named the keys should fail here as well as in the case below.
     vi.useFakeTimers();
-    const journal = await seed();
+    const journal = await seedRun();
     const claimSleep = vi.spyOn(journal, "claimSleep");
     const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       await ctx.step("napper", async () => {
@@ -117,10 +97,10 @@ describe("a wait reached inside a step", () => {
       return "done";
     };
 
-    const first = await replay(journal, body);
+    const first = await replayOn(journal, body);
     vi.advanceTimersByTime(3000);
-    const second = await replay(journal, body);
-    const third = await replay(journal, body);
+    const second = await replayOn(journal, body);
+    const third = await replayOn(journal, body);
 
     // Refused on the first walk, so the week-long wait is never mis-keyed and
     // no walk can reach the `completed` that used to end this run.
@@ -133,8 +113,8 @@ describe("a wait reached inside a step", () => {
   });
 
   test("refuses ctx.waitFor too, for the same two reasons", async () => {
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) =>
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) =>
       ctx.step("approver", () => ctx.waitFor("tok_review")),
     );
     expect(failureMessage(outcome)).toContain('ctx.waitFor was called inside ctx.step("approver")');
@@ -144,11 +124,11 @@ describe("a wait reached inside a step", () => {
     // The run context is narrowed for the whole of the body's execution, so the
     // check does not depend on the wait being lexically in the callback — which
     // is exactly where an accidental one hides.
-    const journal = await seed();
+    const journal = await seedRun();
     const poll = async (ctx: WorkflowContext) => {
       await ctx.sleep("nap", 1000);
     };
-    const outcome = await replay(journal, async (_input, ctx) =>
+    const outcome = await replayOn(journal, async (_input, ctx) =>
       ctx.step("outer", async () => {
         await poll(ctx);
         return "x";
@@ -158,8 +138,8 @@ describe("a wait reached inside a step", () => {
   });
 
   test("names the INNER step when steps are nested", async () => {
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) =>
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) =>
       ctx.step("outer", () =>
         ctx.step("inner", async () => {
           await ctx.sleep("nap", 1000);
@@ -175,8 +155,8 @@ describe("a wait reached inside a step", () => {
     // able to turn an engine refusal into `completed`. Unlike a SUSPENSION —
     // which the body can no longer see at all — a refusal still travels as a
     // throw, so this catch really does run and `refused` is what overrules it.
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       try {
         await ctx.step("napper", async () => {
           await ctx.sleep("nap", 2000);
@@ -192,9 +172,9 @@ describe("a wait reached inside a step", () => {
   });
 
   test("does not retry it — a redelivery cannot make a body legal", async () => {
-    const journal = await seed();
+    const journal = await seedRun();
     const enters: string[] = [];
-    await replay(journal, async (_input, ctx) =>
+    await replayOn(journal, async (_input, ctx) =>
       ctx.step(
         "napper",
         async () => {
@@ -211,8 +191,8 @@ describe("a wait reached inside a step", () => {
 
 describe("the guard is invisible to a legal body", () => {
   test("a body-level sleep still suspends", async () => {
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       await ctx.sleep("nap", 60_000);
       return "done";
     });
@@ -222,8 +202,8 @@ describe("the guard is invisible to a legal body", () => {
   test("a body-level sleep AFTER a step still suspends", async () => {
     // The context is narrowed by entering a fresh one, so a step resolving puts
     // the body back at body level rather than leaving `step` set.
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       await ctx.step("work", () => 1);
       await ctx.sleep("nap", 60_000);
       return "done";
@@ -232,14 +212,14 @@ describe("the guard is invisible to a legal body", () => {
   });
 
   test("a body-level waitFor still suspends", async () => {
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => ctx.waitFor("tok_gate"));
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => ctx.waitFor("tok_gate"));
     expect(outcome.kind).toBe("suspended");
   });
 
   test("a step that does not wait is journaled and answered as before", async () => {
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => ctx.step("work", () => 41 + 1));
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => ctx.step("work", () => 41 + 1));
     expect(outcome).toEqual({ kind: "completed", output: 42 });
   });
 });
@@ -258,7 +238,7 @@ describe("a body that reaches a different NUMBER of waits", () => {
     // `early` had claimed and elapsed on walk 1 — so a week-long wait resolved
     // instantly. Named, it is `sleep!schedule#0` on both walks.
     vi.useFakeTimers();
-    const journal = await seed();
+    const journal = await seedRun();
     let takeEarly = true;
     const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       if (takeEarly) await ctx.sleep("early", 1000);
@@ -266,21 +246,24 @@ describe("a body that reaches a different NUMBER of waits", () => {
       return "done";
     };
 
-    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect((await replayOn(journal, body)).kind).toBe("suspended");
     vi.advanceTimersByTime(2000);
     // The early wait has elapsed, so walk 2 walks past it — and then drops it.
-    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect((await replayOn(journal, body)).kind).toBe("suspended");
     takeEarly = false;
 
     // Still waiting a week. Positionally this walk answered `completed`.
-    expect(await replay(journal, body)).toEqual({ kind: "suspended", wakeAt: expect.any(Number) });
+    expect(await replayOn(journal, body)).toEqual({
+      kind: "suspended",
+      wakeAt: expect.any(Number),
+    });
   });
 
   test("hands a hook its OWN payload when an earlier wait is not reached", async () => {
     // Same shape, and the cost is worse: a payload rather than a schedule. Walk
     // 2 reached `final` as `hook!0` — the key `late` held — so the body was
     // handed the wrong answer with nothing raised anywhere.
-    const journal = await seed();
+    const journal = await seedRun();
     let takeLate = true;
     const seen: unknown[] = [];
     const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
@@ -289,16 +272,16 @@ describe("a body that reaches a different NUMBER of waits", () => {
       return "done";
     };
 
-    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect((await replayOn(journal, body)).kind).toBe("suspended");
     await journal.deliverHook("late", { which: "late" });
-    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect((await replayOn(journal, body)).kind).toBe("suspended");
     takeLate = false;
 
     // `final` is still unanswered, so the body parks rather than reading
     // `late`'s payload — which is what it used to be handed.
-    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect((await replayOn(journal, body)).kind).toBe("suspended");
     await journal.deliverHook("final", { which: "final" });
-    expect((await replay(journal, body)).kind).toBe("completed");
+    expect((await replayOn(journal, body)).kind).toBe("completed");
     expect(seen.at(-1)).toEqual({ which: "final" });
   });
 
@@ -306,7 +289,7 @@ describe("a body that reaches a different NUMBER of waits", () => {
     // The property the `#${occurrence}` suffix carries over from `ctx.step`: one
     // call site reached N times is N journal rows, not one.
     vi.useFakeTimers();
-    const journal = await seed();
+    const journal = await seedRun();
     const keys: string[] = [];
     // A WRAPPER, not a `vi.spyOn` — the obvious spelling of that reads the
     // original off the object AFTER `spyOn` has replaced it, so the fake calls
@@ -324,11 +307,11 @@ describe("a body that reaches a different NUMBER of waits", () => {
     };
 
     for (let delivery = 0; delivery < 3; delivery++) {
-      await replay(watched, body);
+      await replayOn(watched, body);
       vi.advanceTimersByTime(2000);
     }
 
-    expect(await replay(watched, body)).toEqual({ kind: "completed", output: "done" });
+    expect(await replayOn(watched, body)).toEqual({ kind: "completed", output: "done" });
     expect([...new Set(keys)]).toEqual(["sleep!poll#0", "sleep!poll#1", "sleep!poll#2"]);
   });
 });

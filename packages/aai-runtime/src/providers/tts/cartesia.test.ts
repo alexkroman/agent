@@ -294,7 +294,7 @@ describe("cartesia TTS adapter", () => {
     // Session stays usable: a subsequent turn still sends.
     session.sendText("still here");
     await flush();
-    expect(sends.some((s) => s.transcript === "still here")).toBe(true);
+    expect(sends).toContainEqual(expect.objectContaining({ transcript: "still here" }));
 
     controller.abort();
     await session.close();

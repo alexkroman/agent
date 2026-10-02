@@ -18,27 +18,14 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { recordingFetch } from "../../_fetch-test-utils.ts";
 import { createPlatformStateBackend } from "./platform.ts";
 
 const BASE = "https://api.test/my-agent";
 const TOKEN = "sandbox-bearer";
 
-function recordingPlatform(answer: () => Response = () => Response.json({ result: null })) {
-  const calls: { url: string; headers: Headers; body: Record<string, unknown> }[] = [];
-  const fetch: typeof globalThis.fetch = async (input, init) => {
-    const req = new Request(input, init);
-    calls.push({
-      url: req.url,
-      headers: req.headers,
-      body: JSON.parse(await req.text()) as Record<string, unknown>,
-    });
-    return answer();
-  };
-  return { calls, fetch };
-}
-
 const backendWith = (answer?: () => Response) => {
-  const platform = recordingPlatform(answer);
+  const platform = recordingFetch(answer);
   return {
     backend: createPlatformStateBackend({ base: BASE, token: TOKEN, fetch: platform.fetch }),
     ...platform,
@@ -59,29 +46,29 @@ describe("what it reports about itself", () => {
 
 describe("what crosses to the platform", () => {
   test("posts to the agent's own route with its bearer", async () => {
-    const { backend, calls } = backendWith(() => Response.json({ result: {} }));
+    const { backend, requests } = backendWith(() => Response.json({ result: {} }));
     await backend.load("sess_1");
-    expect(calls[0]?.url).toBe(`${BASE}/session-state`);
-    expect(calls[0]?.headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
+    expect(requests()[0]?.url).toBe(`${BASE}/session-state`);
+    expect(requests()[0]?.headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
   });
 
   test("tolerates a trailing slash on the operator-set base", async () => {
-    const platform = recordingPlatform(() => Response.json({ result: {} }));
+    const platform = recordingFetch(() => Response.json({ result: {} }));
     const backend = createPlatformStateBackend({
       base: `${BASE}///`,
       token: TOKEN,
       fetch: platform.fetch,
     });
     await backend.load("sess_1");
-    expect(platform.calls[0]?.url).toBe(`${BASE}/session-state`);
+    expect(platform.requests()[0]?.url).toBe(`${BASE}/session-state`);
   });
 
   test("commits only the slots it was given", async () => {
     // The store above calls `commit` with the CHANGED slots only, so the map is
     // small even when the session's state is not.
-    const { backend, calls } = backendWith();
+    const { backend, requests } = backendWith();
     await backend.commit("sess_1", new Map([["cart", '"a"']]));
-    expect(calls[0]?.body).toEqual({
+    expect(requests()[0]?.json()).toEqual({
       method: "commit",
       sessionId: "sess_1",
       values: { cart: '"a"' },
@@ -95,21 +82,21 @@ describe("what crosses to the platform", () => {
    * so renumbering here hands out positions that were never promised.
    */
   test("sends event indices unchanged, and the runtime's json as the wire's event", async () => {
-    const { backend, calls } = backendWith();
+    const { backend, requests } = backendWith();
     await backend.appendEvents("sess_1", [
       { index: 7, json: '{"t":"a"}' },
       { index: 9, json: '{"t":"b"}' },
     ]);
-    expect(calls[0]?.body.events).toEqual([
+    expect(requests()[0]?.json().events).toEqual([
       { index: 7, event: '{"t":"a"}' },
       { index: 9, event: '{"t":"b"}' },
     ]);
   });
 
   test("appending nothing crosses nothing", async () => {
-    const { backend, calls } = backendWith();
+    const { backend, fetch } = backendWith();
     await backend.appendEvents("sess_1", []);
-    expect(calls).toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

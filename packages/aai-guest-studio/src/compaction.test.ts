@@ -192,10 +192,8 @@ describe("compactMessages", () => {
     // Tier 1 is deterministic and free, so a bulky-but-short conversation must
     // never reach the summarizer. The model here THROWS if it is called at all,
     // which is what makes this an assertion about cost rather than shape.
-    let summarizerCalls = 0;
     const summarizer = new MockLanguageModelV3({
       doGenerate: async () => {
-        summarizerCalls += 1;
         throw new Error("tier 2 must not run when tier 1 was enough");
       },
     });
@@ -204,7 +202,7 @@ describe("compactMessages", () => {
 
     const out = await compactMessages(summarizer, input);
 
-    expect(summarizerCalls).toBe(0);
+    expect(summarizer.doGenerateCalls).toEqual([]);
     expect(needsCompaction(out)).toBe(false);
     // The request survives, and so do the recent attempts' payloads.
     expect(out[0]).toEqual(input[0]);

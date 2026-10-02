@@ -204,7 +204,7 @@ describe("createPgWorkspaceStore SQL", () => {
   test("reads accept a jsonb doc that arrives pre-parsed", async () => {
     // The `postgres` driver returns jsonb columns as objects; the fake above
     // returns strings. Both must parse identically.
-    const { sql } = createRecordingSql((query) =>
+    const sql = createRecordingSql((query) =>
       query.includes("select doc, version") ? [{ doc: { v: "object" }, version: 3 }] : [],
     );
     const store = createPgWorkspaceStore(sql);

@@ -629,8 +629,8 @@ describe("the tables this door owes its own database", () => {
         // applier had no production caller on any path at all, and the
         // session-state one had callers everywhere except here.
         const said = logger.warn.mock.calls.map(([message]) => String(message));
-        expect(said.some((line) => SESSION_WARNING.test(line))).toBe(true);
-        expect(said.some((line) => JOURNAL_WARNING.test(line))).toBe(true);
+        expect(said).toContainEqual(expect.stringMatching(SESSION_WARNING));
+        expect(said).toContainEqual(expect.stringMatching(JOURNAL_WARNING));
         // And the boot still happened. Warn-rather-than-throw is the posture
         // both appliers document — a role that may not CREATE, because a real
         // migration already made these tables, has to keep serving — so this

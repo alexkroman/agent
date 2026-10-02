@@ -31,6 +31,7 @@ import {
 } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import { createTestStore, NO_CLIENT_DIR } from "../_orchestrator-test-utils.ts";
+import { byCodeUnit } from "../_sql-test-utils.ts";
 import { createOrchestrator } from "../orchestrator.ts";
 import { createSlotCache } from "../sandbox/slots.ts";
 import {
@@ -183,20 +184,6 @@ describe("guest route exposure", () => {
  * to `workflow-api.ts`'s table — or narrowing a verb in `aai-runtime/src/server/routes.ts` —
  * enough on its own.
  */
-/**
- * Code-unit order, spelled out — the default `.sort()` already applies to
- * strings, made explicit because `useArraySortCompare` cannot see the element
- * type through a `.map()`. NOT `localeCompare`: with no explicit locale that
- * answers to the runtime's ICU, so the same tree would compare differently on
- * another machine (the rule `API-EXPORTS.json`'s sort follows for the same
- * reason).
- */
-const byCodeUnit = (a: string, b: string): number => {
-  if (a < b) return -1;
-  if (a > b) return 1;
-  return 0;
-};
-
 const METHOD_SOURCES: Record<string, { source: string; methods: readonly string[] }> = {
   // `host/server.ts` gates the endpoint on this very array.
   clientConfig: { source: "CLIENT_CONFIG_METHODS", methods: CLIENT_CONFIG_METHODS },

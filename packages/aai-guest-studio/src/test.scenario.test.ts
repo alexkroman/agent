@@ -29,8 +29,7 @@ test("one", () => { expect(1).toBe(1); });
       materialize,
       (dir) => runWorkspaceTests(dir),
     );
-    expect(result.ran).toBe(true);
-    if (!result.ran) return;
+    expect.assert(result.ran);
     expect(result.passed, result.output).toBe(true);
     expect(result.output).toContain("1 passed");
     // A vitest that escaped would pull in this very file. The names have to
@@ -55,8 +54,7 @@ test("no host bearer", () => { expect(process.env.AAI_GUEST_TOKEN).toBeUndefined
       materialize,
       (dir) => runWorkspaceTests(dir),
     );
-    expect(result.ran).toBe(true);
-    if (!result.ran) return;
+    expect.assert(result.ran);
     expect(result.passed, result.output).toBe(true);
   });
 
@@ -82,8 +80,7 @@ test("the eval that must not run", () => { expect("scripted").toBe("live"); });
       materialize,
       (dir) => runWorkspaceTests(dir),
     );
-    expect(result.ran).toBe(true);
-    if (!result.ran) return;
+    expect.assert(result.ran);
     expect(result.passed, result.output).toBe(true);
     // ONE file, and the count is the assertion rather than the name: the
     // reporter this spawn resolves prints a dot per file, so `not.toContain`
@@ -119,8 +116,7 @@ test("drifted", () => { expect("cart").toBe("basket"); });
       materialize,
       (dir) => runWorkspaceTests(dir),
     );
-    expect(result.ran).toBe(true);
-    if (!result.ran) return;
+    expect.assert(result.ran);
     expect(result.passed).toBe(false);
     expect(result.output).toContain("drifted");
   });

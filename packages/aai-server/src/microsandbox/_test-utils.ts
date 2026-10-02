@@ -2,7 +2,8 @@
 /**
  * Gating a suite on a real microVM.
  *
- * Same shape, and the same argument, as `describeWithPg` in `_pg-test-utils.ts`:
+ * Same shape, and the same argument, as `describeWithPg` (both are built on
+ * `gatedDescribe` in `_pg-test-utils.ts`):
  * this tier is the only thing that can see a bug in the parts no fake reaches —
  * whether the published port actually forwards, whether the composed network
  * policy lets the guest resolve DNS, whether the harness in the image really
@@ -33,8 +34,14 @@
  * starts, which would make the enforcement silently inert.
  */
 
+import { vi } from "vitest";
+import { type GatedDescribe, gatedDescribe } from "../_pg-test-utils.ts";
 import { guestImageRegistry } from "../guest/image-source.ts";
-import { LOCAL_GUEST_IMAGE_TAG } from "./sandbox.ts";
+import {
+  LOCAL_GUEST_IMAGE_TAG,
+  type MicrosandboxHandle,
+  type MicrosandboxSpawnContext,
+} from "./sandbox.ts";
 
 export type MicrosandboxAvailability = { available: true } | { available: false; reason: string };
 
@@ -73,20 +80,57 @@ export async function probeMicrosandbox(): Promise<MicrosandboxAvailability> {
 }
 
 /**
- * A skip that says why, or a failure when the run DECLARED it needs a microVM.
- *
- * Returns the `describe` to use, so a suite reads
- * `const d = describeMicrosandbox(probe)` and gates nothing by hand.
+ * The `describe` for a microVM suite: an announced skip that says why, or a
+ * failure when the run DECLARED it needs a microVM (`AAI_REQUIRE_MICROSANDBOX=1`).
+ * A suite reads `const scenario = describeWithMicrosandbox(await probeMicrosandbox())`.
  */
-export function microsandboxGate(
+export function describeWithMicrosandbox(
   availability: MicrosandboxAvailability,
   env: NodeJS.ProcessEnv = process.env,
-): { skip: boolean; reason?: string } {
-  if (availability.available) return { skip: false };
-  if (env.AAI_REQUIRE_MICROSANDBOX === "1") {
-    throw new Error(
-      `AAI_REQUIRE_MICROSANDBOX=1 but a microVM is unavailable: ${availability.reason}`,
-    );
-  }
-  return { skip: true, reason: availability.reason };
+): GatedDescribe {
+  const missing = availability.available ? undefined : availability.reason;
+  return gatedDescribe({
+    missing,
+    required: env.AAI_REQUIRE_MICROSANDBOX === "1",
+    failure: `AAI_REQUIRE_MICROSANDBOX=1 but a microVM is unavailable: ${missing}`,
+    notice: `microsandbox scenario tier SKIPPED — ${missing}`,
+  });
+}
+
+// ── Unit-tier fakes ─────────────────────────────────────────────────────────
+
+/** Named so an intentional no-op is not an empty block. */
+const noop = (): undefined => undefined;
+
+const emptyStream = (): ReadableStream<Uint8Array> =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.close();
+    },
+  });
+
+/**
+ * An injected `MicrosandboxSpawnContext` whose every call is a `vi.fn`, so a
+ * spec reads what was created, written, exec'd and stopped from `mock.calls`.
+ * The exec'd process never exits: a spawned guest does not exit during a
+ * spawn test.
+ */
+export function makeMicrosandboxCtx() {
+  const exec = vi.fn<MicrosandboxHandle["exec"]>(async () => ({
+    stdout: emptyStream(),
+    stderr: emptyStream(),
+    wait: () => new Promise<number>(noop),
+    kill: noop,
+  }));
+  const writeFile = vi.fn<MicrosandboxHandle["writeFile"]>(async () => undefined);
+  const stop = vi.fn<MicrosandboxHandle["stop"]>(async () => undefined);
+  const handle: MicrosandboxHandle = { exec, writeFile, stop };
+  const createSandbox = vi.fn<MicrosandboxSpawnContext["createSandbox"]>(async () => handle);
+  return {
+    ctx: { createSandbox } satisfies MicrosandboxSpawnContext,
+    createSandbox,
+    exec,
+    writeFile,
+    stop,
+  };
 }

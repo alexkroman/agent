@@ -7,7 +7,7 @@
  */
 
 import { agent } from "@alexkroman1/aai";
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import { suiteNetwork } from "./_network-install.ts";
 import { runCase } from "./_run-case.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
@@ -17,26 +17,21 @@ describe("runCase", () => {
   test("a failing body leaves its try's transcript for the summary, refusals included", async () => {
     const net = suiteNetwork("stub", []);
     net.install();
-    let thrown: unknown;
-    try {
-      await runCase({
-        agent: agent({ name: "Desk" }),
-        mode: "stub",
-        options: { network: evalNetwork() },
-        caseOptions: { stubReply: "One moment, please." },
-        net,
-        body: async ({ session }) => {
-          await session.say("Book a table for four.");
-          await fetch("https://api.twilio.com/Calls").catch(() => undefined);
-          throw new Error("expected 'One moment, please.' to match /booked/i");
-        },
-      });
-    } catch (err) {
-      thrown = err;
-    } finally {
-      net.restore();
-    }
-    expect(thrown).toBeInstanceOf(Error);
+    onTestFinished(() => net.restore());
+    const failing = runCase({
+      agent: agent({ name: "Desk" }),
+      mode: "stub",
+      options: { network: evalNetwork() },
+      caseOptions: { stubReply: "One moment, please." },
+      net,
+      body: async ({ session }) => {
+        await session.say("Book a table for four.");
+        await fetch("https://api.twilio.com/Calls").catch(() => undefined);
+        throw new Error("expected 'One moment, please.' to match /booked/i");
+      },
+    });
+    await expect(failing).rejects.toBeInstanceOf(Error);
+    const thrown: unknown = await failing.catch((err: unknown) => err);
     const transcript = new SuiteSpread("s").record("books it", thrown).firstTranscript;
     expect(transcript).toContain("User: Book a table for four.");
     expect(transcript).toContain("Agent: One moment, please.");

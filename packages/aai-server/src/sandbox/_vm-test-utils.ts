@@ -12,10 +12,10 @@
  */
 
 import { hash } from "node:crypto";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { vi } from "vitest";
+import { onTestFinished, vi } from "vitest";
 import type { ModalProcLike, ModalSandboxLike, ModalSpawnContext } from "../modal/context.ts";
 import { GUEST_PORT } from "../modal/context.ts";
 import type { RpcWebSocket } from "../rpc-transport.ts";
@@ -165,11 +165,21 @@ export function makeFakeSandbox(fakeProc: FakeProc): ModalSandboxLike & {
   };
 }
 
+/**
+ * A throwaway `harness.mjs` on disk, removed when the calling test finishes.
+ * Call it from a test body (or a helper a test calls), never a hook.
+ */
 export async function makeHarnessFile(content = "// harness"): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "aai-modal-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "aai-harness-test-"));
+  onTestFinished(() => rm(dir, { recursive: true, force: true }));
   const path = join(dir, "harness.mjs");
   await writeFile(path, content, "utf-8");
   return path;
+}
+
+/** A dial fn resolving to `socket`; read its `(url, token)` from `mock.calls`. */
+export function makeFakeDial(socket: FakeGuestSocket) {
+  return vi.fn(async (_url: string, _token: string) => socket.ws);
 }
 
 export function makeCtx(sb: ModalSandboxLike): ModalSpawnContext & { codes: string[] } {

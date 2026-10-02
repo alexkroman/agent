@@ -124,7 +124,7 @@ describe("GET /workflows/uploads/:id", () => {
     const store = gatedReadStore(UPLOAD_CHUNK_BYTES * 12);
     const base = await serve(store);
     const answered = fetch(`${base}/workflows/uploads/upl_read`);
-    await vi.waitFor(() => expect(store.reads.length).toBe(UPLOAD_READ_AHEAD));
+    await vi.waitFor(() => expect(store.reads).toHaveLength(UPLOAD_READ_AHEAD));
     // Asserted against the constant AND against one, because the constant is what
     // the route uses: a width of 1 would satisfy the line above while being exactly
     // the sequential walk this replaced.

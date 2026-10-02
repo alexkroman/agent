@@ -12,8 +12,9 @@
  * that hands an id to a function does not have.
  */
 
+import { createRunSnapshot } from "@alexkroman1/aai/testing";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { fakeClient, type Harness, run, serve } from "./_test-utils.ts";
+import { fakeClient, type Harness, serve } from "./_test-utils.ts";
 
 let harness: Harness | undefined;
 
@@ -46,7 +47,7 @@ describe("the run id in a path", () => {
     // the module doc's rule is "400, never 500". Before `decodePathSegment` the
     // URIError escaped `runId` into the router's catch — which reports "the agent
     // is broken", the one thing this could not be.
-    const get = vi.fn(async () => run());
+    const get = vi.fn(async () => createRunSnapshot());
     harness = await serve({ engine: () => fakeClient({ get }) });
     const res = await fetch(`${harness.url}${path}`, { method });
     expect(res.status).toBe(400);
@@ -72,7 +73,7 @@ describe("the run id in a path", () => {
     // The remedy is the one `uploadIdOr400` already applies next door: check
     // the grammar at the ROUTER, so an id that would escape the store never
     // reaches one, whichever verb asked.
-    const get = vi.fn(async () => run());
+    const get = vi.fn(async () => createRunSnapshot());
     harness = await serve({ engine: () => fakeClient({ get }) });
     const res = await fetch(`${harness.url}${path}`, { method });
     expect(res.status).toBe(400);

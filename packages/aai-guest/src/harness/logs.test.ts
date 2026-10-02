@@ -54,16 +54,8 @@ describe("installLogCapture", () => {
 
   test("forwards a completion callback passed in the second position", () => {
     const buffer = createLogBuffer();
-    const seen: unknown[][] = [];
-    const streams: CapturedStreams = {
-      stdout: {
-        write: (...args: unknown[]) => {
-          seen.push(args);
-          return true;
-        },
-      },
-      stderr: { write: () => true },
-    };
+    const write = vi.fn((..._args: unknown[]) => true);
+    const streams: CapturedStreams = { stdout: { write }, stderr: { write: () => true } };
     installLogCapture(buffer, streams);
 
     const cb = vi.fn();
@@ -71,27 +63,19 @@ describe("installLogCapture", () => {
 
     // Node's two-arg overload: the callback must not land in the encoding slot,
     // or the writer never learns the write drained.
-    expect(seen).toEqual([["x\n", cb]]);
+    expect(write.mock.calls).toEqual([["x\n", cb]]);
   });
 
   test("forwards an encoding and a callback passed in the three-arg shape", () => {
     const buffer = createLogBuffer();
-    const seen: unknown[][] = [];
-    const streams: CapturedStreams = {
-      stdout: {
-        write: (...args: unknown[]) => {
-          seen.push(args);
-          return true;
-        },
-      },
-      stderr: { write: () => true },
-    };
+    const write = vi.fn((..._args: unknown[]) => true);
+    const streams: CapturedStreams = { stdout: { write }, stderr: { write: () => true } };
     installLogCapture(buffer, streams);
 
     const cb = vi.fn();
     streams.stdout.write("x\n", "utf8", cb);
 
-    expect(seen).toEqual([["x\n", "utf8", cb]]);
+    expect(write.mock.calls).toEqual([["x\n", "utf8", cb]]);
   });
 
   test("returns the underlying stream's backpressure answer", () => {

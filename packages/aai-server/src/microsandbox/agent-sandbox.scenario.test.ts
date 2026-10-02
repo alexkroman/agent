@@ -34,16 +34,14 @@
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { resolveHarnessPath } from "../constants.ts";
 import type { AgentServerHandle } from "../warm-harness.ts";
-import { microsandboxGate, probeMicrosandbox } from "./_test-utils.ts";
+import { describeWithMicrosandbox, probeMicrosandbox } from "./_test-utils.ts";
 import { spawnMicrosandboxAgentServer } from "./agent-sandbox.ts";
 
 // Top level, never inside the gated `describe` body — see probeMicrosandbox.
-const gate = microsandboxGate(await probeMicrosandbox());
-if (gate.skip) console.warn(`microsandbox agent scenario tier SKIPPED — ${gate.reason}`);
-const scenario = gate.skip ? describe.skip : describe;
+const scenario = describeWithMicrosandbox(await probeMicrosandbox());
 
 /**
  * A minimal but REAL bundle: the harness contract demands the

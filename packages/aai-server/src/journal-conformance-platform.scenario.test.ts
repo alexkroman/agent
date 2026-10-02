@@ -46,15 +46,13 @@
  * ```
  */
 
-import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { createPlatformJournal, loadJournalConformance } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { createTestOrchestrator, type TestFetch } from "./_orchestrator-test-utils.ts";
-import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import { describeWithPg } from "./_pg-test-utils.ts";
 import { bearerFor, deploy } from "./_request-test-utils.ts";
 import { fakeAdminDbOver } from "./_sql-test-utils.ts";
-import { ensurePlatformTables } from "./platform/_schema-test-utils.ts";
-import type { SqlExec } from "./sql-exec.ts";
+import { usePlatformDb } from "./platform/_schema-test-utils.ts";
 
 /**
  * Awaited at the TOP, so the cases can be declared synchronously inside the
@@ -71,20 +69,12 @@ const { journalConformance, journalIds } = await loadJournalConformance();
 const SLUG = "journal-conformance-arm";
 
 describeWithPg("the journal contract over the platform's REAL handler", () => {
-  let db: ReturnType<typeof createPostgresDb>;
-  let sql: SqlExec;
+  const sql = usePlatformDb();
   let journal: ReturnType<typeof createPlatformJournal>;
   /** The route as an HTTP surface, for the one claim the client hides: a STATUS. */
   let call: (body: unknown) => Promise<Response>;
 
   beforeAll(async () => {
-    // `pgUrl()` inside the hook and never at the top of this body: vitest
-    // EXECUTES a skipped describe's callback to enumerate what it is skipping,
-    // so a read up there fails the file instead of skipping it.
-    db = createPostgresDb({ url: pgUrl(), max: 4 });
-    sql = (query, params) => db.query(query, params);
-    await ensurePlatformTables(sql);
-
     const harness = await createTestOrchestrator({ adminDb: fakeAdminDbOver(sql) });
     await deploy(harness.fetch, { key: "key1", body: { slug: SLUG } });
     // The agents row the journal's tables cascade FROM. The orchestrator above
@@ -123,7 +113,6 @@ describeWithPg("the journal contract over the platform's REAL handler", () => {
     // sibling asserts. A case that left rows behind would collide with the next
     // run of this file on the same database, which is what `uid()` exists for.
     await sql?.("delete from aai_platform.agents where slug = $1", [SLUG]);
-    await db?.close();
   });
 
   test("a duplicate run id is answered 409, not 503", async () => {

@@ -24,31 +24,10 @@
 
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryJournal } from "../journal/backends/memory.ts";
-import type { JournalStore } from "../journal/types.ts";
-import { replayRun } from "../replay.ts";
+import { replayOn, seedRun } from "../_replay-test-utils.ts";
 
 const RUN_ID = "wrun_stale";
-
-/** A journal holding one running run, ready to replay. */
-async function seed(): Promise<JournalStore> {
-  const journal = createMemoryJournal();
-  await journal.createRun({
-    runId: RUN_ID,
-    workflow: "probe",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  });
-  return journal;
-}
-
-function replay(
-  journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown>,
-): ReturnType<typeof replayRun> {
-  return replayRun({ runId: RUN_ID, workflow: "probe", input: {}, journal, run });
-}
+const RUN_IDENTITY = { runId: RUN_ID, workflow: "probe" };
 
 describe("a walk whose snapshot went stale", () => {
   /**
@@ -60,7 +39,7 @@ describe("a walk whose snapshot went stale", () => {
    * that predates every one of those writes.
    */
   test("does not execute a step a sibling walk already settled", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const gate = Promise.withResolvers<void>();
     let probeRuns = 0;
     let effectRuns = 0;
@@ -78,9 +57,9 @@ describe("a walk whose snapshot went stale", () => {
       return { probe, effect };
     };
 
-    const walkA = replay(journal, body);
+    const walkA = replayOn(journal, body, RUN_IDENTITY);
     await vi.waitFor(() => expect(probeRuns).toBe(1));
-    const walkB = await replay(journal, body);
+    const walkB = await replayOn(journal, body, RUN_IDENTITY);
     expect(walkB).toEqual({ kind: "completed", output: { probe: 2, effect: "did the work" } });
 
     gate.resolve();
@@ -104,7 +83,7 @@ describe("a walk whose snapshot went stale", () => {
    * introduced to avoid one layer down.
    */
   test("answers a settled step from the journal even with its budget spent", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     // Three attempts outstanding on a budget of three: the next reach is over.
     for (const walk of ["w1", "w2", "w3"])
       await journal.claimAttempt(RUN_ID, "s#0", walk, 60 * 60 * 1000);
@@ -127,11 +106,14 @@ describe("a walk whose snapshot went stale", () => {
     );
 
     let ran = 0;
-    const outcome = await replay(journal, async (_input, ctx) =>
-      ctx.step("s", () => {
-        ran += 1;
-        return 1;
-      }),
+    const outcome = await replayOn(
+      journal,
+      async (_input, ctx) =>
+        ctx.step("s", () => {
+          ran += 1;
+          return 1;
+        }),
+      RUN_IDENTITY,
     );
 
     expect(outcome).toEqual({ kind: "completed", output: 7 });
@@ -152,7 +134,7 @@ describe("a walk whose snapshot went stale", () => {
    * first draft of `settledSince`; `DivergenceWatch.answeredLate` is the fix.
    */
   test("answers a nested step late without refusing the next key as divergence", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     // One charge already standing, so `onFirstReach` cannot fire for `outer#0`:
     // a walk beside this one reached it, which is the whole premise.
     await journal.claimAttempt(RUN_ID, "outer#0", "earlier-walk", 60 * 60 * 1000);
@@ -182,14 +164,18 @@ describe("a walk whose snapshot went stale", () => {
     );
 
     let afterRuns = 0;
-    const outcome = await replay(journal, async (_input, ctx) => {
-      const outer = await ctx.step("outer", async () => ctx.step("inner", () => 1));
-      const after = await ctx.step("after", () => {
-        afterRuns += 1;
-        return 2;
-      });
-      return { outer, after };
-    });
+    const outcome = await replayOn(
+      journal,
+      async (_input, ctx) => {
+        const outer = await ctx.step("outer", async () => ctx.step("inner", () => 1));
+        const after = await ctx.step("after", () => {
+          afterRuns += 1;
+          return 2;
+        });
+        return { outer, after };
+      },
+      RUN_IDENTITY,
+    );
 
     // `after#0` is genuinely first-reached and `inner#0` is unread — the exact
     // pair the check refuses on when the cursor has not advanced. Without

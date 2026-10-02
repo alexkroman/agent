@@ -6,8 +6,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import {
-  createFailingSttProvider,
-  createFailingTtsProvider,
+  createFailingProvider,
   createFakeLanguageModel,
   createFakeSttProvider,
   createFakeTtsProvider,
@@ -31,7 +30,7 @@ describe("createFakeSttProvider", () => {
     session.sendAudio(new Int16Array([1, 2, 3]));
     await session.close();
     expect(fake?.audioFrames).toEqual([new Int16Array([1, 2, 3])]);
-    expect(fake?.closed.value).toBe(true);
+    expect(fake?.close).toHaveBeenCalled();
     expect(fake?.options).toBe(OPEN);
   });
 
@@ -97,11 +96,12 @@ describe("the small fakes", () => {
   });
 
   test("the failing providers reject `open` with a coded error", async () => {
+    await expect(createFailingProvider("stt_auth_failed", "no").open(OPEN)).rejects.toMatchObject({
+      code: "stt_auth_failed",
+      message: "no",
+    });
     await expect(
-      createFailingSttProvider("stt_auth_failed", "no").open(OPEN),
-    ).rejects.toMatchObject({ code: "stt_auth_failed", message: "no" });
-    await expect(
-      createFailingTtsProvider("tts_connect_failed", "down").open(OPEN),
+      createFailingProvider("tts_connect_failed", "down").open(OPEN),
     ).rejects.toMatchObject({ code: "tts_connect_failed" });
   });
 });
@@ -111,17 +111,13 @@ describe("registerFakeProviders", () => {
     const stt = createFakeSttProvider();
     const llm = createFakeLanguageModel({ script: [] });
     const registered = registerFakeProviders({ stt, llm });
-    try {
-      expect(registered.tts).toBeUndefined();
-      expect(registered.env[FAKE_STT_API_KEY_ENV]).toBeTypeOf("string");
-      if (registered.stt === undefined || registered.llm === undefined) {
-        expect.fail("expected an STT and an LLM descriptor");
-      }
-      expect(resolveStt(registered.stt, registered.env).opener).toBe(stt);
-      expect(resolveLlm(registered.llm, registered.env)).toBe(llm);
-    } finally {
-      registered.unregister();
+    expect(registered.tts).toBeUndefined();
+    expect(registered.env[FAKE_STT_API_KEY_ENV]).toBeTypeOf("string");
+    if (registered.stt === undefined || registered.llm === undefined) {
+      expect.fail("expected an STT and an LLM descriptor");
     }
+    expect(resolveStt(registered.stt, registered.env).opener).toBe(stt);
+    expect(resolveLlm(registered.llm, registered.env)).toBe(llm);
   });
 
   test("unregister removes the kinds again", () => {

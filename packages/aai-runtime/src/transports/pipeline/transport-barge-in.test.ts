@@ -342,7 +342,7 @@ describe("PipelineTransport", () => {
       // first chunks are never dropped.
       stt.last()?.fireFinal("next question please");
       await vi.waitFor(() => {
-        expect(llm.calls.length).toBe(2);
+        expect(llm.calls).toHaveLength(2);
         expect(tts.last()?.textChunks.length).toBeGreaterThan(1);
       });
       tts.last()?.fireAudio(new Int16Array(2400));
@@ -405,7 +405,7 @@ describe("PipelineTransport", () => {
       // hangs on its TTS drain for the whole flush timeout.
       await t.stop();
       await vi.advanceTimersByTimeAsync(50);
-      expect(llm.calls.length).toBe(1);
+      expect(llm.calls).toHaveLength(1);
     });
 
     test("a turn queued behind an active one does not run after reset()", async () => {
@@ -414,7 +414,7 @@ describe("PipelineTransport", () => {
       // The queued turn carries pre-reset user text: it must not run into the
       // fresh history.
       await vi.advanceTimersByTimeAsync(50);
-      expect(llm.calls.length).toBe(1);
+      expect(llm.calls).toHaveLength(1);
       await t.stop();
     });
 
@@ -422,7 +422,7 @@ describe("PipelineTransport", () => {
       const { t, llm } = await startWithQueuedTurn();
       t.cancelReply();
       await vi.advanceTimersByTimeAsync(50);
-      expect(llm.calls.length).toBe(1);
+      expect(llm.calls).toHaveLength(1);
       await t.stop();
     });
 
@@ -604,7 +604,7 @@ describe("PipelineTransport", () => {
       // Well past the aborted stream settling, which is when the frame used to
       // arrive; the interim snapshots (onAgentTranscriptPartial) are unaffected.
       await vi.advanceTimersByTimeAsync(80);
-      expect(vi.mocked(callbacks.reported("agentTranscript.committed")).mock.calls.length).toBe(
+      expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledTimes(
         transcriptsBefore,
       );
       await t.stop();

@@ -16,7 +16,6 @@
 
 import { workflow } from "@alexkroman1/aai";
 import { publishStepReporter } from "@alexkroman1/aai/host-internal";
-import { sleep } from "@alexkroman1/aai/internal";
 import { stepReport } from "@alexkroman1/aai/step";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_logger-test-utils.ts";
@@ -360,19 +359,19 @@ describe("step execution is BOUNDED, whatever the body opens", () => {
 
     const runId = await engine.start("fanout", [{}]);
     void engine.execute(runId);
-    // A real elapsed wait rather than `vi.waitFor`: the assertion is that the
-    // count STOPS at four and stays there, which a poller that succeeds the
-    // moment it sees four cannot distinguish from one that overshot and came
-    // back down.
-    await sleep(200);
-    expect(running.length).toBe(4);
+    // A full macrotask rather than `vi.waitFor`: admission is promise-driven, so
+    // by then every step that could start has, and the assertion is that the
+    // count STOPPED at four — which a poller that succeeds the moment it sees
+    // four cannot distinguish from one that overshot and came back down.
+    await tick();
+    expect(running).toHaveLength(4);
 
     // And the queue drains rather than deadlocking — 32 admitted in total, four
     // at a time.
     const seen = new Set<number>(running);
     for (let i = 0; i < 40 && release.length > 0; i++) {
       release.shift()?.();
-      await sleep(5);
+      await tick();
       for (const id of running) seen.add(id);
     }
     expect(seen.size).toBeGreaterThan(4);

@@ -234,7 +234,7 @@ describe("a turn nothing can be read off", () => {
       await expect(failed).rejects.toThrow(/commits NO transcript/);
       // Still readable: a case that MEANS to observe a broken turn catches the
       // throw and reads the stream itself.
-      expect(chat.events().some((e) => e.type === "error.reported")).toBe(true);
+      expect(chat.events()).toContainEqual(expect.objectContaining({ type: "error.reported" }));
       expect(chat.said()).toEqual([]);
     } finally {
       await chat.close();

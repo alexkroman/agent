@@ -112,7 +112,7 @@ describe("createPostgresDb", () => {
     await opened({ url: "postgres://db.example/app" });
     const { onnotice } = clientOptions();
     for (const bad of [undefined, null, "a string", 42]) {
-      expect(() => onnotice?.(bad)).not.toThrow();
+      expect.soft(() => onnotice?.(bad), String(bad)).not.toThrow();
     }
   });
 
@@ -244,18 +244,11 @@ describe("createPostgresDb query timeout", () => {
     unsafeMock.mockReturnValueOnce(pending());
     const db = createPostgresDb({ url: "postgres://db.example/app", queryTimeoutMs: 5000 });
     const reserved = await db.reserve();
-    let settled = false;
-    void reserved.query("select pg_advisory_lock(1, 2)").then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      },
-    );
+    const settled = vi.fn();
+    void reserved.query("select pg_advisory_lock(1, 2)").then(settled, settled);
     // Advance well past the pooled deadline — a reserved query must still hang.
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(settled).toBe(false);
+    expect(settled).not.toHaveBeenCalled();
   });
 
   test("a RESERVED query IS bounded once reservedQueryTimeoutMs is set", async () => {
@@ -300,33 +293,19 @@ describe("createPostgresDb query timeout", () => {
     unsafeMock.mockReturnValueOnce(pending());
     const db = createPostgresDb({ url: "postgres://db.example/app", connectTimeoutSeconds: 10 });
     const reserved = await db.reserve();
-    let settled = false;
-    void reserved.query("select pg_advisory_lock(1, 2)").then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      },
-    );
+    const settled = vi.fn();
+    void reserved.query("select pg_advisory_lock(1, 2)").then(settled, settled);
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(settled).toBe(false);
+    expect(settled).not.toHaveBeenCalled();
   });
 
   test("a query is unbounded when queryTimeoutMs is unset", async () => {
     unsafeMock.mockReturnValueOnce(pending());
     const db = createPostgresDb({ url: "postgres://db.example/app" });
-    let settled = false;
-    void db.query("select 1").then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      },
-    );
+    const settled = vi.fn();
+    void db.query("select 1").then(settled, settled);
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(settled).toBe(false);
+    expect(settled).not.toHaveBeenCalled();
   });
 });
 
@@ -384,17 +363,10 @@ describe("createPostgresDb reserve timeout", () => {
     // here would fail deploys under ordinary load.
     reserveMock.mockReturnValueOnce(queued().promise);
     const db = createPostgresDb({ url: "postgres://db.example/app" });
-    let settled = false;
-    void db.reserve().then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      },
-    );
+    const settled = vi.fn();
+    void db.reserve().then(settled, settled);
     await vi.advanceTimersByTimeAsync(600_000);
-    expect(settled).toBe(false);
+    expect(settled).not.toHaveBeenCalled();
   });
 
   test("a reserve the pool can grant is unaffected by the deadline", async () => {

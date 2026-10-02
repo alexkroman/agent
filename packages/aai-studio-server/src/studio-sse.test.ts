@@ -58,20 +58,18 @@ describe("createSsePusher", () => {
   it("holds open indefinitely while the client is there", async () => {
     const { stream, frames } = makeStream();
     const sse = createSsePusher(stream);
-    let cleaned = false;
-    const held = sse.wait(() => {
-      cleaned = true;
-    });
+    const cleanup = vi.fn();
+    const held = sse.wait(cleanup);
 
     // A subscription lives as long as the project is on screen — hours. Only a
     // disconnect, a null push, or shutdown ends one; nothing here expires it.
     await vi.advanceTimersByTimeAsync(2 * 60 * 60_000);
-    expect(cleaned).toBe(false);
+    expect(cleanup).not.toHaveBeenCalled();
     expect(frames.filter((f) => f.event === "ping").length).toBeGreaterThan(0);
 
     endLiveStreams();
     await held;
-    expect(cleaned).toBe(true);
+    expect(cleanup).toHaveBeenCalled();
   });
 
   it("stops heartbeating once the stream has ended", async () => {
@@ -135,15 +133,13 @@ describe("createSsePusher", () => {
   it("a null push ends the stream — the watched row is gone", async () => {
     const { stream } = makeStream();
     const sse = createSsePusher(stream);
-    let cleaned = false;
-    const held = sse.wait(() => {
-      cleaned = true;
-    });
+    const cleanup = vi.fn();
+    const held = sse.wait(cleanup);
 
     sse.push(async () => null);
     await vi.advanceTimersByTimeAsync(0);
     await held;
-    expect(cleaned).toBe(true);
+    expect(cleanup).toHaveBeenCalled();
   });
 });
 
@@ -156,13 +152,11 @@ describe("createSsePusher", () => {
 describe("createSharedReads", () => {
   it("serves one trailing read to every caller that joins while one is in flight", async () => {
     const shared = createSharedReads();
-    let reads = 0;
     const gate = Promise.withResolvers<void>();
-    const read = async () => {
-      reads += 1;
+    const read = vi.fn(async () => {
       await gate.promise;
-      return { event: "project", data: String(reads) };
-    };
+      return { event: "project", data: String(read.mock.calls.length) };
+    });
     const a = shared.acquire("scope proj", read);
     const b = shared.acquire("scope proj", read);
     const c = shared.acquire("scope proj", read);
@@ -177,19 +171,15 @@ describe("createSharedReads", () => {
     // came from the event it is already reading for. What matters is that the
     // count does not GROW with the caller count — the third joiner shares the
     // second's trailing read.
-    expect(reads).toBe(2);
+    expect(read).toHaveBeenCalledTimes(2);
   });
 
   it("does not share between different rows", async () => {
     const shared = createSharedReads();
-    let reads = 0;
-    const read = async () => {
-      reads += 1;
-      return { event: "project", data: "x" };
-    };
+    const read = vi.fn(async () => ({ event: "project", data: "x" }));
     await shared.acquire("scope one", read).trigger();
     await shared.acquire("scope two", read).trigger();
-    expect(reads).toBe(2);
+    expect(read).toHaveBeenCalledTimes(2);
     expect(shared.size()).toBe(2);
   });
 

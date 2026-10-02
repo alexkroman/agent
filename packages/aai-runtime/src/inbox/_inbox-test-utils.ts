@@ -5,10 +5,11 @@
  * live event feed (`holders.test.ts`).
  */
 
+import { once } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { vi } from "vitest";
+import { onTestFinished, vi } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
 import { silentLogger } from "../_logger-test-utils.ts";
 import { type ClientInbox, createClientInbox } from "./inbox.ts";
@@ -21,26 +22,22 @@ export type InboxDevice = {
   next(): Promise<Record<string, unknown> | number>;
 };
 
-/** What a spec registers to be torn down, newest first. */
-export type InboxCleanups = (() => void | Promise<void>)[];
-
-/** An inbox behind a real HTTP server on a free loopback port. */
-export async function startInbox(
-  cleanups: InboxCleanups,
-  pingMs?: number,
-): Promise<{ inbox: ClientInbox; url: string }> {
+/**
+ * An inbox behind a real HTTP server on a free loopback port, torn down when the
+ * calling test finishes (`onTestFinished` runs newest first, so devices close
+ * before the inbox, and the inbox before its server).
+ */
+export async function startInbox(pingMs?: number): Promise<{ inbox: ClientInbox; url: string }> {
   const inbox = createClientInbox({ logger: silentLogger, ...omitUndefined({ pingMs }) });
   const wss = new WebSocketServer({ noServer: true });
   const server = http.createServer();
   server.on("upgrade", (req, socket, head) => {
     wss.handleUpgrade(req, socket, head, (ws) => inbox.attach(ws, req.url));
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  cleanups.push(
-    () => new Promise<void>((resolve) => server.close(() => resolve())),
-    () => wss.close(),
-    () => inbox.close(),
-  );
+  await once(server.listen(0, "127.0.0.1"), "listening");
+  onTestFinished(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  onTestFinished(() => wss.close());
+  onTestFinished(() => inbox.close());
   return { inbox, url: `ws://127.0.0.1:${(server.address() as AddressInfo).port}/inbox` };
 }
 
@@ -49,7 +46,6 @@ export async function startInbox(
  * until the inbox has adopted the socket.
  */
 export async function connectDevice(
-  cleanups: InboxCleanups,
   url: string,
   inbox: ClientInbox,
   clientId = "speaker",
@@ -64,12 +60,12 @@ export async function connectDevice(
     if (waiter) waiter(frame);
     else frames.push(frame);
   });
-  await new Promise((resolve) => ws.once("open", resolve));
+  await once(ws, "open");
   // Adopted a tick after `open`; waited for without an assertion, since this is a helper.
   await vi.waitFor(() => {
     if (!inbox.connected().includes(clientId)) throw new Error(`${clientId} not adopted yet`);
   });
-  cleanups.push(() => ws.terminate());
+  onTestFinished(() => ws.terminate());
   return {
     ws,
     frames,
@@ -78,6 +74,16 @@ export async function connectDevice(
       return queued !== undefined ? Promise.resolve(queued) : new Promise((r) => waiters.push(r));
     },
   };
+}
+
+/**
+ * A ping round trip on the device's socket: every frame the inbox wrote before the
+ * pong has arrived by the time this resolves, so "nothing more was sent" is checked
+ * against the wire rather than against a guessed delay.
+ */
+export async function roundTrip(device: InboxDevice): Promise<void> {
+  device.ws.ping();
+  await once(device.ws, "pong");
 }
 
 /** Answer a notice from the device side. */

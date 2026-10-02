@@ -17,11 +17,9 @@
  *   after a partial failure must not be the thing that breaks a call.
  */
 
-import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
-import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
-import type { SqlExec } from "../sql-exec.ts";
-import { ensurePlatformTables } from "./_schema-test-utils.ts";
+import { describeWithPg } from "../_pg-test-utils.ts";
+import { usePlatformDb } from "./_schema-test-utils.ts";
 import {
   appendEvents,
   commitSlots,
@@ -32,8 +30,7 @@ import {
 } from "./session-state.ts";
 
 describeWithPg("platform session state", () => {
-  let close: () => Promise<void>;
-  let sql: SqlExec;
+  const sql = usePlatformDb();
 
   const SLUGS = ["pss-a", "pss-b"];
   const SESSION = "sess_1";
@@ -47,10 +44,6 @@ describeWithPg("platform session state", () => {
     );
 
   beforeAll(async () => {
-    const db = createPostgresDb({ url: pgUrl(), max: 4 });
-    sql = (q, p) => db.query(q, p);
-    close = () => db.close();
-    await ensurePlatformTables(sql);
     for (const slug of SLUGS) await seedAgent(slug);
   });
 
@@ -65,7 +58,6 @@ describeWithPg("platform session state", () => {
     await sql("delete from aai_platform.session_slots where slug = any($1)", [SLUGS]);
     await sql("delete from aai_platform.session_events where slug = any($1)", [SLUGS]);
     await sql("delete from aai_platform.agents where slug = any($1)", [SLUGS]);
-    await close();
   });
 
   /** Events with their payloads parsed — see the whitespace spec below. */

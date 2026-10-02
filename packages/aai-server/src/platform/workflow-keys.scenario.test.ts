@@ -46,7 +46,7 @@
 
 import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { beforeEach, expect, test } from "vitest";
-import { describeWithPg } from "../_pg-test-utils.ts";
+import { describeWithPg, ulid } from "../_pg-test-utils.ts";
 import { useThrowawayPlatformDb } from "../_workflow-queue-test-utils.ts";
 import { platformCronJobs } from "../pg-cron.ts";
 import type { SqlExec } from "../sql-exec.ts";
@@ -55,28 +55,6 @@ import * as keys from "./workflow-keys.ts";
 /** Two tenants, so every read can be asked whether it crosses. */
 const SLUG = "wfk-tenant";
 const OTHER = "wfk-neighbour";
-
-/** Crockford base32, ULID's alphabet: no I, L, O or U. */
-const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-
-/**
- * A real ULID-SHAPED id: 10 characters of millisecond timestamp, then 16 of
- * randomness — here CHOSEN rather than random, so a case can say which of two ids
- * minted in the same millisecond was minted second.
- *
- * The shape is the whole premise of the tiebreak: a run id sorts
- * lexicographically by generation time. A uuid would tie-break to nonsense and
- * the case would still pass.
- */
-function ulid(ms: number, tail: string): string {
-  let time = "";
-  let n = ms;
-  for (let i = 0; i < 10; i += 1) {
-    time = CROCKFORD.charAt(n % 32) + time;
-    n = Math.floor(n / 32);
-  }
-  return `${time}${tail.padStart(16, "0")}`;
-}
 
 describeWithPg("the platform's correlation-key index over a real Postgres", () => {
   const own = useThrowawayPlatformDb("wfkeys");

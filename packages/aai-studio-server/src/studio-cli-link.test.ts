@@ -4,7 +4,7 @@
 // the account's stored API key. See studio-routes.ts.
 
 import { authFetch, type TestFetch } from "aai-server/test-utils";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
 
 describe("CLI device link (aai login)", () => {
@@ -79,21 +79,20 @@ describe("CLI device link (aai login)", () => {
 
   test("an expired approval is refused and consumed", async () => {
     vi.useFakeTimers();
-    try {
-      const { fetch } = await withDevAuth();
-      const bearer = devToken("a@b.c");
-      await onboardKey(fetch, bearer);
-      await authFetch(fetch, "/studio/cli-link/approve", {
-        method: "POST",
-        key: bearer,
-        body: { code },
-      });
-      vi.advanceTimersByTime(11 * 60_000);
-      expect((await exchange(fetch)).status).toBe(410);
-      // The expired grant was deleted, not left redeemable.
-      expect((await exchange(fetch)).status).toBe(404);
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const { fetch } = await withDevAuth();
+    const bearer = devToken("a@b.c");
+    await onboardKey(fetch, bearer);
+    await authFetch(fetch, "/studio/cli-link/approve", {
+      method: "POST",
+      key: bearer,
+      body: { code },
+    });
+    vi.advanceTimersByTime(11 * 60_000);
+    expect((await exchange(fetch)).status).toBe(410);
+    // The expired grant was deleted, not left redeemable.
+    expect((await exchange(fetch)).status).toBe(404);
   });
 });

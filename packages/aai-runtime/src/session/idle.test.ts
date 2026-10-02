@@ -7,7 +7,8 @@
 import type { SessionEvent } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
-import { makeAgentConfig, makeCore, makeSink } from "./_core-harness.ts";
+import { makeConfig } from "../_agent-test-utils.ts";
+import { makeCore, makeSink } from "./_core-harness.ts";
 import type { ServerSession } from "./core-types.ts";
 
 describe("createSessionCore — idle timeout", () => {
@@ -15,7 +16,7 @@ describe("createSessionCore — idle timeout", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       expect(sink.events.filter((e) => e.type === "session.timedOut")).toHaveLength(0);
@@ -34,7 +35,7 @@ describe("createSessionCore — idle timeout", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       // A continuously-streaming silent mic: frames the whole way through.
@@ -72,7 +73,7 @@ describe("createSessionCore — idle timeout", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       vi.advanceTimersByTime(800);
@@ -93,7 +94,7 @@ describe("createSessionCore — idle timeout", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       vi.advanceTimersByTime(1001);
@@ -121,7 +122,7 @@ describe("createSessionCore — idle timeout", () => {
       };
       const { core } = makeCore({
         client: tracking,
-        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       vi.advanceTimersByTime(1001);

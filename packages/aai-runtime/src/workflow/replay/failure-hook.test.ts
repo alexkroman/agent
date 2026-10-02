@@ -99,27 +99,23 @@ describe("onFailure", () => {
 
   test("the step form takes a retry budget, and a hook that still fails is logged, not recorded", async () => {
     const warn = vi.fn();
-    let attempts = 0;
+    const hook = vi.fn(() => {
+      throw new Error("the device is unplugged");
+    });
     const { engine } = world(
       {
         job: workflow({
           run: () => {
             throw new Error("the body's own failure");
           },
-          onFailure: {
-            run: () => {
-              attempts++;
-              throw new Error("the device is unplugged");
-            },
-            maxAttempts: 2,
-          },
+          onFailure: { run: hook, maxAttempts: 2 },
         }),
       },
       { ...silentLogger, warn },
     );
     const runId = await engine.start("job", [{}]);
     expect(await engine.execute(runId)).toBe("failed");
-    expect(attempts).toBe(2);
+    expect(hook).toHaveBeenCalledTimes(2);
     expect((await engine.getRun(runId))?.error?.message).toBe("the body's own failure");
     expect(warn).toHaveBeenCalledWith(
       expect.stringMatching(/onFailure hook failed/),

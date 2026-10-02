@@ -5,7 +5,7 @@
  */
 
 import { HTTPException } from "hono/http-exception";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { captureLogs } from "../_logger-test-utils.ts";
 import { createTestOrchestrator } from "../_orchestrator-test-utils.ts";
 import { deployAgent } from "../_request-test-utils.ts";
@@ -39,9 +39,6 @@ async function resident(
 
 describe("brokerSessionUrl", () => {
   captureLogs();
-  afterEach(() => {
-    vi.useRealTimers();
-  });
 
   test("an unknown slug is a 404", async () => {
     const { store } = await createTestOrchestrator();
@@ -70,6 +67,9 @@ describe("brokerSessionUrl", () => {
 
   test("a sandbox still booting past the cap is a retryable 503", async () => {
     vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const opts = await resident(
       "slow",
       () => fakeSandbox({ sessionUrl: () => new Promise<string>(() => undefined) }),

@@ -6,11 +6,7 @@
 // lifecycle's other half, is greeting.test.ts's.
 
 import { describe, expect, test, vi } from "vitest";
-import {
-  createFailingSttProvider,
-  createFailingTtsProvider,
-  createFakeTtsProvider,
-} from "../../_pipeline-test-fakes.ts";
+import { createFailingProvider, createFakeTtsProvider } from "../../_pipeline-test-fakes.ts";
 import type { SttOpener, SttSession } from "../../providers/openers.ts";
 import { makeOpts, useVirtualTime } from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
@@ -49,8 +45,8 @@ describe("pipeline lifecycle", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       await t.stop();
-      expect(stt.last()?.closed.value).toBe(true);
-      expect(tts.last()?.closed.value).toBe(true);
+      expect(stt.last()?.close).toHaveBeenCalled();
+      expect(tts.last()?.close).toHaveBeenCalled();
     });
 
     test("stop() is idempotent", async () => {
@@ -59,7 +55,7 @@ describe("pipeline lifecycle", () => {
       await t.start();
       await t.stop();
       await t.stop();
-      expect(stt.last()?.closed.value).toBe(true);
+      expect(stt.last()?.close).toHaveBeenCalled();
     });
 
     test("stop() waits for an in-flight start() and tears down the mid-connect session", async () => {
@@ -73,13 +69,11 @@ describe("pipeline lifecycle", () => {
       const t = createPipelineTransport(opts);
 
       void t.start();
-      let stopResolved = false;
-      const stopP = t.stop().then(() => {
-        stopResolved = true;
-      });
+      const stopResolved = vi.fn();
+      const stopP = t.stop().then(stopResolved);
 
       await vi.advanceTimersByTimeAsync(0);
-      expect(stopResolved).toBe(false); // blocked on the in-flight open
+      expect(stopResolved).not.toHaveBeenCalled(); // blocked on the in-flight open
 
       const landed: SttSession = {
         sendAudio: vi.fn(),
@@ -89,7 +83,7 @@ describe("pipeline lifecycle", () => {
       open.resolve(landed);
       await stopP;
 
-      expect(stopResolved).toBe(true);
+      expect(stopResolved).toHaveBeenCalled();
       expect(closeStt).toHaveBeenCalled();
     });
   });
@@ -146,7 +140,7 @@ describe("pipeline lifecycle", () => {
 
     test("STT open failure fires onError('stt', ...) via reportOpenRejection", async () => {
       const { opts, callbacks } = makeOpts({
-        stt: createFailingSttProvider("stt_connect_failed", "connect failed"),
+        stt: createFailingProvider("stt_connect_failed", "connect failed"),
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -161,7 +155,7 @@ describe("pipeline lifecycle", () => {
 
     test("TTS open failure fires onError('tts', ...) via reportOpenRejection", async () => {
       const { opts, callbacks } = makeOpts({
-        tts: createFailingTtsProvider("tts_connect_failed", "tts connect failed"),
+        tts: createFailingProvider("tts_connect_failed", "tts connect failed"),
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -181,7 +175,7 @@ describe("pipeline lifecycle", () => {
       const tts = createFakeTtsProvider();
       const { opts, callbacks } = makeOpts(
         {
-          stt: createFailingSttProvider("stt_connect_failed", "connect timed out"),
+          stt: createFailingProvider("stt_connect_failed", "connect timed out"),
           tts,
           startFailurePhrase: "Sorry, I cannot hear you. Please call back.",
         },
@@ -213,7 +207,7 @@ describe("pipeline lifecycle", () => {
       // Nothing to speak with; the phrase must not wedge the teardown waiting
       // on a provider that never opened.
       const { opts, callbacks } = makeOpts({
-        tts: createFailingTtsProvider("tts_connect_failed", "tts connect failed"),
+        tts: createFailingProvider("tts_connect_failed", "tts connect failed"),
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -225,7 +219,7 @@ describe("pipeline lifecycle", () => {
       const tts = createFakeTtsProvider();
       const { opts, callbacks } = makeOpts(
         {
-          stt: createFailingSttProvider("stt_connect_failed", "connect timed out"),
+          stt: createFailingProvider("stt_connect_failed", "connect timed out"),
           tts,
           startFailurePhrase: "",
         },
@@ -247,7 +241,7 @@ describe("pipeline lifecycle", () => {
       const tts = createFakeTtsProvider();
       const { opts } = makeOpts(
         {
-          stt: createFailingSttProvider("stt_connect_failed", "bad key"),
+          stt: createFailingProvider("stt_connect_failed", "bad key"),
           tts,
         },
         { tts },
@@ -255,7 +249,7 @@ describe("pipeline lifecycle", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       // Promise.allSettled opens both concurrently; STT failure then closes TTS.
-      expect(tts.last()?.closed.value).toBe(true);
+      expect(tts.last()?.close).toHaveBeenCalled();
       await t.stop();
     });
   });

@@ -13,8 +13,8 @@ import { GUEST_SCRATCH_DIR } from "../guest/exec-env.ts";
 import type { RpcConnection } from "../rpc-transport.ts";
 import {
   createFakeGuestSocket,
-  type FakeGuestSocket,
   makeCtx,
+  makeFakeDial,
   makeFakeProc,
   makeFakeSandbox,
   makeHarnessFile,
@@ -22,18 +22,6 @@ import {
 import { GUEST_PORT, type ModalSpawnContext } from "./context.ts";
 import { _internals, spawnModalWarm } from "./sandbox.ts";
 import { DEFAULT_SANDBOX_IDLE_TIMEOUT_MS, DEFAULT_SANDBOX_TIMEOUT_MS } from "./sandbox-env.ts";
-
-// ── Fakes ────────────────────────────────────────────────────────────────────
-
-/** A dial fn resolving to a fake guest socket, recording its arguments. */
-function makeFakeDial(socket: FakeGuestSocket) {
-  const calls: { url: string; token: string }[] = [];
-  const dial = async (url: string, token: string) => {
-    calls.push({ url, token });
-    return socket.ws;
-  };
-  return { dial, calls };
-}
 
 beforeEach(() => {
   _internals.resetModalContext();
@@ -83,9 +71,7 @@ describe("warmFromModal", () => {
 
     expect(warm.alive()).toBe(true);
     fake.exit(1);
-    await vi.waitFor(() => {
-      if (warm.alive()) throw new Error("still alive");
-    });
+    await vi.waitUntil(() => !warm.alive());
     expect(exits).toEqual(["exit"]);
   });
 
@@ -174,7 +160,7 @@ describe("spawnModalWarm", () => {
     };
     const harnessPath = await makeHarnessFile("// the harness code");
     const socket = createFakeGuestSocket();
-    const { dial, calls } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
 
     const warm = await spawnModalWarm({ harnessPath, slug: "my-agent" }, ctx, dial);
 
@@ -201,9 +187,7 @@ describe("spawnModalWarm", () => {
     expect(env.AAI_GUEST_TOKEN).toMatch(/^[0-9a-f]{64}$/);
 
     // The dial went to the tunnel with that same token.
-    expect(calls).toEqual([
-      { url: "wss://tunnel.modal.test:12345/ws", token: env.AAI_GUEST_TOKEN },
-    ]);
+    expect(dial.mock.calls).toEqual([["wss://tunnel.modal.test:12345/ws", env.AAI_GUEST_TOKEN]]);
 
     expect(warm.alive()).toBe(true);
     await warm.cleanup();
@@ -223,7 +207,7 @@ describe("spawnModalWarm", () => {
     };
     const harnessPath = await makeHarnessFile();
     const socket = createFakeGuestSocket();
-    const { dial } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
 
     const warm = await spawnModalWarm(
       { harnessPath, slug: "pinned-agent", imageTag: "aai-guest-harness:abcd1234" },
@@ -241,7 +225,7 @@ describe("spawnModalWarm", () => {
       const fake = makeFakeProc();
       const sb = makeFakeSandbox(fake);
       const socket = createFakeGuestSocket();
-      const { dial } = makeFakeDial(socket);
+      const dial = makeFakeDial(socket);
       const warm = await spawnModalWarm({ harnessPath }, makeCtx(sb), dial);
       const env = sb.execCalls[0]?.params.env ?? {};
       tokens.push(env.AAI_GUEST_TOKEN as string);
@@ -262,7 +246,7 @@ describe("spawnModalWarm", () => {
       const sb = makeFakeSandbox(fake);
       const createParams: SandboxCreateParams[] = [];
       const socket = createFakeGuestSocket();
-      const { dial } = makeFakeDial(socket);
+      const dial = makeFakeDial(socket);
       const warm = await spawnModalWarm(
         { harnessPath, ...identity },
         {
@@ -302,7 +286,7 @@ describe("spawnModalWarm", () => {
       const sb = makeFakeSandbox(fake);
       const createParams: SandboxCreateParams[] = [];
       const socket = createFakeGuestSocket();
-      const { dial } = makeFakeDial(socket);
+      const dial = makeFakeDial(socket);
       const warm = await spawnModalWarm(
         { harnessPath },
         {
@@ -347,7 +331,7 @@ describe("spawnModalWarm", () => {
     };
     const harnessPath = await makeHarnessFile();
     const socket = createFakeGuestSocket();
-    const { dial } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
 
     const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
     expect(createParams[0]).toMatchObject({
@@ -380,7 +364,7 @@ describe("spawnModalWarm", () => {
     };
     const harnessPath = await makeHarnessFile();
     const socket = createFakeGuestSocket();
-    const { dial } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
 
     const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
     expect(createParams[0]).toMatchObject({
@@ -406,7 +390,7 @@ describe("spawnModalWarm", () => {
     };
     const harnessPath = await makeHarnessFile();
     const socket = createFakeGuestSocket();
-    const { dial } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
 
     const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
     for (const key of ["cpu", "cpuLimit", "memoryMiB", "memoryLimitMiB"]) {
@@ -430,7 +414,7 @@ describe("spawnModalWarm", () => {
     };
     const harnessPath = await makeHarnessFile();
     const socket = createFakeGuestSocket();
-    const { dial } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
 
     const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
     expect(createParams[0]).toMatchObject({ idleTimeoutMs: 600_000 });
@@ -455,7 +439,7 @@ describe("spawnModalWarm", () => {
     sb.tunnels = async () => ({});
     const harnessPath = await makeHarnessFile();
     const socket = createFakeGuestSocket();
-    const { dial } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
 
     await expect(spawnModalWarm({ harnessPath }, makeCtx(sb), dial)).rejects.toThrow(
       /no tunnel for guest port/,
@@ -470,7 +454,7 @@ describe("spawnModalWarm", () => {
       const sb = makeFakeSandbox(fake);
       const ctx = makeCtx(sb);
       const socket = createFakeGuestSocket();
-      const { dial } = makeFakeDial(socket);
+      const dial = makeFakeDial(socket);
       const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
       await warm.cleanup();
       return ctx.codes[0] ?? "";
@@ -496,7 +480,7 @@ describe("spawnModalWarm", () => {
     const fake = makeFakeProc();
     const sb = makeFakeSandbox(fake);
     const socket = createFakeGuestSocket();
-    const { dial } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
 
     const warm = await spawnModalWarm({ harnessPath: await makeHarnessFile() }, makeCtx(sb), dial);
 
@@ -508,7 +492,7 @@ describe("spawnModalWarm", () => {
     const fake = makeFakeProc();
     const sb = makeFakeSandbox(fake);
     const socket = createFakeGuestSocket();
-    const { dial } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
     await expect(
       spawnModalWarm({ harnessPath: "/nonexistent/harness.mjs" }, makeCtx(sb), dial),
     ).rejects.toThrow(/ENOENT/);

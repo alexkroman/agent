@@ -12,29 +12,14 @@
 
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryJournal } from "../journal/backends/memory.ts";
+import { replayOn, seedRun } from "../_replay-test-utils.ts";
 import type { JournalStore } from "../journal/types.ts";
 import { replayRun } from "../replay.ts";
 
 const RUN = "wrun_d";
+const RUN_IDENTITY = { runId: RUN, workflow: "billing" };
 
 type Body = (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown;
-
-async function seed(): Promise<JournalStore> {
-  const journal = createMemoryJournal();
-  await journal.createRun({
-    runId: RUN,
-    workflow: "billing",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  });
-  return journal;
-}
-
-function replay(journal: JournalStore, run: Body) {
-  return replayRun({ runId: RUN, workflow: "billing", input: {}, run, journal });
-}
 
 /** The message, whichever arm produced it. */
 function failure(outcome: Awaited<ReturnType<typeof replayRun>>): string {
@@ -52,7 +37,7 @@ describe("a body whose non-determinism reaches a step NAME", () => {
    * difference, which is the whole point of the bug.
    */
   test("is REFUSED on the second walk instead of executing a second time", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const charge = vi.fn(() => "receipt");
     let coin = "h";
     const body: Body = async (_input, ctx) => {
@@ -61,13 +46,13 @@ describe("a body whose non-determinism reaches a step NAME", () => {
       return "done";
     };
 
-    const first = await replay(journal, body);
+    const first = await replayOn(journal, body, RUN_IDENTITY);
     expect(first.kind).toBe("suspended");
     expect(charge).toHaveBeenCalledTimes(1);
 
     coin = "t";
     await journal.wakeSleeps(RUN, undefined);
-    const second = await replay(journal, body);
+    const second = await replayOn(journal, body, RUN_IDENTITY);
 
     expect(second.kind).toBe("failed");
     // The side effect is the assertion. Before the check, this was 2.
@@ -75,16 +60,16 @@ describe("a body whose non-determinism reaches a step NAME", () => {
   });
 
   test("names BOTH keys, so the reader can tell a rename from a computed name", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     let coin = "h";
     const body: Body = async (_input, ctx) => {
       await ctx.step(`charge-${coin}`, () => "receipt");
       await ctx.sleep("nap", 1000);
     };
-    await replay(journal, body);
+    await replayOn(journal, body, RUN_IDENTITY);
     coin = "t";
     await journal.wakeSleeps(RUN, undefined);
-    const message = failure(await replay(journal, body));
+    const message = failure(await replayOn(journal, body, RUN_IDENTITY));
 
     expect(message).toContain("charge-t#0");
     expect(message).toContain("charge-h#0");
@@ -99,7 +84,7 @@ describe("a body whose non-determinism reaches a step NAME", () => {
    * `meeting-recap-agent`'s saga is the shipped shape.
    */
   test("still fails the run when the body SWALLOWS the refusal", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     let coin = "h";
     const body: Body = async (_input, ctx) => {
       try {
@@ -110,11 +95,11 @@ describe("a body whose non-determinism reaches a step NAME", () => {
       await ctx.sleep("nap", 1000);
       return "done";
     };
-    await replay(journal, body);
+    await replayOn(journal, body, RUN_IDENTITY);
     coin = "t";
     await journal.wakeSleeps(RUN, undefined);
 
-    const outcome = await replay(journal, body);
+    const outcome = await replayOn(journal, body, RUN_IDENTITY);
     expect(outcome.kind).toBe("failed");
     expect(failure(outcome)).toContain("Workflow replay diverged");
   });
@@ -133,7 +118,7 @@ describe("a body whose non-determinism reaches a step NAME", () => {
 describe("what the run record says about the CODE", () => {
   /** The same divergence every time; only the two versions differ. */
   async function divergeUnder(startedUnder: string | undefined): Promise<string> {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     let coin = "h";
     const body: Body = async (_input, ctx) => {
       await ctx.step(`charge-${coin}`, () => "receipt");
@@ -192,18 +177,22 @@ describe("what the run record says about the CODE", () => {
 
 describe("what the check must NOT accuse", () => {
   test("a FIRST walk, whose journal is empty, however many steps it mints", async () => {
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
-      // `as const` keeps these LITERALS, which is what `ctx.step` now
-      // constrains its name to — a bare `string[]` element is refused.
-      for (const name of ["a", "b", "c"] as const) await ctx.step(name, () => name);
-      return "ok";
-    });
+    const journal = await seedRun(RUN_IDENTITY);
+    const outcome = await replayOn(
+      journal,
+      async (_input, ctx) => {
+        // `as const` keeps these LITERALS, which is what `ctx.step` now
+        // constrains its name to — a bare `string[]` element is refused.
+        for (const name of ["a", "b", "c"] as const) await ctx.step(name, () => name);
+        return "ok";
+      },
+      RUN_IDENTITY,
+    );
     expect(outcome).toEqual({ kind: "completed", output: "ok" });
   });
 
   test("new work appended past the end of a fully-read journal", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     let tail = false;
     const body: Body = async (_input, ctx) => {
       await ctx.step("head", () => 1);
@@ -213,10 +202,10 @@ describe("what the check must NOT accuse", () => {
       }
       return await ctx.step("tail", () => 2);
     };
-    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect((await replayOn(journal, body, RUN_IDENTITY)).kind).toBe("suspended");
     tail = true;
     await journal.wakeSleeps(RUN, undefined);
-    expect(await replay(journal, body)).toEqual({ kind: "completed", output: 2 });
+    expect(await replayOn(journal, body, RUN_IDENTITY)).toEqual({ kind: "completed", output: 2 });
   });
 
   /**
@@ -225,7 +214,7 @@ describe("what the check must NOT accuse", () => {
    * claim is what exonerates it, and this is the case that pays for reading it.
    */
   test("a fan-out gap, where the missing key was REACHED and lost", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     // `segment#0` was reached and never settled; `segment#1` landed.
     await journal.claimAttempt(RUN, "segment#0", "earlier-walk", 60 * 60 * 1000);
     await journal.appendStep(RUN, {
@@ -239,8 +228,10 @@ describe("what the check must NOT accuse", () => {
     });
 
     const ran = vi.fn((n: number) => `re-${n}`);
-    const outcome = await replay(journal, async (_input, ctx) =>
-      Promise.all([0, 1].map((n) => ctx.step("segment", () => ran(n)))),
+    const outcome = await replayOn(
+      journal,
+      async (_input, ctx) => Promise.all([0, 1].map((n) => ctx.step("segment", () => ran(n)))),
+      RUN_IDENTITY,
     );
 
     expect(outcome).toEqual({ kind: "completed", output: ["re-0", "one"] });
@@ -264,7 +255,7 @@ describe("what the check must NOT accuse", () => {
    * exists to refuse.
    */
   test("judges the SECOND fresh key of a fan-out on the same displaced entry", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     // `segment#0` was reached and lost, so its claim exonerates it — this walk
     // may legitimately re-run it, and it is NOT what gets refused.
     await journal.claimAttempt(RUN, "segment#0", "earlier-walk", 60 * 60 * 1000);
@@ -281,8 +272,10 @@ describe("what the check must NOT accuse", () => {
     });
 
     const ran = vi.fn((n: number) => `re-${n}`);
-    const outcome = await replay(journal, async (_input, ctx) =>
-      Promise.all([0, 1].map((n) => ctx.step("segment", () => ran(n)))),
+    const outcome = await replayOn(
+      journal,
+      async (_input, ctx) => Promise.all([0, 1].map((n) => ctx.step("segment", () => ran(n)))),
+      RUN_IDENTITY,
     );
 
     // `segment#1` is the fresh key — never claimed by any walk — so it is the
@@ -305,7 +298,7 @@ describe("what the check must NOT accuse", () => {
    * excuses it: a child settles at or before its parent.
    */
   test("an orphaned INNER key, which a replay legitimately never re-reads", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const inner = vi.fn(() => "in");
     const tail = vi.fn(() => "tail");
     let reachedTail = false;
@@ -316,11 +309,11 @@ describe("what the check must NOT accuse", () => {
       return await ctx.step("tail", tail);
     };
 
-    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect((await replayOn(journal, body, RUN_IDENTITY)).kind).toBe("suspended");
     expect(inner).toHaveBeenCalledTimes(1);
 
     await journal.wakeSleeps(RUN, undefined);
-    const outcome = await replay(journal, body);
+    const outcome = await replayOn(journal, body, RUN_IDENTITY);
 
     expect(reachedTail).toBe(true);
     expect(outcome).toEqual({ kind: "completed", output: "tail" });
@@ -357,7 +350,7 @@ describe("a wait whose journaled record belongs to a DIFFERENT wait", () => {
   }
 
   test("fails the run rather than handing the body the other wait's payload", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const paid = vi.fn();
     const body: Body = async (_input, ctx) => {
       const answer = await ctx.waitFor<{ ok: boolean }>("final");
@@ -365,7 +358,7 @@ describe("a wait whose journaled record belongs to a DIFFERENT wait", () => {
       return answer;
     };
 
-    const outcome = await replay(withHookToken(journal, "late"), body);
+    const outcome = await replayOn(withHookToken(journal, "late"), body, RUN_IDENTITY);
 
     expect(outcome.kind).toBe("failed");
     // The body never ran past the wait, so nothing acted on the wrong payload.
@@ -377,10 +370,10 @@ describe("a wait whose journaled record belongs to a DIFFERENT wait", () => {
    * names in their own source, where the key alone (`hook!…`) says nothing.
    */
   test("names the token it reached AND the token that holds the record", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const body: Body = async (_input, ctx) => ctx.waitFor("final");
 
-    const message = failure(await replay(withHookToken(journal, "late"), body));
+    const message = failure(await replayOn(withHookToken(journal, "late"), body, RUN_IDENTITY));
 
     expect(message).toContain('ctx.waitFor("final")');
     expect(message).toContain('ctx.waitFor("late")');
@@ -393,7 +386,7 @@ describe("a wait whose journaled record belongs to a DIFFERENT wait", () => {
    * refusal on `replayRun`'s `refused` channel has.
    */
   test("still fails the run when the body SWALLOWS the refusal", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const body: Body = async (_input, ctx) => {
       try {
         await ctx.waitFor("final");
@@ -403,14 +396,16 @@ describe("a wait whose journaled record belongs to a DIFFERENT wait", () => {
       return "answered";
     };
 
-    expect((await replay(withHookToken(journal, "late"), body)).kind).toBe("failed");
+    expect((await replayOn(withHookToken(journal, "late"), body, RUN_IDENTITY)).kind).toBe(
+      "failed",
+    );
   });
 
   test("passes a wait whose record is its own, which is every correctly-keyed wait", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const body: Body = async (_input, ctx) => ctx.waitFor("final");
 
     // No wrapper: the real journal answers the token the key names.
-    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect((await replayOn(journal, body, RUN_IDENTITY)).kind).toBe("suspended");
   });
 });

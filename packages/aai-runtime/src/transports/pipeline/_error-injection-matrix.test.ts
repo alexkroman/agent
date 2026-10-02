@@ -73,6 +73,6 @@ describe("every session error code is classified", () => {
   test("the table covers a corpus", () => {
     expect(SESSION_ERROR_SITES.length).toBeGreaterThan(10);
     expect(drivenHere().length).toBeGreaterThan(5);
-    expect(SessionErrorCodeSchema.options.length).toBe(8);
+    expect(SessionErrorCodeSchema.options).toHaveLength(8);
   });
 });

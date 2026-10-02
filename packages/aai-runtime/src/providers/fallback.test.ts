@@ -7,8 +7,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import {
-  createFailingSttProvider,
-  createFailingTtsProvider,
+  createFailingProvider,
   createFakeSttProvider,
   createFakeTtsProvider,
 } from "../_pipeline-test-fakes.ts";
@@ -29,7 +28,7 @@ describe("fallback STT", () => {
     const opener = createFallbackSttOpener(
       [
         {
-          opener: createFailingSttProvider("stt_auth_failed", "401 bad key"),
+          opener: createFailingProvider("stt_auth_failed", "401 bad key"),
           envVar: "A",
           kind: "a",
         },
@@ -54,7 +53,7 @@ describe("fallback STT", () => {
     const secondary = createFakeSttProvider();
     const opener = createFallbackSttOpener(
       [
-        { opener: createFailingSttProvider("stt_connect_failed", "down"), envVar: "A", kind: "a" },
+        { opener: createFailingProvider("stt_connect_failed", "down"), envVar: "A", kind: "a" },
         { opener: secondary, envVar: "B", kind: "b" },
       ],
       undefined,
@@ -84,7 +83,7 @@ describe("fallback STT", () => {
     await vi.waitFor(() => expect(secondary.sessions).toHaveLength(1));
 
     expect(errors).toEqual([]);
-    expect(primary.last()?.closed.value).toBe(true);
+    expect(primary.last()?.close).toHaveBeenCalled();
     expect(failovers.map((f) => [f.from, f.to])).toEqual([["a", "b"]]);
     session.sendAudio(new Int16Array(4));
     expect(secondary.last()?.audioFrames).toHaveLength(1);
@@ -117,8 +116,8 @@ describe("fallback STT", () => {
   test("when every member fails to open, the LAST error is the stage's", async () => {
     const opener = createFallbackSttOpener(
       [
-        { opener: createFailingSttProvider("stt_connect_failed", "first"), envVar: "A", kind: "a" },
-        { opener: createFailingSttProvider("stt_auth_failed", "second"), envVar: "B", kind: "b" },
+        { opener: createFailingProvider("stt_connect_failed", "first"), envVar: "A", kind: "a" },
+        { opener: createFailingProvider("stt_auth_failed", "second"), envVar: "B", kind: "b" },
       ],
       {},
     );
@@ -243,9 +242,9 @@ describe("fallback TTS", () => {
   test("open() failure walks the list; the last member's error rejects", async () => {
     const opener = createFallbackTtsOpener(
       [
-        { opener: createFailingTtsProvider("tts_connect_failed", "one"), envVar: "A", kind: "a" },
-        { opener: createFailingTtsProvider("tts_connect_failed", "two"), envVar: "B", kind: "b" },
-        { opener: createFailingTtsProvider("tts_connect_failed", "three"), envVar: "C", kind: "c" },
+        { opener: createFailingProvider("tts_connect_failed", "one"), envVar: "A", kind: "a" },
+        { opener: createFailingProvider("tts_connect_failed", "two"), envVar: "B", kind: "b" },
+        { opener: createFailingProvider("tts_connect_failed", "three"), envVar: "C", kind: "c" },
       ],
       {},
     );

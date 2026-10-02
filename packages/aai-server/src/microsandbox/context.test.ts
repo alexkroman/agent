@@ -86,15 +86,11 @@ describe("createReclaimingName", () => {
    * how the first draft of this fix stayed broken).
    */
   function builderFailingOnce(err: unknown) {
-    let calls = 0;
-    const build = () => ({
-      create: async () => {
-        calls += 1;
-        if (calls === 1) throw err;
-        return "sandbox" as const;
-      },
-    });
-    return Object.assign(build, { calls: () => calls });
+    const create = vi
+      .fn<() => Promise<"sandbox">>()
+      .mockRejectedValueOnce(err)
+      .mockResolvedValue("sandbox");
+    return Object.assign(() => ({ create }), { create });
   }
 
   it("removes a CRASHED holder and retries the create", async () => {
@@ -107,7 +103,7 @@ describe("createReclaimingName", () => {
       }),
     ).resolves.toBe("sandbox");
     expect(removed).toEqual(["agent-x-v2"]);
-    expect(builder.calls()).toBe(2);
+    expect(builder.create).toHaveBeenCalledTimes(2);
   });
 
   it("removes a STOPPED holder too", async () => {
@@ -137,7 +133,7 @@ describe("createReclaimingName", () => {
         }),
       ).rejects.toThrow(SandboxNameTakenError);
       expect(removed).toEqual([]);
-      expect(builder.calls()).toBe(1);
+      expect(builder.create).toHaveBeenCalledOnce();
     },
   );
 
@@ -155,7 +151,7 @@ describe("createReclaimingName", () => {
       }),
     ).resolves.toBe("sandbox");
     expect(removed).toEqual([]);
-    expect(builder.calls()).toBe(2);
+    expect(builder.create).toHaveBeenCalledTimes(2);
   });
 
   it("rethrows any OTHER create failure untouched, reading no status", async () => {

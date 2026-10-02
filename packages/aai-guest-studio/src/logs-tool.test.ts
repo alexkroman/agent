@@ -35,11 +35,7 @@ async function readLogs(
   const pending = runTool(tools, "read_logs", args);
   // Validation and coercion run before the RPC leaves, so wait for the frame
   // rather than for a fixed number of microtasks.
-  await vi.waitFor(() => {
-    // A throw rather than an `expect`: this helper is not itself a test, and
-    // biome's noMisplacedAssertion is right that an assertion here would be.
-    if (host.sent.length === 0) throw new Error("no RPC frame yet");
-  });
+  await vi.waitUntil(() => host.sent.length > 0);
   const request = host.lastRequest();
   host.answerLast(answer, error);
   return { output: String(await pending), request };
