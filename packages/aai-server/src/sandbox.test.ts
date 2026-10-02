@@ -1,47 +1,39 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { sleep } from "@alexkroman1/aai/internal";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { createTestStore } from "./_orchestrator-test-utils.ts";
+import { spawnedAgent } from "./_sandbox-test-utils.ts";
 import { SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
 import { inlineWorker } from "./sandbox/_vm-test-utils.ts";
 import { resolveSandbox } from "./sandbox/resolve.ts";
 import { createSlotCache } from "./sandbox/slots.ts";
-import { createSandbox, type SandboxOptions } from "./sandbox.ts";
+import { createSandbox, type SandboxOptions, type SpawnAgentServer } from "./sandbox.ts";
+import type { AgentServerHandle } from "./warm-harness.ts";
 
-// ── Mock sandbox-vm ──────────────────────────────────────────────────────────
-// vi.mock factory is hoisted, so we cannot reference top-level variables.
-// Instead, use vi.hoisted to create the mock objects.
+// ── Fake guest spawn ─────────────────────────────────────────────────────────
+// Handed to `createSandbox` through `SandboxOptions.spawnAgentServer`.
 
-const { mockDrain, mockShutdown, mockOnExit, mockSpawnAgentServer } = vi.hoisted(() => {
-  const mockDrain = vi.fn().mockResolvedValue(undefined);
-  const mockShutdown = vi.fn().mockResolvedValue(undefined);
-  const mockOnExit = vi.fn();
-  const mockSpawnAgentServer = vi.fn().mockResolvedValue({
-    sessionUrl: "wss://tunnel.test:443/websocket",
-    drain: mockDrain,
-    shutdown: mockShutdown,
-    onExit: mockOnExit,
-    alive: () => true,
-  });
-  return { mockDrain, mockShutdown, mockOnExit, mockSpawnAgentServer };
+const mockDrain = vi.fn<AgentServerHandle["drain"]>().mockResolvedValue(undefined);
+const mockShutdown = vi.fn<AgentServerHandle["shutdown"]>().mockResolvedValue(undefined);
+const mockOnExit = vi.fn<AgentServerHandle["onExit"]>();
+const mockSpawnAgentServer = vi.fn<SpawnAgentServer>();
+
+beforeEach(() => {
+  mockSpawnAgentServer
+    .mockReset()
+    .mockResolvedValue(
+      spawnedAgent({ drain: mockDrain, shutdown: mockShutdown, onExit: mockOnExit }),
+    );
 });
 
 /** Fire the exit callback `createSandbox` registered on the guest handle. */
 function fireGuestExit(): void {
-  const cb = mockOnExit.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+  const cb = mockOnExit.mock.calls.at(-1)?.[0];
   if (!cb) throw new Error("createSandbox never registered an exit listener");
   cb();
 }
-
-vi.mock("./sandbox/vm.ts", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("./sandbox/vm.ts")>();
-  return {
-    ...orig,
-    spawnAgentServer: mockSpawnAgentServer,
-  };
-});
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,6 +43,7 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
     env: { AAI_ENV_TEST: "1" },
     slug: "test-agent",
     version: 1,
+    spawnAgentServer: mockSpawnAgentServer,
     ...overrides,
   };
 }
@@ -187,18 +180,12 @@ describe("createSandbox", () => {
     // redeploy from cutting the calls a retirement is draining.
     it("shutdown asks a ready guest rather than terminating its sandbox", async () => {
       const terminate = vi.fn().mockResolvedValue(undefined);
-      mockSpawnAgentServer.mockImplementationOnce(
-        (opts: { onSpawned?: ((t: () => Promise<void>) => void) | undefined }) => {
-          opts.onSpawned?.(terminate);
-          return Promise.resolve({
-            sessionUrl: "wss://tunnel.test:443/websocket",
-            drain: mockDrain,
-            shutdown: mockShutdown,
-            onExit: mockOnExit,
-            alive: () => true,
-          });
-        },
-      );
+      mockSpawnAgentServer.mockImplementationOnce((opts) => {
+        opts.onSpawned?.(terminate);
+        return Promise.resolve(
+          spawnedAgent({ drain: mockDrain, shutdown: mockShutdown, onExit: mockOnExit }),
+        );
+      });
       const sandbox = createSandbox(makeSandboxOptions());
 
       await sandbox.shutdown();
@@ -297,10 +284,7 @@ describe("createSandbox", () => {
   // ── Lazy VM initialization tests ──────────────────────────────────────────
 
   it("returns sandbox immediately before VM is ready", () => {
-    const d = Promise.withResolvers<{
-      sessionUrl: string;
-      shutdown: () => Promise<void>;
-    }>();
+    const d = Promise.withResolvers<AgentServerHandle>();
     mockSpawnAgentServer.mockReturnValueOnce(d.promise);
 
     // createSandbox returns synchronously even though VM is still pending
@@ -310,15 +294,12 @@ describe("createSandbox", () => {
     expect(typeof sandbox.shutdown).toBe("function");
 
     // Resolve the VM to clean up
-    d.resolve({ sessionUrl: "wss://t/websocket", shutdown: mockShutdown });
+    d.resolve(spawnedAgent({ sessionUrl: "wss://t/websocket", shutdown: mockShutdown }));
     void sandbox.shutdown();
   });
 
   it("shutdown waits for VM before cleaning up", async () => {
-    const d = Promise.withResolvers<{
-      sessionUrl: string;
-      shutdown: () => Promise<void>;
-    }>();
+    const d = Promise.withResolvers<AgentServerHandle>();
     mockSpawnAgentServer.mockReturnValueOnce(d.promise);
 
     const sandbox = createSandbox(makeSandboxOptions());
@@ -330,7 +311,7 @@ describe("createSandbox", () => {
     expect(mockShutdown).not.toHaveBeenCalled();
 
     // Now resolve the VM
-    d.resolve({ sessionUrl: "wss://t/websocket", shutdown: mockShutdown });
+    d.resolve(spawnedAgent({ sessionUrl: "wss://t/websocket", shutdown: mockShutdown }));
 
     await shutdownDone;
 
@@ -444,6 +425,7 @@ describe("createSandbox", () => {
       return {
         slots: createSlotCache(),
         store,
+        spawnAgentServer: mockSpawnAgentServer,
       };
     }
 

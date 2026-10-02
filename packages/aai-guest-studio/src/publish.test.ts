@@ -8,17 +8,20 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { useTempDirs } from "aai-guest-core/test-utils";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { deployWorkspaceDir, resolveCliEntry } from "./publish.ts";
-import { ensureWorkspaceDependencies } from "./workspace-deps.ts";
 
-// Mocked for both directions: it keeps a publish here from ever spawning a
-// real `npm install`, and it is the only way to drive the warning path without
-// one. Its own behaviour is covered in studio/workspace-deps.test.ts.
-vi.mock("./workspace-deps.ts", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("./workspace-deps.ts")>();
-  return { ...mod, ensureWorkspaceDependencies: vi.fn(() => Promise.resolve(null)) };
-});
+/**
+ * `deployWorkspaceDir` with the dependency install handed in, for both
+ * directions: it keeps a publish here from ever spawning a real `npm install`,
+ * and it is the only way to drive the warning path without one. Its own
+ * behaviour is covered in studio/workspace-deps.test.ts.
+ */
+const deploy = (...[dir, opts]: Parameters<typeof deployWorkspaceDir>) =>
+  deployWorkspaceDir(dir, { ensureDependencies: () => Promise.resolve(null), ...opts });
+
+/** An install that could not satisfy the manifest. */
+const installFails = () => Promise.resolve("Could not install ms");
 
 const makeDir = useTempDirs("aai-publish-");
 
@@ -93,7 +96,7 @@ describe("deployWorkspaceDir", () => {
         data: { slug: "demo", url: "https://x.test/demo", warnings: ["ASSEMBLYAI_API_KEY unset"] },
       })}\n`,
     });
-    const result = await deployWorkspaceDir(dir, {
+    const result = await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       slug: "demo",
@@ -109,7 +112,7 @@ describe("deployWorkspaceDir", () => {
     const cliEntry = await makeFakeCli({
       stdout: `${JSON.stringify({ ok: true, data: { slug: "demo", url: "u" } })}\n`,
     });
-    await deployWorkspaceDir(dir, {
+    await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       slug: "demo",
@@ -146,7 +149,7 @@ describe("deployWorkspaceDir", () => {
       }),
       "utf-8",
     );
-    await deployWorkspaceDir(dir, {
+    await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       slug: "demo",
@@ -166,7 +169,7 @@ describe("deployWorkspaceDir", () => {
     const cliEntry = await makeFakeCli({
       stdout: `${JSON.stringify({ ok: true, data: { slug: "generated", url: "u" } })}\n`,
     });
-    const result = await deployWorkspaceDir(dir, {
+    const result = await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       cliEntry,
@@ -178,7 +181,7 @@ describe("deployWorkspaceDir", () => {
   test("a production Publish does not opt into the reserved -preview suffix", async () => {
     const dir = await makeDir();
     const { cliEntry, readArgv } = await makeArgvRecordingCli();
-    await deployWorkspaceDir(dir, {
+    await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       // A project literally named `*-preview` still deploys as a PRODUCTION
@@ -193,7 +196,7 @@ describe("deployWorkspaceDir", () => {
   test("an auto-preview deploy opts into the -preview suffix explicitly", async () => {
     const dir = await makeDir();
     const { cliEntry, readArgv } = await makeArgvRecordingCli();
-    await deployWorkspaceDir(dir, {
+    await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       slug: "demo-preview",
@@ -206,7 +209,7 @@ describe("deployWorkspaceDir", () => {
   test("skipTypecheck rides through as --skipTypecheck, and is absent by default", async () => {
     const dir = await makeDir();
     const off = await makeArgvRecordingCli();
-    await deployWorkspaceDir(dir, {
+    await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       cliEntry: off.cliEntry,
@@ -216,7 +219,7 @@ describe("deployWorkspaceDir", () => {
     expect(await off.readArgv()).not.toContain("--skipTypecheck");
 
     const on = await makeArgvRecordingCli();
-    await deployWorkspaceDir(dir, {
+    await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       skipTypecheck: true,
@@ -238,7 +241,7 @@ describe("deployWorkspaceDir", () => {
         hint: "Fix the type errors, or pass --skipTypecheck to build anyway",
       })}\n`,
     });
-    const result = await deployWorkspaceDir(dir, {
+    const result = await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       cliEntry,
@@ -254,7 +257,7 @@ describe("deployWorkspaceDir", () => {
       exitCode: 1,
       stdout: `${JSON.stringify({ ok: false, error: "slug is reserved", code: "bad_slug" })}\n`,
     });
-    const result = await deployWorkspaceDir(dir, {
+    const result = await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       cliEntry,
@@ -269,7 +272,7 @@ describe("deployWorkspaceDir", () => {
       stdout: "some progress\n",
       stderr: "boom: out of nowhere\n",
     });
-    const result = await deployWorkspaceDir(dir, {
+    const result = await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       cliEntry,
@@ -296,7 +299,7 @@ describe("deployWorkspaceDir", () => {
       (await readFile(cliEntry, "utf-8")).replaceAll("<DIR>", dir.replaceAll("\\", "\\\\")),
       "utf-8",
     );
-    const result = await deployWorkspaceDir(dir, {
+    const result = await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       cliEntry,
@@ -311,16 +314,16 @@ describe("deployWorkspaceDir", () => {
     // where a custom package.json's dependencies get reified. When one cannot
     // be, the CLI's "failed to resolve import" is the symptom and this is the
     // cause — the coding agent needs the cause first.
-    vi.mocked(ensureWorkspaceDependencies).mockResolvedValueOnce("Could not install ms");
     const dir = await makeDir();
     const cliEntry = await makeFakeCli({
       exitCode: 1,
       stdout: `${JSON.stringify({ ok: false, error: "Build failed", code: "build_failed" })}\n`,
     });
-    const result = await deployWorkspaceDir(dir, {
+    const result = await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       cliEntry,
+      ensureDependencies: installFails,
     });
     expect(result).toEqual({ ok: false, output: "Could not install ms\n\nBuild failed" });
   });
@@ -328,15 +331,15 @@ describe("deployWorkspaceDir", () => {
   test("a successful publish is not annotated with the install warning", async () => {
     // A manifest may name a package nothing imports. Reporting that on a green
     // publish would train the reader to skip the line that matters on a red one.
-    vi.mocked(ensureWorkspaceDependencies).mockResolvedValueOnce("Could not install ms");
     const dir = await makeDir();
     const cliEntry = await makeFakeCli({
       stdout: `${JSON.stringify({ ok: true, data: { slug: "demo", url: "u" } })}\n`,
     });
-    const result = await deployWorkspaceDir(dir, {
+    const result = await deploy(dir, {
       serverUrl: "https://x.test",
       apiKey: "k",
       cliEntry,
+      ensureDependencies: installFails,
     });
     expect(result.ok).toBe(true);
     expect(result.output).not.toContain("Could not install ms");

@@ -7,18 +7,15 @@
  * surface above it (the WAV framing, the credential, the deadline).
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { flush } from "./_timing-test-utils.ts";
-import { FakeWebSocket, pcmBase64 } from "./providers/tts/_fake-ws-test-utils.ts";
-import { speakOverWebSocket } from "./step-speak.ts";
+import {
+  createFakeWebSocket,
+  FakeWebSocket,
+  pcmBase64,
+} from "./providers/tts/_fake-ws-test-utils.ts";
+import { speakOver, type speakOverWebSocket } from "./step-speak.ts";
 import { withRunContext } from "./workflow/run-context.ts";
-
-// Async factory importing an import-free module: the module under test imports
-// "ws" itself, so the factory must not reach it.
-vi.mock("ws", async () => {
-  const { FakeWebSocket } = await import("./providers/tts/_fake-ws-test-utils.ts");
-  return { default: FakeWebSocket, WebSocket: FakeWebSocket };
-});
 
 beforeEach(() => {
   FakeWebSocket.reset();
@@ -28,14 +25,17 @@ beforeEach(() => {
 async function speak(
   overrides: Partial<Parameters<typeof speakOverWebSocket>[0]> = {},
 ): Promise<{ audio: Promise<Uint8Array>; ws: FakeWebSocket }> {
-  const audio = speakOverWebSocket({
-    text: "Three findings.",
-    apiKey: "aai-key",
-    voice: "jane",
-    sampleRate: 24_000,
-    signal: new AbortController().signal,
-    ...overrides,
-  });
+  const audio = speakOver(
+    {
+      text: "Three findings.",
+      apiKey: "aai-key",
+      voice: "jane",
+      sampleRate: 24_000,
+      signal: new AbortController().signal,
+      ...overrides,
+    },
+    createFakeWebSocket,
+  );
   // The socket exists synchronously; "open" lands a microtask later.
   await flush();
   const ws = FakeWebSocket.instances[0];
@@ -149,13 +149,16 @@ describe("speakOverWebSocket", () => {
   test("an already-aborted signal never dials anything", async () => {
     const reason = new Error("too late");
     await expect(
-      speakOverWebSocket({
-        text: "hello",
-        apiKey: "k",
-        voice: "jane",
-        sampleRate: 24_000,
-        signal: AbortSignal.abort(reason),
-      }),
+      speakOver(
+        {
+          text: "hello",
+          apiKey: "k",
+          voice: "jane",
+          sampleRate: 24_000,
+          signal: AbortSignal.abort(reason),
+        },
+        createFakeWebSocket,
+      ),
     ).rejects.toBe(reason);
     expect(FakeWebSocket.instances).toHaveLength(0);
   });
@@ -199,14 +202,17 @@ describe("speakOverWebSocket", () => {
 
   test("refuses an unsupported language code before opening a socket", async () => {
     await expect(
-      speakOverWebSocket({
-        text: "hello",
-        apiKey: "k",
-        voice: "jane",
-        language: "kl",
-        sampleRate: 24_000,
-        signal: new AbortController().signal,
-      }),
+      speakOver(
+        {
+          text: "hello",
+          apiKey: "k",
+          voice: "jane",
+          language: "kl",
+          sampleRate: 24_000,
+          signal: new AbortController().signal,
+        },
+        createFakeWebSocket,
+      ),
     ).rejects.toThrow('stepSpeak: unsupported language "kl"');
     expect(FakeWebSocket.instances).toHaveLength(0);
   });

@@ -33,11 +33,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
-import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
-import { bundleTargetEntry, targetPathExists } from "./_target-bundle.ts";
-
-/** Files copied verbatim, each read at RUNTIME by a path no bundler can see. */
-const RUNTIME_FILES: readonly string[] = [WORKER_ARTIFACT_REL, ".env.example"];
+import { CLIENT_ARTIFACT_REL } from "./_artifacts.ts";
+import { bundleTargetEntry, copyRuntimeFiles, targetPathExists } from "./_target-bundle.ts";
 
 /** What a self-contained target declares about its own directory. */
 export interface SelfContainedTarget {
@@ -86,13 +83,7 @@ export async function emitSelfContainedOutput(
     options.bundle ?? ((dir: string) => bundleTargetEntry(dir, target.entrySource, target.name));
   await fs.writeFile(path.join(outputDir, target.entryFile), await bundle(cwd), "utf-8");
 
-  for (const rel of RUNTIME_FILES) {
-    const from = path.join(cwd, rel);
-    if (!(await targetPathExists(from))) continue;
-    const to = path.join(outputDir, rel);
-    await fs.mkdir(path.dirname(to), { recursive: true });
-    await fs.copyFile(from, to);
-  }
+  await copyRuntimeFiles(cwd, outputDir);
 
   // This project's own built UI when it has one, otherwise the prebuilt default
   // — the same choice `resolveClientDir` makes at boot, made once here so the

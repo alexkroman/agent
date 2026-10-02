@@ -52,7 +52,7 @@ describe("the guest image stamp", () => {
   test("is checked at boot, after the missing-image branch rather than instead", () => {
     // The two are different failures with different remedies, and the missing
     // one must still be reported by name.
-    expect(boot).toContain("warnOnStaleGuestImage()");
+    expect(boot).toContain("warnOnStaleGuestImage(deps)");
     expect(boot).toContain("no local guest image for the microsandbox backend");
   });
 

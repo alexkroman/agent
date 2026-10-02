@@ -30,6 +30,12 @@
  *   (`workflow/_defective-journal.ts`), where the named law fires — this is the
  *   proof the regression can fail.
  *
+ * The two arms live in each scenario's co-located spec
+ * (`interleavings/<name>.test.ts`, over the shared replay in
+ * `_interleaving-test-utils.ts`); this file keeps the corpus itself. A scenario
+ * file with no spec of its own fails `check:module-tests`, so a new one cannot
+ * be enumerated here and replayed nowhere.
+ *
  * Together they also close a gap the property could not: until this file, none
  * of the five laws had ever been demonstrated to fire on anything a suite kept,
  * so a law that had quietly become unfalsifiable would have looked exactly like
@@ -67,19 +73,13 @@
  * covered.
  */
 
-import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import { runConcurrentScenario } from "./_concurrent-harness.ts";
-import { defectiveJournal, type JournalDefect } from "./_defective-journal.ts";
-import { checkLaws } from "./_laws-harness.ts";
-import { label, runScenario } from "./_resume-harness.ts";
+import type { JournalDefect } from "./_defective-journal.ts";
 import { collidingStart } from "./interleavings/colliding-start.ts";
 import { doubleTerminalMove } from "./interleavings/double-terminal-move.ts";
 import { hookCloseRace } from "./interleavings/hook-close-race.ts";
 import type { Interleaving } from "./interleavings/interleaving.ts";
 import { overlappingStepAppend } from "./interleavings/overlapping-step-append.ts";
-import { checkJournalInvariants } from "./journal/_invariants.ts";
-import { createMemoryJournal } from "./journal/backends/memory.ts";
 
 /**
  * Every kept interleaving.
@@ -103,32 +103,6 @@ const DEFECTS: readonly JournalDefect[] = [
   "silentDuplicateCreate",
 ];
 
-/**
- * Replay one frozen interleaving, and report every claim it breaks.
- *
- * The two checkers are pooled deliberately: the five laws and the derived
- * journal invariants overlap but neither contains the other — law 2 compares a
- * step's `{status, output}` where `checkStepEntries` compares the whole stored
- * entry, and law 1's key conservation is a claim against an ORACLE that no
- * log-derived check can make. A scenario passes only when both are silent.
- *
- * `fc.schedulerFor` rather than `fc.scheduler`: the ordering is the frozen half.
- */
-async function replay(kept: Interleaving, defect?: JournalDefect): Promise<string[]> {
-  const program = label(kept.program);
-  const oracle = await runScenario(program, { stepConcurrency: kept.stepConcurrency });
-  const inner = createMemoryJournal();
-  const run = await runConcurrentScenario(program, {
-    scheduler: fc.schedulerFor([...kept.ordering]),
-    deliveries: kept.deliveries,
-    stepConcurrency: kept.stepConcurrency,
-    arm: kept.arm,
-    cancelRound: kept.cancelRound,
-    journal: defect ? defectiveJournal(inner, defect) : inner,
-  });
-  return [...checkLaws(program, run, oracle), ...checkJournalInvariants(run.writes)];
-}
-
 describe("the corpus", () => {
   test("is enumerated, named uniquely, and covers every defect", () => {
     // A floor rather than an exact count: the point is that the corpus has not
@@ -141,21 +115,5 @@ describe("the corpus", () => {
         `no frozen interleaving catches ${defect}`,
       ).toBe(true);
     }
-  });
-});
-
-describe.each(KEPT.map((kept) => [kept.name, kept] as const))("%s", (_name, kept: Interleaving) => {
-  test("holds against the real journal", async () => {
-    expect(await replay(kept), kept.description).toEqual([]);
-  });
-
-  test(`fires when ${kept.catches.defect} is removed`, async () => {
-    const problems = await replay(kept, kept.catches.defect);
-    // The PHRASE, not merely a non-empty list: a scenario that broke some
-    // other claim under a defective store would otherwise read as proof of a
-    // law it never exercised.
-    expect(problems.join("\n"), `expected a problem naming "${kept.catches.law}"`).toContain(
-      kept.catches.law,
-    );
   });
 });

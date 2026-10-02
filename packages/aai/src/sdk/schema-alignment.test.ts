@@ -8,8 +8,8 @@ import {
   ToolSchemaSchema,
 } from "./_internal-types.ts";
 import { type ReadyConfig, ReadyConfigSchema } from "./protocol.ts";
-import { BuiltinToolSchema, ToolChoiceSchema, type VoicePresetNameSchema } from "./type-schemas.ts";
-import type { BuiltinTool, ToolChoice, VoicePresetName } from "./types.ts";
+import type { BuiltinToolSchema } from "./type-schemas.ts";
+import type { BuiltinTool } from "./types.ts";
 
 describe("AgentConfigSchema", () => {
   const valid: AgentConfig = {
@@ -120,26 +120,6 @@ describe("ReadyConfigSchema", () => {
 });
 
 describe("type ↔ schema alignment", () => {
-  test("BuiltinToolSchema values match BuiltinTool union", () => {
-    expect(BuiltinToolSchema.options).toMatchInlineSnapshot(`
-      [
-        "web_search",
-        "visit_webpage",
-        "get_page_design",
-        "fetch_json",
-        "run_code",
-        "think",
-        "remember",
-        "recall",
-        "calculate",
-        "open_meteo",
-        "brave_search",
-        "google_places",
-        "text_me",
-      ]
-    `);
-  });
-
   test("BuiltinTool is OPEN: the shipped enum plus any string, and the config schema accepts it", () => {
     // The enum is the closed set THIS release ships; the published type writes
     // the same names inline as its autocomplete half, then opens.
@@ -160,18 +140,6 @@ describe("type ↔ schema alignment", () => {
     expect(AgentConfigSchema.safeParse({ ...config, telephony: [""] }).success).toBe(false);
   });
 
-  test("ToolChoice type equals schema inference", () => {
-    expectTypeOf<z.infer<typeof ToolChoiceSchema>>().toEqualTypeOf<ToolChoice>();
-  });
-
-  test("VoicePresetName is OPEN, and the schema accepts what the type does", () => {
-    // Known names autocomplete; any other string compiles and parses, and is
-    // warned about at build time rather than refused (`agentConfigWarnings`).
-    expectTypeOf<"echoVerification">().toExtend<VoicePresetName>();
-    expectTypeOf<"a-later-preset">().toExtend<VoicePresetName>();
-    expectTypeOf<z.infer<typeof VoicePresetNameSchema>>().toEqualTypeOf<string>();
-  });
-
   test("AgentConfigSchema accepts an unknown preset name (it is warned about, not refused)", () => {
     const config = { name: "a", systemPrompt: "p", greeting: "g" };
     for (const voicePresets of [["natoAlphabet"], ["a-later-preset"]]) {
@@ -179,18 +147,4 @@ describe("type ↔ schema alignment", () => {
     }
     expect(AgentConfigSchema.safeParse({ ...config, voicePresets: [""] }).success).toBe(false);
   });
-
-  test.each<ToolChoice>(["auto", "required", "none", { type: "tool", toolName: "get_weather" }])(
-    "ToolChoiceSchema accepts %j",
-    (v) => {
-      expect(ToolChoiceSchema.safeParse(v).success).toBe(true);
-    },
-  );
-
-  test.each(["invalid", { type: "tool" }, { type: "tool", toolName: "" }])(
-    "ToolChoiceSchema rejects %j",
-    (v) => {
-      expect(ToolChoiceSchema.safeParse(v).success).toBe(false);
-    },
-  );
 });

@@ -1,8 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type { ContextOptions } from "@cartesia/cartesia-js/resources/tts/ws";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { flush } from "../../_timing-test-utils.ts";
-import { type CartesiaSession, openCartesia } from "./cartesia.ts";
+import {
+  type CartesiaContext,
+  type CartesiaSession,
+  type CartesiaSocket,
+  type CreateCartesiaSocket,
+  openCartesia,
+} from "./cartesia.ts";
 
 interface RecordedSend {
   kind: "send" | "cancel";
@@ -15,97 +22,64 @@ interface RecordedSend {
 
 const sends: RecordedSend[] = [];
 
-interface FakeGenerationRequest {
-  transcript: string;
-  continue: boolean;
-  language?: string;
-  model_id?: string;
+interface FakeContext extends CartesiaContext {
+  options: ContextOptions;
 }
 
-interface FakeContextOptions {
-  contextId: string;
-  model_id?: string;
-  language?: string;
-  voice?: { mode: string; id: string };
-}
-
-interface FakeContext {
-  contextId: string;
-  options: FakeContextOptions;
-  send(req: FakeGenerationRequest): Promise<void>;
-  cancel(): Promise<void>;
-}
-
-interface FakeTTSWS {
+interface FakeTTSWS extends CartesiaSocket {
   contexts: FakeContext[];
-  context(opts: FakeContextOptions): FakeContext;
-  connect(): Promise<FakeTTSWS>;
-  on(event: string, fn: (...args: unknown[]) => void): FakeTTSWS;
-  close(props?: { code: number; reason: string }): void;
   _fire(event: string, payload: unknown): void;
 }
 
-// `Cartesia` only needs to be constructable now: production builds the socket
-// via `new TTSWS(client)` (mocked below) rather than `client.tts.websocket()`,
-// so it can bind an `error` listener before connecting.
-vi.mock("@cartesia/cartesia-js", () => ({
-  Cartesia: class {},
-}));
+/** Each fake socket the opener built, by the handle the session exposes. */
+const fakes = new WeakMap<object, FakeTTSWS>();
 
-vi.mock("@cartesia/cartesia-js/resources/tts/ws", () => {
-  function makeWs(): FakeTTSWS {
-    const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
-    const ws: FakeTTSWS = {
-      contexts: [],
-      context(opts) {
-        const ctx: FakeContext = {
-          contextId: opts.contextId,
-          options: opts,
-          async send(req) {
-            sends.push({
-              kind: "send",
-              contextId: ctx.contextId,
-              transcript: req.transcript,
-              continue: req.continue,
-              language: req.language,
-              model_id: req.model_id,
-            });
-          },
-          async cancel() {
-            sends.push({ kind: "cancel", contextId: ctx.contextId });
-          },
-        };
-        ws.contexts.push(ctx);
-        return ctx;
-      },
-      async connect() {
-        return ws;
-      },
-      on(event, fn) {
-        const arr = listeners.get(event) ?? [];
-        arr.push(fn);
-        listeners.set(event, arr);
-        return ws;
-      },
-      close() {
-        /* no-op */
-      },
-      _fire(event, payload) {
-        for (const fn of listeners.get(event) ?? []) fn(payload);
-      },
-    };
-    return ws;
-  }
-  return {
-    // Production does `new TTSWS(client)`, so the mock presents the fake socket
-    // as the constructed instance.
-    TTSWS: class {
-      constructor() {
-        Object.assign(this, makeWs());
-      }
+/** The `createSocket` seam's fake: records every context and send. */
+const fakeSocket: CreateCartesiaSocket = () => {
+  const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+  const ws: FakeTTSWS = {
+    contexts: [],
+    context(opts) {
+      const ctx: FakeContext = {
+        contextId: opts.contextId ?? "",
+        options: opts,
+        async send(req) {
+          sends.push({
+            kind: "send",
+            contextId: ctx.contextId,
+            transcript: req.transcript,
+            continue: req.continue ?? undefined,
+            language: req.language ?? undefined,
+            model_id: req.model_id,
+          });
+        },
+        async cancel() {
+          sends.push({ kind: "cancel", contextId: ctx.contextId });
+        },
+      };
+      ws.contexts.push(ctx);
+      return ctx;
+    },
+    async connect() {
+      return ws;
+    },
+    on<A extends unknown[]>(event: string, fn: (...args: A) => void) {
+      const arr = listeners.get(event) ?? [];
+      // The test names the event and supplies its payload.
+      arr.push((...args) => fn(...(args as A)));
+      listeners.set(event, arr);
+      return ws;
+    },
+    close() {
+      /* no-op */
+    },
+    _fire(event, payload) {
+      for (const fn of listeners.get(event) ?? []) fn(payload);
     },
   };
-});
+  fakes.set(ws, ws);
+  return ws;
+};
 
 // Per-send payloads carry only the varying fields — the generation config
 // (model_id, voice, language, output_format) lives in the context options
@@ -127,7 +101,7 @@ async function openSession(): Promise<{
   session: CartesiaSession;
   controller: AbortController;
 }> {
-  const provider = openCartesia({ voice: "voice-id" });
+  const provider = openCartesia({ voice: "voice-id" }, fakeSocket);
   const controller = new AbortController();
   const session = (await provider.open({
     sampleRate: 16_000,
@@ -137,14 +111,11 @@ async function openSession(): Promise<{
   return { session, controller };
 }
 
-/**
- * The mocked `@cartesia/cartesia-js` module hands the adapter a
- * {@link FakeTTSWS}, but `CartesiaSession._ws` is typed as the real SDK's
- * `TTSWS` — structurally unrelated shapes, so the narrowing needs a cast.
- * Keep it at this one seam; the escape-hatch ratchet counts every occurrence.
- */
+/** The {@link FakeTTSWS} behind a session opened through {@link fakeSocket}. */
 function fakeWs(session: CartesiaSession): FakeTTSWS {
-  return session._ws as unknown as FakeTTSWS;
+  const ws = fakes.get(session._ws);
+  if (!ws) throw new Error("session was not opened through fakeSocket");
+  return ws;
 }
 
 describe("cartesia TTS adapter", () => {

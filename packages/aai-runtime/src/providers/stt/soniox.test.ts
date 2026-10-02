@@ -1,16 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
-/** Unit test for the Soniox real-time STT adapter (mocked WebSocket). */
+/** Unit test for the Soniox real-time STT adapter (a fake WebSocket through its seam). */
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { flush } from "../../_timing-test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
-import { FakeWebSocket } from "../tts/_fake-ws-test-utils.ts";
+import { createFakeWebSocket, FakeWebSocket } from "../tts/_fake-ws-test-utils.ts";
 import { openSoniox } from "./soniox.ts";
-
-vi.mock("ws", async () => {
-  const { FakeWebSocket } = await import("../tts/_fake-ws-test-utils.ts");
-  return { default: FakeWebSocket, WebSocket: FakeWebSocket };
-});
 
 beforeEach(() => {
   FakeWebSocket.reset();
@@ -23,7 +18,11 @@ interface OpenSessionOpts {
 }
 
 function openOpener(signal: AbortSignal): Promise<unknown> {
-  return openSoniox({}).open({ sampleRate: 16_000, apiKey: "test-key", signal });
+  return openSoniox({}, createFakeWebSocket).open({
+    sampleRate: 16_000,
+    apiKey: "test-key",
+    signal,
+  });
 }
 
 async function openSession(opts: OpenSessionOpts = {}): Promise<{
@@ -34,7 +33,7 @@ async function openSession(opts: OpenSessionOpts = {}): Promise<{
   const openerOpts: { model?: string; languages?: string[] } = {};
   if (opts.model) openerOpts.model = opts.model;
   if (opts.languages) openerOpts.languages = opts.languages;
-  const opener = openSoniox(openerOpts);
+  const opener = openSoniox(openerOpts, createFakeWebSocket);
   const controller = new AbortController();
   const session = await opener.open({
     sampleRate: 16_000,
@@ -222,12 +221,12 @@ describe("Soniox real-time STT adapter", () => {
 
   test("close() drops the session listeners but leaves a no-op error guard", async () => {
     const { session, ws } = await openSession();
-    expect(ws.listenerCount()).toBeGreaterThan(1);
+    expect(ws.listenersTotal()).toBeGreaterThan(1);
     await session.close();
     // The session's message/close/error handlers (which capture emitter,
     // finalBuf, shell) are gone; only a single no-op `error` guard remains so
     // a late error during the close handshake can't crash the process.
-    expect(ws.listenerCount()).toBe(1);
+    expect(ws.listenersTotal()).toBe(1);
     expect(() => ws._fire("error", new Error("late reset"))).not.toThrow();
   });
 

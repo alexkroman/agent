@@ -328,9 +328,10 @@ async function followRedirects(
   init: RequestInit,
   fetchFn: typeof globalThis.fetch,
   screen: boolean,
+  lookupFn: DnsLookup = lookup,
 ): Promise<Response> {
   const originalOrigin = new URL(url).origin;
-  let resolvedIp = screen ? await resolveAndAssertPublic(url) : null;
+  let resolvedIp = screen ? await resolveAndAssertPublic(url, lookupFn) : null;
   let currentUrl = url;
   for (let i = 0; i < MAX_REDIRECTS; i++) {
     // Cut the caller's headers once the request has left its original origin
@@ -347,7 +348,7 @@ async function followRedirects(
     // Release the redirect response's socket before following the hop.
     await resp.body?.cancel().catch(() => undefined);
     currentUrl = new URL(location, currentUrl).href;
-    if (screen) resolvedIp = await resolveAndAssertPublic(currentUrl);
+    if (screen) resolvedIp = await resolveAndAssertPublic(currentUrl, lookupFn);
   }
   throw new Error("Too many redirects");
 }
@@ -358,14 +359,18 @@ async function followRedirects(
  * loop with it; `safeFetch` is this engine curried with `pinnedFetch` and is
  * what callers should use.
  *
+ * `lookupFn` is the same test seam {@link resolveAndAssertPublic} takes —
+ * production callers leave it unset.
+ *
  * @internal
  */
 export async function ssrfSafeFetch(
   url: string,
   init: RequestInit,
   fetchFn: typeof globalThis.fetch,
+  lookupFn: DnsLookup = lookup,
 ): Promise<Response> {
-  return await followRedirects(url, init, fetchFn, true);
+  return await followRedirects(url, init, fetchFn, true, lookupFn);
 }
 
 function requestUrl(input: Parameters<typeof globalThis.fetch>[0]): string {

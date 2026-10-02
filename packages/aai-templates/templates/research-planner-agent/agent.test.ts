@@ -1,7 +1,6 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 import type { ToolContext } from "@alexkroman1/aai";
-import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import {
   createToolContext,
   expectDialogOk,
@@ -17,14 +16,14 @@ import { describe, expect, test, vi } from "vitest";
 import { executeStep, executor, MAX_STEP_TURNS, normalizeAct, planNode } from "./procedure.ts";
 import { PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM, type StepAnswer } from "./prompts.ts";
 import {
+  createWebTools,
   MAX_PAGE_CHARS,
   MAX_PAST_STEPS,
   MAX_REVISIONS,
   planFlow,
   planSlot,
   planView,
-  readTool,
-  searchTool,
+  type WebAccess,
 } from "./shared.ts";
 import startPlan from "./tools/start_plan.ts";
 
@@ -32,12 +31,18 @@ import startPlan from "./tools/start_plan.ts";
  * The web, faked at the SDK's own seam.
  *
  * `webSearch` screens a URL and then really fetches it, through an undici
- * dispatcher a `globalThis.fetch` stub cannot reach — so mocking the module is
- * the only honest way to keep this suite offline. The EXECUTOR's own tests need
- * none of it: they stub the delegation, which is the seam a subagent is reached
- * through.
+ * dispatcher a `globalThis.fetch` stub cannot reach — so the two calls are
+ * handed to `createWebTools` as fakes, which keeps this suite offline while
+ * everything the tools do with an answer stays real. The EXECUTOR's own tests
+ * need none of it: they stub the delegation, which is the seam a subagent is
+ * reached through.
  */
-vi.mock("@alexkroman1/aai/tools", () => ({ webSearch: vi.fn(), visitWebpage: vi.fn() }));
+const fakeSearch = vi.fn<WebAccess["webSearch"]>();
+const fakeVisit = vi.fn<WebAccess["visitWebpage"]>();
+const { searchTool, readTool } = createWebTools({
+  webSearch: fakeSearch,
+  visitWebpage: fakeVisit,
+});
 
 // ─── A scripted desk ─────────────────────────────────────────────────────────
 //
@@ -254,7 +259,7 @@ describe("the executor's guardrail", () => {
 
 describe("the executor's search tool", () => {
   test("renders the hits the model reasons over", async () => {
-    vi.mocked(webSearch).mockResolvedValueOnce({
+    fakeSearch.mockResolvedValueOnce({
       results: [{ title: "Fares to Lisbon", url: "https://example.test/fares" }],
     });
 
@@ -270,7 +275,7 @@ describe("the executor's search tool", () => {
     // carries the refusal out as the tool's own `ToolFailure` — an empty list
     // would tell the executor there is nothing out there, and a thrown `Error`
     // would have the runtime log an ordinary 403 as an uncaught tool bug.
-    vi.mocked(webSearch).mockResolvedValueOnce({ error: "403 Forbidden" });
+    fakeSearch.mockResolvedValueOnce({ error: "403 Forbidden" });
 
     expect(await searchTool.execute({ query: "anything" }, createToolContext())).toEqual({
       error: "403 Forbidden",
@@ -281,16 +286,16 @@ describe("the executor's search tool", () => {
     // A tool body gets a signal and `CallOptions` takes one; until they were
     // joined, a caller who hung up mid-step left a search running against a
     // third party.
-    vi.mocked(webSearch).mockResolvedValueOnce({ results: [] });
+    fakeSearch.mockResolvedValueOnce({ results: [] });
     const ctx = createToolContext();
 
     await searchTool.execute({ query: "anything" }, ctx);
 
-    expect(vi.mocked(webSearch).mock.calls[0]?.[0]).toMatchObject({ signal: ctx.signal });
+    expect(fakeSearch.mock.calls[0]?.[0]).toMatchObject({ signal: ctx.signal });
   });
 
   test("says so when the web really had nothing", async () => {
-    vi.mocked(webSearch).mockResolvedValueOnce({ results: [] });
+    fakeSearch.mockResolvedValueOnce({ results: [] });
     expect(await searchTool.execute({ query: "anything" }, createToolContext())).toBe(
       "No results.",
     );
@@ -299,7 +304,7 @@ describe("the executor's search tool", () => {
 
 describe("the executor's read tool", () => {
   test("hands back the page body, capped", async () => {
-    vi.mocked(visitWebpage).mockResolvedValueOnce({ content: "x".repeat(MAX_PAGE_CHARS + 500) });
+    fakeVisit.mockResolvedValueOnce({ content: "x".repeat(MAX_PAGE_CHARS + 500) });
 
     const body = await readTool.execute({ url: "https://example.test/fares" }, createToolContext());
 
@@ -309,7 +314,7 @@ describe("the executor's read tool", () => {
   });
 
   test("a page that would not load is not a page that said nothing", async () => {
-    vi.mocked(visitWebpage).mockResolvedValueOnce({ error: "404 Not Found" });
+    fakeVisit.mockResolvedValueOnce({ error: "404 Not Found" });
 
     expect(
       await readTool.execute({ url: "https://example.test/gone" }, createToolContext()),
@@ -317,12 +322,12 @@ describe("the executor's read tool", () => {
   });
 
   test("the caller's signal reaches the fetch here too", async () => {
-    vi.mocked(visitWebpage).mockResolvedValueOnce({ content: "anything" });
+    fakeVisit.mockResolvedValueOnce({ content: "anything" });
     const ctx = createToolContext();
 
     await readTool.execute({ url: "https://example.test/fares" }, ctx);
 
-    expect(vi.mocked(visitWebpage).mock.calls[0]?.[1]).toMatchObject({ signal: ctx.signal });
+    expect(fakeVisit.mock.calls[0]?.[1]).toMatchObject({ signal: ctx.signal });
   });
 });
 

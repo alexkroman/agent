@@ -23,6 +23,9 @@ import { snapshotWorkspace } from "./workspace-fs.ts";
  */
 export const SYNC_RPC_TIMEOUT_MS = 30_000;
 
+/** How a sync reads the workspace — a seam so a spec can skip the real walk. */
+type Snapshot = typeof snapshotWorkspace;
+
 /**
  * Push the workspace and settled conversation back to the host's stores.
  *
@@ -32,8 +35,12 @@ export const SYNC_RPC_TIMEOUT_MS = 30_000;
  * RPC method but never carry the flag, so a half-finished workspace is never
  * preview-deployed.
  */
-export async function settleTurn(session: StudioSession, messages: UIMessage[]): Promise<void> {
-  const { files, warnings } = await snapshotWorkspace(session.dir);
+export async function settleTurn(
+  session: StudioSession,
+  messages: UIMessage[],
+  snapshot: Snapshot = snapshotWorkspace,
+): Promise<void> {
+  const { files, warnings } = await snapshot(session.dir);
   for (const warning of warnings) console.error(`studio sync: ${warning}`);
   // Independent stores — no reason to pay two 30s worst cases in sequence.
   await Promise.all([
@@ -76,9 +83,12 @@ export const MUTATING_TOOLS: ReadonlySet<string> = new Set([
  * without bound — the snapshot reads the tree as it stands, so a long tool
  * chain issues at most one extra sync after the current one, never a backlog.
  */
-export function createWorkspaceCheckpointer(session: StudioSession): () => void {
+export function createWorkspaceCheckpointer(
+  session: StudioSession,
+  snapshot: Snapshot = snapshotWorkspace,
+): () => void {
   const runner = createCoalescingRunner(async () => {
-    const { files } = await snapshotWorkspace(session.dir);
+    const { files } = await snapshot(session.dir);
     await hostRequest("studio/sync-workspace", { files }, SYNC_RPC_TIMEOUT_MS);
   });
   let reported: Promise<void> | null = null;

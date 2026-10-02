@@ -29,7 +29,7 @@ import { createGenerateFn } from "./generate.ts";
  * only when the last step finished with `stop`, so a fake reporting the old
  * shape resolves `undefined` and the typed accessor throws
  * `NoOutputGeneratedError`, naming an empty model reply rather than a stale
- * fake. `tools/call-salvage.test.ts` already had it right.
+ * fake. `tools/call-repair.test.ts` already had it right.
  */
 function fakeOneShotModel(reply: (opts: { prompt: unknown }) => string): LanguageModel & {
   readonly calls: readonly Record<string, unknown>[];

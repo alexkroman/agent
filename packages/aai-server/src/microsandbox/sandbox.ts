@@ -74,7 +74,7 @@ import {
   startGuestLogging,
   warmFromGuest,
 } from "../warm-harness.ts";
-import { _contextInternals, defaultMicrosandboxContext } from "./context.ts";
+import { defaultMicrosandboxContext } from "./context.ts";
 
 const log = createLogger("sandbox.microsandbox");
 
@@ -340,5 +340,3 @@ export async function spawnMicrosandboxWarm(
     });
   }
 }
-
-export const _internals = { ..._contextInternals, realContext: defaultMicrosandboxContext };

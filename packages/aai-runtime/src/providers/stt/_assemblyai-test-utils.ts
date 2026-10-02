@@ -7,25 +7,22 @@
  * The seam is "what the adapter does with a live stream" against "what it dials
  * with", and both halves need the same fake transcriber.
  *
- * `vi.mock` is hoisted above imports, so a suite cannot hand
- * {@link assemblyAIModuleMock} to it directly — call it from an ASYNC factory
- * that `await import`s this module:
- *
- * ```ts no-check
- * vi.mock("assemblyai", async () => {
- *   const { assemblyAIModuleMock } = await import("./_assemblyai-test-utils.ts");
- *   return assemblyAIModuleMock();
- * });
- * ```
+ * The fake reaches the adapter through `openAssemblyAI`'s `createTranscriber`
+ * seam ({@link fakeTranscriber}), so no suite replaces the `assemblyai` module.
  */
 
 import { EventEmitter } from "node:events";
+import type { BeginEvent, StreamingTranscriberParams } from "assemblyai";
 import { vi } from "vitest";
-import type { AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
+import type {
+  AssemblyAISession,
+  CreateAssemblyAITranscriber,
+  openAssemblyAI,
+} from "./assemblyai.ts";
 
 /**
- * The stand-in the mocked `assemblyai` module hands the adapter: an
- * `EventEmitter` whose wire methods are spies, so a spec asserts on calls.
+ * The stand-in {@link fakeTranscriber} hands the adapter: an `EventEmitter`
+ * whose wire methods are spies, so a spec asserts on calls.
  */
 export class FakeTranscriber extends EventEmitter {
   readonly updateConfiguration = vi.fn<(config: Record<string, unknown>) => void>();
@@ -36,13 +33,15 @@ export class FakeTranscriber extends EventEmitter {
 
   readonly params: Record<string, unknown>;
 
-  constructor(params: Record<string, unknown>) {
+  constructor(params: StreamingTranscriberParams) {
     super();
     this.params = params;
   }
 
-  async connect(): Promise<void> {
-    this.emit("open", { type: "Begin", id: "mock-sess", expires_at: 0 });
+  async connect(): Promise<BeginEvent> {
+    const begin: BeginEvent = { type: "Begin", id: "mock-sess", expires_at: 0 };
+    this.emit("open", begin);
+    return begin;
   }
 
   /** Every audio frame the adapter forwarded, in order. */
@@ -55,31 +54,21 @@ export class FakeTranscriber extends EventEmitter {
   }
 }
 
-/** The module shape `vi.mock("assemblyai", …)` must return. */
-export function assemblyAIModuleMock(): { AssemblyAI: new () => unknown } {
-  return {
-    AssemblyAI: class {
-      streaming = {
-        transcriber: (params: Record<string, unknown>): FakeTranscriber =>
-          new FakeTranscriber(params),
-      };
-    },
-  };
-}
+/** The `createTranscriber` every suite opens with: a {@link FakeTranscriber}. */
+export const fakeTranscriber: CreateAssemblyAITranscriber = (_apiKey, params) =>
+  new FakeTranscriber(params);
 
-/**
- * The mocked `assemblyai` module hands the adapter a {@link FakeTranscriber},
- * but `AssemblyAISession._transcriber` is typed as the real SDK's
- * `StreamingTranscriber` — structurally unrelated shapes, so the narrowing
- * needs a cast. Keep it to this one seam rather than repeating it at every
- * assertion; the escape-hatch ratchet counts each occurrence.
- */
+/** The {@link FakeTranscriber} behind a session opened through {@link fakeTranscriber}. */
 export function fakeOf(session: AssemblyAISession): FakeTranscriber {
-  return session._transcriber as unknown as FakeTranscriber;
+  const fake = session._transcriber;
+  if (!(fake instanceof FakeTranscriber)) {
+    throw new Error("session was not opened through fakeTranscriber");
+  }
+  return fake;
 }
 
 /**
- * Open a session against the mocked SDK. Takes the opener factory rather than
+ * Open a session against {@link fakeTranscriber}. Takes the opener factory rather than
  * importing it, so a suite that reloads the module graph (the `AAI_DEBUG`
  * trace test) can pass its own freshly imported copy.
  */
@@ -89,7 +78,7 @@ export async function openSessionWith(
   openOpts: Partial<Parameters<ReturnType<typeof openAssemblyAI>["open"]>[0]> = {},
 ): Promise<AssemblyAISession> {
   const controller = new AbortController();
-  return (await open(providerOpts).open({
+  return (await open(providerOpts, fakeTranscriber).open({
     sampleRate: 16_000,
     apiKey: "k",
     signal: controller.signal,

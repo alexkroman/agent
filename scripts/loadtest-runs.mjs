@@ -60,6 +60,7 @@
 
 import { sleep } from "../packages/aai/src/sdk/sleep.ts";
 import { valueReader } from "./_args.mjs";
+import { percentile } from "./_upload-sweep-report.mjs";
 
 const arg = valueReader(process.argv.slice(2));
 
@@ -77,12 +78,8 @@ const TIMEOUT_MS = Number(arg("timeout", "120")) * 1000;
 /** The statuses a run stops at — anything else is still going. */
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
-const pct = (sorted, p) =>
-  sorted.length > 0
-    ? Number(
-        sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)].toFixed(1),
-      )
-    : 0;
+/** Nearest-rank, to 0.1ms — the one `percentile` `upload-sweep.mjs` reports with too. */
+const pct = (sorted, p) => Number(percentile(sorted, p).toFixed(1));
 
 // The poll wait is the SDK's one `sleep` (guard-invariants rule 19), imported
 // by path as `upload-sweep.mjs` does: the repo root resolves no

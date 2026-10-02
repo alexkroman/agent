@@ -10,15 +10,16 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { workflow } from "./cli-workflow.ts";
+import { createWorkflowCommand } from "./cli-workflow.ts";
 
-const executors = vi.hoisted(() => ({
+const executors = {
   executeWorkflowList: vi.fn().mockResolvedValue({ ok: true, data: {} }),
   executeWorkflowRuns: vi.fn().mockResolvedValue({ ok: true, data: {} }),
   executeWorkflowShow: vi.fn().mockResolvedValue({ ok: true, data: {} }),
   executeWorkflowCancel: vi.fn().mockResolvedValue({ ok: true, data: {} }),
-}));
-vi.mock("./workflow.ts", () => executors);
+};
+/** The group, built over the fake executors rather than `workflow.ts`. */
+const workflow = createWorkflowCommand(async () => executors);
 
 const subs = workflow.subCommands as Record<
   string,

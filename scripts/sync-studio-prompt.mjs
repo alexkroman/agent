@@ -66,16 +66,12 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { parseScriptArgs } from "./_args.mjs";
+import { parseCheckFlag } from "./_args.mjs";
 import { repoRoot } from "./_fs.mjs";
 
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
 const DESTINATION_DIR = join(ROOT, "packages/aai-guest-studio/studio-prompts");
-const { values: FLAGS } = parseScriptArgs({
-  script: import.meta.url,
-  options: { check: { type: "boolean" } },
-});
-const CHECK = FLAGS.check === true;
+const CHECK = parseCheckFlag(import.meta.url);
 
 /**
  * A banner on each copy, so nobody edits the wrong file.

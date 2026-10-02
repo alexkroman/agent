@@ -107,20 +107,6 @@ const FALLBACK_HTML = `<!DOCTYPE html>
 reload this page to use the browser coding agent.</p>
 </body></html>`;
 
-let _clientDir: string | undefined;
-/** The aai-studio-client package's Vite build output. */
-function clientDir(): string {
-  if (!_clientDir) {
-    const require = createRequire(import.meta.url);
-    const pkgPath = require.resolve("aai-studio-client/package.json");
-    _clientDir = path.join(path.dirname(pkgPath), "dist");
-  }
-  return _clientDir;
-}
-
-// Cached, containment-checked reads over the studio client build.
-const readClientFile = createCachedDirReader(clientDir);
-
 /**
  * The shell is the ONE response that must never outlive the build it names.
  *
@@ -142,26 +128,6 @@ const readClientFile = createCachedDirReader(clientDir);
  */
 const SHELL_CACHE_CONTROL = "no-store";
 
-// Both are fixed for the process lifetime (the sandbox backend, the auth
-// binding, and the build output don't change under a running server), and
-// `GET /` is the shell's hot path.
-let _pageHeaders: { "Content-Security-Policy": string; "Cache-Control": string } | undefined;
-let _pageHtml: { buf: Buffer; str: string } | undefined;
-
-/** `GET /` — the studio app shell (or the not-built fallback). */
-export async function handleStudioPage(c: AppContext): Promise<Response> {
-  _pageHeaders ??= {
-    "Content-Security-Policy": studioCsp(process.env, c.env.auth?.clientConfig),
-    "Cache-Control": SHELL_CACHE_CONTROL,
-  };
-  const html = await readClientFile("index.html");
-  if (!html) return c.html(FALLBACK_HTML, 200, _pageHeaders);
-  // Decode once per cached buffer (keyed by identity, so it tracks the
-  // dir reader's own cache invalidation).
-  if (_pageHtml?.buf !== html) _pageHtml = { buf: html, str: html.toString("utf-8") };
-  return c.html(_pageHtml.str, 200, _pageHeaders);
-}
-
 /**
  * A zero-copy view of a CACHED buffer, for handing bytes to `c.body`.
  *
@@ -175,21 +141,6 @@ export async function handleStudioPage(c: AppContext): Promise<Response> {
  */
 function viewOf(buf: Buffer): Uint8Array<ArrayBuffer> {
   return new Uint8Array(buf.buffer as ArrayBuffer, buf.byteOffset, buf.byteLength);
-}
-
-/**
- * `GET /favicon.ico` — the studio icon, for the default browser request
- * (the built studio shell links it at `/studio-assets/favicon.ico`, but
- * the not-built fallback page and non-browser clients hit the root path).
- * 404s when the client has not been built.
- */
-export async function handleStudioFavicon(c: AppContext): Promise<Response> {
-  const content = await readClientFile("favicon.ico");
-  if (!content) throw new HTTPException(404, { message: "Favicon not found" });
-  return c.body(viewOf(content), 200, {
-    "Content-Type": "image/x-icon",
-    "Cache-Control": "public, max-age=86400",
-  });
 }
 
 /**
@@ -215,51 +166,126 @@ export function handleStudioRobots(c: AppContext): Response {
   });
 }
 
-/**
- * `GET /studio-assets/:path{.+}` — hashed Vite build assets.
- *
- * **A missing asset while this replica is DRAINING is a 503, not a 404.** The
- * shell doc above explains the race and closes half of it: Modal's rolling
- * deploy keeps old containers serving next to new ones and load-balances every
- * request independently, so a browser can take `index.html` from the new build
- * and have its entry `<script>` land on a replica running the old one. Making
- * the shell `no-store` stops a browser PINNING itself to a dead build; it
- * cannot stop that one cross-build request.
- *
- * What it left was the wrong STATUS on it. Production served
- * `GET /studio-assets/assets/index-ByztzOpq.js -> 404` on the same second as
- * `Shutting down (retiring guests)...`, and the identical URL answered 200
- * forty-one seconds later — so 404 was false twice over: the asset exists, and
- * the condition is transient. It also invites an intermediary to CACHE the
- * negative answer, which turns a self-healing blip into a sticky white page for
- * whoever is behind that cache.
- *
- * Gated on `isDraining` rather than on the path's SHAPE, deliberately: no
- * heuristic can tell a hashed asset from another build apart from a typo'd
- * path, and answering 503 to a genuinely nonexistent asset would say "retry"
- * forever. While draining, "this replica does not have this build" is simply
- * what is true, and a 404 is still the answer everywhere else.
- */
-export function studioClientAssetHandler(
-  isDraining?: () => boolean,
-): (c: AppContext) => Promise<Response> {
-  return async function handleStudioClientAsset(c: AppContext): Promise<Response> {
-    const rawPath = c.req.param("path") ?? "";
-    const parsed = SafePathSchema.safeParse(rawPath);
-    if (!parsed.success) throw new HTTPException(400, { message: "Invalid asset path" });
-    const content = await readClientFile(parsed.data);
-    if (!content && isDraining?.()) {
-      // `Retry-After: 1` because the replacement replica is already serving —
-      // this one is on its way out, not overloaded.
-      return c.json({ error: "Asset not on this replica (draining)" }, 503, {
-        "Retry-After": "1",
-        "Cache-Control": "no-store",
-      });
-    }
-    if (!content) throw new HTTPException(404, { message: "Asset not found" });
-    return c.body(viewOf(content), 200, {
-      "Content-Type": mime.lookup(parsed.data) || "application/octet-stream",
-      "Cache-Control": "public, max-age=31536000, immutable",
-    });
-  };
+/** The default package resolution: wherever Node finds `aai-studio-client`. */
+function resolveClientPackage(): string {
+  return createRequire(import.meta.url).resolve("aai-studio-client/package.json");
 }
+
+/** The three handlers that read the studio client build. */
+export type StudioClientHandlers = {
+  handleStudioPage: (c: AppContext) => Promise<Response>;
+  handleStudioFavicon: (c: AppContext) => Promise<Response>;
+  studioClientAssetHandler: (isDraining?: () => boolean) => (c: AppContext) => Promise<Response>;
+};
+
+/**
+ * Build the client handlers over one resolution of the client package.
+ *
+ * Every memo (client dir, read cache, CSP headers, decoded shell) lives in the
+ * instance, so a spec gets fresh ones per call. `resolvePackageJson` is the
+ * test seam: it stands in for module resolution only, so the `dist` join, the
+ * containment check and the cached reader stay the real ones.
+ */
+export function createStudioClientHandlers(
+  resolvePackageJson: () => string = resolveClientPackage,
+): StudioClientHandlers {
+  let clientDirMemo: string | undefined;
+  /** The aai-studio-client package's Vite build output. */
+  function clientDir(): string {
+    clientDirMemo ??= path.join(path.dirname(resolvePackageJson()), "dist");
+    return clientDirMemo;
+  }
+
+  // Cached, containment-checked reads over the studio client build.
+  const readClientFile = createCachedDirReader(clientDir);
+
+  // Both are fixed for the instance's lifetime (the sandbox backend, the auth
+  // binding, and the build output don't change under a running server), and
+  // `GET /` is the shell's hot path.
+  let pageHeaders: { "Content-Security-Policy": string; "Cache-Control": string } | undefined;
+  let pageHtml: { buf: Buffer; str: string } | undefined;
+
+  /** `GET /` — the studio app shell (or the not-built fallback). */
+  async function handleStudioPage(c: AppContext): Promise<Response> {
+    pageHeaders ??= {
+      "Content-Security-Policy": studioCsp(process.env, c.env.auth?.clientConfig),
+      "Cache-Control": SHELL_CACHE_CONTROL,
+    };
+    const html = await readClientFile("index.html");
+    if (!html) return c.html(FALLBACK_HTML, 200, pageHeaders);
+    // Decode once per cached buffer (keyed by identity, so it tracks the
+    // dir reader's own cache invalidation).
+    if (pageHtml?.buf !== html) pageHtml = { buf: html, str: html.toString("utf-8") };
+    return c.html(pageHtml.str, 200, pageHeaders);
+  }
+
+  /**
+   * `GET /favicon.ico` — the studio icon, for the default browser request
+   * (the built studio shell links it at `/studio-assets/favicon.ico`, but
+   * the not-built fallback page and non-browser clients hit the root path).
+   * 404s when the client has not been built.
+   */
+  async function handleStudioFavicon(c: AppContext): Promise<Response> {
+    const content = await readClientFile("favicon.ico");
+    if (!content) throw new HTTPException(404, { message: "Favicon not found" });
+    return c.body(viewOf(content), 200, {
+      "Content-Type": "image/x-icon",
+      "Cache-Control": "public, max-age=86400",
+    });
+  }
+
+  /**
+   * `GET /studio-assets/:path{.+}` — hashed Vite build assets.
+   *
+   * **A missing asset while this replica is DRAINING is a 503, not a 404.** The
+   * shell doc above explains the race and closes half of it: Modal's rolling
+   * deploy keeps old containers serving next to new ones and load-balances every
+   * request independently, so a browser can take `index.html` from the new build
+   * and have its entry `<script>` land on a replica running the old one. Making
+   * the shell `no-store` stops a browser PINNING itself to a dead build; it
+   * cannot stop that one cross-build request.
+   *
+   * What it left was the wrong STATUS on it. Production served
+   * `GET /studio-assets/assets/index-ByztzOpq.js -> 404` on the same second as
+   * `Shutting down (retiring guests)...`, and the identical URL answered 200
+   * forty-one seconds later — so 404 was false twice over: the asset exists, and
+   * the condition is transient. It also invites an intermediary to CACHE the
+   * negative answer, which turns a self-healing blip into a sticky white page for
+   * whoever is behind that cache.
+   *
+   * Gated on `isDraining` rather than on the path's SHAPE, deliberately: no
+   * heuristic can tell a hashed asset from another build apart from a typo'd
+   * path, and answering 503 to a genuinely nonexistent asset would say "retry"
+   * forever. While draining, "this replica does not have this build" is simply
+   * what is true, and a 404 is still the answer everywhere else.
+   */
+  function studioClientAssetHandler(
+    isDraining?: () => boolean,
+  ): (c: AppContext) => Promise<Response> {
+    return async function handleStudioClientAsset(c: AppContext): Promise<Response> {
+      const rawPath = c.req.param("path") ?? "";
+      const parsed = SafePathSchema.safeParse(rawPath);
+      if (!parsed.success) throw new HTTPException(400, { message: "Invalid asset path" });
+      const content = await readClientFile(parsed.data);
+      if (!content && isDraining?.()) {
+        // `Retry-After: 1` because the replacement replica is already serving —
+        // this one is on its way out, not overloaded.
+        return c.json({ error: "Asset not on this replica (draining)" }, 503, {
+          "Retry-After": "1",
+          "Cache-Control": "no-store",
+        });
+      }
+      if (!content) throw new HTTPException(404, { message: "Asset not found" });
+      return c.body(viewOf(content), 200, {
+        "Content-Type": mime.lookup(parsed.data) || "application/octet-stream",
+        "Cache-Control": "public, max-age=31536000, immutable",
+      });
+    };
+  }
+
+  return { handleStudioPage, handleStudioFavicon, studioClientAssetHandler };
+}
+
+/** The process's handlers, over the installed client package. */
+export const { handleStudioPage, handleStudioFavicon, studioClientAssetHandler } =
+  createStudioClientHandlers();

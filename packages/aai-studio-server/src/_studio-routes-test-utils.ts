@@ -95,7 +95,7 @@ export function brokerOptions(): Parameters<typeof createStudioSessionBroker>[0]
 }
 
 // Preview wake-up: observable fake so the session route's wiring is
-// asserted without real HTTP (behavior lives in studio-preview.test.ts).
+// asserted without real HTTP (behavior lives in studio-preview-wake.test.ts).
 export const wakePreviewMock = vi.fn(
   (..._args: Parameters<typeof wakeProjectPreview>): void => undefined,
 );

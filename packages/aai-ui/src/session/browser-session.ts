@@ -17,7 +17,7 @@ import { createEpoch, RESUME_ID_RE, WS_OPEN } from "@alexkroman1/aai/internal";
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import { createSessionIdentity } from "../client-identity.ts";
 import type { VoiceSessionOptions } from "../types.ts";
-import { createAudioEffects } from "./audio-effects.ts";
+import { type AudioEffectsDeps, createAudioEffects } from "./audio-effects.ts";
 import { createAudioPath } from "./audio-state.ts";
 import { closeFailure } from "./close.ts";
 import { createDialer } from "./dial.ts";
@@ -72,6 +72,20 @@ import { createUserInput } from "./user-turn.ts";
  * @public
  */
 export function createBrowserSession(options: VoiceSessionOptions): BrowserSession {
+  return createBrowserSessionWith(options, {});
+}
+
+/**
+ * {@link createBrowserSession} with its audio bring-up injectable. Not on the
+ * barrel: it is the seam a spec uses to hold an audio path open by hand rather
+ * than replacing the audio module.
+ *
+ * @internal
+ */
+export function createBrowserSessionWith(
+  options: VoiceSessionOptions,
+  internals: Pick<AudioEffectsDeps, "openAudioPath">,
+): BrowserSession {
   // ─── Internal state ─────────────────────────────────────────────────────
 
   let currentSnapshot: SessionSnapshot = {
@@ -114,7 +128,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     // A write that changes no field still notified every consumer. Now that
     // the state machine answers "did anything move" (a declined transition
     // returns the position unchanged), the check lives here for every caller;
-    // `session/events.test.ts` pins both cases.
+    // `session/messages.test.ts` pins both cases.
     if (Object.keys(partial).every((key) => isUnchanged(key as keyof SessionSnapshot, partial))) {
       return;
     }
@@ -189,7 +203,15 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   // The mic opened at `connect()`, taken over at `config` (`session/preconnect.ts`).
   const preConnect = createPreConnectAudio(options.preConnectAudio !== false);
   const audio = createAudioPath(
-    createAudioEffects({ conn, updateState, agentState, sendJson, mic, preConnect }),
+    createAudioEffects({
+      conn,
+      updateState,
+      agentState,
+      sendJson,
+      mic,
+      preConnect,
+      openAudioPath: internals.openAudioPath,
+    }),
   );
 
   // ─── Message handling ─────────────────────────────────────────────────────

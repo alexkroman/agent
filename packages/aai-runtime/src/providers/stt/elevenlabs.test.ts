@@ -1,14 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
-/** Unit test for the ElevenLabs Scribe STT adapter (mocked SDK). */
+/** Unit test for the ElevenLabs Scribe STT adapter (a fake connection through its seam). */
 
 import { ELEVENLABS_DEFAULT_MODEL } from "@alexkroman1/aai/host-internal";
 import type { ElevenLabsSttOptions } from "@alexkroman1/aai/stt";
-import { describe, expect, test, vi } from "vitest";
+import type { AudioOptions } from "@elevenlabs/elevenlabs-js/wrapper/realtime/index.js";
+import { describe, expect, test } from "vitest";
 import { flush } from "../../_timing-test-utils.ts";
-import { openElevenLabs } from "./elevenlabs.ts";
+import { type ElevenLabsConnect, openElevenLabs } from "./elevenlabs.ts";
 
 interface FakeConnection {
-  on(ev: string, fn: (data: unknown) => void): void;
+  /** Generic so it fits the SDK's typed `on`. */
+  on<A extends unknown[]>(ev: string, fn: (...args: A) => void): void;
   send(_: { audioBase64: string }): void;
   close(): void;
   _fire(ev: string, data: unknown): void;
@@ -19,63 +21,38 @@ interface FakeConnection {
    * covered by nothing: a wrong entry declares the wrong rate to the service
    * and produces garbled transcription with no error anywhere.
    */
-  connectOpts: Record<string, unknown>;
+  connectOpts: AudioOptions;
 }
 
 const captured: { connections: FakeConnection[] } = { connections: [] };
 
-vi.mock("@elevenlabs/elevenlabs-js", () => ({
-  ElevenLabsClient: class {
-    speechToText = {
-      realtime: {
-        connect: async (connectOpts: Record<string, unknown>): Promise<FakeConnection> => {
-          const listeners = new Map<string, (data: unknown) => void>();
-          const conn: FakeConnection = {
-            sentAudio: [],
-            connectOpts,
-            on(ev, fn) {
-              listeners.set(ev, fn);
-            },
-            send(msg) {
-              conn.sentAudio.push(msg.audioBase64);
-            },
-            close() {
-              /* no-op */
-            },
-            _fire(ev, data) {
-              listeners.get(ev)?.(data);
-            },
-          };
-          captured.connections.push(conn);
-          return conn;
-        },
-      },
-    };
-  },
-}));
-
-vi.mock("@elevenlabs/elevenlabs-js/wrapper/realtime", () => ({
-  AudioFormat: {
-    PCM_8000: "pcm_8000",
-    PCM_16000: "pcm_16000",
-    PCM_22050: "pcm_22050",
-    PCM_24000: "pcm_24000",
-    PCM_44100: "pcm_44100",
-    PCM_48000: "pcm_48000",
-  },
-  CommitStrategy: { VAD: "vad", MANUAL: "manual" },
-  RealtimeEvents: {
-    SESSION_STARTED: "session_started",
-    PARTIAL_TRANSCRIPT: "partial_transcript",
-    COMMITTED_TRANSCRIPT: "committed_transcript",
-    ERROR: "error",
-    AUTH_ERROR: "auth_error",
-  },
-}));
+/** The `connect` seam every session opens through: a {@link FakeConnection}, recorded. */
+const fakeConnect: ElevenLabsConnect = async (_apiKey, connectOpts) => {
+  const listeners = new Map<string, (...args: unknown[]) => void>();
+  const conn: FakeConnection = {
+    sentAudio: [],
+    connectOpts,
+    on<A extends unknown[]>(ev: string, fn: (...args: A) => void) {
+      // The test names the event and supplies its payload.
+      listeners.set(ev, (...args) => fn(...(args as A)));
+    },
+    send(msg) {
+      conn.sentAudio.push(msg.audioBase64);
+    },
+    close() {
+      /* no-op */
+    },
+    _fire(ev, data) {
+      listeners.get(ev)?.(data);
+    },
+  };
+  captured.connections.push(conn);
+  return conn;
+};
 
 async function openSession(sampleRate = 16_000, opts: ElevenLabsSttOptions = {}) {
   captured.connections.length = 0;
-  const opener = openElevenLabs(opts);
+  const opener = openElevenLabs(opts, fakeConnect);
   const controller = new AbortController();
   const session = await opener.open({
     sampleRate,

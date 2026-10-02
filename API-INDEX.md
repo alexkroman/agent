@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 251 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
-- [Framework internals](#framework-internals) — 434 names
+- [Framework internals](#framework-internals) — 435 names
 
 ## Agent authoring
 
@@ -1298,6 +1298,7 @@ trace or a type error can be traced back to something.
 | `Db` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `DelayedRung` | type | `@alexkroman1/aai/host-internal` |  | One rung of a delay ladder: what to say, and how long into the call. |
 | `DerivedEnvQuery` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `DnsLookup` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `EGRESS_KEEP_ALIVE_MS` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ELEVENLABS_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the ElevenLabs API key. |
 | `ELEVENLABS_DEFAULT_MODEL` | const | `@alexkroman1/aai/host-internal` |  | Streaming model used when the descriptor names none. |
@@ -1440,7 +1441,7 @@ trace or a type error can be traced back to something.
 | `SessionWiring` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `SleepTimerOptions` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `SlotName` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
-| `SpawnCappedResult` | type | `@alexkroman1/aai/host-internal` |  | One child-process runner for every tool that shells out. |
+| `SpawnCappedResult` | type | `@alexkroman1/aai/host-internal` |  |  |
 | `SpeechDirectory` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `SpeechSynthesizer` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StateSyncSession` | type | `@alexkroman1/aai-runtime/internal` |  | The per-session state this decision reads and writes. |

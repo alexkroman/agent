@@ -10,29 +10,23 @@
 import { createMemoryPlatformEvents } from "aai-server/platform";
 import { createMemoryChatStore, createMemoryWorkspaceStore } from "aai-server/stores";
 import { createTestStore } from "aai-server/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { clientDistFile, clientShellHtml } from "./_studio-client-dist-test-utils.ts";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
-import type { createStudioRoutes } from "./studio-routes.ts";
+import { createStudioRoutes } from "./studio-routes.ts";
 
 /** Options the app forwarded to `createStudioRoutes` on the last build. */
-const routeOpts = vi.hoisted(() => ({}) as { last?: Parameters<typeof createStudioRoutes>[0] });
+const routeOpts: { last?: Parameters<typeof createStudioRoutes>[0] } = {};
 
 // The route factory is wrapped, not replaced: the app under test still gets
 // real routes, and the forwarded options become observable. Without this the
 // four conditional spreads below are invisible — with every option absent,
 // omitting a key and passing it as `undefined` look identical from outside.
-vi.mock("./studio-routes.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./studio-routes.ts")>();
-  return {
-    ...actual,
-    createStudioRoutes: (opts: Parameters<typeof createStudioRoutes>[0]) => {
-      routeOpts.last = opts;
-      return actual.createStudioRoutes(opts);
-    },
-  };
-});
+const recordingRoutes: typeof createStudioRoutes = (opts) => {
+  routeOpts.last = opts;
+  return createStudioRoutes(opts);
+};
 
 function makeApp(overrides: Partial<StudioAppOpts> = {}) {
   // One process, so the memory queue — the choice the composition root makes,
@@ -47,6 +41,7 @@ function makeApp(overrides: Partial<StudioAppOpts> = {}) {
     // composition root, so it makes the choice rather than leaving a `??`
     // downstream to make a different one.
     events: createMemoryPlatformEvents().events,
+    createRoutes: recordingRoutes,
     ...overrides,
     previewQueue,
   });

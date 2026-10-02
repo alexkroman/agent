@@ -16,7 +16,7 @@
 import type { AgentRecord } from "../agent-store.ts";
 import { BROKER_READY_TIMEOUT_MS } from "../constants.ts";
 import { createLogger } from "../logger.ts";
-import { createSandbox, type Sandbox } from "../sandbox.ts";
+import { createSandbox, type Sandbox, type SpawnAgentServer } from "../sandbox.ts";
 import type { SecretStore } from "../secret-store.ts";
 import type { BundleStore } from "../store-types.ts";
 import type { SandboxDirectory } from "./directory.ts";
@@ -52,6 +52,11 @@ export type ResolveSandboxOpts = {
    * process, which has no peers.
    */
   directory?: SandboxDirectory;
+  /**
+   * How a sandbox built here boots its guest. Defaults to the selected
+   * backend's `spawnAgentServer`; the seam a test hands a fake guest through.
+   */
+  spawnAgentServer?: SpawnAgentServer;
   /**
    * True once this replica is shutting down. The broker then refuses to boot
    * a NEW sandbox, answering a retryable 503 instead.
@@ -199,6 +204,7 @@ function buildSandboxFromParts(
     version: parts.version,
     ...(parts.imageTag !== null && { imageTag: parts.imageTag }),
     onSandboxLost: () => onSandboxLost(sandbox),
+    spawnAgentServer: opts.spawnAgentServer,
   });
   return sandbox;
 }

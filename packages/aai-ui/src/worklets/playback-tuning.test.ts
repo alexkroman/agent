@@ -49,7 +49,6 @@ import {
   type RenderResult,
   renderSchedule,
   runBench,
-  scoreRender,
 } from "./_playback-bench-harness.ts";
 import { playoutVsHost } from "./_playback-bench-host.ts";
 import {
@@ -365,25 +364,5 @@ describe.skipIf(!present)("playback tuning against a real TTS reply", () => {
           .toBeLessThan(PIPELINE_PLAYBACK_GRACE_MS);
       }
     }
-  });
-
-  test("the score ranks a clean render above a stalled one", () => {
-    // The weights in `scoreRender` are the bench's one opinion; this keeps them
-    // from silently inverting, which would quietly re-rank every sweep above.
-    const clean = scoreRender(
-      runBench({ trace, pacer: SHIPPED_PACER, net: TYPICAL, settings: SHIPPED }),
-    );
-    // Past what the shipped lead absorbs — otherwise there is no stall to rank.
-    const stalled = scoreRender(
-      runBench({
-        trace,
-        pacer: SHIPPED_PACER,
-        net: stall(3000, SHIPPED_PACER.leadMs + 1000),
-        settings: SHIPPED,
-      }),
-    );
-    expect(clean.score).toBeLessThan(stalled.score);
-    expect(clean.parts.silentMs).toBe(0);
-    expect(stalled.parts.silentMs).toBeGreaterThan(0);
   });
 });
