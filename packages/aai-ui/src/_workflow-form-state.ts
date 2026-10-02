@@ -49,6 +49,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { assign, createActor, fromPromise, setup } from "xstate";
+import { type ActorStore, actorStore } from "./_actor-store.ts";
 import type { UploadGate } from "./upload/index.ts";
 import type { UploadStatus } from "./use-workflow-form.ts";
 
@@ -309,12 +310,7 @@ export type WorkflowFormView = {
 };
 
 /** One running machine: send events, read and subscribe to its view, stop it. */
-export type WorkflowFormStore = {
-  send(event: WorkflowFormEvent): void;
-  getView(): WorkflowFormView;
-  subscribe(listener: () => void): () => void;
-  stop(): void;
-};
+export type WorkflowFormStore = ActorStore<WorkflowFormEvent, WorkflowFormView>;
 
 /** Start a machine over `effects`. */
 export function createWorkflowForm(effects: WorkflowFormEffects): WorkflowFormStore {
@@ -341,14 +337,5 @@ export function createWorkflowForm(effects: WorkflowFormEffects): WorkflowFormSt
     }
     return view;
   };
-  actor.start();
-  return {
-    send: (event) => actor.send(event),
-    getView: read,
-    subscribe(listener) {
-      const sub = actor.subscribe(() => listener());
-      return () => sub.unsubscribe();
-    },
-    stop: () => actor.stop(),
-  };
+  return actorStore(actor, read);
 }

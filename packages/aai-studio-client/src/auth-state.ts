@@ -105,6 +105,12 @@ type Context = {
   token: string | null;
 };
 
+/** The backend `ready` holds — assigned on the transition into it. */
+function backendOf(context: Context): AuthBackend {
+  if (!context.backend) throw new Error("studio auth: no backend outside `ready`");
+  return context.backend;
+}
+
 const machine = setup({
   types: {} as {
     context: Context;
@@ -181,8 +187,7 @@ const machine = setup({
       type: "parallel",
       invoke: {
         src: "follow",
-        // biome-ignore lint/style/noNonNullAssertion: assigned on the way in.
-        input: ({ context }) => context.backend!,
+        input: ({ context }) => backendOf(context),
       },
       states: {
         methods: {
@@ -235,8 +240,7 @@ const machine = setup({
                 refreshing: {
                   invoke: {
                     src: "refresh",
-                    // biome-ignore lint/style/noNonNullAssertion: `ready` holds one.
-                    input: ({ context }) => context.backend!,
+                    input: ({ context }) => backendOf(context),
                     onDone: [
                       {
                         guard: ({ event }) => Boolean(event.output),

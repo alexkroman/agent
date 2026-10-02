@@ -7,6 +7,7 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { tick } from "./_react-test-utils.ts";
 import {
   createWorkflowForm,
   type SubmissionReports,
@@ -70,9 +71,6 @@ function submit(): Held {
   };
 }
 
-/** Let the promise callbacks XState queued run. */
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
-
 describe("workflow form statechart — the lookup", () => {
   test("starts idle, with nothing to report", () => {
     expect(form().getView()).toEqual({
@@ -88,14 +86,14 @@ describe("workflow form statechart — the lookup", () => {
     form(async () => "wrun_9");
     store.send({ type: "RECOVER" });
     expect(store.getView().busy).toBe(true);
-    await flush();
+    await tick();
     expect(store.getView()).toMatchObject({ runId: "wrun_9", busy: false, startedHere: false });
   });
 
   test("a key with no runs goes back to idle", async () => {
     form(async () => undefined);
     store.send({ type: "RECOVER" });
-    await flush();
+    await tick();
     expect(store.getView()).toMatchObject({ runId: undefined, busy: false });
   });
 
@@ -104,7 +102,7 @@ describe("workflow form statechart — the lookup", () => {
       throw new Error("agent unavailable");
     });
     store.send({ type: "RECOVER" });
-    await flush();
+    await tick();
     expect(store.getView()).toMatchObject({ startError: "agent unavailable", busy: false });
   });
 
@@ -118,7 +116,7 @@ describe("workflow form statechart — the lookup", () => {
     held.reports().started("wrun_1");
 
     found.resolve("wrun_old");
-    await flush();
+    await tick();
     expect(store.getView().runId).toBe("wrun_1");
   });
 
@@ -130,7 +128,7 @@ describe("workflow form statechart — the lookup", () => {
     expect(store.getView().busy).toBe(false);
 
     found.resolve("wrun_9");
-    await flush();
+    await tick();
     expect(store.getView().runId).toBeUndefined();
   });
 
@@ -138,7 +136,7 @@ describe("workflow form statechart — the lookup", () => {
     const find = vi.fn(async () => "wrun_9");
     form(find);
     store.send({ type: "RECOVER" });
-    await flush();
+    await tick();
     store.send({ type: "RECOVER" });
     expect(find).toHaveBeenCalledOnce();
     expect(store.getView().busy).toBe(false);
@@ -151,7 +149,7 @@ describe("workflow form statechart — a submission", () => {
       throw new Error("old failure");
     });
     store.send({ type: "RECOVER" });
-    await flush();
+    await tick();
 
     submit();
     expect(store.getView()).toMatchObject({
@@ -170,7 +168,7 @@ describe("workflow form statechart — a submission", () => {
 
     held.reports().started("wrun_1");
     held.finish();
-    await flush();
+    await tick();
     expect(store.getView()).toMatchObject({ runId: "wrun_1", upload: undefined, busy: false });
     expect(held.settle).toHaveBeenCalledOnce();
   });
@@ -180,7 +178,7 @@ describe("workflow form statechart — a submission", () => {
     const held = submit();
     held.reports().progress(BAR);
     held.fail(new Error("url: invalid"));
-    await flush();
+    await tick();
     expect(store.getView()).toMatchObject({
       startError: "url: invalid",
       upload: undefined,
@@ -202,7 +200,7 @@ describe("workflow form statechart — a submission", () => {
     stale.reports().progress({ ...BAR, name: "old.wav" });
     stale.reports().started("wrun_stale");
     stale.fail(new Error("Upload cancelled."));
-    await flush();
+    await tick();
     expect(store.getView()).toMatchObject({
       busy: true,
       upload: BAR,
@@ -221,7 +219,7 @@ describe("workflow form statechart — a submission", () => {
     expect(held.gate.cancelled).toBe(true);
     expect(held.settle).toHaveBeenCalledOnce();
     held.fail(new Error("Upload cancelled."));
-    await flush();
+    await tick();
     expect(store.getView()).toEqual({
       runId: undefined,
       startError: undefined,
@@ -238,7 +236,7 @@ describe("workflow form statechart — a submission", () => {
     store.stop();
     expect(held.gate.cancelled).toBe(true);
     held.fail(new Error("Upload cancelled."));
-    await flush();
+    await tick();
     expect(held.settle).toHaveBeenCalled();
   });
 });

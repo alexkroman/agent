@@ -25,6 +25,7 @@
  */
 
 import { assign, createActor, raise, setup, stateIn } from "xstate";
+import { type ActorStore, actorStore } from "./_actor-store.ts";
 import type { AgentState } from "./types.ts";
 
 /** What the session looks like to a tap: the three phases the hook publishes. */
@@ -191,12 +192,7 @@ const machine = setup({
 export type TapToTalkView = { live: boolean; failed: boolean };
 
 /** One running machine: send events, read and subscribe to its view, stop it. */
-export type TapToTalkStore = {
-  send(event: TapToTalkEvent): void;
-  getView(): TapToTalkView;
-  subscribe(listener: () => void): () => void;
-  stop(): void;
-};
+export type TapToTalkStore = ActorStore<TapToTalkEvent, TapToTalkView>;
 
 /** Start a machine over `effects`. */
 export function createTapToTalk(
@@ -212,14 +208,5 @@ export function createTapToTalk(
     if (live !== view.live || failed !== view.failed) view = { live, failed };
     return view;
   };
-  actor.start();
-  return {
-    send: (event) => actor.send(event),
-    getView: read,
-    subscribe(listener) {
-      const sub = actor.subscribe(() => listener());
-      return () => sub.unsubscribe();
-    },
-    stop: () => actor.stop(),
-  };
+  return actorStore(actor, read);
 }

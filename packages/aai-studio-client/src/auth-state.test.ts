@@ -7,6 +7,7 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { tick } from "./_test-utils.ts";
 import type { AuthConfig } from "./api.ts";
 import { GITHUB_ONLY, NO_PROVIDERS, type SignInMethods } from "./auth-methods.ts";
 import {
@@ -22,9 +23,6 @@ const SUPABASE: AuthConfig = {
   supabasePublishableKey: "sb_publishable_test",
 };
 const BOTH: SignInMethods = { github: true, password: true };
-
-/** Let every settled promise's continuation run. */
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /** A backend whose session the spec drives through `report`. */
 function fakeBackend(restored: string | null = null) {
@@ -85,7 +83,7 @@ function start(fake: Fake = fakeBackend()) {
 async function ready(config: AuthConfig, fake: Fake = fakeBackend()) {
   const run = start(fake);
   run.configs[0]?.resolve(config);
-  await flush();
+  await tick();
   return run;
 }
 
@@ -93,7 +91,7 @@ async function ready(config: AuthConfig, fake: Fake = fakeBackend()) {
 async function supabaseReady(fake: Fake = fakeBackend()) {
   const run = await ready(SUPABASE, fake);
   run.methods[0]?.resolve(BOTH);
-  await flush();
+  await tick();
   return run;
 }
 
@@ -108,21 +106,21 @@ describe("the config read", () => {
     const { store, effects, configs } = start();
     const error = new Error("storage exploded");
     configs[0]?.reject(error);
-    await flush();
+    await tick();
     expect(store.getView()).toEqual({ phase: "failed", error });
 
     store.retry();
     expect(store.getView()).toEqual({ phase: "loading" });
     expect(effects.readConfig).toHaveBeenCalledTimes(2);
     configs[1]?.resolve({ mode: "dev" });
-    await flush();
+    await tick();
     expect(store.getView()).toEqual({ phase: "signedOut", mode: "dev", methods: NO_PROVIDERS });
   });
 
   test("a rejection with no error still reads as a failure", async () => {
     const { store, configs } = start();
     configs[0]?.reject(undefined);
-    await flush();
+    await tick();
     const view = store.getView();
     expect(view.phase).toBe("failed");
     expect(view.phase === "failed" && view.error).toBeInstanceOf(Error);
@@ -146,7 +144,7 @@ describe("the config read", () => {
     const { store, configs, effects } = start();
     store.stop();
     configs[0]?.resolve({ mode: "dev" });
-    await flush();
+    await tick();
     expect(store.getView()).toEqual({ phase: "loading" });
     expect(effects.connect).not.toHaveBeenCalled();
   });
@@ -183,14 +181,14 @@ describe("supabase mode", () => {
     expect(effects.readMethods).toHaveBeenCalledWith(SUPABASE);
     expect(store.getView()).toEqual({ phase: "loading" });
     methods[0]?.resolve(BOTH);
-    await flush();
+    await tick();
     expect(store.getView()).toEqual({ phase: "signedOut", mode: "supabase", methods: BOTH });
   });
 
   test("a failed methods read is GitHub-only", async () => {
     const { store, methods } = await ready(SUPABASE);
     methods[0]?.reject(new Error("offline"));
-    await flush();
+    await tick();
     expect(store.getView()).toEqual({
       phase: "signedOut",
       mode: "supabase",
@@ -229,11 +227,12 @@ describe("supabase mode", () => {
 
   test("a failed sign-in rejects with the backend's error", async () => {
     const fake = fakeBackend();
-    fake.backend.signIn.mockRejectedValueOnce(new Error("Invalid login credentials"));
+    const failure = new Error("Invalid login credentials");
+    fake.backend.signIn.mockRejectedValueOnce(failure);
     const { store } = await supabaseReady(fake);
     await expect(
       store.signIn({ kind: "password", email: "a@b.test", password: "nope" }),
-    ).rejects.toThrow("Invalid login credentials");
+    ).rejects.toBe(failure);
     expect(store.getView().phase).toBe("signedOut");
   });
 
@@ -335,7 +334,7 @@ describe("the view", () => {
   ])("a %s view is stable across reads", async (phase, settle) => {
     const run = start();
     settle(run);
-    await flush();
+    await tick();
     const before = run.store.getView();
     expect(before.phase).toBe(phase);
     expect(run.store.getView()).toBe(before);
