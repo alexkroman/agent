@@ -58,6 +58,7 @@ import {
   TURN_IN_FLIGHT_CODE,
   TURN_IN_FLIGHT_STATUS,
 } from "./turn-stream.ts";
+import { snapshotWorkspace } from "./workspace-fs.ts";
 import type { TypecheckFn } from "./write-diagnostics.ts";
 
 /** Matches the host store's whole-conversation byte cap (4 MB). */
@@ -206,9 +207,12 @@ async function runTurn(
     // and the settled conversation reach the host's stores. A failure is
     // logged, never fatal: losing one snapshot must not kill the reply.
     onFinish: ({ messages: updated }) => {
-      void settleTurn(session, updated).catch((err: unknown) => {
-        console.error(`studio chat: failed to settle turn: ${errorMessage(err)}`);
-      });
+      // Behind any in-flight checkpoint, so the TURN-COMPLETE sync lands last.
+      void settleTurn(session, updated, snapshotWorkspace, checkpointWorkspace).catch(
+        (err: unknown) => {
+          console.error(`studio chat: failed to settle turn: ${errorMessage(err)}`);
+        },
+      );
     },
     toErrorText: errorMessage,
   });

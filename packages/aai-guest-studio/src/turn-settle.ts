@@ -39,7 +39,14 @@ export async function settleTurn(
   session: StudioSession,
   messages: UIMessage[],
   snapshot: Snapshot = snapshotWorkspace,
+  checkpoints: Pick<WorkspaceCheckpointer, "drained"> | null = null,
 ): Promise<void> {
+  // The TURN-COMPLETE sync must be the LAST word on the tree: the host applies
+  // syncs last-writer-wins and keys the preview deploy off this one. A
+  // checkpoint whose walk started before the turn's final edit could otherwise
+  // finish after this walk and land a stale tree on top of it — found by
+  // `turn-settle-fuzz.test.ts`, whose shrunk ordering is pinned there.
+  await checkpoints?.drained();
   const { files, warnings } = await snapshot(session.dir);
   for (const warning of warnings) console.error(`studio sync: ${warning}`);
   // Independent stores — no reason to pay two 30s worst cases in sequence.
@@ -83,25 +90,42 @@ export const MUTATING_TOOLS: ReadonlySet<string> = new Set([
  * without bound — the snapshot reads the tree as it stands, so a long tool
  * chain issues at most one extra sync after the current one, never a backlog.
  */
+/**
+ * Request a checkpoint (fire-and-forget), plus `drained()`: resolves once every
+ * checkpoint requested so far has settled, whatever its outcome.
+ */
+export type WorkspaceCheckpointer = (() => void) & { drained(): Promise<void> };
+
 export function createWorkspaceCheckpointer(
   session: StudioSession,
   snapshot: Snapshot = snapshotWorkspace,
-): () => void {
+): WorkspaceCheckpointer {
   const runner = createCoalescingRunner(async () => {
     const { files } = await snapshot(session.dir);
     await hostRequest("studio/sync-workspace", { files }, SYNC_RPC_TIMEOUT_MS);
   });
   let reported: Promise<void> | null = null;
+  // The run the latest trigger joined — a trailing run settles after the one
+  // it followed, so this is the last checkpoint anything has asked for.
+  let latest: Promise<void> = Promise.resolve();
 
-  return () => {
+  const checkpoint = () => {
     const run = runner.trigger();
     // Coalesced triggers share one run promise — log each run's failure once.
     if (run === reported) return;
     reported = run;
-    run.catch((err: unknown) => {
+    latest = run.catch((err: unknown) => {
       // Never fatal — a lost checkpoint costs recoverable work, while a
       // thrown one would kill a reply that is otherwise fine.
       console.error(`studio chat: workspace checkpoint failed: ${errorMessage(err)}`);
     });
   };
+  const drained = async (): Promise<void> => {
+    // Re-read after each wait: a trigger may have joined a later run meanwhile.
+    for (let seen = latest; ; seen = latest) {
+      await seen;
+      if (seen === latest) return;
+    }
+  };
+  return Object.assign(checkpoint, { drained });
 }
