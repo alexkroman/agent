@@ -282,7 +282,9 @@ describe("fixture replay with real executor (transport layer)", () => {
     await vi.waitFor(() => expect(capturedMessages.length).toBeGreaterThan(0));
 
     const assistantMsgs = capturedMessages.filter((m) => m.role === "assistant");
-    expect(assistantMsgs.some((m) => m.content === "This was completed")).toBe(true);
+    expect(assistantMsgs).toContainEqual(
+      expect.objectContaining({ content: "This was completed" }),
+    );
     expect(assistantMsgs.every((m) => m.content !== "This was interrupted")).toBe(true);
   });
 
@@ -312,7 +314,9 @@ describe("fixture replay with real executor (transport layer)", () => {
     await vi.waitFor(() => expect(ctx.fakeHandle.sendToolResult).toHaveBeenCalled());
 
     const userMsgs = capturedMessages.filter((m) => m.role === "user");
-    expect(userMsgs.some((m) => m.content.toLowerCase().includes("weather"))).toBe(true);
+    expect(userMsgs).toContainEqual(
+      expect.objectContaining({ content: expect.stringMatching(/weather/i) }),
+    );
   });
 
   test("reply.audio events forwarded to client.audio", async () => {
@@ -322,7 +326,7 @@ describe("fixture replay with real executor (transport layer)", () => {
     ctx.mockCallbacks.onAudio(new Uint8Array([10, 20, 30, 40]));
     ctx.mockCallbacks.onAudio(new Uint8Array([50, 60]));
 
-    expect(ctx.client.audioChunks.length).toBe(2);
+    expect(ctx.client.audioChunks).toHaveLength(2);
     expect(Array.from(ctx.client.audioChunks[0] ?? [])).toEqual([10, 20, 30, 40]);
     expect(Array.from(ctx.client.audioChunks[1] ?? [])).toEqual([50, 60]);
   });
@@ -351,7 +355,7 @@ describe("fixture replay with real executor (transport layer)", () => {
     cbs.onToolCall("c2", "get_weather", { city: "LA" });
 
     await vi.waitFor(() => {
-      expect(ctx.client.toolCallEvents.length).toBe(2);
+      expect(ctx.client.toolCallEvents).toHaveLength(2);
     });
 
     expect(ctx.fakeHandle.sendToolResult).not.toHaveBeenCalled();
@@ -363,7 +367,7 @@ describe("fixture replay with real executor (transport layer)", () => {
 
     const calls = vi.mocked(ctx.fakeHandle.sendToolResult).mock.calls as [string, string][];
     const results = calls.map(([, r]) => JSON.parse(r));
-    expect(results.some((r) => r.city === "NYC")).toBe(true);
-    expect(results.some((r) => r.city === "LA")).toBe(true);
+    expect(results).toContainEqual(expect.objectContaining({ city: "NYC" }));
+    expect(results).toContainEqual(expect.objectContaining({ city: "LA" }));
   });
 });

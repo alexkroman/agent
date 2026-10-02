@@ -63,6 +63,6 @@ describe("the per-session listener seam", () => {
     );
     const seen: ProviderFailover[] = [];
     await opener.openReporting(sttOptions(), (f) => seen.push(f));
-    expect(seen[0]?.reason.length).toBe(500);
+    expect(seen[0]?.reason).toHaveLength(500);
   });
 });

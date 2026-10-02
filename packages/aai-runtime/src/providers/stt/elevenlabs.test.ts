@@ -247,11 +247,11 @@ describe("ElevenLabs Scribe STT adapter — frame coalescing (~100 ms)", () => {
 
     const frame20 = new Int16Array(SAMPLES_20MS); // reused: exercises the copy
     for (let i = 0; i < 4; i++) session.sendAudio(frame20); // 80 ms — nothing yet
-    expect(fake.sentAudio.length).toBe(0);
+    expect(fake.sentAudio).toHaveLength(0);
 
     session.sendAudio(frame20); // 5th frame → 100 ms accumulated → one send
-    expect(fake.sentAudio.length).toBe(1);
-    expect(fake.sentAudio[0]?.length).toBe(base64Len(SAMPLES_100MS));
+    expect(fake.sentAudio).toHaveLength(1);
+    expect(fake.sentAudio[0]).toHaveLength(base64Len(SAMPLES_100MS));
 
     await session.close();
   });
@@ -260,20 +260,20 @@ describe("ElevenLabs Scribe STT adapter — frame coalescing (~100 ms)", () => {
     const { session, fake } = await openSession();
 
     session.sendAudio(new Int16Array(SAMPLES_1000MS + 480)); // 1000 ms + 30 ms
-    expect(fake.sentAudio.length).toBe(1);
-    expect(fake.sentAudio[0]?.length).toBe(base64Len(SAMPLES_1000MS));
+    expect(fake.sentAudio).toHaveLength(1);
+    expect(fake.sentAudio[0]).toHaveLength(base64Len(SAMPLES_1000MS));
 
     // close() flushes the tail — ElevenLabs has no frame floor, so even a
     // sub-50 ms remainder is forwarded rather than dropped.
     await session.close();
-    expect(fake.sentAudio.length).toBe(2);
-    expect(fake.sentAudio[1]?.length).toBe(base64Len(480));
+    expect(fake.sentAudio).toHaveLength(2);
+    expect(fake.sentAudio[1]).toHaveLength(base64Len(480));
   });
 
   test("no audio is sent after close()", async () => {
     const { session, fake } = await openSession();
     await session.close();
     session.sendAudio(new Int16Array(SAMPLES_100MS));
-    expect(fake.sentAudio.length).toBe(0);
+    expect(fake.sentAudio).toHaveLength(0);
   });
 });

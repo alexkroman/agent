@@ -73,7 +73,7 @@ describe("createSessionCore — lifecycle", () => {
       await core.stop();
       core.onAudio(new Uint8Array([1]));
       vi.advanceTimersByTime(5000);
-      expect(sink.events.some((e) => e.type === "session.timedOut")).toBe(false);
+      expect(sink.events).not.toContainEqual(expect.objectContaining({ type: "session.timedOut" }));
     } finally {
       vi.useRealTimers();
     }
@@ -129,7 +129,7 @@ describe("createSessionCore — client inbound", () => {
     await core.start();
     core.command({ type: "cancel" });
     expect(transport.cancelReply).toHaveBeenCalledOnce();
-    expect(sink.events.some((e) => e.type === "reply.cancelled")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "reply.cancelled" }));
   });
   test("onCancel aborts an in-flight tool's signal", async () => {
     // A user cancel must stop the tool's actual work — without the abort the
@@ -170,7 +170,7 @@ describe("createSessionCore — client inbound", () => {
     const { core, sink } = makeCore();
     await core.start();
     core.command({ type: "reset" });
-    expect(sink.events.some((e) => e.type === "session.reset")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "session.reset" }));
   });
 });
 
@@ -186,7 +186,9 @@ describe("createSessionCore — transport inbound (basic)", () => {
     const { core, sink } = makeCore();
     await core.start();
     core.report({ type: "userTranscript.committed", text: "hello" });
-    expect(sink.events.some((e) => e.type === "userTranscript.committed")).toBe(true);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ type: "userTranscript.committed" }),
+    );
   });
 });
 
@@ -196,11 +198,11 @@ describe("createSessionCore — reply dedup", () => {
     await core.start();
     core.onReplyStarted("r1");
     core.report({ type: "reply.completed" });
-    expect(sink.events.some((e) => e.type === "reply.completed")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "reply.completed" }));
     // `audio.completed` is an EVENT now, not a `playAudioDone()` on the sink —
     // which is what put it in the retained stream. The sink is what keeps it
     // behind held audio, by type.
-    expect(sink.events.some((e) => e.type === "audio.completed")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "audio.completed" }));
   });
   test("duplicate reply_done is dropped", async () => {
     const { core, sink } = makeCore();
@@ -233,7 +235,7 @@ describe("createSessionCore — tool call pending results", () => {
     await vi.waitFor(() =>
       expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "tool-output"),
     );
-    expect(sink.events.some((e) => e.type === "tool.completed")).toBe(true);
+    expect(sink.events).toContainEqual(expect.objectContaining({ type: "tool.completed" }));
   });
 
   test("the provider reads a record collection as rows; the tool.completed event keeps the tool's own string", async () => {

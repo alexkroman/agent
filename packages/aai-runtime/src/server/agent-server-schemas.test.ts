@@ -74,8 +74,8 @@ describe("ensureOwnedSchemas", () => {
     // half names the tables in the message and the journal half names the
     // subsystem, so a shared phrase would assert about one of them.
     const said = logger.warn.mock.calls.map(([message]) => String(message));
-    expect(said.some((line) => /aai_session_state/.test(line))).toBe(true);
-    expect(said.some((line) => /Workflow journal schema not applied/.test(line))).toBe(true);
+    expect(said).toContainEqual(expect.stringMatching(/aai_session_state/));
+    expect(said).toContainEqual(expect.stringMatching(/Workflow journal schema not applied/));
   });
 
   test("a second call is the SAME work, not a second round of it", async () => {

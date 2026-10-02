@@ -98,7 +98,7 @@ describe("the three watching loops share one read", () => {
     // 62: one per second — the tightest deadline any live watcher asked for —
     // plus the two the three joins take between them. It was 213 (61 per stream
     // and 30 for the notifier), i.e. 3.55 reads a second on one idle run.
-    expect(runs.get.mock.calls.length).toBe(62);
+    expect(runs.get).toHaveBeenCalledTimes(62);
 
     for (const stream of streams) stream.close();
     notifier.stop();

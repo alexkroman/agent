@@ -83,7 +83,7 @@ describe("speakOverWebSocket", () => {
     ws._msg({ type: "FlushDone" });
 
     const pcm = await audio;
-    expect(pcm.length).toBe(6);
+    expect(pcm).toHaveLength(6);
     expect(Buffer.from(pcm).readInt16LE(4)).toBe(3);
   });
 
@@ -91,7 +91,7 @@ describe("speakOverWebSocket", () => {
     const { audio, ws } = await speak();
     ws._msg({ type: "Audio", audio: pcmBase64([7]), is_final: true });
 
-    expect((await audio).length).toBe(2);
+    expect(await audio).toHaveLength(2);
   });
 
   test("ignores the frames that are not audio and not an ending", async () => {
@@ -101,7 +101,7 @@ describe("speakOverWebSocket", () => {
     ws._msg({ type: "Audio", audio: pcmBase64([5]) });
     ws._msg({ type: "FlushDone" });
 
-    expect((await audio).length).toBe(2);
+    expect(await audio).toHaveLength(2);
   });
 
   test("an Error frame rejects with the service's own code and reason", async () => {

@@ -334,7 +334,7 @@ describe("Soniox real-time STT adapter", () => {
     const pcm = new Int16Array([1, 2, 3, 4]);
     session.sendAudio(pcm);
 
-    expect(ws.sent.length).toBe(before + 1);
+    expect(ws.sent).toHaveLength(before + 1);
     const sent = ws.sent.at(-1);
     expect(sent).toBeInstanceOf(Uint8Array);
     const sentView = sent as Uint8Array;
@@ -350,11 +350,11 @@ describe("Soniox real-time STT adapter", () => {
 
     ws.bufferedAmount = 8 * 1024 * 1024;
     session.sendAudio(new Int16Array([1, 2, 3]));
-    expect(ws.sent.length).toBe(before);
+    expect(ws.sent).toHaveLength(before);
 
     ws.bufferedAmount = 0;
     session.sendAudio(new Int16Array([1, 2, 3]));
-    expect(ws.sent.length).toBe(before + 1);
+    expect(ws.sent).toHaveLength(before + 1);
     await session.close();
   });
 

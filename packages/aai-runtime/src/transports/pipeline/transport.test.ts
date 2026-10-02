@@ -140,7 +140,7 @@ describe("PipelineTransport", () => {
         expect(llm.calls.length).toBeGreaterThanOrEqual(1);
       });
       await vi.advanceTimersByTimeAsync(20);
-      expect(llm.calls.length).toBe(1);
+      expect(llm.calls).toHaveLength(1);
       await t.stop();
     });
 
@@ -186,7 +186,7 @@ describe("PipelineTransport", () => {
       });
       // Two tool steps, then exactly one forced answer step — not a third
       // tool step, and not silence.
-      expect(llm.calls.length).toBe(3);
+      expect(llm.calls).toHaveLength(3);
       expect(llm.calls[0]?.toolChoice).not.toEqual({ type: "none" });
       expect(llm.calls[1]?.toolChoice).not.toEqual({ type: "none" });
       expect(llm.calls[2]?.toolChoice).toEqual({ type: "none" });
@@ -203,7 +203,7 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
-      expect(llm.calls.length).toBe(1);
+      expect(llm.calls).toHaveLength(1);
       expect(llm.calls[0]?.toolChoice).not.toEqual({ type: "none" });
       await t.stop();
     });
@@ -269,7 +269,7 @@ describe("PipelineTransport", () => {
       expect(sttSession?.sendAudio).toHaveBeenCalledOnce();
       const pcm = firstCallArg<Int16Array>(sttSession?.sendAudio);
       expect(pcm).toBeInstanceOf(Int16Array);
-      expect(pcm.length).toBe(2);
+      expect(pcm).toHaveLength(2);
       await t.stop();
     });
 
@@ -280,7 +280,7 @@ describe("PipelineTransport", () => {
       // 3 bytes → 1 sample (truncates the trailing odd byte).
       t.sendUserAudio(new Uint8Array([1, 2, 3]));
       const pcm = firstCallArg<Int16Array>(stt.last()?.sendAudio);
-      expect(pcm.length).toBe(1);
+      expect(pcm).toHaveLength(1);
       await t.stop();
     });
   });

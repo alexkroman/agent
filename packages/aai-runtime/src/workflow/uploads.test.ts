@@ -41,7 +41,7 @@ describe("the store", () => {
     // a no-op against a table that already exists — so this is the only statement
     // that reaches a deployment which stored an upload before the boundary list
     // existed. Without it every read there fails on an unknown column.
-    expect(sql.some((one) => one.includes("add column if not exists parts"))).toBe(true);
+    expect(sql).toContainEqual(expect.stringContaining("add column if not exists parts"));
   });
 
   test("never sends a BYTE to the database", async () => {
@@ -431,7 +431,7 @@ describe("a whole-file write", () => {
     // what has been read are the same wait, not two.
     const gated = gatedStore();
     const done = gated.store.create({}, windowBody(6));
-    await vi.waitFor(() => expect(gated.started.length).toBe(UPLOAD_WINDOW_CONCURRENCY));
+    await vi.waitFor(() => expect(gated.started).toHaveLength(UPLOAD_WINDOW_CONCURRENCY));
     expect(gated.started).toEqual([
       0,
       UPLOAD_PART_BYTES,
@@ -453,11 +453,11 @@ describe("a whole-file write", () => {
     // peak memory is this module's choice and not the sender's.
     const gated = gatedStore();
     const done = gated.store.create({}, windowBody(5));
-    await vi.waitFor(() => expect(gated.started.length).toBe(UPLOAD_WINDOW_CONCURRENCY));
+    await vi.waitFor(() => expect(gated.started).toHaveLength(UPLOAD_WINDOW_CONCURRENCY));
     // The fifth window is not read off the wire until one of the four lands.
     expect(gated.started).toHaveLength(UPLOAD_WINDOW_CONCURRENCY);
     gated.release(0);
-    await vi.waitFor(() => expect(gated.started.length).toBe(UPLOAD_WINDOW_CONCURRENCY + 1));
+    await vi.waitFor(() => expect(gated.started).toHaveLength(UPLOAD_WINDOW_CONCURRENCY + 1));
     for (const at of [1, 2, 3, 4]) gated.release(at);
     await expect(done).resolves.toMatchObject({ size: UPLOAD_PART_BYTES * 5 });
   });
@@ -467,7 +467,7 @@ describe("a whole-file write", () => {
     // what makes the writes independent of each other's completion order.
     const gated = gatedStore();
     const done = gated.store.create({}, windowBody(4));
-    await vi.waitFor(() => expect(gated.started.length).toBe(UPLOAD_WINDOW_CONCURRENCY));
+    await vi.waitFor(() => expect(gated.started).toHaveLength(UPLOAD_WINDOW_CONCURRENCY));
     // Back to front, so a store deriving the next offset from the last completion
     // would place them wrong.
     for (const at of [3, 2, 1, 0]) gated.release(at);

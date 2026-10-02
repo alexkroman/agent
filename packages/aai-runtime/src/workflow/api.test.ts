@@ -625,6 +625,6 @@ describe("GET /runs/:id/stream", () => {
     const url = `${harness.url}/workflows/runs/wrun_1/stream`;
     const answers = await Promise.all([fetch(url), fetch(url), fetch(url), fetch(url)]);
     expect(answers.map((res) => res.status)).toEqual([200, 200, 200, 200]);
-    expect(get.mock.calls.length).toBe(2);
+    expect(get).toHaveBeenCalledTimes(2);
   });
 });
