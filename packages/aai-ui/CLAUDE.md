@@ -93,8 +93,9 @@ otherwise.
   browser half of `WS /inbox`.
 - `define-client.tsx` — `mountClient()`, plus `resolveContainer` and
   `mountRoot`, which `mountPage()` (`page.tsx`) shares.
-- `default-client.tsx` / `build-default-client.ts` — the default UI for agents
-  with no `client.tsx`, and its build step.
+- `default-client.tsx` / `default-client-entry.tsx` / `build-default-client.ts`
+  — the default UI for agents with no `client.tsx` (the page choice, its bundle
+  entry), and its build step.
 - `use-*.ts` — public hooks (conversation, conversation log, session controls,
   push-to-talk, tap-to-talk, route, route mutation, client runs, stored value,
   workflow run/runs/progress/submit/stream, download URL, flash, copy).

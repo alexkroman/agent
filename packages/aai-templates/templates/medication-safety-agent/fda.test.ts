@@ -1,9 +1,9 @@
 /**
  * The half of `fda.ts` that `agent.test.ts` cannot reach.
  *
- * That spec replaces `fetchFdaLabel` with a `vi.fn()`, which is right for what
- * it is about — the cross-mention scan, the refuse-on-a-missing-drug rule — and
- * leaves the lookup itself, the cache and the section readers untested. This
+ * That spec hands the tools a `vi.fn()` in place of `fetchFdaLabel`, which is
+ * right for what it is about — the cross-mention scan, the refuse-on-a-missing-
+ * drug rule — and leaves the lookup itself, the cache and the section readers untested. This
  * file drives the REAL function, with no module mocking at all: `CallOptions`
  * carries a `fetch`, documented as being for exactly this, so the query openFDA
  * receives and the signal it is cancelled by are both observable from here

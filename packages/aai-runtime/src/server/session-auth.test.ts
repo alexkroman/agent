@@ -2,11 +2,17 @@
 import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
 import { SESSION_PROTOCOL } from "@alexkroman1/aai/protocol";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import WebSocket from "ws";
 import { silentLogger } from "../_logger-test-utils.ts";
 import { makeClientSink } from "../_session-test-utils.ts";
-import { type AgentServer, createServerForRuntime, type SessionRuntime } from "./server.ts";
+import {
+  type AgentServer,
+  createServerForRuntime,
+  createServerForRuntimeWithSeams,
+  type ServerSeams,
+  type SessionRuntime,
+} from "./server.ts";
 import {
   createSessionAuth,
   createSessionToken,
@@ -22,20 +28,15 @@ import { mintPlatformSessionTicket, platformSessionSecret } from "./session-tick
 /**
  * `startHostSession` stubbed to what matters here: it opens a session and
  * reports its id through `startOpts.onSinkCreated`, as the real one does once
- * the tenant's `config` frame arrives. The real one would dial STT/TTS.
+ * the tenant's `config` frame arrives. The real one would dial STT/TTS. Handed
+ * to the server through its `startHostSession` seam.
  */
-const hostStarts = vi.hoisted((): string[] => []);
-vi.mock("./host-mode.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./host-mode.ts")>()),
-  startHostSession: (
-    ws: { send(data: string): void },
-    opts: { startOpts?: import("../runtime/index.ts").SessionStartOptions },
-  ) => {
-    hostStarts.push(opts.startOpts?.resumeFrom ?? "fresh");
-    opts.startOpts?.onSinkCreated?.(`host-${hostStarts.length}`, makeClientSink());
-    ws.send(JSON.stringify({ type: "hello" }));
-  },
-}));
+const hostStarts: string[] = [];
+const stubHostSession: NonNullable<ServerSeams["startHostSession"]> = (ws, opts) => {
+  hostStarts.push(opts.startOpts?.resumeFrom ?? "fresh");
+  opts.startOpts?.onSinkCreated?.(`host-${hostStarts.length}`, makeClientSink());
+  ws.send(JSON.stringify({ type: "hello" }));
+};
 
 const SECRET = "test-secret-with-enough-entropy";
 const T0 = Date.UTC(2026, 0, 1);
@@ -399,11 +400,14 @@ describe("createServerForRuntime with auth", () => {
   test("a host-mode session is resumable by the identity that opened it", async () => {
     hostStarts.length = 0;
     const { runtime } = recordingRuntime();
-    server = createServerForRuntime({
-      runtime,
-      logger: silentLogger,
-      env: { AAI_ALLOW_HOST: "1", AAI_SESSION_SECRET: SECRET },
-    });
+    server = createServerForRuntimeWithSeams(
+      {
+        runtime,
+        logger: silentLogger,
+        env: { AAI_ALLOW_HOST: "1", AAI_SESSION_SECRET: SECRET },
+      },
+      { startHostSession: stubHostSession },
+    );
     await server.listen(0);
     const as = (sub: string) => `token=${createSessionToken({ secret: SECRET, sub })}`;
 

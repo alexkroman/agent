@@ -31,7 +31,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { parseScriptArgs } from "./_args.mjs";
+import { parseCheckFlag } from "./_args.mjs";
 import { repoRoot } from "./_fs.mjs";
 
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
@@ -41,11 +41,7 @@ const DOC = join(ROOT, DOC_PATH);
 const START = "<!-- provider-table:start (generated: pnpm sync:provider-table) -->";
 const END = "<!-- provider-table:end -->";
 
-const { values: FLAGS } = parseScriptArgs({
-  script: import.meta.url,
-  options: { check: { type: "boolean" } },
-});
-const CHECK = FLAGS.check === true;
+const CHECK = parseCheckFlag(import.meta.url);
 
 /** @type {{ PROVIDER_CATALOG: readonly { envVar: string, factory: string, subpath: string }[] }} */
 const { PROVIDER_CATALOG } = await import(pathToFileURL(CATALOG).href);

@@ -27,7 +27,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { ffmpegVersion } from "./_ffmpeg-version.ts";
 import {
   type FfmpegError,
   isFfmpegError,
@@ -234,13 +233,5 @@ describeWithFfmpeg("ffmpeg helpers against a real binary", () => {
       ),
     );
     expect(err.kind).toBe("output-too-large");
-  });
-
-  test("ffmpegVersion answers what is installed", async () => {
-    await expect(ffmpegVersion()).resolves.toMatch(/^ffmpeg version /);
-  });
-
-  test("ffmpegVersion answers undefined for a binary that is not there", async () => {
-    await expect(ffmpegVersion({ binary: "aai-no-such-ffmpeg" })).resolves.toBeUndefined();
   });
 });

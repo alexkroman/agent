@@ -12,8 +12,27 @@
  * the format the session speaks, at the rate the session announced.
  */
 
-import { type ChildProcess, spawn } from "node:child_process";
+import { type StdioOptions, spawn } from "node:child_process";
+import type { Readable, Writable } from "node:stream";
 import type { ConsoleAudio, ConsoleCapture, ConsolePlayer } from "./_console-session.ts";
+
+/** The slice of a `ChildProcess` these devices touch — all a fake has to provide. */
+export type SoxProcess = {
+  readonly exitCode: number | null;
+  readonly killed: boolean;
+  readonly stdin: Writable | null;
+  readonly stdout: Readable | null;
+  kill(signal?: NodeJS.Signals): boolean;
+  on(event: "error", listener: (err: NodeJS.ErrnoException) => void): unknown;
+  on(event: "exit", listener: (code: number | null) => void): unknown;
+};
+
+/** How a device starts its SoX process — `node:child_process`'s `spawn` by default. */
+export type SoxSpawn = (
+  command: string,
+  args: string[],
+  options: { stdio: StdioOptions },
+) => SoxProcess;
 
 const RAW_PCM16 = ["-t", "raw", "-b", "16", "-e", "signed-integer", "-c", "1", "-L"];
 
@@ -30,7 +49,7 @@ function spawnError(binary: string, err: NodeJS.ErrnoException): Error {
   return err.code === "ENOENT" ? new Error(missingSoxMessage(binary)) : err;
 }
 
-function kill(child: ChildProcess, signal?: NodeJS.Signals): void {
+function kill(child: SoxProcess, signal?: NodeJS.Signals): void {
   if (child.exitCode === null && !child.killed) child.kill(signal);
 }
 
@@ -48,7 +67,7 @@ function kill(child: ChildProcess, signal?: NodeJS.Signals): void {
  * Windows keeps the direct spawn: it has no bash, and its stdio pipes are
  * named pipes rather than sockets.
  */
-function spawnPlay(args: string[]): ChildProcess {
+function spawnPlay(spawn: SoxSpawn, args: string[]): SoxProcess {
   const stdio: ["pipe", "ignore", "ignore"] = ["pipe", "ignore", "ignore"];
   if (process.platform === "win32") return spawn("play", args, { stdio });
   return spawn("bash", ["-c", 'exec play "$@" < <(exec cat)', "play", ...args], { stdio });
@@ -59,6 +78,7 @@ const COMMAND_NOT_FOUND = 127;
 
 /** Open the default microphone. */
 function startCapture(
+  spawn: SoxSpawn,
   sampleRate: number,
   onChunk: (pcm16: Uint8Array) => void,
   onError: (err: Error) => void,
@@ -97,12 +117,16 @@ function startCapture(
  * between reads, so a `play` blocked on an idle pipe — every moment the agent
  * is not talking — ignores it and outlives the console.
  */
-function startPlayback(sampleRate: number, onError: (err: Error) => void): ConsolePlayer {
+function startPlayback(
+  spawn: SoxSpawn,
+  sampleRate: number,
+  onError: (err: Error) => void,
+): ConsolePlayer {
   let stopped = false;
   let child = open();
 
-  function open(): ChildProcess {
-    const next = spawnPlay(["-q", ...RAW_PCM16, "-r", String(sampleRate), "-"]);
+  function open(): SoxProcess {
+    const next = spawnPlay(spawn, ["-q", ...RAW_PCM16, "-r", String(sampleRate), "-"]);
     next.on("error", (err) => onError(spawnError("play", err)));
     // A speaker that dies on its own — the device refused the rate, or was
     // unplugged — ends the console exactly as a dead microphone does. The
@@ -138,5 +162,14 @@ function startPlayback(sampleRate: number, onError: (err: Error) => void): Conso
   };
 }
 
+/** SoX-backed devices that start their processes through `spawnFn`. */
+export function createSoxAudio(spawnFn: SoxSpawn = spawn): ConsoleAudio {
+  return {
+    startCapture: (sampleRate, onChunk, onError) =>
+      startCapture(spawnFn, sampleRate, onChunk, onError),
+    startPlayback: (sampleRate, onError) => startPlayback(spawnFn, sampleRate, onError),
+  };
+}
+
 /** The SoX-backed devices. */
-export const soxAudio: ConsoleAudio = { startCapture, startPlayback };
+export const soxAudio: ConsoleAudio = createSoxAudio();

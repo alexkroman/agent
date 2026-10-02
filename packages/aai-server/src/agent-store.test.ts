@@ -2,7 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import type { SqlExec } from "./sql-exec.ts";
-import { agentRowsConformance } from "./store-conformance-cases.ts";
+import { agentRowsConformance } from "./store-conformance-test-defs.ts";
 
 const RECORD = {
   slug: "my-agent",

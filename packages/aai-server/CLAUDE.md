@@ -243,7 +243,7 @@ mutexes kept _under_ the distributed ones.
 ### Two arms per store contract, and the stack is the only real one
 
 Memory/Postgres equivalence is asserted: one case list per contract in
-`store-conformance-cases.ts` (registry `store-conformance.ts`), run over the
+`store-conformance-test-defs.ts` (registry `store-conformance.ts`), run over the
 memory arm in unit suites and over the local Supabase stack in the
 `*store-conformance.scenario.test.ts` files (`describeWithStack`,
 `pnpm test:pg`).

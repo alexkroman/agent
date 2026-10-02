@@ -4,6 +4,7 @@
 
 ```ts
 
+import { InlineConfig } from 'vite';
 import { PluginOption } from 'vite';
 
 // @internal
@@ -14,6 +15,7 @@ export type BuildClientOptions = {
     plugins?: PluginOption[];
     configFile?: false;
     outDir?: string;
+    viteBuild?: (config: InlineConfig) => Promise<unknown>;
 };
 
 // (No @packageDocumentation comment for this package)

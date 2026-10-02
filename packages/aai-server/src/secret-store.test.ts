@@ -2,7 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { createRecordingSql as fakeSql } from "./_sql-test-utils.ts";
 import { createMemorySecretStore, createVaultSecretStore } from "./secret-store.ts";
-import { secretStoreConformance } from "./store-conformance-cases.ts";
+import { secretStoreConformance } from "./store-conformance-test-defs.ts";
 
 // ── The CONTRACT, over the arm that runs everywhere ─────────────────────────
 //

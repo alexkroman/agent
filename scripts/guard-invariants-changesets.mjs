@@ -54,7 +54,7 @@ const BUMP_TYPES = new Set(["patch", "minor", "major"]);
 const MIN_WORKSPACE_PACKAGES = 9; // measured: 10 (packages/* is 9, plus docs)
 
 /**
- * Every package name pnpm treats as a workspace member.
+ * The parsed manifest of every directory pnpm treats as a workspace member.
  *
  * Derived from `pnpm-workspace.yaml`'s two globs — `packages/*` and `docs` —
  * by listing ONE level under `packages/` rather than by handing
@@ -65,18 +65,29 @@ const MIN_WORKSPACE_PACKAGES = 9; // measured: 10 (packages/* is 9, plus docs)
  * pass. AGENTS.md records this same trap costing `check-file-length` its entire
  * top-level `scripts/` corpus.
  *
- * @returns {Set<string>}
+ * @returns {Record<string, unknown>[]}
  */
-export function workspacePackageNames() {
+function workspaceManifests() {
   const dirs = readdirSync(new URL("../packages", import.meta.url), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => `packages/${entry.name}`);
 
-  const names = new Set();
+  const manifests = [];
   for (const dir of [...dirs, "docs"]) {
     const source = readRepoFile(`${dir}/package.json`);
-    if (source === undefined) continue;
-    const { name } = JSON.parse(source);
+    if (source !== undefined) manifests.push(JSON.parse(source));
+  }
+  return manifests;
+}
+
+/**
+ * Every package name pnpm treats as a workspace member.
+ *
+ * @returns {Set<string>}
+ */
+export function workspacePackageNames() {
+  const names = new Set();
+  for (const { name } of workspaceManifests()) {
     if (typeof name === "string" && name.length > 0) names.add(name);
   }
 
@@ -161,15 +172,8 @@ export function checkChangeset(file, source, known) {
  * @returns {{name: string, private: boolean, version: string}[]}
  */
 function workspacePackages() {
-  const dirs = readdirSync(new URL("../packages", import.meta.url), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => `packages/${entry.name}`);
-
   const packages = [];
-  for (const dir of [...dirs, "docs"]) {
-    const source = readRepoFile(`${dir}/package.json`);
-    if (source === undefined) continue;
-    const { name, private: isPrivate, version } = JSON.parse(source);
+  for (const { name, private: isPrivate, version } of workspaceManifests()) {
     if (typeof name === "string" && name.length > 0) {
       packages.push({ name, private: isPrivate === true, version: String(version ?? "") });
     }

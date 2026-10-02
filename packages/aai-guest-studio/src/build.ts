@@ -35,6 +35,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { annotateDiagnostics, type ExportResolver } from "./diagnostics.ts";
 import {
+  type EnsureDependencies,
   ensureWorkspaceDependencies,
   type WorkspaceDependencyOptions,
   withDependencyWarning,
@@ -117,6 +118,10 @@ export function workspaceDependencyOptions(): WorkspaceDependencyOptions {
   return { toolchainModules: toolchainModules() };
 }
 
+/** The production {@link EnsureDependencies}: install with the guest's layout. */
+export const installWorkspaceDependencies: EnsureDependencies = (dir) =>
+  ensureWorkspaceDependencies(dir, workspaceDependencyOptions());
+
 // Memoized lazy load: pool-spawned warm harnesses must not pay the Vite
 // import at boot, and a missing toolchain should fail the BUILD (a message
 // the coding agent sees), not the harness.
@@ -166,6 +171,10 @@ function annotateTypeErrors(output: string, dir: string): Promise<string> {
 export async function buildWorkspaceDir(
   dir: string,
   want: { worker: boolean; client: boolean },
+  deps: {
+    /** Test seam: defaults to {@link installWorkspaceDependencies}. */
+    ensureDependencies?: EnsureDependencies | undefined;
+  } = {},
 ): Promise<GuestBuildResult> {
   let tc: Toolchain;
   try {
@@ -176,7 +185,7 @@ export async function buildWorkspaceDir(
   // Whatever package.json declares has to be on disk before either pass reads
   // an import — the agent may have edited the manifest by hand rather than
   // through `add_dependency`. A no-op unless something is genuinely missing.
-  const depWarning = await ensureWorkspaceDependencies(dir, workspaceDependencyOptions());
+  const depWarning = await (deps.ensureDependencies ?? installWorkspaceDependencies)(dir);
   // Type errors first, as their own failure: the bundlers strip types
   // unchecked, so this is the only gate that catches runtime-working-but-
   // wrong code — and the message is exactly what the coding agent needs.

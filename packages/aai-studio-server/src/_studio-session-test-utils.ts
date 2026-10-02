@@ -1,10 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Shared fakes for the studio session suites — `studio-session-broker.test.ts`
- * (boot/reuse/adopt/evict) and `studio-session-publish.test.ts` (the
- * `workspace/deploy` path). Both drive the broker's public surface against a
- * fake guest, so the guest and the broker factory live here rather than in
- * whichever suite happened to be written first.
+ * (refresh/lock/adopt/evict), `studio-session-ensure.test.ts` (boot/reuse),
+ * `studio-session-wire.test.ts` (the guest RPCs) and
+ * `studio-session-publish.test.ts` (the `workspace/deploy` path). All drive
+ * the broker's public surface against a fake guest, so the guest and the
+ * broker factory live here rather than in whichever suite happened to be
+ * written first.
  */
 
 import type { GuestConnection } from "aai-server/config";

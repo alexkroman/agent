@@ -60,13 +60,9 @@ import {
   topicFiles,
   withSubpathBlock,
 } from "./_agent-guide.mjs";
-import { parseScriptArgs } from "./_args.mjs";
+import { parseCheckFlag } from "./_args.mjs";
 
-const { values: FLAGS } = parseScriptArgs({
-  script: import.meta.url,
-  options: { check: { type: "boolean" } },
-});
-const CHECK = FLAGS.check === true;
+const CHECK = parseCheckFlag(import.meta.url);
 
 const rel = (path) => relative(ROOT, path);
 

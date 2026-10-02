@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Fake `ws` WebSocket shared by the TTS adapter specs (AssemblyAI and Rime).
-// Import-free on purpose: each test file's `vi.mock("ws", ...)` factory
-// imports THIS module, so it must not (transitively) import an adapter —
-// which imports "ws" — or the mock factory would re-enter itself.
+// Fake `ws` WebSocket shared by the TTS adapter specs (AssemblyAI and Rime)
+// and `step-speak.test.ts`. It reaches the code under test through each
+// opener's `createSocket` seam — pass {@link createFakeWebSocket} — rather than
+// by replacing the `ws` module.
 //
 // It used to be AssemblyAI's alone while `rime.test.ts` and
 // `stt/soniox.test.ts` each re-implemented it, and the copies had already
@@ -10,14 +10,19 @@
 // flips to OPEN when it fires "open", the other two were pinned OPEN from
 // the constructor — so a write-before-open regression was catchable in one
 // suite and structurally invisible in the other two. This one matches real
-// `ws`: `readyState` is CONNECTING until the "open" event. (Soniox's copy
-// survives because its adapter speaks binary frames, reads `bufferedAmount`
-// and reads the close CODE, none of which this fake models.)
+// `ws`: `readyState` is CONNECTING until the "open" event, and it is an
+// `EventEmitter`, so an `error` with no listener throws exactly as it would
+// crash the host. (Soniox's copy survives because its adapter speaks binary
+// frames, reads `bufferedAmount` and reads the close CODE, none of which this
+// fake models.)
+
+import { EventEmitter } from "node:events";
+import type WebSocket from "ws";
+import type { CreateProviderSocket } from "../_socket.ts";
 
 type WsEvent = "open" | "message" | "error" | "close";
-type WsListener = (...args: unknown[]) => void;
 
-export class FakeWebSocket {
+export class FakeWebSocket extends EventEmitter {
   static CONNECTING = 0;
   static OPEN = 1;
   static CLOSED = 3;
@@ -28,13 +33,10 @@ export class FakeWebSocket {
   readyState: number = FakeWebSocket.CONNECTING;
   sent: string[] = [];
   readonly url: string;
-  readonly options: { headers?: Record<string, string>; perMessageDeflate?: boolean } | undefined;
-  private readonly listeners = new Map<string, WsListener[]>();
+  readonly options: WebSocket.ClientOptions | undefined;
 
-  constructor(
-    url: string,
-    opts?: { headers?: Record<string, string>; perMessageDeflate?: boolean },
-  ) {
+  constructor(url: string, opts?: WebSocket.ClientOptions) {
+    super();
     this.url = url;
     this.options = opts;
     FakeWebSocket.instances.push(this);
@@ -55,44 +57,16 @@ export class FakeWebSocket {
     FakeWebSocket.neverOpen = false;
   }
 
-  on(event: string, fn: WsListener) {
-    const arr = this.listeners.get(event) ?? [];
-    arr.push(fn);
-    this.listeners.set(event, arr);
-  }
-
-  once(event: string, fn: WsListener) {
-    const wrapper = (...args: unknown[]) => {
-      this.removeListener(event, wrapper);
-      fn(...args);
-    };
-    this.on(event, wrapper);
-  }
-
-  removeListener(event: string, fn: WsListener) {
-    const arr = this.listeners.get(event) ?? [];
-    this.listeners.set(
-      event,
-      arr.filter((l) => l !== fn),
-    );
-  }
-
-  off(event: string, fn: WsListener) {
-    this.removeListener(event, fn);
-  }
-
-  removeAllListeners() {
-    this.listeners.clear();
-  }
-
-  listenerCount() {
+  /** Every listener on every event — what `dropSocket` must leave at one. */
+  listenersTotal(): number {
     let n = 0;
-    for (const arr of this.listeners.values()) n += arr.length;
+    for (const ev of this.eventNames()) n += this.listenerCount(ev);
     return n;
   }
 
-  send(data: string) {
-    this.sent.push(data);
+  /** Every adapter on this fake speaks JSON text frames; a binary one is kept decoded. */
+  send(data: string | Uint8Array, _options?: { binary?: boolean }) {
+    this.sent.push(typeof data === "string" ? data : new TextDecoder().decode(data));
   }
 
   close() {
@@ -114,7 +88,7 @@ export class FakeWebSocket {
   }
 
   _fire(event: WsEvent, ...args: unknown[]) {
-    for (const fn of this.listeners.get(event) ?? []) fn(...args);
+    this.emit(event, ...args);
   }
 
   _msg(payload: unknown) {
@@ -125,6 +99,10 @@ export class FakeWebSocket {
     return this.sent.map((s) => JSON.parse(s) as Record<string, unknown>);
   }
 }
+
+/** The `createSocket` seam's fake: a {@link FakeWebSocket}, recorded in `instances`. */
+export const createFakeWebSocket: CreateProviderSocket = (url, options) =>
+  new FakeWebSocket(url, options);
 
 /** Base64 of one PCM16 LE sample per value. */
 export function pcmBase64(samples: number[]): string {

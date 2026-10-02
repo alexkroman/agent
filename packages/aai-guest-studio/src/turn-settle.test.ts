@@ -7,7 +7,8 @@
 // catching a file the package average cannot see — said so. Incidental
 // coverage is what that gate exists to distinguish from the real thing.
 //
-// `snapshotWorkspace` is MOCKED, and that is the split rather than a shortcut:
+// `snapshotWorkspace` is FAKED (handed in through the functions' `snapshot`
+// seam), and that is the split rather than a shortcut:
 // what this module decides is which RPCs go out, with which flags, and how a
 // failure is handled. Walking a real tree is `studio/workspace-fs.ts`'s
 // subject, and reading one here would only re-test it more slowly.
@@ -16,16 +17,11 @@ import { setHostSend } from "aai-guest-core/rpc";
 import { installFakeHostChannel } from "aai-guest-core/test-utils";
 import type { StudioSession } from "aai-guest-core/types";
 import { describe, expect, test, vi } from "vitest";
+import { createWorkspaceCheckpointer, settleTurn } from "./turn-settle.ts";
 
 const snapshotWorkspace = vi.fn<
   (dir: string) => Promise<{ files: Record<string, string>; warnings: string[] }>
 >(() => Promise.resolve({ files: { "agent.ts": "// x" }, warnings: [] }));
-
-vi.mock("./workspace-fs.ts", () => ({
-  snapshotWorkspace: (dir: string) => snapshotWorkspace(dir),
-}));
-
-const { createWorkspaceCheckpointer, settleTurn } = await import("./turn-settle.ts");
 
 const session: StudioSession = {
   scope: "s",
@@ -54,7 +50,7 @@ describe("settleTurn", () => {
   test("syncs the workspace as TURN-COMPLETE and persists the conversation", async () => {
     const channel = installFakeHostChannel({ autoAnswer: true });
     try {
-      await settleTurn(session, []);
+      await settleTurn(session, [], snapshotWorkspace);
 
       const calls = requestsOf(channel);
       const sync = calls.find((c) => c.method === "studio/sync-workspace");
@@ -73,7 +69,7 @@ describe("settleTurn", () => {
     const errors = vi.spyOn(console, "error").mockReturnValue(undefined);
     snapshotWorkspace.mockResolvedValueOnce({ files: {}, warnings: ["skipped huge.bin"] });
     try {
-      await settleTurn(session, []);
+      await settleTurn(session, [], snapshotWorkspace);
       expect(errors).toHaveBeenCalledWith(expect.stringContaining("skipped huge.bin"));
       // And the sync still goes out: a warning is about one FILE, not the turn.
       expect(requestsOf(channel)).toContainEqual(
@@ -89,7 +85,7 @@ describe("createWorkspaceCheckpointer", () => {
   test("syncs WITHOUT the done flag, so a half-finished turn is not deployed", async () => {
     const channel = installFakeHostChannel({ autoAnswer: true });
     try {
-      const checkpoint = createWorkspaceCheckpointer(session);
+      const checkpoint = createWorkspaceCheckpointer(session, snapshotWorkspace);
       checkpoint();
       await vi.waitFor(() => {
         const sync = requestsOf(channel).find((c) => c.method === "studio/sync-workspace");
@@ -104,7 +100,7 @@ describe("createWorkspaceCheckpointer", () => {
   test("coalesces a burst into one trailing run rather than a backlog", async () => {
     const channel = installFakeHostChannel({ autoAnswer: true });
     try {
-      const checkpoint = createWorkspaceCheckpointer(session);
+      const checkpoint = createWorkspaceCheckpointer(session, snapshotWorkspace);
       // A long tool chain: nine more triggers while the first walk is in
       // flight. The runner's contract is at most ONE trailing run for them —
       // the snapshot reads the tree as it stands, so queueing each would be
@@ -124,7 +120,7 @@ describe("createWorkspaceCheckpointer", () => {
     const errors = vi.spyOn(console, "error").mockReturnValue(undefined);
     snapshotWorkspace.mockRejectedValueOnce(new Error("tree vanished"));
     try {
-      const checkpoint = createWorkspaceCheckpointer(session);
+      const checkpoint = createWorkspaceCheckpointer(session, snapshotWorkspace);
       // Synchronous by contract: the caller is a tool-result handler mid-turn,
       // and a throw here would take down a reply that is otherwise fine.
       expect(() => checkpoint()).not.toThrow();

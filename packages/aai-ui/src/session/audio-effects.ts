@@ -31,6 +31,11 @@ export type AudioEffectsDeps = {
   mic: Pick<MicSender, "sendAudio" | "sendBuffered">;
   /** The microphone opened at `connect()`, which the next bring-up adopts. */
   preConnect: PreConnectAudio;
+  /**
+   * Test seam: how a path is opened. Defaults to {@link openAudioPath}; a spec
+   * hands in one whose promise it settles by hand.
+   */
+  openAudioPath?: typeof openAudioPath | undefined;
 };
 
 /** Build the effects for one session's audio path. */
@@ -59,7 +64,8 @@ export function createAudioEffects(deps: AudioEffectsDeps): AudioPathEffects {
   }
 
   return {
-    open: (config, callbacks) => openAudioPath(config, callbacks, preConnect.take()),
+    open: (config, callbacks) =>
+      (deps.openAudioPath ?? openAudioPath)(config, callbacks, preConnect.take()),
     sendMicAudio: (pcm16) => {
       try {
         mic.sendAudio(pcm16);

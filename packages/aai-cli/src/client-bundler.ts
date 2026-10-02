@@ -27,7 +27,7 @@ import path from "node:path";
 // zod and five other modules into the graph for one pure string helper.
 import { isTextAssetPath } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { build, mergeConfig, type PluginOption } from "vite";
+import { build, type InlineConfig, mergeConfig, type PluginOption } from "vite";
 import { defaultClientPlugins } from "./_client-plugins.ts";
 import { writeTempHtml } from "./_default-html.ts";
 import { devSourceViteConfig } from "./_dev-source.ts";
@@ -55,6 +55,12 @@ export type BuildClientOptions = {
   configFile?: false;
   /** Build output directory, relative to `cwd`. */
   outDir?: string;
+  /**
+   * The Vite build to run the assembled config through — Vite's own `build`
+   * unless given. A seam for specs, which assert on the config rather than
+   * running Rolldown.
+   */
+  viteBuild?: (config: InlineConfig) => Promise<unknown>;
 };
 
 const DEFAULT_OUT_DIR = ".aai/client";
@@ -82,6 +88,7 @@ export async function buildClient(
   const plugins =
     options.plugins ?? (options.configFile === false ? undefined : await defaultClientPlugins(cwd));
   const outDir = options.outDir ?? DEFAULT_OUT_DIR;
+  const viteBuild = options.viteBuild ?? build;
   const clientDir = path.join(cwd, outDir);
   // Assigned inside the try so cleanup runs even if writeTempHtml itself
   // throws mid-write; until then there is nothing to clean up.
@@ -91,7 +98,7 @@ export async function buildClient(
   try {
     cleanupHtml = writeTempHtml(cwd);
     await withPreservedNodeEnv(() =>
-      build(
+      viteBuild(
         mergeConfig(devSourceViteConfig(), {
           root: cwd,
           base: "./",

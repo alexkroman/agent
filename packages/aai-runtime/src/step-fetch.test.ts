@@ -10,32 +10,41 @@
  * options are asserted directly.
  */
 
-import { describe, expect, test, vi } from "vitest";
-
-const agentOptions: unknown[] = [];
-const requests: { url: string; init: Record<string, unknown> }[] = [];
-
-vi.mock("undici", () => ({
-  Agent: class {
-    constructor(options: unknown) {
-      agentOptions.push(options);
-    }
-  },
-  fetch: vi.fn(async (url: string, init: Record<string, unknown>) => {
-    requests.push({ url, init });
-    return new Response("ok");
-  }),
-}));
-
-const { createStepFetch } = await import("./step-fetch.ts");
-const {
+import {
   STEP_FETCH_CONNECTIONS,
   STEP_FETCH_INACTIVITY_MS,
   STEP_FETCH_KEEP_ALIVE_MS,
   STEP_FETCH_PIPELINING,
-} = await import("@alexkroman1/aai/host-internal");
-const { TRANSCRIBE_SYNC_TIMEOUT_MS } = await import("@alexkroman1/aai/step");
-const { withRunContext } = await import("./workflow/run-context.ts");
+} from "@alexkroman1/aai/host-internal";
+import { TRANSCRIBE_SYNC_TIMEOUT_MS } from "@alexkroman1/aai/step";
+import { describe, expect, test } from "vitest";
+import { createEgressPool, type EgressPoolOptions } from "./_egress-pool.ts";
+import { createStepFetch as createRealStepFetch, type StepFetchDeps } from "./step-fetch.ts";
+import { withRunContext } from "./workflow/run-context.ts";
+
+const agentOptions: EgressPoolOptions[] = [];
+const requests: {
+  url: Parameters<typeof globalThis.fetch>[0];
+  init: (RequestInit & { dispatcher?: unknown }) | undefined;
+}[] = [];
+
+/**
+ * Both collaborators recorded through the module's seam: the pool is the real
+ * one (an undici `Agent` opens nothing until a request reaches it), and the
+ * request never leaves the process.
+ */
+const deps: StepFetchDeps = {
+  createPool(options) {
+    agentOptions.push(options);
+    return createEgressPool(options);
+  },
+  async fetch(url, init) {
+    requests.push({ url, init });
+    return new Response("ok");
+  },
+};
+
+const createStepFetch = () => createRealStepFetch(deps);
 
 describe("createStepFetch", () => {
   test("pins HTTP/1.1 — the one option the whole module exists for", () => {
@@ -72,13 +81,13 @@ describe("createStepFetch", () => {
     // the value that means "no layer bounds this request at all".
     agentOptions.length = 0;
     createStepFetch();
-    const options = agentOptions[0] as { headersTimeout: number; bodyTimeout: number };
-    expect(options.headersTimeout).toBeGreaterThan(0);
-    expect(options.bodyTimeout).toBeGreaterThan(0);
+    const options = agentOptions[0];
+    expect(options?.headersTimeout).toBeGreaterThan(0);
+    expect(options?.bodyTimeout).toBeGreaterThan(0);
     // And it has to clear the longest server think-time this SDK can produce —
     // the sync transcription endpoint's own 120s contract — or restoring the
     // bound would truncate exactly the calls turning it off was meant to protect.
-    expect(options.headersTimeout).toBeGreaterThan(TRANSCRIBE_SYNC_TIMEOUT_MS);
+    expect(options?.headersTimeout).toBeGreaterThan(TRANSCRIBE_SYNC_TIMEOUT_MS);
   });
 
   test("builds ONE dispatcher per server, so a fan-out's batches share a warm pool", async () => {
@@ -93,7 +102,7 @@ describe("createStepFetch", () => {
     requests.length = 0;
     const fetchFn = createStepFetch().fetch;
     await fetchFn("https://example.test/x");
-    expect(requests[0]?.init.dispatcher).toBeDefined();
+    expect(requests[0]?.init?.dispatcher).toBeDefined();
   });
 
   test("passes only the plain shapes that survive the realm boundary", async () => {
@@ -120,7 +129,7 @@ describe("createStepFetch", () => {
     requests.length = 0;
     const headers = { Authorization: "k" };
     await createStepFetch().fetch("https://example.test/x", { headers });
-    expect(requests[0]?.init.headers).not.toBe(headers);
+    expect(requests[0]?.init?.headers).not.toBe(headers);
   });
 
   test("omits an absent field rather than sending it as undefined", async () => {
@@ -155,7 +164,7 @@ describe("the WALK's signal reaches a step's outbound request", () => {
     const fetchFn = createStepFetch().fetch;
 
     await inStep(walk.signal, () => fetchFn("https://example.test/x"));
-    const sent = requests[0]?.init.signal as AbortSignal;
+    const sent = requests[0]?.init?.signal as AbortSignal;
     expect(sent).toBeInstanceOf(AbortSignal);
     expect(sent.aborted).toBe(false);
     walk.abort();
@@ -173,7 +182,7 @@ describe("the WALK's signal reaches a step's outbound request", () => {
         fetchFn("https://example.test/x", { signal: pair.caller.signal }),
       );
     }
-    const [first, second] = requests.map((one) => one.init.signal as AbortSignal);
+    const [first, second] = requests.map((one) => one.init?.signal);
 
     // The caller's deadline still fires — `stepTranscribeUpload`'s 30 minutes is
     // the shipped instance, and it has to keep winning over a walk nobody
@@ -193,7 +202,7 @@ describe("the WALK's signal reaches a step's outbound request", () => {
     requests.length = 0;
     const signal = new AbortController().signal;
     await createStepFetch().fetch("https://example.test/x", { signal });
-    expect(requests[0]?.init.signal).toBe(signal);
+    expect(requests[0]?.init?.signal).toBe(signal);
   });
 
   test("a run whose walk has no signal adds none", async () => {

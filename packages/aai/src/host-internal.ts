@@ -63,7 +63,7 @@ export {
   type LogStream,
 } from "./host/log-buffer.ts";
 export { getSessionLocation } from "./host/session-location.ts";
-export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
+export { CONTAINED_ENV, type DnsLookup, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";
 // The route-key matcher `stubFetchRoutes` is built on, shared with the eval

@@ -16,6 +16,7 @@ import {
   FFMPEG_KILL_GRACE_MS,
   FFMPEG_STDERR_TAIL_CHARS,
   type FfmpegError,
+  ffmpegProcess,
   isFfmpegError,
 } from "./_ffmpeg-spawn.ts";
 import { ffmpegVersion } from "./_ffmpeg-version.ts";
@@ -30,24 +31,23 @@ import {
   wavEncodeArgs,
 } from "./ffmpeg.ts";
 
-const spawnMock = vi.fn();
-vi.mock("node:child_process", () => ({ spawn: (...args: unknown[]) => spawnMock(...args) }));
-
 /**
  * A child process the test drives.
  *
  * Only what `spawnFfmpeg` touches: two output emitters, a writable stdin, the
- * `error`/`close` events, and `kill`. Nothing is annotated as a
- * `ChildProcess` — the mocked module's value is untyped, so the fake needs no
- * cast to stand in for one, which is what keeps this file's escape-hatch count
- * at zero.
+ * `error`/`close` events, and `kill` — the structural `FfmpegChild`, handed in
+ * through the module's `ffmpegProcess.spawn` seam, so it needs no cast.
  */
 function installChild() {
   const listeners = new Map<string, (...args: unknown[]) => void>();
   const dataListeners = new Map<string, (chunk: Buffer) => void>();
   let stdinErrorListener: ((err: Error) => void) | undefined;
   const state = {
-    calls: [] as { binary: string; args: string[]; options: Record<string, unknown> }[],
+    calls: [] as {
+      binary: string;
+      args: string[];
+      options: Parameters<typeof ffmpegProcess.spawn>[2];
+    }[],
     kills: [] as (string | undefined)[],
     stdinChunks: [] as Uint8Array[],
     stdinEnded: false,
@@ -71,20 +71,19 @@ function installChild() {
         if (bytes) state.stdinChunks.push(bytes);
       },
     },
-    on(event: string, cb: (...args: unknown[]) => void) {
-      listeners.set(event, cb);
+    on<A extends unknown[]>(event: string, cb: (...args: A) => void) {
+      // The test names the event and supplies its payload.
+      listeners.set(event, (...args) => cb(...(args as A)));
       return child;
     },
     kill(signal?: string) {
       state.kills.push(signal);
     },
   };
-  spawnMock.mockImplementation(
-    (binary: string, args: string[], options: Record<string, unknown>) => {
-      state.calls.push({ binary, args, options });
-      return child;
-    },
-  );
+  vi.spyOn(ffmpegProcess, "spawn").mockImplementation((binary, args, options) => {
+    state.calls.push({ binary, args, options });
+    return child;
+  });
   // GETTERS, not a spread of `state`: spreading copies the booleans at return
   // time, so `stdinEnded` would answer what it was before the run started.
   return {

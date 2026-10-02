@@ -13,34 +13,12 @@ import { tmpdir } from "node:os";
 import nodePath from "node:path";
 import type { AppContext } from "aai-server/http";
 import { Hono } from "hono";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { chatUrlForGuest } from "./studio-session-broker.ts";
-import { studioCsp } from "./studio-static.ts";
+import { createStudioClientHandlers, studioCsp } from "./studio-static.ts";
 
 /** The faked `aai-studio-client` package root the handler suite resolves to. */
-const tmp = vi.hoisted(() => ({ dir: "" }));
-
-// Only the module RESOLUTION is faked. The real cached reader still runs, so
-// `clientDir()`'s own `dist` join and its containment check stay under test —
-// faking the reader instead would leave the line that names the build
-// directory unexercised.
-vi.mock("node:module", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:module")>();
-  return {
-    ...actual,
-    createRequire: (url: string | URL) => {
-      const req = actual.createRequire(url);
-      return Object.assign(req.bind(null) as typeof req, req, {
-        // Only the one-argument form is used by the module under test;
-        // everything else delegates to the real resolver unchanged.
-        resolve: ((id: string) =>
-          id === "aai-studio-client/package.json"
-            ? nodePath.join(tmp.dir, "package.json")
-            : req.resolve(id)) as typeof req.resolve,
-      });
-    },
-  };
-});
+const tmp = { dir: "" };
 
 /** The `connect-src` sources from a CSP string. */
 function connectSrc(csp: string): string[] {
@@ -169,7 +147,8 @@ describe("studioCsp", () => {
 
 /**
  * The three handlers themselves, driven over a real Hono app against a real
- * (temporary) build directory. Only the module resolution is faked, so
+ * (temporary) build directory. Only the module resolution is faked (through
+ * `createStudioClientHandlers`' `resolvePackageJson` seam), so
  * `clientDir()`'s own `dist` join, the containment check, and the cached
  * reader all stay under test — mocking the reader instead would have left the
  * one line that names the build directory unexercised.
@@ -178,9 +157,6 @@ describe("studio client handlers", () => {
   beforeEach(async () => {
     tmp.dir = await mkdtemp(nodePath.join(tmpdir(), "aai-studio-static-"));
     await writeFile(nodePath.join(tmp.dir, "package.json"), '{"name":"aai-studio-client"}');
-    // Module-level memos (client dir, CSP headers, decoded shell, read cache)
-    // outlive a single test, so each case gets a fresh module instance.
-    vi.resetModules();
     return () => rm(tmp.dir, { recursive: true, force: true });
   });
 
@@ -201,15 +177,15 @@ describe("studio client handlers", () => {
   const asAppContext = (c: object): AppContext => c as unknown as AppContext;
 
   /**
-   * A Hono app wired to the freshly imported handlers.
+   * A Hono app wired to a fresh handler instance — its memos (client dir, CSP
+   * headers, decoded shell, read cache) would otherwise outlive a single test.
    *
-   * `draining` is a per-app switch rather than a module one so the same import
-   * can serve both the steady-state 404 and the drain-time 503.
+   * `draining` is a per-app switch rather than an instance one so the same
+   * handlers can serve both the steady-state 404 and the drain-time 503.
    */
   async function app({ draining = false }: { draining?: boolean } = {}) {
-    const { handleStudioPage, handleStudioFavicon, studioClientAssetHandler } = await import(
-      "./studio-static.ts"
-    );
+    const { handleStudioPage, handleStudioFavicon, studioClientAssetHandler } =
+      createStudioClientHandlers(() => nodePath.join(tmp.dir, "package.json"));
     const asset = studioClientAssetHandler(() => draining);
     const hono = new Hono();
     hono.get("/", (c) => handleStudioPage(asAppContext(c)));

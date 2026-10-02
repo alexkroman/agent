@@ -1,321 +1,562 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The "landing on a project" half of preview handling (studio-preview-wake.ts):
- * the sandbox warm-up, and the wake that hangs off the session broker call.
+ * The preview deploy loop: what a settled edit deploys, what it stamps, and
+ * how the durable queue behaves when it or the deploy fails.
  *
- * The deploy loop and its durable queue live in
- * `studio-preview-deploy.test.ts`, and the preview slug's NAME in
- * `studio-project-slugs.test.ts` — the three share only a workspace, and
- * splitting them keeps each under the file-length cap.
+ * The "landing on a project" half (slug, warm-up, wake) is
+ * `studio-preview-wake.test.ts`.
  */
 
-import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/stores";
-import { describe, expect, test, vi } from "vitest";
-import { answering, fakeFetch } from "./_studio-fetch-test-utils.ts";
+import { createMemoryWorkspaceStore } from "aai-server/stores";
+import { captureLogs } from "aai-server/test-utils";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   PROJECT,
+  previewStamped,
   SCOPE,
   seededStore,
   settled,
   stampProject,
   TARGET,
 } from "./_studio-preview-test-utils.ts";
-import { wakeProjectPreview, warmPreviewSandbox } from "./studio-preview-wake.ts";
-import type { WorkspaceDeployTarget } from "./studio-session-broker.ts";
+import { createPreviewDeployer, type PreviewDeployerOptions } from "./studio-preview.ts";
+import {
+  createMemoryPreviewQueue,
+  PREVIEW_JOB_MAX_ATTEMPTS,
+  PREVIEW_JOB_VISIBILITY_MS,
+} from "./studio-preview-queue.ts";
+import type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-broker.ts";
 import { getWorkspace } from "./studio-workspace.ts";
 
-describe("warmPreviewSandbox", () => {
-  test("hits the platform's client-config broker for the slug, with a deadline", async () => {
-    const fetchImpl = fakeFetch();
-    await expect(
-      warmPreviewSandbox("https://platform.example", "proj-preview", fetchImpl),
-    ).resolves.toBe(200);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchImpl.mock.calls[0] ?? [];
-    expect(String(url)).toBe("https://platform.example/proj-preview/client-config");
-    expect(init?.signal).toBeInstanceOf(AbortSignal);
+/** Jump the memory queue's clock past any visibility timeout. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A deployer over a fresh in-memory queue, with the periodic drain disabled —
+ * scheduling kicks a drain synchronously, so the timer would only add
+ * nondeterminism to these tests.
+ */
+function makeDeployer(opts: Omit<PreviewDeployerOptions, "queue" | "pollMs">) {
+  const queue = createMemoryPreviewQueue();
+  const deployer = createPreviewDeployer({ ...opts, queue, pollMs: 0 });
+  return Object.assign(deployer, { queue });
+}
+
+describe("createPreviewDeployer", () => {
+  // The EXPECTED warnings go through the package's log seam, not a
+  // `spyOn(console, "warn")`. `captureLogs` registers its own hooks, so it is
+  // called at DESCRIBE scope, once.
+  const logs = captureLogs();
+
+  test("deploys the workspace to the preview slug and stamps the metadata", async () => {
+    const workspaces = await seededStore();
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }),
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    const workspace = await previewStamped(workspaces);
+
+    expect(deploy).toHaveBeenCalledWith(
+      SCOPE,
+      PROJECT,
+      { "agent.ts": "// v1" },
+      {
+        serverUrl: TARGET.serverUrl,
+        apiKey: TARGET.apiKey,
+        slug: "contact-form-x7k2mq-preview",
+        // The auto-preview deploy is the ONLY caller allowed to claim the
+        // reserved `-preview` suffix, and it says so explicitly — Publish
+        // shares this path and must not inherit the opt-in.
+        allowPreviewSlug: true,
+      },
+    );
+    expect(workspace.previewSlug).toBe("contact-form-x7k2mq-preview");
+    expect(workspace.previewError).toBeUndefined();
+    // The stamped hash matches the deployed files — the preview is current.
+    expect(workspace.previewHash).toBe(workspace.hash);
   });
 
-  test("reports the broker's status so callers can spot a gone agent", async () => {
-    const fetchImpl = fakeFetch(answering("nope", 404));
-    await expect(
-      warmPreviewSandbox("https://platform.example", "proj-preview", fetchImpl),
-    ).resolves.toBe(404);
+  test("prefers the slug the deploy actually claimed, and reuses it after", async () => {
+    const workspaces = await seededStore();
+    const deploy = vi.fn(
+      async (
+        _scope: string,
+        _project: string,
+        _files: Record<string, string>,
+        _target: WorkspaceDeployTarget,
+      ): Promise<WorkspaceDeployOutcome> => ({ ok: true, slug: "claimed", output: "ok" }),
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewSlug).toBe("claimed");
+    });
+
+    // Edit → redeploys to the SAME slug, so the preview URL never rots.
+    await stampProject(workspaces, { files: { "agent.ts": "// v2" } });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(2));
+    expect(deploy.mock.calls[1]?.[3]).toMatchObject({ slug: "claimed" });
   });
 
-  test("resolves null on fetch failure — the warm-up is only an accelerator", async () => {
-    const fetchImpl = fakeFetch(() => Promise.reject(new Error("cold boot timed out")));
-    await expect(
-      warmPreviewSandbox("https://platform.example", "proj-preview", fetchImpl),
-    ).resolves.toBeNull();
+  test("a no-op schedule (preview already current) never deploys", async () => {
+    const workspaces = await seededStore();
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await previewStamped(workspaces);
+    // Same files, second schedule: nothing to ship.
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await settled();
+    expect(deploy).toHaveBeenCalledTimes(1);
   });
 
-  test("an unparsable origin is a no-op, never a throw", async () => {
-    const fetchImpl = fakeFetch();
-    await expect(warmPreviewSandbox("not a url", "proj-preview", fetchImpl)).resolves.toBeNull();
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-});
+  test("schedules during a deploy coalesce into one trailing re-deploy", async () => {
+    const workspaces = await seededStore();
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+    const deploy = vi.fn(
+      async (
+        _scope: string,
+        _project: string,
+        _files: Record<string, string>,
+        _target: WorkspaceDeployTarget,
+      ): Promise<WorkspaceDeployOutcome> => {
+        await gate;
+        return { ok: true, output: "ok" };
+      },
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
 
-describe("wakeProjectPreview", () => {
-  const scheduleFn = () =>
-    vi.fn<(scope: string, project: string, target: WorkspaceDeployTarget) => void>();
-  const wake = (
-    workspaces: WorkspaceStore,
-    schedule: ReturnType<typeof scheduleFn>,
-    fetchImpl: ReturnType<typeof fakeFetch>,
-  ) =>
-    wakeProjectPreview({
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(1));
+    // Three edits land while the first deploy is in flight…
+    for (const version of ["v2", "v3", "v4"]) {
+      await stampProject(workspaces, { files: { "agent.ts": `// ${version}` } });
+      deployer.schedule(SCOPE, PROJECT, TARGET);
+    }
+    release();
+    // …and cost exactly one trailing deploy, of the FINAL tree.
+    await vi.waitFor(async () => {
+      const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);
+      expect(workspace?.previewHash).toBe(workspace?.hash);
+    });
+    expect(deploy).toHaveBeenCalledTimes(2);
+    expect(deploy.mock.calls[1]?.[2]).toEqual({ "agent.ts": "// v4" });
+  });
+
+  test("a failed deploy stamps previewError and leaves the hash unset", async () => {
+    const workspaces = await seededStore({ "agent.ts": "// broken" });
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> => ({
+        ok: false,
+        output: "Build failed:\nagent.ts:1: oops",
+      }),
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toContain(
+        "Build failed",
+      );
+    });
+    const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);
+    // Still stale — the next edit retries.
+    expect(workspace?.previewHash).toBeUndefined();
+    expect(workspace?.previewSlug).toBeUndefined();
+  });
+
+  test("a success after a failure clears previewError", async () => {
+    const workspaces = await seededStore({ "agent.ts": "// broken" });
+    let ok = false;
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> =>
+        ok ? { ok: true, output: "Deployed" } : { ok: false, output: "Build failed" },
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeDefined();
+    });
+
+    ok = true;
+    await stampProject(workspaces, { files: { "agent.ts": "// fixed" } });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    expect((await previewStamped(workspaces)).previewError).toBeUndefined();
+  });
+
+  /**
+   * The banner that could never clear. A bad edit fails its deploy and stamps
+   * `previewError` while `previewHash` still names the last GOOD deploy; the
+   * user reverts, the files hash returns to that value — and the no-op early
+   * return fired before anything was stamped, so the pane showed a build error
+   * for code no longer in the workspace, permanently, with every later job for
+   * that project confirming it. Clearing on the no-op is the one case where
+   * "success" needs no deploy: what is running already IS the current files.
+   */
+  test("a job over already-deployed files clears a stale previewError without deploying", async () => {
+    const workspaces = await seededStore({ "agent.ts": "// good" });
+    let ok = true;
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> =>
+        ok ? { ok: true, output: "Deployed" } : { ok: false, output: "Build failed" },
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    // A good deploy, then a bad edit that fails.
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    const goodHash = (await previewStamped(workspaces)).previewHash;
+    ok = false;
+    await stampProject(workspaces, { files: { "agent.ts": "// broken" } });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeDefined();
+    });
+    expect(deploy).toHaveBeenCalledTimes(2);
+
+    // Undo. The files now hash to exactly what is deployed.
+    await stampProject(workspaces, { files: { "agent.ts": "// good" } });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeUndefined();
+    });
+
+    const after = await getWorkspace(workspaces, SCOPE, PROJECT);
+    // Nothing was redeployed — the running preview is already these files.
+    expect(deploy).toHaveBeenCalledTimes(2);
+    expect(after?.previewHash).toBe(goodHash);
+  });
+
+  test("a no-op job over a clean workspace stamps nothing at all", async () => {
+    // The common case, and the one the clear above must not turn into a write:
+    // N queued jobs for one project cost a read each, not a version bump each
+    // (every bump is an SSE push of the whole file map to every open tab).
+    const workspaces = await seededStore();
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }),
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    const before = await previewStamped(workspaces);
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await settled();
+
+    expect(deploy).toHaveBeenCalledTimes(1);
+    expect(await getWorkspace(workspaces, SCOPE, PROJECT)).toEqual(before);
+  });
+
+  test("a workspace with no entry is skipped, then deploys when the entry lands", async () => {
+    // A new project's first edits are the coding agent scaffolding a tree, and
+    // `agent.ts` is not the first file it writes. Every one of those edits
+    // enqueued a deploy that could only come back with the CLI's
+    // "No agent.ts found in the current directory. Run `aai init` first." —
+    // stamped as `previewError` and rendered in the Preview pane, telling a
+    // browser user to run a CLI command. Production did it three times in five
+    // minutes on one project.
+    const workspaces = await seededStore({ "package.json": "{}" });
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }),
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await settled();
+    expect(deploy).not.toHaveBeenCalled();
+    const skipped = await getWorkspace(workspaces, SCOPE, PROJECT);
+    // Nothing stamped, and `previewHash` above all: a hash here would make the
+    // real deploy below read as already-deployed and never run.
+    expect(skipped?.previewHash).toBeUndefined();
+    expect(skipped?.previewError).toBeUndefined();
+
+    // The agent writes the entry. The very next edit deploys for real.
+    await stampProject(workspaces, {
+      files: { "package.json": "{}", "agent.ts": "// v1" },
+    });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    const after = await previewStamped(workspaces);
+
+    expect(deploy).toHaveBeenCalledTimes(1);
+    expect(after.previewHash).toBe(after.hash);
+  });
+
+  test("an entry DELETED under a stale previewError clears the banner", async () => {
+    // The mirror of the already-deployed clear above, reached the other way:
+    // declining to deploy leaves a `previewError` that only a SUCCESSFUL
+    // deploy would have removed, so the pane would show a build failure for
+    // code the workspace no longer holds, for as long as the project lived.
+    const workspaces = await seededStore({ "agent.ts": "// broken" });
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> => ({ ok: false, output: "Build failed" }),
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeDefined();
+    });
+
+    await stampProject(workspaces, { files: { "package.json": "{}" } });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeUndefined();
+    });
+    expect(deploy).toHaveBeenCalledTimes(1);
+  });
+
+  test("a deleted project deploys nothing and never resurrects", async () => {
+    const workspaces = createMemoryWorkspaceStore();
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+    deployer.schedule(SCOPE, "ghost", TARGET);
+    await settled();
+    expect(deploy).not.toHaveBeenCalled();
+    expect(await getWorkspace(workspaces, SCOPE, "ghost")).toBeNull();
+  });
+
+  test("a thrown deploy (dead sandbox) is contained, not fatal", async () => {
+    const workspaces = await seededStore();
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
+      throw new Error("sandbox gone");
+    });
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(() => expect(logs.warns().length).toBeGreaterThan(0));
+    // A later schedule runs again — nothing wedged.
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(2));
+  });
+
+  /**
+   * The whole point of the queue. Before it, a deploy that died mid-flight
+   * (replica restart, sandbox gone) was simply lost, and the workspace sat
+   * stamped-stale with nothing on the way — the pane showing "Updating
+   * preview…" indefinitely.
+   */
+  test("a job whose deploy throws is left for redelivery, not consumed", async () => {
+    const workspaces = await seededStore();
+    const deploy = vi
+      .fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }))
+      .mockRejectedValueOnce(new Error("sandbox gone"));
+    // The clock moves a day per attempt, so a retry is always past visibility.
+    const queue = createMemoryPreviewQueue({
+      now: () => Date.now() + deploy.mock.calls.length * DAY_MS,
+    });
+    const deployer = createPreviewDeployer({
       workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+    });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(() => expect(logs.warns().length).toBeGreaterThan(0));
+    // Not acked and not archived: still in the queue, merely invisible.
+    expect(queue.archived).toEqual([]);
+
+    // The next drain — any replica's — picks it up and finishes the work.
+    await deployer.drainOnce();
+    expect((await previewStamped(workspaces)).previewError).toBeUndefined();
+  });
+
+  test("a job wedged on its project lock is handed back, not sat on", async () => {
+    // A claimed job is invisible to the whole fleet for the visibility
+    // timeout, so waiting on an in-process lock spends the queue's own
+    // durability. The acquire is bounded well under that window; a lapsed one
+    // rejects, leaving the job unacked for redelivery.
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const workspaces = await seededStore();
+
+    // The first deploy never returns — a sandbox that went away mid-request.
+    const wedged = vi.fn(
+      (): Promise<WorkspaceDeployOutcome> =>
+        new Promise(() => {
+          /* never settles */
+        }),
+    );
+    const queue = createMemoryPreviewQueue();
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: wedged,
+      queue,
+      pollMs: 0,
+      resolveApiKey: () => Promise.resolve("stored-key"),
+    });
+
+    // Two jobs for ONE project, so the batch claims both and the second
+    // queues behind the first on the project lock.
+    const job = { scope: SCOPE, project: PROJECT, serverUrl: TARGET.serverUrl, userId: "u1" };
+    await queue.enqueue(job);
+    await queue.enqueue(job);
+
+    // Never settles — the first job's deploy is wedged by construction.
+    void deployer.drainOnce();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(wedged).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(PREVIEW_JOB_VISIBILITY_MS);
+
+    // The waiter gave up rather than holding its claim to the deadline, and
+    // it is still in the queue — unacked and unarchived — for redelivery.
+    // Asserting the REASON, not just that something warned: a job left
+    // unacked because the deploy errored looks identical from the queue's
+    // side, and only the message separates it from the lock lapsing.
+    expect(logs.all()).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        msg: "studio.preview deploy errored",
+        ctx: expect.objectContaining({ error: expect.stringContaining("timed out") }),
+      }),
+    );
+    expect(queue.archived).toEqual([]);
+    expect(wedged).toHaveBeenCalledTimes(1);
+    deployer.dispose();
+  });
+
+  test("a job redelivered past the attempt cap is archived, not retried forever", async () => {
+    const workspaces = await seededStore();
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
+      throw new Error("crash loop");
+    });
+    // A day further on per read, so every drain sees the job visible again.
+    const now = vi.fn((): number => Date.now() + now.mock.calls.length * DAY_MS);
+    const queue = createMemoryPreviewQueue({ now });
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+    });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    for (let i = 0; i < PREVIEW_JOB_MAX_ATTEMPTS + 2; i++) await deployer.drainOnce();
+    expect(queue.archived).toHaveLength(1);
+    // Capped: the deploy is not attempted once per drain forever.
+    expect(deploy.mock.calls.length).toBeLessThanOrEqual(PREVIEW_JOB_MAX_ATTEMPTS);
+  });
+
+  /**
+   * A durable row must never carry a credential, so a job redelivered to a
+   * replica that did not enqueue it resolves the user's key from Vault.
+   */
+  test("a redelivered job resolves the caller's key by user id", async () => {
+    const workspaces = await seededStore();
+    const queue = createMemoryPreviewQueue();
+    // Enqueued by a replica that is now gone: only the row survives.
+    await queue.enqueue({
       scope: SCOPE,
       project: PROJECT,
-      target: TARGET,
-      schedule,
-      fetchImpl,
+      serverUrl: TARGET.serverUrl,
+      userId: "user-1",
     });
-
-  /**
-   * The queue owns delivery now, so a stale preview means a job is still
-   * enqueued and the drain will run it. Re-scheduling on project open would
-   * be a second mechanism answering the same question — and the weaker one,
-   * since it only fires when a human happens to look.
-   */
-  test("a stale preview only warms — the queue owns the redeploy", async () => {
-    const workspaces = await seededStore();
-    await stampProject(workspaces, {
-      previewSlug: "p-preview",
-      previewHash: "stale",
+    const deploy = vi.fn(
+      async (
+        _scope: string,
+        _project: string,
+        _files: Record<string, string>,
+        _target: WorkspaceDeployTarget,
+      ): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }),
+    );
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+      resolveApiKey: (userId) => Promise.resolve(userId === "user-1" ? "stored-key" : null),
     });
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch();
-    wake(workspaces, schedule, fetchImpl);
-    await vi.waitFor(() => {
-      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    await deployer.drainOnce();
+    expect(deploy.mock.calls[0]?.[3]).toMatchObject({ apiKey: "stored-key" });
+  });
+
+  test("a redelivered job with no resolvable key is archived", async () => {
+    const workspaces = await seededStore();
+    const queue = createMemoryPreviewQueue();
+    // No userId: a raw-key caller's job whose enqueuing replica is gone. No
+    // replica will ever hold that credential, so retrying is pointless.
+    await queue.enqueue({ scope: SCOPE, project: PROJECT, serverUrl: TARGET.serverUrl });
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
     });
-    await settled();
-    expect(schedule).not.toHaveBeenCalled();
-    const [url] = fetchImpl.mock.calls[0] ?? [];
-    expect(String(url)).toBe("https://platform.example/p-preview/client-config");
-  });
-
-  test("a current preview only warms — never redeploys", async () => {
-    const workspaces = await seededStore();
-    await stampProject(workspaces, (current) => ({
-      previewSlug: "p-preview",
-      previewHash: current.hash,
-    }));
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch();
-    wake(workspaces, schedule, fetchImpl);
-    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
-    expect(schedule).not.toHaveBeenCalled();
-  });
-
-  test("an empty workspace (fresh project) neither deploys nor warms", async () => {
-    const workspaces = await seededStore({});
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch();
-    wake(workspaces, schedule, fetchImpl);
-    await settled();
-    // Nothing deployable yet — the first agent turn owns the first preview.
-    expect(schedule).not.toHaveBeenCalled();
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  /**
-   * A settled failure is the one case with no queued job behind it, so the
-   * wake is the only thing that can retry it. Not retrying is what turned a
-   * transient failure — a platform 500, a Storage blip — into a permanently
-   * stuck error banner that only an edit could clear.
-   */
-  test("a stamped failure is retried on open, and still warms", async () => {
-    const workspaces = await seededStore();
-    await stampProject(workspaces, {
-      previewSlug: "p-preview",
-      previewError: "deploy failed (HTTP 500): Internal server error",
-    });
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch();
-    wake(workspaces, schedule, fetchImpl);
-    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
-    // The previous deploy's agent is what the pane embeds, so it is still
-    // worth warming while the retry runs.
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
-
-  test("a stamped failure is retried even with no agent ever deployed", async () => {
-    // A first-ever preview that failed has no previewSlug and no deployedSlug,
-    // so there is nothing to warm — and the early `if (!slug) return` this
-    // replaced meant such a project could never retry at all.
-    const workspaces = await seededStore();
-    await stampProject(workspaces, {
-      previewError: "deploy failed (HTTP 500): Internal server error",
-    });
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch();
-    wake(workspaces, schedule, fetchImpl);
-    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  /**
-   * The retry has to CLEAR the stamp as well as schedule, and for a long time
-   * it only scheduled — which made it a no-op in the one state it exists to
-   * rescue. A failed deploy leaves `previewHash` naming the last GOOD deploy;
-   * revert the bad edit and the files hash back to that value, so the job the
-   * retry enqueues finds a matching hash and returns. Every project open then
-   * scheduled another no-op behind a banner that could not clear. The `gone`
-   * branch three tests down always cleared; `forcePreviewRedeploy` is what
-   * stops the two branches from disagreeing again.
-   */
-  test("a settled failure retry clears previewHash, so the deploy is not a no-op", async () => {
-    const workspaces = await seededStore();
-    await stampProject(workspaces, (current) => ({
-      previewSlug: "p-preview",
-      // The workspace was reverted to exactly what is deployed.
-      previewHash: current.hash,
-      previewError: "deploy failed (HTTP 500): Internal server error",
-    }));
-    const schedule = scheduleFn();
-    wake(workspaces, schedule, fakeFetch());
-    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
-    await settled();
-    const after = await getWorkspace(workspaces, SCOPE, PROJECT);
-    expect(after?.previewHash).toBeUndefined();
-    // The slug survives — the redeploy re-claims it, so the pane's URL holds.
-    expect(after?.previewSlug).toBe("p-preview");
-  });
-
-  test("a retry leaves previewError stamped for the pane's banner", async () => {
-    // Cleared only by a deploy that SUCCEEDS (see `attempt`), so the pane
-    // keeps showing the last real error instead of flickering to "starting".
-    const workspaces = await seededStore();
-    await stampProject(workspaces, {
-      previewSlug: "p-preview",
-      previewError: "deploy failed (HTTP 500): Internal server error",
-    });
-    const schedule = scheduleFn();
-    wake(workspaces, schedule, fakeFetch());
-    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
-    await settled();
-    const after = await getWorkspace(workspaces, SCOPE, PROJECT);
-    expect(after?.previewError).toBe("deploy failed (HTTP 500): Internal server error");
-  });
-
-  test("never warms the production agent: the pane frames only the preview", async () => {
-    const workspaces = await seededStore();
-    await stampProject(workspaces, (current) => ({
-      deployedSlug: "prod-slug",
-      deployedHash: current.hash,
-      previewError: "Build failed: nope",
-    }));
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch();
-    wake(workspaces, schedule, fetchImpl);
-    // The settled failure is still retried — with no warm-up in front of it.
-    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  test("a 404 from the broker regenerates a 'current' preview", async () => {
-    // The agent behind the stamp is GONE (expired/swept/deleted) — the
-    // workspace still says the preview is current, so without the warm-up's
-    // existence check nothing would ever redeploy it.
-    const workspaces = await seededStore();
-    await stampProject(workspaces, (current) => ({
-      previewSlug: "p-preview",
-      previewHash: current.hash,
-    }));
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch(answering("nope", 404));
-    wake(workspaces, schedule, fetchImpl);
-    await vi.waitFor(() => expect(schedule).toHaveBeenCalledWith(SCOPE, PROJECT, TARGET));
-    const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);
-    // The stamp was a lie — cleared so the scheduled deploy doesn't no-op.
-    expect(workspace?.previewHash).toBeUndefined();
-    // The slug survives, so the redeploy re-claims the same preview URL.
-    expect(workspace?.previewSlug).toBe("p-preview");
-  });
-
-  test("a 503 (sandbox mid-boot) does not redeploy a current preview", async () => {
-    const workspaces = await seededStore();
-    await stampProject(workspaces, (current) => ({
-      previewSlug: "p-preview",
-      previewHash: current.hash,
-    }));
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch(answering("retry shortly", 503));
-    wake(workspaces, schedule, fetchImpl);
-    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
-    await settled();
-    expect(schedule).not.toHaveBeenCalled();
-    expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
-  });
-
-  test("a 404 on an already-stale preview schedules exactly once", async () => {
-    const workspaces = await seededStore();
-    await stampProject(workspaces, {
-      previewSlug: "p-preview",
-      previewHash: "stale",
-    });
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch(answering("nope", 404));
-    wake(workspaces, schedule, fetchImpl);
-    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
-    await settled();
-    // The stale path already rescheduled; the 404 must not double up.
-    expect(schedule).toHaveBeenCalledTimes(1);
-  });
-
-  test("a 404 plus a stamped failure schedules exactly once", async () => {
-    const workspaces = await seededStore();
-    await stampProject(workspaces, (current) => ({
-      previewSlug: "p-preview",
-      previewHash: current.hash,
-      previewError: "deploy failed (HTTP 500): Internal server error",
-    }));
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch(answering("nope", 404));
-    wake(workspaces, schedule, fetchImpl);
-    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
-    await settled();
-    // Both reasons to redeploy are present; they must not double up.
-    expect(schedule).toHaveBeenCalledTimes(1);
-    // The 404 branch still drops the stamp, else the deploy no-ops on a hash
-    // that matches a preview the platform no longer serves.
-    const after = await getWorkspace(workspaces, SCOPE, PROJECT);
-    expect(after?.previewHash).toBeUndefined();
-  });
-
-  test("a missing project is a silent no-op", async () => {
-    const workspaces = createMemoryWorkspaceStore();
-    const schedule = scheduleFn();
-    const fetchImpl = fakeFetch();
-    expect(() => wake(workspaces, schedule, fetchImpl)).not.toThrow();
-    await settled();
-    expect(schedule).not.toHaveBeenCalled();
-    expect(fetchImpl).not.toHaveBeenCalled();
+    await deployer.drainOnce();
+    expect(deploy).not.toHaveBeenCalled();
+    expect(queue.archived).toHaveLength(1);
   });
 });
 
-describe("wakeProjectPreview containment", () => {
-  test("a failing workspace read is swallowed — the wake is only an accelerator", async () => {
-    // Hung off the once-per-open session broker call, whose response must not
-    // depend on it. The pane's own iframe fetch remains the functional path.
-    const workspaces = createMemoryWorkspaceStore();
-    workspaces.get = () => Promise.reject(new Error("database unreachable"));
-    const schedule = vi.fn();
-    expect(() =>
-      wakeProjectPreview({
-        workspaces,
-        scope: SCOPE,
-        project: PROJECT,
-        target: TARGET,
-        schedule,
-        fetchImpl: () => Promise.reject(new Error("never asked")),
-      }),
-    ).not.toThrow();
+/**
+ * The queue is best-effort by design: preview scheduling must never fail a
+ * caller's request, and a queue read that fails must not wedge the drain. Both
+ * guarantees are pure error handling, so nothing else in this file reaches
+ * them — and a swallowed error is exactly the kind of code that rots unnoticed.
+ */
+describe("queue failures are contained", () => {
+  const logs = captureLogs();
+
+  test("an enqueue failure is logged and never reaches the caller", async () => {
+    const workspaces = await seededStore();
+    const queue = createMemoryPreviewQueue();
+    queue.enqueue = () => Promise.reject(new Error("pgmq is down"));
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }),
+      queue,
+      pollMs: 0,
+    });
+
+    // `schedule` is fire-and-forget from an editor PUT or an agent turn: a
+    // throw here would surface as a failed file write.
+    expect(() => deployer.schedule(SCOPE, PROJECT, TARGET)).not.toThrow();
     await settled();
-    expect(schedule).not.toHaveBeenCalled();
+    expect(logs.warns()).toContain("studio.preview queue enqueue failed");
+  });
+
+  test("a claim failure yields no jobs rather than throwing", async () => {
+    const workspaces = createMemoryWorkspaceStore();
+    const queue = createMemoryPreviewQueue();
+    queue.claim = () => Promise.reject(new Error("connection reset"));
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+    });
+
+    // The drain runs on a timer and on every edit; a rejection would become an
+    // unhandled one, and the next tick has to keep working regardless.
+    await expect(deployer.drainOnce()).resolves.toBeUndefined();
+    expect(deploy).not.toHaveBeenCalled();
+  });
+
+  test("an ack failure is logged, leaving the job for redelivery", async () => {
+    const workspaces = await seededStore();
+    const queue = createMemoryPreviewQueue();
+    queue.ack = () => Promise.reject(new Error("ack lost"));
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+    });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await settled();
+
+    // The deploy still happened and was still stamped — an unacked job is
+    // redelivered and then no-ops on the matching hash, which is the whole
+    // reason at-least-once is safe here.
+    expect(deploy).toHaveBeenCalledTimes(1);
+    expect(logs.warns()).toContain("studio.preview queue ack failed");
   });
 });

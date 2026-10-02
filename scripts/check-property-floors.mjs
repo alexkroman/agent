@@ -142,7 +142,11 @@ const UPDATE_COMMAND = "node scripts/check-property-floors.mjs --update";
  * debt scan means blindness — but here it is the GOAL, and the corpus floors
  * below already cover a scan that has gone blind.
  */
-const GROUPS = [{ key: "unmeasured-floor", label: "floor with no recorded measurement" }];
+const GROUPS = [
+  // `keepEmpty`: the group is at zero today, and `property-floor-gate.test.ts`
+  // requires its key — `--update` would otherwise drop it.
+  { key: "unmeasured-floor", label: "floor with no recorded measurement", keepEmpty: true },
+];
 
 /**
  * Floors on the scan itself, because this gate's whole success output is a
