@@ -45,7 +45,7 @@ export function createRealtimeTurnBuffers(): RealtimeTurnBuffers {
 
 export type RealtimeMessageDeps = {
   callbacks: TransportCallbacks;
-  lifecycle: Pick<OpenaiRealtimeLifecycle, "send">;
+  lifecycle: Pick<OpenaiRealtimeLifecycle, "send" | "phase" | "replying">;
   buffers: RealtimeTurnBuffers;
   log: Logger;
   /** A TURN-level, non-fatal error report (the socket stays open). */
@@ -173,6 +173,17 @@ function createEventHandlers(deps: RealtimeMessageDeps) {
   };
 }
 
+/** The frames that carry a response's content, owned only by the reply in flight. */
+const RESPONSE_CONTENT: ReadonlySet<unknown> = new Set([
+  "response.output_audio.delta",
+  "response.output_audio.done",
+  "response.output_audio_transcript.delta",
+  "response.output_audio_transcript.done",
+  "response.output_item.added",
+  "response.function_call_arguments.delta",
+  "response.function_call_arguments.done",
+]);
+
 /**
  * The transport's `message` handler: parse one frame and dispatch it. A frame
  * that is not JSON is logged and dropped; a JSON non-object is ignored.
@@ -180,6 +191,26 @@ function createEventHandlers(deps: RealtimeMessageDeps) {
 export function createRealtimeMessageHandler(deps: RealtimeMessageDeps): (data: unknown) => void {
   const { callbacks, lifecycle, log } = deps;
   const on = createEventHandlers(deps);
+  /**
+   * Does a frame of this type still belong to someone?
+   *
+   * A socket keeps delivering what is already on the wire after the reply or
+   * the session it belongs to is over: the trailing deltas of a response the
+   * session cancelled or the caller barged in on (OpenAI only stops producing
+   * when the `response.cancel` reaches it), and anything at all once `stop()`
+   * has closed a socket that is still CLOSING. Dispatched, those reached the
+   * session as audio after the client was told to flush, a tool call of the
+   * abandoned turn, and — because the reply's exit cleared its buffers — a
+   * transcript FRAGMENT committed to history. So a finished session owns no
+   * frame, and response content is owned only while a reply is in flight;
+   * one socket delivers a response's frames between its `response.created`
+   * and its `response.done`, so nothing legitimate is dropped.
+   */
+  const owned = (type: unknown): boolean => {
+    const at = lifecycle.phase();
+    if (at === "closed" || at === "ended") return false;
+    return !RESPONSE_CONTENT.has(type) || lifecycle.replying();
+  };
   return (data) => {
     const raw = safeJsonParse(String(data));
     if (raw === undefined) {
@@ -188,6 +219,12 @@ export function createRealtimeMessageHandler(deps: RealtimeMessageDeps): (data: 
     }
     if (!isRecord(raw)) return;
     const obj = raw;
+    if (!owned(obj.type)) {
+      log.debug("OpenAI Realtime: frame of a finished reply or session dropped", {
+        type: obj.type,
+      });
+      return;
+    }
     switch (obj.type) {
       case "response.output_audio.delta":
         on.audioDelta(obj);
