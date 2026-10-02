@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, type Mock, type MockInstance, vi } from "vitest";
+import { test as baseTest, describe, type Mock, type MockInstance, vi } from "vitest";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
 import type { LogLevel, NotifyLevel, Ui, UiPrompts, UiSpinner } from "./_ui.ts";
 
@@ -26,45 +26,20 @@ export function stubProcessExit(): MockInstance<typeof process.exit> {
   return vi.spyOn(process, "exit").mockImplementation(vi.fn<typeof process.exit>());
 }
 
-/** Create a temp directory, run `fn`, then clean up. */
-export async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
+/**
+ * The package's `test`, extended with a `tmpDir` fixture: a fresh temp
+ * directory per test that destructures it, removed after the test (pass or
+ * fail). Fixtures are lazy, so a test that does not name `tmpDir` creates
+ * nothing — a spec can import this `test` for every case in the file.
+ *
+ * The cleanup is `force` so an ENOENT (a test that removed the dir itself)
+ * cannot replace the real assertion error with a filesystem one.
+ */
+export const test = baseTest.extend("tmpDir", async ({ task: _task }, { onCleanup }) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "aai_test_"));
-  try {
-    await fn(dir);
-  } finally {
-    // `force` so a cleanup ENOENT (a test that removed the dir itself) cannot
-    // replace the real assertion error with a filesystem one from the
-    // `finally`.
-    await fs.rm(dir, { recursive: true, force: true });
-  }
-}
-
-/** Stub console.log to suppress output in tests. */
-function silenceSteps(): {
-  restore: () => void;
-} {
-  const orig = console.log;
-  console.log = () => {
-    /* noop */
-  };
-  return {
-    restore() {
-      console.log = orig;
-    },
-  };
-}
-
-/** Run a function with console output silenced. */
-export function silenced<T>(fn: (dir: string) => Promise<T>) {
-  return async (dir: string) => {
-    const s = silenceSteps();
-    try {
-      return await fn(dir);
-    } finally {
-      s.restore();
-    }
-  };
-}
+  onCleanup(() => fs.rm(dir, { recursive: true, force: true }));
+  return dir;
+});
 
 /**
  * `err` is a filesystem EEXIST.
@@ -321,6 +296,11 @@ export interface BinaryGate {
   /** Args that make it print its version. Defaults to `--version`. */
   readonly versionArgs?: readonly string[];
   /**
+   * What the skip says when the probe fails. Defaults to `no <bin> was found`;
+   * a gate whose probe checks more than presence (a `-c "import x"`) names it.
+   */
+  readonly absent?: string;
+  /**
    * The oldest version whose behaviour the suite asserts, as `x.y.z`.
    *
    * A binary that ANSWERS but is older is not the same case as one that is
@@ -409,7 +389,7 @@ export function describeWithBinary(gate: BinaryGate, name: string, body: () => v
   const why =
     state.kind === "old"
       ? `${gate.bin} ${state.version} is older than the ${String(gate.minVersion)} this suite asserts`
-      : `no ${gate.bin} was found`;
+      : (gate.absent ?? `no ${gate.bin} was found`);
   if ((process.env[gate.requireEnv] ?? "") !== "") {
     throw new Error(`${gate.requireEnv} is set but ${why}.\n${gate.howTo}`);
   }
