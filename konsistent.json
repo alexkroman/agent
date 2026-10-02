@@ -1074,10 +1074,7 @@
             "files": "aai-studio-client/src/_test-utils.ts"
           },
           "must": {
-            "exportFunctions": [
-              "stubFetch",
-              "renderWithClient"
-            ]
+            "exportFunctions": ["stubFetch", "renderWithClient"]
           }
         },
         {
