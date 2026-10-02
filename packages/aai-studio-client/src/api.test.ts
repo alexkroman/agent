@@ -5,9 +5,9 @@ import {
   fetchCall,
   fetchLines,
   jsonResponse,
-  settle,
   sseResponse,
   stubFetch,
+  tick,
 } from "./_test-utils.ts";
 import {
   api,
@@ -458,7 +458,7 @@ describe("api.watchProject", () => {
   test("aborting via the returned unsubscribe does NOT report down", async () => {
     // A never-ending stream: unsubscribe is the only way out. Nothing is
     // delivered, so the open request is the only condition to wait on; the
-    // `settle()` after `stop()` bounds the abort's own propagation, which is
+    // `tick()` after `stop()` bounds the abort's own propagation, which is
     // the one thing here a condition cannot express (the assertion is that
     // nothing happens).
     const fetchMock = stubFetch(
@@ -472,7 +472,7 @@ describe("api.watchProject", () => {
     const stop = api.watchProject("k", "proj", { onData: () => undefined, onDown: down });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     stop();
-    await settle();
+    await tick();
     expect(down).not.toHaveBeenCalled();
   });
 });

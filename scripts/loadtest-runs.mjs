@@ -56,8 +56,9 @@
 // side's latency rather than the item count. `sdk/app-db-budget.ts` argues why
 // the default is 3 and who may raise it.
 //
-// Global `fetch` (Node 22+), so this has no dependencies.
+// Global `fetch`, so this has no npm dependencies.
 
+import { sleep } from "../packages/aai/src/sdk/sleep.ts";
 import { valueReader } from "./_args.mjs";
 
 const arg = valueReader(process.argv.slice(2));
@@ -83,25 +84,15 @@ const pct = (sorted, p) =>
       )
     : 0;
 
-/**
- * The poll wait.
- *
- * `guard-invariants` rule 19 bans a hand-rolled sleep and names
- * `@alexkroman1/aai/internal`'s as the remedy; this occurrence is BASELINED
- * because that remedy is unreachable here and every alternative destroys the
- * measurement. The repo root resolves no `@alexkroman1/*` (there is no root
- * dependency on them, deliberately), a relative import into `packages/aai` is
- * refused by Biome's `noRestrictedImports`, and this script must run against a
- * server that is not necessarily this repo's checkout.
- *
- * The three timer-free ways to wait for a run all cost more than they save:
- * `GET /workflows/runs/:id/events` polls at `RUN_EVENT_POLL_MS` (1000ms) and
- * `POST … {wait}` at `WORKFLOW_WAIT_POLL_MS` (250ms), either of which reports a
- * 133ms one-step run as a quarter- or whole-second one; and a poll loop with no
- * wait at all issues ~300-1000 requests a second per worker against the very
- * server under test, which measured ~3300 rps in total for `/health`.
- */
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// The poll wait is the SDK's one `sleep` (guard-invariants rule 19), imported
+// by path as `upload-sweep.mjs` does: the repo root resolves no
+// `@alexkroman1/*`, and Node strips the types. A timer it must be — the three
+// timer-free ways to wait for a run all cost more than they save:
+// `GET /workflows/runs/:id/events` polls at `RUN_EVENT_POLL_MS` (1000ms) and
+// `POST … {wait}` at `WORKFLOW_WAIT_POLL_MS` (250ms), either of which reports a
+// 133ms one-step run as a quarter- or whole-second one; and a poll loop with no
+// wait at all issues ~300-1000 requests a second per worker against the very
+// server under test, which measured ~3300 rps in total for `/health`.
 
 /** One run, start to terminal. Answers what it cost and how it ended. */
 async function oneRun() {

@@ -61,9 +61,14 @@ export function sseResponse(frames?: readonly string[]): Response {
   });
 }
 
-/** Wait until a stream's `finally` block has run. */
-export function settle(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+/**
+ * Yield a full MACROTASK — drains microtasks and lets already-scheduled
+ * zero-delay timers run, which is what lets a stream's `finally` block finish.
+ * The same `tick()` as aai-runtime's `_timing-test-utils.ts`, spelled again
+ * because that module is `_`-internal to its package.
+ */
+export function tick(): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 /** A `vi.fn()` standing in for `fetch`, with `fetch`'s own parameter types. */

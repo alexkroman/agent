@@ -414,7 +414,9 @@ export function mountClient(config: ClientConfig): ClientHandle {
       // Baselined under `guard-invariants` rule 27: a teardown THUNK handed to
       // the React root, which calls it on unmount. A callback is not a scope,
       // so `using` has nothing to attach the lifetime to — the session outlives
-      // this function by design and the root owns when it ends.
+      // this function by design and the root owns when it ends. Not a
+      // `DisposableStack` inside `mountRoot` either: that is a runtime global
+      // this browser bundle (target es2022, no polyfill) cannot assume.
       () => session[Symbol.dispose](),
     ),
   };

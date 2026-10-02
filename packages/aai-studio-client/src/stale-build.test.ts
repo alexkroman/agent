@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { settle } from "./_test-utils.ts";
+import { tick } from "./_test-utils.ts";
 import { installStaleBuildRecovery, lazyRetry, reloadForStaleBuild } from "./stale-build.ts";
 
 /** A `sessionStorage` stand-in — these tests run in the node environment. */
@@ -124,7 +124,7 @@ describe("lazyRetry", () => {
 
     void lazyRetry(factory)().then(onSettled, onSettled);
     await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
-    await settle();
+    await tick();
 
     // The page is navigating away: settling would flash an error boundary
     // over a document about to be replaced.

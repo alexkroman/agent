@@ -86,6 +86,12 @@ export type SubagentRunner = (
 
 // setImmediate rather than setTimeout(0): same yield-to-I/O semantics without
 // Node's ~1ms timer clamp — saves a couple of ms on every tool call.
+//
+// Baselined under `guard-invariants` rule 4: a deliberate SHIPPED yield, not a
+// test wait. `node:timers/promises`' `setImmediate` is not a substitute —
+// `vi.useFakeTimers()` does not drive it, so a spec advancing the clock past a
+// deadline returns before `pTimeout` has armed its timer (the five deadline
+// specs in executor.test.ts hang with it).
 const yieldTick = (): Promise<void> => new Promise((r) => setImmediate(r));
 
 type ExecuteToolCallOptions = {

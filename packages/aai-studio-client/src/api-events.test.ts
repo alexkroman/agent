@@ -5,7 +5,7 @@
 
 import type { EventStreamFrame } from "@alexkroman1/aai/workflow-api";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { fetchCall, jsonResponse, settle, sseResponse, stubFetch } from "./_test-utils.ts";
+import { fetchCall, jsonResponse, sseResponse, stubFetch, tick } from "./_test-utils.ts";
 import { type StreamDownReason, watchEventStream } from "./api-events.ts";
 
 afterEach(() => {
@@ -30,7 +30,7 @@ function recorder() {
 
 /** Let the subscription's async body run to its `finally`. */
 async function drain(): Promise<void> {
-  for (let i = 0; i < 5; i++) await settle();
+  for (let i = 0; i < 5; i++) await tick();
 }
 
 describe("watchEventStream", () => {

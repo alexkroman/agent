@@ -85,10 +85,12 @@ export const SELF_REFERENTIAL_ENTRIES = [
   ["packages/aai/src/sdk/omit-undefined.ts", ["rule2_spreadTernary"]], // its doc shows the banned spelling
   ["packages/aai/src/sdk/keyed-lock.ts", ["rule9_handRolledKeyedLock"]], // rule 9 IS this implementation
   ["packages/aai/src/sdk/owned-map.ts", ["rule8_handRolledOwnedMap"]], // rule 8 IS this implementation
-  // All three DEFINE `tick()`, so all three are the remedy rather than a
+  // All four DEFINE `tick()`, so all four are the remedy rather than a
   // violation. The split duplicated the helper: aai-runtime owns the full set,
   // packages/aai keeps the four its remaining host/ modules need, and aai-ui
-  // spells it again because those modules are `_`-internal to their packages.
+  // and aai-studio-client spell it again because those modules are
+  // `_`-internal to their packages. (The studio-client copy was a BASELINED
+  // `settle()` until it took the shared name.)
   //
   // The aai-ui entry was ADDED BY THE PARSE. That copy writes its executor as a
   // block, so the line rule could not see it, and its own doc comment says as
@@ -96,6 +98,7 @@ export const SELF_REFERENTIAL_ENTRIES = [
   // by nothing". An exemption you can only write once the gate can see the file
   // is the difference between a rule that is at zero and one that is blind.
   ["packages/aai-runtime/src/_timing-test-utils.ts", ["rule4_inlineTickPromise"]],
+  ["packages/aai-studio-client/src/_test-utils.ts", ["rule4_inlineTickPromise"]],
   ["packages/aai-ui/src/_react-test-utils.ts", ["rule4_inlineTickPromise"]],
   ["packages/aai/src/host/_test-utils.ts", ["rule4_inlineTickPromise"]], // its doc quotes the shadowing bug
   ["packages/aai/src/sdk/is-record.ts", ["rule17_openCodedRecordGuard"]], // rule 17 IS `isRecord`'s body
