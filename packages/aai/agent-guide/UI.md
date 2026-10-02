@@ -14,13 +14,13 @@
 
 Part of the aai authoring guide (start with the core guide). A voice agent's
 page mounts with `mountClient()`; a workflow app's mounts with `mountPage()`
-(see "The page" in `WORKFLOWS.md`). Both are React 19 + Tailwind v4, bundled
-by the CLI with no `vite.config.ts`.
+(see "The page" in `WORKFLOWS.md`). Both are React 19 + Tailwind v4, bundled by
+the CLI with no `vite.config.ts`.
 
 ## Custom UI — `mountClient()`
 
-File: `client.tsx` alongside `agent.ts`. Uses **React** (not Preact).
-Always import `"@alexkroman1/aai-ui/styles.css"` first.
+File: `client.tsx` alongside `agent.ts`. Uses **React** (not Preact). Always
+import `"@alexkroman1/aai-ui/styles.css"` first.
 
 ### Tier 1 — config only (default UI)
 
@@ -113,15 +113,14 @@ Beside a `component`, `sidebar` still renders; `name` becomes the page title.
 | `started`         | `boolean`              | Whether session started                                                                     |
 | `running`         | `boolean`              | Whether session active                                                                      |
 
-Methods: `start()`, `toggle()`, `cancel()`, `disconnect()`, `resetState()`,
-and:
+Methods: `start()`, `toggle()`, `cancel()`, `disconnect()`, `resetState()`, and:
 
-- `end()` hangs up: `started` goes `false`; the next `start()` is a new
-  session (fresh tool state, greeting). For End/Hang up/New game.
-- `reset()` clears the conversation, keeping the call and tool state. For
-  "clear chat", not ending.
-- `sendText(text)`: a TYPED turn, answered as if spoken. The server's
-  transcript adds it to `messages`; don't. Pipeline agents only.
+- `end()` hangs up: `started` goes `false`; the next `start()` is a new session
+  (fresh tool state, greeting). For End/Hang up/New game.
+- `reset()` clears the conversation, keeping the call and tool state. For "clear
+  chat", not ending.
+- `sendText(text)`: a TYPED turn, answered as if spoken. The server's transcript
+  adds it to `messages`; don't. Pipeline agents only.
 - `setMicMuted(muted)`: mute without hanging up (streams silence), e.g.
   hold-to-talk. Read as `micMuted`.
 
@@ -137,13 +136,13 @@ useToolResult<ResultType>("tool_name", (result) => { ... })        // typed (opt
 ```
 
 `result` is the tool's return value, already JSON-parsed and untyped — read
-fields off it directly (`result.price`). The type parameter is optional; add
-it only when you want the shape checked.
+fields off it directly (`result.price`). The type parameter is optional; add it
+only when you want the shape checked.
 
-**There is no global `JSX` namespace.** React 19 removed it, so
-`JSX.Element` is `Cannot find namespace 'JSX'` (`TS2503`). Type a component's
-return as `ReactNode` — `import type { ReactNode } from "react"` — which is
-also what you want for anything that can be a string, an array, or null.
+**There is no global `JSX` namespace.** React 19 removed it, so `JSX.Element` is
+`Cannot find namespace 'JSX'` (`TS2503`). Type a component's return as
+`ReactNode` — `import type { ReactNode } from "react"` — which is also what you
+want for anything that can be a string, an array, or null.
 
 **`useAgentState`** — the agent's session state, pushed automatically:
 
@@ -173,16 +172,16 @@ pushed before the first tool call); `useAgentState("cart", fallback)` returns
 factory is expensive to import into the browser. `selectAgentState("cart")` is
 the same slot as a `useSessionSelector` selector.
 
-**Reach for this before wiring `useToolResult` into `useState`.** Without
-it the pattern is: return a cart snapshot from every tool, declare a type
-describing what those tools return, and mirror it into `useState` — three
-things to keep in step, and the usual source of drift when you add a tool
-and forget to return the snapshot from it.
+**Reach for this before wiring `useToolResult` into `useState`.** Without it the
+pattern is: return a cart snapshot from every tool, declare a type describing
+what those tools return, and mirror it into `useState` — three things to keep in
+step, and the usual source of drift when you add a tool and forget to return the
+snapshot from it.
 
-`syncState` holds projections, not flags, because state often holds things
-that should not reach a browser (keys, PINs, scratch) or cannot be
-serialized. Whatever it returns is exactly what the client receives. It runs
-after every tool call and is sent only when the result changed.
+`syncState` holds projections, not flags, because state often holds things that
+should not reach a browser (keys, PINs, scratch) or cannot be serialized.
+Whatever it returns is exactly what the client receives. It runs after every
+tool call and is sent only when the result changed.
 
 **`useEvent`** — fires for custom events from `ctx.send()`:
 
@@ -190,15 +189,16 @@ after every tool call and is sent only when the result changed.
 useEvent<DataType>("event_name", (data) => { ... })
 ```
 
-Server: `ctx.send("order", { total: "$14.99" })` —
-Client: `useEvent("order", (data) => ...)`.
+Server: `ctx.send("order", { total: "$14.99" })` — Client:
+`useEvent("order", (data) => ...)`.
 
 **`useTheme`** — returns `{ bg, primary, text, surface, border }`.
 
 **`useToolCallStart`** — fires when a tool call begins (status `"pending"`).
 
 **`useClientTool`** — runs a server `clientTool` in the page and answers the
-model with the handler's return value (see "A tool the BROWSER runs" in `TOOLS.md`):
+model with the handler's return value (see "A tool the BROWSER runs" in
+`TOOLS.md`):
 
 ```tsx
 import { useClientTool } from "@alexkroman1/aai-ui";
@@ -211,9 +211,9 @@ export function ConfirmTool({ ask }: { ask: (question: string) => Promise<boolea
 }
 ```
 
-**Anti-pattern:** Do NOT use `useEffect` + `toolCalls` to build derived
-state. Use `useToolResult` — it deduplicates. The `useEffect` pattern
-re-processes every tool call on every render, causing duplicates.
+**Anti-pattern:** Do NOT use `useEffect` + `toolCalls` to build derived state.
+Use `useToolResult` — it deduplicates. The `useEffect` pattern re-processes
+every tool call on every render, causing duplicates.
 
 ## Components
 
@@ -234,9 +234,10 @@ the DOM and hands them over once the browser's own validation passes; the field
 components — `TextField`, `TextAreaField`, `NumberField`, `SelectField`,
 `CheckboxField`, `FileField` and `SubmitButton` — are plain named inputs, and
 `Field`/`FieldShell` are what a custom control wraps itself in to match them.
-For a workflow app there is usually no field markup at all: `<WorkflowFields
-workflow="name" />` fetches that workflow's input schema and renders a control
-per field, so a page written against one workflow serves another.
+For a workflow app there is usually no field markup at all:
+`<WorkflowFields workflow="name" />` fetches that workflow's input schema and
+renders a control per field, so a page written against one workflow serves
+another.
 
 ```tsx no-check
 import { Form, WorkflowFields } from "@alexkroman1/aai-ui";
@@ -250,8 +251,8 @@ import { Form, WorkflowFields } from "@alexkroman1/aai-ui";
 writes its form by hand, which is what the two are for.
 
 The usual shape — note `StartScreen` **wraps** the app rather than sitting
-beside it; writing `<StartScreen ... />` self-closing is a `TS2741:
-Property 'children' is missing` build error:
+beside it; writing `<StartScreen ... />` self-closing is a
+`TS2741: Property 'children' is missing` build error:
 
 ```tsx
 /// <reference types="vite/client" />
@@ -271,12 +272,12 @@ mountClient({ component: PizzaApp });
 
 ## Styling
 
-- **Tailwind CSS v4** — compiled at bundle time, configured via CSS.
-  Do NOT create `tailwind.config.js` — it will be ignored.
+- **Tailwind CSS v4** — compiled at bundle time, configured via CSS. Do NOT
+  create `tailwind.config.js` — it will be ignored.
 - Use Tailwind classes for layout, `useTheme()` for dynamic colors.
 - Set theme: `mountClient({ theme: { bg, primary, text, surface, border } })`.
-- Override CSS custom properties for extra tokens:
-  `--color-aai-*`, `--radius-aai`, `--font-aai`.
+- Override CSS custom properties for extra tokens: `--color-aai-*`,
+  `--radius-aai`, `--font-aai`.
 - Always import `"@alexkroman1/aai-ui/styles.css"` at the top of `client.tsx`.
 
 ### Design guidelines
@@ -285,19 +286,19 @@ A custom UI should look deliberate, not like boilerplate. When building or
 restyling a `client.tsx`:
 
 - **Color:** pick one primary brand color, 2-3 neutrals (white/grays/black
-  variants), and at most 1-2 accents — 3-5 colors total. Avoid gradients
-  unless asked. If you override an element's background color, also set its
-  text color so contrast holds.
-- **Typography:** at most 2 font families — one for headings, one for body.
-  Body text 14px or larger with a relaxed line height (`leading-relaxed`).
-- **Layout:** design mobile-first, then enhance with responsive prefixes
-  (`md:`, `lg:`). Prefer flexbox (`flex items-center justify-between`);
-  use grid only for genuinely two-dimensional layouts; avoid absolute
-  positioning unless nothing else works.
-- **Tailwind:** stay on the spacing scale (`p-4`, never `p-[16px]`), use
-  `gap-*` between siblings rather than per-child margins, and wrap headings
-  and key copy in `text-balance` or `text-pretty`.
-- **Accessibility:** semantic elements (`main`, `header`, `button`), alt
-  text on meaningful images, `sr-only` labels on icon-only buttons.
-- **No filler:** no emojis as icons, no decorative gradient blobs or
-  abstract placeholder shapes, no lorem-ipsum-looking content.
+  variants), and at most 1-2 accents — 3-5 colors total. Avoid gradients unless
+  asked. If you override an element's background color, also set its text color
+  so contrast holds.
+- **Typography:** at most 2 font families — one for headings, one for body. Body
+  text 14px or larger with a relaxed line height (`leading-relaxed`).
+- **Layout:** design mobile-first, then enhance with responsive prefixes (`md:`,
+  `lg:`). Prefer flexbox (`flex items-center justify-between`); use grid only
+  for genuinely two-dimensional layouts; avoid absolute positioning unless
+  nothing else works.
+- **Tailwind:** stay on the spacing scale (`p-4`, never `p-[16px]`), use `gap-*`
+  between siblings rather than per-child margins, and wrap headings and key copy
+  in `text-balance` or `text-pretty`.
+- **Accessibility:** semantic elements (`main`, `header`, `button`), alt text on
+  meaningful images, `sr-only` labels on icon-only buttons.
+- **No filler:** no emojis as icons, no decorative gradient blobs or abstract
+  placeholder shapes, no lorem-ipsum-looking content.

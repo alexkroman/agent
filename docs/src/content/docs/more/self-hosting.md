@@ -3,11 +3,11 @@ title: Self-hosting
 description: Run an agent as your own Node process, with your own routes and auth.
 ---
 
-Most people don't need this page. `npm start` already serves the agent on a
-port ([Run it locally](/agent/deploy/local/)), and `aai build --target <host>`
-covers Vercel, Deno Deploy, and Modal
-([Deploy anywhere](/agent/deploy/anywhere/)). Come here when you need to own the
-boot — your own routes, your own auth, your own process.
+Most people don't need this page. `npm start` already serves the agent on a port
+([Run it locally](/agent/deploy/local/)), and `aai build --target <host>` covers
+Vercel, Deno Deploy, and Modal ([Deploy anywhere](/agent/deploy/anywhere/)).
+Come here when you need to own the boot — your own routes, your own auth, your
+own process.
 
 `@alexkroman1/aai-runtime` is the same engine `aai dev` runs, and
 `createAgentServer()` is how you build it yourself:
@@ -93,11 +93,9 @@ is safe either way.
 somebody else. Behind a proxy that URL is not the socket the server binds, so it
 is never sniffed.
 
-:::note
-Without `publicUrl`, `ctx.workflows.publicWebhookUrl(token)` throws and names
-the option. That beats minting a `127.0.0.1` callback that fails days later on
-someone else's server.
-:::
+:::note Without `publicUrl`, `ctx.workflows.publicWebhookUrl(token)` throws and
+names the option. That beats minting a `127.0.0.1` callback that fails days
+later on someone else's server. :::
 
 ## What doesn't come with you
 

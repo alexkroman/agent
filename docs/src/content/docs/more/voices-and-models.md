@@ -27,11 +27,10 @@ changing the voice too.
 The type autocompletes but does not guard. The catalog belongs to the service,
 so a voice added after your SDK release still has to work.
 
-:::caution[A misspelled voice id is refused after the socket opens]
-That leaves an agent that connects, reports ready, and never speaks. So
-`aai build` and `aai dev` warn about an id they do not recognize, and name the
-ones it is closest to.
-:::
+:::caution[A misspelled voice id is refused after the socket opens] That leaves
+an agent that connects, reports ready, and never speaks. So `aai build` and
+`aai dev` warn about an id they do not recognize, and name the ones it is
+closest to. :::
 
 ## A model
 
@@ -51,11 +50,10 @@ Bare ids autocomplete from `AssemblyAIGatewayModel` (`@alexkroman1/aai`), the
 union generated from what the gateway advertises. Like a voice id, it is
 autocomplete rather than a guard.
 
-:::caution[A wrong model id is a gateway error on the first turn]
-Nothing catches it at build time the way a voice id is caught. An id the gateway
-does not carry comes back as a 400 the first time the agent tries to think, so
-the session opens and then fails on the caller's first sentence.
-:::
+:::caution[A wrong model id is a gateway error on the first turn] Nothing
+catches it at build time the way a voice id is caught. An id the gateway does
+not carry comes back as a 400 the first time the agent tries to think, so the
+session opens and then fails on the caller's first sentence. :::
 
 ## A whole stage
 
@@ -127,8 +125,8 @@ export default agent({
 });
 ```
 
-It switches only before the stage has produced anything, so a caller never
-hears half an answer from one vendor and the rest from another:
+It switches only before the stage has produced anything, so a caller never hears
+half an answer from one vendor and the rest from another:
 
 - **STT and TTS** switch when the connection fails to open, or when the session
   reports an error before its first transcript (STT) or its first audio (TTS).
@@ -138,8 +136,8 @@ hears half an answer from one vendor and the rest from another:
 - **Nothing** switches on an interruption or after output has started.
 
 Each switch is a `provider.failedOver` session event naming the stage, both
-providers and the reason, so an `events` handler can count them. Every
-provider in the list needs its key: `aai dev` and Publish check all of them.
+providers and the reason, so an `events` handler can count them. Every provider
+in the list needs its key: `aai dev` and Publish check all of them.
 
 ## Your own provider
 
@@ -183,19 +181,19 @@ export default agent({ name: "My Agent", mode: "s2s", s2s: openAIS2s() });
 `assemblyAIS2s()` is the other one, from the same subpath.
 
 What you buy is one round trip instead of three hops. What you give up is the
-seams. Providers can no longer be mixed, the S2S descriptor owns its own
-voice, and the tuning groups below are implemented by
-the three-stage pipeline alone — so setting one on an S2S agent is a compile
-error naming the rule rather than a silent no-op.
+seams. Providers can no longer be mixed, the S2S descriptor owns its own voice,
+and the tuning groups below are implemented by the three-stage pipeline alone —
+so setting one on an S2S agent is a compile error naming the rule rather than a
+silent no-op.
 
 Stay on the three-stage default unless response time is the specific problem you
 are trying to fix.
 
 ## Tuning the conversation
 
-Three groups on `agent()` — `turnTaking`, `interruption` and `silence` —
-decide how a pipeline agent handles pauses, interruptions and monologues. Reach
-for them once you have heard a specific problem, not before.
+Three groups on `agent()` — `turnTaking`, `interruption` and `silence` — decide
+how a pipeline agent handles pauses, interruptions and monologues. Reach for
+them once you have heard a specific problem, not before.
 
 | Field                        | What it decides                                                                                                                                                                                                                                                                                   | Default                                           |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |

@@ -16,8 +16,8 @@ underneath). Private package.
 `scaffold/agent-guide/` are the user-facing authoring guide — embedded in the
 studio prompt, shipped in the SDK tarball as `AGENT_GUIDE.md` and
 `agent-guide/`, and the scaffold files a project gets no copy of
-(`PROJECT_GUIDE_POINTER` in `packages/aai/src/host/scaffold-layer.ts`).
-Never add repo-docs `CLAUDE.md` files under either tree.
+(`PROJECT_GUIDE_POINTER` in `packages/aai/src/host/scaffold-layer.ts`). Never
+add repo-docs `CLAUDE.md` files under either tree.
 
 ## Directory guides and references
 
@@ -53,8 +53,8 @@ tests, typecheck and lint stay here.
 
 `biome.json` must not exclude `scaffold/` — it is the one tree that lands in
 someone else's project. `noUndeclaredDependencies` does not misfire there
-because the scaffold ships its own `package.json`. `templates.test.ts` pins
-this (see `src/CLAUDE.md`).
+because the scaffold ships its own `package.json`. `templates.test.ts` pins this
+(see `src/CLAUDE.md`).
 
 ### `check:scaffold` exists because the sync ran only during a release
 
@@ -75,8 +75,8 @@ inside pnpm's `minimumReleaseAge` window and `aai init` fails with
 ships `minimumReleaseAgeExclude: ["@alexkroman1/*"]` — scoped, so third-party
 deps keep the user's window. Never lower the pin instead: the floor must admit
 the build the templates need. Reproduce by copying `scaffold/` to a temp dir,
-appending `minimumReleaseAge: 10080`, and running `pnpm install
---lockfile-only`.
+appending `minimumReleaseAge: 10080`, and running
+`pnpm install --lockfile-only`.
 
 Not the same as a stale metadata cache: plain `ERR_PNPM_NO_MATCHING_VERSION`
 with a `The latest release … is "X"` line older than the pin is client-side
@@ -90,9 +90,10 @@ place in that manifest first, or the starter fails to build.
 
 ### Self-hosting is the scaffold's default
 
-Every project runs on its own with `npm start` (`prestart`/`start` → `aai
-start`). The mechanism is the CLI's: see "Self-hosting is the scaffold's
-default, and it runs the BUILT worker" in `packages/aai-cli/SELF-HOSTING-CLAUDE.md`.
+Every project runs on its own with `npm start` (`prestart`/`start` →
+`aai start`). The mechanism is the CLI's: see "Self-hosting is the scaffold's
+default, and it runs the BUILT worker" in
+`packages/aai-cli/SELF-HOSTING-CLAUDE.md`.
 
 ## The authoring guide ships inside the SDK
 
@@ -145,8 +146,8 @@ or copy the array into a fresh result (`resourceBrief`). A client renders
 tool body over non-slot state needs `createKeyedLock`/`withLock`
 (`@alexkroman1/aai/utils`). Not inside `slot.update`, which is already atomic.
 
-**A template's spec is what makes its exemplar code true** — an unexercised
-tool can be wrong for releases. Drive every tool you add.
+**A template's spec is what makes its exemplar code true** — an unexercised tool
+can be wrong for releases. Drive every tool you add.
 
 ## The templates are where SDK primitives get their worked example
 
@@ -165,11 +166,11 @@ Rules the table carries that apply to any template:
 - Do not call `spokenOrdinal` beside `resolveOne`; it consults it internally.
 - Name a subagent in code when the tool IS the choice; put it on
   `agent({ roster })` when the caller's words are. Give every speaker an
-  `expectedOutput`. Reach for `SpeakerDef.guardrail` only when a `schema`
-  cannot express the check; an unaccepted result stays a field on the tool
-  result, not a `ToolFailure`.
-- `ToolDef.onError` is a classifier: re-throw to make a failure fatal instead
-  of a model retry loop.
+  `expectedOutput`. Reach for `SpeakerDef.guardrail` only when a `schema` cannot
+  express the check; an unaccepted result stays a field on the tool result, not
+  a `ToolFailure`.
+- `ToolDef.onError` is a classifier: re-throw to make a failure fatal instead of
+  a model retry loop.
 - `agent({ outputGuardrails })` is pipeline-only; `agent({ description })` is
   for humans choosing the agent, not the model.
 - Step code imports from `@alexkroman1/aai/step` (zero-zod), not the root.
@@ -192,11 +193,11 @@ template's account: `EXEMPLARS-CLAUDE.md`, "Dialog templates".
 
 - **A tool legal in EVERY state is not a flow tool.** Keep it an ordinary
   `tool()`/`slot.updateTool` that calls `dialog.send` itself.
-- **`sendFrom` goes BELOW `execute`** (next section). It is also where "did
-  this actually do the thing" lives: send nothing when nothing happened.
+- **`sendFrom` goes BELOW `execute`** (next section). It is also where "did this
+  actually do the thing" lives: send nothing when nothing happened.
 - **A `final` state delivers no events**, so restarting is `dialog.reset`.
-- **A refusal short-circuits before the tool body**, including any bookkeeping
-  a per-agent wrapper does; say so at the wrapper.
+- **A refusal short-circuits before the tool body**, including any bookkeeping a
+  per-agent wrapper does; say so at the wrapper.
 - **A state with a `timeout` must not transition on chatter** unless you want
   every turn to re-arm it: the deadline runs from the dialog's last MOVE.
 
@@ -210,14 +211,13 @@ annotated function reference and so does not show this. With `NoInfer` it is a
 compile error, not silence: delete absorbing guards (`"x" in result &&`,
 `isToolFailure(result) ? … : …` in a `summary`) rather than adding them.
 
-- **A per-agent wrapper copies the SDK's signature, not its `Exclude`:**
-  declare `execute: (…) => R | ToolFailure` and let union inference subtract
-  the failure arm; `summary` takes `NoInfer<R>`.
-  `Exclude<NoInfer<R>, ToolFailure>` does not distribute over a non-naked type
-  parameter.
+- **A per-agent wrapper copies the SDK's signature, not its `Exclude`:** declare
+  `execute: (…) => R | ToolFailure` and let union inference subtract the failure
+  arm; `summary` takes `NoInfer<R>`. `Exclude<NoInfer<R>, ToolFailure>` does not
+  distribute over a non-naked type parameter.
 - **Every arm of the result union must have the field `sendFrom` reads.** A
-  return through a declared type or an inner union gains no `?: never` keys;
-  add `field: undefined` at that return.
+  return through a declared type or an inner union gains no `?: never` keys; add
+  `field: undefined` at that return.
 
 ### A dialog is a plain state map now
 
@@ -227,9 +227,9 @@ union is synthesized from the `on` keys. `packages/aai/src/sdk/CLAUDE.md` has
 the rationale.
 
 - **An ungated tool reports its position by SPREADING it:**
-  `return { incidentId: id, ...callFlow.send(ctx, { type: "LOGGED" }) }` —
-  never rename `state`/`done`/`instruction`, or the model reads its position
-  under two key sets.
+  `return { incidentId: id, ...callFlow.send(ctx, { type: "LOGGED" }) }` — never
+  rename `state`/`done`/`instruction`, or the model reads its position under two
+  key sets.
 - **A spec pins the POSITION as well as the refusal** — that it moved, and did
   not move on a failure — using `expectToolOk`/`expectDialogOk`.
 
@@ -244,8 +244,8 @@ the wiring; `roadside-assistance-agent` is the example.
 - A self transition on `@userTranscript.committed` is a silence ladder; no
   chatter transition makes the deadline wall clock from entry.
 - A `timeout` needs a state to LAND in (a different instruction). A committed
-  turn, not a partial, restarts the clock, so a deadline leads to a nudge,
-  never to anything irreversible.
+  turn, not a partial, restarts the clock, so a deadline leads to a nudge, never
+  to anything irreversible.
 - `interruption: "off"` applies per step, so the tool that SPEAKS the protected
   sentence must not advance the dialog; advance with a second tool a turn later.
 - Pin `toolChoice` only where the tool needs nothing the caller has not said,
@@ -255,14 +255,14 @@ the wiring; `roadside-assistance-agent` is the example.
 
 ### A rule the model can skip is not a rule
 
-When prose ("confirm every change out loud") and the tool surface disagree,
-fix the tool surface: changing tools STAGE a pending action, one gated
+When prose ("confirm every change out loud") and the tool surface disagree, fix
+the tool surface: changing tools STAGE a pending action, one gated
 `confirm_change` applies it, and the confirming state is reachable only by
 staging. **Validate at STAGE time** — every apply must be total, since "yes"
-followed by a refusal is what the gate prevents — and stage ids and amounts,
-not store references a persisted session cannot carry. Beware a
-self-transition on a parent with children: it re-enters and resets the child.
-`retail-orders-agent` is the example.
+followed by a refusal is what the gate prevents — and stage ids and amounts, not
+store references a persisted session cannot carry. Beware a self-transition on a
+parent with children: it re-enters and resets the child. `retail-orders-agent`
+is the example.
 
 ## Workflow templates
 
@@ -315,8 +315,8 @@ Use `stepTranscribeUpload`/`Submit`/`Poll` and `stepTranscribeSync` wrapped in
 — a step is what a body wraps in `ctx.step(name, fn)` — so the template owns
 which steps exist, i.e. what is journaled and what a retry repeats.
 
-- Keep upload and submit as separate steps, so a submit retry does not
-  re-upload the file.
+- Keep upload and submit as separate steps, so a submit retry does not re-upload
+  the file.
 - `stepTranscribePoll` returns the transcript; do not fetch it again.
 - `meeting-recap-agent` keeps its hand-written poll on purpose (its status is a
   value its Query port and saga read); do not convert it.
@@ -345,8 +345,8 @@ so an ffmpeg flow's durability is the scenario tier's.
 ## Every template ships an EVAL
 
 `templates/*/agent.eval.test.ts`, required by `konsistent.json`'s
-`template-eval-spec`, gated in CI against a scripted model. The harness and
-what a template owes: "Driving an agent from text is a published surface" in
+`template-eval-spec`, gated in CI against a scripted model. The harness and what
+a template owes: "Driving an agent from text is a published surface" in
 `packages/aai-runtime/CLAUDE.md`.
 
 ## Ports
@@ -372,12 +372,12 @@ prose to READ, a `workflowApp()` page, or a voice agent that hands off to a run.
 
 ### One template is a port of a CrewAI flow
 
-`applicant-screening-agent` is `lead-score-flow` (`crews.ts` has attribution).
-A crew task's OUTPUT decides its primitive: `output_pydantic` →
+`applicant-screening-agent` is `lead-score-flow` (`crews.ts` has attribution). A
+crew task's OUTPUT decides its primitive: `output_pydantic` →
 `ctx.generate({ schema })` through `mapConcurrent`; prose with rules →
-`speaker()` with `expectedOutput` and `guardrail`. The feedback loop is
-bounded (`MAX_FEEDBACK_ROUNDS`), and a score is stored under the id the desk
-asked about, not the id the model echoed.
+`speaker()` with `expectedOutput` and `guardrail`. The feedback loop is bounded
+(`MAX_FEEDBACK_ROUNDS`), and a score is stored under the id the desk asked
+about, not the id the model echoed.
 
 ### Two templates are ports of the other voice frameworks' largest samples
 
@@ -399,14 +399,14 @@ in its result.
 
 ## `system-prompt.md` IS the system prompt
 
-A document goes in a file, a value stays in the call: `greeting` and
-`sttPrompt` stay fields. `withSystemPrompt` (`@alexkroman1/aai/manifest`) owns
-the rules and its module doc the argument. A `system-prompt.md` alongside a
-different prompt STRING in `agent.ts` is a build error, and so is an empty
-file — a silently ignored prompt produces an agent that behaves plausibly and
-wrongly. The check compares VALUES, so composing a string from the file passes,
-and a `systemPrompt` RESOLVER passes unchecked (it closes over its own `?raw`
-import). `_discovery.ts` resolves prompts for `templates.test.ts`.
+A document goes in a file, a value stays in the call: `greeting` and `sttPrompt`
+stay fields. `withSystemPrompt` (`@alexkroman1/aai/manifest`) owns the rules and
+its module doc the argument. A `system-prompt.md` alongside a different prompt
+STRING in `agent.ts` is a build error, and so is an empty file — a silently
+ignored prompt produces an agent that behaves plausibly and wrongly. The check
+compares VALUES, so composing a string from the file passes, and a
+`systemPrompt` RESOLVER passes unchecked (it closes over its own `?raw` import).
+`_discovery.ts` resolves prompts for `templates.test.ts`.
 
 **`coding-agent` is TEXT-mode** (`mode: "text"`), so `createRuntime` refuses it
 and it ships its own front door, `chat.ts` — the only entry point in

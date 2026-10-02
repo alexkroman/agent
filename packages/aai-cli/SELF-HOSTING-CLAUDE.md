@@ -15,13 +15,12 @@ Reference sibling of `packages/aai-cli/CLAUDE.md`. Paths are under
 
 ## Self-hosting is the DEFAULT, and `aai build --target` emits per host
 
-**`aai start` is the self-hosting command** (`start.ts`; the module doc has
-the precedent). The scaffold's `prestart`/`start` (`aai build --skip-tests`,
-then `aai start`) makes every `init`/`pull` project run with `npm start`. The
-boot is a command, not a scaffolded file, so improvements reach existing
-projects. The custom-server opt-out is `createProjectServer` on
-`@alexkroman1/aai-cli/start` — builds the `AgentServer`, binds nothing (also
-what a serverless host wants).
+**`aai start` is the self-hosting command** (`start.ts`; the module doc has the
+precedent). The scaffold's `prestart`/`start` (`aai build --skip-tests`, then
+`aai start`) makes every `init`/`pull` project run with `npm start`. The boot is
+a command, not a scaffolded file, so improvements reach existing projects. The
+custom-server opt-out is `createProjectServer` on `@alexkroman1/aai-cli/start` —
+builds the `AgentServer`, binds nothing (also what a serverless host wants).
 
 **`--target` is Nitro's preset shape** (`_build-target.ts`): an entry file is
 EMITTED into build output, never committed. Per-host modules:
@@ -31,14 +30,14 @@ EMITTED into build output, never committed. Per-host modules:
 dependency runs one way: `_build-target.ts` reads each host module, never the
 reverse — a new target is a new file plus two lines.
 
-- **Detection reads the host's build env**: Vercel via `VERCEL`, `VERCEL_ENV`
-  or `NOW_BUILDER` (all three); Deno via `DENO_DEPLOY` or `DENO_DEPLOYMENT_ID`
+- **Detection reads the host's build env**: Vercel via `VERCEL`, `VERCEL_ENV` or
+  `NOW_BUILDER` (all three); Deno via `DENO_DEPLOY` or `DENO_DEPLOYMENT_ID`
   (both platform generations). It cannot fire for a locally built upload
   (`deno deploy`, `modal deploy`), which passes the flag. Otherwise `node`
   (emits nothing extra).
-- **Every target names the command that ships it, as DATA** (`TARGET_OUTPUTS`,
-  a total record over `BuildTarget`), printed and on the result (`log` is
-  silent under `--json`).
+- **Every target names the command that ships it, as DATA** (`TARGET_OUTPUTS`, a
+  total record over `BuildTarget`), printed and on the result (`log` is silent
+  under `--json`).
 - **A host build WARNS about a declared variable the host has no value for**
   (`missingDeployEnv` in `build.ts`, `missingEnv` on the result,
   `TargetOutput.secret` for the fix command). It reads **the host environment
@@ -53,15 +52,15 @@ reverse — a new target is a new file plus two lines.
   after it, a terminal 404 with `no-store` (a miss there is a stale
   `index.html`, and would otherwise inherit the immutable header). Everything
   else falls through.
-- **Vercel's Node major rounds UP** (`vercelNodeRuntime`: smallest offered
-  major ≥ the build's, clamped at newest).
+- **Vercel's Node major rounds UP** (`vercelNodeRuntime`: smallest offered major
+  ≥ the build's, clamped at newest).
 - **`--target deno` emits a self-contained `.aai/deno/`** (bundled server,
   worker, client, `.env.example`, no install step — Deno Deploy dies caching the
   CLI's toolchain graph otherwise), plus a `.aai/deno/deno.json` with a `start`
   task (`-A`; makes the directory runnable by hand).
 - **Long-lived entries drain on `SIGINT`/`SIGTERM`** via one shared
-  `TARGET_DRAIN_SOURCE`; registration is wrapped in `try` because a host
-  without signals throws from `Deno.addSignalListener`.
+  `TARGET_DRAIN_SOURCE`; registration is wrapped in `try` because a host without
+  signals throws from `Deno.addSignalListener`.
 - **`_deno-output.scenario.test.ts` checks the module GRAPH** with
   `deno info --json` and reads the modules (not the exit code, which is 0 on
   unresolved deps) — boot-and-serve cannot see a dangling edge in a comment.
@@ -95,9 +94,9 @@ reverse — a new target is a new file plus two lines.
 - **Only the SERVE half is portable** — `createProjectServer` + `listen` + the
   drain over a directory with no `node_modules`. `aai build` is Node; never try
   to certify it elsewhere, and keep anything runtime-specific out of the entry.
-- **One entry for every host** (`_target-entry.ts`): `RUNTIME_PORT_SOURCE`
-  reads the port under any runtime; `_target-entry.test.ts` pins the real
-  entries to one body modulo a banner and a default port.
+- **One entry for every host** (`_target-entry.ts`): `RUNTIME_PORT_SOURCE` reads
+  the port under any runtime; `_target-entry.test.ts` pins the real entries to
+  one body modulo a banner and a default port.
 - **`_target-runtimes.scenario.test.ts` is the certification**: one memoized
   emit, booted under `node`, `deno` and `bun`, each asserting boot without
   `node_modules`, `/health` + `/client-config` + `/`, a `/websocket` dial (to
@@ -112,32 +111,32 @@ reverse — a new target is a new file plus two lines.
   not restore an undici patch for older Bun**; restate the floor. A "works
   outside a bundle, not inside" Bun report: Bun substitutes native `ws` only
   when imported by name.
-- **There is deliberately no `--target bun`**: Bun is a runtime, not a host,
-  and every target owes a verified non-empty deploy sequence
+- **There is deliberately no `--target bun`**: Bun is a runtime, not a host, and
+  every target owes a verified non-empty deploy sequence
   (`_build-target.test.ts`).
 
 ## Self-hosting is the scaffold's default, and it runs the BUILT worker
 
-**`aai start` imports `.aai/worker.mjs`, which `prestart` (`aai build
---skip-tests`) produces.** Tools are registered by the bundler enumerating
-`tools/`, so an un-bundled loader would serve an agent with no tools and no
-error. That is why `aai build` leaves its worker on disk and why the scaffold
-declares `prestart` (`scaffold/package.json` is the single definition).
+**`aai start` imports `.aai/worker.mjs`, which `prestart`
+(`aai build --skip-tests`) produces.** Tools are registered by the bundler
+enumerating `tools/`, so an un-bundled loader would serve an agent with no tools
+and no error. That is why `aai build` leaves its worker on disk and why the
+scaffold declares `prestart` (`scaffold/package.json` is the single definition).
 
-- **There is no runtime `tools/` scan anywhere**, by decision — one way to
-  build a registry. Specs use `import.meta.glob` (see
+- **There is no runtime `tools/` scan anywhere**, by decision — one way to build
+  a registry. Specs use `import.meta.glob` (see
   `packages/aai-templates/src/_discovery.ts`).
 - **No `registerHooks` shim**: Vite inlines `?raw` and attribute-less `.json`
   imports. The worker import is dynamic via `pathToFileURL` (Windows-correct).
 - **A missing artifact exits with the command that fixes it**, never boots a
   tool-less agent or throws a bare `ERR_MODULE_NOT_FOUND`.
 - **`ctx.env` and provider credentials come from different places.** `env` is
-  declared keys only (`.env`, plus `.env.example` as declarations; real env
-  vars win per key), as under `aai dev`. Provider credentials go through
+  declared keys only (`.env`, plus `.env.example` as declarations; real env vars
+  win per key), as under `aai dev`. Provider credentials go through
   `withHostCredentialFallback` (so `docker run -e ASSEMBLYAI_API_KEY=…` works
   without entering `ctx.env`). An empty declared value is DROPPED.
 - The CLI is a devDependency of self-hosting, so `npm ci --omit=dev` is not
   supported; `prestart` skips only tests.
-- `e2e.test.ts` boots `npm start` on an installed `pizza-ordering-agent`
-  (chosen for its `tools/`), probes `/health`, `/client-config`, `/`, and reads
-  the six tool names out of the booted artifact.
+- `e2e.test.ts` boots `npm start` on an installed `pizza-ordering-agent` (chosen
+  for its `tools/`), probes `/health`, `/client-config`, `/`, and reads the six
+  tool names out of the booted artifact.

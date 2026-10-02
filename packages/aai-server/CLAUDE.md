@@ -8,10 +8,10 @@ read_when: >-
 
 # packages/aai-server — platform guide
 
-The agent service plus the shared platform core (private package, a LIBRARY
-with no entry point). Repo-wide conventions are in the root `AGENTS.md`; the
-guest side of every sandbox is `packages/aai-guest/CLAUDE.md`; the studio
-service and the composition root are `packages/aai-studio-server/CLAUDE.md`.
+The agent service plus the shared platform core (private package, a LIBRARY with
+no entry point). Repo-wide conventions are in the root `AGENTS.md`; the guest
+side of every sandbox is `packages/aai-guest/CLAUDE.md`; the studio service and
+the composition root are `packages/aai-studio-server/CLAUDE.md`.
 
 ## Directory guides
 
@@ -82,8 +82,8 @@ a path based on another variable rather than the file's own directory, and an
 - `transport-websocket.ts` — also the agent's client surface (`GET /:slug/`,
   `/:slug/assets/*`, `/:slug/favicon.ico`). **The shell is `no-store`; hashed
   assets are `immutable`** — a redeploy replaces `client_files`, so a cached
-  shell would reference assets that now 404, and this surface has no
-  stale-build reload.
+  shell would reference assets that now 404, and this surface has no stale-build
+  reload.
 - `rate-limit.ts` — the shared fixed-window limiter (memory + Postgres, one
   atomic upsert per check, so a limit holds platform-wide). Mechanism only;
   every window is the studio's (`aai-studio-server/src/CLAUDE.md`, "Rate
@@ -99,10 +99,10 @@ a path based on another variable rather than the file's own directory, and an
 
 ## Stores, blobs and sweeps
 
-- **`bundle-store.ts`** — content-addressed immutable blobs
-  (`blobs/<sha256>`, worker + client files) committed by the agents-row upsert,
-  the deploy's ATOMIC publish point. Blob reads and writes retry transients
-  (content-hash key + `upsert` makes a retry byte-identical).
+- **`bundle-store.ts`** — content-addressed immutable blobs (`blobs/<sha256>`,
+  worker + client files) committed by the agents-row upsert, the deploy's ATOMIC
+  publish point. Blob reads and writes retry transients (content-hash key +
+  `upsert` makes a retry byte-identical).
   - Writes overlap with a width we choose (`DEPLOY_BLOB_CONCURRENCY`, a worker
     pool) — not an unbounded `Promise.all`, and not `_semaphore.ts`, whose
     bounded wait would silently skip a blob the row is about to reference.
@@ -119,9 +119,8 @@ a path based on another variable rather than the file's own directory, and an
   and retries failures, so conflating them makes a live deploy read as absent.
   - **`SUPABASE_SERVICE_ROLE_KEY` must be a secret key (`sb_secret_…`)**; boot
     refuses an anon-authority one (`assertServiceRoleKey` in `_boot.ts`, called
-    once from `buildServiceConfig`; its doc has why).
-    `SUPABASE_PUBLISHABLE_KEY` (browser sign-in) is separate and stays
-    publishable.
+    once from `buildServiceConfig`; its doc has why). `SUPABASE_PUBLISHABLE_KEY`
+    (browser sign-in) is separate and stays publishable.
   - **`assertBucketPrivate` refuses boot on a misconfigured bucket and only
     warns on an unreachable one** — the bucket lives in the dashboard, not in
     migrations, but failing boot on a Storage blip would stop every container.
@@ -132,22 +131,22 @@ a path based on another variable rather than the file's own directory, and an
   `PUT/GET/HEAD /:slug/uploads/:id/:offset`, one window of a workflow upload, in
   the same bucket under `uploads/`. This is safe only because the blob GC's
   first arm filters `name like 'blobs/%'`; **anything else put in this bucket
-  owes the same check.** A second arm reclaims `uploads/%` whose
-  `(slug, id)` has no `workflow_uploads` row: it deletes only fully-parsed keys,
-  has its own empty-table guard, and waits `UPLOAD_ORPHAN_GRACE` (3 days,
-  because `create` writes bytes before the row). The table cascades on agent
-  delete, so `deleteAgent` does not grow a step.
+  owes the same check.** A second arm reclaims `uploads/%` whose `(slug, id)`
+  has no `workflow_uploads` row: it deletes only fully-parsed keys, has its own
+  empty-table guard, and waits `UPLOAD_ORPHAN_GRACE` (3 days, because `create`
+  writes bytes before the row). The table cascades on agent delete, so
+  `deleteAgent` does not grow a step.
 - **`deploy.ts` / `delete.ts`** — a delete is `deleteAgentResources`: a slug
   lock around `store.deleteAgent(slug)` (agents row + `agent-env:<slug>`
   secret). **A delete whose external step fails must FAIL (503), never warn and
   continue** — keep this for any future external teardown step.
 - **`secret-store.ts`** — `SecretStore`: Supabase Vault
   (`createVaultSecretStore` over `SUPABASE_DB_URL`) in production, memory in
-  dev/tests. Holds `agent-env:<slug>` and `PLATFORM_STORAGE_KEY_SECRET`
-  (legacy `app-db:<slug>` rows are written and swept by nothing). **`put`
-  absorbs a lost create race**: a `23505` is retried as an update exactly once
-  (account paths are not slug-locked). Read the SQLSTATE, never the message.
-  Vault encrypts at rest; there is deliberately no app-layer encryption.
+  dev/tests. Holds `agent-env:<slug>` and `PLATFORM_STORAGE_KEY_SECRET` (legacy
+  `app-db:<slug>` rows are written and swept by nothing). **`put` absorbs a lost
+  create race**: a `23505` is retried as an update exactly once (account paths
+  are not slug-locked). Read the SQLSTATE, never the message. Vault encrypts at
+  rest; there is deliberately no app-layer encryption.
 - **`pg-cron.ts`** — janitorial sweeps as pg_cron jobs, installed idempotently
   at boot. Rules:
   - **Boot DIFFS**: every `aai-sweep-*` job in `cron.job` that
@@ -163,20 +162,20 @@ a path based on another variable rather than the file's own directory, and an
     fails if `deleteAgent` grows a step the SQL body lacks.
   - The blob GC deletes through the Storage API via `pg_net` (deleting the
     `storage.objects` row orphans the object), with the credential read from
-    Vault at run time, never interpolated into the job command. **It refuses
-    to run when `aai_platform.agents` is EMPTY**, and its grace window is a day
+    Vault at run time, never interpolated into the job command. **It refuses to
+    run when `aai_platform.agents` is EMPTY**, and its grace window is a day
     (past the drain and the signed URL TTL).
   - `pg-cron.scenario.test.ts` executes every sweep body against a real
     database; `pg-cron.test.ts` only checks the string reached `cron.schedule`.
   - `dblink` and the `aai_admin` schema are dropped
-    (`20260827030000_drop_dblink_admin.sql`); do not re-add an unused
-    capability that can connect to any reachable Postgres.
+    (`20260827030000_drop_dblink_admin.sql`); do not re-add an unused capability
+    that can connect to any reachable Postgres.
 
 ## The platform provisions no tenant database
 
 **A tenant gets no database from the platform.** An author who wants one sets
-`DATABASE_URL` in their own secrets; `sandbox/resolve.ts` overlays nothing.
-The durable state is the platform's, reached over HTTP with the sandbox's own
+`DATABASE_URL` in their own secrets; `sandbox/resolve.ts` overlays nothing. The
+durable state is the platform's, reached over HTTP with the sandbox's own
 bearer: workflow runs (queue, storage, streamer as `aai_platform` tables; the
 guest world is `workflow/platform-world.ts`), turn-level durability
 (`session_slots` / `session_events`), and upload records (`workflow_uploads`,
@@ -208,8 +207,8 @@ decides whether tenant code gets a real boundary.** They are independent.
 - **The safe branch is the default**: an empty env gets isolation and key
   verification (`sandbox/backend.test.ts` asserts `{}`).
 - **Local is no excuse**: `assertSessionModeUrl` and `assertServiceRoleKey` run
-  on every tier, and dev auth is refused once a platform database is
-  configured (`createStudioAuthFromEnv`).
+  on every tier, and dev auth is refused once a platform database is configured
+  (`createStudioAuthFromEnv`).
 
 `scripts/dev-server.mjs` supplies both for `pnpm dev:aai-server` (resolving the
 stack from `supabase status -o env`, under a repo-root `.env` and the shell).
@@ -226,20 +225,20 @@ signed URL. Platform-table traffic from guests does cross a replica, bounded in
 `platform/_route.ts`. The lock, connection budget and pools are in
 [`src/platform/CLAUDE.md`](src/platform/CLAUDE.md).
 
-**Where we differ from Supabase's own recommendations** (`postgres_changes`
-over Broadcast, deny-all RLS on an ungranted schema, IPv4/IPv6 and legacy key
-forms) is in `supabase/README.md`. Read it before adding a watched table, a
-table without RLS, or a publication column list.
+**Where we differ from Supabase's own recommendations** (`postgres_changes` over
+Broadcast, deny-all RLS on an ungranted schema, IPv4/IPv6 and legacy key forms)
+is in `supabase/README.md`. Read it before adding a watched table, a table
+without RLS, or a publication column list.
 
 Session resume needs no cross-replica store: a `?sessionId=` reconnect
 re-brokers via `GET /:slug/client-config`, and a replacement guest recovers slot
 state from the platform tables; the session-state TTL sweep
 (`pg-cron-bodies.ts`) reclaims a dead guest's leftovers.
 
-Deliberately in-process: the slot cache and resident sandboxes (an
-accelerator; the agents change stream keeps them correct), TTL-bounded or
-content-hash-keyed caches (staleness documented at each site), and the
-in-process workspace/slug mutexes kept _under_ the distributed ones.
+Deliberately in-process: the slot cache and resident sandboxes (an accelerator;
+the agents change stream keeps them correct), TTL-bounded or content-hash-keyed
+caches (staleness documented at each site), and the in-process workspace/slug
+mutexes kept _under_ the distributed ones.
 
 ### Two arms per store contract, and the stack is the only real one
 
@@ -249,8 +248,8 @@ memory arm in unit suites and over the local Supabase stack in the
 `*store-conformance.scenario.test.ts` files (`describeWithStack`,
 `pnpm test:pg`).
 
-- An arm is legitimate only if something really runs on it: memory and the
-  stack are; a stock Postgres is not (no Vault, pg_cron, walrus).
+- An arm is legitimate only if something really runs on it: memory and the stack
+  are; a stock Postgres is not (no Vault, pg_cron, walrus).
 - The fake `SqlExec` is a recorder with its own spec, not an arm.
 - A case is arm-independent: fresh keys from `uniqueKeys`, never literals.
 - **A case REMOVES what it wrote**, per case (a claimed queue job is invisible
@@ -274,8 +273,8 @@ the studio surface AND the composition root, whose entry every deployment runs
 `platform/surface.test.ts` fails on an entry nobody imports and on a module the
 studio reaches that no entry names. Widening the surface is a deliberate
 `package.json` edit; if the map starts growing for convenience, the answer is
-the merge, not an eighth barrel. (This package uses vitest **forks**; the
-studio uses threads.)
+the merge, not an eighth barrel. (This package uses vitest **forks**; the studio
+uses threads.)
 
 - **A resolved public origin may be used WITHIN the request that asked for it
   and never stored for a later one** — `Host` / `x-forwarded-*` are
@@ -288,9 +287,9 @@ studio uses threads.)
 `microsandbox/sandbox.ts` boots the guest in a libkrun microVM from the SAME OCI
 image production pulls. `pnpm build:guest-image --msb` builds it — **a harness
 edit is not live until that has run** (`packages/aai-guest/CLAUDE.md`).
-`pnpm --filter aai-server test:scenario` runs the real-microVM tier, which
-skips without hardware virtualization (`AAI_REQUIRE_MICROSANDBOX=1` fails
-instead). Its traps are in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
+`pnpm --filter aai-server test:scenario` runs the real-microVM tier, which skips
+without hardware virtualization (`AAI_REQUIRE_MICROSANDBOX=1` fails instead).
+Its traps are in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 
 ## A new guest route must declare how the PLATFORM exposes it
 
@@ -304,17 +303,17 @@ the route.
 
 **The deploy boundary learns NOTHING about a bundle.** `POST /deploy` takes
 artifacts (worker, client files, env) and ownership (the caller's key); no
-config is extracted, validated or stored, and no name is read. A slugless
-deploy gets `human-id` words plus a random suffix; a caller wanting a readable
-URL requests the slug. `DeployBodySchema` has no config or name field.
+config is extracted, validated or stored, and no name is read. A slugless deploy
+gets `human-id` words plus a random suffix; a caller wanting a readable URL
+requests the slug. `DeployBodySchema` has no config or name field.
 
 - The credential preflight and the import smoke test live in the CLI
   (`aai-cli/_preflight.ts`, `packages/aai-cli/CLAUDE.md`); the preflight WARNS
   because the CLI cannot see secrets already stored against the slug.
 - **Re-adding a host-side view of what an agent is means re-adding trusted
-  extraction** (a bundle can forge its own self-description). Decide that
-  before any quota, provider block or agents list. A new column would also
-  need a backfill story: existing agents carry nothing until redeployed.
+  extraction** (a bundle can forge its own self-description). Decide that before
+  any quota, provider block or agents list. A new column would also need a
+  backfill story: existing agents carry nothing until redeployed.
 - **Contract migrations go through the `RETIRED_COLUMNS` ledger** in
   `platform/schema.test.ts` (empty now — keep the mechanism). A drop cannot ride
   the release of its own expand (`supabase db push` runs before old containers
@@ -345,8 +344,8 @@ different boundary and `subprocess` has none; the boot log names the backend.
 - **Remote isolation**: no shared kernel with the host, no shared state between
   agents; the guest runs plain Node.
 - **Open egress**: a tenant can reach the internet, not the platform. A
-  `DATABASE_URL` in the boot env is the author's own; platform admin
-  credentials never enter the guest.
+  `DATABASE_URL` in the boot env is the author's own; platform admin credentials
+  never enter the guest.
 - **Minimal filesystem**: the baked harness image, never the host filesystem.
 - **Sessions live in the guest**; the host holds no session state.
 - A deployed agent's env is a boot FILE written into its sandbox (scrubbed after
@@ -354,23 +353,23 @@ different boundary and `subprocess` has none; the boot log names the backend.
   host-side.
 
 **Credential separation**: each agent provides its own `ASSEMBLYAI_API_KEY`
-(`.env` locally, `aai secret put` in production) — **there is no
-platform-owned key**. `SandboxOptions` keeps `apiKey` (host-only) apart from
-`agentEnv` (forwarded). What a guest may hold, why resolution never reads
-`process.env`, and the `HostCredentialEnv` brand are in
-`packages/aai-guest/CLAUDE.md`, "Credential separation, and what reaches a
-guest".
+(`.env` locally, `aai secret put` in production) — **there is no platform-owned
+key**. `SandboxOptions` keeps `apiKey` (host-only) apart from `agentEnv`
+(forwarded). What a guest may hold, why resolution never reads `process.env`,
+and the `HostCredentialEnv` brand are in `packages/aai-guest/CLAUDE.md`,
+"Credential separation, and what reaches a guest".
 
 **Cross-agent isolation**: no shared tenant database; the platform's durable
 state is reachable only via HTTP routes gated by the per-sandbox bearer and
 scoped by the caller's slug SERVER-side (the slug in every workflow-journal and
-session-state primary key, `guestSlug`). No shared mutable state between sandboxes.
+session-state primary key, `guestSlug`). No shared mutable state between
+sandboxes.
 
 **`run_code`** executes only inside the guest on the platform (self-hosted,
 `AAI_RUN_CODE=deno` runs it in a zero-permission Deno;
 `packages/aai-cli/CLAUDE.md`) ("The `run_code` executor",
-`packages/aai-guest/CLAUDE.md`). **SSRF**: `aai/host/ssrf.ts`; policy and
-traps in `packages/aai-guest/CLAUDE.md`, "Guest network access".
+`packages/aai-guest/CLAUDE.md`). **SSRF**: `aai/host/ssrf.ts`; policy and traps
+in `packages/aai-guest/CLAUDE.md`, "Guest network access".
 
 ### Auth
 
@@ -388,8 +387,8 @@ traps in `packages/aai-guest/CLAUDE.md`, "Guest network access".
   - **The browser path is verified at STORAGE** (`PUT /studio/account/key`).
 - **Two bearer forms, one resolution point** (`resolveBearer` in
   `middleware.ts`): raw API keys pass through; JWT-shaped bearers (browser
-  sessions) are verified by the auth backend and mapped to the user's stored
-  key (`user-key:<uid>`). `isJwtShaped` only routes; the backend's answer is the
+  sessions) are verified by the auth backend and mapped to the user's stored key
+  (`user-key:<uid>`). `isJwtShaped` only routes; the backend's answer is the
   verification. A raw key also resolves a `userId` via the
   `key-user:<sha256(key)>` mapping (TTL-cached, negatives included), landing a
   linked CLI in the browser account's scope.
@@ -414,9 +413,9 @@ traps in `packages/aai-guest/CLAUDE.md`, "Guest network access".
   never an overwrite.
 - **Server-generated names come from one generator** (`slug-generate.ts`):
   readable base + random base36 suffix. Only studio project creation supplies a
-  base (`projectBaseFromPrompt`); clients never generate names.
-  **Normalization is `slugifyName` in `@alexkroman1/aai/slugify`**, shared by
-  CLI, studio and server — do not add a local slugifier.
+  base (`projectBaseFromPrompt`); clients never generate names. **Normalization
+  is `slugifyName` in `@alexkroman1/aai/slugify`**, shared by CLI, studio and
+  server — do not add a local slugifier.
 
 ### A deployed agent's session opens only for a broker-minted ticket
 
@@ -425,24 +424,25 @@ traps in `packages/aai-guest/CLAUDE.md`, "Guest network access".
 `WS /websocket` (and `/inbox`) refuses an upgrade without one (4401).
 
 - **What it proves is only that the holder fetched this agent's config**, a
-  minute ago (`mintPlatformSessionTicket`, `aai-runtime/server/session-ticket.ts`).
-  The platform knows no end user; `allowedOrigins` has no platform setting yet.
-- **Resume is by POSSESSION.** Every ticket is BOUND to one session id; a
-  lookup presenting the previous ticket (`aai-session-ticket` header) within
+  minute ago (`mintPlatformSessionTicket`,
+  `aai-runtime/server/session-ticket.ts`). The platform knows no end user;
+  `allowedOrigins` has no platform setting yet.
+- **Resume is by POSSESSION.** Every ticket is BOUND to one session id; a lookup
+  presenting the previous ticket (`aai-session-ticket` header) within
   `PLATFORM_TICKET_RESUME_GRACE_SECONDS` (12 h) of its expiry gets one for the
   same session, anything else a new id. Knowing a session id is not enough, and
   the gate opens a bound ticket's own session whatever `?sessionId=` names.
-- **The key is DERIVED, never delivered**: `platformSessionSecret(bearer)`
-  over `guestTokenFor(agentSandboxName(slug, version))`, which the guest holds
-  as `AAI_GUEST_TOKEN` through its exec env. Nothing new reaches the agent env,
-  the bundle or the browser; the key does not reveal the bearer. A presented
-  ticket from the previous deploy (`version - 1`) still proves its session, so a
-  call survives a redeploy.
+- **The key is DERIVED, never delivered**: `platformSessionSecret(bearer)` over
+  `guestTokenFor(agentSandboxName(slug, version))`, which the guest holds as
+  `AAI_GUEST_TOKEN` through its exec env. Nothing new reaches the agent env, the
+  bundle or the browser; the key does not reveal the bearer. A presented ticket
+  from the previous deploy (`version - 1`) still proves its session, so a call
+  survives a redeploy.
 - **Mint for the guest the session is ROUTED to** (`BrokeredSession.version`:
   the resident sandbox's own `version`, or the version a peer was found by),
   never the row's or the local slot's — mid-redeploy either can name another
-  deploy, and that guest refuses the ticket (4401). The row is the fallback
-  only for a broker that cannot say.
+  deploy, and that guest refuses the ticket (4401). The row is the fallback only
+  for a broker that cannot say.
 - The guest also accepts the AUTHOR's tickets when the agent env sets
   `AAI_SESSION_SECRET` (`aai-guest/src/harness/session-tickets.ts`).
 
@@ -452,8 +452,8 @@ A cold spawn never moves the worker bundle through this process:
 `BlobStorage.signedUrl` → `BundleStore.getWorkerUrl` → `WorkerSource`
 (`sandbox/vm.ts`) → `AAI_BUNDLE_URL`, and the guest hash-verifies against
 `worker_hash`. The boot contract (the hash is the security argument, `null`
-means "cannot sign") is
-"Fetching its own bundle" in `packages/aai-guest/src/harness/CLAUDE.md`.
+means "cannot sign") is "Fetching its own bundle" in
+`packages/aai-guest/src/harness/CLAUDE.md`.
 
 ### A workflow upload's bytes are the PLATFORM's
 
@@ -481,9 +481,9 @@ this exists instead of `/:slug/websocket`. The guest half is
 - **Verification is enabled by the agent's own secret** (`TWILIO_AUTH_TOKEN`
   HMAC-SHA1, or `TELNYX_PUBLIC_KEY` Ed25519 with a freshness bound); an agent
   with neither is as open as `/client-config`.
-- **Enablement is per AGENT, never per CARRIER** — `?carrier=` is
-  caller-chosen. Once ANY carrier secret is set, an unverifiable request is
-  refused, including one naming a carrier whose secret is absent.
+- **Enablement is per AGENT, never per CARRIER** — `?carrier=` is caller-chosen.
+  Once ANY carrier secret is set, an unverifiable request is refused, including
+  one naming a carrier whose secret is absent.
 - **The signed URL is the PUBLIC one**, composed from `resolvePublicOrigin`,
   never `c.req.url`.
 
@@ -499,10 +499,9 @@ leaves the system and must outlive the sandbox.
   **503 + `Retry-After`** — senders have retry loops. A forward, never a
   redirect. Auth is the token only; the body is capped
   (`MAX_WEBHOOK_BODY_BYTES`) before buffering.
-- **The SDK mints the public URL**: the DevKit's `hook.url` is
-  guest-local, so `agentBootEnv` sets **`AAI_PUBLIC_BASE_URL`**
-  (`agentPublicBaseUrl` in `public-origin.ts`) and
-  `ctx.workflows.publicWebhookUrl(token)` composes from
+- **The SDK mints the public URL**: the DevKit's `hook.url` is guest-local, so
+  `agentBootEnv` sets **`AAI_PUBLIC_BASE_URL`** (`agentPublicBaseUrl` in
+  `public-origin.ts`) and `ctx.workflows.publicWebhookUrl(token)` composes from
   `WORKFLOW_WEBHOOK_PREFIX`. Do not repoint `WORKFLOW_LOCAL_BASE_URL` — it
   steers queue dispatch and would 404 `flow`/`step`.
 - **`AAI_PUBLIC_ORIGIN` is the only production source, and boot is refused
@@ -542,13 +541,13 @@ arguments; the rules:
   - **bound wake loops per slug, per tick and per RUN** —
     `RECONCILE_MAX_ATTEMPTS` (`_reconcile-abandon.ts`) moves a run to `failed`
     via a COMPARE-AND-SET on live statuses, never over `completed`;
-  - **run on one replica per tick** (transaction-scoped advisory try-lock;
-    a lost lock is a silent skip);
+  - **run on one replica per tick** (transaction-scoped advisory try-lock; a
+    lost lock is a silent skip);
   - **keep the pass width a constant**, not a function of app count.
 - In-flight workflow callbacks count as busy for the guest's idle window and
-  drain (`packages/aai-guest/src/harness/CLAUDE.md`). The engine-side lease
-  rule is in `packages/aai-runtime/JOURNAL-CLAUDE.md`, "An attempt is a LEASE,
-  and it EXPIRES".
+  drain (`packages/aai-guest/src/harness/CLAUDE.md`). The engine-side lease rule
+  is in `packages/aai-runtime/JOURNAL-CLAUDE.md`, "An attempt is a LEASE, and it
+  EXPIRES".
 
 ### The workflow API is brokered too — `/:slug/workflows/*`
 
@@ -578,35 +577,35 @@ bundle's runtime.
 ### Testing security boundaries
 
 Isolation itself (filesystem, memory, network, env) is Modal's; no test here
-covers it. `modal/sandbox.test.ts` covers the spawn flow against a fake
-context; `aai-guest/harness.test.ts` the `run_code` executor; `aai/host/ssrf.test.ts`
-and aai-runtime's `ssrf-*.test.ts` SSRF bypasses.
+covers it. `modal/sandbox.test.ts` covers the spawn flow against a fake context;
+`aai-guest/harness.test.ts` the `run_code` executor; `aai/host/ssrf.test.ts` and
+aai-runtime's `ssrf-*.test.ts` SSRF bypasses.
 
-There is deliberately **no load or chaos tier**. If one is reintroduced:
-**the hostile code must actually execute** (at the bundle's top level),
-thresholds must tie to constants the server reads, it stays outside the merge
-gate, and an open `/session` socket proves nothing (a guest whose runtime
-failed accepts then closes 1011).
+There is deliberately **no load or chaos tier**. If one is reintroduced: **the
+hostile code must actually execute** (at the bundle's top level), thresholds
+must tie to constants the server reads, it stays outside the merge gate, and an
+open `/session` socket proves nothing (a guest whose runtime failed accepts then
+closes 1011).
 
 ## Testing this package
 
 ### Building a platform request in a test
 
 **Build requests with `authFetch` / `deploy(fetch, { key, body })` from
-`_request-test-utils.ts`, never a `Bearer` header literal**; `deployPayload()` is
-`deployBody()` as an object. Use a bare `fetch` only when the REQUEST is the
+`_request-test-utils.ts`, never a `Bearer` header literal**; `deployPayload()`
+is `deployBody()` as an object. Use a bare `fetch` only when the REQUEST is the
 subject (bearer-gate specs, `resolveBearer` cases, header assertions, gzip or
 raw bodies).
 
 ### A suite over a FLEET-WIDE predicate owns its database
 
-Unique slugs isolate the rows a test writes, not predicates that read every
-slug (`claimDue`, `WORKFLOW_QUEUE_CHANNEL`, `findStalledRuns`). Such a suite
-takes `useThrowawayPlatformDb` (`_workflow-queue-test-utils.ts`): a private
-database built by `ensurePlatformTables` (never hand-written DDL, so FKs and
-indexes are the shipped ones). A listener must dial the fixture's `url()`, not
-`pgUrl()`. This is distinct from the `aai_test_schema_ready` sentinel (which
-guards a half-built schema).
+Unique slugs isolate the rows a test writes, not predicates that read every slug
+(`claimDue`, `WORKFLOW_QUEUE_CHANNEL`, `findStalledRuns`). Such a suite takes
+`useThrowawayPlatformDb` (`_workflow-queue-test-utils.ts`): a private database
+built by `ensurePlatformTables` (never hand-written DDL, so FKs and indexes are
+the shipped ones). A listener must dial the fixture's `url()`, not `pgUrl()`.
+This is distinct from the `aai_test_schema_ready` sentinel (which guards a
+half-built schema).
 
 ### Gating a suite on a real Postgres
 
@@ -623,16 +622,16 @@ driver-level bugs.
   stay declared in `check:scenario`'s `env` in `turbo.json` (strict env mode
   strips undeclared vars). `AAI_REQUIRE_REGISTRY` is the same for `check:e2e`
   (`packages/aai-cli/CLAUDE.md`).
-- **Read `pgUrl()` inside a hook or test, never at the top of a gated
-  `describe` body** — vitest executes skipped `describe` callbacks during
-  collection, so it would fail the file instead of skipping.
+- **Read `pgUrl()` inside a hook or test, never at the top of a gated `describe`
+  body** — vitest executes skipped `describe` callbacks during collection, so it
+  would fail the file instead of skipping.
 
 ### Every line goes through `logger.ts`
 
-`createLogger("<namespace>")` at module scope; nothing writes to `console.*`.
-It is built on the SDK's `Logger` (konsistent `platform-logger`). Specs use
-`captureLogs()` (`_logger-test-utils.ts`) and assert THAT a line was
-written, not its wording.
+`createLogger("<namespace>")` at module scope; nothing writes to `console.*`. It
+is built on the SDK's `Logger` (konsistent `platform-logger`). Specs use
+`captureLogs()` (`_logger-test-utils.ts`) and assert THAT a line was written,
+not its wording.
 
 ### An agent's own output — `GET /:slug/logs`
 

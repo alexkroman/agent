@@ -15,14 +15,13 @@ guide, [`../CLAUDE.md`](../CLAUDE.md).
 
 ## A directory with an `index.ts` is a MODULE
 
-Each directory below is entered through its `index.ts` alone, and a module
-not re-exported there is private — so there is no `_` prefix inside these
-directories (test scaffolding keeps one: the coverage and lint globs key on
-it). `guard-invariants` rule 37 refuses an import from outside that names any
-other file, specs included (konsistent's
-`runtime-module-dir-entered-through-index` states it per directory);
-`module-dir-index-is-re-export-only` keeps each index a list of named
-re-exports.
+Each directory below is entered through its `index.ts` alone, and a module not
+re-exported there is private — so there is no `_` prefix inside these
+directories (test scaffolding keeps one: the coverage and lint globs key on it).
+`guard-invariants` rule 37 refuses an import from outside that names any other
+file, specs included (konsistent's `runtime-module-dir-entered-through-index`
+states it per directory); `module-dir-index-is-re-export-only` keeps each index
+a list of named re-exports.
 
 | Directory              | Holds                                                                    | Guide                                                   |
 | ---------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------- |
@@ -41,20 +40,20 @@ re-exports.
 `providers/`, `transports/` (outside `pipeline/`), `workflow/`, `telephony/`,
 `session-state/`, `eval/` and `testing/` predate the rule and hold no index.
 
-**What stays flat, and why**: the six barrels, `internal.ts` and `tracing.ts`
-(a published subpath names each file); `logger.ts`, `s2s-config.ts` and the small
+**What stays flat, and why**: the six barrels, `internal.ts` and `tracing.ts` (a
+published subpath names each file); `logger.ts`, `s2s-config.ts` and the small
 leaves every directory imports (`_timer`, `_pcm`, `_base64`, `_ws`,
 `_audio-gate`, `_get-or-create`, `_ensure-once`, `_path-decode`,
 `_compact-records`, `usage-meter`); `guest-host.ts` (the surface `/internal`
-hands the guest); `_egress-*`, `app-db.ts` and
-`postgres-db.ts`, which `workflow/` imports and so cannot sit behind `server/`
-or `runtime/` without a cycle; `subagent.ts`, whose model resolution would
-pull the provider registry into the `tools/` index (and back into the
-pipeline); the `step-*` primitives; `generate.ts`; the tracing and metrics
-internals; and the test helpers several directories share (`_*-test-utils.ts`,
-`_fake-llm.ts`, `_pipeline-test-fakes.ts`, …). **Before adding a directory,
-find what discovers files by NAME** (scans, `guard-invariants-scopes.mjs`,
-baseline JSONs) — see "Layout" in [`../CLAUDE.md`](../CLAUDE.md).
+hands the guest); `_egress-*`, `app-db.ts` and `postgres-db.ts`, which
+`workflow/` imports and so cannot sit behind `server/` or `runtime/` without a
+cycle; `subagent.ts`, whose model resolution would pull the provider registry
+into the `tools/` index (and back into the pipeline); the `step-*` primitives;
+`generate.ts`; the tracing and metrics internals; and the test helpers several
+directories share (`_*-test-utils.ts`, `_fake-llm.ts`,
+`_pipeline-test-fakes.ts`, …). **Before adding a directory, find what discovers
+files by NAME** (scans, `guard-invariants-scopes.mjs`, baseline JSONs) — see
+"Layout" in [`../CLAUDE.md`](../CLAUDE.md).
 
 ## A client's surfaces: `/api`, several inbox holders, a live feed
 
@@ -78,8 +77,8 @@ baseline JSONs) — see "Layout" in [`../CLAUDE.md`](../CLAUDE.md).
 
 ## Subagents: `ctx.delegate` is a second tool loop
 
-`subagent.ts` implements `ctx.delegate` (contract: `sdk/speaker.ts` in the
-SDK) — any `SpeakerDef` run OFF the line, whether named in code or chosen by a
+`subagent.ts` implements `ctx.delegate` (contract: `sdk/speaker.ts` in the SDK)
+— any `SpeakerDef` run OFF the line, whether named in code or chosen by a
 roster's `delegate` — as the AI SDK's `ToolLoopAgent`-inside-a-tool pattern,
 with the runtime supplying what an author would get wrong:
 
@@ -107,8 +106,8 @@ Rules:
   `db`, `sessionId`; `DelegateOptions.task` must be a complete brief.
 - **Budget**: a delegated run spends on the DELEGATING session's meter per step
   (`ExecuteToolCallOptions.usage`) and is refused before each attempt once it is
-  gone. A sessionless parent (`step-delegate.ts`) has no meter: uncounted,
-  never refused. `usage-meter.ts`'s header lists what feeds the meter.
+  gone. A sessionless parent (`step-delegate.ts`) has no meter: uncounted, never
+  refused. `usage-meter.ts`'s header lists what feeds the meter.
 - **One level deep**: a subagent's tools get a `ctx.delegate` that rejects with
   `NESTED_DELEGATE_MESSAGE` (the refusal replaces the runner, so the message
   says why).
@@ -135,11 +134,11 @@ Rules:
 multiplexed platform socket, see
 [`PLATFORM-SOCKET-CLAUDE.md`](../../aai-server/PLATFORM-SOCKET-CLAUDE.md)) and
 `blobFetch` (window bytes); `_egress-pool.ts` builds them and `step-fetch.ts`
-takes a third. **`globalThis.fetch` is banned here by
-`guard-invariants` rule 29.** Both default to HTTP/1.1: under HTTP/2 concurrent
-requests share one flow-control window and a capacity limit arrives as a
-status-less reset (`sdk/step-fetch.ts` has the measurement).
-`AAI_EGRESS_RPC_HTTP2` switches the RPC pool only.
+takes a third. **`globalThis.fetch` is banned here by `guard-invariants`
+rule 29.** Both default to HTTP/1.1: under HTTP/2 concurrent requests share one
+flow-control window and a capacity limit arrives as a status-less reset
+(`sdk/step-fetch.ts` has the measurement). `AAI_EGRESS_RPC_HTTP2` switches the
+RPC pool only.
 
 - **Per PROCESS, a lazy singleton**; `closeEgressFetch()` RESETS rather than
   poisons it.
@@ -151,14 +150,15 @@ status-less reset (`sdk/step-fetch.ts` has the measurement).
   published export.
 - **Bodies must be plain** (`Uint8Array` or string): through `pinnedFetch`, a
   global `FormData`/`Blob`/`Headers`/`Request` is silently stringified
-  (`host/_undici.ts`). `providers/_openai-stream-repair.ts` is the one
-  baselined exception.
+  (`host/_undici.ts`). `providers/_openai-stream-repair.ts` is the one baselined
+  exception.
 
 ## A reply's metrics are ONE frame, and every reader takes it from there
 
 `metrics.collected` is reported once per settled reply; for the pipeline,
 `transports/pipeline/turn/metrics.ts` assembles it from marks the existing
-producers already take (`transports/pipeline/llm/trace.ts`, `transports/pipeline/output/audio-out.ts`).
+producers already take (`transports/pipeline/llm/trace.ts`,
+`transports/pipeline/output/audio-out.ts`).
 
 - **A stage that did not happen is ABSENT, never zero.**
 - **STT marks are QUEUED per committed text and CLAIMED by the turn answering

@@ -42,10 +42,10 @@ Guides under `src/` are not published: `package.json` `files` is `dist` +
 - `./styles.css` — default styles and the `--aai-*` → Tailwind token map.
 - `./client-dir` — **Node only**: `defaultClientDir()`, the path of the prebuilt
   default client (`dist/default-client/`, not an export of its own) for
-  `createServerForRuntime`/`createAgentServer`'s `clientDir`. Its own subpath because
-  it imports `node:*`, which the root barrel may not
-  (`ui-browser-barrel-has-no-node-module` in `konsistent.json`). A FUNCTION,
-  not a constant, so a missing package fails at call time, not import time.
+  `createServerForRuntime`/`createAgentServer`'s `clientDir`. Its own subpath
+  because it imports `node:*`, which the root barrel may not
+  (`ui-browser-barrel-has-no-node-module` in `konsistent.json`). A FUNCTION, not
+  a constant, so a missing package fails at call time, not import time.
 - `./internal` — what `mountClient()` installs for itself and framework tuning
   constants (`SessionProvider`, `ThemeProvider`, `ToolConfigContext`, the URL
   chips, `buildAgentUrl`, `loadClientConfig`, `VOICE_CAPTURE_CONSTRAINTS`,
@@ -54,7 +54,8 @@ Guides under `src/` are not published: `package.json` `files` is `dist` +
 ## Public vs internal surface
 
 Every export of `.` and `/client-dir` is `@public` and belongs to a capability
-contract (`src/contracts/CLAUDE.md`); `pnpm check:api-contracts` fails otherwise.
+contract (`src/contracts/CLAUDE.md`); `pnpm check:api-contracts` fails
+otherwise.
 
 - **No `@internal` export on the root barrel — the ratchet is at zero.** A name
   that should be public drops the tag and joins a capability; a name that is

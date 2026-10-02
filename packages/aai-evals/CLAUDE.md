@@ -13,12 +13,11 @@ read_when: >-
 
 The repo's eval FRAMEWORK — a recording runner, a spread report, an assertion
 vocabulary over the session event stream, and the key gate — plus the level-1
-behaviour cases that use it (private package). It is importable: `aai-studio-server`
-drives the same runner for the studio starter eval. See "This package is a
-LIBRARY, and what that excludes" for the subpaths and for the line between the
-two. Repo-wide conventions and
-the test-tier table live in the root `AGENTS.md`; the turbo rules are in
-`.agents/ci.md`.
+behaviour cases that use it (private package). It is importable:
+`aai-studio-server` drives the same runner for the studio starter eval. See
+"This package is a LIBRARY, and what that excludes" for the subpaths and for the
+line between the two. Repo-wide conventions and the test-tier table live in the
+root `AGENTS.md`; the turbo rules are in `.agents/ci.md`.
 
 ## What this exists for
 
@@ -36,10 +35,10 @@ The constraint eve's eval framework does not have, and the reason the harnesses
 ended up external: eve drives `t.send("What is the weather in Brooklyn?")`, and
 a voice agent's input is paced PCM.
 
-- **Level 1 — text-driven. BUILT.** `behaviour.eval.test.ts`, over the
-  published target (`@alexkroman1/aai-runtime/eval`). Everything above the audio
-  boundary: tool choice, tool arguments, tool ORDER, step count, what the agent
-  said, history handling.
+- **Level 1 — text-driven. BUILT.** `behaviour.eval.test.ts`, over the published
+  target (`@alexkroman1/aai-runtime/eval`). Everything above the audio boundary:
+  tool choice, tool arguments, tool ORDER, step count, what the agent said,
+  history handling.
 - **Level 2 — paced audio replay. NOT BUILT.** The only level that can measure
   endpointing, splits and merges, barge-in, and the `speech.started` /
   `reply.cancelled` ratio.
@@ -80,18 +79,18 @@ Two consequences worth knowing:
   runner.
 - **A HARNESS failure is kept apart from a failed assertion.** A dead sandbox
   and a wrong tool call want different fixes, and averaging them hides both. A
-  throw from the body is recorded as that pass's `error`; the other repeats still
-  run.
+  throw from the body is recorded as that pass's `error`; the other repeats
+  still run.
 
   **And it is kept out of the SCORE, which for a while it was not.** `runEval`
   averaged every pass, so a pass that died after two passing checks scored 1.0
-  and set `score.max` — a harness failure could RAISE the number the tier is read
-  for and widen the spread, and `AAI_EVAL_MIN_SCORE` (which asserts `score.min`)
-  was partly answering a question about the harness. `score` and `ms` are over
-  the passes that did NOT die; `measuredPasses` says how many that was, and a
-  report with `measuredPasses: 0` prints `not measured` rather than the 0% an
-  empty spread would otherwise produce. `unstableLabels` was already guarded this
-  way — the spread simply had not caught up.
+  and set `score.max` — a harness failure could RAISE the number the tier is
+  read for and widen the spread, and `AAI_EVAL_MIN_SCORE` (which asserts
+  `score.min`) was partly answering a question about the harness. `score` and
+  `ms` are over the passes that did NOT die; `measuredPasses` says how many that
+  was, and a report with `measuredPasses: 0` prints `not measured` rather than
+  the 0% an empty spread would otherwise produce. `unstableLabels` was already
+  guarded this way — the spread simply had not caught up.
 
 ## The vocabulary reads a TEXT agent too, and grades VERIFICATION
 
@@ -110,9 +109,9 @@ arm: there is no greeting turn, so `said()` opens empty where a session's opens
 with the agent's line; and a text turn commits its reply ONCE, joined across
 steps, where a session commits per utterance.
 
-**What the vocabulary could NOT say is what a VERIFYING agent is graded on**, and
-`tool-assertions.ts` is those three arms — spread into the same scope, recording
-through the same prefixed `check`, in a sibling module only because
+**What the vocabulary could NOT say is what a VERIFYING agent is graded on**,
+and `tool-assertions.ts` is those three arms — spread into the same scope,
+recording through the same prefixed `check`, in a sibling module only because
 `assertions.ts` is at its 500-line cap:
 
 - `toolResultMatching(pattern, { tools, min, max, count })` — did a result come
@@ -148,17 +147,17 @@ The instrument is noisy in a measured way: identical code has scored **0.56 and
 - runs REPEAT (`AAI_EVAL_REPEAT`), and the report carries `min`/`max`/`mean`
   plus the width — `75% (50%–100%, ±50%)`, never a bare mean;
 - `EvalReport.unstable` names the assertion labels that were **not unanimous
-  across repeats**. That list is the instrument measuring itself: an assertion in
-  it cannot adjudicate a change until it is out of it;
-- an assertion a pass never REACHED is missing data, not a flip — otherwise every
-  harness error would read as agent nondeterminism.
+  across repeats**. That list is the instrument measuring itself: an assertion
+  in it cannot adjudicate a change until it is out of it;
+- an assertion a pass never REACHED is missing data, not a flip — otherwise
+  every harness error would read as agent nondeterminism.
 
 **This tier is not a merge gate and must not become one.** THIS package's
 `check:eval` is absent from `pnpm check`, from `scripts/check.mjs` and from CI —
 each of which runs `check:eval` filtered to `aai-templates`, in scripted-model
 mode, which is a wiring gate and not a live measurement (see
-`packages/aai-runtime/CLAUDE.md`). A flaky required check that
-blocks merges is worse than an unreliable number nobody is forced to believe.
+`packages/aai-runtime/CLAUDE.md`). A flaky required check that blocks merges is
+worse than an unreliable number nobody is forced to believe.
 `AAI_EVAL_MIN_SCORE` makes it assert, and it asserts `score.min` — the spread's
 LOWER bound — because a mean over a flipping suite passes on a lucky repeat.
 
@@ -192,10 +191,9 @@ LATENCY is. Read the 100% carefully — it says these four cases do not
 discriminate between a good agent and a slightly worse one; it does not say they
 check nothing. They failed loudly on two real harness bugs during development
 (see `eval/stub-speech.ts` and `eval/session.ts`'s `repliedTo` in
-`aai-runtime`), which is the
-discrimination evidence there is. A case that flips is more informative than one
-that always passes, and the way to get there is a harder case, never a lower
-floor.
+`aai-runtime`), which is the discrimination evidence there is. A case that flips
+is more informative than one that always passes, and the way to get there is a
+harder case, never a lower floor.
 
 ## The tier's own wiring
 
@@ -212,8 +210,8 @@ AAI_EVAL_MIN_SCORE=0.8 pnpm test:eval            # opt in to gating
 ```
 
 Every one of those variables is in `check:eval`'s **`env`** in `turbo.json`, not
-in `globalPassThroughEnv`: strict env mode strips an undeclared variable silently
-(the failure that made `AAI_TEST_PM=npm pnpm test:e2e` run pnpm).
+in `globalPassThroughEnv`: strict env mode strips an undeclared variable
+silently (the failure that made `AAI_TEST_PM=npm pnpm test:e2e` run pnpm).
 
 **`AAI_EVAL_ONLY` is one variable across the whole tier, and a file it selects
 nothing from WARNS rather than failing.** The first draft failed it, on the rule
@@ -221,20 +219,20 @@ that a mistyped filter must not read as a passing tier — and that is wrong her
 because each eval file sees only its OWN cases in its own vitest worker, so
 `AAI_EVAL_ONLY="math tutor"` correctly selected one starter and failed the
 level-1 file for not containing it. A typo now ends in a run with zero cases and
-one warning per file listing what it could have matched. The unmatched file still
-registers a passing test naming the situation: vitest fails a file whose suite
-holds no test at all.
+one warning per file listing what it could have matched. The unmatched file
+still registers a passing test naming the situation: vitest fails a file whose
+suite holds no test at all.
 
 **`check:eval` sets `cache: false`, and it is the one task in the repo where the
 `inputs` rule does not apply.** Everywhere else a task is a pure function of its
-inputs and the fix for a replayed green run is to hash more; here two runs of the
-same tree legitimately differ, so a cache hit would REPLAY a measurement rather
-than take one — the second `pnpm test:eval` of a variance check would print FULL
-TURBO and the first run's number. No `inputs` are declared rather than declaring
-a set nothing reads; if this ever becomes cacheable, a package-relative
-`$TURBO_DEFAULT$` is enough, because every input — including the starter corpus,
-`aai-studio-server/src/studio-starter-expectations.ts` — lives inside a
-package.
+inputs and the fix for a replayed green run is to hash more; here two runs of
+the same tree legitimately differ, so a cache hit would REPLAY a measurement
+rather than take one — the second `pnpm test:eval` of a variance check would
+print FULL TURBO and the first run's number. No `inputs` are declared rather
+than declaring a set nothing reads; if this ever becomes cacheable, a
+package-relative `$TURBO_DEFAULT$` is enough, because every input — including
+the starter corpus, `aai-studio-server/src/studio-starter-expectations.ts` —
+lives inside a package.
 
 **Four packages declare `check:eval`** — `aai-templates` (the template evals,
 and the only one `pnpm check` and CI run, against a SCRIPTED model), this one,
@@ -247,13 +245,13 @@ every package that declares the task gets every variable; `AAI_EVAL_ORIGIN`,
 ## The gate ANNOUNCES its skip
 
 `gate.ts`, published as `aai-evals/gate`. The tier needs a live key and spends
-real tokens, so it skips
-without one — and a silent skip is the worst outcome available to a tier nobody
-runs, because a green run of nothing is indistinguishable from a green run of
-something. Same shape as `aai-server/_pg-test-utils.ts`: the skip prints how to
-fix it, and `AAI_REQUIRE_EVAL` turns it into a hard failure. CI deliberately does
-NOT set `AAI_REQUIRE_EVAL` — unlike the Postgres tier there is no argument for
-gating merges on a live model's behaviour.
+real tokens, so it skips without one — and a silent skip is the worst outcome
+available to a tier nobody runs, because a green run of nothing is
+indistinguishable from a green run of something. Same shape as
+`aai-server/_pg-test-utils.ts`: the skip prints how to fix it, and
+`AAI_REQUIRE_EVAL` turns it into a hard failure. CI deliberately does NOT set
+`AAI_REQUIRE_EVAL` — unlike the Postgres tier there is no argument for gating
+merges on a live model's behaviour.
 
 `describeEvalTierWhen` is how a caller adds a precondition of its own, and the
 studio starter eval in `aai-studio-server` is the one caller — a `/health` probe
@@ -265,9 +263,9 @@ missing key still skips when the caller's own precondition holds.
 nothing the unit tier loads may reach it — `konsistent.json`'s
 `eval-gate-is-not-unit-tier` here, and `studio-eval-gate-is-not-unit-tier` over
 there, where the same hazard arrived with the eval. That is why the
-side-effect-free readers are `env.ts` (`aai-evals/env`) and why the settings that
-name a target read the environment through those rather than living behind the
-gate.
+side-effect-free readers are `env.ts` (`aai-evals/env`) and why the settings
+that name a target read the environment through those rather than living behind
+the gate.
 
 ## Level 1 does NOT drive `?host=1`, and the plan expected it to
 
@@ -301,30 +299,30 @@ where "given this utterance, did the agent do the right thing" had none.
 
 **The fakes go in through `registerSttKind`/`registerTtsKind` on
 `@alexkroman1/aai-runtime`.** That seam's own doc gives the reason: a fake
-resolving through the registry resolves exactly like a real provider, its env var
-included, and production code only ever sees descriptors. Exporting it widened
-`/runtime` — a NON-authoring subpath, so no capability contract moves — and
-`SttOpener`/`TtsOpener` lost their `@internal` tags with it, since they are now
-that seam's parameter type. They stay OFF `/stt` and `/tts`, where the rest of
-the opener-layer types live: an agent author picks a descriptor and never writes
-an opener.
+resolving through the registry resolves exactly like a real provider, its env
+var included, and production code only ever sees descriptors. Exporting it
+widened `/runtime` — a NON-authoring subpath, so no capability contract moves —
+and `SttOpener`/`TtsOpener` lost their `@internal` tags with it, since they are
+now that seam's parameter type. They stay OFF `/stt` and `/tts`, where the rest
+of the opener-layer types live: an agent author picks a descriptor and never
+writes an opener.
 
 ## Two harness bugs, and why they are documented in code
 
-Both were found by the tier failing on its first live run, and both are the class
-of bug that would have made a report LIE rather than error:
+Both were found by the tier failing on its first live run, and both are the
+class of bug that would have made a report LIE rather than error:
 
 - **The fake TTS must forward NO AUDIO.** A chunk of silence per flush looks
   harmless; the pipeline estimates playback open-loop from forwarded audio plus
-  a grace, so for several hundred ms after a reply the agent is modelled as holding
-  the floor — and a harness that commits its next utterance in the same tick
-  commits it _during_ speech, i.e. as a barge-in. Every case after the greeting
-  recorded a spurious `reply.cancelled`.
+  a grace, so for several hundred ms after a reply the agent is modelled as
+  holding the floor — and a harness that commits its next utterance in the same
+  tick commits it _during_ speech, i.e. as a barge-in. Every case after the
+  greeting recorded a spurious `reply.cancelled`.
 - **`say()` waits for the reply to THIS utterance.** Waiting for "a reply
   terminator" settled on the previous reply's cancel, so `say()` returned before
   the model had run and the case recorded "called no tools" — a green harness
-  reporting a broken agent. The utterance's own `userTranscript.committed` is the
-  anchor; every event of its reply follows it.
+  reporting a broken agent. The utterance's own `userTranscript.committed` is
+  the anchor; every event of its reply follows it.
 
 **What ENDS a reply is declared once**, `TURN_ENDS` in
 `@alexkroman1/aai-runtime/eval` — `konsistent.json`'s `eval-turn-terminators`
@@ -373,8 +371,8 @@ and the template behaviour contract it can opt into.
 framework-general: it names no product surface, no HTTP route, no prompt and no
 tool. Everything that moved named the studio in every constant it declared — its
 chat route, its per-sandbox token, its step cap, the prose its own tools write,
-the starter prompts and what each one asked for. Keep `evals-package-boundary`
-a total deny: a package that MAY import the studio's starter list is where the
+the starter prompts and what each one asked for. Keep `evals-package-boundary` a
+total deny: a package that MAY import the studio's starter list is where the
 next studio-shaped eval will land.
 
 Three consequences:
@@ -392,17 +390,17 @@ Three consequences:
   `./register.ts` and `aai-evals/register` are two strings for one module — a
   single rule could require only one of them and would exempt the other package.
 
-**No cycle, and it is worth being able to say why quickly.** `aai-evals`
-depends on `@alexkroman1/aai` and `@alexkroman1/aai-runtime` and on nothing else
-in the workspace; `evals-package-boundary` denies `aai-studio-server` from here,
-so the edge cannot acquire a reverse. `turbo.json`'s `build` is
-`dependsOn: ["^build"]` and would fail hard rather than quietly if it did.
+**No cycle, and it is worth being able to say why quickly.** `aai-evals` depends
+on `@alexkroman1/aai` and `@alexkroman1/aai-runtime` and on nothing else in the
+workspace; `evals-package-boundary` denies `aai-studio-server` from here, so the
+edge cannot acquire a reverse. `turbo.json`'s `build` is `dependsOn: ["^build"]`
+and would fail hard rather than quietly if it did.
 
 ## Adding a case
 
 1. Put it in an existing `*.eval.test.ts`, in the array `registerEvalCases`
-   takes — `konsistent.json`'s `eval-case-registration` requires that import
-   and carries why the indirection is mechanical rather than stylistic.
+   takes — `konsistent.json`'s `eval-case-registration` requires that import and
+   carries why the indirection is mechanical rather than stylistic.
 2. Name it in a way that survives a rename: the name is the key `unstable`
    reports and the thing `AAI_EVAL_ONLY` matches.
 3. Assert through the vocabulary in `assertions.ts`, and prefer a TURN scope

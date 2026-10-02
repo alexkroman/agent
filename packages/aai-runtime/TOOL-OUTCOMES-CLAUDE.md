@@ -14,8 +14,8 @@ guide, for the reason `JOURNAL-CLAUDE.md` is one: Claude Code auto-loads only
 `CLAUDE.md`, so a sibling is read on demand and is the right shape for
 REFERENCE. The two RULES an author or an editor of this package has to carry
 around — read a tool arm by ROLE, and a fifth producer of a `role: "tool"`
-message goes through `tools/result-message.ts` — are in `src/CLAUDE.md`, under "A
-settled tool call writes a `role: "tool"` message" and "A tool's throw is
+message goes through `tools/result-message.ts` — are in `src/CLAUDE.md`, under
+"A settled tool call writes a `role: "tool"` message" and "A tool's throw is
 CLASSIFIED". Everything below is the argument behind them: the four producers,
 the two traps that are silent when you get them wrong, and the four guard rules
 in `tools/error-policy.ts`.
@@ -102,9 +102,9 @@ result twice. The live producers and the resume agree by sharing
 
 ## Trap 1: the tool-call ANCHOR indexes the client-visible list
 
-`RestoredToolCall.afterMessageIndex` is an index into the VISIBLE messages —
-the transcripts, in order, with the `"tool"` ones subtracted. That is the list
-the client receives: `session/core.ts`'s `restoreHistory` filters the array to
+`RestoredToolCall.afterMessageIndex` is an index into the VISIBLE messages — the
+transcripts, in order, with the `"tool"` ones subtracted. That is the list the
+client receives: `session/core.ts`'s `restoreHistory` filters the array to
 `user`/`assistant` before it goes on the wire, because `history.restored`
 renders dialogue and carries the tool calls separately.
 
@@ -149,9 +149,10 @@ of that invariant.
 plus the `tool-result`, exactly as a live step leaves them; a call with only one
 half (front-trimmed, or pending) is dropped. It used to render each call as
 assistant TEXT, `[tool name({…}) → …]`, and the model imitated it: on the
-AssemblyAI gateway a later turn SPOKE `[tool think(…) … to=functions.prepare_call
-…` instead of calling, so nothing ran. Never put text shaped like a call in the
-model's own turns — not even a sentence about one.
+AssemblyAI gateway a later turn SPOKE
+`[tool think(…) … to=functions.prepare_call …` instead of calling, so nothing
+ran. Never put text shaped like a call in the model's own turns — not even a
+sentence about one.
 
 ## What a tool SAYS, and the two places the outcome string forks
 
@@ -168,12 +169,12 @@ That is the same split the S2S arm already makes on its failure path, for the
 same reason: the two strings have different readers, and recording the
 provider's copy is how a live history and a rebuilt one drift.
 
-**A `role: "assistant"` completion adds an assistant message NO STEP
-PRODUCED.** The model is not called, so the sentence exists only in
-`consumeLlmStream`'s return value, appended after the settled steps' messages.
-It is a fourth producer of a message for history, and deliberately NOT a fifth
-producer of a `role: "tool"` one — the tool's result is recorded by
-`tools/to-vercel-tools.ts` exactly as it always was.
+**A `role: "assistant"` completion adds an assistant message NO STEP PRODUCED.**
+The model is not called, so the sentence exists only in `consumeLlmStream`'s
+return value, appended after the settled steps' messages. It is a fourth
+producer of a message for history, and deliberately NOT a fifth producer of a
+`role: "tool"` one — the tool's result is recorded by `tools/to-vercel-tools.ts`
+exactly as it always was.
 
 **Which arm a settled call takes is decided by `isToolFailure` over the parsed
 result**, not by whether `execute` threw. A throw the runtime serialized and a
@@ -188,9 +189,9 @@ The AI SDK runs a tool call only when its step finished with `stop` or
 `tool-calls` (ai@7.0.70+). A step that ends on a call with `length`, `other` or
 `content-filter` leaves the call in its messages with no result, and one such
 message in history refuses every later request of the session ("Tool result is
-missing for tool call …"). `tools/call-pairs.ts` is the one guard: the
-pipeline history re-pairs its LLM view on every write, and the text agent and a
-subagent revision pair what they send. A call nothing ran gets an error result
+missing for tool call …"). `tools/call-pairs.ts` is the one guard: the pipeline
+history re-pairs its LLM view on every write, and the text agent and a subagent
+revision pair what they send. A call nothing ran gets an error result
 (`"This tool call was not executed."`); a result with no call is dropped. It is
 not a fifth producer of a `role: "tool"` CONVERSATION message — the synthetic
 result lives only in the model's view, like the step messages it repairs.
@@ -205,8 +206,8 @@ tool in one turn apart when they are there.
 
 ## A tool's throw is CLASSIFIED: `ToolDef.onError`
 
-`tools/error-policy.ts` is the one place the three kinds of tool failure are told
-apart, and its module doc carries the full argument. The three:
+`tools/error-policy.ts` is the one place the three kinds of tool failure are
+told apart, and its module doc carries the full argument. The three:
 
 - **Expected** — `execute` RETURNS a `ToolFailure`. The author is saying "the
   model can recover from this", and it goes back as an ordinary result. That
@@ -216,16 +217,17 @@ apart, and its module doc carries the full argument. The three:
 - **Unrecoverable** — `execute` throws and `onError` throws in turn. The call
   REJECTS with a `FatalToolError` and the model is handed nothing, **and the
   turn stops.** The rejection alone would not stop it: the AI SDK catches a
-  rejecting `execute`, emits a `tool-error` part that `transports/pipeline/reply/stream-parts.ts`
-  only logs (`Tool call failed`), and keeps stepping. `FatalToolLatch` is the side
-  channel that carries the verdict out of the tool call — `tools/to-vercel-tools.ts`
-  fires it through `onFatalToolError`, and `withFatalSignal` folds its signal
-  into the REQUEST signal only, never the turn's, because aborting the turn's
-  own signal reads as a barge-in (interrupted tail, no drain, nothing spoken).
-  The turn then ends through its ordinary failure path. **S2S is the exception
-  and does not abort**: `session/tool-steps.ts` catches the rejection and hands
-  the provider a serialized failure, because the provider owns the loop and the
-  host has no verb to stop a turn service-side.
+  rejecting `execute`, emits a `tool-error` part that
+  `transports/pipeline/reply/stream-parts.ts` only logs (`Tool call failed`),
+  and keeps stepping. `FatalToolLatch` is the side channel that carries the
+  verdict out of the tool call — `tools/to-vercel-tools.ts` fires it through
+  `onFatalToolError`, and `withFatalSignal` folds its signal into the REQUEST
+  signal only, never the turn's, because aborting the turn's own signal reads as
+  a barge-in (interrupted tail, no drain, nothing spoken). The turn then ends
+  through its ordinary failure path. **S2S is the exception and does not
+  abort**: `session/tool-steps.ts` catches the rejection and hands the provider
+  a serialized failure, because the provider owns the loop and the host has no
+  verb to stop a turn service-side.
 
 **A tool with no `onError` keeps the old behaviour exactly.** `resolveToolError`
 answers `"default"` for it rather than synthesizing a recoverable outcome —
@@ -241,14 +243,13 @@ eats it. `SlotToolDef` and `DialogToolDef` are BUILT from `ToolDef`
 (`Omit<ToolDef, "execute">`), so `onError` and `messages` — and whatever
 `ToolDef` grows next — reach both builders by construction;
 `transports/pipeline/tool-messages.test.ts` runs a real `slot.updateTool` and
-`dialog.tool` through a turn. A dialog REFUSAL is a returned `ToolFailure`, so it
-takes the tool's `messages.failed` line. On a GATED tool there is one thing extra
-to know, and it is on `DialogToolDef`'s doc: the handler runs after the gated
-call has unwound,
-which is past `send`/`sendFrom`, so what it returns reaches the model as a bare
-failure or string rather than inside a `DialogToolResult`, and the dialog stays
-where it was — the same answer a returned `ToolFailure` gets, for the same
-reason.
+`dialog.tool` through a turn. A dialog REFUSAL is a returned `ToolFailure`, so
+it takes the tool's `messages.failed` line. On a GATED tool there is one thing
+extra to know, and it is on `DialogToolDef`'s doc: the handler runs after the
+gated call has unwound, which is past `send`/`sendFrom`, so what it returns
+reaches the model as a bare failure or string rather than inside a
+`DialogToolResult`, and the dialog stays where it was — the same answer a
+returned `ToolFailure` gets, for the same reason.
 
 ### The four guard rules, and the mistake each one prevents
 

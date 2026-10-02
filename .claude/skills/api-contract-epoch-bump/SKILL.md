@@ -11,9 +11,9 @@ description: >-
 
 # Recording a change to the published surface
 
-Three committed artifacts describe the published surface, and a change owes
-each one it moves. The mechanism and its rules are in `docs/CLAUDE.md`; this is
-the procedure.
+Three committed artifacts describe the published surface, and a change owes each
+one it moves. The mechanism and its rules are in `docs/CLAUDE.md`; this is the
+procedure.
 
 | Gate                       | Artifact                                                                       | Regenerate / record with                             |
 | -------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------- |
@@ -41,8 +41,8 @@ pnpm docs:md                              # committed markdown reference
   `scripts/docs-markdown.mjs`), put its exports in a capability (or a reason in
   `NON_AUTHORING_SUBPATHS`, `scripts/_api-contracts-tree.mjs`), and give the
   module an `@module` tag so both renderings name it by its subpath.
-- A new unmeasured feature can ship on `@alexkroman1/aai/experimental` first:
-  it gets a report but no epoch and no reference page.
+- A new unmeasured feature can ship on `@alexkroman1/aai/experimental` first: it
+  gets a report but no epoch and no reference page.
 
 ## 2. Run the backward-compatibility gate first
 
@@ -50,8 +50,8 @@ pnpm docs:md                              # committed markdown reference
 pnpm typecheck
 ```
 
-The frozen examples under `packages/<pkg>/src/contracts/compatibility/` are
-the retained epochs. One it reddens is an OLDER epoch the change breaks;
+The frozen examples under `packages/<pkg>/src/contracts/compatibility/` are the
+retained epochs. One it reddens is an OLDER epoch the change breaks;
 `--bump --drop` classifies only the current epoch, so drop an older one with
 `node scripts/api-contracts.mjs --retire <pkg>:<cap> --epoch N --drop "<reason>"`
 (it also deletes that epoch's example). Never edit a frozen example to make it
@@ -79,8 +79,8 @@ node scripts/api-contracts.mjs --bump aai:tool --retain
   answer there.
 - `--retain` writes an empty frozen example scaffold at
   `src/contracts/compatibility/<capability>/v<N>.ts` (`.tsx` where the package
-  sets `jsx`). Fill it the way that epoch was authored, importing from `..`,
-  and make it import every name the retained epoch promised
+  sets `jsx`). Fill it the way that epoch was authored, importing from `..`, and
+  make it import every name the retained epoch promised
   (`api-contracts-gate.test.ts` checks this).
 - `--drop` deletes the dropped epoch's example.
 - One epoch and one revision per capability per BRANCH: re-running on the same
@@ -96,9 +96,9 @@ remedy is an owner: select the name in the capability it belongs to. The
 `unowned-surface.json` / `internal-surface.json` baselines only shrink
 (`node scripts/api-contracts.mjs --update-internal` lowers them).
 
-Rarely needed: `--rehash --because "…"` recomputes every current epoch
-after a change to the hash RULE (only from a green tree, only in the commit that
-changes the rule).
+Rarely needed: `--rehash --because "…"` recomputes every current epoch after a
+change to the hash RULE (only from a green tree, only in the commit that changes
+the rule).
 
 ## 4. At a `--bump`, ask what should come OUT
 
@@ -110,5 +110,5 @@ template exercises — and consider dropping them in the same epoch.
 
 The `check:api-contracts` output suggests a bump type (removed name → break,
 added → `minor`; anything the probe calls breaking → break). A break is `minor`
-while the packages are on `0.x`. Use it in the
-changeset — see the `changeset-release` skill.
+while the packages are on `0.x`. Use it in the changeset — see the
+`changeset-release` skill.

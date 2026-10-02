@@ -19,8 +19,8 @@ read_when: >-
   only mean a dependency failed; accepting it turns a failed build into a green
   gate. A job that legitimately skips itself needs its own accepted-result list.
 - **`main` — and only `main` — is in its `push` list**, with
-  `cancel-in-progress` scoped to pull requests and a per-SHA push group, so every
-  commit on `main` gets its own verdict. Specced in
+  `cancel-in-progress` scoped to pull requests and a per-SHA push group, so
+  every commit on `main` gets its own verdict. Specced in
   `packages/aai-gates/CLAUDE.md`.
 - **The test matrix names every package with a `test:coverage` script**
   (`aai-evals` included); `check.mjs` runs `turbo run test:coverage` unfiltered,
@@ -40,17 +40,17 @@ the after-build gates in source order.
 
 - **`pnpm check:local`** is what the pre-push hook runs. Full mode is a strict
   SUPERSET of it (the runner refuses to start otherwise), and it ends by naming
-  what it skipped — computed as full minus local: `check:attw`,
-  `check:dedupe`, `check:markdown`, `check:shell`, `check:integration`,
-  `check:scenario`, `docs`, `check:e2e` — so a green subset is not read as a
-  green branch.
+  what it skipped — computed as full minus local: `check:attw`, `check:dedupe`,
+  `check:markdown`, `check:shell`, `check:integration`, `check:scenario`,
+  `docs`, `check:e2e` — so a green subset is not read as a green branch.
 - **`pnpm fix`** runs every auto-fixer: `pnpm format`, then each row's `fix` in
   table order (the `sync:*` copies, `api-report`, `docs:md`, the lower-only
   baseline `*:update`s).
-- **CI derives both lists.** The lint job runs `node scripts/check.mjs --turbo ci`
-  (full mode's first call minus `CI_ELSEWHERE`, the tasks another job or step
-  owns) and `node scripts/check.mjs --gates ci`; `gate-wiring.test.ts` fails if
-  either is restated in the workflow.
+- **CI derives both lists.** The lint job runs
+  `node scripts/check.mjs --turbo ci` (full mode's first call minus
+  `CI_ELSEWHERE`, the tasks another job or step owns) and
+  `node scripts/check.mjs --gates ci`; `gate-wiring.test.ts` fails if either is
+  restated in the workflow.
 - **Both modes run `test:coverage`, not `test`**, because the coverage floors
   are what CI gates on. `pnpm check:affected` (and
   `pnpm test:coverage:affected`) use turbo `--affected` against the default

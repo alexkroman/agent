@@ -32,8 +32,8 @@ read_when: >-
   change early, dispatch `ship.yml` with `deploy: true`.
 - **Any branch arming `deploy` must arm `migrate`**, and every `ship.yml`
   checkout resolves `github.sha`, never `github.ref`, so one run cannot mix
-  commits. `packages/aai-gates/src/ship-workflow-gate.test.ts` pins all of
-  this, including that no source-diff arm comes back.
+  commits. `packages/aai-gates/src/ship-workflow-gate.test.ts` pins all of this,
+  including that no source-diff arm comes back.
 - **`check:deploy-changeset` rejects an EMPTY changeset on a branch that changes
   shipped platform source or `supabase/migrations/**`**, because
   `changeset status` accepts one and the change would otherwise merge and never

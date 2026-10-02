@@ -11,8 +11,8 @@ read_when: >-
 
 The browser studio's coding agent, as it runs inside a guest sandbox (private
 package). The harness that dispatches it is `packages/aai-guest/CLAUDE.md`; the
-shared guest modules are `packages/aai-guest-core/CLAUDE.md`; the studio
-SERVICE that drives it is `packages/aai-studio-server/CLAUDE.md`.
+shared guest modules are `packages/aai-guest-core/CLAUDE.md`; the studio SERVICE
+that drives it is `packages/aai-studio-server/CLAUDE.md`.
 
 **The agent itself and its tools are documented below**, from "The coding agent
 is an ordinary `agent()`" on; its tests and eval are
@@ -21,9 +21,8 @@ is an ordinary `agent()`" on; its tests and eval are
 ## What is in here, and what the boundary buys
 
 The studio half of the guest (formerly a directory of `aai-guest`), plus
-`studio-prompts/`, the committed copies `scripts/sync-studio-prompt.mjs`
-writes. The prompts moved because `_eval-prompt.ts` reads them relative to
-itself.
+`studio-prompts/`, the committed copies `scripts/sync-studio-prompt.mjs` writes.
+The prompts moved because `_eval-prompt.ts` reads them relative to itself.
 
 It depends on `aai-guest-core` and is depended on by `aai-guest`, whose entry
 dispatches studio mode. That direction is the whole reason core exists — see
@@ -43,13 +42,13 @@ dispatches studio mode. That direction is the whole reason core exists — see
 
 ## The session scratch directory moved with `build.ts`
 
-`workspacesRoot()` is `path.join(import.meta.dirname, ".workspaces", pid)`, so
-a materialized workspace now lands beside THIS package's source. The coding
-agent writes `*.test.ts` into a workspace, so a leftover one is collected by
-the unit glob and fails this package's suite with somebody else's assertion —
-it happened once in `aai-guest`, where a stray fixture whose whole job is to
-fail turned `pnpm check` red naming a file no commit contains. The
-`src/.workspaces/**` exclude moved with it.
+`workspacesRoot()` is `path.join(import.meta.dirname, ".workspaces", pid)`, so a
+materialized workspace now lands beside THIS package's source. The coding agent
+writes `*.test.ts` into a workspace, so a leftover one is collected by the unit
+glob and fails this package's suite with somebody else's assertion — it happened
+once in `aai-guest`, where a stray fixture whose whole job is to fail turned
+`pnpm check` red naming a file no commit contains. The `src/.workspaces/**`
+exclude moved with it.
 
 ## The coding agent is an ordinary `agent()`
 
@@ -59,9 +58,9 @@ HTTP surface plus one turn's delivery. Never hand-assemble a `streamText` call
 here — every piece of that is `agent()` plus `createTextAgent`
 (`@alexkroman1/aai-runtime`), and a second copy drifts from the shipped rule.
 
-- **Tools are SDK `ToolDef`s** (`tool()`), run through `executeToolCall`:
-  schema validation, coercion, `ctx`, the per-call deadline, and a throw shaped
-  into `{"error": …}`. Specs call `runTool` (`aai-guest-core/test-utils`), never
+- **Tools are SDK `ToolDef`s** (`tool()`), run through `executeToolCall`: schema
+  validation, coercion, `ctx`, the per-call deadline, and a throw shaped into
+  `{"error": …}`. Specs call `runTool` (`aai-guest-core/test-utils`), never
   `execute` — several depend on that shaping.
 - **Web builtins are NAMED**
   (`builtinTools: ["visit_webpage", "get_page_design", "web_search"]`), not
@@ -86,7 +85,8 @@ keeps the agent's narrative text. Tier 2 (LLM summary) runs only if still over
 budget. **Cut points must fall on turn boundaries:** a cut at index `i` is safe
 iff `messages[i]` is not a `tool` message (providers reject an unmatched tool
 result; same failure `capLlm` documents in
-`aai-runtime/transports/pipeline/history/history.ts`). Boundaries only move OUTWARD.
+`aai-runtime/transports/pipeline/history/history.ts`). Boundaries only move
+OUTWARD.
 
 `STUDIO_TOOL_LABELS` and `MUTATING_TOOLS` are checked against
 `createStudioAgent`'s real tool surface, never a hand-merged copy.
@@ -101,8 +101,8 @@ guest holding a control-channel bearer). `test_agent` stays here whole.
 **`test_agent`'s test run is `aai test`'s tier; the eval tier is excluded.**
 `testFiles` drops `*.eval.test.ts` by infix and passes the discovered files as
 positional filters (vitest's default glob would collect evals, which can only
-run scripted here since the key is scrubbed). Covered in
-`test.scenario.test.ts` by a fixture eval that fails if ever collected.
+run scripted here since the key is scrubbed). Covered in `test.scenario.test.ts`
+by a fixture eval that fails if ever collected.
 
 **Descriptions split the same way:** `CODING_TOOL_DESCRIPTIONS` (SDK),
 `STUDIO_CODING_TOOL_DESCRIPTIONS` (overrides for three host-specific tools),
@@ -124,8 +124,8 @@ transiently and a cached `null` would disable the syntax gate for the process.
 Not testable: vitest patches `createRequire`.
 
 **Every child running workspace-authored code gets a scrubbed env.**
-`workspaceChildEnv()` (`spawn.ts`) is an allow-list used by `bash`, `runNpm`
-and the workspace test run; the in-guest deploy child takes the stricter
+`workspaceChildEnv()` (`spawn.ts`) is an allow-list used by `bash`, `runNpm` and
+the workspace test run; the in-guest deploy child takes the stricter
 `cliChildEnv()` (`PATH` plus the three names `os.tmpdir()` reads, which keeps
 the bundler's `mkdtemp` off the microVM's RAM disk). Defence in depth, not a
 boundary (`bash` can read `/proc/<pid>/environ`) — so keep it uniform, no
@@ -139,9 +139,9 @@ import comes AFTER `resolveCliEntry()`, which fails the publish cleanly if the
 toolchain is missing. Anything else written for the CLI belongs in that subpath.
 
 **A prompt-directory URL keeps its trailing slash**
-(`new URL("../studio-prompts/", import.meta.url)` in `_eval-prompt.ts`):
-without it `new URL("agent.md", …)` replaces the last segment. Path-rewriting
-sweeps drop it.
+(`new URL("../studio-prompts/", import.meta.url)` in `_eval-prompt.ts`): without
+it `new URL("agent.md", …)` replaces the last segment. Path-rewriting sweeps
+drop it.
 
 Testing:
 [`packages/aai-guest-studio/CODING-AGENT-TESTS-CLAUDE.md`](CODING-AGENT-TESTS-CLAUDE.md)
@@ -176,8 +176,8 @@ failure.
 **The workspace manifest declares only the workspace's own packages.** The
 platform's six (`WORKSPACE_DEPENDENCIES` in `project-shape.ts`) resolve from the
 toolchain `node_modules` above every workspace and must stay undeclared — npm
-reifies whatever the manifest names, and declaring them makes every install
-cost tens of seconds and ~150 MB. If staging/per-package machinery ever looks
+reifies whatever the manifest names, and declaring them makes every install cost
+tens of seconds and ~150 MB. If staging/per-package machinery ever looks
 necessary, check first whether the manifest grew platform-owned entries.
 
 - **`--omit=dev`** — devDependencies are the baked toolchain.
@@ -209,11 +209,11 @@ itself: "Why the buffer lives in the guest" in
 
 ## Testing notes
 
-- **`chat.scenario.test.ts` drains before unhooking the host channel**:
-  a turn's settle (`snapshotWorkspace` walk + two host RPCs) outlives
-  `serve().close()`, and `setHostSend` is a process singleton. `drainTurns()`
-  waits for the turn claim free, `pendingHostRequests` empty, and no new frame
-  since last poll; bounded and best-effort.
+- **`chat.scenario.test.ts` drains before unhooking the host channel**: a turn's
+  settle (`snapshotWorkspace` walk + two host RPCs) outlives `serve().close()`,
+  and `setHostSend` is a process singleton. `drainTurns()` waits for the turn
+  claim free, `pendingHostRequests` empty, and no new frame since last poll;
+  bounded and best-effort.
 - **Tier = what a test touches.** Split a file on what it touches rather than
   lowering a coverage floor: `build.test.ts`/`test.test.ts` keep the pure parts;
   build-dir lifecycle, typecheck gate and real vitest spawns are scenario. A

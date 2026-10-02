@@ -26,10 +26,10 @@ hook (`lefthook.yml`, `changeset-status`) and `check.yml` run
 | docs, tests, config only                                                | an empty changeset                                                                                                |
 
 Private packages ARE versioned (`privatePackages: { version: true }`), so a
-changeset may name them, and naming a server package is how a server-only
-change reaches production. "It is private, so it owes an empty changeset" is
-wrong for anything the deploy carries — `check:deploy-changeset` fails a branch
-that changes shipped platform source with only an empty changeset. There is no
+changeset may name them, and naming a server package is how a server-only change
+reaches production. "It is private, so it owes an empty changeset" is wrong for
+anything the deploy carries — `check:deploy-changeset` fails a branch that
+changes shipped platform source with only an empty changeset. There is no
 allowlist; a path that genuinely does not ship belongs in `isShippedSource`
 (`scripts/_deploy-changeset-scope.mjs`).
 
@@ -37,10 +37,10 @@ allowlist; a path that genuinely does not ship belongs in `isShippedSource`
 
 **Every package is on `0.x`, so a break is `minor`** and everything else is
 `patch`. `major` would release 1.0.0 — across all four published packages, via
-the fixed group — and `guard-invariants` rule 20 refuses it on a `0.x`
-package. For a published package, read the `check:api-contracts` output first:
-a removed export or a change the compatibility probe calls breaking is the
-break case — see the `api-contract-epoch-bump` skill.
+the fixed group — and `guard-invariants` rule 20 refuses it on a `0.x` package.
+For a published package, read the `check:api-contracts` output first: a removed
+export or a change the compatibility probe calls breaking is the break case —
+see the `api-contract-epoch-bump` skill.
 
 ## 3. Write it (non-interactive)
 
@@ -72,8 +72,8 @@ detection.
   RELEASE: the merged Version Packages PR, detected as a commit that moved a
   version line in a workspace `package.json` (job 1, `changed`).
 - **The deploy fires on a server VERSION bump, never on a server source diff**,
-  so a production rollout always has a release to name. Do not add a
-  source-diff arm back; `ship-workflow-gate.test.ts` pins that it stays gone.
+  so a production rollout always has a release to name. Do not add a source-diff
+  arm back; `ship-workflow-gate.test.ts` pins that it stays gone.
 - A release also arms `migrate`; any branch arming `deploy` must arm `migrate`
   (the deploy waits on it).
 - Every `ship.yml` checkout resolves `github.sha`, never `github.ref`, so one

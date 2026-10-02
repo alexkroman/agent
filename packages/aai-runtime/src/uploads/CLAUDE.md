@@ -8,9 +8,9 @@ read_when: >-
 
 # aai-runtime `uploads/`
 
-Package-wide rules are in [`../../CLAUDE.md`](../../CLAUDE.md); the flat
-`src/` modules' in [`../CLAUDE.md`](../CLAUDE.md). Outside this directory,
-import its `index.ts` only (`guard-invariants` rule 37).
+Package-wide rules are in [`../../CLAUDE.md`](../../CLAUDE.md); the flat `src/`
+modules' in [`../CLAUDE.md`](../CLAUDE.md). Outside this directory, import its
+`index.ts` only (`guard-invariants` rule 37).
 
 ## An upload's bytes are OBJECTS, and its record lives in the RUNS' home
 
@@ -36,8 +36,7 @@ Postgres; `blobs.ts` carries why.
   `UPLOAD_PART_BYTES` so `size` (the contiguous READABLE prefix) advances. Never
   count bytes that merely arrived. Only a published cut may be non-uniform,
   because `create` derives boundaries from `windowList`.
-- **Neither direction takes turns with the socket**:
-  `UPLOAD_WINDOW_CONCURRENCY` on write, `UPLOAD_READ_AHEAD` on read, both via
-  `mapStream`.
+- **Neither direction takes turns with the socket**: `UPLOAD_WINDOW_CONCURRENCY`
+  on write, `UPLOAD_READ_AHEAD` on read, both via `mapStream`.
 - Upload-id validation at the router is in
   [`../workflow/api/CLAUDE.md`](../workflow/api/CLAUDE.md).

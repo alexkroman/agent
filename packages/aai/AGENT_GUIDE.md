@@ -52,23 +52,23 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) → `pnpm test` (logic)
    what it did. With a provider key it uses a LIVE model (spends tokens, noisy);
    without one a SCRIPTED model, which proves wiring and nothing about what the
    agent says.
-4. **Run `pnpm build` before declaring done** — bundles `agent.ts`,
-   type-checks, validates the manifest, and runs the WHOLE spec suite first.
-   Catches issues `dev` won't.
+4. **Run `pnpm build` before declaring done** — bundles `agent.ts`, type-checks,
+   validates the manifest, and runs the WHOLE spec suite first. Catches issues
+   `dev` won't.
 5. **Make small, focused changes** — verify each one before stacking the next.
 6. **Look at templates before writing custom code** — the CLI ships working
    examples inside its own package, at
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
    `aai init --template <name>` scaffolds a fresh project from one. Closest:
    `quickstart-agent`, `custom-pipeline-agent`, `web-research-agent`,
-   `pizza-ordering-agent`, `retail-orders-agent` (the most complex). Built
-   entry points under `node_modules/@alexkroman1/aai*/dist/` re-export with
-   source specifiers — rewrite `.ts`/`.tsx` to `.d.ts` to find the file.
+   `pizza-ordering-agent`, `retail-orders-agent` (the most complex). Built entry
+   points under `node_modules/@alexkroman1/aai*/dist/` re-export with source
+   specifiers — rewrite `.ts`/`.tsx` to `.d.ts` to find the file.
 
 ## CLI
 
-The scaffold's `package.json` runs the project's own CLI as `pnpm dev`,
-`build`, `test`, `eval`, `start` and `publish:agent`; anywhere else it is
+The scaffold's `package.json` runs the project's own CLI as `pnpm dev`, `build`,
+`test`, `eval`, `start` and `publish:agent`; anywhere else it is
 `npx aai <command>` (or `npm i -g @alexkroman1/aai-cli` once).
 
 ```sh
@@ -128,8 +128,8 @@ my-agent/
 
 **`tools/` is not a convention, it is the mechanism.** A file there is named for
 the tool the model calls, default-exports it, and is picked up by the build. It
-is not imported by `agent.ts` and not listed anywhere — `agent()` has no
-`tools` field at all:
+is not imported by `agent.ts` and not listed anywhere — `agent()` has no `tools`
+field at all:
 
 ```ts
 // tools/roll_dice.ts  →  the model calls this "roll_dice"
@@ -151,15 +151,15 @@ Three rules come with it, each a build error naming the file:
   letter, and join words with `_` — `tools/incident_create.ts`, never
   `incident-create.ts`. Renaming the file renames the tool.
 - **The export is the DEFAULT export**, and it must be a `tool()` (or a
-  `slot.tool()` / `slot.updateTool()`). A file exporting something else is
-  named at build time rather than becoming a tool that fails per turn.
+  `slot.tool()` / `slot.updateTool()`). A file exporting something else is named
+  at build time rather than becoming a tool that fails per turn.
 - **`tools/` is flat.** A nested file — a nested HELPER too — is rejected, so
   put shared helpers beside `agent.ts` rather than under `tools/`.
 
 ## `agent()` basics
 
-The minimal agent — a cascaded pipeline, what to build unless the user asks
-for speech-to-speech:
+The minimal agent — a cascaded pipeline, what to build unless the user asks for
+speech-to-speech:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -189,8 +189,8 @@ export default agent({
 });
 ```
 
-The fields almost every agent sets: `name` (required), `greeting` (default:
-"Hey there..."; `""` starts silent), `tts` (voice `jane` unless set), `llm`,
+The fields almost every agent sets: `name` (required), `greeting` (default: "Hey
+there..."; `""` starts silent), `tts` (voice `jane` unless set), `llm`,
 `builtinTools` (omitted = `["think"]` only; setting it REPLACES the default),
 `maxSteps` (default 10 tool-calling steps per reply) and `requiredEnv` (every
 env var a tool or step reads; **publishing checks it**, so a missing key fails
@@ -201,10 +201,10 @@ field.
 mode this guide assumes. `mode: "s2s"` beside an `s2s: assemblyAIS2s()`
 descriptor selects speech-to-speech; `mode: "text"` a text-only agent;
 `workflowApp()` (`mode: "workflow-app"`) a form with no session at all
-(`agent-guide/WORKFLOWS.md`). A field the chosen mode does not have is a
-compile error naming the mode. `assemblyAIPipeline()` is the explicit spelling
-of the default pipeline (spread it for `region: "eu"`). Pipeline knobs and S2S
-are in `agent-guide/PIPELINE-TUNING.md`; vendors in `agent-guide/PROVIDERS.md`.
+(`agent-guide/WORKFLOWS.md`). A field the chosen mode does not have is a compile
+error naming the mode. `assemblyAIPipeline()` is the explicit spelling of the
+default pipeline (spread it for `region: "eu"`). Pipeline knobs and S2S are in
+`agent-guide/PIPELINE-TUNING.md`; vendors in `agent-guide/PROVIDERS.md`.
 
 ## `tool()` basics
 
@@ -230,30 +230,30 @@ export default tool({
 
 - **`execute` must return a value** (sync or async); it goes to the model.
   `fetch` works directly, identically in `aai dev` and deployed.
-- **`inputSchema` is a `z.object(...)` or absent.** Make a FIELD optional,
-  never the object; omit the schema for a no-argument tool.
+- **`inputSchema` is a `z.object(...)` or absent.** Make a FIELD optional, never
+  the object; omit the schema for a no-argument tool.
 - **Do not annotate `execute`'s return type** — it breaks the moment the tool
   also returns an error shape. Let it infer.
 - **`ctx`** carries `env` (secrets; every read is `string | undefined` —
   `requireEnv(ctx, "KEY")` fails by name), `signal` (pass it to anything slow),
-  `messages`, `sessionId`, `send(event, data)` to the browser,
-  `generate(...)` for a one-shot model call, `delegate(...)` for a speaker,
-  `speech` to say something later and `workflows` to start a durable run.
+  `messages`, `sessionId`, `send(event, data)` to the browser, `generate(...)`
+  for a one-shot model call, `delegate(...)` for a speaker, `speech` to say
+  something later and `workflows` to start a durable run.
 - **State across tool calls lives in a `sessionSlot`** — `slot.tool` reads,
   `slot.updateTool` writes. Never keep it in a module variable: every session
   shares the module.
 
 `agent-guide/TOOLS.md` has the rest: `ctx` in full, session state, `dialog()`
-and `procedure()`, speakers and the roster, `clientTool()` (a tool the
-browser runs), the built-in tool table, `/utils`,
-`/html`, persistence and the speech helpers.
+and `procedure()`, speakers and the roster, `clientTool()` (a tool the browser
+runs), the built-in tool table, `/utils`, `/html`, persistence and the speech
+helpers.
 
 ## `system-prompt.md` IS the system prompt
 
 **Write the prompt in `system-prompt.md` beside `agent.ts`, and declare
-nothing.** The build discovers the file, so there is no import line and no
-field — the same rule `tools/` follows, applied to the one part of an agent
-that is a DOCUMENT rather than a value.
+nothing.** The build discovers the file, so there is no import line and no field
+— the same rule `tools/` follows, applied to the one part of an agent that is a
+DOCUMENT rather than a value.
 
 ```markdown
 <!-- system-prompt.md -->
@@ -264,8 +264,8 @@ You are a concise, friendly assistant.
 - Never read a URL aloud.
 ```
 
-**Your prompt is ADDED to the framework's voice sections, never a
-replacement** — yours comes last and wins on conflict. Never interpolate
+**Your prompt is ADDED to the framework's voice sections, never a replacement**
+— yours comes last and wins on conflict. Never interpolate
 `DEFAULT_SYSTEM_PROMPT` (exported to be READ).
 
 Three rules, each a build error naming the file:
@@ -275,8 +275,8 @@ Three rules, each a build error naming the file:
   ignoring the file.
 - **An empty file is an error**, not a silent fall-through to the framework
   default. Delete the file if that is what you want.
-- **A `system-prompt/` directory is rejected.** One file, no concatenation
-  order to guess.
+- **A `system-prompt/` directory is rejected.** One file, no concatenation order
+  to guess.
 
 Composing a prompt from the file plus computed text, and a per-request prompt
 resolver, are in `agent-guide/AGENT-API.md`. `greeting` stays a field: a
@@ -296,15 +296,15 @@ Never hardcode secrets in agent code.
   `ctx.env`.
 - **Production:** `aai secret put NAME`, and list the name in `requiredEnv`.
 - **Access:** `ctx.env.MY_KEY` in a tool; `stepEnv("MY_KEY")` in a step.
-- **AssemblyAI key:** `aai login` links your account and stores the key
-  globally — the only way the CLI authenticates. No `.env` entry needed. For
-  CI, point `AAI_CONFIG_DIR` at a config dir holding a logged-in key (an
-  exported `ASSEMBLYAI_API_KEY` does not authenticate).
+- **AssemblyAI key:** `aai login` links your account and stores the key globally
+  — the only way the CLI authenticates. No `.env` entry needed. For CI, point
+  `AAI_CONFIG_DIR` at a config dir holding a logged-in key (an exported
+  `ASSEMBLYAI_API_KEY` does not authenticate).
 
 ## Subpath exports
 
-Most of the API is not on the root entry. Import each name from the subpath
-that owns it:
+Most of the API is not on the root entry. Import each name from the subpath that
+owns it:
 
 <!-- BEGIN GENERATED aai subpaths: pnpm sync:agent-guide -->
 
@@ -355,10 +355,10 @@ Framework-internal, never imported by an `agent.ts`: `/protocol`,
 <!-- END GENERATED aai subpaths -->
 
 `@alexkroman1/aai-ui` is the browser client (`agent-guide/UI.md`) and
-`@alexkroman1/aai-runtime` the host runtime. **A test file imports testing
-names from its two doors only**: `@alexkroman1/aai-runtime/testing` (every
-fake and reader, plus `runWorkflow`) and `/testing/vitest` (every `install*`,
-plus the eval suites) — `agent-guide/TESTING-EVALS.md`.
+`@alexkroman1/aai-runtime` the host runtime. **A test file imports testing names
+from its two doors only**: `@alexkroman1/aai-runtime/testing` (every fake and
+reader, plus `runWorkflow`) and `/testing/vitest` (every `install*`, plus the
+eval suites) — `agent-guide/TESTING-EVALS.md`.
 
 ## Gotchas
 
@@ -385,16 +385,16 @@ plus the eval suites) — `agent-guide/TESTING-EVALS.md`.
   file or env access. Deployed, it runs in the platform's sandbox. Or use the
   `calculate` builtin for simple arithmetic.
 - **There is no `ctx.db`.** A tool that persists brings its own client — see
-  "Persisting data" in `agent-guide/TOOLS.md`. A secret is read when the
-  sandbox is BUILT, so a newly set `DATABASE_URL` arrives on the next deploy.
-- **A wrong TTS voice id is silent**: it is refused after the socket opens.
-  Pick from the catalog in `agent-guide/PROVIDERS.md`. **Rime language codes
-  are ISO 639-3** (`"eng"`), not ISO 639-1 (`"en"`).
+  "Persisting data" in `agent-guide/TOOLS.md`. A secret is read when the sandbox
+  is BUILT, so a newly set `DATABASE_URL` arrives on the next deploy.
+- **A wrong TTS voice id is silent**: it is refused after the socket opens. Pick
+  from the catalog in `agent-guide/PROVIDERS.md`. **Rime language codes are ISO
+  639-3** (`"eng"`), not ISO 639-1 (`"en"`).
 
 ## Constraints
 
-- Tool `execute` return values go into LLM context, capped at 4000 chars
-  (a truncation marker replaces the tail) — filter large API responses
+- Tool `execute` return values go into LLM context, capped at 4000 chars (a
+  truncation marker replaces the tail) — filter large API responses
 - Agent code runs in a sandboxed worker with open egress for your own `fetch`
 - Tool execution timeout: 30 seconds
 - `maxSteps` caps tool calls per turn (default 10) — lower it for latency. At

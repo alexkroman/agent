@@ -1,8 +1,7 @@
 # @alexkroman1/aai-runtime
 
-The host runtime for
-[AssemblyAI Agent SDK](https://github.com/alexkroman/agent) agents: the thing
-that actually runs an `agent.ts`.
+The host runtime for [AssemblyAI Agent SDK](https://github.com/alexkroman/agent)
+agents: the thing that actually runs an `agent.ts`.
 
 ```ts
 import { createAgentServer } from "@alexkroman1/aai-runtime";
@@ -75,33 +74,33 @@ await server.listen(3000);
 
 Four things worth knowing before you copy it:
 
-- **`agent.ts` stays server-agnostic.** It declares no tools and imports
-  nothing from this package, which is why the same file runs under `aai dev`,
-  publishes with `aai publish`, and is served here. Swapping templates means
-  replacing that file and nothing else. Only the _enumeration_ of `tools/`
-  differs off-platform: `aai build` does it in the bundler, because a deployed
-  agent is handed one ESM string and has no directory to scan; this process has
-  a directory, so it reads it itself.
-- **Node 24+ strips types natively**, so the template's `.ts` is imported
-  as-is — no build step, and no second copy of your agent in JavaScript to
-  drift from the one you deploy.
-- **Tools run in this process, on your credentials.** `ctx.env` is the `env`
-  you assembled, and that is the whole of what a tool receives from you — the
+- **`agent.ts` stays server-agnostic.** It declares no tools and imports nothing
+  from this package, which is why the same file runs under `aai dev`, publishes
+  with `aai publish`, and is served here. Swapping templates means replacing
+  that file and nothing else. Only the _enumeration_ of `tools/` differs
+  off-platform: `aai build` does it in the bundler, because a deployed agent is
+  handed one ESM string and has no directory to scan; this process has a
+  directory, so it reads it itself.
+- **Node 24+ strips types natively**, so the template's `.ts` is imported as-is
+  — no build step, and no second copy of your agent in JavaScript to drift from
+  the one you deploy.
+- **Tools run in this process, on your credentials.** `ctx.env` is the `env` you
+  assembled, and that is the whole of what a tool receives from you — the
   platform hands tool code no database, so a tool that needs SQL brings its own
   client and its own credential from `ctx.env`. The optional `db` on
   `RuntimeOptions` is infrastructure, not an authoring surface: the runtime
   spends it on session-slot storage and on the workflow run journal and
   correlation-key store.
 - **`listen()` binds loopback**, because the server has no request
-  authentication of its own. Expose it deliberately —
-  `listen(port, "0.0.0.0")` behind your own proxy and auth.
+  authentication of its own. Expose it deliberately — `listen(port, "0.0.0.0")`
+  behind your own proxy and auth.
 
 ### Many agents, one server
 
-[`host-server`][ex-host] inverts the arrangement: the server ships with no
-agent and holds no credentials, and each WebSocket connection deploys its own.
-The first frame is the handshake, carrying the system prompt, the tool
-_schemas_ and the provider key that session runs on:
+[`host-server`][ex-host] inverts the arrangement: the server ships with no agent
+and holds no credentials, and each WebSocket connection deploys its own. The
+first frame is the handshake, carrying the system prompt, the tool _schemas_ and
+the provider key that session runs on:
 
 ```ts
 import { createHostServer } from "@alexkroman1/aai-runtime";
@@ -114,23 +113,23 @@ Two properties are what make that safe to expose self-serve, and both are
 structural rather than configured. `createHostServer()` with no `env` has no
 credential to leak and none to spend, so cost lands on whoever opened the
 connection; credential names are screened against `ALL_PROVIDER_ENV_VARS`, so a
-caller cannot smuggle in a `DATABASE_URL` and have the server open a Postgres
-it controls. And schemas are not code: each `tool_call` is
-relayed back over the socket for the caller to execute, so no tenant code runs
-in this process and none of it needs a sandbox.
+caller cannot smuggle in a `DATABASE_URL` and have the server open a Postgres it
+controls. And schemas are not code: each `tool_call` is relayed back over the
+socket for the caller to execute, so no tenant code runs in this process and
+none of it needs a sandbox.
 
 `defaults` is operator policy — a non-AssemblyAI pipeline, `idleTimeoutMs`,
 `builtinTools` — and stands for every tenant; provider descriptors are plain
-data, so declaring one still costs no credential. What host mode does _not_
-give you is authentication (it authenticates the caller's provider key, not the
+data, so declaring one still costs no credential. What host mode does _not_ give
+you is authentication (it authenticates the caller's provider key, not the
 caller — add your own via the `upgrade` hook or a proxy), persistence (a
 "deploy" lasts one connection), or a managed platform.
 
 The example's [`bench/`][ex-bench] has the measured ceiling rather than an
 estimate: on 4 vCPU / 16 GB, **1000 concurrent sessions** at 460 MiB and just
-over one core. Marginal cost is ~300 KiB per session, so memory is not the
-limit — one event loop is, and `node:cluster` over a shared port scales it
-almost linearly.
+over one core. Marginal cost is ~300 KiB per session, so memory is not the limit
+— one event loop is, and `node:cluster` over a shared port scales it almost
+linearly.
 
 ### Into a stack you already have
 
@@ -146,21 +145,24 @@ one, unless you pass an isolating `runCode` — `aai start` has one behind
 `AAI_RUN_CODE=deno`), autoscaling, session brokering and managed secrets. You
 own hardening.
 
-[ex-self]: https://github.com/alexkroman/agent/tree/main/examples/self-hosted-server
+[ex-self]:
+  https://github.com/alexkroman/agent/tree/main/examples/self-hosted-server
 [ex-host]: https://github.com/alexkroman/agent/tree/main/examples/host-server
-[ex-raw]: https://github.com/alexkroman/agent/tree/main/examples/raw-voice-agent-api
-[ex-bench]: https://github.com/alexkroman/agent/tree/main/examples/host-server/bench
+[ex-raw]:
+  https://github.com/alexkroman/agent/tree/main/examples/raw-voice-agent-api
+[ex-bench]:
+  https://github.com/alexkroman/agent/tree/main/examples/host-server/bench
 
 ## Why it is a separate package
 
-It was `@alexkroman1/aai/runtime` until the SDK's authoring surface and its
-host implementation were split apart. Two things came out of that:
+It was `@alexkroman1/aai/runtime` until the SDK's authoring surface and its host
+implementation were split apart. Two things came out of that:
 
 - **The authoring install got lighter.** Every `@ai-sdk/*` adapter and every
-  vendor SDK (Deepgram, ElevenLabs, Cartesia, AssemblyAI), plus `ai`,
-  `postgres` and `ws`, are runtime dependencies — 21 packages that an
-  `agent.ts` never touches. The provider factories return pure descriptors; the
-  host is what resolves them into open sockets.
+  vendor SDK (Deepgram, ElevenLabs, Cartesia, AssemblyAI), plus `ai`, `postgres`
+  and `ws`, are runtime dependencies — 21 packages that an `agent.ts` never
+  touches. The provider factories return pure descriptors; the host is what
+  resolves them into open sockets.
 - **The reference got readable.** The runtime is ~220 exports against the SDK's
-  ~90, and it was two thirds of a combined API reference aimed at people
-  writing agents.
+  ~90, and it was two thirds of a combined API reference aimed at people writing
+  agents.

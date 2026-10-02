@@ -21,15 +21,15 @@ shared guest modules (`rpc`, `types`, `bundle`, `auth`, `http`, `trial`,
 - `src/harness/CLAUDE.md` — agent mode: boot contract, bundle fetch + hash
   check, `/manage/*` and its derived token, guest-owned idle/drain lifecycle,
   the log ring, the `AAI_DEBUG` forward, `/phone`.
-- `packages/aai-guest-studio/CODING-AGENT-TESTS-CLAUDE.md` (reference sibling)
-  — testing and evaluating the studio coding agent.
+- `packages/aai-guest-studio/CODING-AGENT-TESTS-CLAUDE.md` (reference sibling) —
+  testing and evaluating the studio coding agent.
 
 ## Layout
 
 - `src/harness.ts` — tsdown's one entry (`entry: ["src/harness.ts"]`): servers,
   mode dispatch, `lazyRuntime`. Stays beside `src/harness/`, not in it.
-- `src/harness/` — the modes' modules (agent mode, manage, logs, bundle
-  source, crash guards, leak watch, externals test).
+- `src/harness/` — the modes' modules (agent mode, manage, logs, bundle source,
+  crash guards, leak watch, externals test).
 - `toolchain/` — the locked guest toolchain manifest + lockfile. It is part of
   the guest image's Docker build context: **never put a guide or anything
   non-shipping in it.**
@@ -41,12 +41,12 @@ shared guest modules (`rpc`, `types`, `bundle`, `auth`, `http`, `trial`,
 ## The harness: one binary, two modes
 
 `AAI_GUEST_MODE`, set by the spawner, selects the mode (a third, warm-up, exists
-only for the image build — see "The guest image") — **behaviour selection,
-never a security boundary**; capability is whatever the host delivers.
+only for the image build — see "The guest image") — **behaviour selection, never
+a security boundary**; capability is whatever the host delivers.
 
 - **Agent mode** (deployed agents): boots from files delivered at exec time and
-  serves only `/websocket` and `/phone` (the SDK's `createServerForRuntime`) plus
-  token-gated `/manage/*`. See `src/harness/CLAUDE.md`.
+  serves only `/websocket` and `/phone` (the SDK's `createServerForRuntime`)
+  plus token-gated `/manage/*`. See `src/harness/CLAUDE.md`.
 - **Studio mode**: `/ws` (bearer-gated host control channel — JSON-RPC
   `workspace/deploy`, `status`, `studio/session-init`; guest→host
   `studio/sync-workspace`, `studio/persist-chat`), `/session` (public browser
@@ -93,9 +93,8 @@ The guest base image's Node major is covered under "The guest image".
 
 The worker bundle ships its own SDK runtime: `buildWorker`'s wrapper exports
 `__aaiCreateRuntime` over the user's installed SDK, and the harness builds every
-session through it. **Never import `createRuntime` in the harness** —
-konsistent `guest-embeds-no-runtime`; platform SDK drift must never break a
-deployed agent.
+session through it. **Never import `createRuntime` in the harness** — konsistent
+`guest-embeds-no-runtime`; platform SDK drift must never break a deployed agent.
 
 - **The harness carries no runtime; it drives the agent through the bundle's.**
   `__aaiCreateRuntime.host` is the typed `GuestHost` surface
@@ -104,19 +103,19 @@ deployed agent.
   session-init, `/studio/*`) on a plain `node:http` server
   (`harness/studio-server.ts`) and hands every other request to a server the
   LOADED bundle's host builds (`harness/studio-preview.ts`), so a preview is one
-  runtime copy too. The studio coding agent alone uses the
-  image's runtime, by DYNAMIC import (`chat.ts`) so agent mode never loads it.
-  Host-side helpers the harness calls itself (`parseBearer`, `createLogBuffer`,
-  `publishStepEnv`, `safeFetch`) come from `@alexkroman1/aai/host-internal`.
+  runtime copy too. The studio coding agent alone uses the image's runtime, by
+  DYNAMIC import (`chat.ts`) so agent mode never loads it. Host-side helpers the
+  harness calls itself (`parseBearer`, `createLogBuffer`, `publishStepEnv`,
+  `safeFetch`) come from `@alexkroman1/aai/host-internal`.
   `harness/externals.test.ts` is the artifact gate; `warnOnSecondRuntime` the
   runtime one.
-- **The contract stays tiny** (`CreateGuestRuntime`,
-  `aai-guest-core/types.ts`): `{ env, runCode?, publicUrl? }` in,
-  `{ startSession, shutdown }` out. Membership rule: **a capability or fact only
-  the HARNESS holds** (`runCode` = the sandbox executor; `publicUrl` = the
-  spawner's `AAI_PUBLIC_BASE_URL`, translated by `ensureRuntime` so the SDK
-  never reads an `AAI_*` key). Every field is OPTIONAL and additive: old bundles
-  ignore new fields, new bundles degrade without them.
+- **The contract stays tiny** (`CreateGuestRuntime`, `aai-guest-core/types.ts`):
+  `{ env, runCode?, publicUrl? }` in, `{ startSession, shutdown }` out.
+  Membership rule: **a capability or fact only the HARNESS holds** (`runCode` =
+  the sandbox executor; `publicUrl` = the spawner's `AAI_PUBLIC_BASE_URL`,
+  translated by `ensureRuntime` so the SDK never reads an `AAI_*` key). Every
+  field is OPTIONAL and additive: old bundles ignore new fields, new bundles
+  degrade without them.
 - A bundle without the factory is rejected at load; no embedded fallback.
 - Bundles are ~8 MB before user code (`MAX_WORKER_SIZE` 30 MB).
   `evalWorkerBundle` imports via a temp `file:` URL (the runtime's CJS interop
@@ -138,8 +137,8 @@ Lives in `aai-guest-core`; the harness wires it as `RuntimeOptions.runCode`
   `packages/aai-cli/CLAUDE.md`). `node:vm` is not a boundary; the container is.
 - A `new Function` async wrapper **in a worker thread**, with the same authority
   as the rest of the sandboxed agent (egress, fs, env, child processes) and no
-  in-process capability stripping. The tool description promises only
-  "output from console.log" — never claim "no network/filesystem".
+  in-process capability stripping. The tool description promises only "output
+  from console.log" — never claim "no network/filesystem".
 - **5s timeout enforced by `worker.terminate()`, never a promise race** — code
   with no `await` never yields, and in-process it wedged the whole guest
   (`/health`, every session, the idle timer). Each call gets a fresh isolate and
@@ -179,8 +178,8 @@ model at an internal endpoint inside a container with nothing internal.
   and non-HTTP(S).
 - Re-validates every redirect hop; once a redirect leaves the origin, drops
   EVERY caller header except `accept`, `accept-language`, `content-type` and
-  `user-agent` — a vendor credential header (`x-api-key`, `x-goog-api-key`)
-  has no name the screen could list. See "Redirects" in
+  `user-agent` — a vendor credential header (`x-api-key`, `x-goog-api-key`) has
+  no name the screen could list. See "Redirects" in
   `packages/aai/src/host/CLAUDE.md`.
 - **Pins the IP via an undici dispatcher `lookup`, never by rewriting the URL
   hostname** (breaks SNI/cert verification). Keep the URL intact.
@@ -191,18 +190,19 @@ model at an internal endpoint inside a container with nothing internal.
   fetch implementation (`fetchFn` is test-only), and guard tests cover the call
   site. Guarded by `ssrf-dispatcher.test.ts`.
 - **Never hand a `FormData`, `Blob`, `File`, `Headers` or `Request` to a `fetch`
-  that may not be your realm's** — undici brand-checks with its own classes
-  (a `FormData` goes out as `text/plain` `[object FormData]`). Pass bytes.
+  that may not be your realm's** — undici brand-checks with its own classes (a
+  `FormData` goes out as `text/plain` `[object FormData]`). Pass bytes.
 - `web_search`, `visit_webpage`, `get_page_design`, `fetch_json` take
-  model-controlled URLs and **default** to `safeFetch` (`builtin-tools.ts`).
-  Not opt-in; only tests override `fetch`.
+  model-controlled URLs and **default** to `safeFetch` (`builtin-tools.ts`). Not
+  opt-in; only tests override `fetch`.
 
 ## Credential separation, and what reaches a guest
 
-Each agent supplies its own `ASSEMBLYAI_API_KEY` (`.env` locally, `aai secret
-put` in production); there is no platform-owned key. `SandboxOptions` separates
-`apiKey` (host-only, for S2S) from `agentEnv` (forwarded to the guest); the key
-is extracted at sandbox creation and kept host-side.
+Each agent supplies its own `ASSEMBLYAI_API_KEY` (`.env` locally,
+`aai secret put` in production); there is no platform-owned key.
+`SandboxOptions` separates `apiKey` (host-only, for S2S) from `agentEnv`
+(forwarded to the guest); the key is extracted at sandbox creation and kept
+host-side.
 
 - **A guest inherits nothing from the host process** — only what the spawner
   writes into its boot env (see the `AAI_DEBUG` forward in
@@ -245,13 +245,12 @@ own in dev), so it must be (1) external in the ARTIFACT and (2) installed there
 artifact (`aai-guest#test` declares its own `build`).
 
 **Ask of any new dependency whether it reads its own directory.** A package
-reading data files beside itself cannot be bundled
-(`@workflow/world-postgres`'s Drizzle migration journal → `neverBundle`). One
-reading only its own `package.json` is better PATCHED than externalized:
-`@workflow/world-local` is statically imported by `@workflow/core`, so
-externalizing it costs every spawn; `patches/@workflow__world-local@4.2.4.patch`
-returns the version from a constant, and `externals.test.ts` asserts the
-`"bundled"` sentinel is absent.
+reading data files beside itself cannot be bundled (`@workflow/world-postgres`'s
+Drizzle migration journal → `neverBundle`). One reading only its own
+`package.json` is better PATCHED than externalized: `@workflow/world-local` is
+statically imported by `@workflow/core`, so externalizing it costs every spawn;
+`patches/@workflow__world-local@4.2.4.patch` returns the version from a
+constant, and `externals.test.ts` asserts the `"bundled"` sentinel is absent.
 
 ## The guest image
 
@@ -276,10 +275,10 @@ content-addressed tag, `agents.harness_image_tag`, `guest-image.Dockerfile`) is
   no token — a broken warm-up is otherwise invisible.
 - **The toolchain is LOCKED** (`toolchain/{package.json,package-lock.json}`,
   `pnpm sync:guest-toolchain`, gated by `pnpm check:guest-toolchain`), because
-  the tag keys on the install command's text. Two steps, forced:
-  third-party packages via **`npm ci`** against the lockfile; `@alexkroman1/*`
-  via **`npm install` at exact versions** (unlockable — their integrity hashes
-  exist only after publish).
+  the tag keys on the install command's text. Two steps, forced: third-party
+  packages via **`npm ci`** against the lockfile; `@alexkroman1/*` via
+  **`npm install` at exact versions** (unlockable — their integrity hashes exist
+  only after publish).
 - **Neither step runs install scripts** (`--ignore-scripts`) — the unlocked step
   has no integrity hash or release-age quarantine. Safe because the
   script-carrying packages (`esbuild`, `@swc/core`, `cbor-extract`) ship
@@ -299,8 +298,8 @@ different runtimes. **Known split: `.node-version` says 24 against
 `node:26-slim`.** Every package declares `engines.node >=24`, so **code may use
 only APIs on Node 24** — `tsc` cannot enforce it (`lib: ["ESNext"]`), so
 `Map.prototype.getOrInsert*`, `Iterator.concat`, `Temporal` typecheck and then
-throw on the floor (`aai-runtime/src/runtime/tools.ts` is the worked example). Safe:
-`crypto.hash()`, `module.enableCompileCache()`, `await using` +
+throw on the floor (`aai-runtime/src/runtime/tools.ts` is the worked example).
+Safe: `crypto.hash()`, `module.enableCompileCache()`, `await using` +
 `Symbol.asyncDispose`. `DisposableStack`/`AsyncDisposableStack` are unverified
 (note in `studio-session-broker.ts`).
 
@@ -337,9 +336,9 @@ one reference; a build context makes the harness and toolchain plain `COPY`s.
 
 The microVM backend boots `aai-guest-harness:local`, with the harness BAKED in:
 **`pnpm build:guest-image --msb` makes a harness edit live**, not
-`ensure-guest-harness.mjs` (which rebuilds `dist/harness.mjs` for the
-subprocess backend and test tiers only). Symptom: a guest ignoring a change that
-a fresh `dist/harness.mjs` demonstrably contains. Same trap on Modal.
+`ensure-guest-harness.mjs` (which rebuilds `dist/harness.mjs` for the subprocess
+backend and test tiers only). Symptom: a guest ignoring a change that a fresh
+`dist/harness.mjs` demonstrably contains. Same trap on Modal.
 
 ## And the SDK in a LOCAL image is this checkout's, not npm's
 
@@ -364,9 +363,8 @@ A guest's agent bundle resolves `@alexkroman1/*` from the IMAGE's
 - **Local defaults to this checkout** because `:local` promises "whatever this
   checkout is", and a version string cannot tell a released tree from a dirty
   one.
-- The tarball `COPY` sits after `npm ci` (cache), and `sdk-tarballs/.gitkeep`
-  is committed so the COPY never fails; `guest/image-dockerfile.test.ts` pins
-  both.
+- The tarball `COPY` sits after `npm ci` (cache), and `sdk-tarballs/.gitkeep` is
+  committed so the COPY never fails; `guest/image-dockerfile.test.ts` pins both.
 
 ## ffmpeg is installed, and a step reaches it through the SDK
 
@@ -375,10 +373,10 @@ A guest's agent bundle resolves `@alexkroman1/*` from the IMAGE's
 and counts against a published package's size budget). Steps use
 `@alexkroman1/aai/ffmpeg`; its runner, dev fallback (`AAI_FFMPEG_PATH`) and the
 `AAI_REQUIRE_FFMPEG=1` scenario gate are the SDK's (`host/ffmpeg.ts`, whose doc
-lists the runner's four properties; worked
-example `packages/aai-templates/FFMPEG-CLAUDE.md`). The package list is in the
-image fingerprint (`toolchainFingerprint`), its layer FIRST; every added package
-ships in every guest image.
+lists the runner's four properties; worked example
+`packages/aai-templates/FFMPEG-CLAUDE.md`). The package list is in the image
+fingerprint (`toolchainFingerprint`), its layer FIRST; every added package ships
+in every guest image.
 
 ## Building the harness for a test run
 
@@ -398,7 +396,7 @@ aai-studio-server and `predeploy:modal` in aai-server.
 - `src/_test-utils.ts` holds `stubProcessExit`; the shared guest helpers
   (`useTempDir`, `installFakeHostChannel`, `runTool`, `materialize`) are
   `aai-guest-core/test-utils` (see that guide).
-- **A test's tier is what it touches** (root `AGENTS.md`): a file that writes
-  to disk, binds a port or spawns a subprocess is `*.scenario.test.ts`, which
+- **A test's tier is what it touches** (root `AGENTS.md`): a file that writes to
+  disk, binds a port or spawns a subprocess is `*.scenario.test.ts`, which
   `vitest.config.ts` excludes from the unit run. Split a file on what it touches
   rather than lowering a coverage floor.

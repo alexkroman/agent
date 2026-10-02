@@ -57,9 +57,9 @@ mirrored into, and what `publish` deploys from.
 `aai publish` already syncs your `.env` into the agent's secrets, so these
 commands are for changing one afterwards.
 
-:::caution[Keep the value out of argv]
-A secret passed as an argument lands in your shell history and in `ps` output.
-`aai secret put` refuses one. Pipe it in instead:
+:::caution[Keep the value out of argv] A secret passed as an argument lands in
+your shell history and in `ps` output. `aai secret put` refuses one. Pipe it in
+instead:
 
 ```sh
 printf %s "$VALUE" | aai secret put NAME
@@ -87,8 +87,8 @@ All four take `--agent <url>` to target a server you are running yourself
 
 - `--help` on any command lists every flag it accepts. A flag it does not know
   is refused rather than ignored.
-- `--json` prints one result line for scripts. It turns on by itself when
-  stdout is not a terminal.
+- `--json` prints one result line for scripts. It turns on by itself when stdout
+  is not a terminal.
 - `--server <url>` points a platform command at a different platform server.
 - Both spellings of a multi-word flag work: `--skip-tests` and `--skipTests`.
 - Field-level options for `agent()` are in the

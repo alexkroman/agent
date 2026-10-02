@@ -25,8 +25,8 @@ This guide holds the rules of the mechanism.
 
 `docs/` is not under `packages/`, so per-package conventions do not apply.
 `packages/aai/CLAUDE.md`, `packages/aai-ui/src/contracts/CLAUDE.md` and
-`packages/aai-runtime/src/contracts/CLAUDE.md` each say what an epoch bump
-means for that package.
+`packages/aai-runtime/src/contracts/CLAUDE.md` each say what an epoch bump means
+for that package.
 
 ## One Astro build renders both halves
 
@@ -72,15 +72,14 @@ to `main`; the turbo `docs` task is a merge gate in `pnpm check` and CI.
   nobody adds is built and unreachable. The reference group is filled by the
   plugin (`typeDocSidebarGroup`).
 - **`pruneLinklessSidebarGroups()` drops every sidebar group with no clickable
-  descendant** (under per-module output the plugin's per-kind groups are
-  empty). It must stay a plugin AFTER `starlightTypeDoc()`, and its no-op
-  warning means either the generator changed (remove it) or the sidebar shape
-  did (fix it).
+  descendant** (under per-module output the plugin's per-kind groups are empty).
+  It must stay a plugin AFTER `starlightTypeDoc()`, and its no-op warning means
+  either the generator changed (remove it) or the sidebar shape did (fix it).
 - **What is rendered is what somebody writing an `agent.ts` imports**: all of
   `aai` and `aai-ui`, and `aai-runtime`'s `/eval`, `/eval/vitest`, `/testing`
-  and `/testing/vitest`. What an EMBEDDER imports (`aai-runtime`'s
-  root barrel), the `/internal` escape hatches and `aai-cli`'s build hooks are
-  excluded, each with a written reason in `UNDOCUMENTED_SUBPATHS`
+  and `/testing/vitest`. What an EMBEDDER imports (`aai-runtime`'s root barrel),
+  the `/internal` escape hatches and `aai-cli`'s build hooks are excluded, each
+  with a written reason in `UNDOCUMENTED_SUBPATHS`
   (`scripts/docs-markdown.mjs`).
 - **Every subpath export with a `types` target must be an entry point in its
   package's `typedoc.json` or be excused in `UNDOCUMENTED_SUBPATHS`** — a
@@ -108,8 +107,8 @@ by `pnpm check:api-report`:
 - **`API.md`** — the reports concatenated, for readers wanting the whole surface
   in one pass (API Extractor cannot produce a multi-entry rollup).
 - **`API-EXPORTS.json`** — each entry point's export NAMES, so a name appearing
-  or disappearing is a one-line diff. Sorted by code unit, never
-  `localeCompare` (locale would change the file).
+  or disappearing is a one-line diff. Sorted by code unit, never `localeCompare`
+  (locale would change the file).
 - **`API-INDEX.md`** — the same names inverted: name → preferred import (the
   capability owner's subpath, else the narrowest), kind, `<pkg>:<capability>`
   contract and first doc-comment sentence, in audience sections cut by rule
@@ -149,12 +148,12 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
 
 ### Revisions and the compatibility probe
 
-- **A provably compatible change is a REVISION of the same epoch**
-  (`--update`), not a new epoch. `scripts/_api-contracts-compat.mjs` compiles
-  the epoch's ORIGINAL rollup and the new one as two modules with a probe, under
-  `strict` + `exactOptionalPropertyTypes`: every old name still exported; a
-  TYPE mutually assignable; a VALUE assignable new-to-old. `--bump` refuses a
-  change the probe proved compatible.
+- **A provably compatible change is a REVISION of the same epoch** (`--update`),
+  not a new epoch. `scripts/_api-contracts-compat.mjs` compiles the epoch's
+  ORIGINAL rollup and the new one as two modules with a probe, under `strict` +
+  `exactOptionalPropertyTypes`: every old name still exported; a TYPE mutually
+  assignable; a VALUE assignable new-to-old. `--bump` refuses a change the probe
+  proved compatible.
 - **Additive changes pass** (optional member, optional parameter, new export,
   widened parameter, narrowed return). **These need `--bump`**: a removed
   export, an added required member, a removed member (even optional —
@@ -173,8 +172,8 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
   `etc/*.api.md` diff.
 - **Before compiling, the two sides are made to agree**
   (`scripts/_api-contracts-compat-rewrite.mjs`): same-named `unique symbol`
-  brands are one symbol; long misuse-message literals read as one marker type;
-  a declaration another capability of the package owns, or one whose closure is
+  brands are one symbol; long misuse-message literals read as one marker type; a
+  declaration another capability of the package owns, or one whose closure is
   byte-identical, is taken once from the new rollup. Blind spot: a change to
   another capability's type that breaks only THIS capability's use of it is seen
   only by the owner's probe and the frozen examples.
@@ -186,11 +185,11 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
 - **The checker is TypeScript 6** (`typescript-6` at the root), because TS 7
   ships no in-process compiler API; `pnpm typecheck` still runs 7.x over every
   frozen example.
-- **Probe blind spots, which are why `--retain` exists**: the
-  `L & Literal<L>` methods, generic overloads (type parameters erased), an `any`
-  inside a union, another package's types (same current type both sides),
-  behaviour. A CHANGED generic conditional or `as`-remapped type is reported
-  incompatible even when it is not (the safe direction).
+- **Probe blind spots, which are why `--retain` exists**: the `L & Literal<L>`
+  methods, generic overloads (type parameters erased), an `any` inside a union,
+  another package's types (same current type both sides), behaviour. A CHANGED
+  generic conditional or `as`-remapped type is reported incompatible even when
+  it is not (the safe direction).
   `packages/aai-gates/src/api-contracts-compat.test.ts` pairs each accepted
   change with the break beside it.
 
@@ -211,11 +210,11 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
   a deny-list, so a new subpath defaults into the contracted surface. The sets
   are `authoringSubpaths()` / `exampleFacingSubpaths()` there; do not enumerate
   them in prose.
-- **`@alexkroman1/aai/experimental` keeps unmeasured features off the
-  contracted surface**: it gets an API report but no capability and no rendered
-  page. Promote by MOVING names to the owning subpath, never re-exporting from
-  both. A contracted signature may not name an experimental type (it would be
-  unowned). `packages/aai/CLAUDE.md` has the authoring half.
+- **`@alexkroman1/aai/experimental` keeps unmeasured features off the contracted
+  surface**: it gets an API report but no capability and no rendered page.
+  Promote by MOVING names to the owning subpath, never re-exporting from both. A
+  contracted signature may not name an experimental type (it would be unowned).
+  `packages/aai/CLAUDE.md` has the authoring half.
 - **The capability set is exhaustive**: every `@public` export of an authoring
   subpath belongs to exactly one capability of its package, so a new export
   fails until somebody decides which contract it joins. A name on both `.` and a
@@ -242,22 +241,22 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
   `scripts/api-contracts-coverage-denylist.json`, shrink-only, reason each).
 - **A `--bump --drop` classifies only the CURRENT epoch.** Run `pnpm typecheck`
   first; an older epoch it reddens is dropped with `--retire`. So is a retained
-  epoch that promised a name the current surface has since removed — it reads
-  as supported only while its example stays quiet about that name.
+  epoch that promised a name the current surface has since removed — it reads as
+  supported only while its example stays quiet about that name.
 - **Every capability restarts at epoch 1** is a pre-release reset (`--init`
   after deleting each package's `contracts.json` and its epochs and
   compatibility directories), done twice — the second with the package versions
   reset to `0.13.0`: an epoch is a promise to a consumer, and none existed yet.
   Do it again only for that reason and only before release — once a consumer
   exists, deleting a dropped epoch's record hides a broken promise.
-- **Old epoch metadata is immutable**; only the current epoch's record moves,
-  by revision.
+- **Old epoch metadata is immutable**; only the current epoch's record moves, by
+  revision.
 - **The export-list delta suggests the bump type** (removed name a break, added
   `minor`, unchanged `patch or minor`); a break the probe finds prints a break.
   A break is `minor` while the packages are on `0.x` (`BREAKING_BUMP`).
 - **A capability whose promise is a VALUE is not covered by the hash**
-  (`aai:defaults`' prompt text; doc comments and literal values are
-  normalized away). `--bump` refuses; it is a changeset-and-review matter.
+  (`aai:defaults`' prompt text; doc comments and literal values are normalized
+  away). `--bump` refuses; it is a changeset-and-review matter.
 - **A `--bump` is the moment to ask what should come OUT**: read
   `packages/aai-templates/template-api-allowlist.json` (exports no template
   exercises), not only the diff.
@@ -273,8 +272,8 @@ consumer can observe:
 
 - the API Extractor preamble, comments, release tags and import spelling are
   dropped;
-- parameter names are replaced positionally (TypeScript has no named
-  arguments; the rename still shows in `etc/*.api.md`);
+- parameter names are replaced positionally (TypeScript has no named arguments;
+  the rename still shows in `etc/*.api.md`);
 - a declaration another capability of the package contracts is collapsed to its
   NAME, and the walk stops there;
 - string literal types over 80 characters read as `string`, and a `const`'s
@@ -314,8 +313,8 @@ defaults IN; a disagreement between them is a decision to make explicitly.
 ## The markdown rendering is COMMITTED, and gated
 
 `pnpm docs:md` (`scripts/docs-markdown.mjs`) writes `docs/api/`, one file per
-published entry point with its doc comments, so `cat
-docs/api/@alexkroman1/aai/tts.md` answers "what is in this subpath".
+published entry point with its doc comments, so
+`cat docs/api/@alexkroman1/aai/tts.md` answers "what is in this subpath".
 `pnpm check:docs-md` fails when it is stale; it runs in both `check.mjs` modes
 and CI, after `check:api-report`.
 
@@ -360,25 +359,25 @@ typedoc a dependency of this workspace.
 ## Code examples in docs compile
 
 `pnpm check:doc-examples` (`scripts/check-doc-examples.mjs`, in `pnpm check` and
-CI) compiles every ` ```ts `/` ```tsx ` fence in published-package doc
-comments, the scaffold guide, READMEs, `docs/home.md`, the site's guide pages
-and the studio prompt modules, as self-contained modules under the scaffold
-tsconfig. A deliberate fragment opts out with ` ```ts no-check `. The list
-is explicit, so the generated `docs/api/` is not in it.
+CI) compiles every ` ```ts `/` ```tsx ` fence in published-package doc comments,
+the scaffold guide, READMEs, `docs/home.md`, the site's guide pages and the
+studio prompt modules, as self-contained modules under the scaffold tsconfig. A
+deliberate fragment opts out with ` ```ts no-check `. The list is explicit, so
+the generated `docs/api/` is not in it.
 
-**`home.md` opens with NO heading** (hence the
-`markdownlint-disable MD041` on its first line), because the renderer
-titles the page and a body `# …` produces a second `<h1>`. Keep markdown
-characters out of any HTML comment in it: the parser reads a comment's contents
-and backticks there break it open onto the page.
+**`home.md` opens with NO heading** (hence the `markdownlint-disable MD041` on
+its first line), because the renderer titles the page and a body `# …` produces
+a second `<h1>`. Keep markdown characters out of any HTML comment in it: the
+parser reads a comment's contents and backticks there break it open onto the
+page.
 
 ## Rendering `aai-runtime` is a docs decision, and it cannot be half-made
 
 `packages/aai-runtime/typedoc.json` renders only the author-facing subpaths
 (`/eval`, `/eval/vitest`, `/testing`, `/testing/vitest`). The root barrel (~220
 exports for EMBEDDERS) and `/internal` stay in `UNDOCUMENTED_SUBPATHS`; the root
-entry says what would change that ("revisit if embedders ask for a rendered
-page — then it gets its own, not a share of the SDK's").
+entry says what would change that ("revisit if embedders ask for a rendered page
+— then it gets its own, not a share of the SDK's").
 
 **Opting a package or subpath in is one change across five places**:
 `docs/typedoc.json`'s `entryPoints`, the package's `typedoc.json`, the `include`
@@ -405,7 +404,7 @@ A package that grows a `src/contracts/` directory needs the
 `tsconfig.build.json` exclusion (`src/contracts`, so `rootDir: "src"` does not
 emit a `.d.ts` per capability root and per frozen example into `dist/`), the
 `vitest.config.ts` coverage exclusion, knip `entry` points for
-`src/contracts/entrypoints/*.ts` — nothing imports a capability root and
-nothing is meant to — and `packages/*/src/contracts/**` staying in the
-`aai-templates` turbo `inputs`, which is what stops the gate-under-the-gate
-being served from cache exactly when a contract tree changes.
+`src/contracts/entrypoints/*.ts` — nothing imports a capability root and nothing
+is meant to — and `packages/*/src/contracts/**` staying in the `aai-templates`
+turbo `inputs`, which is what stops the gate-under-the-gate being served from
+cache exactly when a contract tree changes.

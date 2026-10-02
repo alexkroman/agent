@@ -33,14 +33,14 @@ import every stage.
 - **Outside a directory, import its `index.ts` and nothing else**; a name not
   re-exported there is private, so there is no `_` prefix inside these
   directories. Outside `pipeline/` that means `pipeline/index.ts` only.
-  `guard-invariants` rule 37 enforces it for every importer, specs included —
-  a spec that needs a private module lives beside it, and shared test
-  scaffolding (`../_pipeline-transport-harness.ts`) lives outside.
+  `guard-invariants` rule 37 enforces it for every importer, specs included — a
+  spec that needs a private module lives beside it, and shared test scaffolding
+  (`../_pipeline-transport-harness.ts`) lives outside.
 - **The stage directions are `guard-invariants` rule 38**, whose
   `PIPELINE_STAGES` table (`scripts/guard-invariants-module-dirs.mjs`) is the
   "May import" column above; a stage spec is exempt, and a stage never imports
-  the assembly (any file directly in `pipeline/`). Biome's `noImportCycles`
-  only sees a cycle once it closes; the rule refuses the first wrong-way edge.
+  the assembly (any file directly in `pipeline/`). Biome's `noImportCycles` only
+  sees a cycle once it closes; the rule refuses the first wrong-way edge.
 - **An `index.ts` lists exactly what is imported from outside** and is a pure
   barrel of named re-exports (konsistent `module-dir-index-is-re-export-only`).
 - `speech/` reaches `llm/` only for speculation, and `history/` reaches
@@ -58,14 +58,15 @@ never got.
   truncation and the resume anchor (`buildTailResumePrompt`) both READ it, and
   it owns the playback clock the barge-in gate reads.
 - **Two accuracy tiers, chosen at runtime**: word timings where the provider
-  sends them (AssemblyAI `WordBoundaries`, `../../providers/tts/assemblyai-words.ts`);
-  otherwise a proportional estimate snapped to a word. Both round toward
-  UNDER-keeping.
+  sends them (AssemblyAI `WordBoundaries`,
+  `../../providers/tts/assemblyai-words.ts`); otherwise a proportional estimate
+  snapped to a word. Both round toward UNDER-keeping.
 - **The proportional estimate is CLAMPED** (`MAX_SPEECH_CHARS_PER_MS`), because
   text runs ahead of synthesis and `spoken.length / audioMs` is not a speech
   rate. The constant's doc carries the arithmetic.
-- **`HEARD_AUDIO_LAG_MS` is derived** — its row in `packages/aai/DEFAULTS-CLAUDE.md`'s
-  defaults table has the decomposition; do not restate it.
+- **`HEARD_AUDIO_LAG_MS` is derived** — its row in
+  `packages/aai/DEFAULTS-CLAUDE.md`'s defaults table has the decomposition; do
+  not restate it.
 - **The caption and the history entry diverge on purpose.** Never emit an
   `agent_transcript` after `cancelled` to "correct" the caption — that is the
   double-transcript bug (`persistInterruptedTurn`).
@@ -73,8 +74,8 @@ never got.
   `emitText`'s `record` flag decides what may be truncated into history; filler
   moves the heard position and is never recordable, and the TTS coalescer
   flushes when the flag flips.
-- **The greeting follows the same rule**: `createLineReply`
-  (`reply/lines.ts`) writes history once PLAYBACK ends, not synthesis.
+- **The greeting follows the same rule**: `createLineReply` (`reply/lines.ts`)
+  writes history once PLAYBACK ends, not synthesis.
 - **A cut after the body committed is taken back too** (TTS drain, playback
   tail, a queued chained reply): `HeardTracker.markPersisted` keeps the reply on
   the clock until played, and `history/heard-history.ts` rewrites the record in
@@ -83,8 +84,8 @@ never got.
 ## A `reset` starts a conversation, so it GREETS
 
 The client `reset` frame discards the conversation, so `reset()` ends with
-`lifecycle.greet()` — queued AFTER `gate.invalidateAll()` and on the turn
-chain, so it runs after the aborted turn unwinds.
+`lifecycle.greet()` — queued AFTER `gate.invalidateAll()` and on the turn chain,
+so it runs after the aborted turn unwinds.
 
 - **`skipGreeting` does not reach `greet()`** — it is a RESUME flag scoped to a
   connection's start, the opposite claim from a reset. (Hence `aai-ui`'s
@@ -114,5 +115,5 @@ written as HEARD once playback ends. It resolves `"played"`, `"interrupted"` or
   `knobs.holdFloor` makes `minBargeInWords` `Infinity` (a dialog's
   `interruption: "off"`) from before the line starts until it settles, so the
   caller is still transcribed and answered afterwards. Cancels, interrupts and
-  typed turns ignore it. **`record: false`** captions with `recorded: false`
-  and skips `createLineReply`'s history writes.
+  typed turns ignore it. **`record: false`** captions with `recorded: false` and
+  skips `createLineReply`'s history writes.

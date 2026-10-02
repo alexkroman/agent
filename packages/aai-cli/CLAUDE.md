@@ -13,18 +13,18 @@ The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root
 `AGENTS.md`; the studio surface the CLI round-trips against is documented in
 `packages/aai-studio-server/CLAUDE.md`.
 
-**Directory guides:** none. `src/` is flat (every module is a sibling), so
-there is no subdirectory a scoped guide could govern; this file is the whole
-guide. It is not shipped: `package.json` `files` is `bin.mjs` + `dist`.
+**Directory guides:** none. `src/` is flat (every module is a sibling), so there
+is no subdirectory a scoped guide could govern; this file is the whole guide. It
+is not shipped: `package.json` `files` is `bin.mjs` + `dist`.
 
 ## Commands and exports
 
-Binary: `aai` — subcommands: init, dev, console, start, test, eval, build,
-list, pull, push, publish, delete, login, secret, logs, workflow, templates.
+Binary: `aai` — subcommands: init, dev, console, start, test, eval, build, list,
+pull, push, publish, delete, login, secret, logs, workflow, templates.
 
 That list is pinned to the registry by `cli.test.ts` ("the subcommand list in
-this package's guide names exactly what `cli.ts` registers"); `deploy` is
-hidden (in-guest Publish is its only caller) and excluded.
+this package's guide names exactly what `cli.ts` registers"); `deploy` is hidden
+(in-guest Publish is its only caller) and excluded.
 
 ### `aai eval` is a separate command from `aai test`
 
@@ -35,18 +35,18 @@ project runs on every save and in `aai build` (`eval.ts`).
 - **The two are disjoint by construction.** A positional to `vitest run` is a
   substring FILTER over vitest's own include matches, so `agent.test.ts` cannot
   match `agent.eval.test.ts`. Neither command names the other's files.
-- **The shared launcher is `_vitest-runner.ts`**, not `test.ts`, so `eval`
-  does not import from the other command's file. Each tier's filenames stay
-  with its command (`TEST_FILES` in `test.ts`, `EVAL_FILES` in `eval.ts`);
-  `candidates` has no default so the runner never names a tier.
-- **It passes `--testTimeout`** (`EVAL_TEST_TIMEOUT_MS`, 5 min): vitest's 5s
-  is shorter than one model turn; the harness's 90s per-turn timeout diagnoses.
+- **The shared launcher is `_vitest-runner.ts`**, not `test.ts`, so `eval` does
+  not import from the other command's file. Each tier's filenames stay with its
+  command (`TEST_FILES` in `test.ts`, `EVAL_FILES` in `eval.ts`); `candidates`
+  has no default so the runner never names a tier.
+- **It passes `--testTimeout`** (`EVAL_TEST_TIMEOUT_MS`, 5 min): vitest's 5s is
+  shorter than one model turn; the harness's 90s per-turn timeout diagnoses.
 - **It hands the project's `.env` to the child** via `resolveServerEnv`
   (declared keys only, shell wins), or every case skips for want of a key.
 
-The harness is published from `@alexkroman1/aai-runtime/eval`, including what
-a keyless run does (not "skip") — see "Driving an agent from text is a
-published surface" in `packages/aai-runtime/CLAUDE.md`.
+The harness is published from `@alexkroman1/aai-runtime/eval`, including what a
+keyless run does (not "skip") — see "Driving an agent from text is a published
+surface" in `packages/aai-runtime/CLAUDE.md`.
 
 ### `aai test` runs the PROJECT's specs, and a narrowed run is honest about it
 
@@ -67,8 +67,8 @@ A narrowed run must never report a green verdict over specs it skipped.
   `true`). `aai test` passes `false` (its result reports it); `aai eval` passes
   `false` (the unrun set is a test-tier claim).
 - **The scaffold's `test` script is `aai test`**, and `test:agent` is
-  `aai test --only`: the command a project wires into CI must run its suite.
-  If an exclude is ever needed, vitest's CLI `--exclude` is appended to
+  `aai test --only`: the command a project wires into CI must run its suite. If
+  an exclude is ever needed, vitest's CLI `--exclude` is appended to
   `defaultExclude`, not a replacement.
 - **`aai test` sets no `NODE_OPTIONS`** — type stripping is default-on for the
   supported Node (`>=24`), and `NODE_OPTIONS` reaches every worker, so a bad
@@ -89,17 +89,16 @@ A narrowed run must never report a green verdict over specs it skipped.
 - No echo cancellation — it tells the user to wear headphones.
 
 **`aai workflow` talks to the AGENT, not the platform API** (`workflow.ts`,
-`cli-workflow.ts`): `list`, `runs <name>`, `show <runId>`, `cancel <runId>`
-over the brokered `/:slug/workflows` surface. **Never an `apiRequest`**: that
-surface takes the agent's own bearer (`AAI_WORKFLOW_API_TOKEN`, `--token`) or
-none, so sending the platform API key would leak it. Every request brokers (may
-boot the sandbox). `--limit` is parsed in the command so a bad value names the
-flag. Requests are the SDK's `createWorkflowApiClient`; `api.get`'s
-`undefined` on 404 also means "no workflow API", so `HINT_BROKER` lists all
-three causes.
+`cli-workflow.ts`): `list`, `runs <name>`, `show <runId>`, `cancel <runId>` over
+the brokered `/:slug/workflows` surface. **Never an `apiRequest`**: that surface
+takes the agent's own bearer (`AAI_WORKFLOW_API_TOKEN`, `--token`) or none, so
+sending the platform API key would leak it. Every request brokers (may boot the
+sandbox). `--limit` is parsed in the command so a bad value names the flag.
+Requests are the SDK's `createWorkflowApiClient`; `api.get`'s `undefined` on 404
+also means "no workflow API", so `HINT_BROKER` lists all three causes.
 
-**`aai logs` reads a RING, so `--follow` polls** (`logs.ts` →
-`GET /:slug/logs`, the guest's bounded buffer with a cursor — see
+**`aai logs` reads a RING, so `--follow` polls** (`logs.ts` → `GET /:slug/logs`,
+the guest's bounded buffer with a cursor — see
 `packages/aai-guest/src/harness/CLAUDE.md`). It must say that the ring dies with
 the sandbox, distinguish `running` from `lines.length`, and print `dropped`. A
 failed poll under `--follow` is not a failed command; only a signal ends it.
@@ -110,14 +109,15 @@ failed poll under `--follow` is not a failed command; only a signal ends it.
 - **Every leaf command is `defineExec({ cwd, args, meta, run })`**
   (`_cli-common.ts`). `cwd` is a required working-directory policy: `"agent"`
   (refuses a directory without `agent.ts`), `"any"`, or `"none"` (body gets
-  `cwd: undefined`, typed). Keep the lazy `await import` of the executor in
-  each body — it keeps a subcommand's deps off every other startup. Group
-  commands (`secret`, `workflow`) are plain citty `defineCommand`s.
+  `cwd: undefined`, typed). Keep the lazy `await import` of the executor in each
+  body — it keeps a subcommand's deps off every other startup. Group commands
+  (`secret`, `workflow`) are plain citty `defineCommand`s.
 - **A returned `fail(...)` and a thrown error converge on one emitter keyed on
-  `result.ok`**, never on the code path (else a returned failure exits 1 silently).
+  `result.ok`**, never on the code path (else a returned failure exits 1
+  silently).
 - **A 2xx body is CHECKED, not cast** (`checkedResponse`, `_api-client.ts`):
-  `apiRequest<T>` is a cast, and a proxy's 200 once wrote `slug: undefined`
-  into `.aai/project.json`. The predicate is the caller's; the helper owns
+  `apiRequest<T>` is a cast, and a proxy's 200 once wrote `slug: undefined` into
+  `.aai/project.json`. The predicate is the caller's; the helper owns
   `bad_response` + hint.
 - **All terminal I/O goes through the `Ui` seam (`_ui.ts`)**, never clack,
   `console.*` or `process.stdout`: `defineExec` hands `ctx.ui` to the body;
@@ -126,19 +126,18 @@ failed poll under `--follow` is not a failed command; only a signal ends it.
   or clack; collaborators are seams too (`DevServerSeams`, `ConsoleSeams`,
   `PlatformDeps`, `VitestDeps`, `InitDeps`).
 - **A long-running command's post-startup output is `ui.notify`**: `silence()`
-  no-ops `log` in JSON mode (a pipe auto-selects it); `notify` then writes
-  plain stderr. Restart failures, watcher errors, crash handlers,
-  `resolveAgentEnv`'s warnings.
+  no-ops `log` in JSON mode (a pipe auto-selects it); `notify` then writes plain
+  stderr. Restart failures, watcher errors, crash handlers, `resolveAgentEnv`'s
+  warnings.
 - **`--help` is grouped** (`HELP_SECTIONS`, `_help.ts`; `cli.test.ts` places
   every visible subcommand once) and says what bare `aai` does. **Flags are
   kebab-case**; camelCase still parses, unadvertised.
 - **Pre-parse failures honour JSON mode too.** `usageForMode` and
   `assertKnownFlags` run in the `runDefault().then(assertKnownFlags)` chain
-  before `defineExec`, so a new guard there owes an explicit
-  `getOutputMode({})` branch. `cli.test.ts` covers it by running the real bin
-  with stdout piped.
-- **`aai init` with no `--template` picks one** (`promptTemplate`, a select
-  over `listTemplates()`, `quickstart-agent` first). **Never without a human**:
+  before `defineExec`, so a new guard there owes an explicit `getOutputMode({})`
+  branch. `cli.test.ts` covers it by running the real bin with stdout piped.
+- **`aai init` with no `--template` picks one** (`promptTemplate`, a select over
+  `listTemplates()`, `quickstart-agent` first). **Never without a human**:
   `--yes` and `silent` (JSON mode) resolve `DEFAULT_TEMPLATE`; the specs
   asserting `select` was NOT called are the point.
 - **`bin.mjs` is the bin in both layouts** (source → `cli.ts`, tarball →
@@ -154,10 +153,10 @@ production comes from Publish.
   (`PUT /studio/projects/:project/source`), fast-forward-checked against
   `studioSourceHash` in `.aai/project.json`; 409 = the studio edited since the
   last pull, `--force` overwrites.
-- **`aai publish`** pushes, syncs `.env` into the agent's secrets (always
-  before the deploy, first publish included), then runs the studio's Publish
-  route (the in-sandbox `aai deploy`). A bare `aai` in a project offers to
-  publish and confirms on a TTY first.
+- **`aai publish`** pushes, syncs `.env` into the agent's secrets (always before
+  the deploy, first publish included), then runs the studio's Publish route (the
+  in-sandbox `aai deploy`). A bare `aai` in a project offers to publish and
+  confirms on a TTY first.
 - **`aai pull <project>`** materializes a workspace and layers the scaffold
   underneath, never overwriting workspace files. **`package.json` is MERGED**
   (`mergeScaffoldManifest`, `aai/src/host/scaffold-layer.ts`, shared via
@@ -166,8 +165,9 @@ production comes from Publish.
   carries no toolchain (it is baked in the guest), and per-entry keeps the
   workspace's exact pins.
 - **A pull that finds nothing prints the project list** (a typo shows other
-  projects; empty means another account's login — `packages/aai-server/CLAUDE.md`).
-  The extra request never replaces the 404; it degrades to "run `aai list`".
+  projects; empty means another account's login —
+  `packages/aai-server/CLAUDE.md`). The extra request never replaces the 404; it
+  degrades to "run `aai list`".
 - **`aai delete` in a linked directory deletes the STUDIO PROJECT**
   (`DELETE /studio/projects/:project`, cascading server-side) and clears the
   link fields from `.aai/project.json`, keeping `serverUrl` — stale link fields
@@ -179,9 +179,8 @@ production comes from Publish.
 - **A workspace carries UTF-8 text only.** Both snapshots (`collectSourceFiles`
   here, the guest's `snapshotWorkspace`) decode with
   `TextDecoder({ fatal: true, ignoreBOM: true })` and SKIP non-UTF-8 files,
-  warning by name. `ignoreBOM` is load-bearing (the default strips a BOM).
-  Skips also ride the JSON result as `warnings`, since `log.warn` is silent
-  there.
+  warning by name. `ignoreBOM` is load-bearing (the default strips a BOM). Skips
+  also ride the JSON result as `warnings`, since `log.warn` is silent there.
 - **Lockfiles never sync in either direction**; `.env` is the one extra rule
   this side adds (`studio.ts`/`_studio.ts`; the walk, caps and decode come from
   `@alexkroman1/aai/workspace-files`).
@@ -205,27 +204,26 @@ production comes from Publish.
   once more, a failed build keeps the old server, the new server is built before
   the old one closes, a lost port race retries, and teardown is idempotent and
   beats an in-flight rebuild. Spec new logic in `_dev-restart.test.ts` (no
-  mocks). The wiring specs take fakes through `DevServerSeams`
-  (`makeDevSeams`, `_dev-server-test-utils.ts`), not module mocks.
+  mocks). The wiring specs take fakes through `DevServerSeams` (`makeDevSeams`,
+  `_dev-server-test-utils.ts`), not module mocks.
 - **Coalescing is `createCoalescingRunner`**, not a local flag pump. The boot
   window is a separate flag released by `adopt`; `restartOnce` returns early
   once `closed`.
 - **Reporting success sits outside the `listen` try/catch** — a throwing
   notifier (`aai dev | head`) must not tear down a bound server.
-- **`viteDevConfig`'s proxy table (`_dev-vite-config.ts`) is the whole agent
-  API as the browser sees it** — with a `client.tsx`, Vite owns the port and
-  answers anything unlisted with a bare 404. **It is DERIVED from
-  `SERVER_ROUTES`** (`ws: true` per ws row, the `fileServedByVite` bypass per
-  prefix HTTP row, `root` skipped), so a route belongs in that table, never in
-  a hand-added proxy key; `_dev-server-serve.test.ts` asserts every row but
-  `root` is proxied. `/workflows` is one prefix entry covering runs, run reads
-  and the SSE stream (workflow apps are dead without it).
-  `/.well-known/workflow/v1/*` stays out (platform/third-party callers, never a
-  browser), which is why `aai dev` hands `createRuntime` the BACKEND origin as
-  `publicUrl`.
+- **`viteDevConfig`'s proxy table (`_dev-vite-config.ts`) is the whole agent API
+  as the browser sees it** — with a `client.tsx`, Vite owns the port and answers
+  anything unlisted with a bare 404. **It is DERIVED from `SERVER_ROUTES`**
+  (`ws: true` per ws row, the `fileServedByVite` bypass per prefix HTTP row,
+  `root` skipped), so a route belongs in that table, never in a hand-added proxy
+  key; `_dev-server-serve.test.ts` asserts every row but `root` is proxied.
+  `/workflows` is one prefix entry covering runs, run reads and the SSE stream
+  (workflow apps are dead without it). `/.well-known/workflow/v1/*` stays out
+  (platform/third-party callers, never a browser), which is why `aai dev` hands
+  `createRuntime` the BACKEND origin as `publicUrl`.
 - **Both Vite entry points dedupe React** (`DEDUPED_PEERS`, `_vite-env.ts`).
-  Missing in dev, a LINKED SDK (`aai init` inside this monorepo) loads two
-  React copies and renders a blank page ("Invalid hook call").
+  Missing in dev, a LINKED SDK (`aai init` inside this monorepo) loads two React
+  copies and renders a blank page ("Invalid hook call").
 - **Bundling bugs may not reproduce in-tree**: `@dev/source`, pnpm links and
   realpath resolution give a different module graph from an installed SDK, and
   only `check:e2e` sees the installed shape. Assert the checkable half (an
@@ -248,8 +246,8 @@ whole. `aai init` drops the UI deps (`CLIENT_ONLY_DEPENDENCIES`, `_init.ts`)
 from a project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
 
 - **`REACT_REFRESH_EXCLUDE` must keep `dist/` and `client.tsx`.** A LINKED
-  `aai-ui` resolves outside `node_modules`, so its bundled chunks became
-  refresh boundaries and a rebuild threw
+  `aai-ui` resolves outside `node_modules`, so its bundled chunks became refresh
+  boundaries and a rebuild threw
   `Session hooks must be used within <SessionProvider>`; `client.tsx` exports
   nothing and re-running it double-mounts. `exclude` REPLACES the plugin's
   `node_modules` default.
@@ -275,23 +273,23 @@ from a project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
 
 ## Running the SDK's own server (`aai dev` and host mode)
 
-`createServerForRuntime` (`packages/aai-runtime/src/server/server.ts`) is `aai dev`'s
-backend; with no `AAI_SESSION_SECRET` it authenticates no one, so both
-defaults fail closed.
-This package owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`;
-`packages/aai/CLAUDE.md`, "Self-hosted server defaults" has the summary.
+`createServerForRuntime` (`packages/aai-runtime/src/server/server.ts`) is
+`aai dev`'s backend; with no `AAI_SESSION_SECRET` it authenticates no one, so
+both defaults fail closed. This package owns `AAI_DEV_HOST`, `hostModeEnv` and
+`resolveServerEnv`; `packages/aai/CLAUDE.md`, "Self-hosted server defaults" has
+the summary.
 
-- **Binds loopback.** `listen(port, host = DEFAULT_LISTEN_HOST)` is
-  `127.0.0.1`; pass `"0.0.0.0"` deliberately. `aai dev` exposes `AAI_DEV_HOST`
-  for containers.
+- **Binds loopback.** `listen(port, host = DEFAULT_LISTEN_HOST)` is `127.0.0.1`;
+  pass `"0.0.0.0"` deliberately. `aai dev` exposes `AAI_DEV_HOST` for
+  containers.
 - **`AAI_SESSION_SECRET` gates `aai dev`, which mints its own client's ticket
   into `GET /client-config`** (`_dev-session-ticket.ts`, which says why resume
   ownership is waived); a self-hosted server never does.
 - **Host mode is opt-in.** A `?host=1` WebSocket lets the client supply the
-  agent definition while spending the operator's credentials, so
-  `isHostAllowed` requires `AAI_ALLOW_HOST` of `1`/`true`/`yes`/`on`.
-  `aai dev` passes the shell value through (`hostModeEnv`), since
-  `resolveServerEnv` surfaces only `.env` keys.
+  agent definition while spending the operator's credentials, so `isHostAllowed`
+  requires `AAI_ALLOW_HOST` of `1`/`true`/`yes`/`on`. `aai dev` passes the shell
+  value through (`hostModeEnv`), since `resolveServerEnv` surfaces only `.env`
+  keys.
 - **A host client may bring its own provider credentials.** The handshake's
   `credentials` record is merged over the server env for that connection and
   WINS, so a server holding only `AAI_ALLOW_HOST` spends only callers' keys.
@@ -301,17 +299,16 @@ This package owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`;
 - **The credential allowlist is a security boundary.** Names are screened
   against `ALL_PROVIDER_ENV_VARS`, checked against the SERVER's env before the
   merge. Unbounded, a client could set `DATABASE_URL` (workflow world, upload
-  store, session-state backend on its own Postgres) or `AAI_ALLOW_HOST`.
-  Unknown names are REJECTED by name, never dropped.
-- **A host session with no base agent runs the DEFAULT PIPELINE, not S2S**:
-  with no `hostBaseAgent`, one `ASSEMBLYAI_API_KEY` covers STT, LLM gateway and
-  TTS.
-- **Host-mode audio pacing is the client's declaration and defaults to
-  paced** (`HostConfig.audioLeadMs`: omitted = `CLIENT_AUDIO_LEAD_MS`, number
-  = that lead, `null` = unpaced). Unpaced, an S2S reply bursts into the
-  client's buffer and a barge-in discards it unheard; paced,
-  `PacedAudioSink.clear()` drops the server-side backlog. `null` is only for a
-  harness faster than real time (tau2 is not).
+  store, session-state backend on its own Postgres) or `AAI_ALLOW_HOST`. Unknown
+  names are REJECTED by name, never dropped.
+- **A host session with no base agent runs the DEFAULT PIPELINE, not S2S**: with
+  no `hostBaseAgent`, one `ASSEMBLYAI_API_KEY` covers STT, LLM gateway and TTS.
+- **Host-mode audio pacing is the client's declaration and defaults to paced**
+  (`HostConfig.audioLeadMs`: omitted = `CLIENT_AUDIO_LEAD_MS`, number = that
+  lead, `null` = unpaced). Unpaced, an S2S reply bursts into the client's buffer
+  and a barge-in discards it unheard; paced, `PacedAudioSink.clear()` drops the
+  server-side backlog. `null` is only for a harness faster than real time (tau2
+  is not).
 
 ## Bundling rules
 
@@ -327,14 +324,13 @@ This package owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`;
   project's `tsc --noEmit` (`typecheck.ts`, gated on a `tsconfig.json`,
   `--skip-typecheck` opts out); the guest's `test_agent` does too. The dev watch
   loop deliberately does not. **`--singleThreaded` is a speedup** for one small
-  project on the guest's one reserved CPU; it is passed only when the
-  compiler's major is >= 7 (older TypeScript rejects the unknown option,
-  TS5023).
+  project on the guest's one reserved CPU; it is passed only when the compiler's
+  major is >= 7 (older TypeScript rejects the unknown option, TS5023).
 - **`buildClient` with no `client.tsx` returns `{}`** → default UI.
-- **`buildClient` dedupes React** (`resolve.dedupe`): `aai-ui` declares React
-  as a peer, and a pruned install can leave it unresolvable from
-  `aai-ui/dist/**`. `client-bundler.test.ts` requires every non-optional
-  `aai-ui` peer to be deduped.
+- **`buildClient` dedupes React** (`resolve.dedupe`): `aai-ui` declares React as
+  a peer, and a pruned install can leave it unresolvable from `aai-ui/dist/**`.
+  `client-bundler.test.ts` requires every non-optional `aai-ui` peer to be
+  deduped.
 
 ## `aai build` warns about a COMPUTED step name
 
@@ -362,8 +358,8 @@ type.
 `serverUrl` — and `aai deploy` / `aai secret` pair that URL with the user's API
 key and secret values. `resolveServerUrl` therefore honors a config-supplied
 origin only when it is the shipped default or already in `approvedServers` in
-the user-owned global config. **Loopback origins are NOT implicitly trusted
-from config** — a repo-supplied `http://localhost:<port>` would hand the key to
+the user-owned global config. **Loopback origins are NOT implicitly trusted from
+config** — a repo-supplied `http://localhost:<port>` would hand the key to
 whatever listens there (dev mode targets its own default server before the
 project config is consulted, so `aai dev` is unaffected). **Passing `--server`
 is what approves an origin** (user intent, not repo content) and is remembered.
@@ -384,26 +380,25 @@ is what approves an origin** (user intent, not repo content) and is remembered.
   overrides the dir).
 - **`ensureApiKey` has exactly ONE source: the key `aai login` saved.** No
   paste-a-key prompt and no `ASSEMBLYAI_API_KEY` env var authenticates the CLI:
-  either would let it push/publish and read/write secrets as an account the
-  user cannot see in the studio; the env var would persist itself and collides
-  with the project `.env`'s provider credential; a hidden prompt can eat piped
-  stdin as a key. Unauthenticated commands fail `not_logged_in` → `aai login`.
+  either would let it push/publish and read/write secrets as an account the user
+  cannot see in the studio; the env var would persist itself and collides with
+  the project `.env`'s provider credential; a hidden prompt can eat piped stdin
+  as a key. Unauthenticated commands fail `not_logged_in` → `aai login`.
   Non-interactive callers (CI, scripts, evals) point `AAI_CONFIG_DIR` at a
   logged-in config dir, as `aaiEnv()` does for e2e.
 - **Every global-config update goes through `updateGlobalConfig`**, holding a
   cross-process `wx` lockfile, because read→modify→write loses concurrent
-  updates (including the key during `aai login`'s five-minute poll). The lock
-  is **bounded** (on timeout, proceed UNLOCKED rather than fail a login),
-  **breaks stale locks**, and must **never nest** (`executeLogin` calls
-  `approveServer` and the key update in sequence). A lock that cannot be broken
-  (a directory, permission-denied) falls through to the unlocked path — never
-  `continue` above the deadline check. `.aai/project.json` stays
-  last-write-wins (per directory).
+  updates (including the key during `aai login`'s five-minute poll). The lock is
+  **bounded** (on timeout, proceed UNLOCKED rather than fail a login), **breaks
+  stale locks**, and must **never nest** (`executeLogin` calls `approveServer`
+  and the key update in sequence). A lock that cannot be broken (a directory,
+  permission-denied) falls through to the unlocked path — never `continue` above
+  the deadline check. `.aai/project.json` stays last-write-wins (per directory).
 - **`aai dev` is the one command a shell-exported key reaches, and only as a
-  provider credential.** `resolveAgentEnv` (`_dev-agent-env.ts`) falls back
-  to the login key only if neither `.env` nor the shell has one. The shell
-  value never enters `ctx.env`: it goes through `withHostCredentialFallback`,
-  and `agentEnvWarnings` flags it shell-only.
+  provider credential.** `resolveAgentEnv` (`_dev-agent-env.ts`) falls back to
+  the login key only if neither `.env` nor the shell has one. The shell value
+  never enters `ctx.env`: it goes through `withHostCredentialFallback`, and
+  `agentEnvWarnings` flags it shell-only.
 - **Tests must never resolve the real config dir.** Under `VITEST`,
   `getConfigDir()` returns a per-process temp dir (unless `AAI_CONFIG_DIR` is
   set); `aaiEnv()` sets it for spawned CLIs (`VITEST` cleared). The guard is in
@@ -437,8 +432,8 @@ spawn.
 AAI_FAULT_PROFILE=restart-on-boot pnpm test:e2e     # the whole suite, under faults
 ```
 
-- **SIGKILL only** — a graceful stop releases graphile-worker's locks and
-  skips the recovery path under test.
+- **SIGKILL only** — a graceful stop releases graphile-worker's locks and skips
+  the recovery path under test.
 - **No seed, no PRNG**: points are keyed on logical events, so runs are
   reproducible. Randomized exploration uses fast-check elsewhere.
 - **A profile that matches nothing FAILS**: `awaitSettled()` throws naming
@@ -457,15 +452,15 @@ AAI_FAULT_PROFILE=restart-on-boot pnpm test:e2e     # the whole suite, under fau
 
 ### The other fault mode lives in `aai-runtime`, and faults a SOCKET
 
-`packages/aai-runtime/src/server/_fault-socket.ts` is a TCP proxy that SEVERS live
-connections, to test session resume. Choose correctly:
+`packages/aai-runtime/src/server/_fault-socket.ts` is a TCP proxy that SEVERS
+live connections, to test session resume. Choose correctly:
 
-- **This mode kills a PROCESS; that one cuts a CONNECTION.** A restart
-  preserves durable slot state (`aai-runtime/session-state/store.ts`) but not the
-  call; a socket drop is the only disconnect a session survives.
+- **This mode kills a PROCESS; that one cuts a CONNECTION.** A restart preserves
+  durable slot state (`aai-runtime/session-state/store.ts`) but not the call; a
+  socket drop is the only disconnect a session survives.
 - **It severs (`destroy()`), never closes** — a clean close is "user hung up",
-  which aai-ui does not reconnect from; `aai-runtime/src/server/session-resume.scenario.test.ts`
-  asserts **1006**.
+  which aai-ui does not reconnect from;
+  `aai-runtime/src/server/session-resume.scenario.test.ts` asserts **1006**.
 - **It is a proxy** so no fault injector lives in production code.
 
 ## `run_code` under `aai dev` / `aai start` is OPT-IN: `AAI_RUN_CODE=deno`
@@ -476,23 +471,23 @@ Off the platform there is no container, so `run_code` refuses
 `AAI_CHANNEL_OUTBOX`'s reason) makes `_run-code-deno.ts` hand the runtime an
 executor that runs each snippet as its own `deno` with no `--allow-*` flag:
 `--no-prompt` turns every file/net/env/run/ffi/sys request into a `NotCapable`,
-the code goes on stdin only, the child env is three fixed entries
-(`DENO_DIR`, `DENO_NO_UPDATE_CHECK`, `NO_COLOR`), and the process group is
-killed at 5s. The binary is `AAI_DENO_PATH`, else the first `deno` on `PATH`,
-probed for 2.x once at boot; enabled but missing, it warns once and keeps
-refusing. `aai start` passes it through `AgentServerOptions.runCode`.
+the code goes on stdin only, the child env is three fixed entries (`DENO_DIR`,
+`DENO_NO_UPDATE_CHECK`, `NO_COLOR`), and the process group is killed at 5s. The
+binary is `AAI_DENO_PATH`, else the first `deno` on `PATH`, probed for 2.x once
+at boot; enabled but missing, it warns once and keeps refusing. `aai start`
+passes it through `AgentServerOptions.runCode`.
 
-**Deno loads a LOCAL module without read permission** — `import s from
-"/x.json" with { type: "json" }` printed the file under `--deny-read` — so the
-argv carries an import map sending every `file:` URL to a host `--no-remote`
-refuses. The module doc lists every flag and why;
+**Deno loads a LOCAL module without read permission** —
+`import s from "/x.json" with { type: "json" }` printed the file under
+`--deny-read` — so the argv carries an import map sending every `file:` URL to a
+host `--no-remote` refuses. The module doc lists every flag and why;
 `_run-code-deno.scenario.test.ts` proves each denial against a real `deno`
 (skipping, announced, without one; `AAI_REQUIRE_DENO` makes that a failure).
 
 ## The e2e suite is pnpm-only in CI
 
-`e2e.test.ts` installs an `aai init` project from a mock verdaccio registry.
-CI runs pnpm only; `publint` + `attw` cover non-pnpm `exports` resolution.
+`e2e.test.ts` installs an `aai init` project from a mock verdaccio registry. CI
+runs pnpm only; `publint` + `attw` cover non-pnpm `exports` resolution.
 `AAI_TEST_PM` (`_e2e-test-utils.ts`, in `check:e2e`'s `env`) switches the
 install to reproduce a user report — a debugging tool, not covered ground:
 
@@ -505,19 +500,19 @@ AAI_TEST_PM=npm pnpm test:e2e
 
 ## Windows is NOT tested, and is currently broken
 
-No `os` field is declared, so the packages claim Windows by omission. A
-one-off `windows-latest` run found two causes:
+No `os` field is declared, so the packages claim Windows by omission. A one-off
+`windows-latest` run found two causes:
 
-- **Hardcoded `/tmp` literals** (drive-relative on Windows) — fixed; kept out
-  by `guard-invariants` rule 11 (baseline: `modal/agent-sandbox.ts`'s remote
-  paths, which are in the Linux sandbox).
+- **Hardcoded `/tmp` literals** (drive-relative on Windows) — fixed; kept out by
+  `guard-invariants` rule 11 (baseline: `modal/agent-sandbox.ts`'s remote paths,
+  which are in the Linux sandbox).
 - **The `aai` build emits unbundled `.ts` specifiers on Windows** (rolldown
   `UNRESOLVED_IMPORT` on `./_internal-types.ts`) — UNRESOLVED, a tsdown/rolldown
   difference that needs a Windows machine.
 
-**Do not re-add a Windows matrix without a Windows machine to reproduce on,
-and never as `continue-on-error`** — a leg green while broken is worse than
-none. The scenario/integration tiers are Linux-by-design.
+**Do not re-add a Windows matrix without a Windows machine to reproduce on, and
+never as `continue-on-error`** — a leg green while broken is worse than none.
+The scenario/integration tiers are Linux-by-design.
 
 ## Key files
 
@@ -531,8 +526,8 @@ none. The scenario/integration tiers are Linux-by-design.
 - `studio.ts` / `_studio.ts` — pull/push/publish over `/studio/projects`
 - `_dev-server.ts` — `aai dev`: loads the agent, builds the runtime, watches,
   optionally runs Vite; `_dev-vite-config.ts` — `viteDevConfig`;
-  `_dev-restart.ts` — restart state machine; `_dev-watch.ts` —
-  `watchDirectory`, `isIgnoredPath`, the `DevWatchFn` seam
+  `_dev-restart.ts` — restart state machine; `_dev-watch.ts` — `watchDirectory`,
+  `isIgnoredPath`, the `DevWatchFn` seam
 - `_bundler.ts` — bundles `agent.ts` (and `client.tsx`)
 - `_api-client.ts` — `apiRequest`, `apiRequestOrThrow`, `checkedResponse`
 - `_config.ts` — auth/project config, API key. `project-config.ts` re-exports

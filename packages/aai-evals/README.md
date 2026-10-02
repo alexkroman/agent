@@ -2,8 +2,8 @@
 
 The repo's **eval framework**: the runner, its assertion vocabulary over the
 session event stream, the key gate, and the level-1 behaviour cases that use
-them. Private — it ships nowhere, but it IS importable, and
-`aai-studio-server` drives the same runner for the studio starter eval.
+them. Private — it ships nowhere, but it IS importable, and `aai-studio-server`
+drives the same runner for the studio starter eval.
 
 An eval is not a test. A test asserts a deterministic fact and gates a merge; an
 eval measures a probabilistic system and **reports**. Identical code has scored
@@ -55,8 +55,8 @@ it also wants `ANTHROPIC_API_KEY`; without it, use `--allow-scripted`.
 
 The **studio codegen** eval is not here: it drives the studio's own HTTP surface
 and grades the source its coding agent writes, so it lives in the package it is
-about — `packages/aai-studio-server/src/studio-starter.eval.test.ts` and the five
-`studio-*` modules beside it, documented in
+about — `packages/aai-studio-server/src/studio-starter.eval.test.ts` and the
+five `studio-*` modules beside it, documented in
 `packages/aai-studio-server/STARTER-EVAL-CLAUDE.md`. It imports this package
 through five subpath exports (`/runner`, `/report`, `/gate`, `/register`,
 `/env`).
@@ -64,14 +64,14 @@ through five subpath exports (`/runner`, `/report`, `/gate`, `/register`,
 ## Three things worth knowing before reading the code
 
 **Assertions record, they do not throw.** An `expect()` that throws turns a
-behaviour run into a bisect — the first failing turn ends the case and everything
-after it is unmeasured. What a behaviour eval wants is a PROFILE: "it called the
-right tools in the wrong order and never said the confirmation", not "turn 3
-failed". `check(ok, label, detail)` is the only primitive.
+behaviour run into a bisect — the first failing turn ends the case and
+everything after it is unmeasured. What a behaviour eval wants is a PROFILE: "it
+called the right tools in the wrong order and never said the confirmation", not
+"turn 3 failed". `check(ok, label, detail)` is the only primitive.
 
 **One number is not a result.** A run reports `min`/`max`/`mean` over repeats
-and, more usefully, the assertion labels that were **not unanimous** across them.
-That list is the instrument measuring itself: an assertion in it cannot
+and, more usefully, the assertion labels that were **not unanimous** across
+them. That list is the instrument measuring itself: an assertion in it cannot
 adjudicate a change until it is out of it.
 
 **The coding agent writes its own tests**, so "the tests passed" is a measure it
@@ -89,13 +89,13 @@ enumerated, checked against the loaded config and `agent.ts`, and — with
   endpointing, splits and merges, barge-in, and the `speech.started` /
   `reply.cancelled` ratio.
 
-Neither substitutes for the other, and **nothing here may be named, documented or
-reported in a way that implies level 2 coverage.** Level 1 cannot see an
+Neither substitutes for the other, and **nothing here may be named, documented
+or reported in a way that implies level 2 coverage.** Level 1 cannot see an
 endpointing bug; level 2 without tools cannot see the bug an endpointing change
 caused.
 
 ## More
 
-`CLAUDE.md` in this directory carries the arguments — why the tier does not gate,
-how the gate announces its skip, the two harness bugs that would have made a
-report lie, and how to add a case.
+`CLAUDE.md` in this directory carries the arguments — why the tier does not
+gate, how the gate announces its skip, the two harness bugs that would have made
+a report lie, and how to add a case.

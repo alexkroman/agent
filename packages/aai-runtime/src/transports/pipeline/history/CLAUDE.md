@@ -13,11 +13,11 @@ leaves in history is "History records what was HEARD" there.
 
 ## History is budgeted in TOKENS everywhere; there is no message cap
 
-- **The REQUEST** is bounded only by `context-budget.ts`, a
-  **`prepareStep` preparer**, so `PipelineHistory` keeps everything (replay,
-  resume and `ctx.messages` read it) and only the request is trimmed. The window
-  is `ASSEMBLYAI_GATEWAY_MODELS.context` less `CONTEXT_WINDOW_RESERVE`; an
-  UNKNOWN window is budgeted as the smallest the catalog carries
+- **The REQUEST** is bounded only by `context-budget.ts`, a **`prepareStep`
+  preparer**, so `PipelineHistory` keeps everything (replay, resume and
+  `ctx.messages` read it) and only the request is trimmed. The window is
+  `ASSEMBLYAI_GATEWAY_MODELS.context` less `CONTEXT_WINDOW_RESERVE`; an UNKNOWN
+  window is budgeted as the smallest the catalog carries
   (`UNKNOWN_MODEL_CONTEXT_TOKENS`), because nothing else bounds the request; the
   count is calibrated per SESSION against reported `usage.inputTokens`.
 - **The RECORD** is bounded for memory only, also in tokens (`retention.ts`,

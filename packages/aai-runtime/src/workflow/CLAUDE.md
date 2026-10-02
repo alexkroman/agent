@@ -39,14 +39,14 @@ The boot line names the winner. `wait-durability.scenario.test.ts` pins that a
 the system: `RuntimeOptions.publicUrl` + `WORKFLOW_WEBHOOK_PREFIX`, the constant
 the router parses, so they cannot drift.
 
-- **The route hangs off `createServerForRuntime`**, which every door goes through
-  (`aai dev`, `server.mjs`, the guest) — never off a build artifact. A missing
-  route is invisible: the run looks healthily suspended.
+- **The route hangs off `createServerForRuntime`**, which every door goes
+  through (`aai dev`, `server.mjs`, the guest) — never off a build artifact. A
+  missing route is invisible: the run looks healthily suspended.
 - **It reads `runtime.workflows` through a LAZY getter** — the guest builds its
   runtime on first need.
 - **A `false` from `WorkflowClient.signal` is a 404, never a 5xx** — the caller
-  is a third party whose retry loop reads 5xx as "come back"
-  (`webhook.ts`; `http-adapter.ts` takes the failure status as a parameter).
+  is a third party whose retry loop reads 5xx as "come back" (`webhook.ts`;
+  `http-adapter.ts` takes the failure status as a parameter).
 - **`publicUrl` is an OPTION, never sniffed**: the platform passes
   `AAI_PUBLIC_BASE_URL` through the harness, `server.mjs` reads `PUBLIC_URL`,
   `aai dev` passes its BACKEND origin (Vite does not proxy `/.well-known/`).
@@ -94,8 +94,7 @@ an author's look-alike object must never revive.
 
 **The fix is round-trip TOTALITY**: `typed-json-escape.ts` renames an author's
 reserved keys on encode (`__type` → `___type`, `___type` → `____type`) and back
-on decode — injective, and nothing maps onto `__type`. Easy to undo by
-accident:
+on decode — injective, and nothing maps onto `__type`. Easy to undo by accident:
 
 - **A key rename, never a wrapper** — the reviver runs bottom-up and would
   revive the inner envelope first.
@@ -105,8 +104,8 @@ accident:
 - Decode still accepts a bare `__type` envelope (existing rows), so deploy
   decoder-first.
 - **A new envelope kind**: encode PAIRS and let the replacer recurse on both
-  halves; refuse a malformed payload. The escape never reads the tag's value,
-  so it needs no change. Known hole: no unsupported-type guard, so other exotic
+  halves; refuse a malformed payload. The escape never reads the tag's value, so
+  it needs no change. Known hole: no unsupported-type guard, so other exotic
   values journal as `{}` — the fix is a structural check at the step boundary.
 - Strict decoding: base64 via
   `Uint8Array.fromBase64(…, { lastChunkHandling: "strict" })`; an unparsable
@@ -118,6 +117,6 @@ accident:
 **`typed-json-property.test.ts` is the pattern for other codecs**: keys drawn
 from a pool with the reserved family and `__proto__`, strings with `"Date"`,
 `"Uint8Array"` and valid/invalid base64, plus `envelopeShape` constructing full
-forged envelopes and a **coverage floor** so the property cannot pass
-vacuously. Named cases stay as regression pins. A/B a mutation before trusting
-a test — note `{ __proto__: … }` as a literal creates no own property.
+forged envelopes and a **coverage floor** so the property cannot pass vacuously.
+Named cases stay as regression pins. A/B a mutation before trusting a test —
+note `{ __proto__: … }` as a literal creates no own property.

@@ -9,8 +9,8 @@ read_when: >-
 
 # packages/aai-server/src/guest — the platform's view of a guest
 
-What a guest may do and hold is in `packages/aai-guest/CLAUDE.md`
-("Credential separation, and what reaches a guest", "Guest network access").
+What a guest may do and hold is in `packages/aai-guest/CLAUDE.md` ("Credential
+separation, and what reaches a guest", "Guest network access").
 
 ## `routes.ts` — every guest route declares its platform exposure
 
@@ -25,16 +25,16 @@ platform half; `guard-invariants` rule 12 and konsistent's
 tenant sandbox (`/client-config`, `/:slug/workflows/*`, the durable-run
 webhook). Do not re-derive a forward in a handler.
 
-- **A header crossing this hop reaches TENANT CODE**: `Cookie`,
-  `Authorization` and `X-Forwarded-*` never do.
-- **Every direction is an allow-list except the webhook's REQUEST** — a
-  sender's signature headers cannot be enumerated; the webhook RESPONSE is
-  still allow-listed. The doc argues the asymmetry.
-- **A route forwarding a STREAMING request body needs `bound: "activity"`.**
-  The other bounds (`"headers"`, `"response"`) cover the response head, so a
-  guest that answers only after consuming the body has the whole upload inside
-  its deadline. `aai dev` has no forward and will not show this. See the
-  `bound` doc.
+- **A header crossing this hop reaches TENANT CODE**: `Cookie`, `Authorization`
+  and `X-Forwarded-*` never do.
+- **Every direction is an allow-list except the webhook's REQUEST** — a sender's
+  signature headers cannot be enumerated; the webhook RESPONSE is still
+  allow-listed. The doc argues the asymmetry.
+- **A route forwarding a STREAMING request body needs `bound: "activity"`.** The
+  other bounds (`"headers"`, `"response"`) cover the response head, so a guest
+  that answers only after consuming the body has the whole upload inside its
+  deadline. `aai dev` has no forward and will not show this. See the `bound`
+  doc.
 
 ## `bearer.ts` — the guest bearer gate
 
@@ -50,5 +50,5 @@ webhook). Do not re-derive a forward in a handler.
 ## Directory scans must be rooted at `src/` and recursive
 
 `exec-env.test.ts` reads every module in the package to find a second `TMPDIR`
-setter; its 120-file floor fails the test if the scan silently narrows (e.g.
-to this directory). Any spec that scans source must do the same.
+setter; its 120-file floor fails the test if the scan silently narrows (e.g. to
+this directory). Any spec that scans source must do the same.

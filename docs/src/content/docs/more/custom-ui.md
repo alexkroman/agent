@@ -40,13 +40,12 @@ A **slot** is a named piece of session state. `useAgentState` reads whatever the
 agent projects from one with `syncState`, so declare a slot first or there is
 nothing to receive — see [Remembering things](/agent/build/state/).
 
-:::note[No slot to hand?]
-A page that cannot import the slot — a client kept apart from the agent —
-names it instead, with a fallback: `useAgentState("cart", EMPTY)`, `EMPTY`
-declared at module scope so the reference is stable across renders. Reach for
-the slot whenever you have it: `cartSlot.projected` is the same object the
-agent pushes with, so there is no empty frame to write and no type to restate.
-:::
+:::note[No slot to hand?] A page that cannot import the slot — a client kept
+apart from the agent — names it instead, with a fallback:
+`useAgentState("cart", EMPTY)`, `EMPTY` declared at module scope so the
+reference is stable across renders. Reach for the slot whenever you have it:
+`cartSlot.projected` is the same object the agent pushes with, so there is no
+empty frame to write and no type to restate. :::
 
 ## The hooks
 

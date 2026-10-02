@@ -11,8 +11,8 @@ aai test
 ```
 
 `aai test` runs every spec in the project with vitest — everything but the
-evals, which have their own command. A tool is a plain function, so a spec
-calls it and asserts on what comes back. No model, no session, no server.
+evals, which have their own command. A tool is a plain function, so a spec calls
+it and asserts on what comes back. No model, no session, no server.
 
 A spec imports its testing names from two doors:
 `@alexkroman1/aai-runtime/testing` for everything that installs nothing, and
@@ -38,8 +38,8 @@ test("get_weather answers for the city it was given", async () => {
 
 That is a complete spec. Put it in `agent.test.ts` and run `aai test`.
 
-**Assert on what the tool returns, not on what the API it called returned.**
-The scaffold's `get_weather` narrows wttr.in's response to
+**Assert on what the tool returns, not on what the API it called returned.** The
+scaffold's `get_weather` narrows wttr.in's response to
 `{ city, tempF, conditions }` before handing it back, so those are the fields a
 spec names — see [Tools](/agent/build/tools/).
 
@@ -50,12 +50,11 @@ A tool is a _file_, so `agent.ts`'s own default export carries no tools at all.
 the project, and `virtual:aai/agent` is that lowered agent — your `tools/`
 directory discovered, your `system-prompt.md` applied.
 
-Hand a runner the authored def instead and it says so on the spot: a runner
-over zero tools can only ever be this mistake.
+Hand a runner the authored def instead and it says so on the spot: a runner over
+zero tools can only ever be this mistake.
 
-:::note[Not running vitest?]
-`virtual:aai/agent` is a Vite module. On another runner, lower the agent
-yourself with
+:::note[Not running vitest?] `virtual:aai/agent` is a Vite module. On another
+runner, lower the agent yourself with
 `deployedAgent(def, { tools: import.meta.glob("./tools/*.ts", { eager: true }) })`.
 :::
 
@@ -165,6 +164,7 @@ did. See [Evals](/agent/build/evals/).
 
 ## Next
 
-- [Evals](/agent/build/evals/) — driving a real session, and what a green run means
+- [Evals](/agent/build/evals/) — driving a real session, and what a green run
+  means
 - [Run it locally](/agent/deploy/local/) — `aai dev`, then a plain Node process
 - [Publish](/agent/deploy/publish/) — ship it, and where your secrets go

@@ -24,8 +24,8 @@ it will hold.
 
 ## Read it with `slot.tool()`
 
-`execute` is handed the current value as its second argument, already typed
-from the slot's default:
+`execute` is handed the current value as its second argument, already typed from
+the slot's default:
 
 ```ts no-check
 // tools/list_cart.ts
@@ -66,9 +66,9 @@ export default cartSlot.updateTool({
   `Map`, `Set`, `Date`, or class instance is refused with the field named,
   because none of them survives being stored.
 - **An `updateTool` body cannot `await`.** Whatever it leaves on the draft is
-  stored the moment it returns, and that is what keeps two concurrent tools
-  from overwriting each other. To fetch something first, use a plain `tool()`:
-  its `execute` gets `ctx` as a second argument, so it can call
+  stored the moment it returns, and that is what keeps two concurrent tools from
+  overwriting each other. To fetch something first, use a plain `tool()`: its
+  `execute` gets `ctx` as a second argument, so it can call
   `cartSlot.update(ctx, …)` once the data is in hand.
 - **It is stored for you.** On the platform, a crash or a redeploy no longer
   loses the cart. Under `aai dev` it lives in memory, unless you point a
@@ -106,19 +106,18 @@ export default agent({ name: "Store", syncState: cartSlot.projected });
 
 **3. Read it in the browser** with the same object:
 `useAgentState(cartSlot.projected)`, which selects the `cart` key. No type
-argument, no slot name to repeat, and no empty frame to write by hand. See [Your
-own UI](/agent/more/custom-ui/).
+argument, no slot name to repeat, and no empty frame to write by hand. See
+[Your own UI](/agent/more/custom-ui/).
 
-:::note[No `syncState`, nothing to receive]
-`useAgentState` only ever shows what an agent projects. An agent that declares
-no `syncState` pushes nothing, and the hook has nothing to render.
-:::
+:::note[No `syncState`, nothing to receive] `useAgentState` only ever shows what
+an agent projects. An agent that declares no `syncState` pushes nothing, and the
+hook has nothing to render. :::
 
 ### Why both ends pass the same object
 
-`cartSlot.projected` is built once, where the slot is declared. The agent
-pushes with it and the page renders with it, so the frame shown before the
-first tool call and the frames pushed after it cannot describe different views.
+`cartSlot.projected` is built once, where the slot is declared. The agent pushes
+with it and the page renders with it, so the frame shown before the first tool
+call and the frames pushed after it cannot describe different views.
 
 Writing out a view at each end separately is what could drift: two expressions
 have to agree, and nothing checks that they do.
@@ -144,10 +143,11 @@ export default agent({
 });
 ```
 
-The key must be the slot's own name; `agent()` refuses one that is not. A
-slot has one view — a panel that needs another shape derives it from that one.
+The key must be the slot's own name; `agent()` refuses one that is not. A slot
+has one view — a panel that needs another shape derives it from that one.
 
 ## Next
 
 - [Testing](/agent/build/testing/) — driving a slot from a spec
-- [Background jobs](/agent/more/background-jobs/) — for work that outlives the call
+- [Background jobs](/agent/more/background-jobs/) — for work that outlives the
+  call

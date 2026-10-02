@@ -42,9 +42,9 @@ that owns the retry VOCABULARY.** `StepGenerateError.retryable` and
 `RetryableError` are what the engine READS. Both classes used to be the Workflow
 DevKit's, imported from `workflow` — which `/utils` may not, being the CLI's
 zero-dependency startup path — so the mapping between them lived as a snippet in
-two module docs that both templates copied out verbatim.
-`toStepError` / `throwStepError` / `throwFatalStepError` are that snippet, and
-the classes are ours now (`sdk/step-error-classes.ts`).
+two module docs that both templates copied out verbatim. `toStepError` /
+`throwStepError` / `throwFatalStepError` are that snippet, and the classes are
+ours now (`sdk/step-error-classes.ts`).
 
 Three things the templates now demonstrate rather than restate:
 
@@ -78,17 +78,17 @@ rather than naming a call it cannot make.
 now** — `@alexkroman1/aai/step`, used by every workflow template. The objection
 recorded here (it needed a writable stream out of the workflow engine, which
 that subpath may not import) was answered by the same `Symbol.for` slot
-`stepEnv` uses: `createServerForRuntime` publishes a reporter and the helper stays
-dependency-free. What forced the question was not the duplication but the second
-reader — a step's narration now also reaches the SERVER LOG, with the attempt
-number appended past the first, so a retrying fan-out is legible without a page
-open. `packages/aai-ui/src/CLAUDE.md` carries the argument.
+`stepEnv` uses: `createServerForRuntime` publishes a reporter and the helper
+stays dependency-free. What forced the question was not the duplication but the
+second reader — a step's narration now also reaches the SERVER LOG, with the
+attempt number appended past the first, so a retrying fan-out is legible without
+a page open. `packages/aai-ui/src/CLAUDE.md` carries the argument.
 
 The same sweep took two more copies with it: `isTransientStatus` (the
 408/429/5xx split each template had spelled out) and `retryAfter`, which is what
 lets a rate-limited step throw `RetryableError` with the delay the provider
-asked for instead of that class's one-second default. `transcription-workflow` and
-`link-digest-workflow` are the worked examples. Both are now reached THROUGH
+asked for instead of that class's one-second default. `transcription-workflow`
+and `link-digest-workflow` are the worked examples. Both are now reached THROUGH
 `toStepError` above — the extraction that stopped one function short.
 
 **And the fake LLM gateway is the SDK's too** — `stubGateway`
@@ -113,9 +113,9 @@ starts one and answers the turn); `link-digest-workflow` and
 `transcription-workflow` are declared with `workflowApp()` and the workflow IS
 the product — no `stt`/`llm`/`tts`, no tools, and a `client.tsx` that mounts
 with `mountPage()` rather than `mountClient()`. Those fields are not merely
-omitted there: `WorkflowAppAgentParams` refuses them, so a `systemPrompt` addressed
-to a model that never runs — which `link-digest-workflow` shipped — no longer
-type-checks.
+omitted there: `WorkflowAppAgentParams` refuses them, so a `systemPrompt`
+addressed to a model that never runs — which `link-digest-workflow` shipped — no
+longer type-checks.
 
 **`link-digest-workflow` really reads the page too.** `fetchArticle` fetches the
 URL and reduces the HTML to text — crudely, on purpose, since a real extractor
@@ -161,10 +161,10 @@ its character cap. Its betas rename and split predicates (`export` →
 `node_modules/konsistent/docs/`, not the GitHub README.
 
 **A `tools/` file IS the tool: it default-exports it, nothing imports it, and
-`agent()` takes no `tools` field at all.** Discovery happens where
-the bundle is assembled (`aai-cli/worker-bundler.ts` enumerates `tools/*.ts` and
-emits static imports), because the guest sandbox is handed one ESM string and has
-no directory to scan — the same lowering eve does. `toolRegistry` /`withTools`
+`agent()` takes no `tools` field at all.** Discovery happens where the bundle is
+assembled (`aai-cli/worker-bundler.ts` enumerates `tools/*.ts` and emits static
+imports), because the guest sandbox is handed one ESM string and has no
+directory to scan — the same lowering eve does. `toolRegistry` /`withTools`
 (`@alexkroman1/aai/manifest`) own the rules, so the name grammar, the
 default-export requirement, the flat-only rule and a duplicate name are one
 implementation and each is a build error naming the file.
@@ -260,10 +260,11 @@ a bundler or through a glob, and there is no runtime directory scan in the repo
 (see "Self-hosting is the scaffold's default" in `CLAUDE.md`).
 
 Note what this DROPS: a `tools:` map checked each tool's assignability against
-the agent's state type, so a tool whose state shape disagreed was a compile error
-at the map. `toolRegistry` checks shape at build time and no state type at all —
-the slot is what carries that guarantee now, which is most of why `sessionSlot()`
-exists, and there is no per-agent state type left for a map to have checked.
+the agent's state type, so a tool whose state shape disagreed was a compile
+error at the map. `toolRegistry` checks shape at build time and no state type at
+all — the slot is what carries that guarantee now, which is most of why
+`sessionSlot()` exists, and there is no per-agent state type left for a map to
+have checked.
 
 The one thing a template may still hand-roll here is a **fallback that would
 cost the browser bundle**: `retail-orders-agent`'s client builds its empty view
@@ -272,8 +273,8 @@ the slot's factory pulls a 107 KB `seed.json` and importing it would ship the
 whole catalog to the browser. It says so in place.
 
 That is the ONE exception to the rule the others follow: **declare the view on
-the slot (`sessionSlot(key, create, { view })`) and pass `slot.projected` at both
-ends** — `syncState: cartSlot.projected` on the agent,
+the slot (`sessionSlot(key, create, { view })`) and pass `slot.projected` at
+both ends** — `syncState: cartSlot.projected` on the agent,
 `useAgentState(cartSlot.projected)` in the client. One object, built once at
 declaration, so the two ends cannot name different views.
 
@@ -298,10 +299,10 @@ grow, twice:
 
 - **`stepSpeak`** synthesizes from inside a step. The session TTS surface cannot
   be used there at all — a `TtsSession` is an event stream wired into a live
-  pipeline's playback, with a turn tracker and barge-in behind it, and a step has
-  no turn to be part of and has to return a VALUE. `sdk/step-speak.ts` and
-  `aai-runtime/step-speak.ts` carry the argument, including why the one-socket exchange
-  reuses nothing from the session opener.
+  pipeline's playback, with a turn tracker and barge-in behind it, and a step
+  has no turn to be part of and has to return a VALUE. `sdk/step-speak.ts` and
+  `aai-runtime/step-speak.ts` carry the argument, including why the one-socket
+  exchange reuses nothing from the session opener.
 - **`stepWriteUpload`** is `stepReadUpload`'s other direction. A run's OUTPUT is
   read back as JSON, so audio cannot travel in one — the same rule that keeps a
   recording's bytes out of a run's INPUT, arriving at the other end of the run.
@@ -321,8 +322,8 @@ gets wrong:
 - **Ask the model for a SPOKEN script, not just points.** A template that
   synthesized its own bullet list produces a voice reading "one. two. three."
   with no connective tissue, so the schema asks for both and only the script is
-  spoken. It is the same decision `meeting-recap-agent` makes for the sentence it
-  reads down a phone, and one a prompt alone does not hold — hence a required
+  spoken. It is the same decision `meeting-recap-agent` makes for the sentence
+  it reads down a phone, and one a prompt alone does not hold — hence a required
   `spoken` field rather than a defaulted one, so a missing script is a retry
   instead of half a second of silence.
 - **Derive the voice list from `ASSEMBLYAI_TTS_VOICES`.** A wrong voice id is a

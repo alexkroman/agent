@@ -24,9 +24,10 @@ coding agent runs in is `packages/aai-guest/CLAUDE.md` and
 - [`src/prompts/CLAUDE.md`](src/prompts/CLAUDE.md) — the coding agent's system
   prompt, the project kind, and what the prompt must say.
 
-Reference siblings, read on demand: [`GITHUB-SYNC-CLAUDE.md`](GITHUB-SYNC-CLAUDE.md)
-(Sync to GitHub), [`SSE-CLAUDE.md`](SSE-CLAUDE.md) (the long-lived event
-streams), [`STARTER-EVAL-CLAUDE.md`](STARTER-EVAL-CLAUDE.md) (the starter eval).
+Reference siblings, read on demand:
+[`GITHUB-SYNC-CLAUDE.md`](GITHUB-SYNC-CLAUDE.md) (Sync to GitHub),
+[`SSE-CLAUDE.md`](SSE-CLAUDE.md) (the long-lived event streams),
+[`STARTER-EVAL-CLAUDE.md`](STARTER-EVAL-CLAUDE.md) (the starter eval).
 
 ## Key files
 
@@ -34,15 +35,15 @@ streams), [`STARTER-EVAL-CLAUDE.md`](STARTER-EVAL-CLAUDE.md) (the starter eval).
   every route that is not the project document.
 - `studio-project-routes.ts` — project CRUD, the two file routes, `aai push`'s
   `PUT …/source`.
-- `studio-session-broker.ts` (collaborators, per-project lock, public
-  surface), `studio-session-ensure.ts` (reuse → adopt → spawn, all under that
-  lock), `studio-session-idle.ts` (teardown, idle eviction),
+- `studio-session-broker.ts` (collaborators, per-project lock, public surface),
+  `studio-session-ensure.ts` (reuse → adopt → spawn, all under that lock),
+  `studio-session-idle.ts` (teardown, idle eviction),
   `studio-session-registry.ts` (the fleet-wide row), `studio-session-adopt.ts`
   (installing into a PEER's guest over HTTP), `studio-session-publish.ts`
   (`buildWorkspace` for Publish).
-- `studio-workspace.ts` (file store), `studio-deploy.ts` (guest build →
-  validate config → deploy), `studio-llm.ts` (gateway model; the key is always
-  the caller's), `studio-project-kind.ts` (voice agent vs workflow app),
+- `studio-workspace.ts` (file store), `studio-deploy.ts` (guest build → validate
+  config → deploy), `studio-llm.ts` (gateway model; the key is always the
+  caller's), `studio-project-kind.ts` (voice agent vs workflow app),
   `studio-static.ts` (serves the built client).
 - `prompts/` — prompt text, and only prompt text.
 - `index.ts` — the service entry; see below.
@@ -55,20 +56,20 @@ library consumed through its `exports` map, whose subpaths resolve to `.ts`
 source. `platform-barrel.ts` is the sanctioned path to its `_`-internal
 utilities.
 
-`aai-studio-server` is the studio surface AND the composition root. Its entry
-is the only one any deployment runs (`pnpm dev:aai-server` included): studio
-paths (`isStudioPath`, `aai-server/studio-paths.ts`) go to the studio app,
-everything else — `/health` and WebSocket upgrades included — to the agent
-orchestrator. Both share one `ServiceConfig`, so they share the slot cache and
-stores. There is ONE Modal app, `aai-server-web`, deployed by
+`aai-studio-server` is the studio surface AND the composition root. Its entry is
+the only one any deployment runs (`pnpm dev:aai-server` included): studio paths
+(`isStudioPath`, `aai-server/studio-paths.ts`) go to the studio app, everything
+else — `/health` and WebSocket upgrades included — to the agent orchestrator.
+Both share one `ServiceConfig`, so they share the slot cache and stores. There
+is ONE Modal app, `aai-server-web`, deployed by
 `packages/aai-server/modal_deploy.py` (the deploy script lives in the package
 that does not provide the entry) and launching
 `packages/aai-studio-server/dist/index.mjs`.
 
-There is no split deployment; `modal_deploy.py`'s "One app, both surfaces"
-block records what reviving one would cost. Two constraints survive any
-revival: **one public origin** (below), and the studio's event streams need the
-raised function timeout (`SSE-CLAUDE.md`).
+There is no split deployment; `modal_deploy.py`'s "One app, both surfaces" block
+records what reviving one would cost. Two constraints survive any revival: **one
+public origin** (below), and the studio's event streams need the raised function
+timeout (`SSE-CLAUDE.md`).
 
 ### Bundling
 
@@ -83,8 +84,8 @@ raised function timeout (`SSE-CLAUDE.md`).
   has no `aai-guest` above it — hence `guestPackageDir`'s fallback
   (modal/harness-image.ts). Anything else that resolves a workspace sibling by
   module location owes the same fallback.
-- **So aai-server may not resolve a sibling package at all — this root does
-  and passes it in.** `createOrchestrator` takes a REQUIRED `clientDir`, passed
+- **So aai-server may not resolve a sibling package at all — this root does and
+  passes it in.** `createOrchestrator` takes a REQUIRED `clientDir`, passed
   `defaultClientDir()` from `index.ts` (the package that declares
   `@alexkroman1/aai-ui`). Required with no fallback, `Omit`ted from
   `ServiceConfig` (everything there comes from env), and resolved eagerly so a
@@ -104,8 +105,8 @@ raised function timeout (`SSE-CLAUDE.md`).
 ### Origin and CORS
 
 - **One public origin** — both surfaces are served by one process on one
-  hostname. Agent pages are `X-Frame-Options: SAMEORIGIN`, so the preview
-  iframe needs the studio on their origin.
+  hostname. Agent pages are `X-Frame-Options: SAMEORIGIN`, so the preview iframe
+  needs the studio on their origin.
 - **Never derive the public scheme from the request URL** — use
   `resolvePublicOrigin` (`aai-server/public-origin.ts`). Modal terminates TLS
   and forwards plain HTTP without `X-Forwarded-Proto`, so `new URL(c.req.url)`
@@ -122,16 +123,16 @@ raised function timeout (`SSE-CLAUDE.md`).
 
 ### Cross-service invalidation
 
-- **The agents row's CHANGE STREAM is the only invalidation**
-  (`agent-store.ts`; `platform/events.ts` / `realtime-events.ts`;
-  `watchAgentInvalidation` in `sandbox/resolve.ts`). Mutations ONLY write the
-  row; every replica reacts to the Realtime event by dropping bundle-store row
-  caches, re-reading the version (events are signals, never payloads), and
-  retiring a resident at a different version — terminating it on a deleted
-  row. The version comparison under the slug lock makes duplicate or reordered
-  events harmless; an unreadable version logs and leaves the resident alone.
-  There is no second detection path: `resolveSandbox` serves any live resident
-  and the idle sweep is about idleness only.
+- **The agents row's CHANGE STREAM is the only invalidation** (`agent-store.ts`;
+  `platform/events.ts` / `realtime-events.ts`; `watchAgentInvalidation` in
+  `sandbox/resolve.ts`). Mutations ONLY write the row; every replica reacts to
+  the Realtime event by dropping bundle-store row caches, re-reading the version
+  (events are signals, never payloads), and retiring a resident at a different
+  version — terminating it on a deleted row. The version comparison under the
+  slug lock makes duplicate or reordered events harmless; an unreadable version
+  logs and leaves the resident alone. There is no second detection path:
+  `resolveSandbox` serves any live resident and the idle sweep is about idleness
+  only.
 - **The REJOIN is a signal**: changes during a join or a socket drop reach
   nobody. `watchAgents` takes a separate slug-less `onResync` (not a nullable
   slug), which `watchAgentInvalidation` answers by reconciling every resident
@@ -169,9 +170,8 @@ raised function timeout (`SSE-CLAUDE.md`).
   with it (`dispose()`).
 - **Shutdown stops BOOTING sandboxes before it stops serving**:
   `brokerSessionUrl` refuses a new sandbox when `isDraining` (503 → client
-  re-brokers) while still serving a live resident, and `teardownSandboxes`
-  waits `SHUTDOWN_GRACE_MS` (3s) before emptying slots. The studio-only path
-  passes 0.
+  re-brokers) while still serving a live resident, and `teardownSandboxes` waits
+  `SHUTDOWN_GRACE_MS` (3s) before emptying slots. The studio-only path passes 0.
 - **Shutdown is bounded at two levels** — `SANDBOX_TEARDOWN_READY_MS` caps the
   readiness wait, `SHUTDOWN_TEARDOWN_TIMEOUT_MS` nets the whole teardown. Read
   their budget arithmetic in `constants.ts` before changing `SHUTDOWN_GRACE_MS`.
@@ -186,8 +186,8 @@ raised function timeout (`SSE-CLAUDE.md`).
 `predev` ends with `pnpm --filter aai-studio-client build`, so
 `pnpm dev:aai-server` always serves a current client. `studio-static.ts` serves
 whatever is in that package's `dist/` without checking its age, so a stale
-bundle looks like nothing changed. Unconditional, not staleness-gated: the
-build is sub-second.
+bundle looks like nothing changed. Unconditional, not staleness-gated: the build
+is sub-second.
 
 ## Long-lived responses (SSE)
 
@@ -197,8 +197,8 @@ stream or the lifecycle under them.
 ## Studio starter evals
 
 `src/studio-starter.eval.test.ts` and the `studio-starter-*` modules beside it
-drive the studio's REAL surface (create project, broker a session, stream a
-turn to the guest) on `aai-evals`' runner:
+drive the studio's REAL surface (create project, broker a session, stream a turn
+to the guest) on `aai-evals`' runner:
 
 ```sh
 pnpm dev:aai-server                                       # in another shell
@@ -210,13 +210,13 @@ It spends real tokens on the caller's key, so it is not in CI.
 [`STARTER-EVAL-CLAUDE.md`](STARTER-EVAL-CLAUDE.md) is the reference;
 `packages/aai-evals/CLAUDE.md` owns the runner.
 
-- The primary verdict is **capability coverage** against the PROMPT's
-  enumerated capabilities (`studio-starter-expectations.ts`), checked on the
-  loaded config and `agent.ts` — not "the agent's own tests passed", which it
-  can satisfy by weakening them.
+- The primary verdict is **capability coverage** against the PROMPT's enumerated
+  capabilities (`studio-starter-expectations.ts`), checked on the loaded config
+  and `agent.ts` — not "the agent's own tests passed", which it can satisfy by
+  weakening them.
 - It also reports cost (tool calls, repair rounds = failed `test_agent` runs,
-  wall clock) and a failure taxonomy: never-verified / verified-broken /
-  missing capability / step-capped.
+  wall clock) and a failure taxonomy: never-verified / verified-broken / missing
+  capability / step-capped.
 - **One run cannot adjudicate a prompt change** — variance is the size of most
   prompt effects. Use `AAI_EVAL_REPEAT=3` and compare arms; a non-unanimous
   assertion decides nothing.
@@ -229,11 +229,11 @@ suites over the preview queue and the SSE streams, asserting preview
 convergence, one deploy per project at a time, no write into an ended stream,
 frame order, and no live-stream registry leak.
 
-- **Wrap the resumption INSIDE the deploy body** (`s.schedule`), never the
-  whole deploy function (`s.scheduleFunction`) — `fc.scheduler` runs tasks one
-  at a time, which would make the no-concurrent-deploy invariant unfalsifiable.
+- **Wrap the resumption INSIDE the deploy body** (`s.schedule`), never the whole
+  deploy function (`s.scheduleFunction`) — `fc.scheduler` runs tasks one at a
+  time, which would make the no-concurrent-deploy invariant unfalsifiable.
 - **Assert the invariant, not the mechanism** (a failed build stamping
   `previewError` is SETTLED, not unconverged).
-- **Check that an asserted state is reachable.** A property a random walk
-  never reaches is vacuous; the attempt-cap boundary has its own targeted
-  property for that reason.
+- **Check that an asserted state is reachable.** A property a random walk never
+  reaches is vacuous; the attempt-cap boundary has its own targeted property for
+  that reason.

@@ -14,8 +14,9 @@ Both legs are **raw PCM16 over the session WebSocket** (384 kbps down at 24 kHz,
 absorbs jitter; no buffer size fixes a link that cannot carry that bitrate.
 
 Tuning measurements (`PLAYBACK_JITTER_MS`, `PLAYBACK_REFILL_MS`, what the server
-pacer costs playback) are in [`../../PLAYBACK-CLAUDE.md`](../../PLAYBACK-CLAUDE.md),
-read on demand. Tune against a REAL recorded reply (`../fixtures/tts-reply-24k.pcm`,
+pacer costs playback) are in
+[`../../PLAYBACK-CLAUDE.md`](../../PLAYBACK-CLAUDE.md), read on demand. Tune
+against a REAL recorded reply (`../fixtures/tts-reply-24k.pcm`,
 `playback-tuning.test.ts`), not a generated one.
 
 ## Playback (`playback-processor.ts`)
@@ -35,16 +36,16 @@ read on demand. Tune against a REAL recorded reply (`../fixtures/tts-reply-24k.p
 - **`stop` echoes the turn id its `done` named**, and `audio/voice-io.ts`
   settles only the matching wait: a real drain-stop in flight when a barge-in
   flushes belongs to a turn the host has moved past. The host-side half (turn
-  epoch on `ConnState`) is in `../session/CLAUDE.md`, "Drain completion
-  outlives the turn".
+  epoch on `ConnState`) is in `../session/CLAUDE.md`, "Drain completion outlives
+  the turn".
 
 ## Capture (`capture-processor.ts`)
 
 - **Its own AudioContext at the STT rate; the worklet converts no rates.** The
   browser's resampler is band-limited; linear interpolation aliases. Playback
   has a separate context at the TTS rate (one context when rates match). There
-  is deliberately **no fallback resampler**: `audio/voice-io.ts` asserts the browser
-  honoured both rates and fails init otherwise.
+  is deliberately **no fallback resampler**: `audio/voice-io.ts` asserts the
+  browser honoured both rates and fails init otherwise.
 - **Flush a `slice()` copy and keep its own buffer** — re-reading a
   just-transferred view is how a mic goes permanently deaf. Start/stop gating,
   and a stop → flush → `stopped`-ack protocol.

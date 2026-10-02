@@ -36,8 +36,8 @@ durable runs, no microphone — whose default template is
   refresh and adopt; a per-request flag would let a second tab build the other
   product. That is why `sessionParams` takes the whole `StudioWorkspace`.
 - **Every workspace document carries a `kind`**: `POST /studio/projects`
-  requires one, the CLI's first push stamps `agent`, and `parseWorkspace`
-  reads a document without one as malformed (`isProjectKind`).
+  requires one, the CLI's first push stamps `agent`, and `parseWorkspace` reads
+  a document without one as malformed (`isProjectKind`).
 - **One preamble, five fragments swapped** — the overview line, the
   product-shape section, the spoken-replies rule, the `client.tsx` section, and
   the alignment examples. Tools, the write-then-typecheck loop, "you cannot
@@ -51,8 +51,8 @@ durable runs, no microphone — whose default template is
 
 - **It cannot publish** — stated outright, so it never claims a deploy or
   invents a production URL. The preview auto-deploy is platform-triggered.
-- **It will not see a Publish result** — the output goes to the Publish menu,
-  so it asks the user what the menu said.
+- **It will not see a Publish result** — the output goes to the Publish menu, so
+  it asks the user what the menu said.
 - **No MCP.** The prompt embeds a snapshot of the scaffold guide; for anything
   outside it (a voice, a new gateway model, a provider option) the agent uses
   `visit_webpage`, the AssemblyAI docs included, rather than guessing.
@@ -60,10 +60,10 @@ durable runs, no microphone — whose default template is
   (`toolchainPromptSection` in `aai-guest-studio`, appended at
   `initStudioSession`). The baked `node_modules` (SDK `.d.ts`, `aai-ui`
   component `.d.ts`, `aai-cli/dist/templates`) sits above the workspace at a
-  depth that differs per layout, and only `bash` can reach it.
-  `toolchainRoot()` searches upward and emits absolute paths or nothing;
-  `build.test.ts` asserts each exists. Never name a monorepo path
-  (`packages/aai-templates/…`) — no sandbox has one.
+  depth that differs per layout, and only `bash` can reach it. `toolchainRoot()`
+  searches upward and emits absolute paths or nothing; `build.test.ts` asserts
+  each exists. Never name a monorepo path (`packages/aai-templates/…`) — no
+  sandbox has one.
 
 ## The tool surface the prompt describes
 
@@ -75,8 +75,8 @@ Guest-side; the detail is "The coding agent is an ordinary `agent()`" in
 - Tools: list/read (windowed, numbered)/write/edit/delete, `glob`, `grep`,
   `bash` (guest token scrubbed), `todo_write`, `test_agent` (the ONE
   verification tool — there is no `check_types`), `read_logs`,
-  `list_templates`/`use_template` (copies files verbatim), the dependency
-  tools, and the keyless web builtins (`visit_webpage`, `get_page_design`,
+  `list_templates`/`use_template` (copies files verbatim), the dependency tools,
+  and the keyless web builtins (`visit_webpage`, `get_page_design`,
   `web_search`) named in `builtinTools`.
 - Every successful write/edit appends capped type diagnostics; a write is never
   rejected for type errors.

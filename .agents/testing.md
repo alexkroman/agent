@@ -28,10 +28,10 @@ read_when: >-
 - **Every package config is `export default defineUnitProject({ … })`**
   (`vitest.shared.ts`). The factory owns the shared options (`restoreMocks`,
   `unstubEnvs`, `TZ=UTC`, the CI `reporters`, the worker budget), the unit-tier
-  excludes, and the MERGES a hand-written `test: { … }` gets wrong:
-  `setupFiles` is appended to `sharedSetupFiles`, `env` merged over the shared
-  one, `coverageExclude` appended to `sharedCoverageExclude`. Anything else
-  (`pool`, `testTimeout`, `globalSetup`) goes in its `test` option. konsistent
+  excludes, and the MERGES a hand-written `test: { … }` gets wrong: `setupFiles`
+  is appended to `sharedSetupFiles`, `env` merged over the shared one,
+  `coverageExclude` appended to `sharedCoverageExclude`. Anything else (`pool`,
+  `testTimeout`, `globalSetup`) goes in its `test` option. konsistent
   `package-vitest-config` and `aai-gates/src/vitest-setup-wiring.test.ts`
   enforce it.
 - **A listener LEAK fails the run** via `scripts/fail-on-process-warning.mjs`,
@@ -65,18 +65,18 @@ read_when: >-
   `*.scenario.test.ts`, `*.eval.test.ts`, and aai-cli's `e2e*.test.ts`.**
   `defineUnitProject` excludes all four from every unit config;
   `test:integration` / `test:scenario` / `test:eval` / `test:e2e` select one
-  each. Only the INFIX decides,
-  so these are deliberately unit tests despite the name: `aai-cli`'s
-  `integration.test.ts` / `integration-edge-cases.test.ts`, and `aai-server`'s
-  `agent-server-integration.test.ts` — which boots a real harness and is the
-  only coverage of `subprocess-sandbox.ts` / `warm-harness.ts` /
-  `sandbox/vm.ts`; promote it only after restoring that coverage elsewhere,
-  never by lowering aai-server's floor. A package with no files in a tier
-  declares no script for it (vitest fails a run matching nothing).
+  each. Only the INFIX decides, so these are deliberately unit tests despite the
+  name: `aai-cli`'s `integration.test.ts` / `integration-edge-cases.test.ts`,
+  and `aai-server`'s `agent-server-integration.test.ts` — which boots a real
+  harness and is the only coverage of `subprocess-sandbox.ts` /
+  `warm-harness.ts` / `sandbox/vm.ts`; promote it only after restoring that
+  coverage elsewhere, never by lowering aai-server's floor. A package with no
+  files in a tier declares no script for it (vitest fails a run matching
+  nothing).
 - **Yielding**: `flush()` for microtasks, `tick()` for a macrotask (from
   `aai-runtime/src/_timing-test-utils.ts`, or `aai/src/host/_test-utils.ts` in
-  the SDK), never `await new Promise(r => setTimeout(r, 0))` or a local
-  `flush`. `sleep(ms)` is a published SDK export, not a test helper. Poll with
+  the SDK), never `await new Promise(r => setTimeout(r, 0))` or a local `flush`.
+  `sleep(ms)` is a published SDK export, not a test helper. Poll with
   `vi.waitFor()`, never a fixed delay.
 - **Helpers are split BY DOMAIN** into `_<domain>-test-utils.ts` modules
   (aai-runtime: timing, agent, session, s2s-fixture, logger, fetch, db;
@@ -84,10 +84,11 @@ read_when: >-
   one whose name says what it fakes; the rosters are konsistent's
   `test-helper-modules`.
 - **A spec that observes a TIMER runs on virtual time**, never the wall clock:
-  `useVirtualTime()` (`aai-runtime/src/transports/_pipeline-transport-harness.ts`)
-  installs fake timers per file; drive with `vi.advanceTimersByTimeAsync(ms)`.
-  Under virtual time `tick()` hangs (advance by 0 instead) and `vi.waitFor`
-  still polls in real time.
+  `useVirtualTime()`
+  (`aai-runtime/src/transports/_pipeline-transport-harness.ts`) installs fake
+  timers per file; drive with `vi.advanceTimersByTimeAsync(ms)`. Under virtual
+  time `tick()` hangs (advance by 0 instead) and `vi.waitFor` still polls in
+  real time.
 - **Type-level tests** are `.test-d.ts` files using `expectTypeOf`, never
   executed. The `aai-types` / `aai-ui-types` / `aai-runtime-types` projects run
   each under its package tsconfig (aai-ui needs `lib: DOM`, `jsx`).
@@ -111,18 +112,18 @@ read_when: >-
   suppresses it. `isolatedDeclarations` is unusable here (inferred Zod schema
   types).
 - **Coverage**: `pnpm test:coverage` enforces each package's floor (see
-  `.agents/ratchets.md`); CI runs it for every package in the test matrix.
-  The per-file floor (`pnpm check:coverage-per-file`) reads that output; after
-  ONE package's coverage run, `pnpm coverage-per-file:update --package <name>`
+  `.agents/ratchets.md`); CI runs it for every package in the test matrix. The
+  per-file floor (`pnpm check:coverage-per-file`) reads that output; after ONE
+  package's coverage run, `pnpm coverage-per-file:update --package <name>`
   merges that package's gains into the baseline and leaves the rest untouched.
 
 ## Two manual diagnostics, and a knip glob that could not see a dead script
 
 - **`knip.json`'s root `entry` names only what a pipeline invokes**, never a
   `scripts/**` glob — an entry point is reachable by definition, so a glob hides
-  dead scripts. A script that is a module is reached through its importer; one
-  a `package.json` script or vitest `globalSetup` names is discovered by knip
-  and must not be repeated.
+  dead scripts. A script that is a module is reached through its importer; one a
+  `package.json` script or vitest `globalSetup` names is discovered by knip and
+  must not be repeated.
 - **`audit:gateway-models` is wired into no pipeline, deliberately**: it spends
   real tokens and depends on a third-party service. `pnpm gen:gateway-models`
   regenerates the catalog it compares against.
@@ -133,9 +134,9 @@ read_when: >-
 `reports/mutation/sdk/index.html`. It carries no threshold, because one nothing
 enforces reads as a gate. It cannot become a gate: `inPlace: true` (forced by
 TS 7) mutates the real tree — read `stryker.base.config.mjs` for the `bin.mjs`
-mode hazard before committing after a run. `check:test-assertions` is complementary:
-it catches a test with NO assertion; mutation catches one that does not
-discriminate.
+mode hazard before committing after a run. `check:test-assertions` is
+complementary: it catches a test with NO assertion; mutation catches one that
+does not discriminate.
 
 ## Package-specific suites
 
@@ -233,17 +234,16 @@ harnesses print a `schedulerFor()` template to paste into a regression test.
   the shrinker converges on the wrong counterexample.
 - **Every property suite needs hand-rolled coverage floors**, because an
   all-green property proves nothing about a state the generator never entered
-  (`fc.statistics` only prints).
-  **Set each floor under the OBSERVED MINIMUM across many runs, and record the
-  range and run count in a comment** — never a fraction of the mean, since these
-  distributions have long left tails. A state whose whole range is small gets
-  `> 0`; a state deliberately left unfloored says so in place, with the reason.
-  `scripts/check-property-floors.mjs` requires each floor and its recorded
-  actual. **Measure, don't guess**: `pnpm floors:sample --runs 20 <file>...`
-  runs the suite N times (a fresh fast-check seed each, unless the property
-  pins one), records every `toBeGreaterThan(OrEqual)` on a number, and prints
-  each counter's min–max as a ready comment, flagging a floor that is not under
-  the observed minimum.
+  (`fc.statistics` only prints). **Set each floor under the OBSERVED MINIMUM
+  across many runs, and record the range and run count in a comment** — never a
+  fraction of the mean, since these distributions have long left tails. A state
+  whose whole range is small gets `> 0`; a state deliberately left unfloored
+  says so in place, with the reason. `scripts/check-property-floors.mjs`
+  requires each floor and its recorded actual. **Measure, don't guess**:
+  `pnpm floors:sample --runs 20 <file>...` runs the suite N times (a fresh
+  fast-check seed each, unless the property pins one), records every
+  `toBeGreaterThan(OrEqual)` on a number, and prints each counter's min–max as a
+  ready comment, flagging a floor that is not under the observed minimum.
 - **A generator must not break its own contract** — a failure caused by an
   illegal generated value looks like a finding and is not. Map every generated
   value to a legal one (append rather than filter) so shrinking stays well

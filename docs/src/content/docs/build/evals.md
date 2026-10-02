@@ -50,8 +50,7 @@ the agent as `aai build` lowers it, with `tools/` discovered and
 
 ## Asserting the agent used a tool
 
-The reply is half of it. The other half is what the agent _did_ before it
-spoke:
+The reply is half of it. The other half is what the agent _did_ before it spoke:
 
 ```ts
 import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
@@ -151,11 +150,10 @@ describeEval(agentDef, (test) => {
 });
 ```
 
-:::note[Keep one case each mode can run]
-A suite where every case ends up skipped fails rather than reporting green. The
-scripted half is what proves `agent.ts` still boots and its tools still resolve,
-and it is the one check a pipeline with no key can make for free.
-:::
+:::note[Keep one case each mode can run] A suite where every case ends up
+skipped fails rather than reporting green. The scripted half is what proves
+`agent.ts` still boots and its tools still resolve, and it is the one check a
+pipeline with no key can make for free. :::
 
 ### Forcing a mode
 
@@ -279,5 +277,6 @@ covered separately, in [Workflow evals](/agent/more/workflow-evals/).
 
 - [Workflow evals](/agent/more/workflow-evals/) — the same questions, asked of a
   background job
-- [Run it locally](/agent/deploy/local/) — `aai dev`, and the half no eval reaches
+- [Run it locally](/agent/deploy/local/) — `aai dev`, and the half no eval
+  reaches
 - [Publish](/agent/deploy/publish/) — ship it, and where your secrets go

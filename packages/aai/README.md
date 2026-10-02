@@ -14,8 +14,8 @@ scaffolds a project with it wired up.
 
 ## The simple case stays simple
 
-One mode of the SDK is a prompt, a voice and some keyterms over a single
-socket — the whole agent:
+One mode of the SDK is a prompt, a voice and some keyterms over a single socket
+— the whole agent:
 
 ```ts
 import { agent, assemblyAIS2s } from "@alexkroman1/aai";
@@ -28,8 +28,8 @@ export default agent({
 });
 ```
 
-Everything below is what becomes available when your own code runs alongside
-it. Nothing here is required to get a working agent.
+Everything below is what becomes available when your own code runs alongside it.
+Nothing here is required to get a working agent.
 
 | Capability                | What it is                                                       | Where                                                |
 | ------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
@@ -65,21 +65,20 @@ export default agent({
 });
 ```
 
-- `agent()` — the agent definition; every field and default is documented
-  on [`AgentDef`](https://alexkroman.github.io/agent/). With no provider
-  fields it runs the default all-AssemblyAI STT → LLM → TTS pipeline,
-  billed to one `ASSEMBLYAI_API_KEY`; `voice: "michael"` picks its TTS
-  voice.
+- `agent()` — the agent definition; every field and default is documented on
+  [`AgentDef`](https://alexkroman.github.io/agent/). With no provider fields it
+  runs the default all-AssemblyAI STT → LLM → TTS pipeline, billed to one
+  `ASSEMBLYAI_API_KEY`; `voice: "michael"` picks its TTS voice.
 - `tool()` — a typed tool for the stateless case: Zod `inputSchema` and an
   `execute(args, ctx)` that runs server-side with `ctx.env` (secrets),
   `ctx.signal` (aborts on barge-in), `ctx.generate` (one-shot LLM calls),
-  `ctx.delegate` (subagents), `ctx.workflows` (start and find durable runs)
-  and `ctx.send` (push events to the browser client).
+  `ctx.delegate` (subagents), `ctx.workflows` (start and find durable runs) and
+  `ctx.send` (push events to the browser client).
 - `sessionSlot()` — a typed named slot owning a session's state. `slot.tool()`
   reads it (the value is deeply frozen) and `slot.updateTool()` writes it
   synchronously. There is no `ctx.state` and no `ctx.db`.
-- `dialog()` / `procedure()` — a flow the model is gated by, and a flow your
-  own code drives.
+- `dialog()` / `procedure()` — a flow the model is gated by, and a flow your own
+  code drives.
 - `speaker()` / `roster()` — a second voice: delegated to off the line
   (`ctx.delegate`), or handed the call (`speaks: true`).
 - `workflow()` / `workflowApp()` — a durable run, and a form-shaped agent whose
@@ -223,16 +222,16 @@ export const addItem = cartSlot.updateTool({
 Slots hold plain data (a `Map`, `Set`, `Date` or class instance is refused with
 the field named). On the platform they are stored for you — a crash or a
 redeploy no longer loses them, and there is nothing to enable. Under `aai dev`
-they live in memory unless you set a `DATABASE_URL`; the code is the same
-either way.
+they live in memory unless you set a `DATABASE_URL`; the code is the same either
+way.
 
 ## Every session can resume
 
 Connections drop, and five minutes of identity verification plus a half-built
 order shouldn't restart. A client reconnecting with `?sessionId=<id>` rejoins
-the same session: the event log is restored, slot values are rehydrated, and
-the greeting is suppressed because the caller has already heard it. A resume
-that finds nothing is treated as a new session and greets, rather than sitting
+the same session: the event log is restored, slot values are rehydrated, and the
+greeting is suppressed because the caller has already heard it. A resume that
+finds nothing is treated as a new session and greets, rather than sitting
 connected and silent. Background work is found again by key — on a later turn,
 or on the next call:
 
@@ -295,8 +294,8 @@ export const quoteClaim = claim.tool({
 
 States and events are inferred from the spec, so a misspelled `send` is a
 compile error. `procedure()` is the sibling for a flow YOU drive with no model
-in the loop — an XState machine with branches, retries and a bounded budget,
-run with `await procedure(machine).run(input)`.
+in the loop — an XState machine with branches, retries and a bounded budget, run
+with `await procedure(machine).run(input)`.
 
 ## Understanding mid-turn
 
@@ -366,7 +365,8 @@ No caller holds four minutes while a report generates. A tool starts a durable
 run and answers the turn; the run is journaled, so it survives a restart, a
 redeploy and an idle sandbox. With `notify` the agent speaks the result when it
 lands — an ordinary interruptible turn, only if the caller is still on the line.
-If they've hung up, the run completes anyway and the next call finds it by `key`.
+If they've hung up, the run completes anyway and the next call finds it by
+`key`.
 
 ```ts
 import { tool, workflow, type WorkflowContext } from "@alexkroman1/aai";
@@ -406,10 +406,10 @@ export default tool({
 ```
 
 Declare the workflow on the agent (`agent({ workflows: { research } })`) and
-`ctx.workflows` can `start`, `find`, `get`, `wakeUp` and `stream` its runs.
-When the product IS the form rather than the call, `workflowApp()` is an agent
-whose front door is a workflow — no session, no LLM loop, and every voice knob
-a compile error.
+`ctx.workflows` can `start`, `find`, `get`, `wakeUp` and `stream` its runs. When
+the product IS the form rather than the call, `workflowApp()` is an agent whose
+front door is a workflow — no session, no LLM loop, and every voice knob a
+compile error.
 
 ## Voice in, screen out
 
@@ -491,10 +491,10 @@ transport, not a mode — what you tested in the web demo is what callers get.
 
 ## Session modes and providers
 
-**Pipeline mode** (default) streams STT partials into a server-side LLM
-loop and speaks the reply through a TTS provider. Swap any stage with a
-factory from the provider subpaths — set any subset of `stt`, `llm`, `tts`;
-the unset stages keep the AssemblyAI default:
+**Pipeline mode** (default) streams STT partials into a server-side LLM loop and
+speaks the reply through a TTS provider. Swap any stage with a factory from the
+provider subpaths — set any subset of `stt`, `llm`, `tts`; the unset stages keep
+the AssemblyAI default:
 
 | Subpath                | Factories                                                                                                                                                                                                                                      |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -503,15 +503,14 @@ the unset stages keep the AssemblyAI default:
 | `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesiaTts`, `rimeTts`                                                                                                                                                                                                      |
 
 Factories return pure descriptors — serializable data, not SDK clients.
-Credentials are resolved server-side from the agent's env (each factory's
-docs name the env var), so no provider SDK or secret ever enters the agent
-bundle. `llm` also accepts a model-id string: `"creator/model"` routes
-through the Vercel AI Gateway, a bare id through the AssemblyAI LLM
-Gateway — `agent({ name: "...", llm: "claude-sonnet-4-6" })` swaps just the
-model.
+Credentials are resolved server-side from the agent's env (each factory's docs
+name the env var), so no provider SDK or secret ever enters the agent bundle.
+`llm` also accepts a model-id string: `"creator/model"` routes through the
+Vercel AI Gateway, a bare id through the AssemblyAI LLM Gateway —
+`agent({ name: "...", llm: "claude-sonnet-4-6" })` swaps just the model.
 
-**S2S mode** is the explicit opt-in to a speech-to-speech service, where
-STT, the LLM loop, and TTS all run service-side over one socket:
+**S2S mode** is the explicit opt-in to a speech-to-speech service, where STT,
+the LLM loop, and TTS all run service-side over one socket:
 `s2s: assemblyAIS2s()` (root export) or `openAIS2s()` from
 `@alexkroman1/aai/s2s`.
 
@@ -580,8 +579,8 @@ scripted, so it is free and deterministic in CI.
 
 ## Other subpaths
 
-Each subpath is named by WHO READS IT — reach for one when the right-hand
-column describes what you are doing.
+Each subpath is named by WHO READS IT — reach for one when the right-hand column
+describes what you are doing.
 
 | Subpath                                                               | Reach for it when                                                                                                               |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -600,8 +599,8 @@ column describes what you are doing.
 
 Full API reference: <https://alexkroman.github.io/agent/>
 
-The complete authoring guide — every `agent()` field, the workflow rules, the
-UI hooks, the voice-prompt rules — ships in this package as `AGENT_GUIDE.md`,
+The complete authoring guide — every `agent()` field, the workflow rules, the UI
+hooks, the voice-prompt rules — ships in this package as `AGENT_GUIDE.md`,
 beside this file. (Deliberately not a relative link: TypeDoc copies a linked
-file into the rendered docs tree, and this one is 100 kB of generated text
-that already lives in two places.)
+file into the rendered docs tree, and this one is 100 kB of generated text that
+already lives in two places.)

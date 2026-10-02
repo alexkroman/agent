@@ -4,8 +4,8 @@ Thanks for contributing! This is the human quickstart. The full rules for the
 repo — test tiers, naming, import boundaries, gates — are in
 [`AGENTS.md`](../AGENTS.md), which coding agents read too; step-by-step
 procedures live in [`.claude/skills/`](../.claude/skills/) (`pr-workflow`,
-`changeset-release`, `api-contract-epoch-bump`, `expose-guest-route`), and
-every package has its own `CLAUDE.md` guide (`pnpm docs:list` prints them all).
+`changeset-release`, `api-contract-epoch-bump`, `expose-guest-route`), and every
+package has its own `CLAUDE.md` guide (`pnpm docs:list` prints them all).
 
 ## Prerequisites
 
@@ -28,10 +28,10 @@ pnpm vitest run packages/aai/src/sdk/protocol.test.ts -t "protocol constants" # 
 pnpm check:local                          # the fast pre-commit gate: lint, typecheck, unit tests, ratchets
 ```
 
-1. **Branch from `main`** and make your change. Tests are co-located:
-   `foo.ts` → `foo.test.ts` (unit). The tier is the suffix —
-   `foo.integration.test.ts`, `foo.scenario.test.ts`, `foo.eval.test.ts` — and
-   the table of what each tier may touch is "Test tiers" in `AGENTS.md`.
+1. **Branch from `main`** and make your change. Tests are co-located: `foo.ts` →
+   `foo.test.ts` (unit). The tier is the suffix — `foo.integration.test.ts`,
+   `foo.scenario.test.ts`, `foo.eval.test.ts` — and the table of what each tier
+   may touch is "Test tiers" in `AGENTS.md`.
 2. **Run `pnpm check:local`** before the first commit. The pre-commit hook runs
    Biome on staged files; the pre-push hook blocks a push to `main`, a branch
    behind or conflicting with `origin/main`, a missing changeset and a failing

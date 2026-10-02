@@ -7,7 +7,9 @@
     {
       "files": ["*.md", "*.mdx"],
       "options": {
-        "embeddedLanguageFormatting": "off"
+        "embeddedLanguageFormatting": "off",
+        "proseWrap": "always",
+        "printWidth": 80
       }
     }
   ]

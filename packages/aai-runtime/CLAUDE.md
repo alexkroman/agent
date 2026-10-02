@@ -17,23 +17,22 @@ transports, the provider openers, the workflow API, and the WebSocket handler.
 Rules that govern one area live beside the files they govern, and Claude Code
 loads them when you work there:
 
-- [`src/CLAUDE.md`](src/CLAUDE.md) — the `src/` map (which directory holds
-  what, what stays flat), client surfaces, subagents, egress pools, reply
-  metrics.
+- [`src/CLAUDE.md`](src/CLAUDE.md) — the `src/` map (which directory holds what,
+  what stays flat), client surfaces, subagents, egress pools, reply metrics.
 - [`src/session/CLAUDE.md`](src/session/CLAUDE.md),
   [`src/server/CLAUDE.md`](src/server/CLAUDE.md),
   [`src/runtime/CLAUDE.md`](src/runtime/CLAUDE.md),
   [`src/tools/CLAUDE.md`](src/tools/CLAUDE.md),
-  [`src/uploads/CLAUDE.md`](src/uploads/CLAUDE.md) — one session's lifecycle
-  and vocabularies; `createAgentServer`; the prompt suffix, dialogs and
-  personas; tool execution; the upload store.
+  [`src/uploads/CLAUDE.md`](src/uploads/CLAUDE.md) — one session's lifecycle and
+  vocabularies; `createAgentServer`; the prompt suffix, dialogs and personas;
+  tool execution; the upload store.
 - [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — capabilities, epochs,
   and the frozen compatibility templates.
 - [`src/transports/CLAUDE.md`](src/transports/CLAUDE.md) — the transport
   boundary, the capability table, per-turn prompt resolution.
-- [`src/transports/pipeline/CLAUDE.md`](src/transports/pipeline/CLAUDE.md) —
-  the pipeline's stage directories and their import direction, heard history,
-  reset, `speakLine`; its `speech/`, `history/` and `reply/` guides hold
+- [`src/transports/pipeline/CLAUDE.md`](src/transports/pipeline/CLAUDE.md) — the
+  pipeline's stage directories and their import direction, heard history, reset,
+  `speakLine`; its `speech/`, `history/` and `reply/` guides hold
   `speech_started` and push-to-talk, the context budget and rollback, and
   code-initiated lines.
 - [`src/workflow/CLAUDE.md`](src/workflow/CLAUDE.md) — journal selection,
@@ -46,8 +45,8 @@ loads them when you work there:
   design lives.
 
 Reference siblings, read on demand: [`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md)
-(journal + replay engine), [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md)
-(text mode, `/eval`), [`DIALOG-CLAUDE.md`](DIALOG-CLAUDE.md) (dialog knobs),
+(journal + replay engine), [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md) (text
+mode, `/eval`), [`DIALOG-CLAUDE.md`](DIALOG-CLAUDE.md) (dialog knobs),
 [`TOOL-OUTCOMES-CLAUDE.md`](TOOL-OUTCOMES-CLAUDE.md) (tool results and throws).
 
 ## What this package is, and what it is NOT
@@ -90,8 +89,8 @@ capability, no epoch, no TypeDoc page, no semver promise.
   `aai-templates`' typecheck on a `BodyInit` mismatch in `_upload-blobs-*.ts`).
   What the subpath excludes is an AGENT, not a package.
 - **It is not `./internal`**, because that subpath is deliberately ZOD-FREE and
-  the schema helpers (`EMPTY_PARAMS`, `isConvertibleSchema`,
-  `toToolJsonSchema`) import zod.
+  the schema helpers (`EMPTY_PARAMS`, `isConvertibleSchema`, `toToolJsonSchema`)
+  import zod.
 - **Adding a symbol:** authoring API → import from the public subpath that owns
   it; otherwise add it to `host-internal.ts`. Never a relative path into
   `packages/aai/src/sdk/` — Biome's `noRestrictedImports` rejects it and
@@ -104,21 +103,21 @@ alone (`guard-invariants` rule 37, in aai-ui too): `runtime/`, `server/`,
 `session/`, `tools/`, `uploads/`, `mcp/`, `platform/`, `inbox/`, `s2s/`,
 `text-agent/`, and `transports/pipeline/` with one subdirectory per stage. The
 map, and what stays flat and why, is [`src/CLAUDE.md`](src/CLAUDE.md).
-`providers/`, `telephony/`, `eval/`, `testing/` and `session-state/` are
-older directories with no index.
+`providers/`, `telephony/`, `eval/`, `testing/` and `session-state/` are older
+directories with no index.
 
 **The durable-workflow half is the directory `workflow/`**, with `api/`,
 `replay/` and `journal/` for its three largest clusters. It holds the
 `_workflow-*` harnesses and `journal-conformance*` too; `step-*` deliberately
 stays flat — those are the SDK's step primitives, not the replay engine.
 
-**Before turning another prefix into a directory, find everything that
-discovers it by FILENAME** — none of it is a compiler error: suites that scan
-for their own subject (`startsWith("workflow-journal-")`),
-`RUNTIME_ROUTE_SOURCES` in `guard-invariants-scopes.mjs`,
-`check-optional-peers.mjs`'s per-specifier exemptions, and baseline JSONs. A
-scan must carry an `expect(found.length).toBeGreaterThan(0)` floor so an empty
-match fails loudly. [`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md) has the rest.
+**Before turning another prefix into a directory, find everything that discovers
+it by FILENAME** — none of it is a compiler error: suites that scan for their
+own subject (`startsWith("workflow-journal-")`), `RUNTIME_ROUTE_SOURCES` in
+`guard-invariants-scopes.mjs`, `check-optional-peers.mjs`'s per-specifier
+exemptions, and baseline JSONs. A scan must carry an
+`expect(found.length).toBeGreaterThan(0)` floor so an empty match fails loudly.
+[`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md) has the rest.
 
 ## The published surface: two barrels and a rule between them
 
@@ -128,8 +127,8 @@ barrel a name goes on.
 
 - **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`) is exactly the names the
   capabilities select.** `API-EXPORTS.json` is the count — never write one here.
-  Nothing on it is `@internal`; `contracts/internal-surface.json` is at 0 and the
-  ratchet only shrinks.
+  Nothing on it is `@internal`; `contracts/internal-surface.json` is at 0 and
+  the ratchet only shrinks.
 - **`@alexkroman1/aai-runtime/internal` (`internal.ts`) is cross-package
   infrastructure** for `aai-server`, `aai-cli` and `aai-guest`: session-state
   backends, the journal and its DDL, the platform route table, the queue-name
@@ -153,8 +152,8 @@ barrel a name goes on.
   `runtime-opener-contract-on-root-barrel` refuses the tidy-up and carries the
   argument. The opener types are declared here (`providers/openers.ts`).
 - The server-side session is `ServerSession` (in `/internal`); `aai-ui`'s is
-  `BrowserSession`. Keep the side of the wire in any new name that both
-  packages might publish.
+  `BrowserSession`. Keep the side of the wire in any new name that both packages
+  might publish.
 
 ### The handles a caller RECEIVES are sealed
 
@@ -163,8 +162,8 @@ barrel a name goes on.
 `createSessionAuth` can mint one and a received handle can grow a member in a
 minor. Rules that follow:
 
-- A test DOUBLE implements the unsealed slice a consumer takes
-  (`SessionRuntime` for `createServerForRuntime`), never the sealed handle.
+- A test DOUBLE implements the unsealed slice a consumer takes (`SessionRuntime`
+  for `createServerForRuntime`), never the sealed handle.
 - A method that would widen a sealed handle becomes a free function over it
   (`connectSession`) or a sub-handle.
 - A handle that is only ever received (`AgentServer`, `TextAgent`,
@@ -173,8 +172,8 @@ minor. Rules that follow:
 - **Test seams are not public types.** They live on `HostRuntimeOptions` /
   `HostRuntime` via `createRuntimeWithSeams` (`runtime.ts`) and on
   `HostEvalSessionOptions` via `openEvalSessionWithSeams`, reached by relative
-  import. Fields shared by every entry point are one `HostAgentOptions`
-  (`env` and `llm` are excluded — their types differ per entry point).
+  import. Fields shared by every entry point are one `HostAgentOptions` (`env`
+  and `llm` are excluded — their types differ per entry point).
 - **`auth` stays a server FIELD, not an `upgrade`-hook use**: the hook answers
   synchronously, a claimed socket cannot be handed back, resume ownership is
   recorded on the session the server starts, and the ticket subprotocol must be
@@ -182,19 +181,19 @@ minor. Rules that follow:
 
 ### Four subpaths are RENDERED, and the root barrel is not
 
-`typedoc.json` names only `eval-barrel`, `eval-vitest-barrel`,
-`testing-barrel` and `testing-vitest-barrel` — they are written by whoever
-wrote the `agent.ts`, so they belong in the authoring reference. The root
-barrel, `/internal`, `/auth`, `/metrics` and `/tracing` stay deny-listed in
+`typedoc.json` names only `eval-barrel`, `eval-vitest-barrel`, `testing-barrel`
+and `testing-vitest-barrel` — they are written by whoever wrote the `agent.ts`,
+so they belong in the authoring reference. The root barrel, `/internal`,
+`/auth`, `/metrics` and `/tracing` stay deny-listed in
 `scripts/docs-markdown.mjs`. See [`docs/CLAUDE.md`](../../docs/CLAUDE.md),
 "Rendering `aai-runtime` is a docs decision", for the files one change touches
 together.
 
 ## Driving an agent from text is a published surface
 
-In [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md): the text-agent surface, why
-a workflow app is evaluated by RUNNING it, and why a keyless run gets a
-SCRIPTED model.
+In [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md): the text-agent surface, why a
+workflow app is evaluated by RUNNING it, and why a keyless run gets a SCRIPTED
+model.
 
 ### A test file has TWO doors: `/testing` and `/testing/vitest`
 
@@ -223,8 +222,8 @@ table of which import serves which FILE is "Which testing import, by FILE" in
   `/eval/vitest` gains fails here until the door carries it.
 - **`/eval/vitest` and `/eval` stay.** `/eval/vitest` is the door
   `/testing/vitest` builds on (a stub an eval needs is a line in
-  `eval-vitest-barrel.ts` and one in `testing-vitest-barrel.ts`); `/eval` is
-  the runner-free door for a harness that is not vitest —
+  `eval-vitest-barrel.ts` and one in `testing-vitest-barrel.ts`); `/eval` is the
+  runner-free door for a harness that is not vitest —
   `scripts/loadtest-stub-agent` and `aai-evals`' runner import it.
   `/eval/simulate` is gone.
 - konsistent's `template-testing-doors` holds every template file to the two
@@ -272,8 +271,8 @@ detector for it.
 - **`detail` is a THUNK**, run only on the failing path so a violation reports
   the actual numbers. Its call is wrapped, so a second throw inside it cannot
   lose the finding.
-- **No SAMPLING.** Every invariant today is O(1); add a rate only with the
-  first O(n) caller. O(n) whole-log checks belong in a harness
+- **No SAMPLING.** Every invariant today is O(1); add a rate only with the first
+  O(n) caller. O(n) whole-log checks belong in a harness
   (`workflow/journal/_invariants.ts`).
 - **Never inside an error handler** — a throw there turns a 500 into an
   unhandled rejection. The workflow API's classification is swept over a pure
@@ -284,6 +283,6 @@ Stated so far:
 - **`session.page.tail`** (`session/event-stream.ts`) — a page cannot contain
   events its own tail says do not exist (a read starting past the tail is
   legitimate and answers zero events).
-- **`capacity.line.terms`** (`aai-server/platform/db-capacity.ts`) — the terms
-  a boot line names must COMPOSE the total it prints. See "The boot line
-  describes the reading it was built from" in that package.
+- **`capacity.line.terms`** (`aai-server/platform/db-capacity.ts`) — the terms a
+  boot line names must COMPOSE the total it prints. See "The boot line describes
+  the reading it was built from" in that package.

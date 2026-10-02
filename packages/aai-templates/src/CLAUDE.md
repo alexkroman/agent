@@ -18,16 +18,16 @@ contracts. The template-authoring rules they enforce are in
 
 Every public export must be exercised by a template or the scaffold, over a
 scope DERIVED from the contract tree so it and `check:api-contracts` cannot
-disagree about the authoring API. Its module doc has why. Exports with no
-honest template use go in `template-api-allowlist.json` — e.g.
-`defaultClientDir` (its only caller is framework code, `aai start`),
+disagree about the authoring API. Its module doc has why. Exports with no honest
+template use go in `template-api-allowlist.json` — e.g. `defaultClientDir` (its
+only caller is framework code, `aai start`),
 `TextAgentParams`/`PipelineAgentParams`/`S2sAgentParams` (union arms an author
-never names), `isFfmpegError`/`FfmpegError`, `commandedBuiltins`,
-`stubGateway`. An allowlist entry beats a contrived use.
+never names), `isFfmpegError`/`FfmpegError`, `commandedBuiltins`, `stubGateway`.
+An allowlist entry beats a contrived use.
 
-**The last remover pays.** A cross-template migration moves coverage in a way
-no single diff shows: when parallel changes each remove one of an export's
-three uses, whoever lands LAST owes an allowlist entry or a retained example.
+**The last remover pays.** A cross-template migration moves coverage in a way no
+single diff shows: when parallel changes each remove one of an export's three
+uses, whoever lands LAST owes an allowlist entry or a retained example.
 `EXEMPLARS-CLAUDE.md` at the package root lists who exercises what.
 
 ## `template-durability-gate.test.ts` — every workflow template runs durably
@@ -37,15 +37,14 @@ Every template with a `workflows/` directory must CALL `runWorkflow`
 `describe("the run is DURABLE")` block asserting that template's own claim
 (suspend, resume without redoing settled work, retry, signal, a worker dying
 mid-step). The gate requires the call, not the import, so a leftover import
-cannot satisfy it; both arms are A/B'd. Coverage alone would be satisfied by
-one template.
+cannot satisfy it; both arms are A/B'd. Coverage alone would be satisfied by one
+template.
 
 Accepted limits: `call-audit-workflow`'s first step runs ffmpeg, which the test
 environment lacks, so its block asserts a `FatalError` failing the run on one
 attempt and says so. A whole-run spec cannot stub the gateway over
-`globalThis.fetch` — compose `stubGatewayRoute` into one
-`installStubStepFetch`, or use `stubTranscribe`'s `otherwise` where that fake
-owns the slot.
+`globalThis.fetch` — compose `stubGatewayRoute` into one `installStubStepFetch`,
+or use `stubTranscribe`'s `otherwise` where that fake owns the slot.
 
 ## `template-layout-gate.test.ts` — where declarations live
 
@@ -57,8 +56,8 @@ session slot is declared in `shared.ts`. The module doc numbers each rule.
 
 ## `templates.test.ts` — pins that fail only on a user's machine
 
-It asserts things whose failure makes a tool QUIETER, so nothing goes red on
-its own:
+It asserts things whose failure makes a tool QUIETER, so nothing goes red on its
+own:
 
 - **The scaffold stays linted**: no negated scaffold glob in `biome.json`'s
   `files.includes`, and `packages/**` still present. The scaffold is the one

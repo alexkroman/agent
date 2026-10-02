@@ -24,8 +24,8 @@ green subset is not a green branch; CI runs them all. `pnpm check:affected`
 limits it to packages changed since `main`.
 
 A failing gate prints its fix command; **`pnpm fix`** runs every auto-fixer
-(`pnpm format`, the `sync:*` copies, `api-report`, `docs:md`, and the
-lower-only baseline `*:update`s) in one go. Review the diff before committing.
+(`pnpm format`, the `sync:*` copies, `api-report`, `docs:md`, and the lower-only
+baseline `*:update`s) in one go. Review the diff before committing.
 
 The five causes of most fix-up commits, and what to do:
 
@@ -69,7 +69,8 @@ The pre-push hook (`lefthook.yml`) blocks a push that:
 - targets `main`/`master`;
 - is behind `origin/main` (rebase first);
 - has merge conflicts with `main` (`git merge-tree`);
-- changes packages with no changeset (`pnpm changeset status --since=origin/main`);
+- changes packages with no changeset
+  (`pnpm changeset status --since=origin/main`);
 - fails `pnpm check:local`.
 
 Never bypass it with `--no-verify`; CI runs those gates and the ones

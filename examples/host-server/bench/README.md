@@ -11,9 +11,9 @@ node bench.mjs --steps 100,200,400,600,1000 --hold 12
 
 Each simulated tenant does what a real one does: opens `?host=1`, deploys its
 agent in the config frame, then streams 16 kHz PCM16 continuously and reads the
-agent's audio back. Everything above the provider socket is real code — the
-real handshake, a real per-connection runtime, the real pipeline transport and
-audio pacer.
+agent's audio back. Everything above the provider socket is real code — the real
+handshake, a real per-connection runtime, the real pipeline transport and audio
+pacer.
 
 The two AssemblyAI providers are replaced by local fakes, reached through the
 documented staging overrides (`assemblyAIStt({ streamingUrl })`,
@@ -24,8 +24,8 @@ also matches production, where the providers are somebody else's machines.
 
 ## Results — 4 vCPU, 16 GB, Node 22
 
-Paced connects (25 every 250ms), 12s hold per step, 20ms audio frames.
-`CPU%` is percent of **one** core; `drvCPU` is the load driver on the same box.
+Paced connects (25 every 250ms), 12s hold per step, 20ms audio frames. `CPU%` is
+percent of **one** core; `drvCPU` is the load driver on the same box.
 
 ```text
   conns   ready  RSS MiB  KiB/conn   CPU%  drvCPU  loop lag  ready p50/p95   audio in
@@ -38,8 +38,8 @@ Paced connects (25 every 250ms), 12s hold per step, 20ms audio frames.
    1000    1000      460       345    104      99      59ms       68/743ms  30319KiB/s
 ```
 
-**1000 concurrent streaming sessions, and the box was not the thing that
-stopped it.** At 1000 the server holds 460 MiB, uses just over one core, keeps
+**1000 concurrent streaming sessions, and the box was not the thing that stopped
+it.** At 1000 the server holds 460 MiB, uses just over one core, keeps
 event-loop lag under 60ms, and loses no audio: 30,319 KiB/s inbound against a
 30,850 KiB/s theoretical maximum is 98.3%, and the shortfall is the driver
 missing its own 50 Hz cadence, not the server dropping frames.
@@ -58,8 +58,8 @@ Two failure modes show up past the clean region, from an earlier unpaced run
   400 opened in batches of 25. Each connect costs two TLS handshakes, and they
   all land on one event loop.
 - **Past ~1200 it comes apart.** Event-loop lag hit 2.4s at 1200 and `ready p95`
-  reached 21s at 1600, with STT connect attempts timing out at 2.5s — the
-  server was too busy to finish its own outbound handshakes.
+  reached 21s at 1600, with STT connect attempts timing out at 2.5s — the server
+  was too busy to finish its own outbound handshakes.
 
 ## Caveats — read before quoting these
 

@@ -9,13 +9,13 @@ read_when: >-
 
 A SIBLING of `packages/aai-server/CLAUDE.md`, for the reason
 [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md) beside it is one: Claude Code auto-loads
-only `CLAUDE.md`, so nothing here is resident. The RULE lives
-there, under "Queryable run state is not `workflow_runs`' job", because a
-decision somebody needs resident while editing a migration belongs in the
-resident guide. What is HERE is the evidence, which is reference: the index
-inventory as measured, what three other durable-execution engines did with the
-same table, and — a second question about the same rows — which of these tables
-are pruned on a timeframe and which are not.
+only `CLAUDE.md`, so nothing here is resident. The RULE lives there, under
+"Queryable run state is not `workflow_runs`' job", because a decision somebody
+needs resident while editing a migration belongs in the resident guide. What is
+HERE is the evidence, which is reference: the index inventory as measured, what
+three other durable-execution engines did with the same table, and — a second
+question about the same rows — which of these tables are pruned on a timeframe
+and which are not.
 
 ## The write path's current cost, measured
 
@@ -40,10 +40,10 @@ not zero, and it is what the two sweeps cost.
 **nothing else** — every step insert is a heap append plus one index entry.
 `20260902130000` added `started_at` and wrote "no index: nothing filters or
 orders on it"; `20260902140000` added `code_version` to `workflow_runs` on the
-same terms, and `20260929010000` added `label` the same way (it is read with
-the row, never filtered or ordered on). The rule in `CLAUDE.md` is that
-precedent generalized, written down before the first listing feature makes it
-a judgement call each time.
+same terms, and `20260929010000` added `label` the same way (it is read with the
+row, never filtered or ordered on). The rule in `CLAUDE.md` is that precedent
+generalized, written down before the first listing feature makes it a judgement
+call each time.
 
 ## What the other three engines did
 
@@ -56,11 +56,10 @@ a judgement call each time.
   one names an index created elsewhere — leaving **fourteen live**, of which
   **five** are partial with a `status` predicate (`idx_workflow_status_delayed`,
   `_pending`, `_failed`, `_in_flight`, `_partition_dequeue_v2`) and two more are
-  partial on a column a transition sets (`completed_at`,
-  `started_at_epoch_ms`). Every status write is maintenance across that set.
-  Counted off `main` on 2026-09-03 by resolving creates against drops, because
-  the file is append-only and its gross statement count over-states the live set
-  by six.
+  partial on a column a transition sets (`completed_at`, `started_at_epoch_ms`).
+  Every status write is maintenance across that set. Counted off `main` on
+  2026-09-03 by resolving creates against drops, because the file is append-only
+  and its gross statement count over-states the live set by six.
 - **Temporal** splits the two. `executions` is one row per run, blob columns,
   PK-ordered inserts, deliberately index-poor; everything queryable lives in
   `executions_visibility`, a wide table of generated columns that a visibility
@@ -117,10 +116,9 @@ for the five exceptions.
 | `aai-sweep-workflow-runs`     | `workflow_runs` + `workflow_steps`, `workflow_attempts`, `workflow_attempt_leases`, `workflow_sleeps`, `workflow_hooks` | 30 days after the run started, once terminal |
 | `aai-sweep-workflow-run-keys` | `workflow_run_keys`                                                                                                     | when the run it names is gone                |
 
-Outside `aai_platform`, `aai-sweep-cron-history` prunes
-`cron.job_run_details` and `aai-sweep-preview-archive` prunes
-`pgmq.a_aai_studio_preview`, both at 7 days; `aai-sweep-blob-gc` reclaims
-unreferenced blob and upload objects.
+Outside `aai_platform`, `aai-sweep-cron-history` prunes `cron.job_run_details`
+and `aai-sweep-preview-archive` prunes `pgmq.a_aai_studio_preview`, both at 7
+days; `aai-sweep-blob-gc` reclaims unreferenced blob and upload objects.
 
 **The terminal-run window bounds the table only because every run REACHES a
 terminal status**, which is a claim spanning SQL and TypeScript: the sweep's
@@ -151,8 +149,8 @@ the gate checks it:
   never reach an agent an author deployed.
 - `workflow_queue` — transient by construction and deliberately not by clock. A
   parked `sleep()` message may be due months out, and expiring it cancels the
-  run; a message goes when it is delivered or its retry budget runs out
-  (`ack`, `fail`, `failUnreachable`).
+  run; a message goes when it is delivered or its retry budget runs out (`ack`,
+  `fail`, `failUnreachable`).
 - `workflow_run_owner` — retired, written and read by nothing, owed a `drop`
   (`RETIRED_OBJECTS` in `platform/schema.test.ts`). Its rows are frozen rather
   than growing.

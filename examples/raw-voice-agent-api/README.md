@@ -1,7 +1,7 @@
 # Raw Voice Agent API — no SDK
 
-A browser talking **directly to the [AssemblyAI Voice Agent
-API](https://www.assemblyai.com/docs/voice-agents/voice-agent-api/quickstart)**
+A browser talking **directly to the
+[AssemblyAI Voice Agent API](https://www.assemblyai.com/docs/voice-agents/voice-agent-api/quickstart)**
 over one WebSocket, with nothing in between. The workload happens to be the
 [`emergency-dispatch-agent`](../../packages/aai-templates/templates/emergency-dispatch-agent)
 template rebuilt from scratch; the point is the wire protocol, not the domain.
@@ -17,9 +17,9 @@ It uses **no SDKs and no libraries** — not `@alexkroman1/aai`, not
   whose only job is to mint a short-lived connection token.
 
 Everything the managed platform normally does for you — the system-prompt
-assembly, the tool JSON-Schemas, tool execution, the KV store, the dashboard
-UI — is reproduced here by hand so you can see exactly what the platform
-abstracts away.
+assembly, the tool JSON-Schemas, tool execution, the KV store, the dashboard UI
+— is reproduced here by hand so you can see exactly what the platform abstracts
+away.
 
 ## Architecture
 
@@ -83,7 +83,8 @@ The whole integration is just a handful of JSON messages over one WebSocket:
 }
 ```
 
-**Streaming audio up** — base64 PCM16 (24 kHz mono), once `session.ready` arrives:
+**Streaming audio up** — base64 PCM16 (24 kHz mono), once `session.ready`
+arrives:
 
 ```json
 { "type": "input.audio", "audio": "<base64>" }

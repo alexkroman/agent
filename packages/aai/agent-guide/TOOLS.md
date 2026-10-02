@@ -31,8 +31,8 @@ const myTool = tool({
 });
 ```
 
-`execute` may call `fetch` directly — tool code reaches external APIs the
-same way in `aai dev` and deployed.
+`execute` may call `fetch` directly — tool code reaches external APIs the same
+way in `aai dev` and deployed.
 
 ### `ctx` (ToolContext)
 
@@ -67,9 +67,9 @@ declare module "@alexkroman1/aai" {
 }
 ```
 
-**Pass `ctx.signal` to anything slow.** It is always present — no `?.`
-needed — and forwarding it is what makes a tool stop work the caller has
-already interrupted:
+**Pass `ctx.signal` to anything slow.** It is always present — no `?.` needed —
+and forwarding it is what makes a tool stop work the caller has already
+interrupted:
 
 ```ts
 import { tool } from "@alexkroman1/aai";
@@ -92,9 +92,9 @@ so a variable declared empty and filled in the same scope widens from what you
 put in it — `const items = []` followed by `items.push(pick)` infers `Pick[]`
 with no annotation. Do NOT add type annotations defensively.
 
-**Annotate the DECLARATION when the first write is somewhere the compiler
-cannot follow** — inside a callback, or after the value has already been read.
-The widening only tracks straight-line code in one scope, so in those cases the
+**Annotate the DECLARATION when the first write is somewhere the compiler cannot
+follow** — inside a callback, or after the value has already been read. The
+widening only tracks straight-line code in one scope, so in those cases the
 declaration keeps its starting type:
 
 ```ts no-check
@@ -107,8 +107,8 @@ let best: Pick | null = null;          // ✅
 const [picks, set] = useState<Pick[]>([]);  // ✅
 ```
 
-Annotating the _use_ instead does not help — the declaration is still wrong,
-so the next push just reports the next line.
+Annotating the _use_ instead does not help — the declaration is still wrong, so
+the next push just reports the next line.
 
 ### Session state
 
@@ -154,9 +154,9 @@ Four rules, and each is an error rather than advice if you get it wrong:
 
 - **`tool` reads, `updateTool` writes.** What a read is handed is FROZEN, so
   mutating it throws instead of quietly going nowhere.
-- **A write is SYNCHRONOUS.** The value you mutate is stored the moment your body
-  returns, so an `updateTool` body may not `await`. When you need a model call or
-  a fetch first, do it in an ordinary `tool()` and then mutate:
+- **A write is SYNCHRONOUS.** The value you mutate is stored the moment your
+  body returns, so an `updateTool` body may not `await`. When you need a model
+  call or a fetch first, do it in an ordinary `tool()` and then mutate:
 
   ```ts no-check
   execute: async (args, ctx) => {
@@ -178,22 +178,22 @@ Four rules, and each is an error rather than advice if you get it wrong:
   either way; that is the reason for the rules above.
 
 There is nothing to declare on `agent()` — the slot owns its own default. Use
-`syncState: slot.projected` (or a list of them) to show state to a custom client.
-`slot.snapshot(ctx)` returns a mutable deep copy of the value — what a spec
-hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
+`syncState: slot.projected` (or a list of them) to show state to a custom
+client. `slot.snapshot(ctx)` returns a mutable deep copy of the value — what a
+spec hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
 
 **`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
-`ToolDef`, `Message`, provider types. A plain
-`import { ToolContext }` fails; use `import type { ToolContext }`, or
-`import { agent, type ToolContext }` to combine with value imports.
+`ToolDef`, `Message`, provider types. A plain `import { ToolContext }` fails;
+use `import type { ToolContext }`, or `import { agent, type ToolContext }` to
+combine with value imports.
 
 `ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
-runs one LLM generation on the host. It defaults to the agent's pipeline
-`llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) or a model-id
-string to use another provider whose API key is in the agent's secrets —
-that's also how S2S agents use it. Pass a Zod schema as `schema` for typed
-structured output (`generateObject`-style): the result's `object` carries
-the parsed, typed value. A plain JSON Schema object also works.
+runs one LLM generation on the host. It defaults to the agent's pipeline `llm`;
+pass an `llm` descriptor (from `@alexkroman1/aai/llm`) or a model-id string to
+use another provider whose API key is in the agent's secrets — that's also how
+S2S agents use it. Pass a Zod schema as `schema` for typed structured output
+(`generateObject`-style): the result's `object` carries the parsed, typed value.
+A plain JSON Schema object also works.
 
 The option bag is `GenerateOptions` and the answer is `GenerateResult`
 (`GenerateObjectResult<T>` with a `schema`), both exported from
@@ -259,9 +259,9 @@ an SDK dependency. `technical-support-agent` is the worked example.
 ### Speakers (`speaker()`, `ctx.delegate`, `roster()`)
 
 `ctx.generate` is ONE prompt. When answering takes an unknown number of tool
-calls the conversation has no reason to carry, delegate to a **speaker** off
-the line: a second tool loop with its own prompt, model, tools and — the whole
-point — its own context window.
+calls the conversation has no reason to carry, delegate to a **speaker** off the
+line: a second tool loop with its own prompt, model, tools and — the whole point
+— its own context window.
 
 ```ts
 import { speaker, tool } from "@alexkroman1/aai";
@@ -290,12 +290,12 @@ FINAL message, so declare `expectedOutput`; its context is isolated, so `task`
 must be a complete brief; `maxSteps` bounds the loop, and a capped run is asked
 for its answer with tools withheld; and say you are looking it up before you
 call. It may name its own `llm` and `tools` map; **delegation is one level
-deep**. In tests, `stubDelegate` (`@alexkroman1/aai-runtime/testing`) fakes
-it by name.
+deep**. In tests, `stubDelegate` (`@alexkroman1/aai-runtime/testing`) fakes it
+by name.
 
 When the SPEAKER has to change — triage verifies the caller, billing takes over
-with its own instructions and tools, one history — mark them `speaks: true` on
-a `roster()`; the first speaking entry answers the call.
+with its own instructions and tools, one history — mark them `speaks: true` on a
+`roster()`; the first speaking entry answers the call.
 
 ```ts
 import { agent, speaker, roster } from "@alexkroman1/aai";
@@ -351,9 +351,8 @@ Nothing else. `agent.ts` does not import it, does not list it, and takes no
 `tools` field at all — see "A file in `tools/` IS a tool" in the core guide.
 
 **Calling the network builtins from your own tool code.** `web_search`,
-`visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls
-them, and they are not on `ctx`. When your own `execute` needs one, import
-it:
+`visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls them,
+and they are not on `ctx`. When your own `execute` needs one, import it:
 
 ```ts no-check
 import { fetchJson, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
@@ -365,28 +364,27 @@ execute: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
 
 Same implementations the builtins use, so you get URL screening, credential-
 header stripping, size caps and timeouts rather than a bare `fetch`. Plain
-`fetch` still works when you want none of that. There is no callable
-`run_code`: it exists to run code the model wrote, and tool code that wants
-to compute something can just compute it.
+`fetch` still works when you want none of that. There is no callable `run_code`:
+it exists to run code the model wrote, and tool code that wants to compute
+something can just compute it.
 
 **But prefer the BUILTIN when the model should decide.** These two are not
 interchangeable:
 
 - If the agent's job is to search or browse — a research assistant, anything
   that follows a link the user mentions — declare
-  `builtinTools: ["web_search", "visit_webpage"]` and let the model call
-  them. It can then search several times with different queries, or read one
-  specific page, as the conversation needs.
-- Import from `/tools` when YOUR tool's own logic needs a fetch: a currency
-  tool hitting one known API, a price checker with a fixed endpoint.
+  `builtinTools: ["web_search", "visit_webpage"]` and let the model call them.
+  It can then search several times with different queries, or read one specific
+  page, as the conversation needs.
+- Import from `/tools` when YOUR tool's own logic needs a fetch: a currency tool
+  hitting one known API, a price checker with a fixed endpoint.
 
 Wrapping `webSearch` in a single custom tool is the mistake to avoid — it
 replaces "the model searches as needed" with one fixed query-and-summarize
 pipeline, and no amount of prompting gets the flexibility back.
 
-**`inputSchema` is a Zod object, or absent.** The field itself is
-optional, but its VALUE must be a plain `z.object(...)` — so all of these
-are type errors:
+**`inputSchema` is a Zod object, or absent.** The field itself is optional, but
+its VALUE must be a plain `z.object(...)` — so all of these are type errors:
 
 ```ts no-check
 inputSchema: z.undefined(),                // ✗ ZodUndefined
@@ -399,11 +397,11 @@ For a tool with no arguments write `tool({ description, execute })`, or
 argument optional, put `.optional()` on the FIELD, never on the object:
 `z.object({ notes: z.string().optional() })`.
 
-**Do not annotate `execute`'s return type.** Nothing needs it — the result
-is serialized to the model either way — and it reliably breaks the moment
-the tool also returns an error, because `Promise<DrugInfo>` does not accept
-`{ error: "not found" }`. Every such annotation eventually costs a build
-round to widen into a union. Let it infer.
+**Do not annotate `execute`'s return type.** Nothing needs it — the result is
+serialized to the model either way — and it reliably breaks the moment the tool
+also returns an error, because `Promise<DrugInfo>` does not accept
+`{ error: "not found" }`. Every such annotation eventually costs a build round
+to widen into a union. Let it infer.
 
 ### A tool the BROWSER runs — `clientTool()`
 
@@ -446,19 +444,19 @@ export function LocationTool() {
 }
 ```
 
-- **Only a browser session can answer it.** On a phone call, in a text agent
-  or a subagent the call fails naming why — give such an agent a server path.
+- **Only a browser session can answer it.** On a phone call, in a text agent or
+  a subagent the call fails naming why — give such an agent a server path.
 - **No page answer within `timeoutMs` fails the call**, as does a barge-in.
-- **Never send a secret the model should not see through one** — the result
-  goes into the conversation like any other tool result. Return the token, the
-  last four digits, the decision — not the card number.
+- **Never send a secret the model should not see through one** — the result goes
+  into the conversation like any other tool result. Return the token, the last
+  four digits, the decision — not the card number.
 
 ### A tool built by a factory still gets its own file
 
-The `tools/` rules (file name = tool name, default export, flat directory)
-are in the core guide. A tool that closes over module-local state, or one
-built by your own wrapper, still gets its own file — the file names the
-instance and the factory lives beside it:
+The `tools/` rules (file name = tool name, default export, flat directory) are
+in the core guide. A tool that closes over module-local state, or one built by
+your own wrapper, still gets its own file — the file names the instance and the
+factory lives beside it:
 
 ```ts no-check
 // tools/to_hotel_assistant.ts
@@ -496,13 +494,13 @@ it, `[]` for none.
 
 A keyed builtin reads its key from the agent env; list it in `requiredEnv`.
 
-**Every builtin here is a tool the MODEL calls, not a function your code
-can call** — there is no `fetch_json()` for a tool's `execute`. So:
+**Every builtin here is a tool the MODEL calls, not a function your code can
+call** — there is no `fetch_json()` for a tool's `execute`. So:
 
-- **Declare the builtin** (`builtinTools: ["fetch_json"]`) when the MODEL
-  should decide the URL and read the JSON — lookups you cannot enumerate.
-- **Write your own tool** whose `execute` calls `fetch` when YOU own the
-  URL and the shape — a specific endpoint, auth, or a reshaped response.
+- **Declare the builtin** (`builtinTools: ["fetch_json"]`) when the MODEL should
+  decide the URL and read the JSON — lookups you cannot enumerate.
+- **Write your own tool** whose `execute` calls `fetch` when YOU own the URL and
+  the shape — a specific endpoint, auth, or a reshaped response.
 
 Network builtins are SSRF-screened outside a container (private/loopback
 blocked). Your own tool code has open egress either way.
@@ -561,13 +559,13 @@ const feed = parseFeed(xml);
 const episodes = feed?.items.filter((item) => item.enclosureUrl !== undefined) ?? [];
 ```
 
-**Reach for this rather than writing the patterns.** Both are cheap to get
-wrong in ways that only show up on real pages: `<[^>]+>` cuts a tag whose
-attribute contains a `>`, `<script[^>]*>[\s\S]*?<\/script>` leaves the whole
-script in your prompt when the page was truncated mid-tag, and
-`indexOf("<title>")` finds an entry's title rather than a channel's. The
-`link-digest-workflow` and `podcast-digest-workflow` templates each shipped one
-before this subpath existed.
+**Reach for this rather than writing the patterns.** Both are cheap to get wrong
+in ways that only show up on real pages: `<[^>]+>` cuts a tag whose attribute
+contains a `>`, `<script[^>]*>[\s\S]*?<\/script>` leaves the whole script in
+your prompt when the page was truncated mid-tag, and `indexOf("<title>")` finds
+an entry's title rather than a channel's. The `link-digest-workflow` and
+`podcast-digest-workflow` templates each shipped one before this subpath
+existed.
 
 ## Persisting data — bring your own client
 
@@ -595,9 +593,9 @@ export default tool({
 });
 ```
 
-Add the driver to your project's `package.json` and the URL with `aai secret put
-DATABASE_URL …` (or in `.env` under `aai dev`). Nothing here is privileged — an
-HTTP API, a provider SDK or a hosted KV works the same way.
+Add the driver to your project's `package.json` and the URL with
+`aai secret put DATABASE_URL …` (or in `.env` under `aai dev`). Nothing here is
+privileged — an HTTP API, a provider SDK or a hosted KV works the same way.
 
 **What the platform DOES persist for you**, with no setup:
 
@@ -616,23 +614,24 @@ saves.
 ## Speech goes both ways — `spokenMoney`, `resolveOne`, `isoDate`
 
 **Speech goes both ways, and `@alexkroman1/aai` publishes both conversions.**
-Inbound: `spokenDigits("four one five")` is `"415"`, `spokenOrdinal("the third
-one")` is `3`, and `resolveOne(candidates, spoken, opts)` picks the one item a
-phrase meant — answering a `ToolFailure` when nothing matches or several do, the
-case a hand-written `.find()` gets wrong.
+Inbound: `spokenDigits("four one five")` is `"415"`,
+`spokenOrdinal("the third one")` is `3`, and
+`resolveOne(candidates, spoken, opts)` picks the one item a phrase meant —
+answering a `ToolFailure` when nothing matches or several do, the case a
+hand-written `.find()` gets wrong.
 
 Outbound: an engine handed `$240.50` may read "dollar sign two hundred forty
-point five zero" — right text, wrong call.
-Render the words first: `spokenMoney(240.5)` is `"240 dollars and 50 cents"`,
-`spokenDate("2026-06-08")` is `"Monday, June 8"`, `spokenTime("18:30")` is
-`"6:30 PM"`. `mintCode("HTL")` mints a reference with no `0`/`O`, `1`/`I` or
-`L` in it — what comes back wrong read aloud.
+point five zero" — right text, wrong call. Render the words first:
+`spokenMoney(240.5)` is `"240 dollars and 50 cents"`, `spokenDate("2026-06-08")`
+is `"Monday, June 8"`, `spokenTime("18:30")` is `"6:30 PM"`. `mintCode("HTL")`
+mints a reference with no `0`/`O`, `1`/`I` or `L` in it — what comes back wrong
+read aloud.
 
 **Declare a date or a time on the SCHEMA.** `isoDate("the arrival date")` and
 `clockTime("the pickup time")` are zod fields, so the rule reaches the model
 before it calls rather than as a refusal after. `isIsoDate` refuses
-`2026-02-30`; `addDays`/`daysBetween` compute in UTC — never turn a
-`YYYY-MM-DD` into a `Date` in local time.
+`2026-02-30`; `addDays`/`daysBetween` compute in UTC — never turn a `YYYY-MM-DD`
+into a `Date` in local time.
 
 **Never call `Math.random()` in a tool** — use `ctx.random`, which a test can
 substitute, so a dice roll or a minted code is something a spec can assert.

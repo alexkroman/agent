@@ -79,9 +79,8 @@ what declares which variables become `ctx.env`, and it is the place to name a
 variable nothing else can see: one a tool reads straight off `process.env`, or a
 host setting like `PORT`.
 
-:::caution[Your `.env` is never uploaded to the host]
-The secret step in the printed sequence is how the values get there.
-:::
+:::caution[Your `.env` is never uploaded to the host] The secret step in the
+printed sequence is how the values get there. :::
 
 `node` emits no directory, so there is no deployment to warn about: what runs is
 a process you start, reading `.env` at boot. A blank there is a developer

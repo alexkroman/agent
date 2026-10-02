@@ -10,8 +10,8 @@ read_when: >-
 Reference for the journal's own decisions, the engine's walk, the topology of
 their tests and what the contract does and does not promise. A decision needed
 while working elsewhere in the package belongs in `CLAUDE.md` instead, which
-keeps which journal a deployment gets (and in what order) and points here.
-Paths below are under `packages/aai-runtime/src/` unless they name a package.
+keeps which journal a deployment gets (and in what order) and points here. Paths
+below are under `packages/aai-runtime/src/` unless they name a package.
 
 ## A run's journal has THREE homes, and the order between them is a decision
 
@@ -22,8 +22,8 @@ index, the upload record and the owed DDL are mapped from the same value, so
 none of them carries a copy of the order. The boot line names whichever won.
 
 - **platform** — `createPlatformJournal`, one `POST /:slug/workflow-journal` per
-  operation, beside the queue, session state and upload records that already work
-  this way. The statements run on the platform's own database
+  operation, beside the queue, session state and upload records that already
+  work this way. The statements run on the platform's own database
   (`aai-server/platform/workflow-journal.ts`), which mirrors
   `workflow/journal/schema.ts` with a `slug` added to every key.
 - **postgres** — `createPostgresJournal` over the agent's own `DATABASE_URL`,
@@ -36,8 +36,8 @@ tenant database, so every deployed run journaled into a sandbox that self-exits
 after `AGENT_IDLE_EXIT_MS`. A step's result, its attempt count and an open
 approval window died with it — and nothing reported it, because from inside the
 system a step whose result was lost is indistinguishable from one never reached.
-The run sat suspended looking healthy, so "durable" was true of the interface and
-false of every deployment.
+The run sat suspended looking healthy, so "durable" was true of the interface
+and false of every deployment.
 
 Platform BEFORE postgres for a second reason: a deployed guest may also carry an
 author-supplied `DATABASE_URL`, and its runs belong beside its session state
@@ -60,11 +60,11 @@ accident.
 **The ~840 ms is DECOMPOSABLE now, and was a total for as long as it was
 quoted.** Every RPC carries a W3C `traceparent` (`_trace-context.ts`) and logs
 its own elapsed at debug; `aai-server`'s `withReserved` logs `waitedMs` and
-`workMs` under the same id. So `elapsed - (waited + work)` is the hop, and
-"was it our pool" is answerable from two log lines rather than from a guess —
-which matters because `ADMIN_POOL_MAX` had already been widened once on the
-assumption that it was. One span per CALL: a run's whole walk is not one trace,
-which would need the trace minted at the delivery and carried through
+`workMs` under the same id. So `elapsed - (waited + work)` is the hop, and "was
+it our pool" is answerable from two log lines rather than from a guess — which
+matters because `ADMIN_POOL_MAX` had already been widened once on the assumption
+that it was. One span per CALL: a run's whole walk is not one trace, which would
+need the trace minted at the delivery and carried through
 `workflow/run-context.ts`.
 
 Every platform-arm `JournalStore` call is one `POST /:slug/workflow-journal`,
@@ -96,17 +96,16 @@ resurrect a terminal run nor undo an `abandon`; and a LOST eager set is
 **re-asked, never believed** — issued beside the record read it can reach the
 store ahead of a racing `start`'s `createRun` and decline a run that is alive,
 which `workflow/concurrent-delivery.test.ts` shrinks to a step the body needed
-and nothing ever ran. `workflow/engine-opening.test.ts` states both. The
-speedup also moved where a cancel lands, which is why law 1 relaxes its
-per-name floor for a cancelled run and `cancelsMidWalk`'s floor was
-re-measured.
+and nothing ever ran. `workflow/engine-opening.test.ts` states both. The speedup
+also moved where a cancel lands, which is why law 1 relaxes its per-name floor
+for a cancelled run and `cancelsMidWalk`'s floor was re-measured.
 
 The FOURTH is a WAIT, and it was the worst of them because it grew with the
 number of DELIVERIES rather than with the body: a settled step was answered from
 the walk's snapshot and every elapsed `ctx.sleep` was still a `claimSleep` round
-trip, so a polling run's traffic was quadratic. `JournalStore.readSleeps` and
-"A wait was outside the whole-read guarantee" below carry the measurement and
-the rule for using the snapshot.
+trip, so a polling run's traffic was quadratic. `JournalStore.readSleeps` and "A
+wait was outside the whole-read guarantee" below carry the measurement and the
+rule for using the snapshot.
 
 ### A clock, a random number and a uuid are AFFORDANCES
 
@@ -121,10 +120,11 @@ the lexical backstop with its remedy naming them.
 **`workflow/replay/determinism.ts`'s module doc is the argument**, and the three
 decisions it records are the ones not to relitigate: their own key space (per
 KIND, so inserting one shifts no other); NO attempt lease (a lease bounds
-abandonment and these have no body to abandon); and one float per `random()` call
-rather than a seeded sequence. A fourth thing it settles is why they RECORD a
-divergence reach and never raise one — an unrecorded reach fails the next step on
-a healthy resume, and raising is unsound without `claimAttempt`'s corroboration.
+abandonment and these have no body to abandon); and one float per `random()`
+call rather than a seeded sequence. A fourth thing it settles is why they RECORD
+a divergence reach and never raise one — an unrecorded reach fails the next step
+on a healthy resume, and raising is unsound without `claimAttempt`'s
+corroboration.
 
 **Inside a `ctx.step` they are REFUSED**, by the same `currentRun()?.step` test
 and for the same key-shift reason as the section below.
@@ -136,9 +136,9 @@ their waits as `sleep!<label>#<occurrence>` and `hook!<token>#<occurrence>` —
 name plus occurrence, exactly like `ctx.step`. The occurrence counters are PER
 NAME, so a loop is one label and N rows, and inserting a wait shifts nothing.
 
-They were two bare ordinals, and then a body reaching a different NUMBER of waits
-read its predecessor's record. Two shapes, both legal code with no author mistake
-in them beyond a condition:
+They were two bare ordinals, and then a body reaching a different NUMBER of
+waits read its predecessor's record. Two shapes, both legal code with no author
+mistake in them beyond a condition:
 
 ```ts no-check
 if (somethingAboutTheClock) await ctx.sleep("early", 1000);
@@ -159,44 +159,48 @@ Three things not to relitigate:
   signature change, taken while there are no external consumers.
 - **`correlationId` is NOT defaulted from `label`.** They answer different
   questions: `label` decides which journal ROW this wait is, `correlationId`
-  decides which waits one `wakeUp` ends. A polled schedule wants one label and one
-  id across every iteration; two independent waits want two labels and may
+  decides which waits one `wakeUp` ends. A polled schedule wants one label and
+  one id across every iteration; two independent waits want two labels and may
   want a shared id.
 - **The three determinism reads stay positional** (`now!0`, `random!0`,
-  `uuid!0`). They take no argument to name, and they journal through `appendStep`
-  so a reach is at least recorded for the divergence check. `sdk/workflow-ctx.ts`
-  carries why requiring a literal there is the worse trade.
+  `uuid!0`). They take no argument to name, and they journal through
+  `appendStep` so a reach is at least recorded for the divergence check.
+  `sdk/workflow-ctx.ts` carries why requiring a literal there is the worse
+  trade.
 
 What is left is one shape, and it is strictly better than what it replaced: a
 label or token that is ITSELF non-deterministic mints a key no walk has reached,
 so the run registers a fresh wait and PARKS on something nobody can signal. That
 hangs rather than answering wrongly, and nothing detects it —
 `workflow/replay/divergence.ts` states the residual and why the NEW-key report
-that would catch it is not built. `waitTokenDiverged` there is the nearest thing:
-it compares the token `claimHook` hands back against the one the walk reached, so
-it is an assertion about the KEY SCHEME (unreachable while a key names its token)
-rather than about the body, and it is what caught the positional case.
+that would catch it is not built. `waitTokenDiverged` there is the nearest
+thing: it compares the token `claimHook` hands back against the one the walk
+reached, so it is an assertion about the KEY SCHEME (unreachable while a key
+names its token) rather than about the body, and it is what caught the
+positional case.
 
 ### A step body may not WAIT, and the engine refuses one that does
 
 `ctx.sleep` and `ctx.waitFor` belong to the body. The closure `ctx.step` is
-handed CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep("nap",
-2000))` is one line away at every call site, and until `workflow/replay/wait.ts`
-existed the engine ran it — silently, and wrongly in three separate ways. Two of
-them are measured below and both still stand; the third was the key slide, which
-naming the waits closed independently (see "A wait is keyed by NAME").
+handed CAPTURES `ctx`, though, so
+`ctx.step("napper", () => ctx.sleep("nap", 2000))` is one line away at every
+call site, and until `workflow/replay/wait.ts` existed the engine ran it —
+silently, and wrongly in three separate ways. Two of them are measured below and
+both still stand; the third was the key slide, which naming the waits closed
+independently (see "A wait is keyed by NAME").
 
 - **The step body re-ran from the top on every delivery.** The suspend unwinds
   out of the step, the attempt charge is released (correct — a suspend settles
   nothing), so the step is never journaled and the next delivery re-runs the
   closure. A one-step body logged its effect **twice** across two deliveries and
-  reported `completed`. For a step that calls a paid provider that is a duplicate
-  charge, which is how this was found.
-- **And every LATER wait in the run READ the wrong record.** That half is CLOSED,
-  and not by this check — see "A wait is keyed by NAME" above, which carries the
-  transcript. It is listed here because it was one of three reasons for the
-  refusal rather than the whole of it, and because `workflow/replay/wait.ts`'s
-  own doc is still the clearest statement of what positional keys cost.
+  reported `completed`. For a step that calls a paid provider that is a
+  duplicate charge, which is how this was found.
+- **And every LATER wait in the run READ the wrong record.** That half is
+  CLOSED, and not by this check — see "A wait is keyed by NAME" above, which
+  carries the transcript. It is listed here because it was one of three reasons
+  for the refusal rather than the whole of it, and because
+  `workflow/replay/wait.ts`'s own doc is still the clearest statement of what
+  positional keys cost.
 
 So both methods now refuse when `currentRun()?.step` is set — which is true for
 the whole of a step's execution, including inside every helper it awaits, since
@@ -214,13 +218,13 @@ is already two steps with the wait between them).
 **What the refusal cost, recorded because it is a real loss.** The property
 grammar's `nestedWait` node (`workflow/_resume-program.ts`) generated exactly
 this shape and was the 10-out-of-10 regression for the lease fix ("An attempt is
-a LEASE, and it EXPIRES", below). It is
-gone: it can no longer generate a legal body. The arm it defended — a suspend
-GIVING BACK its charge — is gone too, and needs no replacement: a suspension is
-no longer a THROW, so nothing unwinds through a step's attempt loop and there is
-no charge to hand back (`workflow/replay/suspend.ts`). The half of the lease
-still reachable through `ctx` — a charge NOT given back when an attempt dies —
-is held by `flaky`. Removing the node also lowered two coverage floors in
+a LEASE, and it EXPIRES", below). It is gone: it can no longer generate a legal
+body. The arm it defended — a suspend GIVING BACK its charge — is gone too, and
+needs no replacement: a suspension is no longer a THROW, so nothing unwinds
+through a step's attempt loop and there is no charge to hand back
+(`workflow/replay/suspend.ts`). The half of the lease still reachable through
+`ctx` — a charge NOT given back when an attempt dies — is held by `flaky`.
+Removing the node also lowered two coverage floors in
 `workflow/resume-equivalence.test.ts`, re-measured over 20 runs with the old
 ranges kept beside the new ones.
 
@@ -228,8 +232,9 @@ ranges kept beside the new ones.
 never settles and quiescence means "no engine operation in flight", so a wait
 inside a step is a step awaiting something that cannot settle, holding the walk
 open against the check that would suspend it — `replayRun` would never return.
-A/B'd: with the check disabled, all eight cases in `workflow/replay/wait.test.ts`
-stop failing and start timing OUT. That module's own doc carries it.
+A/B'd: with the check disabled, all eight cases in
+`workflow/replay/wait.test.ts` stop failing and start timing OUT. That module's
+own doc carries it.
 
 **That residual is REACHABLE, and the estimate beside it was measured wrong.**
 It read "far past what one dispatcher per deployment produces". One dispatcher
@@ -266,28 +271,29 @@ came down with a re-measured range — and
 
 What is NOT closed is the race it was never about: two walks reaching a step
 NEITHER has settled still both run it, which is the engine's stated
-at-least-once cost, and the delivery door still starts walks it cannot stop. Both
-want a heartbeat on the RUN so a ceiling cannot abandon a walk that is alive.
-The platform's own half — a slow delivery starving every OTHER tenant's claim —
-is fixed separately in `aai-server/workflow-queue-budget.ts`.
+at-least-once cost, and the delivery door still starts walks it cannot stop.
+Both want a heartbeat on the RUN so a ceiling cannot abandon a walk that is
+alive. The platform's own half — a slow delivery starving every OTHER tenant's
+claim — is fixed separately in `aai-server/workflow-queue-budget.ts`.
 
 ### A run record names the CODE it was started against
 
 `RunRecord.codeVersion` is `AAI_BUNDLE_SHA256`, recorded at `start` and compared
 at each walk, and it exists for one reader: the divergence message. That message
-states two causes — a redeploy mid-flight, or a non-deterministic body — and then
-hands the reader a test to run against their own source, because a journal holds
-what a value WAS and never how it was produced. The version settles half of it:
-an inequality states the redeploy and names both bundles, an equality ELIMINATES
-it. The fork stays in the text either way, being what says what to look for.
+states two causes — a redeploy mid-flight, or a non-deterministic body — and
+then hands the reader a test to run against their own source, because a journal
+holds what a value WAS and never how it was produced. The version settles half
+of it: an inequality states the redeploy and names both bundles, an equality
+ELIMINATES it. The fork stays in the text either way, being what says what to
+look for.
 
 **A DIAGNOSTIC, never a gate**, and read from THIS PROCESS's environment rather
 than the agent's — an agent may set any other `AAI_*` key as a secret, so a
 tenant read would let it pin its own version and have the message assert as a
 fact the one cause it had ruled out. Absence therefore means UNKNOWN in both
 directions and may never read as "unchanged"; only a deployed guest has a hash.
-`workflow/code-version.ts` carries the rest, including why an inequality does not
-refuse the run.
+`workflow/code-version.ts` carries the rest, including why an inequality does
+not refuse the run.
 
 ### A step body can read its own ATTEMPT
 
@@ -297,7 +303,8 @@ refuse the run.
 could read it, so the one decision a retry policy cannot make for an author was
 unavailable: degrade rather than fail. **`sdk/step-attempt.ts` carries the
 argument** — the two differences from the DevKit's `getStepMetadata()`, and why
-`maxAttempts` has to travel with the attempt rather than be restated at the body.
+`maxAttempts` has to travel with the attempt rather than be restated at the
+body.
 
 What is this package's: `installWorkflowSupport` publishes the reader
 (`createStepInfoReader` in `workflow/report.ts`) into a `Symbol.for` slot like
@@ -324,16 +331,16 @@ An absolute instant rather than a duration — the difference is derivable and t
 instant is not, and a gap between one entry's `finishedAt` and the next's
 `startedAt` is DELIVERY latency, a different question from step cost and the one
 that tells a slow step from a slow queue. It spans the whole reach, retries and
-backoff included, and excludes time queued behind `StepGate`; the field's own doc
-argues both.
+backoff included, and excludes time queued behind `StepGate`; the field's own
+doc argues both.
 
 **REQUIRED**, and `not null` on both schemas: rows that predated the column were
 backfilled with their own `finished_at` (zero duration, the one value that
 invents no cost) by `20261001010000_workflow_journal_contract.sql`. The
 conformance table pins that a start of `0` is KEPT, not tested for truthiness.
 
-**No reader surfaces it yet**, and that is worth saying rather than implying: the
-public workflow API carries a run SNAPSHOT and no step history, so this is
+**No reader surfaces it yet**, and that is worth saying rather than implying:
+the public workflow API carries a run SNAPSHOT and no step history, so this is
 queryable from the database and from nowhere else. A route and a CLI verb over
 `readSteps` are the obvious next move and are not built.
 
@@ -343,9 +350,9 @@ uncompared — which made it blind to exactly the drift it exists to catch, and
 had already hidden `workflow_runs.reconciled_at` plus two reconcile indexes. It
 reads every migration in filename order now, applies `alter table … add column`
 on both sides, and scopes the parse to the five tables the pairing derives. And
-its column-ORDER assertion had to go: a column added by an `alter` lands last, so
-the two sides diverge in position the moment either adds one. Sets are compared
-instead; every claim that matters is asserted by name.
+its column-ORDER assertion had to go: a column added by an `alter` lands last,
+so the two sides diverge in position the moment either adds one. Sets are
+compared instead; every claim that matters is asserted by name.
 
 ### A parked delivery asks to come back PROPORTIONATELY
 
@@ -355,8 +362,8 @@ walked, and `workflow/queue-park.ts` decides what to answer it:
 one line and one reschedule, so `reportPark` ANSWERS the delay it printed rather
 than either half computing it twice.
 
-It was a flat 5, argued as "self-limiting by construction" because the first park
-lands ~61s into a walk and a healthy run parks zero times. True, and the
+It was a flat 5, argued as "self-limiting by construction" because the first
+park lands ~61s into a walk and a healthy run parks zero times. True, and the
 conclusion was not: after that it is a 5s LOOP, and each turn is a full queue
 round trip doing no work plus one of the replica's
 `WORKFLOW_QUEUE_DELIVER_CONCURRENCY` slots. Production, on a 660 MiB upload:
@@ -405,17 +412,16 @@ The claims are of four different kinds, which is why there are four files:
   predicted exactly that and was still only prose. The roster is checked against
   the imported NAMESPACE now ("the table names every journal method"), so a
   method added to the namespace fails this suite rather than being remembered.
-  Same reason
-  every counting gate in this repo carries a floor: the success output of a
-  hand-kept table is indistinguishable from a complete one.
+  Same reason every counting gate in this repo carries a floor: the success
+  output of a hand-kept table is indistinguishable from a complete one.
 
 - **`aai-server/platform/workflow-journal.scenario.test.ts`** — the only place
   TENANCY is testable, that being a claim about column values in a shared table.
   Two tenants' rows, and every cross-tenant read comes back empty.
 - **`aai-server/journal-conformance-platform.scenario.test.ts`** — the shared
-  CONTRACT, answered by the real route over a real database. The three above each
-  assert a property somebody thought to write down; this one asserts the same
-  cases every other backend answers, which is a different job. See below.
+  CONTRACT, answered by the real route over a real database. The three above
+  each assert a property somebody thought to write down; this one asserts the
+  same cases every other backend answers, which is a different job. See below.
 
 Two things the scenario tier taught. **`jsonb` NORMALIZES**, so a value survives
 by MEANING and not by bytes — the memory journal preserves bytes and these do
@@ -472,72 +478,74 @@ the fault with the direct-import gate still green.
 ## Three `JournalStore` contract points the suite refused to decide, decided
 
 A conformance table can only assert what the interface actually promises, and
-three points were underspecified — each with two backends doing one thing and the
-third doing another, and no case able to name a winner. The decisions:
+three points were underspecified — each with two backends doing one thing and
+the third doing another, and no case able to name a winner. The decisions:
 
 - **`setStatus`'s patch is ADDITIVE.** A field the patch does not carry is not
   written, and an explicit `undefined` is the same as absent — so a stored
   `output` can never be CLEARED. The platform already behaves this way (the
-  handler builds `{output, error}` and the SQL `coalesce`s), which makes memory's
-  and postgres's `"output" in patch` distinction dead code. Adopted rather than
-  fixed the other way for three reasons. It is what `error` has always done in
-  ALL THREE backends (`coalesce($6, error)`, `if (patch?.error)`), so the
-  alternative leaves two fields of one patch with two rules. Reaching the
-  distinction over HTTP needs a new wire field — the client sends
-  `output: encode(patch?.output)` and `JSON.stringify` drops an `undefined` key,
-  so "no patch" and "clear it" are already the same bytes — i.e. a protocol
-  change to serve a caller that does not exist: the engine passes either a
-  defined output or no patch at all. And clearing a terminal payload is a
-  mutation primitive in disguise, which this interface says outright it does not
-  have ("no `updateStep` and no `deleteRun`: the journal is APPEND-ONLY").
+  handler builds `{output, error}` and the SQL `coalesce`s), which makes
+  memory's and postgres's `"output" in patch` distinction dead code. Adopted
+  rather than fixed the other way for three reasons. It is what `error` has
+  always done in ALL THREE backends (`coalesce($6, error)`,
+  `if (patch?.error)`), so the alternative leaves two fields of one patch with
+  two rules. Reaching the distinction over HTTP needs a new wire field — the
+  client sends `output: encode(patch?.output)` and `JSON.stringify` drops an
+  `undefined` key, so "no patch" and "clear it" are already the same bytes —
+  i.e. a protocol change to serve a caller that does not exist: the engine
+  passes either a defined output or no patch at all. And clearing a terminal
+  payload is a mutation primitive in disguise, which this interface says
+  outright it does not have ("no `updateStep` and no `deleteRun`: the journal is
+  APPEND-ONLY").
 - **`claimAttempt`, `claimSleep`, `claimHook` and `appendStep` are defined only
   for a run that EXISTS, and a backend MAY throw.** Memory throws; both
   databases insert a row with no run to belong to and answer normally. Left
-  under-specified ON PURPOSE, out loud, so nobody writes a caller that depends on
-  either: mandating the throw costs the databases a read (or a foreign key) per
-  step to detect a state the engine cannot reach — it calls these only after
+  under-specified ON PURPOSE, out loud, so nobody writes a caller that depends
+  on either: mandating the throw costs the databases a read (or a foreign key)
+  per step to detect a state the engine cannot reach — it calls these only after
   `createRun` — and mandating the answer would have memory invent a slot, i.e.
   resurrect a run, which is the worse of the two.
 - **`readSteps` is ordered by `finishedAt`, ties broken by `key`.** Both
-  databases already do exactly that (`order by finished_at, key`); memory returns
-  insertion order, which agrees except on a same-millisecond tie. The one-line
-  change memory owes: sort a COPY of `steps` by `finishedAt` then `key` before
-  mapping. One limit worth stating rather than pretending away — a database
-  breaks the tie in the column's COLLATION, which for `text` under a non-C
-  collation is not code-unit order, and step keys are punctuation-heavy
+  databases already do exactly that (`order by finished_at, key`); memory
+  returns insertion order, which agrees except on a same-millisecond tie. The
+  one-line change memory owes: sort a COPY of `steps` by `finishedAt` then `key`
+  before mapping. One limit worth stating rather than pretending away — a
+  database breaks the tie in the column's COLLATION, which for `text` under a
+  non-C collation is not code-unit order, and step keys are punctuation-heavy
   (`fetch#0`, `sleep!0`). It is unobservable in practice: a tie needs two steps
-  settling in one millisecond, and the engine indexes what `readSteps` returns by
-  `key`. Do not tighten it to a byte order without `collate "C"` on the column.
+  settling in one millisecond, and the engine indexes what `readSteps` returns
+  by `key`. Do not tighten it to a byte order without `collate "C"` on the
+  column.
 
 ## A failure of the JOURNAL is not a failure of the RUN
 
 `replayRun` has always documented that it propagates a store failure rather than
 marking a run failed on a database blip. **That was true only of `readSteps`** —
-the one journal call made before the body starts. Every other one is reached FROM
-the body, so its rejection unwound through the body like any other throw and
-`classifyThrow` could not tell it from an exception the body raised. It answered
-`{ kind: "failed" }`, which `setStatus` writes as a TERMINAL status, so one
-unavailable moment killed a healthy run permanently, discarded a step that had
-already SUCCEEDED (unjournaled, so a retry has nothing to answer from), and
+the one journal call made before the body starts. Every other one is reached
+FROM the body, so its rejection unwound through the body like any other throw
+and `classifyThrow` could not tell it from an exception the body raised. It
+answered `{ kind: "failed" }`, which `setStatus` writes as a TERMINAL status, so
+one unavailable moment killed a healthy run permanently, discarded a step that
+had already SUCCEEDED (unjournaled, so a retry has nothing to answer from), and
 showed a caller the store's "connection reset" as their own workflow's error.
 
-**`workflow/replay/journal-failure.ts` closes it and carries the argument** — why
-a wrapper around the store rather than a check at each of seven methods across
-five files, why the body SWALLOWING the rejection is the quieter half, and why
-its one exemption is `JournalConflictError` (`claimHook`'s token conflict: a
-verdict about the run, so it must still fail it — without the exemption
-`workflow/engine-waits.test.ts` retries a conflicted run forever). Every backend
-owes that type for that case; the platform arm maps its route's 409, scoped to
-`claimHook` because postgres refuses a duplicate run id with a raw primary-key
-violation and a type only one arm keeps is worse than none.
+**`workflow/replay/journal-failure.ts` closes it and carries the argument** —
+why a wrapper around the store rather than a check at each of seven methods
+across five files, why the body SWALLOWING the rejection is the quieter half,
+and why its one exemption is `JournalConflictError` (`claimHook`'s token
+conflict: a verdict about the run, so it must still fail it — without the
+exemption `workflow/engine-waits.test.ts` retries a conflicted run forever).
+Every backend owes that type for that case; the platform arm maps its route's
+409, scoped to `claimHook` because postgres refuses a duplicate run id with a
+raw primary-key violation and a type only one arm keeps is worse than none.
 
 Two things this found are worth more than the fix. The unit platform conformance
 arm's fake transport answered **500 for every throw**, under a comment reasoning
-that status could not matter because the client propagates either way — true when
-written, false the moment status began deciding a type, and it made that arm
-structurally unable to see the mapping. And the conformance table asserted the
-conflict with a bare `toThrow()`, which cannot see an arm refusing with the wrong
-type at all.
+that status could not matter because the client propagates either way — true
+when written, false the moment status began deciding a type, and it made that
+arm structurally unable to see the mapping. And the conformance table asserted
+the conflict with a bare `toThrow()`, which cannot see an arm refusing with the
+wrong type at all.
 
 ## A wait was outside the whole-read guarantee
 
@@ -568,20 +576,20 @@ slower.
 
 **What a snapshot may answer is NARROWER than for a step, and that is the whole
 of the correctness argument.** `claimSleep` is a CLAIM, not a read: it creates
-the record when there is none. So `overInSnapshot`
-(`workflow/replay/waits.ts`) answers `true` only when the record is IN the
-snapshot — the claim has already happened — AND the wait is over by a MONOTONIC
-test: `woken` is set once and never cleared, and `wakeAt` is fixed on the first
-reach (first write wins) so a past deadline stays past. Everything else
-round-trips exactly as before, which means a stale snapshot can only ever be
-wrong in the direction of taking a round trip it did not need — never of
-skipping a claim that had to happen, and never of missing a wake.
+the record when there is none. So `overInSnapshot` (`workflow/replay/waits.ts`)
+answers `true` only when the record is IN the snapshot — the claim has already
+happened — AND the wait is over by a MONOTONIC test: `woken` is set once and
+never cleared, and `wakeAt` is fixed on the first reach (first write wins) so a
+past deadline stays past. Everything else round-trips exactly as before, which
+means a stale snapshot can only ever be wrong in the direction of taking a round
+trip it did not need — never of skipping a claim that had to happen, and never
+of missing a wake.
 
 Three things not to relitigate:
 
 - **The deadline half of `ctx.waitFor` takes the same arm**, and not by analogy:
-  a `hookTimeout` is a row in the same table, so `readSleeps` already carries it.
-  What it does not skip is `closeHook`, whose answer decides the branch.
+  a `hookTimeout` is a row in the same table, so `readSleeps` already carries
+  it. What it does not skip is `closeHook`, whose answer decides the branch.
 - **`claimHook` has the same shape and is deliberately NOT fixed.** `delivered`
   is monotonic exactly as `woken` is, so a bulk hook read would let a snapshot
   answer an already-answered wait — but hooks are their own table and their own
@@ -606,27 +614,25 @@ HOLDER, and an expiry.
 `claimAttempt` charges an attempt before a step's body runs — a crash therefore
 burns it, which is the whole reason the charge precedes the body — and
 `releaseAttempt` gives one back. The number a claim answers is not "how many
-times has this step been tried"; it is **how many attempts are outstanding
-right now**, this one included. Only an attempt that never ENDED keeps its
-charge, and only a dead worker fails to end one, so the pre-body ceiling bounds
-ABANDONMENT.
+times has this step been tried"; it is **how many attempts are outstanding right
+now**, this one included. Only an attempt that never ENDED keeps its charge, and
+only a dead worker fails to end one, so the pre-body ceiling bounds ABANDONMENT.
 
 It used to be a bare tally, and one number served two budgets that pull in
 opposite directions — how many times to TRY (the author's `maxAttempts`) and how
 many workers may die holding this step. A property harness
 (`workflow/concurrent-delivery.test.ts`) shrank the defect to a ONE-node body
 under three deliveries: a `ctx.step` whose body sleeps — a shape the engine now
-REFUSES outright, see "A step body may not WAIT" above — all three
-suspending
+REFUSES outright, see "A step body may not WAIT" above — all three suspending
 inside it having charged one each, so the next reach found the budget spent and
 appended `{status: "failed", error: "step s0 exhausted 3 attempt(s)"}` over a
 step that then SUCCEEDED — whose own walk read that failure back out of the
 idempotent append and failed the run. Tries are counted in the WALK now, and the
-pre-body refusal is no longer a journal entry at all
-(`StepAbandonedError`, classified like a divergence: a verdict about the walk,
-never about the step). **A step that succeeded is never journaled `failed`,
-because only a walk whose own body threw may write a `failed` entry.**
-`workflow/replay/step.ts`'s module doc carries the rest.
+pre-body refusal is no longer a journal entry at all (`StepAbandonedError`,
+classified like a divergence: a verdict about the walk, never about the step).
+**A step that succeeded is never journaled `failed`, because only a walk whose
+own body threw may write a `failed` entry.** `workflow/replay/step.ts`'s module
+doc carries the rest.
 
 **The residual that account ends on is the rest of this section.** It read: a
 charge cannot tell an abandoned attempt from a LIVE one, so `maxAttempts`
@@ -666,10 +672,10 @@ exactly as the scalar counter's `n = n + 1` did.
 **A row per HOLDER is the obvious shape and it is WRONG.** It was written that
 way first: two claims by different holders conflict on nothing, so each inserts
 its own row and each counts under a snapshot the other's insert is absent from.
-Both answer `1`, both read that as a first reach, and the ceiling bounds nothing.
-Measured on a real Postgres — three concurrent claims answered **`[1, 1, 3]`**
-against a contract that no two ever agree, caught by the conformance suite's
-"two concurrent claims never hand out the same number".
+Both answer `1`, both read that as a first reach, and the ceiling bounds
+nothing. Measured on a real Postgres — three concurrent claims answered
+**`[1, 1, 3]`** against a contract that no two ever agree, caught by the
+conformance suite's "two concurrent claims never hand out the same number".
 
 `workflow/journal/_attempts.ts` holds the statement and the three cases its
 `case` expression gets right; the platform twin is in
@@ -692,14 +698,13 @@ and cannot be wrong in the expensive direction.
 
 **What a heartbeat would buy is a SHORTER window**, not a different mechanism: a
 walk that renewed its lease could be given one measured in minutes, and the
-ceiling would bound concurrency in near-real time. It needs a timer per in-flight
-step and its teardown, and is not built.
+ceiling would bound concurrency in near-real time. It needs a timer per
+in-flight step and its teardown, and is not built.
 
-**A live holder's re-claim must NOT refresh its instant.** Otherwise a walk
-that keeps re-reaching one key holds its charge for as long as it keeps
-reaching — the failure the expiry exists to end, by a slower route. That is
-what the `case` in the statement is for, and an unconditional add would delete
-it silently.
+**A live holder's re-claim must NOT refresh its instant.** Otherwise a walk that
+keeps re-reaching one key holds its charge for as long as it keeps reaching —
+the failure the expiry exists to end, by a slower route. That is what the `case`
+in the statement is for, and an unconditional add would delete it silently.
 
 It is pinned twice, and the conformance half is exact rather than coarse. The
 recorder tests in `workflow/journal/backends/postgres.test.ts` and
@@ -709,9 +714,9 @@ all. The conformance case OWNS the clock instead of racing it: it spies
 under a ten-minute window, so 1 means the instant was kept and 2 means it was
 refreshed. A first draft aged charges with real `sleep()`s, and that version
 could only fail in one direction — a machine slow enough to age a refreshed
-charge past the window passed it wrongly, which made the interesting half of
-the assertion untestable. Every arm runs in-process, including the platform
-ones, which is what makes one spy reach all three backends.
+charge past the window passed it wrongly, which made the interesting half of the
+assertion untestable. Every arm runs in-process, including the platform ones,
+which is what makes one spy reach all three backends.
 
 ### The old table is RETIRED, not dropped
 
@@ -719,19 +724,19 @@ ones, which is what makes one spy reach all three backends.
 self-hoster's copy is an empty table nothing reads, and a shipped applier has no
 business running `drop table` on an operator's database.
 
-The PLATFORM's copy is the expand half of an expand/contract.
-`supabase db push` runs before the deploy (`ship.yml` gates the deploy job on
-migrate) and Modal's rolling strategy keeps the previous build serving beside the
-new one, so dropping `aai_platform.workflow_attempts` in the same release is
-`42P01` under still-running old containers — on the one journal call every step
-makes before its body runs. It compounds with the retry-budget change beside it:
-that failure reaches the guest as a 503, and because the guest ANSWERED it spends
-the message's own five attempts, whose backoff totals ~380 s. A rollout longer
-than about six minutes would drop messages.
+The PLATFORM's copy is the expand half of an expand/contract. `supabase db push`
+runs before the deploy (`ship.yml` gates the deploy job on migrate) and Modal's
+rolling strategy keeps the previous build serving beside the new one, so
+dropping `aai_platform.workflow_attempts` in the same release is `42P01` under
+still-running old containers — on the one journal call every step makes before
+its body runs. It compounds with the retry-budget change beside it: that failure
+reaches the guest as a 503, and because the guest ANSWERED it spends the
+message's own five attempts, whose backoff totals ~380 s. A rollout longer than
+about six minutes would drop messages.
 
 So the drop rode a later release: `20261001010000_workflow_journal_contract.sql`
-re-issues `sweep_terminal_workflow_runs` without its `gone_attempts` arm and then
-drops the table.
+re-issues `sweep_terminal_workflow_runs` without its `gone_attempts` arm and
+then drops the table.
 
 `platform/schema.scenario.test.ts` asserts the EXACT set of `aai_platform`
 tables (it needs a Supabase stack and skips without one, so CI's

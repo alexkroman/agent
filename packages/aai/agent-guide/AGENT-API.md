@@ -16,13 +16,13 @@ Part of the aai authoring guide (start with the core guide, which has the
 minimal agent and the fields almost every agent sets). This file lists EVERY
 field `agent()` takes, grouped by what it governs. The declarations are the
 final word: `AgentDef` documents each field's meaning and default, and
-`AgentParams` — a union with one member per `mode` — which fields each mode
-has. Both are in `node_modules/@alexkroman1/aai/dist/`.
+`AgentParams` — a union with one member per `mode` — which fields each mode has.
+Both are in `node_modules/@alexkroman1/aai/dist/`.
 
 ## `agent()` API
 
-A field the chosen `mode` does not have is simply ABSENT from that member of
-the parameter type, so setting one (a pipeline knob on `mode: "s2s"`, `stt` on
+A field the chosen `mode` does not have is simply ABSENT from that member of the
+parameter type, so setting one (a pipeline knob on `mode: "s2s"`, `stt` on
 `mode: "text"`) is a compile error naming the member; a raw config that skips
 `agent()` is checked at parse time.
 
@@ -170,8 +170,8 @@ export default agent({
 ```
 
 MCP servers are declared here and CONNECTED by the host (`withMcpTools` from
-`@alexkroman1/aai-runtime`), because discovery is a network round trip. A
-server that is down costs its own tools and nothing else:
+`@alexkroman1/aai-runtime`), because discovery is a network round trip. A server
+that is down costs its own tools and nothing else:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -215,21 +215,21 @@ document goes in a file, a value stays in the call.**
 
 **JSON imports need no attribute.** `resolveJsonModule` is on, so
 `import data from "./knowledge.json"` is all it takes. Do NOT write
-`assert { type: "json" }` — import assertions were replaced by import
-attributes and TypeScript rejects them (`TS2880`). If you want to be
-explicit the modern spelling is `with { type: "json" }`, but plain is fine.
+`assert { type: "json" }` — import assertions were replaced by import attributes
+and TypeScript rejects them (`TS2880`). If you want to be explicit the modern
+spelling is `with { type: "json" }`, but plain is fine.
 
 ### Opt-in prompt presets
 
 `agent({ voicePresets: ["echoVerification", "natoAlphabet"] })` switches on
-named behaviours instead of writing them. They compose, each is removable on
-its own, and each is paid for on EVERY model request: `echoVerification`
-(~190 tokens — read critical values back and get a yes), `speechNormalization`
-(~920 — money, dates, phone numbers and emails as spoken words, `"$758.08"`
-as "seven fifty-eight dollars and eight cents") and `natoAlphabet` (~190 —
-"That's B as in Bravo, 7, K as in Kilo, 2 — correct?"). `VOICE_PRESETS` holds
-the exact text. The two spelling presets override the default "don't spell
-things back", so use them where a wrong value costs more than a slow call;
-`speechNormalization` is the PROMPT layer only, and for the agent's OWN data
-the speech renderers (`spokenMoney`, `spokenDate`, … — "Speech goes both ways"
-in `TOOLS.md`) do it in code for free.
+named behaviours instead of writing them. They compose, each is removable on its
+own, and each is paid for on EVERY model request: `echoVerification` (~190
+tokens — read critical values back and get a yes), `speechNormalization` (~920 —
+money, dates, phone numbers and emails as spoken words, `"$758.08"` as "seven
+fifty-eight dollars and eight cents") and `natoAlphabet` (~190 — "That's B as in
+Bravo, 7, K as in Kilo, 2 — correct?"). `VOICE_PRESETS` holds the exact text.
+The two spelling presets override the default "don't spell things back", so use
+them where a wrong value costs more than a slow call; `speechNormalization` is
+the PROMPT layer only, and for the agent's OWN data the speech renderers
+(`spokenMoney`, `spokenDate`, … — "Speech goes both ways" in `TOOLS.md`) do it
+in code for free.

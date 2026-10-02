@@ -15,18 +15,18 @@ which name you are looking up.
 
 This is the API reference for what you write an agent AGAINST:
 
-- **`@alexkroman1/aai`** — the SDK an `agent.ts` imports. Start with
-  `agent()` and `tool()` on the root module, then the provider factory
-  subpaths (`stt`, `llm`, `tts`, `s2s`) to swap pipeline stages, `tools`
-  for the keyless network helpers callable from tool code, and `testing`
-  for the fakes a spec hands a tool.
+- **`@alexkroman1/aai`** — the SDK an `agent.ts` imports. Start with `agent()`
+  and `tool()` on the root module, then the provider factory subpaths (`stt`,
+  `llm`, `tts`, `s2s`) to swap pipeline stages, `tools` for the keyless network
+  helpers callable from tool code, and `testing` for the fakes a spec hands a
+  tool.
 - **`@alexkroman1/aai-ui`** — the browser client for custom UIs:
   `mountClient()`, the session hooks (`useSession`, `useAgentState`,
   `useToolResult`, `useEvent`), and the framework-agnostic
   `createBrowserSession()`.
-- **`@alexkroman1/aai-runtime/eval` and `/testing`** — measuring what an
-  agent DID. `describeEval` and `openEvalSession` drive a real session from
-  text and assert on the tools it called and what it said; `runWorkflow` and
+- **`@alexkroman1/aai-runtime/eval` and `/testing`** — measuring what an agent
+  DID. `describeEval` and `openEvalSession` drive a real session from text and
+  assert on the tools it called and what it said; `runWorkflow` and
   `runTextAgent` drive a durable workflow run and a text turn against the real
   engine. Both are written in the same vitest project as the agent.
 
@@ -44,9 +44,9 @@ plus committed API reports rather than a rendered page. And the `aai` CLI
 
 **For a single name, read
 [`API-INDEX.md`](https://github.com/alexkroman/agent/blob/main/API-INDEX.md)** —
-every published symbol, grouped by who imports it, with its kind, the subpath
-to import it from, the contract that versions it and a one-line summary —
-generated from the same reports this reference is.
+every published symbol, grouped by who imports it, with its kind, the subpath to
+import it from, the contract that versions it and a one-line summary — generated
+from the same reports this reference is.
 
 Three places on this surface publish more than one way to do a thing. Each
 distinction is real; none is guessable from the names alone.
@@ -72,9 +72,8 @@ and the eval harness on `@alexkroman1/aai-runtime/eval` (runner-free) and
 `/eval/vitest`; all four still work, and the two doors re-export them as the
 same declarations.
 
-**Reading a live session** — one hook returns everything and the rest are
-slices of it, so a component re-renders on its own data rather than every
-frame:
+**Reading a live session** — one hook returns everything and the rest are slices
+of it, so a component re-renders on its own data rather than every frame:
 
 | Hook                                        | Returns                                                                                                                 |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -90,5 +89,5 @@ frame:
 - [The guide](/agent/) — how to build and ship an agent
 - [GitHub repository](https://github.com/alexkroman/agent)
 - [Agent-building guide](https://github.com/alexkroman/agent/blob/main/packages/aai-templates/scaffold/CLAUDE.md)
-  (ships inside the SDK as `node_modules/@alexkroman1/aai/AGENT_GUIDE.md`,
-  which is where a scaffolded project's `CLAUDE.md` points)
+  (ships inside the SDK as `node_modules/@alexkroman1/aai/AGENT_GUIDE.md`, which
+  is where a scaffolded project's `CLAUDE.md` points)

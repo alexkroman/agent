@@ -37,16 +37,16 @@ export default agent({
 | `llm`         | A model id, e.g. `"claude-sonnet-4-6"`; defaults to AssemblyAI's |
 | `requiredEnv` | Keys your tools read; a deploy checks they are all set           |
 
-Every other field is in the [SDK reference](/agent/reference/). You do not
-need any of them to build something good.
+Every other field is in the [SDK reference](/agent/reference/). You do not need
+any of them to build something good.
 
 ### About the voice and `llm`
 
 A voice id and a model id both autocomplete the ids this SDK release knows
 about. Neither is checked by the compiler, so a wrong id fails when the session
-opens rather than when you build. [Voices and
-models](/agent/more/voices-and-models/) lists what each one accepts and shows
-what a wrong id looks like.
+opens rather than when you build.
+[Voices and models](/agent/more/voices-and-models/) lists what each one accepts
+and shows what a wrong id looks like.
 
 ## The system prompt is a file
 
@@ -61,29 +61,28 @@ You are a concise, friendly assistant.
 - Never read a URL aloud.
 ```
 
-Editing this file is most of building an agent, so it gets to be a real
-markdown file you can read.
+Editing this file is most of building an agent, so it gets to be a real markdown
+file you can read.
 
-Write the prompt in one place. If `system-prompt.md` exists and `agent.ts`
-also sets `systemPrompt`, the build stops and tells you, rather than letting
-you edit a file that is being ignored.
+Write the prompt in one place. If `system-prompt.md` exists and `agent.ts` also
+sets `systemPrompt`, the build stops and tells you, rather than letting you edit
+a file that is being ignored.
 
 ## Your prompt is added to the framework's, not swapped in for it
 
 **Write only your own domain rules.** `"You only ever discuss pizza."` is a
 complete system prompt.
 
-Whatever you write — in `system-prompt.md` or in `systemPrompt` — is appended
-to the voice rules the framework always sends: how to speak a number, how to
-read a transcript, one question per turn, today's date. Your rules come last,
-under a header saying they win where the two conflict.
+Whatever you write — in `system-prompt.md` or in `systemPrompt` — is appended to
+the voice rules the framework always sends: how to speak a number, how to read a
+transcript, one question per turn, today's date. Your rules come last, under a
+header saying they win where the two conflict.
 
-:::caution[Never interpolate `DEFAULT_SYSTEM_PROMPT` into your prompt]
-That sends the ~10,000-character voice core twice, once by the framework and
-once by you, under two precedence headers arguing with each other — and you pay
-for it on every turn. A leading copy is dropped automatically and a warning is
-printed. A copy anywhere else is warned about and sent.
-:::
+:::caution[Never interpolate `DEFAULT_SYSTEM_PROMPT` into your prompt] That
+sends the ~10,000-character voice core twice, once by the framework and once by
+you, under two precedence headers arguing with each other — and you pay for it
+on every turn. A leading copy is dropped automatically and a warning is printed.
+A copy anywhere else is warned about and sent. :::
 
 ## Writing for a voice
 
@@ -97,8 +96,8 @@ carry most of the difference:
 
 ## Reading the framework's prompt
 
-`DEFAULT_SYSTEM_PROMPT` is exported to be read, not composed. Print it while
-you tune your own rules, or diff it across SDK versions:
+`DEFAULT_SYSTEM_PROMPT` is exported to be read, not composed. Print it while you
+tune your own rules, or diff it across SDK versions:
 
 ```ts
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
@@ -108,10 +107,10 @@ console.log(DEFAULT_SYSTEM_PROMPT); // what your rules are added to
 
 ## A prompt that changes during the call
 
-A prompt computed once — a menu, a catalog — is still just a string: build it
-in `agent.ts` and pass it as `systemPrompt`. Today's date is already in every
-prompt, so that is not a reason to compute one. What this section is about is
-a prompt that has to change _during_ a call.
+A prompt computed once — a menu, a catalog — is still just a string: build it in
+`agent.ts` and pass it as `systemPrompt`. Today's date is already in every
+prompt, so that is not a reason to compute one. What this section is about is a
+prompt that has to change _during_ a call.
 
 Pass a function instead of a string. It is called as each model request is
 assembled, so what the agent is told can move with the conversation:

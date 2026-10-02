@@ -624,23 +624,23 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) → `pnpm test` (logic)
    what it did. With a provider key it uses a LIVE model (spends tokens, noisy);
    without one a SCRIPTED model, which proves wiring and nothing about what the
    agent says.
-4. **Run `pnpm build` before declaring done** — bundles `agent.ts`,
-   type-checks, validates the manifest, and runs the WHOLE spec suite first.
-   Catches issues `dev` won't.
+4. **Run `pnpm build` before declaring done** — bundles `agent.ts`, type-checks,
+   validates the manifest, and runs the WHOLE spec suite first. Catches issues
+   `dev` won't.
 5. **Make small, focused changes** — verify each one before stacking the next.
 6. **Look at templates before writing custom code** — the CLI ships working
    examples inside its own package, at
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
    `aai init --template <name>` scaffolds a fresh project from one. Closest:
    `quickstart-agent`, `custom-pipeline-agent`, `web-research-agent`,
-   `pizza-ordering-agent`, `retail-orders-agent` (the most complex). Built
-   entry points under `node_modules/@alexkroman1/aai*/dist/` re-export with
-   source specifiers — rewrite `.ts`/`.tsx` to `.d.ts` to find the file.
+   `pizza-ordering-agent`, `retail-orders-agent` (the most complex). Built entry
+   points under `node_modules/@alexkroman1/aai*/dist/` re-export with source
+   specifiers — rewrite `.ts`/`.tsx` to `.d.ts` to find the file.
 
 ## CLI
 
-The scaffold's `package.json` runs the project's own CLI as `pnpm dev`,
-`build`, `test`, `eval`, `start` and `publish:agent`; anywhere else it is
+The scaffold's `package.json` runs the project's own CLI as `pnpm dev`, `build`,
+`test`, `eval`, `start` and `publish:agent`; anywhere else it is
 `npx aai <command>` (or `npm i -g @alexkroman1/aai-cli` once).
 
 ```sh
@@ -700,8 +700,8 @@ my-agent/
 
 **`tools/` is not a convention, it is the mechanism.** A file there is named for
 the tool the model calls, default-exports it, and is picked up by the build. It
-is not imported by `agent.ts` and not listed anywhere — `agent()` has no
-`tools` field at all:
+is not imported by `agent.ts` and not listed anywhere — `agent()` has no `tools`
+field at all:
 
 ```ts
 // tools/roll_dice.ts  →  the model calls this "roll_dice"
@@ -723,15 +723,15 @@ Three rules come with it, each a build error naming the file:
   letter, and join words with `_` — `tools/incident_create.ts`, never
   `incident-create.ts`. Renaming the file renames the tool.
 - **The export is the DEFAULT export**, and it must be a `tool()` (or a
-  `slot.tool()` / `slot.updateTool()`). A file exporting something else is
-  named at build time rather than becoming a tool that fails per turn.
+  `slot.tool()` / `slot.updateTool()`). A file exporting something else is named
+  at build time rather than becoming a tool that fails per turn.
 - **`tools/` is flat.** A nested file — a nested HELPER too — is rejected, so
   put shared helpers beside `agent.ts` rather than under `tools/`.
 
 ## `agent()` basics
 
-The minimal agent — a cascaded pipeline, what to build unless the user asks
-for speech-to-speech:
+The minimal agent — a cascaded pipeline, what to build unless the user asks for
+speech-to-speech:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -761,8 +761,8 @@ export default agent({
 });
 ```
 
-The fields almost every agent sets: `name` (required), `greeting` (default:
-"Hey there..."; `""` starts silent), `tts` (voice `jane` unless set), `llm`,
+The fields almost every agent sets: `name` (required), `greeting` (default: "Hey
+there..."; `""` starts silent), `tts` (voice `jane` unless set), `llm`,
 `builtinTools` (omitted = `["think"]` only; setting it REPLACES the default),
 `maxSteps` (default 10 tool-calling steps per reply) and `requiredEnv` (every
 env var a tool or step reads; **publishing checks it**, so a missing key fails
@@ -773,10 +773,10 @@ field.
 mode this guide assumes. `mode: "s2s"` beside an `s2s: assemblyAIS2s()`
 descriptor selects speech-to-speech; `mode: "text"` a text-only agent;
 `workflowApp()` (`mode: "workflow-app"`) a form with no session at all
-(`agent-guide/WORKFLOWS.md`). A field the chosen mode does not have is a
-compile error naming the mode. `assemblyAIPipeline()` is the explicit spelling
-of the default pipeline (spread it for `region: "eu"`). Pipeline knobs and S2S
-are in `agent-guide/PIPELINE-TUNING.md`; vendors in `agent-guide/PROVIDERS.md`.
+(`agent-guide/WORKFLOWS.md`). A field the chosen mode does not have is a compile
+error naming the mode. `assemblyAIPipeline()` is the explicit spelling of the
+default pipeline (spread it for `region: "eu"`). Pipeline knobs and S2S are in
+`agent-guide/PIPELINE-TUNING.md`; vendors in `agent-guide/PROVIDERS.md`.
 
 ## `tool()` basics
 
@@ -802,30 +802,30 @@ export default tool({
 
 - **`execute` must return a value** (sync or async); it goes to the model.
   `fetch` works directly, identically in `aai dev` and deployed.
-- **`inputSchema` is a `z.object(...)` or absent.** Make a FIELD optional,
-  never the object; omit the schema for a no-argument tool.
+- **`inputSchema` is a `z.object(...)` or absent.** Make a FIELD optional, never
+  the object; omit the schema for a no-argument tool.
 - **Do not annotate `execute`'s return type** — it breaks the moment the tool
   also returns an error shape. Let it infer.
 - **`ctx`** carries `env` (secrets; every read is `string | undefined` —
   `requireEnv(ctx, "KEY")` fails by name), `signal` (pass it to anything slow),
-  `messages`, `sessionId`, `send(event, data)` to the browser,
-  `generate(...)` for a one-shot model call, `delegate(...)` for a speaker,
-  `speech` to say something later and `workflows` to start a durable run.
+  `messages`, `sessionId`, `send(event, data)` to the browser, `generate(...)`
+  for a one-shot model call, `delegate(...)` for a speaker, `speech` to say
+  something later and `workflows` to start a durable run.
 - **State across tool calls lives in a `sessionSlot`** — `slot.tool` reads,
   `slot.updateTool` writes. Never keep it in a module variable: every session
   shares the module.
 
 `agent-guide/TOOLS.md` has the rest: `ctx` in full, session state, `dialog()`
-and `procedure()`, speakers and the roster, `clientTool()` (a tool the
-browser runs), the built-in tool table, `/utils`,
-`/html`, persistence and the speech helpers.
+and `procedure()`, speakers and the roster, `clientTool()` (a tool the browser
+runs), the built-in tool table, `/utils`, `/html`, persistence and the speech
+helpers.
 
 ## `system-prompt.md` IS the system prompt
 
 **Write the prompt in `system-prompt.md` beside `agent.ts`, and declare
-nothing.** The build discovers the file, so there is no import line and no
-field — the same rule `tools/` follows, applied to the one part of an agent
-that is a DOCUMENT rather than a value.
+nothing.** The build discovers the file, so there is no import line and no field
+— the same rule `tools/` follows, applied to the one part of an agent that is a
+DOCUMENT rather than a value.
 
 ```markdown
 <!-- system-prompt.md -->
@@ -836,8 +836,8 @@ You are a concise, friendly assistant.
 - Never read a URL aloud.
 ```
 
-**Your prompt is ADDED to the framework's voice sections, never a
-replacement** — yours comes last and wins on conflict. Never interpolate
+**Your prompt is ADDED to the framework's voice sections, never a replacement**
+— yours comes last and wins on conflict. Never interpolate
 `DEFAULT_SYSTEM_PROMPT` (exported to be READ).
 
 Three rules, each a build error naming the file:
@@ -847,8 +847,8 @@ Three rules, each a build error naming the file:
   ignoring the file.
 - **An empty file is an error**, not a silent fall-through to the framework
   default. Delete the file if that is what you want.
-- **A `system-prompt/` directory is rejected.** One file, no concatenation
-  order to guess.
+- **A `system-prompt/` directory is rejected.** One file, no concatenation order
+  to guess.
 
 Composing a prompt from the file plus computed text, and a per-request prompt
 resolver, are in `agent-guide/AGENT-API.md`. `greeting` stays a field: a
@@ -868,15 +868,15 @@ Never hardcode secrets in agent code.
   `ctx.env`.
 - **Production:** `aai secret put NAME`, and list the name in `requiredEnv`.
 - **Access:** `ctx.env.MY_KEY` in a tool; `stepEnv("MY_KEY")` in a step.
-- **AssemblyAI key:** `aai login` links your account and stores the key
-  globally — the only way the CLI authenticates. No `.env` entry needed. For
-  CI, point `AAI_CONFIG_DIR` at a config dir holding a logged-in key (an
-  exported `ASSEMBLYAI_API_KEY` does not authenticate).
+- **AssemblyAI key:** `aai login` links your account and stores the key globally
+  — the only way the CLI authenticates. No `.env` entry needed. For CI, point
+  `AAI_CONFIG_DIR` at a config dir holding a logged-in key (an exported
+  `ASSEMBLYAI_API_KEY` does not authenticate).
 
 ## Subpath exports
 
-Most of the API is not on the root entry. Import each name from the subpath
-that owns it:
+Most of the API is not on the root entry. Import each name from the subpath that
+owns it:
 
 <!-- BEGIN GENERATED aai subpaths: pnpm sync:agent-guide -->
 
@@ -927,10 +927,10 @@ Framework-internal, never imported by an `agent.ts`: `/protocol`,
 <!-- END GENERATED aai subpaths -->
 
 `@alexkroman1/aai-ui` is the browser client (`agent-guide/UI.md`) and
-`@alexkroman1/aai-runtime` the host runtime. **A test file imports testing
-names from its two doors only**: `@alexkroman1/aai-runtime/testing` (every
-fake and reader, plus `runWorkflow`) and `/testing/vitest` (every `install*`,
-plus the eval suites) — `agent-guide/TESTING-EVALS.md`.
+`@alexkroman1/aai-runtime` the host runtime. **A test file imports testing names
+from its two doors only**: `@alexkroman1/aai-runtime/testing` (every fake and
+reader, plus `runWorkflow`) and `/testing/vitest` (every `install*`, plus the
+eval suites) — `agent-guide/TESTING-EVALS.md`.
 
 ## Gotchas
 
@@ -957,16 +957,16 @@ plus the eval suites) — `agent-guide/TESTING-EVALS.md`.
   file or env access. Deployed, it runs in the platform's sandbox. Or use the
   `calculate` builtin for simple arithmetic.
 - **There is no `ctx.db`.** A tool that persists brings its own client — see
-  "Persisting data" in `agent-guide/TOOLS.md`. A secret is read when the
-  sandbox is BUILT, so a newly set `DATABASE_URL` arrives on the next deploy.
-- **A wrong TTS voice id is silent**: it is refused after the socket opens.
-  Pick from the catalog in `agent-guide/PROVIDERS.md`. **Rime language codes
-  are ISO 639-3** (`"eng"`), not ISO 639-1 (`"en"`).
+  "Persisting data" in `agent-guide/TOOLS.md`. A secret is read when the sandbox
+  is BUILT, so a newly set `DATABASE_URL` arrives on the next deploy.
+- **A wrong TTS voice id is silent**: it is refused after the socket opens. Pick
+  from the catalog in `agent-guide/PROVIDERS.md`. **Rime language codes are ISO
+  639-3** (`"eng"`), not ISO 639-1 (`"en"`).
 
 ## Constraints
 
-- Tool `execute` return values go into LLM context, capped at 4000 chars
-  (a truncation marker replaces the tail) — filter large API responses
+- Tool `execute` return values go into LLM context, capped at 4000 chars (a
+  truncation marker replaces the tail) — filter large API responses
 - Agent code runs in a sandboxed worker with open egress for your own `fetch`
 - Tool execution timeout: 30 seconds
 - `maxSteps` caps tool calls per turn (default 10) — lower it for latency. At
@@ -982,13 +982,13 @@ Part of the aai authoring guide (start with the core guide, which has the
 minimal agent and the fields almost every agent sets). This file lists EVERY
 field `agent()` takes, grouped by what it governs. The declarations are the
 final word: `AgentDef` documents each field's meaning and default, and
-`AgentParams` — a union with one member per `mode` — which fields each mode
-has. Both are in `node_modules/@alexkroman1/aai/dist/`.
+`AgentParams` — a union with one member per `mode` — which fields each mode has.
+Both are in `node_modules/@alexkroman1/aai/dist/`.
 
 ## `agent()` API
 
-A field the chosen `mode` does not have is simply ABSENT from that member of
-the parameter type, so setting one (a pipeline knob on `mode: "s2s"`, `stt` on
+A field the chosen `mode` does not have is simply ABSENT from that member of the
+parameter type, so setting one (a pipeline knob on `mode: "s2s"`, `stt` on
 `mode: "text"`) is a compile error naming the member; a raw config that skips
 `agent()` is checked at parse time.
 
@@ -1136,8 +1136,8 @@ export default agent({
 ```
 
 MCP servers are declared here and CONNECTED by the host (`withMcpTools` from
-`@alexkroman1/aai-runtime`), because discovery is a network round trip. A
-server that is down costs its own tools and nothing else:
+`@alexkroman1/aai-runtime`), because discovery is a network round trip. A server
+that is down costs its own tools and nothing else:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -1181,24 +1181,24 @@ document goes in a file, a value stays in the call.**
 
 **JSON imports need no attribute.** `resolveJsonModule` is on, so
 `import data from "./knowledge.json"` is all it takes. Do NOT write
-`assert { type: "json" }` — import assertions were replaced by import
-attributes and TypeScript rejects them (`TS2880`). If you want to be
-explicit the modern spelling is `with { type: "json" }`, but plain is fine.
+`assert { type: "json" }` — import assertions were replaced by import attributes
+and TypeScript rejects them (`TS2880`). If you want to be explicit the modern
+spelling is `with { type: "json" }`, but plain is fine.
 
 ### Opt-in prompt presets
 
 `agent({ voicePresets: ["echoVerification", "natoAlphabet"] })` switches on
-named behaviours instead of writing them. They compose, each is removable on
-its own, and each is paid for on EVERY model request: `echoVerification`
-(~190 tokens — read critical values back and get a yes), `speechNormalization`
-(~920 — money, dates, phone numbers and emails as spoken words, `"$758.08"`
-as "seven fifty-eight dollars and eight cents") and `natoAlphabet` (~190 —
-"That's B as in Bravo, 7, K as in Kilo, 2 — correct?"). `VOICE_PRESETS` holds
-the exact text. The two spelling presets override the default "don't spell
-things back", so use them where a wrong value costs more than a slow call;
-`speechNormalization` is the PROMPT layer only, and for the agent's OWN data
-the speech renderers (`spokenMoney`, `spokenDate`, … — "Speech goes both ways"
-in `TOOLS.md`) do it in code for free.
+named behaviours instead of writing them. They compose, each is removable on its
+own, and each is paid for on EVERY model request: `echoVerification` (~190
+tokens — read critical values back and get a yes), `speechNormalization` (~920 —
+money, dates, phone numbers and emails as spoken words, `"$758.08"` as "seven
+fifty-eight dollars and eight cents") and `natoAlphabet` (~190 — "That's B as in
+Bravo, 7, K as in Kilo, 2 — correct?"). `VOICE_PRESETS` holds the exact text.
+The two spelling presets override the default "don't spell things back", so use
+them where a wrong value costs more than a slow call; `speechNormalization` is
+the PROMPT layer only, and for the agent's OWN data the speech renderers
+(`spokenMoney`, `spokenDate`, … — "Speech goes both ways" in `TOOLS.md`) do it
+in code for free.
 
 
 <!-- agent-guide/TOOLS.md — inlined; where the guide says to read `agent-guide/TOOLS.md`, this section is that file. -->
@@ -1224,8 +1224,8 @@ const myTool = tool({
 });
 ```
 
-`execute` may call `fetch` directly — tool code reaches external APIs the
-same way in `aai dev` and deployed.
+`execute` may call `fetch` directly — tool code reaches external APIs the same
+way in `aai dev` and deployed.
 
 ### `ctx` (ToolContext)
 
@@ -1260,9 +1260,9 @@ declare module "@alexkroman1/aai" {
 }
 ```
 
-**Pass `ctx.signal` to anything slow.** It is always present — no `?.`
-needed — and forwarding it is what makes a tool stop work the caller has
-already interrupted:
+**Pass `ctx.signal` to anything slow.** It is always present — no `?.` needed —
+and forwarding it is what makes a tool stop work the caller has already
+interrupted:
 
 ```ts
 import { tool } from "@alexkroman1/aai";
@@ -1285,9 +1285,9 @@ so a variable declared empty and filled in the same scope widens from what you
 put in it — `const items = []` followed by `items.push(pick)` infers `Pick[]`
 with no annotation. Do NOT add type annotations defensively.
 
-**Annotate the DECLARATION when the first write is somewhere the compiler
-cannot follow** — inside a callback, or after the value has already been read.
-The widening only tracks straight-line code in one scope, so in those cases the
+**Annotate the DECLARATION when the first write is somewhere the compiler cannot
+follow** — inside a callback, or after the value has already been read. The
+widening only tracks straight-line code in one scope, so in those cases the
 declaration keeps its starting type:
 
 ```ts no-check
@@ -1300,8 +1300,8 @@ let best: Pick | null = null;          // ✅
 const [picks, set] = useState<Pick[]>([]);  // ✅
 ```
 
-Annotating the _use_ instead does not help — the declaration is still wrong,
-so the next push just reports the next line.
+Annotating the _use_ instead does not help — the declaration is still wrong, so
+the next push just reports the next line.
 
 ### Session state
 
@@ -1347,9 +1347,9 @@ Four rules, and each is an error rather than advice if you get it wrong:
 
 - **`tool` reads, `updateTool` writes.** What a read is handed is FROZEN, so
   mutating it throws instead of quietly going nowhere.
-- **A write is SYNCHRONOUS.** The value you mutate is stored the moment your body
-  returns, so an `updateTool` body may not `await`. When you need a model call or
-  a fetch first, do it in an ordinary `tool()` and then mutate:
+- **A write is SYNCHRONOUS.** The value you mutate is stored the moment your
+  body returns, so an `updateTool` body may not `await`. When you need a model
+  call or a fetch first, do it in an ordinary `tool()` and then mutate:
 
   ```ts no-check
   execute: async (args, ctx) => {
@@ -1371,22 +1371,22 @@ Four rules, and each is an error rather than advice if you get it wrong:
   either way; that is the reason for the rules above.
 
 There is nothing to declare on `agent()` — the slot owns its own default. Use
-`syncState: slot.projected` (or a list of them) to show state to a custom client.
-`slot.snapshot(ctx)` returns a mutable deep copy of the value — what a spec
-hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
+`syncState: slot.projected` (or a list of them) to show state to a custom
+client. `slot.snapshot(ctx)` returns a mutable deep copy of the value — what a
+spec hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
 
 **`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
-`ToolDef`, `Message`, provider types. A plain
-`import { ToolContext }` fails; use `import type { ToolContext }`, or
-`import { agent, type ToolContext }` to combine with value imports.
+`ToolDef`, `Message`, provider types. A plain `import { ToolContext }` fails;
+use `import type { ToolContext }`, or `import { agent, type ToolContext }` to
+combine with value imports.
 
 `ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
-runs one LLM generation on the host. It defaults to the agent's pipeline
-`llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) or a model-id
-string to use another provider whose API key is in the agent's secrets —
-that's also how S2S agents use it. Pass a Zod schema as `schema` for typed
-structured output (`generateObject`-style): the result's `object` carries
-the parsed, typed value. A plain JSON Schema object also works.
+runs one LLM generation on the host. It defaults to the agent's pipeline `llm`;
+pass an `llm` descriptor (from `@alexkroman1/aai/llm`) or a model-id string to
+use another provider whose API key is in the agent's secrets — that's also how
+S2S agents use it. Pass a Zod schema as `schema` for typed structured output
+(`generateObject`-style): the result's `object` carries the parsed, typed value.
+A plain JSON Schema object also works.
 
 The option bag is `GenerateOptions` and the answer is `GenerateResult`
 (`GenerateObjectResult<T>` with a `schema`), both exported from
@@ -1452,9 +1452,9 @@ an SDK dependency. `technical-support-agent` is the worked example.
 ### Speakers (`speaker()`, `ctx.delegate`, `roster()`)
 
 `ctx.generate` is ONE prompt. When answering takes an unknown number of tool
-calls the conversation has no reason to carry, delegate to a **speaker** off
-the line: a second tool loop with its own prompt, model, tools and — the whole
-point — its own context window.
+calls the conversation has no reason to carry, delegate to a **speaker** off the
+line: a second tool loop with its own prompt, model, tools and — the whole point
+— its own context window.
 
 ```ts
 import { speaker, tool } from "@alexkroman1/aai";
@@ -1483,12 +1483,12 @@ FINAL message, so declare `expectedOutput`; its context is isolated, so `task`
 must be a complete brief; `maxSteps` bounds the loop, and a capped run is asked
 for its answer with tools withheld; and say you are looking it up before you
 call. It may name its own `llm` and `tools` map; **delegation is one level
-deep**. In tests, `stubDelegate` (`@alexkroman1/aai-runtime/testing`) fakes
-it by name.
+deep**. In tests, `stubDelegate` (`@alexkroman1/aai-runtime/testing`) fakes it
+by name.
 
 When the SPEAKER has to change — triage verifies the caller, billing takes over
-with its own instructions and tools, one history — mark them `speaks: true` on
-a `roster()`; the first speaking entry answers the call.
+with its own instructions and tools, one history — mark them `speaks: true` on a
+`roster()`; the first speaking entry answers the call.
 
 ```ts
 import { agent, speaker, roster } from "@alexkroman1/aai";
@@ -1544,9 +1544,8 @@ Nothing else. `agent.ts` does not import it, does not list it, and takes no
 `tools` field at all — see "A file in `tools/` IS a tool" in the core guide.
 
 **Calling the network builtins from your own tool code.** `web_search`,
-`visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls
-them, and they are not on `ctx`. When your own `execute` needs one, import
-it:
+`visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls them,
+and they are not on `ctx`. When your own `execute` needs one, import it:
 
 ```ts no-check
 import { fetchJson, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
@@ -1558,28 +1557,27 @@ execute: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
 
 Same implementations the builtins use, so you get URL screening, credential-
 header stripping, size caps and timeouts rather than a bare `fetch`. Plain
-`fetch` still works when you want none of that. There is no callable
-`run_code`: it exists to run code the model wrote, and tool code that wants
-to compute something can just compute it.
+`fetch` still works when you want none of that. There is no callable `run_code`:
+it exists to run code the model wrote, and tool code that wants to compute
+something can just compute it.
 
 **But prefer the BUILTIN when the model should decide.** These two are not
 interchangeable:
 
 - If the agent's job is to search or browse — a research assistant, anything
   that follows a link the user mentions — declare
-  `builtinTools: ["web_search", "visit_webpage"]` and let the model call
-  them. It can then search several times with different queries, or read one
-  specific page, as the conversation needs.
-- Import from `/tools` when YOUR tool's own logic needs a fetch: a currency
-  tool hitting one known API, a price checker with a fixed endpoint.
+  `builtinTools: ["web_search", "visit_webpage"]` and let the model call them.
+  It can then search several times with different queries, or read one specific
+  page, as the conversation needs.
+- Import from `/tools` when YOUR tool's own logic needs a fetch: a currency tool
+  hitting one known API, a price checker with a fixed endpoint.
 
 Wrapping `webSearch` in a single custom tool is the mistake to avoid — it
 replaces "the model searches as needed" with one fixed query-and-summarize
 pipeline, and no amount of prompting gets the flexibility back.
 
-**`inputSchema` is a Zod object, or absent.** The field itself is
-optional, but its VALUE must be a plain `z.object(...)` — so all of these
-are type errors:
+**`inputSchema` is a Zod object, or absent.** The field itself is optional, but
+its VALUE must be a plain `z.object(...)` — so all of these are type errors:
 
 ```ts no-check
 inputSchema: z.undefined(),                // ✗ ZodUndefined
@@ -1592,11 +1590,11 @@ For a tool with no arguments write `tool({ description, execute })`, or
 argument optional, put `.optional()` on the FIELD, never on the object:
 `z.object({ notes: z.string().optional() })`.
 
-**Do not annotate `execute`'s return type.** Nothing needs it — the result
-is serialized to the model either way — and it reliably breaks the moment
-the tool also returns an error, because `Promise<DrugInfo>` does not accept
-`{ error: "not found" }`. Every such annotation eventually costs a build
-round to widen into a union. Let it infer.
+**Do not annotate `execute`'s return type.** Nothing needs it — the result is
+serialized to the model either way — and it reliably breaks the moment the tool
+also returns an error, because `Promise<DrugInfo>` does not accept
+`{ error: "not found" }`. Every such annotation eventually costs a build round
+to widen into a union. Let it infer.
 
 ### A tool the BROWSER runs — `clientTool()`
 
@@ -1639,19 +1637,19 @@ export function LocationTool() {
 }
 ```
 
-- **Only a browser session can answer it.** On a phone call, in a text agent
-  or a subagent the call fails naming why — give such an agent a server path.
+- **Only a browser session can answer it.** On a phone call, in a text agent or
+  a subagent the call fails naming why — give such an agent a server path.
 - **No page answer within `timeoutMs` fails the call**, as does a barge-in.
-- **Never send a secret the model should not see through one** — the result
-  goes into the conversation like any other tool result. Return the token, the
-  last four digits, the decision — not the card number.
+- **Never send a secret the model should not see through one** — the result goes
+  into the conversation like any other tool result. Return the token, the last
+  four digits, the decision — not the card number.
 
 ### A tool built by a factory still gets its own file
 
-The `tools/` rules (file name = tool name, default export, flat directory)
-are in the core guide. A tool that closes over module-local state, or one
-built by your own wrapper, still gets its own file — the file names the
-instance and the factory lives beside it:
+The `tools/` rules (file name = tool name, default export, flat directory) are
+in the core guide. A tool that closes over module-local state, or one built by
+your own wrapper, still gets its own file — the file names the instance and the
+factory lives beside it:
 
 ```ts no-check
 // tools/to_hotel_assistant.ts
@@ -1689,13 +1687,13 @@ it, `[]` for none.
 
 A keyed builtin reads its key from the agent env; list it in `requiredEnv`.
 
-**Every builtin here is a tool the MODEL calls, not a function your code
-can call** — there is no `fetch_json()` for a tool's `execute`. So:
+**Every builtin here is a tool the MODEL calls, not a function your code can
+call** — there is no `fetch_json()` for a tool's `execute`. So:
 
-- **Declare the builtin** (`builtinTools: ["fetch_json"]`) when the MODEL
-  should decide the URL and read the JSON — lookups you cannot enumerate.
-- **Write your own tool** whose `execute` calls `fetch` when YOU own the
-  URL and the shape — a specific endpoint, auth, or a reshaped response.
+- **Declare the builtin** (`builtinTools: ["fetch_json"]`) when the MODEL should
+  decide the URL and read the JSON — lookups you cannot enumerate.
+- **Write your own tool** whose `execute` calls `fetch` when YOU own the URL and
+  the shape — a specific endpoint, auth, or a reshaped response.
 
 Network builtins are SSRF-screened outside a container (private/loopback
 blocked). Your own tool code has open egress either way.
@@ -1754,13 +1752,13 @@ const feed = parseFeed(xml);
 const episodes = feed?.items.filter((item) => item.enclosureUrl !== undefined) ?? [];
 ```
 
-**Reach for this rather than writing the patterns.** Both are cheap to get
-wrong in ways that only show up on real pages: `<[^>]+>` cuts a tag whose
-attribute contains a `>`, `<script[^>]*>[\s\S]*?<\/script>` leaves the whole
-script in your prompt when the page was truncated mid-tag, and
-`indexOf("<title>")` finds an entry's title rather than a channel's. The
-`link-digest-workflow` and `podcast-digest-workflow` templates each shipped one
-before this subpath existed.
+**Reach for this rather than writing the patterns.** Both are cheap to get wrong
+in ways that only show up on real pages: `<[^>]+>` cuts a tag whose attribute
+contains a `>`, `<script[^>]*>[\s\S]*?<\/script>` leaves the whole script in
+your prompt when the page was truncated mid-tag, and `indexOf("<title>")` finds
+an entry's title rather than a channel's. The `link-digest-workflow` and
+`podcast-digest-workflow` templates each shipped one before this subpath
+existed.
 
 ## Persisting data — bring your own client
 
@@ -1788,9 +1786,9 @@ export default tool({
 });
 ```
 
-Add the driver to your project's `package.json` and the URL with `aai secret put
-DATABASE_URL …` (or in `.env` under `aai dev`). Nothing here is privileged — an
-HTTP API, a provider SDK or a hosted KV works the same way.
+Add the driver to your project's `package.json` and the URL with
+`aai secret put DATABASE_URL …` (or in `.env` under `aai dev`). Nothing here is
+privileged — an HTTP API, a provider SDK or a hosted KV works the same way.
 
 **What the platform DOES persist for you**, with no setup:
 
@@ -1809,23 +1807,24 @@ saves.
 ## Speech goes both ways — `spokenMoney`, `resolveOne`, `isoDate`
 
 **Speech goes both ways, and `@alexkroman1/aai` publishes both conversions.**
-Inbound: `spokenDigits("four one five")` is `"415"`, `spokenOrdinal("the third
-one")` is `3`, and `resolveOne(candidates, spoken, opts)` picks the one item a
-phrase meant — answering a `ToolFailure` when nothing matches or several do, the
-case a hand-written `.find()` gets wrong.
+Inbound: `spokenDigits("four one five")` is `"415"`,
+`spokenOrdinal("the third one")` is `3`, and
+`resolveOne(candidates, spoken, opts)` picks the one item a phrase meant —
+answering a `ToolFailure` when nothing matches or several do, the case a
+hand-written `.find()` gets wrong.
 
 Outbound: an engine handed `$240.50` may read "dollar sign two hundred forty
-point five zero" — right text, wrong call.
-Render the words first: `spokenMoney(240.5)` is `"240 dollars and 50 cents"`,
-`spokenDate("2026-06-08")` is `"Monday, June 8"`, `spokenTime("18:30")` is
-`"6:30 PM"`. `mintCode("HTL")` mints a reference with no `0`/`O`, `1`/`I` or
-`L` in it — what comes back wrong read aloud.
+point five zero" — right text, wrong call. Render the words first:
+`spokenMoney(240.5)` is `"240 dollars and 50 cents"`, `spokenDate("2026-06-08")`
+is `"Monday, June 8"`, `spokenTime("18:30")` is `"6:30 PM"`. `mintCode("HTL")`
+mints a reference with no `0`/`O`, `1`/`I` or `L` in it — what comes back wrong
+read aloud.
 
 **Declare a date or a time on the SCHEMA.** `isoDate("the arrival date")` and
 `clockTime("the pickup time")` are zod fields, so the rule reaches the model
 before it calls rather than as a refusal after. `isIsoDate` refuses
-`2026-02-30`; `addDays`/`daysBetween` compute in UTC — never turn a
-`YYYY-MM-DD` into a `Date` in local time.
+`2026-02-30`; `addDays`/`daysBetween` compute in UTC — never turn a `YYYY-MM-DD`
+into a `Date` in local time.
 
 **Never call `Math.random()` in a tool** — use `ctx.random`, which a test can
 substitute, so a dice roll or a minted code is something a spec can assert.
@@ -1837,8 +1836,8 @@ own journaled `ctx.random()` instead.
 
 # Workflows — durable runs, steps and workflow apps
 
-Part of the aai authoring guide. Start with the core guide (`AGENT_GUIDE.md`
-in the SDK, `CLAUDE.md` in the scaffold); this file is the reference for
+Part of the aai authoring guide. Start with the core guide (`AGENT_GUIDE.md` in
+the SDK, `CLAUDE.md` in the scaffold); this file is the reference for
 `workflow()`, `workflowApp()`, step code in `workflows/*.ts` and the page that
 drives a run. Session tools that START a run are in `TOOLS.md`.
 
@@ -1865,10 +1864,10 @@ export default workflowApp({
 });
 ```
 
-That is the whole declaration, and the fields it does NOT take are the point:
-a workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
-`maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob
-are **compile errors** here, not fields that quietly do nothing. `greeting` and
+That is the whole declaration, and the fields it does NOT take are the point: a
+workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
+`maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob are
+**compile errors** here, not fields that quietly do nothing. `greeting` and
 `requiredEnv` stay. `workflowApp()` is `agent({ mode: "workflow-app", … })` with
 the discriminant already set — same definition object out, so `aai build`,
 `aai dev` and `aai publish` treat it like any other agent.
@@ -1876,8 +1875,8 @@ the discriminant already set — same definition object out, so `aai build`,
 Reach for it when the user asks for something that outlives a request: an
 overnight job, an upload that takes minutes, anything waiting on a third-party
 callback. Reach for `agent()` when someone is on the line — a voice agent can
-also START a workflow from a tool (`ctx.workflows.start(def, input)`) and
-answer the turn, which is the other shape.
+also START a workflow from a tool (`ctx.workflows.start(def, input)`) and answer
+the turn, which is the other shape.
 
 **Runs are DURABLE on the platform with no setup.** A deployed app's runs live
 on the platform's own database, so they survive a restart, a redeploy and an
@@ -1886,23 +1885,23 @@ idle sandbox. There is nothing to enable.
 Under `aai dev` without a `DATABASE_URL` they live in the process that started
 them — you can submit the form, watch the run and read its result, and
 everything in flight is lost when that process goes away. That is the honest
-tradeoff, and it is what
-lets you build a workflow app before provisioning anything.
+tradeoff, and it is what lets you build a workflow app before provisioning
+anything.
 
 **A workflow UPLOAD is durable with no setup either**, and this paragraph used
 to say the opposite. An upload's record is a platform row and its bytes are
-platform storage, so `api.upload`, `<FileField>` and the file-taking form
-hooks outlive the sandbox exactly as the runs reading them do — a deployed app
-needs no database of its own for either half. Under `aai dev` they are as
-temporary as the runs above: the bytes go to a per-process temporary directory
-that a restart abandons. There is no `ctx.db` at all — see "Persisting data"
-in `TOOLS.md`.
+platform storage, so `api.upload`, `<FileField>` and the file-taking form hooks
+outlive the sandbox exactly as the runs reading them do — a deployed app needs
+no database of its own for either half. Under `aai dev` they are as temporary as
+the runs above: the bytes go to a per-process temporary directory that a restart
+abandons. There is no `ctx.db` at all — see "Persisting data" in `TOOLS.md`.
 
 ### Workflow bodies live in `workflows/`
 
-A body is an ordinary exported async function of its input and a `WorkflowContext`.
-There is no directive and no compile step of its own — the agent bundle compiles
-`workflows/` like any other source file — and durability is a method call:
+A body is an ordinary exported async function of its input and a
+`WorkflowContext`. There is no directive and no compile step of its own — the
+agent bundle compiles `workflows/` like any other source file — and durability
+is a method call:
 
 ```ts
 import type { WorkflowContext } from "@alexkroman1/aai";
@@ -1934,18 +1933,18 @@ async function file(_digest: { url: string }) {
 
 `ctx.step(name, fn)` runs `fn` once, journals what it returned, and on every
 later replay returns the journaled value without running it again. The step
-functions themselves are ordinary functions — which is also what lets a spec call
-one directly, with no engine in the path.
+functions themselves are ordinary functions — which is also what lets a spec
+call one directly, with no engine in the path.
 
 **Type the body's input from the SCHEMA, not by hand.** The example above writes
 `input: { url: string }`, which is fine only while the workflow declares no
 input schema. Once it does, a hand-written parameter is unchecked: `run` takes
 its input as a function PARAMETER, so it is contravariant, and a body declaring
-a wider shape — or the same shape with one field's optionality or default
-wrong — is assignable and compiles. A `z.number().default(5)` against a body
-that writes `input.limit ?? 3` is the sharp version: the schema guarantees
-`limit` is there, the `??` is dead, and the two numbers disagree with nothing
-to report it. `WorkflowInputOf<typeof theDef>` reads the declaration instead.
+a wider shape — or the same shape with one field's optionality or default wrong
+— is assignable and compiles. A `z.number().default(5)` against a body that
+writes `input.limit ?? 3` is the sharp version: the schema guarantees `limit` is
+there, the `??` is dead, and the two numbers disagree with nothing to report it.
+`WorkflowInputOf<typeof theDef>` reads the declaration instead.
 
 **Reaching for it needs one thing that is not obvious: ANNOTATE the def.** The
 obvious spelling does not compile —
@@ -1999,8 +1998,8 @@ them:
 - **The body replays from the top on every resume**, so it holds no live handle
   and makes no undurable decision — no `Date.now()`, no `Math.random()`, no
   `crypto.randomUUID()`, no `fetch`. The three commonest have methods of their
-  own (`ctx.now()`, `ctx.random()`, `ctx.uuid()` — see below); anything else goes
-  inside a `ctx.step`, whose result is journaled and returned unchanged on
+  own (`ctx.now()`, `ctx.random()`, `ctx.uuid()` — see below); anything else
+  goes inside a `ctx.step`, whose result is journaled and returned unchanged on
   replay.
 - **A step's arguments and return value cross a queue**, so they must be
   JSON-shaped and small. Put bytes in storage and pass the key.
@@ -2017,8 +2016,8 @@ share a name: the journal keys an entry by `(name, occurrence)`, so two sites
 alias onto one counter and read each other's journaled results. Nothing detects
 it.
 
-**Per-step retries are an argument, not a property.** Pass
-`{ maxAttempts }` where a step deserves more patience than the default three:
+**Per-step retries are an argument, not a property.** Pass `{ maxAttempts }`
+where a step deserves more patience than the default three:
 
 ```ts no-check
 const digest = await ctx.step("summarize", () => summarize(input.url), {
@@ -2026,8 +2025,8 @@ const digest = await ctx.step("summarize", () => summarize(input.url), {
 });
 ```
 
-**And a step body can read which attempt it is on**, so a step may degrade rather
-than fail — a smaller model on the last try beats a failed run:
+**And a step body can read which attempt it is on**, so a step may degrade
+rather than fail — a smaller model on the last try beats a failed run:
 
 ```ts
 import { stepInfo } from "@alexkroman1/aai/step";
@@ -2073,18 +2072,18 @@ export async function chargeFlow(input: { amount: number }, ctx: WorkflowContext
 and the same value after a resume, so a retried request is recognisably the same
 request rather than a second one. `ctx.random()` draws one float per CALL, so a
 loop is correct as written; a BULK draw belongs in a step
-(`ctx.step("jitter", () => Array.from({ length: 1000 }, Math.random))`), which is
-one journal entry instead of a thousand.
+(`ctx.step("jitter", () => Array.from({ length: 1000 }, Math.random))`), which
+is one journal entry instead of a thousand.
 
 Two rules:
 
-- **Call them from the BODY, never inside a `ctx.step`** — the engine refuses one
-  there and the message names the fix. Inside a step there is nothing to fix: a
-  step's internals are not replayed, only its result, so a plain `Date.now()` in
-  a step body is already durable and is what to write.
+- **Call them from the BODY, never inside a `ctx.step`** — the engine refuses
+  one there and the message names the fix. Inside a step there is nothing to
+  fix: a step's internals are not replayed, only its result, so a plain
+  `Date.now()` in a step body is already durable and is what to write.
 - **A `ctx.uuid()` is not a hook TOKEN.** `ctx.waitFor`'s token has to be
-  DERIVED from the run's own input, because whoever signals is usually a tool and
-  a tool cannot see the body's local variables. See below.
+  DERIVED from the run's own input, because whoever signals is usually a tool
+  and a tool cannot see the body's local variables. See below.
 
 ### Waiting: `ctx.sleep` and `ctx.waitFor`
 
@@ -2095,7 +2094,8 @@ brings the run back — so a long wait costs nothing while it runs.
 platform it is durable with no setup, and a self-hosted deployment with a
 `DATABASE_URL` is durable too — the wait outlives the body, the worker and the
 process. Under `aai dev` without a `DATABASE_URL` the store is memory, so a wait
-lives only as long as the dev server. The boot line reports which one is in play.
+lives only as long as the dev server. The boot line reports which one is in
+play.
 
 ```ts no-check
 // A label, then a duration in milliseconds or an absolute Date.
@@ -2112,29 +2112,30 @@ if (approval === undefined) return { published: false, reason: "nobody approved"
 
 Five things worth knowing:
 
-- **A wait's NAME is its identity, exactly like a step's.** A sleep's `label` and
-  a `waitFor`'s token are what the journal keys the wait on
+- **A wait's NAME is its identity, exactly like a step's.** A sleep's `label`
+  and a `waitFor`'s token are what the journal keys the wait on
   (`sleep!<label>#<occurrence>`, `hook!<token>#<occurrence>`), so make a label a
   string literal, give two call sites two labels, and let a loop reuse one — the
   occurrence count separates the iterations. This is what makes a wait behind an
-  `if` safe: the body can reach a different NUMBER of waits on two walks and each
-  one still finds its own record.
+  `if` safe: the body can reach a different NUMBER of waits on two walks and
+  each one still finds its own record.
 - **A hook's token must be DERIVED, not random.** Whoever signals is usually a
-  tool, and a tool cannot see the body's local variables — so export one function
-  that computes the token from the run's own input and import it in both places.
-  Derive it from something that identifies the RUN rather than the caller: a
-  token is held for the life of its run, so two runs deriving the same one is the
-  second one failing.
+  tool, and a tool cannot see the body's local variables — so export one
+  function that computes the token from the run's own input and import it in
+  both places. Derive it from something that identifies the RUN rather than the
+  caller: a token is held for the life of its run, so two runs deriving the same
+  one is the second one failing.
 - **`timeoutMs` resolves `undefined` when the window closes unanswered.** A
-  closing window is an outcome to branch on, not a failure, and the engine closes
-  the hook as it shuts so a late answer cannot change what already happened.
+  closing window is an outcome to branch on, not a failure, and the engine
+  closes the hook as it shuts so a late answer cannot change what already
+  happened.
 - **Racing two independent waits WORKS** (the run suspends once, on the
   earliest), but a deadline ON a wait is `timeoutMs`: it CLOSES the hook before
   the body continues, so a late signal cannot change a window already timed out.
-- **`ctx.workflows.wakeUp(runId, { correlationIds: [id] })`** ends a sleep early,
-  which is how a "send it now" tool cuts a scheduled wait short. Naming no ids
-  wakes every outstanding SLEEP and deliberately not a `waitFor` deadline, so
-  cutting a schedule short cannot also close an approval window.
+- **`ctx.workflows.wakeUp(runId, { correlationIds: [id] })`** ends a sleep
+  early, which is how a "send it now" tool cuts a scheduled wait short. Naming
+  no ids wakes every outstanding SLEEP and deliberately not a `waitFor`
+  deadline, so cutting a schedule short cannot also close an approval window.
 - **A SUSPEND is not free, so `ctx.sleep` is not a `setTimeout`.** A wait costs
   a journal write to record it, a queued delivery to bring the run back, and a
   fresh WALK of the body — measured on a deployed agent at roughly a second of
@@ -2144,11 +2145,12 @@ Five things worth knowing:
   whole cost.
 
   So a sub-second pause is not what this is for. For a short backoff inside a
-  step, use an ordinary timer (`sleep` from `@alexkroman1/aai/internal`) — a step
-  body may not call `ctx.sleep` anyway, and the engine refuses one that does. Use
-  `ctx.sleep` for a wait you want to SURVIVE the process, which is the thing a
-  timer cannot do. A body that polls in a loop pays the suspend per iteration,
-  which is the strongest argument for the next section: park on the callback.
+  step, use an ordinary timer (`sleep` from `@alexkroman1/aai/internal`) — a
+  step body may not call `ctx.sleep` anyway, and the engine refuses one that
+  does. Use `ctx.sleep` for a wait you want to SURVIVE the process, which is the
+  thing a timer cannot do. A body that polls in a loop pays the suspend per
+  iteration, which is the strongest argument for the next section: park on the
+  callback.
 
 #### A third-party callback is an OPTIMIZATION over a reconciling read
 
@@ -2160,9 +2162,9 @@ already paid for:
 
 - **Mint it with `stepWebhookUrl(token)`, from inside the step that hands it
   over.** That is the step-side half of `ctx.workflows.publicWebhookUrl` — the
-  tool-side one needs a `ToolContext`, which a step is not handed. It THROWS when
-  the deployment cannot mint one, which a step should catch and treat as "no
-  callback": a run must not fail over a missing optimization. And note
+  tool-side one needs a `ToolContext`, which a step is not handed. It THROWS
+  when the deployment cannot mint one, which a step should catch and treat as
+  "no callback": a run must not fail over a missing optimization. And note
   `requireStepEnv("AAI_PUBLIC_BASE_URL")` is NOT a substitute — the public base
   URL is a boot parameter of the deployment, not one of the agent's own secrets,
   so that read is `undefined` in production precisely where the value exists.
@@ -2172,22 +2174,22 @@ already paid for:
   — it runs once, on first execution, never on a replay — and answer
   `{ id, callback }`.
 - **Keep the poll as the TIMEOUT arm.** A webhook is one HTTP POST from a third
-  party with no delivery guarantee you control: the sender gives up after its own
-  retry budget, a deployment may not know its public URL, and a delivery that
-  lands before your body reaches its wait is answered `404` and dropped. So read
-  the state before you park and again after, give the wait a `timeoutMs`, and let
-  an unanswered window fall through to the read.
+  party with no delivery guarantee you control: the sender gives up after its
+  own retry budget, a deployment may not know its public URL, and a delivery
+  that lands before your body reaches its wait is answered `404` and dropped. So
+  read the state before you park and again after, give the wait a `timeoutMs`,
+  and let an unanswered window fall through to the read.
 - **Wait for the EDGE, not the answer.** Treat the payload as "something
   happened, go look" and get the fact from the far side's own API under your own
-  credential. That is what makes an unauthenticated callback route safe: a forged
-  delivery on a guessed token costs one extra read and changes no outcome. The
-  route authorizes on the TOKEN and reads no other header, so a sender's own
-  auth-header option is ignored.
+  credential. That is what makes an unauthenticated callback route safe: a
+  forged delivery on a guessed token costs one extra read and changes no
+  outcome. The route authorizes on the TOKEN and reads no other header, so a
+  sender's own auth-header option is ignored.
 - **One token, ONE `waitFor` per run.** A token is claimed for the life of its
-  run and given back when the run goes terminal, so a second `ctx.waitFor` on the
-  same token — a wait written inside a loop — THROWS. A throw is not a suspend,
-  so a body with a `catch` will treat it as a failed run and start compensating.
-  Park once, outside the loop.
+  run and given back when the run goes terminal, so a second `ctx.waitFor` on
+  the same token — a wait written inside a loop — THROWS. A throw is not a
+  suspend, so a body with a `catch` will treat it as a failed run and start
+  compensating. Park once, outside the loop.
 - **You cannot test it under `aai dev` without a tunnel.** `publicUrl` there is
   `http://localhost:<backend port>`, which no third party can reach — so the
   delivery never arrives and the run silently takes the fallback.
@@ -2199,9 +2201,9 @@ Steps are ordinary exported functions, so a spec imports and calls them. The
 BODY needs an engine, and there are two, for two different questions.
 
 **"What did the body ask for?"** — `createWorkflowContext` from
-`@alexkroman1/aai-runtime/testing`. It runs the steps and records the names,
-the retry policies and the sleeps, over one walk with no journal. Nothing
-replays, so a spec built on it must not claim to test durability.
+`@alexkroman1/aai-runtime/testing`. It runs the steps and records the names, the
+retry policies and the sleeps, over one walk with no journal. Nothing replays,
+so a spec built on it must not claim to test durability.
 
 ```ts no-check
 import { createWorkflowContext } from "@alexkroman1/aai-runtime/testing";
@@ -2251,8 +2253,8 @@ Three more things it can do, each the thing a durable body is written for:
   second run sees.
 
 Stub the steps' collaborators at the seams they really use — a step's HTTP goes
-through the published `stepFetch` slot, so a model call and a page fetch are BOTH
-answered there. `stubGatewayRoute` composes the two:
+through the published `stepFetch` slot, so a model call and a page fetch are
+BOTH answered there. `stubGatewayRoute` composes the two:
 
 ```ts no-check
 import { stubGatewayRoute } from "@alexkroman1/aai-runtime/testing";
@@ -2333,16 +2335,16 @@ and a second later all N ask again.
 **Reach for the raw call when the failure is not simply a failure** — a `404`
 that means "already deleted", a `4xx` whose body decides which advice to print.
 Then classify it yourself: `throwStepError(err)`, `throwFatalStepError(err)` to
-stop outright, `toStepError(cause, message)` to build the error without throwing,
-or `throwFfmpegStepError(err)` for a media failure, whose default runs the other
-way (only a `timeout` or an `aborted` is worth another attempt).
+stop outright, `toStepError(cause, message)` to build the error without
+throwing, or `throwFfmpegStepError(err)` for a media failure, whose default runs
+the other way (only a `timeout` or an `aborted` is worth another attempt).
 
 **Why the split exists, since the wrapped call is what you usually want:**
 importing from here is the OPT-IN, and `/step` is not written only for a step:
-`mapConcurrent` bounds a rate-limited call anywhere, `stepFetch` is an
-ordinary HTTP client, and your specs drive exported steps directly. None of
-those callers has a retry budget to burn, so none should meet a vocabulary whose
-whole subject is one. A step pays nothing for the extra import line.
+`mapConcurrent` bounds a rate-limited call anywhere, `stepFetch` is an ordinary
+HTTP client, and your specs drive exported steps directly. None of those callers
+has a retry budget to burn, so none should meet a vocabulary whose whole subject
+is one. A step pays nothing for the extra import line.
 
 ### Media, big files, and transcription from a step
 
@@ -2353,15 +2355,14 @@ bundling rule as `/step` — import them there, never through the root barrel:
   recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
   `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
   the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
-  lives on `/step` with the other step primitives.) Wrap each in `orFail`
-  as above: a provider refusal — a container it will not read, a
-  recording with no speech — arrives
-  with `retryable: false`, and unclassified a step re-uploads the same bytes
-  until its attempts run out.
+  lives on `/step` with the other step primitives.) Wrap each in `orFail` as
+  above: a provider refusal — a container it will not read, a recording with no
+  speech — arrives with `retryable: false`, and unclassified a step re-uploads
+  the same bytes until its attempts run out.
 - **`@alexkroman1/aai/ffmpeg`** — `transcodeToWav(bytes, { sampleRate })`,
   `runFfmpeg(args)`, `probeMedia(source)` for duration and stream info, and
-  `FfmpegError`/`isFfmpegError`. Under `aai dev` it needs ffmpeg on your PATH;
-  a `missing-binary` failure says so and carries the install line.
+  `FfmpegError`/`isFfmpegError`. Under `aai dev` it needs ffmpeg on your PATH; a
+  `missing-binary` failure says so and carries the install line.
 - **`@alexkroman1/aai/step-files`** — for a recording too big to hold in memory.
   `readUploadToFile(uploadId, path)` streams an upload to disk,
   `writeUploadFromFile(path)` streams one back, and `withTempDir(work)` gives
@@ -2419,20 +2420,19 @@ sentence a person can act on. `podcast-digest-workflow` is the worked example.
 
 A run reaches a device holding `WS /inbox?client=<id>` open: a tool passes
 `sessionClientId(ctx)` to the run, and a step's `stepNotifyClient` throws a
-retryable error until the device acks. Test: `stubClientInbox`.
-`?client=` also makes a device one conversation across connects (self-hosted):
-`sessionContext`, `onSessionEnd`, `stepClientTranscript`; its id is the only
-key.
-A page is a device too: `mountClient({ client: "auto" })` keeps a per-browser
-id; `useInbox({ onNotice })` holds the inbox (busy mid-call) and plays notices;
+retryable error until the device acks. Test: `stubClientInbox`. `?client=` also
+makes a device one conversation across connects (self-hosted): `sessionContext`,
+`onSessionEnd`, `stepClientTranscript`; its id is the only key. A page is a
+device too: `mountClient({ client: "auto" })` keeps a per-browser id;
+`useInbox({ onNotice })` holds the inbox (busy mid-call) and plays notices;
 `useClientId()`/`useSessionId()` read the ids. Also: `useTapToTalk`,
 `useConversationLog`, `useRoute`, `createStoredValue`.
 
 ### A step's HTTP: use `stepFetch`, not `fetch`
 
 Any outbound request from a step goes through `stepFetch` (also
-`@alexkroman1/aai/step`). Not a style preference: `fetch` is the wrong call
-from a step, for a reason the call site does not show:
+`@alexkroman1/aai/step`). Not a style preference: `fetch` is the wrong call from
+a step, for a reason the call site does not show:
 
 ```ts no-check
 import { multipartBody, stepFetch, StepTransportError } from "@alexkroman1/aai/step";
@@ -2466,14 +2466,14 @@ connection, sharing one flow-control window: fine for small JSON, pathological
 for `mapConcurrent` over large bodies (8 concurrent 17.66 MB uploads: `fetch`
 landed 14 of 16 at p50 8094ms, HTTP/1.1 16 of 16 at p50 3037ms).
 
-**The two it lost matter more than the latency.** On
-HTTP/2 a capacity limit arrives as a _stream reset_ — `NGHTTP2_ENHANCE_YOUR_CALM`
-— and a stream error carries no HTTP status, so `isTransientStatus` and
-`retryAfter` cannot see it. Every sibling in the batch then retries in lockstep
-into the same reset, exhausts the step's attempts, and fails the run with
-`TypeError: fetch failed`, whose real cause is two `cause` hops down where
-nothing prints it. Over HTTP/1.1 the identical limit arrives as `503` with
-`retry-after`, which your retry policy already reads.
+**The two it lost matter more than the latency.** On HTTP/2 a capacity limit
+arrives as a _stream reset_ — `NGHTTP2_ENHANCE_YOUR_CALM` — and a stream error
+carries no HTTP status, so `isTransientStatus` and `retryAfter` cannot see it.
+Every sibling in the batch then retries in lockstep into the same reset,
+exhausts the step's attempts, and fails the run with `TypeError: fetch failed`,
+whose real cause is two `cause` hops down where nothing prints it. Over HTTP/1.1
+the identical limit arrives as `503` with `retry-after`, which your retry policy
+already reads.
 
 Three rules come with it:
 
@@ -2488,9 +2488,9 @@ Three rules come with it:
   `cause` chain, and `err.codes` is what to branch on (`ECONNRESET`,
   `ETIMEDOUT`, …).
 - **Test it with `stubStepFetch`** (`@alexkroman1/aai-runtime/testing`), not
-  `vi.stubGlobal("fetch", …)`. The global stub passes — an unpublished slot falls
-  back to it — while asserting a path production does not take, and it cannot see
-  the request body as bytes.
+  `vi.stubGlobal("fetch", …)`. The global stub passes — an unpublished slot
+  falls back to it — while asserting a path production does not take, and it
+  cannot see the request body as bytes.
 
 `stepGenerate` already goes through this, so a step that only calls a model gets
 it for free.
@@ -2498,9 +2498,9 @@ it for free.
 ### A step can SPEAK, and store the file it made
 
 A workflow whose answer is a FILE — a summary read aloud, a rendered image, a
-generated PDF — needs two things a first draft reaches for and misses.
-Both are on `@alexkroman1/aai/step`, and `spoken-summary-workflow` shows the
-whole round trip.
+generated PDF — needs two things a first draft reaches for and misses. Both are
+on `@alexkroman1/aai/step`, and `spoken-summary-workflow` shows the whole round
+trip.
 
 ```ts
 import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
@@ -2577,7 +2577,8 @@ search wrote it, and one of them had a `catch` for this exact failure — which
 never ran, because a `catch` cannot see a returned value. DuckDuckGo refuses
 often enough that the empty answer is routine, and to the model "no results" and
 "the search was blocked" are different facts: told the first, it concludes the
-pages do not exist and tries again with different words until its budget is gone.
+pages do not exist and tries again with different words until its budget is
+gone.
 
 An UNTYPED call (`await fetchJson(url)`) stays loose and needs no narrowing —
 naming a shape is what asks the compiler to make you handle the failure.
@@ -2585,9 +2586,9 @@ naming a shape is what asks the compiler to make you handle the failure.
 ### The page
 
 A workflow app's `client.tsx` mounts with `mountPage()` rather than
-`mountClient()` — there is no session to build, so no socket, no audio graph
-and no microphone request. Everything else is the same file, React and
-Tailwind included.
+`mountClient()` — there is no session to build, so no socket, no audio graph and
+no microphone request. Everything else is the same file, React and Tailwind
+included.
 
 ```tsx no-check
 import { createWorkflowApi, mountPage, useWorkflowRun } from "@alexkroman1/aai-ui";
@@ -2621,11 +2622,11 @@ export function App() {
 mountPage({ name: "Link Digest", component: App });
 ```
 
-`api.start()` resolves as soon as the RUN EXISTS, not when it finishes — that
-is the whole mechanism. The `runId` is the entire client state, so it survives
-a reload, a different device, or `curl`. Note the workflow is named by the key
-it has in `workflows` above (`"digest"`); nothing else records that string, so
-a rename there is a 400 here rather than a compile error.
+`api.start()` resolves as soon as the RUN EXISTS, not when it finishes — that is
+the whole mechanism. The `runId` is the entire client state, so it survives a
+reload, a different device, or `curl`. Note the workflow is named by the key it
+has in `workflows` above (`"digest"`); nothing else records that string, so a
+rename there is a 400 here rather than a compile error.
 
 The same routes are scriptable, which is the other half of having an API:
 
@@ -2644,15 +2645,15 @@ GET    /workflows/runs/:id/events → SSE
 
 Part of the aai authoring guide (start with the core guide). This file covers
 the session's MODES — the default pipeline, S2S, text — answering and placing
-phone calls, speaking from outside a turn, and the pipeline's turn-taking
-knobs. Which vendor runs each stage is `PROVIDERS.md`; the full `agent()` field
-list is `AGENT-API.md`.
+phone calls, speaking from outside a turn, and the pipeline's turn-taking knobs.
+Which vendor runs each stage is `PROVIDERS.md`; the full `agent()` field list is
+`AGENT-API.md`.
 
 ## Pipeline mode
 
-Pipeline mode is the default: omitting `stt`/`llm`/`tts` (and `s2s`) gives
-you the all-AssemblyAI pipeline, and any stage you do declare replaces just
-that stage — the rest keep the default.
+Pipeline mode is the default: omitting `stt`/`llm`/`tts` (and `s2s`) gives you
+the all-AssemblyAI pipeline, and any stage you do declare replaces just that
+stage — the rest keep the default.
 
 **S2S mode is an explicit opt-in.** `mode: "s2s"` beside an
 `s2s: assemblyAIS2s()` descriptor (imported from `@alexkroman1/aai`, next to
@@ -2691,35 +2692,33 @@ export default agent({
 ```
 
 - `voice` — the agent's voice. Unset uses the service default.
-- `languages` — **leave it unset for multilingual calls**: unset means
-  "detect per turn", so pinning `["en"]` on a line that takes other
-  languages disables detection for every caller. Pin it when the line
-  really is monolingual — on a benchmark run that plus a transcription
-  prompt took a caller's spelled first name from 1 of 6 attempts correct
-  to 6 of 6.
-- `keyterms` — product names and proper nouns to bias transcription
-  toward. Use `sttPrompt` (above, and honoured in **both** modes) for
-  prose guidance and `keyterms` for a term list.
+- `languages` — **leave it unset for multilingual calls**: unset means "detect
+  per turn", so pinning `["en"]` on a line that takes other languages disables
+  detection for every caller. Pin it when the line really is monolingual — on a
+  benchmark run that plus a transcription prompt took a caller's spelled first
+  name from 1 of 6 attempts correct to 6 of 6.
+- `keyterms` — product names and proper nouns to bias transcription toward. Use
+  `sttPrompt` (above, and honoured in **both** modes) for prose guidance and
+  `keyterms` for a term list.
 
-**Prefer pipeline mode** — the default — unless the user specifically
-asks for the speech-to-speech API. Nearly every template ships this way, and
-it is what AssemblyAI Build defaults to. The host runs the LLM loop locally
-(Vercel AI SDK) with your chosen STT, LLM, and TTS. You want explicit
-providers when:
+**Prefer pipeline mode** — the default — unless the user specifically asks for
+the speech-to-speech API. Nearly every template ships this way, and it is what
+AssemblyAI Build defaults to. The host runs the LLM loop locally (Vercel AI SDK)
+with your chosen STT, LLM, and TTS. You want explicit providers when:
 
 - you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq,
-  hundreds of models via OpenRouter, or 25+ models via the AssemblyAI
-  LLM Gateway)
-- you want a specific STT model, a non-AssemblyAI TTS provider, or another
-  voice (`tts: assemblyAITts({ voice })`)
+  hundreds of models via OpenRouter, or 25+ models via the AssemblyAI LLM
+  Gateway)
+- you want a specific STT model, a non-AssemblyAI TTS provider, or another voice
+  (`tts: assemblyAITts({ voice })`)
 - you need to swap providers without changing agent code
 
-**The rule:** declare only the stages you're changing — any subset of
-`stt`, `llm`, `tts`; each unset stage runs on the AssemblyAI default.
-Combining `s2s` with any pipeline provider or pipeline-only tuning field is
-a compile error naming the rule; a voice has one place to live, the TTS
-descriptor (there is no agent-level `voice`). A raw config that skips
-`agent()` is still checked at parse time.
+**The rule:** declare only the stages you're changing — any subset of `stt`,
+`llm`, `tts`; each unset stage runs on the AssemblyAI default. Combining `s2s`
+with any pipeline provider or pipeline-only tuning field is a compile error
+naming the rule; a voice has one place to live, the TTS descriptor (there is no
+agent-level `voice`). A raw config that skips `agent()` is still checked at
+parse time.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -2735,8 +2734,8 @@ export default agent({
 });
 ```
 
-Tools, the database, `ctx`, and the UI all behave identically across modes.
-Only the audio + LLM transport differs.
+Tools, the database, `ctx`, and the UI all behave identically across modes. Only
+the audio + LLM transport differs.
 
 **Four modes, one field on `agent()`: `mode`.** Omit it for PIPELINE (voice,
 cascaded STT → LLM → TTS) — the default, and the mode this guide assumes.
@@ -2774,9 +2773,9 @@ mu-law is transcoded both ways, so a call is a transport, not a mode.
 `createAgentServer({ telephony })` overrides one deployment; embedding:
 `createTelephonyBridge`, `startTelephonySession`.
 
-**A call your app places** (below): the session starts on the carrier's
-`start` frame, so `sessionContext`/`onSessionEnd` get `call`
-— `{ carrier, callId?, parameters }` — and a tool reads `sessionCall(ctx)`.
+**A call your app places** (below): the session starts on the carrier's `start`
+frame, so `sessionContext`/`onSessionEnd` get `call` —
+`{ carrier, callId?, parameters }` — and a tool reads `sessionCall(ctx)`.
 `/phone` is unauthenticated: check a parameter you issued and answer
 `{ refuse: "why" }` otherwise (hung up before the greeting or any model call; a
 WebSocket gets 1008). A tool hangs up with `endSession(ctx)` once the reply has
@@ -2801,14 +2800,13 @@ been spoken (`{ afterReply: false }` cuts it); a spec reads
 - `turnTaking` — `minSilenceMs`/`maxSilenceMs` are how long a pause ends a turn
   (lowered onto the default `assemblyAIStt()`; with an explicit `stt` set them
   on the descriptor, e.g. `deepgramStt({ endpointing })`). `userTurnLimit`
-  (`{ maxWords }`, `{ maxDurationMs }` or both; `{}` refused) ends ONE turn as
-  a pause would, emitting `userTurn.exceeded`. `detection: "manual"` is
+  (`{ maxWords }`, `{ maxDurationMs }` or both; `{}` refused) ends ONE turn as a
+  pause would, emitting `userTurn.exceeded`. `detection: "manual"` is
   PUSH-TO-TALK (`usePushToTalk()` in `aai-ui`): the mic is heard only while
-  held, all of it is ONE turn answered on release, and pressing is the
-  barge-in. `preemptiveGeneration` (default **`false`**) starts the reply from
-  a confident interim, adopted if the commit matches (measured **+8ms per
-  turn**, 44% of requests wasted); it never speaks or calls a tool until
-  adopted.
+  held, all of it is ONE turn answered on release, and pressing is the barge-in.
+  `preemptiveGeneration` (default **`false`**) starts the reply from a confident
+  interim, adopted if the commit matches (measured **+8ms per turn**, 44% of
+  requests wasted); it never speaks or calls a tool until adopted.
 
 ### Placing a call
 
@@ -2871,10 +2869,10 @@ speaking on every one never stops. Speak from an event your line cannot produce
 (`tool.called`, a timer), or check the event's `text` first.
 
 `done` never rejects: `"played"` once playback ends, `"interrupted"`,
-`"dropped"` (call ended, taken back, or an S2S agent). **Never await
-`done` inside the reply it waits behind** (a tool's `execute`). **A session id
-is not authorization**: verify a webhook first. Specs: `createToolContext()`
-records into `ctx.said`.
+`"dropped"` (call ended, taken back, or an S2S agent). **Never await `done`
+inside the reply it waits behind** (a tool's `execute`). **A session id is not
+authorization**: verify a webhook first. Specs: `createToolContext()` records
+into `ctx.said`.
 
 
 <!-- agent-guide/PROVIDERS.md — inlined; where the guide says to read `agent-guide/PROVIDERS.md`, this section is that file. -->
@@ -2887,8 +2885,8 @@ Choosing between pipeline and S2S is `PIPELINE-TUNING.md`.
 
 ## Providers
 
-Provider SDKs are **optional peer dependencies**. Install only the SDKs
-for the providers you actually use.
+Provider SDKs are **optional peer dependencies**. Install only the SDKs for the
+providers you actually use.
 
 ### STT — `@alexkroman1/aai/stt`
 
@@ -2899,19 +2897,18 @@ for the providers you actually use.
 | `elevenLabsStt` | `"scribe_v2_realtime"` | `ELEVENLABS_API_KEY` |
 | `sonioxStt`     | `"stt-rt-v3"`          | `SONIOX_API_KEY`     |
 
-All STT factories accept `{ model?: string, ... }`. Bare calls
-(`deepgramStt()`, `sonioxStt()`, etc.) use the default model. Language is spelled
-`language` where the vendor takes one code (`deepgramStt`, `elevenLabsStt`) and
-`languages` where it takes a list (`assemblyAIStt`, `sonioxStt`) — and only
-`deepgramStt`'s unset value means English; the other three auto-detect.
+All STT factories accept `{ model?: string, ... }`. Bare calls (`deepgramStt()`,
+`sonioxStt()`, etc.) use the default model. Language is spelled `language` where
+the vendor takes one code (`deepgramStt`, `elevenLabsStt`) and `languages` where
+it takes a list (`assemblyAIStt`, `sonioxStt`) — and only `deepgramStt`'s unset
+value means English; the other three auto-detect.
 
-`elevenLabsStt` carries the stage in its name because ElevenLabs is
-better known for TTS: when that stage arrives, `elevenLabs` is the name it
-should get.
+`elevenLabsStt` carries the stage in its name because ElevenLabs is better known
+for TTS: when that stage arrives, `elevenLabs` is the name it should get.
 
-`assemblyAIStt` accepts an optional `region: "eu"` for EU data residency —
-it routes streaming transcription to AssemblyAI's EU endpoints. EU-region
-API keys require it; the US endpoints reject them. Example:
+`assemblyAIStt` accepts an optional `region: "eu"` for EU data residency — it
+routes streaming transcription to AssemblyAI's EU endpoints. EU-region API keys
+require it; the US endpoints reject them. Example:
 `assemblyAIStt({ model: "universal-3-5-pro", region: "eu" })`.
 
 ### LLM — `@alexkroman1/aai/llm`
@@ -2933,24 +2930,24 @@ The provider is a string, not a function name:
 | `"assemblyai"` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
 
 `model` is required. Example:
-`llm({ provider: "anthropic", model: "claude-haiku-4-5" })`.
-`"openrouter"` and `"gateway"` (the [Vercel AI
-Gateway](https://vercel.com/docs/ai-gateway)) address a model as
-`"creator/model"`; every other provider takes its own bare id.
+`llm({ provider: "anthropic", model: "claude-haiku-4-5" })`. `"openrouter"` and
+`"gateway"` (the [Vercel AI Gateway](https://vercel.com/docs/ai-gateway))
+address a model as `"creator/model"`; every other provider takes its own bare
+id.
 
-`provider` is OPEN: any other string compiles. A provider with no built-in
-entry is reached as an OpenAI-compatible endpoint by naming its `baseUrl` (and
+`provider` is OPEN: any other string compiles. A provider with no built-in entry
+is reached as an OpenAI-compatible endpoint by naming its `baseUrl` (and
 `apiKeyEnv`, the variable its key is in); `aai build` warns about an unknown
-provider that has neither. `providerOptions` carries provider-specific
-settings: a native client's AI SDK `providerOptions`; on `openrouter`,
-`cerebras` or a `baseUrl` provider, raw request-body fields (`top_k`).
+provider that has neither. `providerOptions` carries provider-specific settings:
+a native client's AI SDK `providerOptions`; on `openrouter`, `cerebras` or a
+`baseUrl` provider, raw request-body fields (`top_k`).
 
-`"assemblyai"` routes through the [AssemblyAI LLM
-Gateway](https://www.assemblyai.com/docs/llm-gateway) — an
-OpenAI-compatible endpoint fronting 25+ models (Claude, GPT, Gemini,
-etc.) with the same API key as AssemblyAI STT. A bare model-id string on
-`llm` is shorthand for it (and a `"creator/model"` string for `"gateway"`), and
-unset stages keep the AssemblyAI default:
+`"assemblyai"` routes through the
+[AssemblyAI LLM Gateway](https://www.assemblyai.com/docs/llm-gateway) — an
+OpenAI-compatible endpoint fronting 25+ models (Claude, GPT, Gemini, etc.) with
+the same API key as AssemblyAI STT. A bare model-id string on `llm` is shorthand
+for it (and a `"creator/model"` string for `"gateway"`), and unset stages keep
+the AssemblyAI default:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -2989,36 +2986,34 @@ export default agent({
 Bare calls (`assemblyAITts()`, `cartesiaTts()`, `rimeTts()`) use the defaults.
 Override with `{ voice, model, language }`.
 
-**AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the
-LLM Gateway, so an all-AssemblyAI pipeline needs exactly one secret. On the
-default pipeline, `tts: assemblyAITts({ voice: "michael" })` changes the voice
-and leaves the other two stages on the default. Each
-voice speaks one language, and this is the whole catalog — **a voice not on
-this list is rejected after the socket opens, which leaves the agent
-connected, "ready", and permanently silent**, so pick one from here rather
-than guessing a plausible name:
+**AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the LLM
+Gateway, so an all-AssemblyAI pipeline needs exactly one secret. On the default
+pipeline, `tts: assemblyAITts({ voice: "michael" })` changes the voice and
+leaves the other two stages on the default. Each voice speaks one language, and
+this is the whole catalog — **a voice not on this list is rejected after the
+socket opens, which leaves the agent connected, "ready", and permanently
+silent**, so pick one from here rather than guessing a plausible name:
 
-- **English, US accent**: `alba`, `anna`, `charles`, `eve`, `george`,
-  `jane` (the default), `jean`, `mary`, `michael`
+- **English, US accent**: `alba`, `anna`, `charles`, `eve`, `george`, `jane`
+  (the default), `jean`, `mary`, `michael`
 - **English, UK accent**: `paul`, `vera`
-- **Native accent, code-switches with English**: `estelle` (fr),
-  `giovanni` (it), `juergen` (de), `lola` (es), `rafael` (pt)
+- **Native accent, code-switches with English**: `estelle` (fr), `giovanni`
+  (it), `juergen` (de), `lola` (es), `rafael` (pt)
 
-There is no separate age/gender/style axis — match the persona by picking a
-name and accent, and put the delivery in the system prompt instead.
+There is no separate age/gender/style axis — match the persona by picking a name
+and accent, and put the delivery in the system prompt instead.
 
-Set
-`language` only alongside a voice that speaks it, as an ISO 639-1 code —
-`"en"`, `"fr"`, `"de"`, `"it"`, `"pt"`, `"es"` are the six the catalog
-covers, and the SDK translates each to the full name the service wants.
-An unsupported code, and a code the declared voice does not speak, are both
-build errors naming the voices that do speak it — including the one you get by
-setting `language` alone, since the descriptor then fills in the default
-English voice. (A voice this release's catalog does not list is passed through:
-the catalog is the service's, so a voice it ships later still works.)
+Set `language` only alongside a voice that speaks it, as an ISO 639-1 code —
+`"en"`, `"fr"`, `"de"`, `"it"`, `"pt"`, `"es"` are the six the catalog covers,
+and the SDK translates each to the full name the service wants. An unsupported
+code, and a code the declared voice does not speak, are both build errors naming
+the voices that do speak it — including the one you get by setting `language`
+alone, since the descriptor then fills in the default English voice. (A voice
+this release's catalog does not list is passed through: the catalog is the
+service's, so a voice it ships later still works.)
 
-**Rime quirk:** language uses ISO 639-3 three-letter codes (e.g. `"eng"`
-not `"en"`).
+**Rime quirk:** language uses ISO 639-3 three-letter codes (e.g. `"eng"` not
+`"en"`).
 
 Set provider keys the same way as any secret: `.env` for local dev,
 `aai secret put` for production.
@@ -3030,13 +3025,13 @@ Set provider keys the same way as any secret: `.env` for local dev,
 
 Part of the aai authoring guide (start with the core guide). A voice agent's
 page mounts with `mountClient()`; a workflow app's mounts with `mountPage()`
-(see "The page" in `WORKFLOWS.md`). Both are React 19 + Tailwind v4, bundled
-by the CLI with no `vite.config.ts`.
+(see "The page" in `WORKFLOWS.md`). Both are React 19 + Tailwind v4, bundled by
+the CLI with no `vite.config.ts`.
 
 ## Custom UI — `mountClient()`
 
-File: `client.tsx` alongside `agent.ts`. Uses **React** (not Preact).
-Always import `"@alexkroman1/aai-ui/styles.css"` first.
+File: `client.tsx` alongside `agent.ts`. Uses **React** (not Preact). Always
+import `"@alexkroman1/aai-ui/styles.css"` first.
 
 ### Tier 1 — config only (default UI)
 
@@ -3129,15 +3124,14 @@ Beside a `component`, `sidebar` still renders; `name` becomes the page title.
 | `started`         | `boolean`              | Whether session started                                                                     |
 | `running`         | `boolean`              | Whether session active                                                                      |
 
-Methods: `start()`, `toggle()`, `cancel()`, `disconnect()`, `resetState()`,
-and:
+Methods: `start()`, `toggle()`, `cancel()`, `disconnect()`, `resetState()`, and:
 
-- `end()` hangs up: `started` goes `false`; the next `start()` is a new
-  session (fresh tool state, greeting). For End/Hang up/New game.
-- `reset()` clears the conversation, keeping the call and tool state. For
-  "clear chat", not ending.
-- `sendText(text)`: a TYPED turn, answered as if spoken. The server's
-  transcript adds it to `messages`; don't. Pipeline agents only.
+- `end()` hangs up: `started` goes `false`; the next `start()` is a new session
+  (fresh tool state, greeting). For End/Hang up/New game.
+- `reset()` clears the conversation, keeping the call and tool state. For "clear
+  chat", not ending.
+- `sendText(text)`: a TYPED turn, answered as if spoken. The server's transcript
+  adds it to `messages`; don't. Pipeline agents only.
 - `setMicMuted(muted)`: mute without hanging up (streams silence), e.g.
   hold-to-talk. Read as `micMuted`.
 
@@ -3153,13 +3147,13 @@ useToolResult<ResultType>("tool_name", (result) => { ... })        // typed (opt
 ```
 
 `result` is the tool's return value, already JSON-parsed and untyped — read
-fields off it directly (`result.price`). The type parameter is optional; add
-it only when you want the shape checked.
+fields off it directly (`result.price`). The type parameter is optional; add it
+only when you want the shape checked.
 
-**There is no global `JSX` namespace.** React 19 removed it, so
-`JSX.Element` is `Cannot find namespace 'JSX'` (`TS2503`). Type a component's
-return as `ReactNode` — `import type { ReactNode } from "react"` — which is
-also what you want for anything that can be a string, an array, or null.
+**There is no global `JSX` namespace.** React 19 removed it, so `JSX.Element` is
+`Cannot find namespace 'JSX'` (`TS2503`). Type a component's return as
+`ReactNode` — `import type { ReactNode } from "react"` — which is also what you
+want for anything that can be a string, an array, or null.
 
 **`useAgentState`** — the agent's session state, pushed automatically:
 
@@ -3189,16 +3183,16 @@ pushed before the first tool call); `useAgentState("cart", fallback)` returns
 factory is expensive to import into the browser. `selectAgentState("cart")` is
 the same slot as a `useSessionSelector` selector.
 
-**Reach for this before wiring `useToolResult` into `useState`.** Without
-it the pattern is: return a cart snapshot from every tool, declare a type
-describing what those tools return, and mirror it into `useState` — three
-things to keep in step, and the usual source of drift when you add a tool
-and forget to return the snapshot from it.
+**Reach for this before wiring `useToolResult` into `useState`.** Without it the
+pattern is: return a cart snapshot from every tool, declare a type describing
+what those tools return, and mirror it into `useState` — three things to keep in
+step, and the usual source of drift when you add a tool and forget to return the
+snapshot from it.
 
-`syncState` holds projections, not flags, because state often holds things
-that should not reach a browser (keys, PINs, scratch) or cannot be
-serialized. Whatever it returns is exactly what the client receives. It runs
-after every tool call and is sent only when the result changed.
+`syncState` holds projections, not flags, because state often holds things that
+should not reach a browser (keys, PINs, scratch) or cannot be serialized.
+Whatever it returns is exactly what the client receives. It runs after every
+tool call and is sent only when the result changed.
 
 **`useEvent`** — fires for custom events from `ctx.send()`:
 
@@ -3206,15 +3200,16 @@ after every tool call and is sent only when the result changed.
 useEvent<DataType>("event_name", (data) => { ... })
 ```
 
-Server: `ctx.send("order", { total: "$14.99" })` —
-Client: `useEvent("order", (data) => ...)`.
+Server: `ctx.send("order", { total: "$14.99" })` — Client:
+`useEvent("order", (data) => ...)`.
 
 **`useTheme`** — returns `{ bg, primary, text, surface, border }`.
 
 **`useToolCallStart`** — fires when a tool call begins (status `"pending"`).
 
 **`useClientTool`** — runs a server `clientTool` in the page and answers the
-model with the handler's return value (see "A tool the BROWSER runs" in `TOOLS.md`):
+model with the handler's return value (see "A tool the BROWSER runs" in
+`TOOLS.md`):
 
 ```tsx
 import { useClientTool } from "@alexkroman1/aai-ui";
@@ -3227,9 +3222,9 @@ export function ConfirmTool({ ask }: { ask: (question: string) => Promise<boolea
 }
 ```
 
-**Anti-pattern:** Do NOT use `useEffect` + `toolCalls` to build derived
-state. Use `useToolResult` — it deduplicates. The `useEffect` pattern
-re-processes every tool call on every render, causing duplicates.
+**Anti-pattern:** Do NOT use `useEffect` + `toolCalls` to build derived state.
+Use `useToolResult` — it deduplicates. The `useEffect` pattern re-processes
+every tool call on every render, causing duplicates.
 
 ## Components
 
@@ -3250,9 +3245,10 @@ the DOM and hands them over once the browser's own validation passes; the field
 components — `TextField`, `TextAreaField`, `NumberField`, `SelectField`,
 `CheckboxField`, `FileField` and `SubmitButton` — are plain named inputs, and
 `Field`/`FieldShell` are what a custom control wraps itself in to match them.
-For a workflow app there is usually no field markup at all: `<WorkflowFields
-workflow="name" />` fetches that workflow's input schema and renders a control
-per field, so a page written against one workflow serves another.
+For a workflow app there is usually no field markup at all:
+`<WorkflowFields workflow="name" />` fetches that workflow's input schema and
+renders a control per field, so a page written against one workflow serves
+another.
 
 ```tsx no-check
 import { Form, WorkflowFields } from "@alexkroman1/aai-ui";
@@ -3266,8 +3262,8 @@ import { Form, WorkflowFields } from "@alexkroman1/aai-ui";
 writes its form by hand, which is what the two are for.
 
 The usual shape — note `StartScreen` **wraps** the app rather than sitting
-beside it; writing `<StartScreen ... />` self-closing is a `TS2741:
-Property 'children' is missing` build error:
+beside it; writing `<StartScreen ... />` self-closing is a
+`TS2741: Property 'children' is missing` build error:
 
 ```tsx
 /// <reference types="vite/client" />
@@ -3287,12 +3283,12 @@ mountClient({ component: PizzaApp });
 
 ## Styling
 
-- **Tailwind CSS v4** — compiled at bundle time, configured via CSS.
-  Do NOT create `tailwind.config.js` — it will be ignored.
+- **Tailwind CSS v4** — compiled at bundle time, configured via CSS. Do NOT
+  create `tailwind.config.js` — it will be ignored.
 - Use Tailwind classes for layout, `useTheme()` for dynamic colors.
 - Set theme: `mountClient({ theme: { bg, primary, text, surface, border } })`.
-- Override CSS custom properties for extra tokens:
-  `--color-aai-*`, `--radius-aai`, `--font-aai`.
+- Override CSS custom properties for extra tokens: `--color-aai-*`,
+  `--radius-aai`, `--font-aai`.
 - Always import `"@alexkroman1/aai-ui/styles.css"` at the top of `client.tsx`.
 
 ### Design guidelines
@@ -3301,32 +3297,32 @@ A custom UI should look deliberate, not like boilerplate. When building or
 restyling a `client.tsx`:
 
 - **Color:** pick one primary brand color, 2-3 neutrals (white/grays/black
-  variants), and at most 1-2 accents — 3-5 colors total. Avoid gradients
-  unless asked. If you override an element's background color, also set its
-  text color so contrast holds.
-- **Typography:** at most 2 font families — one for headings, one for body.
-  Body text 14px or larger with a relaxed line height (`leading-relaxed`).
-- **Layout:** design mobile-first, then enhance with responsive prefixes
-  (`md:`, `lg:`). Prefer flexbox (`flex items-center justify-between`);
-  use grid only for genuinely two-dimensional layouts; avoid absolute
-  positioning unless nothing else works.
-- **Tailwind:** stay on the spacing scale (`p-4`, never `p-[16px]`), use
-  `gap-*` between siblings rather than per-child margins, and wrap headings
-  and key copy in `text-balance` or `text-pretty`.
-- **Accessibility:** semantic elements (`main`, `header`, `button`), alt
-  text on meaningful images, `sr-only` labels on icon-only buttons.
-- **No filler:** no emojis as icons, no decorative gradient blobs or
-  abstract placeholder shapes, no lorem-ipsum-looking content.
+  variants), and at most 1-2 accents — 3-5 colors total. Avoid gradients unless
+  asked. If you override an element's background color, also set its text color
+  so contrast holds.
+- **Typography:** at most 2 font families — one for headings, one for body. Body
+  text 14px or larger with a relaxed line height (`leading-relaxed`).
+- **Layout:** design mobile-first, then enhance with responsive prefixes (`md:`,
+  `lg:`). Prefer flexbox (`flex items-center justify-between`); use grid only
+  for genuinely two-dimensional layouts; avoid absolute positioning unless
+  nothing else works.
+- **Tailwind:** stay on the spacing scale (`p-4`, never `p-[16px]`), use `gap-*`
+  between siblings rather than per-child margins, and wrap headings and key copy
+  in `text-balance` or `text-pretty`.
+- **Accessibility:** semantic elements (`main`, `header`, `button`), alt text on
+  meaningful images, `sr-only` labels on icon-only buttons.
+- **No filler:** no emojis as icons, no decorative gradient blobs or abstract
+  placeholder shapes, no lorem-ipsum-looking content.
 
 
 <!-- agent-guide/TESTING-EVALS.md — inlined; where the guide says to read `agent-guide/TESTING-EVALS.md`, this section is that file. -->
 
 # Testing and evals
 
-Part of the aai authoring guide (start with the core guide). A TEST asserts
-the agent's shape and its tools' logic (`pnpm test`); an EVAL drives a real
-session and asserts what the agent did (`pnpm eval`). Testing a workflow BODY
-— the replay engine, crashes, signals — is "Testing a workflow body" in
+Part of the aai authoring guide (start with the core guide). A TEST asserts the
+agent's shape and its tools' logic (`pnpm test`); an EVAL drives a real session
+and asserts what the agent did (`pnpm eval`). Testing a workflow BODY — the
+replay engine, crashes, signals — is "Testing a workflow body" in
 `WORKFLOWS.md`.
 
 **A test file imports testing names from two doors, and only those two:**
@@ -3336,8 +3332,8 @@ session and asserts what the agent did (`pnpm eval`). Testing a workflow BODY
 | `@alexkroman1/aai-runtime/testing`        | everything that installs nothing — `runTool`, `createToolContext`, `expectToolOk`, the stubs, `runWorkflow` |
 | `@alexkroman1/aai-runtime/testing/vitest` | everything that installs or restores (`installStubGateway`, `installStubStepFetch`, …) and the eval suites  |
 
-`vitest.config.ts` is the one exception: it imports `defineAgentTestConfig`
-from `@alexkroman1/aai/testing/vite`. (The helpers are declared in
+`vitest.config.ts` is the one exception: it imports `defineAgentTestConfig` from
+`@alexkroman1/aai/testing/vite`. (The helpers are declared in
 `@alexkroman1/aai/testing` and `/testing/vitest`, which still work; the two
 runtime doors re-export them as the same declarations beside the runtime's own.)
 
@@ -3345,11 +3341,11 @@ runtime doors re-export them as the same declarations beside the runtime's own.)
 
 Co-locate tests as `agent.test.ts` (the `custom-pipeline-agent` template is a
 reference). **When the project has one, it is yours to maintain**: it asserts
-the agent's shape — name, providers, tool names — so rewriting the agent
-without updating it leaves a test asserting an agent that no longer exists.
-When a test fails after your change, decide which side is stale: updating the
-test to match the new agent is a normal fix, not a workaround. Do not delete a
-test to make it pass.
+the agent's shape — name, providers, tool names — so rewriting the agent without
+updating it leaves a test asserting an agent that no longer exists. When a test
+fails after your change, decide which side is stale: updating the test to match
+the new agent is a normal fix, not a workaround. Do not delete a test to make it
+pass.
 
 **A spec that needs the agent as DEPLOYED imports one module:**
 
@@ -3361,17 +3357,17 @@ That is `agent.ts` with its `tools/` directory discovered and its
 `system-prompt.md` applied — the same lowering `aai build` does, so a spec
 measures the agent that ships rather than the raw default export (which has no
 tools and the framework's default prompt). `vitest.config.ts` registers the
-plugin that serves it; a scaffolded project already has it. For a runner that
-is not vitest, `deployedAgent` on `@alexkroman1/aai-runtime/testing` is the
-same thing written out.
+plugin that serves it; a scaffolded project already has it. For a runner that is
+not vitest, `deployedAgent` on `@alexkroman1/aai-runtime/testing` is the same
+thing written out.
 
 **Call a tool with `runTool(tool, args, ctx)`**: passed the tool itself, the
 result is typed by its `execute` — no `as` cast (the `runTool(agent, "name", …)`
-form answers `unknown`). **Unwrap it with `expectToolOk(result)`**, which
-INFERS the type: it subtracts the `ToolFailure` arm of a plain `tool()`'s
-result (and unwraps a gated dialog tool's envelope), throwing with the refusal
-quoted when the tool refused. Do not copy an `ok<T>()` helper into a spec; pass
-a type argument only for a result that arrives as `unknown`.
+form answers `unknown`). **Unwrap it with `expectToolOk(result)`**, which INFERS
+the type: it subtracts the `ToolFailure` arm of a plain `tool()`'s result (and
+unwraps a gated dialog tool's envelope), throwing with the refusal quoted when
+the tool refused. Do not copy an `ok<T>()` helper into a spec; pass a type
+argument only for a result that arrives as `unknown`.
 
 ```ts
 import { tool, toolFailure } from "@alexkroman1/aai";
@@ -3398,9 +3394,9 @@ on.
 
 **A hand-built `ctx` is `createToolContext()`** — every field inert, `send`
 recorded on `ctx.sent`, a real slot store, a fresh `sessionId` per call. Its
-`generate` and `delegate` take a SCRIPT (`{ reply }` for every call, `{ routes }`
-keyed by system prompt or subagent name) and hand the fake back on `ctx.model`
-and `ctx.desk`, whose `calls` a spec asserts on.
+`generate` and `delegate` take a SCRIPT (`{ reply }` for every call,
+`{ routes }` keyed by system prompt or subagent name) and hand the fake back on
+`ctx.model` and `ctx.desk`, whose `calls` a spec asserts on.
 
 ```ts
 import { createToolContext } from "@alexkroman1/aai-runtime/testing";
@@ -3417,21 +3413,21 @@ test("the tool asks the model once", async () => {
 });
 ```
 
-The other doubles a tool body needs are on the same door — `stubDelegate` for
-a subagent, `endSessionCalls(ctx)` for a hang-up, `stubStepFetch`/`stubSpeech`/
+The other doubles a tool body needs are on the same door — `stubDelegate` for a
+subagent, `endSessionCalls(ctx)` for a hang-up, `stubStepFetch`/`stubSpeech`/
 `stubUploads`/`stubPlaceCall` for step I/O — and each topic file names the one
 its feature needs. **A fake that fills a process-wide slot is INSTALLED** from
 `@alexkroman1/aai-runtime/testing/vitest`, which arms it for one test and
 restores it afterwards: `installStubGateway(replies)` answers a step's model
 calls (`stepGenerate`, `stepGenerateJson`) and returns the calls it saw. Call it
-by its own name — do not alias it to `stubGateway`, which is the
-non-installing builder it wraps.
+by its own name — do not alias it to `stubGateway`, which is the non-installing
+builder it wraps.
 
 ## Evals: `agent.eval.test.ts`
 
 Run `pnpm eval` when you change what the agent DOES. Cases live in
-`agent.eval.test.ts` (the `quickstart-agent` template ships one), and
-everything an eval's harness needs — `describeEval`, the readers and claims,
+`agent.eval.test.ts` (the `quickstart-agent` template ships one), and everything
+an eval's harness needs — `describeEval`, the readers and claims,
 `evalSimulation`, and stubs like `stubGatewayRoute` — is on
 `@alexkroman1/aai-runtime/testing/vitest`:
 
@@ -3468,9 +3464,9 @@ prompt, the session's own event stream. Before trusting a green run:
   the model has to choose for itself, a refusal, a judgement).
 
 **Who is calling** is a suite or case option (a case's `null` clears it):
-`clientId`, `phone` and `call` are what `sessionClientId`,
-`sessionClientPhone`, `sessionCall` and `sessionContext` see; a refused call
-reads as `session.refused`. A tool's `endSession(ctx)` really hangs up
+`clientId`, `phone` and `call` are what `sessionClientId`, `sessionClientPhone`,
+`sessionCall` and `sessionContext` see; a refused call reads as
+`session.refused`. A tool's `endSession(ctx)` really hangs up
 (`turn.endedSession`, `session.ended`); that turn awaits `onSessionEnd`.
 `network: evalNetwork({ state, routes })` answers every tool, builtin and step
 `fetch`, refusing the rest: `ctx.network`. `workflows` takes a client or
@@ -3486,8 +3482,8 @@ stopped talking, barge-in, two sentences merging into one turn. Those need
 # Self-hosting, tracing and deploy targets
 
 Part of the aai authoring guide (start with the core guide). The managed
-platform is `aai publish`; this file is everything that runs the agent
-somewhere else — `npm start`, OpenTelemetry tracing, and `aai build --target`.
+platform is `aai publish`; this file is everything that runs the agent somewhere
+else — `npm start`, OpenTelemetry tracing, and `aai build --target`.
 
 ## Running it yourself (`npm start`)
 
@@ -3499,10 +3495,10 @@ npm start                          # http://127.0.0.1:3000
 PORT=8080 HOST=0.0.0.0 npm start   # bind every interface, e.g. in a container
 ```
 
-`npm start` **builds first** (that is the `prestart` script) and then serves
-the result: `aai start` boots `.aai/worker.mjs`, the same artifact
-`aai publish` uploads. It serves your own `client.tsx` build when there is one
-and falls back to the prebuilt default UI shipped inside `@alexkroman1/aai-ui`.
+`npm start` **builds first** (that is the `prestart` script) and then serves the
+result: `aai start` boots `.aai/worker.mjs`, the same artifact `aai publish`
+uploads. It serves your own `client.tsx` build when there is one and falls back
+to the prebuilt default UI shipped inside `@alexkroman1/aai-ui`.
 
 There is no server file in your project, and that is deliberate — the boot
 belongs to the framework, so it improves when you update rather than being
@@ -3510,30 +3506,30 @@ frozen at the moment you scaffolded. When you need to own it, import
 `createProjectServer` from `@alexkroman1/aai-cli/start`: it builds the server
 and binds nothing, so you decide how it is served. Building one from scratch
 instead, `defaultClientDir()` (`@alexkroman1/aai-ui/client-dir`) is where that
-prebuilt UI lives — the only export of `aai-ui` that runs on Node rather than
-in the browser.
+prebuilt UI lives — the only export of `aai-ui` that runs on Node rather than in
+the browser.
 
 The build is what makes `tools/` work — a tool is registered by existing, and
 the enumeration happens where the bundle is assembled, so a server that loaded
 `agent.ts` directly would run an agent with none of its tools. The same build
 produces your `client.tsx`, so a custom UI is served with no extra step.
 
-Secrets work the same as everywhere else: `ctx.env` holds the keys declared
-in `.env` (or `.env.example`), and a real environment variable of that name
-wins — so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
+Secrets work the same as everywhere else: `ctx.env` holds the keys declared in
+`.env` (or `.env.example`), and a real environment variable of that name wins —
+so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
 
-One thing to know: it binds **loopback by default**, because this server has
-no request authentication of its own; set `HOST=0.0.0.0` only behind your own
-proxy or auth.
+One thing to know: it binds **loopback by default**, because this server has no
+request authentication of its own; set `HOST=0.0.0.0` only behind your own proxy
+or auth.
 
-`run_code` is the one feature that does not follow — it needs a sandbox
-(the platform's, or `AAI_RUN_CODE=deno`) and refuses outside one.
+`run_code` is the one feature that does not follow — it needs a sandbox (the
+platform's, or `AAI_RUN_CODE=deno`) and refuses outside one.
 
 ## Tracing (OpenTelemetry)
 
-Point the runtime at any OTLP collector and it exports spans for the model
-calls your agent makes — one per generation, with a child per step, per model
-call and per tool call, carrying model id, token counts and finish reason.
+Point the runtime at any OTLP collector and it exports spans for the model calls
+your agent makes — one per generation, with a child per step, per model call and
+per tool call, carrying model id, token counts and finish reason.
 
 **It is off unless you configure a collector, and that is the whole switch:**
 
@@ -3557,8 +3553,7 @@ npm i @opentelemetry/api @opentelemetry/sdk-trace-base \
 ```
 
 `aai dev` and `aai start` arm it for you. Embedding the server in a process of
-your own means calling it yourself, from
-`@alexkroman1/aai-runtime/tracing`:
+your own means calling it yourself, from `@alexkroman1/aai-runtime/tracing`:
 
 ```ts
 import { startTracing, tracingEndpoint } from "@alexkroman1/aai-runtime/tracing";
@@ -3576,11 +3571,11 @@ that must not wait — constructing the exporter costs a few hundred ms.
 `DEFAULT_SERVICE_NAME` the fallback, if you would rather read them than
 hard-code the strings.
 
-**Spans carry no conversation content.** Not a default you can change — there
-is no code path that reads a prompt, a completion, a transcript, a tool
-argument or a tool result, so none of it can reach your collector. Attributes
-are built from an allow-list of metadata names following OpenTelemetry's
-`gen_ai.*` conventions, so existing dashboards find them.
+**Spans carry no conversation content.** Not a default you can change — there is
+no code path that reads a prompt, a completion, a transcript, a tool argument or
+a tool result, so none of it can reach your collector. Attributes are built from
+an allow-list of metadata names following OpenTelemetry's `gen_ai.*`
+conventions, so existing dashboards find them.
 
 ### Deploying to a host that wants its own entry file
 
@@ -3616,10 +3611,10 @@ not copied.
 
 One thing to know before deploying a VOICE agent to a serverless host: the
 session is a WebSocket, so the host has to support one. Vercel does — it hands
-the function the raw upgrade, and the emitted entry passes it to the same
-server `aai dev` runs. Deno Deploy does too, and more simply: it runs a
-long-lived process, so the emitted entry just calls `listen()` and the session
-reaches the same server unchanged. A host that serves only request/response
-still runs the HTTP surface — `/health`, `/client-config`,
-`/workflows/*` and your static assets — which is everything a workflow app
-needs and none of what a voice agent needs.
+the function the raw upgrade, and the emitted entry passes it to the same server
+`aai dev` runs. Deno Deploy does too, and more simply: it runs a long-lived
+process, so the emitted entry just calls `listen()` and the session reaches the
+same server unchanged. A host that serves only request/response still runs the
+HTTP surface — `/health`, `/client-config`, `/workflows/*` and your static
+assets — which is everything a workflow app needs and none of what a voice agent
+needs.

@@ -12,8 +12,8 @@ standalone.
 
 ## Source of truth
 
-**The guide ships inside the installed package. Read it — do not work from
-this file.**
+**The guide ships inside the installed package. Read it — do not work from this
+file.**
 
 ```text
 node_modules/@alexkroman1/aai/AGENT_GUIDE.md
@@ -24,8 +24,8 @@ basics, the `tools/` directory rule, `system-prompt.md`, secrets and the
 gotchas), and it opens with a "Read X when Y" routing table. Read the core
 whole, then open only the topic files the task needs — they sit beside it in
 `node_modules/@alexkroman1/aai/agent-guide/` (`TOOLS.md`, `WORKFLOWS.md`,
-`PIPELINE-TUNING.md`, `PROVIDERS.md`, `UI.md`, `TESTING-EVALS.md`,
-`HOSTING.md`, `AGENT-API.md`).
+`PIPELINE-TUNING.md`, `PROVIDERS.md`, `UI.md`, `TESTING-EVALS.md`, `HOSTING.md`,
+`AGENT-API.md`).
 
 Those files are version-matched by construction: they live in the same tarball
 as the `@alexkroman1/aai` the project resolved, so they cannot describe a

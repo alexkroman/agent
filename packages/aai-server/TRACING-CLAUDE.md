@@ -9,17 +9,16 @@ read_when: >-
 
 A sibling of `CLAUDE.md` rather than a section in it, for the reason the guide
 gives for `MODAL-CLAUDE.md` and `SCHEMA-CLAUDE.md`: this is REFERENCE — which
-env vars turn it on, which spans exist, what an operator must not assume — not
-a rule that has to be resident in every agent's context.
+env vars turn it on, which spans exist, what an operator must not assume — not a
+rule that has to be resident in every agent's context.
 
 ## It is OFF unless a collector is configured, and that is the whole switch
 
 `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) is the
-predicate. Unset, nothing is constructed: no provider, no exporter, no timer,
-no import. `tracing.test.ts` proves that with an exporter FACTORY that must
-never be called — an instance would already exist by the time a spy could see
-it, so asserting "no spans" would pass over a provider that was built and
-merely idle.
+predicate. Unset, nothing is constructed: no provider, no exporter, no timer, no
+import. `tracing.test.ts` proves that with an exporter FACTORY that must never
+be called — an instance would already exist by the time a spy could see it, so
+asserting "no spans" would pass over a provider that was built and merely idle.
 
 Everything else — headers, the `/v1/traces` suffix rule, timeouts — is left to
 the exporter, which already implements the spec. The env is read here only as a
@@ -32,9 +31,9 @@ predicate, never re-parsed.
 | `@hono/otel`     | one SERVER span per platform HTTP request                              | `aai-server` |
 | AI SDK telemetry | `ai.generate`, `ai.step`, `ai.languageModelCall`, `ai.toolCall <name>` | `aai-guest`  |
 
-**Guest spans now adopt the platform's span as parent**, so a model call and
-the platform HTTP request that caused it are ONE trace. Three things had to be
-true together, and any one of them missing puts it silently back to two:
+**Guest spans now adopt the platform's span as parent**, so a model call and the
+platform HTTP request that caused it are ONE trace. Three things had to be true
+together, and any one of them missing puts it silently back to two:
 
 - `guest/forward.ts` injects the platform's ACTIVE span context on the hop
   (`withTraceparent`). The header is minted, never relayed — this hop's callers
@@ -46,8 +45,8 @@ true together, and any one of them missing puts it silently back to two:
 - the telemetry bridge's operation span parents to that context rather than
   hard-rooting at `ROOT_CONTEXT`, which is what it used to do.
 
-The platform RPC hop, the workflow journal and the STT/TTS sockets still emit
-no spans of their own — only the HTTP span that contains them.
+The platform RPC hop, the workflow journal and the STT/TTS sockets still emit no
+spans of their own — only the HTTP span that contains them.
 
 ## Spans carry NO conversation content, and the SDK will not do this for you
 
@@ -65,8 +64,8 @@ opt-in to capturing it: the safe setting is the only setting.
 This is a voice runtime — transcripts are user data, and some deployments carry
 contractual limits on where they may travel. `tracing.test.ts` asserts it with
 distinctive prompt, completion, tool-argument and tool-result strings and fails
-if any reaches a span; one leaking attribute fails four specs. Keep it that
-way, and extend that test with any attribute you add.
+if any reaches a span; one leaking attribute fails four specs. Keep it that way,
+and extend that test with any attribute you add.
 
 ## The OTLP credential shares the sandbox's trust level
 
@@ -94,9 +93,9 @@ default path; fixable by extending warm-up.
 ## Bundle cost
 
 `dist/harness.mjs` 15.24 MB → 15.82 MB raw (+561 KB, +3.8%), 1.96 MB → 2.05 MB
-gzip (+85.5 KB, +4.5%). Under the 10% budget threshold, and no PUBLISHED
-package gained a runtime dependency — all five OTel deps are `aai-server`'s and
-the guest bridge's.
+gzip (+85.5 KB, +4.5%). Under the 10% budget threshold, and no PUBLISHED package
+gained a runtime dependency — all five OTel deps are `aai-server`'s and the
+guest bridge's.
 
 ## Verified against a live collector
 
@@ -112,7 +111,7 @@ been exercised, and finding one thing was the point of doing it:
 **`startTracing(env)`'s argument is only the PREDICATE.** The exporter resolves
 its own URL, headers and timeout from the REAL `process.env` — deliberately, so
 this repo never re-parses a grammar the library owns — so a test that passes a
-custom endpoint in the argument arms the gate and then exports to OTel's
-DEFAULT endpoint (`localhost:4318`). It looks like it works. The scenario test
-therefore stubs `process.env`, and a caller pointing this at a collector must
-set the real environment rather than the parameter.
+custom endpoint in the argument arms the gate and then exports to OTel's DEFAULT
+endpoint (`localhost:4318`). It looks like it works. The scenario test therefore
+stubs `process.env`, and a caller pointing this at a collector must set the real
+environment rather than the parameter.

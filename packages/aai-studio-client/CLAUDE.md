@@ -24,8 +24,8 @@ guides cover the rest of this package:
 Three directories: `panes/` (the eight modules `project-view.tsx` renders),
 `components/`, `hooks/` (the `use-*` modules).
 
-- **A PANE and a COMPONENT are different categories, and the roster says
-  so.** konsistent's `studio-client-pane-modules` names the eight — `chat.tsx`,
+- **A PANE and a COMPONENT are different categories, and the roster says so.**
+  konsistent's `studio-client-pane-modules` names the eight — `chat.tsx`,
   `preview.tsx`, `docs.tsx`, `workflows.tsx`, `code-view.tsx`, `logs-view.tsx`,
   `secrets.tsx`, `settings.tsx` — as what the switcher renders.
 - **The FRAME stays at `src/` root**: it is what a pane is mounted BY. `app.tsx`
@@ -34,9 +34,9 @@ Three directories: `panes/` (the eight modules `project-view.tsx` renders),
   `public-api.tsx` (a top-level ROUTE, never a tab). `auth.tsx`, `starters.ts`
   (an export subpath) and `_test-utils.ts` stay there too.
 - **`studio-client-pane-export` names FIVE panes and that is not the roster.**
-  Those five have a filename equal to their tab id, so they export
-  `<Tab>Pane`; `code-view.tsx` (tab `code`) and `logs-view.tsx` (tab `logs`)
-  are named for what they are, and `chat.tsx` sits outside the switcher.
+  Those five have a filename equal to their tab id, so they export `<Tab>Pane`;
+  `code-view.tsx` (tab `code`) and `logs-view.tsx` (tab `logs`) are named for
+  what they are, and `chat.tsx` sits outside the switcher.
 - **On any file move, re-check `studio-client-cleanup-is-setup`.** It is keyed
   on `src/{suite}.test.tsx` and a konsistent `**` glob needs a subdirectory to
   match, so both spellings are listed; a spec moved into a directory neither
@@ -61,10 +61,10 @@ page with build instructions (unit tests do not need it).
   their own.
 - **The shell splits on whether a project is open**, which is what makes
   `project` a `string` rather than `string | null` below it. `app.tsx` owns the
-  account-scoped half — routing (`project-route.ts`), the project list, the
-  home hero, the account menu; `project-view.tsx` owns everything that exists
-  only while a project is open — its workspace, chat and sandbox queries, the
-  panes, Publish, and the unsaved editor drafts. `ProjectView` is mounted
+  account-scoped half — routing (`project-route.ts`), the project list, the home
+  hero, the account menu; `project-view.tsx` owns everything that exists only
+  while a project is open — its workspace, chat and sandbox queries, the panes,
+  Publish, and the unsaved editor drafts. `ProjectView` is mounted
   `key={project}`, so per-project state resets on a switch with no effect.
 - **The home hero's Voice agent / Workflow switch is the ONLY place a project's
   `kind` is set** (`components/home.tsx`, `starters.ts`, `api.createProject`).
@@ -72,8 +72,8 @@ page with build instructions (unit tests do not need it).
   read at every session install to pick the coding agent's system prompt ("A
   project has a KIND" in `packages/aai-studio-server/src/prompts/CLAUDE.md`).
   - Each position owns its copy (`KIND_COPY`) AND its starter list
-    (`STARTERS[kind]`) — two lists, not one tagged list, so a workflow-mode
-    pick never lands a voice template in a project whose prompt forbids one.
+    (`STARTERS[kind]`) — two lists, not one tagged list, so a workflow-mode pick
+    never lands a voice template in a project whose prompt forbids one.
     `research-handoff-agent` stays under Voice agent: it is an `agent()` that
     hands off to a run.
   - Both catalogs are sampled once per MOUNT (`useState`), not per flip, or the
@@ -89,17 +89,17 @@ page with build instructions (unit tests do not need it).
 before sending, so the client shows a bare **"Failed to fetch"** and the server
 logs NOTHING. There are exactly two:
 
-1. the project's guest sandbox (chat + tool labels), keyed by sandbox backend
-   so a production policy never trusts loopback;
+1. the project's guest sandbox (chat + tool labels), keyed by sandbox backend so
+   a production policy never trusts loopback;
 2. the Supabase project — the provider read (`auth-methods.ts`), password
    sign-in, the session restore and the OAuth code exchange. GitHub itself is
    top-level navigation, which `connect-src` does not govern.
 
 Both are derived from what the server hands the client (`chatUrlForGuest`'s
-shape, the auth binding's `clientConfig`), never hand-copied, and both are
-exact — `https://*.supabase.co` would trust every Supabase project. The
-sign-in case hides best: the page and `GET /studio/auth` load (`'self'`), and
-only the button fails.
+shape, the auth binding's `clientConfig`), never hand-copied, and both are exact
+— `https://*.supabase.co` would trust every Supabase project. The sign-in case
+hides best: the page and `GET /studio/auth` load (`'self'`), and only the button
+fails.
 
 ## Sign-in and the session
 
@@ -112,22 +112,22 @@ OAuth app. Four rules:
 - **An unknown answer falls back to GitHub-only, never to nothing**; assuming
   everything is on offers a button GoTrue refuses after a GitHub round trip.
 - **A backend with NEITHER method renders as such**, not as dead controls.
-- **"Create account" is its own action, never a fallback from a failed
-  sign-in** — a mistyped password would silently become a new, empty account.
+- **"Create account" is its own action, never a fallback from a failed sign-in**
+  — a mistyped password would silently become a new, empty account.
 - **The email is trimmed and the password is not** (spaces are legal in it).
 
 `readSignInMethods` lives outside `auth.tsx` so the coverage floors govern it:
-the hook in `auth.tsx` (supabase-js, an auth subscription, an OAuth redirect)
-is deliberately never LOADED by a test, and importing a value from `auth.tsx`
-in a spec drops package coverage ~11 points.
+the hook in `auth.tsx` (supabase-js, an auth subscription, an OAuth redirect) is
+deliberately never LOADED by a test, and importing a value from `auth.tsx` in a
+spec drops package coverage ~11 points.
 
 **The session lives in `localStorage`, and the origin split is owed**
 (`auth.tsx`, and the threat-model note in `main.tsx`). Tenant agent pages are
 served from this same origin (`/:slug/`) with attacker-controlled JS that can
 read that key — **moving them to a dedicated origin is a precondition of real
 users.** Per-tab `sessionStorage` bought little: the Live pane iframes `/:slug/`
-same-origin, which shares the tab's storage either way. The dev-token path
-uses the same storage.
+same-origin, which shares the tab's storage either way. The dev-token path uses
+the same storage.
 
 **A rejected bearer is REFRESHED, never signed out on** (`auth-recovery.ts`).
 supabase-js refreshes only on FOCUSED tabs, so a background tab holds an
@@ -137,12 +137,12 @@ whether the session survives.
 
 - **The recovery is CAPPED, and the cap is the terminal state**: against a
   server that 401s a refreshable token (another Supabase project, a JWT-secret
-  mismatch, clock skew) an uncapped refresh loops. It is an effect (never a
-  call in a render body), renders "Signing you back in…" while in flight, and
-  past the cap signs out to the sign-in gate.
+  mismatch, clock skew) an uncapped refresh loops. It is an effect (never a call
+  in a render body), renders "Signing you back in…" while in flight, and past
+  the cap signs out to the sign-in gate.
 - **A refreshed bearer has to be pushed at the queries**: only the account's
-  cache key carries a bearer, so `App` invalidates on a bearer change,
-  excluding the chat session (its token comes from the broker).
+  cache key carries a bearer, so `App` invalidates on a bearer change, excluding
+  the chat session (its token comes from the broker).
 
 ## A gate screen never sits on an unexplained wait
 
@@ -151,19 +151,19 @@ phase in `auth.tsx`. A gate has no app to degrade into, so "Loading…" must end
 somewhere the user can act. Both mechanisms are needed:
 
 - **The two gating reads carry per-attempt deadlines**
-  (`ACCOUNT_ATTEMPT_TIMEOUT_MS`, `AUTH_CONFIG_ATTEMPT_TIMEOUT_MS`). A request
-  to a restarting server can HANG, and TanStack Query folds a `refetch` into
-  the in-flight promise, so without a deadline there is nothing a retry button
-  can start.
+  (`ACCOUNT_ATTEMPT_TIMEOUT_MS`, `AUTH_CONFIG_ATTEMPT_TIMEOUT_MS`). A request to
+  a restarting server can HANG, and TanStack Query folds a `refetch` into the
+  in-flight promise, so without a deadline there is nothing a retry button can
+  start.
 - **The card appears after ONE failed attempt** (`gateProblem`): a mid-retry
   failure lives in `failureReason` with `error` NULL. Automatic retries keep
-  running behind the card; while one is in flight the button reads
-  "Retrying…" and is disabled.
+  running behind the card; while one is in flight the button reads "Retrying…"
+  and is disabled.
 
 Wording splits on `isTransientError` (`loadFailureText`): a 5xx, a rejected
 fetch or a timeout reads as "AssemblyAI Build is busy right now", quoting the
-server only when it answered; anything else is quoted verbatim. The one
-failure with no retry is a server answering "sign-in is not configured here".
+server only when it answered; anything else is quoted verbatim. The one failure
+with no retry is a server answering "sign-in is not configured here".
 
 ## Requests are deadlined BY DEFAULT; the SSE streams are NOT
 
@@ -177,21 +177,21 @@ the preview probe, `/studio/status` — which gates the home hero's Send and
 `AbortSignal.any`, so it can only settle a request sooner.
 
 `watchEventStream` (`api-events.ts`) must not have a deadline: a healthy stream
-stays open and silent for minutes. Liveness comes from the server's pings, and
-a dead connection surfaces as the read ending → `onDown` → backoff resubscribe.
+stays open and silent for minutes. Liveness comes from the server's pings, and a
+dead connection surfaces as the read ending → `onDown` → backoff resubscribe.
 
 - **The FRAMING is the SDK's, the policy is ours.** Frames are read by
-  `@alexkroman1/aai`'s event-stream reader (`sdk/event-stream.ts`); this
-  package keeps only its policy (the `auth`/`transport` taxonomy, the abort
-  handle, `onOpen`, the `ApiError` mapping). Frames arrive JSON-parsed and are
-  narrowed by guards (`isProjectData`/`isChatMessages`/`isProjectNames` in
+  `@alexkroman1/aai`'s event-stream reader (`sdk/event-stream.ts`); this package
+  keeps only its policy (the `auth`/`transport` taxonomy, the abort handle,
+  `onOpen`, the `ApiError` mapping). Frames arrive JSON-parsed and are narrowed
+  by guards (`isProjectData`/`isChatMessages`/`isProjectNames` in
   `api-types.ts`, which argues what they check); a frame that fails a guard is
   DROPPED, not fatal, since every frame is a whole snapshot.
 - **The SSE backoff resets on a stream that SERVED, not one that opened**
-  (`EVENTS_MIN_UPTIME_MS` in `hooks/use-event-stream.ts`). A server that
-  answers `200` and ends the body (a crash-looping container, a rollout, a
-  dropping proxy) has "opened" by every test the hook can apply, so resetting
-  on `onOpen` kept the backoff flat at 3s forever. A stream up 10s resets.
+  (`EVENTS_MIN_UPTIME_MS` in `hooks/use-event-stream.ts`). A server that answers
+  `200` and ends the body (a crash-looping container, a rollout, a dropping
+  proxy) has "opened" by every test the hook can apply, so resetting on `onOpen`
+  kept the backoff flat at 3s forever. A stream up 10s resets.
 
 ## The chat transport and the follow-up queue
 
@@ -203,12 +203,12 @@ conversation, so the wrapper builds the real transport per request from the
 lease the app holds now — otherwise every message after a spin-down fails with
 "Failed to fetch" until a reload.
 
-- **The retry lives with the TURN, not the request** — the replacement
-  sandbox has a different origin and token. `resilient-fetch.ts` only NAMES the
-  failure (`StaleSandboxError`, for the three signals it classifies) and the
-  transport re-sends the turn once on the fresh lease. Safe because the guest
-  never received or refused the request before the turn began. A 423 (another
-  tab holds the turn) is NOT in that class.
+- **The retry lives with the TURN, not the request** — the replacement sandbox
+  has a different origin and token. `resilient-fetch.ts` only NAMES the failure
+  (`StaleSandboxError`, for the three signals it classifies) and the transport
+  re-sends the turn once on the fresh lease. Safe because the guest never
+  received or refused the request before the turn began. A 423 (another tab
+  holds the turn) is NOT in that class.
 - **The re-broker reports the lease; the transport never re-reads it.** The
   broker query settles before React re-renders with the new prop, so
   `onSessionStale` (`app.tsx`) resolves with what it read from the query CACHE.
@@ -226,20 +226,21 @@ composer, and it is sent when the turn settles — one turn at a time, FIFO.
   workspace syncs. `sendAutomaticallyWhen` only re-sends the existing list, and
   appending a user message mid-stream corrupts the transcript. Hence a queue
   held OUTSIDE `messages`, flushed on the settle.
-- Three reducer rules: the flush is **latched** from dispatch until the turn
-  is observed (`sendMessage` awaits before flipping status; the same window
-  keeps Publish locked, so `hasPendingWork` serves both); a **Stop hands the
-  queue back to the composer** (`drainText`), never firing or dropping it; a
-  **failed turn drains the same way**, or an `error` status wedges the queue.
+- Three reducer rules: the flush is **latched** from dispatch until the turn is
+  observed (`sendMessage` awaits before flipping status; the same window keeps
+  Publish locked, so `hasPendingWork` serves both); a **Stop hands the queue
+  back to the composer** (`drainText`), never firing or dropping it; a **failed
+  turn drains the same way**, or an `error` status wedges the queue.
 
 **No studio action writes into the transcript.** Publish, a secret save or
 delete each report beside their own control (the PublishMenu renders
 `publish.data.output` / `publish.error`; each Secrets form clears only on its
 own success). The coding agent therefore cannot see a secret change or a failed
-deploy, and the preamble says so (`aai-studio-server/src/prompts/studio-preamble.ts`
-— the Secrets section and the Publish bullet). If that ever has to change, add
-a "send this to the agent" BUTTON, never an automatic injection — and wait for a
-settled turn: the SDK's streaming writer (`ai@7`, `Chat.makeRequest`) compares
+deploy, and the preamble says so
+(`aai-studio-server/src/prompts/studio-preamble.ts` — the Secrets section and
+the Publish bullet). If that ever has to change, add a "send this to the agent"
+BUTTON, never an automatic injection — and wait for a settled turn: the SDK's
+streaming writer (`ai@7`, `Chat.makeRequest`) compares
 `response.state.message.id` with `this.lastMessage?.id` per chunk, so a message
 appended UNDER a streaming assistant message makes the next chunk push that
 assistant message a second time — one object at two indices, in the array the
@@ -282,37 +283,37 @@ down rather than being reached up for.
   (`studio-client-cleanup-is-setup`). The setup raises Testing Library's async
   ceiling to 10s, which `vitest.config.ts` backs with `testTimeout` 20s.
 - **Constants a test asserts a cadence against are IMPORTED, never mirrored**
-  (`studio-client-probe-cadence` and `studio-client-probe-cadence-imported`,
-  for `panes/preview.tsx`'s `PROBE_*` figures).
+  (`studio-client-probe-cadence` and `studio-client-probe-cadence-imported`, for
+  `panes/preview.tsx`'s `PROBE_*` figures).
 
 ## Surviving a platform deploy (`stale-build.ts`)
 
 Assets are content-hashed and served `Cache-Control: immutable`, and a Modal
 deploy replaces the image holding them, so **a tab open across a deploy holds
-chunk names the new containers 404**. `CodeView` is lazy (CodeMirror is the
-bulk of the bundle), so this surfaces whenever the user next opens Code; an
-unhandled `lazy` rejection unmounts the whole studio to a blank page.
+chunk names the new containers 404**. `CodeView` is lazy (CodeMirror is the bulk
+of the bundle), so this surfaces whenever the user next opens Code; an unhandled
+`lazy` rejection unmounts the whole studio to a blank page.
 
 - Modal deploys are **rolling**: old and new containers serve side by side (up
   to `scaledown_window`, 300s) and requests balance independently, so a shell
   from one build can have its assets answered by the other.
 - **This package ships only as a side effect of a SERVER release.** Its `dist/`
   is baked into the one Modal app's image (`aai-server-web`,
-  `AAI_SERVICE=combined`), and `.github/workflows/ship.yml` deploys on a
-  version bump to `aai-server` **or** `aai-studio-server`. A studio-client
-  change needs a changeset naming one of those two, or it ships to nothing —
+  `AAI_SERVICE=combined`), and `.github/workflows/ship.yml` deploys on a version
+  bump to `aai-server` **or** `aai-studio-server`. A studio-client change needs
+  a changeset naming one of those two, or it ships to nothing —
   `guard-invariants` rule 20 (`SHIPS_VIA` in
   `scripts/guard-invariants-changesets.mjs`) enforces it.
 
 The fix has two halves, and the client half is just "reload":
 
 - **The shell is `no-store`** (`aai-studio-server/src/studio-static.ts`): it
-  must never outlive the build it names. No cache header at all is not the
-  same — a heuristic cache may reuse it.
+  must never outlive the build it names. No cache header at all is not the same
+  — a heuristic cache may reuse it.
 - **`lazyRetry` + `installStaleBuildRecovery`** cover both ways a missing chunk
   reports itself: a rejected dynamic import, and Vite's cancelable
-  `vite:preloadError` for a failed `<link rel="modulepreload">`. Both retry
-  once (a dropped connection is not a deploy), then reload.
+  `vite:preloadError` for a failed `<link rel="modulepreload">`. Both retry once
+  (a dropped connection is not a deploy), then reload.
 
 **The reload is guarded, and that is the load-bearing part.** A chunk can fail
 for reasons a reload cannot fix (offline, a proxy, a broken deploy), and an
