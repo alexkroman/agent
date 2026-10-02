@@ -2,11 +2,6 @@
 import pTimeout from "p-timeout";
 import { describe, expect, it, vi } from "vitest";
 import { createKeyedLock, KeyedLockTimeoutError } from "./keyed-lock.ts";
-// `sdk/sleep.ts` rather than `host/_test-utils.ts`: this is an `sdk/` unit test,
-// and that helper module re-exports `sleep` while itself importing
-// `createRuntime`, `assemblyAIS2s` and `node:fs` — the whole host graph, pulled
-// in for one wait.
-import { sleep } from "./sleep.ts";
 
 // Every drain assertion below is `vi.waitFor`, never a fixed number of
 // `await Promise.resolve()`s: the invariant is "the map drains", not "the map
@@ -20,10 +15,13 @@ describe("createKeyedLock", () => {
   it("serializes holders of the same key in acquisition order", async () => {
     const lock = createKeyedLock();
     const events: string[] = [];
+    // The first holder parks on a gate rather than a timer, so "the second
+    // waits" is asserted while the first still holds "k", not raced.
+    const gate = Promise.withResolvers<void>();
 
     const first = lock("k").then(async (release) => {
       events.push("first:start");
-      await sleep(10);
+      await gate.promise;
       events.push("first:end");
       release();
     });
@@ -31,6 +29,8 @@ describe("createKeyedLock", () => {
       events.push("second:start");
       release();
     });
+    await vi.waitFor(() => expect(events).toEqual(["first:start"]));
+    gate.resolve();
 
     // Bounded rather than plainly awaited, for the reason spelled out on the
     // sibling case below: a lock that never handed "k" to the second acquirer

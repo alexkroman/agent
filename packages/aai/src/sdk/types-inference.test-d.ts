@@ -40,7 +40,7 @@ describe("ToolDef type inference", () => {
     };
 
     type Ctx = Parameters<typeof _t.execute>[1];
-    expectTypeOf<Ctx>().toMatchTypeOf<ToolContext>();
+    expectTypeOf<Ctx>().toExtend<ToolContext>();
   });
 
   test("ToolContext provides env and messages, and NO db", () => {
@@ -66,7 +66,7 @@ describe("ToolDef type inference", () => {
 describe("AgentDef type inference", () => {
   test("satisfies AgentDef type", () => {
     const agent: AgentDef = { ...baseAgent, name: "test", tools: {} };
-    expectTypeOf(agent).toMatchTypeOf<AgentDef>();
+    expectTypeOf(agent).toExtend<AgentDef>();
   });
 
   test("a slot types the state a tool reads, with no annotation anywhere", () => {
@@ -89,7 +89,7 @@ describe("AgentDef type inference", () => {
         },
       },
     };
-    expectTypeOf(_agent).toMatchTypeOf<AgentDef>();
+    expectTypeOf(_agent).toExtend<AgentDef>();
   });
 
   test("tools field accepts ToolDef objects", () => {
