@@ -217,6 +217,11 @@ describe("it cleans up after itself", () => {
       { AAI_PLATFORM_URL: "https://x", AAI_API_KEY: "k" },
     );
     expect(code).toBe(1);
-    expect(fetchImpl.mock.calls.filter(([, init]) => init?.method === "DELETE")).toHaveLength(1);
+    const deletes = fetchImpl.mock.calls.filter(([, init]) => init?.method === "DELETE");
+    expect(deletes).toHaveLength(1);
+    // `DELETE /:slug/` 404s on the platform (the router's `/` collapses to
+    // `/:slug`), so a trailing slash leaks the agent while this still counts
+    // one call.
+    expect(String(deletes[0]?.[0])).toMatch(/\/ci-smoke-[0-9a-f]+$/);
   });
 });

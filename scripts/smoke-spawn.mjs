@@ -318,8 +318,11 @@ export async function main(argv, env = process.env) {
     console.log(`sandbox spawned and brokered ${spawned.detail} ✓`);
     return 0;
   } finally {
+    // No trailing slash: Hono's `mergePath` collapses the agents router's
+    // `DELETE /` to `/:slug`, so `/:slug/` matches nothing and 404s — which is
+    // how every smoke agent leaked. The same path `aai delete` uses.
     const deleted = await request({
-      url: `${base}/${slug}/`,
+      url: `${base}/${slug}`,
       init: { method: "DELETE", headers: auth },
     });
     if (deleted.ok) console.log(`cleaned up ${slug}`);
