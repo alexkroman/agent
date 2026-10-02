@@ -116,10 +116,15 @@ OAuth app. Four rules:
   — a mistyped password would silently become a new, empty account.
 - **The email is trimmed and the password is not** (spaces are legal in it).
 
-`readSignInMethods` lives outside `auth.tsx` so the coverage floors govern it:
-`auth.tsx` is excluded from coverage (`vitest.config.ts`), because its spec
-drives only the flows with no third party (the config read, `none`, `dev`) and
-the rest is supabase-js wiring (an auth subscription, an OAuth redirect).
+`readSignInMethods` and the auth statechart (`auth-state.ts`: config read →
+`ready` { methods read ∥ `signedOut` ⇄ `signedIn` { `idle`, `refreshing` } })
+live outside `auth.tsx` so the coverage floors govern them; the machine's spec
+drives every path, supabase included, through typed fakes of its effects.
+`auth.tsx` is excluded from coverage (`vitest.config.ts`): what is left there is
+the hook's `useSyncExternalStore` bridge and supabase-js wiring (an auth
+subscription, an OAuth redirect). **The refresh single-flight is the
+`refreshing` state**: a second `REJECTED` is not an event it takes, and every
+caller during one flight gets the same promise.
 
 **The session lives in `localStorage`, and the origin split is owed**
 (`auth.tsx`, and the threat-model note in `main.tsx`). Tenant agent pages are

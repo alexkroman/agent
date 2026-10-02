@@ -58,31 +58,24 @@
  * redirect chain (Supabase's `redirect_to`, GitHub's `redirect_uri`).
  */
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { type AuthConfig, api } from "./api.ts";
-import { NO_PROVIDERS, readSignInMethods, type SignInMethods } from "./auth-methods.ts";
+import { createClient } from "@supabase/supabase-js";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { api } from "./api.ts";
+import { readSignInMethods, type SignInMethods } from "./auth-methods.ts";
+import {
+  type AuthBackend,
+  createStudioAuth,
+  LOADING_VIEW,
+  type SignInCredentials,
+  type StudioAuthStore,
+  type SupabaseAuthConfig,
+} from "./auth-state.ts";
 import { loadFailureText } from "./components/gate-card.tsx";
 
 export type { SignInMethods } from "./auth-methods.ts";
+export type { SignInCredentials } from "./auth-state.ts";
 
 const DEV_TOKEN_STORAGE = "aai-studio-dev-token";
-
-/**
- * What a sign-in attempt supplies, which is different per method.
- *
- * A discriminated union rather than one `(email?, password?)` signature: with
- * the latter, "GitHub ignores both arguments" and "sign-up needs both" are
- * comments instead of types, and the gate has to be trusted to pass the right
- * subset. Sign-up is its own member rather than a fallback inside password
- * sign-in, because silently creating an account for a MISTYPED password is a
- * failure the user cannot see.
- */
-export type SignInCredentials =
-  | { kind: "github" }
-  | { kind: "password"; email: string; password: string }
-  | { kind: "signup"; email: string; password: string }
-  | { kind: "dev"; email: string };
 
 export type StudioAuthState =
   | { phase: "loading" }
@@ -142,7 +135,7 @@ function writeDevToken(token: string | null): void {
     if (token === null) localStorage.removeItem(DEV_TOKEN_STORAGE);
     else localStorage.setItem(DEV_TOKEN_STORAGE, token);
   } catch {
-    // Storage unavailable — the token still lives in component state.
+    // Storage unavailable — the token still lives in the machine's state.
   }
 }
 
@@ -153,110 +146,63 @@ function mintDevToken(email: string): string {
   return `dev.${base64url}.dev`;
 }
 
-export function useStudioAuth(): StudioAuthState {
-  const [config, setConfig] = useState<AuthConfig | null>(null);
-  const [configError, setConfigError] = useState<unknown>(null);
-  const [token, setToken] = useState<string | null>(null);
-  // What GoTrue says it offers. `null` while unread, which the gate renders as
-  // the pre-methods wait rather than as "no way to sign in".
-  const [methods, setMethods] = useState<SignInMethods | null>(null);
-  const supabaseRef = useRef<SupabaseClient | null>(null);
-  // One shared refresh for concurrent callers — every open event stream can
-  // report the same dead token within the same tick.
-  const refreshing = useRef<Promise<void> | null>(null);
+/**
+ * A sign-in that settles in place with no session event, so it hands its token
+ * back to the machine. Accepted in either mode, as the old hook did; only the
+ * `dev` gate ever offers it.
+ */
+async function signInDev(email: string): Promise<string> {
+  const minted = mintDevToken(email);
+  writeDevToken(minted);
+  return minted;
+}
 
-  // Which config read is current. Bumped per read and on unmount, so a
-  // response that lands after a retry started — or after the tab moved on —
-  // cannot overwrite newer state.
-  const configRead = useRef(0);
+/** `dev` mode: the token is the stored one, and nothing can refresh it. */
+function devBackend(): AuthBackend {
+  return {
+    follow(report) {
+      report(readDevToken());
+      // Nothing to unsubscribe: a dev token changes only through this backend.
+      return () => undefined;
+    },
+    signIn: async (creds) => (creds.kind === "dev" ? signInDev(creds.email) : undefined),
+    // Dev tokens carry no expiry, so a rejection means the token is malformed
+    // and unrecoverable: it is discarded rather than no-opped, since a caller
+    // left holding a bearer nobody will accept has no way forward.
+    refresh: async () => {
+      writeDevToken(null);
+      return null;
+    },
+    signOut: () => writeDevToken(null),
+  };
+}
 
-  /**
-   * Read the auth config. Also the retry the unavailable gate offers: nothing
-   * else in this hook runs until this lands, so a page opened while the server
-   * was busy would otherwise be a dead end — and a reload is not the same
-   * offer, since it asks that same busy server to serve the page again.
-   */
-  const loadConfig = useCallback(() => {
-    const read = ++configRead.current;
-    setConfigError(null);
-    api.authConfig().then(
-      (cfg) => {
-        if (configRead.current === read) setConfig(cfg);
-      },
-      (err: unknown) => {
-        // The raw error, not its text: the gate words itself from the error's
-        // KIND (a busy server reads differently from a broken one), and a
-        // string has already thrown that away.
-        if (configRead.current === read) {
-          setConfigError(err ?? new Error("Could not reach the server"));
-        }
-      },
-    );
-  }, []);
-
-  useEffect(() => {
-    loadConfig();
-    return () => {
-      configRead.current++;
-    };
-  }, [loadConfig]);
-
-  // Supabase wiring, once the config resolves: restore any stored session
-  // (including the one `detectSessionInUrl` extracts when the GitHub OAuth
-  // redirect lands back here), then follow every auth change — sign-in, the
-  // hourly token refresh, sign-out — so the app always holds a live access
-  // token.
-  // Which methods GoTrue has enabled, asked once per config. Its own effect
-  // rather than part of the client wiring below: it is a plain public read that
-  // must not be re-issued by the auth-state subscription's lifecycle, and a
-  // failure here narrows the screen instead of breaking it.
-  useEffect(() => {
-    if (config?.mode !== "supabase") return;
-    let current = true;
-    void readSignInMethods(config.supabaseUrl, config.supabasePublishableKey).then((m) => {
-      if (current) setMethods(m);
-    });
-    return () => {
-      current = false;
-    };
-  }, [config]);
-
-  useEffect(() => {
-    if (config?.mode !== "supabase") return;
-    const client = createClient(config.supabaseUrl, config.supabasePublishableKey, {
-      // Survives a tab close — see the module doc, and the origin split it is
-      // conditional on.
-      auth: { storage: window.localStorage },
-    });
-    supabaseRef.current = client;
-    void client.auth.getSession().then(({ data }) => {
-      setToken(data.session?.access_token ?? null);
-    });
-    const { data: sub } = client.auth.onAuthStateChange((_event, session) => {
-      setToken(session?.access_token ?? null);
-    });
-    return () => {
-      sub.subscription.unsubscribe();
-      supabaseRef.current = null;
-    };
-  }, [config]);
-
-  useEffect(() => {
-    if (config?.mode !== "dev") return;
-    setToken(readDevToken());
-  }, [config]);
-
-  const mode = config?.mode;
-  const signIn = useCallback(
-    async (creds: SignInCredentials) => {
-      if (creds.kind === "dev") {
-        const minted = mintDevToken(creds.email);
-        writeDevToken(minted);
-        setToken(minted);
-        return;
-      }
-      const client = supabaseRef.current;
-      if (mode !== "supabase" || !client) return;
+/**
+ * `supabase` mode: one supabase-js client per config.
+ *
+ * {@link AuthBackend.follow} restores any stored session (including the one
+ * `detectSessionInUrl` extracts when the GitHub OAuth redirect lands back
+ * here), then follows every auth change — sign-in, the hourly token refresh,
+ * sign-out — so the app always holds a live access token.
+ */
+function supabaseBackend(config: SupabaseAuthConfig): AuthBackend {
+  const client = createClient(config.supabaseUrl, config.supabasePublishableKey, {
+    // Survives a tab close — see the module doc, and the origin split it is
+    // conditional on.
+    auth: { storage: window.localStorage },
+  });
+  return {
+    follow(report) {
+      void client.auth.getSession().then(({ data }) => {
+        report(data.session?.access_token ?? null);
+      });
+      const { data: sub } = client.auth.onAuthStateChange((_event, session) => {
+        report(session?.access_token ?? null);
+      });
+      return () => sub.subscription.unsubscribe();
+    },
+    async signIn(creds) {
+      if (creds.kind === "dev") return signInDev(creds.email);
       if (creds.kind === "github") {
         // Navigates to GitHub; the page unloads unless this errors first.
         const { error } = await client.auth.signInWithOAuth({
@@ -278,85 +224,105 @@ export function useStudioAuth(): StudioAuthState {
             });
       if (error) throw new Error(error.message);
     },
-    [mode],
-  );
-
-  /**
-   * Mint a fresh access token, called when the server rejects the current one.
-   *
-   * This exists because `onAuthStateChange` cannot cover the case: supabase-js
-   * runs its refresh ticker ONLY on focused tabs ("the refresh token ticker
-   * runs only on focused tabs which prevents race conditions" —
-   * `GoTrueClient._onVisibilityChanged`), so a studio tab left in the
-   * background for an hour holds an expired token, emits no auth event, and
-   * has no way back on its own. `refreshSession` works regardless of
-   * visibility, since the refresh token outlives the access token.
-   *
-   * A refresh that fails is a real sign-out, not something to retry: the
-   * stored session is dropped LOCALLY (no network round trip on a dead
-   * session) so a reload cannot restore the same expired token and resume
-   * the loop, and the app falls back to the sign-in gate. So the contract is
-   * "the server rejected this bearer — recover it or sign out", which is why
-   * dev mode (whose tokens carry no expiry, so a rejection means the token is
-   * malformed and unrecoverable) discards its token rather than no-opping:
-   * a caller left holding a bearer nobody will accept has no way forward.
-   */
-  const refresh = useCallback(async (): Promise<void> => {
-    if (mode === "dev") {
-      writeDevToken(null);
-      setToken(null);
-      return;
-    }
-    const client = supabaseRef.current;
-    if (mode !== "supabase" || !client) return;
-    refreshing.current ??= (async () => {
+    /**
+     * Mint a fresh access token, called when the server rejects the current one.
+     *
+     * This exists because `onAuthStateChange` cannot cover the case: supabase-js
+     * runs its refresh ticker ONLY on focused tabs ("the refresh token ticker
+     * runs only on focused tabs which prevents race conditions" —
+     * `GoTrueClient._onVisibilityChanged`), so a studio tab left in the
+     * background for an hour holds an expired token, emits no auth event, and
+     * has no way back on its own. `refreshSession` works regardless of
+     * visibility, since the refresh token outlives the access token.
+     *
+     * A refresh that fails is a real sign-out, not something to retry: the
+     * stored session is dropped LOCALLY (no network round trip on a dead
+     * session) so a reload cannot restore the same expired token and resume
+     * the loop, and the app falls back to the sign-in gate. So the contract is
+     * "the server rejected this bearer — recover it or sign out".
+     */
+    async refresh() {
       try {
         const { data, error } = await client.auth.refreshSession();
-        if (!error && data.session) {
-          setToken(data.session.access_token);
-          return;
-        }
+        if (!error && data.session) return data.session.access_token;
         await client.auth.signOut({ scope: "local" });
-        setToken(null);
+        return null;
       } catch {
-        setToken(null);
-      } finally {
-        refreshing.current = null;
+        return null;
       }
-    })();
-    return refreshing.current;
-  }, [mode]);
+    },
+    signOut: () => void client.auth.signOut(),
+  };
+}
 
-  const signOut = useCallback(() => {
-    if (mode === "supabase") void supabaseRef.current?.auth.signOut();
-    if (mode === "dev") writeDevToken(null);
-    setToken(null);
-  }, [mode]);
+/** The machine's effects, against the real server, GoTrue and storage. */
+function browserStudioAuth(): StudioAuthStore {
+  return createStudioAuth({
+    // Also the retry the unavailable gate offers: nothing else runs until this
+    // lands, so a page opened while the server was busy would otherwise be a
+    // dead end — and a reload is not the same offer, since it asks that same
+    // busy server to serve the page again.
+    readConfig: () => api.authConfig(),
+    // A plain public read, asked once per config; a failure narrows the
+    // screen to GitHub-only instead of breaking it.
+    readMethods: (config) => readSignInMethods(config.supabaseUrl, config.supabasePublishableKey),
+    connect: (config) => (config.mode === "dev" ? devBackend() : supabaseBackend(config)),
+  });
+}
 
-  if (configError) {
-    return {
-      ...loadFailureText(configError, "Could not reach the server"),
-      phase: "unavailable",
-      retry: loadConfig,
+const NO_SUBSCRIPTION = (): (() => void) => () => undefined;
+const loadingView = () => LOADING_VIEW;
+
+/**
+ * Which phase the studio's front door is in — the statechart in
+ * `auth-state.ts`, bridged to React.
+ *
+ * `refresh` is the recovery for a REJECTED bearer (see `supabaseBackend`'s
+ * `refresh`): concurrent callers — every open event stream can report the same
+ * dead token within the same tick — share one refresh and one promise.
+ */
+export function useStudioAuth(): StudioAuthState {
+  // Created in an effect (and stopped in its cleanup) so a StrictMode double
+  // mount gets a fresh machine rather than a stopped one.
+  const [store, setStore] = useState<StudioAuthStore | null>(null);
+  useEffect(() => {
+    const next = browserStudioAuth();
+    setStore(next);
+    return () => {
+      next.stop();
+      setStore(null);
     };
+  }, []);
+
+  const view = useSyncExternalStore(
+    store?.subscribe ?? NO_SUBSCRIPTION,
+    store ? store.getView : loadingView,
+  );
+
+  if (!store) return { phase: "loading" };
+  switch (view.phase) {
+    case "failed":
+      return {
+        ...loadFailureText(view.error, "Could not reach the server"),
+        phase: "unavailable",
+        retry: store.retry,
+      };
+    case "notConfigured":
+      return {
+        phase: "unavailable",
+        message:
+          "Sign-in is not configured on this server (SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY are unset).",
+      };
+    case "signedIn":
+      return {
+        phase: "signedIn",
+        token: view.token,
+        signOut: store.signOut,
+        refresh: store.refresh,
+      };
+    case "signedOut":
+      return { phase: "signedOut", mode: view.mode, methods: view.methods, signIn: store.signIn };
+    default:
+      return { phase: "loading" };
   }
-  if (!config) return { phase: "loading" };
-  if (config.mode === "none") {
-    return {
-      phase: "unavailable",
-      message:
-        "Sign-in is not configured on this server (SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY are unset).",
-    };
-  }
-  if (token) return { phase: "signedIn", token, signOut, refresh };
-  // A `dev` server has one method and it is not GoTrue's, so nothing is read for
-  // it. In `supabase` mode an unfinished read stays on the loading phase rather
-  // than rendering a card with no buttons on it — the read is a same-origin-ish
-  // public GET with its own deadline, so this is a frame or two, and its failure
-  // path already yields GitHub-only rather than nothing.
-  if (config.mode === "dev") {
-    return { phase: "signedOut", mode: "dev", methods: NO_PROVIDERS, signIn };
-  }
-  if (!methods) return { phase: "loading" };
-  return { phase: "signedOut", mode: config.mode, methods, signIn };
 }
