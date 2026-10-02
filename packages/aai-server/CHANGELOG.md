@@ -1,5 +1,19 @@
 # aai-server
 
+## 0.1.3
+
+### Patch Changes
+
+- d66b0c3: Name the agent sandbox slot states as a discriminated union; validate a reloaded
+  guest bundle before swapping it in (a failed reload keeps the old agent
+  serving); studio turn step policy as a pure reducer; studio auth as an XState
+  machine.
+- Updated dependencies [d66b0c3]
+- Updated dependencies [f7c51dc]
+  - @alexkroman1/aai@0.14.2
+  - @alexkroman1/aai-runtime@0.14.2
+  - aai-guest@0.6.12
+
 ## 0.1.2
 
 ### Patch Changes
