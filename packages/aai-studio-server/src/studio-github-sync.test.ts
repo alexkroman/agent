@@ -83,7 +83,7 @@ describe("syncWorkspaceToGithub", () => {
     expect(result.commitUrl).toBe(`https://github.com/acme/voice-agent/commit/${FAKE_COMMIT_SHA}`);
     expect(github.lastCall("/git/commits")?.body).toMatchObject({ parents: [] });
     expect(github.lastCall("/git/refs")?.method).toBe("POST");
-    expect(github.calls.some((call) => call.method === "PATCH")).toBe(false);
+    expect(github.calls).not.toContainEqual(expect.objectContaining({ method: "PATCH" }));
   });
 
   test("a repository with NO COMMITS is bootstrapped through the Contents API", async () => {
@@ -230,8 +230,12 @@ describe("syncWorkspaceToGithub", () => {
 
     expect(result.changed).toBe(false);
     expect(result.commitSha).toBe("abc123");
-    expect(github.calls.some((call) => call.path.includes("/git/blobs"))).toBe(false);
-    expect(github.calls.some((call) => call.path.includes("/git/commits"))).toBe(false);
+    expect(github.calls).not.toContainEqual(
+      expect.objectContaining({ path: expect.stringContaining("/git/blobs") }),
+    );
+    expect(github.calls).not.toContainEqual(
+      expect.objectContaining({ path: expect.stringContaining("/git/commits") }),
+    );
   });
 
   test("a matching syncedHash against a repository with NO head still pushes", async () => {
@@ -243,7 +247,9 @@ describe("syncWorkspaceToGithub", () => {
     const result = await runSync(github, { syncedHash: "hash-1" });
 
     expect(result.changed).toBe(true);
-    expect(github.calls.some((call) => call.path.includes("/git/commits"))).toBe(true);
+    expect(github.calls).toContainEqual(
+      expect.objectContaining({ path: expect.stringContaining("/git/commits") }),
+    );
   });
 
   test("the commit message names the project", async () => {

@@ -21,20 +21,14 @@
  */
 
 import { performance } from "node:perf_hooks";
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { resolveHarnessPath } from "../constants.ts";
-import { microsandboxGate, probeMicrosandbox } from "./_test-utils.ts";
+import { describeWithMicrosandbox, probeMicrosandbox } from "./_test-utils.ts";
 import { spawnMicrosandboxWarm } from "./sandbox.ts";
 
 // Top level, never inside the gated `describe` body — see probeMicrosandbox.
-const gate = microsandboxGate(await probeMicrosandbox());
-if (gate.skip) {
-  // ANNOUNCED: a silent skip on the only tier that sees real VM behaviour is
-  // indistinguishable from a passing run.
-  console.warn(`microsandbox scenario tier SKIPPED — ${gate.reason}`);
-}
-const scenario = gate.skip ? describe.skip : describe;
+const scenario = describeWithMicrosandbox(await probeMicrosandbox());
 
 scenario("spawnMicrosandboxWarm against a real microVM", () => {
   it("boots the guest image and serves its control channel over the published port", async () => {

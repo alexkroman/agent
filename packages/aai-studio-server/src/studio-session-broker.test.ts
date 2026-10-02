@@ -9,7 +9,7 @@
 import { setImmediate } from "node:timers/promises";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createMemoryChatStore, createMemoryWorkspaceStore } from "aai-server/stores";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   type FakeGuest,
   fakeGuest,
@@ -309,7 +309,9 @@ describe("studio session broker", () => {
     // Mid-turn checkpoint: files land, no preview deploy.
     await sync?.({ files: { "agent.ts": "// checkpoint" } });
     await setImmediate();
-    expect(guest.requests.some((r) => r.method === "workspace/deploy")).toBe(false);
+    expect(guest.requests).not.toContainEqual(
+      expect.objectContaining({ method: "workspace/deploy" }),
+    );
 
     // Turn-complete sync: the preview deploys to `<project>-preview`, on
     // the live session sandbox, and stamps the workspace metadata.
@@ -328,8 +330,8 @@ describe("studio session broker", () => {
     // run elsewhere (the drain resolves that user's key from Vault); a job
     // without one is ARCHIVED, so the preview silently never lands, and while
     // the broker took a bare `serverUrl` this path could not name one.
-    expect(enqueued).toEqual([
-      { scope: SCOPE, project: PROJECT, serverUrl: "https://platform.example", userId: "user-1" },
+    expect(enqueued.mock.calls).toEqual([
+      [{ scope: SCOPE, project: PROJECT, serverUrl: "https://platform.example", userId: "user-1" }],
     ]);
     await broker.dispose();
   });
@@ -341,7 +343,9 @@ describe("studio session broker", () => {
     const sync = guest.handlers.get("studio/sync-workspace");
     await sync?.({ files: { "agent.ts": "// settled" }, done: true });
     await setImmediate();
-    expect(guest.requests.some((r) => r.method === "workspace/deploy")).toBe(false);
+    expect(guest.requests).not.toContainEqual(
+      expect.objectContaining({ method: "workspace/deploy" }),
+    );
     await broker.dispose();
   });
 
@@ -477,13 +481,9 @@ describe("studio session broker", () => {
   test("a failed publish does not evict a session installed while it ran", async () => {
     const first = fakeGuest();
     const second = fakeGuest("wss://tunnel2.example:443");
-    let failDeploy!: (err: Error) => void;
+    const stalledDeploy = Promise.withResolvers<never>();
     (first.warm.conn as { sendRequest: unknown }).sendRequest = (method: string) => {
-      if (method === "workspace/deploy") {
-        return new Promise((_resolve, reject) => {
-          failDeploy = reject;
-        });
-      }
+      if (method === "workspace/deploy") return stalledDeploy.promise;
       // Once the sandbox is gone, re-init rejects — as the real one does.
       return first.disposed()
         ? Promise.reject(new Error("Connection disposed"))
@@ -505,7 +505,7 @@ describe("studio session broker", () => {
     expect(replacement?.url).toBe("https://tunnel2.example/studio/chat");
 
     // Only now does the stalled publish notice and run its cleanup.
-    failDeploy(new Error("sandbox gone"));
+    stalledDeploy.reject(new Error("sandbox gone"));
     await publish.catch(() => undefined);
 
     // The replacement must still be the project's session — reusable, and
@@ -655,37 +655,36 @@ describe("cross-replica studio sessions", () => {
    */
   test("reusing a sandbox refreshes the fleet lease", async () => {
     vi.useFakeTimers();
-    try {
-      const lease = 10_000;
-      const shared = await sharedFleet(lease);
-      const a = await makeReplica("replica-a", [fakeGuest("wss://guest-a.example:443")], shared);
-      const first = await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
-
-      // Two reloads, each well inside the lease but together well past it.
-      vi.advanceTimersByTime(lease * 0.7);
-      await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
-      vi.advanceTimersByTime(lease * 0.7);
-
-      // The row is what a peer reads. Untouched, it expired one reload ago.
-      expect(await shared.registry.get(SCOPE, PROJECT)).toMatchObject({ owner: "replica-a" });
-
-      const adopt = vi.fn<typeof adoptPeerSession>(async () => ({
-        url: "https://guest-a.example/studio/chat",
-        token: first?.token as string,
-      }));
-      const b = await makeReplica(
-        "replica-b",
-        [fakeGuest("wss://guest-b.example:443")],
-        shared,
-        adopt,
-      );
-      expect(await b.broker.ensureSession(SCOPE, PROJECT, "caller-key")).toEqual(first);
-      expect(adopt).toHaveBeenCalled();
-      // The failure this prevents: a cold spawn under a name Modal refuses.
-      expect(b.spawn).not.toHaveBeenCalled();
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const lease = 10_000;
+    const shared = await sharedFleet(lease);
+    const a = await makeReplica("replica-a", [fakeGuest("wss://guest-a.example:443")], shared);
+    const first = await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+
+    // Two reloads, each well inside the lease but together well past it.
+    vi.advanceTimersByTime(lease * 0.7);
+    await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+    vi.advanceTimersByTime(lease * 0.7);
+
+    // The row is what a peer reads. Untouched, it expired one reload ago.
+    expect(await shared.registry.get(SCOPE, PROJECT)).toMatchObject({ owner: "replica-a" });
+
+    const adopt = vi.fn<typeof adoptPeerSession>(async () => ({
+      url: "https://guest-a.example/studio/chat",
+      token: first?.token as string,
+    }));
+    const b = await makeReplica(
+      "replica-b",
+      [fakeGuest("wss://guest-b.example:443")],
+      shared,
+      adopt,
+    );
+    expect(await b.broker.ensureSession(SCOPE, PROJECT, "caller-key")).toEqual(first);
+    expect(adopt).toHaveBeenCalled();
+    // The failure this prevents: a cold spawn under a name Modal refuses.
+    expect(b.spawn).not.toHaveBeenCalled();
   });
 
   test("disposing releases the row so the next broker call spawns fresh", async () => {

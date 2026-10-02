@@ -31,7 +31,7 @@ import { createRecordingSql } from "../_sql-test-utils.ts";
 import { nextEventIndex, readEvents } from "./session-state.ts";
 
 /** A driver answering one row's `next`, as postgres.js would shape it. */
-const answering = (next: unknown) => createRecordingSql(() => [{ next }]).sql;
+const answering = (next: unknown) => createRecordingSql(() => [{ next }]);
 
 const SLUG = "an-agent";
 const SESSION = "sess_1";
@@ -70,7 +70,7 @@ describe("nextEventIndex reads the driver's answer", () => {
     // 503 a working session. It is still a refusal rather than a 0, because
     // "the read did not happen" and "there are no events" are different
     // answers and only one of them is safe to act on.
-    const { sql } = createRecordingSql(() => []);
+    const sql = createRecordingSql(() => []);
     await expect(nextEventIndex(sql, SLUG, SESSION)).rejects.toThrow(/non-index/);
   });
 
@@ -84,15 +84,15 @@ describe("nextEventIndex reads the driver's answer", () => {
   });
 
   test("the slug and session id are BOUND, never interpolated", async () => {
-    const { sql, calls } = createRecordingSql(() => [{ next: "3" }]);
+    const sql = createRecordingSql(() => [{ next: "3" }]);
     await nextEventIndex(sql, SLUG, SESSION);
-    expect(calls[0]?.params).toEqual([SLUG, SESSION]);
-    expect(calls[0]?.query).not.toContain(SLUG);
+    expect(sql.mock.calls[0]?.[1]).toEqual([SLUG, SESSION]);
+    expect(sql.mock.calls[0]?.[0]).not.toContain(SLUG);
   });
 });
 
 /** A driver answering the given `session_events` rows, as postgres.js shapes them. */
-const rowsOf = (...rows: Record<string, unknown>[]) => createRecordingSql(() => rows).sql;
+const rowsOf = (...rows: Record<string, unknown>[]) => createRecordingSql(() => rows);
 
 /** A healthy page at the given indices — `bigint` columns, so every one a string. */
 const rowsAt = (...indices: string[]) =>
@@ -177,9 +177,9 @@ describe("readEvents reads the driver's rows", () => {
   });
 
   test("the slug, session id, cursor and limit are all BOUND", async () => {
-    const { sql, calls } = createRecordingSql(() => []);
+    const sql = createRecordingSql(() => []);
     await readEvents(sql, SLUG, SESSION, 2, 50);
-    expect(calls[0]?.params).toEqual([SLUG, SESSION, 2, 50]);
-    expect(calls[0]?.query).not.toContain(SLUG);
+    expect(sql.mock.calls[0]?.[1]).toEqual([SLUG, SESSION, 2, 50]);
+    expect(sql.mock.calls[0]?.[0]).not.toContain(SLUG);
   });
 });

@@ -45,7 +45,7 @@
 
 import { createPostgresDb, createPostgresKeyStore } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import { describeWithPg, pgUrl, ulid } from "./_pg-test-utils.ts";
 
 /**
  * NOT app-shaped (`app_` + 16 hex), deliberately — the platform's TTL sweep
@@ -54,28 +54,6 @@ import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
  * tier can run its files in one process.
  */
 const SCHEMA = "wf_keys_scenario";
-
-/** Crockford base32, ULID's alphabet: no I, L, O or U. */
-const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-
-/**
- * A real ULID-SHAPED id: 10 characters of millisecond timestamp, then 16 of
- * randomness — here chosen rather than random, so a test can say which of two
- * ids generated in the same millisecond was generated second.
- *
- * The shape matters because the tiebreak's whole premise is that a run id sorts
- * lexicographically by generation time. A uuid would tie-break to nonsense and
- * the test would still pass.
- */
-function ulid(ms: number, tail: string): string {
-  let time = "";
-  let n = ms;
-  for (let i = 0; i < 10; i += 1) {
-    time = CROCKFORD.charAt(n % 32) + time;
-    n = Math.floor(n / 32);
-  }
-  return time + tail.padStart(16, "0");
-}
 
 /**
  * Ids from ONE millisecond, in the order they would have been generated.

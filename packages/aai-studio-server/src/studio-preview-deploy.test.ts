@@ -9,7 +9,7 @@
 
 import { createMemoryWorkspaceStore } from "aai-server/stores";
 import { captureLogs } from "aai-server/test-utils";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   PROJECT,
   previewStamped,
@@ -340,13 +340,13 @@ describe("createPreviewDeployer", () => {
    */
   test("a job whose deploy throws is left for redelivery, not consumed", async () => {
     const workspaces = await seededStore();
-    let attempts = 0;
-    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
-      attempts++;
-      if (attempts === 1) throw new Error("sandbox gone");
-      return { ok: true, output: "Deployed" };
+    const deploy = vi
+      .fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }))
+      .mockRejectedValueOnce(new Error("sandbox gone"));
+    // The clock moves a day per attempt, so a retry is always past visibility.
+    const queue = createMemoryPreviewQueue({
+      now: () => Date.now() + deploy.mock.calls.length * DAY_MS,
     });
-    const queue = createMemoryPreviewQueue({ now: () => Date.now() + attempts * DAY_MS });
     const deployer = createPreviewDeployer({
       workspaces,
       deployWorkspace: deploy,
@@ -370,56 +370,55 @@ describe("createPreviewDeployer", () => {
     // durability. The acquire is bounded well under that window; a lapsed one
     // rejects, leaving the job unacked for redelivery.
     vi.useFakeTimers();
-    try {
-      const workspaces = await seededStore();
-
-      // The first deploy never returns — a sandbox that went away mid-request.
-      const wedged = vi.fn(
-        (): Promise<WorkspaceDeployOutcome> =>
-          new Promise(() => {
-            /* never settles */
-          }),
-      );
-      const queue = createMemoryPreviewQueue();
-      const deployer = createPreviewDeployer({
-        workspaces,
-        deployWorkspace: wedged,
-        queue,
-        pollMs: 0,
-        resolveApiKey: () => Promise.resolve("stored-key"),
-      });
-
-      // Two jobs for ONE project, so the batch claims both and the second
-      // queues behind the first on the project lock.
-      const job = { scope: SCOPE, project: PROJECT, serverUrl: TARGET.serverUrl, userId: "u1" };
-      await queue.enqueue(job);
-      await queue.enqueue(job);
-
-      // Never settles — the first job's deploy is wedged by construction.
-      void deployer.drainOnce();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(wedged).toHaveBeenCalledTimes(1);
-
-      await vi.advanceTimersByTimeAsync(PREVIEW_JOB_VISIBILITY_MS);
-
-      // The waiter gave up rather than holding its claim to the deadline, and
-      // it is still in the queue — unacked and unarchived — for redelivery.
-      // Asserting the REASON, not just that something warned: a job left
-      // unacked because the deploy errored looks identical from the queue's
-      // side, and only the message separates it from the lock lapsing.
-      expect(logs.all()).toContainEqual(
-        expect.objectContaining({
-          level: "warn",
-          msg: "studio.preview deploy errored",
-          ctx: expect.objectContaining({ error: expect.stringContaining("timed out") }),
-        }),
-      );
-      expect(queue.archived).toEqual([]);
-      expect(wedged).toHaveBeenCalledTimes(1);
-      deployer.dispose();
-    } finally {
+    onTestFinished(() => {
       vi.useRealTimers();
-    }
+    });
+    const workspaces = await seededStore();
+
+    // The first deploy never returns — a sandbox that went away mid-request.
+    const wedged = vi.fn(
+      (): Promise<WorkspaceDeployOutcome> =>
+        new Promise(() => {
+          /* never settles */
+        }),
+    );
+    const queue = createMemoryPreviewQueue();
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: wedged,
+      queue,
+      pollMs: 0,
+      resolveApiKey: () => Promise.resolve("stored-key"),
+    });
+
+    // Two jobs for ONE project, so the batch claims both and the second
+    // queues behind the first on the project lock.
+    const job = { scope: SCOPE, project: PROJECT, serverUrl: TARGET.serverUrl, userId: "u1" };
+    await queue.enqueue(job);
+    await queue.enqueue(job);
+
+    // Never settles — the first job's deploy is wedged by construction.
+    void deployer.drainOnce();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(wedged).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(PREVIEW_JOB_VISIBILITY_MS);
+
+    // The waiter gave up rather than holding its claim to the deadline, and
+    // it is still in the queue — unacked and unarchived — for redelivery.
+    // Asserting the REASON, not just that something warned: a job left
+    // unacked because the deploy errored looks identical from the queue's
+    // side, and only the message separates it from the lock lapsing.
+    expect(logs.all()).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        msg: "studio.preview deploy errored",
+        ctx: expect.objectContaining({ error: expect.stringContaining("timed out") }),
+      }),
+    );
+    expect(queue.archived).toEqual([]);
+    expect(wedged).toHaveBeenCalledTimes(1);
+    deployer.dispose();
   });
 
   test("a job redelivered past the attempt cap is archived, not retried forever", async () => {
@@ -427,8 +426,9 @@ describe("createPreviewDeployer", () => {
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
       throw new Error("crash loop");
     });
-    let reads = 0;
-    const queue = createMemoryPreviewQueue({ now: () => Date.now() + ++reads * DAY_MS });
+    // A day further on per read, so every drain sees the job visible again.
+    const now = vi.fn((): number => Date.now() + now.mock.calls.length * DAY_MS);
+    const queue = createMemoryPreviewQueue({ now });
     const deployer = createPreviewDeployer({
       workspaces,
       deployWorkspace: deploy,
@@ -456,17 +456,13 @@ describe("createPreviewDeployer", () => {
       serverUrl: TARGET.serverUrl,
       userId: "user-1",
     });
-    const targets: WorkspaceDeployTarget[] = [];
     const deploy = vi.fn(
       async (
         _scope: string,
         _project: string,
         _files: Record<string, string>,
-        target: WorkspaceDeployTarget,
-      ): Promise<WorkspaceDeployOutcome> => {
-        targets.push(target);
-        return { ok: true, output: "ok" };
-      },
+        _target: WorkspaceDeployTarget,
+      ): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }),
     );
     const deployer = createPreviewDeployer({
       workspaces,
@@ -476,7 +472,7 @@ describe("createPreviewDeployer", () => {
       resolveApiKey: (userId) => Promise.resolve(userId === "user-1" ? "stored-key" : null),
     });
     await deployer.drainOnce();
-    expect(targets[0]).toMatchObject({ apiKey: "stored-key" });
+    expect(deploy.mock.calls[0]?.[3]).toMatchObject({ apiKey: "stored-key" });
   });
 
   test("a redelivered job with no resolvable key is archived", async () => {

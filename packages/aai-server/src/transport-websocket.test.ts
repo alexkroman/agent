@@ -7,6 +7,7 @@ import { platformSessionSecret } from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
+import { captureLogs } from "./_logger-test-utils.ts";
 import {
   createTestOrchestrator,
   createTestStore,
@@ -460,6 +461,9 @@ function wsError(ws: WsClient): Promise<Error> {
 }
 
 describe("session upgrades (direct-to-tunnel)", () => {
+  // The store-failure case logs its 500; keep it out of the output.
+  captureLogs();
+
   test("an upgrade is redirected to the sandbox's live session URL, not a session", async () => {
     const ctx = await startServerWithOrchestrator();
     try {
@@ -542,7 +546,6 @@ describe("session upgrades (direct-to-tunnel)", () => {
   });
 
   test("a store failure during an upgrade answers 500 and destroys the socket", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
     const ctx = await startServerWithOrchestrator({ seedSandbox: false });
     ctx.store.getAgent = () => Promise.reject(new Error("storage down"));
     try {

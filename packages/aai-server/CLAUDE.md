@@ -615,9 +615,12 @@ driver-level bugs.
 - `pnpm test:pg` resolves a database (stack on 54322, server on 5432, or
   `AAI_TEST_PG_URL`); with the stack up it also exports the Supabase trio. It
   starts nothing.
-- Gate with `describeWithPg` / `describeWithStack` from `_pg-test-utils.ts` —
-  never a hand-rolled `PG_URL ? describe : describe.skip`. A skip announces
-  itself.
+- Gate with `describeWithPg` / `describeWithStack` from `_pg-test-utils.ts` (and
+  a microVM suite with `describeWithMicrosandbox(await probeMicrosandbox())`
+  from `microsandbox/_test-utils.ts`) — never a hand-rolled
+  `PG_URL ? describe : describe.skip`. All three are built on `gatedDescribe` (a
+  `describe.skipIf` that announces the skip once per file); a new
+  real-infrastructure gate is one more call to it.
 - `AAI_REQUIRE_PG` / `AAI_REQUIRE_STACK` turn a skip into a failure; both must
   stay declared in `check:scenario`'s `env` in `turbo.json` (strict env mode
   strips undeclared vars). `AAI_REQUIRE_REGISTRY` is the same for `check:e2e`

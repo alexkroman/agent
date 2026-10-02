@@ -26,30 +26,24 @@
  *   query here would disprove it without any database at all.
  */
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { SqlExec } from "../sql-exec.ts";
 import * as journal from "./workflow-journal.ts";
 
 const SLUG = "tenant-a";
 
-/** One statement the store issued. */
-type Issued = { sql: string; params: unknown[] };
-
 /**
- * A recording `SqlExec` that answers from a queue.
+ * A recording `SqlExec` that answers from a queue; read what it was handed
+ * from `mock.calls`.
  *
  * `rows` is consumed in order. Every method here issues exactly ONE statement, so
  * one entry is the ordinary case; a second entry is what a RE-RUN reads, which is
  * how the first-write-wins retry is driven below.
  */
 function recorder(rows: Record<string, unknown>[][] = []) {
-  const issued: Issued[] = [];
-  const queue = [...rows];
-  const sql: SqlExec = async (query, params = []) => {
-    issued.push({ sql: query, params });
-    return queue.shift() ?? [];
-  };
-  return { sql, issued };
+  const sql = vi.fn<SqlExec>(async () => []);
+  for (const answer of rows) sql.mockResolvedValueOnce(answer);
+  return sql;
 }
 
 /** A step entry with every field filled, for the methods that take one. */
@@ -189,12 +183,12 @@ describe("tenancy is in every statement", () => {
       // statement that dropped it would read or write across tenants. The
       // scenario tier proves the read comes back empty; this proves the parameter
       // is there, over every method, so a dropped one cannot arrive quietly.
-      const { sql, issued } = recorder(call.rows);
+      const sql = recorder(call.rows);
       await call.run(sql);
-      expect(issued.length).toBeGreaterThan(0);
-      for (const statement of issued) {
-        expect(statement.params[0], statement.sql).toBe(SLUG);
-        expect(statement.sql).toContain("$1");
+      expect(sql.mock.calls.length).toBeGreaterThan(0);
+      for (const [query, params = []] of sql.mock.calls) {
+        expect(params[0], query).toBe(SLUG);
+        expect(query).toContain("$1");
       }
     },
   );
@@ -203,10 +197,10 @@ describe("tenancy is in every statement", () => {
     // These are the platform's tables, not an app's. An unqualified name would
     // resolve through `search_path` to whatever the connection happens to have.
     for (const call of CALLS) {
-      const { sql, issued } = recorder(call.rows);
+      const sql = recorder(call.rows);
       await call.run(sql);
-      for (const statement of issued) {
-        expect(statement.sql, call.name).toContain("aai_platform.workflow_");
+      for (const [query] of sql.mock.calls) {
+        expect(query, call.name).toContain("aai_platform.workflow_");
       }
     }
   });
@@ -222,9 +216,9 @@ describe("every jsonb binding casts through text", () => {
     // run's `input` reads back as text.
     const casts: string[] = [];
     for (const call of CALLS) {
-      const { sql, issued } = recorder(call.rows);
+      const sql = recorder(call.rows);
       await call.run(sql);
-      for (const statement of issued) casts.push(...(statement.sql.match(JSONB_BINDINGS) ?? []));
+      for (const [query] of sql.mock.calls) casts.push(...(query.match(JSONB_BINDINGS) ?? []));
     }
     // createRun, setStatus, deliverHook, appendStep — four writes carry an
     // encoded value, and a floor here is what stops this passing on an empty scan.
@@ -261,9 +255,9 @@ describe("a first-write-wins claim is ONE statement", () => {
   test.each(CLAIMS.map((claim) => [claim.name, claim] as const))(
     "%s writes and reads in one statement",
     async (_name, claim) => {
-      const { sql, issued } = recorder([[claim.row]]);
+      const sql = recorder([[claim.row]]);
       await claim.run(sql);
-      expect(issued).toHaveLength(1);
+      expect(sql).toHaveBeenCalledOnce();
     },
   );
 
@@ -273,10 +267,10 @@ describe("a first-write-wins claim is ONE statement", () => {
       // The outer select reads the statement's snapshot, taken BEFORE the CTE's
       // insert, so exactly one arm can produce a row — which is the whole reason
       // the two halves are unioned rather than selected afterwards.
-      const { sql, issued } = recorder([[claim.row]]);
+      const sql = recorder([[claim.row]]);
       await claim.run(sql);
-      expect(issued[0]?.sql).toContain("union all");
-      expect(issued[0]?.sql).toMatch(/on conflict.*do nothing/s);
+      expect(sql.mock.calls[0]?.[0]).toContain("union all");
+      expect(sql.mock.calls[0]?.[0]).toMatch(/on conflict.*do nothing/s);
     },
   );
 
@@ -290,9 +284,9 @@ describe("a first-write-wins claim is ONE statement", () => {
       // retry a race whose winner it could simply have read; for `claimHook` it
       // was worse, a 409 that makes a saga compensate. By the next attempt the
       // rival has committed or aborted.
-      const { sql, issued } = recorder([[], [claim.row]]);
+      const sql = recorder([[], [claim.row]]);
       await expect(claim.run(sql)).resolves.toBeDefined();
-      expect(issued).toHaveLength(2);
+      expect(sql).toHaveBeenCalledTimes(2);
     },
   );
 
@@ -302,20 +296,20 @@ describe("a first-write-wins claim is ONE statement", () => {
       // Exhausted is a plain `Error`, i.e. a 503, and that is the right answer:
       // the store genuinely cannot say what the row holds, and the call is
       // idempotent. What it may NOT do is spin.
-      const { sql, issued } = recorder([]);
+      const sql = recorder([]);
       await expect(claim.run(sql)).rejects.toThrow();
-      expect(issued.length).toBeLessThanOrEqual(3);
+      expect(sql.mock.calls.length).toBeLessThanOrEqual(3);
     },
   );
 
   test("claimHook still refuses a VISIBLE owner on the first answer", async () => {
     // The retry is scoped to the empty answer. An owner the statement can see is
     // a decision, so it must not be re-run and must not be softened into one.
-    const { sql, issued } = recorder([[{ ...HOOK_ROW, run_id: "wrun_other", key: "hook!0" }]]);
+    const sql = recorder([[{ ...HOOK_ROW, run_id: "wrun_other", key: "hook!0" }]]);
     await expect(journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok")).rejects.toBeInstanceOf(
       journal.PlatformWorkflowHookTokenError,
     );
-    expect(issued).toHaveLength(1);
+    expect(sql).toHaveBeenCalledOnce();
   });
 });
 
@@ -325,10 +319,10 @@ describe("claimAttempt", () => {
     // after which a wedged step never reaches its ceiling. Whether the database
     // makes the single statement atomic is the scenario tier's question; whether
     // there is only one is this one's, and a second query would settle it here.
-    const { sql, issued } = recorder([[{ n: 3 }]]);
+    const sql = recorder([[{ n: 3 }]]);
     expect(await journal.claimAttempt(sql, SLUG, "wrun_1", "a#0", "walk-1", 60_000)).toBe(3);
-    expect(issued).toHaveLength(1);
-    expect(issued[0]?.sql).toMatch(/on conflict .* do update\s+set holders/s);
+    expect(sql).toHaveBeenCalledOnce();
+    expect(sql.mock.calls[0]?.[0]).toMatch(/on conflict .* do update\s+set holders/s);
   });
 
   test("keeps a LIVE holder's instant, which is the whole of the `case`", async () => {
@@ -336,13 +330,15 @@ describe("claimAttempt", () => {
     // one key would hold its charge indefinitely — the failure the expiry exists
     // to end, by a slower route. A recorder cannot see the effect; it can see
     // the branch go missing.
-    const { sql, issued } = recorder([[{ n: 1 }]]);
+    const sql = recorder([[{ n: 1 }]]);
     await journal.claimAttempt(sql, SLUG, "wrun_1", "a#0", "walk-1", 60_000);
-    expect(issued[0]?.sql).toMatch(/case\s+when .*holders ->> \$4.*>= \$6\s+then '\{\}'::jsonb/s);
+    expect(sql.mock.calls[0]?.[0]).toMatch(
+      /case\s+when .*holders ->> \$4.*>= \$6\s+then '\{\}'::jsonb/s,
+    );
   });
 
   test("refuses an empty result rather than inventing an attempt number", async () => {
-    const { sql } = recorder([[]]);
+    const sql = recorder([[]]);
     await expect(
       journal.claimAttempt(sql, SLUG, "wrun_1", "a#0", "walk-1", 60_000),
     ).rejects.toThrow(/returned nothing/);
@@ -362,7 +358,7 @@ describe("createRun", () => {
     // that row or was blocked by a row already there, and `do nothing` does not
     // wait on a concurrent inserter — it declines, which is what makes this
     // reachable by the race rather than only by a committed duplicate.
-    const { sql, issued } = recorder([[]]);
+    const sql = recorder([[]]);
     await expect(
       journal.createRun(sql, SLUG, {
         runId: "wrun_1",
@@ -372,14 +368,14 @@ describe("createRun", () => {
       }),
     ).rejects.toBeInstanceOf(journal.PlatformWorkflowRunTakenError);
     // Without the `returning`, zero rows and one row are the same answer.
-    expect(issued[0]?.sql).toContain("returning run_id");
+    expect(sql.mock.calls[0]?.[0]).toContain("returning run_id");
   });
 
   test("refuses it as a TYPED error, which is what buys the caller a 409", async () => {
     // Same argument as `claimHook`'s below: every plain `Error` reaching
     // `withReserved` becomes a 503, so the guest retries a refusal that cannot
     // change and spends the message's whole attempt budget on it.
-    const { sql } = recorder([[]]);
+    const sql = recorder([[]]);
     await expect(
       journal.createRun(sql, SLUG, {
         runId: "wrun_1",
@@ -391,7 +387,7 @@ describe("createRun", () => {
   });
 
   test("resolves when the insert reports the row it wrote", async () => {
-    const { sql } = recorder([[{ run_id: "wrun_1" }]]);
+    const sql = recorder([[{ run_id: "wrun_1" }]]);
     await expect(
       journal.createRun(sql, SLUG, {
         runId: "wrun_1",
@@ -406,25 +402,25 @@ describe("createRun", () => {
 
 describe("setStatus", () => {
   test("passes its `expect` list, and answers from the ROW COUNT", async () => {
-    const { sql, issued } = recorder([[{ run_id: "wrun_1" }]]);
+    const sql = recorder([[{ run_id: "wrun_1" }]]);
     expect(await journal.setStatus(sql, SLUG, "wrun_1", "completed", undefined, ["running"])).toBe(
       true,
     );
-    expect(issued[0]?.params).toContainEqual(["running"]);
+    expect(sql.mock.calls[0]?.[1]).toContainEqual(["running"]);
   });
 
   test("answers false when the update matched no row", async () => {
     // A worker that had not noticed a cancel must not be told it moved the run.
-    const { sql } = recorder([[]]);
+    const sql = recorder([[]]);
     expect(await journal.setStatus(sql, SLUG, "wrun_1", "completed", undefined, ["running"])).toBe(
       false,
     );
   });
 
   test("passes null for an ABSENT expect, so the predicate matches any status", async () => {
-    const { sql, issued } = recorder([[{ run_id: "wrun_1" }]]);
+    const sql = recorder([[{ run_id: "wrun_1" }]]);
     await journal.setStatus(sql, SLUG, "wrun_1", "cancelled", undefined, undefined);
-    expect(issued[0]?.params).toContain(null);
+    expect(sql.mock.calls[0]?.[1]).toContain(null);
   });
 });
 
@@ -432,15 +428,15 @@ describe("wakeSleeps", () => {
   test("a BARE wake is scoped to `kind = 'sleep'`, never a hook deadline", async () => {
     // Journaling a hook's timeout as an ordinary sleep meant a "send it now" tool
     // also closed every open approval window on the run.
-    const { sql, issued } = recorder([[{ key: "sleep!0" }]]);
+    const sql = recorder([[{ key: "sleep!0" }]]);
     expect(await journal.wakeSleeps(sql, SLUG, "wrun_1", 5, undefined)).toBe(1);
-    expect(issued[0]?.sql).toContain("kind = 'sleep'");
+    expect(sql.mock.calls[0]?.[0]).toContain("kind = 'sleep'");
   });
 
   test("a CORRELATED wake passes its ids and reaches any kind", async () => {
-    const { sql, issued } = recorder([[]]);
+    const sql = recorder([[]]);
     await journal.wakeSleeps(sql, SLUG, "wrun_1", 5, ["order-7"]);
-    expect(issued[0]?.params).toContainEqual(["order-7"]);
+    expect(sql.mock.calls[0]?.[1]).toContainEqual(["order-7"]);
   });
 });
 
@@ -452,16 +448,16 @@ describe("claimHook", () => {
     // `workflow_hooks_token_idx` (23505) instead of the authored refusal. An
     // untargeted `on conflict do nothing` cannot raise that at all, and one
     // statement is what makes the read and the write one decision.
-    const { sql, issued } = recorder([[{ ...HOOK_ROW, run_id: "wrun_1", key: "hook!0" }]]);
+    const sql = recorder([[{ ...HOOK_ROW, run_id: "wrun_1", key: "hook!0" }]]);
     await journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok");
-    expect(issued).toHaveLength(1);
-    expect(issued[0]?.sql).toContain("on conflict do nothing");
+    expect(sql).toHaveBeenCalledOnce();
+    expect(sql.mock.calls[0]?.[0]).toContain("on conflict do nothing");
   });
 
   test("refuses a token another run holds, naming the holder", async () => {
     // Two waits sharing a token means one signal resolves whichever row the
     // planner reached first and the other waits forever.
-    const { sql } = recorder([[{ ...HOOK_ROW, run_id: "wrun_other", key: "hook!0" }]]);
+    const sql = recorder([[{ ...HOOK_ROW, run_id: "wrun_other", key: "hook!0" }]]);
     await expect(journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok")).rejects.toThrow(
       /already held by run wrun_other/,
     );
@@ -471,14 +467,14 @@ describe("claimHook", () => {
     // A plain `Error` reaches `withReserved`'s catch-all and becomes a 503 —
     // "come back later" for a condition that cannot change while the holder is
     // alive, so the guest retries and burns the message's attempt budget on it.
-    const { sql } = recorder([[{ ...HOOK_ROW, run_id: "wrun_other", key: "hook!0" }]]);
+    const sql = recorder([[{ ...HOOK_ROW, run_id: "wrun_other", key: "hook!0" }]]);
     await expect(journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok")).rejects.toBeInstanceOf(
       journal.PlatformWorkflowHookTokenError,
     );
   });
 
   test("accepts a re-claim by the SAME run and key, which is what a replay does", async () => {
-    const { sql } = recorder([[{ ...HOOK_ROW, run_id: "wrun_1", key: "hook!0" }]]);
+    const sql = recorder([[{ ...HOOK_ROW, run_id: "wrun_1", key: "hook!0" }]]);
     await expect(journal.claimHook(sql, SLUG, "wrun_1", "hook!0", "tok")).resolves.toMatchObject({
       token: "tok",
       delivered: false,
@@ -491,19 +487,19 @@ describe("closeHook is a compare-and-set", () => {
     // Unconditional, this walk of the body timed out while every later replay
     // read `delivered: true` and answered — the divergence `closed` exists to
     // prevent, arriving by the other door.
-    const { sql, issued } = recorder([[{ closed: "1", existing: "1" }]]);
+    const sql = recorder([[{ closed: "1", existing: "1" }]]);
     expect(await journal.closeHook(sql, SLUG, "wrun_1", "hook!0")).toBe(true);
-    expect(issued[0]?.sql).toContain("delivered = false");
+    expect(sql.mock.calls[0]?.[0]).toContain("delivered = false");
   });
 
   test("answers false when the row exists and the update matched nothing", async () => {
-    const { sql } = recorder([[{ closed: "0", existing: "1" }]]);
+    const sql = recorder([[{ closed: "0", existing: "1" }]]);
     expect(await journal.closeHook(sql, SLUG, "wrun_1", "hook!0")).toBe(false);
   });
 
   test("answers true when the window is GONE, a terminal run having released it", async () => {
     // Nothing to refuse, so the caller's timeout stands.
-    const { sql } = recorder([[{ closed: "0", existing: "0" }]]);
+    const sql = recorder([[{ closed: "0", existing: "0" }]]);
     expect(await journal.closeHook(sql, SLUG, "wrun_1", "hook!0")).toBe(true);
   });
 });
@@ -512,7 +508,7 @@ describe("a bigint column arrives as a STRING", () => {
   test("getRun and readSteps convert it, so a timestamp is never compared as text", async () => {
     // Left alone every comparison against a deadline is lexicographic and every
     // arithmetic one is concatenation.
-    const { sql } = recorder([
+    const sql = recorder([
       [
         {
           run_id: "wrun_1",
@@ -532,7 +528,7 @@ describe("a bigint column arrives as a STRING", () => {
   });
 
   test("a null column reads as absent rather than as the string 'null'", async () => {
-    const { sql } = recorder([
+    const sql = recorder([
       [
         {
           run_id: "wrun_1",

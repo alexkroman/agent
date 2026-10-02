@@ -14,14 +14,11 @@
  * tier would have to wait out real windows to see any of it.
  */
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { ABANDONED_RUN_ERROR, RECONCILE_MAX_ATTEMPTS } from "./_reconcile-abandon.ts";
 import type { SqlExec } from "./sql-exec.ts";
 import { findStalledRuns, reconcileStalledRuns } from "./workflow-queue-reconcile.ts";
-
-/** One statement the pass issued. */
-type Issued = { sql: string; params: unknown[] };
 
 /**
  * A recording `SqlExec` that answers by STATEMENT SHAPE rather than from a queue.
@@ -32,9 +29,7 @@ type Issued = { sql: string; params: unknown[] };
  * empty, which is what `enqueue` and `pg_notify` both expect.
  */
 function recorder(stalled: { slug: string; runId: string; reconciles: number }[]) {
-  const issued: Issued[] = [];
-  const sql: SqlExec = async (query, params = []) => {
-    issued.push({ sql: query, params });
+  const sql = vi.fn<SqlExec>(async (query) => {
     if (query.includes("select r.slug, r.run_id, r.reconciles")) {
       return stalled.map((run) => ({
         slug: run.slug,
@@ -47,9 +42,13 @@ function recorder(stalled: { slug: string; runId: string; reconciles: number }[]
     // `enqueue`'s insert reports the row it wrote.
     if (query.includes("insert into aai_platform.workflow_queue")) return [{ id: "queued" }];
     return [];
-  };
-  const of = (needle: string) => issued.filter((statement) => statement.sql.includes(needle));
-  return { sql, issued, of };
+  });
+  /** The statements whose text includes `needle`, in issue order. */
+  const of = (needle: string) =>
+    sql.mock.calls
+      .filter(([query]) => query.includes(needle))
+      .map(([, params = []]) => ({ params }));
+  return { sql, of };
 }
 
 /**
@@ -66,9 +65,9 @@ describe("the predicate carries the strike count", () => {
     // Without it the pass has no way to tell a first repair from a fiftieth: the
     // stamp overwrites `reconciled_at` every time, so the row cannot say how many
     // there have been.
-    const { sql, issued } = recorder([UNDER]);
+    const { sql } = recorder([UNDER]);
     expect(await findStalledRuns(sql)).toEqual([UNDER]);
-    expect(issued[0]?.sql).toContain("r.reconciles");
+    expect(sql.mock.calls[0]?.[0]).toContain("r.reconciles");
   });
 
   test("the status filter is still the partial index's literal list", async () => {
@@ -76,9 +75,9 @@ describe("the predicate carries the strike count", () => {
     // and a partial index is matched by IMPLICATION, so binding the list as a
     // parameter would silently stop using the index that serves the filter, the
     // ordering and the bound in one walk.
-    const { sql, issued } = recorder([]);
+    const { sql } = recorder([]);
     await findStalledRuns(sql);
-    expect(issued[0]?.sql).toContain("r.status in ('pending', 'running')");
+    expect(sql.mock.calls[0]?.[0]).toContain("r.status in ('pending', 'running')");
   });
 });
 
@@ -142,14 +141,13 @@ describe("a run OUT of budget is abandoned", () => {
   test("a run that settled on its own is not reported as abandoned", async () => {
     // The compare-and-set matched nothing, which is the ordinary outcome of a
     // guest finishing the run between the predicate and the write.
-    const { issued, of } = recorder([OVER]);
-    const sql: SqlExec = async (query, params = []) => {
-      issued.push({ sql: query, params });
+    const { sql, of } = recorder([OVER]);
+    sql.mockImplementation(async (query) => {
       if (query.includes("select r.slug, r.run_id, r.reconciles")) {
         return [{ slug: OVER.slug, run_id: OVER.runId, reconciles: OVER.reconciles }];
       }
       return [];
-    };
+    });
     expect(await reconcileStalledRuns(sql)).toEqual({ stalled: 0, skipped: 0, abandoned: 0 });
     expect(of("with moved as")).toHaveLength(1);
   });

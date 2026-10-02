@@ -29,10 +29,7 @@ describe("with a synthetic installed SDK", () => {
     root = mkdtempSync(path.join(tmpdir(), "aai-sdk-exports-"));
     startDir = path.join(root, "project", "src", "deep");
     mkdirSync(startDir, { recursive: true });
-  });
-
-  afterEach(() => {
-    rmSync(root, { recursive: true, force: true });
+    return () => rmSync(root, { recursive: true, force: true });
   });
 
   /** Install `contents` as the SDK's package.json at the tree root. */

@@ -2,20 +2,14 @@
 /**
  * A fake GitHub, and a real key to sign against it.
  *
- * The GitHub half of this feature is reached ONLY through Octokit, so the
- * honest seam is the `fetch` Octokit is constructed with (`GithubClientOptions
- * .fetchFn`) — not a module mock over our own wrappers. That difference is
- * what these suites are for: a mock of `syncWorkspaceToGithub` would assert
- * that the route calls it, where this asserts what actually goes over the
- * wire — that the tree carries no `base_tree`, that a `PATCH` of the ref is
- * not forced, that an empty repository takes the `POST /git/refs` path.
+ * The seam is the `fetch` Octokit is constructed with
+ * (`GithubClientOptions.fetchFn`), never a module mock over our own wrappers,
+ * so a suite asserts what goes over the wire (no `base_tree`, an unforced ref
+ * `PATCH`, the empty-repository `POST /git/refs` path).
  *
- * It also exercises `@octokit/auth-app` for real: a request as an installation
- * mints an App JWT (RS256, WebCrypto) and exchanges it for an installation
- * token before the call under test is issued. So the key below is a genuine
- * RSA key rather than a placeholder string — generated once per module load,
- * because 2048-bit keygen is tens of milliseconds and every suite here needs
- * exactly one.
+ * `@octokit/auth-app` runs for real (App JWT, then an installation token), so
+ * the key is a genuine RSA key — generated once per module load, since keygen
+ * costs tens of milliseconds.
  */
 
 import { createHash, generateKeyPairSync } from "node:crypto";
@@ -70,14 +64,9 @@ export type FakeGithubOptions = {
   /** Make the `code` exchange fail, as a replayed or forged code does. */
   rejectUserCode?: boolean;
   /**
-   * A repository with NO COMMITS, which refuses every Git Data write with
-   * 409 until something gives it one.
-   *
-   * The state a user who just created a repository for this is in, and the
-   * one `head: null` alone cannot express: that says the BRANCH has no
-   * commit, where this says GitHub will not accept the blob that would make
-   * one. Cleared by the Contents API write the sync bootstraps with, which is
-   * how the real thing behaves.
+   * A repository with NO COMMITS: every Git Data write answers 409 until the
+   * Contents API write the sync bootstraps with clears it, as on GitHub.
+   * (`head: null` alone says only that the BRANCH has no commit.)
    */
   emptyRepo?: boolean;
   /**
@@ -166,11 +155,9 @@ const contains =
     path.includes(fragment);
 
 /**
- * The routes this feature touches, as a TABLE rather than a chain of ifs.
- *
- * One entry per endpoint the code under test is allowed to call, which is
- * also the list a reviewer checks against the real API — and a shape the
- * complexity threshold does not have to be argued with.
+ * The routes this feature touches, as a TABLE: one entry per endpoint the code
+ * under test is allowed to call, which is the list a reviewer checks against
+ * the real API.
  */
 const FAKE_ROUTES: readonly FakeRoute[] = [
   // The OAuth `code` exchange — github.com rather than api.github.com, but the
@@ -304,11 +291,8 @@ export function createFakeGithub(options: FakeGithubOptions = {}): FakeGithub {
   let failures = 0;
 
   /**
-   * The injected failure, when this call is one of the ones it claims.
-   *
-   * Split out of `fetchFn` rather than inlined because it is the half with a
-   * policy in it — how many calls fail, and what the branch looks like
-   * afterwards — while the caller around it is plumbing.
+   * The injected failure, when this call is one of the ones it claims — how
+   * many calls fail, and what the branch looks like afterwards.
    */
   const injectedFailure = (call: GithubCall): Response | null => {
     const fail = options.failWith;

@@ -1,6 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The template-contract harness, with the vitest spawn faked.
+ * The template-contract harness, with the vitest spawn faked. The real
+ * spawner (`spawnCommand`) starts child processes, so its spec is the
+ * `.scenario.` sibling.
  *
  * What a unit test can reach here is everything except the live model run, and
  * that is most of the risk: the selection (which starter is held to which
@@ -14,27 +16,24 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   CONTRACT_FILE,
   type ContractRunner,
   contractWorkspace,
   readContract,
   runTemplateContract,
-  spawnCommand,
   TEMPLATES_DIR,
   templateNamed,
 } from "./studio-template-contract.ts";
 
-const scratches: string[] = [];
-afterEach(async () => {
-  for (const dir of scratches.splice(0)) await rm(dir, { recursive: true, force: true });
-});
-
-/** A scratch path that does not exist yet — `runTemplateContract` creates it. */
+/**
+ * A scratch path that does not exist yet — `runTemplateContract` creates it.
+ * Removed when the calling test finishes.
+ */
 async function scratch(): Promise<string> {
   const base = await mkdtemp(path.join(tmpdir(), "aai-contract-"));
-  scratches.push(base);
+  onTestFinished(() => rm(base, { recursive: true, force: true }));
   return path.join(base, "workspace");
 }
 
@@ -240,75 +239,5 @@ describe("runTemplateContract", () => {
       run: fakeRunner(0),
     });
     expect(result.outcome).toBe("passed");
-  });
-});
-
-describe("spawnCommand", () => {
-  test("a green command reports code 0", async () => {
-    const result = await spawnCommand("node", ["-e", ""], { env: {}, timeoutMs: 10_000 })(
-      process.cwd(),
-    );
-    expect(result.code).toBe(0);
-  });
-
-  test("a non-zero exit is reported, not thrown", async () => {
-    const result = await spawnCommand("node", ["-e", "process.exit(3)"], {
-      env: {},
-      timeoutMs: 10_000,
-    })(process.cwd());
-    expect(result.code).toBe(3);
-  });
-
-  test("BOTH streams are captured", async () => {
-    // A vitest failure writes its assertion to stdout and its summary to
-    // stderr; keeping one loses half the only diagnostic the note carries.
-    const result = await spawnCommand(
-      "node",
-      ["-e", "process.stdout.write('OUT');process.stderr.write('ERR');process.exit(1)"],
-      { env: {}, timeoutMs: 10_000 },
-    )(process.cwd());
-    expect(result.output).toContain("OUT");
-    expect(result.output).toContain("ERR");
-  });
-
-  test("the child sees the env it was handed", async () => {
-    const result = await spawnCommand(
-      "node",
-      ["-e", "process.stdout.write(process.env.AAI_X??'')"],
-      {
-        env: { AAI_X: "seen" },
-        timeoutMs: 10_000,
-      },
-    )(process.cwd());
-    expect(result.output).toContain("seen");
-  });
-
-  test("it runs in the directory it was given", async () => {
-    const dir = await scratch();
-    await mkdir(dir, { recursive: true });
-    const result = await spawnCommand("node", ["-e", "process.stdout.write(process.cwd())"], {
-      env: {},
-      timeoutMs: 10_000,
-    })(dir);
-    // realpath, because macOS resolves /var to /private/var.
-    expect(result.output).toContain(path.basename(dir));
-  });
-
-  test("a command that cannot start resolves as a failure", async () => {
-    // Not a throw: a contract that could not run is a contract that did not
-    // pass, and the reason belongs in the note beside the other failures.
-    const result = await spawnCommand("aai-no-such-binary", [], { env: {}, timeoutMs: 10_000 })(
-      process.cwd(),
-    );
-    expect(result.code).toBe(1);
-    expect(result.output).toMatch(/ENOENT|not found|spawn/i);
-  });
-
-  test("a wedged child is killed and reported rather than hanging", async () => {
-    const result = await spawnCommand("node", ["-e", "setTimeout(()=>{}, 60000)"], {
-      env: {},
-      timeoutMs: 250,
-    })(process.cwd());
-    expect(result.code).toBe(1);
   });
 });

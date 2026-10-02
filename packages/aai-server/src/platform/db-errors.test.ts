@@ -56,7 +56,7 @@ describe("isPlatformDbUnreachable", () => {
       "53300",
       "57P03",
     ]) {
-      expect(isPlatformDbUnreachable(coded(code))).toBe(true);
+      expect.soft(isPlatformDbUnreachable(coded(code)), code).toBe(true);
     }
   });
 
@@ -65,7 +65,7 @@ describe("isPlatformDbUnreachable", () => {
     // unique_violation, `42703` undefined_column: all server faults or caller
     // bugs, none of them fixed by retrying.
     for (const code of ["42P01", "23505", "42703"]) {
-      expect(isPlatformDbUnreachable(coded(code))).toBe(false);
+      expect.soft(isPlatformDbUnreachable(coded(code)), code).toBe(false);
     }
     expect(isPlatformDbUnreachable(new Error("boom"))).toBe(false);
     expect(isPlatformDbUnreachable("not an error at all")).toBe(false);

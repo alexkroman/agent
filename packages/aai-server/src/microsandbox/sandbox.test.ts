@@ -9,90 +9,21 @@
  * makes this backend quietly stop resembling production.
  */
 
-import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { GUEST_SCRATCH_DIR } from "../guest/exec-env.ts";
 import { GUEST_ROUTES } from "../guest/routes.ts";
-import { createFakeGuestSocket } from "../sandbox/_vm-test-utils.ts";
+import { createFakeGuestSocket, makeHarnessFile } from "../sandbox/_vm-test-utils.ts";
 import { SandboxNameTakenError } from "../sandbox/directory.ts";
+import { makeMicrosandboxCtx } from "./_test-utils.ts";
 import {
   _internals,
   LOCAL_GUEST_IMAGE_TAG,
-  type MicrosandboxCreateParams,
-  type MicrosandboxHandle,
-  type MicrosandboxSpawnContext,
   microsandboxHarnessImageTag,
   microsandboxImageRef,
   spawnMicrosandboxWarm,
 } from "./sandbox.ts";
-
-// ── Fakes ────────────────────────────────────────────────────────────────────
-
-/** Named so an intentional no-op is not an empty block. */
-const noop = (): undefined => undefined;
-
-const emptyStream = (): ReadableStream<Uint8Array> =>
-  new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.close();
-    },
-  });
-
-type FakeSandbox = {
-  ctx: MicrosandboxSpawnContext;
-  created: MicrosandboxCreateParams[];
-  execs: string[][];
-  writes: { path: string; data: string }[];
-  stops: number;
-};
-
-function makeCtx(): FakeSandbox {
-  const created: MicrosandboxCreateParams[] = [];
-  const execs: string[][] = [];
-  const writes: { path: string; data: string }[] = [];
-  const state = { stops: 0 };
-  const handle: MicrosandboxHandle = {
-    exec: async (command) => {
-      execs.push(command);
-      return {
-        stdout: emptyStream(),
-        stderr: emptyStream(),
-        // Never settles: a spawned guest does not exit during a spawn test.
-        wait: () => new Promise<number>(noop),
-        kill: noop,
-      };
-    },
-    writeFile: async (path, data) => {
-      writes.push({ path, data });
-    },
-    stop: async () => {
-      state.stops += 1;
-    },
-  };
-  return {
-    created,
-    execs,
-    writes,
-    get stops() {
-      return state.stops;
-    },
-    ctx: {
-      createSandbox: async (params) => {
-        created.push(params);
-        return handle;
-      },
-    },
-  };
-}
-
-async function makeHarnessFile(content = "// harness"): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "aai-microsandbox-test-"));
-  const path = join(dir, "harness.mjs");
-  await writeFile(path, content, "utf-8");
-  return path;
-}
 
 // ── The image a guest boots from ─────────────────────────────────────────────
 
@@ -185,7 +116,7 @@ describe("procFromExec", () => {
 
 describe("spawnMicrosandboxWarm", () => {
   it("boots the guest image and dials the control channel with its bearer", async () => {
-    const fake = makeCtx();
+    const fake = makeMicrosandboxCtx();
     const socket = createFakeGuestSocket();
     const dialed: { url: string; token: string }[] = [];
     vi.stubEnv("GUEST_IMAGE_REGISTRY", undefined);
@@ -199,9 +130,9 @@ describe("spawnMicrosandboxWarm", () => {
       },
     );
 
-    const created = fake.created[0];
+    const created = fake.createSandbox.mock.calls[0]?.[0];
     expect(created?.imageRef).toBe(LOCAL_GUEST_IMAGE_TAG);
-    expect(fake.execs[0]).toEqual(["node", "/opt/aai/harness.mjs"]);
+    expect(fake.exec.mock.calls[0]?.[0]).toEqual(["node", "/opt/aai/harness.mjs"]);
     expect(dialed[0]?.url).toContain(GUEST_ROUTES.control);
     expect(dialed[0]?.token).toBe(warm.token);
     // A studio guest carries no tenant DSNs — but it DOES deploy, and the
@@ -218,7 +149,7 @@ describe("spawnMicrosandboxWarm", () => {
     // pinned, no progress — and reads as a hung build. `subprocess` cannot see
     // this: there the limit is V8's --max-old-space-size on a process with the
     // whole machine behind it, so leaving it unset costs nothing.
-    const fake = makeCtx();
+    const fake = makeMicrosandboxCtx();
     vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", undefined);
     vi.stubEnv("SANDBOX_CPU_LIMIT", undefined);
 
@@ -230,13 +161,13 @@ describe("spawnMicrosandboxWarm", () => {
 
     // Modal reserves 1 core / 1024 MiB and caps at 4 / 4096 for builds; a VM
     // has no burst, so the cap is the number to take.
-    expect(fake.created[0]?.memoryLimitMiB).toBe(4096);
-    expect(fake.created[0]?.cpus).toBe(4);
+    expect(fake.createSandbox.mock.calls[0]?.[0]?.memoryLimitMiB).toBe(4096);
+    expect(fake.createSandbox.mock.calls[0]?.[0]?.cpus).toBe(4);
     await warm.cleanup();
   });
 
   it("lets a declared limit win over the default", async () => {
-    const fake = makeCtx();
+    const fake = makeMicrosandboxCtx();
     vi.stubEnv("SANDBOX_MEMORY_MB", "512");
     vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "2048");
 
@@ -246,12 +177,12 @@ describe("spawnMicrosandboxWarm", () => {
       async () => createFakeGuestSocket().ws,
     );
 
-    expect(fake.created[0]?.memoryLimitMiB).toBe(2048);
+    expect(fake.createSandbox.mock.calls[0]?.[0]?.memoryLimitMiB).toBe(2048);
     await warm.cleanup();
   });
 
   it("hands the guest a MINIMAL env — never the server's own", async () => {
-    const fake = makeCtx();
+    const fake = makeMicrosandboxCtx();
     const socket = createFakeGuestSocket();
     // The parity rule: agent code that wrongly reads process.env must fail here
     // the way it fails in production.
@@ -263,7 +194,7 @@ describe("spawnMicrosandboxWarm", () => {
       async () => socket.ws,
     );
 
-    const env = fake.created[0]?.env ?? {};
+    const env = fake.createSandbox.mock.calls[0]?.[0]?.env ?? {};
     expect(env.SUPABASE_DB_URL).toBeUndefined();
     expect(env.AAI_GUEST_TOKEN).toBe(warm.token);
     // Absent on purpose: the harness binds 0.0.0.0 exactly as under Modal, and
@@ -288,7 +219,7 @@ describe("spawnMicrosandboxWarm", () => {
     // `/tmp` is not a fact a spawner should know. It was named HERE and in two
     // other builders until that function had room for it (`guest/exec-env.ts`),
     // and `guest/exec-env.test.ts` is what keeps the copies from coming back.
-    const fake = makeCtx();
+    const fake = makeMicrosandboxCtx();
     const socket = createFakeGuestSocket();
 
     const warm = await spawnMicrosandboxWarm(
@@ -297,12 +228,12 @@ describe("spawnMicrosandboxWarm", () => {
       async () => socket.ws,
     );
 
-    expect(fake.created[0]?.env.TMPDIR).toBe(GUEST_SCRATCH_DIR);
+    expect(fake.createSandbox.mock.calls[0]?.[0]?.env.TMPDIR).toBe(GUEST_SCRATCH_DIR);
     await warm.cleanup();
   });
 
   it("stops the VM when the dial fails, rather than leaking it", async () => {
-    const fake = makeCtx();
+    const fake = makeMicrosandboxCtx();
     await expect(
       spawnMicrosandboxWarm(
         { harnessPath: await makeHarnessFile(), name: "warm-3" },
@@ -312,11 +243,11 @@ describe("spawnMicrosandboxWarm", () => {
         },
       ),
     ).rejects.toThrow(/Microsandbox spawn failed/);
-    expect(fake.stops).toBe(1);
+    expect(fake.stop).toHaveBeenCalledOnce();
   });
 
   it("fails with the missing path when the harness was never built", async () => {
-    const fake = makeCtx();
+    const fake = makeMicrosandboxCtx();
     await expect(
       spawnMicrosandboxWarm(
         { harnessPath: join(tmpdir(), "aai-does-not-exist", "harness.mjs"), name: "warm-4" },
@@ -325,7 +256,7 @@ describe("spawnMicrosandboxWarm", () => {
       ),
     ).rejects.toThrow(/Microsandbox spawn failed/);
     // Nothing was created, so there is nothing to stop.
-    expect(fake.created).toHaveLength(0);
+    expect(fake.createSandbox).not.toHaveBeenCalled();
   });
 });
 
@@ -351,15 +282,11 @@ describe("createReclaimingName", () => {
    * how the first draft of this fix stayed broken).
    */
   function builderFailingOnce(err: unknown) {
-    let calls = 0;
-    const build = () => ({
-      create: async () => {
-        calls += 1;
-        if (calls === 1) throw err;
-        return "sandbox" as const;
-      },
-    });
-    return Object.assign(build, { calls: () => calls });
+    const create = vi
+      .fn<() => Promise<"sandbox">>()
+      .mockRejectedValueOnce(err)
+      .mockResolvedValue("sandbox");
+    return Object.assign(() => ({ create }), { create });
   }
 
   it("removes a CRASHED holder and retries the create", async () => {
@@ -372,7 +299,7 @@ describe("createReclaimingName", () => {
       }),
     ).resolves.toBe("sandbox");
     expect(removed).toEqual(["agent-x-v2"]);
-    expect(builder.calls()).toBe(2);
+    expect(builder.create).toHaveBeenCalledTimes(2);
   });
 
   it("removes a STOPPED holder too", async () => {
@@ -402,7 +329,7 @@ describe("createReclaimingName", () => {
         }),
       ).rejects.toThrow(SandboxNameTakenError);
       expect(removed).toEqual([]);
-      expect(builder.calls()).toBe(1);
+      expect(builder.create).toHaveBeenCalledOnce();
     },
   );
 
@@ -420,7 +347,7 @@ describe("createReclaimingName", () => {
       }),
     ).resolves.toBe("sandbox");
     expect(removed).toEqual([]);
-    expect(builder.calls()).toBe(2);
+    expect(builder.create).toHaveBeenCalledTimes(2);
   });
 
   it("rethrows any OTHER create failure untouched, reading no status", async () => {
