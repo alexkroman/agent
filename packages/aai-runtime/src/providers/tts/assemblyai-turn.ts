@@ -24,9 +24,11 @@ export type SynthesisAck = "is_final" | "flush_done";
 export interface TurnTracker {
   /**
    * Text arrived for a turn. If the previous turn already finished, reset all
-   * per-turn state — nothing from the last turn carries over.
+   * per-turn state — nothing from the last turn carries over — and return
+   * `true`: a new turn began, and it now owns the word timeline (see
+   * {@link TurnTracker.wordsOpen}).
    */
-  onTurnText(): void;
+  onTurnText(): boolean;
   /** A `Generate`+`Flush` pair went out for this turn. */
   onFlushSent(): void;
   /**
@@ -48,7 +50,8 @@ export interface TurnTracker {
    * Barge-in. Abandons the turn's outstanding flushes (their acks will never
    * arrive — the socket is dropped or the queued frames discarded) and emits
    * `done` synchronously. Returns whether a turn was actually in flight; when
-   * none was, it changes nothing.
+   * none was, it changes nothing but the word window, which a cancel closes
+   * either way.
    */
   cancel(): boolean;
   /**
@@ -66,6 +69,14 @@ export interface TurnTracker {
    * otherwise be attributed to the next reply.
    */
   inFlight(): boolean;
+  /**
+   * Does a turn own the word timeline? False before the first turn, and from
+   * a cancel until the next turn's first text. Unlike {@link inFlight} it stays
+   * true past a turn's normal `done`: a `WordBoundaries` frame may TRAIL its
+   * own flush's `FlushDone` (`assemblyai.ts` has the measurement), so the only
+   * window that closes is the one a cancel closes.
+   */
+  wordsOpen(): boolean;
 }
 
 /**
@@ -82,6 +93,8 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
   let turnClosed = false;
   // FlushDone frames already accounted for by an `is_final` Audio frame.
   let flushDoneDebt = 0;
+  // A turn owns the word timeline — see `wordsOpen()`.
+  let wordsOpen = false;
 
   const emitDoneOnce = (): void => {
     if (doneEmitted) return;
@@ -90,9 +103,10 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
   };
 
   return {
-    onTurnText(): void {
-      if (!doneEmitted) return;
+    onTurnText(): boolean {
+      if (!doneEmitted) return false;
       doneEmitted = false;
+      wordsOpen = true;
       turnClosed = false;
       outstandingFlushes = 0;
       // `flushDoneDebt` deliberately survives the turn boundary: it pairs
@@ -103,6 +117,7 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
       // outstanding flushes, emitting `done` while its audio is still
       // streaming. The debt resets only in `cancel()`, where the socket is
       // actually swapped (or its queued frames discarded).
+      return true;
     },
 
     onFlushSent(): void {
@@ -129,6 +144,11 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
     },
 
     cancel(): boolean {
+      // First, and whether or not a turn is in flight. The cancel window
+      // filters the abandoned turn's frames only until `Cancelled`, and `done`
+      // is emitted for it below, so this is what stops a trailing frame
+      // landing on a reply the client has dropped.
+      wordsOpen = false;
       // With no turn in flight the adapter sends no `Cancel` and the socket
       // keeps its frames — including the last turn's trailing `FlushDone`,
       // which the debt still has to absorb. Zeroing it here let that frame
@@ -153,5 +173,7 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
     inFlight(): boolean {
       return !doneEmitted;
     },
+
+    wordsOpen: () => wordsOpen,
   };
 }

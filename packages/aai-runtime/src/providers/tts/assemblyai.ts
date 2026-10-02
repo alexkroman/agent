@@ -90,10 +90,11 @@
  * turn's audio, acks and word timings (never its `Error` frames, which
  * describe the socket rather than the turn). Dropping the connection and
  * reconnecting is the FALLBACK, for a socket that cannot carry the frame or
- * will not answer one. That is one measured rule and lives in
- * `assemblyai-cancel.ts` — read it before changing the barge-in path; this
- * doc claimed for a long time that no cancel frame existed. Text sent while a
- * replacement socket is still connecting is queued and flushed to it on open.
+ * will not answer one. That is one measured rule, and when the socket is
+ * replaced is a statechart in `assemblyai-lifecycle.ts` — read it before
+ * changing the barge-in path; this doc claimed for a long time that no cancel
+ * frame existed. Text sent while a replacement socket is still connecting is
+ * queued and flushed to it on open.
  */
 
 import {
@@ -131,8 +132,12 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../openers.ts";
-import { createCancelBarrier } from "./assemblyai-cancel.ts";
-import { type AssemblyAITtsMessage, handleMessage } from "./assemblyai-frames.ts";
+import {
+  type AssemblyAITtsMessage,
+  type CancelWindow,
+  handleMessage,
+} from "./assemblyai-frames.ts";
+import { createAssemblyAITtsLifecycle } from "./assemblyai-lifecycle.ts";
 import { splitSegment } from "./assemblyai-segment.ts";
 import { createTurnTracker, type SynthesisAck } from "./assemblyai-turn.ts";
 import { createWordTimeline, readWordBoundaries } from "./assemblyai-words.ts";
@@ -214,24 +219,12 @@ export function openAssemblyAITts(
       });
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
-      // Non-null while a post-cancel replacement socket is connecting: frames
-      // queue here and flush to it on open, preserving order.
-      let queued: Record<string, unknown>[] | null = null;
+      // Frames for a post-cancel replacement socket that is still connecting
+      // (the lifecycle's `queueing()`), flushed to it on open in order.
+      const queued: Record<string, unknown>[] = [];
       // Accepted text not yet sent: `Generate` goes out only paired with a
       // `Flush`, so the server never holds unsynthesized text.
       let buffered = "";
-      // Barge-in: the socket survives a cancel, so the abandoned turn's
-      // trailing frames are filtered until the service acknowledges. An
-      // unanswered `Cancel` falls back to the reconnect below.
-      const cancels = createCancelBarrier(() => {
-        if (shell.isClosed()) return;
-        reconnect();
-        // A turn begun since the `Cancel` sent its flushes on the socket just
-        // dropped, and the shut window filtered their acks: none will ever
-        // arrive, so without this its `done` never fires and the pipeline's
-        // flush-wait hangs (`assemblyai-cancel-race.test.ts`).
-        turn.abandonFlushes();
-      });
 
       /** Detach + politely close a socket without emitting anything for it. */
       const dropSocket = (socket: ProviderSocket): void =>
@@ -241,16 +234,17 @@ export function openAssemblyAITts(
         emitter,
         // `ws` is read at teardown time so a close after a cancel-reconnect
         // releases the replacement socket, not the one already dropped.
+        // Closing the lifecycle first stops the ack deadline and any reconnect.
         teardown: () => {
-          cancels.reset();
+          lifecycle.send({ type: "CLOSE" });
           dropSocket(ws);
         },
       });
 
       // Flush/acknowledgement bookkeeping — which ack ends the turn, and the
-      // is_final+FlushDone pair dedup — lives in assemblyai-turn.ts.
+      // is_final+FlushDone pair dedup — lives in assemblyai-turn.ts. No closed
+      // check: the shell's `emit` is already a no-op once the session closes.
       const turn = createTurnTracker(() => {
-        if (shell.isClosed()) return;
         // The turn is over, so text still held here belongs to nothing. Keeping
         // it would splice it into the next turn's first segment.
         buffered = "";
@@ -288,23 +282,30 @@ export function openAssemblyAITts(
       // own, and nothing in the parse distinguishes them. The service does send
       // a `flush_id`, which is the field that would.
       const timeline = createWordTimeline();
-      // False while no turn owns the word timeline: before the first turn, and
-      // from a cancel until the next turn's first text.
-      let wordsTurnOpen = false;
+      // Closed while no turn owns the word timeline: before the first turn, and
+      // from a cancel until the next turn's first text (`turn.wordsOpen()`).
       const onWords = (msg: AssemblyAITtsMessage): void => {
-        if (!wordsTurnOpen) return;
+        if (!turn.wordsOpen()) return;
         const words = timeline.rebase(readWordBoundaries(msg));
         if (words.length > 0) shell.emit("words", words);
       };
 
+      // The `Cancel` → `Cancelled` window, as the frame handler reads it.
+      const cancels: CancelWindow = {
+        abandoned: () => lifecycle.abandoned(),
+        onCancelled: () => lifecycle.send({ type: "CANCELLED" }),
+      };
+
+      // No closed checks in these handlers: every socket is detached by
+      // `dropSocket` before it is released, the session's own included, and
+      // what a late frame could reach — the shell, the turn, the lifecycle — is
+      // inert once the session has closed.
       const attach = (socket: ProviderSocket): void => {
         socket.on("message", (raw: WebSocket.Data) => {
-          if (shell.isClosed()) return;
           handleMessage(raw, shell, onSynthesisComplete, onWords, cancels);
         });
         socket.on("error", (err: Error) => shell.onSocketError(err));
         socket.on("close", (code: number) => {
-          if (shell.isClosed()) return;
           // Unexpected server-side close: release the turn so the pipeline
           // doesn't wait for an utterance that will never complete.
           turn.forceDone();
@@ -320,51 +321,60 @@ export function openAssemblyAITts(
       };
       attach(ws);
 
-      /** Replace the connection after a mid-turn cancel — see the module doc. */
-      const reconnect = (): void => {
-        // The abandoned turn's frames die with the socket, so the barrier has
-        // nothing left to filter — and leaving it shut would mute the session.
-        cancels.reset();
-        dropSocket(ws);
-        const frames: Record<string, unknown>[] = [];
-        queued = frames;
-        let next: ProviderSocket;
-        try {
-          next = connect();
-        } catch (cause) {
-          queued = null;
-          shell.streamError(errorMessage(cause));
-          return;
-        }
-        ws = next;
-        // Deadline, not just open-or-error: this open runs mid-session with
-        // nothing upstream bounding it, and a black-holed connect (no `open`,
-        // no `error`) would leave `queued` non-null forever — every later
-        // turn's frames queue "successfully" while nothing reaches the wire.
-        void waitForOpen(next, { timeoutMs: TTS_RECONNECT_TIMEOUT_MS }).then(
-          () => {
-            // Superseded (closed, or cancelled again) — not the live socket.
-            if (shell.isClosed() || ws !== next) return;
-            attach(next);
-            queued = null;
-            for (const frame of frames) next.send(JSON.stringify(frame));
-          },
-          (cause: unknown) => {
-            if (shell.isClosed() || ws !== next) return;
-            // Release the failed socket now — on timeout it may still open
-            // later and would otherwise linger connected until session close.
-            dropSocket(next);
-            queued = null;
-            shell.streamError(
-              `AssemblyAI TTS: reconnect after cancel failed: ${errorMessage(cause)}`,
-            );
-          },
-        );
-      };
+      // Barge-in, and the reconnect that is its fallback — WHEN is the
+      // statechart in assemblyai-lifecycle.ts; HOW is here. The socket survives
+      // a cancel, so the abandoned turn's trailing frames are filtered until
+      // the service acknowledges; a socket that cannot carry the `Cancel`, or
+      // does not answer it in time, is replaced.
+      const lifecycle = createAssemblyAITtsLifecycle({
+        socketOpen: () => ws.readyState === WebSocket.OPEN,
+        sendCancel: () => ws.send(JSON.stringify({ type: "Cancel" })),
+        replaceSocket: (signal) => {
+          // The abandoned turn's frames die with the socket, so nothing is left
+          // to filter or to send.
+          dropSocket(ws);
+          queued.length = 0;
+          let opened: Promise<void>;
+          try {
+            ws = connect();
+            // Deadline, not just open-or-error: this open runs mid-session
+            // with nothing upstream bounding it, and a black-holed connect (no
+            // `open`, no `error`) would leave the session queueing forever —
+            // every later turn's frames queue "successfully" while nothing
+            // reaches the wire.
+            opened = waitForOpen(ws, { timeoutMs: TTS_RECONNECT_TIMEOUT_MS, signal });
+          } catch (cause) {
+            opened = Promise.reject(cause);
+          }
+          // A turn begun since an unanswered `Cancel` sent its flushes on the
+          // socket just dropped, and the shut window filtered their acks: none
+          // will ever arrive, so without this its `done` never fires and the
+          // pipeline's flush-wait hangs (`assemblyai-cancel-race.test.ts`).
+          // After a `Cancel` that could not be sent, `turn.cancel()` has
+          // already forgotten them and this changes nothing.
+          turn.abandonFlushes();
+          return opened;
+        },
+        adoptSocket: () => {
+          attach(ws);
+          for (const frame of queued.splice(0)) ws.send(JSON.stringify(frame));
+        },
+        dropQueue: () => {
+          queued.length = 0;
+        },
+        reconnectFailed: (cause) => {
+          // Release the failed socket now — on timeout it may still open later
+          // and would otherwise linger connected until session close.
+          dropSocket(ws);
+          shell.streamError(
+            `AssemblyAI TTS: reconnect after cancel failed: ${errorMessage(cause)}`,
+          );
+        },
+      });
 
+      // No closed check: every caller is a session method that makes its own.
       const send = (payload: Record<string, unknown>): boolean => {
-        if (shell.isClosed()) return false;
-        if (queued !== null) {
+        if (lifecycle.queueing()) {
           queued.push(payload);
           return true;
         }
@@ -382,11 +392,7 @@ export function openAssemblyAITts(
           // the word timeline included (it re-anchors this turn's first frame
           // at zero). This is also what CLOSES the previous turn's word window:
           // a frame arriving from here on is rebased onto THIS turn.
-          if (!turn.inFlight()) {
-            timeline.reset();
-            wordsTurnOpen = true;
-          }
-          turn.onTurnText();
+          if (turn.onTurnText()) timeline.reset();
           buffered += text;
           // Synthesize each segment as it lands rather than waiting for the end
           // of the turn — see the module doc. Loops because one delta can carry
@@ -420,37 +426,23 @@ export function openAssemblyAITts(
         cancel() {
           if (shell.isClosed()) return;
           // The cancelled turn's flushes are abandoned: their acknowledgements
-          // are either filtered by the barrier below, discarded with the queued
+          // are either filtered by the cancel window, discarded with the queued
           // frames, or unobservable on a dropped socket. `done` is emitted
           // synchronously — the orchestrator's state machine advances on it,
           // and barge-in must not be microtask-deferred.
           buffered = "";
           timeline.reset();
-          // The abandoned turn's timings must not reach the session. The cancel
-          // barrier filters this turn's frames only until `Cancelled`, and
-          // `done` has already been emitted for it, so closing the window here
-          // is what stops a trailing frame landing on a reply the client has
-          // dropped.
-          wordsTurnOpen = false;
+          // Also closes the word window: the abandoned turn's timings must not
+          // reach the session (see `TurnTracker.cancel`).
           const turnInFlight = turn.cancel();
           // Idempotent: nothing sent since the last done means nothing is
           // buffered server-side and no audio is in flight.
           if (!turnInFlight) return;
-          if (queued !== null) {
-            // The replacement socket is still connecting, so the cancelled
-            // turn's frames never left the process — dropping them IS the cancel.
-            queued.length = 0;
-            return;
-          }
           // `Cancel` discards the server's buffered text AND aborts synthesis
-          // in progress, leaving the socket usable — measured; see the module
-          // doc. A socket that cannot carry the frame is one the reconnect is
-          // for.
-          if (!send({ type: "Cancel" })) {
-            reconnect();
-            return;
-          }
-          cancels.arm();
+          // in progress, leaving the socket usable — measured; see
+          // assemblyai-lifecycle.ts, which also decides what a socket that
+          // cannot carry the frame, or one still connecting, gets instead.
+          lifecycle.send({ type: "CANCEL" });
         },
 
         on: shell.on,

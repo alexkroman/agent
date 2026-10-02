@@ -181,4 +181,27 @@ describe("createTurnTracker", () => {
     turn.forceDone();
     expect(doneCount()).toBe(1);
   });
+
+  test("onTurnText says when it began a new turn", () => {
+    const { turn } = tracker();
+    expect(turn.onTurnText()).toBe(true);
+    expect(turn.onTurnText()).toBe(false); // same turn
+    turn.closeTurn();
+    expect(turn.onTurnText()).toBe(true);
+  });
+
+  test("the word window opens with a turn, outlives its done, and closes on cancel", () => {
+    const { turn } = tracker();
+    expect(turn.wordsOpen()).toBe(false); // before the first turn
+    turn.onTurnText();
+    expect(turn.wordsOpen()).toBe(true);
+    turn.closeTurn(); // done: a trailing WordBoundaries still belongs to it
+    expect(turn.inFlight()).toBe(false);
+    expect(turn.wordsOpen()).toBe(true);
+    expect(turn.cancel()).toBe(false); // nothing in flight, but still closes it
+    expect(turn.wordsOpen()).toBe(false);
+    turn.onTurnText();
+    turn.cancel();
+    expect(turn.wordsOpen()).toBe(false);
+  });
 });

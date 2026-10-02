@@ -2,8 +2,8 @@
 /**
  * The AssemblyAI TTS frame vocabulary as `handleMessage` reads it, one frame at
  * a time over a real session shell: audio decodes, both acknowledgements end
- * the synthesis, `Cancelled` closes the barrier, and inside the barrier only
- * `Error` gets through.
+ * the synthesis, `Cancelled` ends the cancel window, and inside that window
+ * only `Error` gets through.
  */
 
 import { createNanoEvents } from "nanoevents";
@@ -11,8 +11,8 @@ import { describe, expect, test, vi } from "vitest";
 import { createTtsSessionShell } from "../_utils.ts";
 import type { TtsError, TtsEvents } from "../openers.ts";
 import { pcmBase64 } from "./_fake-ws-test-utils.ts";
-import { createCancelBarrier } from "./assemblyai-cancel.ts";
-import { handleMessage } from "./assemblyai-frames.ts";
+import { type CancelWindow, handleMessage } from "./assemblyai-frames.ts";
+import { createAssemblyAITtsLifecycle } from "./assemblyai-lifecycle.ts";
 
 function setup() {
   const emitter = createNanoEvents<TtsEvents>();
@@ -23,10 +23,23 @@ function setup() {
   emitter.on("error", (err) => errors.push(err));
   const onComplete = vi.fn();
   const onWords = vi.fn();
-  const cancels = createCancelBarrier(() => undefined);
+  // The real window, over a socket that always carries the `Cancel`.
+  const lifecycle = createAssemblyAITtsLifecycle({
+    socketOpen: () => true,
+    sendCancel: () => undefined,
+    replaceSocket: () => Promise.resolve(),
+    adoptSocket: () => undefined,
+    dropQueue: () => undefined,
+    reconnectFailed: () => undefined,
+  });
+  const cancels: CancelWindow = {
+    abandoned: () => lifecycle.abandoned(),
+    onCancelled: () => lifecycle.send({ type: "CANCELLED" }),
+  };
+  const shut = (): void => lifecycle.send({ type: "CANCEL" });
   const deliver = (frame: unknown): void =>
     handleMessage(JSON.stringify(frame), shell, onComplete, onWords, cancels);
-  return { shell, audio, errors, onComplete, onWords, cancels, deliver };
+  return { shell, audio, errors, onComplete, onWords, cancels, shut, deliver };
 }
 
 describe("handleMessage", () => {
@@ -85,8 +98,8 @@ describe("handleMessage", () => {
   });
 
   test("inside the cancel window only Error passes; Cancelled reopens it", () => {
-    const { audio, errors, deliver, onComplete, cancels } = setup();
-    cancels.arm();
+    const { audio, errors, deliver, onComplete, cancels, shut } = setup();
+    shut();
     deliver({ type: "Audio", audio: pcmBase64([1]) });
     deliver({ type: "FlushDone" });
     deliver({ type: "Error", error_code: 1, error: "socket" });

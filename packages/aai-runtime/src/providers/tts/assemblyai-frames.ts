@@ -4,7 +4,7 @@
  * one handler that routes them.
  *
  * Split out for the same reason `assemblyai-segment.ts`, `assemblyai-turn.ts`
- * and `assemblyai-cancel.ts` are — the adapter owns socket and turn lifecycle,
+ * and `assemblyai-lifecycle.ts` are — the adapter owns socket and turn lifecycle,
  * this owns one rule.
  *
  * **The client->server vocabulary is exactly `Generate`, `Flush`, `Terminate`,
@@ -28,8 +28,18 @@ import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import type { SessionShell } from "../_utils.ts";
 import type { TtsEvents } from "../openers.ts";
-import type { CancelBarrier } from "./assemblyai-cancel.ts";
 import type { SynthesisAck } from "./assemblyai-turn.ts";
+
+/**
+ * The cancel window as the frame handler reads it: the `cancelling` phase of
+ * `assemblyai-lifecycle.ts`, and the acknowledgement that ends it.
+ */
+export interface CancelWindow {
+  /** Is a cancelled turn's audio still arriving? */
+  abandoned(): boolean;
+  /** The service acknowledged one `Cancel`. */
+  onCancelled(): void;
+}
 
 export interface AssemblyAITtsMessage {
   type:
@@ -79,7 +89,7 @@ export function handleMessage(
   shell: SessionShell<TtsEvents>,
   onSynthesisComplete: (ack: SynthesisAck) => void,
   onWords: (msg: AssemblyAITtsMessage) => void,
-  cancels: CancelBarrier,
+  cancels: CancelWindow,
 ): void {
   const msg = safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
     | AssemblyAITtsMessage
