@@ -95,9 +95,9 @@ describe("resolveAllBuiltins defs", () => {
     // def`. Reachable through /runtime's untyped `builtinTools`.
     for (const name of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
       const { defs, schemas, guidance } = resolveAllBuiltins([name]);
-      expect(defs).toEqual({});
-      expect(schemas).toEqual([]);
-      expect(guidance).toEqual([]);
+      expect(defs, String(name)).toEqual({});
+      expect(schemas, String(name)).toEqual([]);
+      expect(guidance, String(name)).toEqual([]);
     }
   });
 

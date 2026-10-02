@@ -59,8 +59,8 @@ describe("dead-air cover phrases", () => {
 
   test("every phrase is short, speakable, and carries no markup", () => {
     for (const phrase of [DEAD_AIR_OPENING_PHRASE, ...DEAD_AIR_COVER_PHRASES]) {
-      expect(phrase.trim()).toBe(phrase);
-      expect(phrase.length).toBeLessThan(60);
+      expect(phrase.trim(), phrase).toBe(phrase);
+      expect(phrase.length, phrase).toBeLessThan(60);
       // Filler is spoken aloud by TTS — anything unspeakable is a defect.
       expect(phrase).not.toMatch(/[*_#`<>[\]{}]/);
     }

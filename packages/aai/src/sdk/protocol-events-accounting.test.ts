@@ -73,8 +73,14 @@ describe("usage.updated", () => {
 
   test("a negative or fractional count is refused on every counter", () => {
     for (const field of ["inputTokens", "outputTokens", "totalTokens", "steps"] as const) {
-      expect(UsageUpdatedEventSchema.safeParse({ ...USAGE, [field]: -1 }).success).toBe(false);
-      expect(UsageUpdatedEventSchema.safeParse({ ...USAGE, [field]: 0.5 }).success).toBe(false);
+      expect(
+        UsageUpdatedEventSchema.safeParse({ ...USAGE, [field]: -1 }).success,
+        String(field),
+      ).toBe(false);
+      expect(
+        UsageUpdatedEventSchema.safeParse({ ...USAGE, [field]: 0.5 }).success,
+        String(field),
+      ).toBe(false);
     }
   });
 
@@ -90,7 +96,7 @@ describe("usage.updated", () => {
   test("every counter is required — a partial report is not a report", () => {
     for (const field of ["inputTokens", "outputTokens", "totalTokens", "steps"] as const) {
       const { [field]: _dropped, ...rest } = USAGE;
-      expect(UsageUpdatedEventSchema.safeParse(rest).success).toBe(false);
+      expect(UsageUpdatedEventSchema.safeParse(rest).success, String(field)).toBe(false);
     }
   });
 });

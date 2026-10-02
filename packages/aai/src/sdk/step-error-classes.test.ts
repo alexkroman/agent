@@ -97,8 +97,8 @@ describe("the brand", () => {
 
   test("answers false for everything that is not an object", () => {
     for (const value of [undefined, null, "fatal", 7, true, Symbol("fatal")]) {
-      expect(FatalError.is(value)).toBe(false);
-      expect(RetryableError.is(value)).toBe(false);
+      expect(FatalError.is(value), String(value)).toBe(false);
+      expect(RetryableError.is(value), String(value)).toBe(false);
     }
   });
 

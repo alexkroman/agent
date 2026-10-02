@@ -141,7 +141,9 @@ describe("stepPlaceCall", () => {
       },
     ];
     for (const options of bad) {
-      await expect(stepPlaceCall(options)).rejects.toMatchObject({ retryable: false });
+      await expect(stepPlaceCall(options), JSON.stringify(options)).rejects.toMatchObject({
+        retryable: false,
+      });
     }
     expect(twilio.calls).toHaveLength(0);
   });
@@ -183,8 +185,8 @@ describe("isCallOver", () => {
       ["busy", "canceled", "completed", "failed", "no-answer"].sort(),
     );
     const live: PlacedCallStatus[] = ["queued", "ringing", "in-progress"];
-    for (const status of live) expect(isCallOver(status)).toBe(false);
-    for (const status of CALL_OVER_STATUSES) expect(isCallOver(status)).toBe(true);
+    for (const status of live) expect(isCallOver(status), String(status)).toBe(false);
+    for (const status of CALL_OVER_STATUSES) expect(isCallOver(status), String(status)).toBe(true);
   });
 
   test("an unknown status is not over", () => {
