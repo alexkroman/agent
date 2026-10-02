@@ -25,6 +25,7 @@
 // Global `WebSocket` (Node 22+), so this has no dependencies.
 
 import { valueReader } from "./_args.mjs";
+import { percentile } from "./_upload-sweep-report.mjs";
 
 const arg = valueReader(process.argv.slice(2));
 
@@ -143,13 +144,8 @@ const started = Date.now();
 await Promise.all(Array.from({ length: SESSIONS }, () => runSession(started + DURATION_MS)));
 const elapsedMs = Date.now() - started;
 
-const sorted = [...latencies].sort((a, b) => a - b);
-const pct = (p) =>
-  sorted.length > 0
-    ? Number(
-        sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)].toFixed(1),
-      )
-    : 0;
+/** Nearest-rank, to 0.1ms — the one `percentile` `upload-sweep.mjs` reports with too. */
+const pct = (p) => Number(percentile(latencies, p).toFixed(1));
 
 console.log(
   JSON.stringify({

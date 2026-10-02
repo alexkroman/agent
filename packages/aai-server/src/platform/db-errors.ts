@@ -43,8 +43,8 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import { causes } from "../_causes.ts";
 import type { CloseableDb, ReservedDb } from "@alexkroman1/aai-runtime";
+import { causes } from "../_causes.ts";
 
 /**
  * Seconds the platform pools wait for a NEW connection before failing. Bounds

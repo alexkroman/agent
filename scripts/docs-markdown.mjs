@@ -78,16 +78,12 @@ import { execFileSync } from "node:child_process";
 import { cpSync, globSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseScriptArgs } from "./_args.mjs";
-import { compareNames, repoRoot } from "./_fs.mjs";
+import { parseCheckFlag } from "./_args.mjs";
+import { compareNames, parseJsonText, repoRoot } from "./_fs.mjs";
 import { resolveLinks } from "./docs-markdown-links.mjs";
 
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
-const { values: FLAGS } = parseScriptArgs({
-  script: import.meta.url,
-  options: { check: { type: "boolean" } },
-});
-const CHECK = FLAGS.check === true;
+const CHECK = parseCheckFlag(import.meta.url);
 
 /** Where the committed reference lives, repo-relative. */
 const OUT_DIR = "docs/api";
@@ -263,17 +259,13 @@ const JSONC_TOKEN = /("(?:\\.|[^"\\])*")|\/\/[^\n]*|\/\*[\s\S]*?\*\/|,(?=\s*[}\]
  * Trailing commas go too, since a config a human hand-edits will eventually
  * have one and `JSON.parse` rejects it with a message that names neither the
  * file nor the line.
+ *
+ * @param {string} path
+ * @returns {any}
  */
 function parseJsonc(path) {
   const text = readFileSync(path, "utf8").replace(JSONC_TOKEN, (_match, string) => string ?? "");
-  try {
-    return JSON.parse(text);
-  } catch (err) {
-    throw new Error(
-      `failed to parse ${path}: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err },
-    );
-  }
+  return parseJsonText(text, path);
 }
 
 /** Every `exports` key of `manifest` whose target declares `types`. */
