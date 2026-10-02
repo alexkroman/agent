@@ -126,8 +126,8 @@ describe("GateProblem", () => {
   test("shows the message, the detail, and a working retry", () => {
     const onRetry = vi.fn();
     render(<GateProblem message="Busy" detail="Service unavailable" onRetry={onRetry} />);
-    expect(screen.getByText("Busy")).toBeDefined();
-    expect(screen.getByText("Service unavailable")).toBeDefined();
+    expect(screen.getByText("Busy")).toBeInTheDocument();
+    expect(screen.getByText("Service unavailable")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
@@ -145,7 +145,7 @@ describe("GateProblem", () => {
 
   test("no retry offered when trying again cannot help", () => {
     render(<GateProblem message="Sign-in is not configured on this server" />);
-    expect(screen.getByText("Sign-in is not configured on this server")).toBeDefined();
+    expect(screen.getByText("Sign-in is not configured on this server")).toBeInTheDocument();
     expect(screen.queryByRole("button")).toBeNull();
   });
 });

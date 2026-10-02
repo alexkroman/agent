@@ -46,7 +46,7 @@ describe("Controls: click interactions", () => {
 
     expect(toggle).toHaveBeenCalledOnce();
     expect(core.getSnapshot().running).toBe(false);
-    expect(screen.getByText("Resume")).toBeDefined();
+    expect(screen.getByText("Resume")).toBeInTheDocument();
   });
 
   test("clicking New Conversation restarts the SESSION, it does not reset it", () => {
@@ -91,7 +91,7 @@ describe("StartScreen: start flow", () => {
     );
 
     // Shows start button, not children
-    expect(screen.getByText("Start Conversation")).toBeDefined();
+    expect(screen.getByText("Start Conversation")).toBeInTheDocument();
     expect(screen.queryByTestId("chat")).toBeNull();
 
     // Click start
@@ -99,7 +99,7 @@ describe("StartScreen: start flow", () => {
 
     // start() sets started=true, which notifies subscribers and triggers re-render
     expect(screen.queryByText("Start Conversation")).toBeNull();
-    expect(screen.getByTestId("chat")).toBeDefined();
+    expect(screen.getByTestId("chat")).toBeInTheDocument();
   });
 
   test("renders custom button text", () => {
@@ -110,7 +110,7 @@ describe("StartScreen: start flow", () => {
       </StartScreen>,
       core,
     );
-    expect(screen.getByText("Begin Session")).toBeDefined();
+    expect(screen.getByText("Begin Session")).toBeInTheDocument();
   });
 
   test("renders title and subtitle", () => {
@@ -121,8 +121,8 @@ describe("StartScreen: start flow", () => {
       </StartScreen>,
       core,
     );
-    expect(screen.getByText("Pizza Bot")).toBeDefined();
-    expect(screen.getByText("Order by voice")).toBeDefined();
+    expect(screen.getByText("Pizza Bot")).toBeInTheDocument();
+    expect(screen.getByText("Order by voice")).toBeInTheDocument();
   });
 });
 
@@ -224,7 +224,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
     );
     expect(screen.getByText("second")).toBe(secondBubbleBefore);
     expect(container.textContent).not.toContain("first");
-    expect(screen.getByText("third")).toBeDefined();
+    expect(screen.getByText("third")).toBeInTheDocument();
   });
 
   test("shows thinking indicator when state is thinking and no pending tool", () => {
@@ -240,7 +240,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
     // when any sibling row gained a round badge (wrong behaviour, green test).
     // The class-assertion argument this package makes elsewhere is about
     // cascade and layout, which does not apply to element presence.
-    expect(screen.getByRole("status", { name: "Thinking" })).toBeDefined();
+    expect(screen.getByRole("status", { name: "Thinking" })).toBeInTheDocument();
   });
 
   test("hides thinking indicator when a tool call is pending", () => {
@@ -285,7 +285,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
 
     const { container } = renderWithProvider(<MessageList />, core);
     expect(container.innerHTML).toContain("tool-shimmer");
-    expect(screen.getByText("web_search")).toBeDefined();
+    expect(screen.getByText("web_search")).toBeInTheDocument();
   });
 
   test("shows streaming agent utterance as bubble", () => {
@@ -296,7 +296,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
     });
 
     renderWithProvider(<MessageList />, core);
-    expect(screen.getByText("I'm thinking about...")).toBeDefined();
+    expect(screen.getByText("I'm thinking about...")).toBeInTheDocument();
   });
 
   test("shows user transcript while speaking", () => {
@@ -307,7 +307,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
     });
 
     renderWithProvider(<MessageList />, core);
-    expect(screen.getByText("hello wor")).toBeDefined();
+    expect(screen.getByText("hello wor")).toBeInTheDocument();
   });
 });
 
@@ -365,7 +365,7 @@ describe("ChatView: narrow subscriptions", () => {
     // A field ChatView does read still re-renders it.
     act(() => core.update({ state: "thinking" }));
     expect(commits).toBeGreaterThan(before);
-    expect(screen.getByText("thinking")).toBeDefined();
+    expect(screen.getByText("thinking")).toBeInTheDocument();
   });
 });
 
@@ -386,7 +386,7 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     );
 
     // 1. Start screen
-    expect(screen.getByText("Start Conversation")).toBeDefined();
+    expect(screen.getByText("Start Conversation")).toBeInTheDocument();
 
     // 2. Click start -> chat view
     fireEvent.click(screen.getByText("Start Conversation"));
@@ -394,8 +394,8 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     // The start() call sets started=true and running=true
     // We also need to update state to "listening"
     act(() => core.update({ state: "listening" }));
-    expect(screen.getByText("listening")).toBeDefined();
-    expect(screen.getByText("Stop")).toBeDefined();
+    expect(screen.getByText("listening")).toBeInTheDocument();
+    expect(screen.getByText("Stop")).toBeInTheDocument();
 
     // 3. User message
     act(() =>
@@ -404,8 +404,8 @@ describe("ChatView + StartScreen: full component tree integration", () => {
         state: "thinking",
       }),
     );
-    expect(screen.getByText("What time is it?")).toBeDefined();
-    expect(screen.getByText("thinking")).toBeDefined();
+    expect(screen.getByText("What time is it?")).toBeInTheDocument();
+    expect(screen.getByText("thinking")).toBeInTheDocument();
 
     // 4. Assistant responds
     act(() =>
@@ -417,7 +417,7 @@ describe("ChatView + StartScreen: full component tree integration", () => {
         state: "listening",
       }),
     );
-    expect(screen.getByText("It's 3pm.")).toBeDefined();
+    expect(screen.getByText("It's 3pm.")).toBeInTheDocument();
 
     // 5. Error occurs
     act(() =>
@@ -430,7 +430,7 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     // The banner is one element holding message AND code, so it is read off
     // the alert rather than matched as a text node.
     expect(screen.getByRole("alert").textContent).toBe("Lost connection (connection)");
-    expect(screen.getByText("Resume")).toBeDefined();
+    expect(screen.getByText("Resume")).toBeInTheDocument();
   });
 
   test("the session error banner is ANNOUNCED, not just drawn", () => {

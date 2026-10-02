@@ -95,13 +95,13 @@ describe("WorkflowRunPanel", () => {
         <p data-testid="node">done</p>
       </WorkflowRunPanel>,
     );
-    expect(screen.getByTestId("node")).toBeDefined();
+    expect(screen.getByTestId("node")).toBeInTheDocument();
   });
 
   test("the `live` slot shows while the run is not terminal and goes away when it is", () => {
     const live = <p data-testid="live">so far…</p>;
     render(<WorkflowRunPanel run={RUNNING} live={live} />);
-    expect(screen.getByTestId("live")).toBeDefined();
+    expect(screen.getByTestId("live")).toBeInTheDocument();
     for (const run of [DONE, FAILED, { ...BASE, status: "cancelled" as const }]) {
       const { container } = render(<WorkflowRunPanel run={run} live={live} />);
       expect(container.querySelector("[data-testid='live']")).toBeNull();

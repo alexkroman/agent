@@ -166,7 +166,7 @@ describe("GithubCard", () => {
 
     await screen.findByText("acme");
     await screen.findByText("acme/voice-agent (private)");
-    expect(screen.getByText("Add or remove repositories")).toBeTruthy();
+    expect(screen.getByText("Add or remove repositories")).toBeInTheDocument();
   });
 
   test("the picker renders the newest repository first", async () => {
@@ -200,7 +200,7 @@ describe("GithubCard", () => {
       "/studio/github/repos": () => jsonResponse({ repos: [] }),
     });
     renderCard();
-    expect(await screen.findByText(/cannot write to any repository yet/)).toBeTruthy();
+    expect(await screen.findByText(/cannot write to any repository yet/)).toBeInTheDocument();
   });
 
   test("Sync is disabled until a repository is chosen", async () => {
@@ -273,7 +273,7 @@ describe("GithubCard", () => {
 
     await screen.findByText("acme/voice-agent (private)");
     fireEvent.click(button(/Sync to GitHub/));
-    expect(await screen.findByText(/Already up to date on/)).toBeTruthy();
+    expect(await screen.findByText(/Already up to date on/)).toBeInTheDocument();
   });
 
   test("a cold open links the LAST synced commit from the workspace stamps", async () => {
@@ -302,7 +302,7 @@ describe("GithubCard", () => {
 
     await screen.findByText("acme/voice-agent (private)");
     fireEvent.click(button(/Sync to GitHub/));
-    expect(await screen.findByText("Grant it Contents: read and write.")).toBeTruthy();
+    expect(await screen.findByText("Grant it Contents: read and write.")).toBeInTheDocument();
   });
 
   // The pair below is one contrast, split across two cases so the reporter
@@ -315,7 +315,7 @@ describe("GithubCard", () => {
       "/studio/github/repos": () => jsonResponse(REPOS),
     });
     renderCard();
-    expect(await screen.findByText("Or create a new one")).toBeTruthy();
+    expect(await screen.findByText("Or create a new one")).toBeInTheDocument();
   });
 
   test("a personal account is not offered repository creation", async () => {

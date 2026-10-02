@@ -31,6 +31,10 @@
  * restores timers or globals in its own hook wants.
  */
 
+// jest-dom's DOM matchers (`toBeInTheDocument`, `toHaveAttribute`, …) on
+// vitest's `expect`, plus their type augmentation — this file is in the
+// typecheck program, so the side-effect import is what makes them type.
+import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 

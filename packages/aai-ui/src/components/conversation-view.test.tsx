@@ -94,7 +94,7 @@ describe("ConversationView", () => {
   test("shows `empty` only while there is nothing at all — no items and no streaming text", () => {
     const empty = <p data-testid="empty">Standing by.</p>;
     mount({}, { empty });
-    expect(screen.getByTestId("empty")).toBeDefined();
+    expect(screen.getByTestId("empty")).toBeInTheDocument();
 
     mount({ messages: MESSAGES }, { empty });
     expect(screen.queryAllByTestId("empty")).toHaveLength(1); // the first mount's
@@ -211,14 +211,14 @@ describe("ConversationView", () => {
       toolCalls: [{ ...TOOL, callId: "2", afterMessageId: 2 }],
     });
     const second = screen.getByText("hi there");
-    expect(screen.getByText("web_search")).toBeDefined();
+    expect(screen.getByText("web_search")).toBeInTheDocument();
     act(() =>
       core.update({
         messages: [MESSAGES[1] as ChatMessage, { id: 3, role: "user", content: "again" }],
       }),
     );
     expect(screen.getByText("hi there")).toBe(second);
-    expect(screen.getByText("again")).toBeDefined();
+    expect(screen.getByText("again")).toBeInTheDocument();
   });
 
   test("forwards the container classes and style to the scroll region", () => {

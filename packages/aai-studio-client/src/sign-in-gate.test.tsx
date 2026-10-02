@@ -49,19 +49,19 @@ describe("SignInGate", () => {
     expect(input("Email")).toBeTruthy();
     expect(input("Password")).toBeTruthy();
     // The blurb may not name a button that is not on the screen.
-    expect(screen.getByText(/Sign in with your email/)).toBeTruthy();
+    expect(screen.getByText(/Sign in with your email/)).toBeInTheDocument();
   });
 
   test("offers both, separated, when both are enabled", () => {
     mount(BOTH);
     expect(button(/Continue with GitHub/)).toBeTruthy();
     expect(input("Password")).toBeTruthy();
-    expect(screen.getByText("or")).toBeTruthy();
+    expect(screen.getByText("or")).toBeInTheDocument();
   });
 
   test("a backend with no method enabled says so instead of showing dead controls", () => {
     mount(NEITHER);
-    expect(screen.getByText(/No sign-in method is enabled/)).toBeTruthy();
+    expect(screen.getByText(/No sign-in method is enabled/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /GitHub|Sign in/ })).toBeNull();
   });
 
@@ -117,7 +117,7 @@ describe("SignInGate", () => {
     // Its method is not GoTrue's, so it is offered on the mode rather than on
     // `methods` — which is why both flags are false here.
     const onSignIn = mount(NEITHER, "dev");
-    expect(screen.getByText(/Local dev mode/)).toBeTruthy();
+    expect(screen.getByText(/Local dev mode/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Password")).toBeNull();
     fireEvent.change(input("Email"), { target: { value: "me@local.test" } });
     fireEvent.click(button("Sign in"));
@@ -135,7 +135,7 @@ describe("SignInGate", () => {
     fireEvent.click(button("Sign in"));
     // That sentence is the whole difference between a typo and an account that
     // does not exist yet, so it is quoted rather than replaced.
-    expect(await screen.findByText("Invalid login credentials")).toBeTruthy();
+    expect(await screen.findByText("Invalid login credentials")).toBeInTheDocument();
   });
 });
 

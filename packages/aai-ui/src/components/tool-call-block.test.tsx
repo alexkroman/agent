@@ -39,7 +39,7 @@ describe("ToolCallBlock", () => {
 
   test("renders tool name", () => {
     renderBlock(pendingToolCall);
-    expect(screen.getByText("web_search")).toBeDefined();
+    expect(screen.getByText("web_search")).toBeInTheDocument();
   });
 
   test("shows pending status indicator for pending tool calls", () => {
@@ -50,7 +50,7 @@ describe("ToolCallBlock", () => {
   test("shows result for completed tool calls", () => {
     const { container } = renderBlock(completedToolCall);
     expect(container.innerHTML).not.toContain("tool-shimmer");
-    expect(screen.getByText("fetch_json")).toBeDefined();
+    expect(screen.getByText("fetch_json")).toBeInTheDocument();
   });
 
   test("clicking a completed call expands the formatted JSON result", () => {
@@ -61,7 +61,7 @@ describe("ToolCallBlock", () => {
     fireEvent.click(screen.getByRole("button"));
 
     // Expanded: pretty-printed JSON with the key and value visible.
-    expect(screen.getByText(/"answer": 42/)).toBeDefined();
+    expect(screen.getByText(/"answer": 42/)).toBeInTheDocument();
   });
 
   test('a tool named "constructor" renders its raw name with an empty config', () => {
@@ -77,8 +77,8 @@ describe("ToolCallBlock", () => {
       seq: 3,
       afterMessageId: -1,
     });
-    expect(screen.getByText("constructor")).toBeDefined();
-    expect(screen.getByText("Tool")).toBeDefined();
+    expect(screen.getByText("constructor")).toBeInTheDocument();
+    expect(screen.getByText("Tool")).toBeInTheDocument();
   });
 });
 

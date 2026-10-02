@@ -132,8 +132,8 @@ describe("queued follow-ups", () => {
 
     type("also add tests");
     // Queued, not sent: the sandbox is still streaming the first turn.
-    await waitFor(() => expect(screen.getByLabelText("Queued messages")).toBeDefined());
-    expect(screen.getByText("also add tests")).toBeDefined();
+    expect(await screen.findByLabelText("Queued messages")).toBeInTheDocument();
+    expect(screen.getByText("also add tests")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     // The composer is cleared, so the next thought can be typed too.
     expect(composer().value).toBe("");
@@ -154,14 +154,14 @@ describe("queued follow-ups", () => {
     turn(0).speak("working");
     type("second");
     type("third");
-    await waitFor(() => expect(screen.getByText("third")).toBeDefined());
+    expect(await screen.findByText("third")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     turn(0).finish();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     // Only ONE of the two queued messages went out — the other is still shown.
     expect(sent[1]?.at(-1)).toBe("second");
-    expect(screen.getByText("third")).toBeDefined();
+    expect(screen.getByText("third")).toBeInTheDocument();
 
     turn(1).speak("still working");
     turn(1).finish();
@@ -178,7 +178,7 @@ describe("queued follow-ups", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     turn(0).speak("working");
     type("never mind this");
-    await waitFor(() => expect(screen.getByText("never mind this")).toBeDefined());
+    expect(await screen.findByText("never mind this")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Remove queued message 1"));
     await waitFor(() => expect(screen.queryByText("never mind this")).toBeNull());
@@ -199,7 +199,7 @@ describe("queued follow-ups", () => {
     turn(0).speak("working");
     type("queued one");
     type("queued two");
-    await waitFor(() => expect(screen.getByText("queued two")).toBeDefined());
+    expect(await screen.findByText("queued two")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Stop"));
 
@@ -218,7 +218,7 @@ describe("queued follow-ups", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     turn(0).speak("working");
     type("and then this");
-    await waitFor(() => expect(screen.getByText("and then this")).toBeDefined());
+    expect(await screen.findByText("and then this")).toBeInTheDocument();
 
     turn(0).fail();
 
@@ -252,7 +252,7 @@ describe("queued follow-ups", () => {
 
     live.speak("on it");
     live.finish();
-    await waitFor(() => expect(screen.getByText("on it")).toBeDefined());
+    expect(await screen.findByText("on it")).toBeInTheDocument();
     // The user is never shown the failure the studio recovered from.
     expect(screen.queryByText(/Lost the connection/)).toBeNull();
   });
@@ -272,12 +272,12 @@ describe("queued follow-ups", () => {
 
     type("build a greeter");
 
-    await waitFor(() => expect(screen.getByText("Restarting the sandbox…")).toBeDefined());
+    expect(await screen.findByText("Restarting the sandbox…")).toBeInTheDocument();
     expect(screen.queryByText("Working…")).toBeNull();
 
     broker.resolve({ url: SANDBOX_URL, token: "fresh-token" });
     await waitFor(() => expect(screen.queryByText("Restarting the sandbox…")).toBeNull());
-    expect(screen.getByText("Working…")).toBeDefined();
+    expect(screen.getByText("Working…")).toBeInTheDocument();
   });
 
   test("Publish stays locked between queued turns", async () => {
@@ -292,7 +292,7 @@ describe("queued follow-ups", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     turn(0).speak("working");
     type("second");
-    await waitFor(() => expect(screen.getByText("second")).toBeDefined());
+    expect(await screen.findByText("second")).toBeInTheDocument();
 
     onBusyChange.mockClear();
     turn(0).finish();

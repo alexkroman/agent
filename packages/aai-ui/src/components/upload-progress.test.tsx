@@ -62,8 +62,8 @@ describe("UploadProgressBar", () => {
 
   test("reads the sizes in the units the file was chosen in", () => {
     render(<UploadProgressBar upload={status()} />);
-    expect(screen.getByText("512 KB of 2.0 MB")).toBeDefined();
-    expect(screen.getByText("Uploading standup.wav")).toBeDefined();
+    expect(screen.getByText("512 KB of 2.0 MB")).toBeInTheDocument();
+    expect(screen.getByText("Uploading standup.wav")).toBeInTheDocument();
   });
 
   test("an unknown total is INDETERMINATE, never a bar pinned at zero", () => {
@@ -75,19 +75,19 @@ describe("UploadProgressBar", () => {
     expect(fill(bar).style.width).toBe("100%");
     // The loaded count is still worth showing — it is the only evidence of
     // movement an indeterminate bar has.
-    expect(screen.getByText("512 KB")).toBeDefined();
+    expect(screen.getByText("512 KB")).toBeInTheDocument();
   });
 
   test("counts the files when there is more than one", () => {
     // Files are sent one after another, so an uncounted bar appears to restart
     // from zero partway through with nothing to say why.
     render(<UploadProgressBar upload={status({ name: "two.wav", index: 2, count: 3 })} />);
-    expect(screen.getByText("Uploading two.wav (2 of 3)")).toBeDefined();
+    expect(screen.getByText("Uploading two.wav (2 of 3)")).toBeInTheDocument();
   });
 
   test("whole bytes are whole, so a tiny file does not read as 0.0 B", () => {
     render(<UploadProgressBar upload={status({ loaded: 7, total: 40, fraction: 0.175 })} />);
-    expect(screen.getByText("7 B of 40 B")).toBeDefined();
+    expect(screen.getByText("7 B of 40 B")).toBeInTheDocument();
     // Rounded, because a bar's width is a percentage and 17.5% of a track is a
     // subpixel argument nobody can see.
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("18");
@@ -126,7 +126,7 @@ describe("UploadProgressBar", () => {
 
   test("a paused upload says PAUSED, since a stalled bar looks identical", () => {
     render(<UploadProgressBar upload={status({ paused: true })} />);
-    expect(screen.getByText("Paused standup.wav")).toBeDefined();
+    expect(screen.getByText("Paused standup.wav")).toBeInTheDocument();
     // The width is still where it got to: a pause keeps its bytes, and a bar that
     // reset to zero would be describing a cancel.
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("25");

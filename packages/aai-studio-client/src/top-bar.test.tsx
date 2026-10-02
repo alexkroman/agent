@@ -35,7 +35,7 @@ describe("TopBar", () => {
 
   test("shows the open project's name, and no switcher", () => {
     render(<TopBar {...barProps} />);
-    expect(screen.getByText("demo")).toBeDefined();
+    expect(screen.getByText("demo")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
@@ -92,7 +92,7 @@ describe("TopBar", () => {
     render(<TopBar {...barProps} />);
     expect(screen.queryByRole("button", { name: "Database" })).toBeNull();
     for (const label of ["UI", "API", "Workflows", "Code", "Logs", "Secrets", "Settings"]) {
-      expect(screen.getByRole("button", { name: label })).toBeDefined();
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
   });
 
@@ -254,7 +254,7 @@ describe("PublishMenu", () => {
 
   test("an error renders as CLI output and suppresses the live link", () => {
     render(<PublishMenu {...menuProps} open={true} error="build failed" deployedSlug="my-agent" />);
-    expect(screen.getByText("build failed")).toBeDefined();
+    expect(screen.getByText("build failed")).toBeInTheDocument();
     expect(screen.queryByRole("link")).toBeNull();
   });
 

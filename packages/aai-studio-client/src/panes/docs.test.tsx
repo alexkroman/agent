@@ -105,7 +105,7 @@ describe("DocsPane", () => {
     // With no slug there is no base URL, so every snippet would be a
     // placeholder somebody could paste and wonder about.
     renderPane();
-    expect(screen.getByText(/Publish this project/)).toBeTruthy();
+    expect(screen.getByText(/Publish this project/)).toBeInTheDocument();
   });
 
   test("generates the request body from the agent's own input schema", async () => {
@@ -139,15 +139,15 @@ describe("DocsPane", () => {
 
     // The compact form specifically: the form card's annotated version of the
     // same call opens `startAndWait("digest", {` and breaks the line there.
-    await waitFor(() =>
-      expect(screen.getByText(/agent\.startAndWait\("digest", \{"topic"/)).toBeTruthy(),
-    );
+    expect(await screen.findByText(/agent\.startAndWait\("digest", \{"topic"/)).toBeInTheDocument();
     // The client the snippets are written against is offered before the routes.
-    expect(screen.getByText("npm i @alexkroman1/aai")).toBeTruthy();
+    expect(screen.getByText("npm i @alexkroman1/aai")).toBeInTheDocument();
     expect(screen.getAllByText(/createAgentClient\(/).length).toBeGreaterThan(1);
     // The reads a caller reaches for next, in the same client.
-    expect(screen.getByText(/agent\.get\("<run id>"/)).toBeTruthy();
-    expect(screen.getByText(/for await \(const run of agent\.follow\("<run id>"\)\)/)).toBeTruthy();
+    expect(screen.getByText(/agent\.get\("<run id>"/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/for await \(const run of agent\.follow\("<run id>"\)\)/),
+    ).toBeInTheDocument();
     // `agent.list()` is a ROUTE TABLE line, and this pane no longer carries
     // one — see the route-table test below, and public-api.test.tsx for the
     // page that keeps it.
@@ -163,7 +163,7 @@ describe("DocsPane", () => {
     const fetchMock = stubFetch(listing());
     renderPane({ deployedSlug: "demo" });
 
-    await waitFor(() => expect(screen.getByText("digest")).toBeTruthy());
+    expect(await screen.findByText("digest")).toBeInTheDocument();
     // The agent's own path, not a studio route. The listing URL is absolute
     // (the SDK client resolves against the agent's base URL) while the studio
     // reads beside it are relative, so both are read as paths.
@@ -182,7 +182,7 @@ describe("DocsPane", () => {
     renderPane({ previewSlug: "demo-preview" });
     // A project has a preview long before a first publish, so documenting
     // nothing until then would leave the pane empty for its whole early life.
-    await waitFor(() => expect(screen.getByText(/preview agent/)).toBeTruthy());
+    expect(await screen.findByText(/preview agent/)).toBeInTheDocument();
   });
 
   test("names the bearer only when the agent's env closes the API", async () => {
@@ -198,7 +198,7 @@ describe("DocsPane", () => {
       [`GET ${SECRETS}`]: () => jsonResponse({ vars: [], pending: [] }),
     });
     renderPane({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText(/declares no workflows/)).toBeTruthy());
+    expect(await screen.findByText(/declares no workflows/)).toBeInTheDocument();
   });
 
   test("and shows it none of the workflow API", async () => {
@@ -212,7 +212,7 @@ describe("DocsPane", () => {
       [`GET ${SECRETS}`]: () => jsonResponse({ vars: [], pending: [] }),
     });
     renderPane({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText(/declares no workflows/)).toBeTruthy());
+    expect(await screen.findByText(/declares no workflows/)).toBeInTheDocument();
     expect(screen.queryByText(/Running a workflow/)).toBeNull();
     expect(screen.queryByText(`${window.location.origin}/demo/workflows/runs`)).toBeNull();
   });
@@ -232,7 +232,7 @@ describe("DocsPane", () => {
     // The workflow half is what this agent IS, so it is on screen — which is
     // what makes the absences below the pane's judgement rather than a pane
     // that failed to render.
-    await waitFor(() => expect(screen.getByText("digest")).toBeTruthy());
+    expect(await screen.findByText("digest")).toBeInTheDocument();
     expect(screen.queryByText("Twilio")).toBeNull();
     expect(screen.queryByText("Telnyx")).toBeNull();
     expect(screen.queryByText(`${window.location.origin}/demo/phone`)).toBeNull();
@@ -246,12 +246,12 @@ describe("DocsPane", () => {
     const origin = window.location.origin;
     // The URL alone: each row's method sits in a `<span>` of its own, so the
     // matchable text on the row is the URL.
-    await waitFor(() => expect(screen.getByText(`${origin}/demo/phone`)).toBeTruthy());
-    expect(screen.getByText(`${origin}/demo/client-config`)).toBeTruthy();
+    expect(await screen.findByText(`${origin}/demo/phone`)).toBeInTheDocument();
+    expect(screen.getByText(`${origin}/demo/client-config`)).toBeInTheDocument();
     // The workflow half, which on THIS pane is the run examples rather than a
     // route table — see below.
-    expect(screen.getByText("digest")).toBeTruthy();
-    expect(screen.getByText("Twilio")).toBeTruthy();
+    expect(screen.getByText("digest")).toBeInTheDocument();
+    expect(screen.getByText("Twilio")).toBeInTheDocument();
   });
 
   test("carries no /workflows route table — the studio has a pane for that", async () => {
@@ -263,14 +263,14 @@ describe("DocsPane", () => {
     stubFetch(listing());
     renderPane({ deployedSlug: "demo" });
 
-    await waitFor(() => expect(screen.getByText("digest")).toBeTruthy());
+    expect(await screen.findByText("digest")).toBeInTheDocument();
     const origin = window.location.origin;
     expect(screen.queryByText(`${origin}/demo/workflows`)).toBeNull();
     expect(screen.queryByText(`${origin}/demo/workflows/runs`)).toBeNull();
     expect(screen.queryByText(`${origin}/demo/workflows/uploads?name=`)).toBeNull();
     // The front door's OWN table stays: it is three rows about this agent's
     // shape, not a reference for a subsystem with a tab of its own.
-    expect(screen.getByText(`${origin}/demo/client-config`)).toBeTruthy();
+    expect(screen.getByText(`${origin}/demo/client-config`)).toBeInTheDocument();
   });
 
   test("and the openness sentence follows the reader rather than the table", async () => {
@@ -279,7 +279,7 @@ describe("DocsPane", () => {
     // table it normally sits on must not drop it.
     stubFetch(listing());
     renderPane({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText(/open by default/)).toBeTruthy());
+    expect(await screen.findByText(/open by default/)).toBeInTheDocument();
   });
 
   test("quotes the agent's own sentence when the listing cannot be read", async () => {
@@ -291,7 +291,7 @@ describe("DocsPane", () => {
       [`GET ${SECRETS}`]: () => jsonResponse({ vars: [], pending: [] }),
     });
     renderPane({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText(/Agent is starting/)).toBeTruthy());
+    expect(await screen.findByText(/Agent is starting/)).toBeInTheDocument();
   });
 
   test("asks the AGENT whether it is a page or a voice session", async () => {
@@ -304,7 +304,7 @@ describe("DocsPane", () => {
       [`GET ${SECRETS}`]: () => jsonResponse({ vars: [], pending: [] }),
     });
     renderPane({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText(/serves a page rather than/)).toBeTruthy());
+    expect(await screen.findByText(/serves a page rather than/)).toBeInTheDocument();
   });
 
   test("hands out the PUBLIC link for this agent's API", async () => {
@@ -317,7 +317,7 @@ describe("DocsPane", () => {
     renderPane({ deployedSlug: "demo" });
 
     const url = `${window.location.origin}/studio/api/demo`;
-    await waitFor(() => expect(screen.getByText(url)).toBeTruthy());
+    expect(await screen.findByText(url)).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /Open the public page/ });
     expect(link.getAttribute("href")).toBe(url);
   });
@@ -334,10 +334,10 @@ describe("DocsPane", () => {
     });
     renderPane({ previewSlug: "demo-preview" });
 
-    await waitFor(() =>
-      expect(screen.getByText(`${window.location.origin}/studio/api/demo-preview`)).toBeTruthy(),
-    );
-    expect(screen.getByText(/points at the PREVIEW agent/)).toBeTruthy();
+    expect(
+      await screen.findByText(`${window.location.origin}/studio/api/demo-preview`),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/points at the PREVIEW agent/)).toBeInTheDocument();
   });
 
   test("documents how to actually SEND the file a workflow declares", async () => {
@@ -350,13 +350,15 @@ describe("DocsPane", () => {
     stubFetch(uploadListing());
     renderPane({ deployedSlug: "demo" });
 
-    await waitFor(() => expect(screen.getByText(/Sending a file/)).toBeTruthy());
-    expect(screen.getByText(/audio_file property carries an upload id/)).toBeTruthy();
-    expect(screen.getByText(/const stored = await agent\.upload\(file, \{/)).toBeTruthy();
+    expect(await screen.findByText(/Sending a file/)).toBeInTheDocument();
+    expect(screen.getByText(/audio_file property carries an upload id/)).toBeInTheDocument();
+    expect(screen.getByText(/const stored = await agent\.upload\(file, \{/)).toBeInTheDocument();
     // The start-first shape, on an id the caller minted — the reason the PUT
     // route exists beside the POST.
-    expect(screen.getByText(/await agent\.uploadStream\(audioFileUploadId, file/)).toBeTruthy();
-    expect(screen.getByText(/await agent\.uploadInfo\("<upload id>"\)/)).toBeTruthy();
+    expect(
+      screen.getByText(/await agent\.uploadStream\(audioFileUploadId, file/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/await agent\.uploadInfo\("<upload id>"\)/)).toBeInTheDocument();
   });
 
   test("and the shell alternate really uploads, rather than naming a placeholder id", async () => {
@@ -365,7 +367,7 @@ describe("DocsPane", () => {
     stubFetch(uploadListing());
     renderPane({ deployedSlug: "demo" });
 
-    await waitFor(() => expect(screen.getByText(/Sending a file/)).toBeTruthy());
+    expect(await screen.findByText(/Sending a file/)).toBeInTheDocument();
     expect(screen.getAllByText(/--data-binary @recording\.wav/).length).toBeGreaterThan(1);
     expect(screen.getAllByText(/AUDIO_FILE_UPLOAD_ID=\$\(curl -s -X POST/).length).toBeTruthy();
     expect(screen.queryByText(/<upload id for/)).toBeNull();
@@ -378,7 +380,7 @@ describe("DocsPane", () => {
     // above is what makes this an absence rather than a card that failed.
     stubFetch(listing());
     renderPane({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText("digest")).toBeTruthy());
+    expect(await screen.findByText("digest")).toBeInTheDocument();
     expect(screen.queryByText(/Sending a file/)).toBeNull();
   });
 
@@ -391,7 +393,7 @@ describe("DocsPane", () => {
     stubFetch(formListing());
     renderPane({ deployedSlug: "demo" });
 
-    await waitFor(() => expect(screen.getByText(/Every form field, over HTTP/)).toBeTruthy());
+    expect(await screen.findByText(/Every form field, over HTTP/)).toBeInTheDocument();
     for (const control of [
       "<TextField>",
       "<TextAreaField>",
@@ -400,7 +402,7 @@ describe("DocsPane", () => {
       "<CheckboxField>",
       "<FileField upload>",
     ]) {
-      expect(screen.getByText(control)).toBeTruthy();
+      expect(screen.getByText(control)).toBeInTheDocument();
     }
     // A nested shape gets no generated control and the API takes it anyway,
     // which is a different sentence from "the API will not accept this". Its
@@ -416,20 +418,20 @@ describe("DocsPane", () => {
     stubFetch(formListing());
     renderPane({ deployedSlug: "demo" });
 
-    await waitFor(() => expect(screen.getByText(/Every form field, over HTTP/)).toBeTruthy());
+    expect(await screen.findByText(/Every form field, over HTTP/)).toBeInTheDocument();
     // A `SelectField` sends one member of the declared enum — a REAL value,
     // and the only row whose sample is not a placeholder.
-    expect(screen.getByText('tone: "formal"')).toBeTruthy();
-    expect(screen.getByText("draft: false")).toBeTruthy();
-    expect(screen.getByText("count: 0")).toBeTruthy();
+    expect(screen.getByText('tone: "formal"')).toBeInTheDocument();
+    expect(screen.getByText("draft: false")).toBeInTheDocument();
+    expect(screen.getByText("count: 0")).toBeInTheDocument();
     // An upload property is a plain string in the schema, so this is the row
     // inference gets wrong: the value is a handle, not the file.
-    expect(screen.getByText('cover: "<upload id>"')).toBeTruthy();
+    expect(screen.getByText('cover: "<upload id>"')).toBeInTheDocument();
     expect(screen.getAllByText(/Declared by publish\./).length).toBeGreaterThan(4);
     // The one control no schema selects: a textarea and a text field are the
     // same string over the wire, so matching a property to it would put one
     // property on two rows claiming to be two controls.
-    expect(screen.getByText(/Example — this agent declares none/)).toBeTruthy();
+    expect(screen.getByText(/Example — this agent declares none/)).toBeInTheDocument();
   });
 
   test("and the annotated call labels each property with its control", async () => {
@@ -440,7 +442,7 @@ describe("DocsPane", () => {
     stubFetch(formListing());
     renderPane({ deployedSlug: "demo" });
 
-    await waitFor(() => expect(screen.getByText(/Every form field, over HTTP/)).toBeTruthy());
+    expect(await screen.findByText(/Every form field, over HTTP/)).toBeInTheDocument();
     // Found by an annotated LINE rather than by the opening brace: testing
     // library normalizes whitespace before matching, so a newline-anchored
     // pattern cannot see the line break this snippet's whole shape depends on.
@@ -471,8 +473,8 @@ describe("DocsPane", () => {
     });
     renderPane({ deployedSlug: "demo" });
 
-    await waitFor(() => expect(screen.getByText(/Every form field, over HTTP/)).toBeTruthy());
-    expect(screen.getByText("<CheckboxField>")).toBeTruthy();
+    expect(await screen.findByText(/Every form field, over HTTP/)).toBeInTheDocument();
+    expect(screen.getByText("<CheckboxField>")).toBeInTheDocument();
     expect(screen.getAllByText(/Example — this agent declares none/).length).toBe(7);
     expect(screen.queryByText(/each property labelled by the control it is/)).toBeNull();
   });
@@ -486,7 +488,7 @@ describe("DocsPane", () => {
       [`GET ${SECRETS}`]: () => jsonResponse({ vars: [], pending: [] }),
     });
     renderPane({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText(/declares no workflows/)).toBeTruthy());
+    expect(await screen.findByText(/declares no workflows/)).toBeInTheDocument();
     expect(screen.queryByText(/Every form field, over HTTP/)).toBeNull();
   });
 
@@ -494,9 +496,7 @@ describe("DocsPane", () => {
     stubFetch(listing());
     renderPane({ deployedSlug: "demo" });
     const origin = window.location.origin;
-    await waitFor(() =>
-      expect(screen.getByText(`${origin}/demo/phone?carrier=twilio`)).toBeTruthy(),
-    );
-    expect(screen.getByText(`${origin}/demo/phone?carrier=telnyx`)).toBeTruthy();
+    expect(await screen.findByText(`${origin}/demo/phone?carrier=twilio`)).toBeInTheDocument();
+    expect(screen.getByText(`${origin}/demo/phone?carrier=telnyx`)).toBeInTheDocument();
   });
 });

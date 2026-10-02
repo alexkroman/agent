@@ -60,7 +60,7 @@ describe("ApiKeyField", () => {
     expect(put?.init.body).toBe(JSON.stringify({ apiKey: "aai_key_123" }));
     expect(new Headers(put?.init.headers).get("Authorization")).toBe("Bearer bearer-1");
     expect(input("API key").value).toBe("");
-    expect(screen.getByText("Key saved.")).toBeTruthy();
+    expect(screen.getByText("Key saved.")).toBeInTheDocument();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.accounts });
   });
 
@@ -81,7 +81,7 @@ describe("ApiKeyField", () => {
     fireEvent.change(input("API key"), { target: { value: "bad-key" } });
     fireEvent.click(button("Save key"));
 
-    expect(await screen.findByText("That key was rejected")).toBeTruthy();
+    expect(await screen.findByText("That key was rejected")).toBeInTheDocument();
     expect(input("API key").value).toBe("bad-key");
     expect(onSaved).not.toHaveBeenCalled();
     expect(screen.queryByText("Key saved.")).toBeNull();
@@ -92,7 +92,7 @@ describe("ApiKeyField", () => {
     renderField();
     fireEvent.change(input("API key"), { target: { value: "k" } });
     fireEvent.click(button("Save key"));
-    expect(await screen.findByText("Key saved.")).toBeTruthy();
+    expect(await screen.findByText("Key saved.")).toBeInTheDocument();
     fireEvent.change(input("API key"), { target: { value: "n" } });
     expect(screen.queryByText("Key saved.")).toBeNull();
   });

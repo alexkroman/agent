@@ -36,9 +36,7 @@ describe("AccountMenu", () => {
   test("shows who is signed in", async () => {
     stubFetch({ "/studio/account": ACCOUNT });
     renderMenu(true);
-    await waitFor(() => {
-      expect(screen.getByText("a@b.c")).toBeTruthy();
-    });
+    expect(await screen.findByText("a@b.c")).toBeInTheDocument();
   });
 
   test("saving PUTs the new key, clears the field, and confirms", async () => {
@@ -55,9 +53,7 @@ describe("AccountMenu", () => {
     fireEvent.change(field, { target: { value: "  new-key  " } });
     fireEvent.click(screen.getByRole("button", { name: "Update key" }));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Key updated/)).toBeTruthy();
-    });
+    expect(await screen.findByText(/Key updated/)).toBeInTheDocument();
     const [put] = fetchCallsWith(fetchMock, "PUT");
     expect(put?.url).toBe("/studio/account/key");
     // Trimmed — a pasted key routinely carries whitespace.
@@ -95,9 +91,7 @@ describe("AccountMenu", () => {
       target: { value: "bad-key" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Update key" }));
-    await waitFor(() => {
-      expect(screen.getByText("Invalid API key")).toBeTruthy();
-    });
+    expect(await screen.findByText("Invalid API key")).toBeInTheDocument();
     expect(screen.queryByText(/Key updated/)).toBeNull();
   });
 

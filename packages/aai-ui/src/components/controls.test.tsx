@@ -23,17 +23,17 @@ function renderControls(overrides?: Parameters<typeof createMockSessionCore>[0])
 describe("Controls", () => {
   test("shows Stop when running", () => {
     renderControls({ running: true });
-    expect(screen.getByText("Stop")).toBeDefined();
+    expect(screen.getByText("Stop")).toBeInTheDocument();
   });
 
   test("shows Resume when not running", () => {
     renderControls({ running: false });
-    expect(screen.getByText("Resume")).toBeDefined();
+    expect(screen.getByText("Resume")).toBeInTheDocument();
   });
 
   test("shows New Conversation button", () => {
     renderControls();
-    expect(screen.getByText("New Conversation")).toBeDefined();
+    expect(screen.getByText("New Conversation")).toBeInTheDocument();
   });
 
   // Regression guard: the row was `shrink-0` with two nowrap buttons and the

@@ -37,7 +37,7 @@ describe("AudioResult", () => {
 
   test("says it is fetching while the bytes are in flight, with no player yet", () => {
     const { container } = mount({ pending: true });
-    expect(screen.getByText("Fetching the audio…")).toBeDefined();
+    expect(screen.getByText("Fetching the audio…")).toBeInTheDocument();
     expect(container.querySelector("audio")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -57,7 +57,7 @@ describe("AudioResult", () => {
     expect(container.querySelector("audio")).toBeNull();
     expect(screen.queryByText("Fetching the audio…")).toBeNull();
     expect(screen.getByText("Read aloud").tagName).toBe("H3");
-    expect(screen.getByTestId("spoken")).toBeDefined();
+    expect(screen.getByTestId("spoken")).toBeInTheDocument();
   });
 
   test("the heading is optional, and the children come after the player", () => {

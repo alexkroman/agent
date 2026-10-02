@@ -90,8 +90,8 @@ describe("WorkflowFields", () => {
     });
     // `recordingId` → `Recording id`: a default, which is why a schema whose
     // labels matter should carry a description.
-    expect(screen.getByLabelText("Requested by")).toBeTruthy();
-    expect(screen.getByText("Who it is filed under")).toBeTruthy();
+    expect(screen.getByLabelText("Requested by")).toBeInTheDocument();
+    expect(screen.getByText("Who it is filed under")).toBeInTheDocument();
   });
 
   test("marks a required property required, so the browser blocks the submit", () => {

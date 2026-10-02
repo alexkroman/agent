@@ -52,7 +52,7 @@ describe("SecretsPane", () => {
     // every one of them is a section title.
     stubFetch({ [`GET ${LIST}`]: () => jsonResponse({ vars: [], pending: [] }) });
     renderPane();
-    await waitFor(() => expect(screen.getByText("Attached keys")).toBeTruthy());
+    expect(await screen.findByText("Attached keys")).toBeInTheDocument();
     const titles = [...document.querySelectorAll(".eyebrow")].map((el) => el.textContent);
     expect(titles).toEqual(["Add a secret", "Attached keys", "Paste a .env"]);
   });
@@ -65,7 +65,7 @@ describe("SecretsPane", () => {
     renderPane();
     await waitFor(() => expect(callsTo(fetchMock, LIST)).toBe(1));
     expect(screen.queryByText(/Publish the project first/)).toBeNull();
-    expect(screen.getByText("Add secret")).toBeTruthy();
+    expect(screen.getByText("Add secret")).toBeInTheDocument();
   });
 
   test("lists the project's secret names, live ones marked as such", async () => {
@@ -73,9 +73,9 @@ describe("SecretsPane", () => {
       [`GET ${LIST}`]: () => jsonResponse({ vars: ["OPENAI_API_KEY"], pending: [] }),
     });
     renderPane();
-    await waitFor(() => expect(screen.getByText("OPENAI_API_KEY")).toBeTruthy());
-    expect(screen.getByText("live")).toBeTruthy();
-    expect(screen.getByText("Attached keys · 1")).toBeTruthy();
+    expect(await screen.findByText("OPENAI_API_KEY")).toBeInTheDocument();
+    expect(screen.getByText("live")).toBeInTheDocument();
+    expect(screen.getByText("Attached keys · 1")).toBeInTheDocument();
   });
 
   test("a name no deployed agent carries yet says so, rather than reading as live", async () => {
@@ -83,7 +83,7 @@ describe("SecretsPane", () => {
       [`GET ${LIST}`]: () => jsonResponse({ vars: ["LIVE_KEY", "NEW_KEY"], pending: ["NEW_KEY"] }),
     });
     renderPane();
-    await waitFor(() => expect(screen.getByText("NEW_KEY")).toBeTruthy());
+    expect(await screen.findByText("NEW_KEY")).toBeInTheDocument();
     expect(screen.getAllByText("on next deploy")).toHaveLength(1);
     expect(screen.getAllByText("live")).toHaveLength(1);
   });
@@ -91,7 +91,7 @@ describe("SecretsPane", () => {
   test("an empty project says so, rather than showing an empty list frame", async () => {
     stubFetch({ [`GET ${LIST}`]: () => jsonResponse({ vars: [] }) });
     renderPane();
-    await waitFor(() => expect(screen.getByText(/No secrets yet/)).toBeTruthy());
+    expect(await screen.findByText(/No secrets yet/)).toBeInTheDocument();
     expect(screen.queryByRole("listitem")).toBeNull();
   });
 
@@ -148,7 +148,7 @@ describe("SecretsPane", () => {
     await waitFor(() => expect(callsTo(fetchMock, LIST)).toBe(1));
     typePair("my key", "v");
     fireEvent.click(screen.getByText("Add secret"));
-    expect(screen.getByText(/isn't a valid environment variable name/)).toBeTruthy();
+    expect(screen.getByText(/isn't a valid environment variable name/)).toBeInTheDocument();
     expect(fetchCallsWith(fetchMock, "PUT")).toHaveLength(0);
     // The pair survives the refusal — it is what the user would retype.
     expect(input("Name").value).toBe("my key");
@@ -162,7 +162,7 @@ describe("SecretsPane", () => {
     renderPane();
     typePair("A", "1");
     fireEvent.click(screen.getByText("Add secret"));
-    await waitFor(() => expect(screen.getByText("vault unavailable")).toBeTruthy());
+    expect(await screen.findByText("vault unavailable")).toBeInTheDocument();
     expect(input("Name").value).toBe("A");
     expect(input("Value").value).toBe("1");
   });
@@ -206,7 +206,7 @@ describe("SecretsPane", () => {
   test("a failed listing surfaces the server's error message", async () => {
     stubFetch({ [`GET ${LIST}`]: () => jsonResponse({ error: "unauthorized" }, 401) });
     renderPane();
-    await waitFor(() => expect(screen.getByText("unauthorized")).toBeTruthy());
+    expect(await screen.findByText("unauthorized")).toBeInTheDocument();
     // A read that failed is not an empty project.
     expect(screen.queryByText(/No secrets yet/)).toBeNull();
   });
@@ -221,7 +221,7 @@ describe("SecretsPane", () => {
       vi.fn(() => false),
     );
     renderPane();
-    await waitFor(() => expect(screen.getByText("OLD_KEY")).toBeTruthy());
+    expect(await screen.findByText("OLD_KEY")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Delete"));
     expect(callsTo(fetchMock, `${LIST}/OLD_KEY`)).toBe(0);
     vi.stubGlobal(
@@ -241,7 +241,7 @@ describe("SecretsPane", () => {
       [`GET ${LIST}`]: () => jsonResponse({ vars: ["ASSEMBLYAI_API_KEY", "OPENAI_API_KEY"] }),
     });
     renderPane();
-    await waitFor(() => expect(screen.getByText("OPENAI_API_KEY")).toBeTruthy());
+    expect(await screen.findByText("OPENAI_API_KEY")).toBeInTheDocument();
     expect(screen.getAllByText("Delete")).toHaveLength(1);
     const rows = screen.getAllByRole("listitem").map((li) => li.textContent);
     expect(rows.some((text) => text?.includes("ASSEMBLYAI_API_KEY"))).toBe(false);
@@ -253,7 +253,7 @@ describe("SecretsPane", () => {
     await waitFor(() => expect(callsTo(fetchMock, LIST)).toBe(1));
     typePair("ASSEMBLYAI_API_KEY", "leaked");
     fireEvent.click(screen.getByText("Add secret"));
-    expect(screen.getByText(/managed for you and can't be set here/)).toBeTruthy();
+    expect(screen.getByText(/managed for you and can't be set here/)).toBeInTheDocument();
     expect(fetchCallsWith(fetchMock, "PUT")).toHaveLength(0);
   });
 
@@ -268,9 +268,7 @@ describe("SecretsPane", () => {
       target: { value: "ASSEMBLYAI_API_KEY=leaked\nOPENAI_API_KEY=ok" },
     });
     fireEvent.click(screen.getByText("Save secrets"));
-    await waitFor(() =>
-      expect(screen.getByText(/managed for you and can't be set here/)).toBeTruthy(),
-    );
+    expect(await screen.findByText(/managed for you and can't be set here/)).toBeInTheDocument();
     const [put] = fetchCallsWith(fetchMock, "PUT");
     expect(put?.init.body).toContain("OPENAI_API_KEY");
     expect(put?.init.body).not.toContain("ASSEMBLYAI_API_KEY");
@@ -282,7 +280,7 @@ describe("SecretsPane", () => {
     await waitFor(() => expect(callsTo(fetchMock, LIST)).toBe(1));
     fireEvent.change(pasteBox(), { target: { value: "ASSEMBLYAI_API_KEY=leaked" } });
     fireEvent.click(screen.getByText("Save secrets"));
-    expect(screen.getByText(/managed for you and can't be set here/)).toBeTruthy();
+    expect(screen.getByText(/managed for you and can't be set here/)).toBeInTheDocument();
     expect(callsTo(fetchMock, LIST)).toBe(1);
   });
 });

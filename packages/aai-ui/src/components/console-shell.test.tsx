@@ -59,9 +59,9 @@ describe("ConsoleShell", () => {
 
   test("renders the content and the footer, and the title when given one", () => {
     shell({ title: "Dispatch" });
-    expect(screen.getByText("Conversation")).not.toBeNull();
-    expect(screen.getByText("Stop")).not.toBeNull();
-    expect(screen.getByText("Dispatch")).not.toBeNull();
+    expect(screen.getByText("Conversation")).toBeInTheDocument();
+    expect(screen.getByText("Stop")).toBeInTheDocument();
+    expect(screen.getByText("Dispatch")).toBeInTheDocument();
   });
 
   test("shows the live state, and a custom icon in place of the logo", () => {
@@ -69,7 +69,7 @@ describe("ConsoleShell", () => {
       state: "thinking",
       icon: <span data-testid="mark">*</span>,
     });
-    expect(screen.getByText("thinking")).not.toBeNull();
+    expect(screen.getByText("thinking")).toBeInTheDocument();
     expect(container.querySelector("[data-testid='mark']")).not.toBeNull();
     // The stock logo is an <svg>; a custom icon replaces it rather than joining
     // it, which is what a branded chrome needs.

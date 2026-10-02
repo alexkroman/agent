@@ -27,8 +27,7 @@ function renderApp(
 
 /** Landing always shows the hero — opening a project is a sidebar click. */
 async function openProject(name: string) {
-  await waitFor(() => expect(screen.getByRole("button", { name })).toBeDefined());
-  fireEvent.click(screen.getByRole("button", { name }));
+  fireEvent.click(await screen.findByRole("button", { name }));
 }
 
 beforeEach(() => {
@@ -81,9 +80,7 @@ describe("App auth handling", () => {
           <App bearer={bearer} onSignOut={onSignOut} refreshAuth={() => Promise.resolve()} />
         </QueryClientProvider>,
       );
-      await waitFor(() =>
-        expect(screen.getByText(/No projects yet|Loading projects/)).toBeDefined(),
-      );
+      expect(await screen.findByText(/No projects yet|Loading projects/)).toBeInTheDocument();
     }
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
   });
@@ -112,8 +109,8 @@ describe("App auth handling", () => {
     });
     const onSignOut = vi.fn();
     renderApp(onSignOut);
-    await waitFor(() => expect(screen.getByText("What should your voice agent do?")).toBeDefined());
-    await waitFor(() => expect(screen.getByText(/No projects yet/)).toBeDefined());
+    expect(await screen.findByText("What should your voice agent do?")).toBeInTheDocument();
+    expect(await screen.findByText(/No projects yet/)).toBeInTheDocument();
     expect(onSignOut).not.toHaveBeenCalled();
   });
 
@@ -132,7 +129,7 @@ describe("App auth handling", () => {
     const onSignOut = vi.fn();
     renderApp(onSignOut);
     await openProject("demo");
-    await waitFor(() => expect(screen.getByText(/storage exploded/)).toBeDefined());
+    expect(await screen.findByText(/storage exploded/)).toBeInTheDocument();
     expect(onSignOut).not.toHaveBeenCalled();
   });
 });
@@ -156,9 +153,9 @@ describe("chat history hydration", () => {
       "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
     });
     renderApp(vi.fn());
-    await waitFor(() => expect(screen.getByText("What should your voice agent do?")).toBeDefined());
+    expect(await screen.findByText("What should your voice agent do?")).toBeInTheDocument();
     // The previous project waits in the sidebar instead.
-    await waitFor(() => expect(screen.getByRole("button", { name: "demo" })).toBeDefined());
+    expect(await screen.findByRole("button", { name: "demo" })).toBeInTheDocument();
   });
 
   test("opening a project syncs the v0-style URL", async () => {
@@ -179,7 +176,7 @@ describe("chat history hydration", () => {
     });
     renderApp(vi.fn());
     // Straight into the project chat — no hero, no sidebar click.
-    await waitFor(() => expect(screen.getByText(/Welcome to AssemblyAI Build/)).toBeDefined());
+    expect(await screen.findByText(/Welcome to AssemblyAI Build/)).toBeInTheDocument();
     const paths = fetchMock.mock.calls.map(
       (c) => new URL(String(c[0]), "http://studio.test").pathname,
     );
@@ -199,8 +196,8 @@ describe("chat history hydration", () => {
     });
     renderApp(vi.fn());
     await openProject("demo");
-    await waitFor(() => expect(screen.getByText("build a pizza bot")).toBeDefined());
-    expect(screen.getByText(/Done — pizza bot/)).toBeDefined();
+    expect(await screen.findByText("build a pizza bot")).toBeInTheDocument();
+    expect(screen.getByText(/Done — pizza bot/)).toBeInTheDocument();
     // Hydrated history means no "new chat" welcome bubble.
     expect(screen.queryByText(/Welcome to AssemblyAI Build/)).toBeNull();
   });
@@ -212,7 +209,7 @@ describe("chat history hydration", () => {
     });
     renderApp(vi.fn());
     await openProject("demo");
-    await waitFor(() => expect(screen.getByText(/Welcome to AssemblyAI Build/)).toBeDefined());
+    expect(await screen.findByText(/Welcome to AssemblyAI Build/)).toBeInTheDocument();
     expect(screen.queryByText("Loading conversation…")).toBeNull();
   });
 
@@ -232,14 +229,14 @@ describe("chat history hydration", () => {
     renderApp(vi.fn());
     await openProject("demo");
     // Holds on the boot note while the retry rides out the restart…
-    await waitFor(() => expect(screen.getByText("Starting sandbox…")).toBeDefined());
+    expect(await screen.findByText("Starting sandbox…")).toBeInTheDocument();
     // …then connects on its own once the broker answers (first retry ~1s).
     // The note going away is the signal, not the welcome bubble: that renders
     // over the restored (here empty) history from the first paint.
     await waitFor(() => expect(screen.queryByText("Starting sandbox…")).toBeNull(), {
       timeout: 4000,
     });
-    expect(screen.getByPlaceholderText("Describe your agent…")).toBeDefined();
+    expect(screen.getByPlaceholderText("Describe your agent…")).toBeInTheDocument();
     expect(calls).toBe(2);
   });
 
@@ -255,14 +252,12 @@ describe("chat history hydration", () => {
     });
     renderApp(vi.fn());
     await openProject("demo");
-    await waitFor(() =>
-      expect(screen.getByText(/Could not start the project's sandbox/)).toBeDefined(),
-    );
+    expect(await screen.findByText(/Could not start the project's sandbox/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() =>
       expect(screen.queryByText(/Could not start the project's sandbox/)).toBeNull(),
     );
-    expect(screen.getByPlaceholderText("Describe your agent…")).toBeDefined();
+    expect(screen.getByPlaceholderText("Describe your agent…")).toBeInTheDocument();
     expect(calls).toBe(2);
   });
 
@@ -275,7 +270,7 @@ describe("chat history hydration", () => {
     });
     renderApp(vi.fn());
     await openProject("demo");
-    await waitFor(() => expect(screen.getByText("Loading conversation…")).toBeDefined());
+    expect(await screen.findByText("Loading conversation…")).toBeInTheDocument();
     expect(screen.queryByText(/Welcome to AssemblyAI Build/)).toBeNull();
   });
 
@@ -297,9 +292,9 @@ describe("chat history hydration", () => {
     });
     renderApp(vi.fn());
     await openProject("demo");
-    await waitFor(() => expect(screen.getByText("build a pizza bot")).toBeDefined());
+    expect(await screen.findByText("build a pizza bot")).toBeInTheDocument();
     // The wait is said under the last message, and it is SENDING that waits.
-    expect(screen.getByText("Starting sandbox…")).toBeDefined();
+    expect(screen.getByText("Starting sandbox…")).toBeInTheDocument();
     expect(button("Send").disabled).toBe(true);
   });
 

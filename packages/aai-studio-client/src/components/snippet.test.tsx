@@ -28,7 +28,7 @@ describe("Snippet", () => {
     render(<Snippet code={CODE} label="Start a run" />);
     fireEvent.click(screen.getByLabelText("Copy: Start a run"));
     expect(writeText).toHaveBeenCalledWith(CODE);
-    expect(await screen.findByText("Copied")).toBeTruthy();
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
   });
 });
 
@@ -55,7 +55,7 @@ describe("CopyLine", () => {
     stubClipboard();
     render(<TwoLines />);
     fireEvent.click(screen.getByLabelText("Copy one"));
-    expect(await screen.findByText("Copied")).toBeTruthy();
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
     expect(screen.getByLabelText("Copy one").textContent).toBe("Copied");
     expect(screen.getByLabelText("Copy two").textContent).not.toBe("Copied");
   });

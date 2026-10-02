@@ -139,7 +139,7 @@ describe("WorkflowProgress", () => {
 
     await consumed;
     await flushEffects();
-    expect(screen.getByText("Starting…")).not.toBeNull();
+    expect(screen.getByText("Starting…")).toBeInTheDocument();
   });
 
   test("the narration is a LIVE REGION, so a run is audible while it happens", async () => {
@@ -192,7 +192,7 @@ describe("WorkflowProgress", () => {
     fetchMock.mockImplementation(() => Promise.resolve(sse(["Reading…"])));
     render(<WorkflowProgress runId="wrun_1" lines={0} placeholder={<p>Starting…</p>} />);
 
-    await waitFor(() => expect(screen.getByText("Starting…")).not.toBeNull());
+    expect(await screen.findByText("Starting…")).toBeInTheDocument();
   });
 
   test("`lines` still respects `supported` — an older agent stays blank, not windowed", async () => {

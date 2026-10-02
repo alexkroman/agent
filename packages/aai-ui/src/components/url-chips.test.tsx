@@ -30,12 +30,12 @@ describe("UrlChip copy feedback", () => {
     await act(async () => {
       /* flush the clipboard promise */
     });
-    expect(screen.getByText("Copied")).toBeDefined();
+    expect(screen.getByText("Copied")).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(1500);
     });
-    expect(screen.getByText("UI")).toBeDefined();
+    expect(screen.getByText("UI")).toBeInTheDocument();
   });
 
   test("clears the feedback timer on unmount", async () => {
@@ -68,7 +68,7 @@ describe("UrlChip copy feedback", () => {
     await act(async () => {
       /* flush the clipboard promise */
     });
-    expect(screen.getByText("Failed")).toBeDefined();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
     expect(screen.getByTestId("ui-url-chip-url").textContent).not.toBe("");
   });
 });

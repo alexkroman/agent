@@ -98,7 +98,7 @@ describe("SessionControls", () => {
     mount({ started: true, running: true }, { labels: { pause: "Hold", end: "Hang up" } });
     expect(labels()).toEqual(["Hold", "New Conversation", "Hang up"]);
     mount({ started: false }, { labels: { start: "Begin Adventure" } });
-    expect(screen.getByText("Begin Adventure")).toBeDefined();
+    expect(screen.getByText("Begin Adventure")).toBeInTheDocument();
   });
 
   test("`renderButton` gets every button with its action, label, handler and the running flag", () => {

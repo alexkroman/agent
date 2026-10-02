@@ -190,7 +190,7 @@ describe("HomeSidebar with a long list", () => {
 
   test("shows the count, because the list scrolls", () => {
     render(<HomeSidebar projects={many(30)} onSelectProject={noop} />);
-    expect(screen.getByText(/Projects \(30\)/)).toBeTruthy();
+    expect(screen.getByText(/Projects \(30\)/)).toBeInTheDocument();
   });
 
   test("offers no filter for a handful", () => {
@@ -203,7 +203,7 @@ describe("HomeSidebar with a long list", () => {
     render(<HomeSidebar projects={[...many(20), "bedtime-story-reader"]} onSelectProject={noop} />);
     fireEvent.change(input("Filter projects"), { target: { value: "bedtime" } });
 
-    expect(screen.getByRole("button", { name: "bedtime-story-reader" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "bedtime-story-reader" })).toBeInTheDocument();
     // The 20 that do not match are gone, not merely reordered.
     expect(screen.queryByRole("button", { name: "use-transcript-workflow-00" })).toBeNull();
   });
@@ -212,7 +212,7 @@ describe("HomeSidebar with a long list", () => {
     render(<HomeSidebar projects={many(20)} onSelectProject={noop} />);
     fireEvent.change(input("Filter projects"), { target: { value: "nothing-matches-this" } });
 
-    expect(screen.getByText(/No project matches/)).toBeTruthy();
+    expect(screen.getByText(/No project matches/)).toBeInTheDocument();
   });
 
   test("a filtered row still selects the project it names", () => {
