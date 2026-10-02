@@ -28,6 +28,7 @@
  * - **no hang**: `start()` settles however the connect ends.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { silentLogger } from "../_logger-test-utils.ts";
@@ -511,7 +512,7 @@ async function runOne(
     options: {},
     sessionConfig: {
       systemPrompt: () => `prompt ${prompt++ >> 1}`,
-      ...(behavior.greets ? { greeting: "Hi." } : {}),
+      ...omitUndefined({ greeting: behavior.greets ? "Hi." : undefined }),
     },
     toolSchemas: [],
     toolChoice: "auto",
