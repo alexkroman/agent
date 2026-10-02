@@ -1,3 +1,16 @@
+import { ClientRun } from '@alexkroman1/aai';
+import { ClientRunsResponse } from '@alexkroman1/aai';
+import { ClientRunStatus } from '@alexkroman1/aai';
+import { errorMessage } from '@alexkroman1/aai';
+
+export { ClientRun }
+
+export { ClientRunsResponse }
+
+export { ClientRunStatus }
+
+export { errorMessage }
+
 // @public
 export function routeFetch<T = unknown>(method: RouteMethod, path: string, body?: unknown, options?: RouteFetchOptions): Promise<T>;
 
@@ -12,7 +25,47 @@ export type RouteFetchOptions = {
 export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 // @public
+export type RouteMutationRunOptions = {
+    key?: string | undefined;
+};
+
+// @public
+export function useClientRuns(path?: string, options?: UseClientRunsOptions): UseClientRunsResult;
+
+// @public
+export type UseClientRunsOptions = {
+    pollMs?: number | undefined;
+    client?: string | undefined;
+};
+
+// @public
+export type UseClientRunsResult = {
+    runs: ClientRun[] | undefined;
+    error: string | undefined;
+    reload: () => void;
+    cancel: (runId: string) => Promise<boolean>;
+    cancelling: string | undefined;
+};
+
+// @public
 export function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions): UseRouteResult<T>;
+
+// @public
+export function useRouteMutation(options?: UseRouteMutationOptions): UseRouteMutationResult;
+
+// @public
+export type UseRouteMutationOptions = {
+    client?: string | undefined;
+    onSettled?: (() => void) | undefined;
+};
+
+// @public
+export type UseRouteMutationResult = {
+    run: <T = unknown>(method: RouteMethod, path: string, body?: unknown, options?: RouteMutationRunOptions) => Promise<T | undefined>;
+    busy: string | undefined;
+    error: string | undefined;
+    clearError: () => void;
+};
 
 // @public
 export type UseRouteOptions = {

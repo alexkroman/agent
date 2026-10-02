@@ -17,28 +17,28 @@ export function stepTranscribeUpload(uploadId: string, options?: TranscribeReque
 }>;
 
 // @public
-export const TRANSCRIBE_API = "https://api.assemblyai.com";
+export const TRANSCRIBE_API: string;
 
 // @public
-export const TRANSCRIBE_MODELS: readonly ["universal-3-5-pro"];
+export const TRANSCRIBE_MODELS: readonly [string];
 
 // @public
-export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
+export const TRANSCRIBE_SYNC_ENDPOINT: string;
 
 // @public
-export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
+export const TRANSCRIBE_SYNC_MODEL: string;
 
 // @public
-export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
+export const TRANSCRIBE_SYNC_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_TIMEOUT_MS = 60000;
+export const TRANSCRIBE_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 1800000;
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_WINDOW_BYTES = 4194304;
+export const TRANSCRIBE_WINDOW_BYTES: number;
 
 // @public
 export class TranscribeError extends Error {
@@ -55,10 +55,10 @@ export class TranscribeError extends Error {
 // @public
 export type TranscribeProgress = {
     done: false;
-    status: string;
+    status: "queued" | "processing" | (string & {});
 } | {
     done: true;
-    status: string;
+    status: "completed" | (string & {});
     transcript: Transcript;
 };
 
@@ -83,7 +83,7 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
     label?: string | undefined;
 };
 
-// @public
+// @public @sealed
 export type Transcript = {
     id: string;
     text: string;

@@ -381,6 +381,7 @@ describe("studio session broker", () => {
       serverUrl: "https://platform.example",
       apiKey: "caller-key",
       slug: "proj",
+      skipTypecheck: false,
     });
   });
 
@@ -452,7 +453,10 @@ describe("studio session broker", () => {
     const first = fakeGuest();
     const second = fakeGuest("wss://tunnel2.example:443");
     const { broker, workspaces, spawn } = await makeBroker([first, second]);
-    await createWorkspace(workspaces, SCOPE, "other", { files: { "agent.ts": "// o" } });
+    await createWorkspace(workspaces, SCOPE, "other", {
+      kind: "agent",
+      files: { "agent.ts": "// o" },
+    });
 
     const [a, b] = await Promise.all([
       broker.ensureSession(SCOPE, PROJECT, "k"),
@@ -551,7 +555,10 @@ describe("cross-replica studio sessions", () => {
   async function sharedFleet(leaseMs?: number) {
     const workspaces = createMemoryWorkspaceStore();
     const chats = createMemoryChatStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await createWorkspace(workspaces, SCOPE, PROJECT, {
+      kind: "agent",
+      files: { "agent.ts": "// v1" },
+    });
     return {
       workspaces,
       chats,

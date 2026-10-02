@@ -105,8 +105,6 @@ templates are held to the two doors by konsistent `template-testing-doors`, and
 `aai-runtime`'s `testing-doors.test.ts` holds each door to the lists it carries
 — a helper added here needs a line in `aai-runtime/src/testing-barrel.ts` (or
 `testing-vitest-barrel.ts`) and in its `aai-runtime:testing-stubs` capability.
-`scriptedToolContext` is deprecated for `createToolContext`;
-`createRuntimeServer` for `createServerForRuntime`.
 
 ### The rules
 
@@ -122,7 +120,7 @@ Each helper's doc carries the detail; the rules:
   `omitUndefined`; `testing.test-d.ts` pins its key set to `ToolContext`'s).
   Its `generate`/`delegate` take a SCRIPT or a function; a FUNCTION is always
   the seam itself. `ctx.model`/`ctx.desk` are always present (empty `calls`
-  when unwired). `scriptedToolContext` predates this and is deprecated.
+  when unwired).
 - **A script NAMES its shape — `{ reply }` or `{ routes }`** — everywhere one
   is taken; a computed route is `{ reply: (call) => … }`; a bare shape reaching
   the runtime untyped throws at bind.
@@ -293,8 +291,8 @@ on the member it governs**:
   `normalizeSyncState` (`_author-conveniences.ts`) resolves it to the record
   keyed by SLOT NAME that `AgentDef.syncState` holds, so the frame is
   `{ [slot]: view }` and the browser selects by the same name; one slot twice
-  is refused. The record form and `slot.projection(view)` are `@deprecated`
-  (each key repeated its slot's; a composed view is a value both ends name).
+  is refused. A slot has ONE view, declared with `sessionSlot(key, create,
+{ view })`; there is no per-call `slot.projection(view)`.
 - **`caps` bounds a TOP-LEVEL array on every store, AFTER `after`**;
   `SlotCaps<T>` admits only array keys, bad caps refused at declaration
   (`_session-slot-caps.ts`). The hook sees the untrimmed draft.

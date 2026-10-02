@@ -58,7 +58,7 @@ export interface AgentDeclaration extends PipelineTuning, PipelinePhrases, Agent
 }
 
 // @public
-export interface AgentDef extends AgentDeclaration {
+export interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
     syncState?: Readonly<Record<string, StateProjection>>;
     tools: ToolMap;
     toolsets?: readonly Toolset[];
@@ -72,9 +72,6 @@ export interface AgentGuardrails {
     inputGuardrails?: readonly AgentGuardrail[];
     outputGuardrails?: readonly AgentGuardrail[];
 }
-
-// @public @deprecated
-export type AgentInstructions = Exclude<AgentSystemPrompt, string>;
 
 // @public
 export type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
@@ -1042,7 +1039,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     audioFormat: z.ZodString;
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
+    sessionId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"audio.completed">;
     meta: z.ZodObject<{
@@ -1301,8 +1298,6 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     get(ctx: SlotHolder): DeepReadonly<T>;
     readonly key: K;
     readonly projected: StateProjection<V>;
-    // @deprecated
-    projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
     reset(ctx: SlotHolder): DeepReadonly<T>;
     set(ctx: SlotHolder, value: T): DeepReadonly<T>;
     snapshot(ctx: SlotHolder): T;
@@ -1500,9 +1495,6 @@ export interface StateProjection<V = unknown> {
     readonly key: string;
 }
 
-// @public @deprecated
-export type StaticAgentParams = WorkflowAppAgentParams;
-
 // @public
 type StepClientTranscriptOptions = {
     since?: number | undefined;
@@ -1538,7 +1530,7 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
-export type SyncStateDeclaration = StateProjection | readonly StateProjection[] | Readonly<Record<string, StateProjection>>;
+export type SyncStateDeclaration = StateProjection | readonly StateProjection[];
 
 // @public
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];

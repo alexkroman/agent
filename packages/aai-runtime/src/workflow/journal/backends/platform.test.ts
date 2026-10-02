@@ -72,6 +72,7 @@ describe("the codec runs on this side", () => {
       status: "ok",
       output: new Uint8Array([1, 2, 3]),
       attempts: 1,
+      startedAt: 7,
       finishedAt: 7,
     };
     const { journal, sent } = journalOver([]);
@@ -135,6 +136,7 @@ describe("an answer is refused rather than invented", () => {
         name: "a",
         status: "ok",
         attempts: 1,
+        startedAt: 1,
         finishedAt: 1,
       }),
     ).rejects.toThrow(/appendStep answered nothing/);
@@ -154,6 +156,7 @@ describe("an answer is refused rather than invented", () => {
         name: "a",
         status: "ok",
         attempts: 1,
+        startedAt: 1,
         finishedAt: 1,
       }),
     ).rejects.toThrow(/appendStep answered nothing/);
@@ -162,8 +165,8 @@ describe("an answer is refused rather than invented", () => {
   test("a malformed step in readSteps is dropped, like a malformed run in a listing", async () => {
     const { journal } = journalOver([
       [
-        { key: "a#0", name: "a", status: "ok", attempts: 1, finishedAt: 1 },
-        { key: "b#0", name: "b", status: "maybe", attempts: 1, finishedAt: 2 },
+        { key: "a#0", name: "a", status: "ok", attempts: 1, startedAt: 1, finishedAt: 1 },
+        { key: "b#0", name: "b", status: "maybe", attempts: 1, startedAt: 2, finishedAt: 2 },
       ],
     ]);
     expect((await journal.readSteps("wrun_1")).map((step) => step.key)).toEqual(["a#0"]);

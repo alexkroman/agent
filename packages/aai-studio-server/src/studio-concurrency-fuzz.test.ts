@@ -171,7 +171,12 @@ async function runPreviewPipeline(
   const store = createMemoryWorkspaceStore();
   for (const project of PROJECTS) {
     const seed: Record<string, string> = { [ENTRY]: CONTENTS[0] ?? "" };
-    await store.put(SCOPE, project, { files: seed, hash: filesHash(seed), updatedAt: 0 }, null);
+    await store.put(
+      SCOPE,
+      project,
+      { kind: "agent", files: seed, hash: filesHash(seed), updatedAt: 0 },
+      null,
+    );
   }
 
   // A virtual clock: a job whose deploy THREW is left unacked on purpose and
@@ -374,7 +379,12 @@ test("preview queue: a crash-looping job is archived past the cap, never before"
         await store.put(
           SCOPE,
           "alpha-a1b2c3",
-          { files: { [ENTRY]: "//" }, hash: filesHash({ [ENTRY]: "//" }), updatedAt: 0 },
+          {
+            kind: "agent",
+            files: { [ENTRY]: "//" },
+            hash: filesHash({ [ENTRY]: "//" }),
+            updatedAt: 0,
+          },
           null,
         );
         const queue = createMemoryPreviewQueue({ now: () => clock });
@@ -436,7 +446,12 @@ test("preview queue: an undo clears the banner its failed edit left", async () =
       await store.put(
         SCOPE,
         "alpha-a1b2c3",
-        { files: { [ENTRY]: "// v0" }, hash: filesHash({ [ENTRY]: "// v0" }), updatedAt: 0 },
+        {
+          kind: "agent",
+          files: { [ENTRY]: "// v0" },
+          hash: filesHash({ [ENTRY]: "// v0" }),
+          updatedAt: 0,
+        },
         null,
       );
       const queue = createMemoryPreviewQueue();

@@ -73,8 +73,8 @@
  * puts the `AgentDef.subagents` field's signature on this capability rather than
  * on its own.
  *
- * `AgentSystemPrompt` and `AgentInstructions` are the type of `systemPrompt`
- * after it widened from `string` — the union and the resolver arm. Contracted
+ * `AgentSystemPrompt` is the type of `systemPrompt` after it widened from
+ * `string` — the text, or a resolver that answers it. Contracted
  * here and not on a capability of their own: `systemPrompt` is the field an
  * `agent()` declaration cannot omit, and a resolver is a way of writing it
  * rather than a separate thing to write.
@@ -139,7 +139,6 @@ export {
   type AgentDef,
   type AgentGuardrail,
   type AgentGuardrails,
-  type AgentInstructions,
   type AgentMode,
   type AgentModelTuning,
   type AgentObservation,
@@ -195,7 +194,6 @@ export {
   type SpeechHandle,
   type SpeechOutcome,
   type StandardWebhookOptions,
-  type StaticAgentParams,
   type SyncStateDeclaration,
   sessionCall,
   sessionClientLocation,

@@ -181,14 +181,9 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
   // migration declares, so a retired table left standing here fails it over a
   // database that is only wrong because this replay is.
   //
-  // **No migration drops a table today, so this currently applies nothing** —
-  // said out loud, because unexercised replay logic is exactly the shape this
-  // repo keeps getting bitten by. It is here rather than owed because the
-  // obligation is already committed: `RETIRED_OBJECTS` in
-  // `platform/schema.test.ts` holds `workflow_attempts` and fails the release
-  // that drops it unless the entry goes too, so the drop this serves is
-  // scheduled rather than hypothetical — and without the line, that release
-  // fails `schema-drift` for a reason that has nothing to do with it.
+  // `20261001010000_workflow_journal_contract.sql` drops `workflow_attempts`,
+  // which is what this replays; without it, `schema-drift` would find a table
+  // the migrations retired.
   //
   // Last rather than in migration order, which is a stated assumption rather
   // than a subtlety nobody noticed: no migration re-creates a table it dropped,

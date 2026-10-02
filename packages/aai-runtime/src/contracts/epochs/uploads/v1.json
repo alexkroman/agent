@@ -3,24 +3,16 @@
   "capability": "uploads",
   "epoch": 1,
   "rule": 2,
-  "sha256": "cf53ee51d2d0369b1926a80ec1e12797e06db4f83572066c379aef19568fba17",
+  "sha256": "9baf059e8ba1bd133218d6fde422ce35a1bbf61e896fc980b30c0c1c866ee2c9",
   "exports": [
-    "HttpUploadBackendOptions",
-    "UPLOADS_TABLE",
     "UPLOAD_KEY_PREFIX",
     "UPLOAD_STORAGE_BUCKET_ENV",
     "UPLOAD_STORAGE_KEY_ENV",
     "UPLOAD_STORAGE_URL_ENV",
-    "UploadBackend",
     "UploadMeta",
     "UploadPart",
-    "UploadStore",
     "UploadTooLargeError",
-    "UploadsUnavailableError",
-    "createHttpUploadBackend",
-    "createMemoryUploadBackend",
-    "partKey",
-    "partsOf"
+    "UploadsUnavailableError"
   ],
-  "rollup": "f2dd706e75cc08804a89fbb5db5196fddac009a3e18e1fbf3096df5d5f42e18b"
+  "rollup": "6804a81957db7cc7f14c5124463e9fd9de1b5dcbd87233ba4523ef39dad15c6d"
 }

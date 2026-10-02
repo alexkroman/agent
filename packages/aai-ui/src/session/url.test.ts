@@ -12,62 +12,55 @@ const params = (url: URL) => Object.fromEntries(url.searchParams);
 describe.each([
   [
     "same-origin",
-    (resume: boolean, sid?: string, loc?: string) =>
-      buildWsUrl("https://host/agent/", resume, sid, { location: loc }),
+    (sid?: string, loc?: string) => buildWsUrl("https://host/agent/", sid, { location: loc }),
   ],
   [
     "brokered",
-    (resume: boolean, sid?: string, loc?: string) =>
-      buildBrokeredWsUrl("https://sandbox.example/websocket", resume, sid, { location: loc }),
+    (sid?: string, loc?: string) =>
+      buildBrokeredWsUrl("https://sandbox.example/websocket", sid, { location: loc }),
   ],
 ])("%s connect URL", (_route, build) => {
   test("switches to the WebSocket scheme", () => {
-    expect(build(false).protocol).toBe("wss:");
+    expect(build().protocol).toBe("wss:");
   });
 
   test("a first connect carries no resume parameter", () => {
-    expect(params(build(false))).toEqual({});
+    expect(params(build())).toEqual({});
   });
 
-  test("a resume carries the session id, and only falls back to resume=1 without one", () => {
-    expect(params(build(true, "s-1"))).toEqual({ sessionId: "s-1" });
-    expect(params(build(true))).toEqual({ resume: "1" });
+  test("a resume carries the session id", () => {
+    expect(params(build("s-1"))).toEqual({ sessionId: "s-1" });
   });
 
-  test("`location` rides on every attempt — first, resumed or fallback", () => {
+  test("`location` rides on every attempt — first or resumed", () => {
     const loc = "Portland, Oregon";
-    expect(params(build(false, undefined, loc))).toEqual({ location: loc });
-    expect(params(build(true, "s-1", loc))).toEqual({ sessionId: "s-1", location: loc });
-    expect(params(build(true, undefined, loc))).toEqual({ resume: "1", location: loc });
+    expect(params(build(undefined, loc))).toEqual({ location: loc });
+    expect(params(build("s-1", loc))).toEqual({ sessionId: "s-1", location: loc });
   });
 
   test("an empty location sends no parameter", () => {
-    expect(params(build(false, undefined, ""))).toEqual({});
+    expect(params(build(undefined, ""))).toEqual({});
   });
 
   test("a location is URL-encoded, not spliced", () => {
-    const url = build(false, undefined, "1 Main St & 2nd Ave #4");
+    const url = build(undefined, "1 Main St & 2nd Ave #4");
     expect(url.searchParams.get("location")).toBe("1 Main St & 2nd Ave #4");
     expect(url.search).not.toContain("&2nd");
   });
 });
 
 test("a broker URL that already names a location is overridden, never doubled", () => {
-  const url = buildBrokeredWsUrl(
-    "https://sandbox.example/websocket?location=old",
-    false,
-    undefined,
-    { location: "new" },
-  );
+  const url = buildBrokeredWsUrl("https://sandbox.example/websocket?location=old", undefined, {
+    location: "new",
+  });
   expect(url.searchParams.getAll("location")).toEqual(["new"]);
 });
 
 describe.each([
-  ["same-origin", (phone?: string) => buildWsUrl("https://host/agent/", true, "s-1", { phone })],
+  ["same-origin", (phone?: string) => buildWsUrl("https://host/agent/", "s-1", { phone })],
   [
     "brokered",
-    (phone?: string) =>
-      buildBrokeredWsUrl("https://sandbox.example/websocket", true, "s-1", { phone }),
+    (phone?: string) => buildBrokeredWsUrl("https://sandbox.example/websocket", "s-1", { phone }),
   ],
 ])("%s connect URL `phone`", (_route, build) => {
   test("rides beside the resume id, URL-encoded", () => {
@@ -83,18 +76,17 @@ describe.each([
 });
 
 test("a broker URL that already names a phone is overridden, never doubled", () => {
-  const url = buildBrokeredWsUrl("https://sandbox.example/websocket?phone=old", false, undefined, {
+  const url = buildBrokeredWsUrl("https://sandbox.example/websocket?phone=old", undefined, {
     phone: "+15035550123",
   });
   expect(url.searchParams.getAll("phone")).toEqual(["+15035550123"]);
 });
 
 describe.each([
-  ["same-origin", (client?: string) => buildWsUrl("https://host/agent/", true, "s-1", { client })],
+  ["same-origin", (client?: string) => buildWsUrl("https://host/agent/", "s-1", { client })],
   [
     "brokered",
-    (client?: string) =>
-      buildBrokeredWsUrl("https://sandbox.example/websocket", true, "s-1", { client }),
+    (client?: string) => buildBrokeredWsUrl("https://sandbox.example/websocket", "s-1", { client }),
   ],
 ])("%s connect URL `client`", (_route, build) => {
   test("rides beside the resume id", () => {
@@ -111,7 +103,7 @@ describe.each([
 });
 
 test("a broker URL that already names a client is overridden, never doubled", () => {
-  const url = buildBrokeredWsUrl("https://sandbox.example/websocket?client=old", false, undefined, {
+  const url = buildBrokeredWsUrl("https://sandbox.example/websocket?client=old", undefined, {
     client: "kitchen-speaker",
   });
   expect(url.searchParams.getAll("client")).toEqual(["kitchen-speaker"]);

@@ -73,9 +73,7 @@ export type WarmHarness = {
  * and push the same bytes into the sandbox, so the bundle crossed this process
  * twice per cold spawn. A time-boxed signed Storage URL (see
  * `BlobStorage.signedUrl`) removes both hops. `inline` covers everything that
- * cannot sign — the memory blob store behind local dev and tests — and guests
- * pinned to a harness image that predates URL delivery (see
- * the harness image tag).
+ * cannot sign — the memory blob store behind local dev and tests.
  *
  * `sha256` rides along in BOTH shapes and is the agents row's `worker_hash` —
  * the deploy's own record of what it published, not a digest of whatever

@@ -8,7 +8,8 @@ import { flush } from "../_timing-test-utils.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "../transports/capabilities.ts";
 import type { Transport, TransportEventBody, TransportEventType } from "../transports/types.ts";
 import { makeAgentConfig, makeCore, makeSink } from "./_core-harness.ts";
-import { createSessionCore, type ServerSession } from "./core.ts";
+import { createSessionCore } from "./core.ts";
+import type { ServerSession } from "./core-types.ts";
 
 describe("createSessionCore — lifecycle", () => {
   test("start/stop calls transport", async () => {

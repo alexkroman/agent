@@ -2,16 +2,9 @@
 /**
  * The exec env every CONTAINED guest gets — the whole of it, in one builder.
  *
- * Split out of `modal/harness-image.ts`, which had grown two jobs: BUILDING the
- * harness-baked snapshot image, and declaring what a process exec'd inside one is
- * handed. The seam is worth having for a reason beyond size — this half is a
- * CONTRACT four spawn sites read and the other half is a recipe one resolver runs,
- * and they change for unrelated reasons. It cost something concrete: the file sat
- * at 494 of its 500-line cap, so `TMPDIR` was added to the three env builders
- * AROUND {@link guestExecBaseEnv} rather than into it, and one value had three
- * homes.
- *
- * `modal/harness-image.ts` re-exports every name here, so no import site moved.
+ * Its own module rather than part of `modal/harness-image.ts`: this half is a
+ * CONTRACT four spawn sites read, the image's identity is another, and they
+ * change for unrelated reasons.
  *
  * ## The four sites, and the one that is deliberately not among them
  *

@@ -35,7 +35,7 @@ function buildClientConfig(source: {
 
 Build the `GET /client-config` response body from an agent-shaped config.
 
-Every server that serves the endpoint (a self-hosted `createRuntimeServer`, the
+Every server that serves the endpoint (a self-hosted `createServerForRuntime`, the
 platform's per-slug handler, the CLI dev server) goes through this, so a
 surface rule can't drift between them.
 

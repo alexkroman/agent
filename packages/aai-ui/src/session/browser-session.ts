@@ -88,7 +88,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     // session may actually connect to: that URL dies with the sandbox (idle
     // eviction, redeploy), while the platform endpoint is stable and upgrades
     // callers to the current sandbox endpoint itself.
-    apiUrl: buildWsUrl(options.platformUrl, false).toString(),
+    apiUrl: buildWsUrl(options.platformUrl).toString(),
   };
 
   const subscribers = new Set<() => void>();
@@ -224,7 +224,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
    */
   function onServerConfig(config: SessionConfigMessage): void {
     dialer.configured(config.sid);
-    if (config.sid) options.onSessionId?.(config.sid);
+    options.onSessionId?.(config.sid);
     flushQueued();
     // The audio path reports its own failures — see `session/audio-state.ts`.
     audio.start(config);
@@ -415,7 +415,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     // No socket, so the `reset` frame above went nowhere and this redial is
     // what starts the new conversation. `end()` is the whole clear-and-forget:
     // it drops the resume identity, so `start()` redials without
-    // `?sessionId=`/`resume=1` — a resume rejoins the conversation in progress,
+    // `?sessionId=` — a resume rejoins the conversation in progress,
     // keeping the server's history and suppressing the greeting. `start()`
     // also leaves the session running, so the controls don't show "Resume".
     end();

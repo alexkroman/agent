@@ -98,7 +98,7 @@ describe("sessionSlot({ caps })", () => {
     const ctx = createToolContext();
     expect(wide.get(ctx).log).toEqual(["b", "c"]);
     expect(wide.reset(ctx).log).toEqual(["b", "c"]);
-    expect(wide.projection((v) => v.log)()).toEqual(["b", "c"]);
+    expect(wide.projected().log).toEqual(["b", "c"]);
   });
 
   test("each capped array is independent, and uncapped fields are untouched", () => {

@@ -49,10 +49,12 @@ const PARAMS = {
   // Equal to `serverUrl` on every backend but the local microVM one; the case
   // where they differ has its own test below.
   browserUrl: "https://platform.example",
+  skipTypecheck: false,
 };
 
 async function seedProject(deps: StudioDeployDeps, project: string, deployedSlug?: string) {
   await createWorkspace(deps.workspaces, SCOPE, project, {
+    kind: "agent",
     files: { "agent.ts": "export default {}" },
     ...omitUndefined({ deployedSlug }),
   });
@@ -74,17 +76,17 @@ describe("deployStudioProject", () => {
         apiKey: "caller-key",
         // First deploys claim the project name itself.
         slug: "my-agent",
+        skipTypecheck: false,
       },
     );
   });
 
-  test("forwards skipTypecheck to the sandbox, and omits it by default", async () => {
+  test("forwards skipTypecheck to the sandbox either way", async () => {
     const off = vi.fn(fakeDeployWorkspace());
     const offDeps = makeDeps({ deployWorkspace: off });
     await seedProject(offDeps, "my-agent");
     await deployStudioProject(offDeps, PARAMS);
-    // Undefined by default so the in-sandbox `aai deploy` runs its tsc gate.
-    expect(off.mock.calls[0]?.[3]?.skipTypecheck).toBeUndefined();
+    expect(off.mock.calls[0]?.[3]).toMatchObject({ skipTypecheck: false });
 
     const on = vi.fn(fakeDeployWorkspace());
     const onDeps = makeDeps({ deployWorkspace: on });

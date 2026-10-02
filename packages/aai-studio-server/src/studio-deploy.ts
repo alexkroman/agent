@@ -36,11 +36,8 @@ export type StudioDeployParams = {
    * microVM one — see {@link translateGuestOrigin}.
    */
   browserUrl: string;
-  /**
-   * `--skipTypecheck`: forwarded to the in-sandbox `aai deploy`. Absent reads
-   * as "run the tsc gate" — the safe default an older CLI produces.
-   */
-  skipTypecheck?: boolean | undefined;
+  /** `--skipTypecheck`: forwarded to the in-sandbox `aai deploy`. */
+  skipTypecheck: boolean;
 };
 
 /**

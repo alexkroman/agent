@@ -89,8 +89,7 @@ on.
 recorded on `ctx.sent`, a real slot store, a fresh `sessionId` per call. Its
 `generate` and `delegate` take a SCRIPT (`{ reply }` for every call, `{ routes }`
 keyed by system prompt or subagent name) and hand the fake back on `ctx.model`
-and `ctx.desk`, whose `calls` a spec asserts on. It replaces the deprecated
-`scriptedToolContext`.
+and `ctx.desk`, whose `calls` a spec asserts on.
 
 ```ts
 import { createToolContext } from "@alexkroman1/aai-runtime/testing";

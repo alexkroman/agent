@@ -10,8 +10,8 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { hostRequest } from "aai-guest-core/rpc";
+import type { StudioSession } from "aai-guest-core/types";
 import type { UIMessage } from "ai";
-import type { StudioSession } from "./session.ts";
 import { snapshotWorkspace } from "./workspace-fs.ts";
 
 /**

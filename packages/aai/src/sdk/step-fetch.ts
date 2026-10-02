@@ -50,7 +50,7 @@
  * the same reason: the HTTP/1.1 dispatcher needs `undici`, this module is on the
  * CLI's zero-dependency startup path and rides the browser bundle, and a step
  * artifact carries its own copy of this file — so the publisher and the reader
- * are two module instances in one realm. `createRuntimeServer` publishes;
+ * are two module instances in one realm. `createServerForRuntime` publishes;
  * `host/step-fetch.ts` is the published half.
  *
  * An UNPUBLISHED slot falls back to `globalThis.fetch`, which is what keeps an
@@ -121,7 +121,7 @@ const STEP_FETCH_SLOT = globalSlot<StepFetch>("stepFetch");
 /**
  * Publish the HTTP/1.1 fetch for this process's steps.
  *
- * `createRuntimeServer` does this, which is what makes a step's outbound calls behave
+ * `createServerForRuntime` does this, which is what makes a step's outbound calls behave
  * identically under `aai dev`, on a self-hosted server and in a deployed guest.
  * Pass `undefined` to unpublish.
  *

@@ -146,10 +146,6 @@ type PreviewPaneProps = {
   hasAgent?: boolean | undefined;
   /** CLI output of the last failed preview deploy. */
   previewError?: string | undefined;
-  /** Production slug — updated only by Publish; fallback for old projects. */
-  deployedSlug?: string | undefined;
-  /** Bumped after each publish so the production-fallback iframe reloads. */
-  nonce: number;
   /**
    * Report that the platform is not serving the slug this pane wants to
    * frame, so the server regenerates it. Called at most once per missing
@@ -212,10 +208,8 @@ function PaneScreen(props: { title: string; body: string }) {
 }
 
 export function PreviewPane(props: PreviewPaneProps) {
-  const { previewSlug, deployedSlug } = props;
-  // Prefer the preview (the workspace's current state); production is only
-  // a fallback for projects published before auto previews existed.
-  const slug = previewSlug ?? deployedSlug;
+  // The preview — the workspace's current state. Production is never framed.
+  const slug = props.previewSlug;
   const ready = useAgentPageReady(slug, props.onPreviewMissing);
   // A build in flight owns the whole pane — the FIRST one and every rebuild
   // alike, which is why this is one flag and not a first-build special case.
@@ -237,13 +231,11 @@ export function PreviewPane(props: PreviewPaneProps) {
         <PaneBanner previewError={props.previewError} framed={true} />
         {/* Same-origin and unsandboxed on purpose: `sandbox` without
             allow-same-origin blocks getUserMedia, the pane's whole point.
-            Only the user's own preview/production agent is ever framed here —
+            Only the user's own preview agent is ever framed here —
             see the key-storage threat notes in main.tsx. Keyed by the preview
             version so a fresh preview deploy reloads the frame exactly once. */}
         <iframe
-          key={
-            previewSlug ? `${previewSlug}-${props.previewVersion ?? ""}` : `${slug}-${props.nonce}`
-          }
+          key={`${slug}-${props.previewVersion ?? ""}`}
           src={`/${slug}/`}
           title="Preview agent"
           allow="microphone"

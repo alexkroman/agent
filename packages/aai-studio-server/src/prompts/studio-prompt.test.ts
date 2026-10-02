@@ -65,7 +65,7 @@ describe("loadScaffoldGuide", () => {
 
 describe("studioSystemPrompt", () => {
   test("composes the studio preamble with the scaffold guide", () => {
-    const prompt = studioSystemPrompt();
+    const prompt = studioSystemPrompt("agent");
     // Studio preamble (workflow + environment overrides).
     expect(prompt).toContain("AssemblyAI Build coding agent");
     expect(prompt).toContain("test_agent");
@@ -133,7 +133,7 @@ describe("studioSystemPrompt", () => {
   });
 
   test("lists the SDK's real subpaths without naming removed ones", () => {
-    const prompt = studioSystemPrompt().replace(/\s+/g, " ");
+    const prompt = studioSystemPrompt("agent").replace(/\s+/g, " ");
     expect(prompt).toContain("Never invent an SDK subpath");
     // Interpolated from the package's own exports map, so it can't drift.
     expect(prompt).toContain("@alexkroman1/aai/llm");
@@ -154,23 +154,17 @@ describe("studioSystemPrompt", () => {
     const guide = loadScaffoldGuide();
     expect(guide).toContain("## Workflow\n");
 
-    const prompt = studioSystemPrompt().replace(/\s+/g, " ");
+    const prompt = studioSystemPrompt("agent").replace(/\s+/g, " ");
     // The exclusion has to name what it means precisely.
     expect(prompt).toContain("`pnpm dev` / `pnpm test` / `pnpm build` loop");
   });
 
   test("is cached across calls, per kind", () => {
-    expect(studioSystemPrompt()).toBe(studioSystemPrompt());
+    expect(studioSystemPrompt("agent")).toBe(studioSystemPrompt("agent"));
     expect(studioSystemPrompt("workflow")).toBe(studioSystemPrompt("workflow"));
     // One cache entry per kind, not one entry the second caller overwrites —
     // a studio replica serves both kinds, interleaved.
     expect(studioSystemPrompt("agent")).not.toBe(studioSystemPrompt("workflow"));
-  });
-
-  test("defaults to the voice-agent prompt", () => {
-    // Every project written before the switcher existed is a voice agent, and
-    // so is every caller that names no kind (the CLI's first push, evals).
-    expect(studioSystemPrompt()).toBe(studioSystemPrompt("agent"));
   });
 
   test("names the transcription-workflow template in the workflow prompt", () => {
@@ -257,7 +251,7 @@ describe("studioSystemPrompt", () => {
   });
 
   test("falls back to the built-in guide when the scaffold file is absent", () => {
-    const prompt = composeStudioPrompt(null);
+    const prompt = composeStudioPrompt(null, "agent");
     expect(prompt).toContain("AssemblyAI Build coding agent");
     expect(prompt).toContain("agent() essentials");
     // The preamble points at a "Design guidelines" section; the fallback is

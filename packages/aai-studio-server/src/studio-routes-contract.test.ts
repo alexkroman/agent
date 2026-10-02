@@ -10,7 +10,11 @@
  * length cap; the shared fakes live in _studio-routes-test-utils.ts.
  */
 
-import { createMemorySecretStore, createMemoryWorkspaceStore } from "aai-server/stores";
+import {
+  createMemorySecretStore,
+  createMemoryWorkspaceStore,
+  WorkspaceConflictError,
+} from "aai-server/stores";
 import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { devToken, onboardKey } from "./_studio-auth-test-utils.ts";
@@ -55,9 +59,11 @@ describe("response bodies", () => {
     expect(await res.text()).toContain("Invalid project name");
   });
 
-  test("a duplicate create says the project already exists", async () => {
-    await createProject(fetch);
-    const res = await createProject(fetch);
+  test("a create whose generated names both collide says the project already exists", async () => {
+    const workspaces = createMemoryWorkspaceStore();
+    vi.spyOn(workspaces, "put").mockRejectedValue(new WorkspaceConflictError("s", "p"));
+    const { fetch: conflicted } = await createFakedCombined({ workspaces });
+    const res = await authFetch(conflicted, "/studio/projects", { body: { kind: "agent" } });
     expect(res.status).toBe(409);
     expect(await errorOf(res)).toBe("Project already exists");
   });
@@ -202,8 +208,13 @@ describe("browser-session scoping", () => {
     await onboardKey(fetch, bob, "bob-key");
 
     expect(
-      (await authFetch(fetch, "/studio/projects", { body: { name: "alice-proj" }, key: alice }))
-        .status,
+      (
+        await authFetch(fetch, "/studio/projects/alice-proj/source", {
+          method: "PUT",
+          body: { files: {} },
+          key: alice,
+        })
+      ).status,
     ).toBe(201);
 
     const alicesList = await authFetch(fetch, "/studio/projects", { method: "GET", key: alice });
@@ -313,7 +324,7 @@ describe("workspace failure handling", () => {
     vi.spyOn(workspaces, "put").mockRejectedValue(new Error("store offline"));
     const { fetch } = await createFakedCombined({ workspaces });
 
-    const res = await createProject(fetch);
+    const res = await authFetch(fetch, "/studio/projects", { body: { kind: "agent" } });
     expect(res.status).not.toBe(409);
     expect(res.status).toBeGreaterThanOrEqual(500);
   });
@@ -366,7 +377,7 @@ describe("deploy route wiring", () => {
     deployMock.mockClear();
     const { fetch } = await createFakedCombined();
     await createProject(fetch);
-    await authFetch(fetch, "/studio/projects/proj/deploy", { body: {} });
+    await authFetch(fetch, "/studio/projects/proj/deploy", { body: { skipTypecheck: false } });
 
     // Typed off `deployStudioProject`'s own parameters (see the fakes in
     // _studio-routes-test-utils.ts), so a renamed or newly required dependency

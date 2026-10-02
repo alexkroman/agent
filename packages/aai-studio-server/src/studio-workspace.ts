@@ -27,18 +27,16 @@ import {
   MAX_STUDIO_FILES,
   MAX_STUDIO_WORKSPACE_BYTES,
 } from "./studio-limits.ts";
-import type { ProjectKind } from "./studio-project-kind.ts";
+import { isProjectKind, type ProjectKind } from "./studio-project-kind.ts";
 
 export type StudioWorkspace = {
   files: Record<string, string>;
   /**
    * What the project builds — the new-project screen's switcher, stamped at
    * create time and read back when a coding-agent session is installed, which
-   * is what selects the system prompt (see studio-project-kind.ts). Absent on
-   * every document written before the switcher existed, which
-   * `resolveProjectKind` reads as the default (`agent`).
+   * is what selects the system prompt (see studio-project-kind.ts).
    */
-  kind?: ProjectKind;
+  kind: ProjectKind;
   /**
    * `filesHash` of `files`, stamped on every write so reads (project GET,
    * deploy) never recompute it. Required: `stampWorkspace` is the only way a
@@ -221,7 +219,8 @@ function parseWorkspace(doc: unknown): StudioWorkspace | null {
   // `isRecord` rather than a hand-spelled `typeof`/`Array.isArray` pair: it
   // NARROWS, so reading `.files` needs no cast. A doc with `files: null` (or an
   // array) must read as "no workspace", not surface as TypeErrors downstream.
-  if (!(isRecord(doc) && isRecord(doc.files))) return null;
+  // So must one with no `kind`: it would select no system prompt.
+  if (!(isRecord(doc) && isRecord(doc.files) && isProjectKind(doc.kind))) return null;
   return doc as StudioWorkspace;
 }
 
@@ -321,7 +320,9 @@ export function syncWorkspaceSource(
       // A caller holding a baseHash pulled a project that has since been
       // deleted — that is a conflict to surface, not a fresh create.
       if (baseHash !== undefined) throw new WorkspaceConflictError(scope, project);
-      const doc = stampWorkspace({ files: incoming }, undefined, incomingHash);
+      // A first push has no new-project switcher to ask, so it creates a voice
+      // agent; the coding agent's prompt still switches shape on request.
+      const doc = stampWorkspace({ files: incoming, kind: "agent" }, undefined, incomingHash);
       await store.put(scope, project, doc, null);
       return { workspace: doc, sourceHash: doc.hash, created: true, changed: true };
     }

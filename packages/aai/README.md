@@ -53,13 +53,15 @@ it. Nothing here is required to get a working agent.
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
-export const notesSlot = sessionSlot("notes", () => ({ items: [] as string[] }));
+export const notesSlot = sessionSlot("notes", () => ({ items: [] as string[] }), {
+  view: (notes) => ({ count: notes.items.length }),
+});
 
 export default agent({
   name: "Notes",
   systemPrompt: "You take short notes for the caller.",
   // Show the slot to the browser client, read there with `useAgentState`.
-  syncState: { notes: notesSlot.projection((notes) => ({ count: notes.items.length })) },
+  syncState: notesSlot.projected,
 });
 ```
 
@@ -95,7 +97,9 @@ fields the example above leaves out:
 import { agent, sessionSlot } from "@alexkroman1/aai";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
 
-const cart = sessionSlot("cart", () => ({ items: [] as string[] }));
+const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
+  view: (c) => ({ count: c.items.length }),
+});
 
 export default agent({
   name: "Storefront",
@@ -108,7 +112,7 @@ export default agent({
   maxSteps: 6,
   turnTaking: { minSilenceMs: 1200 },
   // What the browser client renders with `useAgentState`.
-  syncState: { cart: cart.projection((c) => ({ count: c.items.length })) },
+  syncState: cart.projected,
   // Observe-only hooks over the session event stream.
   events: {
     "tool.called": (event) => {
@@ -417,27 +421,24 @@ what the browser is allowed to see:
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
-// shared.ts — compose the projection once and import it at both ends.
-export const cartSlot = sessionSlot("cart", () => ({
-  cart: [] as string[],
-  staffPin: "",
-}));
+// shared.ts — declare the view on the slot and import it at both ends.
+// `staffPin` is not in the view, so it never reaches the browser.
+export const cartSlot = sessionSlot("cart", () => ({ cart: [] as string[], staffPin: "" }), {
+  view: (s) => ({ cart: s.cart }),
+});
 
-// `staffPin` never reaches the browser.
-export const cartProjection = cartSlot.projection((s) => ({ cart: s.cart }));
-
-export default agent({ name: "Storefront", syncState: { cart: cartProjection } });
+export default agent({ name: "Storefront", syncState: cartSlot.projected });
 ```
 
 ```tsx
 import { sessionSlot } from "@alexkroman1/aai";
 import { mountClient, useAgentState } from "@alexkroman1/aai-ui";
 
-// client.tsx — in a project this is `import { cartProjection } from "./shared.ts"`,
-// the same value the agent declared, so the two ends cannot name different views.
-const cartProjection = sessionSlot("cart", () => ({ cart: [] as string[] })).projection(
-  (s) => ({ cart: s.cart }),
-);
+// client.tsx — in a project this is `import { cartSlot } from "./shared.ts"`,
+// the same slot the agent declared, so the two ends cannot name different views.
+const cartProjection = sessionSlot("cart", () => ({ cart: [] as string[] }), {
+  view: (s) => ({ cart: s.cart }),
+}).projected;
 
 function App() {
   // The projection types the state AND supplies the frame rendered before the

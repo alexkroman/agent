@@ -135,13 +135,9 @@ describe("pack + build + boot: template workflows", () => {
       );
       ctx.skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
     }
-    // `--all`, so the claim is the template's WHOLE suite passing in a project
-    // `aai init` produced. Bare `aai test` runs `agent.test.ts` and refuses when
-    // the project holds specs it did not run, which is deliberate — but that
-    // makes it a test of how many files a template ships, and this loop is not
-    // where that contract lives. "`aai test` FAILS naming the spec files it did
-    // not run" pins it below, on a lab project built to have exactly that shape.
-    aai(aaiBin, ["test", "--all"], projectDir);
+    // The template's WHOLE suite passing in a project `aai init` produced —
+    // bare `aai test` runs every spec in the project.
+    aai(aaiBin, ["test"], projectDir);
     aai(aaiBin, ["build", "--skip-tests"], projectDir);
 
     // `aai` only signals a successful build by not throwing — so name the

@@ -327,8 +327,7 @@ the rest live only here.
   client spreads `PROVIDER_WS_OPTIONS` (`_ws.ts`; pinned by `_ws.test.ts`).
   Vendor-SDK providers (assemblyai STT, Deepgram, ElevenLabs, Cartesia) cannot
   be covered.
-- **Self-hosted server defaults**: `createServerForRuntime` (formerly
-  `createRuntimeServer`) has no auth, so it
+- **Self-hosted server defaults**: `createServerForRuntime` has no auth, so it
   **binds loopback** (`AAI_DEV_HOST` to override) and **host mode is opt-in**
   (`AAI_ALLOW_HOST`). `createHostServer` is the host-only server in one call.
   The rest is in `packages/aai-cli/CLAUDE.md`, "Running the SDK's own server".

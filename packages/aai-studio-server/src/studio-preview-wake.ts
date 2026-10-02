@@ -87,10 +87,9 @@ export const PREVIEW_WAKE_THROTTLE_MS = 30_000;
  *   broker a session. Neither trigger is TRUSTED; both land here, and the
  *   404 check below is what decides.
  *
- * It always warms the sandbox of the agent the pane embeds (the preview,
- * falling back to the production agent for projects published before previews
- * existed) via {@link warmPreviewSandbox}, so a preview idle-evicted since the
- * last visit is booting before the pane's iframe asks for it.
+ * It always warms the sandbox of the agent the pane embeds — the preview — via
+ * {@link warmPreviewSandbox}, so a preview idle-evicted since the last visit is
+ * booting before the pane's iframe asks for it.
  *
  * It used to ALSO redeploy a stale preview, because scheduling was
  * fire-and-forget in-process state and a replica restart could drop a
@@ -150,8 +149,8 @@ export function wakeProjectPreview(options: {
       // A settled failure has no queued job behind it, so this is the only
       // thing that can retry it (see the doc comment).
       const retrySettledFailure = Boolean(workspace.previewError);
-      const slug = workspace.previewSlug ?? workspace.deployedSlug;
-      // Warm whatever the pane embeds even when a retry is already decided:
+      const slug = workspace.previewSlug;
+      // Warm what the pane embeds even when a retry is already decided:
       // on a failure that followed a working deploy, `previewSlug` still
       // points at that agent and the pane loads it while the retry runs.
       // Doubles as an existence check — a 404 means the stamped agent is gone.

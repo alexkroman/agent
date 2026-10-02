@@ -26,26 +26,5 @@
     "stepNotifyClient",
     "stepSayOnClient"
   ],
-  "rollup": "08f14f670df557b22b71ce5ca55ef92da27365da5a7a86fbe929c5a3c24874b5",
-  "revision": 2,
-  "revisions": [
-    {
-      "revision": 0,
-      "rule": 2,
-      "sha256": "7b15d5d14225b220a82cd5ca51bc15452c47d7cb7fcbb0fe1f45243db37bbab5",
-      "reason": "minted"
-    },
-    {
-      "revision": 1,
-      "rule": 2,
-      "sha256": "f79c72faa57374edce111e113891a49501836fbe6bdeb1b17676377b9bb813ec",
-      "reason": "additive (checked): +DEFAULT_CLIENT_DELIVERY_ATTEMPTS, +StepSayOnClientOptions, +requireSessionClient, +stepSayOnClient"
-    },
-    {
-      "revision": 2,
-      "rule": 2,
-      "sha256": "23651b5289e6eaabe8856d33091f4696a3ee630250de5bbecd2c95d8469362f1",
-      "reason": "additive (checked): +DEFAULT_CLIENT_DELIVERY_ATTEMPTS, +SayFailureOnClientOptions, +StepSayOnClientOptions, +requireSessionClient, +sayFailureOnClient, +stepSayOnClient"
-    }
-  ]
+  "rollup": "5aa3d8317676eb84d77aed79c6cd64d74b75fe6843a9de1c518c988b21130dfb"
 }

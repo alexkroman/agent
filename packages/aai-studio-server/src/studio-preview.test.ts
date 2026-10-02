@@ -202,7 +202,7 @@ describe("wakeProjectPreview", () => {
     expect(after?.previewError).toBe("deploy failed (HTTP 500): Internal server error");
   });
 
-  test("falls back to warming the production agent for pre-preview projects", async () => {
+  test("never warms the production agent: the pane frames only the preview", async () => {
     const workspaces = await seededStore();
     await stampProject(workspaces, (current) => ({
       deployedSlug: "prod-slug",
@@ -212,9 +212,9 @@ describe("wakeProjectPreview", () => {
     const schedule = scheduleFn();
     const fetchImpl = fakeFetch();
     wake(workspaces, schedule, fetchImpl);
-    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
-    const [url] = fetchImpl.mock.calls[0] ?? [];
-    expect(String(url)).toBe("https://platform.example/prod-slug/client-config");
+    // The settled failure is still retried — with no warm-up in front of it.
+    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   test("a 404 from the broker regenerates a 'current' preview", async () => {

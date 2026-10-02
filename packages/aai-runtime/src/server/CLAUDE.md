@@ -17,9 +17,9 @@ import its `index.ts` only (`guard-invariants` rule 37).
 Three servers, picked by what the caller HAS: an agent definition →
 `createAgentServer`; no agent, callers bring theirs → `createHostServer`; a
 runtime built elsewhere or later (the guest harness, `aai dev`) →
-`createServerForRuntime`, the layer the other two wrap. `createRuntimeServer` is
-its deprecated old name — and stays the `GuestHost` FIELD name
-(`guest-host.ts`), which shipped harnesses read across SDK versions.
+`createServerForRuntime`, the layer the other two wrap. The `GuestHost` FIELD
+for it is still named `createRuntimeServer` (`guest-host.ts`), because shipped
+harnesses read it across SDK versions.
 
 ### Self-hosted durable workflows: there is no world to start
 

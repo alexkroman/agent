@@ -119,8 +119,9 @@ test("useAgentState infers its type from a slot projection", () => {
   // The overload's whole reason to exist: the projection's return type IS the
   // state's type, so a caller passing one restates nothing. A type argument
   // here would mean the round-trip is still hand-wired.
-  const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-  const cartProjection = cartSlot.projection((cart) => ({ count: cart.items.length }));
+  const cartProjection = sessionSlot("cart", () => ({ items: [] as string[] }), {
+    view: (cart) => ({ count: cart.items.length }),
+  }).projected;
 
   expectTypeOf(useAgentState(cartProjection)).toEqualTypeOf<{ count: number }>();
   // And the `null` is gone, for the same reason the `fallback` overload drops

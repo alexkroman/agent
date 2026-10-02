@@ -51,6 +51,7 @@ function stepRecord(key: string, finishedAt: number): StepEntry {
     status: "ok",
     output: null,
     attempts: 1,
+    startedAt: finishedAt,
     finishedAt,
   };
 }
@@ -222,6 +223,7 @@ describe("the refusals", () => {
           name: "a",
           status: "ok",
           attempts: 1,
+          startedAt: 1,
           finishedAt: 1,
         }),
     ],
@@ -257,6 +259,7 @@ describe("what a caller is handed is a COPY", () => {
       status: "ok",
       output: 1,
       attempts: 1,
+      startedAt: 1,
       finishedAt: 1,
     });
     const [step] = await journal.readSteps("wrun_1");

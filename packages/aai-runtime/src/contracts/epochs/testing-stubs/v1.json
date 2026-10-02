@@ -3,7 +3,7 @@
   "capability": "testing-stubs",
   "epoch": 1,
   "rule": 2,
-  "sha256": "1f5645c080814ea0edf8eb09ca3431639e77f246ebe1696c4d05fc8568256008",
+  "sha256": "d6778e8b018c88ca4a0368789c955723fc041d9c34aeddc8924f1d35a4237421",
   "exports": [
     "DeployedConfig",
     "DeployedStage",
@@ -19,8 +19,6 @@
     "RunSnapshotOverrides",
     "STUB_SPEECH_PCM_BYTES",
     "SaidLine",
-    "ScriptedToolContext",
-    "ScriptedToolContextOptions",
     "SentEvent",
     "StubClientInbox",
     "StubClientInboxCall",
@@ -87,7 +85,6 @@
     "runGuardrail",
     "runTool",
     "schemaInputIssues",
-    "scriptedToolContext",
     "stubClientInbox",
     "stubClientTranscript",
     "stubDelegate",
@@ -106,5 +103,5 @@
     "toolOf",
     "toolRunner"
   ],
-  "rollup": "45851950d1a81fc9fc582a1ba4e8e575a9f3cc73abf69bd3adbdceb4bcfa2741"
+  "rollup": "2268891c821b5d7907fbd6d8f218b5a3631fb524be853260cea6cbaf9cbc7d8a"
 }

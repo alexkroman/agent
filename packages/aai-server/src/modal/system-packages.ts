@@ -2,13 +2,10 @@
 /**
  * The system packages a guest sandbox gets on top of its base image.
  *
- * Its own module because it is its own image LAYER, cached on its own commands
- * and invalidated by nothing the toolchain does (see `modal/harness-image.ts`
- * for how the layers stack), and because both things it exports have to agree
- * exactly: the `apt-get install` line and the image FINGERPRINT.
+ * Its own module because it is its own image LAYER (the `apt-get install` in
+ * `guest-image.Dockerfile`, which `scripts/build-guest-image.mjs` reads these
+ * values for), and because the image FINGERPRINT has to agree with it exactly.
  */
-
-import type { Image } from "modal";
 
 /**
  * System packages the guest image installs on top of the base image.
@@ -29,33 +26,13 @@ import type { Image } from "modal";
 export const GUEST_SYSTEM_PACKAGES = ["ffmpeg"] as const;
 
 /**
- * The system-package install as its own image LAYER.
- *
- * `--no-install-recommends` because the recommends of `ffmpeg` alone pull an X
- * stack the guest has no display for, and the apt lists go with the layer they
- * were fetched for — a cached index in the image is bytes on the cold-start
- * path of every sandbox, and stale within a day besides.
- *
- * An empty list returns the base image UNTOUCHED rather than emitting an
- * `apt-get install` with no arguments: that command fails, and it would fail
- * inside an image build whose error surfaces as a failed spawn.
- */
-export function systemPackagesImage(baseImage: Image, systemPackages: readonly string[]): Image {
-  if (systemPackages.length === 0) return baseImage;
-  return baseImage.dockerfileCommands([
-    "RUN apt-get update && apt-get install -y --no-install-recommends " +
-      `${systemPackageList(systemPackages)} && rm -rf /var/lib/apt/lists/*`,
-  ]);
-}
-
-/**
  * The system packages as one canonical string — SORTED, so reordering the
  * declaration is not a change.
  *
  * One function because two callers must agree exactly: the `apt-get install`
  * line and the image FINGERPRINT. Deriving them separately is how a package
  * joins the layer without minting a new tag, and the symptom of that is the
- * worst one available here — every already-published snapshot keeps its tag, so
+ * worst one available here — every already-published image keeps its tag, so
  * spawns resolve an image that silently lacks the binary a step calls.
  */
 export function systemPackageList(systemPackages: readonly string[]): string {

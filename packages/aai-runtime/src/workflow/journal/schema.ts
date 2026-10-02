@@ -36,22 +36,8 @@ export const WORKFLOW_RUN_TABLE = "aai_workflow_runs";
 /** One row per settled step, plus the attempt counter and the two wait kinds. */
 export const WORKFLOW_STEP_TABLE = "aai_workflow_steps";
 /**
- * One row per OUTSTANDING attempt, and a new table rather than a changed one.
- *
- * `aai_workflow_attempts` held a scalar `n` keyed `(run_id, key)`, and a scalar
- * cannot expire: the charge a dead walk left was indistinguishable from a live
- * one and stood forever, so `maxAttempts` deaths on one step key refused it
- * permanently. Expiring individual charges needs a timestamp PER charge, which
- * needs a row per charge, which needs the holder in the primary key — so the key
- * changes, and `create table if not exists` cannot change a key.
- *
- * The old table is left in place rather than dropped here. A shipped DDL
- * applier runs on operator databases, and `drop table` is not a thing a library
- * should do to one on its own initiative; the platform's own migration retires
- * its copy, and a self-hoster's is an empty table nothing reads. Outstanding
- * charges are lost at the changeover, which is the safe direction — see
- * `JournalStore.releaseAttempt` on why under-charging is recoverable and
- * over-charging is not.
+ * One row per OUTSTANDING attempt: a charge EXPIRES, so it needs a timestamp per
+ * charge — see {@link CREATE_ATTEMPTS}.
  */
 export const WORKFLOW_ATTEMPT_TABLE = "aai_workflow_attempt_leases";
 export const WORKFLOW_SLEEP_TABLE = "aai_workflow_sleeps";
@@ -95,57 +81,10 @@ const CREATE_STEPS = (t: string) => `create table if not exists ${t} (
   output jsonb,
   error text,
   attempts integer not null,
-  started_at bigint,
+  started_at bigint not null,
   finished_at bigint not null,
   primary key (run_id, key)
 )`;
-
-/**
- * `started_at` on a table that already exists.
- *
- * The FIRST of these, so it carries the argument both share; see
- * {@link ALTER_RUNS_CODE_VERSION} for the second.
- *
- * `create table if not exists` is a NO-OP once the table is there, so a column
- * added to {@link CREATE_STEPS} reaches a fresh deployment and no existing one —
- * which for a self-hoster is the deployment that matters. `add column if not
- * exists` is idempotent, so it runs at every boot for the price of one
- * catalogue lookup.
- *
- * Nullable, and it has to be: the rows already there have no start, and a
- * default would invent one. `StepEntry.startedAt` is optional for the same
- * reason and says what a reader owes an absent value.
- *
- * The residual is the one this module's applier already lives with — a role that
- * may not ALTER gets a warned, swallowed failure and then a `42703` from the
- * store's own insert. That is the operator's migration to run, which is what
- * `ensureWorkflowJournalSchema` being PUBLIC is for.
- */
-const ALTER_STEPS_STARTED_AT = (t: string) =>
-  `alter table ${t} add column if not exists started_at bigint`;
-
-/**
- * `code_version` on a runs table that already exists.
- *
- * Same mechanism, same nullability and the same residual as
- * {@link ALTER_STEPS_STARTED_AT} — read that one. Nullable here is not merely a
- * migration concession: only a deployed guest has a bundle hash at all, so a
- * self-hosted run legitimately has none for the life of the column, and
- * `RunRecord.codeVersion` says what a reader owes an absent value.
- */
-const ALTER_RUNS_CODE_VERSION = (t: string) =>
-  `alter table ${t} add column if not exists code_version text`;
-
-/**
- * `label` on a runs table that already exists — `RunRecord.label`.
- *
- * Same mechanism and residual as {@link ALTER_STEPS_STARTED_AT}. Nullable
- * because a label is optional on every run, not only on the rows already there.
- * No length check in the DDL: the client bounds it before `createRun`, and a
- * self-hoster's own table is not an untrusted writer's (the platform's is, and
- * its migration carries the check).
- */
-const ALTER_RUNS_LABEL = (t: string) => `alter table ${t} add column if not exists label text`;
 
 /**
  * Every outstanding attempt for one step key: WHO holds a charge, and since when.
@@ -201,22 +140,14 @@ const CREATE_HOOKS = (t: string) => `create table if not exists ${t} (
 /**
  * The five tables, for whoever owns the database.
  *
- * Not purely `create table` statements any more: three `alter table … add column
- * if not exists` follow their tables, because a column added to a `create
- * … if not exists` reaches only a database that does not exist yet. See
- * {@link ALTER_STEPS_STARTED_AT}, which carries the argument.
- *
  * @internal
  */
 export function workflowJournalDdl(schema?: string): string[] {
   const q = (table: string) => (schema ? `"${schema}".${table}` : table);
   return [
     CREATE_RUNS(q(WORKFLOW_RUN_TABLE)),
-    ALTER_RUNS_CODE_VERSION(q(WORKFLOW_RUN_TABLE)),
-    ALTER_RUNS_LABEL(q(WORKFLOW_RUN_TABLE)),
     CREATE_RUNS_INDEX(q(WORKFLOW_RUN_TABLE)),
     CREATE_STEPS(q(WORKFLOW_STEP_TABLE)),
-    ALTER_STEPS_STARTED_AT(q(WORKFLOW_STEP_TABLE)),
     CREATE_ATTEMPTS(q(WORKFLOW_ATTEMPT_TABLE)),
     CREATE_SLEEPS(q(WORKFLOW_SLEEP_TABLE)),
     CREATE_HOOKS(q(WORKFLOW_HOOK_TABLE)),

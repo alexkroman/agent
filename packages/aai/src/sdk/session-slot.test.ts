@@ -156,7 +156,7 @@ describe("sessionSlot", () => {
     expect(nullable.get(ctx)).toBeNull();
     expect(zero.set(ctx, 0)).toBe(0);
     expect(zero.get(ctx)).toBe(0);
-    expect(nullable.projection((v) => v)(null)).toBeNull();
+    expect(nullable.projected(null)).toBeNull();
   });
 
   describe("update", () => {

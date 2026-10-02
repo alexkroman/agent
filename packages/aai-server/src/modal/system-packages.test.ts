@@ -1,42 +1,18 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Specs for the guest image's system-package layer.
+ * Specs for the guest image's system-package declaration.
  *
- * The layer's ORDER relative to the toolchain, and the fingerprint that keeps a
- * package change from reusing a published tag, are asserted next to the image
- * they belong to — `modal/harness-image.test.ts`.
+ * The fingerprint that keeps a package change from reusing a published tag is
+ * asserted next to the tag — `modal/harness-image.test.ts`; the Dockerfile's
+ * `apt-get install` line is held to this list by `guest/image-dockerfile.test.ts`.
  */
 
 import { describe, expect, test } from "vitest";
-import { fakeModalImage as fakeImage } from "../_modal-test-utils.ts";
-import { GUEST_SYSTEM_PACKAGES, systemPackagesImage } from "./system-packages.ts";
+import { GUEST_SYSTEM_PACKAGES, systemPackageList } from "./system-packages.ts";
 
-describe("systemPackagesImage", () => {
-  test("installs the declared packages in one layer, and keeps no apt index", () => {
-    const image = fakeImage();
-    systemPackagesImage(image, ["ffmpeg"]);
-    expect(image.commands).toHaveLength(1);
-    const line = image.commands[0]?.[0] ?? "";
-    expect(line).toContain("apt-get install -y --no-install-recommends ffmpeg");
-    // The recommends of ffmpeg alone pull an X stack the guest has no display
-    // for, and a cached index is bytes on every sandbox's cold-start path.
-    expect(line).toContain("--no-install-recommends");
-    expect(line).toContain("rm -rf /var/lib/apt/lists/*");
-  });
-
-  // `apt-get install` with no packages FAILS, and it would fail inside an image
-  // build whose error reaches an operator as a failed spawn.
-  test("returns the base image untouched when nothing is declared", () => {
-    const image = fakeImage();
-    expect(systemPackagesImage(image, [])).toBe(image);
-    expect(image.commands).toEqual([]);
-  });
-
-  test("names the packages in the same sorted order the fingerprint hashes", () => {
-    const image = fakeImage();
-    systemPackagesImage(image, ["sox", "ffmpeg"]);
-    const line = image.commands[0]?.[0] ?? "";
-    expect(line).toContain("ffmpeg sox");
+describe("system packages", () => {
+  test("lists the packages in sorted order, so reordering is not a change", () => {
+    expect(systemPackageList(["sox", "ffmpeg"])).toBe("ffmpeg sox");
   });
 
   // The reason ffmpeg is in the image at all: `@alexkroman1/aai/ffmpeg` spawns

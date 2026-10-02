@@ -13,7 +13,7 @@
  * the entire product, and the declaration says so:
  *
  * - `workflowApp()` is `agent({ …, mode: "workflow-app" })` with the discriminant
- *   already set. The declaration is not decoration: `createRuntimeServer` declines
+ *   already set. The declaration is not decoration: `createServerForRuntime` declines
  *   `/websocket` with a reason (so a page mounted with `mountClient()` by mistake
  *   fails the same way in `aai dev` and in production rather than only after a
  *   deploy) and telephony defaults off.

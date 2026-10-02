@@ -24,11 +24,12 @@ import { requestPath, sleep } from "@alexkroman1/aai/internal";
 import { scriptedTextModel } from "@alexkroman1/aai-runtime/testing";
 import { pendingHostRequests, setHostSend } from "aai-guest-core/rpc";
 import { type FakeHostChannel, installFakeHostChannel } from "aai-guest-core/test-utils";
+import type { StudioSession } from "aai-guest-core/types";
 import type { LanguageModel } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { handleStudioRequest, type StudioChatDeps } from "./chat.ts";
-import { initStudioSession, type StudioSession } from "./session.ts";
+import { initStudioSession } from "./session.ts";
 import { enterTurn, resetTurnGate } from "./turn-stream.ts";
 
 const API_KEY = "caller-key-123";

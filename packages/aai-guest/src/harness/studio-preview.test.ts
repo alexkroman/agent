@@ -14,7 +14,13 @@ import { type PreviewServer, studioPreview } from "./studio-preview.ts";
 /** A bundle factory carrying `host`, as the worker wrapper builds one. */
 function bundle(host: GuestHost): CreateGuestRuntime {
   return Object.assign(
-    () => ({ startSession: () => undefined, shutdown: () => Promise.resolve() }),
+    () => ({
+      startSession: () => undefined,
+      shutdown: () => Promise.resolve(),
+      workflows: undefined,
+      deliverWorkflow: undefined,
+      serveRoute: undefined,
+    }),
     { host },
   );
 }

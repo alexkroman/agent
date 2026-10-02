@@ -216,10 +216,7 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
    */
   const privateCopy = (value: T): T => (durable ? structuredClone(value) : value);
 
-  /**
-   * One projection over this slot, for the declared `projected` below and the
-   * deprecated {@link SessionSlot.projection} — one code path for both.
-   */
+  /** The projection over this slot that `projected` below is built from. */
   const project = <P>(view: (value: DeepReadonly<T>) => P): StateProjection<P> => {
     // `applyCaps` on the default too: a stored value never exceeds its caps,
     // and the frame rendered before the first tool call should not either.
@@ -324,8 +321,7 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     // projection and `useAgentState` memoizes one empty frame off its identity.
     //
     // The identity view is what a slot that declared none projects — the whole
-    // value, which is what `slot.projection((value) => value)` already spelled
-    // by hand — and `projected` is total rather than conditionally present so
+    // value — and `projected` is total rather than conditionally present so
     // that "no view" has to mean something. The assertion is this file's
     // existing seam (see `update` above): with no `view`, `V` really is its own
     // default (`DeepReadonly<T>`), but the `??` widens the inferred projection
@@ -335,6 +331,5 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
       T,
       V
     >["projected"],
-    projection: project,
   };
 }

@@ -13,9 +13,6 @@
  *   (zod, valibot…) and, optionally, `req.clientId` required, both answered
  *   400 with the reason before the handler runs.
  *
- * `route()` answers a `RouteError` itself too, so a handler built with it
- * behaves the same on a runtime that predates the dispatcher recognizing one.
- *
  * @module
  */
 
@@ -174,15 +171,9 @@ export function route<
       }
       body = result.value;
     }
-    try {
-      return await def.handler(
-        { ...req, body } as ValidatedRouteRequest<InferSchemaOutput<S>, Client>,
-        ctx,
-      );
-    } catch (err: unknown) {
-      const refusal = readRouteError(err);
-      if (refusal === undefined) throw err;
-      return routeResponse(refusal.status, { error: refusal.message });
-    }
+    return def.handler(
+      { ...req, body } as ValidatedRouteRequest<InferSchemaOutput<S>, Client>,
+      ctx,
+    );
   };
 }

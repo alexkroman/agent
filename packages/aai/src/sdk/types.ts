@@ -44,7 +44,7 @@ export type { AgentGuardrail, AgentGuardrails, GuardrailVerdict } from "./agent-
  * A system prompt computed per request — see `agent-instructions.ts` for where
  * the resolved text lands and how often it is asked for.
  */
-export type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.ts";
+export type { AgentSystemPrompt } from "./agent-instructions.ts";
 /** The discriminant `agent()` is overloaded over — see `agent-mode.ts`. */
 export type { AgentMode } from "./agent-mode.ts";
 /**
@@ -434,7 +434,7 @@ export interface AgentDeclaration
  *
  * @public
  */
-export interface AgentDef extends AgentDeclaration {
+export interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
   /**
    * The `syncState` projections, keyed by each one's slot name — the canonical
    * form `agent()` normalizes a projection or a list into. See

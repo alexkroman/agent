@@ -8,62 +8,19 @@
  * open-draft guard or its tool builders. What it does need is a slot and a
  * context, which is three lines.
  *
- * The two groups are the two spellings, and the second is the point:
- * `slot.projection(view)` composes a projection per call, so the agent and the
- * page each compose their own and nothing relates them; `slot.projected` is the
- * slot's DECLARED view, built once, so both ends pass the same object.
+ * `slot.projected` is the slot's DECLARED view, built once, so the agent and
+ * the page pass the same object.
  */
 
 import { describe, expect, test } from "vitest";
 import { agent } from "./define.ts";
-import { type DeepReadonly, sessionSlot } from "./session-slot.ts";
+import { sessionSlot } from "./session-slot.ts";
 import { createToolContext } from "./testing.ts";
 
 type Cart = { items: string[]; nextId: number };
 
 const emptyCart = (): Cart => ({ items: [], nextId: 1 });
 const cartSlot = sessionSlot("cart", emptyCart);
-
-describe("projection", () => {
-  const view = (cart: DeepReadonly<Cart>) => ({ count: cart.items.length });
-
-  test("projects the stored value", () => {
-    expect(cartSlot.projection(view)({ items: ["a", "b"], nextId: 3 })).toEqual({ count: 2 });
-  });
-
-  test("projects the default before anything is stored", () => {
-    // What makes a client's empty-state fallback derivable from the projection
-    // itself rather than hand-written — five templates hoist exactly this.
-    expect(cartSlot.projection(view)()).toEqual({ count: 0 });
-    expect(cartSlot.projection(view)(undefined)).toEqual({ count: 0 });
-  });
-
-  test("the projection sees a non-optional value", () => {
-    // The callback's parameter is a real `Cart`, so a projection needs no
-    // optional chaining. A type-level claim, asserted by dereferencing.
-    expect(cartSlot.projection((cart) => cart.items.length)(undefined)).toBe(0);
-  });
-
-  test("carries the slot's key and default, which is what the runtime reads", () => {
-    const projection = cartSlot.projection(view);
-    expect(projection.key).toBe("cart");
-    expect(projection.create()).toEqual({ items: [], nextId: 1 });
-  });
-
-  test("its default is minted per call, never a shared object", () => {
-    const projection = cartSlot.projection(view);
-    expect(projection.create()).not.toBe(projection.create());
-  });
-
-  test("two compositions of the same view are DIFFERENT objects", () => {
-    // The hazard `projected` exists to remove, stated as the fact that makes
-    // it one: composing at each end produces two projections, so nothing
-    // relates the frame the agent pushes to the frame the page renders — and
-    // `useAgentState` memoizes on identity, so an inline composition is also
-    // a fresh empty frame per render.
-    expect(cartSlot.projection(view)).not.toBe(cartSlot.projection(view));
-  });
-});
 
 describe("projected", () => {
   const viewedSlot = sessionSlot("viewed", emptyCart, {
@@ -105,9 +62,13 @@ describe("projected", () => {
     expect(viewedSlot.projected.create()).toEqual({ items: [], nextId: 1 });
   });
 
+  test("its default is minted per call, never a shared object", () => {
+    expect(viewedSlot.projected.create()).not.toBe(viewedSlot.projected.create());
+  });
+
   test("projects the WHOLE value when no view is declared", () => {
     // Total rather than conditionally present, so "no view" has to mean
-    // something — and this is what `slot.projection((v) => v)` already meant.
+    // something.
     expect(cartSlot.projected({ items: ["a", "b"], nextId: 3 })).toEqual({
       items: ["a", "b"],
       nextId: 3,
@@ -116,8 +77,8 @@ describe("projected", () => {
   });
 
   test("holds the slot's caps on the pre-push frame too", () => {
-    // Same rule `projection` follows: a stored value never exceeds its caps,
-    // so neither may the frame rendered before the first tool call.
+    // A stored value never exceeds its caps, so neither may the frame rendered
+    // before the first tool call.
     const capped = sessionSlot("capped-view", (): { log: string[] } => ({ log: ["a", "b", "c"] }), {
       caps: { log: 2 },
       view: (value) => ({ log: value.log }),
@@ -143,11 +104,6 @@ describe("agent({ syncState }) takes projections and keys them by slot name", ()
     expect(def.syncState?.prefs).toBe(prefsSlot.projected);
   });
 
-  test("the deprecated record form still resolves to the same thing", () => {
-    const def = agent({ name: "Shop", syncState: { cart: cartSlot.projected } });
-    expect(def.syncState).toEqual({ cart: cartSlot.projected });
-  });
-
   test("a record key that disagrees with its slot is refused, naming the slot", () => {
     expect(() => untyped({ basket: cartSlot.projected })).toThrow(
       /`syncState.basket` projects the "cart" slot — pass the projection itself/,
@@ -170,8 +126,6 @@ describe("agent({ syncState }) takes projections and keys them by slot name", ()
 
   test("normalizing is idempotent, as toAgentConfig re-normalizes agent()'s output", () => {
     const def = agent({ name: "Shop", syncState: [cartSlot.projected] });
-    expect(agent({ name: "Shop", syncState: def.syncState ?? [] }).syncState).toEqual(
-      def.syncState,
-    );
+    expect(untyped(def.syncState).syncState).toEqual(def.syncState);
   });
 });

@@ -27,8 +27,16 @@ function fakeSession(values: Record<string, unknown> = {}): StateSyncSession & {
   };
 }
 
-const cartSlot = sessionSlot("cart", () => ({ cart: [] as string[], pin: "" }));
-const cartOnly = cartSlot.projection((s) => ({ cart: s.cart }));
+type Cart = { readonly cart: readonly string[]; readonly pin: string };
+const emptyCart = () => ({ cart: [] as string[], pin: "" });
+
+/** The `cart` slot declared with `view` — the projection `syncState` takes. */
+const cartView = <P>(view: (s: Cart) => P) => sessionSlot("cart", emptyCart, { view }).projected;
+/** The `flags` slot declared with `view`. */
+const flagView = <P>(view: (f: { readonly seen: boolean }) => P) =>
+  sessionSlot("flags", () => ({ seen: false }), { view }).projected;
+
+const cartOnly = cartView((s) => ({ cart: s.cart }));
 
 describe("createStateSync", () => {
   test("pushes the projection, then stays quiet until it changes", () => {
@@ -66,8 +74,7 @@ describe("createStateSync", () => {
   });
 
   test("keys every projection by its slot, in one frame", () => {
-    const flagSlot = sessionSlot("flags", () => ({ seen: false }));
-    const sync = createStateSync([cartOnly, flagSlot.projection((f) => ({ seen: f.seen }))]);
+    const sync = createStateSync([cartOnly, flagView((f) => ({ seen: f.seen }))]);
     const session = fakeSession({
       cart: { cart: ["a"], pin: "" },
       flags: { seen: true },
@@ -79,8 +86,7 @@ describe("createStateSync", () => {
   });
 
   test("one slot changing pushes the whole keyed frame", () => {
-    const flagSlot = sessionSlot("flags", () => ({ seen: false }));
-    const sync = createStateSync([cartOnly, flagSlot.projection((f) => ({ seen: f.seen }))]);
+    const sync = createStateSync([cartOnly, flagView((f) => ({ seen: f.seen }))]);
     const session = fakeSession({ cart: { cart: [], pin: "" }, flags: { seen: false } });
     expect(sync(session).push).toBe(true);
     session.set("flags", { seen: true });
@@ -93,11 +99,10 @@ describe("createStateSync", () => {
   test("a non-object projection is a value under its key, alone or beside others", () => {
     // The frame is keyed, so there is nothing to merge a number INTO and no
     // reason to refuse one: any JSON value is legal for any slot.
-    const count = cartSlot.projection((s) => s.cart.length);
+    const count = cartView((s) => s.cart.length);
     expect(createStateSync([count])(fakeSession())).toEqual({ push: true, state: { cart: 0 } });
 
-    const flagSlot = sessionSlot("flags", () => ({ seen: false }));
-    const both = createStateSync([count, flagSlot.projection((f) => f.seen)]);
+    const both = createStateSync([count, flagView((f) => f.seen)]);
     expect(both(fakeSession())).toEqual({ push: true, state: { cart: 0, flags: false } });
   });
 
@@ -105,7 +110,7 @@ describe("createStateSync", () => {
     // It runs in a `finally` around the tool call — an author bug here must
     // not take down a tool call that already succeeded.
     const sync = createStateSync([
-      cartSlot.projection(() => {
+      cartView(() => {
         throw new Error("bad projection");
       }),
     ]);
@@ -119,13 +124,13 @@ describe("createStateSync", () => {
   test("an unserializable projection reports rather than escaping", () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
-    const sync = createStateSync([cartSlot.projection(() => cyclic)]);
+    const sync = createStateSync([cartView(() => cyclic)]);
     expect(sync(fakeSession())).toMatchObject({ push: false, reason: "failed" });
   });
 
   test("refuses a projection over the payload cap", () => {
     const sync = createStateSync([
-      cartSlot.projection(() => ({ blob: "x".repeat(MAX_CLIENT_EVENT_PAYLOAD_BYTES) })),
+      cartView(() => ({ blob: "x".repeat(MAX_CLIENT_EVENT_PAYLOAD_BYTES) })),
     ]);
     expect(sync(fakeSession())).toMatchObject({ push: false, reason: "too-large" });
   });
@@ -135,7 +140,7 @@ describe("createStateSync", () => {
     // reach the client.
     let big = true;
     const sync = createStateSync([
-      cartSlot.projection(() => (big ? "x".repeat(MAX_CLIENT_EVENT_PAYLOAD_BYTES) : "ok")),
+      cartView(() => (big ? "x".repeat(MAX_CLIENT_EVENT_PAYLOAD_BYTES) : "ok")),
     ]);
     const session = fakeSession();
     expect(sync(session).push).toBe(false);
@@ -159,7 +164,7 @@ describe("createStateSync", () => {
     // `JSON.stringify` drops an undefined property, so the key would vanish;
     // it is normalized to null so the client learns the slot is empty and the
     // second call correctly says nothing changed.
-    const sync = createStateSync([cartSlot.projection(() => undefined)]);
+    const sync = createStateSync([cartView(() => undefined)]);
     const session = fakeSession();
     expect(sync(session)).toEqual({ push: true, state: { cart: null } });
     expect(sync(session)).toEqual({ push: false, reason: "unchanged" });
@@ -184,9 +189,7 @@ describe("createStateSync", () => {
 
   test("force does not bypass the payload cap", () => {
     // A resume must not become the one path that can blow the wire budget.
-    const sync = createStateSync([
-      cartSlot.projection(() => "x".repeat(MAX_CLIENT_EVENT_PAYLOAD_BYTES)),
-    ]);
+    const sync = createStateSync([cartView(() => "x".repeat(MAX_CLIENT_EVENT_PAYLOAD_BYTES))]);
     expect(sync(fakeSession(), { force: true })).toMatchObject({
       push: false,
       reason: "too-large",

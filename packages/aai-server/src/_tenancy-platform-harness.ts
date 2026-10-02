@@ -109,7 +109,7 @@ async function applyStep(sql: SqlExec, op: StepOp): Promise<Answer> {
           output: op.output,
           error: undefined,
           attempts: 1,
-          startedAt: undefined,
+          startedAt: op.finishedAt,
           finishedAt: op.finishedAt,
         }),
       };
@@ -268,7 +268,7 @@ async function readJournal(
   }
   for (const row of await read(
     "workflow_steps",
-    "run_id, key, status, output::text as output, attempts, finished_at",
+    "run_id, key, status, output::text as output, attempts, started_at, finished_at",
   )) {
     into(row)?.steps.push({
       runId: str(row.run_id),
@@ -276,6 +276,7 @@ async function readJournal(
       status: str(row.status),
       output: text(row.output),
       attempts: num(row.attempts),
+      startedAt: num(row.started_at),
       finishedAt: num(row.finished_at),
     });
   }

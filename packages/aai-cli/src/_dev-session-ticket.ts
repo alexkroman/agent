@@ -12,7 +12,7 @@
  * **This makes the dev page itself the credential holder** — anyone who can
  * load it gets a ticket, which is what serving a client means. That is fine for
  * a dev server (loopback by default; `AAI_DEV_HOST` widens it on purpose) and is
- * exactly why a self-hosted `createRuntimeServer` NEVER does it: there,
+ * exactly why a self-hosted `createServerForRuntime` NEVER does it: there,
  * `client-config` is unauthenticated, and tickets come from the operator's own
  * backend after its own login check (`createSessionToken` on
  * `@alexkroman1/aai-runtime/auth`, the browser's `token` option).

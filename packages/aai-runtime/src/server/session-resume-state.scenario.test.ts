@@ -104,7 +104,7 @@ async function serve(): Promise<Harness> {
       toolChoice: "auto",
       // The projection carries the slot's own default, so there is nothing to
       // declare for `pushStateSnapshot` to have something to project on a resume.
-      syncState: { probe: probeSlot.projection((state) => ({ items: state.items })) },
+      syncState: { probe: probeSlot.projected },
       tools: {
         add_item: tool({
           description: "Add an item to the list.",

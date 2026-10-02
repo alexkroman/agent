@@ -13,7 +13,7 @@ import { staticSystemPrompt, systemPromptResolver } from "./agent-instructions.t
 import type { AgentSessionContext } from "./agent-session-context.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
 
-/** The function half of `AgentSystemPrompt` (the deprecated `AgentInstructions`). */
+/** The function half of `AgentSystemPrompt`: a resolver. */
 type Resolver = Exclude<AgentSystemPrompt, string>;
 
 const CTX: AgentSessionContext = {

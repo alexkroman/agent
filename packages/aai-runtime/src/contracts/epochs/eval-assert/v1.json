@@ -5,5 +5,5 @@
   "rule": 2,
   "sha256": "2d9a8966ab5ff97ec940c1452ef26c4cb8db40768aa5809679e500d71fcd52bf",
   "exports": ["expectCalled", "lastToolResultIn"],
-  "rollup": "a2560e28975c5924e75ea846ea6d011d9954e8d62b216e5d4e8fe486530b2b66"
+  "rollup": "6e94dfe4aadc35ba21c2c55f25b6e1c14dee47d85a25378b4a35bb46640d9776"
 }

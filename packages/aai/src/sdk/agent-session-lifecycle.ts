@@ -125,7 +125,7 @@ export type SessionContext = {
    * ```
    *
    * It replaces the TEXT, never the decision: a session that would not greet —
-   * a resume, `?resume=1` — still does not, and one that would speaks this
+   * a resume (`?sessionId=`) — still does not, and one that would speaks this
    * exactly as it speaks the agent's (synthesized as written, no model call,
    * recorded in history as the agent's opening line, spoken again after a
    * client `reset`). An empty string means no greeting this session. Control

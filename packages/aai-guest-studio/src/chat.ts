@@ -32,7 +32,7 @@ import { ASSEMBLYAI_LLM_API_KEY_ENV } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { verifyBearer } from "aai-guest-core/auth";
 import { hostRequest } from "aai-guest-core/rpc";
-import type { HarnessBundleAccess } from "aai-guest-core/types";
+import type { HarnessBundleAccess, StudioSession } from "aai-guest-core/types";
 import { convertToModelMessages, type LanguageModel, type UIMessage } from "ai";
 import { createStudioAgent, STUDIO_TOOL_TIMEOUT_MS } from "./agent.ts";
 import { typecheckWorkspaceDir } from "./build.ts";
@@ -43,7 +43,6 @@ import {
   needsCompaction,
 } from "./compaction.ts";
 import { CORS_HEADERS, readBody, sendJson } from "./http.ts";
-import type { StudioSession } from "./session.ts";
 import { STUDIO_TOOL_LABELS } from "./tools.ts";
 import { createTurnBudget } from "./turn-budget.ts";
 import { createKeepGoing, prepareTurnStep } from "./turn-continue.ts";
@@ -221,7 +220,7 @@ async function runTurn(
 
 /**
  * The harness's HTTP hook for `/studio/*` — returns true when the request
- * was claimed. Wired into `createRuntimeServer`'s `request` option.
+ * was claimed. Wired into `createServerForRuntime`'s `request` option.
  */
 export function handleStudioRequest(
   session: StudioSession | null,

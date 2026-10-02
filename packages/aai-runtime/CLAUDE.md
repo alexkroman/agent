@@ -238,7 +238,7 @@ A worker bundle inlines this package (`__aaiCreateRuntime`, "User-shipped
 runtime" in `packages/aai-guest/CLAUDE.md`), and **the guest harness carries no
 copy of its own**: it drives the agent through the bundle's, reached as
 `__aaiCreateRuntime.host` — the typed `GuestHost` surface (`guest-host.ts`:
-`createRuntimeServer`, the delivery door, tracing, the session gate), checked by
+`createServerForRuntime`, the delivery door, tracing, the session gate), checked by
 `version` at load. A self-hosted host (`aai dev`, `aai start`, a `--target`
 entry) builds both the server and the runtime from its own copy. So in every
 host the server shell, the engine and the sessions share one module instance,

@@ -310,8 +310,7 @@ const NO_ROUTES = { routes: {} } as const;
  * **`generate` and `delegate` also take a SCRIPT**, which is the way in for a
  * tool that calls a model: pass `stubGenerate`'s own argument and the fake is
  * built here, installed, and handed back on `ctx.model` (`ctx.desk` for
- * `delegate`). It replaces the deprecated {@link scriptedToolContext}, which
- * returned the same two fakes beside the context.
+ * `delegate`).
  *
  * **Each call is a distinct session.** `sessionId` auto-increments, which is
  * what makes the two-context isolation test — the same tool run against two

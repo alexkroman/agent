@@ -23,9 +23,9 @@ import { Socket } from "node:net";
 import { scriptedTextModel } from "@alexkroman1/aai-runtime/testing";
 import { setHostSend } from "aai-guest-core/rpc";
 import { installFakeHostChannel } from "aai-guest-core/test-utils";
+import type { StudioSession } from "aai-guest-core/types";
 import { describe, expect, test, vi } from "vitest";
 import { handleStudioRequest, type StudioChatDeps } from "./chat.ts";
-import type { StudioSession } from "./session.ts";
 import { STUDIO_TOOL_LABELS } from "./tools.ts";
 import { enterTurn, resetTurnGate, TURN_IN_FLIGHT_CODE } from "./turn-stream.ts";
 
@@ -149,7 +149,7 @@ function dispatch(
 
 describe("handleStudioRequest dispatch", () => {
   test("claims only its own two URLs, so everything else can 404", () => {
-    // The harness wires this in as `createRuntimeServer`'s `request` hook and answers
+    // The harness wires this in as `createServerForRuntime`'s `request` hook and answers
     // 404 on false, so claiming too widely would swallow the session surfaces.
     expect(dispatch("/health", "GET").claimed).toBe(false);
     expect(dispatch("/websocket", "GET").claimed).toBe(false);

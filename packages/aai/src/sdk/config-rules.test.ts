@@ -348,10 +348,12 @@ describe("assertProviderTriple with s2s", () => {
   });
 
   // Raw classifier only: the config layers inject the pipeline default
-  // before calling this, so "nothing set" reaches it only for stored
-  // configs predating the pipeline-by-default flip (wire tolerance).
-  test("returns 's2s' when nothing is set (pre-flip wire tolerance)", () => {
-    expect(assertProviderTriple(undefined, undefined, undefined, undefined)).toBe("s2s");
+  // before calling this, so "nothing set" is a shape that skipped the fill.
+  // S2S is never reached by omission.
+  test("refuses a config that sets nothing — S2S needs an explicit descriptor", () => {
+    expect(() => assertProviderTriple(undefined, undefined, undefined, undefined)).toThrow(
+      /must be set together on a RESOLVED config — this one sets none of them/,
+    );
   });
 
   test("returns 'pipeline' when triple is set and s2s is not", () => {

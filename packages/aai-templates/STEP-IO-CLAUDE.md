@@ -78,7 +78,7 @@ rather than naming a call it cannot make.
 now** — `@alexkroman1/aai/step`, used by every workflow template. The objection
 recorded here (it needed a writable stream out of the workflow engine, which
 that subpath may not import) was answered by the same `Symbol.for` slot
-`stepEnv` uses: `createRuntimeServer` publishes a reporter and the helper stays
+`stepEnv` uses: `createServerForRuntime` publishes a reporter and the helper stays
 dependency-free. What forced the question was not the duplication but the second
 reader — a step's narration now also reaches the SERVER LOG, with the attempt
 number appended past the first, so a retrying fan-out is legible without a page
@@ -113,7 +113,7 @@ starts one and answers the turn); `link-digest-workflow` and
 `transcription-workflow` are declared with `workflowApp()` and the workflow IS
 the product — no `stt`/`llm`/`tts`, no tools, and a `client.tsx` that mounts
 with `mountPage()` rather than `mountClient()`. Those fields are not merely
-omitted there: `StaticAgentParams` refuses them, so a `systemPrompt` addressed
+omitted there: `WorkflowAppAgentParams` refuses them, so a `systemPrompt` addressed
 to a model that never runs — which `link-digest-workflow` shipped — no longer
 type-checks.
 

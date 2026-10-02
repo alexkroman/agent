@@ -236,7 +236,7 @@ module doc is the authoritative table; the platform brokers them at
   telephony defaults off; it needs NO provider credential
   (`requiredProviderEnvVars` returns `[]`, keyed off `page` because provider
   injection has already happened by preflight; `createRuntime` DEFERS provider
-  resolution). `StaticAgentParams` (`mode: "workflow-app"`) has none of the
+  resolution). `WorkflowAppAgentParams` (`mode: "workflow-app"`) has none of the
   session fields — they are absent, not message-typed.
 - **Three factories**: `createAgentClient` (`@alexkroman1/aai/workflow-api`, the
   one to reach for), `createWorkflowApiClient` (the narrow SDK client it wraps),

@@ -2,8 +2,10 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "workflow",
   "epoch": 1,
-  "sha256": "79b72a671bc7c23597144884a377361948b894beb9a42495998611a1292afdee",
+  "rule": 2,
+  "sha256": "ba6d0ad8705c25116f5c5d0e40c3a257ad1b718fc526e26b6cccf455c796c12e",
   "exports": [
+    "AgentClient",
     "AudioResult",
     "AudioResultCaptions",
     "AudioResultProps",
@@ -47,5 +49,6 @@
     "useWorkflowStream",
     "useWorkflowSubmit",
     "useWorkflows"
-  ]
+  ],
+  "rollup": "a160cb2e3c6cc100d89f266fd46f015021432086eacd14e064a4dd98ec7bf5e6"
 }

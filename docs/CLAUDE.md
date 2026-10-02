@@ -244,14 +244,17 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
   first; an older epoch it reddens is dropped with `--retire`. So is a retained
   epoch that promised a name the current surface has since removed — it reads
   as supported only while its example stays quiet about that name.
-- **Every capability restarts at epoch 1** was a one-time pre-release reset
-  (`--init`): an epoch is a promise to a consumer, and none existed yet. Do it
+- **Every capability restarts at epoch 1** is a pre-release reset (`--init`
+  after deleting each package's `contracts.json` and its epochs and
+  compatibility directories), done twice — the second with the package versions reset
+  to `0.13.0`: an epoch is a promise to a consumer, and none existed yet. Do it
   again only for that reason and only before release — once a consumer exists,
   deleting a dropped epoch's record hides a broken promise.
 - **Old epoch metadata is immutable**; only the current epoch's record moves,
   by revision.
-- **The export-list delta suggests the bump type** (removed name `major`, added
-  `minor`, unchanged `patch or minor`); a break the probe finds prints `major`.
+- **The export-list delta suggests the bump type** (removed name a break, added
+  `minor`, unchanged `patch or minor`); a break the probe finds prints a break.
+  A break is `minor` while the packages are on `0.x` (`BREAKING_BUMP`).
 - **A capability whose promise is a VALUE is not covered by the hash**
   (`aai:defaults`' prompt text; doc comments and literal values are
   normalized away). `--bump` refuses; it is a changeset-and-review matter.

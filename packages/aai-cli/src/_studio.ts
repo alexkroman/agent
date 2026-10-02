@@ -184,9 +184,8 @@ export function publishStudioProject(
     action: "publish",
     method: "POST",
     // `--skipTypecheck` rides the request body so the in-sandbox `aai deploy`
-    // skips its own tsc gate. `apiRequest` omits an undefined body, so the
-    // common publish stays a bodyless POST an older server ignores.
-    body: opts.skipTypecheck ? { skipTypecheck: true } : undefined,
+    // skips its own tsc gate; the route requires the field either way.
+    body: { skipTypecheck: opts.skipTypecheck === true },
     // A retried publish re-runs a whole in-sandbox build; surface the
     // failure instead.
     retry: 0,

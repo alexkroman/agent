@@ -20,26 +20,5 @@
     "withMcpTools",
     "withToolsDir"
   ],
-  "rollup": "ae5b5a3bd5450a3d2af9ae18bd22ae9fc13936f247159ec18e37e348b2a4209c",
-  "revision": 2,
-  "revisions": [
-    {
-      "revision": 0,
-      "rule": 2,
-      "sha256": "34b9197b903c49da09335ca745c9dc6406e2b7fe75b3eb74f15df5eec443b12d",
-      "reason": "minted"
-    },
-    {
-      "revision": 1,
-      "rule": 2,
-      "sha256": "c32fa245afd32f7a4bfe87d5f39fe121685803e307f4afff3b8a0d7184d387c0",
-      "reason": "compatible (checked): no export added or removed; every old export still assignable"
-    },
-    {
-      "revision": 2,
-      "rule": 2,
-      "sha256": "e522dbd30aac1e305a1ed6909421612f7e09309b49e4c94089ed8ffedd330c32",
-      "reason": "compatible (checked): no export added or removed; every old export still assignable"
-    }
-  ]
+  "rollup": "9c391cb0c0936e794faeffc2dd459e25b7a4fe5aeed3fb56e6119dbb77411d84"
 }

@@ -3,7 +3,7 @@
   "capability": "protocol",
   "epoch": 1,
   "rule": 2,
-  "sha256": "871dbb5a13bc1edcbc2deed2aafb8fb965370f2d52d30862ae6eaaa52b012141",
+  "sha256": "25faa3e0ffd93f177fa3b6e94510f1b11d2ac7ed79abb34adb52afd84c4ff445",
   "exports": [
     "CLIENT_CONFIG_METHODS",
     "CLIENT_CONFIG_PATH",
@@ -12,12 +12,19 @@
     "HostConfig",
     "HostConfigMessageSchema",
     "HostConfigSchema",
+    "InboxClientFrame",
+    "InboxClientFrameSchema",
+    "InboxServerFrame",
+    "InboxServerFrameSchema",
     "ReadyConfig",
     "ReadyConfigSchema",
     "RestoredToolCall",
     "RestoredToolCallSchema",
+    "SESSION_AUTH_PROTOCOL_PREFIX",
     "SESSION_COMMAND_TYPES",
     "SESSION_EVENT_TYPES",
+    "SESSION_PROTOCOL",
+    "SESSION_TICKET_HEADER",
     "SessionCommand",
     "SessionCommandSchema",
     "SessionErrorCode",
@@ -28,5 +35,5 @@
     "buildReadyConfig",
     "lenientParse"
   ],
-  "rollup": "9e87cea53e4504fe1c5863171439e0c28339c3e2c860c61edc60a80a7f511123"
+  "rollup": "8cca7be8d045975490c3429e48ec6b803d79c5aef6dad3f8a38318b9d249e8e5"
 }

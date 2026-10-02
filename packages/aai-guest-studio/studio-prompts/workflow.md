@@ -1371,7 +1371,7 @@ Four rules, and each is an error rather than advice if you get it wrong:
   either way; that is the reason for the rules above.
 
 There is nothing to declare on `agent()` — the slot owns its own default. Use
-`syncState: { [slotName]: slot.projected }` to show state to a custom client.
+`syncState: slot.projected` (or a list of them) to show state to a custom client.
 `slot.snapshot(ctx)` returns a mutable deep copy of the value — what a spec
 hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
 
@@ -3164,15 +3164,16 @@ also what you want for anything that can be a string, an array, or null.
 **`useAgentState`** — the agent's session state, pushed automatically:
 
 ```ts no-check
-// shared.ts — the slot owns the shape; `agent()` has no `state` field.
-export const cartSlot = sessionSlot("cart", () => ({ cart: [] as Item[], staffPin: "" }));
+// shared.ts — the slot owns the shape AND its one view; `agent()` has no
+// `state` field. staffPin is not in the view, so it stays server-side, and the
+// agent and the client cannot name different views of it.
+export const cartSlot = sessionSlot("cart", () => ({ cart: [] as Item[], staffPin: "" }), {
+  view: (s) => ({ cart: s.cart }),
+});
+export const cartProjection = cartSlot.projected;
 
-// Compose the projection HERE, once, and import it at both ends: staffPin stays
-// server-side, and the agent and the client cannot name different views of it.
-export const cartProjection = cartSlot.projection((s) => ({ cart: s.cart }));
-
-// agent.ts — keyed by SLOT NAME; the key must be the slot's own (agent() checks)
-export default agent({ syncState: { cart: cartProjection } });
+// agent.ts — the frame is keyed by the slot's own name
+export default agent({ syncState: cartProjection });
 
 // client.tsx — selects `state.cart`; the projection types it AND supplies the
 // frame rendered before the first push, so no type argument and no `?? EMPTY`.
@@ -3399,8 +3400,7 @@ on.
 recorded on `ctx.sent`, a real slot store, a fresh `sessionId` per call. Its
 `generate` and `delegate` take a SCRIPT (`{ reply }` for every call, `{ routes }`
 keyed by system prompt or subagent name) and hand the fake back on `ctx.model`
-and `ctx.desk`, whose `calls` a spec asserts on. It replaces the deprecated
-`scriptedToolContext`.
+and `ctx.desk`, whose `calls` a spec asserts on.
 
 ```ts
 import { createToolContext } from "@alexkroman1/aai-runtime/testing";

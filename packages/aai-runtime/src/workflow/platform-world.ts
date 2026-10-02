@@ -34,7 +34,7 @@ import type { PlatformQueueOptions } from "./platform-queue.ts";
  * Where the platform is DIALABLE, slug included — what the platform bakes in for
  * exactly this purpose.
  *
- * Its own key rather than {@link PUBLIC_BASE_URL_ENV}, which used to serve both,
+ * Its own key rather than `AAI_PUBLIC_BASE_URL`, which used to serve both,
  * because the two claims can require OPPOSITE values. The public one is what a
  * third party is handed by `ctx.workflows.publicWebhookUrl`, so it must resolve
  * from the internet; this one is dialled from inside the sandbox, so it must
@@ -45,25 +45,12 @@ import type { PlatformQueueOptions } from "./platform-queue.ts";
  * `agentPlatformBaseUrl` has the log lines and the fix.
  */
 const PLATFORM_BASE_URL_ENV = "AAI_PLATFORM_BASE_URL";
-/** The guest's own public base URL, slug included — what a third party is handed. */
-const PUBLIC_BASE_URL_ENV = "AAI_PUBLIC_BASE_URL";
 /** This sandbox's bearer, which the platform also gave it. */
 const GUEST_TOKEN_ENV = "AAI_GUEST_TOKEN";
 
-/**
- * The base to dial, preferring the key that MEANS that.
- *
- * The fallback is not politeness — an agent sandbox runs the harness image
- * PINNED at deploy time, so a guest booted before this key existed receives only
- * the public one and would otherwise lose its platform world entirely (durable
- * runs silently onto the DevKit's local world, session state silently onto
- * memory — the two failures `platformGuestOptions` was written to stop being
- * silent). On every backend but microsandbox the two values are identical, which
- * is what makes the fallback safe rather than merely quiet: it restores the exact
- * behaviour that guest already had.
- */
+/** The base to dial: `AAI_PLATFORM_BASE_URL`, never the public one. */
 function dialBase(env: NodeJS.ProcessEnv): string | undefined {
-  return env[PLATFORM_BASE_URL_ENV]?.trim() || env[PUBLIC_BASE_URL_ENV]?.trim();
+  return env[PLATFORM_BASE_URL_ENV]?.trim() || undefined;
 }
 
 /**

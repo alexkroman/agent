@@ -70,6 +70,7 @@ const configured = () =>
     audioFormat: "pcm_s16le",
     sampleRate: 16_000,
     ttsSampleRate: 24_000,
+    sessionId: "sess_1",
   });
 const toolDone = () => event({ type: "tool.completed", toolCallId: "call_1", result: "{}" });
 const heard = () => event({ type: "userTranscript.committed", text: "hello" });

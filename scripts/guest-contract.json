@@ -1,7 +1,7 @@
 {
   "_description": "The deployed-guest contract GUEST_CONTRACT_VERSION versions: the exec-env keys agentBootEnv writes, the /manage/* surface, and the harness<->bundle handshake types. Written by `node scripts/check-guest-contract.mjs --record|--revise \"<reason>\"`; history is append-only. See the header of scripts/check-guest-contract.mjs.",
   "version": 5,
-  "sha256": "8727ebe8d174831457bb1742991872007d48ec6b046436b429b33cf5e0e579fb",
+  "sha256": "3d7123dc3b1125d2810821996d40c289c884904517fd1996d8b1a22c0919550e",
   "surface": {
     "bootEnv": [
       "AAI_AGENT_ENV_PATH",
@@ -31,8 +31,8 @@
       "responseKeys": ["activeSessions", "contractVersion", "draining", "error", "ok"]
     },
     "types": {
-      "GuestRuntime": "type GuestRuntime={startSession(ws:unknown,opts:unknown):void;shutdown():Promise<void>;workflows?:unknown;deliverWorkflow?:unknown;serveRoute?:unknown;};",
-      "CreateGuestRuntime": "type CreateGuestRuntime=((opts:{env:Record<string,string>;runCode?:(code:string)=>Promise<string|{error:string}>;publicUrl?:string;})=>GuestRuntime)&{host:GuestHost;};"
+      "GuestRuntime": "type GuestRuntime={startSession(ws:unknown,opts:unknown):void;shutdown():Promise<void>;workflows:unknown;deliverWorkflow:unknown;serveRoute:unknown;};",
+      "CreateGuestRuntime": "type CreateGuestRuntime=((opts:{env:Record<string,string>;runCode:(code:string)=>Promise<string|{error:string}>;publicUrl?:string;})=>GuestRuntime)&{host:GuestHost;};"
     }
   },
   "history": [
@@ -53,6 +53,12 @@
       "revision": 0,
       "sha256": "8727ebe8d174831457bb1742991872007d48ec6b046436b429b33cf5e0e579fb",
       "reason": "v5: __aaiCreateRuntime.host (GuestHost) is required — the harness carries no runtime and drives the agent through the bundle's; an older pinned guest ignores the field, and a v5 harness refuses a bundle without it, naming the rebuild"
+    },
+    {
+      "version": 5,
+      "revision": 1,
+      "sha256": "3d7123dc3b1125d2810821996d40c289c884904517fd1996d8b1a22c0919550e",
+      "reason": "GuestRuntime.workflows/deliverWorkflow/serveRoute and CreateGuestRuntime.runCode became required in the TYPE: every bundle a v5 harness accepts (one carrying the host surface) already supplies all four, so the undefined branches the optional types forced were unreachable. No pinned guest and no accepted bundle can tell."
     }
   ]
 }

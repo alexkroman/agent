@@ -50,8 +50,7 @@ type PreambleMode = {
 /**
  * Agent mode: a voice agent, which is what "an agent" means unqualified.
  *
- * This is the text the preamble carried before the switcher existed, and it is
- * still the default for every project that does not say otherwise.
+ * A project the CLI's first push created (no switcher to ask) is one too.
  */
 const AGENT_MODE: PreambleMode = {
   overview: `The user chose **Voice agent** when creating this project, so build a voice
@@ -107,7 +106,7 @@ search agent whose whole output is speech. If the project already has a
 client.tsx, preserve its established style.
 
 The way to surface state is the SDK's hooks, and \`useAgentState\` is the
-one to reach for first: declare a slot and \`syncState: { [slot]: slot.projected }\` and
+one to reach for first: declare a slot and \`syncState: slot.projected\` and
 read it with \`useAgentState(slot.projected)\` in client.tsx. Use
 \`useToolResult("tool_name", ...)\` for reacting to a single tool's return
 value, not as the way to mirror state — that pattern means every tool has

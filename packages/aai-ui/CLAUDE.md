@@ -42,7 +42,7 @@ Guides under `src/` are not published: `package.json` `files` is `dist` +
 - `./styles.css` — default styles and the `--aai-*` → Tailwind token map.
 - `./client-dir` — **Node only**: `defaultClientDir()`, the path of the prebuilt
   default client (`dist/default-client/`, not an export of its own) for
-  `createRuntimeServer`/`createAgentServer`'s `clientDir`. Its own subpath because
+  `createServerForRuntime`/`createAgentServer`'s `clientDir`. Its own subpath because
   it imports `node:*`, which the root barrel may not
   (`ui-browser-barrel-has-no-node-module` in `konsistent.json`). A FUNCTION,
   not a constant, so a missing package fails at call time, not import time.

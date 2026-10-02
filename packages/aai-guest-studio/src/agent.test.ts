@@ -22,9 +22,9 @@
 import path from "node:path";
 import { expectDeployable } from "@alexkroman1/aai/testing";
 import { runTool } from "aai-guest-core/test-utils";
+import type { StudioSession } from "aai-guest-core/types";
 import { describe, expect, test } from "vitest";
 import { createStudioAgent, STUDIO_TOOL_TIMEOUT_MS, type StudioAgentDeps } from "./agent.ts";
-import type { StudioSession } from "./session.ts";
 import { STUDIO_TOOL_LABELS } from "./tools.ts";
 
 /** This package's `src/`, which holds the module under test. */

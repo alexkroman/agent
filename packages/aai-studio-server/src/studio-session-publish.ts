@@ -133,9 +133,7 @@ async function requestDeploy(
       apiKey: target.apiKey,
       ...omitUndefined({ slug: target.slug }),
       ...(target.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
-      // Plain key (not a guarded spread): JSON-RPC drops an undefined value on
-      // the wire, so an older guest still sees the field absent.
-      skipTypecheck: target.skipTypecheck,
+      skipTypecheck: target.skipTypecheck === true,
     },
     WORKSPACE_DEPLOY_TIMEOUT_MS,
   );

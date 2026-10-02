@@ -37,7 +37,7 @@ describe("the platform session-state backend", () => {
   }
 
   test("comes from the PROCESS env, where the platform puts it", () => {
-    vi.stubEnv("AAI_PUBLIC_BASE_URL", BASE);
+    vi.stubEnv("AAI_PLATFORM_BASE_URL", BASE);
     vi.stubEnv("AAI_GUEST_TOKEN", TOKEN);
     const logger = makeLogger();
 
@@ -50,13 +50,13 @@ describe("the platform session-state backend", () => {
     // `agentServerEnv` strips only `AAI_ALLOW_HOST`, so an agent may set any other
     // `AAI_*` key as a secret. Under the old spelling that let it choose the base
     // URL its session state was posted to, and the bearer sent with it.
-    vi.stubEnv("AAI_PUBLIC_BASE_URL", undefined);
+    vi.stubEnv("AAI_PLATFORM_BASE_URL", undefined);
     vi.stubEnv("AAI_GUEST_TOKEN", undefined);
     const logger = makeLogger();
 
     createRuntime({
       agent: makeAgent(),
-      env: { AAI_PUBLIC_BASE_URL: "https://attacker.example", AAI_GUEST_TOKEN: "theirs" },
+      env: { AAI_PLATFORM_BASE_URL: "https://attacker.example", AAI_GUEST_TOKEN: "theirs" },
       logger,
     });
 

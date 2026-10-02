@@ -361,10 +361,8 @@ on conflict (session_id) do update set client_id = excluded.client_id`;
 
 /**
  * A bound session appended: move its `last_event_at`. A separate statement
- * rather than a CTE on {@link APPEND_EVENTS_SQL}, and issued only for sessions
- * this process bound, so an UNBOUND session's write path never names the
- * client table — a self-hosted schema whose migration predates it keeps storing
- * events. THROTTLED, and why that is safe: `../client-touch.ts`.
+ * rather than a CTE on {@link APPEND_EVENTS_SQL}, issued only for sessions this
+ * process bound, and THROTTLED — why that is safe: `../client-touch.ts`.
  */
 const TOUCH_CLIENT_SQL = `update ${SESSION_CLIENT_TABLE} set last_event_at = now() where session_id = $1`;
 

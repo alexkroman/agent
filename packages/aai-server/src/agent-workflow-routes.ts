@@ -162,15 +162,12 @@ export function registerAgentWorkflowRoutes(
   // every deployed run journaled into a sandbox that self-exits. Same bearer and
   // the same slug-in-every-statement scoping as session state.
   //
-  // TWO paths, ONE handler. The method-in-the-path form is what a current guest
+  // TWO paths, ONE handler. The method-in-the-path form is what the HTTP fallback
   // POSTs to, and it exists for the request LOG: fifteen methods on one path made
-  // Modal's per-request line name the slug and never the operation, so a run's RPC
-  // sequence could only be read out of production by counting requests. The bare
-  // route stays registered because an agent bundle carries its own copy of
-  // `aai-runtime` and is deployed independently of this server — a bundle older
-  // than the path form still sends the method in the body, and a journal call that
-  // 404s is a durable run that stops. `workflow-journal-handler.ts` reads the path
-  // first and falls back to the body.
+  // Modal's per-request line name the slug and never the operation. The bare
+  // route is what a platform SOCKET frame is replayed as (its route comes from a
+  // closed set, with the method in the body), and a journal call that 404s is a
+  // durable run that stops. The handler reads the path first and the body second.
   const handleWorkflowJournal = createWorkflowJournalHandler(
     omitUndefined({ adminDb: opts.adminDb }),
   );

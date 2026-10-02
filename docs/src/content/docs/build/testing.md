@@ -126,8 +126,6 @@ system prompt:
 `delegate` takes the same two shapes, with `routes` keyed by subagent name.
 
 `createToolContext` hands the two fakes back on `ctx.model` and `ctx.desk`.
-`scriptedToolContext({ generate, delegate })` is the deprecated spelling of the
-same call; use `createToolContext`.
 
 The full set — `stubGateway`, guardrails, workflow contexts, upload fixtures,
 run snapshots — is in the [SDK reference](/agent/reference/) under

@@ -18,13 +18,13 @@
  */
 
 import path from "node:path";
+import type { StudioSessionParams } from "aai-guest-core/types";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { workspacesRoot } from "./build.ts";
 import {
   initStudioSession,
   resetSessionIdentity,
   SessionIdentityError,
-  type StudioSessionParams,
   toolchainPromptSection,
 } from "./session.ts";
 import { enterTurn, resetTurnGate } from "./turn-stream.ts";

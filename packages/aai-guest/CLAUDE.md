@@ -2,7 +2,7 @@
 summary: >-
   The guest harness: one binary / two modes (plus warm-up), user-shipped
   runtime, dev-prod parity, `run_code`, guest network access + SSRF, credential
-  separation, and the snapshot image the harness runs from
+  separation, and the guest image the harness runs from
 read_when: >-
   changing what runs inside a sandbox, what a guest may reach, or how the guest
   image and its toolchain are built
@@ -41,11 +41,11 @@ shared guest modules (`rpc`, `types`, `bundle`, `auth`, `http`, `trial`,
 ## The harness: one binary, two modes
 
 `AAI_GUEST_MODE`, set by the spawner, selects the mode (a third, warm-up, exists
-only for the image build — see "The snapshot image") — **behaviour selection,
+only for the image build — see "The guest image") — **behaviour selection,
 never a security boundary**; capability is whatever the host delivers.
 
 - **Agent mode** (deployed agents): boots from files delivered at exec time and
-  serves only `/websocket` and `/phone` (the SDK's `createRuntimeServer`) plus
+  serves only `/websocket` and `/phone` (the SDK's `createServerForRuntime`) plus
   token-gated `/manage/*`. See `src/harness/CLAUDE.md`.
 - **Studio mode**: `/ws` (bearer-gated host control channel — JSON-RPC
   `workspace/deploy`, `status`, `studio/session-init`; guest→host
@@ -69,7 +69,7 @@ looks like after crossing the JSON-RPC boundary.
 ## Dev/prod parity
 
 **The guest IS the dev server, and the runtime IS the user's.** The harness
-wraps the same `createRuntimeServer` `aai dev` runs, adding per mode the
+wraps the same `createServerForRuntime` `aai dev` runs, adding per mode the
 `/manage/*` hook or `/ws`, plus `lazyRuntime` (built on first session — a
 `test_agent` load carries an empty env). In agent mode the bundle arrives at
 exec time, hash-verified (`harness/bundle-source.ts`); `test_agent` loads
@@ -87,7 +87,7 @@ Known remaining asymmetries:
 | Durable-run backing                                                | different backend           | Dev uses the DevKit postgres world at the developer's `DATABASE_URL`; a deployed guest reaches run storage, queue, session state and uploads over HTTP and opens no tenant DB connection.                                                                             |
 | Modal credentials                                                  | prod stricter               | Production spawns Modal sandboxes (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`); local dev uses an isolation-free child process ("Modal sandbox notes", `packages/aai-server/MODAL-CLAUDE.md`).                                                                             |
 
-The guest base image's Node major is covered under "The snapshot image".
+The guest base image's Node major is covered under "The guest image".
 
 ## User-shipped runtime
 
@@ -253,31 +253,27 @@ externalizing it costs every spawn; `patches/@workflow__world-local@4.2.4.patch`
 returns the version from a constant, and `externals.test.ts` asserts the
 `"bundled"` sentinel is absent.
 
-## The snapshot image
+## The guest image
 
-The artifact is this package's; the host side (`modal/harness-image.ts`, the
-content-addressed tag, `agents.harness_image_tag`) is `aai-server`'s
-("MODAL-CLAUDE.md").
+The artifact is this package's; the host side (`modal/harness-image.ts`'s
+content-addressed tag, `agents.harness_image_tag`, `guest-image.Dockerfile`) is
+`aai-server`'s ("MODAL-CLAUDE.md").
 
-- **Harness and toolchain are baked into a snapshot image**, never written per
-  spawn. The TOOLCHAIN is a native layer (`toolchainImage`: `RUN npm install`
-  into `/opt/aai/node_modules`), cached by Modal. The HARNESS needs a builder
-  sandbox (`dockerfileCommands` has no build context): it writes the bundle,
-  `snapshotFilesystem()`, and publishes as
-  `aai-guest-harness:<hash(base image, harness, toolchain)>`. A failed build
-  fails the spawn loudly (memo cleared).
+- **Harness and toolchain are baked into the image**, never written per spawn:
+  `guest-image.Dockerfile` installs the toolchain into `/opt/aai/node_modules`
+  and `COPY`s the harness, published as
+  `aai-guest-harness:<hash(base image, harness, toolchain)>`.
 - **Deployed agents spawn from the tag pinned on their row**; an unresolvable
   pin FAILS the spawn (never substitute the current image).
   `SANDBOX_IGNORE_IMAGE_PINS=1` is the explicit operator override. Studio
   sandboxes always run the current image.
-- **The V8 compile cache is baked in**: the builder runs the harness in
+- **The V8 compile cache is baked in**: the Dockerfile runs the harness in
   **warm-up mode** (`AAI_GUEST_WARMUP=1` — evaluate, open nothing, exit 0) under
   `NODE_COMPILE_CACHE`, and `guestExecBaseEnv()` points guests at
   `/opt/aai/.compile-cache` (~200ms off every cold boot). Stale entries are a
-  silent miss; the warm-up is best-effort; Modal-only. **Warm-up is checked
-  before every other mode in `main()`**, and `modal/harness-image.test.ts` pins
-  both sides (host asks for it; real harness honours it with no token) — a
-  broken warm-up is otherwise invisible.
+  silent miss. **Warm-up is checked before every other mode in `main()`**, and
+  `harness-warmup.scenario.test.ts` pins that the real harness honours it with
+  no token — a broken warm-up is otherwise invisible.
 - **The toolchain is LOCKED** (`toolchain/{package.json,package-lock.json}`,
   `pnpm sync:guest-toolchain`, gated by `pnpm check:guest-toolchain`), because
   the tag keys on the install command's text. Two steps, forced:
@@ -290,8 +286,7 @@ content-addressed tag, `agents.harness_image_tag`) is `aai-server`'s
   prebuilt binaries. `toolchain-install-scripts.test.ts` fails when the lockfile
   gains an unvouched install-script package. The flags are not in the tag
   fingerprint.
-- Manifest + lockfile are written by the RUN itself (gzip+base64, no build
-  context); the tag hashes the LOCKFILE, so transitive changes mint a new tag.
+- The tag hashes the LOCKFILE, so transitive changes mint a new tag.
 - The subprocess backend runs `dist/harness.mjs` and resolves the toolchain from
   this package's `node_modules`; aai-server's `workspace-build.scenario.test.ts`
   covers that path.
@@ -315,21 +310,20 @@ throw on the floor (`aai-runtime/src/runtime/tools.ts` is the worked example). S
 OCI image (`pnpm build:guest-image`), so the local backend and Modal can pull
 one reference; a build context makes the harness and toolchain plain `COPY`s.
 
-- **`GUEST_IMAGE_REGISTRY` is the switch**: set → Modal spawns resolve
-  `<registry>/aai-guest-harness:<sha16>` via `images.fromRegistry`; unset (the
-  code default) → the server builds its own snapshot. **Production sets it** (in
-  the Modal secret). Policy: `aai-server/guest/image-source.ts`
-  (`resolvePinAcrossSources` handles pins missing from the registry).
-- **The TAG is identical across sources** (the registry source only prepends a
-  registry), so recorded pins survive the switch; tested.
+- **`GUEST_IMAGE_REGISTRY` is REQUIRED on the Modal backend**: spawns resolve
+  `<registry>/aai-guest-harness:<sha16>` via `images.fromRegistry`, and an unset
+  value fails naming the variable — there is no in-process build. **Production
+  sets it** (in the Modal secret). Policy: `aai-server/guest/image-source.ts`.
+- **The registry is a PREFIX outside the hashed tag**, so recorded pins resolve
+  at the tag a deploy wrote; tested.
 - **A missing image fails at CREATE, not resolution** (`fromRegistry` is lazy),
   so the chosen source and registry are logged at boot.
 - **Published by a RELEASE, live on a DEPLOY.** `ship.yml`'s image job
   `needs: release` (no `paths` filter: the tag hashes nearly all of
   `packages/`); a new tag goes live only when a version-bump deploy ships a
   server hashing to it. Between releases main's head has no published image —
-  for local dev leave `GUEST_IMAGE_REGISTRY` unset, push with
-  `scripts/build-guest-image.mjs`, or dispatch `ship.yml`.
+  for local dev on Modal push one with `scripts/build-guest-image.mjs`, or
+  dispatch `ship.yml`.
 - **The Dockerfile lives in `aai-server`** beside the constants it mirrors
   (`GUEST_SYSTEM_PACKAGES`, `SDK_PACKAGES`, `GUEST_ROOT`,
   `DEFAULT_SANDBOX_IMAGE`) so `guest/image-dockerfile.test.ts` is hashed with

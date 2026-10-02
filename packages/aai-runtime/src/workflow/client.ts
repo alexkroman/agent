@@ -186,26 +186,10 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   /**
    * The engine's run record as our discriminated snapshot.
    *
-   * `output` comes off the RECORD when the record CARRIES it, which every
-   * adapter in this repo does. It used to be a second `readOutput` call
-   * unconditionally, and that cost a journal round trip per snapshot of a
-   * finished run — two POSTs to the platform where one would do, paid again on
-   * every browser reload of a completed form, and `recent()` paid one per
-   * completed run in the page. The re-read bought nothing: `completed` is
-   * terminal and the status and the output are written by one statement, so the
-   * record already in hand carries the final value.
-   *
-   * **`readOutput` is still the FALLBACK, and dropping it was a real gap.**
-   * `WdkRunRecord.output` is OPTIONAL, so an adapter written against an earlier
-   * epoch legitimately carries none — and `contracts/compatibility/workflow/
-   * v2.ts`, a RETAINED epoch, is exactly that adapter, its own doc justifying
-   * the retain on the grounds that "an adapter that carries no `output` is one
-   * whose callers fall back to `readOutput` exactly as they did". They had
-   * stopped: every completed run of such an adapter reported `output:
-   * undefined`, silently, and the epoch's stated contract was false. The test is
-   * PRESENCE of the key rather than definedness, because a body that returns
-   * nothing is a completed run whose output really is `undefined` and must not
-   * cost a round trip to say so.
+   * `output` comes off the RECORD: `completed` is terminal and the status and
+   * the output are written by one statement, so the record already in hand
+   * carries the final value, and a second `readOutput` would be a journal round
+   * trip per snapshot for nothing.
    *
    * **It does NOT re-validate the output against `WorkflowDef.output`, and that
    * is a decision rather than an omission.** This runs on every poll — every
@@ -238,7 +222,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
         return {
           ...base,
           status: "completed",
-          output: withOutput ? await outputOf(record) : undefined,
+          output: withOutput ? record.output : undefined,
         };
       case "failed":
         // A run can be recorded `failed` with no message — a killed container,
@@ -250,11 +234,6 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       default:
         return { ...base, status: record.status };
     }
-  }
-
-  /** A completed record's output: on the record when the adapter carried it, else read. */
-  async function outputOf(record: WdkRunRecord): Promise<unknown> {
-    return "output" in record ? record.output : await wdk.readOutput(record.runId);
   }
 
   /** Snapshot a run id, resolving undefined for one that does not exist. */

@@ -52,7 +52,7 @@ function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
 export type SessionConfigMessage = {
   sampleRate: number;
   ttsSampleRate: number;
-  sid?: string | undefined;
+  sid: string;
 };
 
 /** Dependencies the message handlers need from the owning session core. */
@@ -211,11 +211,8 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
 
   function handleErrorEvent(e: SessionEvent<"error.reported">): void {
     console.error("Agent error:", e.message);
-    // `!== false` rather than a bare read, keeping the defensiveness the branch
-    // below already had: an `error.reported` from an older guest that predates
-    // the field is treated as fatal, which is the safe direction.
-    const error: SessionError = { code: e.code, message: e.message, fatal: e.fatal !== false };
-    if (e.fatal === false) {
+    const error: SessionError = { code: e.code, message: e.message, fatal: e.fatal };
+    if (!e.fatal) {
       // Turn-level failure (e.g. one upload's transcription failed): show
       // the banner but keep the session usable — the server kept running.
       updateState(agentState.apply({ type: "TURN_ERROR", error }));

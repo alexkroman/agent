@@ -84,6 +84,7 @@ const configured = () =>
     audioFormat: "pcm_s16le",
     sampleRate: 16_000,
     ttsSampleRate: 24_000,
+    sessionId: "sess_1",
   });
 
 function setup(

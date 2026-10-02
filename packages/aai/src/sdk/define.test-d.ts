@@ -185,7 +185,7 @@ test("syncState resolves to a record of slot projections keyed by slot name", ()
   expectTypeOf(cartSlot.projected()).toEqualTypeOf<{ count: number }>();
 });
 
-test("syncState takes a projection, a list, or the deprecated record", () => {
+test("syncState takes a projection or a list, never a record", () => {
   const a = sessionSlot("a", () => ({ x: 1 }));
   const b = sessionSlot("b", () => ({ y: 2 }));
   expectTypeOf<
@@ -194,9 +194,11 @@ test("syncState takes a projection, a list, or the deprecated record", () => {
   expectTypeOf<
     AgentAccepts<{ name: string; syncState: readonly StateProjection[] }>
   >().toEqualTypeOf<true>();
+  // The record `agent()` RETURNS is not a spelling it takes: its key repeated
+  // each projection's own slot name.
   expectTypeOf<
     AgentAccepts<{ name: string; syncState: { a: typeof a.projected; b: typeof b.projected } }>
-  >().toEqualTypeOf<true>();
+  >().toEqualTypeOf<false>();
   // Not a projection at all.
   expectTypeOf<
     AgentAccepts<{ name: string; syncState: readonly string[] }>

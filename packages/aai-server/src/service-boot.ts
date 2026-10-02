@@ -79,10 +79,9 @@ export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
       throw modalRequiredError();
     }
   } else {
-    // Resolve the Modal context AND bake/publish the guest snapshot image now
-    // (fire-and-forget), so neither the gRPC round trip nor — far more
-    // expensive, and unavoidable on the first boot of every new harness
-    // version — the image build lands on the first session's cold start.
+    // Resolve the Modal context AND the guest image tag now (fire-and-forget),
+    // so neither the gRPC round trip nor the ~13 MB harness hash lands on the
+    // first session's cold start.
     // The harness path is resolved separately: it throws when the harness
     // isn't built, which must not take down boot for a prewarm.
     prewarmModal(harnessPathOrWarn());

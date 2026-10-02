@@ -46,11 +46,6 @@ import { createReplyTracker } from "./reply-tracker.ts";
 import { createReportDispatcher } from "./report.ts";
 import { createSpeechVerbs } from "./speech.ts";
 
-export type {
-  ServerSession,
-  ServerSessionOptions,
-} from "./core-types.ts";
-
 /**
  * Create the server-side session core for one connected client.
  *

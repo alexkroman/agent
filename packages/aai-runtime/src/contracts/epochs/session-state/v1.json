@@ -3,7 +3,7 @@
   "capability": "session-state",
   "epoch": 1,
   "rule": 2,
-  "sha256": "b30ec8e897325190028e5bf06985b74cbc0d1372a42b1fd79069c930a552ee66",
-  "exports": ["SessionStateBackend", "SessionStateStore", "ensureSessionStateSchema"],
-  "rollup": "f60323cb80ee5673b0a685cde3d3ff0dafac252acd07ed4645f4572101b6a318"
+  "sha256": "2858360ece1381a80339927cdbb229b9353d9596a6edb3cba41499298c0f9643",
+  "exports": ["ensureSessionStateSchema"],
+  "rollup": "29d3eae95c6dbc2602b9da27aad9efee46501b6dc8a4bd33436fa127cefe4fbc"
 }

@@ -1,23 +1,48 @@
 // @public
-type KnownTurnDetectionMode = "auto" | "manual";
-
-// @public
-export interface PipelineVoiceTuning {
-    deadAirCoverMs?: number;
-    errorPhrase?: string;
-    interruptionBackoffMs?: number;
-    interruptionMinDurationMs?: number;
-    minBargeInWords?: number;
-    preemptiveGeneration?: boolean;
+export interface InterruptionTuning {
+    backoffMs?: number;
+    minDurationMs?: number;
+    minWords?: number;
     resumeFalseInterruption?: boolean;
-    startFailurePhrase?: string;
-    startSpeakingFloorMs?: number;
-    turnDetection?: TurnDetectionMode;
-    userTurnLimit?: UserTurnLimit;
 }
 
 // @public
-type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
+export interface PipelinePhrases {
+    errorPhrase?: string;
+    startFailurePhrase?: string;
+}
+
+// @public
+export interface PipelineTuning {
+    interruption?: InterruptionTuning | "off";
+    silence?: SilenceTuning;
+    turnTaking?: TurnTakingTuning;
+}
+
+// @public
+export interface SilenceNudge {
+    afterMs: number;
+    prompt?: string;
+}
+
+// @public
+export interface SilenceTuning {
+    deadAirCoverMs?: number;
+    nudge?: SilenceNudge;
+}
+
+// @public
+type TurnDetectionMode = "auto" | "manual" | (string & {});
+
+// @public
+export interface TurnTakingTuning {
+    detection?: TurnDetectionMode;
+    maxSilenceMs?: number;
+    minSilenceMs?: number;
+    preemptiveGeneration?: boolean;
+    startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
+}
 
 // @public
 export interface UserTurnLimit {

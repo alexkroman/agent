@@ -62,6 +62,7 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { zValidator } from "@hono/zod-validator";
 import { authMw, userApiKeySecretName } from "aai-server/http";
 import { createLogger } from "aai-server/logger";
 import { TtlCache } from "aai-server/platform";
@@ -85,7 +86,7 @@ import { PREVIEW_WAKE_THROTTLE_MS, wakeProjectPreview } from "./studio-preview-w
 import { registerProjectRoutes } from "./studio-project-routes.ts";
 import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createRouteLimits } from "./studio-route-limits.ts";
-import { ProjectNameSchema } from "./studio-schemas.ts";
+import { ProjectNameSchema, PublishProjectSchema } from "./studio-schemas.ts";
 import { registerSecretRoutes } from "./studio-secret-routes.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
@@ -247,12 +248,9 @@ export function createStudioRoutes(options: StudioRouteOptions): {
     settledEdit,
   });
 
-  studio.post("/projects/:project/deploy", async (c) => {
+  studio.post("/projects/:project/deploy", zValidator("json", PublishProjectSchema), async (c) => {
     const { scope, project } = c.var;
-    // Optional, defensive: an older CLI sends no body at all, and Publish has
-    // no other body fields, so anything unparsable reads as "run the tsc gate".
-    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
-    const skipTypecheck = (body as { skipTypecheck?: unknown }).skipTypecheck === true;
+    const { skipTypecheck } = c.req.valid("json");
     const result = await deploy(
       {
         workspaces: c.env.workspaces,

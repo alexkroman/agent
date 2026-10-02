@@ -190,12 +190,10 @@ describe("a session across a severed connection", () => {
     second.ws.close();
   });
 
-  test("`?resume` alone suppresses the greeting without naming a session", async () => {
-    // A client that knows it is redialling but has lost the id: a new session,
-    // and still no second greeting.
+  test("`?resume` without an id is a new, greeted session", async () => {
     harness = await serve();
     const { ws, config } = await connect(harness.proxy, "?resume=1");
-    expect(config.skipGreeting).toBe(true);
+    expect(config.skipGreeting).toBe(false);
     expect(config.starts).toBe(1);
     ws.close();
   });

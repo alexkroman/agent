@@ -118,7 +118,7 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
     const supersededEvents: SessionEvent[] = [];
     const resumedEvents: SessionEvent[] = [];
     const { executeTool, emitters, release, parked } = parkedToolRuntime({
-      syncState: { count: countSlot.projection((s) => ({ count: s.count })) },
+      syncState: { count: countSlot.projected },
       tools: {
         bump: {
           description: "bump the counter",
@@ -181,7 +181,7 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
   test("without a reconnect the session's own sink still receives both", async () => {
     const events: SessionEvent[] = [];
     const { executeTool, emitters, release } = parkedToolRuntime({
-      syncState: { count: countSlot.projection((s) => ({ count: s.count })) },
+      syncState: { count: countSlot.projected },
       tools: {
         bump: {
           description: "bump the counter",

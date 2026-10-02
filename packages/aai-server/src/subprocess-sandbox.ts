@@ -54,6 +54,7 @@ import { performance } from "node:perf_hooks";
 import { Readable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { agentBootEnv } from "./guest/boot-env.ts";
 import { pollGuestHealth } from "./guest/readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest/routes.ts";
 import { guestTokenFor } from "./guest/token.ts";
@@ -64,7 +65,6 @@ import { resolveSandboxRole, type SpawnIdentity } from "./sandbox/role.ts";
 import type { WarmHarness, WorkerSource } from "./sandbox/vm.ts";
 import {
   type AgentServerHandle,
-  agentBootEnv,
   agentServerFromGuest,
   type DialGuest,
   dialGuest,

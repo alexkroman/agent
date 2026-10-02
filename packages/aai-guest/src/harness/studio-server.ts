@@ -4,7 +4,7 @@
  * handed to the loaded bundle's server.
  *
  * The harness carries no runtime ("User-shipped runtime" in this package's
- * guide), so studio mode cannot be a `createRuntimeServer` with hooks the way
+ * guide), so studio mode cannot be a `createServerForRuntime` with hooks the way
  * agent mode is. It is a plain `node:http` server that answers the control
  * channel (`/ws`), session-init and the chat routes itself, and forwards every
  * other request and upgrade to the preview server the LOADED bundle's runtime

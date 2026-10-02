@@ -1,13 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The guest harness HONOURS the warm-up the snapshot image build asks for.
+ * The guest harness HONOURS the warm-up the image build asks for.
  *
- * `modal/harness-image.test.ts` proves the host half — the build execs the
- * harness with `AAI_GUEST_WARMUP=1` and `NODE_COMPILE_CACHE`, before taking the
- * filesystem snapshot. This is the half a fake cannot check, and the half that
+ * `guest-image.Dockerfile` runs the harness with `AAI_GUEST_WARMUP=1` and
+ * `NODE_COMPILE_CACHE`. This is the half a fake cannot check, and the half that
  * silently rots: warm-up mode has to be reached BEFORE the `AAI_GUEST_TOKEN`
  * requirement (it is handed no token), so moving that check earlier would leave
- * the image snapshotting an empty cache with every host-side test still green.
+ * the image baking an empty cache with every host-side test still green.
  *
  * SCENARIO tier: it spawns a real subprocess and writes a real temp directory,
  * which is the membership rule (AGENTS.md, "Test tiers"). It sat in the unit

@@ -316,7 +316,7 @@ export function ensureRuntime(state: HarnessState): GuestRuntime {
 }
 
 /**
- * The session-facing runtime handed to `createRuntimeServer` — a lazy facade over
+ * The session-facing runtime handed to `createServerForRuntime` — a lazy facade over
  * `ensureRuntime` so the real runtime is built on the FIRST session (with
  * the loaded bundle's env), plus the live-session count the host's idle
  * eviction asks for over `status`.
@@ -358,7 +358,7 @@ export function lazyRuntime(
       runtime.startSession(ws, opts);
     },
     /**
-     * `ctx.workflows`, for the workflow API `createRuntimeServer` mounts.
+     * `ctx.workflows`, for the workflow API `createServerForRuntime` mounts.
      *
      * A GETTER, and that is the whole point of it being here rather than a
      * captured value. The runtime is built on first use, and for a
@@ -374,20 +374,13 @@ export function lazyRuntime(
     get workflows() {
       return ensureRuntime(state).workflows as SessionRuntime["workflows"];
     },
-    /**
-     * The delivery hook, a GETTER for the same lazy-runtime reason as `workflows`.
-     *
-     * A bundle predating the replay engine has none, and `undefined` is the
-     * honest answer there rather than a throwing stub: that bundle's runs belong
-     * to the DevKit's own world, which holds their schedule itself.
-     */
+    /** The delivery hook, a GETTER for the same lazy-runtime reason as `workflows`. */
     get deliverWorkflow() {
       return ensureRuntime(state).deliverWorkflow as SessionRuntime["deliverWorkflow"];
     },
     /**
      * `agent({ routes })`, for the `/api` surface — a GETTER for the lazy-runtime
-     * reason `workflows` gives. A bundle whose SDK predates routes has none, and
-     * `undefined` leaves `/api` to static serving, which is the honest answer.
+     * reason `workflows` gives.
      */
     get serveRoute() {
       return ensureRuntime(state).serveRoute as SessionRuntime["serveRoute"];

@@ -48,7 +48,12 @@ describe("control-channel dispatch", () => {
         jsonrpc: "2.0",
         id: 7,
         method: "workspace/deploy",
-        params: { files: { "../escape": "x" }, serverUrl: "http://s", apiKey: "k" },
+        params: {
+          files: { "../escape": "x" },
+          serverUrl: "http://s",
+          apiKey: "k",
+          skipTypecheck: false,
+        },
       } as JsonRpcMessage,
       state,
     );

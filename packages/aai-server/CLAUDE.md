@@ -51,8 +51,8 @@ a path based on another variable rather than the file's own directory, and an
 - `warm-harness.ts` — guest wiring shared by all three backends:
   dial-with-retry, stdio draining, free-port allocation, `WarmHarness`
   exit/cleanup.
-- `modal/context.ts` — the memoized Modal client, App, harness-baked snapshot
-  image (content-addressed tag) and harness bytes; a spawn racing the boot-time
+- `modal/context.ts` — the memoized Modal client, App, registry guest image
+  (content-addressed tag) and harness bytes; a spawn racing the boot-time
   prewarm joins it. `modal/sandbox.ts` is the control-channel (studio) spawn;
   `modal/agent-sandbox.ts` the deployed-agent spawn.
 - `packages/aai-guest/` — resolved here only as a built artifact
@@ -452,7 +452,7 @@ A cold spawn never moves the worker bundle through this process:
 `BlobStorage.signedUrl` → `BundleStore.getWorkerUrl` → `WorkerSource`
 (`sandbox/vm.ts`) → `AAI_BUNDLE_URL`, and the guest hash-verifies against
 `worker_hash`. The boot contract (the hash is the security argument, `null`
-means "cannot sign", `guestUnderstandsBundleUrl` for pinned older guests) is
+means "cannot sign") is
 "Fetching its own bundle" in `packages/aai-guest/src/harness/CLAUDE.md`.
 
 ### A workflow upload's bytes are the PLATFORM's

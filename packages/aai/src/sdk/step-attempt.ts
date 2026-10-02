@@ -56,7 +56,7 @@
  * publisher and the reader are two module instances in one realm.
  *
  * A reader rather than the VALUE, because the value changes per step and per
- * attempt while the slot is filled once, at `createRuntimeServer`.
+ * attempt while the slot is filled once, at `createServerForRuntime`.
  *
  * @module
  */
@@ -120,7 +120,7 @@ export type StepInfoReader = () => StepInfo | undefined;
 /**
  * Publish the reader for this process's steps.
  *
- * Called by whatever is about to serve workflows — `createRuntimeServer`, the one front
+ * Called by whatever is about to serve workflows — `createServerForRuntime`, the one front
  * door `aai dev`, a self-hosted server and every deployed guest share.
  * Publishing again REPLACES, which is what a dev-server restart means; pass
  * `undefined` to unpublish, which is what a spec does when it is done with a

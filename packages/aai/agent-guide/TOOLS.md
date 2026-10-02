@@ -178,7 +178,7 @@ Four rules, and each is an error rather than advice if you get it wrong:
   either way; that is the reason for the rules above.
 
 There is nothing to declare on `agent()` — the slot owns its own default. Use
-`syncState: { [slotName]: slot.projected }` to show state to a custom client.
+`syncState: slot.projected` (or a list of them) to show state to a custom client.
 `slot.snapshot(ctx)` returns a mutable deep copy of the value — what a spec
 hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
 

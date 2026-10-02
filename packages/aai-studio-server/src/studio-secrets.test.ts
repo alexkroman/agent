@@ -43,7 +43,12 @@ const deployAgent = (slug: string, apiKey = KEY): Promise<void> => claimSlug(sto
 /** Replace the workspace doc, whatever version it is on. */
 async function writeWorkspace(doc: Record<string, unknown>): Promise<void> {
   const existing = await workspaces.get(SCOPE, PROJECT);
-  await workspaces.put(SCOPE, PROJECT, { files: {}, ...doc }, existing?.version ?? null);
+  await workspaces.put(
+    SCOPE,
+    PROJECT,
+    { kind: "agent", files: {}, ...doc },
+    existing?.version ?? null,
+  );
 }
 
 beforeEach(async () => {

@@ -15,9 +15,8 @@ type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
-    readonly errors: readonly Extract<SessionEvent, {
-        type: "error.reported";
-    }>[];
+    readonly errors: readonly SessionEvent<"error.reported">[];
+    readonly endedSession?: boolean;
 };
 
 // @public

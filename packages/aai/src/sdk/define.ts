@@ -324,7 +324,6 @@ export type {
   PipelineAgentParams,
   S2sAgentParams,
   SharedAgentParams,
-  StaticAgentParams,
   TextAgentParams,
   WorkflowAppAgentParams,
 } from "./agent-params.ts";

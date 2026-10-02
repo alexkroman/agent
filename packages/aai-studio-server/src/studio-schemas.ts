@@ -1,14 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Zod schemas + limits for the browser studio (coding agent) HTTP surface.
 
-import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/internal";
 import { slugifyName } from "@alexkroman1/aai/slugify";
 import { isRecord } from "@alexkroman1/aai/utils";
-import { generatedSlug, RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/config";
+import { generatedSlug, SafePathSchema, VALID_SLUG_RE } from "aai-server/config";
 import { z } from "zod";
 import { GITHUB_NAME_RE } from "./studio-github-sync.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_MESSAGE_BYTES } from "./studio-limits.ts";
-import { DEFAULT_PROJECT_KIND, PROJECT_KINDS } from "./studio-project-kind.ts";
+import { PROJECT_KINDS } from "./studio-project-kind.ts";
 
 // Re-exported from studio-limits.ts (the dependency-free limits home).
 export {
@@ -21,26 +20,9 @@ export {
 /**
  * Project names share the slug grammar so they can double as deploy slugs.
  * This is the *identifier* form — used for path params and chat bodies, where
- * the name is addressing an existing project. Creation is lenient; see
- * `CreateProjectSchema`.
+ * the name is addressing an existing project.
  */
 export const ProjectNameSchema = z.string().regex(VALID_SLUG_RE, "Invalid project name");
-
-/** Upper bound on a typed name, before slugification. */
-const MAX_TYPED_PROJECT_NAME = 100;
-
-/**
- * Normalize a human-typed project name into the slug grammar.
- *
- * People type "My Agent"; the name doubles as the deploy slug and appears in
- * the agent's URL, so it has to reduce to `VALID_SLUG_RE`. Built on the
- * platform's shared `slugifyName` (`@alexkroman1/aai/slugify` — see it for
- * the transliteration/`decamelize` posture) so a typed project name, a
- * prompt-derived base, and a CLI directory name can't normalize differently.
- */
-function slugifyProjectName(input: string): string {
-  return slugifyName(input, MAX_SLUG_LENGTH);
-}
 
 /** Upper bound on the prompt excerpt a generated name derives from. */
 const MAX_NAME_PROMPT = 2000;
@@ -121,43 +103,35 @@ const PROMPT_FILLER_WORDS: ReadonlySet<string> = new Set([
 
 /**
  * What the project builds, as the create body carries it — the new-project
- * screen's Agent/Workflow switcher.
- *
- * Defaulted rather than optional, so the route always holds a kind and the
- * workspace is always stamped with one: an explicit `"agent"` on a new
- * document says "this project chose voice", where absence would be
- * indistinguishable from a document written before the switcher existed.
- * Callers that predate it (the CLI's first push, evals, tests) get the same
- * default they would have got from `resolveProjectKind`.
+ * screen's Agent/Workflow switcher. Required: the workspace is always stamped
+ * with the kind somebody chose.
  */
-export const ProjectKindSchema = z.enum(PROJECT_KINDS).default(DEFAULT_PROJECT_KIND);
+export const ProjectKindSchema = z.enum(PROJECT_KINDS);
 
 /**
- * Create a project. `name` is the legacy explicit path (slugified,
- * validated); when absent the server GENERATES the name — from `prompt`
- * when one is given (the guided chat-first flow), else from random words.
- * Name generation deliberately lives server-side so the studio and the CLI
- * deploy path (`POST /deploy` with no slug) share one generator.
+ * Create a project. The server GENERATES the name — from `prompt` when one is
+ * given (the guided chat-first flow), else from random words. Name generation
+ * deliberately lives server-side so the studio and the CLI deploy path
+ * (`POST /deploy` with no slug) share one generator; a project with a name of
+ * the caller's choosing is created by `aai push` (`PUT …/source`).
  */
-export const CreateProjectSchema = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(MAX_TYPED_PROJECT_NAME)
-    .transform(slugifyProjectName)
-    .refine(
-      (name) => VALID_SLUG_RE.test(name),
-      "Project name must contain at least two letters or numbers",
-    )
-    // Caught here rather than at publish: a project that can never go live is
-    // a dead end the user only discovers after building in it.
-    .refine((name) => !RESERVED_SLUGS.has(name), "That name is reserved")
-    .optional(),
-  /** First chat message — seeds the generated name when `name` is absent. */
-  prompt: z.string().max(MAX_NAME_PROMPT).optional(),
-  /** Voice agent or workflow app — decides the coding agent's system prompt. */
-  kind: ProjectKindSchema,
-});
+export const CreateProjectSchema = z
+  .object({
+    /** First chat message — seeds the generated name. */
+    prompt: z.string().max(MAX_NAME_PROMPT).optional(),
+    /** Voice agent or workflow app — decides the coding agent's system prompt. */
+    kind: ProjectKindSchema,
+  })
+  // Strict, so a caller still naming the project is refused rather than handed
+  // a generated name it did not ask for.
+  .strict();
+
+/**
+ * `POST /projects/:project/deploy` — Publish. `skipTypecheck` is
+ * `--skipTypecheck`, forwarded to the in-sandbox `aai deploy`; every caller
+ * (the CLI, the studio's Publish menu) says which.
+ */
+export const PublishProjectSchema = z.object({ skipTypecheck: z.boolean() }).strict();
 
 export const StudioFileSchema = z.object({
   path: SafePathSchema,

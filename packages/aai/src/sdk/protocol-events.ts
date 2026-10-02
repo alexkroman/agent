@@ -230,7 +230,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
      * Session ID for this connection. Clients reconnect with `?sessionId=<id>`
      * to resume, and read the retained event stream by the same id.
      */
-    sessionId: z.string().optional(),
+    sessionId: z.string(),
   }),
   /**
    * All of this turn's TTS audio has been sent. A turn BOUNDARY, so the pacer

@@ -72,7 +72,7 @@ describeWithStack("studio store conformance: the Supabase stack arm", () => {
 
   /** The workspace a session row hangs off — `on delete cascade` needs a parent. */
   const parent = async (scope: string, project: string): Promise<void> => {
-    await createPgWorkspaceStore(sql).put(scope, project, { files: {} }, null);
+    await createPgWorkspaceStore(sql).put(scope, project, { kind: "agent", files: {} }, null);
   };
 
   describe("StudioSessionRegistry", () => {

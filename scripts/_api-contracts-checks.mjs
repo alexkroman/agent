@@ -34,7 +34,7 @@ import {
 } from "./_api-contracts-tree.mjs";
 import { compareNames } from "./_api-surface.mjs";
 
-export { classify } from "./_api-contracts-staleness.mjs";
+export { BREAKING_BUMP, classify } from "./_api-contracts-staleness.mjs";
 
 /** Findings for one run. Reset by `runChecks`, appended to by every check. */
 let issues = [];

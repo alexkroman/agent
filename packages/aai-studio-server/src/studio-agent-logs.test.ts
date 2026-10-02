@@ -34,7 +34,10 @@ function line(seq: number, text: string, stream: Line["stream"] = "stdout"): Lin
 /** A workspace with whichever slugs the case needs stamped on it. */
 async function makeWorkspace(meta: { previewSlug?: string; deployedSlug?: string } = {}) {
   const workspaces = createMemoryWorkspaceStore();
-  await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+  await createWorkspace(workspaces, SCOPE, PROJECT, {
+    kind: "agent",
+    files: { "agent.ts": "// v1" },
+  });
   if (Object.keys(meta).length > 0) {
     await stampWorkspaceMeta(workspaces, SCOPE, PROJECT, meta);
   }

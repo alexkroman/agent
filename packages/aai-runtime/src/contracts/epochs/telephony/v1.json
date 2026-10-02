@@ -3,14 +3,12 @@
   "capability": "telephony",
   "epoch": 1,
   "rule": 2,
-  "sha256": "8a040783c726b6245ce678646ed293243eb3a2b725bf1323d2ec4ceb579781ed",
+  "sha256": "d2142ef02bf4e263a697f18b0bfe6e2eea312300ad42b0ecdf73e6fbd1aa2b09",
   "exports": [
     "CARRIER_CODECS",
-    "CARRIER_PARAM",
     "CarrierCodec",
     "CarrierInbound",
     "CarrierName",
-    "TELEPHONY_PATH",
     "TELEPHONY_SAMPLE_RATE",
     "TelephonyBridgeOptions",
     "carrierByName",
@@ -19,5 +17,5 @@
     "telnyxCodec",
     "twilioCodec"
   ],
-  "rollup": "39c8da64d2f155757b734b06b44cf92ea47ec10be40900b4031ea4f263555c84"
+  "rollup": "2e8396f6fb58be1e6e763f112a8df6635b25cf65d40c3501950f07f4ff4b1a36"
 }

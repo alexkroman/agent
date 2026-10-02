@@ -60,7 +60,7 @@ const ENTRY: journal.JournalStepRow = {
   output: `"value"`,
   error: undefined,
   attempts: 1,
-  startedAt: undefined,
+  startedAt: 7,
   finishedAt: 7,
 };
 

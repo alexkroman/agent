@@ -83,7 +83,7 @@
  * ## Where it is served
  *
  * Self-hosted — `aai dev` (its Vite proxy included), `aai start`,
- * `createRuntimeServer`. A deployed guest serves `/api` on its sandbox URL too,
+ * `createServerForRuntime`. A deployed guest serves `/api` on its sandbox URL too,
  * but the PLATFORM routes nothing to it: a page served at `/:slug/` has no
  * `/:slug/api`, so treat the routes as self-hosted only for now.
  *

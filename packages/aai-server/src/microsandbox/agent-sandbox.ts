@@ -20,18 +20,18 @@ import { access } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { agentBootEnv } from "../guest/boot-env.ts";
+import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "../guest/exec-env.ts";
 import { pollGuestHealth } from "../guest/readiness.ts";
 import { guestTokenFor } from "../guest/token.ts";
 import { createLogger } from "../logger.ts";
 import { AGENT_BUNDLE_REMOTE_PATH, AGENT_ENV_REMOTE_PATH } from "../modal/agent-sandbox.ts";
 import { GUEST_PORT, harnessCode } from "../modal/context.ts";
-import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "../modal/harness-image.ts";
 import { parseSandboxLimitsFromEnv } from "../modal/sandbox-env.ts";
 import { SandboxUnavailableError } from "../sandbox/errors.ts";
 import type { WorkerSource } from "../sandbox/vm.ts";
 import {
   type AgentServerHandle,
-  agentBootEnv,
   agentServerFromGuest,
   type GuestFetch,
   getFreePort,

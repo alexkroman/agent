@@ -237,7 +237,9 @@ describe("deploy + chat endpoints", () => {
 
   test("deploy route runs the pipeline and returns the URL + CLI output", async () => {
     await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/projects/proj/deploy", { body: {} });
+    const res = await authFetch(fetch, "/studio/projects/proj/deploy", {
+      body: { skipTypecheck: false },
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       ok: true,
@@ -261,7 +263,9 @@ describe("deploy + chat endpoints", () => {
   test("deploy route surfaces pipeline errors as 400", async () => {
     await createProject(fetch);
     deployMock.mockResolvedValueOnce({ ok: false, error: "Build failed: nope" });
-    const res = await authFetch(fetch, "/studio/projects/proj/deploy", { body: {} });
+    const res = await authFetch(fetch, "/studio/projects/proj/deploy", {
+      body: { skipTypecheck: false },
+    });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toContain("Build failed");
   });
@@ -277,7 +281,7 @@ describe("deploy + chat endpoints", () => {
   test("a refused deploy is logged with its reason", async () => {
     await createProject(fetch);
     deployMock.mockResolvedValueOnce({ ok: false, error: "Build failed: nope" });
-    await authFetch(fetch, "/studio/projects/proj/deploy", { body: {} });
+    await authFetch(fetch, "/studio/projects/proj/deploy", { body: { skipTypecheck: false } });
     expect(logs.warns()).toContainEqual(expect.stringContaining("deploy refused"));
     const line = logs.all().find((l) => l.msg.includes("deploy refused"));
     expect(line?.ctx).toMatchObject({ project: "proj", reason: "Build failed: nope" });

@@ -40,7 +40,7 @@ export async function seededStore(
   files: Record<string, string> = { "agent.ts": "// v1" },
 ): Promise<WorkspaceStore> {
   const workspaces = makeStore();
-  await createWorkspace(workspaces, SCOPE, PROJECT, { files });
+  await createWorkspace(workspaces, SCOPE, PROJECT, { kind: "agent", files });
   return workspaces;
 }
 

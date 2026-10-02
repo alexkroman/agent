@@ -128,12 +128,14 @@ export async function startRun(
 
 /** A settled step with everything defaulted. */
 export function stepOf(overrides: Partial<StepEntry> & { key: string }): StepEntry {
+  const now = Date.now();
   return {
     name: overrides.key.split("#")[0] ?? overrides.key,
     status: "ok",
     output: { ok: true },
     attempts: 1,
-    finishedAt: Date.now(),
+    startedAt: now,
+    finishedAt: now,
     ...overrides,
   };
 }

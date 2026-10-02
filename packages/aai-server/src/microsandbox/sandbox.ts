@@ -55,16 +55,13 @@ import { access } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import { platformOwnPort } from "../_boot.ts";
+import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "../guest/exec-env.ts";
 import { guestImageRef, guestImageRegistry } from "../guest/image-source.ts";
 import { GUEST_ROUTES, guestWsUrl } from "../guest/routes.ts";
 import { guestTokenFor } from "../guest/token.ts";
 import { createLogger } from "../logger.ts";
 import { GUEST_PORT, harnessCode, sandboxBaseTag } from "../modal/context.ts";
-import {
-  guestExecBaseEnv,
-  HARNESS_REMOTE_PATH,
-  localHarnessImageTag,
-} from "../modal/harness-image.ts";
+import { localHarnessImageTag } from "../modal/harness-image.ts";
 import { parseSandboxLimitsFromEnv } from "../modal/sandbox-env.ts";
 import { SandboxUnavailableError } from "../sandbox/errors.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "../sandbox/role.ts";

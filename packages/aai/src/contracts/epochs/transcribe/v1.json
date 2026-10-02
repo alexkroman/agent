@@ -24,20 +24,5 @@
     "stepTranscribeSync",
     "stepTranscribeUpload"
   ],
-  "rollup": "aa17103a72e93f7809b6f0336fa40d8b7428314a77b8dc287851b4ed979d8913",
-  "revision": 1,
-  "revisions": [
-    {
-      "revision": 0,
-      "rule": 2,
-      "sha256": "122aa4e00c95367ac0860f6c9171c8bf017c995d8ab31da94571d1bfbe12f920",
-      "reason": "minted"
-    },
-    {
-      "revision": 1,
-      "rule": 2,
-      "sha256": "4ac09550a818d4aa03bd9b3c477b23149925df730d80264f989f4916838ea075",
-      "reason": "compatible (checked): no export added or removed; every old export still assignable"
-    }
-  ]
+  "rollup": "1e0e800842224f5b796f21f6c87b092aeb56805229496a026219434beb99ee5a"
 }

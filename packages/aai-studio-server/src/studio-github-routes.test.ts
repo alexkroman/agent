@@ -514,10 +514,10 @@ describe("POST /studio/projects/:project/github/sync", () => {
     // let a key inherit a browser session's repository write access.
     const github = createFakeGithub({ head: "abc123" });
     const harness = await withDevAuth({ githubApp: testGithubApp, githubFetch: github.fetchFn });
-    await authFetch(harness.fetch, "/studio/projects", {
-      method: "POST",
+    await authFetch(harness.fetch, "/studio/projects/cli-project/source", {
       key: "raw-api-key",
-      body: { name: "cli-project" },
+      method: "PUT",
+      body: { files: {} },
     });
     const res = await authFetch(harness.fetch, "/studio/projects/cli-project/github/sync", {
       method: "POST",
