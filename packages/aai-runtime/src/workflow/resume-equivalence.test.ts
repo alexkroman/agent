@@ -255,7 +255,14 @@ describe("a run resumed after its worker died", () => {
     await fc.assert(
       fc.asyncProperty(
         programArb(true, true, 5),
-        fc.integer({ min: 1, max: 4 }),
+        // The one-slot gate drawn half the time rather than a quarter: gate
+        // re-entry needs it AND a nested program, and at a quarter that pair
+        // came up 1-10 times in 60, so a draw of zero (about 1 in 100) failed
+        // its floor on a tree nothing had touched.
+        fc.oneof(
+          { weight: 3, arbitrary: fc.constant(1) },
+          { weight: 3, arbitrary: fc.integer({ min: 2, max: 4 }) },
+        ),
         async (raw, stepConcurrency) => {
           const program = label(raw);
           const oracle = await runScenario(program, { stepConcurrency });
@@ -303,7 +310,7 @@ describe("a run resumed after its worker died", () => {
     expect(reached.suspends, "nothing ever suspended").toBeGreaterThan(30); // 104-200, and 62 seen live
     expect(reached.fanOut, "no program fanned out").toBeGreaterThan(10); // 21-37
     expect(reached.nested, "no program nested a step inside a step").toBeGreaterThan(5); // 13-23
-    expect(reached.gateReentry, "no nested step ran through a one-slot gate").toBeGreaterThan(0); // 1-10
+    expect(reached.gateReentry, "no nested step ran through a one-slot gate").toBeGreaterThan(0); // 4-14 over 20 runs, at the weighted gate
     expect(reached.signals, "no hook was ever answered by a signal").toBeGreaterThan(12); // 27-123
     expect(reached.failures, "no generated run ever failed").toBeGreaterThan(3); // 11-26
   });
