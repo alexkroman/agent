@@ -1191,7 +1191,7 @@
     },
     {
       "name": "concurrency-primitives",
-      "description": "The repo's recurring async-coordination patterns are reified as small primitives, and this pins each one's HOME so the roster cannot go stale and a call site can be checked against it. Almost all are packages/aai exports; createTurnMachine() is the one that lives in aai-runtime (transports/pipeline/turn/state.ts). The catalogue: createEpoch() (sdk/epoch.ts), createOwnedMap() (sdk/owned-map.ts), createCoalescingRunner() (sdk/coalescing-runner.ts), createKeyedLock()/withLock() (sdk/keyed-lock.ts - withLock is a const arrow, not a function declaration, which is why it is asserted as a constant), sleep(ms, { signal?, unref? }) (sdk/sleep.ts - the ONE wait, and NOT a test helper, which the root guide used to imply; guard-invariants rule 19 keeps the seventh hand-rolled spelling out), jitteredBackoff(attempt, ...) (sdk/jittered-backoff.ts - rule 31 keeps the fourth copy out; the JITTER is the half a copy gets wrong), sessionSlot() (sdk/session-slot.ts), ToolFailure/toolFailure()/isToolFailure()/pushCapped() (sdk/utils.ts), resolveOne() (sdk/spoken.ts), omitUndefined() (sdk/omit-undefined.ts - rules 2 and 22 are its enforcement half), isRecord() (sdk/is-record.ts). What this convention deliberately cannot do is see a hand-rolled copy at a call site: that is inside a function body, hence guard-invariants (rules 2, 3, 4, 19, 21, 22, 23, 31). It covers the other direction - a primitive renamed, moved or deleted out from under those rules, which would leave every one of them matching nothing while printing the same checkmark as a rule upheld. Two repo-wide members are absent because they are not ours to export: p-timeout for timeouts (never a hand-rolled Promise.race with a timer) and native AbortSignal.any([...]) for combining signals; both stay as prose in AGENTS.md. packages/aai/src/sdk/CLAUDE.md, \"Concurrency primitives\", carries the argument behind each primitive.",
+      "description": "The repo's recurring async-coordination patterns are reified as small primitives, and this pins each one's HOME so the roster cannot go stale and a call site can be checked against it. Almost all are packages/aai exports; createTurnMachine() is the one that lives in aai-runtime (transports/pipeline/turn/state.ts). The catalogue: createEpoch() (sdk/epoch.ts), createOwnedMap() (sdk/owned-map.ts), createCoalescingRunner() (sdk/coalescing-runner.ts), createKeyedLock()/withLock() (sdk/keyed-lock.ts - withLock is a const arrow, not a function declaration, which is why it is asserted as a constant), sleep(ms, { signal?, unref? }) (sdk/sleep.ts - the ONE wait, and NOT a test helper, which the root guide used to imply; guard-invariants rule 19 keeps the seventh hand-rolled spelling out), jitteredBackoff(attempt, ...) (sdk/jittered-backoff.ts - rule 31 keeps the fourth copy out; the JITTER is the half a copy gets wrong), createBackoffLoop(attempt, ...) (sdk/backoff-loop.ts - the reconnect loop the aai-ui inbox and the studio event stream had each hand-rolled: failure count, pending timer, stopped flag), sessionSlot() (sdk/session-slot.ts), ToolFailure/toolFailure()/isToolFailure()/pushCapped() (sdk/utils.ts), resolveOne() (sdk/spoken.ts), omitUndefined() (sdk/omit-undefined.ts - rules 2 and 22 are its enforcement half), isRecord() (sdk/is-record.ts). What this convention deliberately cannot do is see a hand-rolled copy at a call site: that is inside a function body, hence guard-invariants (rules 2, 3, 4, 19, 21, 22, 23, 31). It covers the other direction - a primitive renamed, moved or deleted out from under those rules, which would leave every one of them matching nothing while printing the same checkmark as a rule upheld. Two repo-wide members are absent because they are not ours to export: p-timeout for timeouts (never a hand-rolled Promise.race with a timer) and native AbortSignal.any([...]) for combining signals; both stay as prose in AGENTS.md. packages/aai/src/sdk/CLAUDE.md, \"Concurrency primitives\", carries the argument behind each primitive.",
       "paths": "packages",
       "must": [
         {
@@ -1247,6 +1247,15 @@
           },
           "must": {
             "exportFunctions": ["jitteredBackoff"]
+          }
+        },
+        {
+          "name": "backoff-loop",
+          "for": {
+            "files": "aai/src/sdk/backoff-loop.ts"
+          },
+          "must": {
+            "exportFunctions": ["createBackoffLoop"]
           }
         },
         {

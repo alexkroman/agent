@@ -342,8 +342,9 @@ export const TIMING_RULES = [
       "that the explanation IS the function.\n" +
       "\n" +
       "The rule is on the JITTER rather than on the doubling because the\n" +
-      "doubling is legitimate alone — `hooks/use-event-stream.ts` reconnects on the\n" +
-      "same window with no jitter and asserts its gaps exactly, and\n" +
+      "doubling is legitimate alone — `createBackoffLoop({ jitter: false })`\n" +
+      "reconnects the studio's event stream on the same window and its spec\n" +
+      "asserts the gaps exactly, and\n" +
       "`_upload-byte-util.ts` doubles bytes rather than milliseconds. What a\n" +
       "copy gets wrong is the spread: callers that failed together retry\n" +
       "together, so a fixed schedule brings a fan-out's parts, two browser tabs\n" +

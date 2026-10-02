@@ -56,6 +56,14 @@ export { DEFAULT_GREETING } from "./sdk/agent-defaults.ts";
 // The mode → front-door mapping every server hosting an agent derives (`aai
 // dev`, the deployed guest, `createAgentServer`): one spelling, not four.
 export { frontDoorOf } from "./sdk/agent-mode.ts";
+// A reconnect loop on an exponential backoff: the stopped flag, failure count
+// and pending timer the inbox socket (`aai-ui`) and the studio's event stream
+// had each kept by hand. Browser-side, so here and not on `./host-internal`.
+export {
+  type BackoffLoop,
+  type BackoffLoopOptions,
+  createBackoffLoop,
+} from "./sdk/backoff-loop.ts";
 // The barge-in phrase lists and the classifier that reads them. The LISTS an
 // author may replace are authoring data and ride the `agent()` field; the
 // classifier is the framework's reading of them, and the transport is its only

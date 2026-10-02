@@ -11,6 +11,7 @@
 // verification — because supabase-js pauses its refresh ticker on hidden tabs
 // and nothing here asked for a new token.
 
+import { createBackoffLoop } from "@alexkroman1/aai/internal";
 import { useEffect } from "react";
 import type { StreamDownReason } from "../api-events.ts";
 
@@ -67,36 +68,36 @@ export function useEventStream(
   onAuthFailure: () => Promise<void>,
 ) {
   useEffect(() => {
-    let stopped = false;
     let unsubscribe: (() => void) | undefined;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    let failures = 0;
-    const start = () => {
-      // Per attempt: when this stream opened, so `onDown` can tell a stream
-      // that SERVED from one that was merely accepted.
-      let openedAt: number | undefined;
-      unsubscribe = subscribe({
-        onOpen: () => {
-          openedAt = Date.now();
-        },
-        onDown: (reason) => {
-          if (stopped) return;
-          if (reason === "auth") void onAuthFailure();
-          // A stream that stayed up long enough to be working starts the
-          // backoff over (a long-lived subscription that drops once must
-          // reconnect promptly). One that died immediately is a FAILURE, no
-          // matter that the server accepted it — see EVENTS_MIN_UPTIME_MS.
-          const served = openedAt !== undefined && Date.now() - openedAt >= EVENTS_MIN_UPTIME_MS;
-          failures = served ? 1 : failures + 1;
-          const delay = Math.min(EVENTS_RETRY_MS * 2 ** (failures - 1), EVENTS_RETRY_MAX_MS);
-          retry = setTimeout(start, delay);
-        },
-      });
-    };
-    start();
+    // Unjittered on purpose: the spec pins the gaps exactly — see
+    // `jittered-backoff.ts` in the SDK for why converting it is its own change.
+    const loop = createBackoffLoop(
+      () => {
+        // Per attempt: when this stream opened, so `onDown` can tell a stream
+        // that SERVED from one that was merely accepted.
+        let openedAt: number | undefined;
+        unsubscribe = subscribe({
+          onOpen: () => {
+            openedAt = Date.now();
+          },
+          onDown: (reason) => {
+            if (loop.stopped()) return;
+            if (reason === "auth") void onAuthFailure();
+            // A stream that stayed up long enough to be working starts the
+            // backoff over (a long-lived subscription that drops once must
+            // reconnect promptly). One that died immediately is a FAILURE, no
+            // matter that the server accepted it — see EVENTS_MIN_UPTIME_MS.
+            const served = openedAt !== undefined && Date.now() - openedAt >= EVENTS_MIN_UPTIME_MS;
+            if (served) loop.reset();
+            loop.retry();
+          },
+        });
+      },
+      { baseMs: EVENTS_RETRY_MS, maxMs: EVENTS_RETRY_MAX_MS, jitter: false },
+    );
+    loop.start();
     return () => {
-      stopped = true;
-      if (retry !== undefined) clearTimeout(retry);
+      loop.stop();
       unsubscribe?.();
     };
   }, [subscribe, onAuthFailure]);
