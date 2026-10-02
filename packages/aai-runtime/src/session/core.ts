@@ -58,6 +58,9 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
   // The current reply and the tool work chained onto it — see `reply-tracker.ts`.
   const replies = createReplyTracker();
   let history: Message[] = [];
+  // Bumped by `reset`: a tool call settling into a later conversation than
+  // the one it was issued in is dropped — see `ToolStepDeps.conversation`.
+  let conversation = 0;
   // A MEMORY bound in tokens, never a message count — see
   // `transports/pipeline/history/retention.ts`. A running total, so a push that
   // evicts nothing does not re-sum the window.
@@ -115,6 +118,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     cancelReply: () => replies.cancel(),
     clearHistory: () => {
       history = [];
+      conversation++;
       retained.recount();
     },
     // A relay owns every `tool_result`; otherwise they answer `clientTool` calls.
@@ -147,6 +151,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
         // `ToolStepDeps.toolCall`.
         recordToolResult: (message: Message) => pushMessages(message),
       },
+      conversation: () => conversation,
       emit,
       log,
       relayed: Boolean(opts.onToolResult),
