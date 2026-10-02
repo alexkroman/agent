@@ -16,8 +16,8 @@ import {
   input,
   jsonResponse,
   renderWithClient,
-  settle,
   stubFetch,
+  tick,
 } from "./_test-utils.ts";
 import type { SignInCredentials } from "./auth.tsx";
 import { readSignInMethods, type SignInMethods } from "./auth-methods.ts";
@@ -70,7 +70,7 @@ describe("SignInGate", () => {
     fireEvent.change(input("Email"), { target: { value: "  dev@local.test  " } });
     fireEvent.change(input("Password"), { target: { value: "devdevdev" } });
     fireEvent.click(button("Sign in"));
-    await settle();
+    await tick();
     // The email is TRIMMED (a pasted address routinely carries whitespace) and
     // the password is NOT — leading/trailing spaces are legitimate characters in
     // one, and stripping them makes a correct password fail with the message a
@@ -89,7 +89,7 @@ describe("SignInGate", () => {
     fireEvent.change(input("Email"), { target: { value: "new@local.test" } });
     fireEvent.change(input("Password"), { target: { value: "hunter2hunter2" } });
     fireEvent.click(button("Create account"));
-    await settle();
+    await tick();
     expect(onSignIn).toHaveBeenCalledWith({
       kind: "signup",
       email: "new@local.test",
@@ -102,14 +102,14 @@ describe("SignInGate", () => {
     fireEvent.click(button("Sign in"));
     fireEvent.change(input("Email"), { target: { value: "dev@local.test" } });
     fireEvent.click(button("Sign in"));
-    await settle();
+    await tick();
     expect(onSignIn).not.toHaveBeenCalled();
   });
 
   test("the GitHub button needs no field filled", async () => {
     const onSignIn = mount(BOTH);
     fireEvent.click(button(/Continue with GitHub/));
-    await settle();
+    await tick();
     expect(onSignIn).toHaveBeenCalledWith({ kind: "github" });
   });
 
@@ -121,7 +121,7 @@ describe("SignInGate", () => {
     expect(screen.queryByLabelText("Password")).toBeNull();
     fireEvent.change(input("Email"), { target: { value: "me@local.test" } });
     fireEvent.click(button("Sign in"));
-    await settle();
+    await tick();
     expect(onSignIn).toHaveBeenCalledWith({ kind: "dev", email: "me@local.test" });
   });
 

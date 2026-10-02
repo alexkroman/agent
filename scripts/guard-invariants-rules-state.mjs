@@ -284,12 +284,13 @@ export const STATE_RULES = [
       "written twice and a third exit added anywhere in the body would have\n" +
       "leaked a billed Modal sandbox in silence.\n\n" +
       "Baseline an occurrence only when the call is NOT a scope guard, and say so\n" +
-      "at the line. Two are:\n" +
-      "  - `studio-session-idle.ts`'s `disposeEntry`, whose whole PURPOSE is\n" +
-      "    disposal — it releases an entry the session map owns, and `using`\n" +
-      "    cannot express 'dispose a resource acquired in another scope'.\n" +
-      "  - `define-client.tsx`'s `() => session[Symbol.dispose]()`, a teardown\n" +
-      "    thunk handed to the React root. A callback is not a scope either.",
+      "at the line. One is: `define-client.tsx`'s `() => session[Symbol.dispose]()`,\n" +
+      "a teardown thunk handed to the React root. A callback is not a scope, and\n" +
+      "a DisposableStack would add a runtime global to the browser bundle.\n\n" +
+      "A function that TAKES OWNERSHIP of a resource acquired elsewhere is a\n" +
+      "scope: bind it at the top with `await using`, as\n" +
+      "`studio-session-idle.ts`'s `disposeEntry` does, so a throw on the way\n" +
+      "to the end cannot skip the disposal.",
   },
   {
     id: 29,

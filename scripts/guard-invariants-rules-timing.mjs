@@ -177,9 +177,12 @@ export const TIMING_RULES = [
       "`setImmediate` is the same yield reached by another name and is counted\n" +
       "here rather than by rule 19: it takes no delay, so it can never be a\n" +
       "sleep. SHIPPED source that yields deliberately is the legitimate baseline\n" +
-      "entry — `host/tool-executor.ts` uses it between tool calls for its\n" +
-      "I/O-phase semantics, and a test helper is not the remedy for production\n" +
-      "code.\n\n" +
+      "entry — `aai-runtime/src/tools/executor.ts` uses it around each tool call\n" +
+      "for its I/O-phase semantics, and a test helper is not the remedy for\n" +
+      "production code. Nor is `node:timers/promises`' `setImmediate`: fake\n" +
+      "timers do not drive it, so a spec that advances the clock past a tool's\n" +
+      "deadline finishes before the deadline timer is even armed (measured: the\n" +
+      "five deadline specs in executor.test.ts hang).\n\n" +
       "A promise whose timer callback does WORK before it settles is not this\n" +
       "and is not reported: that is a deferral, and neither yield replaces it.",
   },
