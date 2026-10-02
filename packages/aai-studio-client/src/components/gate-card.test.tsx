@@ -12,18 +12,16 @@ import { ApiError } from "../api-error.ts";
 import { GateProblem, gateProblem, loadFailureText, SERVER_BUSY_MESSAGE } from "./gate-card.tsx";
 
 describe("loadFailureText", () => {
-  test("a server that never answered reads as busy, not as a bug in the page", () => {
-    // What a hung request and an unreachable server settle as. Neither
-    // message is worth showing the user ("signal timed out" reads as a
-    // front-end fault), so neither carries detail.
-    for (const err of [
-      new DOMException("The operation timed out", "TimeoutError"),
-      new TypeError("Failed to fetch"),
-    ]) {
-      expect(loadFailureText(err, "Could not load your account")).toEqual({
-        message: SERVER_BUSY_MESSAGE,
-      });
-    }
+  // What a hung request and an unreachable server settle as. Neither message is
+  // worth showing the user ("signal timed out" reads as a front-end fault), so
+  // neither carries detail.
+  test.each([
+    ["a timeout", new DOMException("The operation timed out", "TimeoutError")],
+    ["a rejected fetch", new TypeError("Failed to fetch")],
+  ])("a server that never answered (%s) reads as busy, not as a bug in the page", (_, err) => {
+    expect(loadFailureText(err, "Could not load your account")).toEqual({
+      message: SERVER_BUSY_MESSAGE,
+    });
   });
 
   test("a busy server's own answer is quoted as detail under the busy line", () => {

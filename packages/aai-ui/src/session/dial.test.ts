@@ -74,15 +74,11 @@ describe("createDialer client report", () => {
 });
 
 test("the snapshot's apiUrl never carries the phone", () => {
-  const session = createBrowserSession({
+  using session = createBrowserSession({
     platformUrl: "http://test.local",
     WebSocket: MockWebSocketConstructor,
     phone: "+15035550123",
   });
   session.connect();
-  try {
-    expect(session.getSnapshot().apiUrl).not.toContain("phone");
-  } finally {
-    session.disconnect();
-  }
+  expect(session.getSnapshot().apiUrl).not.toContain("phone");
 });

@@ -47,13 +47,11 @@ describe("BulletList", () => {
     expect(bare.firstElementChild?.tagName).toBe("UL");
   });
 
-  test("a title of false or null is no title, not an empty heading", () => {
-    // `title={cond && "Risks"}` is the shape a page reaches for.
-    for (const title of [false, null] as const) {
-      const { container } = render(<BulletList title={title} items={["one"]} />);
-      expect(container.querySelector("h3")).toBeNull();
-      expect(container.firstElementChild?.tagName).toBe("UL");
-    }
+  // `title={cond && "Risks"}` is the shape a page reaches for.
+  test.each([false, null] as const)("a title of %s is no title, not an empty heading", (title) => {
+    const { container } = render(<BulletList title={title} items={["one"]} />);
+    expect(container.querySelector("h3")).toBeNull();
+    expect(container.firstElementChild?.tagName).toBe("UL");
   });
 
   test("size=sm adds text-sm and the default adds nothing", () => {
@@ -65,9 +63,7 @@ describe("BulletList", () => {
 
   test("className is added to the list's own classes, not swapped for them", () => {
     const { container } = render(<BulletList items={["one"]} className="opacity-70" />);
-    const cls = container.querySelector("ul")?.className ?? "";
-    expect(cls).toContain("opacity-70");
-    expect(cls).toContain("list-disc");
+    expect(container.querySelector("ul")).toHaveClass("opacity-70", "list-disc");
   });
 
   test("duplicate items render twice and warn about nothing", () => {

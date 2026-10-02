@@ -166,19 +166,16 @@ describe("WorkflowFields", () => {
  * that lookup's error into the form's.
  */
 describe("WorkflowFields resolving by name", () => {
-  /** A `fetch` answering `GET /workflows`, counting how often it was called. */
+  /** A `fetch` answering `GET /workflows`; the mock records every call. */
   function stubListing(workflows: WorkflowSummary[]) {
-    const calls: string[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        calls.push(String(url));
-        return new Response(JSON.stringify({ workflows }), {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ workflows }), {
           headers: { "Content-Type": "application/json" },
-        });
-      }),
+        }),
     );
-    return calls;
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
   }
 
   test("reads the listing and renders the named workflow's schema", async () => {
@@ -203,7 +200,7 @@ describe("WorkflowFields resolving by name", () => {
   test("requests nothing when it is handed a summary it already has", () => {
     // The reason the hook takes a `skip`: a page holding its own listing must
     // not make this component fetch a second copy of it.
-    const calls = stubListing([]);
+    const fetchMock = stubListing([]);
     render(
       <ThemeProvider>
         <form>
@@ -211,7 +208,7 @@ describe("WorkflowFields resolving by name", () => {
         </form>
       </ThemeProvider>,
     );
-    expect(calls).toEqual([]);
+    expect(fetchMock.mock.calls).toEqual([]);
   });
 
   test("cannot be submitted before the fields it validates exist", async () => {
