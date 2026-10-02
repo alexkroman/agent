@@ -162,16 +162,14 @@ describeWithPg("a self-hosted agent's conversation across a process restart", ()
     if (port === undefined) throw new Error("server did not report a port");
     const proc: Process = {
       port,
-      callbacks: async () => {
-        const deadline = Date.now() + 5000;
-        while (!captured) {
-          if (Date.now() > deadline) {
-            throw new Error("connectS2s never fired in 5000ms — no session started");
-          }
-          await sleep(20);
-        }
-        return captured;
-      },
+      callbacks: () =>
+        vi.waitFor(
+          () => {
+            if (!captured) throw new Error("connectS2s never fired in 5000ms — no session started");
+            return captured;
+          },
+          { timeout: 5000, interval: 20 },
+        ),
       close: () => server.close(),
     };
     running.push(proc);
@@ -202,21 +200,19 @@ describeWithPg("a self-hosted agent's conversation across a process restart", ()
       // Cumulative recorder, so `count` is what makes a second wait assert about
       // the action that preceded it — see the same helper's doc in
       // `session-resume-state.scenario.test.ts`.
-      waitFor: async (type, { count = 1, ms = 5000 } = {}) => {
-        const deadline = Date.now() + ms;
-        for (;;) {
-          const nth = frames.filter((f) => f.type === type)[count - 1];
-          if (nth) return nth;
-          if (Date.now() > deadline) {
+      waitFor: (type, { count = 1, ms = 5000 } = {}) =>
+        vi.waitFor(
+          () => {
+            const nth = frames.filter((f) => f.type === type)[count - 1];
+            if (nth) return nth;
             throw new Error(
               `fewer than ${count} "${type}" frame(s) in ${ms}ms; saw [${frames
                 .map((f) => f.type)
                 .join(", ")}]`,
             );
-          }
-          await sleep(20);
-        }
-      },
+          },
+          { timeout: ms, interval: 20 },
+        ),
     };
   }
 

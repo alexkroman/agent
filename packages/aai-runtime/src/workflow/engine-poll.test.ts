@@ -6,12 +6,16 @@
  */
 
 import type { WorkflowContext } from "@alexkroman1/aai";
-import { sleep } from "@alexkroman1/aai/internal";
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { harness } from "./_engine-harness.ts";
 
 describe("ctx.poll", () => {
   test("suspends between checks and resolves once done, across deliveries", async () => {
+    // Each wait is a deadline on the clock, so the clock is moved past it.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     let checks = 0;
     const { engine, journal } = harness({
       call: async (_input, ctx: WorkflowContext) => {
@@ -29,7 +33,7 @@ describe("ctx.poll", () => {
       const status = await engine.execute(runId);
       statuses.push(status);
       if (status === "completed") break;
-      await sleep(30);
+      vi.advanceTimersByTime(30);
     }
     expect(statuses.at(-1)).toBe("completed");
     // Every wait was a real suspension, so the run took one delivery per check.

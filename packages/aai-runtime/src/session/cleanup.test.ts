@@ -4,7 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_logger-test-utils.ts";
 import { MockWebSocket } from "../_mock-ws.ts";
 import { makeMockCore } from "../_session-test-utils.ts";
-import { sleep } from "../_timing-test-utils.ts";
+import { tick } from "../_timing-test-utils.ts";
 import { simulateFrame } from "./_ws-handler-test-utils.ts";
 import type { ServerSession } from "./core-types.ts";
 import { createSessionDirectory, type SessionDirectory } from "./directory.ts";
@@ -82,15 +82,16 @@ describe("wireSessionSocket resource cleanup", () => {
   });
 
   test("multiple rapid closes don't double-invoke stop()", async () => {
+    // Held open by the test, so the later closes provably land DURING the drain.
+    const draining = Promise.withResolvers<void>();
     const core = makeMockCore({
-      stop: vi.fn(() => sleep(50)),
+      stop: vi.fn(() => draining.promise),
     });
     const ws = makeOpenWs();
     wire(ws, core);
 
     // Three close events, the second and third landing while the first stop()
-    // is still in flight (it takes 50 ms) — the guard has to hold DURING the
-    // drain, and the single close this test used to send exercised none of it.
+    // is still in flight — the guard has to hold DURING the drain.
     ws.close();
     ws.close();
     ws.close();
@@ -100,7 +101,9 @@ describe("wireSessionSocket resource cleanup", () => {
     });
 
     // And after it: a late close on an already-ended session starts nothing.
-    await sleep(60);
+    draining.resolve();
+    await draining.promise;
+    await tick();
     ws.close();
     expect(core.stop).toHaveBeenCalledOnce();
   });
