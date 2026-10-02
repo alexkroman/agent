@@ -132,10 +132,10 @@ function isBuiltin(name: string): name is BuiltinTool {
  * Takes only the field it reads, so an `AgentConfig` passes and so does a
  * `{ systemPrompt }` a spec assembled itself — a resolver's own text, say.
  *
- * A reader, not an assertion — {@link expectPromptBuiltinsDeclared} is the
- * claim most specs want. This is exported for the spec that wants to say more:
- * that a particular builtin is among the commanded ones, or that the prompt
- * commands exactly the set the template is about.
+ * The reader behind {@link expectPromptBuiltinsDeclared}, which returns the
+ * same list, so a spec that wants to say more (that a particular builtin is
+ * among the commanded ones) reads it there. Not published: the assertion is
+ * the one door, and exported from this module only for its own spec.
  *
  * **It reads what the CONFIG carries, which for a RESOLVER is nothing.**
  * `AgentDef.systemPrompt` may be a function, and `toAgentConfig` cannot
@@ -144,22 +144,7 @@ function isBuiltin(name: string): name is BuiltinTool {
  * hands this function the FRAMEWORK's prompt and gets `[]` back, which is a
  * true answer to the wrong question. Nothing here can tell that config from one
  * whose author simply wrote no prompt; the def can, which is why the check that
- * refuses is {@link expectPromptBuiltinsDeclared} and not this reader. To scan a
- * resolver's own text, resolve it and substitute it:
- * `commandedBuiltins({ systemPrompt: resolver(ctx) })`.
- *
- * ```ts
- * import { agent } from "@alexkroman1/aai";
- * import { toAgentConfig } from "@alexkroman1/aai/manifest";
- * import { commandedBuiltins } from "@alexkroman1/aai/testing";
- *
- * const config = toAgentConfig(
- *   agent({ name: "Penny", systemPrompt: "Use fetch_json for rates; annual_rate is a number." }),
- * );
- * console.log(commandedBuiltins(config)); // ["fetch_json"]
- * ```
- *
- * @public
+ * refuses is {@link expectPromptBuiltinsDeclared} and not this reader.
  */
 export function commandedBuiltins(config: { readonly systemPrompt: string }): BuiltinTool[] {
   const ordered = mentions(config.systemPrompt).sort(([a], [b]) => a - b);
@@ -212,8 +197,9 @@ export function commandedBuiltins(config: { readonly systemPrompt: string }): Bu
  * prose half, which is a `?raw` import closed over by the function and does not
  * vary with session state. A resolver that cannot answer from a bare context
  * (it reads an env var, or a slot it expects seeded) THROWS, and this refuses by
- * name rather than falling back to the default: seed a context and scan the text
- * yourself with {@link commandedBuiltins}, or assert on `builtinTools` directly.
+ * name rather than falling back to the default: seed a context, call the
+ * resolver yourself and pass its text as the `systemPrompt` of the def this
+ * takes, or assert on `builtinTools` directly.
  *
  * ```ts
  * import { agent } from "@alexkroman1/aai";
@@ -324,7 +310,7 @@ function refusal(what: string): string {
     "There is nothing to scan, and the converted config carries the FRAMEWORK's",
     "default prompt rather than yours — checking that one would report on a prompt",
     "this agent never sends. Seed a context, call the resolver yourself, and scan",
-    "its text — hand `commandedBuiltins` a `{ systemPrompt }` of your own.",
+    "its text — pass it here as a string `systemPrompt` beside your `builtinTools`.",
     "Or assert on `builtinTools` directly.",
   ].join(" ");
   return `${head}resolver and ${what}. ${out}`;

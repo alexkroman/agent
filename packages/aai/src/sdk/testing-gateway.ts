@@ -147,9 +147,10 @@ const COMPLETIONS_PATH = "/chat/completions";
 export interface StubGatewayRoute {
   /**
    * Answers a completion request and `undefined` for anything else, so the
-   * caller composes it: `?? { body: html }` for a flow that also fetches a
-   * page, `?? someThrow()` for one where an unexpected request is a finding, or
-   * straight into `stubTranscribe`'s `otherwise`.
+   * caller composes it: as the first leg of a `stubFetchRoutes` list (where
+   * an unexpected request is a finding by default), `?? { body: html }` for a
+   * flow that also fetches a page, or straight into `stubTranscribe`'s
+   * `otherwise`.
    */
   route: (request: StubStepRequest) => StubStepAnswer | undefined;
   /** Every completion request this route answered, DECODED, in call order. */

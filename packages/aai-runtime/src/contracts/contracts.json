@@ -30,9 +30,11 @@
     "dropped": {}
   },
   "eval-stubs": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The eval door no longer re-exports routeStepFetch/StepRoute/StepUnmatched: the SDK folded them into stubFetchRoutes, which an eval imports from @alexkroman1/aai-runtime/testing. An eval importing them from /eval/vitest or /testing/vitest no longer compiles."
+    }
   },
   "keys": {
     "current": 1,
@@ -85,9 +87,11 @@
     "dropped": {}
   },
   "testing-stubs": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The testing doors no longer re-export commandedBuiltins, createProgressStream or installFetchRoutes: the SDK removed them (expectPromptBuiltinsDeclared returns the commanded list; ReadableStream.from replaces createProgressStream; stubFetchRoutes + onTestFinished replaces installFetchRoutes). A spec importing them no longer compiles."
+    }
   },
   "text": {
     "current": 1,

@@ -8,7 +8,7 @@ every fake and reader that installs nothing, and this subpath for the rest.
 One import serves a unit spec and an eval file alike:
 
 - every installer of `@alexkroman1/aai/testing/vitest` (`installStubGateway`,
-  `installStubStepFetch`, `installFetchRoutes`, …), each of which arms a fake
+  `installStubStepFetch`, `installStubTranscribe`, …), each of which arms a fake
   and restores it with `onTestFinished`;
 - everything `@alexkroman1/aai-runtime/eval/vitest` provides — the
   `describeEval` / `describeTextEval` / `describeWorkflowEval` suites, the
@@ -39,60 +39,6 @@ the SDK stubs `eval-stubs`, and the other installers `testing-stubs`.
 pulls it; `/testing` and `/eval` stay importable without it.
 
 ## Functions
-
-### installFetchRoutes()
-
-```ts
-function installFetchRoutes(routes: 
-  | Readonly<Record<string, 
-  | StubStepAnswer
-  | FetchRouteHandler>>
-  | readonly FetchRouteHandler[], options?: FetchRoutesOptions): StubFetchRoutes;
-```
-
-Route the global `fetch` — and the step fetch — through one URL/method
-table, restored when this test finishes, and return the request log.
-
-`stubFetchRoutes` with the bookkeeping done — see it (and
-[FetchRouteTable](../testing.md#fetchroutetable)) for the key forms, which key wins, and why an
-unmatched request THROWS by default. It replaces the per-file
-`vi.stubGlobal("fetch", async (url, init) => …)` that parsed the URL and the
-body, pushed onto a `calls` array and answered anything unforeseen `200 {}`.
-
-#### Parameters
-
-##### routes
-
-  \| `Readonly`\<`Record`\<`string`, 
-  \| [`StubStepAnswer`](../testing.md#stubstepanswer)
-  \| [`FetchRouteHandler`](../testing.md#fetchroutehandler)\>\>
-  \| readonly [`FetchRouteHandler`](../testing.md#fetchroutehandler)[]
-
-##### options?
-
-[`FetchRoutesOptions`](../testing.md#fetchroutesoptions)
-
-#### Returns
-
-[`StubFetchRoutes`](../testing.md#stubfetchroutes)
-
-#### Example
-
-In a test body or a `beforeEach`:
-```ts
-import { installFetchRoutes } from "@alexkroman1/aai/testing/vitest";
-
-const net = installFetchRoutes({
-  "POST https://api.mem0.ai/v3/memories/add/": { body: { event_id: "e1" } },
-});
-await fetch("https://api.mem0.ai/v3/memories/add/", {
-  method: "POST",
-  body: JSON.stringify({ user_id: "home" }),
-});
-console.log(net.hits[0]?.json); // { user_id: "home" }
-```
-
-***
 
 ### installStubClientInbox()
 
@@ -834,12 +780,6 @@ Re-exports [resolveWorkflowEvalMode](../eval/vitest.md#resolveworkflowevalmode)
 
 ***
 
-### routeStepFetch
-
-Re-exports [routeStepFetch](../eval/vitest.md#routestepfetch)
-
-***
-
 ### RunCodeExecutor
 
 Re-exports [RunCodeExecutor](../eval.md#runcodeexecutor)
@@ -909,18 +849,6 @@ Re-exports [SimulationTarget](../eval.md#simulationtarget)
 ### statesIn
 
 Re-exports [statesIn](../eval.md#statesin)
-
-***
-
-### StepRoute
-
-Re-exports [StepRoute](../eval/vitest.md#steproute)
-
-***
-
-### StepUnmatched
-
-Re-exports [StepUnmatched](../eval/vitest.md#stepunmatched)
 
 ***
 

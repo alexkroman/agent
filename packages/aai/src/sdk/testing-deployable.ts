@@ -12,8 +12,8 @@
  * carried the mode cascade byte-identically at twenty-one lines each. That is
  * a spec's business exactly once, which is what {@link expectDeployable} is.
  *
- * The prompt↔builtin scan beside it (`commandedBuiltins`,
- * `expectPromptBuiltinsDeclared`) is `testing-prompt-builtins.ts`, split out at
+ * The prompt↔builtin scan beside it (`expectPromptBuiltinsDeclared`) is
+ * `testing-prompt-builtins.ts`, split out at
  * the source-length cap on the seam between the two: this module reads the
  * CONFIG a deploy carries, that one reads the PROSE the model is handed.
  *

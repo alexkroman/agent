@@ -1,0 +1,282 @@
+import { createRunSnapshot } from '@alexkroman1/aai/testing';
+import { createStubWorkflows } from '@alexkroman1/aai/testing';
+import { createToolContext } from '@alexkroman1/aai/testing';
+import { createWorkflowContext } from '@alexkroman1/aai/testing';
+import { deployedAgent } from '@alexkroman1/aai/testing';
+import { DeployedConfig } from '@alexkroman1/aai/testing';
+import { DeployedStage } from '@alexkroman1/aai/testing';
+import { endSessionCalls } from '@alexkroman1/aai/testing';
+import { expectDeployable } from '@alexkroman1/aai/testing';
+import { expectDialogOk } from '@alexkroman1/aai/testing';
+import { expectDialogRefused } from '@alexkroman1/aai/testing';
+import { expectPromptBuiltinsDeclared } from '@alexkroman1/aai/testing';
+import { expectToolOk } from '@alexkroman1/aai/testing';
+import { FetchRouteHandler } from '@alexkroman1/aai/testing';
+import { FetchRouteHit } from '@alexkroman1/aai/testing';
+import { FetchRouteRequest } from '@alexkroman1/aai/testing';
+import { FetchRoutesOptions } from '@alexkroman1/aai/testing';
+import { FetchRouteTable } from '@alexkroman1/aai/testing';
+import { installStubClientInbox } from '@alexkroman1/aai/testing/vitest';
+import { installStubGateway } from '@alexkroman1/aai/testing/vitest';
+import { installStubReporter } from '@alexkroman1/aai/testing/vitest';
+import { installStubWorkflows } from '@alexkroman1/aai/testing/vitest';
+import { parseSchemaInput } from '@alexkroman1/aai/testing';
+import { parseToolInput } from '@alexkroman1/aai/testing';
+import { ProjectFiles } from '@alexkroman1/aai/testing';
+import { RecordedSleep } from '@alexkroman1/aai/testing';
+import { RecordedStart } from '@alexkroman1/aai/testing';
+import { RecordedStep } from '@alexkroman1/aai/testing';
+import { runGuardrail } from '@alexkroman1/aai/testing';
+import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
+import { runTool } from '@alexkroman1/aai/testing';
+import { SaidLine } from '@alexkroman1/aai/testing';
+import { schemaInputIssues } from '@alexkroman1/aai/testing';
+import { SentEvent } from '@alexkroman1/aai/testing';
+import { STUB_SPEECH_PCM_BYTES } from '@alexkroman1/aai/testing';
+import { StubClientInbox } from '@alexkroman1/aai/testing';
+import { stubClientInbox } from '@alexkroman1/aai/testing';
+import { StubClientInboxCall } from '@alexkroman1/aai/testing';
+import { StubClientInboxOptions } from '@alexkroman1/aai/testing';
+import { StubClientTranscript } from '@alexkroman1/aai/testing';
+import { stubClientTranscript } from '@alexkroman1/aai/testing';
+import { StubClientTranscriptAnswer } from '@alexkroman1/aai/testing';
+import { StubClientTranscriptCall } from '@alexkroman1/aai/testing';
+import { StubDelegate } from '@alexkroman1/aai/testing';
+import { stubDelegate } from '@alexkroman1/aai/testing';
+import { StubDelegateCall } from '@alexkroman1/aai/testing';
+import { StubDelegateReply } from '@alexkroman1/aai/testing';
+import { StubDelegateRoute } from '@alexkroman1/aai/testing';
+import { StubDelegateScript } from '@alexkroman1/aai/testing';
+import { StubEmitted } from '@alexkroman1/aai/testing';
+import { StubFetchRoutes } from '@alexkroman1/aai/testing';
+import { stubFetchRoutes } from '@alexkroman1/aai/testing';
+import { StubGateway } from '@alexkroman1/aai/testing';
+import { stubGateway } from '@alexkroman1/aai/testing';
+import { StubGatewayCall } from '@alexkroman1/aai/testing';
+import { StubGatewayOptions } from '@alexkroman1/aai/testing';
+import { StubGenerate } from '@alexkroman1/aai/testing';
+import { stubGenerate } from '@alexkroman1/aai/testing';
+import { StubGenerateCall } from '@alexkroman1/aai/testing';
+import { StubGenerateReply } from '@alexkroman1/aai/testing';
+import { StubGenerateRoute } from '@alexkroman1/aai/testing';
+import { StubGenerateScript } from '@alexkroman1/aai/testing';
+import { StubPlaceCall } from '@alexkroman1/aai/testing';
+import { stubPlaceCall } from '@alexkroman1/aai/testing';
+import { StubPlaceCallOptions } from '@alexkroman1/aai/testing';
+import { StubPlaceCallRefusal } from '@alexkroman1/aai/testing';
+import { StubPlacedCall } from '@alexkroman1/aai/testing';
+import { StubReporter } from '@alexkroman1/aai/testing';
+import { stubReporter } from '@alexkroman1/aai/testing';
+import { stubSpeech } from '@alexkroman1/aai/testing';
+import { StubSpeechCall } from '@alexkroman1/aai/testing';
+import { StubStepAnswer } from '@alexkroman1/aai/testing';
+import { stubStepDelegate } from '@alexkroman1/aai/testing';
+import { stubStepFetch } from '@alexkroman1/aai/testing';
+import { stubStepInfo } from '@alexkroman1/aai/testing';
+import { StubStepRequest } from '@alexkroman1/aai/testing';
+import { stubTranscribe } from '@alexkroman1/aai/testing';
+import { StubTranscribeCall } from '@alexkroman1/aai/testing';
+import { StubTranscribeFailure } from '@alexkroman1/aai/testing';
+import { StubTranscribeLeg } from '@alexkroman1/aai/testing';
+import { StubUpload } from '@alexkroman1/aai/testing';
+import { stubUploads } from '@alexkroman1/aai/testing';
+import { StubUploadWrite } from '@alexkroman1/aai/testing';
+import { StubWorkflowsOptions } from '@alexkroman1/aai/testing/vitest';
+import { TestToolContext } from '@alexkroman1/aai/testing';
+import { ToolBearingAgent } from '@alexkroman1/aai/testing';
+import { ToolContextOverrides } from '@alexkroman1/aai/testing';
+import { toolInputIssues } from '@alexkroman1/aai/testing';
+import { toolOf } from '@alexkroman1/aai/testing';
+import { ToolRunner } from '@alexkroman1/aai/testing';
+import { toolRunner } from '@alexkroman1/aai/testing';
+import { WORKFLOW_CONTEXT_NOW } from '@alexkroman1/aai/testing';
+import { WorkflowContextOptions } from '@alexkroman1/aai/testing';
+import { WorkflowContextRecorder } from '@alexkroman1/aai/testing';
+
+export { createRunSnapshot }
+
+export { createStubWorkflows }
+
+export { createToolContext }
+
+export { createWorkflowContext }
+
+export { deployedAgent }
+
+export { DeployedConfig }
+
+export { DeployedStage }
+
+export { endSessionCalls }
+
+export { expectDeployable }
+
+export { expectDialogOk }
+
+export { expectDialogRefused }
+
+export { expectPromptBuiltinsDeclared }
+
+export { expectToolOk }
+
+export { FetchRouteHandler }
+
+export { FetchRouteHit }
+
+export { FetchRouteRequest }
+
+export { FetchRoutesOptions }
+
+export { FetchRouteTable }
+
+export { installStubClientInbox }
+
+export { installStubGateway }
+
+export { installStubReporter }
+
+export { installStubWorkflows }
+
+export { parseSchemaInput }
+
+export { parseToolInput }
+
+export { ProjectFiles }
+
+export { RecordedSleep }
+
+export { RecordedStart }
+
+export { RecordedStep }
+
+export { runGuardrail }
+
+export { RunSnapshotOverrides }
+
+export { runTool }
+
+export { SaidLine }
+
+export { schemaInputIssues }
+
+export { SentEvent }
+
+export { STUB_SPEECH_PCM_BYTES }
+
+export { StubClientInbox }
+
+export { stubClientInbox }
+
+export { StubClientInboxCall }
+
+export { StubClientInboxOptions }
+
+export { StubClientTranscript }
+
+export { stubClientTranscript }
+
+export { StubClientTranscriptAnswer }
+
+export { StubClientTranscriptCall }
+
+export { StubDelegate }
+
+export { stubDelegate }
+
+export { StubDelegateCall }
+
+export { StubDelegateReply }
+
+export { StubDelegateRoute }
+
+export { StubDelegateScript }
+
+export { StubEmitted }
+
+export { StubFetchRoutes }
+
+export { stubFetchRoutes }
+
+export { StubGateway }
+
+export { stubGateway }
+
+export { StubGatewayCall }
+
+export { StubGatewayOptions }
+
+export { StubGenerate }
+
+export { stubGenerate }
+
+export { StubGenerateCall }
+
+export { StubGenerateReply }
+
+export { StubGenerateRoute }
+
+export { StubGenerateScript }
+
+export { StubPlaceCall }
+
+export { stubPlaceCall }
+
+export { StubPlaceCallOptions }
+
+export { StubPlaceCallRefusal }
+
+export { StubPlacedCall }
+
+export { StubReporter }
+
+export { stubReporter }
+
+export { stubSpeech }
+
+export { StubSpeechCall }
+
+export { StubStepAnswer }
+
+export { stubStepDelegate }
+
+export { stubStepFetch }
+
+export { stubStepInfo }
+
+export { StubStepRequest }
+
+export { stubTranscribe }
+
+export { StubTranscribeCall }
+
+export { StubTranscribeFailure }
+
+export { StubTranscribeLeg }
+
+export { StubUpload }
+
+export { stubUploads }
+
+export { StubUploadWrite }
+
+export { StubWorkflowsOptions }
+
+export { TestToolContext }
+
+export { ToolBearingAgent }
+
+export { ToolContextOverrides }
+
+export { toolInputIssues }
+
+export { toolOf }
+
+export { ToolRunner }
+
+export { toolRunner }
+
+export { WORKFLOW_CONTEXT_NOW }
+
+export { WorkflowContextOptions }
+
+export { WorkflowContextRecorder }

@@ -29,13 +29,9 @@
 // journal, no replay, and no per-step retry, so a rate-limited live run FAILS
 // where a deployed one would have ridden it out. The tier that really resumes a
 // run is `aai-cli`'s `dev-workflow.scenario.test.ts`.
-import {
-  describeWorkflowEval,
-  installStubStepFetch,
-  routeStepFetch,
-  stubGatewayRoute,
-} from "@alexkroman1/aai-runtime/testing/vitest";
-import { expect } from "vitest";
+import { stubFetchRoutes } from "@alexkroman1/aai-runtime/testing";
+import { describeWorkflowEval, stubGatewayRoute } from "@alexkroman1/aai-runtime/testing/vitest";
+import { expect, onTestFinished } from "vitest";
 import agentDef, { MAX_ROUNDS, redline } from "./agent.ts";
 
 /** A brief with a word in it nothing else would produce, so the draft is checkable. */
@@ -74,20 +70,21 @@ const critique = (verdict: "ship" | "revise", score = 8): string =>
  * fail on the script rather than on the code. Both of those are now the SDK's
  * one copy rather than this file's second.
  *
- * `installStubStepFetch` rather than `installStubGateway`: `stepGenerate` goes
- * through the published `stepFetch` slot, and a published slot BEATS a stubbed
- * global, so stubbing the global here would test a path production does not
- * take. Anything that is not a completion request THROWS — every step in this
+ * The step fetch rather than `installStubGateway`: `stepGenerate` goes through
+ * the published `stepFetch` slot, and a published slot BEATS a stubbed global,
+ * so stubbing the global here would test a path production does not take —
+ * hence `globalFetch: false`. Anything that is not a completion request THROWS — every step in this
  * body is a model call, so a request the route does not recognise is a finding,
  * and answering it with a reply anyway is how a stage that started dialling
  * something else would pass.
  */
 function scriptGateway(contents: readonly string[]) {
   const model = stubGatewayRoute(contents);
-  // `routeStepFetch` defaults to throwing on an unrecognised request, which is
+  // `stubFetchRoutes` defaults to throwing on an unrecognised request, which is
   // what this file wants and what it used to spell out: every step in this body
   // is a model call, so anything the route does not recognise is a finding.
-  installStubStepFetch(routeStepFetch([model.route]));
+  const net = stubFetchRoutes([model.route], { globalFetch: false });
+  onTestFinished(net.restore);
   return model;
 }
 

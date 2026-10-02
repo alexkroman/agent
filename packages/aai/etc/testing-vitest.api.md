@@ -71,35 +71,6 @@ interface DelegateToolCall {
 }
 
 // @public
-type FetchRouteHandler = (request: FetchRouteRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>;
-
-// @public
-type FetchRouteHit = FetchRouteRequest & {
-    readonly outcome: "routed" | "passthrough" | "unmatched";
-    readonly route?: string | undefined;
-    readonly via: "fetch" | "stepFetch";
-    readonly status?: number | undefined;
-};
-
-// @public
-type FetchRouteRequest = StubStepRequest & {
-    readonly host: string;
-    readonly pathname: string;
-    readonly searchParams: URLSearchParams;
-    readonly json: unknown;
-};
-
-// @public
-type FetchRoutesOptions = {
-    unmatched?: "throw" | "notFound" | "passthrough" | undefined;
-    passThrough?: RegExp | undefined;
-    stepFetch?: boolean | undefined;
-};
-
-// @public
-type FetchRouteTable = Readonly<Record<string, FetchRouteHandler | StubStepAnswer>>;
-
-// @public
 type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
@@ -147,9 +118,6 @@ type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
-
-// @public
-export function installFetchRoutes(routes: FetchRouteTable | readonly FetchRouteHandler[], options?: FetchRoutesOptions): StubFetchRoutes;
 
 // @public
 export function installStubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
@@ -442,14 +410,6 @@ type StubDelegateScript = {
 type StubEmitted = {
     namespace: string;
     chunk: unknown;
-};
-
-// @public
-type StubFetchRoutes = {
-    readonly hits: FetchRouteHit[];
-    to(filter: string | RegExp): FetchRouteHit[];
-    readonly fetch: typeof globalThis.fetch;
-    restore(): void;
 };
 
 // @public
