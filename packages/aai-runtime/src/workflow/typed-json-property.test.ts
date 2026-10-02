@@ -38,7 +38,9 @@ const roundTrip = (value: unknown): unknown => decodeTypedJson(encodeTypedJson(v
 /** The same, over the storage RPC's codec, which also carries dates. */
 const storageRoundTrip = (value: unknown): unknown => decodeStorageJson(encodeStorageJson(value));
 
-describe("round-trip totality over a generated domain", () => {
+// Unshuffled: the floor test at the bottom reads what the properties above it
+// recorded in `seen`, so it has to run last.
+describe("round-trip totality over a generated domain", { shuffle: false }, () => {
   /**
    * Keys a generated record draws from.
    *

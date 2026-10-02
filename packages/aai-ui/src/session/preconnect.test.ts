@@ -149,6 +149,17 @@ describe("BrowserSession pre-connect audio", () => {
     await vi.waitFor(() => expect(trackStops).toHaveBeenCalled());
   });
 
+  it("a hang-up before the mic opens never opens it", async () => {
+    const early = session();
+    early.connect();
+    early.disconnect();
+    // A second session's mic opens after the same module loads the first was
+    // waiting on, so once it has, the first had its chance and did not take it.
+    session().connect();
+    await preCapture();
+    expect(getUserMedia).toHaveBeenCalledOnce();
+  });
+
   it("a denied pre-connect prompt falls back to the ordinary bring-up", async () => {
     getUserMedia.mockImplementationOnce(() => Promise.reject(new Error("NotAllowedError")));
     session().connect();

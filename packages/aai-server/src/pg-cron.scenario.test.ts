@@ -472,14 +472,16 @@ describeWithStack("the pg_cron sweep bodies", () => {
   /**
    * The empty-table guard for the UPLOADS arm, asserted before any record exists.
    *
-   * First of these tests deliberately: `workflow_uploads` is empty right now, and
-   * this is the one guard that can only be observed in that state. An upload
-   * record IS the referrer for the uploads arm, so a table that failed to load
-   * would condemn every recording in the bucket — the same catastrophe the agents
-   * guard exists for, one table over.
+   * The table is emptied first because this is the one guard that can only be
+   * observed in that state, and test order is shuffled: a sibling's leftover
+   * record would make the pass read a populated table. An upload record IS the
+   * referrer for the uploads arm, so a table that failed to load would condemn
+   * every recording in the bucket — the same catastrophe the agents guard exists
+   * for, one table over.
    */
   test("the uploads arm reclaims nothing while workflow_uploads reads empty", async () => {
     await resetBucket();
+    await sql("delete from aai_platform.workflow_uploads");
     await putAgent("gc-guard", "gc-guard-hash");
     expect(await sql("select 1 from aai_platform.workflow_uploads")).toEqual([]);
     // Old, unrecorded, perfectly shaped — garbage by every rule the arm applies
@@ -547,10 +549,15 @@ describeWithStack("the pg_cron sweep bodies", () => {
    */
   test("an agent's upload windows are reclaimed once the agent is deleted", async () => {
     await resetBucket();
+    // A bystander tenant's record, so the cascade below cannot empty the table:
+    // an empty `workflow_uploads` trips the guard above and reclaims nothing,
+    // which would make this test about the guard rather than the delete.
+    await putAgent("gc-up-bystander", "gc-up-bystander-hash");
     await putAgent("gc-up-gone", "gc-up-gone-hash");
     await sql(
       `insert into aai_platform.workflow_uploads (slug, id, size, complete, parts, created_at)
-       values ('gc-up-gone', 'upl_kept', 8, true, '[]'::jsonb, now() - interval '30 days')`,
+       values ('gc-up-bystander', 'upl_other', 8, true, '[]'::jsonb, now() - interval '30 days'),
+              ('gc-up-gone', 'upl_kept', 8, true, '[]'::jsonb, now() - interval '30 days')`,
     );
     await putObject("uploads/gc-up-gone/upl_kept/0", "30 days");
     // Held by its record while the agent is live — the control that makes the

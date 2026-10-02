@@ -86,6 +86,10 @@ function fakeAudio() {
 beforeEach(() => {
   state.sink = undefined;
   state.mode = undefined;
+  // Specs wait on `connection` appearing; a previous test's would satisfy that
+  // before this run has opened a device.
+  state.connection = undefined;
+  state.resolveEnded = undefined;
   vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 });
 

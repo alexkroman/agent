@@ -145,6 +145,26 @@ read_when: >-
   real tokens and depends on a third-party service. `pnpm gen:gateway-models`
   regenerates the catalog it compares against.
 
+## Test order is SHUFFLED, every run
+
+`vitest.shared.ts` sets `sequence: { shuffle: true }`, so every tier runs files
+and the tests within them in a fresh random order: a test that passes only after
+a sibling left a key, a connection or a stale session behind fails instead.
+
+- **Reproduce with the printed seed**: the run logs
+  `Running tests with seed "N"`;
+  `pnpm --filter <pkg> exec vitest run <file> --sequence.seed=N` replays that
+  order.
+- **A suite whose order IS the contract opts out in writing**:
+  `describe(name, { shuffle: false }, …)` with a comment naming why — the
+  coverage-floor test that reads what the properties above it recorded is the
+  case (`typed-json-property.test.ts`). Never opt out to quiet a failure.
+- **Concurrency is NOT on** (`sequence.concurrent`): the shared
+  `restoreMocks`/`clearMocks`/`unstubEnvs`/`unstubGlobals` run before EVERY
+  test, so a sibling starting mid-`await` clears a running test's mocks, and
+  fake timers and the jsdom document are per worker. A probe run failed ~1,900
+  tests in 460 files, most of them correct.
+
 ## Async-leak detection is an opt-in DIAGNOSTIC
 
 `pnpm test:leaks` runs every package's unit tier with vitest's

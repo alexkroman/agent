@@ -86,7 +86,9 @@ live audio. Opt out with `preConnectAudio: false`.
   (`sendBuffered`) while still honouring mute.
 - **Ownership**: the holder until the bring-up `take()`s it, then the bring-up
   (every rejection in `openAudioPath` closes it). A reconnect BEFORE `config`
-  keeps it buffering; only terminal paths `release()` it.
+  keeps it buffering; only terminal paths `release()` it. A release that lands
+  while the audio modules still load stops the attempt BEFORE `getUserMedia` —
+  closing it after the grant would still light the recording indicator.
 
 ## Drain completion outlives the turn
 
