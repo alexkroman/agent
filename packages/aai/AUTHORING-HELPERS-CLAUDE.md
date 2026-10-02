@@ -30,22 +30,21 @@ from each end, and for a long time the SDK owned only the first.
 ### Inbound: `resolveOne` and the readings it consults
 
 A voice agent's tool arguments do not arrive as ids: "cancel my second order",
-"the blue medium one", "eight six four two, one nine…". `resolveOne(candidates,
-spoken, { describe, label?, code?, match?, score? })` on the root barrel picks
-one, and the
-interesting part is what it does when the utterance picks NONE or MORE THAN ONE
-— a `ToolFailure` that LISTS the candidates, which is the one shape that lets
-the model recover on its own turn instead of acting and apologizing.
-`spokenDigits` and `spokenOrdinal` are the two readings it consults, exported
-because an agent narrowing by its own vocabulary needs them before the pick;
-`spokenAlphanumeric` is `spokenDigits` for an id that carries letters (a policy
-number, a `#W…` order id — upper-cased ASCII), which two templates had each
-normalized with a regex of their own. **`code` and `match` are the two scorers
-you no longer write**: `code` compares an id through `spokenAlphanumeric`,
-`match` counts whole-word overlap (filler words skipped, a minimum word
-length), and the ladder is code → ordinal → words. Four templates had
-independently written the same word-overlap scorer with four different
-splitting rules; `score` stays for a genuine domain scorer, and
+"the blue medium one", "eight six four two, one nine…".
+`resolveOne(candidates, spoken, { describe, label?, code?, match?, score? })` on
+the root barrel picks one, and the interesting part is what it does when the
+utterance picks NONE or MORE THAN ONE — a `ToolFailure` that LISTS the
+candidates, which is the one shape that lets the model recover on its own turn
+instead of acting and apologizing. `spokenDigits` and `spokenOrdinal` are the
+two readings it consults, exported because an agent narrowing by its own
+vocabulary needs them before the pick; `spokenAlphanumeric` is `spokenDigits`
+for an id that carries letters (a policy number, a `#W…` order id — upper-cased
+ASCII), which two templates had each normalized with a regex of their own.
+**`code` and `match` are the two scorers you no longer write**: `code` compares
+an id through `spokenAlphanumeric`, `match` counts whole-word overlap (filler
+words skipped, a minimum word length), and the ladder is code → ordinal → words.
+Four templates had independently written the same word-overlap scorer with four
+different splitting rules; `score` stays for a genuine domain scorer, and
 `entertainment-picks-agent` still needs one — its listener says "books" where
 the field says "book", and `match` has no stemming.
 
@@ -58,9 +57,9 @@ Three things the API is load-bearing about:
   anything else → ambiguous. The caller narrows first, by whatever its domain
   understands.
 - **`spokenOrdinal` matches on word boundaries and cannot do better.** "firstly"
-  and "the 21st" are correctly not positions; "the first aid kit" IS one, because
-  it really does contain the word "first". That is the reason positions are
-  consulted after the caller's own narrowing rather than before, and
+  and "the 21st" are correctly not positions; "the first aid kit" IS one,
+  because it really does contain the word "first". That is the reason positions
+  are consulted after the caller's own narrowing rather than before, and
   `spoken.test.ts` pins the limitation as a test rather than leaving it to be
   rediscovered.
 - **It is on the ROOT and not `/utils`**, which every other tool-body helper
@@ -143,9 +142,9 @@ desk rendered `$150.00`.
 and it bites harder here. The `toLocaleDateString("en-US", …)` this replaced
 answers to the host's ICU build, so a desk that reads dates correctly on a
 laptop can read them differently inside a sandbox, and no spec catches it
-because the spec runs on the laptop. The month and weekday names are written
-out for exactly that reason. An agent that needs another language renders its
-own; that is a different feature, not an option on this one.
+because the spec runs on the laptop. The month and weekday names are written out
+for exactly that reason. An agent that needs another language renders its own;
+that is a different feature, not an option on this one.
 
 A value the renderers cannot read is returned UNCHANGED rather than throwing —
 degrade, like every formatter in `format.ts`. Declare the argument with
@@ -163,8 +162,8 @@ stored as a HASH, and checked against what STT heard (`sdk/one-time-code.ts`).
 - **`hashCode(code)` hashes EXACTLY the string given** (SHA-256, lower-case
   hex); the read-back is normalized by `codeMatches`, never by `hashCode`.
 - **`codeMatches(said, hash)` normalizes with `spokenDigits` and compares in
-  constant time** (`_timing-safe-equal.ts`, shared with `verifyStandardWebhook`).
-  A read-back with no digits never matches.
+  constant time** (`_timing-safe-equal.ts`, shared with
+  `verifyStandardWebhook`). A read-back with no digits never matches.
 - **The attempt cap and the expiry are the app's**, and they are the defence: a
   six-digit code's hash is brute-forced in a millisecond by whoever holds it.
 
@@ -205,21 +204,21 @@ The duplication is not the interesting part; WHERE the rule lives is. A check in
 the body runs after the model has already committed to an argument, so the model
 learns the format by being refused — a wasted turn on every call, and a refusal
 sentence the author had to write. Declared on the schema, the same rule reaches
-the model as JSON Schema before it calls anything, and `parseToolInput`
-rejects a bad value before `execute` runs.
+the model as JSON Schema before it calls anything, and `parseToolInput` rejects
+a bad value before `execute` runs.
 
-`hotel-reception-agent` had ten `z.string().describe("YYYY-MM-DD")` + `if (!isIsoDate(...))
-return toolFailure(...)` pairs, in four different sentences for one rule, plus
-five hand-rolled `HH:MM` checks in three wordings and two different failure
-shapes (`{ error }` and `toolFailure(…)`).
+`hotel-reception-agent` had ten `z.string().describe("YYYY-MM-DD")` +
+`if (!isIsoDate(...)) return toolFailure(...)` pairs, in four different
+sentences for one rule, plus five hand-rolled `HH:MM` checks in three wordings
+and two different failure shapes (`{ error }` and `toolFailure(…)`).
 
 Each field takes what it is FOR — `isoDate("the arrival date")` — so the
 description and the rejection both name the argument rather than making a caller
 map a generic sentence back onto one of four date parameters.
 
-**`refine(isIsoDate)` rather than zod's own `z.iso.date()`**, so the predicate an
-agent's own code calls and the rule its schema enforces are one definition and
-cannot disagree: `z.iso.date()` accepts `2026-02-30`.
+**`refine(isIsoDate)` rather than zod's own `z.iso.date()`**, so the predicate
+an agent's own code calls and the rule its schema enforces are one definition
+and cannot disagree: `z.iso.date()` accepts `2026-02-30`.
 
 ## `ctx.random` — a tool's randomness as an argument
 
@@ -314,11 +313,11 @@ step engine (`_step-or-fail.ts`): a throw, or a non-2xx `Response` it resolves
 to, leaves as `toStepError`'s verdict; anything unclassifiable is rethrown
 unchanged; a sync function stays sync. It replaced (and removed) the eight
 `*OrFail` twins on `/step-errors`, and `/step-errors` re-exports this ONE
-declaration rather than declaring a second
-`orFail` — `API-INDEX.md` merges a name's rows across subpaths, so two
-declarations would be documented as one. A `ToolFailure` is never a function,
-so the arms cannot collide; a function VALUE passed only to be handed back now
-comes back wrapped (the trade, documented on the overload).
+declaration rather than declaring a second `orFail` — `API-INDEX.md` merges a
+name's rows across subpaths, so two declarations would be documented as one. A
+`ToolFailure` is never a function, so the arms cannot collide; a function VALUE
+passed only to be handed back now comes back wrapped (the trade, documented on
+the overload).
 
 ## Reading a WAV is the SDK's now too (`sdk/wav-parse.ts`)
 
@@ -343,17 +342,17 @@ Three more the walk has to get right, all on files that exist: a chunk payload
 is padded to an even length and the pad byte is NOT counted by the declared
 size; the declared data length is not the file's (a streaming encoder writes `0`
 or `0xFFFFFFFF`, a truncated download declares more than it holds, so the range
-is the INTERSECTION and `totalBytes` is a parameter); and `WAVE_FORMAT_EXTENSIBLE`
-(`0xFFFE`) is not PCM whatever it usually wraps, so it is refused rather than
-guessed.
+is the INTERSECTION and `totalBytes` is a parameter); and
+`WAVE_FORMAT_EXTENSIBLE` (`0xFFFE`) is not PCM whatever it usually wraps, so it
+is refused rather than guessed.
 
 **What is NOT there is policy** — a size cap, a segment plan, a minimum
 duration. Those are the caller's and differ per provider endpoint.
 `transcription-workflow` keeps `MAX_BYTES_PER_SECOND` and `planSegments`, and
 the density cap it used to make inside `parseWav` is now a separate
-`assertCuttable` pass — which is what lets `cuttable` and `heavierThanNormalized`
-ask their two questions apart: a file that fails only the second is one
-downsampling repairs.
+`assertCuttable` pass — which is what lets `cuttable` and
+`heavierThanNormalized` ask their two questions apart: a file that fails only
+the second is one downsampling repairs.
 
 ## `roundMoney` shares `formatMoney`'s basis, on purpose
 

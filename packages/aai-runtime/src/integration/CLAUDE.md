@@ -19,8 +19,7 @@ carry the design: the SOCKET is the only fake, and no TIMER is used.
   model of the provider state machine, so a counterexample contains only
   commands that ran.
 - **Three properties, differentiated by `faultBudget`** (0 / 2 / 3): turns,
-  reconnects, retirement. Do not merge them — one budget cannot serve both
-  ends.
+  reconnects, retirement. Do not merge them — one budget cannot serve both ends.
 - **Every exemption increments a `skip:<why>` counter, and floors are on the
   CHECKED counts** — the exemptions are broad enough to silence the oracle
   entirely. `S2S_FUZZ_COVERAGE=1` prints the table. A resumed session inherits

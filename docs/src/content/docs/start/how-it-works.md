@@ -32,11 +32,11 @@ way.
 
 ## What runs where
 
-Your code runs on a server, not in the browser. The browser — or a phone
-carrier — sends audio, and the runtime does the rest:
+Your code runs on a server, not in the browser. The browser — or a phone carrier
+— sends audio, and the runtime does the rest:
 
-1. **Listen.** Speech-to-text turns the caller's audio into words, and works
-   out when they have finished a thought.
+1. **Listen.** Speech-to-text turns the caller's audio into words, and works out
+   when they have finished a thought.
 2. **Think.** The model gets the conversation so far and your system prompt. If
    it asks for a tool, the runtime runs your `execute` function and hands back
    the result.
@@ -71,9 +71,9 @@ on the other end.
 
 There is a second kind. When the audio is a file and the job takes minutes —
 transcribe this recording, summarize this archive — you write a `workflowApp()`
-instead, and get a web page instead of a conversation. That is what
-`workflows/` holds. A workflow is the one thing you name yourself rather than
-taking the name from a filename.
+instead, and get a web page instead of a conversation. That is what `workflows/`
+holds. A workflow is the one thing you name yourself rather than taking the name
+from a filename.
 
 See [Background jobs](/agent/more/background-jobs/) for both.
 

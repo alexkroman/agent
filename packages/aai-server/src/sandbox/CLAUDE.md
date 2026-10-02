@@ -13,46 +13,46 @@ read_when: >-
 The per-backend details (images, Modal, microsandbox traps, resources) are in
 [`MODAL-CLAUDE.md`](../../MODAL-CLAUDE.md). One sandbox's lifecycle object is
 `src/sandbox.ts`; deployed agents run as servers and the host holds no channel
-to them (`packages/aai-guest/src/harness/CLAUDE.md`, "Agent guests are servers").
+to them (`packages/aai-guest/src/harness/CLAUDE.md`, "Agent guests are
+servers").
 
 ## Files
 
 - `vm.ts` — `spawnAgentServer` (dispatch over the three backends), the
-  studio-side `spawnWarmHarness` control channel, and `WorkerSource` (the
-  signed bundle URL; see "The guest fetches its own bundle" in the package
-  guide).
+  studio-side `spawnWarmHarness` control channel, and `WorkerSource` (the signed
+  bundle URL; see "The guest fetches its own bundle" in the package guide).
 - `backend.ts` — selection: `SANDBOX_BACKEND` override, production → `modal`,
   `AAI_LOCAL_DEV=1` → `microsandbox`, `subprocess` opt-in only. The safe branch
   is the default: `backend.test.ts` asserts an empty env `{}` resolves to
   isolation. The boot log prints which backend and why.
 - `slots.ts` — per-slug slot cache `{ slug, version?, sandbox? }`. A plain
-  `Map`; `withSlugLock` is the exclusion (`SlotCache`'s doc). No idle
-  machinery — the guest self-exits, and its exit drops the whole SLOT via
-  `onSandboxLost`, not just its sandbox.
-- `resolve.ts` — slot-based slug→sandbox resolution and
-  `watchAgentInvalidation` (driven by the agents row's change stream).
+  `Map`; `withSlugLock` is the exclusion (`SlotCache`'s doc). No idle machinery
+  — the guest self-exits, and its exit drops the whole SLOT via `onSandboxLost`,
+  not just its sandbox.
+- `resolve.ts` — slot-based slug→sandbox resolution and `watchAgentInvalidation`
+  (driven by the agents row's change stream).
 - `broker.ts` — `brokerSessionUrl`: slug → public session URL with one failure
-  taxonomy shared by `GET /:slug/client-config`, the `/:slug/websocket`
-  upgrade, the workflow routes and the queue sweep. **The platform's ONLY
-  routing point** — new callers broker through it.
+  taxonomy shared by `GET /:slug/client-config`, the `/:slug/websocket` upgrade,
+  the workflow routes and the queue sweep. **The platform's ONLY routing point**
+  — new callers broker through it.
 - `directory.ts` / `peers.ts` — fleet-wide "is some replica already serving this
   deploy?" (below).
 - `invalidate.ts` — deploy and delete move sandboxes via the agents row
-  `version`; a secret change does not (apply it by redeploying). A mutation
-  that changes a guest's environment without its code must bump the row
+  `version`; a secret change does not (apply it by redeploying). A mutation that
+  changes a guest's environment without its code must bump the row
   (`AgentRows.touch`).
 
 ## A teardown may not depend on the boot it is tearing down
 
 `createSandbox` returns synchronously with a pending `vmReady`, so the Modal
-create, boot writes and readiness probe run OUTSIDE the broker's slug lock and
-a DELETE can complete while a guest is still booting.
+create, boot writes and readiness probe run OUTSIDE the broker's slug lock and a
+DELETE can complete while a guest is still booting.
 
 **Rule: a capability a TEARDOWN needs must never be published only on the
 RESOLVED handle.** Both backends hand over a kill the moment the sandbox exists
 (`BackendAgentSpawn.onSpawned`, whose doc carries the account) and `shutdown()`
-falls back to it rather than waiting on `vmReady`. Note `28P01` (auth failed)
-is also what a missing Postgres role reports, so a lifecycle race can read as a
+falls back to it rather than waiting on `vmReady`. Note `28P01` (auth failed) is
+also what a missing Postgres role reports, so a lifecycle race can read as a
 credential bug.
 
 ## No warm pool

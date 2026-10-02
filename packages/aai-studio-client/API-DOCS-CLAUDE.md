@@ -11,8 +11,9 @@ read_when: >-
 
 # The API pane and the public docs page
 
-`panes/docs.tsx` + `docs-content.ts`, rendered through `components/api-docs.tsx`.
-Package rules are in `CLAUDE.md`; the other panes in `src/panes/CLAUDE.md`.
+`panes/docs.tsx` + `docs-content.ts`, rendered through
+`components/api-docs.tsx`. Package rules are in `CLAUDE.md`; the other panes in
+`src/panes/CLAUDE.md`.
 
 ## The pane is GENERATED from the running agent, never written
 
@@ -25,8 +26,8 @@ reads it (`GET /:slug/workflows`, `GET /:slug/client-config`).
   form from, so `sampleInput` builds an example with THIS deployment's field
   names. The property NAME is the placeholder (`"<topic>"`), never `"string"`.
 - **Each half is offered only to the agents it is TRUE for:**
-  - **No carrier webhook for a workflow app.** `mode: "workflow-app"`
-    declines `/websocket` and can declare no carrier (`AgentDef.mode`), so
+  - **No carrier webhook for a workflow app.** `mode: "workflow-app"` declines
+    `/websocket` and can declare no carrier (`AgentDef.mode`), so
     `frontDoorEndpoints(page)` drops the `POST /phone` row and the Phone card
     with it; the page and its config stay.
   - **No workflow routes for an agent that declares no workflow** — a question
@@ -35,8 +36,8 @@ reads it (`GET /:slug/workflows`, `GET /:slug/client-config`).
     none.
   - **Neither gate DEFAULTS while the answer is outstanding** (both reads are
     one-shot, `staleTime: Infinity`), or cards would flash and vanish on every
-    open. The front-door card waits for `client-config`; the workflow half
-    shows one line (reading / could not read / declares none). A FAILED
+    open. The front-door card waits for `client-config`; the workflow half shows
+    one line (reading / could not read / declares none). A FAILED
     `client-config` defaults to voice, since `ClientConfigResponse.page` is
     optional.
   - `panes/docs.test.tsx` pins both, each negative beside a positive — a
@@ -47,10 +48,10 @@ reads it (`GET /:slug/workflows`, `GET /:slug/client-config`).
 - **Whether a snippet carries `Authorization` is read off the project's
   secrets**: the workflow API is open unless the agent's env sets
   `AAI_WORKFLOW_API_TOKEN`; the pane shares the Secrets pane's query key.
-- **The endpoint tables cannot import `GUEST_ROUTE_EXPOSURE`** (this package
-  may not depend on server code). The tie to what the platform proxies is the
-  shared `WORKFLOW_API_PREFIX` plus aai-server's parity test;
-  `docs-content.test.ts` asserts all four methods are documented.
+- **The endpoint tables cannot import `GUEST_ROUTE_EXPOSURE`** (this package may
+  not depend on server code). The tie to what the platform proxies is the shared
+  `WORKFLOW_API_PREFIX` plus aai-server's parity test; `docs-content.test.ts`
+  asserts all four methods are documented.
 - **The STUDIO pane carries no `/workflows/*` route table; the public page
   does** (`AgentApiDocsProps.workflowRoutes`, `false` from `panes/docs.tsx`).
   Every route is still shown being CALLED in the snippets, and the openness
@@ -80,8 +81,8 @@ and both stay in the DOM so a page search for `curl` finds them.
   DO an upload: SDK first (`agent.upload` / `agent.uploadStream` /
   `agent.uploadInfo`), both ORDERS (upload then start; or mint the id, start,
   and stream the bytes while the run reads the prefix), generated from the
-  agent's listing so it names a real workflow and property. It renders only
-  when some workflow declares an upload.
+  agent's listing so it names a real workflow and property. It renders only when
+  some workflow declares an upload.
 - **The shell alternate really uploads**: `curlStart` emits the upload command
   above the run, and the run body EXPANDS the id
   (`"'"$AUDIO_FILE_UPLOAD_ID"'"`). The `curl` example file is a CONCRETE name
@@ -116,8 +117,9 @@ the file: an upload property is a plain `string` in the schema.
 `project-route.ts`; the API pane links to it so "send me your API docs" has an
 answer that is not a sign-in screen.
 
-- **It discloses nothing new**: both reads are the agent's already-public routes,
-  so the server route needs no ownership check (the response is the app shell).
+- **It discloses nothing new**: both reads are the agent's already-public
+  routes, so the server route needs no ownership check (the response is the app
+  shell).
 - **Two things stay behind the studio**, and `AgentApiDocs` splits along that
   line: the project's SECRETS (`token={false}` publicly — a closed workflow API
   refuses the listing and the card quotes the agent's 401) and the carrier

@@ -33,34 +33,32 @@ in [`SCHEMA-CLAUDE.md`](../../SCHEMA-CLAUDE.md); the guest→platform socket in
   must resolve its place in the chain, or everyone behind it blocks forever.
   `watchAgentInvalidation` holds the mutex across `handoverSlot`'s 120s boot, so
   same-replica contention is real.
-- `sandbox/resolve.ts` stays on the in-process lock deliberately: it guards
-  this replica's slot cache, a process-local resource.
+- `sandbox/resolve.ts` stays on the in-process lock deliberately: it guards this
+  replica's slot cache, a process-local resource.
 
 **The binding is wrapped in `createMutationLock` and must stay wrapped: taking
 the lock also drops this replica's cached view of the slug.** Every mutation is
 a read-modify-write over a read-through row cache (`handleSecretSet` merges onto
 `getEnv`; `deployLocked` merges env and `credential_hashes` off `getAgent`), so
-without the drop a serialized write can still silently revert another
-replica's. Invalidation lives at acquisition (one place) because a route that
-forgets produces no error. Only row caches are dropped (blobs are
-content-addressed). The broker path does NOT use this wrapper — it mutates
-nothing.
+without the drop a serialized write can still silently revert another replica's.
+Invalidation lives at acquisition (one place) because a route that forgets
+produces no error. Only row caches are dropped (blobs are content-addressed).
+The broker path does NOT use this wrapper — it mutates nothing.
 
 ## Connection budget (`db-limits.ts`, `db-capacity.ts`)
 
-- `MAX_PLATFORM_DB_CONNECTIONS` is **fleet-wide**, pinned by `db-budget.test.ts`:
-  these are direct connections, so `MAX_CONTAINERS` × per-replica pools consumes
-  `max_connections` outright, and hitting that ceiling is an outage. It has no
-  per-tenant term — keep it that way; a tenant-scaled term cannot be bounded by
-  a constant.
-- The ceiling is crossed **silently** — no admission control, no load
-  shedding. First symptom: `remaining connection slots are reserved` on a
-  platform read.
+- `MAX_PLATFORM_DB_CONNECTIONS` is **fleet-wide**, pinned by
+  `db-budget.test.ts`: these are direct connections, so `MAX_CONTAINERS` ×
+  per-replica pools consumes `max_connections` outright, and hitting that
+  ceiling is an outage. It has no per-tenant term — keep it that way; a
+  tenant-scaled term cannot be bounded by a constant.
+- The ceiling is crossed **silently** — no admission control, no load shedding.
+  First symptom: `remaining connection slots are reserved` on a platform read.
 - **Boot checks the claim once** (`db-capacity.ts`: `max_connections` plus a
-  `pg_stat_activity` count against `platformDbBudget()`). The reading is a
-  FLOOR and never blocks boot; growth after boot (Supabase's own workers, a
-  leak in our pools) is unobserved. The budget reads env, and `modal_deploy.py`
-  must export `MAX_CONTAINERS` (asserted by `db-budget.test.ts`).
+  `pg_stat_activity` count against `platformDbBudget()`). The reading is a FLOOR
+  and never blocks boot; growth after boot (Supabase's own workers, a leak in
+  our pools) is unobserved. The budget reads env, and `modal_deploy.py` must
+  export `MAX_CONTAINERS` (asserted by `db-budget.test.ts`).
   `MAX_PLATFORM_DB_CONNECTIONS`'s doc has the rest.
 
 ## Pool routing: membership is decided by session affinity
@@ -70,11 +68,10 @@ exclusion while `pg_try_advisory_xact_lock` inside `begin … commit` stays
 correct. `platformDbConnectionsPerReplica` carries this.
 
 - `SUPABASE_DB_URL` — direct, **session** mode. Consumers: the slug-lock pool,
-  and the queue sweep's `NOTIFY` listener on its own handle (a subscription on
-  a transaction pool receives nothing). The DevKit world also needs session
-  mode (graphile-worker named prepared statements, `LISTEN` with no polling
-  fallback, session-scoped advisory lock). `assertSessionModeUrl` refuses a
-  pooler.
+  and the queue sweep's `NOTIFY` listener on its own handle (a subscription on a
+  transaction pool receives nothing). The DevKit world also needs session mode
+  (graphile-worker named prepared statements, `LISTEN` with no polling fallback,
+  session-scoped advisory lock). `assertSessionModeUrl` refuses a pooler.
 - `PLATFORM_POOLER_URL` — Supavisor **transaction** mode, for the admin pool.
   Refuses a session-mode URL (multiplexes nothing while looking set). Unset
   means the admin pool is direct and the budget understates a replica, so boot
@@ -91,8 +88,8 @@ guest platform calls a replica may have in flight; the next queues on
 `guestSlug` from `_route.ts`, is konsistent's `guest-called-platform-routes`
 (every module in `guest-handlers/`). `withReserved` logs the wait and then
 `workMs` under one trace id (its doc says why). **Raising it is a fact about the
-pooler**: under transaction mode these are cheap client slots; unpooled they
-are direct backends and boot warns by name. The slug-lock pool stays direct.
+pooler**: under transaction mode these are cheap client slots; unpooled they are
+direct backends and boot warns by name. The slug-lock pool stays direct.
 
 ## PlatformEvents (`events.ts`)
 
@@ -105,8 +102,8 @@ trust payloads. Memory emitter + store decorators in dev/tests;
   row's UPDATE is what Realtime streams), so a missed mutator is invisible there
   and in dev is a write no watcher hears — no polling loop covers it.
 - **A test standing in for a real writer has to BE that writer** (call e.g.
-  `stampWorkspaceMeta`, not a hand-rolled read-modify-write), or it cannot
-  catch a missed decorator.
+  `stampWorkspaceMeta`, not a hand-rolled read-modify-write), or it cannot catch
+  a missed decorator.
 - **Wait out an emit with `memory.settled()`, never a microtask spin.** A
   watcher whose work must be waitable RETURNS its promise (as
   `watchAgentInvalidation` returns its `withSlugLock` promise). `settled()`

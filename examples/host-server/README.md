@@ -2,8 +2,8 @@
 
 A self-hosted **streaming voice agent API**, in the shape of AssemblyAI's own:
 open a WebSocket, send a config frame, and that connection _is_ a full voice
-agent. The server ships with no agent of its own — the caller brings the
-prompt, the tools, and the provider key.
+agent. The server ships with no agent of its own — the caller brings the prompt,
+the tools, and the provider key.
 
 Where [`self-hosted-server`](../self-hosted-server) runs one operator-funded
 agent for everybody, this inverts the arrangement: the caller supplies the
@@ -54,8 +54,8 @@ The first frame must be the handshake, within 15s. It is the deploy:
 ```
 
 Then it is an ordinary session: send PCM16 audio as binary frames, receive the
-agent's audio back as binary frames and its events as JSON. Two events matter
-to a host caller specifically:
+agent's audio back as binary frames and its events as JSON. Two events matter to
+a host caller specifically:
 
 | Direction       | Frame                                                 | Meaning                                      |
 | --------------- | ----------------------------------------------------- | -------------------------------------------- |
@@ -67,9 +67,9 @@ Everything else is the standard protocol — `agent_transcript`,
 
 ## Why it is safe to expose self-serve
 
-**The server holds no credentials.** `createHostServer()` with no `env` has
-none to leak and none to spend: a session is only possible when its caller
-brings a key, so cost lands on whoever opened the connection. Pass
+**The server holds no credentials.** `createHostServer()` with no `env` has none
+to leak and none to spend: a session is only possible when its caller brings a
+key, so cost lands on whoever opened the connection. Pass
 `env: { ASSEMBLYAI_API_KEY: … }` to add a house account as a fallback — a
 caller's own `credentials` still win over it — but understand that any
 unauthenticated caller can then spend it.
@@ -120,8 +120,8 @@ Four things follow, if you need more on the same hardware:
 ## What it does not give you
 
 **Authentication.** Host mode authenticates the caller's provider key, not the
-caller. `listen()` binds loopback for that reason. Add your own before
-exposing it:
+caller. `listen()` binds loopback for that reason. Add your own before exposing
+it:
 
 ```ts
 import { createHostServer } from "@alexkroman1/aai-runtime";
@@ -137,19 +137,19 @@ const server = createHostServer({
 
 **Persistence.** "Deploy" here lasts one connection. There is no registry, no
 slug, no stored config — a caller re-sends its agent on every reconnect. If you
-want durable per-tenant agents, keep the configs in your own store and have
-your client send the right one at handshake.
+want durable per-tenant agents, keep the configs in your own store and have your
+client send the right one at handshake.
 
 **A managed platform.** No sandbox isolation (the `run_code` builtin refuses to
-run outside one), no autoscaling, no deploy pipeline. Host mode is a
-self-hosted feature; deployed platform agents do not accept `?host=1`.
+run outside one), no autoscaling, no deploy pipeline. Host mode is a self-hosted
+feature; deployed platform agents do not accept `?host=1`.
 
 ## Configuring the pipeline
 
-`createHostServer()` with no arguments runs the default all-AssemblyAI
-pipeline, which is why one caller-supplied `ASSEMBLYAI_API_KEY` covers STT, the
-LLM gateway and TTS. To choose your own, declare it in `defaults` — descriptors
-are plain data, so this still costs no credential:
+`createHostServer()` with no arguments runs the default all-AssemblyAI pipeline,
+which is why one caller-supplied `ASSEMBLYAI_API_KEY` covers STT, the LLM
+gateway and TTS. To choose your own, declare it in `defaults` — descriptors are
+plain data, so this still costs no credential:
 
 ```ts
 import { createHostServer } from "@alexkroman1/aai-runtime";
@@ -169,5 +169,5 @@ const server = createHostServer({
 
 Callers then send the matching keys: `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY`,
 `CARTESIA_API_KEY`. Anything in `defaults` that the handshake does not own
-(`voice`, `idleTimeoutMs`, `interruption`, `builtinTools`) is operator
-policy and stands for every tenant.
+(`voice`, `idleTimeoutMs`, `interruption`, `builtinTools`) is operator policy
+and stands for every tenant.

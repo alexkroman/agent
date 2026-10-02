@@ -12,8 +12,8 @@ read_when: >-
 ## Every environmental error is classified
 
 `error-status.ts` maps a thrown value to a status, and
-`error-classification.test.ts` requires no THIRD state: every environmental
-code a Node service here can meet is either mapped or named in
+`error-classification.test.ts` requires no THIRD state: every environmental code
+a Node service here can meet is either mapped or named in
 `DELIBERATELY_INTERNAL` with a reason a 500 is right. A client cannot back off
 on a 500 and a load balancer cannot shed on it.
 
@@ -37,8 +37,8 @@ the thrown value) against a closed vocabulary and answers 503 with
 
 - **`ENOTFOUND` is absent** — a hostname that does not resolve is a
   misconfiguration; `EAI_AGAIN` is in.
-- **It is checked LAST of the 5xx entries** — a full disk (507) and an
-  exhausted pool (503) surface transport-shaped codes and have better advice.
+- **It is checked LAST of the 5xx entries** — a full disk (507) and an exhausted
+  pool (503) surface transport-shaped codes and have better advice.
 - **It is not `isCallerGone`**, which is checked first: an inbound socket that
   closed must not get a 503 written to it. Both read through the `cause` chain.
 
@@ -46,7 +46,7 @@ the thrown value) against a closed vocabulary and answers 503 with
 
 `uploadIdOr400` (`uploads.ts`) applies `UPLOAD_TOKEN_RE` (1–64 of
 `[A-Za-z0-9_-]`) to all five routes, so a bad id is always a 400 and never
-reaches the store (where `assertUploadToken` throws an unclassified `Error`).
-A well-formed id nothing stored is still a 404 — "malformed" and "reclaimed" are
+reaches the store (where `assertUploadToken` throws an unclassified `Error`). A
+well-formed id nothing stored is still a 404 — "malformed" and "reclaimed" are
 different answers. The upload store's own rules are in
 [`../../CLAUDE.md`](../../CLAUDE.md).

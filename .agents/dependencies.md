@@ -33,9 +33,9 @@ things stay OUT:
   `typescript-6: npm:typescript@~6.0.0` gives the root the 6.x API for
   `scripts/_api-contracts-compat.mjs`.
 
-The scaffold ships to users and cannot use `catalog:`, so
-`pnpm sync:scaffold` (`sync-scaffold-versions.mjs`) writes resolved ranges into
-it; `check:scaffold` fails when stale.
+The scaffold ships to users and cannot use `catalog:`, so `pnpm sync:scaffold`
+(`sync-scaffold-versions.mjs`) writes resolved ranges into it; `check:scaffold`
+fails when stale.
 
 ## A manifest has a SHAPE, and two more checks read it
 
@@ -78,16 +78,16 @@ script. It applies only to resolution (`--frozen-lockfile` is unaffected).
 
 ## Held versions
 
-An exact pin or a narrowed range below is deliberate; lift it when its
-condition clears, not in a routine `pnpm update`.
+An exact pin or a narrowed range below is deliberate; lift it when its condition
+clears, not in a routine `pnpm update`.
 
 - **`@microsoft/api-extractor` is exactly `7.59.1`.** 7.59.2 takes
   `@microsoft/tsdoc` 0.17, whose emitter joins a soft line break with no
   whitespace (`and{@link X}`), so every `API-INDEX.md` summary that wraps onto
   an inline tag loses a space.
 - **`jsdom` is `~30.0.1`, plus a root `overrides` entry** (the comment in
-  `pnpm-workspace.yaml`): vitest <5.0.3's `URL.createObjectURL` shim cannot
-  read a jsdom 30.1 Blob.
+  `pnpm-workspace.yaml`): vitest <5.0.3's `URL.createObjectURL` shim cannot read
+  a jsdom 30.1 Blob.
 - **`jscpd` stays on 4.x.** 5.x is a Rust rewrite with no Node API, and its
   counts disagree with `scripts/duplication-baseline.json` (measured by 4.x)
   file by file — moving means re-measuring the ratchet, not a version bump.
@@ -102,10 +102,11 @@ hand.
 
 ## Artifact sizes have a budget, with an escape valve
 
-`scripts/artifact-size-report.mjs` measures what ships: `aai-guest/dist/
-harness.mjs` (raw and gzip — it is on every sandbox's cold-start path), the
-PACKED published tarballs with file counts, and each published package's
-runtime dependency list (a new entry fails regardless of bytes).
+`scripts/artifact-size-report.mjs` measures what ships:
+`aai-guest/dist/ harness.mjs` (raw and gzip — it is on every sandbox's
+cold-start path), the PACKED published tarballs with file counts, and each
+published package's runtime dependency list (a new entry fails regardless of
+bytes).
 
 - `.github/workflows/artifact-size.yml` builds the PR base in a `git worktree`
   with the base's own lockfile, posts one sticky comment, then enforces. A base

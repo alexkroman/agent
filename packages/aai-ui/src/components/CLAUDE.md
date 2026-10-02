@@ -36,11 +36,11 @@ exported — typedoc drops an inferred one. Two TypeDoc traps no gate checks:
   same digits must not collide), the streaming row (default: `renderMessage`
   over a synthetic assistant message, `id: -1`), a `role="status"` thinking row,
   and the transcript inline or `transcriptPosition="below"`.
-- **`log` (`useConversationLog().entries`) REPLACES the live items**, not
-  adds to them — the log's newest session entry already is the live
-  conversation. Log rows are keyed by the entry's identity plus a repeat count,
-  never its index (the log is trimmed from the front); `spoken` renders through
-  `renderMessage` with id `-2`.
+- **`log` (`useConversationLog().entries`) REPLACES the live items**, not adds
+  to them — the log's newest session entry already is the live conversation. Log
+  rows are keyed by the entry's identity plus a repeat count, never its index
+  (the log is trimmed from the front); `spoken` renders through `renderMessage`
+  with id `-2`.
 - **`<MessageList>` is `<ConversationView>` with stock bubbles**
   (`useCallback`-hoisted renderers so per-row memo holds; default `renderTool`
   is `<ToolCallRow variant="compact">`). It must stay rebuildable from the
@@ -60,9 +60,9 @@ exported — typedoc drops an inferred one. Two TypeDoc traps no gate checks:
   (`satisfies Record<AgentState, string>`) is the PROP; the component owns the
   exhaustive lookup, the `AGENT_STATE_LABELS` fallback and the pulse.
   `ConsoleShell`'s dot is the same `StateDot` coloured from the theme.
-- **`<SessionControls>`** decides which buttons exist and what each presses
-  (New Conversation is `end(); start()`, not `reset()`); `renderButton` decides
-  the look. `useSessionControls()` underneath is for chromes too unusual for the
+- **`<SessionControls>`** decides which buttons exist and what each presses (New
+  Conversation is `end(); start()`, not `reset()`); `renderButton` decides the
+  look. `useSessionControls()` underneath is for chromes too unusual for the
   slot.
 - `.aai-scroll` (`styles.css`) is the shared thin scrollbar, coloured via
   `--aai-scrollbar-thumb` / `--aai-scrollbar-track`.
@@ -135,8 +135,8 @@ theme rules are in `../CLAUDE.md`.
 - **`<UploadProgressBar>`** covers the upload, `<WorkflowProgress>` the run —
   disjoint by construction. It renders NOTHING with nothing to describe (pass it
   unguarded), shows an unknown total as INDETERMINATE, NAMES and counts the file
-  (files go sequentially), and draws pause only when handed BOTH
-  `pauseUpload` and `resumeUpload`.
+  (files go sequentially), and draws pause only when handed BOTH `pauseUpload`
+  and `resumeUpload`.
 - **`<AudioResult download>`** renders over `useDownloadUrl`: heading, pending
   line, `role="alert"` error, `<audio controls>` and a `download` anchor on the
   object URL. `captions` is optional in both directions.

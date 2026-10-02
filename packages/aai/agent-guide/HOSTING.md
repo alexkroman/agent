@@ -13,8 +13,8 @@
 # Self-hosting, tracing and deploy targets
 
 Part of the aai authoring guide (start with the core guide). The managed
-platform is `aai publish`; this file is everything that runs the agent
-somewhere else — `npm start`, OpenTelemetry tracing, and `aai build --target`.
+platform is `aai publish`; this file is everything that runs the agent somewhere
+else — `npm start`, OpenTelemetry tracing, and `aai build --target`.
 
 ## Running it yourself (`npm start`)
 
@@ -26,10 +26,10 @@ npm start                          # http://127.0.0.1:3000
 PORT=8080 HOST=0.0.0.0 npm start   # bind every interface, e.g. in a container
 ```
 
-`npm start` **builds first** (that is the `prestart` script) and then serves
-the result: `aai start` boots `.aai/worker.mjs`, the same artifact
-`aai publish` uploads. It serves your own `client.tsx` build when there is one
-and falls back to the prebuilt default UI shipped inside `@alexkroman1/aai-ui`.
+`npm start` **builds first** (that is the `prestart` script) and then serves the
+result: `aai start` boots `.aai/worker.mjs`, the same artifact `aai publish`
+uploads. It serves your own `client.tsx` build when there is one and falls back
+to the prebuilt default UI shipped inside `@alexkroman1/aai-ui`.
 
 There is no server file in your project, and that is deliberate — the boot
 belongs to the framework, so it improves when you update rather than being
@@ -37,30 +37,30 @@ frozen at the moment you scaffolded. When you need to own it, import
 `createProjectServer` from `@alexkroman1/aai-cli/start`: it builds the server
 and binds nothing, so you decide how it is served. Building one from scratch
 instead, `defaultClientDir()` (`@alexkroman1/aai-ui/client-dir`) is where that
-prebuilt UI lives — the only export of `aai-ui` that runs on Node rather than
-in the browser.
+prebuilt UI lives — the only export of `aai-ui` that runs on Node rather than in
+the browser.
 
 The build is what makes `tools/` work — a tool is registered by existing, and
 the enumeration happens where the bundle is assembled, so a server that loaded
 `agent.ts` directly would run an agent with none of its tools. The same build
 produces your `client.tsx`, so a custom UI is served with no extra step.
 
-Secrets work the same as everywhere else: `ctx.env` holds the keys declared
-in `.env` (or `.env.example`), and a real environment variable of that name
-wins — so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
+Secrets work the same as everywhere else: `ctx.env` holds the keys declared in
+`.env` (or `.env.example`), and a real environment variable of that name wins —
+so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
 
-One thing to know: it binds **loopback by default**, because this server has
-no request authentication of its own; set `HOST=0.0.0.0` only behind your own
-proxy or auth.
+One thing to know: it binds **loopback by default**, because this server has no
+request authentication of its own; set `HOST=0.0.0.0` only behind your own proxy
+or auth.
 
-`run_code` is the one feature that does not follow — it needs a sandbox
-(the platform's, or `AAI_RUN_CODE=deno`) and refuses outside one.
+`run_code` is the one feature that does not follow — it needs a sandbox (the
+platform's, or `AAI_RUN_CODE=deno`) and refuses outside one.
 
 ## Tracing (OpenTelemetry)
 
-Point the runtime at any OTLP collector and it exports spans for the model
-calls your agent makes — one per generation, with a child per step, per model
-call and per tool call, carrying model id, token counts and finish reason.
+Point the runtime at any OTLP collector and it exports spans for the model calls
+your agent makes — one per generation, with a child per step, per model call and
+per tool call, carrying model id, token counts and finish reason.
 
 **It is off unless you configure a collector, and that is the whole switch:**
 
@@ -84,8 +84,7 @@ npm i @opentelemetry/api @opentelemetry/sdk-trace-base \
 ```
 
 `aai dev` and `aai start` arm it for you. Embedding the server in a process of
-your own means calling it yourself, from
-`@alexkroman1/aai-runtime/tracing`:
+your own means calling it yourself, from `@alexkroman1/aai-runtime/tracing`:
 
 ```ts
 import { startTracing, tracingEndpoint } from "@alexkroman1/aai-runtime/tracing";
@@ -103,11 +102,11 @@ that must not wait — constructing the exporter costs a few hundred ms.
 `DEFAULT_SERVICE_NAME` the fallback, if you would rather read them than
 hard-code the strings.
 
-**Spans carry no conversation content.** Not a default you can change — there
-is no code path that reads a prompt, a completion, a transcript, a tool
-argument or a tool result, so none of it can reach your collector. Attributes
-are built from an allow-list of metadata names following OpenTelemetry's
-`gen_ai.*` conventions, so existing dashboards find them.
+**Spans carry no conversation content.** Not a default you can change — there is
+no code path that reads a prompt, a completion, a transcript, a tool argument or
+a tool result, so none of it can reach your collector. Attributes are built from
+an allow-list of metadata names following OpenTelemetry's `gen_ai.*`
+conventions, so existing dashboards find them.
 
 ### Deploying to a host that wants its own entry file
 
@@ -143,10 +142,10 @@ not copied.
 
 One thing to know before deploying a VOICE agent to a serverless host: the
 session is a WebSocket, so the host has to support one. Vercel does — it hands
-the function the raw upgrade, and the emitted entry passes it to the same
-server `aai dev` runs. Deno Deploy does too, and more simply: it runs a
-long-lived process, so the emitted entry just calls `listen()` and the session
-reaches the same server unchanged. A host that serves only request/response
-still runs the HTTP surface — `/health`, `/client-config`,
-`/workflows/*` and your static assets — which is everything a workflow app
-needs and none of what a voice agent needs.
+the function the raw upgrade, and the emitted entry passes it to the same server
+`aai dev` runs. Deno Deploy does too, and more simply: it runs a long-lived
+process, so the emitted entry just calls `listen()` and the session reaches the
+same server unchanged. A host that serves only request/response still runs the
+HTTP surface — `/health`, `/client-config`, `/workflows/*` and your static
+assets — which is everything a workflow app needs and none of what a voice agent
+needs.

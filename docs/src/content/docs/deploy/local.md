@@ -31,10 +31,9 @@ managed. The scaffold's `prestart` script builds first
 It serves your `client.tsx` build when there is one, and falls back to the
 default UI otherwise.
 
-:::caution[It listens on `localhost` for a reason]
-This server has no request authentication of its own, so set `HOST=0.0.0.0` only
-behind your own proxy or auth.
-:::
+:::caution[It listens on `localhost` for a reason] This server has no request
+authentication of its own, so set `HOST=0.0.0.0` only behind your own proxy or
+auth. :::
 
 There is no server file in your project. When you need to own the startup — your
 own routes, your own auth — see [Self-hosting](/agent/more/self-hosting/).

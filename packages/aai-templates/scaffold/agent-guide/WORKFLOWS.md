@@ -1,7 +1,7 @@
 # Workflows — durable runs, steps and workflow apps
 
-Part of the aai authoring guide. Start with the core guide (`AGENT_GUIDE.md`
-in the SDK, `CLAUDE.md` in the scaffold); this file is the reference for
+Part of the aai authoring guide. Start with the core guide (`AGENT_GUIDE.md` in
+the SDK, `CLAUDE.md` in the scaffold); this file is the reference for
 `workflow()`, `workflowApp()`, step code in `workflows/*.ts` and the page that
 drives a run. Session tools that START a run are in `TOOLS.md`.
 
@@ -28,10 +28,10 @@ export default workflowApp({
 });
 ```
 
-That is the whole declaration, and the fields it does NOT take are the point:
-a workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
-`maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob
-are **compile errors** here, not fields that quietly do nothing. `greeting` and
+That is the whole declaration, and the fields it does NOT take are the point: a
+workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
+`maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob are
+**compile errors** here, not fields that quietly do nothing. `greeting` and
 `requiredEnv` stay. `workflowApp()` is `agent({ mode: "workflow-app", … })` with
 the discriminant already set — same definition object out, so `aai build`,
 `aai dev` and `aai publish` treat it like any other agent.
@@ -39,8 +39,8 @@ the discriminant already set — same definition object out, so `aai build`,
 Reach for it when the user asks for something that outlives a request: an
 overnight job, an upload that takes minutes, anything waiting on a third-party
 callback. Reach for `agent()` when someone is on the line — a voice agent can
-also START a workflow from a tool (`ctx.workflows.start(def, input)`) and
-answer the turn, which is the other shape.
+also START a workflow from a tool (`ctx.workflows.start(def, input)`) and answer
+the turn, which is the other shape.
 
 **Runs are DURABLE on the platform with no setup.** A deployed app's runs live
 on the platform's own database, so they survive a restart, a redeploy and an
@@ -49,23 +49,23 @@ idle sandbox. There is nothing to enable.
 Under `aai dev` without a `DATABASE_URL` they live in the process that started
 them — you can submit the form, watch the run and read its result, and
 everything in flight is lost when that process goes away. That is the honest
-tradeoff, and it is what
-lets you build a workflow app before provisioning anything.
+tradeoff, and it is what lets you build a workflow app before provisioning
+anything.
 
 **A workflow UPLOAD is durable with no setup either**, and this paragraph used
 to say the opposite. An upload's record is a platform row and its bytes are
-platform storage, so `api.upload`, `<FileField>` and the file-taking form
-hooks outlive the sandbox exactly as the runs reading them do — a deployed app
-needs no database of its own for either half. Under `aai dev` they are as
-temporary as the runs above: the bytes go to a per-process temporary directory
-that a restart abandons. There is no `ctx.db` at all — see "Persisting data"
-in `TOOLS.md`.
+platform storage, so `api.upload`, `<FileField>` and the file-taking form hooks
+outlive the sandbox exactly as the runs reading them do — a deployed app needs
+no database of its own for either half. Under `aai dev` they are as temporary as
+the runs above: the bytes go to a per-process temporary directory that a restart
+abandons. There is no `ctx.db` at all — see "Persisting data" in `TOOLS.md`.
 
 ### Workflow bodies live in `workflows/`
 
-A body is an ordinary exported async function of its input and a `WorkflowContext`.
-There is no directive and no compile step of its own — the agent bundle compiles
-`workflows/` like any other source file — and durability is a method call:
+A body is an ordinary exported async function of its input and a
+`WorkflowContext`. There is no directive and no compile step of its own — the
+agent bundle compiles `workflows/` like any other source file — and durability
+is a method call:
 
 ```ts
 import type { WorkflowContext } from "@alexkroman1/aai";
@@ -97,18 +97,18 @@ async function file(_digest: { url: string }) {
 
 `ctx.step(name, fn)` runs `fn` once, journals what it returned, and on every
 later replay returns the journaled value without running it again. The step
-functions themselves are ordinary functions — which is also what lets a spec call
-one directly, with no engine in the path.
+functions themselves are ordinary functions — which is also what lets a spec
+call one directly, with no engine in the path.
 
 **Type the body's input from the SCHEMA, not by hand.** The example above writes
 `input: { url: string }`, which is fine only while the workflow declares no
 input schema. Once it does, a hand-written parameter is unchecked: `run` takes
 its input as a function PARAMETER, so it is contravariant, and a body declaring
-a wider shape — or the same shape with one field's optionality or default
-wrong — is assignable and compiles. A `z.number().default(5)` against a body
-that writes `input.limit ?? 3` is the sharp version: the schema guarantees
-`limit` is there, the `??` is dead, and the two numbers disagree with nothing
-to report it. `WorkflowInputOf<typeof theDef>` reads the declaration instead.
+a wider shape — or the same shape with one field's optionality or default wrong
+— is assignable and compiles. A `z.number().default(5)` against a body that
+writes `input.limit ?? 3` is the sharp version: the schema guarantees `limit` is
+there, the `??` is dead, and the two numbers disagree with nothing to report it.
+`WorkflowInputOf<typeof theDef>` reads the declaration instead.
 
 **Reaching for it needs one thing that is not obvious: ANNOTATE the def.** The
 obvious spelling does not compile —
@@ -162,8 +162,8 @@ them:
 - **The body replays from the top on every resume**, so it holds no live handle
   and makes no undurable decision — no `Date.now()`, no `Math.random()`, no
   `crypto.randomUUID()`, no `fetch`. The three commonest have methods of their
-  own (`ctx.now()`, `ctx.random()`, `ctx.uuid()` — see below); anything else goes
-  inside a `ctx.step`, whose result is journaled and returned unchanged on
+  own (`ctx.now()`, `ctx.random()`, `ctx.uuid()` — see below); anything else
+  goes inside a `ctx.step`, whose result is journaled and returned unchanged on
   replay.
 - **A step's arguments and return value cross a queue**, so they must be
   JSON-shaped and small. Put bytes in storage and pass the key.
@@ -180,8 +180,8 @@ share a name: the journal keys an entry by `(name, occurrence)`, so two sites
 alias onto one counter and read each other's journaled results. Nothing detects
 it.
 
-**Per-step retries are an argument, not a property.** Pass
-`{ maxAttempts }` where a step deserves more patience than the default three:
+**Per-step retries are an argument, not a property.** Pass `{ maxAttempts }`
+where a step deserves more patience than the default three:
 
 ```ts no-check
 const digest = await ctx.step("summarize", () => summarize(input.url), {
@@ -189,8 +189,8 @@ const digest = await ctx.step("summarize", () => summarize(input.url), {
 });
 ```
 
-**And a step body can read which attempt it is on**, so a step may degrade rather
-than fail — a smaller model on the last try beats a failed run:
+**And a step body can read which attempt it is on**, so a step may degrade
+rather than fail — a smaller model on the last try beats a failed run:
 
 ```ts
 import { stepInfo } from "@alexkroman1/aai/step";
@@ -236,18 +236,18 @@ export async function chargeFlow(input: { amount: number }, ctx: WorkflowContext
 and the same value after a resume, so a retried request is recognisably the same
 request rather than a second one. `ctx.random()` draws one float per CALL, so a
 loop is correct as written; a BULK draw belongs in a step
-(`ctx.step("jitter", () => Array.from({ length: 1000 }, Math.random))`), which is
-one journal entry instead of a thousand.
+(`ctx.step("jitter", () => Array.from({ length: 1000 }, Math.random))`), which
+is one journal entry instead of a thousand.
 
 Two rules:
 
-- **Call them from the BODY, never inside a `ctx.step`** — the engine refuses one
-  there and the message names the fix. Inside a step there is nothing to fix: a
-  step's internals are not replayed, only its result, so a plain `Date.now()` in
-  a step body is already durable and is what to write.
+- **Call them from the BODY, never inside a `ctx.step`** — the engine refuses
+  one there and the message names the fix. Inside a step there is nothing to
+  fix: a step's internals are not replayed, only its result, so a plain
+  `Date.now()` in a step body is already durable and is what to write.
 - **A `ctx.uuid()` is not a hook TOKEN.** `ctx.waitFor`'s token has to be
-  DERIVED from the run's own input, because whoever signals is usually a tool and
-  a tool cannot see the body's local variables. See below.
+  DERIVED from the run's own input, because whoever signals is usually a tool
+  and a tool cannot see the body's local variables. See below.
 
 ### Waiting: `ctx.sleep` and `ctx.waitFor`
 
@@ -258,7 +258,8 @@ brings the run back — so a long wait costs nothing while it runs.
 platform it is durable with no setup, and a self-hosted deployment with a
 `DATABASE_URL` is durable too — the wait outlives the body, the worker and the
 process. Under `aai dev` without a `DATABASE_URL` the store is memory, so a wait
-lives only as long as the dev server. The boot line reports which one is in play.
+lives only as long as the dev server. The boot line reports which one is in
+play.
 
 ```ts no-check
 // A label, then a duration in milliseconds or an absolute Date.
@@ -275,29 +276,30 @@ if (approval === undefined) return { published: false, reason: "nobody approved"
 
 Five things worth knowing:
 
-- **A wait's NAME is its identity, exactly like a step's.** A sleep's `label` and
-  a `waitFor`'s token are what the journal keys the wait on
+- **A wait's NAME is its identity, exactly like a step's.** A sleep's `label`
+  and a `waitFor`'s token are what the journal keys the wait on
   (`sleep!<label>#<occurrence>`, `hook!<token>#<occurrence>`), so make a label a
   string literal, give two call sites two labels, and let a loop reuse one — the
   occurrence count separates the iterations. This is what makes a wait behind an
-  `if` safe: the body can reach a different NUMBER of waits on two walks and each
-  one still finds its own record.
+  `if` safe: the body can reach a different NUMBER of waits on two walks and
+  each one still finds its own record.
 - **A hook's token must be DERIVED, not random.** Whoever signals is usually a
-  tool, and a tool cannot see the body's local variables — so export one function
-  that computes the token from the run's own input and import it in both places.
-  Derive it from something that identifies the RUN rather than the caller: a
-  token is held for the life of its run, so two runs deriving the same one is the
-  second one failing.
+  tool, and a tool cannot see the body's local variables — so export one
+  function that computes the token from the run's own input and import it in
+  both places. Derive it from something that identifies the RUN rather than the
+  caller: a token is held for the life of its run, so two runs deriving the same
+  one is the second one failing.
 - **`timeoutMs` resolves `undefined` when the window closes unanswered.** A
-  closing window is an outcome to branch on, not a failure, and the engine closes
-  the hook as it shuts so a late answer cannot change what already happened.
+  closing window is an outcome to branch on, not a failure, and the engine
+  closes the hook as it shuts so a late answer cannot change what already
+  happened.
 - **Racing two independent waits WORKS** (the run suspends once, on the
   earliest), but a deadline ON a wait is `timeoutMs`: it CLOSES the hook before
   the body continues, so a late signal cannot change a window already timed out.
-- **`ctx.workflows.wakeUp(runId, { correlationIds: [id] })`** ends a sleep early,
-  which is how a "send it now" tool cuts a scheduled wait short. Naming no ids
-  wakes every outstanding SLEEP and deliberately not a `waitFor` deadline, so
-  cutting a schedule short cannot also close an approval window.
+- **`ctx.workflows.wakeUp(runId, { correlationIds: [id] })`** ends a sleep
+  early, which is how a "send it now" tool cuts a scheduled wait short. Naming
+  no ids wakes every outstanding SLEEP and deliberately not a `waitFor`
+  deadline, so cutting a schedule short cannot also close an approval window.
 - **A SUSPEND is not free, so `ctx.sleep` is not a `setTimeout`.** A wait costs
   a journal write to record it, a queued delivery to bring the run back, and a
   fresh WALK of the body — measured on a deployed agent at roughly a second of
@@ -307,11 +309,12 @@ Five things worth knowing:
   whole cost.
 
   So a sub-second pause is not what this is for. For a short backoff inside a
-  step, use an ordinary timer (`sleep` from `@alexkroman1/aai/internal`) — a step
-  body may not call `ctx.sleep` anyway, and the engine refuses one that does. Use
-  `ctx.sleep` for a wait you want to SURVIVE the process, which is the thing a
-  timer cannot do. A body that polls in a loop pays the suspend per iteration,
-  which is the strongest argument for the next section: park on the callback.
+  step, use an ordinary timer (`sleep` from `@alexkroman1/aai/internal`) — a
+  step body may not call `ctx.sleep` anyway, and the engine refuses one that
+  does. Use `ctx.sleep` for a wait you want to SURVIVE the process, which is the
+  thing a timer cannot do. A body that polls in a loop pays the suspend per
+  iteration, which is the strongest argument for the next section: park on the
+  callback.
 
 #### A third-party callback is an OPTIMIZATION over a reconciling read
 
@@ -323,9 +326,9 @@ already paid for:
 
 - **Mint it with `stepWebhookUrl(token)`, from inside the step that hands it
   over.** That is the step-side half of `ctx.workflows.publicWebhookUrl` — the
-  tool-side one needs a `ToolContext`, which a step is not handed. It THROWS when
-  the deployment cannot mint one, which a step should catch and treat as "no
-  callback": a run must not fail over a missing optimization. And note
+  tool-side one needs a `ToolContext`, which a step is not handed. It THROWS
+  when the deployment cannot mint one, which a step should catch and treat as
+  "no callback": a run must not fail over a missing optimization. And note
   `requireStepEnv("AAI_PUBLIC_BASE_URL")` is NOT a substitute — the public base
   URL is a boot parameter of the deployment, not one of the agent's own secrets,
   so that read is `undefined` in production precisely where the value exists.
@@ -335,22 +338,22 @@ already paid for:
   — it runs once, on first execution, never on a replay — and answer
   `{ id, callback }`.
 - **Keep the poll as the TIMEOUT arm.** A webhook is one HTTP POST from a third
-  party with no delivery guarantee you control: the sender gives up after its own
-  retry budget, a deployment may not know its public URL, and a delivery that
-  lands before your body reaches its wait is answered `404` and dropped. So read
-  the state before you park and again after, give the wait a `timeoutMs`, and let
-  an unanswered window fall through to the read.
+  party with no delivery guarantee you control: the sender gives up after its
+  own retry budget, a deployment may not know its public URL, and a delivery
+  that lands before your body reaches its wait is answered `404` and dropped. So
+  read the state before you park and again after, give the wait a `timeoutMs`,
+  and let an unanswered window fall through to the read.
 - **Wait for the EDGE, not the answer.** Treat the payload as "something
   happened, go look" and get the fact from the far side's own API under your own
-  credential. That is what makes an unauthenticated callback route safe: a forged
-  delivery on a guessed token costs one extra read and changes no outcome. The
-  route authorizes on the TOKEN and reads no other header, so a sender's own
-  auth-header option is ignored.
+  credential. That is what makes an unauthenticated callback route safe: a
+  forged delivery on a guessed token costs one extra read and changes no
+  outcome. The route authorizes on the TOKEN and reads no other header, so a
+  sender's own auth-header option is ignored.
 - **One token, ONE `waitFor` per run.** A token is claimed for the life of its
-  run and given back when the run goes terminal, so a second `ctx.waitFor` on the
-  same token — a wait written inside a loop — THROWS. A throw is not a suspend,
-  so a body with a `catch` will treat it as a failed run and start compensating.
-  Park once, outside the loop.
+  run and given back when the run goes terminal, so a second `ctx.waitFor` on
+  the same token — a wait written inside a loop — THROWS. A throw is not a
+  suspend, so a body with a `catch` will treat it as a failed run and start
+  compensating. Park once, outside the loop.
 - **You cannot test it under `aai dev` without a tunnel.** `publicUrl` there is
   `http://localhost:<backend port>`, which no third party can reach — so the
   delivery never arrives and the run silently takes the fallback.
@@ -362,9 +365,9 @@ Steps are ordinary exported functions, so a spec imports and calls them. The
 BODY needs an engine, and there are two, for two different questions.
 
 **"What did the body ask for?"** — `createWorkflowContext` from
-`@alexkroman1/aai-runtime/testing`. It runs the steps and records the names,
-the retry policies and the sleeps, over one walk with no journal. Nothing
-replays, so a spec built on it must not claim to test durability.
+`@alexkroman1/aai-runtime/testing`. It runs the steps and records the names, the
+retry policies and the sleeps, over one walk with no journal. Nothing replays,
+so a spec built on it must not claim to test durability.
 
 ```ts no-check
 import { createWorkflowContext } from "@alexkroman1/aai-runtime/testing";
@@ -414,8 +417,8 @@ Three more things it can do, each the thing a durable body is written for:
   second run sees.
 
 Stub the steps' collaborators at the seams they really use — a step's HTTP goes
-through the published `stepFetch` slot, so a model call and a page fetch are BOTH
-answered there. `stubGatewayRoute` composes the two:
+through the published `stepFetch` slot, so a model call and a page fetch are
+BOTH answered there. `stubGatewayRoute` composes the two:
 
 ```ts no-check
 import { stubGatewayRoute } from "@alexkroman1/aai-runtime/testing";
@@ -496,16 +499,16 @@ and a second later all N ask again.
 **Reach for the raw call when the failure is not simply a failure** — a `404`
 that means "already deleted", a `4xx` whose body decides which advice to print.
 Then classify it yourself: `throwStepError(err)`, `throwFatalStepError(err)` to
-stop outright, `toStepError(cause, message)` to build the error without throwing,
-or `throwFfmpegStepError(err)` for a media failure, whose default runs the other
-way (only a `timeout` or an `aborted` is worth another attempt).
+stop outright, `toStepError(cause, message)` to build the error without
+throwing, or `throwFfmpegStepError(err)` for a media failure, whose default runs
+the other way (only a `timeout` or an `aborted` is worth another attempt).
 
 **Why the split exists, since the wrapped call is what you usually want:**
 importing from here is the OPT-IN, and `/step` is not written only for a step:
-`mapConcurrent` bounds a rate-limited call anywhere, `stepFetch` is an
-ordinary HTTP client, and your specs drive exported steps directly. None of
-those callers has a retry budget to burn, so none should meet a vocabulary whose
-whole subject is one. A step pays nothing for the extra import line.
+`mapConcurrent` bounds a rate-limited call anywhere, `stepFetch` is an ordinary
+HTTP client, and your specs drive exported steps directly. None of those callers
+has a retry budget to burn, so none should meet a vocabulary whose whole subject
+is one. A step pays nothing for the extra import line.
 
 ### Media, big files, and transcription from a step
 
@@ -516,15 +519,14 @@ bundling rule as `/step` — import them there, never through the root barrel:
   recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
   `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
   the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
-  lives on `/step` with the other step primitives.) Wrap each in `orFail`
-  as above: a provider refusal — a container it will not read, a
-  recording with no speech — arrives
-  with `retryable: false`, and unclassified a step re-uploads the same bytes
-  until its attempts run out.
+  lives on `/step` with the other step primitives.) Wrap each in `orFail` as
+  above: a provider refusal — a container it will not read, a recording with no
+  speech — arrives with `retryable: false`, and unclassified a step re-uploads
+  the same bytes until its attempts run out.
 - **`@alexkroman1/aai/ffmpeg`** — `transcodeToWav(bytes, { sampleRate })`,
   `runFfmpeg(args)`, `probeMedia(source)` for duration and stream info, and
-  `FfmpegError`/`isFfmpegError`. Under `aai dev` it needs ffmpeg on your PATH;
-  a `missing-binary` failure says so and carries the install line.
+  `FfmpegError`/`isFfmpegError`. Under `aai dev` it needs ffmpeg on your PATH; a
+  `missing-binary` failure says so and carries the install line.
 - **`@alexkroman1/aai/step-files`** — for a recording too big to hold in memory.
   `readUploadToFile(uploadId, path)` streams an upload to disk,
   `writeUploadFromFile(path)` streams one back, and `withTempDir(work)` gives
@@ -582,20 +584,19 @@ sentence a person can act on. `podcast-digest-workflow` is the worked example.
 
 A run reaches a device holding `WS /inbox?client=<id>` open: a tool passes
 `sessionClientId(ctx)` to the run, and a step's `stepNotifyClient` throws a
-retryable error until the device acks. Test: `stubClientInbox`.
-`?client=` also makes a device one conversation across connects (self-hosted):
-`sessionContext`, `onSessionEnd`, `stepClientTranscript`; its id is the only
-key.
-A page is a device too: `mountClient({ client: "auto" })` keeps a per-browser
-id; `useInbox({ onNotice })` holds the inbox (busy mid-call) and plays notices;
+retryable error until the device acks. Test: `stubClientInbox`. `?client=` also
+makes a device one conversation across connects (self-hosted): `sessionContext`,
+`onSessionEnd`, `stepClientTranscript`; its id is the only key. A page is a
+device too: `mountClient({ client: "auto" })` keeps a per-browser id;
+`useInbox({ onNotice })` holds the inbox (busy mid-call) and plays notices;
 `useClientId()`/`useSessionId()` read the ids. Also: `useTapToTalk`,
 `useConversationLog`, `useRoute`, `createStoredValue`.
 
 ### A step's HTTP: use `stepFetch`, not `fetch`
 
 Any outbound request from a step goes through `stepFetch` (also
-`@alexkroman1/aai/step`). Not a style preference: `fetch` is the wrong call
-from a step, for a reason the call site does not show:
+`@alexkroman1/aai/step`). Not a style preference: `fetch` is the wrong call from
+a step, for a reason the call site does not show:
 
 ```ts no-check
 import { multipartBody, stepFetch, StepTransportError } from "@alexkroman1/aai/step";
@@ -629,14 +630,14 @@ connection, sharing one flow-control window: fine for small JSON, pathological
 for `mapConcurrent` over large bodies (8 concurrent 17.66 MB uploads: `fetch`
 landed 14 of 16 at p50 8094ms, HTTP/1.1 16 of 16 at p50 3037ms).
 
-**The two it lost matter more than the latency.** On
-HTTP/2 a capacity limit arrives as a _stream reset_ — `NGHTTP2_ENHANCE_YOUR_CALM`
-— and a stream error carries no HTTP status, so `isTransientStatus` and
-`retryAfter` cannot see it. Every sibling in the batch then retries in lockstep
-into the same reset, exhausts the step's attempts, and fails the run with
-`TypeError: fetch failed`, whose real cause is two `cause` hops down where
-nothing prints it. Over HTTP/1.1 the identical limit arrives as `503` with
-`retry-after`, which your retry policy already reads.
+**The two it lost matter more than the latency.** On HTTP/2 a capacity limit
+arrives as a _stream reset_ — `NGHTTP2_ENHANCE_YOUR_CALM` — and a stream error
+carries no HTTP status, so `isTransientStatus` and `retryAfter` cannot see it.
+Every sibling in the batch then retries in lockstep into the same reset,
+exhausts the step's attempts, and fails the run with `TypeError: fetch failed`,
+whose real cause is two `cause` hops down where nothing prints it. Over HTTP/1.1
+the identical limit arrives as `503` with `retry-after`, which your retry policy
+already reads.
 
 Three rules come with it:
 
@@ -651,9 +652,9 @@ Three rules come with it:
   `cause` chain, and `err.codes` is what to branch on (`ECONNRESET`,
   `ETIMEDOUT`, …).
 - **Test it with `stubStepFetch`** (`@alexkroman1/aai-runtime/testing`), not
-  `vi.stubGlobal("fetch", …)`. The global stub passes — an unpublished slot falls
-  back to it — while asserting a path production does not take, and it cannot see
-  the request body as bytes.
+  `vi.stubGlobal("fetch", …)`. The global stub passes — an unpublished slot
+  falls back to it — while asserting a path production does not take, and it
+  cannot see the request body as bytes.
 
 `stepGenerate` already goes through this, so a step that only calls a model gets
 it for free.
@@ -661,9 +662,9 @@ it for free.
 ### A step can SPEAK, and store the file it made
 
 A workflow whose answer is a FILE — a summary read aloud, a rendered image, a
-generated PDF — needs two things a first draft reaches for and misses.
-Both are on `@alexkroman1/aai/step`, and `spoken-summary-workflow` shows the
-whole round trip.
+generated PDF — needs two things a first draft reaches for and misses. Both are
+on `@alexkroman1/aai/step`, and `spoken-summary-workflow` shows the whole round
+trip.
 
 ```ts
 import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
@@ -740,7 +741,8 @@ search wrote it, and one of them had a `catch` for this exact failure — which
 never ran, because a `catch` cannot see a returned value. DuckDuckGo refuses
 often enough that the empty answer is routine, and to the model "no results" and
 "the search was blocked" are different facts: told the first, it concludes the
-pages do not exist and tries again with different words until its budget is gone.
+pages do not exist and tries again with different words until its budget is
+gone.
 
 An UNTYPED call (`await fetchJson(url)`) stays loose and needs no narrowing —
 naming a shape is what asks the compiler to make you handle the failure.
@@ -748,9 +750,9 @@ naming a shape is what asks the compiler to make you handle the failure.
 ### The page
 
 A workflow app's `client.tsx` mounts with `mountPage()` rather than
-`mountClient()` — there is no session to build, so no socket, no audio graph
-and no microphone request. Everything else is the same file, React and
-Tailwind included.
+`mountClient()` — there is no session to build, so no socket, no audio graph and
+no microphone request. Everything else is the same file, React and Tailwind
+included.
 
 ```tsx no-check
 import { createWorkflowApi, mountPage, useWorkflowRun } from "@alexkroman1/aai-ui";
@@ -784,11 +786,11 @@ export function App() {
 mountPage({ name: "Link Digest", component: App });
 ```
 
-`api.start()` resolves as soon as the RUN EXISTS, not when it finishes — that
-is the whole mechanism. The `runId` is the entire client state, so it survives
-a reload, a different device, or `curl`. Note the workflow is named by the key
-it has in `workflows` above (`"digest"`); nothing else records that string, so
-a rename there is a 400 here rather than a compile error.
+`api.start()` resolves as soon as the RUN EXISTS, not when it finishes — that is
+the whole mechanism. The `runId` is the entire client state, so it survives a
+reload, a different device, or `curl`. Note the workflow is named by the key it
+has in `workflows` above (`"digest"`); nothing else records that string, so a
+rename there is a 400 here rather than a compile error.
 
 The same routes are scriptable, which is the other half of having an API:
 

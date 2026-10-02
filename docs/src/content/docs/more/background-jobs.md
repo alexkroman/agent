@@ -52,17 +52,15 @@ with a ceiling on how many are in flight at once. A fan-out of any size stays
 one literal name: sixty segments are sixty records under `transcribeSegment`,
 which is exactly what the occurrence counter is for.
 
-So do not build a name per item. ``ctx.step(`segment-${index}`, …)`` looks
-like the careful version and is the bug.
+So do not build a name per item. ``ctx.step(`segment-${index}`, …)`` looks like
+the careful version and is the bug.
 
-:::caution[An interpolated step name breaks the replay]
-An interpolated name is computed at run time, so a replay mints a key no earlier
-attempt reached — and the step either runs a second time or the run is refused.
-Measured on a one-line body: 7 of 10 runs ran the side effect twice, all 10
-reporting `completed`. The type refuses a name that has widened to `string`,
-but a template literal is not `string` and slips through it — so `aai build`
-scans for one and warns.
-:::
+:::caution[An interpolated step name breaks the replay] An interpolated name is
+computed at run time, so a replay mints a key no earlier attempt reached — and
+the step either runs a second time or the run is refused. Measured on a one-line
+body: 7 of 10 runs ran the side effect twice, all 10 reporting `completed`. The
+type refuses a name that has widened to `string`, but a template literal is not
+`string` and slips through it — so `aai build` scans for one and warns. :::
 
 **Your fan-out callback must call `ctx.step` as its first act.**
 
@@ -87,10 +85,10 @@ await mapConcurrent(segments, 4, async (seg) => {
 });
 ```
 
-Journal keys are handed out in the order steps are **issued**. Issue
-immediately and that order is the list's — the same on every replay, whichever
-slot `mapConcurrent` happened to run the item in. Await first and it becomes
-the order things finished in, which is a different order each run.
+Journal keys are handed out in the order steps are **issued**. Issue immediately
+and that order is the list's — the same on every replay, whichever slot
+`mapConcurrent` happened to run the item in. Await first and it becomes the
+order things finished in, which is a different order each run.
 
 ### Use a DIFFERENT name for each call site
 

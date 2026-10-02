@@ -17,8 +17,8 @@ Providers have their own guide in `providers/CLAUDE.md`.
 ## `AgentDef` field groups: one module and one rule each
 
 `types.ts` is at the source-length cap, so a group sharing ONE rule is its own
-interface that `AgentDef` extends; each rule is DERIVED from the declaration,
-so a new field cannot skip it.
+interface that `AgentDef` extends; each rule is DERIVED from the declaration, so
+a new field cannot skip it.
 
 | Interface          | Module                  | The rule                                                                                                                        |
 | ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -58,9 +58,9 @@ naming the member, and autocomplete shows only what the mode has. The one
 exception is the pipeline member's `s2s?: undefined`, without which `{ s2s }`
 missing its `mode` would be absorbed by it when `agent()` resolves against the
 whole union. Prove a refusal with `AgentAccepts<X>` (`_test-utils.ts`: the
-excess-property rule over every overload), not an expect-error directive —
-those count against the escape-hatch ratchet.
-`InlineToolsMisuse` and `SyncMutationMisuse` remain: neither is a MODE rule.
+excess-property rule over every overload), not an expect-error directive — those
+count against the escape-hatch ratchet. `InlineToolsMisuse` and
+`SyncMutationMisuse` remain: neither is a MODE rule.
 
 **A message arm is defeated by a shape-competing SIBLING arm** (still true of
 the two that remain): TypeScript elaborates against the closest arm. Verify any
@@ -70,16 +70,16 @@ such message with a real `tsc` run; if nothing can print it, NAME the arms
 ## Wire-shape rules
 
 - **Tool-call args are coerced before a wire schema.** The AI SDK surfaces an
-  unparsable call's `input` as the raw string; every emitter routes args
-  through `toArgsRecord` (`_wire-helpers.ts`; non-records → `{}`) and records a
-  failed call with an error `result`.
+  unparsable call's `input` as the raw string; every emitter routes args through
+  `toArgsRecord` (`_wire-helpers.ts`; non-records → `{}`) and records a failed
+  call with an error `result`.
 - **Pre-connection client config**: the default page is identical for every
   agent and CSP bars inline scripts, so name and greeting come from
   `GET /client-config` (dev) / `GET /:slug/client-config` (platform,
   unauthenticated). Every server builds the body with `buildClientConfig`
   (`client-config.ts`); the platform PROXIES it from the guest, never from the
-  stored config, and degrades to `{ sessionUrl }`. The browser half is
-  "Client config lookup" in `packages/aai-ui/src/CLAUDE.md`.
+  stored config, and degrades to `{ sessionUrl }`. The browser half is "Client
+  config lookup" in `packages/aai-ui/src/CLAUDE.md`.
 
 ## `/testing` helpers
 
@@ -87,10 +87,10 @@ such message with a real `tsc` run; if nothing can print it, NAME the arms
 
 **A test file imports testing names from two doors:
 `@alexkroman1/aai-runtime/testing` (everything that installs nothing) and
-`@alexkroman1/aai-runtime/testing/vitest` (everything that installs or
-restores, plus the eval suites).** Both are on the runtime because `aai` may
-not import `aai-runtime` (the engine and the eval harness are runtime); the
-runtime re-exports this package's helpers instead, as the SAME declarations.
+`@alexkroman1/aai-runtime/testing/vitest` (everything that installs or restores,
+plus the eval suites).** Both are on the runtime because `aai` may not import
+`aai-runtime` (the engine and the eval harness are runtime); the runtime
+re-exports this package's helpers instead, as the SAME declarations.
 
 | File                         | Import from                               | For                                                                                          |
 | ---------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -99,8 +99,8 @@ runtime re-exports this package's helpers instead, as the SAME declarations.
 | the same file                | `@alexkroman1/aai-runtime/testing/vitest` | every `install*` of `/testing/vitest`, plus all of `/eval/vitest` (`describeEval`, …)        |
 | a harness that is not vitest | `@alexkroman1/aai-runtime/eval`           | the runner-free half of the eval harness                                                     |
 
-The names stay DECLARED (and versioned as `aai:testing`) here on `/testing`
-and `/testing/vitest`, which keep working, as does `aai-runtime/eval/vitest`;
+The names stay DECLARED (and versioned as `aai:testing`) here on `/testing` and
+`/testing/vitest`, which keep working, as does `aai-runtime/eval/vitest`;
 templates are held to the two doors by konsistent `template-testing-doors`, and
 `aai-runtime`'s `testing-doors.test.ts` holds each door to the lists it carries
 — a helper added here needs a line in `aai-runtime/src/testing-barrel.ts` (or
@@ -111,19 +111,19 @@ templates are held to the two doors by konsistent `template-testing-doors`, and
 `testing.ts` is published for an author's own project. **It may not import
 `vitest`**; anything that installs or returns a `restore` is on
 `/testing/vitest` (konsistent `published-testing-split` and
-`sdk-modules-do-not-import-the-test-runner`).
-Each helper's doc carries the detail; the rules:
+`sdk-modules-do-not-import-the-test-runner`). Each helper's doc carries the
+detail; the rules:
 
 - **`createToolContext(overrides?)`** — full `ToolContext` with inert defaults,
   recording `send` (`ctx.sent`), a real slot store, and a DISTINCT `sessionId`
   per call. Takes `ToolContextOverrides` (each field accepts `undefined`, via
-  `omitUndefined`; `testing.test-d.ts` pins its key set to `ToolContext`'s).
-  Its `generate`/`delegate` take a SCRIPT or a function; a FUNCTION is always
-  the seam itself. `ctx.model`/`ctx.desk` are always present (empty `calls`
-  when unwired).
-- **A script NAMES its shape — `{ reply }` or `{ routes }`** — everywhere one
-  is taken; a computed route is `{ reply: (call) => … }`; a bare shape reaching
-  the runtime untyped throws at bind.
+  `omitUndefined`; `testing.test-d.ts` pins its key set to `ToolContext`'s). Its
+  `generate`/`delegate` take a SCRIPT or a function; a FUNCTION is always the
+  seam itself. `ctx.model`/`ctx.desk` are always present (empty `calls` when
+  unwired).
+- **A script NAMES its shape — `{ reply }` or `{ routes }`** — everywhere one is
+  taken; a computed route is `{ reply: (call) => … }`; a bare shape reaching the
+  runtime untyped throws at bind.
 - **`deployedAgent(def, { tools, systemPrompt })`** takes
   `import.meta.glob("./tools/*.ts", { eager: true })`'s RESULT; a `readdir` +
   `import()` is refused (it loads a second copy of the SDK). Bounded to
@@ -134,9 +134,9 @@ Each helper's doc carries the detail; the rules:
   toolset's GATE. Args and ctx are told apart by SHAPE; an omitted context is a
   distinct session.
 - **`expectToolOk`** takes ANY tool's result — a dialog envelope unwrapped, a
-  plain value passed through — and INFERS: a typed result loses its failure
-  arm, `expectToolOk<T>(unknown)` is the claimed form for the name lookup.
-  Never copy an `ok<T>()` helper into a spec.
+  plain value passed through — and INFERS: a typed result loses its failure arm,
+  `expectToolOk<T>(unknown)` is the claimed form for the name lookup. Never copy
+  an `ok<T>()` helper into a spec.
 - **`stubGateway`** (global `fetch`, you install) / **`installStubGateway`**
   (global `fetch`, installed) / **`stubGatewayRoute`** (a `stepFetch` route to
   compose); never import the second under the first's name.
@@ -144,8 +144,8 @@ Each helper's doc carries the detail; the rules:
   `expectDialogRefused`/`dialogRefusalPattern` mirror them (`_dialog-refusal.ts`
   owns the sentence); `dialogResultSchema` is the envelope as zod.
 - **`parseToolInput`/`toolInputIssues`** (and `parseSchemaInput`/
-  `schemaInputIssues`) — never reach through `["~standard"].validate`, which
-  may be async.
+  `schemaInputIssues`) — never reach through `["~standard"].validate`, which may
+  be async.
 - **`stubTranscribe`** stages a refusal as an HTTP STATUS so the SDK's own
   classifier runs. `stubUploads` answers `{ restore, writes, read }`.
 - **`stubSpeech` needs no credential** — it marks its synthesizer
@@ -166,21 +166,21 @@ Each helper's doc carries the detail; the rules:
   ```
 
 - **`commandedBuiltins`/`expectPromptBuiltinsDeclared`**
-  (`testing-prompt-builtins.ts`) — a single-word builtin (`think`,
-  `calculate`) counts only where the prose NAMES it: backticks, "the X tool",
-  or the object of use/call/invoke. A custom tool of a builtin's name declares
-  it. The rule and its misses are on `SINGLE_WORD_POSITIONS`.
+  (`testing-prompt-builtins.ts`) — a single-word builtin (`think`, `calculate`)
+  counts only where the prose NAMES it: backticks, "the X tool", or the object
+  of use/call/invoke. A custom tool of a builtin's name declares it. The rule
+  and its misses are on `SINGLE_WORD_POSITIONS`.
 - **`runGuardrail(def, text, answer?)`** THROWS on a def with none or a promise
   verdict.
 - `createStubWorkflows()` is a flat override map over `rejectingWorkflows`.
 
 ## Concurrency primitives (use these, don't hand-roll)
 
-The roster and homes are the **`concurrency-primitives`** konsistent
-convention; `guard-invariants` rules 2, 3, 4, 8, 9, 19, 21, 22, 23, 31 catch
-hand-rolled copies. Each module doc carries the hazard. `p-timeout` and
-`AbortSignal.any` are in `AGENTS.md`; `invariant.ts` (state, not timing) is
-"Runtime invariants" in `packages/aai-runtime/CLAUDE.md`.
+The roster and homes are the **`concurrency-primitives`** konsistent convention;
+`guard-invariants` rules 2, 3, 4, 8, 9, 19, 21, 22, 23, 31 catch hand-rolled
+copies. Each module doc carries the hazard. `p-timeout` and `AbortSignal.any`
+are in `AGENTS.md`; `invariant.ts` (state, not timing) is "Runtime invariants"
+in `packages/aai-runtime/CLAUDE.md`.
 
 - **`createEpoch()`** (`epoch.ts`, `/internal`) — staleness guard: capture
   `current()`, check `isCurrent(gen)`, `bump()`. No hand-rolled generation
@@ -205,8 +205,8 @@ hand-rolled copies. Each module doc carries the hazard. `p-timeout` and
   bound over an ITERATOR, results in SOURCE order, every task wrapped to SETTLE
   (a sibling's rejection behind a slow head would be unhandled).
 - **`sleep(ms, { signal?, unref? })`** (`sleep.ts`, `/internal`) — the ONE wait
-  (rule 19). `unref` is opt-in; an abort resolves. Not a timeout (rule 3), not
-  a yield (`flush()`/`tick()`, rule 4).
+  (rule 19). `unref` is opt-in; an abort resolves. Not a timeout (rule 3), not a
+  yield (`flush()`/`tick()`, rule 4).
 - **`ToolFailure`/`isToolFailure()`/`toolFailure(message)`** (`utils.ts`) — the
   `{ error }` a tool returns for a failure the MODEL should see. Not
   `serializeToolFailure()` (the pre-serialized wire STRING for a THROWN tool,
@@ -244,35 +244,35 @@ stream like any reply. The same `SessionSpeech` is `ToolContext.speech` (so a
   every mode.
 - **Never throws**, and every "cannot" is an outcome on `done`: `"dropped"` for
   an ended session, blank text, a line taken back or stranded by an interrupt.
-- **Never await `done` inside the reply it queues behind** (a tool's
-  `execute`, a handler holding that reply) — it waits for itself.
+- **Never await `done` inside the reply it queues behind** (a tool's `execute`,
+  a handler holding that reply) — it waits for itself.
 - **A speaking handler can hear itself.** A `say` emits
   `agentTranscript.committed` and reply events AFTER the handler returned, so
   the emitter's re-entry guard does not catch a handler that answers its own
-  line; it must key on what triggered it. LiveKit and Pipecat do not guard
-  this either. `session-speech.ts` carries the safe pattern.
+  line; it must key on what triggered it. LiveKit and Pipecat do not guard this
+  either. `session-speech.ts` carries the safe pattern.
 - **`interruptible: false`** holds the caller's barge-in off for that line
   (`PipelineDialogKnobs.holdFloor`, the `bargeIn: "off"` threshold);
   `interrupt()`, `cancel()` and a typed turn still cut it. **`record: false`**
   tags the caption `recorded: false`, which `historyMessageOf` skips, so the
   line is in no history, live or resumed.
 - **`AgentSessionContext` has no `speech`**: a resolver or guardrail runs INSIDE
-  the reply. That is the one deliberate difference between the twins, pinned
-  in `define-agent-groups.test-d.ts`.
+  the reply. That is the one deliberate difference between the twins, pinned in
+  `define-agent-groups.test-d.ts`.
 - **A session id is not authorization.** A route must verify the webhook before
   it speaks into a call.
 
 **Write SYNCHRONOUSLY.** A hook's write is committed after the handler returns
-(an `await` first delays durability) and is not readable by the turn it
-happened in. Commit and re-entry guard: "A hook's write needs a commit, and a
-guard" in `packages/aai-runtime/src/CLAUDE.md`.
+(an `await` first delays durability) and is not readable by the turn it happened
+in. Commit and re-entry guard: "A hook's write needs a commit, and a guard" in
+`packages/aai-runtime/src/CLAUDE.md`.
 
 ## A slot OWNS its session state — and stores it
 
-There is no `ctx.state`. Each `sessionSlot()` (`session-slot.ts`, root) owns
-its key, default, reads, writes, client projection and STORAGE, so state
-survives a crash, redeploy or reconnect. **`session-slot.ts` carries each rule
-on the member it governs**:
+There is no `ctx.state`. Each `sessionSlot()` (`session-slot.ts`, root) owns its
+key, default, reads, writes, client projection and STORAGE, so state survives a
+crash, redeploy or reconnect. **`session-slot.ts` carries each rule on the
+member it governs**:
 
 - **`update` is SYNCHRONOUS over a mutable DRAFT**, stored when it returns — an
   atomic read-modify-write with no lock. Await BEFORE the mutation;
@@ -290,9 +290,10 @@ on the member it governs**:
   carrying key and default, so a session that ran no tool still renders.
   `normalizeSyncState` (`_author-conveniences.ts`) resolves it to the record
   keyed by SLOT NAME that `AgentDef.syncState` holds, so the frame is
-  `{ [slot]: view }` and the browser selects by the same name; one slot twice
-  is refused. A slot has ONE view, declared with `sessionSlot(key, create,
-{ view })`; there is no per-call `slot.projection(view)`.
+  `{ [slot]: view }` and the browser selects by the same name; one slot twice is
+  refused. A slot has ONE view, declared with
+  `sessionSlot(key, create, { view })`; there is no per-call
+  `slot.projection(view)`.
 - **`caps` bounds a TOP-LEVEL array on every store, AFTER `after`**;
   `SlotCaps<T>` admits only array keys, bad caps refused at declaration
   (`_session-slot-caps.ts`). The hook sees the untrimmed draft.
@@ -302,13 +303,13 @@ on the member it governs**:
 reported in "Session mode resolved". A per-slot `persist` flag is refused;
 `{ durable: false }` declares a VIRTUAL slot (unchecked, unfrozen, uncommitted).
 
-**`SessionStateBackend.countEvents` is `max(event_index) + 1`, not
-`count(*)`** — the log may have holes, and a count would re-use an index and
-silently drop appends. **Every backend must agree.** Backends, commit point,
-fail-open on shape drift and size cap: `aai-runtime`'s `session-state/store.ts`
-and `session-state/backends/`. **Persistence is reliable across crashes,
-best-effort across redeploys.** **No backend creates tables**: whoever owns the
-database applies `sessionStateDdl`.
+**`SessionStateBackend.countEvents` is `max(event_index) + 1`, not `count(*)`**
+— the log may have holes, and a count would re-use an index and silently drop
+appends. **Every backend must agree.** Backends, commit point, fail-open on
+shape drift and size cap: `aai-runtime`'s `session-state/store.ts` and
+`session-state/backends/`. **Persistence is reliable across crashes, best-effort
+across redeploys.** **No backend creates tables**: whoever owns the database
+applies `sessionStateDdl`.
 
 ## Dialogs, `procedure()`, and tools as files
 
@@ -317,17 +318,17 @@ module doc owns it, `packages/aai-runtime/DIALOG-CLAUDE.md` owns the knobs.
 
 - **Declarable as a plain `{ initial, states }` map** whose states carry a
   declared `instruction?: string` (a typo in untyped `meta` produced refusals
-  with no recovery text). Only `structuredClone`-able parts, since the
-  snapshot is persisted. The machine overload stays; both forms compile to the
-  same machine. Two type traps are argued in `dialog-types.ts`.
-- **An `on` key starting with `@` is a SESSION event**
-  (`"@session.timedOut"`), kept out of the author's `send` union. A state may
-  carry `timeout: { afterMs, send }` and `voice`/`interruption`/`toolChoice`/
-  `temperature`, read deepest-first, riding in `meta`. **`after` is REFUSED**
-  — the actor is stopped inside its window, so a delay never fires.
-- **`tool()`, `dialog.tool`, `slot.tool`, `slot.updateTool` all thread `R`
-  out** (`ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>`,
-  `ToolDef<P, R>`), still assignable to the registry.
+  with no recovery text). Only `structuredClone`-able parts, since the snapshot
+  is persisted. The machine overload stays; both forms compile to the same
+  machine. Two type traps are argued in `dialog-types.ts`.
+- **An `on` key starting with `@` is a SESSION event** (`"@session.timedOut"`),
+  kept out of the author's `send` union. A state may carry
+  `timeout: { afterMs, send }` and `voice`/`interruption`/`toolChoice`/
+  `temperature`, read deepest-first, riding in `meta`. **`after` is REFUSED** —
+  the actor is stopped inside its window, so a delay never fires.
+- **`tool()`, `dialog.tool`, `slot.tool`, `slot.updateTool` all thread `R` out**
+  (`ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>`, `ToolDef<P, R>`),
+  still assignable to the registry.
 - **`sendFrom` takes `Exclude<NoInfer<R>, ToolFailure>`**; `NoInfer` stops a
   `sendFrom` above `execute` inferring `unknown`. An inline-arrow `execute`
   still needs `sendFrom` declared BELOW it (else `TS18046`) — see "A `sendFrom`
@@ -371,11 +372,11 @@ stays for non-file registries (the studio's coding agent).
 
 - **`mcp-config.ts` holds types only** — nothing in `sdk/` opens a socket.
   `url`/`headers` may be RESOLVERS called once per connection with
-  `{ clientId, env, signal }`; **`toAgentConfig` strips every resolver and
-  every `headers` value** (`wireMcpServers`), so a header credential never
-  reaches a stored config. A resolved URL gets the same http(s) check and SSRF
-  screen as a literal, and every author header is stripped on a cross-origin
-  redirect (`safeFetch`'s safelist, `host/ssrf.ts`).
+  `{ clientId, env, signal }`; **`toAgentConfig` strips every resolver and every
+  `headers` value** (`wireMcpServers`), so a header credential never reaches a
+  stored config. A resolved URL gets the same http(s) check and SSRF screen as a
+  literal, and every author header is stripped on a cross-origin redirect
+  (`safeFetch`'s safelist, `host/ssrf.ts`).
 - **`stepMcp` (`step-mcp.ts`, on `/experimental`) is a published slot** like
   `stepDelegate`: the connector is `aai-runtime`'s `step-mcp.ts` over the same
   `connectMcpServers` core as `withMcpTools`. It REJECTS on an unavailable
@@ -388,14 +389,14 @@ stays for non-file registries (the studio's coding agent).
 and `ensureComposioWebhook` (a setup script's, not an agent's).
 
 - **The `user` is always the AUTHOR's id**, never a model argument, and
-  `disconnect` resolves the account among that user's own; `listApps`
-  re-filters `connected_accounts` to the user and `ACTIVE` because a filter
-  Composio ignores must not leak another user's account.
+  `disconnect` resolves the account among that user's own; `listApps` re-filters
+  `connected_accounts` to the user and `ACTIVE` because a filter Composio
+  ignores must not leak another user's account.
 - **Sessions: one promise per `(kind, user)` in a `createOwnedMap`, then the
-  store; made WITHOUT the caller's signal** (a barge-in must not kill the
-  create others wait on). A 404 whose message names the session is remade
-  ONCE, and only by the caller still owning the lost id — so concurrent callers
-  do not delete a successor. A failed create is not remembered.
+  store; made WITHOUT the caller's signal** (a barge-in must not kill the create
+  others wait on). A 404 whose message names the session is remade ONCE, and
+  only by the caller still owning the lost id — so concurrent callers do not
+  delete a successor. A failed create is not remembered.
 - **`execute`'s refusal split is the contract**: a 4xx other than 401/403/429 is
   `{ ok: false }`; those three and 5xx THROW (key, project, rate — not the
   request's fault).
@@ -403,20 +404,20 @@ and `ensureComposioWebhook` (a setup script's, not an agent's).
   echoes it WITHOUT a `cause` (the cause is the unredacted original). The base
   URL is an author literal, `https://` only, so it is not SSRF-screened; the
   session's MCP url is screened by the MCP client like any other.
-- App policy (tables, connect hints, watch limits, what an event means) stays
-  in the app. `composio.test.ts` / `composio-webhook.test.ts` pin all of it
-  with `stubFetchRoutes`.
+- App policy (tables, connect hints, watch limits, what an event means) stays in
+  the app. `composio.test.ts` / `composio-webhook.test.ts` pin all of it with
+  `stubFetchRoutes`.
 
 ## `ToolDef.messages` — what a tool SAYS
 
 `tool-messages.ts` declares, `tool-messages-select.ts` chooses (both pure);
-`aai-runtime/src/tools/messages-runner.ts` speaks. Kinds:
-`start`, `delayed`, `complete`, `failed`.
+`aai-runtime/src/tools/messages-runner.ts` speaks. Kinds: `start`, `delayed`,
+`complete`, `failed`.
 
 - **Same timing = VARIANTS (one drawn); different timings = STAGES.** Group
   before the draw.
-- **`role: "assistant"` on `complete`/`failed` means the model is NOT CALLED**
-  — spoken verbatim, step loop stops. `"system"` rides back as a hint.
+- **`role: "assistant"` on `complete`/`failed` means the model is NOT CALLED** —
+  spoken verbatim, step loop stops. `"system"` rides back as a hint.
 - **`start`/`delayed` are FILLER, never recorded** and never count as the agent
   having spoken. Barge-in and `blocking`: "A tool can SPEAK" in
   `packages/aai-runtime/src/CLAUDE.md`.
@@ -427,33 +428,32 @@ It rides on `ToolSchema` (via `agentToolsToSchemas`), so it means the same in
 ## One `speaker()`, one `roster()` (`speaker.ts`, `roster.ts`)
 
 **A subagent and a persona are one `SpeakerDef`**; where it runs decides what it
-is. `roster([...])` is ONE list: a `speaks: true` entry is handed the CALL by the
-minted `handoff` (first speaking entry answers), the rest a TASK by the minted
-`delegate` (`ctx.delegate`). `agent({ roster })` lowers it into a `"roster"`
-toolset (`roster-tools.ts`). Every entry needs a `description` (the only thing
-either router reads); a speaking entry's tools have one owner and never a minted
-name. The speaker on the line is the `aai.speaker` slot; a dialog state may PIN
-a speaking entry (`DialogStateSpec.persona`). **The gate is at EXECUTION with
-tools still advertised** (hiding them replaces the named refusal with a generic
-error). Runtime half: "A roster's speakers are wired to a SESSION here" in
-`packages/aai-runtime/src/CLAUDE.md`.
+is. `roster([...])` is ONE list: a `speaks: true` entry is handed the CALL by
+the minted `handoff` (first speaking entry answers), the rest a TASK by the
+minted `delegate` (`ctx.delegate`). `agent({ roster })` lowers it into a
+`"roster"` toolset (`roster-tools.ts`). Every entry needs a `description` (the
+only thing either router reads); a speaking entry's tools have one owner and
+never a minted name. The speaker on the line is the `aai.speaker` slot; a dialog
+state may PIN a speaking entry (`DialogStateSpec.persona`). **The gate is at
+EXECUTION with tools still advertised** (hiding them replaces the named refusal
+with a generic error). Runtime half: "A roster's speakers are wired to a SESSION
+here" in `packages/aai-runtime/src/CLAUDE.md`.
 
 ## Every tool source is a `Toolset` (`toolset.ts`)
 
-Files, builtins, MCP, a roster, a subagent's map: each is a `Toolset` —
-`list()` (entries: def + executor + deadline), `gate(name, ctx)`,
+Files, builtins, MCP, a roster, a subagent's map: each is a `Toolset` — `list()`
+(entries: def + executor + deadline), `gate(name, ctx)`,
 `execute(name, args, ctx)` — and `agentToolsToSchemas`/`executeToolCall` read
 nothing else. **Composition is first-wins** (`composeToolsets`): files, then
 `AgentDef.toolsets` (resolved, never authored — `agent()`'s roster set,
 `withMcpTools`' MCP set), then builtins. **`toolEntry` is the only place a def's
 identity is read** (the `clientTool` brand → `executor: "client"`). A
 `dialog.tool` refuses in its OWN `execute`, with no toolset layer, so the check
-travels with the def (specs, subagents). **A refusal is a
-`ToolRefusal`** — a `ToolFailure` plus `reason` (`unknown_tool`,
-`invalid_arguments`, `cancelled`, `persona`, `dialog`, `roster`); `reason` is NOT
-on `ToolFailure` itself, so an author's `{ error }` literal still narrows.
-`toolOf` is the lookup (the author's def); `runTool(agent, name)` is the CALL
-(gated).
+travels with the def (specs, subagents). **A refusal is a `ToolRefusal`** — a
+`ToolFailure` plus `reason` (`unknown_tool`, `invalid_arguments`, `cancelled`,
+`persona`, `dialog`, `roster`); `reason` is NOT on `ToolFailure` itself, so an
+author's `{ error }` literal still narrows. `toolOf` is the lookup (the author's
+def); `runTool(agent, name)` is the CALL (gated).
 
 ## Speech boundary and voice presets
 
@@ -462,7 +462,8 @@ is an ANSWER, never a guess), outbound `spokenMoney`/`spokenDate`/`spokenTime`/
 `mintCode`, and one-time codes (`one-time-code.ts`: `mintDigitCode`/`hashCode`/
 `codeMatches`, Web Crypto only, the compare shared with `standard-webhook.ts`
 via `_timing-safe-equal.ts`).
-[`AUTHORING-HELPERS-CLAUDE.md`](../../AUTHORING-HELPERS-CLAUDE.md) owns all of it.
+[`AUTHORING-HELPERS-CLAUDE.md`](../../AUTHORING-HELPERS-CLAUDE.md) owns all of
+it.
 
 **`agent({ voicePresets: [...] })`** (`voice-presets.ts`) — `echoVerification`,
 `speechNormalization`, `natoAlphabet`, composed after `## TOOLS` and before the
@@ -509,9 +510,9 @@ use; `GET /client-config` reports it as `page: "static"`. Author-facing half:
 ### A callback URL comes from `publicWebhookUrl`
 
 `ctx.workflows.publicWebhookUrl(token)` is what a tool hands an external
-service; the token is the one the body passed `ctx.waitFor`. A body or step
-uses `stepWebhookUrl(token)` (`step-webhook.ts`, `/step`) — a `Symbol.for` slot
-a host fills. One claim per run; properties in
+service; the token is the one the body passed `ctx.waitFor`. A body or step uses
+`stepWebhookUrl(token)` (`step-webhook.ts`, `/step`) — a `Symbol.for` slot a
+host fills. One claim per run; properties in
 `packages/aai-runtime/src/workflow/CLAUDE.md`.
 
 `start(def, input, { key, notify })` makes the starting session take an
@@ -526,8 +527,8 @@ pipeline only).
   grew a table. Dedupes against a run in ANY status until it expires.
 - **`findByKey`/`cancelAll` are `find`/`cancel` composed**
   (`workflow/client-keyed.ts`) — the key index is `(workflow, key)` in all three
-  backends, the platform's table included, so a cross-workflow read is N
-  lookups merged once, not a new query.
+  backends, the platform's table included, so a cross-workflow read is N lookups
+  merged once, not a new query.
 - **`ctx.poll` is `ctx.step` + `ctx.sleep` under one name**
   (`workflow-poll.ts`), so it journals exactly the hand-written loop's keys; its
   budget is a COUNT (`floor(maxMs / everyMs)` sleeps), replay-safe without a
@@ -556,8 +557,8 @@ pipeline only).
   and hands it to the engine, where a FUNCTION `onFailure` still runs in its
   body `catch`.
 - **`stepTextOwner(text, { phone?, links? })`** (`step-text-owner.ts`, `/step`)
-  is `text_me`'s rule from a step: `allowedSmsRecipient` over the step env,
-  a non-retryable refusal as `{ sent: false, why }`, a transient one thrown
+  is `text_me`'s rule from a step: `allowedSmsRecipient` over the step env, a
+  non-retryable refusal as `{ sent: false, why }`, a transient one thrown
   through `throwStepError`, a missing key FATAL. The env names are
   `_owner-text-env.ts`, which `host/text-me.ts` imports too.
 - **`isCallOver(status)`/`CALL_OVER_STATUSES`** (`step-place-call.ts`) are the

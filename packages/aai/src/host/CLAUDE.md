@@ -28,9 +28,9 @@ dropped except `accept`, `accept-language`, `content-type` and `user-agent`**
 credential can ride in a header no list could name (`x-goog-api-key` on a
 `fetchJson` call, `x-api-key` on an MCP server), so the rule is an ALLOW-list —
 never add a per-caller credential-name list back. Both `safeFetch` and the
-contained builtin fetch (`redirectSafeFetch`: the same redirect loop, no
-address screen) walk the hops themselves with `redirect: "manual"`; undici's
-own follow strips only the fetch spec's three names. Pinned in `ssrf.test.ts`.
+contained builtin fetch (`redirectSafeFetch`: the same redirect loop, no address
+screen) walk the hops themselves with `redirect: "manual"`; undici's own follow
+strips only the fetch spec's three names. Pinned in `ssrf.test.ts`.
 
 ## A builtin's HTTP read is bounded at the READ, in BYTES
 
@@ -61,8 +61,8 @@ pins both halves.
 - `writeUploadFromFile` owns the composition so the reused-read-buffer aliasing
   trap has one home: **keep the `.slice()`** (the round-trip spec fails without
   it).
-- `readUploadToFile` advances by bytes actually READ, never the window size,
-  so a streamed upload leaves no hole.
+- `readUploadToFile` advances by bytes actually READ, never the window size, so
+  a streamed upload leaves no hole.
 
 ## `/coding-tools` (`coding-tools-barrel.ts`)
 

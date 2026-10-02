@@ -36,9 +36,9 @@ event stream — and makes four claims:
   and the second one speaks.
 - **A turn is a `SessionEvent` stream the eval readers take unchanged**
   (`toolCallsInEvents`, `saidIn`, one terminator), asserted against a script.
-- An argument the schema rejects reaches the model as a REPAIRABLE result
-  rather than killing the turn (the studio's model regularly emits a whole
-  source file inside a JSON string).
+- An argument the schema rejects reaches the model as a REPAIRABLE result rather
+  than killing the turn (the studio's model regularly emits a whole source file
+  inside a JSON string).
 - The tool the model chose runs through the real executor, and its result is
   what the next step reads.
 
@@ -134,9 +134,9 @@ the one class of assertion a model cannot satisfy with prose.**
 
 ### Live and scripted cases
 
-**The scripted cases are REFUSALS**: a competent model does not write
-unparsable TypeScript, address a path outside its workspace, or ask for a
-template that does not exist, so something has to call the refused thing
+**The scripted cases are REFUSALS**: a competent model does not write unparsable
+TypeScript, address a path outside its workspace, or ask for a template that
+does not exist, so something has to call the refused thing
 (`EvalCaseOptions.scripted`). They grade the guest's ANSWER — whether the tool's
 sentence is one a model can act on (the syntax rejection says nothing was saved,
 not to run `test_agent` first, and to stop over-escaping; an unknown template
@@ -157,8 +157,8 @@ Adding a case:
 - **`test_agent` dominates the stub-mode wall clock** (two real in-guest
   rolldown passes, two bundle loads, a vitest run, a trial) — a case calling it
   twice doubles the tier.
-- **Live wall clock varies ±40% per case run to run.** Cases are pass/fail, so
-  a case that starts flipping wants `AAI_EVAL_REPEAT` and a look at the spread,
+- **Live wall clock varies ±40% per case run to run.** Cases are pass/fail, so a
+  case that starts flipping wants `AAI_EVAL_REPEAT` and a look at the spread,
   not a nudged assertion.
 
 ### `AAI_EVAL_STUDIO_MODEL`, and the literal it overrides
@@ -166,8 +166,8 @@ Adding a case:
 A live case runs on a model literal in `_eval-harness.ts`, because the shipped
 default is `studioLlmModelId()` in `aai-studio-server`, which this package may
 not import. **That literal drifts when the studio changes model**; the announce
-line prints it on every run. The override is declared in `check:eval`'s `env`
-in `turbo.json` — strict env mode strips an undeclared variable silently.
+line prints it on every run. The override is declared in `check:eval`'s `env` in
+`turbo.json` — strict env mode strips an undeclared variable silently.
 
 `check:eval` here is outside the merge path: `scripts/check.mjs` and `check.yml`
 run `check:eval` filtered to `aai-templates`. `pnpm test:eval`

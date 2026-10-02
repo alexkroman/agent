@@ -8,9 +8,9 @@ read_when: >-
 
 # aai-runtime `tools/`
 
-Package-wide rules are in [`../../CLAUDE.md`](../../CLAUDE.md); the flat
-`src/` modules' in [`../CLAUDE.md`](../CLAUDE.md). Outside this directory,
-import its `index.ts` only (`guard-invariants` rule 37).
+Package-wide rules are in [`../../CLAUDE.md`](../../CLAUDE.md); the flat `src/`
+modules' in [`../CLAUDE.md`](../CLAUDE.md). Outside this directory, import its
+`index.ts` only (`guard-invariants` rule 37).
 
 ## Tools
 
@@ -27,11 +27,13 @@ them first-wins, the same table the schemas were drawn from.
   check (`"cancelled"`), then `toolset.gate` — a refusal is the result, the body
   never runs — then `toolset.execute` under the entry's deadline.
 - **No gate lives in a wrapped `execute`** except `dialog.tool`'s own re-check
-  (for a spec calling it directly); a roster entry's tools are the author's defs.
+  (for a spec calling it directly); a roster entry's tools are the author's
+  defs.
 - **The executor is the ENTRY's** (`ToolsetEntry.executor`), set by `toolEntry`,
   the one function that reads the `clientTool` brand.
-- MCP attaches an `"mcp"` toolset after the agent's (`withMcpTools`), so a remote
-  tool can never shadow an authored one; a subagent's map is a `"subagent"` set.
+- MCP attaches an `"mcp"` toolset after the agent's (`withMcpTools`), so a
+  remote tool can never shadow an authored one; a subagent's map is a
+  `"subagent"` set.
 
 ### ONE call core runs every transport's tools
 
@@ -51,9 +53,9 @@ re-implement a step in a caller.
 
 ### Tool discovery off the platform
 
-`withToolsDir(def, dir)` (`tools-dir.ts`) turns a DIRECTORY into a tool
-registry for a plain Node process (no bundler to glob). It is here because it
-needs `node:fs` and dynamic `import()`, and the SDK must stay browser-loadable.
+`withToolsDir(def, dir)` (`tools-dir.ts`) turns a DIRECTORY into a tool registry
+for a plain Node process (no bundler to glob). It is here because it needs
+`node:fs` and dynamic `import()`, and the SDK must stay browser-loadable.
 
 - **It adds a source, never a second set of rules** — naming, spec skip,
   nested-file error, default-export checks and collisions stay in
@@ -68,16 +70,17 @@ needs `node:fs` and dynamic `import()`, and the SDK must stay browser-loadable.
 
 - **Build it with `toolResultMessage()` (`result-message.ts`), never a
   literal.** It caps the result, which keeps live and resumed histories
-  byte-identical; every producer (`to-vercel-tools.ts`, `../text-agent/agent.ts`,
-  `../session/tool-steps.ts`, `../session/event-history.ts`) goes through it.
+  byte-identical; every producer (`to-vercel-tools.ts`,
+  `../text-agent/agent.ts`, `../session/tool-steps.ts`,
+  `../session/event-history.ts`) goes through it.
 - **Read the arm by ROLE, never by the presence of a field** — a completion
   whose `tool.called` fell off the event log has no name.
 
 The two SILENT traps (resume anchors index the client-visible list;
 `toModelMessage` maps non-`user` roles to `assistant`, hence `isLlmSeedable`)
-are in [`../../TOOL-OUTCOMES-CLAUDE.md`](../../TOOL-OUTCOMES-CLAUDE.md). Author-facing
-account: `packages/aai/src/sdk/CLAUDE.md`, "`ctx.generate`, `ctx.messages`,
-`ctx.delegate`".
+are in [`../../TOOL-OUTCOMES-CLAUDE.md`](../../TOOL-OUTCOMES-CLAUDE.md).
+Author-facing account: `packages/aai/src/sdk/CLAUDE.md`, "`ctx.generate`,
+`ctx.messages`, `ctx.delegate`".
 
 ### A tool's throw is CLASSIFIED, and only the author can call one FATAL
 
@@ -101,14 +104,14 @@ bug; `ToolDef.onError` says which kind. `error-policy.ts` decides
 
 `clientTool()` (SDK) is an ordinary `ToolDef` carrying a brand (its
 `timeoutMs`), which `toolEntry` turns into a `"client"` entry with that
-deadline. The self-hosted dispatcher in `../runtime/tools.ts` hands each call its
-wait on `client-tool-broker.ts`, keyed by (session, `toolCallId`), as
+deadline. The self-hosted dispatcher in `../runtime/tools.ts` hands each call
+its wait on `client-tool-broker.ts`, keyed by (session, `toolCallId`), as
 `clientCall`; `executeToolCall` binds it onto the `ToolContext` only for a
-`"client"` entry, after the gate, and the tool's own `execute` calls it. The session
-emits `tool.called` / `tool.completed` as for any tool; the page's `tool_result`
-reaches the broker through `ServerSessionOptions.clientTools`, which
-`../session/core.ts` consults only when there is no relay (`onToolResult` owns
-every `tool_result` in host mode).
+`"client"` entry, after the gate, and the tool's own `execute` calls it. The
+session emits `tool.called` / `tool.completed` as for any tool; the page's
+`tool_result` reaches the broker through `ServerSessionOptions.clientTools`,
+which `../session/core.ts` consults only when there is no relay (`onToolResult`
+owns every `tool_result` in host mode).
 
 - **The wait rides the CONTEXT, never a swapped `execute`**: a `dialog.tool`
   around a `clientTool` calls the inner `execute` itself (the gate and
@@ -118,23 +121,23 @@ every `tool_result` in host mode).
 - **An answer may beat its wait** (neither transport orders `tool.called` after
   the executor starts), so the broker HOLDS an unmatched answer, bounded
   runtime-wide (`MAX_EARLY_ANSWERS`, oldest evicted), never swept per session.
-- **The brand and the per-call wait are registered boundary keys** (`clientTool`,
-  `clientToolCall` in the SDK's `_boundary.ts`): the bundle and this runtime
-  hold two SDK copies ("The bundle/runtime boundary" in
+- **The brand and the per-call wait are registered boundary keys**
+  (`clientTool`, `clientToolCall` in the SDK's `_boundary.ts`): the bundle and
+  this runtime hold two SDK copies ("The bundle/runtime boundary" in
   `packages/aai/CLAUDE.md`). Read the brand only through `clientToolBrand`,
   whose one caller is `toolEntry`.
 
 ### A tool can SPEAK, and a filler line may not open the barge-in gate
 
 `ToolDef.messages` declares `start`, `delayed`, `complete` and `failed` lines;
-`messages-runner.ts` speaks them from inside `execute`
-(`to-vercel-tools.ts`); the design is on `aai/sdk/tool-messages.ts`.
+`messages-runner.ts` speaks them from inside `execute` (`to-vercel-tools.ts`);
+the design is on `aai/sdk/tool-messages.ts`.
 
 - **A `role: "assistant"` completion means the model is NOT called again.** The
   line latches `ToolSpeechController.verbatim()`, which `startLlmStream` folds
-  into `stopWhen`. The sentence is in no step's response, so
-  `consumeLlmStream` APPENDS it to the turn's messages; the latch is per TURN
-  (`beginTurn()` clears it).
+  into `stopWhen`. The sentence is in no step's response, so `consumeLlmStream`
+  APPENDS it to the turn's messages; the latch is per TURN (`beginTurn()` clears
+  it).
 - **Filler goes out `record: false`, and nothing here may abort anything.**
   Every line goes through `ToolSpeechChannel.speak` → `speakInReply`
   (`../transports/pipeline/reply/lines.ts`), the dead-air cover's placement, so

@@ -34,9 +34,9 @@ export ASSEMBLYAI_API_KEY=sk-…
 npm start
 ```
 
-Open <http://127.0.0.1:3000> and talk to it. One key is enough: with no
-provider fields set, the agent runs the default all-AssemblyAI pipeline (STT +
-LLM gateway + TTS on the same key).
+Open <http://127.0.0.1:3000> and talk to it. One key is enough: with no provider
+fields set, the agent runs the default all-AssemblyAI pipeline (STT + LLM
+gateway + TTS on the same key).
 
 Ask it to roll a twenty-sided die. The number comes back from
 [`tools/roll_die.ts`](./tools/roll_die.ts) running in this process — a die
@@ -89,9 +89,9 @@ await server.listen(3000);
 ```
 
 That line names a directory, never a tool, so it is the last time you touch it.
-A file whose name no provider would accept, one that forgets its default
-export, or one hiding a directory deeper is an error at startup — never an
-agent that silently cannot do the thing.
+A file whose name no provider would accept, one that forgets its default export,
+or one hiding a directory deeper is an error at startup — never an agent that
+silently cannot do the thing.
 
 Tools run **in this process**, on your credentials: `ctx.env` is the `env` you
 assembled, and `ctx.db` is whatever `Db` you passed. That is the sharpest
@@ -113,16 +113,16 @@ That is the whole setup. The tables come with whoever owns the database, and a
 self-hosted deployment has no migration step to hang them off, so
 `createAgentServer()` creates its own — the two session-state tables and the
 five journal tables — before it binds the port. It is best-effort by design: a
-role that may not `CREATE`, because a real migration already made them, gets
-one warning and keeps serving. `ensureSessionStateSchema` and
+role that may not `CREATE`, because a real migration already made them, gets one
+warning and keeps serving. `ensureSessionStateSchema` and
 `ensureWorkflowJournalSchema` stay exported from `@alexkroman1/aai-runtime` for
 exactly that operator.
 
 One more variable, and only if a durable workflow hands a URL to someone else:
 `PUBLIC_URL` is where a third party reaches this deployment, which behind a
-proxy is not the socket it binds. `ctx.workflows.publicWebhookUrl()` is its
-only reader and throws without it, rather than minting a `127.0.0.1` callback
-that fails days later on somebody else's server.
+proxy is not the socket it binds. `ctx.workflows.publicWebhookUrl()` is its only
+reader and throws without it, rather than minting a `127.0.0.1` callback that
+fails days later on somebody else's server.
 
 ## Try another template
 
@@ -163,5 +163,5 @@ deliberately (`listen(port, "0.0.0.0")`) behind your own proxy/auth.
 ## Custom UI
 
 Point `clientDir` at any static bundle that speaks the session protocol — or
-drop `clientDir` and connect programmatically to `ws://host:port/websocket`
-(see `@alexkroman1/aai/protocol` for the wire format).
+drop `clientDir` and connect programmatically to `ws://host:port/websocket` (see
+`@alexkroman1/aai/protocol` for the wire format).

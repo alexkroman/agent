@@ -12,10 +12,10 @@ Reference for ONE wire, whose two ends live in two packages:
 `packages/aai-server/src/platform/socket-handler.ts` (the platform answers).
 
 A SIBLING of this package's guide rather than a section in it, for the reason
-`AGENTS.md` gives for `MODAL-CLAUDE.md` and `SCHEMA-CLAUDE.md`: it is
-REFERENCE, and no single package owns both ends of this. Read it when you are
-changing either end, the frame schema, or the capacity assumptions. Nothing in
-it is needed to work elsewhere.
+`AGENTS.md` gives for `MODAL-CLAUDE.md` and `SCHEMA-CLAUDE.md`: it is REFERENCE,
+and no single package owns both ends of this. Read it when you are changing
+either end, the frame schema, or the capacity assumptions. Nothing in it is
+needed to work elsewhere.
 
 ## What changed
 
@@ -65,8 +65,8 @@ addition into an outage on every guest.
 
 `platformPost` prefers the socket and uses `rpcFetch` whenever there is not an
 open one — the first call of a process (the connect is still in flight), a
-platform that predates the route, a socket that is reconnecting. Nothing here can
-fail a call that HTTP would have served.
+platform that predates the route, a socket that is reconnecting. Nothing here
+can fail a call that HTTP would have served.
 
 Which call may be retried over HTTP is a CORRECTNESS question, not a tidiness
 one, and the answer is the frame write:
@@ -108,8 +108,8 @@ cannot hold an input forever.
 The guest's is deliberately the one that binds: its refusal costs a caller
 nothing, where a 503 is a real answer that has to be retried. The platform's is
 the backstop for a peer that is not ours, and it exists at all because each
-dispatch may reserve one of `ADMIN_POOL_MAX` connections — an unbounded socket is
-one tenant queueing the pool every other tenant reads through.
+dispatch may reserve one of `ADMIN_POOL_MAX` connections — an unbounded socket
+is one tenant queueing the pool every other tenant reads through.
 
 ## The tenant boundary
 
@@ -120,12 +120,12 @@ one tenant queueing the pool every other tenant reads through.
   agent, so it cannot reach another tenant's rows.
 - `route` is checked against `PLATFORM_ROUTES` before a `Request` is built. This
   is a BOUNDARY rather than a validation: the value is concatenated into a URL,
-  so an unchecked `/../elsewhere/session-state` normalizes away from its own slug
-  and paths outside `/:slug` are not gated by the guest bearer at all.
-- The per-route bearer check still runs underneath, and is not redundant: a bearer
-  is verified against the agent's CURRENT version, so a redeploy during the life
-  of a socket invalidates it — the next frame answers 401 and the guest reconnects
-  with the token its new sandbox holds.
+  so an unchecked `/../elsewhere/session-state` normalizes away from its own
+  slug and paths outside `/:slug` are not gated by the guest bearer at all.
+- The per-route bearer check still runs underneath, and is not redundant: a
+  bearer is verified against the agent's CURRENT version, so a redeploy during
+  the life of a socket invalidates it — the next frame answers 401 and the guest
+  reconnects with the token its new sandbox holds.
 
 ## What it costs the web service
 
@@ -142,15 +142,16 @@ availability.
 
 ## What is deliberately NOT on the socket
 
-- **Upload BYTES.** `blobFetch` and its pool are untouched: multi-megabyte bodies
-  do not belong in JSON text frames, and that pool's shape is the one that was
-  measured (`_egress-fetch.ts`).
-- **The live stream read.** A GET whose response is meant to stay open; it has no
-  deadline and shares only `platformBearer`.
-- **`perMessageDeflate`.** Off, matching every other socket this repo opens. These
-  bodies WOULD compress, unlike the PCM `_ws.ts` measured, but the zlib context
-  pair is paid whether or not a frame benefits and nothing has measured the trade
-  here. One line and one measurement away; inheriting it is not the same thing.
+- **Upload BYTES.** `blobFetch` and its pool are untouched: multi-megabyte
+  bodies do not belong in JSON text frames, and that pool's shape is the one
+  that was measured (`_egress-fetch.ts`).
+- **The live stream read.** A GET whose response is meant to stay open; it has
+  no deadline and shares only `platformBearer`.
+- **`perMessageDeflate`.** Off, matching every other socket this repo opens.
+  These bodies WOULD compress, unlike the PCM `_ws.ts` measured, but the zlib
+  context pair is paid whether or not a frame benefits and nothing has measured
+  the trade here. One line and one measurement away; inheriting it is not the
+  same thing.
 
 ## Where the tests are, and what each can see
 
@@ -170,14 +171,14 @@ other at all — every unit suite either side passes against a fake peer.
 RPC path either way, and an unmeasured change to the transport under every
 durable run is not a change to make on a plausible argument."_ That is still
 true of what the SOCKET saves. What makes it shippable anyway is the fallback —
-it can only ever be a latency change, because a call it cannot serve is served by
-the same HTTP route as before.
+it can only ever be a latency change, because a call it cannot serve is served
+by the same HTTP route as before.
 
-What IS measured is the hop underneath it, and by somebody else: `modal_deploy.py`
-records **~24 ms an operation out of region against ~2 ms in it** for exactly
-these calls, which is what put guest sandboxes on the web service's own region
-list. That is the distance a socket does not change. What it removes is the
-per-call connection setup on top of it, and the two numbers still worth taking
-are that saving — against the ~840 ms journal round trip decomposed in
-`packages/aai-runtime/CLAUDE.md` — and the input pressure above under real guest
-counts.
+What IS measured is the hop underneath it, and by somebody else:
+`modal_deploy.py` records **~24 ms an operation out of region against ~2 ms in
+it** for exactly these calls, which is what put guest sandboxes on the web
+service's own region list. That is the distance a socket does not change. What
+it removes is the per-call connection setup on top of it, and the two numbers
+still worth taking are that saving — against the ~840 ms journal round trip
+decomposed in `packages/aai-runtime/CLAUDE.md` — and the input pressure above
+under real guest counts.

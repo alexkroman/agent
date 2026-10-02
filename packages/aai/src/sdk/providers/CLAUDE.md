@@ -18,10 +18,11 @@ dial them, the resolvers and `_llm-registry.ts` live in `aai-runtime`'s
 
 ## One registration per vendor, split along the package boundary
 
-**A vendor is ONE `defineProvider({ kind, stage, envVar, label, factory,
-subpath })` record here and ONE opener there**, keyed by `(stage, kind)`
-(`define-provider.ts` has the design). The SDK may not import an opener, so the
-two halves cannot be one call; everything that is data derives from the record:
+**A vendor is ONE
+`defineProvider({ kind, stage, envVar, label, factory, subpath })` record here
+and ONE opener there**, keyed by `(stage, kind)` (`define-provider.ts` has the
+design). The SDK may not import an opener, so the two halves cannot be one call;
+everything that is data derives from the record:
 
 - **The factory stamps it** — `describeProvider(DEFINITION, options)`, so a
   factory cannot name a kind of its own; the `*_KIND` / `*_API_KEY_ENV`
@@ -32,37 +33,38 @@ two halves cannot be one call; everything that is data derives from the record:
 - **`aai-runtime`'s `providers/registry.ts` is the join**: each opener table is
   `{ [K in SttKind]: … }` over the catalog's kinds (a missing or extra opener
   fails `tsc`) and takes `envVar` from the definition; `registry.test.ts` holds
-  every registry equal to the catalog at run time. `_llm-registry.ts` holds
-  only clients and base URLs.
+  every registry equal to the catalog at run time. `_llm-registry.ts` holds only
+  clients and base URLs.
 - **`requiredProviderEnvVars` and the host-credential allowlist read those
   registries**, so neither restates a key.
 - **The docs site's provider table is GENERATED** from `PROVIDER_CATALOG` by
-  `pnpm sync:provider-table`; `check:provider-table` fails when it is stale.
-  One row per key variable; credential-free and `/experimental` providers are
-  left out.
+  `pnpm sync:provider-table`; `check:provider-table` fails when it is stale. One
+  row per key variable; credential-free and `/experimental` providers are left
+  out.
 
 ## `fallback([...])` — failover as a descriptor
 
 `fallback.ts` (on `/stt`, `/llm` and `/tts`, owned by `aai:stt`) is
-`{ kind: "fallback", options: { providers } }`, flattened, at least two
-members, the primary's `model` copied up for an LLM's readers. **The policy is
-on `fallback`'s doc and nowhere else**: STT/TTS switch on an open failure or an
+`{ kind: "fallback", options: { providers } }`, flattened, at least two members,
+the primary's `model` copied up for an LLM's readers. **The policy is on
+`fallback`'s doc and nowhere else**: STT/TTS switch on an open failure or an
 error before the first output (a transcript / audio); the LLM switches per
 REQUEST on a throw or a stream error before the first content part; never on an
 abort or after output. The host half is `aai-runtime`'s `providers/fallback.ts`
 and `_fallback-llm.ts`; each switch is a `provider.failedOver` session event
-(`protocol-events-accounting.ts`), bound per session in `aai-runtime/src/runtime/transport.ts`
-because resolution is per runtime. **Every member's key is required** — the
-preflight demands them all, and `resolveLlm` resolves every member eagerly.
-`agentConfigWarnings` and the settings log read members one by one.
+(`protocol-events-accounting.ts`), bound per session in
+`aai-runtime/src/runtime/transport.ts` because resolution is per runtime.
+**Every member's key is required** — the preflight demands them all, and
+`resolveLlm` resolves every member eagerly. `agentConfigWarnings` and the
+settings log read members one by one.
 
 ## STT
 
 `assemblyAIStt({ model: "universal-3-5-pro" })` (`ASSEMBLYAI_API_KEY`),
 `deepgramStt({ model: "nova-3" })` (`DEEPGRAM_API_KEY`),
 `elevenLabsStt({ model: "scribe_v2_realtime" })` (`ELEVENLABS_API_KEY`;
-stage-suffixed so the bare name is free for TTS), `sonioxStt({ model:
-"stt-rt-v3" })` (`SONIOX_API_KEY`).
+stage-suffixed so the bare name is free for TTS),
+`sonioxStt({ model: "stt-rt-v3" })` (`SONIOX_API_KEY`).
 
 - **Never inherit the `assemblyai` SDK's 1000 ms `connectTimeout`** — a healthy
   link blows it and the session dies on `stt_connect_failed`. The opener always
@@ -80,13 +82,13 @@ ONE factory, `llm({ provider, model, baseUrl?, apiKeyEnv?, providerOptions? })`
 (`llm/llm.ts`), whose `kind` IS the provider. `@ai-sdk/*` is imported only by
 the host resolver, never the agent bundle. **Key variables and labels are
 `catalog.ts`'s `LLM_PROVIDERS`; base URLs and clients live in `aai-runtime`'s
-`providers/_llm-registry.ts`** (`anthropic`,
-`openai`, `google`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`,
-`gateway`, `assemblyai`). An UNREGISTERED provider with a `baseUrl` resolves as
-OpenAI-compatible, keyed by `apiKeyEnv` (else `<PROVIDER>_API_KEY`). On
-OpenAI-compatible providers `providerOptions` is merged into the request BODY
-by a `fetch` wrapper (`_request-body-extras.ts`; SDK fields win), because the
-chat schema strips vendor keys.
+`providers/_llm-registry.ts`** (`anthropic`, `openai`, `google`, `mistral`,
+`xai`, `groq`, `cerebras`, `openrouter`, `gateway`, `assemblyai`). An
+UNREGISTERED provider with a `baseUrl` resolves as OpenAI-compatible, keyed by
+`apiKeyEnv` (else `<PROVIDER>_API_KEY`). On OpenAI-compatible providers
+`providerOptions` is merged into the request BODY by a `fetch` wrapper
+(`_request-body-extras.ts`; SDK fields win), because the chat schema strips
+vendor keys.
 
 **`provider: "assemblyai"`** routes through the AssemblyAI LLM Gateway
 (OpenAI-compatible) via `@ai-sdk/openai`'s `.chat()`.
@@ -110,10 +112,10 @@ trust a prose default (currently `gpt-5.6-luna`).
   rejected one surfaces as a bare streamed 500. `"none"` is required on
   `gpt-5.6`, refused by every Gemini id. `define.test.ts` pins the id and the
   preset's effort together.
-- **A candidate default needs a tau2-bench run, not a latency measurement** —
-  it is the only default measured on answer quality, and faster models failed
-  more (re-asking for mis-heard values). Do not change the default without a
-  per-task matched tau2 comparison against the current one.
+- **A candidate default needs a tau2-bench run, not a latency measurement** — it
+  is the only default measured on answer quality, and faster models failed more
+  (re-asking for mis-heard values). Do not change the default without a per-task
+  matched tau2 comparison against the current one.
 - The generated `gateway-models.ts` cannot carry the reasoning flag
   (`supported_parameters` never lists `reasoning_effort`).
 
@@ -169,21 +171,22 @@ Opener rules (`aai-runtime`'s `providers/_utils.ts`, `_socket.ts`):
   `createSessionShell`** — `cleanCloseIsFatal` is per-STAGE.
 - **`shell.emit`/`shell.on` are the ONLY path to an opener's emitter** — a
   listener throw from a raw socket handler would crash a multi-tenant host.
-- **`openGuardedWs` is the only way to open a raw provider WebSocket** —
-  connect deadline (`WS_OPEN_TIMEOUT_MS`, under the session start timeout) and
-  the pre-connect `error` guard.
+- **`openGuardedWs` is the only way to open a raw provider WebSocket** — connect
+  deadline (`WS_OPEN_TIMEOUT_MS`, under the session start timeout) and the
+  pre-connect `error` guard.
 - **All four stages are registries, S2S included**: `S2sKind` is the closed
-  union of `S2S_PROVIDERS`' kinds and `aai-runtime/src/runtime/transport.ts` switches
-  exhaustively over it; S2S credentials resolve through `resolveS2sEnvVar`
-  honouring `apiKeyEnv`, so the preflight and the session read the same key.
+  union of `S2S_PROVIDERS`' kinds and `aai-runtime/src/runtime/transport.ts`
+  switches exhaustively over it; S2S credentials resolve through
+  `resolveS2sEnvVar` honouring `apiKeyEnv`, so the preflight and the session
+  read the same key.
 
 ## Settings, not just kinds
 
 `createRuntime`'s "Session mode resolved" line prints each stage's EFFECTIVE
 settings (endpointing, Voice Focus, connect budget, model, `reasoningEffort`,
-voice), built by `aai-runtime`'s `providers/_provider-settings.ts` from the
-SAME `resolve*Settings` functions here that the openers dial with. **Never
-write a second copy of the `??` chains — a settings log that can drift from the
-wire is worse than none.** A new provider adds its resolver here and one entry
-in the stage table. The four `ASSEMBLYAI_*_KIND` constants are all
-`"assemblyai"`; the distinct names exist so `apiKeyEnv` can repoint one stage.
+voice), built by `aai-runtime`'s `providers/_provider-settings.ts` from the SAME
+`resolve*Settings` functions here that the openers dial with. **Never write a
+second copy of the `??` chains — a settings log that can drift from the wire is
+worse than none.** A new provider adds its resolver here and one entry in the
+stage table. The four `ASSEMBLYAI_*_KIND` constants are all `"assemblyai"`; the
+distinct names exist so `apiKeyEnv` can repoint one stage.

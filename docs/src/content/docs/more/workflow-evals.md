@@ -87,14 +87,13 @@ not complete, naming the workflow and the reason, rather than handing back an
 off to one. `app.settleAll()` waits for every run the case began, which a case
 that installed a fake owes before it ends.
 
-:::caution[The engine an eval runs a body on is not durable]
-No journal, no replay, no per-step retry. A green run here says the body does
-the work. It says nothing about resuming after step 27.
-:::
+:::caution[The engine an eval runs a body on is not durable] No journal, no
+replay, no per-step retry. A green run here says the body does the work. It says
+nothing about resuming after step 27. :::
 
 ## Next
 
 - [Your own UI](/agent/more/custom-ui/) — the page a workflow app serves
 - [Publish](/agent/deploy/publish/) — shipping it
-- [Evals](/agent/build/evals/) — the same questions asked of a voice session, and
-  why one run is not a verdict
+- [Evals](/agent/build/evals/) — the same questions asked of a voice session,
+  and why one run is not a verdict

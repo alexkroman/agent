@@ -44,10 +44,10 @@ Elsewhere:
   so the SSE push) and still takes the workspace lock (so it cannot spend a
   local write's single conflict retry).
 - **Scope** is a deterministic SHA-256 (`studioScope`; `requestScope` in
-  `studio-routes.ts`), so a caller can find its projects again. Browser
-  session → `user:<uid>` (stable across key rotation). A raw key an account
-  owns → the same `user:<uid>`, via the `key-user:<sha256(key)>` mapping in
-  `resolveBearer` (written by `PUT /studio/account/key`, backfilled by
+  `studio-routes.ts`), so a caller can find its projects again. Browser session
+  → `user:<uid>` (stable across key rotation). A raw key an account owns → the
+  same `user:<uid>`, via the `key-user:<sha256(key)>` mapping in `resolveBearer`
+  (written by `PUT /studio/account/key`, backfilled by
   `POST /studio/cli-link/approve`; why the backfill matters is in
   `packages/aai-server/CLAUDE.md`). Only a raw key no account has claimed
   (evals, programmatic callers) scopes by the key itself.
@@ -75,15 +75,15 @@ Elsewhere:
   not boot a coding agent.
 - `DELETE /studio/projects/:project` deletes the project: workspace, chat,
   deployed + preview agents (via `deleteAgentResources`, each slug gated by
-  `verifySlugOwner` so a workspace naming a foreign slug is no deletion
-  oracle), and the project's secret record.
+  `verifySlugOwner` so a workspace naming a foreign slug is no deletion oracle),
+  and the project's secret record.
 
 ## Projects and slugs
 
-- Projects are created from the chat: the first message is posted as `prompt`
-  to `POST /studio/projects` and the SERVER mints the name (a prompt-derived
-  base plus a random suffix, via `aai-server/slug-generate.ts`). An explicit
-  `name` stays for programmatic callers. Each project lives at `/studio/chat/<name>`.
+- Projects are created from the chat: the first message is posted as `prompt` to
+  `POST /studio/projects` and the SERVER mints the name (a prompt-derived base
+  plus a random suffix, via `aai-server/slug-generate.ts`). An explicit `name`
+  stays for programmatic callers. Each project lives at `/studio/chat/<name>`.
 - A project's kind selects its system prompt — "A project has a KIND" in
   [`prompts/CLAUDE.md`](prompts/CLAUDE.md).
 - **Reserved slugs** (`RESERVED_SLUGS` in `schemas.ts`): `studio` and
@@ -130,13 +130,12 @@ Elsewhere:
   stream ends in an `error` frame (`withStreamErrorChunk` — never
   `void result.pipe…`), and persisted assistant messages get
   `generateMessageId`.
-- **`ensureSession` is serialized per (scope, project), and entries are
-  disposed by IDENTITY, not key.** Overlapping brokers are routine
-  (double-click, StrictMode, a racing reload); unserialized, the loser's
-  sandbox is orphaned — unreachable by the sweeper and `dispose()`, still
-  billed, its `wire()` handlers still syncing. Every cleanup runs after an
-  await, when the key may already hold a replacement (the `createOwnedMap`
-  reason).
+- **`ensureSession` is serialized per (scope, project), and entries are disposed
+  by IDENTITY, not key.** Overlapping brokers are routine (double-click,
+  StrictMode, a racing reload); unserialized, the loser's sandbox is orphaned —
+  unreachable by the sweeper and `dispose()`, still billed, its `wire()`
+  handlers still syncing. Every cleanup runs after an await, when the key may
+  already hold a replacement (the `createOwnedMap` reason).
 - End of turn the guest calls `studio/sync-workspace` (validated like a client
   PUT; source files only — never node_modules/dist/.git — under the file caps)
   and `studio/persist-chat` (→ `aai_platform.studio_chats`, served by
@@ -145,8 +144,8 @@ Elsewhere:
   handler aborts `streamText` and in-flight tools.
 - The guest holds no tenant data and no platform secrets: LLM calls dial the
   gateway on the caller's key, tools run on the guest filesystem.
-- Idle eviction at 5 min (`STUDIO_SESSION_IDLE_MS`); a dead sandbox heals on
-  the next broker call. Studio guests go down with their replica (`dispose()`):
+- Idle eviction at 5 min (`STUDIO_SESSION_IDLE_MS`); a dead sandbox heals on the
+  next broker call. Studio guests go down with their replica (`dispose()`):
   their sessions live on the host's control channel.
 
 ## One studio sandbox per project, fleet-wide
@@ -160,13 +159,13 @@ two live guests for one project would race `studio/sync-workspace` on one row.
   (`studio-session-adopt.ts`); neither → named cold spawn
   (`studioSandboxName(scope, project)`) + claim.
 - **The lease stays, although agent sandboxes dropped theirs**: the owner's
-  sweeper must know whether ANY replica used the project recently, and a
-  peer's chat traffic goes browser→guest where the owner cannot see it. The
-  Modal name adds what the lease cannot guarantee — two replicas racing the
-  cold path cannot both spawn.
-- **Adoption is HTTP, never the control socket** — a harness accepts one
-  socket (409 on a second). The guest's `POST /studio/session-init` twin is
-  gated by the per-sandbox HOST token. Ownership never moves.
+  sweeper must know whether ANY replica used the project recently, and a peer's
+  chat traffic goes browser→guest where the owner cannot see it. The Modal name
+  adds what the lease cannot guarantee — two replicas racing the cold path
+  cannot both spawn.
+- **Adoption is HTTP, never the control socket** — a harness accepts one socket
+  (409 on a second). The guest's `POST /studio/session-init` twin is gated by
+  the per-sandbox HOST token. Ownership never moves.
 - **The install is the liveness probe**: anything but a clean 2xx drops the row
   and falls through to a cold spawn.
 - **The guest pins its identity**: `initStudioSession` refuses (409) an install
@@ -174,14 +173,14 @@ two live guests for one project would race `studio/sync-workspace` on one row.
   put one tenant's workspace in another tenant's guest.
 - **Lease and local idle window are ONE number** (`STUDIO_SESSION_IDLE_MS`). The
   sweeper consults the row before evicting; guest RPC activity touches it too.
-- **Every rung refreshes the lease, reuse included** — else a peer landing on
-  an expired row cold-spawns into Modal's duplicate-name refusal and answers
-  404 for a live project. `studio-session-broker.test.ts` asserts it as expiry,
-  not as a touch count.
+- **Every rung refreshes the lease, reuse included** — else a peer landing on an
+  expired row cold-spawns into Modal's duplicate-name refusal and answers 404
+  for a live project. `studio-session-broker.test.ts` asserts it as expiry, not
+  as a touch count.
 - **A sandbox with work inside it is not idle** (`SessionEntry.inFlight`, held
   by `LiveSession.hold` for a `workspace/deploy`; `WORKSPACE_DEPLOY_TIMEOUT_MS`
-  is 330s against the 300s window). Re-read the count after the `heldByUs`
-  round trip — a Publish can begin inside it.
+  is 330s against the 300s window). Re-read the count after the `heldByUs` round
+  trip — a Publish can begin inside it.
 - The registry carries `replicaId` (`ServiceConfig.replicaId`) and degrades to
   per-replica behaviour with no platform database (dev and tests).
 
@@ -194,25 +193,26 @@ The Preview pane shows an auto-deployed PREVIEW agent; Publish is production.
   `aai deploy` path Publish uses (`studio-preview.ts`).
 - **Scheduling is durable** (`studio-preview-queue.ts`: `pgmq` in production,
   in-memory in dev): at-least-once, a claimed job hidden for a visibility
-  timeout; archived past `PREVIEW_JOB_MAX_ATTEMPTS`; pg_cron prunes the
-  archive. There is no coalescing logic: the deploy re-reads and no-ops when
+  timeout; archived past `PREVIEW_JOB_MAX_ATTEMPTS`; pg_cron prunes the archive.
+  There is no coalescing logic: the deploy re-reads and no-ops when
   `previewHash` matches, under a per-project drain lock.
-- **The no-op still clears a stale `previewError`** — undoing a bad edit
-  hashes back to the last good stamp, and the banner must not outlive the code.
+- **The no-op still clears a stale `previewError`** — undoing a bad edit hashes
+  back to the last good stamp, and the banner must not outlive the code.
 - **Force a redeploy only via `forcePreviewRedeploy`** (clear `previewHash`,
-  then schedule). The secret switch skips it when there is no `previewSlug`
-  yet, deliberately, at the call site.
+  then schedule). The secret switch skips it when there is no `previewSlug` yet,
+  deliberately, at the call site.
 - **A queue row never carries a credential**: it names `userId`, and the drain
   reads `user-key:<uid>` from Vault. A raw-key job has no `userId`, runs only on
   its enqueuing replica, and is archived if redelivered.
-- **`userId` comes from ONE builder, `previewOrigin`** (`studio-settled-edit.ts`)
-  — settled edits, the project-open wake and the broker (`ensureSession` takes
-  a `PreviewOrigin`, so the guest's own sync inherits it). Omitting it is silent
-  until a redelivery. `PreviewOrigin` is `Omit<PreviewTarget, "apiKey">`, so a
-  new target field is a compile error at every builder.
-- Success stamps `previewSlug`/`previewHash`; failure stamps `previewError`
-  (no chat turn carries auto-deploy output). `GET /studio/projects/:project`
-  returns `previewSlug`/`previewVersion`/`previewStale`/`previewError`.
+- **`userId` comes from ONE builder, `previewOrigin`**
+  (`studio-settled-edit.ts`) — settled edits, the project-open wake and the
+  broker (`ensureSession` takes a `PreviewOrigin`, so the guest's own sync
+  inherits it). Omitting it is silent until a redelivery. `PreviewOrigin` is
+  `Omit<PreviewTarget, "apiKey">`, so a new target field is a compile error at
+  every builder.
+- Success stamps `previewSlug`/`previewHash`; failure stamps `previewError` (no
+  chat turn carries auto-deploy output). `GET /studio/projects/:project` returns
+  `previewSlug`/`previewVersion`/`previewStale`/`previewError`.
 
 ### Waking a preview (`studio-preview-wake.ts`)
 
@@ -242,15 +242,15 @@ Then:
 ## Project event streams
 
 `GET /studio/projects/:project/events` streams `project` frames (the GET's
-payload) on every workspace-row change plus `chat` frames when a turn
-persists; `GET /studio/events` streams the scope's project list. Signals are
-Supabase Realtime `postgres_changes` (`platform/events.ts`); the route re-reads
-the row per push. No polling; the client keys the iframe by `previewVersion`.
+payload) on every workspace-row change plus `chat` frames when a turn persists;
+`GET /studio/events` streams the scope's project list. Signals are Supabase
+Realtime `postgres_changes` (`platform/events.ts`); the route re-reads the row
+per push. No polling; the client keys the iframe by `previewVersion`.
 
 - **Streams watching one row share reads** (`createSharedReads` in
-  `studio-sse.ts`), refcounted and dropped on last release. Two reads per
-  change is correct (`createCoalescingRunner` cannot let a pre-trigger run vouch
-  for that trigger); the count must not grow with tabs.
+  `studio-sse.ts`), refcounted and dropped on last release. Two reads per change
+  is correct (`createCoalescingRunner` cannot let a pre-trigger run vouch for
+  that trigger); the count must not grow with tabs.
 - **Subscribe before reading, and send the initial frame THROUGH `sse.push`**
   (`studio-events-routes.ts`) — read-then-subscribe loses changes during the
   Realtime join, and one serialized chain keeps frames ordered. The pre-stream
@@ -266,8 +266,8 @@ the row per push. No polling; the client keys the iframe by `previewVersion`.
 `studio-secrets.ts` + `studio-secret-routes.ts`:
 `GET/PUT/DELETE /studio/projects/:project/secret` is a PROJECT switch that
 writes both agents. Per-slug `/:slug/secret` is the platform primitive beneath
-it and the only surface for an agent in no project. Never fan out in the
-client — `aai secret put` and `aai publish` would then reach production only.
+it and the only surface for an agent in no project. Never fan out in the client
+— `aai secret put` and `aai publish` would then reach production only.
 
 - **The project holds its own record** (`studio-project-env:<scope>:<project>`
   in Vault — values stay out of the workspace doc, which streams to every tab),
@@ -277,9 +277,9 @@ client — `aai secret put` and `aai publish` would then reach production only.
   broker's `afterDeploy`, `studio-deploy-hooks.ts`).
 - **Resolve the project and its owned slugs BEFORE writing** — a 404 must not
   leave a Vault record under a name a later project could take.
-- The record is a **floor, never an override** (a name already on the slug
-  wins, so `aai secret put` is not reverted). A mutation redeploys the preview
-  (a secret reaches env only when the sandbox is built); production waits for
+- The record is a **floor, never an override** (a name already on the slug wins,
+  so `aai secret put` is not reverted). A mutation redeploys the preview (a
+  secret reaches env only when the sandbox is built); production waits for
   Publish. Project DELETE drops the record.
 
 ## Agent logs for the coding agent
@@ -293,9 +293,9 @@ client — `aai secret put` and `aai publish` would then reach production only.
 - It reuses the session's preview target (origin + key); no target, no read.
 - It calls our public `GET /:slug/logs` over HTTP (which owns lookup, peer
   fallback and ownership) rather than `readAgentLogs` in-process.
-- It returns the TAIL (drains forward, at most five pages of a 2,000-line
-  ring), reports eviction, and distinguishes never-deployed / not running /
-  running and silent.
+- It returns the TAIL (drains forward, at most five pages of a 2,000-line ring),
+  reports eviction, and distinguishes never-deployed / not running / running and
+  silent.
 
 ## Publish
 
@@ -305,15 +305,16 @@ client — `aai secret put` and `aai publish` would then reach production only.
 - **Builds and publishes run in the guest, through the aai CLI** — there is no
   host-side build backend. `test_agent` builds in-process in the harness via
   `@alexkroman1/aai-cli/worker-bundler` from the baked toolchain
-  (`aai-guest-studio/src/build.ts`); a one-shot child-process variant (#845)
-  was reverted — read that PR before trying again. Publish spawns the literal
+  (`aai-guest-studio/src/build.ts`); a one-shot child-process variant (#845) was
+  reverted — read that PR before trying again. Publish spawns the literal
   `aai deploy --server <origin> --json` in the project's sandbox
   (`workspace/deploy` RPC; live sandbox reused, else an ephemeral spawn) after
   `ensureProjectShape` completes the workspace into a real project (scaffold
   files copied from the baked toolchain; `AAI_CONFIG_DIR` and
   `.aai/project.json` written by `@alexkroman1/aai-cli/project-config`). Build,
   upload, credential preflight, ownership, reserved slugs and the key floor are
-  therefore the laptop path. End-to-end: `aai-server/workspace-build.scenario.test.ts`.
+  therefore the laptop path. End-to-end:
+  `aai-server/workspace-build.scenario.test.ts`.
 - CLI output goes to the Publish menu, never the transcript ("No studio action
   writes into the transcript" in `packages/aai-studio-client/CLAUDE.md`).
 - Missing credentials only WARN — a hard failure would deadlock a first publish
@@ -346,9 +347,10 @@ client — `aai secret put` and `aai publish` would then reach production only.
   auth middleware, and no ownership check because it returns only the shell —
   the browser reads the agent's already-public routes. Its param carries
   `SLUG_PATTERN_SOURCE`; `/studio` is already reserved.
-- **The shell is `no-store`; hashed assets are `immutable`** (`studio-static.ts`)
-  — a cached shell pins a browser to assets a rolling deploy deletes (a white
-  page). Client half: `stale-build.ts` in `packages/aai-studio-client/CLAUDE.md`.
+- **The shell is `no-store`; hashed assets are `immutable`**
+  (`studio-static.ts`) — a cached shell pins a browser to assets a rolling
+  deploy deletes (a white page). Client half: `stale-build.ts` in
+  `packages/aai-studio-client/CLAUDE.md`.
 
 ## Studio auth
 
@@ -360,24 +362,25 @@ AssemblyAI, the two bearer forms, key↔account mapping) are "Auth" in
 - Browser sessions are Supabase Auth. **Available sign-in methods are asked of
   GoTrue** (`GET /auth/v1/settings`, the client's `auth-methods.ts`), never
   listed here; an unreadable answer falls back to GitHub-only.
-- **A platform database refuses the no-auth dev tokens** (`createStudioAuthFromEnv`,
-  no `AAI_LOCAL_DEV=1` escape) — they let any caller claim any user id. See
-  "Two questions, two sentinels" in `packages/aai-server/CLAUDE.md`.
+- **A platform database refuses the no-auth dev tokens**
+  (`createStudioAuthFromEnv`, no `AAI_LOCAL_DEV=1` escape) — they let any caller
+  claim any user id. See "Two questions, two sentinels" in
+  `packages/aai-server/CLAUDE.md`.
 - **Two verifiers; which a route gets is a security decision:**
   - `verifyAccessToken` (request path): `getClaims`, verified locally against a
-    cached JWKS on asymmetric projects, a server call on HS256 — which is why its
-    short TTL cache stays. **The cache entry is capped at the token's `exp`**
-    (`getClaims` checks expiry only on a miss). Rejections cache with the flat
-    TTL; only `isAuthRetryableFetchError` throws (a 5xx). `storageKey` is
-    explicit because auth-js caches JWKS process-globally by it.
+    cached JWKS on asymmetric projects, a server call on HS256 — which is why
+    its short TTL cache stays. **The cache entry is capped at the token's
+    `exp`** (`getClaims` checks expiry only on a miss). Rejections cache with
+    the flat TTL; only `isAuthRetryableFetchError` throws (a 5xx). `storageKey`
+    is explicit because auth-js caches JWKS process-globally by it.
   - `verifyAccessTokenFresh` (`GET /auth/v1/user`, uncached): only
     `requireStudioUser` (the three account routes), which read/rotate the key
     and must see a sign-out immediately.
 - Config: `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`. Local dev (`isLocalDev`)
   falls back to `createDevAuth` (`dev.<base64url({id,email})>.dev` tokens). The
   account surface (`GET /studio/auth`, `GET /studio/account`,
-  `PUT /studio/account/key`) authenticates WITHOUT requiring a stored key — it is
-  the onboarding step that sets one.
+  `PUT /studio/account/key`) authenticates WITHOUT requiring a stored key — it
+  is the onboarding step that sets one.
 - **`aai login` links; it never signs in or creates an account.** The CLI mints
   a one-shot code, opens `<server>/?cli-link=<code>` and polls
   `POST /studio/cli-link/exchange`; the signed-in, key-onboarded browser
@@ -397,17 +400,18 @@ window the platform runs is declared in `studio-rate-limit.ts`.
   **Fail-closed**: a database error propagates. pg_cron sweeps expired rows.
   `name` namespaces each limiter (the `studio_` table name is a misnomer).
 - **Studio windows come from `createPgStudioRateLimiters`, the agent surface's
-  three from `createPgAgentRateLimiters(sql)`**, each spread whole by the
-  entry. A window the composition root forgets falls through to the in-memory
-  arm and silently enforces `MAX_CONTAINERS`× its limit (route specs inject
-  limiters, so nothing goes red). Held by `studio-rate-limit.test.ts`,
-  `rate-limit.test.ts` (reads `orchestrator.ts` for an unanswered `RateLimiter`
-  option) and `agent-rate-limits.scenario.test.ts`.
+  three from `createPgAgentRateLimiters(sql)`**, each spread whole by the entry.
+  A window the composition root forgets falls through to the in-memory arm and
+  silently enforces `MAX_CONTAINERS`× its limit (route specs inject limiters, so
+  nothing goes red). Held by `studio-rate-limit.test.ts`, `rate-limit.test.ts`
+  (reads `orchestrator.ts` for an unanswered `RateLimiter` option) and
+  `agent-rate-limits.scenario.test.ts`.
 - **Every limited route is keyed TWICE — by scope and by client IP.** A raw-key
   caller chooses its own scope; the IP key bounds it before key verification
   makes a scope cost an account.
-- With no `X-Forwarded-For` the IP key is the literal `unknown` (`client-ip.ts`):
-  one fleet-wide shared bucket, over-limiting rather than opening. Modal always
-  appends a hop; a proxy that strips it would put every caller in that bucket.
+- With no `X-Forwarded-For` the IP key is the literal `unknown`
+  (`client-ip.ts`): one fleet-wide shared bucket, over-limiting rather than
+  opening. Modal always appends a hop; a proxy that strips it would put every
+  caller in that bucket.
 - Meter anything that can spawn a sandbox or costs a third party: the session
   broker, preview wake, project create, GitHub sync (`GITHUB_SYNC_RATE_LIMIT`).

@@ -2,9 +2,9 @@
 
 ## hello-how-are-you.pcm16
 
-Required by `pipeline-reference.integration.test.ts`. A ~2-second monoaural
-16 kHz signed 16-bit little-endian PCM file of a voice saying "hello, how
-are you?" (or any similar short question the LLM can respond to).
+Required by `pipeline-reference.integration.test.ts`. A ~2-second monoaural 16
+kHz signed 16-bit little-endian PCM file of a voice saying "hello, how are you?"
+(or any similar short question the LLM can respond to).
 
 ### Generating it
 
@@ -28,9 +28,9 @@ curl -X POST https://api.cartesia.ai/tts/bytes ... \
 ### Why it's not checked in
 
 Audio fixtures are binary blobs — we keep them out of the repo. Contributors
-with API keys + local fixtures can run the integration test; CI should
-provide both as secrets and generate/restore the fixture from a secure
-artifact store before the integration job runs.
+with API keys + local fixtures can run the integration test; CI should provide
+both as secrets and generate/restore the fixture from a secure artifact store
+before the integration job runs.
 
 ### Running the test
 
@@ -44,8 +44,8 @@ VITEST_PROFILE=integration \
     -c ../../vitest.slow.config.ts
 ```
 
-The fixture and the three keys are ONE gate. A run missing any of them skips
-the test and prints exactly which ones were missing — a silent skip is
-indistinguishable from a pass, which is how this suite went so long without
-ever executing. Set `AAI_REQUIRE_REFERENCE_STACK=1` to turn that skip into a
-hard failure in a pipeline that means to enforce it.
+The fixture and the three keys are ONE gate. A run missing any of them skips the
+test and prints exactly which ones were missing — a silent skip is
+indistinguishable from a pass, which is how this suite went so long without ever
+executing. Set `AAI_REQUIRE_REFERENCE_STACK=1` to turn that skip into a hard
+failure in a pipeline that means to enforce it.

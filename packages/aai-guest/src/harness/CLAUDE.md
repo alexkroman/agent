@@ -38,8 +38,8 @@ frozen per deploy by the harness image pin and versioned by
 - **Ongoing surface**: `GET /manage/status` (session count, draining,
   `contractVersion` — diagnostic only) and `POST /manage/drain?deadlineMs=`,
   both behind the per-sandbox bearer. Nothing else — no WebSocket, no RPC, no
-  host connection. Public `/client-config` doubles as the broker's
-  name/greeting source.
+  host connection. Public `/client-config` doubles as the broker's name/greeting
+  source.
 - **Lifecycle is guest-owned; the host runs NO idle machinery.** The guest
   self-exits after `AGENT_IDLE_EXIT_MS` (5 min) idle — override with
   `AAI_GUEST_IDLE_EXIT_MS` on the SERVER, which `agentBootEnv` forwards. The
@@ -49,10 +49,10 @@ frozen per deploy by the harness image pin and versioned by
 - **"Busy" = sessions + running durable-workflow WALKS**
   (`createWorkflowActivity`, counted by `createIdleController` for idle and
   drain). A woken run has no session. **The unit is the walk, not the HTTP
-  response**: the counter takes `activity.walk(() => deliver(runId))` and settles
-  in the walk's own `finally`, because the platform aborts a delivery's `fetch`
-  at `QUEUE_DELIVERY_TIMEOUT_MS` (60s) without stopping the walk. A PARK is
-  credited nothing; a walk that never settles pins the guest until
+  response**: the counter takes `activity.walk(() => deliver(runId))` and
+  settles in the walk's own `finally`, because the platform aborts a delivery's
+  `fetch` at `QUEUE_DELIVERY_TIMEOUT_MS` (60s) without stopping the walk. A PARK
+  is credited nothing; a walk that never settles pins the guest until
   `SANDBOX_TIMEOUT_SECS` (deliberate — bound a step with its own deadline). A
   drain's deadline still wins. Details in `createWorkflowActivity`'s doc.
 - **Wake hint.** A workflow guest with a database publishes the earliest time
@@ -104,9 +104,8 @@ nothing else from the host — that is what keeps platform credentials out.
   deployed agent's own env is never merged into `process.env`. **Any future
   runtime knob read off `process.env` needs the same one-line forward.**
 - Takes effect at guest BOOT only (redeploy or idle exit), and is per REPLICA.
-- Only `AAI_DEBUG` is forwarded. Not `LOG_LEVEL=DEBUG` (a generic host name
-  that would arm tenant logging by accident), not `AAI_DEBUG_PARTIALS` (too
-  noisy).
+- Only `AAI_DEBUG` is forwarded. Not `LOG_LEVEL=DEBUG` (a generic host name that
+  would arm tenant logging by accident), not `AAI_DEBUG_PARTIALS` (too noisy).
 
 Read output from the host log or `aai logs`.
 
@@ -125,18 +124,18 @@ redeploy. Given up: rotation on respawn of the same version. Unset
 (`session-tickets.ts`): `WS /websocket` and `/inbox` need a ticket signed with
 `platformSessionSecret(AAI_GUEST_TOKEN)` — what the platform's `client-config`
 broker mints (`packages/aai-server/CLAUDE.md`, "A deployed agent's session opens
-only for a broker-minted ticket") — or with the agent env's
-`AAI_SESSION_SECRET` when the author set one. The key is derived from the bearer
-the guest already holds, so no new credential is delivered. `/phone` is not
-gated (a carrier holds no ticket; its webhook verification is the route's).
+only for a broker-minted ticket") — or with the agent env's `AAI_SESSION_SECRET`
+when the author set one. The key is derived from the bearer the guest already
+holds, so no new credential is delivered. `/phone` is not gated (a carrier holds
+no ticket; its webhook verification is the route's).
 
 ## A phone call is an ordinary session
 
-`WS /phone` (`aai-runtime/telephony/`, served by `createServerForRuntime` here and
-under `aai dev`) runs a carrier media stream (Twilio, Telnyx) as an ordinary
-session — **only for carriers the agent declares** (`agent({ telephony:
-["twilio"] })`), identically everywhere. The TwiML webhook route is "Telephony"
-in `packages/aai-server/CLAUDE.md`.
+`WS /phone` (`aai-runtime/telephony/`, served by `createServerForRuntime` here
+and under `aai dev`) runs a carrier media stream (Twilio, Telnyx) as an ordinary
+session — **only for carriers the agent declares**
+(`agent({ telephony: ["twilio"] })`), identically everywhere. The TwiML webhook
+route is "Telephony" in `packages/aai-server/CLAUDE.md`.
 
 **Nothing below the bridge knows about telephony.** `createTelephonyBridge` is a
 socket-shaped shim speaking the client protocol one side and carrier JSON the
@@ -153,6 +152,7 @@ if one seems needed, the bridge is the wrong shape.
   (`telephony/resample.ts`; `telephony/mulaw.ts` keeps G.711 sample-exact).
 - This is consistent with "the host does not resample": the bridge IS the edge.
 - **Adding a carrier is one `CarrierCodec`** in `telephony/carriers.ts`; its doc
-  lists what every codec owes (decode never throws; non-`inbound` media dropped).
+  lists what every codec owes (decode never throws; non-`inbound` media
+  dropped).
 - Known gaps, deliberate: no `mark` frames (pipeline uses its open-loop
   estimate); DTMF ignored.

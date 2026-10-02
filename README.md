@@ -4,9 +4,9 @@ Voice agent development kit for TypeScript. An agent is a directory of files —
 talk to it in your browser, put it on a phone number, and ship it with one
 command.
 
-Documentation: **<https://alexkroman.github.io/agent/>**
-· [Quickstart](https://alexkroman.github.io/agent/start/quickstart/)
-· [SDK reference](https://alexkroman.github.io/agent/reference/)
+Documentation: **<https://alexkroman.github.io/agent/>** ·
+[Quickstart](https://alexkroman.github.io/agent/start/quickstart/) ·
+[SDK reference](https://alexkroman.github.io/agent/reference/)
 
 ## Installation
 
@@ -84,8 +84,8 @@ default, each with a named field on `agent()` when you disagree:
 
 - A cough or a brief "yeah" doesn't cut the agent off mid-sentence: an
   interruption has to be half a second of sustained speech.
-- An interruption that never becomes a real turn resumes the reply from the
-  last words the caller actually heard.
+- An interruption that never becomes a real turn resumes the reply from the last
+  words the caller actually heard.
 - A slow tool chain speaks a short filler instead of leaving dead air.
 - An interrupted reply is recorded as what the caller _heard_, so the model
   doesn't think it delivered information that never arrived.
@@ -124,9 +124,9 @@ Each of these is one page in the docs:
 
 [`.github/CONTRIBUTING.md`](./.github/CONTRIBUTING.md) is the quickstart: setup,
 running tests, the local checks, changesets and running the platform locally.
-[`AGENTS.md`](./AGENTS.md) is the full guide for working on the framework itself.
-[`scaffold/CLAUDE.md`](./packages/aai-templates/scaffold/CLAUDE.md) is the full
-authoring guide for building agents, and ships inside the SDK as
+[`AGENTS.md`](./AGENTS.md) is the full guide for working on the framework
+itself. [`scaffold/CLAUDE.md`](./packages/aai-templates/scaffold/CLAUDE.md) is
+the full authoring guide for building agents, and ships inside the SDK as
 `AGENT_GUIDE.md`.
 
 ## License

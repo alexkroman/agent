@@ -17,12 +17,12 @@ queue) are in `../../CLAUDE.md`; the API pane and the public docs page are in
 ## The switcher
 
 - **Order: UI, API, Workflows, then Code, Logs, Secrets, Settings** — the
-  running agent first, then the workspace (`TABS` / `StudioTab` in
-  `top-bar.tsx` is the one union; `project-view.tsx`'s `selectedTab` the only
-  selection). UI leads and API sits beside it: one question, asked of a person
-  and of a caller. Secrets precedes Settings because Settings ends in Delete
-  project. The order is a product decision nothing else holds, so one test in
-  `top-bar.test.tsx` pins the rendered sequence.
+  running agent first, then the workspace (`TABS` / `StudioTab` in `top-bar.tsx`
+  is the one union; `project-view.tsx`'s `selectedTab` the only selection). UI
+  leads and API sits beside it: one question, asked of a person and of a caller.
+  Secrets precedes Settings because Settings ends in Delete project. The order
+  is a product decision nothing else holds, so one test in `top-bar.test.tsx`
+  pins the rendered sequence.
 - **No pane is gated.** If a gate ever returns: ONE exported predicate shared by
   the switcher and `project-view.tsx` (they must not disagree — a tab bar with
   no `aria-current` beside a blank pane), the fallback derived during render
@@ -36,8 +36,8 @@ queue) are in `../../CLAUDE.md`; the API pane and the public docs page are in
   (`aai-studio-server/src/prompts/studio-preamble.ts`, `studio-preamble-mode.ts`
   say "UI pane"). It lives in another package and no test reads it.
 - **Anything that POINTS at a pane names the pane, never a direction or a path
-  inside another pane** ("the Secrets pane", not "Secrets below" or
-  "Settings → Secrets") — sections move.
+  inside another pane** ("the Secrets pane", not "Secrets below" or "Settings →
+  Secrets") — sections move.
 
 ## Settings (`settings.tsx`)
 
@@ -67,8 +67,8 @@ deploy**: Delete project must work before anything is published, so
 
 Talks to `/studio/projects/:project/secret`, reports its own outcome and writes
 nothing into the conversation. A database is configured here like any other
-secret (`DATABASE_URL` at the author's own provider): the platform provisions
-no tenant database.
+secret (`DATABASE_URL` at the author's own provider): the platform provisions no
+tenant database.
 
 - **Two forms, one endpoint.** A NAME/VALUE pair is the primary path (value in
   `type="password"`, name checked against `VALID_NAME` locally); the `.env`
@@ -77,12 +77,12 @@ no tenant database.
   over one PUT, so `isPending`/`error` sit beside the button that fired them;
   each form clears only on its OWN success.
 - **Deleting asks first** — the value cannot be read back.
-- **UNGATED — no publish first.** An agent needs its key to run, and the
-  preview (auto-deployed on first edit) needs it before production. The server
-  holds the project's copy and reconciles it into each slug as a deploy claims
-  one (`aai-studio-server/src/studio-secrets.ts`). A name no deployed agent
-  carries yet is labelled **"on next deploy"** (the response's `pending` list)
-  against **"live"**.
+- **UNGATED — no publish first.** An agent needs its key to run, and the preview
+  (auto-deployed on first edit) needs it before production. The server holds the
+  project's copy and reconciles it into each slug as a deploy claims one
+  (`aai-studio-server/src/studio-secrets.ts`). A name no deployed agent carries
+  yet is labelled **"on next deploy"** (the response's `pending` list) against
+  **"live"**.
 - **`ASSEMBLYAI_API_KEY` is platform-managed: the pane neither lists, deletes,
   nor sets it** (`PLATFORM_MANAGED_SECRETS`). It is seeded at publish from the
   caller's account key and deleting it takes the agent off the air. Setting it
@@ -93,8 +93,9 @@ no tenant database.
 ## The Phone card (`components/phone-card.tsx`, on the API pane)
 
 Hands out one carrier webhook URL per carrier, each with a copy button, at the
-platform's `/:slug/phone` route ("Telephony" in `packages/aai-server/CLAUDE.md`).
-The URL needs the platform origin, the PUBLISHED slug and `?carrier=`.
+platform's `/:slug/phone` route ("Telephony" in
+`packages/aai-server/CLAUDE.md`). The URL needs the platform origin, the
+PUBLISHED slug and `?carrier=`.
 
 - **`?carrier=` is spelled out even for Twilio** (the platform's default): the
   string is pasted into a carrier console once and must keep its meaning.
@@ -137,8 +138,8 @@ polls by CURSOR and appends — the guest holds a bounded RING with a cursor.
   actions.
 - **A gap is a ROW**: `dropped` counts lines the ring evicted before this pane
   read them.
-- **It follows the bottom through `<AutoScroll>`** (`instant`/`instant`, since
-  a spring never settles on a tail that appends every second). jsdom computes no
+- **It follows the bottom through `<AutoScroll>`** (`instant`/`instant`, since a
+  spring never settles on a tail that appends every second). jsdom computes no
   layout, so the one test asserts the lines are mounted INSIDE that scroller (a
   plain `overflow-auto` div renders identically and follows nothing).
 - **The footer says the log is not durable**: the ring goes with the sandbox
@@ -179,11 +180,11 @@ only) and keeps "Starting your preview" up until the page is there.
   kill a voice session; a new deploy reaches the frame via the `previewVersion`
   key. The first probe renders an empty pane, so a ready preview does not flash
   "starting".
-- **A build in flight takes the whole pane** (`building` = `previewStale &&
-hasAgent && !previewError`). `hasAgent` keeps an untouched project on
-  "Nothing to preview yet" (no preview is stale server-side); `!previewError`
-  keeps a failed build from parking the pane forever — that case frames the
-  last good preview under the error banner.
+- **A build in flight takes the whole pane** (`building` =
+  `previewStale && hasAgent && !previewError`). `hasAgent` keeps an untouched
+  project on "Nothing to preview yet" (no preview is stale server-side);
+  `!previewError` keeps a failed build from parking the pane forever — that case
+  frames the last good preview under the error banner.
 - **The failed build is the ONLY banner** (`PaneBanner`): the one state the
   frame cannot show by itself. The workspace still reports `unpublished`;
   nothing here reads it.
@@ -192,9 +193,9 @@ hasAgent && !previewError`). `hasAgent` keeps an untouched project on
   `PROBE_FAILURES_BEFORE_WAKE` failures the pane calls `api.wakePreview`
   (`POST /studio/projects/:project/preview/wake`; the server re-checks, so the
   pane is a trigger, not evidence) **once**, latched on DELIVERY rather than on
-  the attempt. Cadence is two-speed (`PROBE_SLOW_AFTER`,
-  `PROBE_SLOW_RETRY_MS`): 3s for a deploy about to land, slower once waiting on
-  the wake. Not exponential: it is slowest exactly where promptness matters.
+  the attempt. Cadence is two-speed (`PROBE_SLOW_AFTER`, `PROBE_SLOW_RETRY_MS`):
+  3s for a deploy about to land, slower once waiting on the wake. Not
+  exponential: it is slowest exactly where promptness matters.
 
 ## Chat (`chat.tsx`) — the transcript does not wait on the sandbox
 

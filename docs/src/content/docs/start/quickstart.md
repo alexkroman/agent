@@ -17,10 +17,9 @@ cd my-agent
 
 `aai init` writes a starter project and installs its dependencies.
 
-:::caution[Add your API key first]
-Open `.env` and paste your key after `ASSEMBLYAI_API_KEY=`. Or run `aai login`
-to save one for every project. Nothing runs until you do.
-:::
+:::caution[Add your API key first] Open `.env` and paste your key after
+`ASSEMBLYAI_API_KEY=`. Or run `aai login` to save one for every project. Nothing
+runs until you do. :::
 
 Here is what you get:
 
@@ -126,6 +125,7 @@ See [Publish](/agent/deploy/publish/) for the details, and
 
 ## Next
 
-- [How it works](/agent/start/how-it-works/) — why the project is shaped this way
+- [How it works](/agent/start/how-it-works/) — why the project is shaped this
+  way
 - [Tools](/agent/build/tools/) — talking to your own APIs
 - [Remembering things](/agent/build/state/) — state that survives the call

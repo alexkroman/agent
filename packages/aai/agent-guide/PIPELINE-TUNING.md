@@ -14,15 +14,15 @@
 
 Part of the aai authoring guide (start with the core guide). This file covers
 the session's MODES — the default pipeline, S2S, text — answering and placing
-phone calls, speaking from outside a turn, and the pipeline's turn-taking
-knobs. Which vendor runs each stage is `PROVIDERS.md`; the full `agent()` field
-list is `AGENT-API.md`.
+phone calls, speaking from outside a turn, and the pipeline's turn-taking knobs.
+Which vendor runs each stage is `PROVIDERS.md`; the full `agent()` field list is
+`AGENT-API.md`.
 
 ## Pipeline mode
 
-Pipeline mode is the default: omitting `stt`/`llm`/`tts` (and `s2s`) gives
-you the all-AssemblyAI pipeline, and any stage you do declare replaces just
-that stage — the rest keep the default.
+Pipeline mode is the default: omitting `stt`/`llm`/`tts` (and `s2s`) gives you
+the all-AssemblyAI pipeline, and any stage you do declare replaces just that
+stage — the rest keep the default.
 
 **S2S mode is an explicit opt-in.** `mode: "s2s"` beside an
 `s2s: assemblyAIS2s()` descriptor (imported from `@alexkroman1/aai`, next to
@@ -61,35 +61,33 @@ export default agent({
 ```
 
 - `voice` — the agent's voice. Unset uses the service default.
-- `languages` — **leave it unset for multilingual calls**: unset means
-  "detect per turn", so pinning `["en"]` on a line that takes other
-  languages disables detection for every caller. Pin it when the line
-  really is monolingual — on a benchmark run that plus a transcription
-  prompt took a caller's spelled first name from 1 of 6 attempts correct
-  to 6 of 6.
-- `keyterms` — product names and proper nouns to bias transcription
-  toward. Use `sttPrompt` (above, and honoured in **both** modes) for
-  prose guidance and `keyterms` for a term list.
+- `languages` — **leave it unset for multilingual calls**: unset means "detect
+  per turn", so pinning `["en"]` on a line that takes other languages disables
+  detection for every caller. Pin it when the line really is monolingual — on a
+  benchmark run that plus a transcription prompt took a caller's spelled first
+  name from 1 of 6 attempts correct to 6 of 6.
+- `keyterms` — product names and proper nouns to bias transcription toward. Use
+  `sttPrompt` (above, and honoured in **both** modes) for prose guidance and
+  `keyterms` for a term list.
 
-**Prefer pipeline mode** — the default — unless the user specifically
-asks for the speech-to-speech API. Nearly every template ships this way, and
-it is what AssemblyAI Build defaults to. The host runs the LLM loop locally
-(Vercel AI SDK) with your chosen STT, LLM, and TTS. You want explicit
-providers when:
+**Prefer pipeline mode** — the default — unless the user specifically asks for
+the speech-to-speech API. Nearly every template ships this way, and it is what
+AssemblyAI Build defaults to. The host runs the LLM loop locally (Vercel AI SDK)
+with your chosen STT, LLM, and TTS. You want explicit providers when:
 
 - you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq,
-  hundreds of models via OpenRouter, or 25+ models via the AssemblyAI
-  LLM Gateway)
-- you want a specific STT model, a non-AssemblyAI TTS provider, or another
-  voice (`tts: assemblyAITts({ voice })`)
+  hundreds of models via OpenRouter, or 25+ models via the AssemblyAI LLM
+  Gateway)
+- you want a specific STT model, a non-AssemblyAI TTS provider, or another voice
+  (`tts: assemblyAITts({ voice })`)
 - you need to swap providers without changing agent code
 
-**The rule:** declare only the stages you're changing — any subset of
-`stt`, `llm`, `tts`; each unset stage runs on the AssemblyAI default.
-Combining `s2s` with any pipeline provider or pipeline-only tuning field is
-a compile error naming the rule; a voice has one place to live, the TTS
-descriptor (there is no agent-level `voice`). A raw config that skips
-`agent()` is still checked at parse time.
+**The rule:** declare only the stages you're changing — any subset of `stt`,
+`llm`, `tts`; each unset stage runs on the AssemblyAI default. Combining `s2s`
+with any pipeline provider or pipeline-only tuning field is a compile error
+naming the rule; a voice has one place to live, the TTS descriptor (there is no
+agent-level `voice`). A raw config that skips `agent()` is still checked at
+parse time.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -105,8 +103,8 @@ export default agent({
 });
 ```
 
-Tools, the database, `ctx`, and the UI all behave identically across modes.
-Only the audio + LLM transport differs.
+Tools, the database, `ctx`, and the UI all behave identically across modes. Only
+the audio + LLM transport differs.
 
 **Four modes, one field on `agent()`: `mode`.** Omit it for PIPELINE (voice,
 cascaded STT → LLM → TTS) — the default, and the mode this guide assumes.
@@ -144,9 +142,9 @@ mu-law is transcoded both ways, so a call is a transport, not a mode.
 `createAgentServer({ telephony })` overrides one deployment; embedding:
 `createTelephonyBridge`, `startTelephonySession`.
 
-**A call your app places** (below): the session starts on the carrier's
-`start` frame, so `sessionContext`/`onSessionEnd` get `call`
-— `{ carrier, callId?, parameters }` — and a tool reads `sessionCall(ctx)`.
+**A call your app places** (below): the session starts on the carrier's `start`
+frame, so `sessionContext`/`onSessionEnd` get `call` —
+`{ carrier, callId?, parameters }` — and a tool reads `sessionCall(ctx)`.
 `/phone` is unauthenticated: check a parameter you issued and answer
 `{ refuse: "why" }` otherwise (hung up before the greeting or any model call; a
 WebSocket gets 1008). A tool hangs up with `endSession(ctx)` once the reply has
@@ -171,14 +169,13 @@ been spoken (`{ afterReply: false }` cuts it); a spec reads
 - `turnTaking` — `minSilenceMs`/`maxSilenceMs` are how long a pause ends a turn
   (lowered onto the default `assemblyAIStt()`; with an explicit `stt` set them
   on the descriptor, e.g. `deepgramStt({ endpointing })`). `userTurnLimit`
-  (`{ maxWords }`, `{ maxDurationMs }` or both; `{}` refused) ends ONE turn as
-  a pause would, emitting `userTurn.exceeded`. `detection: "manual"` is
+  (`{ maxWords }`, `{ maxDurationMs }` or both; `{}` refused) ends ONE turn as a
+  pause would, emitting `userTurn.exceeded`. `detection: "manual"` is
   PUSH-TO-TALK (`usePushToTalk()` in `aai-ui`): the mic is heard only while
-  held, all of it is ONE turn answered on release, and pressing is the
-  barge-in. `preemptiveGeneration` (default **`false`**) starts the reply from
-  a confident interim, adopted if the commit matches (measured **+8ms per
-  turn**, 44% of requests wasted); it never speaks or calls a tool until
-  adopted.
+  held, all of it is ONE turn answered on release, and pressing is the barge-in.
+  `preemptiveGeneration` (default **`false`**) starts the reply from a confident
+  interim, adopted if the commit matches (measured **+8ms per turn**, 44% of
+  requests wasted); it never speaks or calls a tool until adopted.
 
 ### Placing a call
 
@@ -241,7 +238,7 @@ speaking on every one never stops. Speak from an event your line cannot produce
 (`tool.called`, a timer), or check the event's `text` first.
 
 `done` never rejects: `"played"` once playback ends, `"interrupted"`,
-`"dropped"` (call ended, taken back, or an S2S agent). **Never await
-`done` inside the reply it waits behind** (a tool's `execute`). **A session id
-is not authorization**: verify a webhook first. Specs: `createToolContext()`
-records into `ctx.said`.
+`"dropped"` (call ended, taken back, or an S2S agent). **Never await `done`
+inside the reply it waits behind** (a tool's `execute`). **A session id is not
+authorization**: verify a webhook first. Specs: `createToolContext()` records
+into `ctx.said`.

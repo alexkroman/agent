@@ -10,8 +10,8 @@ read_when: >-
 
 # packages/aai-templates — worked examples
 
-A sibling of `packages/aai-templates/CLAUDE.md`, read on demand. The rules
-these templates demonstrate are in that guide; this file says WHERE each one is
+A sibling of `packages/aai-templates/CLAUDE.md`, read on demand. The rules these
+templates demonstrate are in that guide; this file says WHERE each one is
 demonstrated and what building the example settled.
 
 ## Which template demonstrates which primitive
@@ -137,10 +137,10 @@ nested confirmation gate), `tabletop-rpg-agent` (nested, plus `final`),
 (what a dialog does when no tool runs).
 
 - **`emergency-dispatch-agent`** holds many incidents, and a flow has one
-  position per session, so `working.monitoring` means "the incident last
-  touched has units", never "every incident does". Its six gated tools gate on
-  the PARENT state (has anything been logged this shift); the children carry
-  the instruction.
+  position per session, so `working.monitoring` means "the incident last touched
+  has units", never "every incident does". Its six gated tools gate on the
+  PARENT state (has anything been logged this shift); the children carry the
+  instruction.
 - **`roadside-assistance-agent`**:
   `on: { "@userTranscript.committed": "locating" }` on the state itself is the
   silence ladder (re-arms on every committed turn); `onCall.verifying` declares
@@ -155,15 +155,15 @@ nested confirmation gate), `tabletop-rpg-agent` (nested, plus `final`),
   `PendingAction`; `confirm_change` is the only store writer, gated on
   `serving.awaitingConfirmation`; `cancel_change` drops unconditionally.
   `IDENTIFIED` is not handled on `serving`, since that self-transition would
-  re-enter and strand the pending change. Plans hold ids and amounts, not
-  store references, so a persisted session can carry them. `registry.test.ts`
-  pins seventeen tool names. Its wrapper's activity log does not record a gated
+  re-enter and strand the pending change. Plans hold ids and amounts, not store
+  references, so a persisted session can carry them. `registry.test.ts` pins
+  seventeen tool names. Its wrapper's activity log does not record a gated
   refusal (stated at the wrapper).
 - **`tabletop-rpg-agent`**: `gameOver` is `final`; `setup_character` calls
   `dialog.reset`. `isGameOver`/`inCrisis` predicates sit beside the `after`
   hook.
-- **`research-planner-agent`**: both gated tools declare `sendFrom` last and
-  say so; `work_next_step` is the hardest inference case.
+- **`research-planner-agent`**: both gated tools declare `sendFrom` last and say
+  so; `work_next_step` is the hardest inference case.
 - **`word-game-agent`**: `playing` declares no transition except its two exits,
   and its three in-round tools send nothing, so the round timer is not re-armed.
 
@@ -185,8 +185,8 @@ budget is `maxSteps`, not the prompt; the loop is journaled as ONE step result;
 the compression prompt says to REPEAT relevant text rather than summarize. The
 stage-level specs live in `sdk/deep-research.test.ts`.
 
-Spec tiers: tools against stubbed `ctx.workflows`; the desk's configuration
-and delivery via `createWorkflowContext`; the whole run via `runWorkflow` on the
+Spec tiers: tools against stubbed `ctx.workflows`; the desk's configuration and
+delivery via `createWorkflowContext`; the whole run via `runWorkflow` on the
 real replay engine. `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier
 above.
 
@@ -199,14 +199,14 @@ segment 27 resumes having replayed 1–26.
 
 - The recording is UPLOADED (`uploads: ["recording"]`); each step reads its
   window with `stepReadUpload`. The template contains no upload code. The page
-  shows `<UploadProgressBar>` and `<WorkflowProgress>` (two disjoint waits)
-  and one press-to-transcript clock (`useTotalLatency`, `<TotalLatency>`),
-  because `output.elapsedMs` misses the upload.
+  shows `<UploadProgressBar>` and `<WorkflowProgress>` (two disjoint waits) and
+  one press-to-transcript clock (`useTotalLatency`, `<TotalLatency>`), because
+  `output.elapsedMs` misses the upload.
 - Linear-PCM WAV only, named in the error with the `ffmpeg` line that fixes it;
   `workflows/wav.ts` is pure functions over journaled values.
-- Segments overlap by two seconds; `stitchTranscript` drops the longest
-  repeated run at each seam on a punctuation-stripped key (a missed seam
-  repeats words; a false one deletes speech).
+- Segments overlap by two seconds; `stitchTranscript` drops the longest repeated
+  run at each seam on a punctuation-stripped key (a missed seam repeats words; a
+  false one deletes speech).
 - `SEGMENT_CONCURRENCY`'s doc carries the concurrency measurements.
 - Its spec drives only `transcribeBatch` durably; the two ffmpeg flows'
   durability is the scenario tier's. No template covers the webhook waitpoint;

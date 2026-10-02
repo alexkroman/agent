@@ -12,10 +12,10 @@ read_when: >-
 
 Reference for the eval that drives this package's own product surface. The
 package guide's "Studio starter evals" section is the summary and the commands;
-this file is the reasoning behind them, and it is a SIBLING rather than a section
-of `CLAUDE.md` because it is reference, read on demand. The eval FRAMEWORK — the
-recording runner, the spread report, the assertion vocabulary, why a live eval
-reports rather than gates — is
+this file is the reasoning behind them, and it is a SIBLING rather than a
+section of `CLAUDE.md` because it is reference, read on demand. The eval
+FRAMEWORK — the recording runner, the spread report, the assertion vocabulary,
+why a live eval reports rather than gates — is
 [`packages/aai-evals/CLAUDE.md`](../aai-evals/CLAUDE.md).
 
 ## Five files, and why they are in this package
@@ -33,9 +33,8 @@ They are here, not in `aai-evals`, because the line is what a module is ABOUT
 rather than what runs it. `aai-evals` names no product surface: it is a runner,
 a report and a vocabulary over the session event stream. Every one of these
 names the studio in every constant it declares: its chat route, its per-sandbox
-token, its step cap, the prose its own tools write, the starter prompts and
-what each asked for. Keep `evals-package-boundary` a total deny so that stays
-true.
+token, its step cap, the prose its own tools write, the starter prompts and what
+each asked for. Keep `evals-package-boundary` a total deny so that stays true.
 
 The framework is imported, never re-implemented: `aai-evals/gate` for the key
 gate and the announce, `/register` for case registration, `/runner` for
@@ -70,9 +69,9 @@ source rather than behaviour) is a separate job in separate modules.
 
 `aai-runtime/src/text-agent/events.ts` cites this eval as "the measured
 consequence" of a text agent having had no event stream — five REGEXES over
-tool-output text. That is the right motivation for the event stream and the wrong
-prediction about these five, and the audit is worth recording because it says
-where the remaining work actually is.
+tool-output text. That is the right motivation for the event stream and the
+wrong prediction about these five, and the audit is worth recording because it
+says where the remaining work actually is.
 
 |                             | what it reads                                          | replaceable by events? |
 | --------------------------- | ------------------------------------------------------ | ---------------------- |
@@ -93,11 +92,11 @@ place: `readUIMessageStream` does the `toolCallId` → name correlation, and
 `testAgentRuns`. So the honest saving is `StudioTurn` shrinking to its events
 plus the two excerpt renderers, and the pattern set staying exactly as it is.
 
-**A projection was available and was not taken.** `foldMessage` could map the
-UI message parts into `SessionEvent`s and let `studio-starter-grade.ts` grade
+**A projection was available and was not taken.** `foldMessage` could map the UI
+message parts into `SessionEvent`s and let `studio-starter-grade.ts` grade
 through `eventScope` and the tool arms — and it would be testable, since
-`studio-eval-target.test.ts` drives `readTurn` with canned SSE. It is declined on
-two grounds. It makes that file a SECOND producer of the union whose fidelity
+`studio-eval-target.test.ts` drives `readTurn` with canned SSE. It is declined
+on two grounds. It makes that file a SECOND producer of the union whose fidelity
 nothing can check (there is no live studio in CI, and the guest's own events are
 not on the wire to compare against), which is the two-vocabularies hazard
 inverted. And it buys no measurement: the same patterns, the same verdicts, in a
@@ -106,10 +105,10 @@ version that pays for itself needs the guest to emit, which is the next
 paragraph.
 
 **What WOULD retire them is structured tool results** — `test_agent` and
-`check_types` answering JSON a case reads with `toolResultIn(calls, name,
-Schema)` instead of prose. That is a change to the studio's tools in
-`aai-guest`, not to the eval, and it is the only version of this that removes a
-regex rather than moving it.
+`check_types` answering JSON a case reads with
+`toolResultIn(calls, name, Schema)` instead of prose. That is a change to the
+studio's tools in `aai-guest`, not to the eval, and it is the only version of
+this that removes a regex rather than moving it.
 
 ### Carrying the guest's events to a client: measured, and not worth it
 
@@ -121,12 +120,12 @@ would ignore). Of the seven events a text agent emits, **five are already on
 that stream in the SDK's own vocabulary**: the user message is the request's
 own, `tool.called`/`tool.completed` are the tool parts, the reply is the text
 parts, and the terminator is the stream ending. The two that would add
-information are `custom.emitted` (a tool's `ctx.send`) and
-`error.reported` with `code: "tool"` (a tool that THREW rather than returning a
-failure). Neither is something a starter eval grades, and the cost is a new
-versioned wire surface plus a second encoding of arguments and results already
-on the stream. **Recommendation: do not.** Revisit if a case needs to grade a
-`ctx.send` or an uncaught tool throw from outside the sandbox.
+information are `custom.emitted` (a tool's `ctx.send`) and `error.reported` with
+`code: "tool"` (a tool that THREW rather than returning a failure). Neither is
+something a starter eval grades, and the cost is a new versioned wire surface
+plus a second encoding of arguments and results already on the stream.
+**Recommendation: do not.** Revisit if a case needs to grade a `ctx.send` or an
+uncaught tool throw from outside the sandbox.
 
 ## The SECOND, in-process studio eval is in `aai-guest-studio`
 
@@ -174,10 +173,10 @@ template", which makes the template the ask rather than an illustration —
 `checkCapabilities` already special-cases them for it. Twenty-five of the
 twenty-six templates ship an eval. And those files were written to drive a
 DEPLOYED agent rather than their own directory: they import `virtual:aai/agent`,
-which `aaiAgentPlugin` resolves against the IMPORTER's directory, so dropping one
-into a materialized workspace drives that workspace's agent. They also assert
-MECHANISMS — a refusal sentence, a tool result, the projection sent to the
-browser — never the words the model chose, which is what lets a
+which `aaiAgentPlugin` resolves against the IMPORTER's directory, so dropping
+one into a materialized workspace drives that workspace's agent. They also
+assert MECHANISMS — a refusal sentence, a tool result, the projection sent to
+the browser — never the words the model chose, which is what lets a
 different-but-valid implementation pass.
 
 **The canonical copy always wins.** `use_template` copies template files
@@ -189,17 +188,18 @@ prompt is ours, the contract is ours, and the only thing the agent controls is
 the agent.
 
 **Why the scratch directory is inside this package.** A contract imports
-`@alexkroman1/aai/protocol`, `@alexkroman1/aai-runtime/eval`, `vitest` and `zod`,
-and Node resolution walks UPWARD — a directory under `packages/aai-studio-server/`
-resolves all four with nothing installed, where one in `tmpdir()` resolves none.
-This package declares all four, which is what let the module move without the
-constraint changing. It is `src/.eval-workspaces/`, gitignored, and removed in a
-`finally`: a leak here is a tree that `git status`, `biome check` and `tsc` all
-walk into — and, now that it is under `src/`, one this package's own vitest
-config has to exclude from collection. The `.gitignore` entry was corrected on
-the way: it named `packages/aai-evals/.eval-workspaces/`, one level above the
-directory the module's `new URL("./.eval-workspaces/", import.meta.url)` ever
-resolved to, so it had matched nothing for as long as it existed.
+`@alexkroman1/aai/protocol`, `@alexkroman1/aai-runtime/eval`, `vitest` and
+`zod`, and Node resolution walks UPWARD — a directory under
+`packages/aai-studio-server/` resolves all four with nothing installed, where
+one in `tmpdir()` resolves none. This package declares all four, which is what
+let the module move without the constraint changing. It is
+`src/.eval-workspaces/`, gitignored, and removed in a `finally`: a leak here is
+a tree that `git status`, `biome check` and `tsc` all walk into — and, now that
+it is under `src/`, one this package's own vitest config has to exclude from
+collection. The `.gitignore` entry was corrected on the way: it named
+`packages/aai-evals/.eval-workspaces/`, one level above the directory the
+module's `new URL("./.eval-workspaces/", import.meta.url)` ever resolved to, so
+it had matched nothing for as long as it existed.
 
 **Off by default, and that is a cost decision rather than a doubt.** A contract
 run is a live model session on top of a codegen turn that already takes minutes,

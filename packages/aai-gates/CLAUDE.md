@@ -25,14 +25,15 @@ Three things were wrong with that, and none of them was cosmetic:
   numbers come from tests of something else has no floor of its own; the
   template surface it was supposed to ratchet was a rounding error in the
   denominator.
-- **CI's `test (aai-templates)` job was really "the repo gate suite"**, so a
-  red job named the wrong thing.
-- **`aai-templates/turbo.json` reached four levels out** to hash `../../AGENTS.md`,
-  `../*/CLAUDE.md`, `scripts/**` and `.github/workflows/*.yml`. A package
-  declaring the repo root as its input is the build config saying those tests
-  belong somewhere else. Those entries are in THIS package's `turbo.json` now,
-  where they describe the truth, and `aai-templates` kept only the two it
-  really reads (`biome.json` and `scripts/_api-contracts-tree.mjs`).
+- **CI's `test (aai-templates)` job was really "the repo gate suite"**, so a red
+  job named the wrong thing.
+- **`aai-templates/turbo.json` reached four levels out** to hash
+  `../../AGENTS.md`, `../*/CLAUDE.md`, `scripts/**` and
+  `.github/workflows/*.yml`. A package declaring the repo root as its input is
+  the build config saying those tests belong somewhere else. Those entries are
+  in THIS package's `turbo.json` now, where they describe the truth, and
+  `aai-templates` kept only the two it really reads (`biome.json` and
+  `scripts/_api-contracts-tree.mjs`).
 
 ## What it may depend on: nothing
 
@@ -44,8 +45,8 @@ package's `tsconfig.json` does not admit. `_gate-support.ts`'s hand-rolled path
 walk exists for exactly that reason and says so at the declaration.
 
 The same rule runs the other way: `byCodeUnit` and `sole` are duplicated in
-`aai-templates/src/_template-support.ts` rather than exported from here. That
-is the repo's `test-helper-modules` convention — a spec reaches for the helper
+`aai-templates/src/_template-support.ts` rather than exported from here. That is
+the repo's `test-helper-modules` convention — a spec reaches for the helper
 beside it — and publishing a test helper as a subpath so one sibling can reach
 it is the shape `aai-server`'s exports map is criticized for.
 
@@ -100,11 +101,10 @@ pattern OR the options object into a constant. It can import the result, which
 is the only reason this module works — and it is why the glob-per-source shape
 stays wherever a spec reads a source only it cares about.
 
-It never ships — nothing under `aai-templates`' `templates/` or `scaffold/`
-may import it, and `guard-invariants` rule 13 enforces that, which since the
-split is true by construction: this package is not a dependency of anything.
-The shared-helper shape is right here and wrong inside a
-template.
+It never ships — nothing under `aai-templates`' `templates/` or `scaffold/` may
+import it, and `guard-invariants` rule 13 enforces that, which since the split
+is true by construction: this package is not a dependency of anything. The
+shared-helper shape is right here and wrong inside a template.
 
 ## The capability-contract gate is specced by BEHAVIOUR, in pairs
 
@@ -112,22 +112,23 @@ Five specs hold `scripts/api-contracts.mjs`. `api-contracts-gate.test.ts` reads
 the contract tree as text and re-derives what the script believes (including
 each current epoch's pinned rollup sha, via `crypto.subtle`). The other four
 import the gate's PURE modules as real values — the one exception to "never
-import the script you guard", taken for the reason `guard-invariants-scanner-
-rules.test.ts` takes it: the subject is a function from text to text, and
-scraping it would test the scrape. `api-contracts-hash.test.ts` holds the hash
-normalizations, `api-contracts-compat.test.ts` the compatibility probe (a real
-TypeScript program over two in-memory rollups; it reads lib files and writes
-nothing), `api-contracts-compat-rewrite.test.ts` what the probe makes both
-sides agree on first (shared brands, `@sealed`, misuse literals), and
+import the script you guard", taken for the reason
+`guard-invariants-scanner- rules.test.ts` takes it: the subject is a function
+from text to text, and scraping it would test the scrape.
+`api-contracts-hash.test.ts` holds the hash normalizations,
+`api-contracts-compat.test.ts` the compatibility probe (a real TypeScript
+program over two in-memory rollups; it reads lib files and writes nothing),
+`api-contracts-compat-rewrite.test.ts` what the probe makes both sides agree on
+first (shared brands, `@sealed`, misuse literals), and
 `api-contracts-epochs.test.ts` the revision/one-per-branch arithmetic and the
 one-owner baseline. Every one is written in PAIRS: each change the gate lets
-through beside the neighbouring break it must still catch,
-because an over-eager normalization or probe ships a breaking change under a
-checkmark. What reads files or git (`_api-contracts-mint.mjs`, `-base.mjs`) is
-kept thin over those pure modules and has NO spec here — a unit spec may not
-write files or spawn git — so its flows (revise, collapse, restore, re-mint in
-place, un-mint, point back) were exercised by hand against an edited `dist` when
-it landed. That is a known gap, not a guarantee.
+through beside the neighbouring break it must still catch, because an over-eager
+normalization or probe ships a breaking change under a checkmark. What reads
+files or git (`_api-contracts-mint.mjs`, `-base.mjs`) is kept thin over those
+pure modules and has NO spec here — a unit spec may not write files or spawn git
+— so its flows (revise, collapse, restore, re-mint in place, un-mint, point
+back) were exercised by hand against an edited `dist` when it landed. That is a
+known gap, not a guarantee.
 
 ## A new guard-invariants rule, and what the linter cannot do for you
 
@@ -142,9 +143,9 @@ between `new Promise(` and `setTimeout(`, which cannot cross the arrow's own
 parameter list — 0 reported against five real occurrences, the same
 silently-dead-pattern shape as the `\b` bug in `check-escape-hatches.mjs`. And
 **the rules module matches most of its own rules**, since every `label` and `re`
-describes what it bans; it, the gate, the baseline and the gate's spec are all in
-the script's `SELF_REFERENTIAL` set. That is the third and fourth time this trap
-has been paid for.
+describes what it bans; it, the gate, the baseline and the gate's spec are all
+in the script's `SELF_REFERENTIAL` set. That is the third and fourth time this
+trap has been paid for.
 
 ### `vitest-setup-wiring.test.ts` — a gate is only as wide as its rollout
 
@@ -159,13 +160,12 @@ The same signal is watched at RUNTIME in the guest
 `setMaxListeners` as "A LEAK threshold, not a capacity one". This gate closes
 the remaining half: a leak a suite already provokes.
 
-**One suite may opt out: `aai-guest/harness/leak-watch.test.ts`**, whose
-subject IS the warning. It sets
-`globalThis[Symbol.for("aai.expectsProcessWarnings")]` at module scope, which is
-the one legitimate opt-out; every other suite is clean, so the rule is absolute
-rather than baselined. `vitest-setup-wiring.test.ts` asserts the opt-out has
-exactly ONE user, because an exemption nobody counts is how a gate narrows with
-no diff saying so.
+**One suite may opt out: `aai-guest/harness/leak-watch.test.ts`**, whose subject
+IS the warning. It sets `globalThis[Symbol.for("aai.expectsProcessWarnings")]`
+at module scope, which is the one legitimate opt-out; every other suite is
+clean, so the rule is absolute rather than baselined.
+`vitest-setup-wiring.test.ts` asserts the opt-out has exactly ONE user, because
+an exemption nobody counts is how a gate narrows with no diff saying so.
 
 **Only `MaxListenersExceededWarning` fails a run.** Failing on every
 `process.on("warning")` would fold in `DeprecationWarning` /
@@ -178,12 +178,12 @@ a complete one.** `setupFiles` is an ARRAY, so a package config writing
 shared list rather than extending it — no error, no warning, that package simply
 stops being gated. FOUR of the nine packages declare their own — plus
 `vitest.slow.config.ts`, a fifth config — so that is five chances to opt out
-silently, and the tenth package added will be a sixth. It is
-the same trap the root guide records for `test` itself, where it cost every
-package its `reporters`; that one was found by reading, this one is mechanical.
-The spec asserts against config SOURCE rather than a loaded config object
-deliberately: a resolved array is what is right today and silently regresses on
-the next edit — the spread is the invariant.
+silently, and the tenth package added will be a sixth. It is the same trap the
+root guide records for `test` itself, where it cost every package its
+`reporters`; that one was found by reading, this one is mechanical. The spec
+asserts against config SOURCE rather than a loaded config object deliberately: a
+resolved array is what is right today and silently regresses on the next edit —
+the spread is the invariant.
 
 Two mechanical notes on the script, both load-bearing. The listener installs
 once per PROCESS via a marker property read off `process.listeners("warning")`:
@@ -206,9 +206,9 @@ What they report NOTHING for is every promise whose type comes from a `node:`
 module: `writeFile` (node:fs/promises), `pipeline` / `finished`
 (node:stream/promises), `setTimeout` (node:timers/promises), `resolve4`
 (node:dns/promises), `once` (node:events) — and the two that matter most here,
-`EventEmitter.on(…, async …)` and `AbortSignal.addEventListener(…, async …)`.
-It is not a resolution failure, not a `Promise<void>` exemption, and not fixable
-by re-exporting: the blindness follows the type's ORIGIN.
+`EventEmitter.on(…, async …)` and `AbortSignal.addEventListener(…, async …)`. It
+is not a resolution failure, not a `Promise<void>` exemption, and not fixable by
+re-exporting: the blindness follows the type's ORIGIN.
 
 **`pnpm lint:promises` closes it.** oxlint's `oxlint-tsgolint` backend runs the
 typescript-eslint rules on tsgo, so it needs no `ts.createProgram` — the
@@ -218,18 +218,19 @@ nothing else; Biome stays the linter. Measured before adopting, on every shape
 above: all seven floating `node:` calls and all four listener registrations
 (including the `{ once: true }` third argument) reported, and none of the
 correct twins — the arrow body that RETURNS `readFile(…)`, the `void p.catch()`
-listener, the awaited call. That also covers the floating half rule 23 could
-not take, since a type checker can tell a returned promise from a dropped one
-where a line scan could not.
+listener, the awaited call. That also covers the floating half rule 23 could not
+take, since a type checker can tell a returned promise from a dropped one where
+a line scan could not.
 
 First run over the tree: 110 findings, and what they were is the argument for
-the tool. 100 came from seven specs typing their fetch stub as `ReturnType<typeof
-vi.fn>`, which erases the return to `void` and so hid every async implementation
-from both linters — typed as `Mock<(url, init?) => Promise<Response>>` now. The
-rest were real: a `dispatch` option typed `=> void` that the engine awaits, a
-retry button discarding a promise, `.finally(() => shutdown())` in `aai start`,
-and two `examples/` servers registering an `async` SIGINT listener (a shape
-that has caused a real shutdown bug).
+the tool. 100 came from seven specs typing their fetch stub as
+`ReturnType<typeof vi.fn>`, which erases the return to `void` and so hid every
+async implementation from both linters — typed as
+`Mock<(url, init?) => Promise<Response>>` now. The rest were real: a `dispatch`
+option typed `=> void` that the engine awaits, a retry button discarding a
+promise, `.finally(() => shutdown())` in `aai start`, and two `examples/`
+servers registering an `async` SIGINT listener (a shape that has caused a real
+shutdown bug).
 
 **`guard-invariants` rule 23 is retired**, its number with it. It was the
 listener half, matched by method NAME at argument index 1; the type-aware rule
@@ -245,14 +246,14 @@ same failure: no error, just nothing reported.
 ## A gated-runtime suite's CI wiring is specced here too
 
 `runtime-pins-gate.test.ts` holds the CLI's runtime matrix
-(`aai-cli/_target-runtimes.scenario.test.ts`, which boots one emitted
-deployment under `node`, `deno` and `bun`) to CI. Each non-node arm skips when
-its binary is absent — right on a laptop, worthless as a gate — so being a gate
-in CI takes four separate things, and every one of them is a silent no-op when
-it breaks: the workflow installs the runtime, in the job that runs the scenario
-tier, BEFORE the step that runs it, exporting `AAI_REQUIRE_<X>`, with that
-variable declared in the task's `env` (turbo's strict env mode strips an
-undeclared one before the task starts, so the export would set nothing).
+(`aai-cli/_target-runtimes.scenario.test.ts`, which boots one emitted deployment
+under `node`, `deno` and `bun`) to CI. Each non-node arm skips when its binary
+is absent — right on a laptop, worthless as a gate — so being a gate in CI takes
+four separate things, and every one of them is a silent no-op when it breaks:
+the workflow installs the runtime, in the job that runs the scenario tier,
+BEFORE the step that runs it, exporting `AAI_REQUIRE_<X>`, with that variable
+declared in the task's `env` (turbo's strict env mode strips an undeclared one
+before the task starts, so the export would set nothing).
 
 Nothing held any of them, and the cost is on the record: the Deno arm shipped on
 the branch that added the target with no `deno` installed anywhere in CI, green
@@ -276,28 +277,28 @@ also owns the two facts about WHEN that workflow runs, because both are the
 shape this package's gates exist for: config that looks live while checking
 nothing.
 
-**The push list is `main` and nothing else.** `changeset-release/main` sat beside
-it and was a straight duplicate: a Version Packages PR targets main, so the
-`pull_request` arm already covers that branch, the two runs land in different
-concurrency groups (`check-<number>` vs `check-<sha>`), and nothing dedupes
-them — every push to a version PR ran the whole matrix twice. 97 such push runs
-are in the history, and they stopped on 2026-08-07 when `RELEASE_TOKEN` went
-dead: `GITHUB_TOKEN` cannot trigger a workflow. That PAT is gone now, so the
-entry can never fire again — but it was invisible in a diff AND in the run list
-for weeks, which is the shape worth asserting against.
+**The push list is `main` and nothing else.** `changeset-release/main` sat
+beside it and was a straight duplicate: a Version Packages PR targets main, so
+the `pull_request` arm already covers that branch, the two runs land in
+different concurrency groups (`check-<number>` vs `check-<sha>`), and nothing
+dedupes them — every push to a version PR ran the whole matrix twice. 97 such
+push runs are in the history, and they stopped on 2026-08-07 when
+`RELEASE_TOKEN` went dead: `GITHUB_TOKEN` cannot trigger a workflow. That PAT is
+gone now, so the entry can never fire again — but it was invisible in a diff AND
+in the run list for weeks, which is the shape worth asserting against.
 
 **The push concurrency group is per-SHA, and that is what makes
-`cancel-in-progress: false` mean anything.** GitHub keeps at most ONE pending run
-per group and cancels it when a newer run joins, so declining to cancel the
+`cancel-in-progress: false` mean anything.** GitHub keeps at most ONE pending
+run per group and cancels it when a newer run joins, so declining to cancel the
 IN-FLIGHT run does not save the QUEUED one. With every commit on main sharing a
 single `github.ref` group, each main run died at the exact second the next merge
 arrived — measured over 28 consecutive main pushes: 5 cancelled, every one's
-`updated_at` equal to the next run's `created_at`, and nothing reaching a verdict
-on main across five merges between 16:00 and 21:57 on 2026-08-18. That is
-precisely the "gap in its history exactly where it is merging fastest" the
+`updated_at` equal to the next run's `created_at`, and nothing reaching a
+verdict on main across five merges between 16:00 and 21:57 on 2026-08-18. That
+is precisely the "gap in its history exactly where it is merging fastest" the
 workflow's own comment says the setting prevents. The pull-request side stays
-keyed on the PR NUMBER: a PR's `github.sha` is the merge ref and changes on every
-push, so a bare per-SHA group there would supersede nothing.
+keyed on the PR NUMBER: a PR's `github.sha` is the merge ref and changes on
+every push, so a bare per-SHA group there would supersede nothing.
 
 Both specs were A/B'd against the old config before landing — the non-vacuity
 rule every gate in this package carries.

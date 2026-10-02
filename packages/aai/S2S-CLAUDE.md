@@ -12,13 +12,13 @@ Wire-level findings about AssemblyAI's Voice Agent API and OpenAI Realtime.
 `CLAUDE.md` keeps the three modes' SELECTION rules — which fields put an agent
 in which mode — and points here.
 
-- **S2S mode** (explicit opt-in — `s2s: assemblyAIS2s()` from the main
-  export, or `openAIS2s()` from `@alexkroman1/aai/s2s`) uses
-  `createS2sTransport()` in `packages/aai-runtime/src/transports/s2s-transport.ts`.
-  The host opens a single WebSocket to AssemblyAI's speech-to-speech
-  service; STT, the LLM loop, and TTS all run service-side and audio/events
-  relay through that one socket. There is no way to reach S2S by omission —
-  only the `s2s` descriptor selects it.
+- **S2S mode** (explicit opt-in — `s2s: assemblyAIS2s()` from the main export,
+  or `openAIS2s()` from `@alexkroman1/aai/s2s`) uses `createS2sTransport()` in
+  `packages/aai-runtime/src/transports/s2s-transport.ts`. The host opens a
+  single WebSocket to AssemblyAI's speech-to-speech service; STT, the LLM loop,
+  and TTS all run service-side and audio/events relay through that one socket.
+  There is no way to reach S2S by omission — only the `s2s` descriptor selects
+  it.
 
   **The Voice Agent API accepts ONE sample rate — 24 kHz, both directions — so
   the CLIENT must send true 24 kHz audio, not 16 kHz relabelled as 24.** The
@@ -43,10 +43,10 @@ in which mode — and points here.
   (511 frames over one 215s session; this guide asserted the opposite for a
   while), and `s2s.ts` forwards them as a partial and commits them on a
   COMPLETED reply that sent no final — never on an interrupted one, which would
-  put words in history the caller never heard. **Read `aai-runtime/s2s/reply.ts`'s
-  module doc** for both measurements, the two properties that decide how the
-  deltas are consumed, and the anomaly log; this guide is at its cap and that
-  module owns the finding.
+  put words in history the caller never heard. **Read
+  `aai-runtime/s2s/reply.ts`'s module doc** for both measurements, the two
+  properties that decide how the deltas are consumed, and the anomaly log; this
+  guide is at its cap and that module owns the finding.
 
   **S2S sends Voice Focus, `sttPrompt`, and the three descriptor options
   (`voice`, `languages`, `keyterms`).** `updateSession` pins
@@ -85,9 +85,9 @@ in which mode — and points here.
   an agent that connects, reports ready and never speaks, and why
   `turn_detection` is deliberately not pinned.
 
-  **An in-band service error is NOT the end of the session, and a fatal frame
-  is not a banner.** An `error.reported` with no `fatal` key means the session
-  is over, and aai-ui answers one by calling `cleanupAudio()`, bumping the
+  **An in-band service error is NOT the end of the session, and a fatal frame is
+  not a banner.** An `error.reported` with no `fatal` key means the session is
+  over, and aai-ui answers one by calling `cleanupAudio()`, bumping the
   connection generation and setting `running: false` — the MICROPHONE IS
   RELEASED. Both S2S transports used to report every in-band error that way
   (AssemblyAI's `session.error` with a non-expiry code, its bare `error` frame,

@@ -1,20 +1,20 @@
 # Protocol Compatibility Fixtures
 
 Pinned JSON snapshots of valid wire-format messages. Unlike inline snapshot
-tests, these files **never auto-update** — they represent what
-already-deployed clients and agents actually send and receive.
+tests, these files **never auto-update** — they represent what already-deployed
+clients and agents actually send and receive.
 
 ## When to create a new version
 
-Create a new `v{N}.json` when you intentionally change the protocol and
-have confirmed all deployed clients/agents have been updated. The old
-fixture stays to protect any stragglers.
+Create a new `v{N}.json` when you intentionally change the protocol and have
+confirmed all deployed clients/agents have been updated. The old fixture stays
+to protect any stragglers.
 
 ## Rules
 
 - **Never modify** an existing fixture file after it's committed.
-- **Never delete** a fixture unless you're certain no deployed code depends
-  on that version.
+- **Never delete** a fixture unless you're certain no deployed code depends on
+  that version.
 - One example per variant, plus examples with/without optional fields.
 
 ## What's covered
@@ -27,8 +27,8 @@ The `WS /inbox` frames have their own series, `inbox-v{N}.json`
 (`InboxServerFrame` and `InboxClientFrame`), under the same rules: that socket's
 clients include firmware, which updates on no schedule of ours.
 
-`KvRequest` was covered until KV support was removed from the SDK (a
-deliberate breaking change — the guest RPC no longer has KV operations).
+`KvRequest` was covered until KV support was removed from the SDK (a deliberate
+breaking change — the guest RPC no longer has KV operations).
 
 ## v1 was retired, and it is the worked example of the rule above
 
@@ -40,10 +40,9 @@ client used to push its own conversation back in.
 
 Every one of those changed at once, so **no deployed code speaks v1** — nothing
 published is depended on yet — and "never delete a fixture unless you're certain
-no deployed code depends on
-that version" is satisfied rather than bent. Keeping it would have meant a suite
-asserting that the current schemas still accept a vocabulary they deliberately
-do not, i.e. a red gate with no reader.
+no deployed code depends on that version" is satisfied rather than bent. Keeping
+it would have meant a suite asserting that the current schemas still accept a
+vocabulary they deliberately do not, i.e. a red gate with no reader.
 
 What it would have protected is real, though, and is the reason this directory
 survived the change rather than being deleted with the fixture: the moment there

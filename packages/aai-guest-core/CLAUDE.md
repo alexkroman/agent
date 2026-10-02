@@ -23,24 +23,24 @@ therefore cannot express it — whichever one holds the entry must depend on
 studio, so studio cannot depend on it — and a cycle between workspace packages
 is unbuildable.
 
-Splitting the SHARED five out is what breaks it: core depends on nothing in
-this trio, studio depends on core, and `aai-guest` depends on both. The entry
-keeps its `./harness` subpath and `dist/harness.mjs`, so `aai-server`'s guest
-image pin is untouched.
+Splitting the SHARED five out is what breaks it: core depends on nothing in this
+trio, studio depends on core, and `aai-guest` depends on both. The entry keeps
+its `./harness` subpath and `dist/harness.mjs`, so `aai-server`'s guest image
+pin is untouched.
 
 **The closure is exactly the modules that were shared**, which is what made it
 worth doing: `auth`, `bundle`, `http`, `rpc`, `types` pull in nothing else from
 the old `harness/`. `trial.ts` (the `run_code`/tool executor) and `limits.ts`
-(the shared constants) joined them because all three packages import them —
-they sat at `src/` root, so a scan of `harness/` alone missed them.
+(the shared constants) joined them because all three packages import them — they
+sat at `src/` root, so a scan of `harness/` alone missed them.
 
 ## `StudioSession` is DECLARED here
 
 `bundle.ts` holds the `studio` slot, and a package that owns a slot owns the
 slot's type. It used to be declared beside `startStudioSession` and imported
 back as a type — the one core→studio edge, and enough to make the cycle real
-even though nothing behavioural crossed. `aai-guest-studio/session`
-re-exports both names for the call sites that read them from there.
+even though nothing behavioural crossed. `aai-guest-studio/session` re-exports
+both names for the call sites that read them from there.
 
 ## `test-utils.ts` carries no underscore, deliberately
 
@@ -55,18 +55,18 @@ crash-guard specs. Each lives in its own package's `_test-utils.ts`.
 
 ## A test follows its subject, and coverage is why
 
-`trial.test.ts`, `bundle.test.ts` and `auth.test.ts` were five `describe`
-blocks inside `aai-guest/src/harness.test.ts`. They had to move with the
-modules, because **coverage attributes a file to whoever LOADED it**: left
-behind, core's modules read as uncovered in core's own report and its floors
-would have been seeded at 25% — a ratchet that cannot fail, which is the
-failure shape this repo keeps paying for.
+`trial.test.ts`, `bundle.test.ts` and `auth.test.ts` were five `describe` blocks
+inside `aai-guest/src/harness.test.ts`. They had to move with the modules,
+because **coverage attributes a file to whoever LOADED it**: left behind, core's
+modules read as uncovered in core's own report and its floors would have been
+seeded at 25% — a ratchet that cannot fail, which is the failure shape this repo
+keeps paying for.
 
-The same mechanism bites from the other side. A workspace dependency resolves
-to its `src/` through `@dev/source`, so v8 measures a dependency's modules too:
-`aai-guest`'s report counted all 60 studio modules and read 27% lines against
-a floor of 83. Each package's `vitest.config.ts` excludes its siblings by name
-— `include: ["src/**"]` does NOT do it, since the siblings' paths end in `src/`
+The same mechanism bites from the other side. A workspace dependency resolves to
+its `src/` through `@dev/source`, so v8 measures a dependency's modules too:
+`aai-guest`'s report counted all 60 studio modules and read 27% lines against a
+floor of 83. Each package's `vitest.config.ts` excludes its siblings by name —
+`include: ["src/**"]` does NOT do it, since the siblings' paths end in `src/`
 and match the same glob.
 
 ## What `test-utils.ts` owes
@@ -88,4 +88,5 @@ Everything more than one guest suite needs:
 
 Never a local `errMsg`/ternary: `errorMessage` (`@alexkroman1/aai`) also unwraps
 a non-`Error` object with a string `message` — what a thrown value looks like
-after crossing `rpc.ts`'s JSON-RPC boundary. Covered once in `sdk/utils.test.ts`.
+after crossing `rpc.ts`'s JSON-RPC boundary. Covered once in
+`sdk/utils.test.ts`.

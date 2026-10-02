@@ -15,16 +15,15 @@ Each capability under `contracts/entrypoints/` is a named slice of what an
 embedder writes against (read the tree for the list — never restate it). The
 mechanism is the repo's: see "The authoring surface is versioned in epochs" in
 [`docs/CLAUDE.md`](../../../../docs/CLAUDE.md), which owns the reports, the
-epochs and the renderings. Here it means a signature change on a contracted
-name is RECORDED — `node scripts/api-contracts.mjs --update` when provably
+epochs and the renderings. Here it means a signature change on a contracted name
+is RECORDED — `node scripts/api-contracts.mjs --update` when provably
 compatible, else `--bump aai-runtime:<capability> --drop "<reason>"` or
 `--retain` — rather than discovered by whoever's build breaks.
 
 - **A new feature gets its own capability**, and its own subpath when a
   different reader imports it. Adding a feature to an existing capability makes
   every change to it an epoch of that capability; that is why `auth`, `metrics`,
-  `eval-simulate`, `eval-assert`, `eval-stubs` and `testing-stubs` are
-  separate.
+  `eval-simulate`, `eval-assert`, `eval-stubs` and `testing-stubs` are separate.
 - `tools` (one name, `withToolsDir`) is its own capability because it assembles
   the DEFINITION a runtime is handed, not any part of the engine.
 - **A capability is not a subpath.** The two testing doors re-export across
@@ -52,11 +51,11 @@ tree for which exist.
   front to back, edit points marked, no design commentary.
 - **A template need not exercise every contracted name.** The epoch hash covers
   the capability's whole REPORT, so every name is classification-covered; only
-  compile-time exercise is per name. Deliberately absent: `createServerForRuntime`
-  / `createHostServer` (a different artifact from the bootstrap) and
-  `telnyxCodec` / `twilioCodec` (a third-carrier template is the alternative to
-  them). Do not contort a starter into a catalogue.
+  compile-time exercise is per name. Deliberately absent:
+  `createServerForRuntime` / `createHostServer` (a different artifact from the
+  bootstrap) and `telnyxCodec` / `twilioCodec` (a third-carrier template is the
+  alternative to them). Do not contort a starter into a catalogue.
 - What writing the templates found (types whose constructor is `@internal`,
   `WdkAdapter`'s nine methods, `TextTurnResult` and upstream minors) is in
-  [`docs/CLAUDE.md`](../../../../docs/CLAUDE.md), "`aai-runtime`
-  contract hazards".
+  [`docs/CLAUDE.md`](../../../../docs/CLAUDE.md), "`aai-runtime` contract
+  hazards".

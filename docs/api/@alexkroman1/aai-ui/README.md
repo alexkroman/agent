@@ -9,28 +9,27 @@ npm i @alexkroman1/aai-ui react react-dom
 ```
 
 Every agent gets this UI for free — `aai dev` and deployed agents serve a
-default client built from this package. Install it directly when the agent
-has its own `client.tsx`.
+default client built from this package. Install it directly when the agent has
+its own `client.tsx`.
 
 ## UI integration
 
-The hooks here are what a page reads an agent with: the live call, the state
-the agent projects, the tool calls as they run, and the durable runs it
-started. **There is no route to write.** The agent server already serves the
-session socket and the workflow HTTP API, so a component talks to a live
-agent with no glue file in between — a client is one `client.tsx` calling one
-mount.
+The hooks here are what a page reads an agent with: the live call, the state the
+agent projects, the tool calls as they run, and the durable runs it started.
+**There is no route to write.** The agent server already serves the session
+socket and the workflow HTTP API, so a component talks to a live agent with no
+glue file in between — a client is one `client.tsx` calling one mount.
 
 **Two front doors, two mounts.** A voice agent's page calls `mountClient()` and
-talks to a live session. A workflow app's page (`workflowApp()`, or `agent({
-mode: "workflow-app" })`) calls `mountPage()` and talks to the workflow HTTP API
-— no session, no socket, no microphone. Both are still `client.tsx`, still
-React, still the same theme tokens.
+talks to a live session. A workflow app's page (`workflowApp()`, or
+`agent({ mode: "workflow-app" })`) calls `mountPage()` and talks to the workflow
+HTTP API — no session, no socket, no microphone. Both are still `client.tsx`,
+still React, still the same theme tokens.
 
 ### Agent `agent.ts`
 
-The session's state lives in a slot, and `syncState` is what the browser sees
-— pushed after every tool call, so the client never rebuilds it from events:
+The session's state lives in a slot, and `syncState` is what the browser sees —
+pushed after every tool call, so the client never rebuilds it from events:
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -70,10 +69,10 @@ export default tool({
 
 ### UI component for a tool `quote-card.tsx`
 
-`useToolResult` fires once per settled call of one named tool, with the
-result already parsed. A component that mounts late still receives the
-results of calls that finished before it — a result is a value the UI is
-driven from, not a moment:
+`useToolResult` fires once per settled call of one named tool, with the result
+already parsed. A component that mounts late still receives the results of calls
+that finished before it — a result is a value the UI is driven from, not a
+moment:
 
 ```tsx
 import { useState } from "react";
@@ -94,13 +93,12 @@ export default function QuoteCard() {
 }
 ```
 
-`useToolCallStart` is the same hook for the other end of the call — the
-pending invocation and its arguments, for a spinner rather than a value.
-Either one takes the tool's own shape as a type argument, derived from the
-tool module by a **type-only** import that is erased and so pulls no server
-code into the bundle: `useToolResult<InferToolOutput<typeof getQuote>>(…)`
-for the result, `useToolCallStart<InferToolInput<typeof getQuote>>(…)` for
-the arguments.
+`useToolCallStart` is the same hook for the other end of the call — the pending
+invocation and its arguments, for a spinner rather than a value. Either one
+takes the tool's own shape as a type argument, derived from the tool module by a
+**type-only** import that is erased and so pulls no server code into the bundle:
+`useToolResult<InferToolOutput<typeof getQuote>>(…)` for the result,
+`useToolCallStart<InferToolInput<typeof getQuote>>(…)` for the arguments.
 
 ### Client `client.tsx`
 
@@ -134,11 +132,11 @@ mountClient({
 });
 ```
 
-The type argument above restates a shape the agent already knows. Move the
-slot and its projection into a `shared.ts` both ends import, pass the
-projection itself — `useAgentState(deskProjection)` — and the state is typed
-from the projection and the pre-first-push frame derived from it, so there is
-nothing to restate and no branch for the first render.
+The type argument above restates a shape the agent already knows. Move the slot
+and its projection into a `shared.ts` both ends import, pass the projection
+itself — `useAgentState(deskProjection)` — and the state is typed from the
+projection and the pre-first-push frame derived from it, so there is nothing to
+restate and no branch for the first render.
 
 Pass `component` instead of `sidebar` to replace the whole shell. It renders
 inside the same providers, so every hook here works in it unchanged.
@@ -146,8 +144,8 @@ inside the same providers, so every hook here works in it unchanged.
 ## A workflow app
 
 `mountPage()` mounts a form over the agent's workflows and installs no session.
-`<WorkflowFields>` renders one control per scalar property of the workflow's
-own input schema, so adding a field to the schema adds it to the page:
+`<WorkflowFields>` renders one control per scalar property of the workflow's own
+input schema, so adding a field to the schema adds it to the page:
 
 ```tsx
 import "@alexkroman1/aai-ui/styles.css";
@@ -183,11 +181,10 @@ function App() {
 mountPage({ name: "Digest", component: App });
 ```
 
-Naming the workflow's def — `useWorkflowSubmit<typeof digest>("digest")`, off
-a **type-only** import of `agent.ts` — is what makes `submit()` take the
-declared input and `run.status === "completed"` narrow to a typed
-`run.output`. The import is erased, so it pulls no server code into the
-bundle.
+Naming the workflow's def — `useWorkflowSubmit<typeof digest>("digest")`, off a
+**type-only** import of `agent.ts` — is what makes `submit()` take the declared
+input and `run.status === "completed"` narrow to a typed `run.output`. The
+import is erased, so it pulls no server code into the bundle.
 
 ## What is in the package
 
@@ -205,47 +202,46 @@ handle each returns (`ClientConfig`, `ClientHandle`, `PageConfig`,
 `useSessionError()` and `useSessionActions()` as the narrow reads a custom
 chrome repeats; `useUserTranscript()` for the caller's in-progress turn, which
 keeps `null` (silent) and `""` (speech, no words yet) apart; `useConversation()`
-for the interleaved transcript with nothing rendered. `createBrowserSession()` is
-the same session as a plain store with an immutable snapshot per change, for a
-non-React client. `SessionSnapshot`, `AgentState`, `ChatMessage`,
+for the interleaved transcript with nothing rendered. `createBrowserSession()`
+is the same session as a plain store with an immutable snapshot per change, for
+a non-React client. `SessionSnapshot`, `AgentState`, `ChatMessage`,
 `ToolCallInfo`, `SessionError` and `SessionErrorCode` come with it.
 
 **What the agent pushes** — `useAgentState(slot.projected)` (that slot's entry
 in the agent's `syncState`; `selectAgentState(slot)` for `useSessionSelector`),
 `useToolResult()` / `useToolCallStart()` (tool calls as they run), and
-`useEvent()` (custom events from `ctx.send`, and the one to prefer in new
-code over reading tool results).
+`useEvent()` (custom events from `ctx.send`, and the one to prefer in new code
+over reading tool results).
 
 **Chat chrome** — `ChatView` is the whole surface; `ConsoleShell`,
 `MessageList`, `Controls`, `Markdown`, `ToolCallRow`, `SessionErrorBanner`,
-`StartScreen`, `SidebarLayout`, `AutoScroll`, `BulletList`, `Facts` and
-`Button` are its parts, exported so a custom chrome reuses them rather than
-approximating them. `AutoScroll` is the one to reach for directly: it is the
-only scroll-pinning implementation here, and it needs a **bounded height**.
+`StartScreen`, `SidebarLayout`, `AutoScroll`, `BulletList`, `Facts` and `Button`
+are its parts, exported so a custom chrome reuses them rather than approximating
+them. `AutoScroll` is the one to reach for directly: it is the only
+scroll-pinning implementation here, and it needs a **bounded height**.
 `AGENT_STATE_LABELS` and `WORKFLOW_STATUS_LABELS` are the default state words,
 so a chrome overrides the one term it has a better word for.
 
 **Forms** — `Form` collects typed values off the DOM on submit. `Field`,
 `TextField`, `NumberField`, `TextAreaField`, `SelectField`, `CheckboxField`,
-`FileField` and `SubmitButton` are the controls; `WorkflowFields` generates
-them from a schema. A plain `<input name="x">` works identically.
+`FileField` and `SubmitButton` are the controls; `WorkflowFields` generates them
+from a schema. A plain `<input name="x">` works identically.
 
-**Workflows** — `createWorkflowApi()` is the client;
-`useWorkflowSubmit()` / `useWorkflowStream()` (start one and watch it),
-`useWorkflowRun()` (watch one by id), `useWorkflowRuns()` (the history),
-`useWorkflowProgress()` (what a run has written), `useWorkflows()` (the
-listing), `useDownloadUrl()` (an upload a run produced, as a URL a DOM element
-accepts), `useRunKey()` (the storage-backed key a submission is recovered by).
-`<WorkflowProgress>` and `<UploadProgressBar>` are the
-rendered halves. `WorkflowRun`, `WorkflowSummary`, `WorkflowInputOf`,
+**Workflows** — `createWorkflowApi()` is the client; `useWorkflowSubmit()` /
+`useWorkflowStream()` (start one and watch it), `useWorkflowRun()` (watch one by
+id), `useWorkflowRuns()` (the history), `useWorkflowProgress()` (what a run has
+written), `useWorkflows()` (the listing), `useDownloadUrl()` (an upload a run
+produced, as a URL a DOM element accepts), `useRunKey()` (the storage-backed key
+a submission is recovered by). `<WorkflowProgress>` and `<UploadProgressBar>`
+are the rendered halves. `WorkflowRun`, `WorkflowSummary`, `WorkflowInputOf`,
 `WorkflowOutputOf` and `isTerminal()` are the vocabulary.
 
 **Theme** — `useTheme()` and `ClientTheme`.
 
 ## Other subpaths
 
-The root export is the whole client API. Two subpaths sit beside it, neither
-of them something a `client.tsx` reaches for:
+The root export is the whole client API. Two subpaths sit beside it, neither of
+them something a `client.tsx` reaches for:
 
 | Subpath       | Reach for it when                                                                                                                                                                                                                               |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

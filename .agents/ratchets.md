@@ -11,24 +11,24 @@ every task's context. AGENTS.md's "Detailed references" table points here. -->
 
 # Quality ratchets
 
-Beyond lint/typecheck/test, `scripts/check.mjs` **and the CI check job** run
-the **gates** in its `GATES` table (all also runnable standalone) that hold the
-line on technical debt. The catalogue below is GENERATED from that table
+Beyond lint/typecheck/test, `scripts/check.mjs` **and the CI check job** run the
+**gates** in its `GATES` table (all also runnable standalone) that hold the line
+on technical debt. The catalogue below is GENERATED from that table
 (`pnpm sync:gate-catalogue`; `check:gate-catalogue` fails when it is stale or
 when a row is described nowhere in this file), so no count is written here.
 
 - **Phase.** `ratchets` run first, IN PARALLEL with buffered output printed back
-  in table order; `after-tests` reads `test:coverage` output; `after-build` reads
-  `dist/` and runs serially in source order, because api-report →
+  in table order; `after-tests` reads `test:coverage` output; `after-build`
+  reads `dist/` and runs serially in source order, because api-report →
   api-contracts → authoring-guide each read what the one before wrote.
 - **Failure.** A fatal gate stops the run; the rest are all reported at the end,
   so a branch tripping three ratchets hears about three.
 - **Fix.** The root script that repairs a failure mechanically. A failing gate
   prints it, and **`pnpm fix`** runs `pnpm format` then every fix in table order
   (with `pnpm build` before the first one that reads `dist/`). Every gate whose
-  fix ends in `:update` compares against a COMMITTED BASELINE in `scripts/`,
-  and that `--update` is LOWER-ONLY: it records an improvement and refuses to
-  raise a budget, so blessing growth is a hand edit in a reviewable diff.
+  fix ends in `:update` compares against a COMMITTED BASELINE in `scripts/`, and
+  that `--update` is LOWER-ONLY: it records an improvement and refuses to raise
+  a budget, so blessing growth is a hand edit in a reviewable diff.
 - **An improvement WARNS, never fails.** A baseline sitting above the tree
   prints the entries to give back and the command; only growth fails. Same rule
   in every ratchet (`_ratchet.mjs`'s `warnStale`, `check-file-length.mjs`,
@@ -128,8 +128,9 @@ The gates with a section of their own further down (`check:hatches`,
   number that disagrees fails here rather than in a caller's ear. No fixer: the
   right number is a decision.
 - **`check:scaffold`** — the scaffold's manifest SHIPS and cannot say
-  `catalog:`, so every catalogued bump is applied to it a second time; unchecked,
-  it once wrote a literal `catalog:` into a manifest npm cannot resolve.
+  `catalog:`, so every catalogued bump is applied to it a second time;
+  unchecked, it once wrote a literal `catalog:` into a manifest npm cannot
+  resolve.
 - **`check:konsistent`** — structural conventions (`konsistent.json`): shapes no
   per-file tool sees because none is wrong WITHIN a file — a provider module
   exporting four of its five symbols, an import across a forbidden boundary.
@@ -147,12 +148,12 @@ The gates with a section of their own further down (`check:hatches`,
   fails on TS7016 only, with a TS7006 floor so a tsc that resolved nothing
   cannot pass.
 - **`check:coverage-per-file`** — reads what `test:coverage` wrote (`turbo.json`
-  declares `coverage/**` as its output, so a cache hit still measures the current
-  tree). The per-package floors catch a package sliding; this catches one new
-  module landing untested. Runs per package in CI's coverage matrix.
-- **`check:publish-names`** — a publishable package must use the
-  `@alexkroman1/` scope (the unscoped names belong to other npm publishers),
-  plus what a published manifest owes beyond packaging (`.agents/dependencies.md`).
+  declares `coverage/**` as its output, so a cache hit still measures the
+  current tree). The per-package floors catch a package sliding; this catches
+  one new module landing untested. Runs per package in CI's coverage matrix.
+- **`check:publish-names`** — a publishable package must use the `@alexkroman1/`
+  scope (the unscoped names belong to other npm publishers), plus what a
+  published manifest owes beyond packaging (`.agents/dependencies.md`).
 - **`check:publish-protocols`** — it PACKS. `catalog:` and `workspace:` are
   pnpm-only protocols rewritten at pack time; publint reads the source manifest
   and cannot see a release that installs for nobody.
@@ -166,8 +167,8 @@ The gates with a section of their own further down (`check:hatches`,
   compiles". Recording a hash is a decision (`api-contract-epoch-bump` skill),
   so it has no fix.
 - **`check:authoring-guide`** — after THAT: the guide that ships to users must
-  name every capability the contracts version. `check:agent-guide` asserts it
-  is CURRENT; this asserts it is COMPLETE.
+  name every capability the contracts version. `check:agent-guide` asserts it is
+  CURRENT; this asserts it is COMPLETE.
 - **`check:docs-md`** — `docs/api/` is TypeDoc's own markdown, committed, for an
   agent that cannot fetch the rendered site.
 - **`check:doc-examples`** — every `ts`/`tsx` fence in published doc comments
@@ -200,27 +201,25 @@ clear, not as a precedent for skipping.
 
 - **`pnpm check:hatches`** (`scripts/check-escape-hatches.mjs`) — counts
   static-analysis escape hatches (`@ts-expect-error`, `@ts-ignore`,
-  `@ts-nocheck`, `biome-ignore`, `eslint-disable`, `as any`,
-  `as unknown as`, `as never`) across `packages/` and `scripts/` and holds each
-  FILE to the count recorded in `scripts/escape-hatch-baseline.json`. A file
-  may hold fewer; it may never hold more; a file absent from a pattern may
-  hold none.
-  Fix the underlying type/lint error instead of suppressing it. On failure it
-  **names the offending lines** (`file:line` plus the source line) under each
-  file over budget.
+  `@ts-nocheck`, `biome-ignore`, `eslint-disable`, `as any`, `as unknown as`,
+  `as never`) across `packages/` and `scripts/` and holds each FILE to the count
+  recorded in `scripts/escape-hatch-baseline.json`. A file may hold fewer; it
+  may never hold more; a file absent from a pattern may hold none. Fix the
+  underlying type/lint error instead of suppressing it. On failure it **names
+  the offending lines** (`file:line` plus the source line) under each file over
+  budget.
 
   **Per-file, not a grand total**, which is what makes the ratchet actually
   ratchet: the old total-based version passed a branch that traded one hatch for
   another elsewhere — verified by A/B, the total stayed at 122 and only the
-  per-file gate caught it.
-  **The engine counts OCCURRENCES, not matching lines** — `git grep -o`. Both
-  baselines describe themselves as recording occurrences and for a long time
-  recorded lines: three casts on one line reported `found 1`, the same three on
-  three lines reported `found 3`. Honest when it was measured (94 lines against
-  94 occurrences) and structurally wrong, because a file at its budget could
-  absorb more by appending them to the line that bought the budget. The scan is
-  two passes: `-n` for the source line the report prints and the comment filter
-  decides on, `-o` for the count.
+  per-file gate caught it. **The engine counts OCCURRENCES, not matching lines**
+  — `git grep -o`. Both baselines describe themselves as recording occurrences
+  and for a long time recorded lines: three casts on one line reported
+  `found 1`, the same three on three lines reported `found 3`. Honest when it
+  was measured (94 lines against 94 occurrences) and structurally wrong, because
+  a file at its budget could absorb more by appending them to the line that
+  bought the budget. The scan is two passes: `-n` for the source line the report
+  prints and the comment filter decides on, `-o` for the count.
 
   **And `assertScanCorpus` diffs `git ls-files` against `git grep -lI`, because
   ONE control character makes a whole file invisible.** A single raw NUL makes a
@@ -237,12 +236,12 @@ clear, not as a precedent for skipping.
 
   **The three CAST patterns skip COMMENT-ONLY lines; the five suppression
   patterns do not.** A `biome-ignore` genuinely is a comment, and suppressing
-  the rule is what the comment does — but a cast named in prose is prose. Of
-  119 counted hatches, 25 sat on comment lines; 21 were correct and all four
-  cast hits were JSDoc, two of them the ENTIRE `as any` budget. So a real
+  the rule is what the comment does — but a cast named in prose is prose. Of 119
+  counted hatches, 25 sat on comment lines; 21 were correct and all four cast
+  hits were JSDoc, two of them the ENTIRE `as any` budget. So a real
   `export const smuggled = (globalThis as any).x;` could move into that budget
-  with the gate still printing `as any allowed=2 now=2 … ✓`, demonstrated on
-  the real gate. `guard-invariants` had solved this all along with a per-rule
+  with the gate still printing `as any allowed=2 now=2 … ✓`, demonstrated on the
+  real gate. `guard-invariants` had solved this all along with a per-rule
   `skipComments` flag; this gate called the same `scanGroups` with no filter.
 
   **`as never` is counted, and it is strictly worse than `as unknown as`.**
@@ -275,9 +274,9 @@ clear, not as a precedent for skipping.
   of code versus prose, so any doc that _discusses_ a hatch scores as one — and
   `CHANGELOG.md` is generated from changeset summaries, so one naming a pattern
   failed the Version Packages PR on a file no human wrote. A changeset summary
-  may name a pattern freely. `escape-hatch-scope.test.ts` guards the
-  exclusion, and asserts the patterns really do match prose so it cannot pass by
-  them quietly becoming narrower.
+  may name a pattern freely. `escape-hatch-scope.test.ts` guards the exclusion,
+  and asserts the patterns really do match prose so it cannot pass by them
+  quietly becoming narrower.
 
   **`as unknown as` is the one to watch**: it launders a value past the checker
   without tripping `as any`, and went 210 → 105 once counted. Copy the removals
@@ -313,29 +312,28 @@ clear, not as a precedent for skipping.
   was installed. That one was fixed by injection
   (`createDefaultClientHandlers`); the next cannot be, since nobody injects into
   `node-gyp-build-optional-packages` — so `modal` and `microsandbox` are
-  `external` (the first takes 26 of the 52 with it, being their tree) and the
-  25 that remain are pure JS where inlining is free.
+  `external` (the first takes 26 of the 52 with it, being their tree) and the 25
+  that remain are pure JS where inlining is free.
 
   It reads tsdown's own `Detected dependencies in bundle` hint rather than
   re-deriving the set from the lockfile: rolldown inlines what is imported, not
   what is declared, and a gate whose set disagrees with the real bundle is worse
-  than none. It asks turbo for the build (`turbo run build --filter
-aai-studio-server`) and reads turbo's task log
+  than none. It asks turbo for the build
+  (`turbo run build --filter aai-studio-server`) and reads turbo's task log
   (`packages/aai-studio-server/.turbo/turbo-build.log`), which a cache hit
   restores with `dist/`, so the hint is the one the current bundle's build
   printed and the gate costs a cache lookup rather than a rebuild.
   `pnpm bundled-deps:update` only DROPS packages no longer inlined; adding one
-  is a hand edit to the baseline. An ABSENT
-  hint is a hard failure — `deps.onlyBundle` suppresses it while ALSO
-  externalizing `aai-server` itself, which is the cold-start regression that
-  config's comment exists to prevent, and an unparsed hint and a bundle that
-  swallows nothing look identical from here. `bundled-deps.test.ts` holds the
-  config to `alwaysBundle` from the authoring side, because the specifier checks
-  beside it pass either way.
+  is a hand edit to the baseline. An ABSENT hint is a hard failure —
+  `deps.onlyBundle` suppresses it while ALSO externalizing `aai-server` itself,
+  which is the cold-start regression that config's comment exists to prevent,
+  and an unparsed hint and a bundle that swallows nothing look identical from
+  here. `bundled-deps.test.ts` holds the config to `alwaysBundle` from the
+  authoring side, because the specifier checks beside it pass either way.
 
 - **`pnpm check:optional-peers`** (`scripts/check-optional-peers.mjs`) — no
-  module a PUBLISHED entry can reach may statically import an OPTIONAL PEER.
-  A consumer bundles these packages with `ssr: { noExternal: true }` and
+  module a PUBLISHED entry can reach may statically import an OPTIONAL PEER. A
+  consumer bundles these packages with `ssr: { noExternal: true }` and
   `codeSplitting: false` (that is `aai build`'s worker and every deployment
   target's entry), and both settings together INLINE a dynamic import — so a
   module reached only lazily still has its own imports resolved at the
@@ -370,14 +368,14 @@ aai-studio-server`) and reads turbo's task log
 
   **`TEST_ONLY_EDGES` is the one exemption, and it is two edges**: the dynamic
   imports inside `internal.ts`'s conformance loaders, whose only callers are
-  `aai-server`'s platform arms. They are the one place where following a
-  dynamic edge over-reports — a bundler inlines one, but it also tree-shakes an
-  export nobody calls, and no runtime path calls a conformance suite (measured:
-  the guest harness bundles `/internal` with `codeSplitting: false` and carries
-  no vitest). Keyed by the module that names them, so a NEW edge out of the
-  same module is still checked, and a declared edge that stops existing fails
-  the gate rather than rotting. The shape this gate was written for — a loader
-  a shipped feature really calls — is still caught on that same subpath.
+  `aai-server`'s platform arms. They are the one place where following a dynamic
+  edge over-reports — a bundler inlines one, but it also tree-shakes an export
+  nobody calls, and no runtime path calls a conformance suite (measured: the
+  guest harness bundles `/internal` with `codeSplitting: false` and carries no
+  vitest). Keyed by the module that names them, so a NEW edge out of the same
+  module is still checked, and a declared edge that stops existing fails the
+  gate rather than rotting. The shape this gate was written for — a loader a
+  shipped feature really calls — is still caught on that same subpath.
 
   Its empirical half is `aai-cli`'s `_target-bundle-peers.scenario.test.ts`,
   which builds a real target entry in a project whose runtime is COPIED out of
@@ -385,9 +383,9 @@ aai-studio-server`) and reads turbo's task log
   install, since resolution follows a symlink to its realpath and finds this
   workspace's devDependency.
 
-- **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
-  source files at 900 CODE lines and test files at 1200: blank lines and lines
-  wholly inside comments do not count (comment ranges from `oxc-parser`), so
+- **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps source
+  files at 900 CODE lines and test files at 1200: blank lines and lines wholly
+  inside comments do not count (comment ranges from `oxc-parser`), so
   documentation never forces a split. The caps catch OUTLIERS, not ordinary
   growth: the coupling they stood in for is checked directly — a module
   directory (one holding an `index.ts`) is entered through that index only
@@ -419,18 +417,18 @@ aai-studio-server`) and reads turbo's task log
   the split lands as its own commit rather than inside the feature. Two branches
   extracting from the same hot file independently produce duplicate modules.
 
-- **`pnpm check:test-assertions`** (`scripts/check-test-assertions.mjs`) —
-  fails on any `test()`/`it()` body containing no `expect` / `expectTypeOf` /
+- **`pnpm check:test-assertions`** (`scripts/check-test-assertions.mjs`) — fails
+  on any `test()`/`it()` body containing no `expect` / `expectTypeOf` /
   `assert`. A test with no assertion still runs the code, still counts in the
   green total, and still shows up in COVERAGE, while checking nothing but "did
-  not throw synchronously" — indistinguishable from real coverage at every
-  level anyone looks at. Nine were found: `"/health returns ok JSON"` never
-  sent a request (a real version lived 30 lines below it),
+  not throw synchronously" — indistinguishable from real coverage at every level
+  anyone looks at. Nine were found: `"/health returns ok JSON"` never sent a
+  request (a real version lived 30 lines below it),
   `"onHistory appends and onUserTranscript pushes user messages"` checked none
   of its three claims, and `"does not block different keys on each other"`
   encoded its invariant as a bare `await`, so a regression would HANG to the
-  suite timeout rather than fail. **"Does not throw" is legitimate — it just
-  has to be said**: `expect(fn).not.toThrow()`,
+  suite timeout rather than fail. **"Does not throw" is legitimate — it just has
+  to be said**: `expect(fn).not.toThrow()`,
   `await expect(p).resolves.toBeUndefined()`, `expect.fail(msg)` in place of a
   bare `throw`.
 
@@ -452,20 +450,20 @@ aai-studio-server`) and reads turbo's task log
   claim was a bare `await` that HANGS rather than fails. A file that will not
   PARSE fails the run; skipping it would understate every count the gate prints.
 
-- **`pnpm check:claude-md`** (`scripts/check-claude-md.mjs`) — caps agent
-  guides in two tiers. **Auto-loaded** guides (`AGENTS.md`, every package or
-  directory `CLAUDE.md`, `docs/CLAUDE.md`) get **40,000 characters**, because
-  Claude Code loads them unasked on every task in that directory.
-  **Reference** files (`*-CLAUDE.md` siblings, `.agents/*.md`, the scaffold and
-  template guides) get **130,000**, ~13% under the ~150k point past which a read
-  silently drops the rest. An auto-loaded guide still over 40k is listed in
-  `scripts/claude-md-baseline.json`, which is shrink-only: growing past an
-  entry fails, shrinking below one fails until `pnpm claude-md:update` records
-  it, a stale entry fails, and `--update` never raises or adds. When it fails,
-  move the section to the `CLAUDE.md` of the directory it governs and leave a
-  pointer (the report names the largest `##` sections); the scaffold guide has
-  to be cut. It also pins the root `CLAUDE.md` to `@AGENTS.md`. Mirrored as a
-  test, `packages/aai-gates/src/claude-md-limit.test.ts`, which reads the same
+- **`pnpm check:claude-md`** (`scripts/check-claude-md.mjs`) — caps agent guides
+  in two tiers. **Auto-loaded** guides (`AGENTS.md`, every package or directory
+  `CLAUDE.md`, `docs/CLAUDE.md`) get **40,000 characters**, because Claude Code
+  loads them unasked on every task in that directory. **Reference** files
+  (`*-CLAUDE.md` siblings, `.agents/*.md`, the scaffold and template guides) get
+  **130,000**, ~13% under the ~150k point past which a read silently drops the
+  rest. An auto-loaded guide still over 40k is listed in
+  `scripts/claude-md-baseline.json`, which is shrink-only: growing past an entry
+  fails, shrinking below one fails until `pnpm claude-md:update` records it, a
+  stale entry fails, and `--update` never raises or adds. When it fails, move
+  the section to the `CLAUDE.md` of the directory it governs and leave a pointer
+  (the report names the largest `##` sections); the scaffold guide has to be
+  cut. It also pins the root `CLAUDE.md` to `@AGENTS.md`. Mirrored as a test,
+  `packages/aai-gates/src/claude-md-limit.test.ts`, which reads the same
   baseline and asserts the caps match.
 - **`pnpm check:shell`** (`scripts/check-shell.mjs`) — ShellCheck over every
   tracked `*.sh` and extensionless `sh`/`bash`-shebang file, since Biome reads
@@ -475,15 +473,14 @@ aai-studio-server`) and reads turbo's task log
 - **`pnpm check:prettier`** — Prettier (with `prettier-plugin-sh`) as the
   FORMATTER for Markdown, MDX, YAML, shell scripts and Dockerfiles, which Biome
   does not read; `pnpm format:prettier` applies it. Markdown keeps
-  `proseWrap: preserve` (markdownlint's 80 columns still hold, so re-wrap a
-  line Prettier pushes over) and leaves fenced code alone. Two things it
-  cannot touch: the generated files `.prettierignore` lists, and the
-  guide-index tables in AGENTS.md, fenced by `prettier-ignore-start`/`-end` so
-  the generator and the formatter do not fight. Prettier pads tables to
-  aligned columns, which is why the reference cap is 130,000. YAML that a gate
-  spec parses by regex keeps its shape with a `# prettier-ignore` line. Never
-  let a code span wrap across lines: Prettier strips the continuation's
-  indentation.
+  `proseWrap: preserve` (markdownlint's 80 columns still hold, so re-wrap a line
+  Prettier pushes over) and leaves fenced code alone. Two things it cannot
+  touch: the generated files `.prettierignore` lists, and the guide-index tables
+  in AGENTS.md, fenced by `prettier-ignore-start`/`-end` so the generator and
+  the formatter do not fight. Prettier pads tables to aligned columns, which is
+  why the reference cap is 130,000. YAML that a gate spec parses by regex keeps
+  its shape with a `# prettier-ignore` line. Never let a code span wrap across
+  lines: Prettier strips the continuation's indentation.
 - **`pnpm check:polyglot`** (`scripts/check-polyglot.mjs`) — lints and
   format-checks every tracked file in a language the rest of the pipeline does
   not read: yamllint (`.yamllint.yaml`), ruff check + format (`ruff.toml`),
@@ -502,22 +499,22 @@ aai-studio-server`) and reads turbo's task log
   `*-CLAUDE.md` siblings, and directory guides under `src/`) opens with a
   frontmatter block holding exactly `summary` and `read_when`, and AGENTS.md's
   four guide tables match what `pnpm sync:guide-index` generates from them; a
-  missing marker pair fails. Hand-kept tables drift. `pnpm docs:list` prints
-  the same index for a reader. Floored at 30 guides.
+  missing marker pair fails. Hand-kept tables drift. `pnpm docs:list` prints the
+  same index for a reader. Floored at 30 guides.
 - **`pnpm check:defaults`** (`scripts/check-defaults.mjs`) — every stated
   default agrees with the `DEFAULT_*` constant that is the default. It imports
   the constants' real values from `packages/aai/src/sdk/` and checks every
   `@defaultValue` there (a literal against the constant the tag names, or the
-  `export const` it sits on; a NUMBER naming no constant fails), the docs
-  site's "Tuning the conversation" table in `more/voices-and-models.md`, and
-  every "(default X)" the scaffold guide states for a field (its copies are
-  held by `check:agent-guide` / `check:studio-prompt`). Written after
-  `minBargeInWords` moved 2 → 1 and all three kept saying 2. Floored at each
-  source's measured count; spec `packages/aai-gates/src/defaults-gate.test.ts`.
+  `export const` it sits on; a NUMBER naming no constant fails), the docs site's
+  "Tuning the conversation" table in `more/voices-and-models.md`, and every
+  "(default X)" the scaffold guide states for a field (its copies are held by
+  `check:agent-guide` / `check:studio-prompt`). Written after `minBargeInWords`
+  moved 2 → 1 and all three kept saying 2. Floored at each source's measured
+  count; spec `packages/aai-gates/src/defaults-gate.test.ts`.
 - **`pnpm check:workflows`** (`scripts/check-workflows.mjs`) — actionlint and
   zizmor over `.github/workflows/`, the config agents edit most and which
-  nothing read before GitHub ran it. actionlint type-checks expressions,
-  `needs` and outputs, and runs ShellCheck over every `run:` block (the shell
+  nothing read before GitHub ran it. actionlint type-checks expressions, `needs`
+  and outputs, and runs ShellCheck over every `run:` block (the shell
   `check:shell` cannot see); zizmor audits template injection, default token
   scopes and persisted checkout credentials. The first run found 30 zizmor
   findings and 3 ShellCheck notes, all fixed: every workflow now opens with
@@ -525,34 +522,34 @@ aai-studio-server`) and reads turbo's task log
   `persist-credentials: false`, and the two that do carry an inline
   `# zizmor: ignore[artipacked]` saying why. **CI passes `--base origin/main`,
   so zizmor's policy (`.github/zizmor.yml`, none today) is read from the base**:
-  a PR that relaxes it is still audited under the policy it is trying to
-  change. Same PATH/`AAI_REQUIRE_WORKFLOW_LINT=1` shape as `check:shell`;
-  `check.yml` installs pinned versions with pipx. Offline audits only.
+  a PR that relaxes it is still audited under the policy it is trying to change.
+  Same PATH/`AAI_REQUIRE_WORKFLOW_LINT=1` shape as `check:shell`; `check.yml`
+  installs pinned versions with pipx. Offline audits only.
 - **`pnpm check:template-types`** (`scripts/check-template-types.mjs`) — every
   template, plus the scaffold's `server.mjs` and `vitest.config.ts`, compiled
   under the tsconfig `aai init` ships (derived at run time by
   `_scaffold-tsc.mjs`, which EXTENDS the scaffold's `@alexkroman1/aai/tsconfig`
-  preset rather than copying it). **It runs TWICE**: that config verbatim,
-  then with `exactOptionalPropertyTypes: true` overlaid. The second pass exists
-  because `_api-contracts-compat.mjs` proves an epoch revision compatible
-  under that flag, while nothing compiled a real consumer under it — so a
-  published optional field that rejects an explicit `undefined` passed every
-  gate and broke only the user who turned the flag on. It is an OVERLAY, not a
-  scaffold setting: flipping it in `scaffold/tsconfig.json` ships it into every
-  user project, a product call rather than a gate's. `noUncheckedIndexedAccess`
-  needs no second pass — the scaffold already sets it. Both passes were clean
-  when the second landed; a canary `{ a?: number } = { a: undefined }` in a
-  template fails only the strict one. When the strict pass fails inside an SDK
-  type, fix the PUBLISHED type (`?: T | undefined`), not the template.
+  preset rather than copying it). **It runs TWICE**: that config verbatim, then
+  with `exactOptionalPropertyTypes: true` overlaid. The second pass exists
+  because `_api-contracts-compat.mjs` proves an epoch revision compatible under
+  that flag, while nothing compiled a real consumer under it — so a published
+  optional field that rejects an explicit `undefined` passed every gate and
+  broke only the user who turned the flag on. It is an OVERLAY, not a scaffold
+  setting: flipping it in `scaffold/tsconfig.json` ships it into every user
+  project, a product call rather than a gate's. `noUncheckedIndexedAccess` needs
+  no second pass — the scaffold already sets it. Both passes were clean when the
+  second landed; a canary `{ a?: number } = { a: undefined }` in a template
+  fails only the strict one. When the strict pass fails inside an SDK type, fix
+  the PUBLISHED type (`?: T | undefined`), not the template.
 
-**Every gate whose success output is a COUNT now carries a floor**, set from
-the measured actual and recorded beside it, because a scan that stops matching
+**Every gate whose success output is a COUNT now carries a floor**, set from the
+measured actual and recorded beside it, because a scan that stops matching
 prints the same checkmark as a healthy tree. Five were added at once:
 `check-gateway-models` had none at all and its `[^}]*` entry parser could not
 cross a nested `}`, so one reformatted entry dropped BOTH the committed and the
-generated map to zero, made the diff empty, and printed `catalog current — 0
-advertised, 0 usable ✓`; `artifact-size-report` did not floor
-`publishablePackages()` though `_fs.mjs` documents that the caller must;
+generated map to zero, made the diff empty, and printed
+`catalog current — 0 advertised, 0 usable ✓`; `artifact-size-report` did not
+floor `publishablePackages()` though `_fs.mjs` documents that the caller must;
 `check-doc-examples`'s `MIN_EXAMPLES` sat at 45 against a measured 98, so more
 than half the corpus could vanish silently (its `extractFences` also dropped
 every block after an unclosed fence, which now throws); and `guard-invariants`
@@ -577,15 +574,15 @@ floor of 20 with five of the six missing.
 The general rule, which is what the `src/` restructuring cost four times over:
 **a path or specifier written down in a gate needs an assertion that it still
 resolves, sited before anything reads it.** TypeScript cannot supply one — a
-gate script runs outside the program it checks, and the whole reason these
-lists exist is to reach files nothing imports (see "Before turning another
-prefix into a directory" in `packages/aai-runtime/CLAUDE.md`). What is available
-instead is the choice between a named finding and a silent narrowing, and it is
-made per mechanism: `check-optional-peers.mjs` fails when a `TEST_ONLY_EDGES`
-exemption names a subpath that is gone, `JOURNAL_BACKENDS`' sweep fails when a
-registered `module` is absent from the tree, and this floor covers the third
-shape. A `readFileSync` over a path literal with no such assertion is the shape
-to refuse in review.
+gate script runs outside the program it checks, and the whole reason these lists
+exist is to reach files nothing imports (see "Before turning another prefix into
+a directory" in `packages/aai-runtime/CLAUDE.md`). What is available instead is
+the choice between a named finding and a silent narrowing, and it is made per
+mechanism: `check-optional-peers.mjs` fails when a `TEST_ONLY_EDGES` exemption
+names a subpath that is gone, `JOURNAL_BACKENDS`' sweep fails when a registered
+`module` is absent from the tree, and this floor covers the third shape. A
+`readFileSync` over a path literal with no such assertion is the shape to refuse
+in review.
 
 These are pure fs checks (no build needed), so they run up front and fail fast.
 To tighten quality over time, lower the entries in the file-length allowlist and
@@ -593,27 +590,26 @@ in the two per-file baselines (`escape-hatch-baseline.json`,
 `guard-invariants-baseline.json`) — all three only move one direction, and
 `--update` on the latter two enforces that rather than trusting it.
 
-A sixth ratchet lives in the vitest configs: **coverage thresholds**.
-Every package has floors — `aai-templates` was for a while the one that did
-not, so CI measured its coverage and threw the number away. Each package's
+A sixth ratchet lives in the vitest configs: **coverage thresholds**. Every
+package has floors — `aai-templates` was for a while the one that did not, so CI
+measured its coverage and threw the number away. Each package's
 `vitest.config.ts` declares per-package coverage floors
-(lines/functions/branches/statements) that CI enforces via
-`pnpm test:coverage` (the `test` job runs it per package). The root
-`vitest.config.ts` holds NO thresholds — see below. Like the
-other ratchets these only move up: when a coverage run shows actuals
-comfortably above a floor, raise the floor to ~2-3 points below the
-actual. Never lower a floor to make a PR pass — add tests instead.
-Coverage measures production source only; test infrastructure
+(lines/functions/branches/statements) that CI enforces via `pnpm test:coverage`
+(the `test` job runs it per package). The root `vitest.config.ts` holds NO
+thresholds — see below. Like the other ratchets these only move up: when a
+coverage run shows actuals comfortably above a floor, raise the floor to ~2-3
+points below the actual. Never lower a floor to make a PR pass — add tests
+instead. Coverage measures production source only; test infrastructure
 (`_test-utils.ts`, mocks, fixtures, setup files) is excluded via
 `sharedCoverageExclude` in `vitest.shared.ts`.
 
 **The per-package floors are the only ones, because they are the only ones
 anything evaluates.** `pnpm test:coverage` is `turbo run test:coverage`, which
-fans out to each package's own config, and CI runs `pnpm --filter
-./packages/<pkg> test:coverage` per matrix entry — so nothing in the repo or in
-CI ever read the root `vitest.config.ts` thresholds, and only a direct
-`pnpm vitest run --coverage` at the root ever could. They were kept for a while
-on the argument that they were "the only floor that sees the repo as one
+fans out to each package's own config, and CI runs
+`pnpm --filter ./packages/<pkg> test:coverage` per matrix entry — so nothing in
+the repo or in CI ever read the root `vitest.config.ts` thresholds, and only a
+direct `pnpm vitest run --coverage` at the root ever could. They were kept for a
+while on the argument that they were "the only floor that sees the repo as one
 program", which is a view nobody's pipeline takes; what they actually were was a
 ratchet no process could move and no PR could trip, sitting ~4 points under an
 actual nobody had measured. They are DELETED. The measured actuals stay in a
@@ -622,8 +618,8 @@ comment there, which was the informative half.
 **And the floors are measured locally now, because for a long time they were
 not.** `scripts/check.mjs` ran `test`, CI's matrix runs `test:coverage`, so the
 one gate a PR could not see coming was its own coverage: every suite green
-locally, `test (<pkg>)` red in CI. It happened — a new 300-line module in
-aai-ui landed at 1.44% line and 0% branch coverage, took the package under all
-four of its floors, and cost a whole follow-up commit to fix. Floors do not
-move to accommodate a PR, so the earlier that is known the cheaper it is. Both
+locally, `test (<pkg>)` red in CI. It happened — a new 300-line module in aai-ui
+landed at 1.44% line and 0% branch coverage, took the package under all four of
+its floors, and cost a whole follow-up commit to fix. Floors do not move to
+accommodate a PR, so the earlier that is known the cheaper it is. Both
 `check.mjs` modes and `check:affected` run `test:coverage` now.

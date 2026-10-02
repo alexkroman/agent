@@ -8,9 +8,8 @@ read_when: >-
 
 # packages/aai-templates — ffmpeg in the templates
 
-A SIBLING of `packages/aai-templates/CLAUDE.md`, read on demand: this section
-is REFERENCE for someone already
-working in this area.
+A SIBLING of `packages/aai-templates/CLAUDE.md`, read on demand: this section is
+REFERENCE for someone already working in this area.
 
 ## ffmpeg is what lets a desk cut a recording where a HUMAN would
 
@@ -23,9 +22,9 @@ trip — so what it is FOR is the one thing none of those can show: what changes
 downstream when a decoder is in the pipeline.
 
 The answer is that almost everything gets SMALLER, which is the argument worth
-keeping. `transcription-workflow` cuts by arithmetic because with no decoder that
-is all it can do, and it pays for that three times over. Normalizing first, to a
-format the desk itself chose, deletes all three:
+keeping. `transcription-workflow` cuts by arithmetic because with no decoder
+that is all it can do, and it pays for that three times over. Normalizing first,
+to a format the desk itself chose, deletes all three:
 
 |                      | `transcription-workflow`                 | `call-audit-workflow`        |
 | -------------------- | ---------------------------------------- | ---------------------------- |
@@ -41,26 +40,26 @@ Four rules came out of building it, each of which a first draft gets wrong:
 
 - **An analysis whose output grows with the recording must NOT come back on
   stderr.** The SDK keeps a capped stderr TAIL (`FFMPEG_STDERR_TAIL_CHARS`, 4000
-  chars), which is right for `loudnorm`'s one fixed-size JSON block printed after
-  the last frame, and wrong for `silencedetect`, which logs an event per pause —
-  720 of them on a two-hour call. What a tail drops is the BEGINNING, so the
-  failure is a desk that cuts the back half of every long recording and the front
-  half of none, silently, on inputs nobody tests with.
+  chars), which is right for `loudnorm`'s one fixed-size JSON block printed
+  after the last frame, and wrong for `silencedetect`, which logs an event per
+  pause — 720 of them on a two-hour call. What a tail drops is the BEGINNING, so
+  the failure is a desk that cuts the back half of every long recording and the
+  front half of none, silently, on inputs nobody tests with.
   `ametadata=mode=print:file=…` writes to a path with no cap, and does so at
-  `-loglevel error`, so that pass is quiet AND complete. The mirror-image trap is
-  on the other pass: `print_format=json` writes through the LOG, so at
+  `-loglevel error`, so that pass is quiet AND complete. The mirror-image trap
+  is on the other pass: `print_format=json` writes through the LOG, so at
   `-loglevel error` the measure pass runs, succeeds, and prints nothing.
-- **Build the argv in a pure module, and it becomes testable.** An ffmpeg step is
-  untestable exactly where it spawns, so `workflows/media.ts` holds every argv
-  and both parsers as pure functions and the steps hold only materialize, spawn,
-  store. That is what makes 100% line coverage of the decisions possible in the
-  UNIT tier, with no subprocess: `media.ts` measures 100% statements where
-  `ingest.ts` measures 26%, and the 26% is plumbing.
+- **Build the argv in a pure module, and it becomes testable.** An ffmpeg step
+  is untestable exactly where it spawns, so `workflows/media.ts` holds every
+  argv and both parsers as pure functions and the steps hold only materialize,
+  spawn, store. That is what makes 100% line coverage of the decisions possible
+  in the UNIT tier, with no subprocess: `media.ts` measures 100% statements
+  where `ingest.ts` measures 26%, and the 26% is plumbing.
 - **A temp file may not cross a step boundary**, so the shape of an ffmpeg step
   is decided by materialization cost rather than by retry granularity.
-  `ingestRecording` runs `ffprobe` and both `loudnorm` passes in ONE step because
-  splitting them would read the whole recording out of the upload store three
-  times — and on a 700 MB file that is the expensive part by an order of
+  `ingestRecording` runs `ffprobe` and both `loudnorm` passes in ONE step
+  because splitting them would read the whole recording out of the upload store
+  three times — and on a 700 MB file that is the expensive part by an order of
   magnitude, while the decodes are seconds. Its module doc carries the argument.
 - **Plan byte offsets from the BYTE COUNT, never from a duration.**
   `pcmDurationMs` answers whole milliseconds, so a 640,500-byte file reports
@@ -79,18 +78,18 @@ flagged as `cutInSpeech`, counted in the run's output, and rendered on the page.
 A mangled word at a seam is otherwise a mystery, and hiding the one number that
 explains it would be the worse trade.
 
-The same subpath also closed a defect in `transcription-workflow`, which is worth
-reading as the SMALL version of all of this: `workflows/normalize.ts` converts
-anything that is not already cuttable, so its classic flow accepts an m4a off a
-phone. **The test for whether to convert is `parseWav` ITSELF**, not an `ffprobe`
-codec check — a `WAVE_FORMAT_EXTENSIBLE` file reports `pcm_s16le` to ffprobe and
-is refused by the parser, so a probe-based check would pass it through and then
-fail to cut it. Asking the downstream authority as a QUESTION makes the two
-decisions the same decision by construction, and it repairs anything the parser
-rejects for any reason — a 192 kHz 32-bit WAV over `MAX_BYTES_PER_SECOND`
-included. `transcribeStream` still refuses, and has to: it cuts while the bytes
-are still arriving, and a partial file is not something a decoder can be pointed
-at.
+The same subpath also closed a defect in `transcription-workflow`, which is
+worth reading as the SMALL version of all of this: `workflows/normalize.ts`
+converts anything that is not already cuttable, so its classic flow accepts an
+m4a off a phone. **The test for whether to convert is `parseWav` ITSELF**, not
+an `ffprobe` codec check — a `WAVE_FORMAT_EXTENSIBLE` file reports `pcm_s16le`
+to ffprobe and is refused by the parser, so a probe-based check would pass it
+through and then fail to cut it. Asking the downstream authority as a QUESTION
+makes the two decisions the same decision by construction, and it repairs
+anything the parser rejects for any reason — a 192 kHz 32-bit WAV over
+`MAX_BYTES_PER_SECOND` included. `transcribeStream` still refuses, and has to:
+it cuts while the bytes are still arriving, and a partial file is not something
+a decoder can be pointed at.
 
 Both probing steps report what the file WAS before they touch it — "Levelling
 41:20 of aac to 16 kHz mono" — and both had written the phrase themselves, one

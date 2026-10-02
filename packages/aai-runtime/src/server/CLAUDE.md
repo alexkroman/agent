@@ -8,9 +8,9 @@ read_when: >-
 
 # aai-runtime `server/`
 
-Package-wide rules are in [`../../CLAUDE.md`](../../CLAUDE.md); the flat
-`src/` modules' in [`../CLAUDE.md`](../CLAUDE.md). Outside this directory,
-import its `index.ts` only (`guard-invariants` rule 37).
+Package-wide rules are in [`../../CLAUDE.md`](../../CLAUDE.md); the flat `src/`
+modules' in [`../CLAUDE.md`](../CLAUDE.md). Outside this directory, import its
+`index.ts` only (`guard-invariants` rule 37).
 
 ## `createAgentServer` is the front door
 
@@ -28,22 +28,22 @@ The replay engine executes a run in THIS process off the agent's own
 
 - **`publishWorkflowStepEnv()` at CONSTRUCTION**, only when the agent declares
   workflows (it writes a module-global, so publishing unconditionally leaks one
-  test's env into the next; `unstubEnvs` only undoes `vi.stubEnv`). It
-  publishes the AGENT env, not `providerEnv`, so a step sees exactly what `.env`
-  declares. Construction, not `listen()`, because a host that binds
-  `AgentServer.node` itself never calls `listen()`.
+  test's env into the next; `unstubEnvs` only undoes `vi.stubEnv`). It publishes
+  the AGENT env, not `providerEnv`, so a step sees exactly what `.env` declares.
+  Construction, not `listen()`, because a host that binds `AgentServer.node`
+  itself never calls `listen()`.
 - **The delivery door**: `handleWorkflowRequest` is composed into
   `createServerForRuntime`'s `request` hook, wired identically to `aai dev` and
   the harness, with no `allowRemote` — so `POST /workflow-queue` answers 401 (no
   platform queue to vouch for it; in-process timers deliver).
-- **A test must boot a workflow through this door** — `aai-cli`'s
-  `e2e.test.ts` and the `pack + build + boot` subset do.
+- **A test must boot a workflow through this door** — `aai-cli`'s `e2e.test.ts`
+  and the `pack + build + boot` subset do.
 - The scaffold's `server.mjs` promises `PUBLIC_URL` and `DATABASE_URL`
-  forwarding; `ensureWorkflowJournalSchema` is on the public barrel for the
-  same reason (see "The tables come WITH the database" in
+  forwarding; `ensureWorkflowJournalSchema` is on the public barrel for the same
+  reason (see "The tables come WITH the database" in
   `../workflow/journal/backends/postgres.ts`).
-- Host mode (`createHostServer`) wires no workflows: its caller-supplied
-  agents declare none.
+- Host mode (`createHostServer`) wires no workflows: its caller-supplied agents
+  declare none.
 
 ### A server is HANDED to a serverless host, never started by one
 
@@ -57,7 +57,8 @@ the socket itself.
 - **Anything `listen()` does that is not the BIND is a bug** — it runs in dev
   and silently not in production. `listen()` is the bind plus the boot line.
 - **A serverless host gets no WebSocket** (`/websocket`, `/phone` unreachable);
-  the HTTP surface is unaffected, which is all a `mode: "workflow-app"` app needs.
+  the HTTP surface is unaffected, which is all a `mode: "workflow-app"` app
+  needs.
 - **`server.mjs` still calls `listen()`**: `npm start` owns its lifecycle
   (`PORT`, boot line, signal handlers). A serverless deployment is a second,
   tiny entry module, not a mode of that one.
@@ -65,26 +66,26 @@ the socket itself.
 ### `createAgentServer` forwards what only it can
 
 An option the front door does not carry is unreachable, because dropping to
-`createRuntime` + `createServerForRuntime` means restating every derived field by
-hand. So:
+`createRuntime` + `createServerForRuntime` means restating every derived field
+by hand. So:
 
 - `page` and `telephony` are read off the AGENT (`telephony` defaults to no
   carrier), with an explicit field still winning; `name` and `greeting` are
   derived.
 - **`env` is forwarded minus the host gate**, through `agentServerEnv`
   (`env.ts`, shared with the guest). `createServerForRuntime` reads
-  `AAI_WORKFLOW_API_TOKEN` (closes `/workflows/*`),
-  `AAI_SESSION_EVENTS_TOKEN`, and `DATABASE_URL` (where an upload's record
-  lives) from it; the host-mode key is excluded because `?host=1` would run a
-  caller's agent on the operator's credentials. "Belongs to the other door" is
-  not a safe reason to drop an option.
+  `AAI_WORKFLOW_API_TOKEN` (closes `/workflows/*`), `AAI_SESSION_EVENTS_TOKEN`,
+  and `DATABASE_URL` (where an upload's record lives) from it; the host-mode key
+  is excluded because `?host=1` would run a caller's agent on the operator's
+  credentials. "Belongs to the other door" is not a safe reason to drop an
+  option.
 - **`agent-server-forwarding.ts` is the enforcement**: every `RuntimeOptions`
   member is on `AgentServerOptions` or on `UnforwardedRuntimeOption` with a
-  reason. `ForwardingGap`, `StaleExcuse`, `RedundantExcuse` and `TypeDrift`
-  must be `never`; a violation fails `tsc` and the build (the spec beside it is
+  reason. `ForwardingGap`, `StaleExcuse`, `RedundantExcuse` and `TypeDrift` must
+  be `never`; a violation fails `tsc` and the build (the spec beside it is
   type-level and cannot fail on its own).
 - **A forwarding spec must take the door a caller takes**, not call
   `createServerForRuntime` directly.
 - Reasons for each unforwarded member (sandbox seams, `stt`/`llm`/`tts`, two
-  tuning numbers) are at the deny-list entry. Forward one when somebody needs
-  it — `runCode` was, for `AAI_RUN_CODE=deno` (`packages/aai-cli/CLAUDE.md`).
+  tuning numbers) are at the deny-list entry. Forward one when somebody needs it
+  — `runCode` was, for `AAI_RUN_CODE=deno` (`packages/aai-cli/CLAUDE.md`).

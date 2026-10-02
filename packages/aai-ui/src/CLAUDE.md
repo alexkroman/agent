@@ -20,24 +20,24 @@ in `contracts/CLAUDE.md`.
 
 ## Module directories
 
-Three directories under `src/` are MODULES, each entered through its
-`index.ts` only: `session/` (the session core — its rules are in
-`session/CLAUDE.md`), `audio/` (the `VoiceIO`, the capture primitives and the
-pre-connect capture, beside `worklets/`) and `upload/` (the workflow hooks'
-upload id claiming, pause gate, recall and report coalescing).
+Three directories under `src/` are MODULES, each entered through its `index.ts`
+only: `session/` (the session core — its rules are in `session/CLAUDE.md`),
+`audio/` (the `VoiceIO`, the capture primitives and the pre-connect capture,
+beside `worklets/`) and `upload/` (the workflow hooks' upload id claiming, pause
+gate, recall and report coalescing).
 
 - **A sibling of `index.ts` is private** — "not re-exported there" — and
-  guard-invariants rule 37 fails an import from outside the directory that
-  names one (specs and test helpers included); konsistent
-  `ui-module-dir-entered-through-index` states the same rule per directory.
-  A directory opts in by holding an `index.ts`, so a new one is covered on
+  guard-invariants rule 37 fails an import from outside the directory that names
+  one (specs and test helpers included); konsistent
+  `ui-module-dir-entered-through-index` states the same rule per directory. A
+  directory opts in by holding an `index.ts`, so a new one is covered on
   arrival.
 - **Inside a directory, names carry no prefix and no underscore**:
   `session/dial.ts`, never a `session-core-` prefixed name; privacy is the
   index's job.
 - **`index.ts` is re-export only** (konsistent
-  `module-dir-index-is-re-export-only`), which is why `check-module-tests`
-  does not ask it for a test.
+  `module-dir-index-is-re-export-only`), which is why `check-module-tests` does
+  not ask it for a test.
 - **One-way edges**: `audio/` imports neither `session/` nor `upload/`
   (`ui-audio-imports-no-session`) — the session drives the device layer, and
   `audio/` is a lazy chunk the session reaches by dynamic `import()`. `upload/`
@@ -70,14 +70,14 @@ upload id claiming, pause gate, recall and report coalescing).
   (`wss://host/:slug/websocket`), never the sandbox tunnel URL, which rots.
 - **A session ticket is asked for per ATTEMPT** (`session/ticket.ts`):
   `VoiceSessionOptions.token` (told the session the attempt resumes), else the
-  attempt's `client-config` `sessionToken`. It rides `Sec-WebSocket-Protocol`
-  as `aai.auth.<ticket>` AFTER the plain `aai.session` (both from
+  attempt's `client-config` `sessionToken`. It rides `Sec-WebSocket-Protocol` as
+  `aai.auth.<ticket>` AFTER the plain `aai.session` (both from
   `@alexkroman1/aai/protocol`) — a browser fails a handshake that selects none
   of its offers, and the server selects the plain one so the ticket is never
-  echoed. The URL provider STARTS an attempt and the protocol provider reads
-  the same one. A getter that throws dials without a ticket (a provider that
-  rejects leaves partysocket with no `close`, so "connecting" forever); an
-  injected `WebSocket` needs a synchronous one.
+  echoed. The URL provider STARTS an attempt and the protocol provider reads the
+  same one. A getter that throws dials without a ticket (a provider that rejects
+  leaves partysocket with no `close`, so "connecting" forever); an injected
+  `WebSocket` needs a synchronous one.
 - **The last server-issued ticket is the resume credential** on the platform:
   stored beside the session id (`session/resume-store.ts`), presented in
   `SESSION_TICKET_HEADER` on a lookup that resumes, dropped by `forget()`. A
@@ -105,24 +105,24 @@ upload id claiming, pause gate, recall and report coalescing).
   yet. Render on `speaking`; `text` carries the placeholder; `partial` is raw.
 - **The `agent_state` frame is keyed by slot name** (`{ [slot]: view }`, the
   agent's `syncState` keys), so every reader selects ONE slot
-  (`agent-state.ts`). **`useAgentState(projection)`** is the overload to
-  use: it selects `state[projection.key]`, typed and defaulted by the
-  projection, memoized on its identity. Export the projection once from the
-  module declaring the slot and import it in both `agent.ts` and `client.tsx`.
+  (`agent-state.ts`). **`useAgentState(projection)`** is the overload to use: it
+  selects `state[projection.key]`, typed and defaulted by the projection,
+  memoized on its identity. Export the projection once from the module declaring
+  the slot and import it in both `agent.ts` and `client.tsx`.
   `useAgentState("slot", fallback)` is only for a slot whose `create()` is
   expensive to ship to the browser; `useAgentState()` is the whole frame.
-  `hooks.test-d.ts` pins all four signatures. **Per-slot re-renders hold
-  because of two things together**: `selectAgentState(slot)` is ONE stable
-  selector per name, and the session core keeps an unchanged slot's value
-  object across pushes (`shareUnchangedSlots`, `session/messages.ts`).
+  `hooks.test-d.ts` pins all four signatures. **Per-slot re-renders hold because
+  of two things together**: `selectAgentState(slot)` is ONE stable selector per
+  name, and the session core keeps an unchanged slot's value object across
+  pushes (`shareUnchangedSlots`, `session/messages.ts`).
 - **State or moment:** if re-rendering after a reload would be RIGHT, it is
   state → a `sessionSlot` read by `useAgentState`. If it would be a lie or a
   nuisance, it is a moment → `useEvent` / `useToolCallStart` (which never
   replays). `entertainment-picks-agent` shows both.
-- **`useClientTool(name, handler)`** is the one hook that answers BACK: built
-  on `useToolCallStart` (one run per call id; a call still pending at mount is
-  run, a completed one is not) and `session.sendToolResult`, which encodes the
-  result and turns an unencodable one into an `error` rather than a throw.
+- **`useClientTool(name, handler)`** is the one hook that answers BACK: built on
+  `useToolCallStart` (one run per call id; a call still pending at mount is run,
+  a completed one is not) and `session.sendToolResult`, which encodes the result
+  and turns an unencodable one into an `error` rather than a throw.
 - **Theme tokens are CSS variables** (`--aai-bg`, `--aai-surface`, `--aai-text`,
   `--aai-border`, `--aai-primary`, written by `ThemeProvider`, mapped in
   `styles.css`'s `@theme`). Additive: `useTheme()` stays. The page background is
@@ -138,17 +138,17 @@ upload id claiming, pause gate, recall and report coalescing).
   hand, and never into `localStorage` (a stale id suppresses the greeting and
   rejoins a dead context).
 - **`usePushToTalk`** drives `session.userTurn` (`start`/`commit`/`clear`) for a
-  `turnTaking: { detection: "manual" }` agent; its module doc lists the ways a hand-written
-  button leaves a turn open.
+  `turnTaking: { detection: "manual" }` agent; its module doc lists the ways a
+  hand-written button leaves a turn open.
 - **`useTapToTalk`** is the toggle for an automatic-turn agent. Its decisions
   are a statechart (`_tap-to-talk-state.ts`: a `live` region and a `session`
-  region whose `active` children own the hang-up clocks); the hook only feeds
-  it `SESSION` on every snapshot activity and runs its effects. **The feed
+  region whose `active` children own the hang-up clocks); the hook only feeds it
+  `SESSION` on every snapshot activity and runs its effects. **The feed
   subscribes to the session core OUT OF BAND of React** (`feedSession`), so a
   transcript delta restarts a clock without re-rendering the host; React
-  subscribes to the phase alone. Hang-up is
-  `disconnect()` (resumable), never `end()`; the mute is an ENTRY action of
-  `live`, so no path forgets it; a clock hangs up only while not live.
+  subscribes to the phase alone. Hang-up is `disconnect()` (resumable), never
+  `end()`; the mute is an ENTRY action of `live`, so no path forgets it; a clock
+  hangs up only while not live.
 - **`sendText(text, { connect: true })`** queues in the session core (not in a
   hook) and flushes on the next `config` frame; `updateState` empties the queue
   on any `running: false`, so a message typed into a call that failed is never
@@ -191,8 +191,8 @@ A run reaches the page after the call through `WS /inbox?client=` (server half:
   repeat memory replays it; only the half-received notice is dropped with the
   socket. A repeat is acked even while busy; a header mid-notice goes unacked.
 - **The inbox presents a ticket like the session** (a gated server checks
-  `/inbox` like `/websocket`): `createInbox({ token })`, same type and per-attempt
-  rule as `VoiceSessionOptions.token`; `useInbox` passes
+  `/inbox` like `/websocket`): `createInbox({ token })`, same type and
+  per-attempt rule as `VoiceSessionOptions.token`; `useInbox` passes
   `session.identity.ticket()` — the session's `token`, else a FRESH
   `client-config` ticket until a lookup shows the server issues none. A
   synchronous answer dials at once, so an ungated inbox is unchanged.
@@ -206,8 +206,9 @@ A run reaches the page after the call through `WS /inbox?client=` (server half:
 `session/fuzz-session` (frames × controls × socket lifecycle),
 `audio/fuzz-voiceio` (enqueue/done/flush/close × worklet stops), `fuzz-hooks`
 (exactly-once tool-call/event delivery), `session/fuzz-reconnect` (broker latch,
-resume ids, history replay); `worklets/audio-stress.test.ts` for the
-processors. They assert INVARIANTS. Beyond "Property tests run on fast-check" (`.agents/testing.md`):
+resume ids, history replay); `worklets/audio-stress.test.ts` for the processors.
+They assert INVARIANTS. Beyond "Property tests run on fast-check"
+(`.agents/testing.md`):
 
 - **Check sensitivity** — revert the fix and confirm the harness fails. The
   audio mocks accumulate nodes across a test, so a harness can silently drive a
@@ -220,8 +221,8 @@ processors. They assert INVARIANTS. Beyond "Property tests run on fast-check" (`
 
 A `mode: "workflow-app"` agent (declared with `workflowApp({ name, workflows })`
 from `@alexkroman1/aai`) is a web page over the workflow HTTP API: no session,
-WebSocket or audio. The routes are served by `aai-runtime/workflow/api.ts`, whose
-module doc is the authoritative table; the platform brokers them at
+WebSocket or audio. The routes are served by `aai-runtime/workflow/api.ts`,
+whose module doc is the authoritative table; the platform brokers them at
 `/:slug/workflows/*`.
 
 ### Mounting and factories
@@ -280,9 +281,9 @@ GET    /workflows/uploads/:id/info → { id, name, type, size, complete, ranges 
   already `destroyed`), and answers an unknown id at once.
   `useWorkflowSubmit(workflow, { wait })` still follows with `useWorkflowRun`.
 - **Auth is fail-open**: the surface is as public as `/websocket`;
-  `AAI_WORKFLOW_API_TOKEN` makes every route require a bearer. So
-  `<audio src>` / `<a href>` cannot point at an upload — use `api.download`
-  → `Blob` → `useDownloadUrl`.
+  `AAI_WORKFLOW_API_TOKEN` makes every route require a bearer. So `<audio src>`
+  / `<a href>` cannot point at an upload — use `api.download` → `Blob` →
+  `useDownloadUrl`.
 - Run names: the WDK's `workflowName` is the compiler id; ours is the
   `agent({ workflows })` key. `workflow/client.ts` (SDK) translates both ways,
   and its test fake stores runs under the compiler id.
@@ -321,13 +322,13 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
 - `_repeat-until.ts` is the bounded-read loop; `_workflow-api-ref.ts` the ref
   preamble.
 - Write side (every `step*` helper here is on `@alexkroman1/aai/step`):
-  `stepReport(line)` writes to the stream
-  AND the server log with `(attempt N)`; `stepEmit(namespace, chunk)` writes
-  structured values to a REQUIRED named stream (never the default one — a page
-  renders it as text), not logged. Both from a STEP only (a body replays), both
-  best-effort; `stubReporter()` asserts them in specs. Steps should also use
-  `isTransientStatus(status)` and `retryAfter(response)` from `/step` rather
-  than hand-rolling a 408/429/5xx split or ignoring `Retry-After`.
+  `stepReport(line)` writes to the stream AND the server log with `(attempt N)`;
+  `stepEmit(namespace, chunk)` writes structured values to a REQUIRED named
+  stream (never the default one — a page renders it as text), not logged. Both
+  from a STEP only (a body replays), both best-effort; `stubReporter()` asserts
+  them in specs. Steps should also use `isTransientStatus(status)` and
+  `retryAfter(response)` from `/step` rather than hand-rolling a 408/429/5xx
+  split or ignoring `Retry-After`.
 
 ### Submitting (`use-workflow-form.ts`, `use-workflow-stream.ts`)
 
@@ -351,10 +352,10 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   form's files stay sequential; it degrades to one request for small files or
   older agents.
 - **Pause/resume** (`pauseUpload`/`resumeUpload`, `UploadStatus.paused`) is an
-  abort plus the minted id — no new storage. `submit()` stays unresolved
-  across a pause; the run is untouched (its idle bound applies); `reset()`
-  ABANDONS with no error. `upload/session.ts` keys off the ABORT, not
-  `gate.paused` (a double-click reopens the gate before the rejection lands).
+  abort plus the minted id — no new storage. `submit()` stays unresolved across
+  a pause; the run is untouched (its idle bound applies); `reset()` ABANDONS
+  with no error. `upload/session.ts` keys off the ABORT, not `gate.paused` (a
+  double-click reopens the gate before the rejection lands).
 
 ### Reload recovery
 
@@ -364,9 +365,8 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   `uploadInfo` first — complete → skip the transfer; unfinished WITH windows →
   resume (`resume: true`); anything else, including unfinished with NO windows
   (a second `PUT` gets 409) → fresh id. Specs that want a second transfer need a
-  second file and clear `sessionStorage` between specs.
-  `useWorkflowStream` does NOT recall (it would start a second run on the first
-  run's upload).
+  second file and clear `sessionStorage` between specs. `useWorkflowStream` does
+  NOT recall (it would start a second run on the first run's upload).
 - **Run recovery**: `useWorkflowSubmit` mints a per-page key in `sessionStorage`
   (`use-run-key.ts`) and calls `find(workflow, key)` once on mount. `key`
   overrides (e.g. an account id); `useRunKey({ storage: "local" })` outlives the

@@ -52,10 +52,10 @@ pnpm check:affected      # Only check packages affected by changes since main
 pnpm docs:list           # Every agent guide: what it covers, when to read it
 ```
 
-**Never type `turbo run <task>` across the workspace directly** — use the
-`pnpm` scripts, which set `TURBO_CONCURRENCY` via
-`scripts/with-worker-budget.mjs` so turbo and vitest's pool share one CPU
-budget. A longer timeout is never the fix for contention.
+**Never type `turbo run <task>` across the workspace directly** — use the `pnpm`
+scripts, which set `TURBO_CONCURRENCY` via `scripts/with-worker-budget.mjs` so
+turbo and vitest's pool share one CPU budget. A longer timeout is never the fix
+for contention.
 
 ### Test tiers
 
@@ -114,8 +114,8 @@ pnpm vitest run --project aai -t "rejects"      # Tests whose NAME matches
 pnpm --filter @alexkroman1/aai test             # Single package via pnpm filter
 ```
 
-A root `vitest` run loads every package config, and `aai-templates`' imports
-the SDK's `dist`: run `pnpm --filter @alexkroman1/aai build` first.
+A root `vitest` run loads every package config, and `aai-templates`' imports the
+SDK's `dist`: run `pnpm --filter @alexkroman1/aai build` first.
 
 ## Architecture
 
@@ -164,10 +164,10 @@ Thirteen workspace packages under `packages/`:
 
 ### Package guides
 
-**This file holds only what is repo-wide.** Package rules live in the
-package's `CLAUDE.md` and area rules in the governed directory's `CLAUDE.md`;
-Claude Code loads both when you work there. Reference siblings
-(`<PKG>/<NAME>-CLAUDE.md`) are read on demand.
+**This file holds only what is repo-wide.** Package rules live in the package's
+`CLAUDE.md` and area rules in the governed directory's `CLAUDE.md`; Claude Code
+loads both when you work there. Reference siblings (`<PKG>/<NAME>-CLAUDE.md`)
+are read on demand.
 
 **The index of every package, directory and sibling guide is
 [`.agents/index.md`](.agents/index.md)** (generated from each guide's
@@ -214,29 +214,28 @@ Enforced by `check:package-layout`.
 
 Each package's helper module is its own; a spec uses the one beside it, never
 another package's. The paths and roster are the **`test-helper-modules`**
-konsistent convention. In the published pair, anything that INSTALLS or
-RESTORES goes in `@alexkroman1/aai/testing/vitest`, and `testing.ts` may not
-import `vitest` (**`published-testing-split`**; inventory in
-`packages/aai/CLAUDE.md`).
+konsistent convention. In the published pair, anything that INSTALLS or RESTORES
+goes in `@alexkroman1/aai/testing/vitest`, and `testing.ts` may not import
+`vitest` (**`published-testing-split`**; inventory in `packages/aai/CLAUDE.md`).
 
 ### `@dev/source` custom export condition
 
-Every export names `"@dev/source": "./src/…"` FIRST, then `types`/`import`
-under `./dist/…`. The root `tsconfig.json`'s `customConditions:
-["@dev/source"]` resolves workspace imports to source with no build step; a
-consumer without it gets `dist`. Condition order matters (first match wins),
-which is why `.syncpackrc.json`'s `sortExports` names `@dev/source` first.
+Every export names `"@dev/source": "./src/…"` FIRST, then `types`/`import` under
+`./dist/…`. The root `tsconfig.json`'s `customConditions: ["@dev/source"]`
+resolves workspace imports to source with no build step; a consumer without it
+gets `dist`. Condition order matters (first match wins), which is why
+`.syncpackrc.json`'s `sortExports` names `@dev/source` first.
 
 ### Import rules
 
 - **Cross-package imports** must use the npm package name (e.g.
   `import { X } from "@alexkroman1/aai/protocol"`), never relative paths between
   packages. Biome's `noRestrictedImports` enforces this.
-- **Internal modules** (`_*.ts`) must not be imported from outside their
-  own package. Biome's `noPrivateImports` enforces this.
+- **Internal modules** (`_*.ts`) must not be imported from outside their own
+  package. Biome's `noPrivateImports` enforces this.
 - **Re-exports**: barrel files use `export * from "..."` with explicit
-  `biome-ignore` comments. Follow re-export chains to find the original
-  source of a type/function.
+  `biome-ignore` comments. Follow re-export chains to find the original source
+  of a type/function.
 
 ### Disambiguating cross-package names
 
@@ -254,9 +253,9 @@ The catalogue is the **`concurrency-primitives`** konsistent convention plus
 rules 2, 3, 4, 8, 9, 19, 21, 22 and 31 catch hand-rolled copies. Two are
 repo-wide:
 
-- **Timeouts**: use `p-timeout`, never a hand-rolled `Promise.race` with a
-  timer (the losing branch's late rejection and timer cleanup are what get
-  re-derived wrong). tsdown bundles it into the guest harness too.
+- **Timeouts**: use `p-timeout`, never a hand-rolled `Promise.race` with a timer
+  (the losing branch's late rejection and timer cleanup are what get re-derived
+  wrong). tsdown bundles it into the guest harness too.
 - **Combining abort signals**: use native `AbortSignal.any([...])`.
 
 ### The published surface is described by three committed artifacts
@@ -277,7 +276,8 @@ all three and fails until covered or excused in writing. The procedure is the
 
 `scaffold/CLAUDE.md` is the one source of truth for writing an aai agent;
 `pnpm sync:agent-guide` copies it to `packages/aai/AGENT_GUIDE.md`
-(`check:agent-guide`). See the same heading in `packages/aai-templates/CLAUDE.md`.
+(`check:agent-guide`). See the same heading in
+`packages/aai-templates/CLAUDE.md`.
 
 ### API reference docs
 
@@ -302,30 +302,31 @@ committed markdown reference an agent can `cat` (`docs/api/**`). See
 **Write each rule as: the rule, one sentence of why when it is not obvious, and
 a link** to what enforces it; if a guard enforces it, say so in one line.
 History — what broke, measurements, what the rule replaced — belongs in commit
-messages and PR bodies. Never drop a rule, gotcha or security constraint to
-save space; compress it.
+messages and PR bodies. Never drop a rule, gotcha or security constraint to save
+space; compress it.
 
-A guide documents code that EXISTS; designs belong on their issue.
-Auto-loaded guides (this file, package and directory `CLAUDE.md`,
-`docs/CLAUDE.md`) are capped at 40,000 characters, with a shrink-only baseline
-for files still over it; reference files (`.agents/`, siblings, the scaffold
-guide) at 130,000. Both are enforced by `check:claude-md`, which also prints a
-nearly-full guide's largest sections.
+A guide documents code that EXISTS; designs belong on their issue. Auto-loaded
+guides (this file, package and directory `CLAUDE.md`, `docs/CLAUDE.md`) are
+capped at 40,000 characters, with a shrink-only baseline for files still over
+it; reference files (`.agents/`, siblings, the scaffold guide) at 130,000. Both
+are enforced by `check:claude-md`, which also prints a nearly-full guide's
+largest sections.
 
 ## PR workflow
 
 When a branch is done, push it and open a PR without asking. Run
 `pnpm check:local` before the first commit and rebase on `origin/main` before
 pushing. The pre-push hook blocks pushes to `main`, a branch behind or
-conflicting with `origin/main`, a missing changeset and a failing `pnpm check:local`.
-In a worktree, `unset GIT_DIR` before `pnpm changeset status` and install with
-`--frozen-lockfile`; never edit `pnpm-lock.yaml` directly. Full procedure: the
-`pr-workflow` skill; changesets: the `changeset-release` skill.
+conflicting with `origin/main`, a missing changeset and a failing
+`pnpm check:local`. In a worktree, `unset GIT_DIR` before
+`pnpm changeset status` and install with `--frozen-lockfile`; never edit
+`pnpm-lock.yaml` directly. Full procedure: the `pr-workflow` skill; changesets:
+the `changeset-release` skill.
 
 ## A new guest route must declare how the PLATFORM exposes it
 
-`aai dev` serves every guest route directly, but the deployed platform does
-not, so each new route must declare its exposure (the **`guest-route-exposure`**
+`aai dev` serves every guest route directly, but the deployed platform does not,
+so each new route must declare its exposure (the **`guest-route-exposure`**
 konsistent convention; `guard-invariants` rule 12). The procedure is the
 `expose-guest-route` skill; the four exposure kinds are in "A new guest route
 must declare how the PLATFORM exposes it" in `packages/aai-server/CLAUDE.md`.
@@ -335,8 +336,8 @@ must declare how the PLATFORM exposes it" in `packages/aai-server/CLAUDE.md`.
 - **The Modal container is the security boundary**; no in-process capability
   stripping is relied on anywhere.
 - **Every AssemblyAI key on the platform is user-provided**: there is no
-  platform-owned provider credential, and no credential resolution may fall
-  back to the host's `process.env`.
+  platform-owned provider credential, and no credential resolution may fall back
+  to the host's `process.env`.
 - The rest lives with the boundary: sandboxing, auth, `run_code` and the threat
   model in `packages/aai-server/CLAUDE.md`; guest capabilities, network access
   and SSRF (`aai/host/ssrf.ts`) in `packages/aai-guest/CLAUDE.md`; the `sdk/` vs
@@ -349,19 +350,19 @@ must declare how the PLATFORM exposes it" in `packages/aai-server/CLAUDE.md`.
   `pnpm lint:promises` (oxlint/tsgolint) holds `no-floating-promises` and
   `no-misused-promises`. A file is linted against its NEAREST `tsconfig.json`,
   which is why `scripts/tsconfig.json` exists (`packages/aai-gates/CLAUDE.md`).
-- **Type-level tests cover little of the surface**: most subpath exports have
-  no `.test-d.ts`, and each existing one pins only the shapes its fixtures use
-  (two blind spots are in `packages/aai-templates/CLAUDE.md`).
-  `hooks.test-d.ts` pins the deliberate `any`s (`DefaultToolResult`,
-  `ToolCallInfo.args`): tightening one to `unknown` breaks untyped clients.
+- **Type-level tests cover little of the surface**: most subpath exports have no
+  `.test-d.ts`, and each existing one pins only the shapes its fixtures use (two
+  blind spots are in `packages/aai-templates/CLAUDE.md`). `hooks.test-d.ts` pins
+  the deliberate `any`s (`DefaultToolResult`, `ToolCallInfo.args`): tightening
+  one to `unknown` breaks untyped clients.
 
 ### Open testability work
 
-`aai-cli`'s output goes through two module-level globals rather than an
-injected sink: `_ui.ts`'s `silenced` flag (`silenceOutput()`, flipped once for
-JSON mode) and `_output.ts`'s direct `process.stdout` writes and process-wide
+`aai-cli`'s output goes through two module-level globals rather than an injected
+sink: `_ui.ts`'s `silenced` flag (`silenceOutput()`, flipped once for JSON mode)
+and `_output.ts`'s direct `process.stdout` writes and process-wide
 `installStdoutGuard`. A command is therefore testable only by stubbing the
 process; route it through a passed `Logger`/writer as `aai-server` does
-(`logger.ts`, `captureLogs()`).
-`guard-invariants` rule 34 baselines every `vi.mock`/`vi.doMock` — each marks a
-unit with no seam for a fake; `pnpm debt:report` lists them.
+(`logger.ts`, `captureLogs()`). `guard-invariants` rule 34 baselines every
+`vi.mock`/`vi.doMock` — each marks a unit with no seam for a fake;
+`pnpm debt:report` lists them.

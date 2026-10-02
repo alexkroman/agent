@@ -32,10 +32,10 @@ in `packages/aai-server/src/guest/routes.ts`.
    | `host-only`      | the platform itself, through the sandbox URL, bearer-gated                                | nothing public                                                                        |
    | `guest-internal` | the guest's own machinery on loopback only                                                | nothing — never write `host-only` here; that describes a token gate that is not there |
 
-   For `proxied`: list the methods the **guest** answers, read from its
-   dispatch (`if (url === X)` chains — there is no table to derive verbs from).
-   Add `suffix` when the platform path ends in a parameter the guest parses
-   itself (e.g. the webhook token).
+   For `proxied`: list the methods the **guest** answers, read from its dispatch
+   (`if (url === X)` chains — there is no table to derive verbs from). Add
+   `suffix` when the platform path ends in a parameter the guest parses itself
+   (e.g. the webhook token).
 
 3. **Make the platform match.** Register each proxied method under `/:slug` in
    the orchestrator. A route forwarding a streaming request body needs
@@ -45,8 +45,8 @@ in `packages/aai-server/src/guest/routes.ts`.
      introspects the real orchestrator app: every declared proxied method must
      be registered, and a registered route must not be declared otherwise
      (catches a stale `direct-dial`).
-   - `pnpm check:invariants` — **rule 12** scans the guest's HTTP
-     surface as text (`aai-guest` plus the `aai-runtime` modules in
+   - `pnpm check:invariants` — **rule 12** scans the guest's HTTP surface as
+     text (`aai-guest` plus the `aai-runtime` modules in
      `RUNTIME_ROUTE_SOURCES`) and fails on a route literal missing from
      `GUEST_ROUTES`.
    - `pnpm check:konsistent` — the **`guest-route-exposure`** convention pins
@@ -62,8 +62,8 @@ in `packages/aai-server/src/guest/routes.ts`.
 ## Worked example: the three DevKit workflow routes
 
 - `flow` and `step` are `guest-internal`: the guest's own worker dials them on
-  loopback and they are unauthenticated because loopback is the gate. A
-  platform route would let anyone replay another tenant's run. If the queue
-  ever leaves the guest they need a route **and** an authenticity check.
+  loopback and they are unauthenticated because loopback is the gate. A platform
+  route would let anyone replay another tenant's run. If the queue ever leaves
+  the guest they need a route **and** an authenticity check.
 - `webhook` is `proxied` (POST, with a token `suffix`): its URL goes to a third
   party and must outlive the sandbox that minted it.

@@ -27,8 +27,8 @@ buffer.
 the PCM16 bytes plus the millisecond each frame ARRIVED. The `.pcm` is a sidecar
 rather than base64 in the JSON so it stays `ffplay`-able and reviewable by its
 length; `pcm` is in `KNOWN_BINARY` in `scripts/_ratchet.mjs` for that reason.
-Three harnesses sit behind it, all excluded from coverage by the
-`_*-harness.ts` glob:
+Three harnesses sit behind it, all excluded from coverage by the `_*-harness.ts`
+glob:
 
 | Harness                      | Job                                                                                                                                                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -60,10 +60,10 @@ Recorded against the trace above, the shipped pacing (`CLIENT_AUDIO_LEAD_MS`
   anything near the 400 ms fill target. The operative cushion is
   `CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS`. - **Stall resilience is ~867 ms and
   is FLAT in `PLAYBACK_JITTER_MS`** — 859 ms at 100, 906 ms at 800. It tracks
-  the pacer's lead almost one-for-one instead (lead 400 -> 250 ms absorbed,
-  1000 -> 875 ms, 2000 -> 1844 ms).
-- **The whole legal range of `PLAYBACK_JITTER_MS` costs 37 ms of startup**
-  (149 ms at 100, 187 ms at 800), because the audio to fill it with has already
+  the pacer's lead almost one-for-one instead (lead 400 -> 250 ms absorbed, 1000
+  -> 875 ms, 2000 -> 1844 ms).
+- **The whole legal range of `PLAYBACK_JITTER_MS` costs 37 ms of startup** (149
+  ms at 100, 187 ms at 800), because the audio to fill it with has already
   arrived. Its doc's trade — startup for resilience — is real in the abstract
   and worth tens of milliseconds on both sides at these values.
 - **The one profile where the fill target earns its keep is a link under the PCM
@@ -81,31 +81,31 @@ Recorded against the trace above, the shipped pacing (`CLIENT_AUDIO_LEAD_MS`
 ### `PLAYBACK_JITTER_MS` is redundant BY CONSTRUCTION
 
 The strongest result, and it is structural rather than a property of this trace:
-**`{jitterMs: 0, refillMs: R}` renders byte-identically to `{jitterMs: R,
-refillMs: R}`** — same startup, same concealed samples, same episode count, on a
-healthy link, a 900 ms-jitter link and a starved one alike.
+**`{jitterMs: 0, refillMs: R}` renders byte-identically to
+`{jitterMs: R, refillMs: R}`** — same startup, same concealed samples, same
+episode count, on a healthy link, a 900 ms-jitter link and a starved one alike.
 
 On a turn's FIRST render the ring is empty, so `avail` (0) is under one quantum
-and the underrun branch fires before any audio exists — setting `fillTarget =
-refillSamples`. Every turn therefore waits for the REFILL target regardless of
-what the jitter target said, and `PLAYBACK_JITTER_MS` can only act by being
-LARGER. Its entire effect is to make a turn's first wait longer than every later
-recovery's, which is the opposite of the argument the refill step rests on (mid
--reply a long wait is itself a hole in the speech).
+and the underrun branch fires before any audio exists — setting
+`fillTarget = refillSamples`. Every turn therefore waits for the REFILL target
+regardless of what the jitter target said, and `PLAYBACK_JITTER_MS` can only act
+by being LARGER. Its entire effect is to make a turn's first wait longer than
+every later recovery's, which is the opposite of the argument the refill step
+rests on (mid -reply a long wait is itself a hole in the speech).
 
 Collapsing to one target at today's `PLAYBACK_REFILL_MS` (200) is strictly
-better than the shipped pair on every link that can carry the bitrate —
-startup drops 16 ms on a typical link, 54 ms on mobile, 118 ms at 400 ms of
-jitter and 208 ms at 900 ms, with concealment unchanged at zero — and behaves
-the same under starvation. Collapsing BELOW 200 is what must not happen: at 50
-ms the reply degrades into 99 fragments, which is the stutter the re-arm
-exists to prevent.
+better than the shipped pair on every link that can carry the bitrate — startup
+drops 16 ms on a typical link, 54 ms on mobile, 118 ms at 400 ms of jitter and
+208 ms at 900 ms, with concealment unchanged at zero — and behaves the same
+under starvation. Collapsing BELOW 200 is what must not happen: at 50 ms the
+reply degrades into 99 fragments, which is the stutter the re-arm exists to
+prevent.
 
 ### The pacer is a cost to playback, not a contributor
 
 Measured across leads including no pacing at all, **startup is 155 ms at every
-one of them** — the fill target is met by the first frames either way. Everything
-the pacer does to the audio is subtraction:
+one of them** — the fill target is met by the first frames either way.
+Everything the pacer does to the audio is subtraction:
 
 | lead / burst         | absorbs a freeze of | peak in flight | ear behind forwarded |
 | -------------------- | ------------------- | -------------- | -------------------- |
@@ -115,12 +115,12 @@ the pacer does to the audio is subtraction:
 | 2000 / 100           | 1945 ms             | 93 KiB         | 1947 ms              |
 | unpaced              | the whole reply     | 354 KiB        | 4149 ms              |
 
-So the pacer earns its keep on backpressure (`MAX_CLIENT_WS_BUFFERED_BYTES` is
-4 MiB, so even unpaced this reply is nowhere near it — the guard is for a genuinely
-slow link) and on heard-cursor accuracy, NOT on audio. Its `burstMs` is the cheap
-win: it is spent out of the client's cushion one-for-one, and the wakeup rate it
-was sized against ("~50/second") is ~12.5/second at this provider's 3840-byte
-frames.
+So the pacer earns its keep on backpressure (`MAX_CLIENT_WS_BUFFERED_BYTES` is 4
+MiB, so even unpaced this reply is nowhere near it — the guard is for a
+genuinely slow link) and on heard-cursor accuracy, NOT on audio. Its `burstMs`
+is the cheap win: it is spent out of the client's cushion one-for-one, and the
+wakeup rate it was sized against ("~50/second") is ~12.5/second at this
+provider's 3840-byte frames.
 
 **The last column is NOT why the lead cannot be raised**, and believing it was
 cost this branch a second commit. `HEARD_AUDIO_LAG_MS` (originally 750) was
@@ -157,12 +157,12 @@ the repetition `buildTailResumePrompt` exists to fix.
 **`PIPELINE_PLAYBACK_GRACE_MS` (750) is likewise fine and likewise
 lead-independent.** The requirement — how long after `endsAtMs` the caller is
 still hearing audio, so a smaller value misses a tail barge-in — measures 15 ms
-on a loopback link, 63 ms typical, 138 ms mobile, identical at every lead. It has
-~5x margin over the worst of those.
+on a loopback link, 63 ms typical, 138 ms mobile, identical at every lead. It
+has ~5x margin over the worst of those.
 
 The rule this leaves behind, since two derivations broke on it: **neither
-constant is the client's buffer depth.** Measure `heardMs()` against the ear, not
-the buffer against the lead.
+constant is the client's buffer depth.** Measure `heardMs()` against the ear,
+not the buffer against the lead.
 
 ### What was changed, and what deliberately was not
 
@@ -181,16 +181,17 @@ Three of those findings were acted on; the tests above are what keep them true.
   which exists to keep the trap they share in one place.
 - **`CLIENT_AUDIO_LEAD_MS` is 1500**, up from 1000: the longest absorbed link
   freeze goes 914 ms -> 1453 ms at no latency cost. What bounds it is bandwidth
-  rather than correctness — a mid-reply barge-in discards ~1.3 s of pushed speech
-  instead of ~0.85 s, paid on the metered links that can least afford it.
+  rather than correctness — a mid-reply barge-in discards ~1.3 s of pushed
+  speech instead of ~0.85 s, paid on the metered links that can least afford it.
 
 **The bench grew a barge-in instrument to settle that**, because the claim that
 the grace blocked the lead was arithmetic rather than measurement, and wrong.
 `playoutVsHost` (in `_playback-bench-host.ts`) replays a render against the
 host's own playback-clock arithmetic and reports how long after its estimate the
-ear was still receiving audio, for a client that reports its backlog and one that
-does not. That is what turned "the grace is ~200 ms short" into "the requirement
-is 15-138 ms and the grace has 5x margin", and it is what unblocked the lead.
+ear was still receiving audio, for a client that reports its backlog and one
+that does not. That is what turned "the grace is ~200 ms short" into "the
+requirement is 15-138 ms and the grace has 5x margin", and it is what unblocked
+the lead.
 
 **The pacer itself stays.** Removing it is the best thing that could happen to
 playback quality in isolation — unpaced, the client rides out any freeze — and
@@ -200,6 +201,6 @@ MiB extrapolated to 60 s, against a 4 MiB disconnect), a mid-reply barge-in
 throws away ~3.9 s of pushed speech instead of ~0.85 s, and the ear-lag becomes
 proportional to reply length, which no constant or formula can model. Note also
 that on a link which cannot carry 384 kbps the pacer changes nothing at all
-(identical episode and silence counts at 350 and 250 kbps) — the link is
-already the pacer. Its cost is paid on good links and its protection earned on
-bad ones, which is coherent.
+(identical episode and silence counts at 350 and 250 kbps) — the link is already
+the pacer. Its cost is paid on good links and its protection earned on bad ones,
+which is coherent.

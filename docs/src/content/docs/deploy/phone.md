@@ -36,9 +36,9 @@ that publishes does not have to re-derive them.
 
 ## 3. Set the carrier's secret
 
-Signature verification turns on when the agent has the carrier's own secret.
-Set `TWILIO_AUTH_TOKEN` (or `TELNYX_PUBLIC_KEY`) as a secret and every request
-is checked:
+Signature verification turns on when the agent has the carrier's own secret. Set
+`TWILIO_AUTH_TOKEN` (or `TELNYX_PUBLIC_KEY`) as a secret and every request is
+checked:
 
 ```sh
 printf %s "$TWILIO_AUTH_TOKEN" | aai secret put TWILIO_AUTH_TOKEN
@@ -77,8 +77,8 @@ something you configure.
 
 ## The missing-secret warning
 
-A declared carrier whose secret is missing from the env being uploaded is
-warned about by name at deploy time, beside the provider-credential warning:
+A declared carrier whose secret is missing from the env being uploaded is warned
+about by name at deploy time, beside the provider-credential warning:
 
 ```text
 telephony declares telnyx but TELNYX_PUBLIC_KEY is not set — the telnyx webhook
@@ -92,6 +92,6 @@ is. The CLI sees the env it is about to upload, and cannot see what an earlier
 `aai secret put` already stored against the agent — so a secret the platform
 holds looks missing from here.
 
-Worth knowing: verification is on for the whole route as soon as _either_
-secret is set. A call naming a carrier whose secret is missing is then refused
-rather than let through unverified.
+Worth knowing: verification is on for the whole route as soon as _either_ secret
+is set. A call naming a carrier whose secret is missing is then refused rather
+than let through unverified.

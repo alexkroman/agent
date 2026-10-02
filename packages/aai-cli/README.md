@@ -1,7 +1,7 @@
 # @alexkroman1/aai-cli
 
-The `aai` command — scaffold, run, test, and publish voice agents built with
-the AssemblyAI Agent SDK.
+The `aai` command — scaffold, run, test, and publish voice agents built with the
+AssemblyAI Agent SDK.
 
 ```sh
 npm i -g @alexkroman1/aai-cli
@@ -28,8 +28,8 @@ npm i -g @alexkroman1/aai-cli
 | `aai logs`                              | Read the deployed agent's log ring (`--follow` polls it)                                                                   |
 | `aai workflow list\|runs\|show\|cancel` | Inspect the deployed agent's durable workflow runs                                                                         |
 
-Every command accepts `--json` for machine-readable output (auto-detected
-when stdout is not a TTY). `aai <command> --help` shows flags.
+Every command accepts `--json` for machine-readable output (auto-detected when
+stdout is not a TTY). `aai <command> --help` shows flags.
 
 ## Typical flow
 
@@ -41,11 +41,11 @@ aai dev            # talk to it at the printed URL
 aai publish        # ship it; .env values become the agent's secrets
 ```
 
-Every published agent is also a **studio project**: publishing prints a
-studio link where the same source can be edited in the browser (with the
-coding agent), and `aai pull` brings those edits back to your machine.
-`push`/`pull` are fast-forward-only — an edit made in the studio since your
-last pull surfaces as a conflict instead of being overwritten.
+Every published agent is also a **studio project**: publishing prints a studio
+link where the same source can be edited in the browser (with the coding agent),
+and `aai pull` brings those edits back to your machine. `push`/`pull` are
+fast-forward-only — an edit made in the studio since your last pull surfaces as
+a conflict instead of being overwritten.
 
 `aai publish` type-checks the project locally, then builds and deploys inside
 the project's sandbox — byte-for-byte the studio's Publish path. It preflights
@@ -53,13 +53,13 @@ the credentials the agent declares, and prints the agent's public URL.
 
 ## Notes
 
-- A bare `aai` in a project directory offers to publish (TTY-confirmed);
-  outside one it runs `init`.
-- `--server <url>` targets a self-hosted platform; the origin is remembered
-  in your user config after explicit approval.
+- A bare `aai` in a project directory offers to publish (TTY-confirmed); outside
+  one it runs `init`.
+- `--server <url>` targets a self-hosted platform; the origin is remembered in
+  your user config after explicit approval.
 - `aai login` is the only way to authenticate — it links an account already
-  signed in to the studio. An exported `ASSEMBLYAI_API_KEY` does not log you
-  in; in a project that variable is a provider credential for `aai dev`.
+  signed in to the studio. An exported `ASSEMBLYAI_API_KEY` does not log you in;
+  in a project that variable is a provider credential for `aai dev`.
 - The API key is stored `0600` in your user config dir (`AAI_CONFIG_DIR`
   overrides the location). Non-interactive callers point `AAI_CONFIG_DIR` at a
   config dir holding a key from an interactive `aai login`.

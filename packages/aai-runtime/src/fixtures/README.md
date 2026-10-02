@@ -1,8 +1,7 @@
 # API Response Fixtures
 
-Real AssemblyAI S2S WebSocket messages recorded from the live API.
-User audio was generated with Kokoro TTS (24kHz resampled to 16kHz
-PCM16).
+Real AssemblyAI S2S WebSocket messages recorded from the live API. User audio
+was generated with Kokoro TTS (24kHz resampled to 16kHz PCM16).
 
 ## Files
 
@@ -34,7 +33,7 @@ PCM16).
 ## Notes
 
 - Audio data is truncated (`_truncated`, `_originalBase64Length`).
-- Real messages include extra fields (`timestamp`, `config`,
-  `start_ms`, `end_ms`) that the parser must tolerate.
-- Session IDs and timestamps are from the recording — tests should
-  not depend on specific values.
+- Real messages include extra fields (`timestamp`, `config`, `start_ms`,
+  `end_ms`) that the parser must tolerate.
+- Session IDs and timestamps are from the recording — tests should not depend on
+  specific values.

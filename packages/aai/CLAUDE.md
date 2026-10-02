@@ -23,8 +23,8 @@ Claude Code loads these when you work in the directory:
   `ctx.generate`/`messages`/`delegate`, personas, tool `messages`, voice
   presets, persistence, workflow apps and the upload client.
 - `src/sdk/providers/CLAUDE.md` — the STT/LLM/TTS/S2S descriptors, the
-  AssemblyAI gateway default and its measurement, voices, adding a provider,
-  the settings log.
+  AssemblyAI gateway default and its measurement, voices, adding a provider, the
+  settings log.
 - `src/host/CLAUDE.md` — the Node-only modules: guest network access
   (`ssrf.ts`), the bounded builtin fetch, `/step-files`, `/coding-tools`.
 
@@ -38,12 +38,12 @@ Two directories with a **hard dependency boundary** — critical for sandbox
 security:
 
 - **`sdk/`** — **zero Node.js dependencies**; safe in browsers, Deno and
-  sandboxes. Types, the wire protocol, the canonical config
-  (`agent-config.ts`, `toAgentConfig`), Standard Schema acceptance
-  (`schema.ts`), the `agent()`/`tool()`/`sessionSlot()` helpers, provider
-  DESCRIPTOR factories, the concurrency primitives. `sdk/tsconfig.json`
-  compiles with `types: []`, so a `node:` import — or even naming a Node TYPE
-  such as `NodeJS.Signals` — is a compile error, not a convention.
+  sandboxes. Types, the wire protocol, the canonical config (`agent-config.ts`,
+  `toAgentConfig`), Standard Schema acceptance (`schema.ts`), the
+  `agent()`/`tool()`/`sessionSlot()` helpers, provider DESCRIPTOR factories, the
+  concurrency primitives. `sdk/tsconfig.json` compiles with `types: []`, so a
+  `node:` import — or even naming a Node TYPE such as `NodeJS.Signals` — is a
+  compile error, not a convention.
 - **`host/`** — Node-only modules (`node:fs`, `node:child_process`, …), never
   run inside a guest sandbox: `ssrf.ts`, `_fetch-capped.ts`, the builtins, the
   coding tools, ffmpeg, html, step-files, slugify. The runtime itself
@@ -64,13 +64,13 @@ a runtime holding another** — `aai dev` (`buildWorker({ runtime: false })`),
 project's `createAgentServer`), and `aai build`/`aai deploy`'s in-CLI preflight.
 So module identity is never a contract between them.
 
-- **Every cross-copy key is registered in `sdk/_boundary.ts`**
-  (`BOUNDARY_KEYS`: the brands a value carries out — `clientTool`,
-  `routeResponse`, `routeError`, `stepError`, … — and the `globalThis` slots a
-  host publishes into). Reach one by NAME: `globalSlot("stepEnv")`,
-  `setBrand`/`readBrand`. `Symbol.for` is called nowhere else in this package,
-  and no source here or in `aai-runtime` spells a registered key —
-  `_boundary.test.ts` and `aai-runtime`'s `sdk-boundary.test.ts` are the gate.
+- **Every cross-copy key is registered in `sdk/_boundary.ts`** (`BOUNDARY_KEYS`:
+  the brands a value carries out — `clientTool`, `routeResponse`, `routeError`,
+  `stepError`, … — and the `globalThis` slots a host publishes into). Reach one
+  by NAME: `globalSlot("stepEnv")`, `setBrand`/`readBrand`. `Symbol.for` is
+  called nowhere else in this package, and no source here or in `aai-runtime`
+  spells a registered key — `_boundary.test.ts` and `aai-runtime`'s
+  `sdk-boundary.test.ts` are the gate.
 - **What crosses is plain data the reader re-validates** (`readBrand` answers
   `unknown`; `clientToolBrand`, `readRouteResponse`, `readRouteError`,
   `FatalError.is` check the shape).
@@ -98,13 +98,13 @@ test-side twin is `defineAgentTestConfig()` on `/testing/vite`.
 
 ### The root barrel is CURATED, and `export *` is what broke it
 
-**A symbol belongs on the root if an `agent.ts`, a tool module or a
-`workflow()` would NAME it.** A budget the framework enforces on its own does
-not qualify, nor does a value whose only use is reading back what the
-framework already did (budgets and defaults are on `/internal`, slug/CLI
-contracts and wire helpers on `/utils`). **No root export is `@internal`** —
-preserve that. `index.ts`'s module doc holds the test in full and is the only
-thing enforcing membership; keep it accurate.
+**A symbol belongs on the root if an `agent.ts`, a tool module or a `workflow()`
+would NAME it.** A budget the framework enforces on its own does not qualify,
+nor does a value whose only use is reading back what the framework already did
+(budgets and defaults are on `/internal`, slug/CLI contracts and wire helpers on
+`/utils`). **No root export is `@internal`** — preserve that. `index.ts`'s
+module doc holds the test in full and is the only thing enforcing membership;
+keep it accurate.
 
 **A name a narrower subpath owns crosses to the root for one of two reasons
 only**: it is a TYPE (or catalog) a root signature is spelled in — the stage
@@ -122,12 +122,12 @@ constant.
 
 ## New features ship in `/experimental` first
 
-**No inert knobs on the contracted surface** — a field typed and documented
-but not honoured end to end (or unmeasured) costs an epoch to remove. A new,
+**No inert knobs on the contracted surface** — a field typed and documented but
+not honoured end to end (or unmeasured) costs an epoch to remove. A new,
 unmeasured feature lands on `@alexkroman1/aai/experimental`
 (`src/experimental.ts`), which is on `NON_AUTHORING_SUBPATHS` and
-`docs-markdown.mjs`'s `UNDOCUMENTED_SUBPATHS`. Promotion is a MOVE to the
-owning subpath, never a re-export from both. A contracted type may not name an
+`docs-markdown.mjs`'s `UNDOCUMENTED_SUBPATHS`. Promotion is a MOVE to the owning
+subpath, never a re-export from both. A contracted type may not name an
 experimental one (the gate refuses unowned declarations).
 
 **Open vocabularies are known literals `| (string & {})`, written INLINE**
@@ -136,8 +136,8 @@ experimental one (the gate refuses unowned declarations).
 `OpenAIS2sVoice`, `AssemblyAIReasoningEffort`). An unknown value compiles, is
 accepted by `AgentConfigSchema`, and is WARNED about by `agentConfigWarnings`.
 **Never publish the closed `Known…` half**: a grown union is not assignable to
-the one it grew from, so every added name would break that export. A reader
-that must be total derives it (`KnownLiterals<T>` in `sdk/is-known.ts`,
+the one it grew from, so every added name would break that export. A reader that
+must be total derives it (`KnownLiterals<T>` in `sdk/is-known.ts`,
 `keyof typeof VOICE_PRESETS`); `KnownLlmProvider`/`KnownGatewayModel` are on
 `/host-internal`.
 
@@ -181,18 +181,18 @@ reset to epoch 1 with nothing retained; see "Every capability restarts at epoch
 
 **Four subpaths are NODE-ONLY — `/ffmpeg`, `/step-files`, `/html`,
 `/coding-tools`** — so they live in `host/` rather than joining `/step`. They
-are CONTRACTED anyway: `NON_AUTHORING_SUBPATHS` is for surfaces whose reader
-is the framework. A `workflows/*.ts` module may import them at module scope.
-The `*_KIND`/`*_API_KEY_ENV` pairs are on `/host-internal`; `ProviderDescriptor`
-is on the root alone.
+are CONTRACTED anyway: `NON_AUTHORING_SUBPATHS` is for surfaces whose reader is
+the framework. A `workflows/*.ts` module may import them at module scope. The
+`*_KIND`/`*_API_KEY_ENV` pairs are on `/host-internal`; `ProviderDescriptor` is
+on the root alone.
 
 ## Session modes
 
 **`mode` is the discriminant** (`AgentMode`, `sdk/agent-mode.ts`): `agent()` is
 OVERLOADED over a union with one member per mode (`sdk/agent-params.ts`), each
 CUT from `AgentDef` by subtracting field lists, so a field a mode lacks is
-ABSENT from its member — an excess-property error naming it, not a message
-type. The runtime refusal for an untyped caller (`assertModeFields`,
+ABSENT from its member — an excess-property error naming it, not a message type.
+The runtime refusal for an untyped caller (`assertModeFields`,
 `sdk/_agent-modes.ts`) reads tables that `satisfies` a `Record` over the same
 field-list types, so neither half can drift. There are no other mode flags
 (`text`, `page` and a bare `s2s:` were removed; the stray-field check names the
@@ -202,26 +202,25 @@ it unchanged — a workflow app is `"workflow-app"` everywhere; only the browser
 one of three SESSION modes underneath:
 
 - **Text mode** (`mode: "text"`, explicit) — no audio; `createTextAgent` over a
-  message list. Text and `s2s` refuse each other by name. See
-  `aai-runtime`'s `text-agent.ts` module doc.
+  message list. Text and `s2s` refuse each other by name. See `aai-runtime`'s
+  `text-agent.ts` module doc.
 - **Pipeline mode** (the DEFAULT) — any subset of `stt`/`llm`/`tts`, or none;
   `defaultProviders` (`sdk/providers/_default-providers.ts`) FILLS each unset
-  stage with AssemblyAI, so `agent({ llm: llm({ … }) })` means "default
-  pipeline with that LLM". The host drives the LLM loop (`streamText`).
-  **A failing TURN is not a failing SESSION**: `onError` defaults to
-  `fatal: true` and aai-ui ends the call on a fatal frame, so every turn-level
-  reporter passes `{ fatal: false }` — `aai-runtime`'s
-  `transports/emit-error.ts` owns it.
+  stage with AssemblyAI, so `agent({ llm: llm({ … }) })` means "default pipeline
+  with that LLM". The host drives the LLM loop (`streamText`). **A failing TURN
+  is not a failing SESSION**: `onError` defaults to `fatal: true` and aai-ui
+  ends the call on a fatal frame, so every turn-level reporter passes
+  `{ fatal: false }` — `aai-runtime`'s `transports/emit-error.ts` owns it.
 - **S2S mode** (`mode: "s2s"` + `assemblyAIS2s()`/`openAIS2s()`) — one
-  WebSocket; STT, LLM and TTS run service-side. **Never reachable by
-  omission.** [`S2S-CLAUDE.md`](S2S-CLAUDE.md) owns the wire rules (24 kHz both
-  ways, tool-call captions, in-band errors, abandoning a handshake) — read it
-  before changing either S2S transport.
+  WebSocket; STT, LLM and TTS run service-side. **Never reachable by omission.**
+  [`S2S-CLAUDE.md`](S2S-CLAUDE.md) owns the wire rules (24 kHz both ways,
+  tool-call captions, in-band errors, abandoning a handshake) — read it before
+  changing either S2S transport.
 
 The default fill runs at every mode-derivation site (`toAgentConfig` and
 `createRuntime`) before `assertProviderTriple`. `createRuntime` hands
-`toAgentConfig` its EFFECTIVE mode (`resolveEffectiveProviders().agentMode`):
-a full provider triple in the runtime options replaces an S2S declaration.
+`toAgentConfig` its EFFECTIVE mode (`resolveEffectiveProviders().agentMode`): a
+full provider triple in the runtime options replaces an S2S declaration.
 
 ## One canonical config schema, deny-list boundaries
 
@@ -231,10 +230,9 @@ serializable schema flows CLI → server → runtime and **each boundary subtrac
 an explicit deny-list instead of copying fields**:
 
 - **`AgentConfigSchema`** (`sdk/_internal-types.ts`) is canonical.
-  `toAgentConfig` strips `HOST_ONLY_AGENT_FIELDS` (the fields holding
-  FUNCTIONS — `tools`, `toolsets`, `syncState`, `workflows`, `events`,
-  `roster`, …) and undefined
-  values, then validates. `_internal-types.test.ts` pins
+  `toAgentConfig` strips `HOST_ONLY_AGENT_FIELDS` (the fields holding FUNCTIONS
+  — `tools`, `toolsets`, `syncState`, `workflows`, `events`, `roster`, …) and
+  undefined values, then validates. `_internal-types.test.ts` pins
   `Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>` = `never`.
 - **`agent()`** derives each member of its parameters from `AgentDef` (`Omit`
   plus `Pick` per mode) plus the conveniences `normalizeAgentParams`
@@ -242,9 +240,9 @@ an explicit deny-list instead of copying fields**:
   `sdk/providers/llm/shared/from-string.ts`, and the endpointing pair). A voice
   has no shorthand: it is the TTS descriptor's option. Never re-declare the
   shape inline — neither bundler typechecks user code. `define.test-d.ts` and
-  `define-modes.test-d.ts` lock this. **Defaults go
-  through `omitUndefined`**: a spread lets a present-and-`undefined` key (from
-  an options bag) beat the default, yielding `undefined` required fields.
+  `define-modes.test-d.ts` lock this. **Defaults go through `omitUndefined`**: a
+  spread lets a present-and-`undefined` key (from an options bag) beat the
+  default, yielding `undefined` required fields.
 - **`IsolateConfigSchema`** (`aai-server/rpc-schemas.ts`) is
   `AgentConfigSchema.extend({...})`; extensions may loosen or add wire fields,
   never drop one. Runs at **deploy time only**.
@@ -253,45 +251,44 @@ an explicit deny-list instead of copying fields**:
   refinements to the stored schema** — strictness belongs at deploy.
 - **The server never maps a stored config onto a runtime agent**; sessions run
   the bundle's own SDK. Provider descriptors are keyed off their own presence,
-  never the optional `config.mode` (`superRefine` rejects a disagreeing
-  `mode`). `Exclude<keyof AgentConfig, keyof IsolateConfig>` must stay
-  `never`.
+  never the optional `config.mode` (`superRefine` rejects a disagreeing `mode`).
+  `Exclude<keyof AgentConfig, keyof IsolateConfig>` must stay `never`.
 
-A new serializable field needs exactly two edits — `AgentDef` (docs + type)
-and `AgentConfigSchema` — and the type guards fail if either is missing.
+A new serializable field needs exactly two edits — `AgentDef` (docs + type) and
+`AgentConfigSchema` — and the type guards fail if either is missing.
 
 ### Never let S2S be a fallback
 
 A config that loses its providers gets the AssemblyAI pipeline
 (`defaultProviders`), never a silent S2S session. `buildTransport`
-(`aai-runtime/src/runtime/transport.ts`) throws on a
-descriptor-less config whose pipeline providers did not resolve. `createRuntime`
-logs `"Session mode resolved"` once with the mode and each stage's effective
-settings (see "Settings, not just kinds" in `src/sdk/providers/CLAUDE.md`).
+(`aai-runtime/src/runtime/transport.ts`) throws on a descriptor-less config
+whose pipeline providers did not resolve. `createRuntime` logs
+`"Session mode resolved"` once with the mode and each stage's effective settings
+(see "Settings, not just kinds" in `src/sdk/providers/CLAUDE.md`).
 
 ## Data flow
 
-On the platform the browser's session WebSocket connects DIRECTLY to the
-agent's sandbox (`/session` on its Modal tunnel, discovered via
+On the platform the browser's session WebSocket connects DIRECTLY to the agent's
+sandbox (`/session` on its Modal tunnel, discovered via
 `GET /:slug/client-config`); "server" is the guest harness, or the `aai dev`
 server locally.
 
 - **S2S**: PCM → WebSocket → one provider socket → service-side LLM + tools →
   audio back through the same socket → browser.
 - **Pipeline**: PCM → STT → `userTranscript.updated` partials and
-  `speech.started`/`speech.stopped` → `userTranscript.committed` → host LLM
-  loop (`streamText`, tools host-side) → TTS → browser. A barge-in that never
-  commits a user turn resumes the reply (`interruption.resumeFalseInterruption`).
+  `speech.started`/`speech.stopped` → `userTranscript.committed` → host LLM loop
+  (`streamText`, tools host-side) → TTS → browser. A barge-in that never commits
+  a user turn resumes the reply (`interruption.resumeFalseInterruption`).
   `turnTaking.preemptiveGeneration` is OFF by default. The turn-taking knobs are
   three groups on the pipeline member (`PipelineTuning`, `sdk/agent-tuning.ts`)
   — `turnTaking`, `interruption`, `silence` — and the same `interruption` type
   is a dialog state's and a persona's override.
 - **Every session event name is `<subject>.<verb>`, both segments camelCase**
   (`tool.called`, `userTranscript.committed`, `provider.failedOver`), so a name
-  is predictable from its neighbours; `sdk/session-event-names.test.ts` fails
-  on any `SessionEventSchema` member off that grammar. Commands
-  (`SessionCommand`, snake_case imperatives) and author-chosen custom event
-  names are a different vocabulary and are not held to it.
+  is predictable from its neighbours; `sdk/session-event-names.test.ts` fails on
+  any `SessionEventSchema` member off that grammar. Commands (`SessionCommand`,
+  snake_case imperatives) and author-chosen custom event names are a different
+  vocabulary and are not held to it.
 
 ## Default values and magic numbers
 
@@ -309,8 +306,8 @@ These are cited from this guide by older comments. The first four are owned by
 the rest live only here.
 
 - **Session vocabularies**: `ServerSession` takes `command(cmd)` and
-  `report(event)` plus two audio paths — no `on*` callbacks
-  (`guard-invariants` rule 16).
+  `report(event)` plus two audio paths — no `on*` callbacks (`guard-invariants`
+  rule 16).
 - **A `reset` GREETS**: pipeline `reset()` ends with `lifecycle.greet()`;
   `skipGreeting` does not reach it; S2S does not re-greet (a known gap).
 - **History records what was HEARD**: an interrupted reply is stored as the
@@ -356,6 +353,6 @@ advance by the amount the work needs. Queue-settle yields
 
 A real `Runtime` and tool executor over a mocked S2S socket, replaying recorded
 AssemblyAI messages from `fixtures/`. `createFixtureSession` /
-`fireFixtureMessage` / `makeMockHandle` in `aai-runtime/src/_s2s-fixture-test-utils.ts`.
-`fireFixtureMessage` drives `S2sCallbacks` (the wire contract), not the
-session's `report` surface.
+`fireFixtureMessage` / `makeMockHandle` in
+`aai-runtime/src/_s2s-fixture-test-utils.ts`. `fireFixtureMessage` drives
+`S2sCallbacks` (the wire contract), not the session's `report` surface.
