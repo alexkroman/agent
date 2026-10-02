@@ -35,7 +35,6 @@ vi.mock("node:child_process", () => ({ spawn: (...args: unknown[]) => spawnMock(
 function installChild() {
   const data = new Map<string, (chunk: Buffer) => void>();
   const events = new Map<string, (...args: unknown[]) => void>();
-  const calls: { cmd: string; args: string[]; options: Record<string, unknown> }[] = [];
   const kills: string[] = [];
   const destroyed: string[] = [];
   const stream = (name: string) => ({
@@ -61,13 +60,14 @@ function installChild() {
       return true;
     },
   };
-  spawnMock.mockImplementation((cmd: string, args: string[], options: Record<string, unknown>) => {
-    calls.push({ cmd, args, options });
-    return child;
-  });
+  spawnMock.mockImplementation(() => child);
   return {
+    /** The latest spawn, as `{ cmd, args, options }`. */
     get call() {
-      return calls.at(-1);
+      const last = spawnMock.mock.lastCall as
+        | [string, string[], Record<string, unknown>]
+        | undefined;
+      return last && { cmd: last[0], args: last[1], options: last[2] };
     },
     kills,
     destroyed,

@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, expectTypeOf, test } from "vitest";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
 import {
   type AgentConfig,
@@ -190,15 +190,9 @@ describe("toAgentConfig", () => {
     // The other half, and the one that would fail silently: calling it here
     // would ask an author's function to answer with no session anywhere, which
     // is exactly what a resolver reading a slot cannot do.
-    let calls = 0;
-    toAgentConfig({
-      ...base,
-      systemPrompt: () => {
-        calls += 1;
-        return "computed";
-      },
-    });
-    expect(calls).toBe(0);
+    const systemPrompt = vi.fn(() => "computed");
+    toAgentConfig({ ...base, systemPrompt });
+    expect(systemPrompt).not.toHaveBeenCalled();
   });
 
   test("injects the default AssemblyAI pipeline when no providers are declared", () => {

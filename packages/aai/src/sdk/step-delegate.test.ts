@@ -8,8 +8,9 @@
  * `subagent.test.ts` under it). What this file owns is the seam.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { speaker } from "./speaker.ts";
+import type { StepDelegateFn } from "./step-delegate.ts";
 import { publishStepDelegate, stepDelegate } from "./step-delegate.ts";
 import { stubStepDelegate } from "./testing-delegate.ts";
 
@@ -19,17 +20,16 @@ afterEach(() => publishStepDelegate(undefined));
 
 describe("stepDelegate", () => {
   it("hands the subagent and the options to the published runner", async () => {
-    const seen: { name: string; task: string; context?: string }[] = [];
-    publishStepDelegate((sub, options) => {
-      seen.push({ name: sub.name, ...options });
-      return Promise.resolve({
+    const runner = vi.fn<StepDelegateFn>(() =>
+      Promise.resolve({
         text: "found it",
         steps: 2,
         toolCalls: [],
         revisions: 0,
         accepted: true,
-      });
-    });
+      }),
+    );
+    publishStepDelegate(runner);
 
     const result = await stepDelegate(researcher, {
       task: "battery prices",
@@ -37,7 +37,11 @@ describe("stepDelegate", () => {
     });
 
     expect(result).toMatchObject({ text: "found it", steps: 2 });
-    expect(seen).toEqual([{ name: "researcher", task: "battery prices", context: "for a brief" }]);
+    expect(runner).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(expect.objectContaining({ name: "researcher" }), {
+      task: "battery prices",
+      context: "for a brief",
+    });
   });
 
   it("rejects with the fix when nothing has published, naming the subagent", async () => {

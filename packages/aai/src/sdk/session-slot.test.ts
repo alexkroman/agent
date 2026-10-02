@@ -43,14 +43,11 @@ describe("sessionSlot", () => {
   });
 
   test("get returns the same object across calls — the factory runs once", () => {
-    let calls = 0;
-    const slot = sessionSlot("counted", () => {
-      calls += 1;
-      return { n: calls };
-    });
+    const create = vi.fn(() => ({ n: create.mock.calls.length }));
+    const slot = sessionSlot("counted", create);
     const ctx = createToolContext();
     expect(slot.get(ctx)).toBe(slot.get(ctx));
-    expect(calls).toBe(1);
+    expect(create).toHaveBeenCalledOnce();
   });
 
   test("what get returns is FROZEN, so a lost write is a throw", () => {

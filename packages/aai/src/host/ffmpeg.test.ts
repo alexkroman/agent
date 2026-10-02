@@ -47,7 +47,6 @@ function installChild() {
   const dataListeners = new Map<string, (chunk: Buffer) => void>();
   let stdinErrorListener: ((err: Error) => void) | undefined;
   const state = {
-    calls: [] as { binary: string; args: string[]; options: Record<string, unknown> }[],
     kills: [] as (string | undefined)[],
     stdinChunks: [] as Uint8Array[],
     stdinEnded: false,
@@ -79,17 +78,16 @@ function installChild() {
       state.kills.push(signal);
     },
   };
-  spawnMock.mockImplementation(
-    (binary: string, args: string[], options: Record<string, unknown>) => {
-      state.calls.push({ binary, args, options });
-      return child;
-    },
-  );
+  spawnMock.mockImplementation(() => child);
   // GETTERS, not a spread of `state`: spreading copies the booleans at return
   // time, so `stdinEnded` would answer what it was before the run started.
   return {
+    /** The latest spawn, as `{ binary, args, options }`. */
     get call() {
-      return state.calls[0];
+      const last = spawnMock.mock.lastCall as
+        | [string, string[], Record<string, unknown>]
+        | undefined;
+      return last && { binary: last[0], args: last[1], options: last[2] };
     },
     get kills() {
       return state.kills;
