@@ -17,13 +17,14 @@
  * and touches neither the network nor the clock.
  */
 
+import { fileURLToPath } from "node:url";
 import { describe, expect, test, vi } from "vitest";
 import { sole } from "./_gate-support.ts";
 
 const smoke = sole(
   import.meta.glob<{
     smokeSlug: (random?: () => string) => string;
-    smokeDeployBody: (slug: string) => Record<string, unknown>;
+    smokeDeployBody: (slug: string, worker: string) => Record<string, unknown>;
     readSettings: (env: Record<string, string | undefined>) => { base: string; key: string };
     brokerSandbox: (args: {
       base: string;
@@ -50,6 +51,13 @@ const fakeFetch = (handler: (url: string, init: RequestInit | undefined) => Resp
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+/**
+ * A file `main` can read as its `--worker`. Any committed file will do — the
+ * deploy it is posted to is a fake — and reading one keeps this unit tier,
+ * which forbids writing a fixture.
+ */
+const ANY_WORKER_FILE = fileURLToPath(new URL("../../../scripts/smoke-spawn.mjs", import.meta.url));
 
 /** The collaborators every broker test injects, so nothing waits or logs. */
 const inert = { sleep: async () => undefined, log: () => undefined };
@@ -96,14 +104,26 @@ describe("the agent it deploys", () => {
     expect(smoke?.smokeSlug()).not.toEqual(smoke?.smokeSlug());
   });
 
-  test("carries a worker with no bare imports", () => {
-    const worker = String(smoke?.smokeDeployBody("ci-smoke-a1")?.worker ?? "");
-    // A deployed worker bundle is self-contained (the CLI bundles it
-    // `noExternal`), so a hand-written one that imported the SDK would exercise
-    // a resolution path no real bundle uses — and fail on a difference that is
-    // not about the image.
-    expect(worker).not.toMatch(/^\s*import\s/m);
-    expect(worker).toContain("__aaiCreateRuntime");
+  test("carries the worker it was handed, not one of its own", () => {
+    // The worker is `aai build`'s output, built by the ship workflow's
+    // `guest-image` job. A hand-written stub cannot carry the runtime host
+    // surface the harness drives an agent through (`__aaiCreateRuntime.host`),
+    // and the one this replaced failed every spawn once the harness required it.
+    expect(smoke?.smokeDeployBody("ci-smoke-a1", "export default {};")).toMatchObject({
+      slug: "ci-smoke-a1",
+      worker: "export default {};",
+    });
+  });
+
+  test("refuses to run without a worker, and names where one comes from", async () => {
+    // Required like the two settings: with nothing to spawn, a skip would read
+    // as a pass.
+    const fetchImpl = fakeFetch(() => json({}));
+    vi.stubGlobal("fetch", fetchImpl);
+    await expect(
+      smoke?.main([], { AAI_PLATFORM_URL: "https://x", AAI_API_KEY: "k" }),
+    ).rejects.toThrow(/--worker is required.*smoke-worker/s);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 
@@ -185,10 +205,17 @@ describe("it cleans up after itself", () => {
     // Sub-millisecond, because `main` takes no `sleep`/`now` seam: whole
     // seconds here would make a unit-tier test wait out the real broker
     // loop. The deadline expiring is the point; how long it took is not.
-    const code = await smoke?.main(["--timeout-seconds", "0.001", "--interval-seconds", "0.001"], {
-      AAI_PLATFORM_URL: "https://x",
-      AAI_API_KEY: "k",
-    });
+    const code = await smoke?.main(
+      [
+        "--worker",
+        ANY_WORKER_FILE,
+        "--timeout-seconds",
+        "0.001",
+        "--interval-seconds",
+        "0.001",
+      ],
+      { AAI_PLATFORM_URL: "https://x", AAI_API_KEY: "k" },
+    );
     expect(code).toBe(1);
     expect(fetchImpl.mock.calls.filter(([, init]) => init?.method === "DELETE")).toHaveLength(1);
   });
