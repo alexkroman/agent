@@ -8,7 +8,12 @@ import {
 } from "./step-transcribe.ts";
 import { stepTranscribeSync } from "./step-transcribe-sync.ts";
 import { publishUploadReader } from "./step-uploads.ts";
-import { stubStepFetch, stubTranscribe, stubUploads } from "./testing.ts";
+import { stubTranscribe } from "./testing.ts";
+import {
+  installStubStepFetch,
+  installStubTranscribe,
+  installStubUploads,
+} from "./testing-vitest.ts";
 
 /**
  * Driven through the real steps, never against the fake directly.
@@ -17,29 +22,17 @@ import { stubStepFetch, stubTranscribe, stubUploads } from "./testing.ts";
  * that asserted on the JSON it answers would be testing the restatement. What
  * is asserted here is what `stepTranscribe*` — the code a template calls — sees.
  */
-const restores: (() => void)[] = [];
-afterEach(() => {
-  for (const restore of restores.splice(0)) restore();
-  publishUploadReader(undefined);
-});
-
-function fake(...args: Parameters<typeof stubTranscribe>) {
-  const provider = stubTranscribe(...args);
-  restores.push(provider.restore);
-  return provider;
-}
+afterEach(() => publishUploadReader(undefined));
 
 function recording(bytes = new Uint8Array(2048)) {
-  const uploads = stubUploads({ rec: bytes });
-  restores.push(uploads.restore);
-  return uploads;
+  return installStubUploads({ rec: bytes });
 }
 
 describe("the async trio", () => {
   test("upload, submit and poll each get an answer the SDK can read", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     recording();
-    fake({ text: "we ship tuesday", durationSec: 42 });
+    installStubTranscribe({ text: "we ship tuesday", durationSec: 42 });
 
     const { audioUrl } = await stepTranscribeUpload("rec");
     const { id } = await stepTranscribeSubmit(audioUrl);
@@ -60,7 +53,7 @@ describe("the async trio", () => {
   test("records every call with the leg it belonged to, and the file it streamed", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     recording(new Uint8Array(5000));
-    const provider = fake();
+    const provider = installStubTranscribe();
 
     await stepTranscribeSubmit((await stepTranscribeUpload("rec")).audioUrl);
 
@@ -77,7 +70,7 @@ describe("the async trio", () => {
 
   test("pendingPolls makes a job take more than one poll, counted per job", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    fake({ pendingPolls: 2, text: "done at last" });
+    installStubTranscribe({ pendingPolls: 2, text: "done at last" });
 
     expect(await stepTranscribePoll("job_a")).toEqual({ done: false, status: "processing" });
     expect(await stepTranscribePoll("job_a")).toEqual({ done: false, status: "processing" });
@@ -88,7 +81,7 @@ describe("the async trio", () => {
 
   test("a job the provider gave up on is TERMINAL, not 'not done yet'", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    fake({ jobError: "audio too quiet" });
+    installStubTranscribe({ jobError: "audio too quiet" });
 
     // The branch a flow is most likely to get wrong: the request SUCCEEDED and
     // the answer is no, so a retry polls a dead job until the budget runs out.
@@ -100,7 +93,7 @@ describe("the async trio", () => {
 
   test("an empty transcript is refused by the poll, which is the SDK's own rule", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    fake({ text: "" });
+    installStubTranscribe({ text: "" });
 
     // A recording of silence succeeds and answers with nothing, which is the
     // failure that reads least like one — so the fake has to be able to stage it.
@@ -111,7 +104,7 @@ describe("the async trio", () => {
 describe("the sync endpoint", () => {
   test("answers each request from the text list, the last repeating", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    fake({ text: ["first segment", "second segment"] });
+    installStubTranscribe({ text: ["first segment", "second segment"] });
 
     const said: string[] = [];
     for (let n = 0; n < 3; n += 1) said.push((await stepTranscribeSync(new Uint8Array(4))).text);
@@ -123,7 +116,7 @@ describe("the sync endpoint", () => {
 
   test("an empty answer is accepted here, unlike the async poll", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    fake({ text: "" });
+    installStubTranscribe({ text: "" });
 
     // A silent segment in a fan-out is ordinary, and a throw would fail a whole
     // recording over a pause in it.
@@ -134,7 +127,9 @@ describe("the sync endpoint", () => {
 describe("refusals", () => {
   test("a 429 becomes a real TranscribeError, classified by the SDK", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    fake({ failure: { leg: "sync", status: 429, message: "slow down", retryAfterSeconds: 30 } });
+    installStubTranscribe({
+      failure: { leg: "sync", status: 429, message: "slow down", retryAfterSeconds: 30 },
+    });
 
     const error = await stepTranscribeSync(new Uint8Array(4)).catch((thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(TranscribeError);
@@ -148,7 +143,7 @@ describe("refusals", () => {
 
   test("a 400 is terminal, and the same staging says so", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    fake({ failure: { status: 400, message: "bad field" } });
+    installStubTranscribe({ failure: { status: 400, message: "bad field" } });
 
     const error = await stepTranscribeSubmit("https://cdn/x").catch((thrown: unknown) => thrown);
     expect((error as TranscribeError).retryable).toBe(false);
@@ -157,7 +152,7 @@ describe("refusals", () => {
   test("a refusal naming a leg leaves the others answering", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     recording();
-    fake({ failure: { leg: "submit", status: 400 } });
+    installStubTranscribe({ failure: { leg: "submit", status: 400 } });
 
     await expect(stepTranscribeUpload("rec")).resolves.toMatchObject({
       audioUrl: expect.any(String),
@@ -168,7 +163,7 @@ describe("refusals", () => {
   test("with no leg named, every call refuses", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     recording();
-    fake({ failure: { status: 503 } });
+    installStubTranscribe({ failure: { status: 503 } });
 
     await expect(stepTranscribeUpload("rec")).rejects.toBeInstanceOf(TranscribeError);
     await expect(stepTranscribeSubmit("https://cdn/x")).rejects.toBeInstanceOf(TranscribeError);
@@ -181,7 +176,7 @@ describe("everything else", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     // Publishing a stepFetch REPLACES, so a flow that transcribes AND calls a
     // model cannot install two fakes — this is the seam for the second one.
-    const provider = fake({
+    const provider = installStubTranscribe({
       otherwise: (request) =>
         request.url.includes("llm-gateway")
           ? { body: { choices: [{ message: { content: "summary" } }] } }
@@ -208,8 +203,7 @@ describe("everything else", () => {
     // answer this instead, which is the cross-file leak that presents as a
     // passing test somewhere else. (Asserting a real request fails would prove
     // the same thing by making one, which a unit test may not do.)
-    const sentinel = stubStepFetch(() => ({ body: { status: "completed", text: "sentinel" } }));
-    restores.push(sentinel.restore);
+    installStubStepFetch(() => ({ body: { status: "completed", text: "sentinel" } }));
 
     expect(await stepTranscribePoll("job_a")).toMatchObject({
       transcript: { text: "sentinel" },
