@@ -1,5 +1,40 @@
 # @alexkroman1/aai-runtime
 
+## 0.14.0
+
+### Patch Changes
+
+- 3c0d0dd: Fix three cancel races found by new property tests. A client `reset` no longer
+  lets an aborted tool call's result settle into the fresh conversation (its
+  history and the `tool.completed` log). In the AssemblyAI TTS adapter, a barge-in
+  after a reply had finished no longer drops the is_final/FlushDone pairing, which
+  let the old turn's trailing FlushDone end the next reply before its last segment
+  played; and a turn begun under an unanswered `Cancel` now ends when the
+  acknowledgement deadline drops the socket, instead of never emitting `done`.
+- b77171d: Studio idle reaping binds the sandbox with `await using`, so it is terminated
+  even if a release step throws; the remaining hand-rolled waits use the shared
+  primitives.
+- 66953d5: An MCP connect that times out now aborts its in-flight fetches instead of
+  leaving them to the SDK's own request timeout. The orchestrator exposes
+  `stopSweeps` so a test-built one stops its queue sweep.
+- dd2e1db: Make `EgressPool.close()` idempotent as documented: a second call now returns
+  the first call's settlement instead of rejecting with undici's
+  `ClientClosedError`
+- a9267f2: Model-provider fetch wrappers now take their delegate as a required argument,
+  named once by the LLM registry (still the ambient fetch, read per call); agent
+  boot artifacts in a contained guest are written under the guest scratch dir
+  (/var/tmp) instead of a hardcoded /tmp.
+- Updated dependencies [5fa348b]
+- Updated dependencies [f6aa687]
+- Updated dependencies [67f7354]
+- Updated dependencies [8820f2c]
+- Updated dependencies [f869b6a]
+- Updated dependencies [99400e3]
+- Updated dependencies [5fa348b]
+- Updated dependencies [5ded42b]
+- Updated dependencies [99400e3]
+  - @alexkroman1/aai@0.14.0
+
 ## 0.13.0
 
 ### Minor Changes
