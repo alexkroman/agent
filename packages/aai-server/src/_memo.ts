@@ -20,14 +20,23 @@ export type MemoizedAsync<T> = (() => Promise<T>) & {
   reset(): void;
 };
 
-/** Memoize `build()`: one in-flight/settled promise, cleared on rejection. */
+/**
+ * Memoize `build()`: one in-flight/settled promise, cleared on rejection.
+ *
+ * The clear is BY OWNERSHIP, as in {@link keyedMemoAsync}: a build that
+ * rejects after `reset()` let a successor start must not evict it, or the next
+ * caller starts a third build instead of joining the second.
+ */
 export function memoAsync<T>(build: () => Promise<T>): MemoizedAsync<T> {
   let memo: Promise<T> | null = null;
   const fn = (): Promise<T> => {
-    memo ??= build().catch((err: unknown) => {
-      memo = null;
+    if (memo) return memo;
+    // Assigned before the catch can run: a rejection is a microtask at the earliest.
+    const pending: Promise<T> = build().catch((err: unknown) => {
+      if (memo === pending) memo = null;
       throw err;
     });
+    memo = pending;
     return memo;
   };
   fn.reset = (): void => {
