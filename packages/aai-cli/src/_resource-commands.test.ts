@@ -28,10 +28,9 @@ const executors = vi.hoisted(() => ({
 vi.mock("./secret.ts", () => executors.secret);
 vi.mock("./logs.ts", () => executors.logs);
 
-// Module-level `vi.fn()`s: `restoreMocks` registers only `vi.spyOn` mocks, so
-// without this a `toHaveBeenCalledWith` can be satisfied by an earlier test.
+// `clearMocks` clears the module-level `vi.fn()`s' calls but not their
+// implementations, so re-prime the defaults a case may have overridden.
 beforeEach(() => {
-  vi.clearAllMocks();
   for (const fn of Object.values(executors.secret))
     if (vi.isMockFunction(fn)) fn.mockResolvedValue(ok);
   executors.logs.executeLogs.mockResolvedValue(ok);

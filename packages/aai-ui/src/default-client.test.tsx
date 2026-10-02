@@ -18,7 +18,7 @@
  * in production, which is the only good news about it.
  */
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 vi.mock("./define-client.tsx", () => ({ mountClient: vi.fn() }));
 vi.mock("./page.tsx", () => ({ mountPage: vi.fn() }));
@@ -38,14 +38,6 @@ async function loadWith(config: unknown): Promise<void> {
   vi.resetModules();
   await import("./default-client.tsx");
 }
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("the prebuilt default client", () => {
   test("mounts the PAGE for an agent whose front door is static", async () => {

@@ -11,7 +11,7 @@
  * not in a browser, or the reverse.
  */
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createWorkflowApiClient } from "./workflow-api-client.ts";
 import type { UploadProgress } from "./workflow-upload-client.ts";
 
@@ -130,13 +130,6 @@ beforeEach(() => {
   // No `XMLHttpRequest` unless a spec installs one: that is the Node shape, and
   // it must be the starting point rather than whatever the previous spec left.
   vi.stubGlobal("XMLHttpRequest", undefined);
-});
-
-afterEach(() => {
-  // `restoreMocks` covers spies and `unstubEnvs` covers env vars; neither undoes
-  // a stubbed global, and a leaked `XMLHttpRequest` would silently move every
-  // later spec in the run onto the other transport.
-  vi.unstubAllGlobals();
 });
 
 describe("upload progress", () => {

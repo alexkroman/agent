@@ -12,7 +12,7 @@
 // points at.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { renderWithClient, stubFetch } from "../_test-utils.ts";
 import { SettingsPane } from "./settings.tsx";
 
@@ -40,10 +40,6 @@ function renderPanel(onDeleteProject = vi.fn()) {
     />,
   );
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("SettingsPane", () => {
   test("the sections run in the order a project needs them", () => {

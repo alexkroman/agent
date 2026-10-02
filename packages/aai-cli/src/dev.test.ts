@@ -18,15 +18,6 @@ function baseDeps(): DevDeps {
   };
 }
 
-// `mockCleanup`, `mockStartDevServer` and `mockNotify` are module-level
-// `vi.fn()`s. `restoreMocks: true` registers only `vi.spyOn` mocks, so it
-// clears none of their call history — without this, the
-// `toHaveBeenCalledTimes(1)` assertions below count every call since the file
-// started rather than the ones this test made.
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
 /**
  * Run executeDev with process.on intercepted, so signal/error handlers are
  * captured instead of registered on the real test process (an actual

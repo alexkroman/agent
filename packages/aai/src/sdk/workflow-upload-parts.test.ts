@@ -12,7 +12,7 @@
  * `host/workflow-api-uploads.test.ts` against a real router.
  */
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   client,
   json,
@@ -33,10 +33,6 @@ import {
 } from "./constants.ts";
 import type { UploadProgress } from "./workflow-upload-client.ts";
 import { partsPlan, planParts } from "./workflow-upload-parts.ts";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 beforeEach(() => {
   scriptAgent();

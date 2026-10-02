@@ -148,10 +148,12 @@ name. A step whose HTTP goes through a published `stepFetch` wants
 The calls array is what a spec asserts on, and it is live — a reference taken
 before the code under test runs holds every call made after.
 
-**Lifetime is the caller's**, as it is for any `vi.stubGlobal`. This repo does
-not set `unstubGlobals`, so a stub outlives its test unless the next one
-replaces it; installing per test (which is the shape every caller wants
-anyway) makes that moot, and `vi.unstubAllGlobals()` is the explicit undo.
+**Lifetime is one test**, as it is for any `vi.stubGlobal` under
+`unstubGlobals` — which this repo's shared config and `defineAgentTestConfig`
+(`@alexkroman1/aai/testing/vite`) both set, so the real `fetch` is back
+before the next test. Install per test (the test body or a `beforeEach`);
+one installed in `beforeAll` is gone before the first test runs. Without
+`unstubGlobals`, `vi.unstubAllGlobals()` is the explicit undo.
 
 #### Parameters
 

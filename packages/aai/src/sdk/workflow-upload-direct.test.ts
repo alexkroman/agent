@@ -16,14 +16,10 @@
  * uses (`_upload-parts-test-utils.ts`).
  */
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { client, PART, recording, scriptAgent, TOTAL } from "./_upload-parts-test-utils.ts";
 import { UPLOAD_CHUNK_BYTES } from "./constants.ts";
 import { directBytesBase } from "./workflow-upload-parts.ts";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 beforeEach(() => {
   scriptAgent();

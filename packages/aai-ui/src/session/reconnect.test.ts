@@ -62,7 +62,6 @@ describe("session-core automatic reconnection (partysocket)", () => {
   afterEach(() => {
     core.disconnect();
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it("exhausting all retries ends the session terminally and stops reconnecting", async () => {
@@ -288,7 +287,6 @@ describe("session-core handshake deadline", () => {
     core.disconnect();
     audio.restore();
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it("re-dials a peer that opens the socket and never sends config", async () => {

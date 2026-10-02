@@ -10,7 +10,7 @@ import {
   stubGenerate,
   toolRunner,
 } from "@alexkroman1/aai-runtime/testing";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { endsRound, gameFlow, TIME_UP_LINE } from "./game.ts";
 import { containsWord, isCorrectGuess, normalizeWord } from "./guess.ts";
 import { PLAYER_SYSTEM, playerPrompt } from "./player.ts";
@@ -90,10 +90,6 @@ async function startRound(ctx: ToolContext): Promise<string> {
   if (word === null) throw new Error("no word after start_game");
   return word;
 }
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 // ─── 1. The referee ──────────────────────────────────────────────────────────
 

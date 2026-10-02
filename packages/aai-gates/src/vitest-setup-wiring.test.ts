@@ -24,6 +24,17 @@ const packageConfigs = Object.entries(
   }),
 ).map(([key, source]) => ({ path: repoPathOf(key), source }));
 
+/** Every package's manifest, as source, keyed by repo path. */
+const packageManifests = new Map(
+  Object.entries(
+    import.meta.glob<string>("../../*/package.json", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }),
+  ).map(([key, source]) => [repoPathOf(key), source]),
+);
+
 /** The two repo-root configs that also declare `setupFiles`. */
 const rootConfigs = Object.entries(
   import.meta.glob<string>("../../../vitest*.config.ts", {
@@ -119,6 +130,26 @@ describe("shared vitest setupFiles wiring", () => {
     // one long-lived signal, i.e. where a listener leak actually lives.
     expect(slow?.source).toMatch(/setupFiles:\s*\[\s*\.\.\.sharedSetupFiles/);
     expect(slow?.source).toContain("VITEST_SETUP");
+  });
+
+  test("a package that pins forks for its unit tier gets forks in its slow tiers", () => {
+    // The slow config picks the pool by package NAME (it cannot load the
+    // package's own config — aai-templates' needs the SDK's `dist`), so a
+    // package that pins `forks` for reasons that hold in every tier must be in
+    // its list, or its scenario suites quietly run in worker threads.
+    const slow = rootConfigs.find(({ path }) => path === "vitest.slow.config.ts");
+    const forks = packageConfigs
+      .filter(({ source }) => /pool:\s*"forks"/.test(source))
+      .map(({ path }) => {
+        const manifest = packageManifests.get(path.replace(/vitest\.config\.ts$/, "package.json"));
+        return (JSON.parse(manifest ?? "{}") as { name?: string }).name;
+      });
+    expect(forks.length, "no package pins forks — the glob or the regex broke").toBeGreaterThan(0);
+    for (const name of forks) {
+      expect(slow?.source, `${name} pins forks but is not in FORKS_PACKAGES`).toContain(
+        `"${name}"`,
+      );
+    }
   });
 
   test("the gate's opt-out has exactly one user", () => {

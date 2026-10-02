@@ -9,7 +9,7 @@
  * honours the home through what it logs and does.
  */
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { isDurableHome, resolveStorageHome } from "./storage-home.ts";
 
 /**
@@ -17,10 +17,6 @@ import { isDurableHome, resolveStorageHome } from "./storage-home.ts";
  * stores, its URL for `ownedSchemaUrl`), so a URL is a faithful stand-in here.
  */
 const db = "postgres://app@127.0.0.1:5432/app";
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
 
 function stubPlatform(): void {
   vi.stubEnv("AAI_PLATFORM_BASE_URL", "https://platform.test/digest-desk");

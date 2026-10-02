@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { sleep } from "@alexkroman1/aai/internal";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { createTestStore } from "./_orchestrator-test-utils.ts";
 import { SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
@@ -59,9 +59,6 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
 
 describe("createSandbox", () => {
   const logs = captureLogs();
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
 
   it("creates a sandbox with the server-handle shape", async () => {
     const sandbox = createSandbox(makeSandboxOptions());

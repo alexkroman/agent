@@ -5,12 +5,8 @@
 
 import { useCopy } from "@alexkroman1/aai-ui";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { CopyLine, Snippet } from "./snippet.tsx";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 function stubClipboard() {
   const writeText = vi.fn(async (_text: string) => undefined);

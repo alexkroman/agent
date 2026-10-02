@@ -18,7 +18,6 @@ import {
 } from "./preview.tsx";
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 

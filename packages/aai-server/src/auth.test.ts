@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { timingSafeEqual } from "node:crypto";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createTestStore } from "./_orchestrator-test-utils.ts";
 import { hashApiKey, verifyApiKeyHash, verifySlugOwner } from "./secrets.ts";
 
@@ -89,12 +89,6 @@ test("verifySlugOwner rejects when credential_hashes is empty", async () => {
 });
 
 describe("auth timing safety", () => {
-  beforeEach(() => {
-    // `restoreMocks` restores `vi.spyOn` mocks and does NOT clear a `vi.fn()`'s
-    // call history, so without this an earlier test's call satisfies the next.
-    vi.mocked(timingSafeEqual).mockClear();
-  });
-
   test("verifyApiKeyHash compares through timingSafeEqual, not ===", () => {
     const stored = hashApiKey("key1");
 

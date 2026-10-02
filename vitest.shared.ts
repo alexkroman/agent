@@ -50,10 +50,17 @@ export const sharedConfig = {
   ssr: { resolve: { conditions: ["@dev/source"] } },
   test: {
     reporters: process.env.CI ? ["dot", "github-actions"] : ["default"],
+    // Before EVERY test, vitest restores each `vi.spyOn`, clears each `vi.fn`'s
+    // calls, and undoes each `vi.stubEnv` and `vi.stubGlobal` — so a spec owes
+    // no `afterEach` for any of them. `clearMocks` is vitest 5's default,
+    // stated so a reader need not know that. The flip side: a stub made in
+    // `beforeAll` or at module scope is undone before the first test, so stub
+    // per test (`beforeEach` or the test body). A helper that needs a sub-test
+    // boundary still calls `vi.unstubAllEnvs()`/`vi.unstubAllGlobals()` itself.
     restoreMocks: true,
-    // Every `vi.stubEnv` is undone after its test; a helper that needs a
-    // sub-test boundary still calls `vi.unstubAllEnvs()` itself.
+    clearMocks: true,
     unstubEnvs: true,
+    unstubGlobals: true,
     // A date test must not depend on the runner's zone. Node re-reads `TZ` on
     // assignment, and `unstubEnvs` restores to this baseline. An OBJECT, so
     // {@link defineUnitProject} merges a package's `env` over it.
@@ -81,7 +88,6 @@ export const sharedCoverageExclude = [
   "**/test-utils.ts",
   "**/*-test-utils.ts",
   "**/_*-setup.ts",
-  "**/_test-matchers.ts",
   "**/_mock-*.ts",
   "**/_*-fakes.ts",
   "**/_*-harness.ts",

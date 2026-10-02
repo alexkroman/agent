@@ -39,7 +39,6 @@ function mount(id = "app"): HTMLElement {
 afterEach(() => {
   document.body.innerHTML = "";
   document.title = "";
-  vi.unstubAllGlobals();
 });
 
 /**

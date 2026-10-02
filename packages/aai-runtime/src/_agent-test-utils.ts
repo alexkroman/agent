@@ -101,16 +101,14 @@ export function makeUsageMeter(limits?: { totalTokens?: number } | undefined): {
 }
 
 /** A {@link SessionSpeech} that records what it was asked to say. */
-export function makeSpeech(): SessionSpeech & { said: string[]; interrupts: number } {
+export function makeSpeech(): SessionSpeech & { said: string[] } {
   const speech = {
     said: [] as string[],
-    interrupts: 0,
     say(text: string) {
       speech.said.push(text);
       return { done: Promise.resolve("played" as const), interrupt: () => undefined };
     },
     interrupt() {
-      speech.interrupts += 1;
       return true;
     },
   };

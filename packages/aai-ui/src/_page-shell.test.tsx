@@ -18,12 +18,8 @@
  */
 
 import { act, render, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { DefaultPageShell } from "./_page-shell.tsx";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 /** One workflow with one declared string field — what a form is rendered FROM. */
 const DIGEST = {

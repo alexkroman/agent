@@ -99,21 +99,16 @@ describe("assertServiceRoleKey", () => {
 
   test("never echoes the key into the error", () => {
     const secret = "AbCdEfGhIjKlMnOpQrStUv";
-    let message = "";
-    try {
-      assertServiceRoleKey(`sb_publishable_${secret}`);
-    } catch (err) {
-      message = (err as Error).message;
-    }
-    // Asserted on the captured message rather than through `toThrow`, which
-    // takes only a string/regex/Error — an asymmetric matcher passed to it is
-    // ignored, so `toThrow(expect.not.stringContaining(…))` asserts nothing
-    // beyond "it threw".
-    //
+    const assertKey = () => assertServiceRoleKey(`sb_publishable_${secret}`);
     // The message is destined for boot logs, so it names the SETTING and the
-    // shape it wants, never the value it found.
-    expect(message).toContain("SUPABASE_SERVICE_ROLE_KEY");
-    expect(message).not.toContain(secret);
+    // shape it wants, never the value it found. `toThrow` matches the thrown
+    // error against an asymmetric matcher, so each half is one assertion.
+    expect(assertKey).toThrow(
+      expect.objectContaining({ message: expect.stringContaining("SUPABASE_SERVICE_ROLE_KEY") }),
+    );
+    expect(assertKey).toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining(secret) }),
+    );
   });
 
   test.each([

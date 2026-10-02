@@ -11,7 +11,7 @@
 // only a LIVE run offers a Stop button.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { fetchCall, jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { WorkflowsCard } from "./workflows-card.tsx";
 
@@ -31,10 +31,6 @@ function run(over: Record<string, unknown> = {}) {
 function renderCard(props: { deployedSlug?: string; previewSlug?: string } = {}) {
   renderWithClient(<WorkflowsCard {...props} />);
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("WorkflowsCard", () => {
   test("asks for a publish or an edit when the project has neither slug", () => {

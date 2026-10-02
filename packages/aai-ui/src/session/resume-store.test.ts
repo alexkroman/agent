@@ -19,8 +19,9 @@ const AGENT = "ws://localhost:3000";
 const OTHER = "ws://localhost:3000/other-agent/";
 
 afterEach(() => {
-  // Unstubbed FIRST: the spec below replaces the global with a hostile `Storage`,
-  // and `restoreMocks`/`unstubEnvs` cover spies and env vars, not globals.
+  // Unstubbed HERE, not left to `unstubGlobals`: the spec below replaces the
+  // global with a hostile `Storage`, and `unstubGlobals` only undoes it before
+  // the next test, after this `clear()` has already thrown on it.
   vi.unstubAllGlobals();
   sessionStorage.clear();
 });

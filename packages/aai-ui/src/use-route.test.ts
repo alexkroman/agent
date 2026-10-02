@@ -8,7 +8,7 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, type Mock, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { createMockSessionCore } from "./_react-test-utils.ts";
 import { SessionProvider } from "./context.ts";
 import { useRoute } from "./use-route.ts";
@@ -25,9 +25,6 @@ beforeEach(() => {
     pathname: "/kitchen/",
     href: "https://h/kitchen/",
   });
-});
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 const lastUrl = () => String(fetchMock.mock.calls.at(-1)?.[0]);

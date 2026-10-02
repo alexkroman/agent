@@ -61,7 +61,6 @@ beforeEach(() => {
 
 afterEach(() => {
   if (ttyDescriptor) Object.defineProperty(process.stdin, "isTTY", ttyDescriptor);
-  vi.clearAllMocks();
 });
 
 describe("aai login", () => {

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   fetchCall,
   fetchLines,
@@ -17,16 +17,6 @@ import {
   STATUS_ATTEMPT_TIMEOUT_MS,
 } from "./api.ts";
 import { ApiError, isTransientError } from "./api-error.ts";
-
-// FILE-scoped, not block-scoped. Four of the five `describe`s below install a
-// global `fetch` and only this one used to remove it, so the last stub of a
-// block outlived it — most recently a rejecting `TimeoutError`. Nothing failed
-// only because every later block happened to re-stub first; a test appended to
-// `isTransientError`, or a block inserted between two of them, would have run
-// against whatever the previous block abandoned.
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("parseSecrets", () => {
   test("parses KEY=value lines", () => {

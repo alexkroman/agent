@@ -6,22 +6,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type RenderResult, render, screen } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { vi } from "vitest";
-
-/**
- * A spy that stands in for `fetch` where one is INJECTED rather than stubbed
- * globally (`createResilientFetch`, `createSandboxTransport`).
- *
- * The one typed seam for that, and the reason it is worth having is that the
- * hand-rolled version was an `as unknown as typeof fetch` per suite — the cast
- * is unnecessary once the mock's parameter types are declared here instead of
- * being inferred from a narrower callback at each call site.
- */
-export function fakeFetch(
-  impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
-): ReturnType<typeof vi.fn<typeof fetch>> {
-  return vi.fn(impl);
-}
+import { type Mock, vi } from "vitest";
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -71,9 +56,6 @@ export function tick(): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-/** A `vi.fn()` standing in for `fetch`, with `fetch`'s own parameter types. */
-export type FetchMock = ReturnType<typeof vi.fn<typeof fetch>>;
-
 /**
  * Stub the global `fetch`. Pass a single factory to answer every request, or
  * a route table keyed `"METHOD /path"` (or just `"/path"` for any method).
@@ -84,15 +66,15 @@ export type FetchMock = ReturnType<typeof vi.fn<typeof fetch>>;
  * is what lets a responder branch on the URL or reject outright. Without that
  * it was `() => Response`, so every suite whose stub had to look at where the
  * request was going hand-rolled `vi.fn(...)` + `vi.stubGlobal` instead — and
- * typed the callback narrower than `fetch`, which is the thing {@link fakeFetch}
- * exists to prevent.
+ * typed the callback narrower than `fetch`. A fetch INJECTED rather than
+ * stubbed globally is a plain `vi.fn<typeof fetch>(impl)`.
  */
 export function stubFetch(
   routes:
     | ((input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>)
     | Record<string, () => Response>,
-): FetchMock {
-  // Typed as `fetch` itself, exactly as `fakeFetch` above is: untyped, every
+): Mock<typeof fetch> {
+  // Typed as `fetch` itself: untyped, every
   // caller either cast `mock.calls[n]` back to `[string, RequestInit]` or read
   // an unchecked `any` off it — and the second is the worse half, since a
   // renamed field on an assertion nothing type-checks stays green.
@@ -114,7 +96,7 @@ export function stubFetch(
  * asserts on request #1 fails saying so instead of on a property of nothing.
  */
 export function fetchCall(
-  mock: FetchMock,
+  mock: Mock<typeof fetch>,
   index = 0,
 ): { url: string; method: string; init: RequestInit } {
   const call = mock.mock.calls[index];
@@ -134,7 +116,7 @@ export function fetchCall(
  * not the caller named one.
  */
 export function fetchCallsWith(
-  mock: FetchMock,
+  mock: Mock<typeof fetch>,
   method: string,
 ): { url: string; method: string; init: RequestInit }[] {
   return mock.mock.calls
@@ -143,7 +125,7 @@ export function fetchCallsWith(
 }
 
 /** Every recorded request as `"METHOD /url"`, in order. */
-export function fetchLines(mock: FetchMock): string[] {
+export function fetchLines(mock: Mock<typeof fetch>): string[] {
   return mock.mock.calls.map((_call, index) => {
     const { url, method } = fetchCall(mock, index);
     return `${method} ${url}`;

@@ -21,7 +21,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sleep } from "@alexkroman1/aai/internal";
-import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { registerLiveStream } from "./live-streams.ts";
@@ -57,16 +57,6 @@ vi.mock("./constants.ts", async (importOriginal) => ({
 
 /** `AAI_LOCAL_DEV=1` and nothing else — what selects the microVM backend. */
 const LOCAL_DEV: NodeJS.ProcessEnv = { AAI_LOCAL_DEV: "1" };
-
-// The one piece of per-test bookkeeping the shared config does not cover:
-// `restoreMocks` restores SPIES, and every mock above is a `vi.fn()` created
-// once per FILE by a module factory, so its call history is cumulative. Verified
-// by A/B — without this, "prewarmModal was not called" passed only in whichever
-// test ran first, and every later assertion on a call count was really an
-// assertion about test order.
-beforeEach(() => {
-  vi.clearAllMocks();
-});
 
 describe("assertSandboxBackendOrWarn", () => {
   const logs = captureLogs();

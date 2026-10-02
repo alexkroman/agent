@@ -7,11 +7,11 @@
  * half (slug, warm-up, wake).
  */
 
+import { createMemoryWorkspaceStore } from "aai-server/stores";
+import { captureLogs } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
 import {
-  makeStore,
   PROJECT,
-  previewLogs,
   previewStamped,
   SCOPE,
   seededStore,
@@ -43,7 +43,10 @@ function makeDeployer(opts: Omit<PreviewDeployerOptions, "queue" | "pollMs">) {
 }
 
 describe("createPreviewDeployer", () => {
-  const logs = previewLogs();
+  // The EXPECTED warnings go through the package's log seam, not a
+  // `spyOn(console, "warn")`. `captureLogs` registers its own hooks, so it is
+  // called at DESCRIBE scope, once.
+  const logs = captureLogs();
 
   test("deploys the workspace to the preview slug and stamps the metadata", async () => {
     const workspaces = await seededStore();
@@ -307,7 +310,7 @@ describe("createPreviewDeployer", () => {
   });
 
   test("a deleted project deploys nothing and never resurrects", async () => {
-    const workspaces = makeStore();
+    const workspaces = createMemoryWorkspaceStore();
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
     const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
     deployer.schedule(SCOPE, "ghost", TARGET);
@@ -502,7 +505,7 @@ describe("createPreviewDeployer", () => {
  * them — and a swallowed error is exactly the kind of code that rots unnoticed.
  */
 describe("queue failures are contained", () => {
-  const logs = previewLogs();
+  const logs = captureLogs();
 
   test("an enqueue failure is logged and never reaches the caller", async () => {
     const workspaces = await seededStore();
@@ -523,7 +526,7 @@ describe("queue failures are contained", () => {
   });
 
   test("a claim failure yields no jobs rather than throwing", async () => {
-    const workspaces = makeStore();
+    const workspaces = createMemoryWorkspaceStore();
     const queue = createMemoryPreviewQueue();
     queue.claim = () => Promise.reject(new Error("connection reset"));
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));

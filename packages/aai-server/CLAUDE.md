@@ -592,8 +592,8 @@ closes 1011).
 ### Building a platform request in a test
 
 **Build requests with `authFetch` / `deploy(fetch, { key, body })` from
-`_request-test-utils.ts`, never a `Bearer` header literal**; `deployPayload()`
-is `deployBody()` as an object. Use a bare `fetch` only when the REQUEST is the
+`_request-test-utils.ts`, never a `Bearer` header literal**; `deployBody()` is
+the default payload as a string. Use a bare `fetch` only when the REQUEST is the
 subject (bearer-gate specs, `resolveBearer` cases, header assertions, gzip or
 raw bodies).
 

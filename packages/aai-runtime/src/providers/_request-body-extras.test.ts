@@ -9,7 +9,7 @@
 
 import { llm } from "@alexkroman1/aai/llm";
 import { generateText } from "ai";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { type FetchLike, mergeRequestBody } from "./_request-body-extras.ts";
 import { resolveLlm } from "./resolve.ts";
 
@@ -36,10 +36,6 @@ function recordingFetch(): { fetch: FetchLike; bodies: Record<string, unknown>[]
   };
   return { fetch, bodies };
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("mergeRequestBody", () => {
   it("adds an extra the body does not carry", async () => {

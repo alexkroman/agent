@@ -8,17 +8,17 @@
  * out, and that the global is put back.
  */
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { stepFetchOver, suiteNetwork, wantsNetwork } from "./_network-install.ts";
 import { evalNetwork } from "./network.ts";
 
 describe("suiteNetwork", () => {
-  const original = globalThis.fetch;
-  afterEach(() => {
-    globalThis.fetch = original;
-  });
-
+  // Each case that swaps the global stubs it first with `vi.stubGlobal`, so
+  // `unstubGlobals` puts the real `fetch` back even when an assertion fails
+  // before `suite.restore()` runs.
   test("swaps the global for the suite and puts the SAME one back", () => {
+    const original = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", original);
     const suite = suiteNetwork("stub", []);
     suite.install();
     expect(globalThis.fetch).not.toBe(original);
@@ -28,7 +28,7 @@ describe("suiteNetwork", () => {
 
   test("LIVE: the model's host goes to the replaced fetch and stays out of the log", async () => {
     const real = vi.fn<typeof fetch>(async () => new Response("model"));
-    globalThis.fetch = real;
+    vi.stubGlobal("fetch", real);
     const suite = suiteNetwork("live", [undefined]);
     suite.install();
     try {
@@ -47,7 +47,7 @@ describe("suiteNetwork", () => {
 
   test("SCRIPTED: a provider host is a tool's request like any other, and is refused", async () => {
     const real = vi.fn<typeof fetch>(async () => new Response("model"));
-    globalThis.fetch = real;
+    vi.stubGlobal("fetch", real);
     const suite = suiteNetwork("stub", [undefined]);
     suite.install();
     try {
@@ -65,7 +65,7 @@ describe("suiteNetwork", () => {
 
   test("a request AFTER the case ended is refused into that case's log, never let out", async () => {
     const real = vi.fn<typeof fetch>(async () => new Response("leaked"));
-    globalThis.fetch = real;
+    vi.stubGlobal("fetch", real);
     const suite = suiteNetwork("stub", []);
     suite.install();
     try {

@@ -76,6 +76,5 @@ describe("warnOversizedResult", () => {
       undefined,
     );
     expect(spy).toHaveBeenCalledOnce();
-    spy.mockRestore();
   });
 });

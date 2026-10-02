@@ -5,7 +5,6 @@
 // hand) or the one the app holds now.
 
 import { describe, expect, it, vi } from "vitest";
-import { fakeFetch } from "./_test-utils.ts";
 import type { ChatSession } from "./api.ts";
 import {
   StaleSandboxError,
@@ -40,7 +39,7 @@ function turn(overrides: { abortSignal?: AbortSignal } = {}) {
 /** Where each request went, and which bearer it carried. */
 function recordRequests(impl: (url: string) => Promise<Response>) {
   const seen: { url: string; bearer: string | null }[] = [];
-  const fetchImpl = fakeFetch((input, init) => {
+  const fetchImpl = vi.fn<typeof fetch>((input, init) => {
     const url = String(input);
     seen.push({ url, bearer: new Headers(init?.headers).get("Authorization") });
     return impl(url);

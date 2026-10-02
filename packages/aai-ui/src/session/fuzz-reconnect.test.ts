@@ -359,7 +359,6 @@ describe("fuzz: reconnect + broker resolution", () => {
   afterEach(() => {
     audio.restore();
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it("re-brokers after failed lookups and always carries the resume id", async () => {

@@ -54,25 +54,24 @@ describe("SessionErrorCodeSchema", () => {
 });
 
 describe("SessionEventSchema", () => {
-  test("accepts speech.started", () => {
-    expect({ type: "speech.started" }).toBeValidSessionEvent();
-  });
+  /**
+   * Parse an event BODY — the shape emitting code writes — under the envelope
+   * the wire schema requires, so each case need not hand-write a `meta`.
+   */
+  const parseBody = (body: Record<string, unknown>) =>
+    SessionEventSchema.safeParse({ ...body, meta: { id: `${EVENT_ID_PREFIX}TEST`, at: 0 } });
 
-  test("accepts userTranscript.committed", () => {
-    expect({ type: "userTranscript.committed", text: "hello world" }).toBeValidSessionEvent();
-  });
-
-  test("accepts error event", () => {
-    expect({
-      type: "error.reported",
-      code: "internal",
-      message: "something went wrong",
-      fatal: true,
-    }).toBeValidSessionEvent();
+  test.each([
+    { type: "speech.started" },
+    { type: "userTranscript.committed", text: "hello world" },
+    { type: "error.reported", code: "internal", message: "something went wrong", fatal: true },
+  ])("accepts $type", (body) => {
+    // The issues, not a bare `false`, are what a failure prints.
+    expect(parseBody(body).error?.issues ?? []).toEqual([]);
   });
 
   test("rejects unknown type", () => {
-    expect({ type: "unknown_event_type" }).not.toBeValidSessionEvent();
+    expect(parseBody({ type: "unknown_event_type" }).success).toBe(false);
   });
 });
 

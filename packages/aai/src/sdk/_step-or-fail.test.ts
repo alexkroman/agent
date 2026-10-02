@@ -1,16 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
 import { FatalError } from "./step-error-classes.ts";
 import { StepGenerateError } from "./step-generate.ts";
 import { stepGenerateJson } from "./step-generate-json.ts";
 import { failable, orFail } from "./tool-failure-flow.ts";
 import { type ToolFailure, toolFailure } from "./utils.ts";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
-});
 
 describe("orFail(call) — the function arm", () => {
   test("a carried verdict becomes the engine's: retryable: false is FATAL", async () => {

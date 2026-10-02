@@ -10,7 +10,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { InlineConfig } from "vite";
 import { build } from "vite";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
 import { buildClient } from "./client-bundler.ts";
 
@@ -55,10 +55,6 @@ async function withClientProject(fn: (dir: string) => Promise<void>): Promise<vo
     await fn(dir);
   });
 }
-
-beforeEach(() => {
-  vi.mocked(build).mockClear();
-});
 
 describe("buildClient", () => {
   test("skips the build entirely when the project has no client.tsx", async () => {

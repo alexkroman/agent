@@ -9,13 +9,9 @@
 // has something to show.
 
 import { screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { WorkflowsPane } from "./workflows.tsx";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("WorkflowsPane", () => {
   test("reads the published agent when there is one", async () => {

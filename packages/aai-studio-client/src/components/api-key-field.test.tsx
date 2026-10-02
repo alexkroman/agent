@@ -5,7 +5,7 @@
 // the draft and says why.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   button,
   fetchCallsWith,
@@ -16,10 +16,6 @@ import {
 } from "../_test-utils.ts";
 import { queryKeys } from "../query-keys.ts";
 import { ApiKeyField } from "./api-key-field.tsx";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 function renderField(onSaved?: () => void) {
   return renderWithClient(

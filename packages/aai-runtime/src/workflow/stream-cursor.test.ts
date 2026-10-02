@@ -58,7 +58,7 @@ import { workflow } from "@alexkroman1/aai";
 import { stepReport } from "@alexkroman1/aai/step";
 import { createWorkflowApiClient } from "@alexkroman1/aai/workflow-api";
 import fc from "fast-check";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createEvalWorkflowEngine, type EvalWorkflowEngine } from "../eval/workflow-engine.ts";
 import { budgetFor } from "./api/stream.ts";
@@ -372,10 +372,6 @@ describe("a poll loop over the progress cursor", () => {
     // generated schedule of eight polls would cost eight seconds a run.
     vi.useFakeTimers();
     return () => void vi.useRealTimers();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
   });
 
   test("followRunOutput reconstructs the log exactly once — no gap, no duplicate", async () => {

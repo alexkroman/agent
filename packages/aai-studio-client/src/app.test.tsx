@@ -36,7 +36,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   // Selection syncs the URL (v0-style project paths); jsdom keeps the
   // location across tests, so reset it or a later render inherits it.
   window.history.replaceState(null, "", "/");

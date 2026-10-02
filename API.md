@@ -12317,6 +12317,9 @@ export type AgentTestConfig = {
     test: {
         globals: boolean;
         reporters: string[];
+        restoreMocks: boolean;
+        unstubEnvs: boolean;
+        unstubGlobals: boolean;
         [option: string]: unknown;
     };
     [option: string]: unknown;

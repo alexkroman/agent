@@ -11,8 +11,8 @@ import { type TestFetch, VALID_ENV } from "./_orchestrator-test-utils.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
 
-/** The default deploy payload as an OBJECT, for callers that re-encode it. */
-export function deployPayload(overrides?: Record<string, unknown>): Record<string, unknown> {
+/** The default deploy payload as an OBJECT: `deployBody`'s and `deploy`'s source. */
+function deployPayload(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
     env: VALID_ENV,
     worker:

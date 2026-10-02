@@ -33,6 +33,3 @@ export type TestWorkflow<
   I extends Record<string, unknown> = Record<string, unknown>,
   O = unknown,
 > = WorkflowDef<SchemaOf<I>, O>;
-
-/** The shape most specs here need: one `recording` upload id, an unknown result. */
-export type UploadWorkflow = TestWorkflow<{ recording: unknown }>;

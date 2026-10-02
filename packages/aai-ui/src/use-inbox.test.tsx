@@ -9,7 +9,7 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, type Mock, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { createMockSessionCore } from "./_react-test-utils.ts";
 import { type MockWebSocket, recordingWebSocketClass } from "./_session-core-test-utils.ts";
 import { SessionProvider } from "./context.ts";
@@ -94,10 +94,6 @@ beforeEach(() => {
     recordingWebSocketClass((s) => sockets.push(s)),
   );
   vi.stubGlobal("AudioContext", FakeAudioContext);
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 describe("useInbox", () => {

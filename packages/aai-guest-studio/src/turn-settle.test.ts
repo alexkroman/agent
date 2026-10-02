@@ -101,7 +101,6 @@ describe("createWorkspaceCheckpointer", () => {
 
   test("coalesces a burst into one trailing run rather than a backlog", async () => {
     const channel = installFakeHostChannel({ autoAnswer: true });
-    snapshotWorkspace.mockClear();
     try {
       const checkpoint = createWorkspaceCheckpointer(session);
       // A long tool chain: nine more triggers while the first walk is in

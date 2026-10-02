@@ -137,7 +137,6 @@ describe("createDialer over partysocket", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 

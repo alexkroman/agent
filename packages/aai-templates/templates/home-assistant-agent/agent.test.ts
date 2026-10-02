@@ -47,7 +47,6 @@ const NOW = new Date(pdt(9, 28, 14));
 
 afterEach(() => {
   vi.useRealTimers();
-  vi.unstubAllEnvs();
 });
 
 describe("the agent", () => {

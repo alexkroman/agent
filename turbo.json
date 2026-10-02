@@ -159,7 +159,8 @@
     // VITEST_POOL is DECLARED, not passed through: turbo runs in strict env
     // mode, so an undeclared variable never reaches the task at all. Declaring
     // it in `env` also puts it in the hash, so a forks run and a threads run
-    // cannot share a cache entry.
+    // cannot share a cache entry. Only `vitest.slow.config.ts` reads it today;
+    // the unit configs pin their own pool.
     //
     // No `dependsOn`: `@dev/source` resolves workspace imports to source, so a
     // unit suite needs no `dist` (measured: aai, aai-ui, aai-runtime, aai-evals,

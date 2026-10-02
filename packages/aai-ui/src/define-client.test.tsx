@@ -59,14 +59,6 @@ describe("mountClient", () => {
 
   afterEach(() => {
     document.body.textContent = "";
-    vi.clearAllMocks();
-    // `unstubAllGlobals` is outside `restoreMocks`/`unstubEnvs`, so it needs an
-    // explicit undo — and it belongs HERE. Four specs used to call it as the
-    // last statement of their body, which is teardown that does not run on
-    // failure: a failed assertion mid-test leaked its `fetch` stub into the
-    // next one, which then stubbed `location` on top of it. Every other file in
-    // the package already does it this way.
-    vi.unstubAllGlobals();
   });
 
   it("throws when target selector does not match", () => {
