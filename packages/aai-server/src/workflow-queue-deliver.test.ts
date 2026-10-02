@@ -25,7 +25,7 @@ import { type GuestCall, recordingGuest } from "./_request-test-utils.ts";
 import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { GUEST_ROUTES } from "./guest/routes.ts";
 import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import { attachSandbox, claimSlot, createSlotCache } from "./sandbox/slots.ts";
 import { createQueueDeliverer } from "./workflow-queue-deliver.ts";
 import { isGuestUnreachable } from "./workflow-queue-failure.ts";
 import type { QueuedMessage } from "./workflow-queue-store.ts";
@@ -82,7 +82,7 @@ async function resident(
   const slots = createSlotCache();
   await store.putAgent(agentRow(SLUG));
   const version = (await store.getAgentVersion(SLUG)) ?? 1;
-  setSlot(slots, { slug: SLUG, sandbox: fakeSandbox(), version });
+  attachSandbox(claimSlot(slots, SLUG), fakeSandbox(), version);
   const guest = recordingGuest(answer);
   return {
     deliver: createQueueDeliverer({
@@ -332,7 +332,7 @@ describe("createQueueDeliverer", () => {
       const slots = createSlotCache();
       await store.putAgent(agentRow(SLUG));
       const version = (await store.getAgentVersion(SLUG)) ?? 1;
-      setSlot(slots, { slug: SLUG, sandbox: fakeSandbox(), version });
+      attachSandbox(claimSlot(slots, SLUG), fakeSandbox(), version);
       const counted = countingRoutes(store);
       const guest = recordingGuest();
       const deliver = createQueueDeliverer({
@@ -381,7 +381,7 @@ describe("createQueueDeliverer", () => {
       const slots = createSlotCache();
       await store.putAgent(agentRow(SLUG));
       const version = (await store.getAgentVersion(SLUG)) ?? 1;
-      setSlot(slots, { slug: SLUG, sandbox: fakeSandbox(), version });
+      attachSandbox(claimSlot(slots, SLUG), fakeSandbox(), version);
       const counted = countingRoutes(store);
       const sequential = createQueueDeliverer({
         store: counted.store,

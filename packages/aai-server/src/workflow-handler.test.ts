@@ -26,7 +26,7 @@ import { endLiveStreams, resetLiveStreams } from "./live-streams.ts";
 import type { RateLimiter } from "./rate-limit.ts";
 import { notFoundMessage } from "./sandbox/broker.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import { attachSandbox, claimSlot, createSlotCache } from "./sandbox/slots.ts";
 import type { SpawnAgentServer } from "./sandbox.ts";
 import { GUEST_PROXY_TOKEN_HEADER } from "./workflow-proxy-constants.ts";
 
@@ -59,11 +59,11 @@ async function residentHarness(
     ...omitUndefined({ workflowStartRateLimiter: limiters.start }),
   });
   await deployAgent(harness.fetch, "my-agent");
-  setSlot(slots, {
-    slug: "my-agent",
-    sandbox: fakeSandbox(),
-    version: (await harness.store.getAgentVersion("my-agent")) ?? 1,
-  });
+  attachSandbox(
+    claimSlot(slots, "my-agent"),
+    fakeSandbox(),
+    (await harness.store.getAgentVersion("my-agent")) ?? 1,
+  );
   return harness;
 }
 
@@ -312,7 +312,7 @@ describe("availability", () => {
     const harness = await residentHarness(guest.fetchFn, {}, slots);
     const version = (await harness.store.getAgentVersion("my-agent")) ?? 1;
     await harness.store.deleteAgent("my-agent");
-    setSlot(slots, { slug: "my-agent", sandbox: fakeSandbox(), version });
+    attachSandbox(claimSlot(slots, "my-agent"), fakeSandbox(), version);
     const res = await get(harness.fetch, "/my-agent/workflows/uploads/abc/parts");
     expect(res.status).toBe(404);
     // The SAME sentence the upload BYTE route answers for this condition

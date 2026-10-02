@@ -9,18 +9,18 @@ import { describe, expect, test, vi } from "vitest";
 import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
 import { deployAgent } from "./_request-test-utils.ts";
 import { fakeSandbox } from "./_sandbox-test-utils.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import { attachSandbox, claimSlot, createSlotCache } from "./sandbox/slots.ts";
 
 /** A deployed `slug` with a resident fake sandbox, whose guest answers `guestFetch`. */
 async function brokerWith(slug: string, guestFetch: typeof globalThis.fetch) {
   const slots = createSlotCache();
   const ctx = await createTestOrchestrator({ slots, guestFetch });
   await deployAgent(ctx.fetch, slug);
-  setSlot(slots, {
-    slug,
-    sandbox: fakeSandbox(),
-    version: (await ctx.store.getAgentVersion(slug)) ?? 1,
-  });
+  attachSandbox(
+    claimSlot(slots, slug),
+    fakeSandbox(),
+    (await ctx.store.getAgentVersion(slug)) ?? 1,
+  );
   return ctx;
 }
 

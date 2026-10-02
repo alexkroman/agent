@@ -5,7 +5,7 @@ import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
 import { deployAgent } from "./_request-test-utils.ts";
 import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { PHONE_READY_TIMEOUT_MS } from "./phone-handler.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import { attachSandbox, claimSlot, createSlotCache } from "./sandbox/slots.ts";
 import type { Sandbox } from "./sandbox.ts";
 
 type TestFetch = Awaited<ReturnType<typeof createTestOrchestrator>>["fetch"];
@@ -24,11 +24,11 @@ async function residentHarness(
   const slots = createSlotCache();
   const harness = await createTestOrchestrator({ slots });
   await deployAgent(harness.fetch, slug);
-  setSlot(slots, {
-    slug,
-    sandbox: fakeSandbox(),
-    version: (await harness.store.getAgentVersion(slug)) ?? 1,
-  });
+  attachSandbox(
+    claimSlot(slots, slug),
+    fakeSandbox(),
+    (await harness.store.getAgentVersion(slug)) ?? 1,
+  );
   return harness;
 }
 
@@ -109,11 +109,11 @@ describe("POST /:slug/phone", () => {
         sessionUrl: vi.fn(() => new Promise<string>(() => undefined)),
         guestOrigin: vi.fn(() => new Promise<string>(() => undefined)),
       };
-      setSlot(slots, {
-        slug: "my-agent",
-        sandbox: booting,
-        version: (await harness.store.getAgentVersion("my-agent")) ?? 1,
-      });
+      attachSandbox(
+        claimSlot(slots, "my-agent"),
+        booting,
+        (await harness.store.getAgentVersion("my-agent")) ?? 1,
+      );
       return harness;
     }
 

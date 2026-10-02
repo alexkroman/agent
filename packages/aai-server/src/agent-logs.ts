@@ -30,7 +30,7 @@ import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { createLogger } from "./logger.ts";
 import { agentSandboxName, type SandboxDirectory } from "./sandbox/directory.ts";
-import { isLive, type SlotCache } from "./sandbox/slots.ts";
+import { isLive, type SlotCache, slotSandbox } from "./sandbox/slots.ts";
 import type { BundleStore } from "./store-types.ts";
 
 const log = createLogger("agent.logs");
@@ -182,7 +182,7 @@ export async function readAgentLogs(
   opts: { after?: number; limit?: number } = {},
 ): Promise<AgentLogsResponse> {
   const after = opts.after ?? -1;
-  const resident = env.slots.get(slug)?.sandbox;
+  const resident = slotSandbox(env.slots.get(slug));
   if (resident && isLive(resident)) {
     // `running` is true even for a resident that cannot answer: it IS running,
     // which is the question this field asks, and a stand-in with no `logs` is a

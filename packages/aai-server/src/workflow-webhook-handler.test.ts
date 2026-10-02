@@ -18,7 +18,7 @@ import { createTestOrchestrator, type TestFetch } from "./_orchestrator-test-uti
 import { deployAgent, recordingGuest } from "./_request-test-utils.ts";
 import { fakeSandbox, spawnedAgent } from "./_sandbox-test-utils.ts";
 import { GUEST_ROUTE_EXPOSURE } from "./guest/routes.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import { attachSandbox, claimSlot, createSlotCache, slotSandbox } from "./sandbox/slots.ts";
 import type { SpawnAgentServer } from "./sandbox.ts";
 
 /**
@@ -43,11 +43,11 @@ async function residentHarness(guestFetch?: typeof globalThis.fetch) {
     ...omitUndefined({ guestFetch }),
   });
   await deployAgent(harness.fetch, "my-agent");
-  setSlot(slots, {
-    slug: "my-agent",
-    sandbox: fakeSandbox(),
-    version: (await harness.store.getAgentVersion("my-agent")) ?? 1,
-  });
+  attachSandbox(
+    claimSlot(slots, "my-agent"),
+    fakeSandbox(),
+    (await harness.store.getAgentVersion("my-agent")) ?? 1,
+  );
   return harness;
 }
 
@@ -216,7 +216,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
       guestFetch: guest.fetchFn,
     });
     await deployAgent(harness.fetch, "my-agent");
-    expect(slots.get("my-agent")?.sandbox).toBeUndefined();
+    expect(slotSandbox(slots.get("my-agent"))).toBeUndefined();
 
     const res = await post(harness.fetch, WEBHOOK_PATH);
 
@@ -249,14 +249,14 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
       guestFetch: guest.fetchFn,
     });
     await deployAgent(harness.fetch, "my-agent");
-    setSlot(slots, {
-      slug: "my-agent",
-      sandbox: fakeSandbox({
+    attachSandbox(
+      claimSlot(slots, "my-agent"),
+      fakeSandbox({
         guestOrigin: vi.fn(() => new Promise<string>(() => undefined)),
         sessionUrl: vi.fn(() => new Promise<string>(() => undefined)),
       }),
-      version: (await harness.store.getAgentVersion("my-agent")) ?? 1,
-    });
+      (await harness.store.getAgentVersion("my-agent")) ?? 1,
+    );
 
     vi.useFakeTimers();
     let res: Response;

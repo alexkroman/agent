@@ -17,7 +17,7 @@ import type { Sandbox } from "../sandbox.ts";
 import { SandboxNameTakenError } from "./directory.ts";
 import { findPeerSession } from "./peers.ts";
 import { DrainingError, type ResolveSandboxOpts, resolveSandbox } from "./resolve.ts";
-import { isLive } from "./slots.ts";
+import { isLive, slotSandbox } from "./slots.ts";
 
 const log = createLogger("sandbox.broker");
 
@@ -59,7 +59,7 @@ export async function brokerSessionUrl(
   // a peer's URL serves the client exactly as well as a local one. A warm
   // local resident always wins — it costs nothing, and the lookup is a
   // round trip on a path where the caller is waiting.
-  const resident = opts.slots.get(slug)?.sandbox;
+  const resident = slotSandbox(opts.slots.get(slug));
   if (!(resident && isLive(resident))) {
     const peer = await findPeerSession(slug, opts);
     if (peer) return peer;

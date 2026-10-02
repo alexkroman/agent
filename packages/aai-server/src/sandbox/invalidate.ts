@@ -22,7 +22,14 @@ import {
   loadBundleParts,
   type ResolveSandboxOpts,
 } from "./resolve.ts";
-import { type AgentSlot, deleteSlot, retireSlot, terminateSlot, withSlugLock } from "./slots.ts";
+import {
+  type AgentSlot,
+  attachSandbox,
+  deleteSlot,
+  retireSlot,
+  terminateSlot,
+  withSlugLock,
+} from "./slots.ts";
 
 const log = createLogger("sandbox.invalidate");
 
@@ -67,18 +74,24 @@ export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSand
   const reconcileSlug = (slug: string, cause: string): Promise<void> =>
     withSlugLock(slug, async () => {
       const slot = opts.slots.get(slug);
-      if (!slot?.sandbox) return;
+      if (slot?.state.kind !== "ready") return;
+      // Snapshotted before the await rather than re-read after it. Same value
+      // either way: every transition but replica shutdown's `retireSlot` needs
+      // this lock, and that one only empties the slot, which the handover
+      // below already tolerates.
+      const residentVersion = slot.state.version;
       opts.store.invalidate?.(slug);
       try {
         const version = await opts.store.getAgentVersion(slug);
         if (version === null) {
           // Row gone: a resident for a deleted agent always terminates —
           // never compared against the slot's stamp, which a slot built
-          // before the stamp landed may not carry.
+          // before the stamp landed may not carry. (A `ready` slot always
+          // carries one now; the rule does not lean on that.)
           log.info(`resident sandbox's agent deleted (${cause}); terminating`, { slug });
           await terminateSlot(slot);
           deleteSlot(opts.slots, slug);
-        } else if (version !== slot.version) {
+        } else if (version !== residentVersion) {
           log.info(`resident sandbox superseded (${cause}); booting replacement`, {
             slug,
             version,
@@ -187,6 +200,5 @@ async function handoverSlot(
   // Swap: detach the old sandbox (background drain) and attach the ready
   // replacement in the same tick — no window with an empty slot.
   void retireSlot(slot, "superseded");
-  slot.version = version;
-  slot.sandbox = replacement;
+  attachSandbox(slot, replacement, version);
 }

@@ -21,7 +21,7 @@ import { brokerSessionUrl } from "./broker.ts";
 import { createMemorySandboxDirectory, SandboxNameTakenError } from "./directory.ts";
 import { watchAgentInvalidation } from "./invalidate.ts";
 import { resolveSandbox } from "./resolve.ts";
-import { createSlotCache } from "./slots.ts";
+import { createSlotCache, slotSandbox } from "./slots.ts";
 
 /** The guest spawn every sandbox here boots through (`ResolveSandboxOpts.spawnAgentServer`). */
 const mockSpawnAgentServer = vi.fn<SpawnAgentServer>();
@@ -154,7 +154,7 @@ describe("broker while draining", () => {
     expect(brokered).toEqual({ ok: false, status: 503 });
     expect(mockSpawnAgentServer).not.toHaveBeenCalled();
     // Nothing installed either — an empty slot must not be left behind.
-    expect(deps.slots.get("shutting-down")?.sandbox).toBeUndefined();
+    expect(slotSandbox(deps.slots.get("shutting-down"))).toBeUndefined();
     deps.unwatch();
   });
 
@@ -229,7 +229,7 @@ describe("broker while draining", () => {
 
     const draining = await brokerSessionUrl("warm", { ...deps, isDraining: () => true });
     expect(draining).toMatchObject({ ok: true, sessionUrl: "wss://tunnel.test:443/websocket" });
-    await deps.slots.get("warm")?.sandbox?.shutdown();
+    await slotSandbox(deps.slots.get("warm"))?.shutdown();
     deps.unwatch();
   });
 });
@@ -260,7 +260,7 @@ describe("broker readiness cap", () => {
       expect(first).toMatchObject({ ok: false, status: 503 });
 
       // The sandbox stayed attached and is still booting.
-      expect(deps.slots.get("hung")?.sandbox?.alive?.()).toBe(true);
+      expect(slotSandbox(deps.slots.get("hung"))?.alive?.()).toBe(true);
 
       // Count from HERE: a cold rebuild may legitimately spawn twice when a
       // change event lands between slot creation and its version stamp (the

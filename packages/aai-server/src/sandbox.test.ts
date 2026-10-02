@@ -8,7 +8,7 @@ import { spawnedAgent } from "./_sandbox-test-utils.ts";
 import { SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
 import { inlineWorker } from "./sandbox/_vm-test-utils.ts";
 import { resolveSandbox } from "./sandbox/resolve.ts";
-import { createSlotCache } from "./sandbox/slots.ts";
+import { attachSandbox, createSlotCache, slotSandbox } from "./sandbox/slots.ts";
 import { createSandbox, type SandboxOptions, type SpawnAgentServer } from "./sandbox.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
@@ -442,7 +442,7 @@ describe("createSandbox", () => {
       // the time resolveSandbox returns — its lock section queues right
       // behind the resolve's.
       await vi.waitFor(() => {
-        expect(deps.slots.get("broken")?.sandbox).toBeUndefined();
+        expect(slotSandbox(deps.slots.get("broken"))).toBeUndefined();
       });
       // The empty SLOT goes too. It used to stay registered "for the rebuild",
       // but a rebuild needs nothing from it — `resolveSandbox` re-reads the row
@@ -501,13 +501,13 @@ describe("createSandbox", () => {
       const replacement = { shutdown: vi.fn().mockResolvedValue(undefined) };
       const slot = deps.slots.get("raced");
       if (!slot) throw new Error("slot missing");
-      slot.sandbox = replacement;
+      attachSandbox(slot, replacement, 2);
 
       // Only NOW does the original's guest exit.
       fireGuestExit();
       await sleep(0);
 
-      expect(deps.slots.get("raced")?.sandbox).toBe(replacement);
+      expect(slotSandbox(deps.slots.get("raced"))).toBe(replacement);
       expect(replacement.shutdown).not.toHaveBeenCalled();
       // And the slot survives — the delete is identity-checked too.
       expect(deps.slots.has("raced")).toBe(true);

@@ -18,7 +18,7 @@ import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
-import { createSlotCache, setSlot } from "./sandbox/slots.ts";
+import { attachSandbox, claimSlot, createSlotCache } from "./sandbox/slots.ts";
 import type { Sandbox } from "./sandbox.ts";
 
 describe("handleAgentHealth", () => {
@@ -56,11 +56,7 @@ describe("handleAgentClientConfig", () => {
     sandbox: Sandbox = fakeSandbox(),
   ): Promise<void> {
     await deployAgent(fetch, slug);
-    setSlot(slots, {
-      slug,
-      sandbox,
-      version: (await store.getAgentVersion(slug)) ?? 1,
-    });
+    attachSandbox(claimSlot(slots, slug), sandbox, (await store.getAgentVersion(slug)) ?? 1);
   }
 
   test("returns 404 for non-existent agent", async () => {
@@ -181,11 +177,7 @@ describe("handleAgentClientConfig", () => {
         const slots = createSlotCache();
         const { fetch, current } = await redeployed("race-agent", { slots });
         const old = current - 1;
-        setSlot(slots, {
-          slug: "race-agent",
-          version: old,
-          sandbox: fakeSandbox({ version: old }),
-        });
+        attachSandbox(claimSlot(slots, "race-agent"), fakeSandbox({ version: old }), old);
 
         const ticket = await ticketOf(fetch, "race-agent");
         expect(verifySessionToken(ticket, { secret: keyFor("race-agent", old) })).toBeDefined();
@@ -209,7 +201,7 @@ describe("handleAgentClientConfig", () => {
         const { fetch, current } = await redeployed("peer-agent", { slots, directory });
         const old = current - 1;
         const dead = fakeSandbox({ version: old, alive: vi.fn(() => false) });
-        setSlot(slots, { slug: "peer-agent", version: old, sandbox: dead });
+        attachSandbox(claimSlot(slots, "peer-agent"), dead, old);
 
         const ticket = await ticketOf(fetch, "peer-agent");
         expect(found).toEqual([["peer-agent", current]]);
@@ -377,7 +369,7 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   // at version 1, matching the single putAgent below, so the resident is
   // not retired as superseded.
   if (opts.seedSandbox !== false) {
-    setSlot(slots, { slug, sandbox, version: 1 });
+    attachSandbox(claimSlot(slots, slug), sandbox, 1);
   }
   const store = createTestStore();
   await store.putAgent({
