@@ -298,7 +298,9 @@ describe("PipelineTransport — a FATAL tool error stops the turn", () => {
   test("the SESSION survives it — the next turn runs normally", async () => {
     // `fatal: false` above is the claim; this is the behaviour behind it. A
     // failing TURN is not a failing session, and the latch is reset per turn.
-    let calls = 0;
+    const executeTool = vi.fn(() =>
+      Promise.reject(new FatalToolError("lookup", new Error("no credential"))),
+    );
     const { opts, stt, tts } = makeOpts({
       llm: createFakeLanguageModel({
         steps: [
@@ -307,10 +309,7 @@ describe("PipelineTransport — a FATAL tool error stops the turn", () => {
         ],
       }),
       toolSchemas: [noopToolSchema],
-      executeTool: () => {
-        calls += 1;
-        return Promise.reject(new FatalToolError("lookup", new Error("no credential")));
-      },
+      executeTool,
     });
     const t = createPipelineTransport(opts);
     await t.start();
@@ -323,7 +322,7 @@ describe("PipelineTransport — a FATAL tool error stops the turn", () => {
     await vi.waitFor(() => {
       expect(spoken(tts)).toContain("second turn answer");
     });
-    expect(calls).toBe(1);
+    expect(executeTool).toHaveBeenCalledTimes(1);
     await t.stop();
   });
 

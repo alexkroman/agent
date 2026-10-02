@@ -240,13 +240,11 @@ describe("createRunReads", () => {
   });
 
   test("a failed read does not wedge the shared reader", async () => {
-    let calls = 0;
     const runs: RunReader = {
-      get: vi.fn(async () => {
-        calls += 1;
-        if (calls === 1) throw new Error("blip");
-        return snapshot({ status: "completed" });
-      }),
+      get: vi
+        .fn<RunReader["get"]>()
+        .mockRejectedValueOnce(new Error("blip"))
+        .mockResolvedValue(snapshot({ status: "completed" })),
     };
     const reads = createRunReads(runs);
     const watch = reads.watch("wrun_1");

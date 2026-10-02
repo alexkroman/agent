@@ -46,7 +46,11 @@ describe("cancellation", () => {
     const journal = await seedRun();
     const controller = new AbortController();
     const reason = new Error("cancelled mid-backoff");
-    let calls = 0;
+    const flaky = vi.fn(() => {
+      // Aborted a tick after the throw, so the cancel lands inside the wait.
+      setTimeout(() => controller.abort(reason), 0);
+      throw new RetryableError("later", { retryAfter: 60_000 });
+    });
     // No clock read: the backoff is 60s against the unit tier's 5s budget, so a
     // walk that waited it out fails this spec by timing out.
     const walk = replayRun({
@@ -55,15 +59,9 @@ describe("cancellation", () => {
       input: {},
       journal,
       signal: controller.signal,
-      run: (_input, ctx) =>
-        ctx.step("flaky", () => {
-          calls++;
-          // Aborted a tick after the throw, so the cancel lands inside the wait.
-          setTimeout(() => controller.abort(reason), 0);
-          throw new RetryableError("later", { retryAfter: 60_000 });
-        }),
+      run: (_input, ctx) => ctx.step("flaky", flaky),
     });
     await expect(walk).rejects.toBe(reason);
-    expect(calls).toBe(1);
+    expect(flaky).toHaveBeenCalledTimes(1);
   });
 });

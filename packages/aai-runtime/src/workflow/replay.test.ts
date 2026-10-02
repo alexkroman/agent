@@ -141,15 +141,17 @@ describe("attempts", () => {
     // unpublished reporter slot sends the engine's retry lines to the console.
     reportedLines();
     const journal = await seedRun();
-    let calls = 0;
-    const outcome = await replayOn(journal, async (_input, ctx) =>
-      ctx.step("flaky", () => {
-        calls++;
-        if (calls < 3) throw new RetryableError("later", { retryAfter: 0 });
-        return "eventually";
-      }),
-    );
-    expect(calls).toBe(3);
+    const flaky = vi
+      .fn<() => string>()
+      .mockImplementationOnce(() => {
+        throw new RetryableError("later", { retryAfter: 0 });
+      })
+      .mockImplementationOnce(() => {
+        throw new RetryableError("later", { retryAfter: 0 });
+      })
+      .mockReturnValue("eventually");
+    const outcome = await replayOn(journal, async (_input, ctx) => ctx.step("flaky", flaky));
+    expect(flaky).toHaveBeenCalledTimes(3);
     expect(outcome).toEqual({ kind: "completed", output: "eventually" });
   });
 
@@ -162,14 +164,16 @@ describe("attempts", () => {
   test("a non-final failure is recorded, not discarded", async () => {
     const lines = reportedLines();
     const journal = await seedRun();
-    let calls = 0;
-    const outcome = await replayOn(journal, async (_input, ctx) =>
-      ctx.step("convert", () => {
-        calls++;
-        if (calls < 3) throw new RetryableError("no space left on device", { retryAfter: 0 });
-        return "converted";
-      }),
-    );
+    const convert = vi
+      .fn<() => string>()
+      .mockImplementationOnce(() => {
+        throw new RetryableError("no space left on device", { retryAfter: 0 });
+      })
+      .mockImplementationOnce(() => {
+        throw new RetryableError("no space left on device", { retryAfter: 0 });
+      })
+      .mockReturnValue("converted");
+    const outcome = await replayOn(journal, async (_input, ctx) => ctx.step("convert", convert));
     expect(outcome).toEqual({ kind: "completed", output: "converted" });
     // The successful attempt is NOT one of these: a step that worked has
     // nothing to explain, and the journal entry records it.
@@ -229,36 +233,26 @@ describe("attempts", () => {
 
   test("does not retry a FatalError, however many attempts remain", async () => {
     const journal = await seedRun();
-    let calls = 0;
+    const terminal = vi.fn(() => {
+      throw new FatalError("will never work");
+    });
     const outcome = await replayOn(journal, async (_input, ctx) =>
-      ctx.step(
-        "terminal",
-        () => {
-          calls++;
-          throw new FatalError("will never work");
-        },
-        { maxAttempts: 5 },
-      ),
+      ctx.step("terminal", terminal, { maxAttempts: 5 }),
     );
-    expect(calls).toBe(1);
+    expect(terminal).toHaveBeenCalledTimes(1);
     expect(outcome).toEqual({ kind: "failed", error: { message: "will never work" } });
   });
 
   test("stops at maxAttempts and fails the run", async () => {
     reportedLines();
     const journal = await seedRun();
-    let calls = 0;
+    const doomed = vi.fn(() => {
+      throw new RetryableError("still no", { retryAfter: 0 });
+    });
     const outcome = await replayOn(journal, async (_input, ctx) =>
-      ctx.step(
-        "doomed",
-        () => {
-          calls++;
-          throw new RetryableError("still no", { retryAfter: 0 });
-        },
-        { maxAttempts: 2 },
-      ),
+      ctx.step("doomed", doomed, { maxAttempts: 2 }),
     );
-    expect(calls).toBe(2);
+    expect(doomed).toHaveBeenCalledTimes(2);
     expect(outcome.kind).toBe("failed");
   });
 
@@ -268,19 +262,12 @@ describe("attempts", () => {
     const journal = await seedRun();
     await journal.claimAttempt("wrun_1", "wedged#0", "dead-1", 60 * 60 * 1000);
     await journal.claimAttempt("wrun_1", "wedged#0", "dead-2", 60 * 60 * 1000);
-    let calls = 0;
+    const wedged = vi.fn(() => "ok");
     const outcome = await replayOn(journal, async (_input, ctx) =>
-      ctx.step(
-        "wedged",
-        () => {
-          calls++;
-          return "ok";
-        },
-        { maxAttempts: 3 },
-      ),
+      ctx.step("wedged", wedged, { maxAttempts: 3 }),
     );
     // The third and last attempt is the one this execution gets.
-    expect(calls).toBe(1);
+    expect(wedged).toHaveBeenCalledTimes(1);
     expect(outcome.kind).toBe("completed");
   });
 

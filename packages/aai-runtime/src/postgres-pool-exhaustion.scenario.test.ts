@@ -27,7 +27,7 @@
  */
 
 import pTimeout from "p-timeout";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { type CloseableDb, createPostgresDb, type ReservedDb } from "./postgres-db.ts";
 
@@ -119,13 +119,11 @@ describeWithPg("a Postgres pool with every connection taken", () => {
     const held = await db.reserve();
     try {
       const queued = attemptReserve(db);
-      let settled = false;
-      void queued.then(() => {
-        settled = true;
-      });
+      const settled = vi.fn();
+      void queued.then(settled);
       // Nothing but the release can settle it — no deadline is going to.
       await Promise.resolve();
-      expect(settled).toBe(false);
+      expect(settled).not.toHaveBeenCalled();
 
       held.release();
       granted(await queued, "an unbounded reserve must be granted").release();

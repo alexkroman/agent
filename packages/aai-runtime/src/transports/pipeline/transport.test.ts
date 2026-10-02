@@ -239,13 +239,11 @@ describe("PipelineTransport", () => {
       const t = createPipelineTransport(opts);
 
       void t.start();
-      let stopResolved = false;
-      const stopP = t.stop().then(() => {
-        stopResolved = true;
-      });
+      const stopResolved = vi.fn();
+      const stopP = t.stop().then(stopResolved);
 
       await vi.advanceTimersByTimeAsync(0);
-      expect(stopResolved).toBe(false); // blocked on the in-flight open
+      expect(stopResolved).not.toHaveBeenCalled(); // blocked on the in-flight open
 
       const landed: SttSession = {
         sendAudio: vi.fn(),
@@ -255,7 +253,7 @@ describe("PipelineTransport", () => {
       open.resolve(landed);
       await stopP;
 
-      expect(stopResolved).toBe(true);
+      expect(stopResolved).toHaveBeenCalled();
       expect(closeStt).toHaveBeenCalled();
     });
   });

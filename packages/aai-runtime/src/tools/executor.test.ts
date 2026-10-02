@@ -431,18 +431,15 @@ describe("executeToolCall — onError classifies a THROW", () => {
       throw new Error("would be fatal");
     });
     const controller = new AbortController();
-    let started = false;
-    const tool = makeTool({
-      execute: () => {
-        started = true;
-        return new Promise<never>(() => {
+    const execute = vi.fn(
+      () =>
+        new Promise<never>(() => {
           /* never resolves */
-        });
-      },
-      onError,
-    });
+        }),
+    );
+    const tool = makeTool({ execute, onError });
     const promise = run("hang", {}, tool, { signal: controller.signal, onError });
-    await vi.waitFor(() => expect(started).toBe(true));
+    await vi.waitFor(() => expect(execute).toHaveBeenCalled());
     controller.abort();
     // Settles with the ordinary cancellation failure rather than rejecting.
     expect(JSON.parse(await promise)).toMatchObject({ error: expect.stringMatching(/abort/i) });
