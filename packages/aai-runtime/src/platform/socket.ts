@@ -63,7 +63,6 @@
 
 import { jitteredBackoff } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import { createRestartableTimer } from "../_timer.ts";
 import { type HeaderWebSocket, openHeaderWebSocket } from "../_ws.ts";
 import { consoleLogger, type Logger } from "../logger.ts";
 import { PLATFORM_UNAVAILABLE_CODE } from "../workflow/api/error-status.ts";
@@ -72,11 +71,8 @@ import {
   PLATFORM_SOCKET_PATH,
   type PlatformRoute,
 } from "./endpoint.ts";
-import {
-  PlatformOutboundFrameSchema,
-  type PlatformRequestFrame,
-  parsePlatformFrame,
-} from "./socket-frames.ts";
+import type { PlatformRequestFrame } from "./socket-frames.ts";
+import { createPlatformSocketLifecycle } from "./socket-lifecycle.ts";
 
 /** `ws`'s `OPEN`, spelled rather than imported — {@link HeaderWebSocket} is structural. */
 const WS_OPEN = 1;
@@ -269,145 +265,55 @@ export function createPlatformSocket(options: CreatePlatformSocketOptions): Plat
   const create = options.create ?? openPlatformWebSocket;
   const url = platformSocketUrl(options.base);
   const pending = new Map<number, Pending>();
-  let socket: HeaderWebSocket | undefined;
   let nextId = 1;
-  let attempt = 0;
-  let closed = false;
-  /** The ping whose pong is outstanding, or `undefined` when none is. */
-  let awaitingPong: number | undefined;
 
-  /** Give up on calls every caller has already given up on — see {@link PENDING_CEILING_MS}. */
-  function sweepPending(): void {
-    const deadline = Date.now() - PENDING_CEILING_MS;
-    for (const [id, entry] of pending) {
-      if (entry.at > deadline) continue;
-      pending.delete(id);
-      entry.reject(droppedInFlight("never answered"));
-    }
-  }
-
-  const heartbeat = createRestartableTimer(() => {
-    sweepPending();
-    if (awaitingPong !== undefined) {
-      // A pong that never came. The socket reads as open and answers nothing,
-      // which is the one failure mode a deadline per call cannot distinguish from
-      // a slow platform — see the module doc.
-      log.warn("platform socket heartbeat timed out", { url, waitedMs: PONG_DEADLINE_MS });
-      drop("heartbeat timed out");
-      return;
-    }
-    if (socket?.readyState !== WS_OPEN) return;
-    awaitingPong = nextId++;
-    socket.send(JSON.stringify({ t: "ping", id: awaitingPong }));
-    heartbeat.arm(PONG_DEADLINE_MS);
+  // WHEN to dial, ping, give up and retry is the statechart's (`socket-lifecycle.ts`);
+  // this closure owns the calls.
+  const lifecycle = createPlatformSocketLifecycle({
+    dial: () => create(url, { headers: { authorization: `Bearer ${options.token}` } }),
+    nextId: () => nextId++,
+    settle(frame) {
+      const entry = pending.get(frame.id);
+      if (entry === undefined) {
+        // Only reachable if the two ends disagree about ids — a reply to a call this
+        // side already failed (a heartbeat drop that raced the answer), or a bug.
+        log.debug("platform socket reply had no pending call", { url, id: frame.id });
+        return;
+      }
+      pending.delete(frame.id);
+      entry.resolve({ status: frame.status, body: frame.body });
+    },
+    /** Give up on calls every caller has already given up on — see {@link PENDING_CEILING_MS}. */
+    sweep() {
+      const deadline = Date.now() - PENDING_CEILING_MS;
+      for (const [id, entry] of pending) {
+        if (entry.at > deadline) continue;
+        pending.delete(id);
+        entry.reject(droppedInFlight("never answered"));
+      }
+    },
+    failInFlight(reason) {
+      for (const [, entry] of pending) entry.reject(droppedInFlight(reason));
+      pending.clear();
+    },
+    backoffMs: (attempt) =>
+      jitteredBackoff(attempt, { baseMs: RECONNECT_BASE_MS, maxMs: RECONNECT_MAX_MS }),
+    log: (level, message, fields) => log[level](message, { url, ...fields }),
+    heartbeatMs: HEARTBEAT_MS,
+    pongDeadlineMs: PONG_DEADLINE_MS,
   });
 
-  /** Fail every written call and tear the socket down, then schedule a reconnect. */
-  function drop(reason: string): void {
-    heartbeat.clear();
-    awaitingPong = undefined;
-    const dying = socket;
-    socket = undefined;
-    for (const [, entry] of pending) entry.reject(droppedInFlight(reason));
-    pending.clear();
-    // 1001 "going away": this end is the one giving up, and a statusless close is
-    // reported by both peers as 1005, which is indistinguishable from the socket
-    // simply vanishing (see `HeaderWebSocket.close`).
-    try {
-      dying?.close(1001);
-    } catch {
-      // Already gone. There is nothing a close can add.
-    }
-    if (!closed) scheduleReconnect();
+  /** The socket a call may be written to, or `undefined` when there is none. */
+  function writable(): HeaderWebSocket | undefined {
+    const socket = lifecycle.openSocket();
+    return socket?.readyState === WS_OPEN ? socket : undefined;
   }
-
-  const reconnect = createRestartableTimer(() => {
-    if (!closed) connect();
-  });
-
-  function scheduleReconnect(): void {
-    attempt += 1;
-    const delay = jitteredBackoff(attempt, {
-      baseMs: RECONNECT_BASE_MS,
-      maxMs: RECONNECT_MAX_MS,
-    });
-    reconnect.arm(delay);
-  }
-
-  function onMessage(raw: unknown): void {
-    const text = typeof raw === "string" ? raw : String(raw);
-    const frame = parsePlatformFrame(PlatformOutboundFrameSchema, text);
-    if (frame === undefined) {
-      // Forwards compatibility, not leniency: a frame this build does not know is
-      // how a newer platform would add one. See `parsePlatformFrame`.
-      log.debug("platform socket dropped an unreadable frame", { url });
-      return;
-    }
-    if (frame.t === "pong") {
-      if (frame.id !== awaitingPong) return;
-      awaitingPong = undefined;
-      heartbeat.arm(HEARTBEAT_MS);
-      return;
-    }
-    const entry = pending.get(frame.id);
-    if (entry === undefined) {
-      // Only reachable if the two ends disagree about ids — a reply to a call this
-      // side already failed (a heartbeat drop that raced the answer), or a bug.
-      log.debug("platform socket reply had no pending call", { url, id: frame.id });
-      return;
-    }
-    pending.delete(frame.id);
-    entry.resolve({ status: frame.status, body: frame.body });
-  }
-
-  function connect(): void {
-    if (closed || socket !== undefined) return;
-    let opening: HeaderWebSocket;
-    try {
-      opening = create(url, { headers: { authorization: `Bearer ${options.token}` } });
-    } catch (err: unknown) {
-      // A malformed URL, or `ws` refusing the options. Nothing to close, and the
-      // next attempt will fail the same way — which is what the backoff is for.
-      log.warn("platform socket could not be created", { url, error: String(err) });
-      scheduleReconnect();
-      return;
-    }
-    socket = opening;
-    opening.addEventListener("open", () => {
-      if (socket !== opening) return;
-      attempt = 0;
-      log.debug("platform socket open", { url });
-      heartbeat.arm(HEARTBEAT_MS);
-    });
-    opening.addEventListener("message", (event) => {
-      if (socket === opening) onMessage(event.data);
-    });
-    opening.addEventListener("close", (event) => {
-      if (socket !== opening) return;
-      // Every close is worth a line and none is worth a warn on its own: the
-      // platform retires a replica on every deploy, so a closed socket is ordinary
-      // and only a call failing on it is news (the caller logs that).
-      log.debug("platform socket closed", { url, code: event.code });
-      drop(`closed (${event.code ?? "no code"})`);
-    });
-    opening.addEventListener("error", (event) => {
-      if (socket !== opening) return;
-      // A handshake refusal lands here — a platform without the route answers 404,
-      // an unauthorized guest 401 — and so does a transport fault. It is a WARN
-      // because a socket that never opens means every call is silently on HTTP,
-      // which is exactly the state that is otherwise invisible.
-      log.warn("platform socket error", { url, error: event.message ?? "unknown" });
-      drop("errored");
-    });
-  }
-
-  connect();
 
   return {
-    isOpen: () => socket?.readyState === WS_OPEN && pending.size < MAX_INFLIGHT,
+    isOpen: () => writable() !== undefined && pending.size < MAX_INFLIGHT,
     async send(call): Promise<PlatformSocketReply> {
-      const live = socket;
-      if (live?.readyState !== WS_OPEN) throw unavailable("not connected");
+      const live = writable();
+      if (live === undefined) throw unavailable("not connected");
       if (pending.size >= MAX_INFLIGHT)
         throw unavailable(`${MAX_INFLIGHT} calls already in flight`);
       const id = nextId++;
@@ -430,10 +336,6 @@ export function createPlatformSocket(options: CreatePlatformSocketOptions): Plat
       }
       return await settled.promise;
     },
-    close(): void {
-      closed = true;
-      reconnect.clear();
-      drop("closed by this process");
-    },
+    close: () => lifecycle.close(),
   };
 }

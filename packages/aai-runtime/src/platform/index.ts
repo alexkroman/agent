@@ -2,7 +2,8 @@
 /**
  * The guest's calls to the PLATFORM: the route table and endpoint
  * (`endpoint.ts`), the multiplexed platform socket and its frame grammar
- * (`socket.ts`, `socket-frames.ts`, `socket-registry.ts`), and `platformPost`,
+ * (`socket.ts`, its reconnect statechart `socket-lifecycle.ts`,
+ * `socket-frames.ts`, `socket-registry.ts`), and `platformPost`,
  * which rides the socket or falls back to `rpcFetch` (`rpc.ts`). Outside this
  * directory, import from here; a name not re-exported here is private to it
  * (guard-invariants rule 37).
