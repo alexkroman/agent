@@ -109,7 +109,7 @@ describe("assemblyAIStt STT adapter — prompt default", () => {
     );
     const fake = fakeOf(session);
     expect(Object.keys(fake.params).filter((key) => /context|keyterm/i.test(key))).toEqual([]);
-    expect(fake.updateConfigurationCalls).toEqual([]);
+    expect(fake.updateConfiguration).not.toHaveBeenCalled();
     await session.close();
   });
 });

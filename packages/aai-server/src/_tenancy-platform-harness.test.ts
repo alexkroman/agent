@@ -16,17 +16,19 @@ const [A, B] = SLUGS;
 
 describe("createPlatformArm", () => {
   test("reset deletes both tenants' agents rows, then re-seeds one per tenant", async () => {
-    const { sql, calls } = createRecordingSql();
+    const sql = createRecordingSql();
     await createPlatformArm(sql).reset();
-    expect(calls).toHaveLength(1 + SLUGS.length);
-    expect(calls[0]?.query).toContain("delete from aai_platform.agents");
-    expect(calls[0]?.params).toEqual([[...SLUGS]]);
-    expect(calls.slice(1).map((c) => c.params)).toEqual(SLUGS.map((slug) => [slug]));
+    expect(sql).toHaveBeenCalledTimes(1 + SLUGS.length);
+    expect(sql.mock.calls[0]?.[0]).toContain("delete from aai_platform.agents");
+    expect(sql.mock.calls[0]?.[1]).toEqual([[...SLUGS]]);
+    expect(sql.mock.calls.slice(1).map(([, params]) => params)).toEqual(
+      SLUGS.map((slug) => [slug]),
+    );
   });
 
   test("a taken run id is answered as a refusal VALUE, not thrown", async () => {
     // `createRun`'s insert reports no row: the store's duplicate refusal.
-    const { sql } = createRecordingSql(() => []);
+    const sql = createRecordingSql(() => []);
     await expect(
       createPlatformArm(sql).apply({
         t: "createRun",
@@ -40,7 +42,7 @@ describe("createPlatformArm", () => {
   });
 
   test("a held hook token is a refusal naming the holder, parsed from the store's error", async () => {
-    const { sql } = createRecordingSql(() => [
+    const sql = createRecordingSql(() => [
       {
         run_id: "wrun_other",
         key: "h",
@@ -56,7 +58,7 @@ describe("createPlatformArm", () => {
   });
 
   test("dumpAll partitions the audit rows by slug, converting and sorting them", async () => {
-    const { sql, calls } = createRecordingSql((query) => {
+    const sql = createRecordingSql((query) => {
       if (!query.includes("aai_platform.workflow_runs")) return [];
       const row = (slug: string, runId: string) => ({
         slug,
@@ -76,7 +78,7 @@ describe("createPlatformArm", () => {
     expect(dumps[A].runs[0]?.createdAt).toBe(1_700_000_000_000);
     expect(dumps[A].runs[0]?.input).toBeUndefined();
     // Eight tables, each one select scoped to the two tenants.
-    expect(calls).toHaveLength(8);
-    for (const call of calls) expect(call.params).toEqual([[...SLUGS]]);
+    expect(sql).toHaveBeenCalledTimes(8);
+    for (const [, params] of sql.mock.calls) expect(params).toEqual([[...SLUGS]]);
   });
 });

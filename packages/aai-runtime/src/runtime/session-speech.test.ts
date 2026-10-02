@@ -13,7 +13,7 @@
 
 import type { AgentDef, SpeechOutcome } from "@alexkroman1/aai";
 import { routeResponse } from "@alexkroman1/aai";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { makeAgent } from "../_agent-test-utils.ts";
 import { silentLogger } from "../_logger-test-utils.ts";
 import {
@@ -30,19 +30,12 @@ import { createRuntimeWithSeams } from "./runtime.ts";
 
 const GREETING = "Hello there.";
 
-let unregister: (() => void) | undefined;
-afterEach(() => {
-  unregister?.();
-  unregister = undefined;
-});
-
 /** A live pipeline call of `agent`, with what TTS was asked to say. */
 async function liveCall(agent: Partial<AgentDef>) {
   const stt = createFakeSttProvider();
   const tts = createFakeTtsProvider();
   const llm = createFakeLanguageModel({ script: [{ type: "text", text: "unused" }] });
   const fakes = registerFakeProviders({ stt, tts, llm });
-  unregister = fakes.unregister;
   const runtime = createRuntimeWithSeams({
     agent: makeAgent({ greeting: GREETING, ...agent }),
     env: { ...fakes.env, [FAKE_STT_API_KEY_ENV]: "stt-key", [FAKE_TTS_API_KEY_ENV]: "tts-key" },

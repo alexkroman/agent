@@ -62,15 +62,12 @@ describe("createPostWriteDiagnostics", () => {
 
   test("callers arriving mid-run share one follow-up run", async () => {
     const first = deferred();
-    const runs: (typeof first)[] = [first];
-    let calls = 0;
-    const diagnose = createPostWriteDiagnostics(() => {
-      calls++;
-      if (calls > runs.length) runs.push(deferred());
-      const run = runs[calls - 1];
-      if (!run) throw new Error("unreachable");
-      return run.promise;
-    });
+    const second = deferred();
+    const check = vi
+      .fn<Parameters<typeof createPostWriteDiagnostics>[0]>()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const diagnose = createPostWriteDiagnostics(check);
 
     // First caller starts run 1; three more arrive while it is in flight.
     const a = diagnose("a.ts");
@@ -78,29 +75,26 @@ describe("createPostWriteDiagnostics", () => {
     const c = diagnose("c.ts");
     const d = diagnose("d.ts");
     // The runner starts the first check on a microtask, so wait for it.
-    await vi.waitFor(() => expect(calls).toBe(1));
+    await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
 
     // Run 1's verdict cannot vouch for b/c/d — settling it starts exactly
     // ONE follow-up, shared by all three.
     first.resolve({ ok: false, output: "stale: error TS1111" });
     expect(await a).toContain("TS1111");
-    await vi.waitFor(() => expect(calls).toBe(2));
-    runs[1]?.resolve({ ok: true, skipped: false });
+    await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(2));
+    second.resolve({ ok: true, skipped: false });
     expect(await b).toBeUndefined();
     expect(await c).toBeUndefined();
     expect(await d).toBeUndefined();
-    expect(calls).toBe(2);
+    expect(check).toHaveBeenCalledTimes(2);
   });
 
   test("a caller after the burst settles starts a fresh run", async () => {
-    let calls = 0;
-    const diagnose = createPostWriteDiagnostics(async () => {
-      calls++;
-      return { ok: true, skipped: false };
-    });
+    const check = vi.fn(async (): Promise<TypecheckResult> => ({ ok: true, skipped: false }));
+    const diagnose = createPostWriteDiagnostics(check);
     await diagnose("a.ts");
     await diagnose("b.ts");
-    expect(calls).toBe(2);
+    expect(check).toHaveBeenCalledTimes(2);
   });
 });
 

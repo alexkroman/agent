@@ -219,7 +219,7 @@ describe("exported spans", () => {
     await runConversation();
     await flush();
     const names = exporter.getFinishedSpans().map((s) => s.name);
-    expect(names.some((n) => n.startsWith("ai.generate"))).toBe(true);
+    expect(names).toContainEqual(expect.stringMatching(/^ai\.generate/));
     expect(names).toContain("ai.languageModelCall");
     expect(names).toContain("ai.step");
     // The tool really executed, so its span is real rather than synthetic.

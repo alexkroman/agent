@@ -2,7 +2,7 @@ import { S2S_MAX_RESUME_ATTEMPTS } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_logger-test-utils.ts";
 import { makeMockHandle } from "../_s2s-fixture-test-utils.ts";
-import { sleep } from "../_timing-test-utils.ts";
+import { tick } from "../_timing-test-utils.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle, S2sWebSocket } from "../s2s/index.ts";
 import { makeCallbacks, type RecordingCallbacks } from "./_transport-recorder.ts";
 import { _internals, createS2sTransport, type S2sTransportOptions } from "./s2s-transport.ts";
@@ -99,7 +99,7 @@ describe("S2sTransport reconnect", () => {
     cb1.onClose(1005, "");
 
     await vi.waitFor(() => {
-      expect(handles.length).toBe(2);
+      expect(handles).toHaveLength(2);
     });
 
     const newHandle = expectAt(handles, 1, "new handle");
@@ -129,7 +129,7 @@ describe("S2sTransport reconnect", () => {
     t.sendToolResult("call-1", "result-1");
 
     await vi.waitFor(() => {
-      expect(handles.length).toBe(2);
+      expect(handles).toHaveLength(2);
     });
     const h2 = expectAt(handles, 1, "resumed handle");
     vi.mocked(h2.sendToolResult).mockReturnValue(true);
@@ -149,8 +149,8 @@ describe("S2sTransport reconnect", () => {
     cb1.onReplyStarted("rep_1");
     cb1.onClose(1008, "unauthorized");
 
-    await sleep(5);
-    expect(handles.length).toBe(1);
+    await tick();
+    expect(handles).toHaveLength(1);
     expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
       type: "error.reported",
       code: "connection",
@@ -171,8 +171,8 @@ describe("S2sTransport reconnect", () => {
     // Upstream close after stop() must be treated as clean shutdown, not a transient drop.
     cb1.onClose(1005, "");
 
-    await sleep(5);
-    expect(handles.length).toBe(1);
+    await tick();
+    expect(handles).toHaveLength(1);
     expect(callbacks.reported("error.reported")).not.toHaveBeenCalled();
   });
 
@@ -186,7 +186,7 @@ describe("S2sTransport reconnect", () => {
     cb1.onReplyStarted("rep_1");
     cb1.onClose(1005, "");
 
-    await vi.waitFor(() => expect(handles.length).toBe(2));
+    await vi.waitFor(() => expect(handles).toHaveLength(2));
 
     const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
     cb2.onClose(1006, "");
@@ -208,7 +208,7 @@ describe("S2sTransport reconnect", () => {
     cb1.onSessionReady("sess_abc");
     cb1.onClose(1005, "");
 
-    await vi.waitFor(() => expect(handles.length).toBe(2));
+    await vi.waitFor(() => expect(handles).toHaveLength(2));
 
     const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
     cb2.onSessionExpired();
@@ -244,7 +244,7 @@ describe("S2sTransport reconnect", () => {
     cb1.onClose(1005, "");
 
     await vi.waitFor(() => expect(callbacks.reported("error.reported")).toHaveBeenCalled());
-    await sleep(5);
+    await tick();
     expect(callbacks.reported("error.reported")).toHaveBeenCalledTimes(1);
     // No further resume attempt after the failure (the 1006 close is transient
     // by code, but the retired session must not loop back into resume).
@@ -276,7 +276,7 @@ describe("S2sTransport reconnect", () => {
     // it must neither re-emit the error nor kick off another resume loop.
     const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
     cb2.onClose(1006, "");
-    await sleep(5);
+    await tick();
     expect(callbacks.reported("error.reported")).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledTimes(2);
   });
@@ -289,12 +289,12 @@ describe("S2sTransport reconnect", () => {
     const cb1 = expectAt(capturedCallbacks, 0, "first callbacks");
     cb1.onSessionReady("sess_abc");
     cb1.onClose(1005, "");
-    await vi.waitFor(() => expect(handles.length).toBe(2));
+    await vi.waitFor(() => expect(handles).toHaveLength(2));
 
     const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
     cb2.onSessionReady("sess_abc");
     cb2.onClose(1006, "");
-    await vi.waitFor(() => expect(handles.length).toBe(3));
+    await vi.waitFor(() => expect(handles).toHaveLength(3));
     expect(expectAt(handles, 2, "second resume handle").resumeSession).toHaveBeenCalledWith(
       "sess_abc",
     );
@@ -311,7 +311,7 @@ describe("S2sTransport reconnect", () => {
     cb0.onSessionReady("sess");
     cb0.onClose(1006, "");
     for (let attempt = 1; attempt <= S2S_MAX_RESUME_ATTEMPTS; attempt++) {
-      await vi.waitFor(() => expect(handles.length).toBe(attempt + 1));
+      await vi.waitFor(() => expect(handles).toHaveLength(attempt + 1));
       const cb = expectAt(capturedCallbacks, attempt, `cb${attempt}`);
       cb.onSessionReady("sess");
       cb.onClose(1006, "");
@@ -326,7 +326,7 @@ describe("S2sTransport reconnect", () => {
         fatal: true,
       });
     });
-    expect(handles.length).toBe(S2S_MAX_RESUME_ATTEMPTS + 1);
+    expect(handles).toHaveLength(S2S_MAX_RESUME_ATTEMPTS + 1);
   });
 
   test("real progress (a reply) resets the resume budget", async () => {
@@ -342,7 +342,7 @@ describe("S2sTransport reconnect", () => {
     cb0.onReplyStarted("r0");
     cb0.onClose(1006, "");
     for (let i = 1; i <= cycles; i++) {
-      await vi.waitFor(() => expect(handles.length).toBe(i + 1));
+      await vi.waitFor(() => expect(handles).toHaveLength(i + 1));
       const cb = expectAt(capturedCallbacks, i, `cb${i}`);
       cb.onSessionReady("sess");
       cb.onReplyStarted(`r${i}`);
@@ -350,7 +350,7 @@ describe("S2sTransport reconnect", () => {
     }
 
     expect(callbacks.reported("error.reported")).not.toHaveBeenCalled();
-    expect(handles.length).toBe(cycles + 1);
+    expect(handles).toHaveLength(cycles + 1);
   });
 
   test("surfaces onError on an unexpected fatal close while idle", async () => {
@@ -409,7 +409,7 @@ describe("S2sTransport reconnect", () => {
     const cb1 = expectAt(capturedCallbacks, 0, "first callbacks");
     cb1.onSessionReady("sess_abc");
     cb1.onClose(1005, "");
-    await vi.waitFor(() => expect(handles.length).toBe(2));
+    await vi.waitFor(() => expect(handles).toHaveLength(2));
 
     // The service answers our `session.resume` with `session_not_found` IN BAND
     // — it does not close. Retiring the session while leaving that socket open
@@ -459,7 +459,7 @@ describe("S2sTransport reconnect", () => {
     const cb1 = expectAt(capturedCallbacks, 0, "first callbacks");
     cb1.onSessionReady("sess_abc");
     cb1.onClose(1005, ""); // transient → a resume starts and hangs mid-handshake
-    await vi.waitFor(() => expect(signals.length).toBe(2));
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
 
     await t.stop();
     expect(signals[1]?.aborted).toBe(true);
@@ -468,8 +468,7 @@ describe("S2sTransport reconnect", () => {
     // installed, and the client hears nothing: it hung up, so there is no
     // session left to fail.
     resume.resolve(resumeHandle);
-    await sleep(5);
-    expect(resumeHandle.close).toHaveBeenCalled();
+    await vi.waitFor(() => expect(resumeHandle.close).toHaveBeenCalled());
     expect(callbacks.reported("error.reported")).not.toHaveBeenCalled();
   });
 

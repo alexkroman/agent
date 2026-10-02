@@ -12,11 +12,10 @@
  * the file from what it looks like.
  */
 
-import { afterEach, describe, expect, test } from "vitest";
-import { closeServer, fakeStore, serve, upload } from "./_uploads-test-utils.ts";
+import { describe, expect, test } from "vitest";
+import { memoryStore } from "../../_upload-store-test-utils.ts";
+import { serve, upload } from "./_uploads-test-utils.ts";
 import { parseRange } from "./uploads-read.ts";
-
-afterEach(closeServer);
 
 describe("POST /workflows/uploads", () => {
   test("stores the body and answers with the handle a run input carries", async () => {
@@ -38,7 +37,7 @@ describe("POST /workflows/uploads", () => {
   test("answers 413 for a body past the cap rather than storing a short file", async () => {
     const base = await serve({
       uploads: {
-        ...fakeStore(),
+        ...memoryStore().store,
         create: async () => {
           const { UploadTooLargeError } = await import("../uploads.ts");
           throw new UploadTooLargeError(10);

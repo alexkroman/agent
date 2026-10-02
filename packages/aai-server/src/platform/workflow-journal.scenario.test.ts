@@ -31,11 +31,9 @@
  * ```
  */
 
-import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
-import type { SqlExec } from "../sql-exec.ts";
-import { ensurePlatformTables } from "./_schema-test-utils.ts";
+import { describeWithPg } from "../_pg-test-utils.ts";
+import { usePlatformDb } from "./_schema-test-utils.ts";
 import * as journal from "./workflow-journal.ts";
 
 /** Two tenants, so every read can be asked whether it crosses. */
@@ -43,8 +41,7 @@ const SLUG = "wfj-tenant";
 const OTHER = "wfj-neighbour";
 
 describeWithPg("the platform's workflow journal over a real Postgres", () => {
-  let db: ReturnType<typeof createPostgresDb>;
-  let sql: SqlExec;
+  const sql = usePlatformDb();
 
   /**
    * The columns the shipped `agents` table really requires — every NOT NULL with
@@ -60,11 +57,6 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
     );
 
   beforeAll(async () => {
-    // `pgUrl()` inside the hook: vitest executes a skipped `describe` body to
-    // enumerate it, so reading at the top would throw on a machine with no PG.
-    db = createPostgresDb({ url: pgUrl(), max: 4 });
-    sql = (q, p) => db.query(q, p);
-    await ensurePlatformTables(sql);
     await seedAgent(SLUG);
     await seedAgent(OTHER);
   });
@@ -73,7 +65,6 @@ describeWithPg("the platform's workflow journal over a real Postgres", () => {
     // Both tenants' rows go with their agents — every table cascades from
     // `agents`, which is itself the property the delete test below asserts.
     await sql("delete from aai_platform.agents where slug = any($1::text[])", [[SLUG, OTHER]]);
-    await db.close();
   });
 
   /** A fresh run id per test, so nothing shares rows. */

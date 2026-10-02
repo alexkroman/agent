@@ -18,11 +18,9 @@
  *   so a read that coerces before checking reports a plausible empty upload.
  */
 
-import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
-import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
-import type { SqlExec } from "../sql-exec.ts";
-import { ensurePlatformTables } from "./_schema-test-utils.ts";
+import { describeWithPg } from "../_pg-test-utils.ts";
+import { usePlatformDb } from "./_schema-test-utils.ts";
 import {
   claimUpload,
   finishUpload,
@@ -33,8 +31,7 @@ import {
 } from "./uploads.ts";
 
 describeWithPg("platform upload records", () => {
-  let close: () => Promise<void>;
-  let sql: SqlExec;
+  const sql = usePlatformDb();
 
   const SLUGS = ["upl-a", "upl-b"];
   const A = () => SLUGS[0] as string;
@@ -58,10 +55,6 @@ describeWithPg("platform upload records", () => {
   });
 
   beforeAll(async () => {
-    const db = createPostgresDb({ url: pgUrl(), max: 4 });
-    sql = (q, p) => db.query(q, p);
-    close = () => db.close();
-    await ensurePlatformTables(sql);
     for (const slug of SLUGS) await seedAgent(slug);
   });
 
@@ -74,7 +67,6 @@ describeWithPg("platform upload records", () => {
   afterAll(async () => {
     await sql("delete from aai_platform.workflow_uploads where slug = any($1)", [SLUGS]);
     await sql("delete from aai_platform.agents where slug = any($1)", [SLUGS]);
-    await close();
   });
 
   test("a claimed record reads back with every field intact", async () => {

@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { ramp } from "../_upload-store-test-utils.ts";
+import { body, ramp } from "../_upload-store-test-utils.ts";
 import {
   createMemoryUploadBackend,
   partKey,
@@ -179,8 +179,3 @@ describe("a part's key", () => {
     expect(partKey("uploads", "upl_a", 8_388_608)).toBe("uploads/upl_a/8388608");
   });
 });
-
-/** One body from several pieces, as a route hands it over. */
-async function* body(...pieces: Uint8Array[]): AsyncGenerator<Uint8Array> {
-  for (const piece of pieces) yield piece;
-}

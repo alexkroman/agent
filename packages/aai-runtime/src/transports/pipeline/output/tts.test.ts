@@ -124,7 +124,7 @@ describe("createTtsTextCoalescer", () => {
     for (let i = 0; i < 40; i++) c.send(word);
     expect(sent).toEqual(["first "]);
     c.send("done. ");
-    expect(sent.length).toBe(2);
+    expect(sent).toHaveLength(2);
     expect(sent[1]).toBe(`${word.repeat(40)}done. `);
   });
 
@@ -138,7 +138,7 @@ describe("createTtsTextCoalescer", () => {
     expect(sent.join("")).toBe("One more thing");
     const count = sent.length;
     c.flush();
-    expect(sent.length).toBe(count);
+    expect(sent).toHaveLength(count);
   });
 
   test("empty deltas are ignored and do not consume the immediate first send", () => {

@@ -18,7 +18,7 @@ import { sleep } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createTestOrchestrator, type TestFetch } from "./_orchestrator-test-utils.ts";
-import { deployAgent } from "./_request-test-utils.ts";
+import { deployAgent, recordingGuest } from "./_request-test-utils.ts";
 import { fakeSandbox, spawnedAgent } from "./_sandbox-test-utils.ts";
 import { GUEST_ROUTE_EXPOSURE } from "./guest/routes.ts";
 import { guestTokenFor } from "./guest/token.ts";
@@ -32,17 +32,6 @@ import { GUEST_PROXY_TOKEN_HEADER } from "./workflow-proxy-constants.ts";
 
 /** The guest spawn the orchestrator boots through (`OrchestratorOpts.spawnAgentServer`). */
 const mockSpawnAgentServer = vi.fn<SpawnAgentServer>();
-
-/** Records what the platform forwarded, and answers as the guest would. */
-function recordingGuest(answer: (req: Request) => Response | Promise<Response> = () => json({})) {
-  const calls: { url: string; method: string; headers: Headers; body: string }[] = [];
-  const fetchFn: typeof globalThis.fetch = async (input, init) => {
-    const req = new Request(input, init as RequestInit);
-    calls.push({ url: req.url, method: req.method, headers: req.headers, body: await req.text() });
-    return await answer(req);
-  };
-  return { calls, fetchFn };
-}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -196,7 +185,7 @@ describe("routing", () => {
 
 describe("headers", () => {
   test("forwards the bearer — the guest's own AAI_WORKFLOW_API_TOKEN gate", async () => {
-    const guest = recordingGuest();
+    const guest = recordingGuest(() => json({}));
     const harness = await residentHarness(guest.fetchFn);
     await get(harness.fetch, "/my-agent/workflows", {
       headers: { Authorization: "Bearer s3cret", Cookie: "session=abc", Origin: "https://evil" },
@@ -209,7 +198,7 @@ describe("headers", () => {
   });
 
   test("injects the manage bearer so the guest can refuse a DIRECT tunnel dial", async () => {
-    const guest = recordingGuest();
+    const guest = recordingGuest(() => json({}));
     const harness = await residentHarness(guest.fetchFn);
     await get(harness.fetch, "/my-agent/workflows");
     // The guest gates `/workflows/*` on this header (aai-guest/harness-agent-mode.ts):
@@ -318,7 +307,7 @@ describe("availability", () => {
     // the in-memory event emitter delivers synchronously, which no real replica
     // does. Without it this passes for the wrong reason — the broker's own 404 —
     // which is what the A/B against the unfixed handler showed.
-    const guest = recordingGuest();
+    const guest = recordingGuest(() => json({}));
     const slots = createSlotCache();
     const harness = await residentHarness(guest.fetchFn, {}, slots);
     const version = (await harness.store.getAgentVersion("my-agent")) ?? 1;

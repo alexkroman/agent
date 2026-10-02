@@ -203,7 +203,7 @@ describe("pipeline greeting", () => {
 
       stt.last()?.fireFinal("remember the number nine");
       await vi.waitFor(() => {
-        expect(llm.calls.length).toBe(1);
+        expect(llm.calls).toHaveLength(1);
       });
 
       t.reset?.();
@@ -212,7 +212,7 @@ describe("pipeline greeting", () => {
       });
       stt.last()?.fireFinal("what now");
       await vi.waitFor(() => {
-        expect(llm.calls.length).toBe(2);
+        expect(llm.calls).toHaveLength(2);
       });
 
       const request = JSON.stringify(llm.calls.at(-1));

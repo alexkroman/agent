@@ -162,7 +162,7 @@ describe.skipIf(missing.length > 0 && !requireStack)(
       }
       await session.stop();
 
-      expect(userTranscripts.some((t) => t.toLowerCase().includes("how are you"))).toBe(true);
+      expect(userTranscripts).toContainEqual(expect.stringMatching(/how are you/i));
       expect(replyDone).toBe(true);
       expect(audioOut.length).toBeGreaterThan(0);
     }, 60_000);

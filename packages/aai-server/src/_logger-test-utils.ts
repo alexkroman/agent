@@ -1,12 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { afterEach, beforeEach } from "vitest";
+import { beforeEach } from "vitest";
 import { type Logger, type RecordedLine, recordingSink, setLogSink } from "./logger.ts";
 
 /**
  * Silence this package's log output for the current file, and record it. Call
- * it at describe scope: it installs the recording sink in `beforeEach` and
- * restores in `afterEach`. Prefer asking whether a line was written over
+ * it at describe scope: it installs the recording sink in a `beforeEach`
+ * whose returned restore runs after each test. Prefer asking whether a line was written over
  * pinning its wording — `warns()` returns namespace-prefixed messages.
  */
 export function captureLogs(): {
@@ -20,13 +20,9 @@ export function captureLogs(): {
   infos(): string[];
 } {
   let recorded: { sink: Logger; lines: RecordedLine[] } = recordingSink();
-  let restore: (() => void) | undefined;
   beforeEach(() => {
     recorded = recordingSink();
-    restore = setLogSink(recorded.sink);
-  });
-  afterEach(() => {
-    restore?.();
+    return setLogSink(recorded.sink);
   });
   const at = (level: RecordedLine["level"]) => () =>
     recorded.lines.filter((l) => l.level === level).map((l) => l.msg);

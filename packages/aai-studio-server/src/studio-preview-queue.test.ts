@@ -82,11 +82,14 @@ describe("createPgPreviewQueue", () => {
 
   function fakeSql() {
     let rows: Record<string, unknown>[] = [];
-    const { sql, calls } = createRecordingSql((query) => (query.includes("pgmq.read") ? rows : []));
+    const sql = createRecordingSql((query) => (query.includes("pgmq.read") ? rows : []));
     const setRows = (next: Record<string, unknown>[]): void => {
       rows = next;
     };
-    return { sql, calls, setRows };
+    /** The `params` of the first statement whose text includes `fragment`. */
+    const paramsOf = (fragment: string) =>
+      sql.mock.calls.find(([query]) => query.includes(fragment))?.[1];
+    return { sql, setRows, paramsOf };
   }
 
   /**
@@ -95,28 +98,28 @@ describe("createPgPreviewQueue", () => {
    * noticed, and hide a missed migration.
    */
   test("issues no DDL — the extension and queue come from migrations", async () => {
-    const { sql, calls } = fakeSql();
+    const { sql } = fakeSql();
     const queue = createPgPreviewQueue(sql);
     await queue.enqueue(JOB);
     await queue.enqueue(JOB);
-    expect(calls.filter((c) => /^\s*(create|do)\b/i.test(c.query))).toEqual([]);
-    expect(calls.filter((c) => c.query.includes("pgmq.send"))).toHaveLength(2);
+    const queries = sql.mock.calls.map(([query]) => query);
+    expect(queries.filter((q) => /^\s*(create|do)\b/i.test(q))).toEqual([]);
+    expect(queries.filter((q) => q.includes("pgmq.send"))).toHaveLength(2);
   });
 
   test("sends the job as jsonb and reads it back with its delivery count", async () => {
-    const { sql, calls, setRows } = fakeSql();
+    const { sql, setRows, paramsOf } = fakeSql();
     const queue = createPgPreviewQueue(sql);
     await queue.enqueue({ ...JOB, userId: "user-1" });
-    const send = calls.find((c) => c.query.includes("pgmq.send"));
-    expect(send?.params?.[0]).toBe(PREVIEW_QUEUE);
-    expect(JSON.parse(String(send?.params?.[1]))).toEqual({ ...JOB, userId: "user-1" });
+    const send = paramsOf("pgmq.send");
+    expect(send?.[0]).toBe(PREVIEW_QUEUE);
+    expect(JSON.parse(String(send?.[1]))).toEqual({ ...JOB, userId: "user-1" });
 
     setRows([{ msg_id: 42n, read_ct: 3, message: { ...JOB, userId: "user-1" } }]);
     const claimed = await queue.claim(5);
     expect(claimed).toEqual([{ id: "42", job: { ...JOB, userId: "user-1" }, attempts: 3 }]);
-    const read = calls.find((c) => c.query.includes("pgmq.read"));
     // Visibility timeout is passed in whole seconds, as pgmq expects.
-    expect(read?.params?.[1]).toBe(PREVIEW_JOB_VISIBILITY_MS / 1000);
+    expect(paramsOf("pgmq.read")?.[1]).toBe(PREVIEW_JOB_VISIBILITY_MS / 1000);
   });
 
   /**
@@ -141,14 +144,11 @@ describe("createPgPreviewQueue", () => {
 
   /** A string that is not JSON at all is still unreadable, not a crash. */
   test("archives a string payload that is not JSON", async () => {
-    const { sql, calls, setRows } = fakeSql();
+    const { sql, setRows, paramsOf } = fakeSql();
     const queue = createPgPreviewQueue(sql);
     setRows([{ msg_id: 8n, read_ct: 1, message: "not json" }]);
     expect(await queue.claim(5)).toEqual([]);
-    expect(calls.find((c) => c.query.includes("pgmq.archive"))?.params).toEqual([
-      PREVIEW_QUEUE,
-      "8",
-    ]);
+    expect(paramsOf("pgmq.archive")).toEqual([PREVIEW_QUEUE, "8"]);
   });
 
   /**
@@ -156,19 +156,17 @@ describe("createPgPreviewQueue", () => {
    * visibility timeout forever.
    */
   test("archives an unreadable payload instead of redelivering it", async () => {
-    const { sql, calls, setRows } = fakeSql();
+    const { sql, setRows, paramsOf } = fakeSql();
     const queue = createPgPreviewQueue(sql);
     setRows([{ msg_id: 7n, read_ct: 1, message: { project: "no-scope" } }]);
     expect(await queue.claim(5)).toEqual([]);
-    const archive = calls.find((c) => c.query.includes("pgmq.archive"));
-    expect(archive?.params).toEqual([PREVIEW_QUEUE, "7"]);
+    expect(paramsOf("pgmq.archive")).toEqual([PREVIEW_QUEUE, "7"]);
   });
 
   test("acks by message id", async () => {
-    const { sql, calls } = fakeSql();
+    const { sql, paramsOf } = fakeSql();
     const queue = createPgPreviewQueue(sql);
     await queue.ack("99");
-    const del = calls.find((c) => c.query.includes("pgmq.delete"));
-    expect(del?.params).toEqual([PREVIEW_QUEUE, "99"]);
+    expect(paramsOf("pgmq.delete")).toEqual([PREVIEW_QUEUE, "99"]);
   });
 });

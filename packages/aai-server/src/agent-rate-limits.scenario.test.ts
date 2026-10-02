@@ -30,25 +30,22 @@
  * of the safety.
  */
 
-import { createPostgresDb } from "@alexkroman1/aai-runtime";
-import { afterAll, beforeAll, expect, test } from "vitest";
-import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import { afterAll, expect, test } from "vitest";
+import { describeWithPg } from "./_pg-test-utils.ts";
 import { UNKNOWN_CLIENT_IP } from "./client-ip.ts";
-import { ensurePlatformTables } from "./platform/_schema-test-utils.ts";
+import { usePlatformDb } from "./platform/_schema-test-utils.ts";
 import {
   createPgAgentRateLimiters,
   createPgRateLimiter,
   createRateLimiter,
   WORKFLOW_START_IP_RATE_LIMIT,
 } from "./rate-limit.ts";
-import type { SqlExec } from "./sql-exec.ts";
 
 /** Every key this file mints. The sweep matches this and nothing else. */
 const KEY_PREFIX = `rl-scenario-${process.pid}-`;
 
 describeWithPg("the agent surface's rate limits, across replicas", () => {
-  let close: () => Promise<void>;
-  let sql: SqlExec;
+  const sql = usePlatformDb();
   let n = 0;
   /** A key no other suite, and no earlier test here, can be counting against. */
   const key = (label: string): string => `${KEY_PREFIX}${label}-${n++}`;
@@ -62,19 +59,8 @@ describeWithPg("the agent surface's rate limits, across replicas", () => {
     return Number(rows[0]?.count ?? 0);
   };
 
-  beforeAll(async () => {
-    // `pgUrl()` inside the hook, never at the top of this body: vitest EXECUTES
-    // a skipped describe callback to enumerate it, so up there it throws during
-    // collection instead of skipping the file.
-    const db = createPostgresDb({ url: pgUrl(), max: 4 });
-    sql = (query, params) => db.query(query, params);
-    close = () => db.close();
-    await ensurePlatformTables(sql);
-  });
-
   afterAll(async () => {
     await sql("delete from aai_platform.studio_rate_limits where key like $1", [`${KEY_PREFIX}%`]);
-    await close?.();
   });
 
   test("two instances over one database share a BUDGET, where two in memory do not", async () => {

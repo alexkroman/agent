@@ -10,10 +10,10 @@
  */
 
 import { type WorkflowContext, workflow } from "@alexkroman1/aai";
-import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { tick } from "../_timing-test-utils.ts";
+import { useVirtualTime } from "../transports/_pipeline-transport-harness.ts";
 import { createInProcessWorkflowEngine, type InProcessWorkflowEngine } from "./in-process.ts";
 import { createMemoryJournal } from "./journal/backends/memory.ts";
 import type { JournalStore } from "./journal/types.ts";
@@ -67,6 +67,10 @@ describe("a started run", () => {
 });
 
 describe("a suspended run", () => {
+  // Every delivery is a timer, so "nothing more happens" is checked by advancing
+  // the clock past the window rather than by sleeping through it.
+  useVirtualTime();
+
   test("comes back when its sleep elapses", async () => {
     const after = vi.fn(() => "resumed");
     const { engine } = harness(async (_input, ctx) => {
@@ -119,8 +123,8 @@ describe("a suspended run", () => {
     });
     // Give the loop room to spin if it is going to.
     const walks = body.mock.calls.length;
-    await sleep(30);
-    expect(body.mock.calls.length).toBe(walks);
+    await vi.advanceTimersByTimeAsync(30);
+    expect(body).toHaveBeenCalledTimes(walks);
     expect(await engine.getRun(runId)).toMatchObject({ status: "running" });
   });
 });
@@ -271,6 +275,10 @@ describe("a burst of deliveries for ONE run", () => {
 });
 
 describe("a run suspended when the engine went away", () => {
+  // Every delivery is a timer, so "nothing more happens" is checked by advancing
+  // the clock past the window rather than by sleeping through it.
+  useVirtualTime();
+
   /** A body that sleeps once and then does one step. */
   const napper =
     (ms: number, after: () => unknown) => async (_i: unknown, ctx: WorkflowContext) => {
@@ -294,7 +302,7 @@ describe("a run suspended when the engine went away", () => {
     // Past the deadline, so the rebuilt engine meets an OVERDUE wait rather than
     // one it can simply re-arm a timer for. A bare `wake` cannot reach it — which
     // is the contract, and the reason nothing else could rescue this run.
-    await sleep(150);
+    await vi.advanceTimersByTimeAsync(150);
     expect(await journal.wakeSleeps(runId, undefined)).toBe(0);
 
     const second = harness(napper(120, after), journal);
@@ -316,7 +324,7 @@ describe("a run suspended when the engine went away", () => {
 
     const second = harness(napper(400, after), journal);
     // The re-enqueue is a SCHEDULE, not a delivery: the step has not run yet.
-    await sleep(30);
+    await vi.advanceTimersByTimeAsync(30);
     expect(after).not.toHaveBeenCalled();
     await vi.waitFor(async () => {
       expect(await second.engine.getRun(runId)).toMatchObject({ status: "completed" });
@@ -342,8 +350,8 @@ describe("a run suspended when the engine went away", () => {
     const walks = body.mock.calls.length;
 
     harness(body, journal);
-    await sleep(40);
-    expect(body.mock.calls.length).toBe(walks);
+    await vi.advanceTimersByTimeAsync(40);
+    expect(body).toHaveBeenCalledTimes(walks);
   });
 
   test("is left to the platform's queue when a dispatcher was injected", async () => {
@@ -358,7 +366,7 @@ describe("a run suspended when the engine went away", () => {
       expect(await first.engine.getRun(runId)).toMatchObject({ status: "running" });
     });
     first.engine.stop();
-    await sleep(150);
+    await vi.advanceTimersByTimeAsync(150);
 
     const dispatch = vi.fn();
     createInProcessWorkflowEngine({
@@ -367,7 +375,7 @@ describe("a run suspended when the engine went away", () => {
       logger: makeLogger(),
       dispatch,
     });
-    await sleep(30);
+    await vi.advanceTimersByTimeAsync(30);
     expect(dispatch).not.toHaveBeenCalled();
     expect(await journal.getRun(runId)).toMatchObject({ status: "running" });
   });
@@ -388,6 +396,10 @@ describe("a run suspended when the engine went away", () => {
 });
 
 describe("stop", () => {
+  // Every delivery is a timer, so "nothing more happens" is checked by advancing
+  // the clock past the window rather than by sleeping through it.
+  useVirtualTime();
+
   test("cancels a pending delivery, so a rebuilt runtime leaves nothing behind", async () => {
     // `aai dev` rebuilds its runtime on every file save. Without this each save
     // leaves the previous engine's timers running bodies from a build that is
@@ -397,7 +409,7 @@ describe("stop", () => {
     const runId = await engine.start("digest", [{}]);
     engine.stop();
 
-    await sleep(30);
+    await vi.advanceTimersByTimeAsync(30);
     expect(body).not.toHaveBeenCalled();
     expect(await engine.getRun(runId)).toMatchObject({ status: "pending" });
   });
@@ -408,7 +420,7 @@ describe("stop", () => {
     engine.stop();
 
     await engine.start("digest", [{}]);
-    await sleep(30);
+    await vi.advanceTimersByTimeAsync(30);
     expect(body).not.toHaveBeenCalled();
   });
 });

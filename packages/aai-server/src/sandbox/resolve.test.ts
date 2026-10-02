@@ -202,15 +202,14 @@ describe("broker while draining", () => {
     const deps = await seedAgent("drains-mid-broker");
     mockSpawnAgentServer.mockClear();
     // False for the broker's own guard, true by the time the sandbox is built.
-    let asked = 0;
-    const isDraining = () => asked++ > 0;
+    const isDraining = vi.fn<() => boolean>().mockReturnValueOnce(false).mockReturnValue(true);
 
     const brokered = await brokerSessionUrl("drains-mid-broker", { ...deps, isDraining });
 
     // A 500 is what this answered before, and a 404 would be the other wrong
     // answer available — the agent exists, it is this replica that is leaving.
     expect(brokered).toEqual({ ok: false, status: 503 });
-    expect(asked).toBeGreaterThan(1);
+    expect(isDraining.mock.calls.length).toBeGreaterThan(1);
     expect(mockSpawnAgentServer).not.toHaveBeenCalled();
     // The orphan the guard exists to prevent: nothing may be left installed.
     expect(deps.slots.get("drains-mid-broker")).toBeUndefined();
@@ -242,10 +241,7 @@ describe("broker while draining", () => {
  * before its 503 — permanently, for every caller.
  */
 describe("broker readiness cap", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-  });
+  captureLogs();
 
   it("answers 503 while a boot is still running, without spawning a second sandbox", async () => {
     // A spawn that never resolves — the hung-boot case.
@@ -291,10 +287,7 @@ describe("broker readiness cap", () => {
 });
 
 describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  });
+  captureLogs();
 
   it("routes a cold broker to a live peer instead of spawning a duplicate", async () => {
     // The reported bug: two replicas serving one slug each spawned a guest,
@@ -403,10 +396,7 @@ describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
  * winner's guest, not to a second spawn.
  */
 describe("losing the sandbox name race", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  });
+  captureLogs();
 
   it("routes to the peer that won it", async () => {
     const seeded = await seedAgent("raced");

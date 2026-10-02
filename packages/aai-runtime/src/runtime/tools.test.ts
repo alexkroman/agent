@@ -364,7 +364,6 @@ describe("self-hosted tool surface: a tool's model call finds its session's mete
     // is by id, not "whatever meter the runtime last saw".
     expect(await executeTool("summarize", {}, "session-2", [])).toBe("another summary");
     expect(usage.snapshot().totalTokens).toBe(2);
-    fakes.unregister();
   });
 });
 

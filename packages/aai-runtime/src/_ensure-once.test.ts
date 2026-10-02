@@ -24,14 +24,12 @@ describe("ensureOnce", () => {
   });
 
   test("every caller sees the same settled result", async () => {
-    let calls = 0;
-    const ensure = ensureOnce(async () => {
-      calls += 1;
-    });
+    const run = vi.fn(async () => undefined);
+    const ensure = ensureOnce(run);
 
     await expect(ensure()).resolves.toBeUndefined();
     await expect(ensure()).resolves.toBeUndefined();
-    expect(calls).toBe(1);
+    expect(run).toHaveBeenCalledTimes(1);
   });
 
   test("a rejection is NOT remembered as done — the next call retries", async () => {

@@ -168,7 +168,7 @@ describe("PipelineTransport speech vs. record", () => {
       const finals = callbacks.events
         .filter((e) => e.type === "agentTranscript.committed")
         .map((e) => e.text);
-      expect(finals.some((text) => text.includes("It's sunny."))).toBe(true);
+      expect(finals).toContainEqual(expect.stringContaining("It's sunny."));
       for (const text of finals) expect(text).not.toContain(DEAD_AIR_OPENING_PHRASE);
       await t.stop();
     });

@@ -15,34 +15,10 @@ import type { WorkflowContext } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryJournal } from "../journal/backends/memory.ts";
-import type { JournalStore, RunRecord } from "../journal/types.ts";
-import { replayRun } from "../replay.ts";
+import { replayOn, seedRun } from "../_replay-test-utils.ts";
 
 /** Long enough that no wait a test reaches can elapse under it. */
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** A run record and the journal holding it, ready to replay. */
-async function seed(): Promise<{ journal: JournalStore }> {
-  const journal = createMemoryJournal();
-  const record: RunRecord = {
-    runId: "wrun_1",
-    workflow: "digest",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  };
-  await journal.createRun(record);
-  return { journal };
-}
-
-/** Replay `run` against a journal, with the seeded run's identity. */
-function replay(
-  journal: JournalStore,
-  run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown,
-) {
-  return replayRun({ runId: "wrun_1", workflow: "digest", input: {}, run, journal });
-}
 
 describe("a body that tries to observe its own suspend", () => {
   // The severe case, and it shipped: `meeting-recap-agent`'s saga wrapped its whole
@@ -58,9 +34,9 @@ describe("a body that tries to observe its own suspend", () => {
   // settles, so none of these `catch`/`finally` bodies runs.
 
   test("a catch that would swallow it never runs — the run SUSPENDS", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     const cleanup = vi.fn(() => "undone");
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       try {
         await ctx.sleep("week", 60_000);
         return "unreachable";
@@ -90,9 +66,9 @@ describe("a body that tries to observe its own suspend", () => {
     // SPY is what discriminates — under the throw this reassigned `answer` and
     // then let the suspension past, so the outcome alone reported `suspended`
     // either way and pinned nothing.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const decide = vi.fn(() => "decided in finally");
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       let answer = "unreachable";
       try {
         await ctx.sleep("week", 60_000);
@@ -108,9 +84,9 @@ describe("a body that tries to observe its own suspend", () => {
   });
 
   test("nothing after the wait runs, so no later step is journaled", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     const after = vi.fn(() => "later");
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       await ctx.sleep("week", 60_000);
       return ctx.step("after", after);
     });
@@ -123,8 +99,8 @@ describe("a body that tries to observe its own suspend", () => {
     // The other half: `try`/`catch` in a body has to keep WORKING, and it is
     // ordinary now — it sees step failures and nothing else, with no predicate
     // to remember.
-    const { journal } = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       let recovered = "no";
       try {
         await ctx.step("flaky", () => {
@@ -146,8 +122,8 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
   // was reached first and the other was never journaled at all.
 
   test("a race over two sleeps wakes at the EARLIER deadline", async () => {
-    const { journal } = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       await Promise.race([ctx.sleep("far", WEEK_MS), ctx.sleep("near", 1000)]);
       return "raced";
     });
@@ -169,7 +145,7 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
     // `all` needs both, so the earlier wake is not the end of the wait — it is
     // the next delivery, which walks past the elapsed one and parks again on
     // what is left. Driven here by waking only the near wait.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const body = async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
       await Promise.all([
         ctx.sleep("far", WEEK_MS),
@@ -178,11 +154,11 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
       return "both";
     };
 
-    const first = await replay(journal, body);
+    const first = await replayOn(journal, body);
     expect(first.kind).toBe("suspended");
     expect(await journal.wakeSleeps("wrun_1", ["near"])).toBe(1);
 
-    const second = await replay(journal, body);
+    const second = await replayOn(journal, body);
     // Still suspended, and now on the WEEK — which is what "aggregate the
     // OUTSTANDING waits" means: a settled one contributes nothing.
     const week = await journal.claimSleep("wrun_1", "sleep!far#0", Date.now() + 999_999, undefined);
@@ -190,8 +166,8 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
   });
 
   test("a hook contributes no wake time, so a sleep beside it decides", async () => {
-    const { journal } = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       await Promise.race([ctx.waitFor("tok_gate"), ctx.sleep("near", 1000)]);
       return "raced";
     });
@@ -209,8 +185,8 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
     // `undefined` is what tells the caller not to schedule a delivery: both are
     // ended by a signal, so polling would wake a run that may be parked for a
     // week. See `ReplayOutcome`.
-    const { journal } = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       await Promise.race([ctx.waitFor("tok_a"), ctx.waitFor("tok_b")]);
       return "raced";
     });
@@ -225,12 +201,12 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
   test("a step in flight beside a parked wait is journaled BEFORE the suspension", async () => {
     // QUIESCENCE, and the reason the suspension is not raised at the first park:
     // the step would go unjournaled and the next delivery would run it again.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const work = vi.fn(async () => {
       await sleep(5);
       return "done";
     });
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       await Promise.all([ctx.sleep("week", WEEK_MS), ctx.step("slow", work)]);
       return "both";
     });
@@ -251,14 +227,14 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
     // The write has to be SLOW to discriminate. Against the memory journal it
     // settles inside the microtask drain `process.nextTick` already waits out,
     // so an unheld read is journaled anyway and the test would pass either way.
-    const { journal } = await seed();
+    const journal = await seedRun();
     const append = journal.appendStep.bind(journal);
     vi.spyOn(journal, "appendStep").mockImplementation(async (runId, entry) => {
       await sleep(5);
       return append(runId, entry);
     });
 
-    const outcome = await replay(journal, async (_input, ctx) => {
+    const outcome = await replayOn(journal, async (_input, ctx) => {
       await Promise.all([ctx.sleep("week", WEEK_MS), ctx.uuid()]);
       return "both";
     });
@@ -273,8 +249,8 @@ describe("concurrent waits are aggregated into ONE suspension", () => {
     // never got to win. Now the wait simply parks, the step answers, and the run
     // is COMPLETE with one journaled wait nobody is waiting on — which is the
     // honest reading of a body that asked for whichever came first.
-    const { journal } = await seed();
-    const outcome = await replay(journal, async (_input, ctx) =>
+    const journal = await seedRun();
+    const outcome = await replayOn(journal, async (_input, ctx) =>
       Promise.race([ctx.sleep("week", WEEK_MS), ctx.step("fast", () => "work won")]),
     );
 

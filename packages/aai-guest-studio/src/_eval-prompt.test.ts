@@ -109,8 +109,7 @@ describe("studioPromptKind", () => {
 describe("studioStarter", () => {
   test("finds a starter by the studio's own label", () => {
     const [first] = studioStarters("agent");
-    expect(first).toBeDefined();
-    if (!first) return;
+    expect.assert(first);
     expect(studioStarter("agent", first.label)).toEqual(first);
   });
 

@@ -84,17 +84,19 @@ export function refusingDdl(failures = 0): SqlHandler {
 }
 
 /**
- * A fake `SqlExec` that records every statement and answers from one
- * `respond` function — for stores whose specs assert on the statements
- * issued rather than on state accumulated across them.
+ * A fake `SqlExec` answering from one `respond` function, as a `vi.fn` — for
+ * stores whose specs assert on the statements issued (`mock.calls`, each a
+ * `[query, params]` pair) rather than on state accumulated across them.
  */
 export function createRecordingSql(
   respond: (query: string, params: unknown[]) => Record<string, unknown>[] = () => [],
-): { sql: SqlExec; calls: SqlCall[] } {
-  const calls: SqlCall[] = [];
-  const sql: SqlExec = (query, params = []) => {
-    calls.push({ query, params });
-    return Promise.resolve(respond(query, params));
-  };
-  return { sql, calls };
+) {
+  return vi.fn<SqlExec>(async (query, params = []) => respond(query, params));
 }
+
+/**
+ * Code-unit order, the repo's standing rule for anything an assertion sorts —
+ * `localeCompare` with no explicit locale answers to the runtime's ICU default,
+ * so the same rows would sort differently on another machine.
+ */
+export const byCodeUnit = (a: string, b: string): number => Number(a > b) - Number(a < b);

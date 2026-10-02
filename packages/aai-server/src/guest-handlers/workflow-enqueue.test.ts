@@ -99,7 +99,7 @@ describe("POST /:slug/workflow-enqueue", () => {
       const res = await enqueue(p.fetch, SLUG, { bearer: await bearerFor(p.store, OTHER) });
       expect(res.status).toBe(401);
       // Nothing was written for the slug the caller was not authorized for.
-      expect(p.statements.some((s) => s.startsWith("insert"))).toBe(false);
+      expect(p.statements).not.toContainEqual(expect.stringMatching(/^insert/));
     });
 
     test.each([
@@ -173,7 +173,7 @@ describe("POST /:slug/workflow-enqueue", () => {
       // expressed here.
       const res = await enqueue(p.fetch, SLUG, { bearer, json });
       expect(res.status).toBe(400);
-      expect(p.statements.some((s) => s.startsWith("insert"))).toBe(false);
+      expect(p.statements).not.toContainEqual(expect.stringMatching(/^insert/));
     });
 
     test.each([
@@ -191,7 +191,7 @@ describe("POST /:slug/workflow-enqueue", () => {
       const bearer = await bearerFor(p.store, SLUG);
       const res = await enqueue(p.fetch, SLUG, { bearer, json: body({ queueName }) });
       expect(res.status).toBe(200);
-      expect(p.statements.some((s) => s.startsWith("insert"))).toBe(true);
+      expect(p.statements).toContainEqual(expect.stringMatching(/^insert/));
     });
 
     test("accepts an EMPTY data string, which is a legal empty payload", async () => {

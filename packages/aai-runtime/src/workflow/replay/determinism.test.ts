@@ -18,9 +18,9 @@
 import type { WorkflowContext } from "@alexkroman1/aai";
 import fc from "fast-check";
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryJournal } from "../journal/backends/memory.ts";
+import { replayOn, seedRun } from "../_replay-test-utils.ts";
 import type { JournalStore } from "../journal/types.ts";
-import { replayRun } from "../replay.ts";
+import type { replayRun } from "../replay.ts";
 import {
   DETERMINISM_KINDS,
   type DeterminismKind,
@@ -30,21 +30,9 @@ import {
 
 type Body = (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown;
 
-async function seed(runId = "wrun_j"): Promise<JournalStore> {
-  const journal = createMemoryJournal();
-  await journal.createRun({
-    runId,
-    workflow: "billing",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  });
-  return journal;
-}
-
-function replay(journal: JournalStore, run: Body, runId = "wrun_j") {
-  return replayRun({ runId, workflow: "billing", input: {}, run, journal });
-}
+const RUN_IDENTITY = { runId: "wrun_j", workflow: "billing" };
+const RUN_A = { ...RUN_IDENTITY, runId: "wrun_a" };
+const RUN_B = { ...RUN_IDENTITY, runId: "wrun_b" };
 
 type Outcome = Awaited<ReturnType<typeof replayRun>>;
 
@@ -79,16 +67,16 @@ async function twoWalks(
   journal: JournalStore,
   body: Body,
 ): Promise<{ first: Outcome; second: Outcome }> {
-  const first = await replay(journal, body);
+  const first = await replayOn(journal, body, RUN_IDENTITY);
   await journal.wakeSleeps("wrun_j", undefined);
-  const second = await replay(journal, body);
+  const second = await replayOn(journal, body, RUN_IDENTITY);
   return { first, second };
 }
 
 describe("a first reach", () => {
   test("reads the source once and journals the value under its own key", async () => {
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => ctx.now());
+    const journal = await seedRun(RUN_IDENTITY);
+    const outcome = await replayOn(journal, async (_input, ctx) => ctx.now(), RUN_IDENTITY);
 
     const steps = await journal.readSteps("wrun_j");
     expect(steps.map((step) => step.key)).toEqual(["now!0"]);
@@ -99,13 +87,17 @@ describe("a first reach", () => {
   });
 
   test("counts each kind separately, so inserting one shifts no other", async () => {
-    const journal = await seed();
-    await replay(journal, async (_input, ctx) => {
-      await ctx.uuid();
-      await ctx.now();
-      await ctx.random();
-      await ctx.uuid();
-    });
+    const journal = await seedRun(RUN_IDENTITY);
+    await replayOn(
+      journal,
+      async (_input, ctx) => {
+        await ctx.uuid();
+        await ctx.now();
+        await ctx.random();
+        await ctx.uuid();
+      },
+      RUN_IDENTITY,
+    );
 
     // `uuid!0` and `uuid!1` although a `ctx.now()` and a `ctx.random()` sit
     // between them: one shared counter would have produced `…!0` through `…!3`,
@@ -120,12 +112,16 @@ describe("a first reach", () => {
   });
 
   test("gives one call site in a loop a distinct key and value per iteration", async () => {
-    const journal = await seed();
-    const drawn = (await replay(journal, async (_input, ctx) => {
-      const out: number[] = [];
-      for (let i = 0; i < 3; i++) out.push(await ctx.random());
-      return out;
-    })) as { output: number[] };
+    const journal = await seedRun(RUN_IDENTITY);
+    const drawn = (await replayOn(
+      journal,
+      async (_input, ctx) => {
+        const out: number[] = [];
+        for (let i = 0; i < 3; i++) out.push(await ctx.random());
+        return out;
+      },
+      RUN_IDENTITY,
+    )) as { output: number[] };
 
     expect((await journal.readSteps("wrun_j")).map((step) => step.key)).toEqual([
       "random!0",
@@ -138,14 +134,18 @@ describe("a first reach", () => {
   });
 
   test("charges no step ATTEMPT, and records that it charged none", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const claimed = vi.spyOn(journal, "claimAttempt");
 
-    await replay(journal, async (_input, ctx) => {
-      await ctx.now();
-      await ctx.random();
-      await ctx.uuid();
-    });
+    await replayOn(
+      journal,
+      async (_input, ctx) => {
+        await ctx.now();
+        await ctx.random();
+        await ctx.uuid();
+      },
+      RUN_IDENTITY,
+    );
 
     // These calls cannot fail, so there is no body to abandon and nothing for a
     // lease to be evidence of — see the module doc's decision 2.
@@ -157,7 +157,7 @@ describe("a first reach", () => {
 describe("a second walk of the same body", () => {
   test.each(DETERMINISM_KINDS)("sees the same value from ctx.%s()", async (kind) => {
     tickingClock();
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const seen: unknown[] = [];
     const body: Body = async (_input, ctx) => {
       seen.push(await ctx[kind]());
@@ -189,7 +189,7 @@ describe("a second walk of the same body", () => {
    * re-read of the source, on the path a long-running run walks most.
    */
   test("answers from the walk's snapshot without a journal write, or a second read", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const appended = vi.spyOn(journal, "appendStep");
     const body: Body = async (_input, ctx) => {
       await ctx.random();
@@ -212,8 +212,8 @@ describe("a second walk of the same body", () => {
       await ctx.uuid(),
     ];
 
-    const one = await replay(await seed("wrun_a"), body, "wrun_a");
-    const two = await replay(await seed("wrun_b"), body, "wrun_b");
+    const one = await replayOn(await seedRun(RUN_A), body, RUN_A);
+    const two = await replayOn(await seedRun(RUN_B), body, RUN_B);
 
     expect(one.kind).toBe("completed");
     expect(two.kind).toBe("completed");
@@ -221,7 +221,7 @@ describe("a second walk of the same body", () => {
   });
 
   test("answers with the STORE's value, not its own, when a redelivery raced it", async () => {
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     // `appendStep` is idempotent on the key and resolves the entry that is now
     // authoritative. Standing in for the racing delivery: something else got
     // there first, and both walks have to answer the same thing or they diverge
@@ -232,7 +232,7 @@ describe("a second walk of the same body", () => {
       return real(runId, entry);
     });
 
-    const outcome = await replay(journal, async (_input, ctx) => ctx.uuid());
+    const outcome = await replayOn(journal, async (_input, ctx) => ctx.uuid(), RUN_IDENTITY);
 
     expect(outcome).toEqual({ kind: "completed", output: "from-the-race" });
   });
@@ -240,9 +240,11 @@ describe("a second walk of the same body", () => {
 
 describe("a read inside a ctx.step", () => {
   test("is REFUSED, naming the step and the remedy", async () => {
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) =>
-      ctx.step("stamp", () => ctx.now()),
+    const journal = await seedRun(RUN_IDENTITY);
+    const outcome = await replayOn(
+      journal,
+      async (_input, ctx) => ctx.step("stamp", () => ctx.now()),
+      RUN_IDENTITY,
     );
 
     const message = failure(outcome);
@@ -255,15 +257,19 @@ describe("a read inside a ctx.step", () => {
   });
 
   test("fails the run even when the body swallows the refusal", async () => {
-    const journal = await seed();
-    const outcome = await replay(journal, async (_input, ctx) => {
-      try {
-        await ctx.step("stamp", () => ctx.uuid());
-      } catch {
-        // Exactly what one shipped template's saga does around its whole body.
-      }
-      return "looks fine";
-    });
+    const journal = await seedRun(RUN_IDENTITY);
+    const outcome = await replayOn(
+      journal,
+      async (_input, ctx) => {
+        try {
+          await ctx.step("stamp", () => ctx.uuid());
+        } catch {
+          // Exactly what one shipped template's saga does around its whole body.
+        }
+        return "looks fine";
+      },
+      RUN_IDENTITY,
+    );
 
     // `completed` here would be the silence the held refusal exists to end.
     expect(outcome.kind).toBe("failed");
@@ -271,14 +277,18 @@ describe("a read inside a ctx.step", () => {
   });
 
   test("leaves the key space untouched, so the failure names one cause", async () => {
-    const journal = await seed();
-    await replay(journal, async (_input, ctx) => {
-      try {
-        await ctx.step("stamp", () => ctx.now());
-      } catch {
-        // See above.
-      }
-    });
+    const journal = await seedRun(RUN_IDENTITY);
+    await replayOn(
+      journal,
+      async (_input, ctx) => {
+        try {
+          await ctx.step("stamp", () => ctx.now());
+        } catch {
+          // See above.
+        }
+      },
+      RUN_IDENTITY,
+    );
 
     // No `now!0` was appended, and no occurrence was consumed — the refusal is
     // checked BEFORE the counter advances.
@@ -304,7 +314,7 @@ describe("the divergence check", () => {
    */
   test("does not accuse a healthy resume that read the clock between two steps", async () => {
     tickingClock();
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     let crash = true;
     const body: Body = async (_input, ctx) => {
       await ctx.step("first", () => 1);
@@ -314,16 +324,16 @@ describe("the divergence check", () => {
       return at;
     };
 
-    expect((await replay(journal, body)).kind).toBe("failed");
+    expect((await replayOn(journal, body, RUN_IDENTITY)).kind).toBe("failed");
     crash = false;
-    const resumed = await replay(journal, body);
+    const resumed = await replayOn(journal, body, RUN_IDENTITY);
 
     expect(resumed.kind, failure(resumed)).toBe("completed");
   });
 
   test("still refuses a body whose step NAME moved, with a determinism read in it", async () => {
     tickingClock();
-    const journal = await seed();
+    const journal = await seedRun(RUN_IDENTITY);
     const charge = vi.fn(() => "receipt");
     let coin = "h";
     const body: Body = async (_input, ctx) => {
@@ -332,13 +342,13 @@ describe("the divergence check", () => {
       await ctx.sleep("nap", 60_000);
     };
 
-    expect((await replay(journal, body)).kind).toBe("suspended");
+    expect((await replayOn(journal, body, RUN_IDENTITY)).kind).toBe("suspended");
     coin = "t";
     await journal.wakeSleeps("wrun_j", undefined);
 
     // Refused at the STEP rather than at the read, which is the documented
     // one-call-later miss — and the side effect is the assertion.
-    expect((await replay(journal, body)).kind).toBe("failed");
+    expect((await replayOn(journal, body, RUN_IDENTITY)).kind).toBe("failed");
     expect(charge).toHaveBeenCalledTimes(1);
   });
 });
@@ -359,7 +369,7 @@ describe("the property, over bodies nobody wrote by hand", () => {
         fc.nat(),
         async (kinds: readonly DeterminismKind[], rawSplit: number) => {
           const split = rawSplit % (kinds.length + 1);
-          const journal = await seed();
+          const journal = await seedRun(RUN_IDENTITY);
           const walks: unknown[][] = [];
           const body: Body = async (_input, ctx) => {
             // Pushed on ENTRY, not on exit: the first walk unwinds at the sleep
@@ -376,11 +386,11 @@ describe("the property, over bodies nobody wrote by hand", () => {
             return seen;
           };
 
-          const first = await replay(journal, body);
+          const first = await replayOn(journal, body, RUN_IDENTITY);
           expect(first.kind).toBe("suspended");
           reached.suspends++;
           await journal.wakeSleeps("wrun_j", undefined);
-          const second = await replay(journal, body);
+          const second = await replayOn(journal, body, RUN_IDENTITY);
           expect(second.kind, failure(second)).toBe("completed");
 
           // The first walk unwound at the sleep, so only the reads BEFORE it

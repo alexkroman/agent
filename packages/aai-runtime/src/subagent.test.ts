@@ -8,7 +8,7 @@
  */
 
 import { speaker, tool } from "@alexkroman1/aai";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   createScriptedOneShotModel,
@@ -18,16 +18,9 @@ import {
 import { createSubagentRunner, NESTED_DELEGATE_MESSAGE } from "./subagent.ts";
 import type { ToolCallDefaults } from "./tools/index.ts";
 
-let unregister: (() => void) | undefined;
-afterEach(() => {
-  unregister?.();
-  unregister = undefined;
-});
-
 function setup(script: readonly ScriptedTurn[]) {
   const model = createScriptedOneShotModel(script);
   const fakes = registerFakeProviders({ llm: model });
-  unregister = fakes.unregister;
   if (!fakes.llm) throw new Error("fake llm descriptor missing");
   return { model, descriptor: fakes.llm, env: fakes.env };
 }

@@ -6,12 +6,10 @@
  * SubprocessSpawnContext, so no real harness is ever started.
  */
 
-import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { CONTAINED_ENV } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, it, vi } from "vitest";
-import { createFakeGuestSocket, type FakeGuestSocket } from "./sandbox/_vm-test-utils.ts";
+import { createFakeGuestSocket, makeFakeDial, makeHarnessFile } from "./sandbox/_vm-test-utils.ts";
 import {
   _internals,
   buildHarnessSpawn,
@@ -55,23 +53,6 @@ function makeCtx(fake: FakeProc): SubprocessSpawnContext & { runs: HarnessSpawnP
       return fake.proc;
     },
   };
-}
-
-/** A dial fn resolving to a fake guest socket, recording its arguments. */
-function makeFakeDial(socket: FakeGuestSocket) {
-  const calls: { url: string; token: string }[] = [];
-  const dial = async (url: string, token: string) => {
-    calls.push({ url, token });
-    return socket.ws;
-  };
-  return { dial, calls };
-}
-
-async function makeHarnessFile(content = "// harness"): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "aai-subprocess-test-"));
-  const path = join(dir, "harness.mjs");
-  await writeFile(path, content, "utf-8");
-  return path;
 }
 
 const BASE_PARAMS: HarnessSpawnParams = {
@@ -150,7 +131,7 @@ describe("spawnSubprocessWarm", () => {
     const fake = makeFakeProc();
     const ctx = makeCtx(fake);
     const socket = createFakeGuestSocket();
-    const { dial, calls } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
     const harnessPath = await makeHarnessFile();
 
     const warm = await spawnSubprocessWarm({ harnessPath, slug: "demo" }, ctx, dial);
@@ -160,8 +141,7 @@ describe("spawnSubprocessWarm", () => {
     expect(run?.harnessPath).toBe(harnessPath);
     // Control channel and session endpoint share the one bound port, exactly
     // as they share the tunnel on the containerized backends.
-    expect(calls[0]?.url).toBe(`ws://127.0.0.1:${run?.port}/ws`);
-    expect(calls[0]?.token).toBe(run?.token);
+    expect(dial).toHaveBeenCalledWith(`ws://127.0.0.1:${run?.port}/ws`, run?.token);
     expect(warm.sessionUrl).toBe(`ws://127.0.0.1:${run?.port}/websocket`);
     expect(warm.alive()).toBe(true);
     await warm.cleanup();
@@ -172,7 +152,7 @@ describe("spawnSubprocessWarm", () => {
     const spawnOne = async () => {
       const fake = makeFakeProc();
       const ctx = makeCtx(fake);
-      const { dial } = makeFakeDial(createFakeGuestSocket());
+      const dial = makeFakeDial(createFakeGuestSocket());
       const warm = await spawnSubprocessWarm({ harnessPath }, ctx, dial);
       await warm.cleanup();
       return ctx.runs[0];
@@ -186,7 +166,7 @@ describe("spawnSubprocessWarm", () => {
   it("marks the harness dead when the child process exits", async () => {
     const fake = makeFakeProc();
     const ctx = makeCtx(fake);
-    const { dial } = makeFakeDial(createFakeGuestSocket());
+    const dial = makeFakeDial(createFakeGuestSocket());
     const harnessPath = await makeHarnessFile();
     const warm = await spawnSubprocessWarm({ harnessPath }, ctx, dial);
 
@@ -203,7 +183,7 @@ describe("spawnSubprocessWarm", () => {
     vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "256");
     const fake = makeFakeProc();
     const ctx = makeCtx(fake);
-    const { dial } = makeFakeDial(createFakeGuestSocket());
+    const dial = makeFakeDial(createFakeGuestSocket());
     const harnessPath = await makeHarnessFile();
     const warm = await spawnSubprocessWarm({ harnessPath }, ctx, dial);
     expect(ctx.runs[0]).toMatchObject({ memoryLimitMiB: 256 });
@@ -227,7 +207,7 @@ describe("spawnSubprocessWarm", () => {
     // exited immediately — the failure mode that motivated this backend.
     const fake = makeFakeProc();
     const ctx = makeCtx(fake);
-    const { dial } = makeFakeDial(createFakeGuestSocket());
+    const dial = makeFakeDial(createFakeGuestSocket());
     await expect(
       spawnSubprocessWarm({ harnessPath: "/nonexistent/harness.mjs" }, ctx, dial),
     ).rejects.toThrow(/Subprocess sandbox spawn failed.*nonexistent\/harness\.mjs/s);
@@ -237,7 +217,7 @@ describe("spawnSubprocessWarm", () => {
   it("cleanup is memoized: one kill for concurrent callers", async () => {
     const fake = makeFakeProc();
     const ctx = makeCtx(fake);
-    const { dial } = makeFakeDial(createFakeGuestSocket());
+    const dial = makeFakeDial(createFakeGuestSocket());
     const harnessPath = await makeHarnessFile();
     const warm = await spawnSubprocessWarm({ harnessPath }, ctx, dial);
 
@@ -253,12 +233,12 @@ describe("spawnSubprocessWarm", () => {
     const fake = makeFakeProc();
     const ctx = makeCtx(fake);
     const socket = createFakeGuestSocket();
-    const { dial } = makeFakeDial(socket);
+    const dial = makeFakeDial(socket);
     const harnessPath = await makeHarnessFile();
     const warm = await spawnSubprocessWarm({ harnessPath }, ctx, dial);
 
     await warm[Symbol.asyncDispose]();
-    expect(socket.sentMessages().some((m) => m.method === "shutdown")).toBe(true);
+    expect(socket.sentMessages()).toContainEqual(expect.objectContaining({ method: "shutdown" }));
     expect(fake.kill).toHaveBeenCalled();
     expect(warm.alive()).toBe(false);
   });

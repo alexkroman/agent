@@ -155,14 +155,14 @@ describe("createPgChatStore SQL", () => {
   });
 
   test("reads accept a jsonb column that arrives pre-parsed", async () => {
-    const { sql } = createRecordingSql((query) =>
+    const sql = createRecordingSql((query) =>
       query.includes("select messages") ? [{ messages: [msg("m1")] }] : [],
     );
     expect(await createPgChatStore(sql).getChat("s", "p")).toEqual([msg("m1")]);
   });
 
   test("a malformed stored value reads as null, not a crash", async () => {
-    const { sql } = createRecordingSql((query) =>
+    const sql = createRecordingSql((query) =>
       query.includes("select messages") ? [{ messages: { not: "an array" } }] : [],
     );
     expect(await createPgChatStore(sql).getChat("s", "p")).toBeNull();

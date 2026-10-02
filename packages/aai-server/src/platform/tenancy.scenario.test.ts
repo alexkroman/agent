@@ -66,34 +66,21 @@
  * test the one world in which a leak has nothing to leak.
  */
 
-import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import fc from "fast-check";
-import { afterAll, beforeAll, expect, test } from "vitest";
-import { describeWithPg, pgUrl } from "../_pg-test-utils.ts";
+import { afterAll, expect, test } from "vitest";
+import { describeWithPg } from "../_pg-test-utils.ts";
 import { emptyCensus, programArb, SLUGS } from "../_tenancy-ops-harness.ts";
 import { createPlatformArm } from "../_tenancy-platform-harness.ts";
 import { checkPartition, explain } from "../_tenancy-world-harness.ts";
-import type { SqlExec } from "../sql-exec.ts";
-import { ensurePlatformTables } from "./_schema-test-utils.ts";
+import { usePlatformDb } from "./_schema-test-utils.ts";
 
 describeWithPg("the platform's stores over a real Postgres, two tenants at once", () => {
-  let db: ReturnType<typeof createPostgresDb>;
-  let sql: SqlExec;
-
-  beforeAll(async () => {
-    // `pgUrl()` inside the hook and never at the top of this body: vitest
-    // EXECUTES a skipped describe's callback to enumerate what it is skipping,
-    // so a read up there fails the file instead of skipping it.
-    db = createPostgresDb({ url: pgUrl(), max: 4 });
-    sql = (query, params) => db.query(query, params);
-    await ensurePlatformTables(sql);
-  });
+  const sql = usePlatformDb();
 
   afterAll(async () => {
     // Both tenants' rows go with their agents — every table here cascades from
     // `aai_platform.agents`.
     await sql("delete from aai_platform.agents where slug = any($1::text[])", [[...SLUGS]]);
-    await db.close();
   });
 
   const seen = emptyCensus();

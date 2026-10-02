@@ -118,15 +118,14 @@ describe("SSRF: redirect chain validation", () => {
   });
 
   test("ssrfSafeFetch enforces max redirect limit", async () => {
-    let callCount = 0;
     // Use a public IP literal to avoid DNS lookups that cause timeouts
-    const mockFetch = vi.fn(async () => {
-      callCount++;
-      return new Response("", {
-        status: 302,
-        headers: { Location: `https://93.184.216.34/hop-${callCount}` },
-      });
-    });
+    const mockFetch = vi.fn(
+      async () =>
+        new Response("", {
+          status: 302,
+          headers: { Location: `https://93.184.216.34/hop-${mockFetch.mock.calls.length}` },
+        }),
+    );
 
     await expect(
       ssrfSafeFetch("https://93.184.216.34/start", {}, fakeFetch(mockFetch)),
@@ -136,35 +135,27 @@ describe("SSRF: redirect chain validation", () => {
     // five requests and then gives up. `toBeLessThanOrEqual` also passed at 1,
     // i.e. it could not tell "follows the chain five deep" from "refuses to
     // follow at all" — the two behaviours this bound sits between.
-    expect(callCount).toBe(5);
+    expect(mockFetch).toHaveBeenCalledTimes(5);
   });
 
   test("ssrfSafeFetch re-validates each hop in redirect chain", async () => {
-    let callCount = 0;
     // Use a public IP literal to avoid DNS lookups that cause timeouts
-    const mockFetch = vi.fn(async (url: string) => {
-      callCount++;
-      if (callCount <= 2) {
-        return new Response("", {
-          status: 302,
-          headers: { Location: "https://93.184.216.34/safe-hop" },
-        });
-      }
+    const hop = (location: string) =>
+      new Response("", { status: 302, headers: { Location: location } });
+    const mockFetch = vi
+      .fn(async (url: string): Promise<Response> => {
+        throw new Error(`redirect target must never be fetched: ${url}`);
+      })
+      .mockResolvedValueOnce(hop("https://93.184.216.34/safe-hop"))
+      .mockResolvedValueOnce(hop("https://93.184.216.34/safe-hop"))
       // Third redirect goes to private IP
-      if (callCount === 3) {
-        return new Response("", {
-          status: 302,
-          headers: { Location: "http://192.168.1.1/" },
-        });
-      }
-      throw new Error(`redirect target must never be fetched: ${url}`);
-    });
+      .mockResolvedValueOnce(hop("http://192.168.1.1/"));
 
     await expect(
       ssrfSafeFetch("https://93.184.216.34/start", {}, fakeFetch(mockFetch)),
     ).rejects.toThrow("Blocked request to private address: 192.168.1.1");
     // Three hops requested; the fourth — the private one — never is.
-    expect(callCount).toBe(3);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
   test("strips credential headers on a cross-origin redirect", async () => {

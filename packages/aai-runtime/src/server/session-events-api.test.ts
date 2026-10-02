@@ -97,7 +97,7 @@ describe("GET /session-events/:id", () => {
 
     expect(res.statusCode).toBe(200);
     expect(json()).toMatchObject({ sessionId: SID, startIndex: 0, tail: 2, durable: false });
-    expect((json().events as unknown[]).length).toBe(2);
+    expect(json().events as unknown[]).toHaveLength(2);
   });
 
   test("startIndex selects a position", async () => {
@@ -106,7 +106,7 @@ describe("GET /session-events/:id", () => {
       `${SESSION_EVENTS_PATH}/${SID}?startIndex=1`,
     );
     expect(json()).toMatchObject({ startIndex: 1, tail: 2 });
-    expect((json().events as unknown[]).length).toBe(1);
+    expect(json().events as unknown[]).toHaveLength(1);
   });
 
   test("a negative startIndex counts back from the end", async () => {

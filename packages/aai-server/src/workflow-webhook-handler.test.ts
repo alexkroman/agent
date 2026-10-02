@@ -15,7 +15,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { createTestOrchestrator, type TestFetch } from "./_orchestrator-test-utils.ts";
-import { deployAgent } from "./_request-test-utils.ts";
+import { deployAgent, recordingGuest } from "./_request-test-utils.ts";
 import { fakeSandbox, spawnedAgent } from "./_sandbox-test-utils.ts";
 import { GUEST_ROUTE_EXPOSURE } from "./guest/routes.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
@@ -29,24 +29,10 @@ import type { SpawnAgentServer } from "./sandbox.ts";
  */
 const mockSpawnAgentServer = vi.fn<SpawnAgentServer>();
 
+const accepted = (): Response => new Response(null, { status: 202 });
+
 const TOKEN = "wh_abc123";
 const WEBHOOK_PATH = `/my-agent/.well-known/workflow/v1/webhook/${TOKEN}`;
-
-/** Records what the platform forwarded, and answers as the guest would. */
-function recordingGuest(answer: () => Response = () => new Response(null, { status: 202 })) {
-  const calls: { url: string; method: string; headers: Headers; body: string }[] = [];
-  const fetchFn: typeof globalThis.fetch = async (input, init) => {
-    const req = new Request(input, init);
-    calls.push({
-      url: req.url,
-      method: req.method,
-      headers: req.headers,
-      body: await req.text(),
-    });
-    return answer();
-  };
-  return { calls, fetchFn };
-}
 
 /** An orchestrator with a deployed agent and a live resident sandbox. */
 async function residentHarness(guestFetch?: typeof globalThis.fetch) {
@@ -76,7 +62,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   });
 
   test("forwards the delivery to the guest's own webhook endpoint, token included", async () => {
-    const guest = recordingGuest();
+    const guest = recordingGuest(accepted);
     const harness = await residentHarness(guest.fetchFn);
 
     const res = await post(harness.fetch, WEBHOOK_PATH, {
@@ -125,7 +111,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   });
 
   test("keeps the query string, which is part of the URL the sender was given", async () => {
-    const guest = recordingGuest();
+    const guest = recordingGuest(accepted);
     const harness = await residentHarness(guest.fetchFn);
 
     await post(harness.fetch, `${WEBHOOK_PATH}?attempt=2`);
@@ -136,7 +122,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   test("does not forward the platform's own hop headers", async () => {
     // `host` names the platform, and `content-length` is re-framed by the
     // fetch that carries the body onward.
-    const guest = recordingGuest();
+    const guest = recordingGuest(accepted);
     const harness = await residentHarness(guest.fetchFn);
 
     await post(harness.fetch, WEBHOOK_PATH, { body: "hi" });
@@ -152,7 +138,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
     // tenant code. They describe the caller to US; the run receives the
     // SENDER'S message, which is why the rest still passes through unfiltered
     // (see the Stripe-Signature spec above).
-    const guest = recordingGuest();
+    const guest = recordingGuest(accepted);
     const harness = await residentHarness(guest.fetchFn);
 
     await post(harness.fetch, WEBHOOK_PATH, {
@@ -177,7 +163,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   test("re-encodes a token so the guest still sees ONE path segment", async () => {
     // The guest rejects an embedded `/` before decoding (`webhookToken`), so a
     // token carrying one has to stay percent-encoded across the hop.
-    const guest = recordingGuest();
+    const guest = recordingGuest(accepted);
     const harness = await residentHarness(guest.fetchFn);
 
     await post(harness.fetch, "/my-agent/.well-known/workflow/v1/webhook/a%2Fb");
@@ -188,7 +174,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   test.each([...GUEST_ROUTE_EXPOSURE.workflowWebhook.methods])(
     "answers %s, the one verb a delivery can arrive on",
     async (method) => {
-      const guest = recordingGuest();
+      const guest = recordingGuest(accepted);
       const harness = await residentHarness(guest.fetchFn);
 
       const res = await harness.fetch(WEBHOOK_PATH, { method, body: "{}" });
@@ -207,7 +193,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   test.each(["GET", "HEAD", "PUT", "PATCH", "DELETE"])(
     "refuses %s at the platform edge, never reaching the guest",
     async (method) => {
-      const guest = recordingGuest();
+      const guest = recordingGuest(accepted);
       const harness = await residentHarness(guest.fetchFn);
 
       const res = await harness.fetch(WEBHOOK_PATH, { method });
@@ -222,7 +208,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
     // started it, and agent mode self-exits on idle — so the common case has
     // NO resident sandbox, and a webhook that 404'd there would strand the run
     // until someone dialled the agent by hand.
-    const guest = recordingGuest();
+    const guest = recordingGuest(accepted);
     const slots = createSlotCache();
     const harness = await createTestOrchestrator({
       spawnAgentServer: mockSpawnAgentServer,
@@ -240,7 +226,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   });
 
   test("404s an unknown slug", async () => {
-    const guest = recordingGuest();
+    const guest = recordingGuest(accepted);
     const harness = await createTestOrchestrator({
       spawnAgentServer: mockSpawnAgentServer,
       guestFetch: guest.fetchFn,
@@ -255,7 +241,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   test("answers 503 with a Retry-After while the sandbox is still booting", async () => {
     // The boot continues server-side and the sender's retry joins it — the
     // same deal a browser gets for free by re-brokering.
-    const guest = recordingGuest();
+    const guest = recordingGuest(accepted);
     const slots = createSlotCache();
     const harness = await createTestOrchestrator({
       spawnAgentServer: mockSpawnAgentServer,
@@ -297,7 +283,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   });
 
   test("refuses a body far past any real webhook payload", async () => {
-    const guest = recordingGuest();
+    const guest = recordingGuest(accepted);
     const harness = await residentHarness(guest.fetchFn);
 
     const res = await post(harness.fetch, WEBHOOK_PATH, {

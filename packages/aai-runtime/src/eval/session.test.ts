@@ -238,7 +238,7 @@ describe("a turn nothing can be read off", () => {
       );
       // The whole point: the turn is still readable, so a case that MEANS to
       // observe a broken turn catches the throw and reads the stream itself.
-      expect(session.events().some((e) => e.type === "error.reported")).toBe(true);
+      expect(session.events()).toContainEqual(expect.objectContaining({ type: "error.reported" }));
     } finally {
       await session.close();
       release();
@@ -294,7 +294,7 @@ describe("a turn nothing can be read off", () => {
       // The failure reached the model, which explained itself — which is what
       // three shipped template evals assert about a gate they expect to refuse.
       expect(turn.text).toContain("could not");
-      expect(turn.events.some((e) => e.type === "error.reported")).toBe(true);
+      expect(turn.events).toContainEqual(expect.objectContaining({ type: "error.reported" }));
     } finally {
       await session.close();
       release();

@@ -10,7 +10,7 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { fakeAdminDbOver } from "./_sql-test-utils.ts";
 import type { AdminDb } from "./platform/lock.ts";
@@ -152,6 +152,14 @@ function fakeDb(claimed: QueuedMessage[]): {
  */
 const flushListen = (): Promise<void> => Promise.resolve();
 
+/** Fake timers for the calling test only. */
+function useVirtualTime(): void {
+  vi.useFakeTimers();
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+}
+
 describe("runQueuePass", () => {
   test("does nothing without a platform database", async () => {
     const deliver = vi.fn(completes);
@@ -237,8 +245,8 @@ describe("runQueuePass", () => {
     expect(pass.retried).toBe(1);
     // Updated (attempt + available_at), never deleted — a lost message is a
     // stalled run.
-    expect(statements.some((s) => s.includes("set attempt ="))).toBe(true);
-    expect(statements.some((s) => s.startsWith("delete from"))).toBe(false);
+    expect(statements).toContainEqual(expect.stringContaining("set attempt ="));
+    expect(statements).not.toContainEqual(expect.stringMatching(/^delete from/));
   });
 
   test("a message past its retry budget is abandoned, and says so", async () => {
@@ -347,8 +355,8 @@ describe("a run that parked itself", () => {
     });
     expect(pass).toEqual({ claimed: 1, delivered: 0, rescheduled: 1, retried: 0, dropped: 0 });
     // NOT deleted: the message has to come back.
-    expect(statements.some((s) => s.startsWith("delete from"))).toBe(false);
-    expect(statements.some((s) => s.includes("set locked_at = null"))).toBe(true);
+    expect(statements).not.toContainEqual(expect.stringMatching(/^delete from/));
+    expect(statements).toContainEqual(expect.stringContaining("set locked_at = null"));
   });
 
   /**
@@ -364,7 +372,7 @@ describe("a run that parked itself", () => {
     });
     // attempt 4 of a 5-attempt budget: read as a failure this would be DROPPED.
     expect(pass).toEqual({ claimed: 1, delivered: 0, rescheduled: 1, retried: 0, dropped: 0 });
-    expect(statements.some((s) => s.includes("set attempt ="))).toBe(false);
+    expect(statements).not.toContainEqual(expect.stringContaining("set attempt ="));
     expect(logs.warns()).toEqual([]);
   });
 
@@ -449,6 +457,9 @@ describe("a slow delivery", () => {
   }
 
   test("does not stop the next message from being claimed and delivered", async () => {
+    // Virtual time: `vi.waitFor` advances the fake clock by its interval on
+    // every check, so the 5ms ticks fire without a wall-clock wait.
+    useVirtualTime();
     const { db } = fakeDbPerClaim([[msg("slow")], [msg("next")]]);
     const holding = Promise.withResolvers<Delivered>();
     const started: string[] = [];
@@ -480,6 +491,7 @@ describe("a slow delivery", () => {
    * delivery is now the ordinary case rather than the rare one.
    */
   test("holds the claim once every delivery slot is taken", async () => {
+    useVirtualTime();
     const { db, claims } = fakeDbPerClaim([[msg("a")], [msg("b")], [msg("c")]]);
     const holding = Promise.withResolvers<Delivered>();
     const started: string[] = [];
@@ -497,7 +509,8 @@ describe("a slow delivery", () => {
     try {
       await vi.waitFor(() => expect(started).toEqual(["a", "b"]));
       const claimsWhenFull = claims();
-      await sleep(60);
+      // A dozen ticks' worth of virtual time.
+      await vi.advanceTimersByTimeAsync(60);
       // Ticks kept firing and every one of them declined to claim.
       expect(started).toEqual(["a", "b"]);
       expect(claims()).toBe(claimsWhenFull);
@@ -604,7 +617,7 @@ describe("delivery on NOTIFY", () => {
     await flushListen();
     notify();
     await vi.waitFor(() =>
-      expect(logs.warns().some((w) => w.includes("notified queue pass failed"))).toBe(true),
+      expect(logs.warns()).toContainEqual(expect.stringContaining("notified queue pass failed")),
     );
     expect(stop).not.toThrow();
   });
@@ -647,7 +660,7 @@ describe("a failed delivery is charged to the right budget", () => {
     expect(settledWith(statements)).toHaveLength(1);
     expect(settledWith(statements)[0]).toContain("unreachable_attempts");
     // And NOT the message's own counter, which is the whole point.
-    expect(statements.some((sql) => sql.includes("set attempt ="))).toBe(false);
+    expect(statements).not.toContainEqual(expect.stringContaining("set attempt ="));
   });
 
   test("a transport throw stays on the STRICTER budget, being ambiguous", async () => {

@@ -19,23 +19,10 @@
 
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import { createMemoryJournal } from "./journal/backends/memory.ts";
+import { seedRun } from "./_replay-test-utils.ts";
 import type { JournalStore } from "./journal/types.ts";
 import { replayRun } from "./replay.ts";
 import { currentRun } from "./run-context.ts";
-
-/** A running run in a fresh memory journal, ready to replay. */
-async function seed(): Promise<JournalStore> {
-  const journal = createMemoryJournal();
-  await journal.createRun({
-    runId: "wrun_1",
-    workflow: "digest",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  });
-  return journal;
-}
 
 /** Read `currentRun()?.step?.signal` from inside a step, and answer with it. */
 async function signalSeenInStep(
@@ -65,13 +52,13 @@ async function signalSeenInStep(
 describe("a step body's I/O can be cancelled", () => {
   test("the WALK's signal is in scope for the whole of a step body", async () => {
     const walk = new AbortController();
-    expect(await signalSeenInStep(await seed(), walk.signal)).toBe(walk.signal);
+    expect(await signalSeenInStep(await seedRun(), walk.signal)).toBe(walk.signal);
   });
 
   test("a walk with no signal leaves the step's undefined rather than inventing one", async () => {
     // A step called from a spec, and `aai dev`'s in-process delivery before a
     // cancel controller exists, both land here. An invented signal would be one
     // nothing ever aborts, which reads as working and is worse than none.
-    expect(await signalSeenInStep(await seed())).toBeUndefined();
+    expect(await signalSeenInStep(await seedRun())).toBeUndefined();
   });
 });

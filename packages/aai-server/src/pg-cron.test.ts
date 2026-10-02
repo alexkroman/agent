@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { CRON_JOB_PREFIX, platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
 import type { SqlExec } from "./sql-exec.ts";
 
@@ -13,46 +12,44 @@ import type { SqlExec } from "./sql-exec.ts";
  * would make every test here exercise the missing-extension path.
  */
 function captureSql(scheduled: string[] = [], hasCron = true) {
-  const calls: { query: string; params?: unknown[] }[] = [];
-  const sql: SqlExec = (query, params) => {
-    calls.push({ query, ...omitUndefined({ params }) });
-    if (query.includes("from pg_extension")) {
-      return Promise.resolve(hasCron ? [{ ok: 1 }] : []);
-    }
-    if (query.includes("from cron.job")) {
-      return Promise.resolve(scheduled.map((jobname) => ({ jobname })));
-    }
-    return Promise.resolve([]);
-  };
-  return { sql, calls };
+  return vi.fn<SqlExec>(async (query) => {
+    if (query.includes("from pg_extension")) return hasCron ? [{ ok: 1 }] : [];
+    if (query.includes("from cron.job")) return scheduled.map((jobname) => ({ jobname }));
+    return [];
+  });
 }
 
+/** The statements `sql` was handed, in order. */
+const queriesOf = (sql: ReturnType<typeof captureSql>): string[] =>
+  sql.mock.calls.map(([query]) => query);
+
 test("verifies the extension then upserts every job by name", async () => {
-  const { sql, calls } = captureSql();
+  const sql = captureSql();
   await schedulePlatformSweeps(sql, platformCronJobs());
 
   // A READ, not DDL. `create extension if not exists pg_cron` used to run here
   // and was redundant with the platform-schema migration, emitted a `42710`
   // NOTICE on every boot, and had every replica altering the database on the
   // admin connection to learn something it could ask.
-  expect(calls[0]?.query).toBe("select 1 as ok from pg_extension where extname = 'pg_cron'");
-  expect(calls.some((c) => c.query.startsWith("create extension"))).toBe(false);
-  const scheduled = calls.slice(1, 1 + platformCronJobs().length);
-  for (const [i, job] of platformCronJobs().entries()) {
-    expect(scheduled[i]?.query).toBe("select cron.schedule($1, $2, $3)");
-    expect(scheduled[i]?.params).toEqual([job.name, job.schedule, job.command]);
-  }
+  expect(sql.mock.calls[0]?.[0]).toBe("select 1 as ok from pg_extension where extname = 'pg_cron'");
+  expect(queriesOf(sql)).not.toContainEqual(expect.stringMatching(/^create extension/));
+  expect(sql.mock.calls.slice(1, 1 + platformCronJobs().length)).toEqual(
+    platformCronJobs().map((job) => [
+      "select cron.schedule($1, $2, $3)",
+      [job.name, job.schedule, job.command],
+    ]),
+  );
 });
 
 test("a database with no pg_cron is reported, and nothing is scheduled", async () => {
   // The caller treats this as non-fatal, so the value of throwing is the
   // SENTENCE: it names what will not happen and how to fix it, where the old
   // path silently altered the database instead.
-  const { sql, calls } = captureSql([], false);
+  const sql = captureSql([], false);
   await expect(schedulePlatformSweeps(sql, platformCronJobs())).rejects.toThrow(
     /pg_cron is not installed.*will\s+not run/s,
   );
-  expect(calls.some((c) => c.query.includes("cron.schedule"))).toBe(false);
+  expect(queriesOf(sql)).not.toContainEqual(expect.stringContaining("cron.schedule"));
 });
 
 /**
@@ -62,27 +59,27 @@ test("a database with no pg_cron is reported, and nothing is scheduled", async (
  * holds, so retirement cannot be forgotten.
  */
 test("unschedules every aai-sweep job it no longer declares", async () => {
-  const { sql, calls } = captureSql(["aai-sweep-rate-limits", "aai-sweep-slug-locks"]);
+  const sql = captureSql(["aai-sweep-rate-limits", "aai-sweep-slug-locks"]);
   await schedulePlatformSweeps(sql, [
     { name: "aai-sweep-rate-limits", schedule: "7 * * * *", command: "select 1" },
   ]);
-  expect(calls.filter((c) => c.query.includes("unschedule"))).toEqual([
-    { query: "select cron.unschedule($1::text)", params: ["aai-sweep-slug-locks"] },
+  expect(sql.mock.calls.filter(([query]) => query.includes("unschedule"))).toEqual([
+    ["select cron.unschedule($1::text)", ["aai-sweep-slug-locks"]],
   ]);
 });
 
 test("only looks at jobs it owns", async () => {
-  const { sql, calls } = captureSql();
+  const sql = captureSql();
   await schedulePlatformSweeps(sql, []);
-  const read = calls.find((c) => c.query.includes("from cron.job"));
+  const read = sql.mock.calls.find(([query]) => query.includes("from cron.job"));
   // A prefix match, so a job some other tenant of this database scheduled is
   // never in scope for unscheduling.
-  expect(read?.params).toEqual(["aai-sweep-%"]);
+  expect(read?.[1]).toEqual(["aai-sweep-%"]);
 });
 
 /** A concurrent boot may have unscheduled it between the read and the call. */
 test("tolerates an unschedule that finds nothing", async () => {
-  const { sql } = captureSql(["aai-sweep-gone"]);
+  const sql = captureSql(["aai-sweep-gone"]);
   const failing: SqlExec = (query, params) =>
     query.includes("unschedule")
       ? Promise.reject(new Error(`could not find job ${String(params?.[0])}`))

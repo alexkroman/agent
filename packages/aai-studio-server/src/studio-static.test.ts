@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import nodePath from "node:path";
 import type { AppContext } from "aai-server/http";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { chatUrlForGuest } from "./studio-session-broker.ts";
 import { createStudioClientHandlers, studioCsp } from "./studio-static.ts";
 
@@ -138,14 +138,9 @@ describe("studioCsp", () => {
 
     it("keeps the underlying parse failure as the cause", () => {
       // The message names the setting; the cause is what says why it failed.
-      let caught: unknown;
-      try {
-        studioCsp({ SANDBOX_BACKEND: "modal" }, { ...supabaseAuth, supabaseUrl: "abc123" });
-      } catch (error) {
-        caught = error;
-      }
-      expect(caught).toBeInstanceOf(Error);
-      expect((caught as Error).cause).toBeInstanceOf(Error);
+      expect(() =>
+        studioCsp({ SANDBOX_BACKEND: "modal" }, { ...supabaseAuth, supabaseUrl: "abc123" }),
+      ).toThrow(expect.objectContaining({ cause: expect.any(Error) }));
     });
   });
 });
@@ -162,10 +157,7 @@ describe("studio client handlers", () => {
   beforeEach(async () => {
     tmp.dir = await mkdtemp(nodePath.join(tmpdir(), "aai-studio-static-"));
     await writeFile(nodePath.join(tmp.dir, "package.json"), '{"name":"aai-studio-client"}');
-  });
-
-  afterEach(async () => {
-    await rm(tmp.dir, { recursive: true, force: true });
+    return () => rm(tmp.dir, { recursive: true, force: true });
   });
 
   /** Write `rel` into the faked build output. */

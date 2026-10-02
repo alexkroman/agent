@@ -28,6 +28,12 @@ const BASE_BUNDLE = {
   credential_hashes: ["hash1"],
 };
 
+/** A transient socket reset, the shape `fetch` rejects with. */
+const connReset = () =>
+  Object.assign(new TypeError("fetch failed"), {
+    cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
+  });
+
 describe("bundle store (agents rows + content-addressed blobs)", () => {
   test("putAgent + getAgent round-trip", async () => {
     const { store } = makeStore();
@@ -269,22 +275,13 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     await store.putAgent(BASE_BUNDLE);
     const workerKey = blobKey(contentHash(BASE_BUNDLE.worker));
 
-    const originalGetItem = storage.getItem.bind(storage);
-    let callCount = 0;
-    storage.getItem = (async (key: string) => {
-      if (key === workerKey) {
-        callCount++;
-        if (callCount < 3) {
-          throw Object.assign(new TypeError("fetch failed"), {
-            cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
-          });
-        }
-      }
-      return originalGetItem(key);
-    }) as typeof storage.getItem;
+    const getItem = vi
+      .spyOn(storage, "getItem")
+      .mockRejectedValueOnce(connReset())
+      .mockRejectedValueOnce(connReset());
 
     expect(await store.getWorkerCode("test-agent")).toBe(BASE_BUNDLE.worker);
-    expect(callCount).toBe(3);
+    expect(getItem.mock.calls).toEqual([[workerKey], [workerKey], [workerKey]]);
   });
 
   /**
@@ -300,22 +297,18 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     const workerKey = blobKey(contentHash(BASE_BUNDLE.worker));
 
     const originalSetItem = storage.setItem.bind(storage);
-    let callCount = 0;
-    storage.setItem = (async (key: string, value: string) => {
-      if (key === workerKey) {
-        callCount++;
-        if (callCount < 3) {
-          throw Object.assign(new TypeError("fetch failed"), {
-            cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
-          });
-        }
-      }
+    const setItem = vi.spyOn(storage, "setItem");
+    // Only the worker's blob resets; the client files write through. This call
+    // is already recorded, so the count includes it.
+    const workerWrites = () => setItem.mock.calls.filter(([key]) => key === workerKey).length;
+    setItem.mockImplementation(async (key, value) => {
+      if (key === workerKey && workerWrites() < 3) throw connReset();
       return originalSetItem(key, value);
-    }) as typeof storage.setItem;
+    });
 
     await store.putAgent(BASE_BUNDLE);
 
-    expect(callCount).toBe(3);
+    expect(workerWrites()).toBe(3);
     // Retrying is safe by construction, not by argument: the key is the
     // content hash and uploads upsert, so every attempt writes identical bytes
     // to the same key — and the deploy still published.
@@ -324,14 +317,10 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
 
   test("a non-transient write failure fails the deploy without retrying", async () => {
     const { store, storage } = makeStore();
-    let callCount = 0;
-    storage.setItem = (async () => {
-      callCount++;
-      throw new Error("403 Forbidden");
-    }) as typeof storage.setItem;
+    const setItem = vi.spyOn(storage, "setItem").mockRejectedValue(new Error("403 Forbidden"));
 
     await expect(store.putAgent(BASE_BUNDLE)).rejects.toThrow("403 Forbidden");
-    expect(callCount).toBe(1);
+    expect(setItem).toHaveBeenCalledOnce();
     // The row is the deploy's commit point, and blobs land first — so a failed
     // blob write must leave no agent published.
     expect(await store.getAgent("test-agent")).toBeNull();
@@ -341,14 +330,10 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     const { store, storage } = makeStore();
     await store.putAgent(BASE_BUNDLE);
 
-    let callCount = 0;
-    storage.getItem = (async () => {
-      callCount++;
-      throw new Error("403 Forbidden");
-    }) as typeof storage.getItem;
+    const getItem = vi.spyOn(storage, "getItem").mockRejectedValue(new Error("403 Forbidden"));
 
     await expect(store.getWorkerCode("test-agent")).rejects.toThrow("403 Forbidden");
-    expect(callCount).toBe(1);
+    expect(getItem).toHaveBeenCalledOnce();
   });
 
   test("getAgent caches the row — second call does not hit the row store", async () => {
@@ -474,18 +459,8 @@ describe("cache invalidation fences in-flight row reads", () => {
     const agents = createMemoryAgentRows();
     const { promise: atFetch, resolve: entered } = Promise.withResolvers<void>();
     const { promise: held, resolve: release } = Promise.withResolvers<void>();
-    let park = false;
-
     const originalGet = agents.get.bind(agents);
-    agents.get = async (slug: string) => {
-      const value = await originalGet(slug);
-      if (park) {
-        park = false;
-        entered();
-        await held;
-      }
-      return value;
-    };
+    const get = vi.spyOn(agents, "get");
 
     const store = createBundleStore(createMemoryBlobStorage(), {
       secrets: createMemorySecretStore(),
@@ -496,7 +471,12 @@ describe("cache invalidation fences in-flight row reads", () => {
     await put("v1");
 
     // A cold read starts and parks mid-fetch, holding the v1 row.
-    park = true;
+    get.mockImplementationOnce(async (slug) => {
+      const value = await originalGet(slug);
+      entered();
+      await held;
+      return value;
+    });
     const parked = store.getAgent("a");
     await atFetch;
 

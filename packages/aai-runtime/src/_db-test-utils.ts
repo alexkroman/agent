@@ -14,11 +14,21 @@ export type RecordingDb = Db & {
 };
 
 /**
+ * Answers one statement from its text and parameters. Returning `undefined`
+ * falls through to the queue; throwing fails the statement.
+ */
+export type DbAnswer = (sql: string, params: unknown[]) => readonly unknown[] | undefined;
+
+/**
  * A `Db` that records what it was asked and answers from a queue of rows,
- * consumed IN ORDER (so a write-then-read method gets the next entry). Holds
+ * consumed IN ORDER (so a write-then-read method gets the next entry), or from
+ * `answer` when a fake has to answer by statement rather than by position. Holds
  * the one unavoidable cast: `Db.query<T>` lets the caller name the row type.
  */
-export function recordingDb(rows: readonly Record<string, unknown>[][] = []): RecordingDb {
+export function recordingDb(
+  rows: readonly Record<string, unknown>[][] = [],
+  options: { answer?: DbAnswer } = {},
+): RecordingDb {
   const issued: IssuedStatement[] = [];
   const queue = [...rows];
   return {
@@ -31,7 +41,7 @@ export function recordingDb(rows: readonly Record<string, unknown>[][] = []): Re
     // a spy would have provided.
     async query<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
       issued.push({ sql, params });
-      return (queue.shift() ?? []) as T[];
+      return (options.answer?.(sql, params) ?? queue.shift() ?? []) as T[];
     },
   };
 }

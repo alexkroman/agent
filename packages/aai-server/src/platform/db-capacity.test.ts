@@ -47,14 +47,10 @@ function fakeSql(maxConnections: unknown, inUse: unknown): SqlExec {
  */
 const POOLED = { PLATFORM_POOLER_URL: "postgresql://u@pool.example:6543/db" };
 const DIRECT = { MAX_CONTAINERS: "5" };
-const logged = (read: () => readonly unknown[]): Promise<void> =>
-  vi.waitFor(() => {
-    // A throw is how `vi.waitFor` is told to retry. Deliberately not an
-    // `expect` — biome's `noMisplacedAssertion` rejects one outside a test
-    // body, and it is right to: an assertion in a helper reports against
-    // whichever test happens to await it.
-    if (read().length === 0) throw new Error("nothing logged yet");
-  });
+/** Waits for a line; asserting on it is the calling test's job. */
+const logged = async (read: () => readonly unknown[]): Promise<void> => {
+  await vi.waitUntil(() => read().length > 0);
+};
 describe("platformDbBudget", () => {
   test("claims the constant rather than re-deriving a sum", () => {
     expect(platformDbBudget(POOLED)).toBe(MAX_PLATFORM_DB_CONNECTIONS);

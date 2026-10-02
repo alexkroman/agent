@@ -201,7 +201,7 @@ describe("createPipelineCommands", () => {
     // would double it.
     const { transport, calls } = harness();
     transport.cancelReply();
-    expect(calls.some((call) => call.includes("cancelled"))).toBe(false);
+    expect(calls).not.toContainEqual(expect.stringContaining("cancelled"));
   });
 
   test("injectTurn goes on the turn CHAIN, marked synthetic", () => {

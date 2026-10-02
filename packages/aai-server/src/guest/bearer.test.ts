@@ -118,7 +118,9 @@ describe("assertGuestBearer", () => {
   test("the expected token is never blank, whatever the version", async () => {
     // The second fact, stated where a change to the derivation would break it.
     for (const version of [0, 1, VERSION, 999]) {
-      expect(guestTokenFor(agentSandboxName(SLUG, version))).toMatch(/^[0-9a-f]{64}$/);
+      expect
+        .soft(guestTokenFor(agentSandboxName(SLUG, version)), `version ${version}`)
+        .toMatch(/^[0-9a-f]{64}$/);
     }
   });
 

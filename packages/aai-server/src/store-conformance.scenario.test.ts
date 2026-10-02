@@ -31,16 +31,13 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
-import type { CloseableDb } from "@alexkroman1/aai-runtime";
-import { createPostgresDb } from "@alexkroman1/aai-runtime";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
+import { afterAll, describe, expect, test } from "vitest";
+import { describeWithStack } from "./_pg-test-utils.ts";
 import { createPgAgentRows } from "./agent-store.ts";
 import { createPgChatStore } from "./chat-store.ts";
-import { ensurePlatformTables } from "./platform/_schema-test-utils.ts";
+import { usePlatformDb } from "./platform/_schema-test-utils.ts";
 import { createPgRateLimiter } from "./rate-limit.ts";
 import { createVaultSecretStore } from "./secret-store.ts";
-import type { SqlExec } from "./sql-exec.ts";
 import { CONFORMANCE_PREFIX, conformanceLike } from "./store-conformance.ts";
 import {
   agentRowsConformance,
@@ -52,19 +49,7 @@ import {
 import { createPgWorkspaceStore } from "./workspace-store.ts";
 
 describeWithStack("store conformance: the Supabase stack arm", () => {
-  let db: CloseableDb;
-  let sql: SqlExec;
-
-  beforeAll(async () => {
-    // `pgUrl()` inside the hook, never at the top of this body: vitest EXECUTES
-    // a `describe.skip` callback to enumerate what it is skipping, so up there it
-    // throws during collection instead of skipping the file.
-    db = createPostgresDb({ url: pgUrl(), max: 4 });
-    sql = (query, params) => db.query(query, params);
-    // Reports a stale stack as a sentence naming the pending migrations, rather
-    // than letting the first case die on a column that a migration added.
-    await ensurePlatformTables(sql);
-  });
+  const sql = usePlatformDb();
 
   afterAll(async () => {
     // Everything this file writes carries THIS PROCESS's prefix, and the sweep
@@ -86,7 +71,6 @@ describeWithStack("store conformance: the Supabase stack arm", () => {
       const store = createVaultSecretStore(sql);
       for (const row of rows) await store.delete(String(row.name));
     });
-    await db?.close();
   });
 
   /**
