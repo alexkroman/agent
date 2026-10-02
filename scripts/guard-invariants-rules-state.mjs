@@ -76,10 +76,11 @@ export const STATE_RULES = [
       "which does not exist — so every write there fails with ENOENT. Two shipped\n" +
       "modules had it (`workflow/serve.ts`, `harness/bundle.ts`) and both run on\n" +
       "the developer's own machine under `aai dev`, not only in the Linux guest.\n" +
-      "Baseline an occurrence only when the path is INSIDE a container by\n" +
-      "construction — `modal/agent-sandbox.ts`'s remote paths name a location in\n" +
-      "the Linux sandbox, where `/tmp` is the correct literal and `tmpdir()` would\n" +
-      "wrongly describe the host.",
+      "A path INSIDE a container is not the host's, so `tmpdir()` would describe\n" +
+      "the wrong machine — derive it from the guest's own named directory\n" +
+      "instead (`GUEST_SCRATCH_DIR` in aai-server's `guest/exec-env.ts`, as\n" +
+      "`modal/agent-sandbox.ts`'s boot-artifact paths do). Baseline one only\n" +
+      "when no such constant can name it.",
   },
   {
     id: 8,
@@ -344,14 +345,12 @@ export const STATE_RULES = [
       "still wins, which is what a spec uses. Only the DEFAULT is the bug.\n" +
       "\n" +
       "Baseline an occurrence only where the pooled fetch would be WRONG, not\n" +
-      "merely unnecessary. `providers/_openai-stream-repair.ts` is the standing\n" +
-      "entry: it wraps a caller-supplied provider fetch, resolves the global per\n" +
-      "call so a spec can stub it, and builds a `Headers`/`Response` from the\n" +
-      "ambient realm — which undici 8 brand-checks against its own classes (see\n" +
-      "`host/_undici.ts`). Its origin is a model provider, one streaming call a\n" +
-      "turn, not a fan-out. `providers/_request-body-extras.ts` is the second,\n" +
-      "for the same origin: it only adds `providerOptions` to a request BODY, so\n" +
-      "a pooled default there would make a body option silently move that\n" +
-      "provider onto a different transport than it has without one.",
+      "merely unnecessary — and prefer making the seam REQUIRED, so the one\n" +
+      "caller that builds it names the transport. That is how the model-provider\n" +
+      "path left this baseline: `providers/_openai-stream-repair.ts` and\n" +
+      "`providers/_request-body-extras.ts` take their delegate as a required\n" +
+      "argument, and `_llm-registry.ts`'s `providerFetch` is the single, documented\n" +
+      "place it is the ambient global (AI SDK parity, the eval network swapping\n" +
+      "the global, undici 8's brand check on the rebuilt `Response`).",
   },
 ];

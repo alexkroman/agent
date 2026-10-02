@@ -14,7 +14,7 @@
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import { agentBootEnv } from "../guest/boot-env.ts";
-import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "../guest/exec-env.ts";
+import { GUEST_SCRATCH_DIR, guestExecBaseEnv, HARNESS_REMOTE_PATH } from "../guest/exec-env.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "../guest/readiness.ts";
 import { guestTokenFor } from "../guest/token.ts";
 import { createLogger } from "../logger.ts";
@@ -38,9 +38,18 @@ import {
 
 const log = createLogger("modal.agent-sandbox");
 
-/** Where agent-mode boot artifacts land in the sandbox (written pre-exec). */
-export const AGENT_BUNDLE_REMOTE_PATH = "/tmp/aai-agent-bundle.mjs";
-export const AGENT_ENV_REMOTE_PATH = "/tmp/aai-agent-env.json";
+/**
+ * Where agent-mode boot artifacts land in the sandbox (written pre-exec), on
+ * BOTH contained backends — `microsandbox/agent-sandbox.ts` imports these.
+ *
+ * Paths INSIDE the guest's Linux filesystem, so `os.tmpdir()` (the HOST's)
+ * would be wrong. They derive from {@link GUEST_SCRATCH_DIR}, the guest's one
+ * named writable directory, rather than spelling `/tmp`: which runtime mounts
+ * what over `/tmp` (the microVM's 512 MiB tmpfs) is not a fact a spawner should
+ * know. The guest is told each path in its exec env, never assumes one.
+ */
+export const AGENT_BUNDLE_REMOTE_PATH = `${GUEST_SCRATCH_DIR}/aai-agent-bundle.mjs`;
+export const AGENT_ENV_REMOTE_PATH = `${GUEST_SCRATCH_DIR}/aai-agent-env.json`;
 
 /**
  * Spawn one DEPLOYED AGENT as a server in a fresh Modal sandbox: create from

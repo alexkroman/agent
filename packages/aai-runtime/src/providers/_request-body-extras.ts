@@ -32,25 +32,21 @@ export type FetchLike = (input: string | URL | Request, init?: RequestInit) => P
 
 /**
  * A `fetch` that merges `extras` into each JSON object request body beneath
- * the fields already there, then delegates to `inner` (default: the global
- * `fetch`, read at call time so a test's stub is honoured).
+ * the fields already there, then delegates to `inner`.
+ *
+ * `inner` is REQUIRED: which transport a model provider rides is decided once,
+ * by the registry (`providerFetch` in `_llm-registry.ts`), and a wrapper that
+ * supplied its own default could quietly move a provider onto another one.
  */
 export function mergeRequestBody(
   extras: Readonly<Record<string, unknown>>,
-  inner?: FetchLike,
+  inner: FetchLike,
 ): FetchLike {
   return (input, init) => {
-    // BASELINED against `guard-invariants` rule 29: the pooled fetch would be
-    // WRONG here, not merely unnecessary. This sits UNDER a model provider's
-    // client, whose own default is this same global, so a pooled default would
-    // make a BODY option silently move the provider onto another transport
-    // than it has without `providerOptions`. One call a turn, not a fan-out at
-    // one origin; resolved per call so a spec can stub it.
-    const send = inner ?? globalThis.fetch;
     const body = init?.body;
-    if (typeof body !== "string") return send(input, init);
+    if (typeof body !== "string") return inner(input, init);
     const parsed = safeJsonParse(body);
-    if (!isRecord(parsed)) return send(input, init);
-    return send(input, { ...init, body: JSON.stringify({ ...extras, ...parsed }) });
+    if (!isRecord(parsed)) return inner(input, init);
+    return inner(input, { ...init, body: JSON.stringify({ ...extras, ...parsed }) });
   };
 }

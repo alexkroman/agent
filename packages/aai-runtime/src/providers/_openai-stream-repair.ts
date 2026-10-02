@@ -253,11 +253,17 @@ function createRepairTransform(newId: () => string): TransformStream<Uint8Array,
 
 /**
  * Wrap a `fetch` so OpenAI-compatible SSE responses get their `tool_calls`
- * deltas repaired on the way through. Defaults to the ambient `fetch`,
- * resolved per call so tests can stub the global.
+ * deltas repaired on the way through.
+ *
+ * `baseFetch` is REQUIRED: which transport a model provider rides is decided
+ * once, by the registry (`providerFetch` in `_llm-registry.ts`), not by a
+ * default here. Whatever it is, the branch below rebuilds the `Headers` and
+ * `Response` from the AMBIENT realm, which undici 8 brand-checks against its
+ * own classes (`host/_undici.ts`) — one reason that transport is the ambient
+ * `fetch` and not an egress pool.
  */
 export function repairOpenAiStream(
-  baseFetch?: FetchLike,
+  baseFetch: FetchLike,
   options: StreamRepairOptions = {},
 ): FetchLike {
   const newId = options.generateId ?? defaultGenerateId;
@@ -265,14 +271,7 @@ export function repairOpenAiStream(
     // Nothing on the request is touched here: the outgoing tool schemas are
     // pruned as typed `params` by `gatewayToolSchemaMiddleware`, before the
     // provider serializes anything (see `_gateway-tool-schema.ts`).
-    // BASELINED against `guard-invariants` rule 29, which bans this fallback in
-    // this package: the pooled `blobFetch` would be WRONG here, not merely
-    // unnecessary. This wraps a caller-supplied PROVIDER fetch, resolves the
-    // global per call so a spec can stub it, and the branch below builds a
-    // `Headers` and a `Response` from the ambient realm — which undici 8
-    // brand-checks against its own classes (`host/_undici.ts`). The origin is a
-    // model provider, one streaming call a turn, not a fan-out at one origin.
-    const response = await (baseFetch ?? globalThis.fetch)(input, init);
+    const response = await baseFetch(input, init);
     const contentType = response.headers.get("content-type") ?? "";
     if (!(response.body && contentType.includes(SSE_CONTENT_TYPE))) return response;
     // The repair transform rewrites frames (synthetic tool-call ids lengthen

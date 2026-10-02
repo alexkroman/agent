@@ -1,11 +1,8 @@
 {
-  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 2, rule 3, rule 5, rule 7, rule 8, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 22, rule 26, rule 28, rule 31, rule 32, rule 33, rule 35, rule 36, rule 37, rule 38.",
+  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 2, rule 3, rule 5, rule 7, rule 8, rule 9, rule 11, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 22, rule 26, rule 28, rule 29, rule 31, rule 32, rule 33, rule 35, rule 36, rule 37, rule 38.",
   "rule4_inlineTickPromise": {
     "packages/aai-runtime/src/tools/executor.ts": 1,
     "packages/aai-studio-client/src/_test-utils.ts": 1
-  },
-  "rule11_hardcodedTmp": {
-    "packages/aai-server/src/modal/agent-sandbox.ts": 2
   },
   "rule16_sessionCallbackName": {
     "packages/aai-runtime/src/integration/_pipeline-fuzz-model.ts": 1,
@@ -38,10 +35,6 @@
   "rule27_explicitDisposeCall": {
     "packages/aai-studio-server/src/studio-session-idle.ts": 1,
     "packages/aai-ui/src/define-client.tsx": 1
-  },
-  "rule29_globalFetchInRuntime": {
-    "packages/aai-runtime/src/providers/_openai-stream-repair.ts": 1,
-    "packages/aai-runtime/src/providers/_request-body-extras.ts": 1
   },
   "rule30_nondeterministicWorkflowBody": {
     "packages/aai-templates/templates/link-digest-workflow/workflows/digest.ts": 1,

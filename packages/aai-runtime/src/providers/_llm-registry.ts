@@ -57,7 +57,7 @@ import {
 import { gatewayToolSchemaMiddleware } from "./_gateway-tool-schema.ts";
 import { type DeferredModel, lazyModel } from "./_lazy-model.ts";
 import { repairOpenAiStream } from "./_openai-stream-repair.ts";
-import { mergeRequestBody } from "./_request-body-extras.ts";
+import { type FetchLike, mergeRequestBody } from "./_request-body-extras.ts";
 import { pickEndpoint } from "./_utils.ts";
 import { bind } from "./registry.ts";
 
@@ -132,6 +132,28 @@ function withProviderOptions(
 }
 
 /**
+ * The transport every model-provider request rides, named once so the two
+ * `fetch` wrappers below delegate to it rather than each defaulting on its own.
+ *
+ * It is the AMBIENT `fetch`, and deliberately not an egress pool from
+ * `../_egress-fetch.ts` (which `guard-invariants` rule 29 otherwise requires):
+ *
+ * - **Parity.** Every native `@ai-sdk/*` client here, and an OpenAI-compatible
+ *   one without `providerOptions`, already uses the AI SDK's default — this
+ *   global. A pooled delegate would make a body option or the gateway's stream
+ *   repair silently move that provider onto another transport.
+ * - **The eval network swaps the global** (`eval/_network-install.ts`), and
+ *   `eval/_model-hosts.ts` relies on the model reaching its API through it.
+ * - **The shape is not a fan-out**: one streaming call a turn to a model
+ *   provider, not the concurrent same-origin bursts the pools exist for.
+ *
+ * Read per CALL, not captured at module load, so a global installed after the
+ * model is built (an eval case's network, a spec's `vi.stubGlobal`) is the one
+ * the request goes through.
+ */
+const providerFetch: FetchLike = (input, init) => globalThis.fetch(input, init);
+
+/**
  * `@ai-sdk/openai`'s factory, imported once for every kind that uses it —
  * OpenAI itself, and the OpenAI-compatible chat endpoints (OpenRouter,
  * Cerebras, the AssemblyAI gateway, and any `baseUrl` provider). The dynamic
@@ -175,7 +197,10 @@ function openAiCompatible(name: string, defaultBaseUrl: string | undefined): Llm
     create: (apiKey, d) => {
       const { baseUrl, providerOptions } = opts(d);
       const baseURL = baseUrl ?? defaultBaseUrl;
-      const fetch = providerOptions === undefined ? undefined : mergeRequestBody(providerOptions);
+      const fetch =
+        providerOptions === undefined
+          ? undefined
+          : mergeRequestBody(providerOptions, providerFetch);
       return lazyModel(`${name}.chat`, model(d), async () =>
         (await openAiFactory())({ apiKey, ...omitUndefined({ baseURL, fetch }), name }).chat(
           model(d),
@@ -323,7 +348,7 @@ const LLM_CLIENTS = {
           apiKey,
           baseURL,
           name: "assemblyai",
-          fetch: repairOpenAiStream(),
+          fetch: repairOpenAiStream(providerFetch),
         }).chat(modelId),
       );
       // The tool-schema prune is UNCONDITIONAL — it is what makes the gateway's

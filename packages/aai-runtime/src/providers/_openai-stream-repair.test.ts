@@ -249,6 +249,23 @@ describe("repairOpenAiStream", () => {
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("3");
   });
+
+  it("sends through the fetch it was given, never the global", async () => {
+    const global = respondingFetch(async () => {
+      throw new Error("the global fetch must not be reached");
+    });
+    vi.stubGlobal("fetch", global);
+    try {
+      const base = sseFetch(sse(chunk({ content: "hi" })));
+      const wrapped = repairOpenAiStream(base, { generateId: seqIds() });
+      const init = { method: "POST", body: "{}" };
+      await readPayloads(await wrapped("https://example.test/v1/chat/completions", init));
+      expect(base).toHaveBeenCalledWith("https://example.test/v1/chat/completions", init);
+      expect(global).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("assemblyai LLM gateway wiring", () => {
@@ -286,6 +303,27 @@ describe("assemblyai LLM gateway wiring", () => {
       expect(calls).toHaveLength(1);
       expect(calls[0]?.toolName).toBe("list_files");
       expect(calls[0]?.toolCallId).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reads the global per CALL, so one installed after the model is built is used", async () => {
+    // The registry's `providerFetch`: an eval case installs its network AFTER
+    // the agent's models exist, so a delegate captured at build time would
+    // send the request past it.
+    const model = resolveLlm(
+      { kind: ASSEMBLYAI_LLM_KIND, options: { model: "claude-sonnet-4-6" } },
+      { ASSEMBLYAI_API_KEY: "test-key" },
+    );
+    const installed = sseFetch(toolCallStream);
+    vi.stubGlobal("fetch", installed);
+    try {
+      const result = streamText({ model, prompt: "list the files" });
+      for await (const part of result.fullStream) {
+        if (part.type === "error") throw part.error;
+      }
+      expect(installed).toHaveBeenCalledTimes(1);
     } finally {
       vi.unstubAllGlobals();
     }

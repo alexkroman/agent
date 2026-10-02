@@ -150,8 +150,9 @@ RPC pool only.
   published export.
 - **Bodies must be plain** (`Uint8Array` or string): through `pinnedFetch`, a
   global `FormData`/`Blob`/`Headers`/`Request` is silently stringified
-  (`host/_undici.ts`). `providers/_openai-stream-repair.ts` is the one baselined
-  exception.
+  (`host/_undici.ts`). Model-provider requests are the one exception: they ride
+  the ambient `fetch` through `providers/_llm-registry.ts`'s `providerFetch`,
+  which the provider wrappers take as a required argument.
 
 ## A reply's metrics are ONE frame, and every reader takes it from there
 
