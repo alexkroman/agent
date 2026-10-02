@@ -15,7 +15,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   client,
-  json,
   PART,
   record,
   recording,
@@ -459,7 +458,7 @@ describe("a part that does not land", () => {
       vi.fn(async (input: string, init?: RequestInit) => {
         const url = new URL(input);
         if (url.pathname.endsWith("/parts") && init?.method === "POST") {
-          return json(201, record(0, false));
+          return Response.json(record(0, false), { status: 201 });
         }
         throw new TypeError("the upload did not reach the agent");
       }),

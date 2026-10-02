@@ -278,10 +278,7 @@ describe("tool transitions", () => {
       },
     });
     const flow = dialog("race", machine);
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
     const go = flow.tool({
       description: "Go",
       when: "open",
