@@ -13,7 +13,7 @@
  */
 
 import type { LanguageModel } from "ai";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { FAKE_LLM_API_KEY_ENV, registerFakeProviders } from "./_pipeline-test-fakes.ts";
 import { createGenerateFn } from "./generate.ts";
@@ -62,16 +62,9 @@ function fakeOneShotModel(reply: (opts: { prompt: unknown }) => string): Languag
   };
 }
 
-let unregister: (() => void) | undefined;
-afterEach(() => {
-  unregister?.();
-  unregister = undefined;
-});
-
 function setup(reply: (opts: { prompt: unknown }) => string = () => "generated text") {
   const model = fakeOneShotModel(reply);
   const fakes = registerFakeProviders({ llm: model });
-  unregister = fakes.unregister;
   if (!fakes.llm) throw new Error("fake llm descriptor missing");
   return { model, descriptor: fakes.llm, env: fakes.env };
 }

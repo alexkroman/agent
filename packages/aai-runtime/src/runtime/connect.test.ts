@@ -45,7 +45,6 @@ function setup() {
     llm: fakes.llm,
     logger: silentLogger,
   });
-  cleanups.push(() => fakes.unregister());
   cleanups.push(() => runtime.shutdown());
   return { runtime, stt, tts };
 }

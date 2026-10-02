@@ -20,10 +20,7 @@ import { createStepDelegate } from "./step-delegate.ts";
 const noop = (): void => undefined;
 const silent = { debug: noop, info: noop, warn: noop, error: noop };
 
-let unregister: (() => void) | undefined;
 afterEach(() => {
-  unregister?.();
-  unregister = undefined;
   publishStepDelegate(undefined);
 });
 
@@ -35,7 +32,6 @@ afterEach(() => {
 function fakes(script: Parameters<typeof createScriptedOneShotModel>[0]) {
   const model = createScriptedOneShotModel(script);
   const registered = registerFakeProviders({ llm: model });
-  unregister = registered.unregister;
   if (!registered.llm) throw new Error("fake llm descriptor missing");
   return { model, descriptor: registered.llm, env: registered.env };
 }

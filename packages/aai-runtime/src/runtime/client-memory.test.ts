@@ -13,7 +13,7 @@
 
 import type { SessionEndContext, SessionEvent } from "@alexkroman1/aai";
 import { setSessionClient } from "@alexkroman1/aai/host-internal";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { makeAgent } from "../_agent-test-utils.ts";
 import { silentLogger } from "../_logger-test-utils.ts";
 import {
@@ -28,9 +28,6 @@ import { makeClientSink } from "../_session-test-utils.ts";
 import { type ClientEventFeed, publishClientEventFeed } from "../inbox/index.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
 
-let unregister: (() => void) | undefined;
-afterEach(() => unregister?.());
-
 function runtimeFor(agent: Parameters<typeof makeAgent>[0]) {
   const llm = createFakeLanguageModel({
     script: [{ type: "text", text: "Sure." }],
@@ -41,7 +38,6 @@ function runtimeFor(agent: Parameters<typeof makeAgent>[0]) {
     tts: createFakeTtsProvider(),
     llm,
   });
-  unregister = fakes.unregister;
   const runtime = createRuntimeWithSeams({
     agent: makeAgent(agent),
     env: { ...fakes.env, [FAKE_STT_API_KEY_ENV]: "stt-key", [FAKE_TTS_API_KEY_ENV]: "tts-key" },

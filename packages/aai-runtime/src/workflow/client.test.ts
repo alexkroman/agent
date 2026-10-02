@@ -66,21 +66,11 @@ function makeAdapter(over: Partial<WdkAdapter> = {}): WdkAdapter {
     cancel: vi.fn(async () => true),
     wakeUp: vi.fn(async () => 1),
     signal: vi.fn(async () => true),
-    readStream: vi.fn(() => chunkStream([{ step: 1 }])),
+    readStream: vi.fn(() => ReadableStream.from<unknown>([{ step: 1 }])),
     streamTail: vi.fn(async () => 0),
     readOutput: vi.fn(async () => ({ ok: true })),
     ...over,
   };
-}
-
-/** A run's written stream, as WDK's `getReadable()` hands one back. */
-function chunkStream(chunks: readonly unknown[]): ReadableStream<unknown> {
-  return new ReadableStream<unknown>({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(chunk);
-      controller.close();
-    },
-  });
 }
 
 /**
@@ -443,7 +433,9 @@ describe("waking a sleeping run", () => {
 
 describe("reading a run's written stream", () => {
   test("resolves the chunks the run wrote", async () => {
-    const { client } = makeClient({ wdk: { readStream: () => chunkStream(["a", "b"]) } });
+    const { client } = makeClient({
+      wdk: { readStream: () => ReadableStream.from<unknown>(["a", "b"]) },
+    });
     const stream = await client.stream("wrun_1");
     const seen: unknown[] = [];
     for await (const chunk of stream) seen.push(chunk);
@@ -451,14 +443,14 @@ describe("reading a run's written stream", () => {
   });
 
   test("forwards namespace and startIndex", async () => {
-    const readStream = vi.fn(() => chunkStream([]));
+    const readStream = vi.fn(() => ReadableStream.from<unknown>([]));
     const { client } = makeClient({ wdk: { readStream } });
     await client.stream("wrun_1", { namespace: "logs", startIndex: -2 });
     expect(readStream).toHaveBeenCalledWith("wrun_1", { namespace: "logs", startIndex: -2 });
   });
 
   test("passes undefined for options the caller omitted", async () => {
-    const readStream = vi.fn(() => chunkStream([]));
+    const readStream = vi.fn(() => ReadableStream.from<unknown>([]));
     const { client } = makeClient({ wdk: { readStream } });
     await client.stream("wrun_1");
     expect(readStream).toHaveBeenCalledWith("wrun_1", {
@@ -472,7 +464,7 @@ describe("reading the newest line of a run's stream", () => {
   /**
    * A progress channel as a run really has one: chunks, and then NO close.
    *
-   * This is the whole hazard. `chunkStream` above closes, so a test built on it
+   * This is the whole hazard. `ReadableStream.from` closes, so a test built on it
    * cannot tell a correct bounded read from one that would hang in production.
    */
   function openStream(chunks: readonly unknown[]): ReadableStream<unknown> {
@@ -547,7 +539,7 @@ describe("reading the newest line of a run's stream", () => {
     // A race rather than a contradiction: the tail was read, then the run's
     // stream was trimmed or the namespace answered empty. It must still end.
     const { client } = makeClient({
-      wdk: { readStream: () => chunkStream([]), streamTail: async () => 3 },
+      wdk: { readStream: () => ReadableStream.from<unknown>([]), streamTail: async () => 3 },
     });
     await expect(client.lastLine("wrun_1")).resolves.toBeUndefined();
   });

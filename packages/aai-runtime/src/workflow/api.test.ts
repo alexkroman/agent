@@ -20,9 +20,10 @@
  * made at the 700-line test cap.
  */
 
+import { createRunSnapshot } from "@alexkroman1/aai/testing";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { WorkflowRequestError } from "./_request-error.ts";
-import { chunkStream, fakeClient, type Harness, run, serve } from "./api/_test-utils.ts";
+import { fakeClient, type Harness, serve } from "./api/_test-utils.ts";
 import { MAX_WORKFLOW_KEY_LENGTH } from "./api/runs.ts";
 import { MAX_WORKFLOW_INPUT_BYTES } from "./api.ts";
 
@@ -270,7 +271,7 @@ describe("POST /runs", () => {
 
 describe("GET /runs", () => {
   test("a key narrows to `find`", async () => {
-    const find = vi.fn(async () => [run({ key: "caller-1" })]);
+    const find = vi.fn(async () => [createRunSnapshot({ key: "caller-1" })]);
     const recent = vi.fn(async () => []);
     harness = await serve({ engine: () => fakeClient({ find, recent }) });
     const res = await fetch(`${harness.url}/workflows/runs?workflow=digest&key=caller-1&limit=3`);
@@ -281,7 +282,7 @@ describe("GET /runs", () => {
 
   test("no key is the KEYLESS read — `recent`, not `find` with an empty key", async () => {
     const find = vi.fn(async () => []);
-    const recent = vi.fn(async () => [run()]);
+    const recent = vi.fn(async () => [createRunSnapshot()]);
     harness = await serve({ engine: () => fakeClient({ find, recent }) });
     await fetch(`${harness.url}/workflows/runs?workflow=digest`);
     expect(recent).toHaveBeenCalledWith("digest", undefined);
@@ -332,7 +333,7 @@ describe("GET /runs", () => {
 
 describe("GET and DELETE /runs/:id", () => {
   test("reads one run", async () => {
-    const snapshot = run({ status: "completed", output: { ok: true } });
+    const snapshot = createRunSnapshot({ status: "completed", output: { ok: true } });
     harness = await serve({ engine: () => fakeClient({ get: vi.fn(async () => snapshot) }) });
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1`);
     expect(res.status).toBe(200);
@@ -436,7 +437,7 @@ describe("POST /runs/:id/wake", () => {
 
 describe("GET /runs/:id/stream", () => {
   test("streams the run's written chunks, then done", async () => {
-    const stream = vi.fn(async () => chunkStream([{ step: 1 }, { step: 2 }]));
+    const stream = vi.fn(async () => ReadableStream.from<unknown>([{ step: 1 }, { step: 2 }]));
     harness = await serve({ engine: () => fakeClient({ stream }) });
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1/stream`);
     expect(res.status).toBe(200);
@@ -472,7 +473,11 @@ describe("GET /runs/:id/stream", () => {
 
   test("a stream nothing has written answers a bare done", async () => {
     harness = await serve({
-      engine: () => fakeClient({ stream: async () => chunkStream([]), streamTail: async () => -1 }),
+      engine: () =>
+        fakeClient({
+          stream: async () => ReadableStream.from<unknown>([]),
+          streamTail: async () => -1,
+        }),
     });
     const body = await (await fetch(`${harness.url}/workflows/runs/wrun_1/stream`)).text();
     expect(body).not.toContain("event: chunk");
@@ -486,7 +491,7 @@ describe("GET /runs/:id/stream", () => {
     // for as long as the step writes nothing. Opening a world read to take no
     // chunks from it is the read that leaked a listener pair per request — see
     // `workflow-stream-readers.test.ts`.
-    const stream = vi.fn(async () => chunkStream([]));
+    const stream = vi.fn(async () => ReadableStream.from<unknown>([]));
     harness = await serve({ engine: () => fakeClient({ stream, streamTail: async () => 2 }) });
     const body = await (
       await fetch(`${harness.url}/workflows/runs/wrun_1/stream?startIndex=3`)
@@ -500,8 +505,8 @@ describe("GET /runs/:id/stream", () => {
     harness = await serve({
       engine: () =>
         fakeClient({
-          get: async () => run({ status: "completed", output: 1 }),
-          stream: async () => chunkStream(["only"]),
+          get: async () => createRunSnapshot({ status: "completed", output: 1 }),
+          stream: async () => ReadableStream.from<unknown>(["only"]),
           streamTail: async () => 0,
         }),
     });
@@ -543,14 +548,14 @@ describe("GET /runs/:id/stream", () => {
   });
 
   test("forwards namespace and startIndex, negative index included", async () => {
-    const stream = vi.fn(async () => chunkStream([]));
+    const stream = vi.fn(async () => ReadableStream.from<unknown>([]));
     harness = await serve({ engine: () => fakeClient({ stream }) });
     await fetch(`${harness.url}/workflows/runs/wrun_1/stream?namespace=logs&startIndex=-3`);
     expect(stream).toHaveBeenCalledWith("wrun_1", { namespace: "logs", startIndex: -3 });
   });
 
   test("passes no options when the query carried none", async () => {
-    const stream = vi.fn(async () => chunkStream([]));
+    const stream = vi.fn(async () => ReadableStream.from<unknown>([]));
     harness = await serve({ engine: () => fakeClient({ stream }) });
     await fetch(`${harness.url}/workflows/runs/wrun_1/stream`);
     expect(stream).toHaveBeenCalledWith("wrun_1", {});
@@ -564,7 +569,7 @@ describe("GET /runs/:id/stream", () => {
     // replay of every chunk it had already read, once per poll. An empty
     // parameter is a malformed request, not a default, which is the same call
     // `?limit=` already gets one route over.
-    const stream = vi.fn(async () => chunkStream([]));
+    const stream = vi.fn(async () => ReadableStream.from<unknown>([]));
     harness = await serve({ engine: () => fakeClient({ stream }) });
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1/stream?startIndex=${value}`);
     expect(res.status).toBe(400);
@@ -575,7 +580,7 @@ describe("GET /runs/:id/stream", () => {
   test("is matched before the bare `/runs/:id` GET", async () => {
     // Same ordering hazard as `/events`: listed after the prefix rule, the whole
     // `wrun_1/stream` would be read as a run id and answer 404 for a live run.
-    const get = vi.fn(async () => run());
+    const get = vi.fn(async () => createRunSnapshot());
     harness = await serve({ engine: () => fakeClient({ get }) });
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1/stream`);
     expect(res.headers.get("content-type")).toBe("text/event-stream");
@@ -607,7 +612,7 @@ describe("GET /runs/:id/stream", () => {
     let requests = 0;
     const get = vi.fn(async () => {
       await arrived.promise;
-      return run();
+      return createRunSnapshot();
     });
     const client = fakeClient({ get, streamTail: async () => -1 });
     harness = await serve({

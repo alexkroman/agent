@@ -13,6 +13,7 @@
  * with no invariant of its own.
  */
 
+import { createRunSnapshot } from "@alexkroman1/aai/testing";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
@@ -52,16 +53,6 @@ function fakeRes(): { res: EventSink; chunks: string[]; head: () => unknown } {
   return { res, chunks, head: () => head };
 }
 
-function run(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot {
-  return {
-    runId: "wrun_1",
-    workflow: "digest",
-    createdAt: 0,
-    status: "running",
-    ...over,
-  } as WorkflowRunSnapshot;
-}
-
 /** The events, in order, ignoring heartbeats. */
 function events(chunks: string[]): string[] {
   return chunks
@@ -88,7 +79,7 @@ afterEach(() => {
 describe("streamRunEvents", () => {
   test("opens as an unbuffered event stream", async () => {
     const { res, head } = fakeRes();
-    streamRunEvents(res, reader([run({ status: "completed", output: 1 })]), "wrun_1");
+    streamRunEvents(res, reader([createRunSnapshot({ status: "completed", output: 1 })]), "wrun_1");
     await vi.advanceTimersByTimeAsync(0);
     expect(head()).toEqual({
       status: 200,
@@ -103,7 +94,11 @@ describe("streamRunEvents", () => {
 
   test("sends the run, then `done`, and ends once it is terminal", async () => {
     const { res, chunks } = fakeRes();
-    streamRunEvents(res, reader([run({ status: "completed", output: { ok: true } })]), "wrun_1");
+    streamRunEvents(
+      res,
+      reader([createRunSnapshot({ status: "completed", output: { ok: true } })]),
+      "wrun_1",
+    );
     await vi.advanceTimersByTimeAsync(0);
     expect(events(chunks)).toEqual(["run", "done"]);
     expect(chunks.at(-1)).toBe("<end>");
@@ -119,7 +114,15 @@ describe("streamRunEvents", () => {
 
   test("re-reads a live run and only sends a frame when the state CHANGED", async () => {
     const { res, chunks } = fakeRes();
-    streamRunEvents(res, reader([run(), run(), run({ status: "completed", output: 1 })]), "wrun_1");
+    streamRunEvents(
+      res,
+      reader([
+        createRunSnapshot(),
+        createRunSnapshot(),
+        createRunSnapshot({ status: "completed", output: 1 }),
+      ]),
+      "wrun_1",
+    );
     await vi.advanceTimersByTimeAsync(0);
     expect(events(chunks)).toEqual(["run"]);
     // A second identical read: the bytes are the same, so there is nothing to
@@ -132,13 +135,11 @@ describe("streamRunEvents", () => {
 
   test("a failed read HOLDS the stream and tries again", async () => {
     // Ending here would send a page back to polling over a blip.
-    let calls = 0;
     const failing: RunReader = {
-      get: vi.fn(async () => {
-        calls += 1;
-        if (calls === 1) throw new Error("transient");
-        return run({ status: "completed", output: 1 });
-      }),
+      get: vi
+        .fn<RunReader["get"]>()
+        .mockRejectedValueOnce(new Error("transient"))
+        .mockResolvedValue(createRunSnapshot({ status: "completed", output: 1 })),
     };
     const { res, chunks } = fakeRes();
     streamRunEvents(res, failing, "wrun_1");
@@ -150,7 +151,7 @@ describe("streamRunEvents", () => {
 
   test("heartbeats while the run is live, so a departed client is noticed", async () => {
     const { res, chunks } = fakeRes();
-    streamRunEvents(res, reader([run()]), "wrun_1");
+    streamRunEvents(res, reader([createRunSnapshot()]), "wrun_1");
     await vi.advanceTimersByTimeAsync(RUN_EVENT_HEARTBEAT_MS);
     expect(chunks).toContain(": ping\n\n");
   });
@@ -159,7 +160,7 @@ describe("streamRunEvents", () => {
     // A run can sleep for hours, and a connection held that long is one nothing
     // is maintaining — ending it cleanly puts the client on a path it has.
     const { res, chunks } = fakeRes();
-    streamRunEvents(res, reader([run()]), "wrun_1");
+    streamRunEvents(res, reader([createRunSnapshot()]), "wrun_1");
     await vi.advanceTimersByTimeAsync(RUN_EVENT_STREAM_MAX_MS + RUN_EVENT_POLL_MS);
     expect(events(chunks).at(-1)).toBe("idle");
     expect(chunks.at(-1)).toBe("<end>");
@@ -170,7 +171,7 @@ describe("streamRunEvents", () => {
     // on the platform that reader is a proxy, which reports it as a transfer
     // failure with nothing tying it back to the shutdown that caused it.
     const { res, chunks } = fakeRes();
-    const stream = streamRunEvents(res, reader([run()]), "wrun_1");
+    const stream = streamRunEvents(res, reader([createRunSnapshot()]), "wrun_1");
     await vi.advanceTimersByTimeAsync(0);
     stream.close();
     expect(chunks.at(-1)).toBe("<end>");
@@ -178,7 +179,7 @@ describe("streamRunEvents", () => {
 
   test("close() is idempotent and stops every later frame", async () => {
     const { res, chunks } = fakeRes();
-    const stream = streamRunEvents(res, reader([run()]), "wrun_1");
+    const stream = streamRunEvents(res, reader([createRunSnapshot()]), "wrun_1");
     await vi.advanceTimersByTimeAsync(0);
     stream.close();
     stream.close();
@@ -197,7 +198,7 @@ describe("streamRunEvents", () => {
     // rather than answering "no such run" for it. Reaching the read was
     // observed under `aai dev` as a stream that sent nothing but heartbeats for
     // its full five-minute cap.
-    const empty = reader([run()]);
+    const empty = reader([createRunSnapshot()]);
     const { res, chunks } = fakeRes();
     streamRunEvents(res, empty, "");
     await vi.advanceTimersByTimeAsync(0);
@@ -231,14 +232,12 @@ describe("streamRunEvents", () => {
   test("an intermittent read does not accumulate toward the failure cap", async () => {
     // The cap counts CONSECUTIVE failures: a stream watching a run for minutes
     // over a flaky link would otherwise reach any fixed total eventually.
-    let calls = 0;
-    const flaky: RunReader = {
-      get: vi.fn(async () => {
-        calls += 1;
-        if (calls % 2 === 1) throw new Error("blip");
-        return run();
-      }),
-    };
+    const get = vi.fn<RunReader["get"]>(async () => {
+      // `mock.calls` already holds this call, so odd counts are the 1st, 3rd, ...
+      if (get.mock.calls.length % 2 === 1) throw new Error("blip");
+      return createRunSnapshot();
+    });
+    const flaky: RunReader = { get };
     const { res, chunks } = fakeRes();
     streamRunEvents(res, flaky, "wrun_1");
     await vi.advanceTimersByTimeAsync(RUN_EVENT_POLL_MS * (RUN_EVENT_MAX_READ_FAILURES * 4));

@@ -26,11 +26,9 @@ import { MAX_ROUTE_BODY_BYTES } from "./agent-routes-http.ts";
 import { type AgentServer, createServerForRuntime, type SessionRuntime } from "./server.ts";
 
 let server: AgentServer | undefined;
-let unregister: (() => void) | undefined;
 afterEach(async () => {
   await server?.close();
   server = undefined;
-  unregister?.();
 });
 
 async function serve(routes: Record<string, RouteHandler> | undefined): Promise<string> {
@@ -166,7 +164,6 @@ describe("agent({ routes }) through createRuntime", () => {
       tts: createFakeTtsProvider(),
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
     });
-    unregister = fakes.unregister;
     const runtime = createRuntimeWithSeams({
       agent: makeAgent({ routes: { "GET /whoami": (_req, ctx) => ({ name: ctx.env.OWNER }) } }),
       env: {

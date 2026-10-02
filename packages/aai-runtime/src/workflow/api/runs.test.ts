@@ -25,10 +25,11 @@
  * entirely.
  */
 
+import { createRunSnapshot } from "@alexkroman1/aai/testing";
 import { createWorkflowApiClient } from "@alexkroman1/aai/workflow-api";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { MAX_WORKFLOW_FIND_LIMIT } from "../keys.ts";
-import { fakeClient, type Harness, run, serve } from "./_test-utils.ts";
+import { fakeClient, type Harness, serve } from "./_test-utils.ts";
 import { MAX_WORKFLOW_KEY_LENGTH } from "./runs.ts";
 
 let harness: Harness | undefined;
@@ -51,7 +52,7 @@ describe("GET /runs — the `limit` a caller supplies", () => {
     ["a non-integer", "2.5"],
     ["empty", ""],
   ])("refuses a limit that is %s", async (_label, limit) => {
-    const recent = vi.fn(async () => [run()]);
+    const recent = vi.fn(async () => [createRunSnapshot()]);
     const { res } = await listRuns(`workflow=digest&limit=${limit}`, { recent });
     expect(res.status).toBe(400);
     // The point of refusing rather than coercing: nothing downstream is asked to
@@ -60,7 +61,7 @@ describe("GET /runs — the `limit` a caller supplies", () => {
   });
 
   test("clamps a limit above the ceiling, and SAYS that it did", async () => {
-    const recent = vi.fn(async () => [run()]);
+    const recent = vi.fn(async () => [createRunSnapshot()]);
     const { res, body } = await listRuns("workflow=digest&limit=100000", { recent });
     expect(res.status).toBe(200);
     expect(recent).toHaveBeenCalledWith("digest", { limit: MAX_WORKFLOW_FIND_LIMIT });
@@ -73,7 +74,7 @@ describe("GET /runs — the `limit` a caller supplies", () => {
     // The bound has to be somewhere a real caller reaches, or nothing proves it
     // works: `MAX_WORKFLOW_FIND_LIMIT` is what `resolveFindLimit` hands the client
     // for any bigger ask, so this exact value is the busiest honest request.
-    const recent = vi.fn(async () => [run()]);
+    const recent = vi.fn(async () => [createRunSnapshot()]);
     const { res, body } = await listRuns(`workflow=digest&limit=${MAX_WORKFLOW_FIND_LIMIT}`, {
       recent,
     });
@@ -85,7 +86,7 @@ describe("GET /runs — the `limit` a caller supplies", () => {
   test("the keyed read is bounded by the same ceiling", async () => {
     // `find` and `recent` are one route and one clamp; a bound on half of it is
     // no bound at all.
-    const find = vi.fn(async () => [run({ key: "caller-1" })]);
+    const find = vi.fn(async () => [createRunSnapshot({ key: "caller-1" })]);
     const { res, body } = await listRuns("workflow=digest&key=caller-1&limit=999", { find });
     expect(res.status).toBe(200);
     expect(find).toHaveBeenCalledWith("digest", "caller-1", { limit: MAX_WORKFLOW_FIND_LIMIT });
@@ -96,7 +97,7 @@ describe("GET /runs — the `limit` a caller supplies", () => {
     // `DEFAULT_WORKFLOW_FIND_LIMIT` lives in `workflow/keys.ts` and is applied by
     // `resolveFindLimit`. Restating it here would be a second copy that can
     // disagree, and the answer would then report a page size the client did not use.
-    const recent = vi.fn(async () => [run()]);
+    const recent = vi.fn(async () => [createRunSnapshot()]);
     const { res, body } = await listRuns("workflow=digest", { recent });
     expect(res.status).toBe(200);
     expect(recent).toHaveBeenCalledWith("digest", undefined);
@@ -125,7 +126,7 @@ describe("GET /runs — the `limit` a caller supplies", () => {
  */
 describe("GET /runs/:id — the `wait` a caller supplies", () => {
   async function readRun(query: string) {
-    const get = vi.fn(async () => run());
+    const get = vi.fn(async () => createRunSnapshot());
     harness = await serve({ engine: () => fakeClient({ get }) });
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1${query}`);
     return { res, get };

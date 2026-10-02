@@ -19,7 +19,7 @@ import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
 import type { LanguageModel } from "ai";
 import { createNanoEvents, type Emitter } from "nanoevents";
-import { vi } from "vitest";
+import { onTestFinished, vi } from "vitest";
 import type {
   SttEvents,
   SttOpener,
@@ -311,12 +311,9 @@ const FAKE_LLM_KIND = "fake-llm";
  * needed a wrong-vendor fallback. Registering a kind removes the need for any of
  * that: a fake resolves with its own env var like any other provider.
  *
- * Always release the registration (the registry is module-level):
- *
- * ```ts no-check
- * const fakes = registerFakeProviders({ stt, tts, llm });
- * try { ... } finally { fakes.unregister(); }
- * ```
+ * Call it inside a test (or a `beforeEach`): the registry is module-level, so
+ * the registration is released by `onTestFinished`. `unregister` is idempotent,
+ * for a spec that has to release it mid-test.
  */
 export function registerFakeProviders(fakes: {
   stt?: FakeSttProvider;
@@ -329,7 +326,7 @@ export function registerFakeProviders(fakes: {
   readonly llm: LlmProvider | undefined;
   /** Credentials for the registered fakes — pass as `createRuntime({ env })`. */
   readonly env: Record<string, string>;
-  /** Restore the registries. Call in a `finally` / cleanup hook. */
+  /** Restore the registries now; also runs when the test finishes. Idempotent. */
   unregister(): void;
 } {
   const undo: (() => void)[] = [];
@@ -365,13 +362,15 @@ export function registerFakeProviders(fakes: {
     );
   }
 
+  const unregister = (): void => {
+    for (const fn of undo.splice(0).reverse()) fn();
+  };
+  onTestFinished(unregister);
   return {
     env,
     stt: fakes.stt ? { kind: FAKE_STT_KIND, options: {} } : undefined,
     tts: fakes.tts ? { kind: FAKE_TTS_KIND, options: {} } : undefined,
     llm: fakes.llm ? { kind: FAKE_LLM_KIND, options: { model: "fake-llm" } } : undefined,
-    unregister(): void {
-      for (const fn of undo.reverse()) fn();
-    },
+    unregister,
   };
 }

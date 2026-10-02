@@ -1,103 +1,20 @@
 // Copyright 2026 the AAI authors. MIT license.
 /** Unit test for the Soniox real-time STT adapter (mocked WebSocket). */
 
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { flush } from "../../_timing-test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
+import { FakeWebSocket } from "../tts/_fake-ws-test-utils.ts";
 import { openSoniox } from "./soniox.ts";
 
-interface FakeWSInstance {
-  readyState: number;
-  options?: { perMessageDeflate?: boolean } | undefined;
-  bufferedAmount?: number;
-  sent: Array<string | Uint8Array>;
-  send(data: string | Uint8Array, opts?: unknown): void;
-  close(): void;
-  on(ev: string, fn: (...args: unknown[]) => void): void;
-  off(ev: string, fn: (...args: unknown[]) => void): void;
-  once(ev: string, fn: (...args: unknown[]) => void): void;
-  removeAllListeners(): void;
-  listenerCount(): number;
-  _fire(ev: string, payload?: unknown): void;
-}
-
-type Listener = (...args: unknown[]) => void;
-
-// A local fake rather than `tts/_fake-ws-test-utils.ts`: this adapter speaks
-// BINARY frames, reads `bufferedAmount` for backpressure, and reads the close
-// CODE — none of which that fake models. It does share the property that
-// matters, and the shared one was fixed to match it: `readyState` is
-// CONNECTING until "open" fires, so a send-before-open is catchable here.
-//
-// `vi.mock` is hoisted above top-level decls, so share state via `vi.hoisted`.
-const { latest, FakeWS } = vi.hoisted(() => {
-  const latestRef: { ws: FakeWSInstance | undefined } = { ws: undefined };
-  class FakeWSImpl implements FakeWSInstance {
-    static OPEN = 1;
-    static CLOSED = 3;
-    /** When true, new sockets black-hole: no "open", no "error" — ever. */
-    static neverOpen = false;
-    readyState = 0;
-    sent: Array<string | Uint8Array> = [];
-    private listeners = new Map<string, Listener[]>();
-    options: { perMessageDeflate?: boolean } | undefined;
-    constructor(_url: string, opts?: { perMessageDeflate?: boolean }) {
-      this.options = opts;
-      if (!FakeWSImpl.neverOpen) {
-        setImmediate(() => {
-          this.readyState = 1;
-          this.emit("open");
-        });
-      }
-      latestRef.ws = this;
-    }
-    on(ev: string, fn: Listener): void {
-      const arr = this.listeners.get(ev) ?? [];
-      arr.push(fn);
-      this.listeners.set(ev, arr);
-    }
-    once(ev: string, fn: Listener): void {
-      const wrapped: Listener = (...args) => {
-        this.off(ev, wrapped);
-        fn(...args);
-      };
-      this.on(ev, wrapped);
-    }
-    off(ev: string, fn: Listener): void {
-      const arr = this.listeners.get(ev);
-      if (!arr) return;
-      const idx = arr.indexOf(fn);
-      if (idx !== -1) arr.splice(idx, 1);
-    }
-    removeAllListeners(): void {
-      this.listeners.clear();
-    }
-    listenerCount(): number {
-      let n = 0;
-      for (const arr of this.listeners.values()) n += arr.length;
-      return n;
-    }
-    private emit(ev: string, ...args: unknown[]): void {
-      const arr = this.listeners.get(ev)?.slice();
-      if (!arr) return;
-      for (const fn of arr) fn(...args);
-    }
-    send(data: string | Uint8Array, _opts?: unknown): void {
-      this.sent.push(data);
-    }
-    close(): void {
-      this.readyState = 2;
-      this.emit("close", 1000);
-      this.readyState = 3;
-    }
-    _fire(ev: string, payload?: unknown): void {
-      this.emit(ev, payload);
-    }
-  }
-  return { latest: latestRef, FakeWS: FakeWSImpl };
+vi.mock("ws", async () => {
+  const { FakeWebSocket } = await import("../tts/_fake-ws-test-utils.ts");
+  return { default: FakeWebSocket, WebSocket: FakeWebSocket };
 });
 
-vi.mock("ws", () => ({ default: FakeWS, WebSocket: FakeWS }));
+beforeEach(() => {
+  FakeWebSocket.reset();
+});
 
 interface OpenSessionOpts {
   apiKey?: string;
@@ -111,10 +28,9 @@ function openOpener(signal: AbortSignal): Promise<unknown> {
 
 async function openSession(opts: OpenSessionOpts = {}): Promise<{
   session: import("../openers.ts").SttSession;
-  ws: FakeWSInstance;
+  ws: FakeWebSocket;
   controller: AbortController;
 }> {
-  latest.ws = undefined;
   const openerOpts: { model?: string; languages?: string[] } = {};
   if (opts.model) openerOpts.model = opts.model;
   if (opts.languages) openerOpts.languages = opts.languages;
@@ -125,9 +41,7 @@ async function openSession(opts: OpenSessionOpts = {}): Promise<{
     apiKey: opts.apiKey ?? "test-key",
     signal: controller.signal,
   });
-  const ws = latest.ws;
-  if (!ws) throw new Error("no fake ws captured");
-  return { session, ws, controller };
+  return { session, ws: FakeWebSocket.latest(), controller };
 }
 
 function frame(payload: unknown): Buffer {
@@ -164,7 +78,7 @@ describe("Soniox real-time STT adapter", () => {
     // resolved: the ws-handler rejected the SESSION at its own timeout without
     // cancelling this connect, leaving the socket held by a pending listener
     // with no owner.
-    FakeWS.neverOpen = true;
+    FakeWebSocket.neverOpen = true;
     vi.useFakeTimers();
     try {
       const controller = new AbortController();
@@ -175,26 +89,21 @@ describe("Soniox real-time STT adapter", () => {
       const rejected = expect(openPromise).rejects.toMatchObject({ code: "stt_connect_failed" });
       await vi.advanceTimersByTimeAsync(WS_OPEN_TIMEOUT_MS + 1);
       await rejected;
-      expect(latest.ws?.readyState).toBe(3);
+      expect(FakeWebSocket.latest().readyState).toBe(3);
     } finally {
       vi.useRealTimers();
-      FakeWS.neverOpen = false;
     }
   });
 
   test("an abort during the connect abandons the socket rather than waiting it out", async () => {
     // `closeOnAbort` is registered only AFTER the connect resolves, so before
     // this the session's own hang-up could not reach a socket still connecting.
-    FakeWS.neverOpen = true;
-    try {
-      const controller = new AbortController();
-      const openPromise = openOpener(controller.signal);
-      controller.abort();
-      await expect(openPromise).rejects.toMatchObject({ code: "stt_connect_failed" });
-      expect(latest.ws?.readyState).toBe(3);
-    } finally {
-      FakeWS.neverOpen = false;
-    }
+    FakeWebSocket.neverOpen = true;
+    const controller = new AbortController();
+    const openPromise = openOpener(controller.signal);
+    controller.abort();
+    await expect(openPromise).rejects.toMatchObject({ code: "stt_connect_failed" });
+    expect(FakeWebSocket.latest().readyState).toBe(3);
   });
 
   test("first frame sent is the JSON config with api_key, model, audio_format, sample_rate", async () => {
