@@ -11,7 +11,6 @@
 import ReconnectingWebSocket from "partysocket/ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  type AudioMockContext,
   type FakeTrack,
   fakeMediaStream,
   fakeTrack,
@@ -175,7 +174,6 @@ describe("session-core automatic reconnection (partysocket)", () => {
   });
 
   describe("voice reconnect with a parked audio init", () => {
-    let audio: AudioMockContext & { restore: () => void };
     /** Resolvers for parked getUserMedia calls, in call order. */
     let gumResolvers: ((stream: MediaStream) => void)[] = [];
     let tracks: FakeTrack[] = [];
@@ -187,17 +185,13 @@ describe("session-core automatic reconnection (partysocket)", () => {
     }
 
     beforeEach(() => {
-      audio = installAudioMocks();
+      installAudioMocks();
       gumResolvers = [];
       tracks = [];
       navigator.mediaDevices.getUserMedia = () =>
         new Promise<MediaStream>((resolve) => {
           gumResolvers.push(resolve);
         });
-    });
-
-    afterEach(() => {
-      audio.restore();
     });
 
     function audioReadyCount(socket: MockWebSocket | undefined): number {
@@ -269,7 +263,6 @@ describe("session-core automatic reconnection (partysocket)", () => {
 // with no mic (no `config` means no initAudioCapture), no error and no retry.
 describe("session-core handshake deadline", () => {
   let core: BrowserSession;
-  let audio: ReturnType<typeof installAudioMocks>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -278,14 +271,13 @@ describe("session-core handshake deadline", () => {
     // The healthy case below receives a real `config`, which starts the audio
     // path — without the mocks it would fail on getUserMedia and error for a
     // reason that has nothing to do with the handshake.
-    audio = installAudioMocks();
+    installAudioMocks();
     vi.stubGlobal("WebSocket", TrackingWebSocket);
     core = createBrowserSession({ platformUrl: "ws://localhost:3000" });
   });
 
   afterEach(() => {
     core.disconnect();
-    audio.restore();
     vi.useRealTimers();
   });
 

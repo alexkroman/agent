@@ -319,57 +319,74 @@ export type AudioMockOptions = {
  */
 export const g: Record<string, unknown> = globalThis;
 
-export function installAudioMocks(
-  mockOpts: AudioMockOptions = {},
-): AudioMockContext & { restore: () => void } {
-  const origAudioContext = globalThis.AudioContext;
-  const origAudioWorkletNode = globalThis.AudioWorkletNode;
-  const nav = g.navigator as { mediaDevices?: { getUserMedia?: unknown } } | undefined;
-  const origGetUserMedia = nav?.mediaDevices?.getUserMedia;
-
+/**
+ * Install the Web Audio and microphone fakes for one test.
+ *
+ * `AudioContext` and `AudioWorkletNode` go in through `vi.stubGlobal` and
+ * `getUserMedia` through `vi.spyOn`, so the shared config's `unstubGlobals` and
+ * `restoreMocks` undo all three after the test — no suite owes an `afterEach`
+ * for them. A harness that builds several worlds INSIDE one test (a property
+ * run) undoes each with `vi.unstubAllGlobals()`.
+ *
+ * Neither node nor jsdom has `navigator.mediaDevices`, so the first install
+ * defines one whose `getUserMedia` rejects the way a browser with no
+ * microphone does: there is a real method to spy on, and between tests nothing
+ * answers with a stream.
+ */
+export function installAudioMocks(mockOpts: AudioMockOptions = {}): AudioMockContext {
   let _lastContext: MockAudioContext;
   const _contexts: MockAudioContext[] = [];
   const _workletNodes: MockAudioWorkletNode[] = [];
   let _lastAudioConstraints: MediaTrackConstraints | undefined;
 
-  g.AudioContext = class extends MockAudioContext {
-    constructor(opts?: { sampleRate?: number }) {
-      super(
-        mockOpts.forceSampleRate === undefined ? opts : { sampleRate: mockOpts.forceSampleRate },
-      );
-      _lastContext = this;
-      _contexts.push(this);
-    }
-  };
+  vi.stubGlobal(
+    "AudioContext",
+    class extends MockAudioContext {
+      constructor(opts?: { sampleRate?: number }) {
+        super(
+          mockOpts.forceSampleRate === undefined ? opts : { sampleRate: mockOpts.forceSampleRate },
+        );
+        _lastContext = this;
+        _contexts.push(this);
+      }
+    },
+  );
 
-  g.AudioWorkletNode = class extends MockAudioWorkletNode {
-    constructor(ctx: MockAudioContext, name: string, options?: unknown) {
-      super(ctx, name, options);
-      _workletNodes.push(this);
-    }
-  };
+  vi.stubGlobal(
+    "AudioWorkletNode",
+    class extends MockAudioWorkletNode {
+      constructor(ctx: MockAudioContext, name: string, options?: unknown) {
+        super(ctx, name, options);
+        _workletNodes.push(this);
+      }
+    },
+  );
 
-  if (nav && !nav.mediaDevices) nav.mediaDevices = {};
-  if (nav?.mediaDevices) {
-    nav.mediaDevices.getUserMedia = (constraints?: MediaStreamConstraints) => {
-      _lastAudioConstraints = constraints?.audio as MediaTrackConstraints | undefined;
-      return Promise.resolve({ getTracks: () => [fakeTrack()] });
-    };
-  }
+  vi.spyOn(mediaDevices(), "getUserMedia").mockImplementation((constraints) => {
+    _lastAudioConstraints = constraints?.audio as MediaTrackConstraints | undefined;
+    return Promise.resolve(fakeMediaStream(fakeTrack()));
+  });
 
   return {
     lastContext: () => _lastContext,
     contexts: () => _contexts,
     workletNodes: () => _workletNodes,
     lastAudioConstraints: () => _lastAudioConstraints,
-    restore() {
-      globalThis.AudioContext = origAudioContext;
-      globalThis.AudioWorkletNode = origAudioWorkletNode;
-      if (origGetUserMedia && nav?.mediaDevices) {
-        nav.mediaDevices.getUserMedia = origGetUserMedia;
-      }
-    },
   };
+}
+
+/** `navigator.mediaDevices`, defined once (rejecting) where the runtime has none. */
+function mediaDevices(): MediaDevices {
+  if (!navigator.mediaDevices) {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: () =>
+          Promise.reject(new DOMException("Requested device not found", "NotFoundError")),
+      },
+    });
+  }
+  return navigator.mediaDevices;
 }
 
 export function findWorkletNode(nodes: MockAudioWorkletNode[], name: string): MockAudioWorkletNode {

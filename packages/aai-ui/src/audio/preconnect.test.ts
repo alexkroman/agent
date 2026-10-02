@@ -4,7 +4,7 @@
  * `createVoiceIO`: the buffer bound, the seamless adoption at a matching rate,
  * and the resample-and-flush at any other.
  */
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   type AudioMockContext,
   findWorkletNode,
@@ -31,12 +31,9 @@ function captureNodes(audio: AudioMockContext): MockAudioWorkletNode[] {
 }
 
 describe("openPreConnectCapture", () => {
-  let audio: AudioMockContext & { restore: () => void };
+  let audio: AudioMockContext;
   beforeEach(() => {
     audio = installAudioMocks();
-  });
-  afterEach(() => {
-    audio.restore();
   });
 
   const open = (maxSeconds = 10) =>
@@ -100,7 +97,6 @@ describe("openPreConnectCapture", () => {
   });
 
   test("a refused rate rejects and releases the mic", async () => {
-    audio.restore();
     audio = installAudioMocks({ forceSampleRate: 48_000 });
     const stop = vi.fn();
     const nav = g.navigator as { mediaDevices: { getUserMedia: unknown } };
@@ -111,12 +107,9 @@ describe("openPreConnectCapture", () => {
 });
 
 describe("createVoiceIO({ preConnect })", () => {
-  let audio: AudioMockContext & { restore: () => void };
+  let audio: AudioMockContext;
   beforeEach(() => {
     audio = installAudioMocks();
-  });
-  afterEach(() => {
-    audio.restore();
   });
 
   test("at the matching rate it ADOPTS the capture: no second mic, context or node", async () => {

@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   type AudioMockContext,
   crashWorklet,
@@ -37,14 +37,10 @@ function drainStop(node: import("../_react-test-utils.ts").MockAudioWorkletNode)
 }
 
 describe("createVoiceIO", () => {
-  let audio: AudioMockContext & { restore: () => void };
+  let audio: AudioMockContext;
 
   beforeEach(() => {
     audio = installAudioMocks();
-  });
-
-  afterEach(() => {
-    audio.restore();
   });
 
   test("returns a VoiceIO with enqueue, flush, close", async () => {
@@ -91,15 +87,11 @@ describe("createVoiceIO", () => {
     // silently resampling in the worklet would alias. Neither is worth
     // shipping over a clear failure.
     const forced = installAudioMocks({ forceSampleRate: 48_000 });
-    try {
-      await expect(
-        createVoiceIO(voiceOpts({ sttSampleRate: 16_000, ttsSampleRate: 24_000 })),
-      ).rejects.toThrow(/sample rate/i);
-      // The failed init must not leave contexts or mic tracks behind.
-      expect(forced.contexts().every((c) => c.closed)).toBe(true);
-    } finally {
-      forced.restore();
-    }
+    await expect(
+      createVoiceIO(voiceOpts({ sttSampleRate: 16_000, ttsSampleRate: 24_000 })),
+    ).rejects.toThrow(/sample rate/i);
+    // The failed init must not leave contexts or mic tracks behind.
+    expect(forced.contexts().every((c) => c.closed)).toBe(true);
   });
 
   test("reuses a single context when the capture and playback rates match", async () => {

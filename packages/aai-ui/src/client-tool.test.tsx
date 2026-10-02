@@ -24,7 +24,6 @@ function noop(): void {
 }
 
 describe("useClientTool", () => {
-  let audio: ReturnType<typeof installAudioMocks>;
   let socket: MockWebSocket | null = null;
   const WS = recordingWebSocketClass((s) => {
     socket = s;
@@ -33,13 +32,12 @@ describe("useClientTool", () => {
   beforeEach(async () => {
     await loadAudioModules();
     vi.useFakeTimers();
-    audio = installAudioMocks();
+    installAudioMocks();
     socket = null;
     sessionStorage.clear();
     vi.spyOn(console, "warn").mockImplementation(noop);
   });
   afterEach(() => {
-    audio.restore();
     vi.useRealTimers();
   });
 
