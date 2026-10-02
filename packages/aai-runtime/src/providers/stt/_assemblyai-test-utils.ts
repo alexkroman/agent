@@ -20,55 +20,40 @@
  * ```
  */
 
+import { EventEmitter } from "node:events";
+import { vi } from "vitest";
 import type { AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
 
-/** The stand-in the mocked `assemblyai` module hands the adapter. */
-export interface FakeTranscriber {
-  readonly params: Record<string, unknown>;
-  readonly updateConfigurationCalls: Record<string, unknown>[];
-  /** How many times the adapter asked the service to end the turn now. */
-  forceEndpointCalls: number;
-  readonly sentAudio: ArrayBufferLike[];
-  on(ev: string, fn: (...args: unknown[]) => void): void;
-  connect(): Promise<void>;
-  close(): Promise<void>;
-  sendAudio(_data: ArrayBufferLike): void;
-  updateConfiguration(config: Record<string, unknown>): void;
-  forceEndpoint(): void;
-  _fire(ev: string, ...args: unknown[]): void;
-}
+/**
+ * The stand-in the mocked `assemblyai` module hands the adapter: an
+ * `EventEmitter` whose wire methods are spies, so a spec asserts on calls.
+ */
+export class FakeTranscriber extends EventEmitter {
+  readonly updateConfiguration = vi.fn<(config: Record<string, unknown>) => void>();
+  /** The adapter asking the service to end the turn now. */
+  readonly forceEndpoint = vi.fn<() => void>();
+  readonly sendAudio = vi.fn<(data: ArrayBufferLike) => void>();
+  readonly close = vi.fn(async () => undefined);
 
-function makeFakeTranscriber(params: Record<string, unknown>): FakeTranscriber {
-  const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
-  return {
-    params,
-    updateConfigurationCalls: [],
-    forceEndpointCalls: 0,
-    sentAudio: [],
-    on(ev, fn) {
-      const arr = listeners.get(ev) ?? [];
-      arr.push(fn);
-      listeners.set(ev, arr);
-    },
-    async connect() {
-      this._fire("open", { type: "Begin", id: "mock-sess", expires_at: 0 });
-    },
-    async close() {
-      /* no-op */
-    },
-    sendAudio(data: ArrayBufferLike) {
-      this.sentAudio.push(data);
-    },
-    updateConfiguration(config: Record<string, unknown>) {
-      this.updateConfigurationCalls.push(config);
-    },
-    forceEndpoint() {
-      this.forceEndpointCalls += 1;
-    },
-    _fire(ev, ...args) {
-      for (const fn of listeners.get(ev) ?? []) fn(...args);
-    },
-  };
+  readonly params: Record<string, unknown>;
+
+  constructor(params: Record<string, unknown>) {
+    super();
+    this.params = params;
+  }
+
+  async connect(): Promise<void> {
+    this.emit("open", { type: "Begin", id: "mock-sess", expires_at: 0 });
+  }
+
+  /** Every audio frame the adapter forwarded, in order. */
+  get sentAudio(): ArrayBufferLike[] {
+    return this.sendAudio.mock.calls.map(([data]) => data);
+  }
+
+  _fire(ev: string, ...args: unknown[]): void {
+    this.emit(ev, ...args);
+  }
 }
 
 /** The module shape `vi.mock("assemblyai", …)` must return. */
@@ -77,7 +62,7 @@ export function assemblyAIModuleMock(): { AssemblyAI: new () => unknown } {
     AssemblyAI: class {
       streaming = {
         transcriber: (params: Record<string, unknown>): FakeTranscriber =>
-          makeFakeTranscriber(params),
+          new FakeTranscriber(params),
       };
     },
   };

@@ -113,7 +113,7 @@ describe("connectSession", () => {
 
     expect(onSessionEnd).toHaveBeenCalledTimes(1);
     expect(onSessionEnd).toHaveBeenCalledWith(connection.id, sink);
-    expect(stt.last()?.closed.value).toBe(true);
+    expect(stt.last()?.close).toHaveBeenCalled();
   });
 
   test("input after close is dropped rather than reaching a stopped session", async () => {
@@ -157,7 +157,7 @@ describe("connectSession", () => {
     await connection.ended;
 
     expect(onSessionEnd).toHaveBeenCalledWith(connection.id, sink);
-    expect(stt.last()?.closed.value).toBe(true);
+    expect(stt.last()?.close).toHaveBeenCalled();
   });
 
   test("an invalid command is dropped, not thrown", () => {

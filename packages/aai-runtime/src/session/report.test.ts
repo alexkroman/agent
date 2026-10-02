@@ -1,10 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
+import { makeConfig } from "../_agent-test-utils.ts";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { flush } from "../_timing-test-utils.ts";
 import type { TransportEventBody } from "../transports/types.ts";
-import { makeAgentConfig } from "./_core-harness.ts";
 import type { SessionEmitter } from "./emitter.ts";
 import { createReplyTracker } from "./reply-tracker.ts";
 import { createReportDispatcher } from "./report.ts";
@@ -27,7 +27,7 @@ function harness(opts: { hosted?: boolean; relayed?: boolean; stopped?: boolean 
     replies,
     toolStepDeps: {
       sessionId: "s1",
-      agentConfig: makeAgentConfig(),
+      agentConfig: makeConfig(),
       toolCall: {
         executeTool,
         sessionId: "s1",

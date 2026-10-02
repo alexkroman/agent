@@ -12,10 +12,9 @@
  */
 
 import type { SessionEvent } from "@alexkroman1/aai";
-import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { vi } from "vitest";
+import { makeConfig } from "../_agent-test-utils.ts";
 import { makeEmitter } from "../_session-test-utils.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "../transports/capabilities.ts";
 import type { Transport } from "../transports/types.ts";
@@ -66,10 +65,6 @@ export function makeTransport(): Transport {
   };
 }
 
-export function makeAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
-  return { name: "test", systemPrompt: DEFAULT_SYSTEM_PROMPT, greeting: "", ...overrides };
-}
-
 export function makeCore(overrides: Partial<ServerSessionOptions> = {}): {
   core: ServerSession;
   sink: ReturnType<typeof makeSink>;
@@ -90,7 +85,7 @@ export function makeCore(overrides: Partial<ServerSessionOptions> = {}): {
     agent: "test-agent",
     client,
     emitter,
-    agentConfig: makeAgentConfig(),
+    agentConfig: makeConfig(),
     executeTool: vi.fn(async () => "ok"),
     transport,
     ...overrides,

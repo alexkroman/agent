@@ -5,7 +5,7 @@ import { silentLogger } from "../_logger-test-utils.ts";
 import { MockWebSocket } from "../_mock-ws.ts";
 import { makeMockCore } from "../_session-test-utils.ts";
 import { sleep } from "../_timing-test-utils.ts";
-import { simulateBinaryFrame } from "./_ws-handler-test-utils.ts";
+import { simulateFrame } from "./_ws-handler-test-utils.ts";
 import type { ServerSession } from "./core-types.ts";
 import { createSessionDirectory, type SessionDirectory } from "./directory.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
@@ -67,14 +67,14 @@ describe("wireSessionSocket resource cleanup", () => {
     // dispatched — a `Uint8Array` because that is the one frame kind the
     // handler would forward to the core, which is what makes "the buffer was
     // dropped" observable at all.
-    simulateBinaryFrame(ws, new Uint8Array([1, 2, 3, 4]));
+    simulateFrame(ws, new Uint8Array([1, 2, 3, 4]));
 
     await vi.waitFor(() => {
       expect(sessions.size).toBe(0);
     });
 
     // A frame arriving after the failure has nowhere to go either.
-    simulateBinaryFrame(ws, new Uint8Array([5, 6, 7, 8]));
+    simulateFrame(ws, new Uint8Array([5, 6, 7, 8]));
 
     // The claimed behaviour: neither frame is ever replayed into a session that
     // failed to start. Without this the test only restated the case above it.

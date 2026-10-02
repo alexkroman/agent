@@ -11,8 +11,8 @@
  */
 
 import { createHash } from "node:crypto";
-import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { recordingDb as recordingBaseDb } from "./_db-test-utils.ts";
 import type { UploadBackend, UploadPart } from "./uploads/index.ts";
 import { createMemoryUploadBackend, createUploadStore, UPLOADS_TABLE } from "./workflow/uploads.ts";
 
@@ -194,8 +194,8 @@ export function recordingDb(options: { refuse?: string } = {}) {
     },
   ];
 
-  const db: Db = {
-    query: async <T = Record<string, unknown>>(text: string, params_: unknown[] = []) => {
+  const db = recordingBaseDb([], {
+    answer: (text, params_) => {
       sql.push(text.replace(/\s+/g, " ").trim());
       params.push(params_);
       // One statement the store is allowed to lose — see the spec that names it.
@@ -203,9 +203,9 @@ export function recordingDb(options: { refuse?: string } = {}) {
         throw new Error(`refused: ${options.refuse}`);
       // First match wins, so the handlers are ordered narrowest-first wherever one
       // statement's text contains another's.
-      return (handlers.find((handler) => text.includes(handler.when))?.run(params_) ?? []) as T[];
+      return handlers.find((handler) => text.includes(handler.when))?.run(params_) ?? [];
     },
-  };
+  });
   return { db, sql, params, uploads };
 }
 

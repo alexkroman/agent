@@ -47,7 +47,8 @@ export type FakeSttSession = SttSession & {
   readonly emitter: Emitter<SttEvents>;
   readonly options: SttOpenOptions;
   readonly audioFrames: Int16Array[];
-  readonly closed: { value: boolean };
+  /** Spy: assert `toHaveBeenCalled()` for "this session was closed". */
+  readonly close: ReturnType<typeof vi.fn<() => Promise<void>>>;
   /** Recorded pushes of the end-of-turn window — see `pipeline-endpointing.ts`. */
   readonly updateEndpointing: ReturnType<typeof vi.fn<(minTurnSilenceMs: number) => void>>;
   /** Recorded forced ends of turn — what `userTurnLimit` asks for. */
@@ -74,12 +75,10 @@ export function createFakeSttProvider(): FakeSttProvider {
     async open(options: SttOpenOptions): Promise<SttSession> {
       const emitter = createNanoEvents<SttEvents>();
       const audioFrames: Int16Array[] = [];
-      const closed = { value: false };
       const session: FakeSttSession = {
         emitter,
         options,
         audioFrames,
-        closed,
         sendAudio: vi.fn((pcm: Int16Array) => {
           audioFrames.push(pcm);
         }),
@@ -90,9 +89,7 @@ export function createFakeSttProvider(): FakeSttProvider {
           /* recorded via the mock's .mock.calls */
         }),
         on: emitter.on.bind(emitter) as SttSession["on"],
-        close: vi.fn(async () => {
-          closed.value = true;
-        }),
+        close: vi.fn(async () => undefined),
         firePartial(text, meta) {
           emitter.emit("partial", text, meta);
         },
@@ -137,7 +134,8 @@ export type FakeTtsSession = TtsSession & {
   readonly emitter: Emitter<TtsEvents>;
   readonly options: TtsOpenOptions;
   readonly textChunks: string[];
-  readonly closed: { value: boolean };
+  /** Spy: assert `toHaveBeenCalled()` for "this session was closed". */
+  readonly close: ReturnType<typeof vi.fn<() => Promise<void>>>;
   readonly sendText: ReturnType<typeof vi.fn<(text: string) => void>>;
   readonly flush: ReturnType<typeof vi.fn<() => void>>;
   readonly cancel: ReturnType<typeof vi.fn<() => void>>;
@@ -170,7 +168,6 @@ export function createFakeTtsProvider(
     async open(options: TtsOpenOptions): Promise<TtsSession> {
       const emitter = createNanoEvents<TtsEvents>();
       const textChunks: string[] = [];
-      const closed = { value: false };
       const sendText = vi.fn((text: string) => {
         textChunks.push(text);
       });
@@ -184,14 +181,11 @@ export function createFakeTtsProvider(
         emitter,
         options,
         textChunks,
-        closed,
         sendText,
         flush,
         cancel,
         on: emitter.on.bind(emitter) as TtsSession["on"],
-        close: vi.fn(async () => {
-          closed.value = true;
-        }),
+        close: vi.fn(async () => undefined),
         fireAudio(pcm) {
           emitter.emit("audio", pcm);
         },
@@ -250,26 +244,19 @@ export function speakFor(
 }
 
 /**
- * Fake STT provider that throws on `open()` with a given error code. Used to
- * test atomic provider open — TTS should not be opened at all when STT fails.
+ * A provider whose `open()` throws with `code` — an STT opener for an `stt_*`
+ * code, a TTS one for a `tts_*` code. For atomic provider open and failover: TTS
+ * is not opened when STT fails, and STT is closed when TTS fails.
  */
-export function createFailingSttProvider(code: SttErrorCode, message: string): SttOpener {
+export function createFailingProvider(code: SttErrorCode, message: string): SttOpener;
+export function createFailingProvider(code: TtsErrorCode, message: string): TtsOpener;
+export function createFailingProvider(
+  code: SttErrorCode | TtsErrorCode,
+  message: string,
+): SttOpener | TtsOpener {
   return {
-    name: "failing-stt",
-    async open(): Promise<SttSession> {
-      throw makeCodedError(code, message);
-    },
-  };
-}
-
-/**
- * Fake TTS provider that throws on `open()` with a given error code. Used to
- * test atomic provider open — STT should be closed when TTS fails.
- */
-export function createFailingTtsProvider(code: TtsErrorCode, message: string): TtsOpener {
-  return {
-    name: "failing-tts",
-    async open(): Promise<TtsSession> {
+    name: code.startsWith("stt_") ? "failing-stt" : "failing-tts",
+    async open(): Promise<never> {
       throw makeCodedError(code, message);
     },
   };

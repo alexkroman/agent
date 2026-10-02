@@ -245,16 +245,16 @@ describe("assemblyAIStt STT adapter — updateEndpointing", () => {
     // what keeps this from being one wire frame per partial for the length of
     // the call.
     session.updateEndpointing?.(DEFAULT_MIN_TURN_SILENCE_MS);
-    expect(fake.updateConfigurationCalls).toEqual([]);
+    expect(fake.updateConfiguration).not.toHaveBeenCalled();
 
     session.updateEndpointing?.(2600);
     session.updateEndpointing?.(2600);
-    expect(fake.updateConfigurationCalls).toEqual([{ min_turn_silence: 2600 }]);
+    expect(fake.updateConfiguration.mock.calls).toEqual([[{ min_turn_silence: 2600 }]]);
 
     session.updateEndpointing?.(DEFAULT_MIN_TURN_SILENCE_MS);
-    expect(fake.updateConfigurationCalls).toEqual([
-      { min_turn_silence: 2600 },
-      { min_turn_silence: DEFAULT_MIN_TURN_SILENCE_MS },
+    expect(fake.updateConfiguration.mock.calls).toEqual([
+      [{ min_turn_silence: 2600 }],
+      [{ min_turn_silence: DEFAULT_MIN_TURN_SILENCE_MS }],
     ]);
 
     await session.close();
@@ -268,7 +268,7 @@ describe("assemblyAIStt STT adapter — updateEndpointing", () => {
     const fake = fakeOf(session);
 
     session.updateEndpointing?.(5000);
-    expect(fake.updateConfigurationCalls).toEqual([{ min_turn_silence: 2000 }]);
+    expect(fake.updateConfiguration.mock.calls).toEqual([[{ min_turn_silence: 2000 }]]);
 
     await session.close();
   });
@@ -278,7 +278,7 @@ describe("assemblyAIStt STT adapter — updateEndpointing", () => {
     const fake = fakeOf(session);
 
     session.updateEndpointing?.(0);
-    expect(fake.updateConfigurationCalls).toEqual([{ min_turn_silence: 1 }]);
+    expect(fake.updateConfiguration.mock.calls).toEqual([[{ min_turn_silence: 1 }]]);
 
     await session.close();
   });
@@ -289,7 +289,7 @@ describe("assemblyAIStt STT adapter — updateEndpointing", () => {
     await session.close();
 
     session.updateEndpointing?.(2600);
-    expect(fake.updateConfigurationCalls).toEqual([]);
+    expect(fake.updateConfiguration).not.toHaveBeenCalled();
   });
 });
 
@@ -303,9 +303,9 @@ describe("assemblyAIStt STT adapter — forceEndOfTurn", () => {
     const fake = fakeOf(session);
 
     session.forceEndOfTurn?.();
-    expect(fake.forceEndpointCalls).toBe(1);
+    expect(fake.forceEndpoint).toHaveBeenCalledTimes(1);
     session.forceEndOfTurn?.();
-    expect(fake.forceEndpointCalls).toBe(2);
+    expect(fake.forceEndpoint).toHaveBeenCalledTimes(2);
 
     await session.close();
   });
@@ -316,7 +316,7 @@ describe("assemblyAIStt STT adapter — forceEndOfTurn", () => {
     await session.close();
 
     session.forceEndOfTurn?.();
-    expect(fake.forceEndpointCalls).toBe(0);
+    expect(fake.forceEndpoint).toHaveBeenCalledTimes(0);
   });
 });
 
@@ -333,10 +333,10 @@ describe("assemblyAIStt STT adapter — frame coalescing (50–1000 ms)", () => 
 
     const frame20 = new Int16Array(SAMPLES_20MS); // reused: exercises the copy
     for (let i = 0; i < 4; i++) session.sendAudio(frame20); // 80 ms — nothing yet
-    expect(fake.sentAudio.length).toBe(0);
+    expect(fake.sendAudio).toHaveBeenCalledTimes(0);
 
     session.sendAudio(frame20); // 5th frame → 100 ms accumulated → one flush
-    expect(fake.sentAudio.length).toBe(1);
+    expect(fake.sendAudio).toHaveBeenCalledTimes(1);
     expect(fake.sentAudio[0]?.byteLength).toBe(SAMPLES_100MS * 2);
 
     await session.close();
@@ -348,12 +348,12 @@ describe("assemblyAIStt STT adapter — frame coalescing (50–1000 ms)", () => 
 
     // 1000 ms + 70 ms in a single call: forwards one 1000 ms frame, carries 70 ms.
     session.sendAudio(new Int16Array(SAMPLES_1000MS + 1120));
-    expect(fake.sentAudio.length).toBe(1);
+    expect(fake.sendAudio).toHaveBeenCalledTimes(1);
     expect(fake.sentAudio[0]?.byteLength).toBe(SAMPLES_1000MS * 2);
 
     // close() flushes the ≥50 ms remainder.
     await session.close();
-    expect(fake.sentAudio.length).toBe(2);
+    expect(fake.sendAudio).toHaveBeenCalledTimes(2);
     expect(fake.sentAudio[1]?.byteLength).toBe(1120 * 2);
   });
 
@@ -362,10 +362,10 @@ describe("assemblyAIStt STT adapter — frame coalescing (50–1000 ms)", () => 
     const fake = fakeOf(session);
 
     session.sendAudio(new Int16Array(SAMPLES_20MS)); // 20 ms, held below 100 ms
-    expect(fake.sentAudio.length).toBe(0);
+    expect(fake.sendAudio).toHaveBeenCalledTimes(0);
 
     await session.close(); // 20 ms < 50 ms floor → dropped, not forwarded
-    expect(fake.sentAudio.length).toBe(0);
+    expect(fake.sendAudio).toHaveBeenCalledTimes(0);
   });
 });
 

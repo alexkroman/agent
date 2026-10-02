@@ -2,12 +2,13 @@ import type { Message, SessionEvent } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
+import { makeConfig } from "../_agent-test-utils.ts";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { makeEmitter } from "../_session-test-utils.ts";
 import { flush } from "../_timing-test-utils.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "../transports/capabilities.ts";
 import type { Transport, TransportEventBody, TransportEventType } from "../transports/types.ts";
-import { makeAgentConfig, makeCore, makeSink } from "./_core-harness.ts";
+import { makeCore, makeSink } from "./_core-harness.ts";
 import { createSessionCore } from "./core.ts";
 import type { ServerSession } from "./core-types.ts";
 
@@ -47,7 +48,7 @@ describe("createSessionCore — lifecycle", () => {
       agent: "test-agent",
       client: sink.sink,
       emitter: makeEmitter(sink.sink, { sessionId: "s-test" }).emitter,
-      agentConfig: makeAgentConfig(),
+      agentConfig: makeConfig(),
       executeTool,
       transport,
     });
@@ -66,7 +67,7 @@ describe("createSessionCore — lifecycle", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: makeAgentConfig({ idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ idleTimeoutMs: 1000 }),
       });
       await core.start();
       await core.stop();
@@ -409,7 +410,7 @@ describe("createSessionCore — idle timeout", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       expect(sink.events.filter((e) => e.type === "session.timedOut")).toHaveLength(0);
@@ -428,7 +429,7 @@ describe("createSessionCore — idle timeout", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       // A continuously-streaming silent mic: frames the whole way through.
@@ -466,7 +467,7 @@ describe("createSessionCore — idle timeout", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       vi.advanceTimersByTime(800);
@@ -487,7 +488,7 @@ describe("createSessionCore — idle timeout", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       vi.advanceTimersByTime(1001);
@@ -515,7 +516,7 @@ describe("createSessionCore — idle timeout", () => {
       };
       const { core } = makeCore({
         client: tracking,
-        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+        agentConfig: makeConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       vi.advanceTimersByTime(1001);

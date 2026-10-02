@@ -17,7 +17,6 @@
  */
 
 import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "@alexkroman1/aai/host-internal";
-import { vi } from "vitest";
 import { MockWebSocket } from "../_mock-ws.ts";
 
 /**
@@ -37,22 +36,7 @@ export function openSocket(readyState: number = MockWebSocket.OPEN): MockWebSock
   return ws;
 }
 
-/** Deliver a binary client frame (audio). */
-export function simulateBinaryFrame(ws: MockWebSocket, frame: Uint8Array): void {
-  ws.dispatchEvent(new MessageEvent("message", { data: frame }));
-}
-
-/** Deliver a text client frame (a JSON `SessionCommand`). */
-export function simulateTextFrame(ws: MockWebSocket, text: string): void {
-  ws.dispatchEvent(new MessageEvent("message", { data: text }));
-}
-
-/** Wait until the handler has logged that `session.start()` resolved. */
-export async function waitForSessionReady(logger: {
-  info: ReturnType<typeof vi.fn>;
-}): Promise<void> {
-  await vi.waitFor(() => {
-    const calls = logger.info.mock.calls.map((c: unknown[]) => c[0]);
-    if (!calls.includes("Session ready")) throw new Error("Session not ready yet");
-  });
+/** Deliver a client frame: binary is audio, text a JSON `SessionCommand`. */
+export function simulateFrame(ws: MockWebSocket, data: string | Uint8Array): void {
+  ws.dispatchEvent(new MessageEvent("message", { data }));
 }
