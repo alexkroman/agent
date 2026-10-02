@@ -165,6 +165,11 @@ export function openCartesia(
       // emit *after* `done`, audibly resuming the interrupted reply. `flush()`
       // does NOT set it: there we want the remaining audio and the real `done`.
       let activeContextCancelled = false;
+      // No text has gone out yet this session: there is no turn to cancel.
+      // Until the first `sendText`, `cancel()` must neither emit `done` (no turn
+      // is in flight to end) nor cancel a context Cartesia has never seen (a
+      // dead-context 400 for every barge-in before the agent first speaks).
+      let anyTextSent = false;
       const rotateIfPending = () => {
         if (!rotatePending) return;
         context = mintContext();
@@ -230,6 +235,7 @@ export function openCartesia(
           // First sendText after flush/cancel starts a fresh context so we
           // don't append to one that's already been finalized.
           rotateIfPending();
+          anyTextSent = true;
           void context.send({ transcript: text, continue: true }).catch(ignoreRejection);
         },
         flush() {
@@ -242,7 +248,7 @@ export function openCartesia(
           rotatePending = true;
         },
         cancel() {
-          if (shell.isClosed()) return;
+          if (shell.isClosed() || !anyTextSent) return;
           // Skip the wire cancel if the context is already final on
           // Cartesia's side: cancelling a retired context returns a 400
           // ("context ID does not exist") which surfaces as a fatal
