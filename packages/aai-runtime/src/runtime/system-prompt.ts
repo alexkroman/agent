@@ -26,7 +26,7 @@
  * with no symptom on a machine running one session at a time.
  */
 
-import type { AgentInstructions, AgentSessionContext } from "@alexkroman1/aai";
+import type { AgentSessionContext, AgentSystemPrompt } from "@alexkroman1/aai";
 import { agentInstructionsSection, buildSystemPrompt } from "@alexkroman1/aai/host-internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 
@@ -105,7 +105,7 @@ export interface SystemPromptResolver {
   /**
    * A fresh per-session resolver, starting with no suffix.
    *
-   * The context is what an {@link AgentInstructions} resolver is called with —
+   * The context is what an {@link AgentSystemPrompt} resolver is called with —
    * this session's id, env and slots. Passed per SESSION rather than held on
    * the runtime for the reason the suffix is per session: a resolver reading
    * one call's slots and answering for another is the concurrency bug this
@@ -146,7 +146,7 @@ export function createSystemPromptResolver(deps: {
    * Deliberately NOT `setSuffix`: that slot belongs to the session's dialogs,
    * last writer wins, and a session may legitimately have both.
    */
-  instructions?: AgentInstructions | undefined;
+  instructions?: Exclude<AgentSystemPrompt, string> | undefined;
 }): SystemPromptResolver {
   let promptCache: { day: string; text: string } | null = null;
 

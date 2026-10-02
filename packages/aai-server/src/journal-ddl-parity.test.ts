@@ -218,7 +218,8 @@ function tableBodies(sql: string): Map<string, string> {
 }
 
 /**
- * Apply every `alter table … add column if not exists` to what is parsed.
+ * Apply every `alter table … add column if not exists` (and `alter column … set
+ * not null`) to what is parsed.
  *
  * The second statement shape either side may use, and the one a `create table if
  * not exists` cannot express: that create is a NO-OP once the table is there, so
@@ -245,6 +246,25 @@ function applyAlters(sql: string, tables: Map<string, Table>): void {
       name: column,
       rest: (match[3] ?? "").trim().replace(/\s+/g, " "),
     });
+  }
+  applyNotNulls(sql, tables);
+}
+
+/**
+ * `alter column … set not null` — a contract migration tightening a column an
+ * earlier expand added nullable, folded onto the column's declaration in
+ * statement order like the adds in {@link applyAlters}.
+ */
+function applyNotNulls(sql: string, tables: Map<string, Table>): void {
+  const tighten = /alter table\s+([\w."]+)\s+alter column\s+([\w"]+)\s+set not null/gi;
+  for (const match of stripComments(sql).matchAll(tighten)) {
+    const name = match[1] ?? "";
+    if (!inScope(name)) continue;
+    const column = (match[2] ?? "").replace(/"/g, "");
+    const existing = tables.get(name)?.columns.find((entry) => entry.name === column);
+    if (existing && !/\bnot null\b/.test(existing.rest)) {
+      (existing as { rest: string }).rest = `${existing.rest} not null`.trim();
+    }
   }
 }
 

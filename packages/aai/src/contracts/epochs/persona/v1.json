@@ -3,37 +3,15 @@
   "capability": "persona",
   "epoch": 1,
   "rule": 2,
-  "sha256": "78cc1e193e5ea186c140efc79537e2d1c63055902a6a924c0cb86c4d329dfb28",
+  "sha256": "24e6f0b72ea87043e1327953f5b7d4c7a5ea4a88b45563fcd236afbe0465fde2",
   "exports": [
+    "DELEGATE_TOOL_NAME",
     "HANDOFF_TOOL_NAME",
     "HandoffOptions",
     "HandoffResult",
-    "PersonaDef",
-    "PersonaPosition",
-    "Personas",
-    "persona",
-    "personas"
+    "Roster",
+    "SpeakerPosition",
+    "roster"
   ],
-  "rollup": "30508bd28094ebd93c9b85913c90a7e49d895b73784640399cde36458f97f873",
-  "revision": 2,
-  "revisions": [
-    {
-      "revision": 0,
-      "rule": 2,
-      "sha256": "5bc3d04925f069a78ee72a083c40cfae0ed85e91dc7f1beef2fe554689e75503",
-      "reason": "minted"
-    },
-    {
-      "revision": 1,
-      "rule": 2,
-      "sha256": "d47e597f33371806ba64c9ee5007bef95d194da12ff6e9015098a8cba51aae32",
-      "reason": "compatible (checked): no export added or removed; every old export still assignable"
-    },
-    {
-      "revision": 2,
-      "rule": 2,
-      "sha256": "78cc1e193e5ea186c140efc79537e2d1c63055902a6a924c0cb86c4d329dfb28",
-      "reason": "compatible (checked): no export added or removed; every old export still assignable"
-    }
-  ]
+  "rollup": "d501f412a4576400eb647a3f894448f1c83b466b08251e9f0b04e4e65f735815"
 }

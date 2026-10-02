@@ -25,16 +25,9 @@ import type { StateProjection } from "./session-state.ts";
 /**
  * What `agent({ syncState })` accepts: one slot projection, or a list of them.
  *
- * The third member, a record keyed by slot name, is the DEPRECATED spelling —
- * the key has to repeat the projection's own slot key. It is still accepted
- * and normalized; write the projection or the list instead.
- *
  * @public
  */
-export type SyncStateDeclaration =
-  | StateProjection
-  | readonly StateProjection[]
-  | Readonly<Record<string, StateProjection>>;
+export type SyncStateDeclaration = StateProjection | readonly StateProjection[];
 
 /**
  * The observe-only half of an agent declaration — see this module's header.
@@ -76,9 +69,7 @@ export interface AgentObservation {
    * agent({ name: "Cart", syncState: [cartSlot.projected, prefsSlot.projected] });
    * ```
    *
-   * The record form `{ cart: cartSlot.projected }` still compiles and is
-   * normalized to the same thing, but is deprecated: its key must repeat the
-   * slot's own name. `agent()` returns the record keyed by slot name (see
+   * `agent()` returns the record keyed by slot name (see
    * {@link AgentDef.syncState}).
    */
   syncState?: SyncStateDeclaration;

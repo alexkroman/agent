@@ -211,6 +211,7 @@ describeWithPg("the durable workflow journal over a real Postgres", () => {
       name: "research",
       status: "ok" as const,
       attempts: 1,
+      startedAt: Date.now(),
       finishedAt: Date.now(),
     };
     const first = await journal.appendStep("wrun_steps", { ...entry, output: "winner" });

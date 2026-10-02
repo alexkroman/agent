@@ -95,19 +95,16 @@ export interface UsageLimits {
  * The per-REQUEST knobs every model loop this runtime runs takes — the agent's
  * own conversational loop and a {@link SpeakerDef}'s delegated one alike.
  *
- * **One declaration, extended by both, rather than a list each restates.**
- * `SpeakerDef` used to carry its own `temperature` and `maxOutputTokens` beside
- * `AgentModelTuning`'s, with one-line docs of their own, and a `maxRetries` that
- * meant something else entirely (the guardrail's revision budget, now
- * {@link SpeakerDef.maxRevisions}). A knob added here reaches both loops, and
- * the name means one thing wherever it is written.
+ * **One declaration, extended by both, rather than a list each restates.** A
+ * knob added here reaches both loops, and the name means one thing wherever it
+ * is written.
  *
  * Every field is passed straight through to the provider request, so each is
  * refused in S2S mode on the AGENT — there the provider runs the loop; see this
  * module's header. A subagent always runs on this runtime, whatever the parent's
  * mode, so it may set `temperature` and `maxOutputTokens` — but not
- * `maxRetries`, which {@link SpeakerDef} omits so the old guardrail-budget
- * spelling fails to compile.
+ * `maxRetries`, which {@link SpeakerDef} omits: its guardrail budget is
+ * `maxRevisions`.
  *
  * @public
  */

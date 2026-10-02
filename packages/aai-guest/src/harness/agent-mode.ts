@@ -222,7 +222,7 @@ export async function mainAgent(port: number, host: string, token: string): Prom
   const server = bundleHost.createRuntimeServer({
     runtime,
     // The agent's own env, and its ABSENCE here was a bug with three symptoms.
-    // `createRuntimeServer` reads four things out of it, and a deployed agent got none:
+    // `createServerForRuntime` reads four things out of it, and a deployed agent got none:
     //
     // - `DATABASE_URL`, which is where a workflow upload's RECORD lives. Without it
     //   `installWorkflowSupport` built a store with no database — so every deployed

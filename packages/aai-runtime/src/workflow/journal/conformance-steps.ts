@@ -131,27 +131,10 @@ export function journalStepConformance(arm: JournalArm): void {
         expect(read.find((step) => step.key === "convert#0")).toMatchObject({ startedAt: 1000 });
       });
 
-      test("an ABSENT start reads back absent, never as zero", async () => {
-        // A row written before the column existed has no start, and `0` reads
-        // as the epoch — so a step that took two seconds would report as having
-        // taken fifty-five years. Every arm must answer `undefined`, which is
-        // what `StepEntry.startedAt` obliges a reader to render as unknown.
-        const { journal, runId } = await startRun(arm);
-        const entry = stepOf({ key: "legacy#0", finishedAt: 2000 });
-        // `stepOf` defaults no start, so this is the pre-column shape exactly.
-        expect(entry.startedAt).toBeUndefined();
-
-        expect((await journal.appendStep(runId, entry)).startedAt).toBeUndefined();
-        const read = await journal.readSteps(runId);
-        expect(read.find((step) => step.key === "legacy#0")?.startedAt).toBeUndefined();
-      });
-
       test("a start of 0 is kept, because the epoch is a legal instant", async () => {
-        // The other side of the absence rule: `0` must not be COERCED to absent
-        // either, or an arm reading `startedAt ?? undefined` would look correct
-        // against the case above while silently dropping a real value. Nothing
-        // produces an epoch start in practice; the point is that the two
-        // conditions are distinguished rather than conflated.
+        // `0` must survive the round trip: an arm testing the value for
+        // truthiness would silently drop a real start. Nothing produces an
+        // epoch start in practice; the point is that it is a value.
         const { journal, runId } = await startRun(arm);
         const entry = stepOf({ key: "epoch#0", startedAt: 0, finishedAt: 5 });
 

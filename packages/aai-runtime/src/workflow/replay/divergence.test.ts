@@ -234,6 +234,7 @@ describe("what the check must NOT accuse", () => {
       status: "ok",
       output: "one",
       attempts: 1,
+      startedAt: Date.now(),
       finishedAt: Date.now(),
     });
 
@@ -275,6 +276,7 @@ describe("what the check must NOT accuse", () => {
       status: "ok",
       output: "kept",
       attempts: 1,
+      startedAt: Date.now(),
       finishedAt: Date.now(),
     });
 

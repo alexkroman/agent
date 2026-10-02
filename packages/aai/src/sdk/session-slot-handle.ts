@@ -229,15 +229,4 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * ```
    */
   readonly projected: StateProjection<V>;
-  /**
-   * A `syncState` projection over this slot through a view composed at the
-   * call: read the value (defaulting when the session has not touched it),
-   * then project.
-   *
-   * @deprecated Declare the view on the slot —
-   * `sessionSlot(key, create, { view })` — and pass {@link SessionSlot.projected}.
-   * A projection composed here is a value both ends must name, export and
-   * import, and an inline one is a fresh object per render. Still works.
-   */
-  projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
 }

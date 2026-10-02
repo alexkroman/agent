@@ -28,6 +28,13 @@ import {
   sha256Of,
 } from "./_api-contracts-tree.mjs";
 
+/**
+ * The bump a breaking change suggests. While the published packages are on
+ * `0.x` a break is a `minor` — `major` would release 1.0.0, and rule 20 of
+ * `guard-invariants` refuses it (`checkChangesetPreRelease`).
+ */
+export const BREAKING_BUMP = "major (minor while on 0.x)";
+
 /** Added and removed export names between two epochs, and what they imply. */
 export function classify(previous, next) {
   const before = new Set(previous);
@@ -35,7 +42,7 @@ export function classify(previous, next) {
   const removed = previous.filter((name) => !after.has(name));
   const added = next.filter((name) => !before.has(name));
   let bump = "patch or minor";
-  if (removed.length > 0) bump = "major";
+  if (removed.length > 0) bump = BREAKING_BUMP;
   else if (added.length > 0) bump = "minor";
   return { added, removed, bump };
 }
@@ -133,7 +140,7 @@ function staleMessage(pkg, capability, contract, committed, generated) {
     added.length > 0 ? `\n  added:   ${added.join(", ")}` : "",
   ].join("");
   const outcome = verdict(pkg, capability, contract, generated);
-  const bump = outcome.kind === "break" ? "major (the probe found a break)" : byExports;
+  const bump = outcome.kind === "break" ? `${BREAKING_BUMP} — the probe found a break` : byExports;
   return (
     `The "${id}" capability no longer matches epoch ${contract.current}.${detail}\n` +
     `  Likely changeset bump: ${bump}.\n${staleAdvice(id, contract.current, outcome)}`

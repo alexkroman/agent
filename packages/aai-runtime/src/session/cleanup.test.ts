@@ -6,7 +6,7 @@ import { MockWebSocket } from "../_mock-ws.ts";
 import { makeMockCore } from "../_session-test-utils.ts";
 import { sleep } from "../_timing-test-utils.ts";
 import { simulateBinaryFrame } from "./_ws-handler-test-utils.ts";
-import type { ServerSession } from "./core.ts";
+import type { ServerSession } from "./core-types.ts";
 import { createSessionDirectory, type SessionDirectory } from "./directory.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 

@@ -124,8 +124,17 @@ export const withFakedDevAuth = (
   overrides: Parameters<typeof withDevAuth>[0] = {},
 ): ReturnType<typeof withDevAuth> => withDevAuth({ ...ROUTE_FAKES, ...overrides });
 
+/**
+ * A project under a name the test picks — through `aai push`'s first push
+ * (`PUT …/source`, 201 on create), the one create path that takes a name.
+ * `POST /studio/projects` generates its own.
+ */
 export function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<Response> {
-  return authFetch(fetch, "/studio/projects", { body: { name }, key });
+  return authFetch(fetch, `/studio/projects/${name}/source`, {
+    method: "PUT",
+    body: { files: {} },
+    key,
+  });
 }
 
 /**

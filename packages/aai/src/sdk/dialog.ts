@@ -411,10 +411,15 @@ export function dialog(
       return position(ctx);
     },
     projection: <V>(project: (position: DialogPosition) => V): StateProjection<V> =>
-      // The slot's own projection resolves the value (defaulting it when the
-      // session has run no tool yet), so the actor here is reading a real
-      // snapshot rather than guessing at an empty frame.
-      slot.projection((state) => withActor(readState(state), (a) => project(positionOf(a)))),
+      // The stored value, or the machine's own initial snapshot when the
+      // session has run no tool yet, so the actor here is reading a real
+      // snapshot rather than guessing at an empty frame. `create` rather than
+      // a captured default, for the reason `sessionSlot`'s projection gives.
+      Object.assign(
+        (value?: unknown): V =>
+          withActor(readState(value ?? create()), (a) => project(positionOf(a))),
+        { key, create: create as () => unknown },
+      ),
     tool: <P extends ToolInputSchema = ToolInputSchema, R = unknown>(
       def: DialogToolDef<P, R, DialogEventOf>,
     ): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>> => {

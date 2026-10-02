@@ -9,7 +9,7 @@ import { createCoalescingRunner, createOwnedMap } from "@alexkroman1/aai/interna
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { registerLiveStream } from "aai-server/platform";
 import type { SSEStreamingApi } from "hono/streaming";
-import { type ProjectKind, resolveProjectKind } from "./studio-project-kind.ts";
+import type { ProjectKind } from "./studio-project-kind.ts";
 import {
   hasGithubChanges,
   hasPreviewChanges,
@@ -71,10 +71,7 @@ export function projectPayload(workspace: StudioWorkspace): ProjectPayload {
   return {
     files: workspace.files,
     sourceHash: workspace.hash,
-    // Resolved rather than spread through: a project written before the
-    // new-project switcher existed carries no `kind`, and the client should
-    // read the same default the prompt composition does, not `undefined`.
-    kind: resolveProjectKind(workspace.kind),
+    kind: workspace.kind,
     unpublished: hasUnpublishedChanges(workspace),
     previewStale: hasPreviewChanges(workspace),
     githubStale: hasGithubChanges(workspace),

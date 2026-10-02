@@ -327,12 +327,10 @@ that tells a slow step from a slow queue. It spans the whole reach, retries and
 backoff included, and excludes time queued behind `StepGate`; the field's own doc
 argues both.
 
-**OPTIONAL, and absence means the row predates the column.** The journal is
-append-only over tables that already hold rows, so a reader owes an absent start
-"unknown" and never zero — which would report a long step as instant. The
-conformance table pins that in both directions, including that a start of `0` is
-KEPT: an arm reading `startedAt ?? undefined` would satisfy the absence case
-while silently dropping a real value.
+**REQUIRED**, and `not null` on both schemas: rows that predated the column were
+backfilled with their own `finished_at` (zero duration, the one value that
+invents no cost) by `20261001010000_workflow_journal_contract.sql`. The
+conformance table pins that a start of `0` is KEPT, not tested for truthiness.
 
 **No reader surfaces it yet**, and that is worth saying rather than implying: the
 public workflow API carries a run SNAPSHOT and no step history, so this is
@@ -731,19 +729,14 @@ that failure reaches the guest as a 503, and because the guest ANSWERED it spend
 the message's own five attempts, whose backoff totals ~380 s. A rollout longer
 than about six minutes would drop messages.
 
-So the drop is owed to a later release and `RETIRED_OBJECTS` in
-`platform/schema.test.ts` is the ledger that remembers — self-clearing, because
-the entry's own assertion fails once the drop lands. `20260903160000`'s re-issued
-`sweep_terminal_workflow_runs` cleans BOTH tables for the length of the expand,
-and the `gone_attempts` arm goes with the table.
+So the drop rode a later release: `20261001010000_workflow_journal_contract.sql`
+re-issues `sweep_terminal_workflow_runs` without its `gone_attempts` arm and then
+drops the table.
 
-Two fixture consequences. `platform/schema.scenario.test.ts` asserts the EXACT
-set of `aai_platform` tables, so it lists both for one release — that suite needs
-a Supabase stack and skips without one, which is why this was caught in CI's
-`platform-stack` job rather than locally. And `ensurePlatformTables` replayed only
-creates, alters and indexes; it replays `drop table if exists` now, which applies
-nothing yet and is pre-positioned for the contract release the ledger entry
-guarantees.
+`platform/schema.scenario.test.ts` asserts the EXACT set of `aai_platform`
+tables (it needs a Supabase stack and skips without one, so CI's
+`platform-stack` job is where it fails), and `ensurePlatformTables` replays
+`drop table if exists` as well as creates, alters and indexes.
 
 ## The journal is a DIRECTORY now, and three scans discovered it by filename
 

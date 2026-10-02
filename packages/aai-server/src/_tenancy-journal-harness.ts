@@ -44,6 +44,8 @@ export type Step = {
   output: string | undefined;
   error: string | undefined;
   attempts: number;
+  /** The driver stamps both ends with one clock reading. */
+  startedAt: number;
   finishedAt: number;
 };
 export type Sleep = {
@@ -194,6 +196,7 @@ export function applyStepOp(t: Tables, op: StepOp, targets: Targets): Answer {
         output: op.output,
         error: undefined,
         attempts: 1,
+        startedAt: op.finishedAt,
         finishedAt: op.finishedAt,
       };
       t.steps.set(key, stored);

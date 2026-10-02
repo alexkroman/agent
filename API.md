@@ -4181,7 +4181,7 @@ export interface AgentDeclaration extends PipelineTuning, PipelinePhrases, Agent
 }
 
 // @public
-export interface AgentDef extends AgentDeclaration {
+export interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
     syncState?: Readonly<Record<string, StateProjection>>;
     tools: ToolMap;
     toolsets?: readonly Toolset[];
@@ -4195,9 +4195,6 @@ export interface AgentGuardrails {
     inputGuardrails?: readonly AgentGuardrail[];
     outputGuardrails?: readonly AgentGuardrail[];
 }
-
-// @public @deprecated
-export type AgentInstructions = Exclude<AgentSystemPrompt, string>;
 
 // @public
 export type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
@@ -5165,7 +5162,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     audioFormat: z.ZodString;
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
+    sessionId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"audio.completed">;
     meta: z.ZodObject<{
@@ -5424,8 +5421,6 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     get(ctx: SlotHolder): DeepReadonly<T>;
     readonly key: K;
     readonly projected: StateProjection<V>;
-    // @deprecated
-    projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
     reset(ctx: SlotHolder): DeepReadonly<T>;
     set(ctx: SlotHolder, value: T): DeepReadonly<T>;
     snapshot(ctx: SlotHolder): T;
@@ -5623,9 +5618,6 @@ export interface StateProjection<V = unknown> {
     readonly key: string;
 }
 
-// @public @deprecated
-export type StaticAgentParams = WorkflowAppAgentParams;
-
 // @public
 type StepClientTranscriptOptions = {
     since?: number | undefined;
@@ -5661,7 +5653,7 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
-export type SyncStateDeclaration = StateProjection | readonly StateProjection[] | Readonly<Record<string, StateProjection>>;
+export type SyncStateDeclaration = StateProjection | readonly StateProjection[];
 
 // @public
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
@@ -7230,7 +7222,7 @@ interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTu
 }
 
 // @public
-interface AgentDef extends AgentDeclaration {
+interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
     syncState?: Readonly<Record<string, StateProjection>>;
     tools: ToolMap;
     toolsets?: readonly Toolset[];
@@ -7775,7 +7767,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     audioFormat: z.ZodString;
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
+    sessionId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"audio.completed">;
     meta: z.ZodObject<{
@@ -8160,7 +8152,7 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type SyncStateDeclaration = StateProjection | readonly StateProjection[] | Readonly<Record<string, StateProjection>>;
+type SyncStateDeclaration = StateProjection | readonly StateProjection[];
 
 // @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];
@@ -8997,7 +8989,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     audioFormat: z.ZodString;
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
+    sessionId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"audio.completed">;
     meta: z.ZodObject<{
@@ -11211,22 +11203,6 @@ type SayOptions = {
 // @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
-// @public @deprecated
-export interface ScriptedToolContext {
-    ctx: TestToolContext;
-    desk: StubDelegate;
-    model: StubGenerate;
-}
-
-// @public @deprecated
-export function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
-
-// @public @deprecated
-export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
-    generate?: StubGenerateScript | undefined;
-    delegate?: StubDelegateScript | undefined;
-};
-
 // @public
 export interface SentEvent {
     // (undocumented)
@@ -11259,7 +11235,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     audioFormat: z.ZodString;
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
+    sessionId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"audio.completed">;
     meta: z.ZodObject<{
@@ -15871,9 +15847,6 @@ export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 // @public
 export function createRuntime(options: RuntimeOptions): Runtime;
 
-// @public @deprecated
-export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
-
 // @public
 export function createServerForRuntime(options: RuntimeServerOptions): AgentServer;
 
@@ -16309,7 +16282,7 @@ type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
-    startedAt?: number | undefined;
+    startedAt: number;
     finishedAt: number;
 };
 
@@ -17384,7 +17357,7 @@ type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
-    startedAt?: number | undefined;
+    startedAt: number;
     finishedAt: number;
 };
 
@@ -17673,9 +17646,6 @@ import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
 import { runTool } from '@alexkroman1/aai/testing';
 import { SaidLine } from '@alexkroman1/aai/testing';
 import { schemaInputIssues } from '@alexkroman1/aai/testing';
-import { ScriptedToolContext } from '@alexkroman1/aai/testing';
-import { scriptedToolContext } from '@alexkroman1/aai/testing';
-import { ScriptedToolContextOptions } from '@alexkroman1/aai/testing';
 import { SentEvent } from '@alexkroman1/aai/testing';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
@@ -17969,12 +17939,6 @@ export type ScriptedToolCall = {
     readonly id?: string;
 };
 
-export { ScriptedToolContext }
-
-export { scriptedToolContext }
-
-export { ScriptedToolContextOptions }
-
 export { SentEvent }
 
 // @public
@@ -18000,7 +17964,7 @@ export type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
-    startedAt?: number | undefined;
+    startedAt: number;
     finishedAt: number;
 };
 

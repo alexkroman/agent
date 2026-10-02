@@ -17,11 +17,10 @@ export type ClientReport = {
 /** Build the session WebSocket URL from the platform URL and resume state. */
 export function buildWsUrl(
   platformUrl: string,
-  resume: boolean,
   sessionId?: string,
   report: ClientReport = {},
 ): URL {
-  return applyResumeParams(buildAgentUrl(platformUrl, "websocket"), resume, sessionId, report);
+  return applyResumeParams(buildAgentUrl(platformUrl, "websocket"), sessionId, report);
 }
 
 /**
@@ -30,24 +29,17 @@ export function buildWsUrl(
  */
 export function buildBrokeredWsUrl(
   sessionUrl: string,
-  resume: boolean,
   sessionId?: string,
   report: ClientReport = {},
 ): URL {
-  return applyResumeParams(new URL(sessionUrl), resume, sessionId, report);
+  return applyResumeParams(new URL(sessionUrl), sessionId, report);
 }
 
 const WS_PROTOCOLS: Record<string, string> = { "https:": "wss:", "http:": "ws:" };
 
-function applyResumeParams(
-  wsUrl: URL,
-  resume: boolean,
-  sessionId: string | undefined,
-  report: ClientReport,
-): URL {
+function applyResumeParams(wsUrl: URL, sessionId: string | undefined, report: ClientReport): URL {
   wsUrl.protocol = WS_PROTOCOLS[wsUrl.protocol] ?? wsUrl.protocol;
   if (sessionId) wsUrl.searchParams.set("sessionId", sessionId);
-  else if (resume) wsUrl.searchParams.set("resume", "1");
   // On EVERY attempt, resume or not: the server keeps what the client reported
   // per session but reads it from the upgrade, so an attempt without it reads
   // as "unknown". `set`, not `append`: a broker `sessionUrl` that already

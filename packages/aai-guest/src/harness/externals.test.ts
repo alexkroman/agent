@@ -122,7 +122,7 @@ describe("the built harness", () => {
     // one runtime in an agent-mode guest is the bundle's. Definitions only the
     // runtime has would mean a module of it was inlined here.
     for (const definition of [
-      /function\s+createRuntimeServer\s*\(/,
+      /function\s+createServerForRuntime\s*\(/,
       /function\s+createTextAgent\s*\(/,
       /function\s+registerMetricsSink\s*\(/,
       /function\s+createRuntime\s*\(/,

@@ -10,17 +10,9 @@
     "dropped": {}
   },
   "eval": {
-    "current": 8,
-    "supported": [8],
-    "dropped": {
-      "1": "the frozen example authors agents with the removed `text: true` / `page` flags, a bare `s2s` or a single/array `syncState`, which `mode` and the slot-keyed record replaced (unreleased SDK)",
-      "2": "the frozen example authors agents with the removed `text: true` / `page` flags, a bare `s2s` or a single/array `syncState`, which `mode` and the slot-keyed record replaced (unreleased SDK)",
-      "3": "the frozen example authors agents with the removed `text: true` / `page` flags, a bare `s2s` or a single/array `syncState`, which `mode` and the slot-keyed record replaced (unreleased SDK)",
-      "4": "EvalSessionOptions (and so DescribeEvalOptions) no longer carries generate: the model seam moved to the host-only HostRuntimeOptions, so this epoch's frozen suite, which passes a metered generate double in its options, no longer compiles.",
-      "5": "EvalSessionOptions (and so DescribeEvalOptions) no longer carries generate: the model seam moved to the host-only HostRuntimeOptions, so this epoch's frozen suite, which passes a metered generate double in its options, no longer compiles.",
-      "6": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed. Also: The simulated caller and the judge (simulateCall, judgeCall, their types, EvalSimulation*) moved to /eval/simulate as the eval-simulate capability, and expectCalled/lastToolResultIn to the eval-assert capability; EvalTestContext/EvalTextTestContext no longer carry simulate()/judge(), EvalCaseOptions no longer carries stubCaller/stubJudge, and the suite options no longer carry callerLlm/judgeLlm. An epoch-6 case destructuring simulate/judge, or importing those names from /eval, no longer compiles.",
-      "7": "EvalSessionOptions and EvalTextAgentOptions now extend HostAgentOptions and no longer carry generate (the model seam moved to the host-only HostRuntimeOptions), so an epoch-7 describeEval/openEvalSession call passing generate no longer compiles. Epoch 7's rollup also imported the stub openers' SttOpener/TtsOpener types from @alexkroman1/aai/host-internal, which no longer exports them."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "eval-assert": {
     "current": 1,
@@ -33,11 +25,9 @@
     "dropped": {}
   },
   "eval-simulate": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "The @alexkroman1/aai-runtime/eval/simulate subpath was removed: the eval surface has one entry point, /eval/vitest (and the runner-free /eval), which export the same declarations. This epoch's frozen template imports from the removed subpath's barrel, so it no longer compiles; an epoch-1 case importing from /eval/simulate must import from /eval/vitest."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "eval-stubs": {
     "current": 1,
@@ -50,11 +40,9 @@
     "dropped": {}
   },
   "logging": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "The guest log ring (createLogBuffer and its types/constants) left the runtime's root barrel for @alexkroman1/aai/host-internal: its only user is the guest harness, which now carries no copy of the runtime. A host importing it from @alexkroman1/aai-runtime no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "metrics": {
     "current": 1,
@@ -62,64 +50,39 @@
     "dropped": {}
   },
   "providers": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "The twelve opener types (SttOpener, SttSession, SttOpenOptions, SttEvents, SttError, SttTurnMeta and the Tts* six) moved out of @alexkroman1/aai/host-internal and are declared by aai-runtime now; epoch 1 re-exported them from host-internal, which no longer exports them, so a host that imported them from there no longer compiles. Their shapes are unchanged and @alexkroman1/aai-runtime still exports them."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "runtime": {
-    "current": 6,
-    "supported": [6],
-    "dropped": {
-      "1": "RuntimeOptions.generate, which this epoch's frozen starter passes, is no longer a RuntimeOptions member: it moved to the host-only HostRuntimeOptions (a relative import from the eval harness), so the starter no longer compiles.",
-      "2": "RuntimeOptions.generate, which this epoch's frozen starter passes, is no longer a RuntimeOptions member: it moved to the host-only HostRuntimeOptions (a relative import from the eval harness), so the starter no longer compiles.",
-      "3": "Epoch 3's RuntimeOptions still carried generate, which moved to the host-only HostRuntimeOptions, so an epoch-3 host passing it no longer compiles; and the names its frozen starter did not exercise were covered only by the v1/v2 starters, which were dropped for the same move.",
-      "4": "Runtime is SEALED (a type-only runtimeBrand only createRuntime mints) and Runtime.connect(sink, options) became the free function connectSession(runtime, sink, options); RuntimeOptions.generate moved to the host-only HostRuntimeOptions behind a relative import. An epoch-4 caller of runtime.connect, or a hand-written Runtime, no longer compiles.",
-      "5": "Runtime lost executeTool, toolSchemas and createSession, and RuntimeOptions lost createWebSocket, createOpenaiRealtimeWebSocket, s2sConfig, sessionStartTimeoutMs, executeTool, toolSchemas, onToolResult and toolGuidance (moved to the host-only HostRuntimeOptions seams); RuntimeOptions.fetch no longer takes an explicit undefined. An epoch-5 host passing any of those options, or calling runtime.createSession or runtime.executeTool, no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "server": {
-    "current": 7,
-    "supported": [2, 3, 7],
-    "dropped": {
-      "1": "HostCredentialEnv, requiredProviderEnvVars and withHostCredentialFallback moved off the contracted root to @alexkroman1/aai-runtime/internal, and this epoch's frozen starter imports all three from @alexkroman1/aai-runtime, so it no longer compiles.",
-      "4": "Session tickets moved to the /auth subpath (auth capability): createSessionToken, verifySessionToken, the three SESSION_* constants and the ticket types are no longer on the root barrel, and the servers' auth option takes an opaque SessionAuth from createSessionAuth() instead of a SessionAuthOptions literal. An epoch-4 server passing auth: { secret } no longer compiles.",
-      "5": "HostCredentialEnv, requiredProviderEnvVars and withHostCredentialFallback moved off the contracted root to @alexkroman1/aai-runtime/internal: an epoch-5 host importing any of them from @alexkroman1/aai-runtime no longer compiles.",
-      "6": "the server capability names `AgentDef.page`, which `mode: \"workflow-app\"` replaced"
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "session": {
-    "current": 5,
-    "supported": [5],
-    "dropped": {
-      "1": "ServerSession, StateSyncSession, StoredSessionEvent, TransportEventBody and TransportEventType moved off the contracted root to @alexkroman1/aai-runtime/internal, and this epoch's frozen starter imports them from @alexkroman1/aai-runtime, so it no longer compiles.",
-      "2": "ServerSession, TransportEventBody and TransportEventType moved off the contracted root to @alexkroman1/aai-runtime/internal, and this epoch's frozen starter imports them from @alexkroman1/aai-runtime, so it no longer compiles.",
-      "3": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed.",
-      "4": "ServerSession, StateSyncSession, StoredSessionEvent, TransportEventBody and TransportEventType moved off the contracted root to @alexkroman1/aai-runtime/internal: an epoch-4 host importing any of them from @alexkroman1/aai-runtime no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "session-state": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "SessionStateBackend and SessionStateStore moved off the contracted root to @alexkroman1/aai-runtime/internal, leaving ensureSessionStateSchema: an epoch-1 host importing either from @alexkroman1/aai-runtime no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "telephony": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "CARRIER_PARAM and TELEPHONY_PATH moved to @alexkroman1/aai-runtime/internal, and CarrierName widened from the shipped \"twilio\" | \"telnyx\" to string: an epoch-1 host importing either constant from the root, or narrowing exhaustively over a CarrierName, no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "testing": {
-    "current": 3,
-    "supported": [3],
-    "dropped": {
-      "1": "the frozen example authors agents with the removed `text: true` / `page` flags, a bare `s2s` or a single/array `syncState`, which `mode` and the slot-keyed record replaced (unreleased SDK)",
-      "2": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "testing-stubs": {
     "current": 1,
@@ -127,12 +90,9 @@
     "dropped": {}
   },
   "text": {
-    "current": 3,
-    "supported": [3],
-    "dropped": {
-      "1": "the frozen example authors agents with the removed `text: true` / `page` flags, a bare `s2s` or a single/array `syncState`, which `mode` and the slot-keyed record replaced (unreleased SDK)",
-      "2": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "tools": {
     "current": 1,
@@ -140,24 +100,18 @@
     "dropped": {}
   },
   "tracing": {
-    "current": 3,
-    "supported": [1, 3],
-    "dropped": {
-      "2": "Metric export's names (the sink registry, otelMetricsSink, OtelMeterLike, OTEL_METRIC_NAMES, the metrics env gate) moved to the /metrics subpath as the metrics capability. An epoch-2 import of any of them from /tracing no longer resolves; startTracing still arms metric export."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "uploads": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "The upload store and its backends (UploadBackend, UploadStore, createHttpUploadBackend, createMemoryUploadBackend, HttpUploadBackendOptions, UPLOADS_TABLE, partKey, partsOf) moved off the contracted root to @alexkroman1/aai-runtime/internal: an epoch-1 host importing any of them from @alexkroman1/aai-runtime no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "workflow": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "WorkflowClientOptions, WdkAdapter, WdkRunRecord and WdkStreamOptions are no longer exported (the WDK adapter is internal to the workflow engine): an epoch-1 host naming any of them no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   }
 }

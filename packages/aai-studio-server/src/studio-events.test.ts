@@ -90,10 +90,10 @@ function openEvents(fetch: TestFetch, project: string, key = "key1"): Promise<Re
 
 async function setupProject() {
   const harness = await createTestCombined();
-  const res = await harness.fetch("/studio/projects", {
-    method: "POST",
+  const res = await harness.fetch("/studio/projects/proj/source", {
+    method: "PUT",
     headers: authHeaders(),
-    body: JSON.stringify({ name: "proj" }),
+    body: JSON.stringify({ files: {} }),
   });
   if (res.status !== 201) throw new Error(`Project create failed (${res.status})`);
   return harness;
@@ -202,10 +202,10 @@ test("a change landing between subscribe and the first read still reaches the cl
       },
     },
   });
-  await harness.fetch("/studio/projects", {
-    method: "POST",
+  await harness.fetch("/studio/projects/proj/source", {
+    method: "PUT",
     headers: authHeaders(),
-    body: JSON.stringify({ name: "proj" }),
+    body: JSON.stringify({ files: {} }),
   });
 
   const stream = await openEvents(harness.fetch, "proj");
@@ -229,7 +229,7 @@ test("the project list stream subscribes before its first read", async () => {
       ...base.events,
       watchScopeProjects: (s, cb) => {
         // A project created on another device as this stream subscribes.
-        raced ??= createWorkspace(base.workspaces, s, "raced", { files: {} });
+        raced ??= createWorkspace(base.workspaces, s, "raced", { kind: "agent", files: {} });
         return base.events.watchScopeProjects(s, cb);
       },
     },
@@ -260,10 +260,10 @@ test("GET /studio/events streams the project list, updated on create and delete"
 
   const framesP = readFrames(res, "projects", 2);
   // A project created on another device...
-  const created = await harness.fetch("/studio/projects", {
-    method: "POST",
+  const created = await harness.fetch("/studio/projects/second/source", {
+    method: "PUT",
     headers: authHeaders(),
-    body: JSON.stringify({ name: "second" }),
+    body: JSON.stringify({ files: {} }),
   });
   expect(created.status).toBe(201);
 
@@ -312,10 +312,10 @@ test("streams on one project share a fixed number of reads per change", async ()
     chats: base.chats,
     events: base.events,
   });
-  await harness.fetch("/studio/projects", {
-    method: "POST",
+  await harness.fetch("/studio/projects/proj/source", {
+    method: "PUT",
     headers: authHeaders(),
-    body: JSON.stringify({ name: "proj" }),
+    body: JSON.stringify({ files: {} }),
   });
 
   // Drain every initial frame first, so no read is in flight when the change

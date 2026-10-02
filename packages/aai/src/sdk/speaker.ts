@@ -236,11 +236,9 @@ export interface SpeakerDef<N extends string = string> extends Omit<ModelTuning,
    *
    * @defaultValue `1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
    *
-   * **Was `maxRetries`.** Renamed because {@link ModelTuning.maxRetries} retries
-   * a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
-   * delegation that SUCCEEDED and was judged not good enough. A subagent does
-   * not accept `maxRetries` at all, so code written against the old name fails
-   * to compile rather than quietly meaning something else.
+   * Not `maxRetries`: {@link ModelTuning.maxRetries} retries a provider REQUEST
+   * that failed (a 429, a socket reset), where this re-runs a delegation that
+   * SUCCEEDED and was judged not good enough.
    *
    * One, not CrewAI's three, because a revision is another FULL run of the
    * subagent and the caller is on a live phone call — the third attempt at a
@@ -255,7 +253,7 @@ export interface SpeakerDef<N extends string = string> extends Omit<ModelTuning,
    */
   maxRevisions?: number;
   /**
-   * Not a field. Typed as the message that names the rename, so
+   * Not a field. Typed as a message naming {@link SpeakerDef.maxRevisions}, so
    * `speaker({ maxRetries: 3 })` fails to compile with the fix in the error
    * rather than with a bare excess-property one — the idiom `agent({ tools })`
    * uses. See {@link SpeakerDef.maxRevisions}.

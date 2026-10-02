@@ -983,7 +983,7 @@
     },
     {
       "name": "test-helper-modules",
-      "description": "Each package's test-helper modules are its OWN and they are not interchangeable: the helpers are named for that package's domain, so a spec reaches for the module beside it rather than importing another package's. A package whose helpers outgrew one file splits them BY DOMAIN into `_<domain>-test-utils.ts` modules (the `*-test-utils.ts` grammar is what the coverage excludes, `tsconfig.build.json`, biome and the guard scopes key on), so a spec imports the module whose name says what it fakes. This pins where each helper lives and the roster it owes; a rename or a move fails the gate instead of quietly making a guide wrong. The rosters: aai/src/host/_test-utils.ts - tick() (a full macrotask yield), createMockToolContext(), makeConfig(), fakeFetch(). aai-runtime/src: _timing-test-utils.ts - flush() (MICROTASK-only; the one to reach for instead of `await new Promise(r => setTimeout(r, 0))`), tick(), withDeadline(); _agent-test-utils.ts - makeTool(), makeAgent(), makeConfig(), createMockToolContext(); _session-test-utils.ts - makeMockCore(), makeTrackingClient(); _s2s-fixture-test-utils.ts - loadFixture(), createFixtureSession() (fixture replay, incl. S2S mocking); _logger-test-utils.ts - makeLogger(); _db-test-utils.ts - recordingDb(). aai-cli/src/_test-utils.ts - withTempDir() (temp dir + cleanup), silenced(), makeBundle(); the dev-server specs additionally share their fake chokidar and runtime/server mocks via _dev-server-test-utils.ts, and a _test-setup.ts setup file points AAI_CONFIG_DIR at a per-run temp dir so a CLI spec can never touch the developer's real ~/.config/aai/config.json (API key + approved servers). aai-ui/src/_react-test-utils.ts - createMockSessionCore(), installAudioMocks(), and the MockAudioContext class. aai-studio-client/src/_test-utils.ts - stubFetch() and its readers, renderWithClient(), the button/input/textarea element seams, installResizeObserver(). aai-server/src: _orchestrator-test-utils.ts - createTestStore() (in-memory BundleStore), createTestOrchestrator(), makeSlot(); _request-test-utils.ts - authHeaders()/authFetch()/deploy()/deployAgent()/deployPayload()/deployBody(); _logger-test-utils.ts - captureLogs(); _sql-test-utils.ts - createDispatchingSql(), createRecordingSql(), fakeAdminDbOver(); _sandbox-test-utils.ts - fakeSandbox(), spawnedAgent(); _modal-test-utils.ts - fakeModalImage(). Build a platform request with authFetch/deploy, never a header literal - see \"Building a platform request in a test\" in packages/aai-server/CLAUDE.md. Two helper SUBPATHS keep the un-underscored `test-utils` name because they cross a package boundary and `_*.ts` is package-private (Biome's noPrivateImports): `aai-server/test-utils` (a barrel, `test-utils-barrel.ts`, over the private modules above, for aai-studio-server) and `aai-guest-core/test-utils` (`src/test-utils.ts` itself, shared by the three guest packages). Each roster is a FLOOR: a module may export more, and several do.",
+      "description": "Each package's test-helper modules are its OWN and they are not interchangeable: the helpers are named for that package's domain, so a spec reaches for the module beside it rather than importing another package's. A package whose helpers outgrew one file splits them BY DOMAIN into `_<domain>-test-utils.ts` modules (the `*-test-utils.ts` grammar is what the coverage excludes, `tsconfig.build.json`, biome and the guard scopes key on), so a spec imports the module whose name says what it fakes. This pins where each helper lives and the roster it owes; a rename or a move fails the gate instead of quietly making a guide wrong. The rosters: aai/src/host/_test-utils.ts - tick() (a full macrotask yield), createMockToolContext(), makeConfig(), fakeFetch(). aai-runtime/src: _timing-test-utils.ts - flush() (MICROTASK-only; the one to reach for instead of `await new Promise(r => setTimeout(r, 0))`), tick(), withDeadline(); _agent-test-utils.ts - makeTool(), makeAgent(), makeConfig(), createMockToolContext(); _session-test-utils.ts - makeMockCore(), makeTrackingClient(); _s2s-fixture-test-utils.ts - loadFixture(), createFixtureSession() (fixture replay, incl. S2S mocking); _logger-test-utils.ts - makeLogger(); _db-test-utils.ts - recordingDb(). aai-cli/src/_test-utils.ts - withTempDir() (temp dir + cleanup), silenced(), makeBundle(); the dev-server specs additionally share their fake chokidar and runtime/server mocks via _dev-server-test-utils.ts, and a _test-setup.ts setup file points AAI_CONFIG_DIR at a per-run temp dir so a CLI spec can never touch the developer's real ~/.config/aai/config.json (API key + approved servers). aai-ui/src/_react-test-utils.ts - createMockSessionCore(), installAudioMocks(), and the MockAudioContext class. aai-studio-client/src/_test-utils.ts - stubFetch() and its readers, renderWithClient(), the button/input/textarea element seams, installResizeObserver(). aai-server/src: _orchestrator-test-utils.ts - createTestStore() (in-memory BundleStore), createTestOrchestrator(), makeSlot(); _request-test-utils.ts - authHeaders()/authFetch()/deploy()/deployAgent()/deployPayload()/deployBody(); _logger-test-utils.ts - captureLogs(); _sql-test-utils.ts - createDispatchingSql(), createRecordingSql(), fakeAdminDbOver(); _sandbox-test-utils.ts - fakeSandbox(), spawnedAgent(). Build a platform request with authFetch/deploy, never a header literal - see \"Building a platform request in a test\" in packages/aai-server/CLAUDE.md. Two helper SUBPATHS keep the un-underscored `test-utils` name because they cross a package boundary and `_*.ts` is package-private (Biome's noPrivateImports): `aai-server/test-utils` (a barrel, `test-utils-barrel.ts`, over the private modules above, for aai-studio-server) and `aai-guest-core/test-utils` (`src/test-utils.ts` itself, shared by the three guest packages). Each roster is a FLOOR: a module may export more, and several do.",
       "paths": "packages",
       "must": [
         {
@@ -1134,15 +1134,6 @@
           },
           "must": {
             "exportFunctions": ["fakeSandbox", "spawnedAgent"]
-          }
-        },
-        {
-          "name": "server-modal-helpers",
-          "for": {
-            "files": "aai-server/src/_modal-test-utils.ts"
-          },
-          "must": {
-            "exportFunctions": ["fakeModalImage"]
           }
         }
       ]
@@ -1872,7 +1863,7 @@
     },
     {
       "name": "guest-route-table",
-      "description": "`guest/routes.ts` declares the guest harness's surface twice over \u2014 `GUEST_ROUTES` (the paths) and `GUEST_ROUTE_EXPOSURE` (how the PLATFORM exposes each one) \u2014 and two thirds of the first table is IMPORTED rather than transcribed. This convention pins exactly that, and it is worth stating what it does and does not cover, because the guarantee is three mechanisms and only one of them is here. The IMPORTS are the structural half: ten of the routes are served by `@alexkroman1/aai-runtime` \u2014 six by `createRuntimeServer`, four by `handleWorkflowRequest` \u2014 and they arrive as `SERVER_ROUTES` and `WORKFLOW_CALLBACK_ROUTES`, so a rename there is a compile error here rather than a 404 a client reads as a dead sandbox and re-brokers against forever. Transcribing them instead would compile and pass every test. The two EXPORT names are pinned because the other two mechanisms read them: `guest/routes.test.ts` introspects the real orchestrator app to prove every `proxied` method is registered under `/:slug` and that no stale `direct-dial` sits beside a route that does forward, and `guard-invariants` rule 12 reads this tree and the guest's dispatch as TEXT \u2014 which is how it respects the boundary that aai-server may not import guest source, and also what makes it silent if either table is renamed out from under it. What is NOT expressible here is the completeness question the section exists for: whether `GUEST_ROUTES` still describes the guest. That list is transcribed by hand and cannot be derived, it has already drifted once (`GET /studio/tools` was a real guest route in neither table, and the `satisfies` cannot catch it \u2014 that compile error fires for a KEY with no exposure entry, never for a route nobody wrote down), and rule 12 plus the test are the answer. Konsistent holds the names those two depend on.",
+      "description": "`guest/routes.ts` declares the guest harness's surface twice over \u2014 `GUEST_ROUTES` (the paths) and `GUEST_ROUTE_EXPOSURE` (how the PLATFORM exposes each one) \u2014 and two thirds of the first table is IMPORTED rather than transcribed. This convention pins exactly that, and it is worth stating what it does and does not cover, because the guarantee is three mechanisms and only one of them is here. The IMPORTS are the structural half: ten of the routes are served by `@alexkroman1/aai-runtime` \u2014 six by `createServerForRuntime`, four by `handleWorkflowRequest` \u2014 and they arrive as `SERVER_ROUTES` and `WORKFLOW_CALLBACK_ROUTES`, so a rename there is a compile error here rather than a 404 a client reads as a dead sandbox and re-brokers against forever. Transcribing them instead would compile and pass every test. The two EXPORT names are pinned because the other two mechanisms read them: `guest/routes.test.ts` introspects the real orchestrator app to prove every `proxied` method is registered under `/:slug` and that no stale `direct-dial` sits beside a route that does forward, and `guard-invariants` rule 12 reads this tree and the guest's dispatch as TEXT \u2014 which is how it respects the boundary that aai-server may not import guest source, and also what makes it silent if either table is renamed out from under it. What is NOT expressible here is the completeness question the section exists for: whether `GUEST_ROUTES` still describes the guest. That list is transcribed by hand and cannot be derived, it has already drifted once (`GET /studio/tools` was a real guest route in neither table, and the `satisfies` cannot catch it \u2014 that compile error fires for a KEY with no exposure entry, never for a route nobody wrote down), and rule 12 plus the test are the answer. Konsistent holds the names those two depend on.",
       "paths": "packages/aai-server/src/guest/routes.ts",
       "must": {
         "exportConstants": ["GUEST_ROUTES", "GUEST_ROUTE_EXPOSURE"],
@@ -2455,7 +2446,7 @@
     },
     {
       "name": "guest-embeds-no-runtime",
-      "description": "The harness embeds NO agent runtime, so no file here may import `createRuntime`. Every worker bundle ships its own: `buildWorker`'s generated wrapper entry exports `__aaiCreateRuntime`, a factory over the USER'S installed SDK's `createRuntime` bundled in with the provider SDKs, and the harness builds every session through that. What the rule buys is that platform SDK drift can never break a deployed agent \u2014 it runs exactly the runtime version it was built and tested against, the same one `aai dev` ran \u2014 and it is why a bundle WITHOUT the factory is rejected at load (\"rebuild with a current @alexkroman1/aai-cli\") rather than falling back to an embedded copy. A static `createRuntime` here is what such a fallback would be built out of, and the failure it produces is the one no test can see: a deployed agent that boots fine on a runtime nobody deployed it against, in a sandbox whose whole contract is frozen per deploy by the harness image pin. The harness carries NO copy of the runtime at all: the HTTP/session shell (`createRuntimeServer`), the delivery door, tracing and the session gate come from the bundle too, as `__aaiCreateRuntime.host` (the typed `GuestHost`, `aai-runtime/guest-host.ts`), so the server and the sessions are one copy \u2014 the artifact half is `harness/externals.test.ts`, which this rule cannot see because konsistent reads imports, not what tsdown inlined. Nor is `createTextAgent`: the studio's in-guest coding agent is the harness's own agent rather than a user's, and running it on the platform's SDK is correct.",
+      "description": "The harness embeds NO agent runtime, so no file here may import `createRuntime`. Every worker bundle ships its own: `buildWorker`'s generated wrapper entry exports `__aaiCreateRuntime`, a factory over the USER'S installed SDK's `createRuntime` bundled in with the provider SDKs, and the harness builds every session through that. What the rule buys is that platform SDK drift can never break a deployed agent \u2014 it runs exactly the runtime version it was built and tested against, the same one `aai dev` ran \u2014 and it is why a bundle WITHOUT the factory is rejected at load (\"rebuild with a current @alexkroman1/aai-cli\") rather than falling back to an embedded copy. A static `createRuntime` here is what such a fallback would be built out of, and the failure it produces is the one no test can see: a deployed agent that boots fine on a runtime nobody deployed it against, in a sandbox whose whole contract is frozen per deploy by the harness image pin. The harness carries NO copy of the runtime at all: the HTTP/session shell (`createServerForRuntime`), the delivery door, tracing and the session gate come from the bundle too, as `__aaiCreateRuntime.host` (the typed `GuestHost`, `aai-runtime/guest-host.ts`), so the server and the sessions are one copy \u2014 the artifact half is `harness/externals.test.ts`, which this rule cannot see because konsistent reads imports, not what tsdown inlined. Nor is `createTextAgent`: the studio's in-guest coding agent is the harness's own agent rather than a user's, and running it on the platform's SDK is correct.",
       "paths": ["packages/aai-guest/src/*.ts", "packages/aai-guest/src/**/*.ts"],
       "mustNot": {
         "importValues": [
@@ -2479,8 +2470,6 @@
           "excludeFiles": ["audio/**"],
           "mustNot": {
             "importValuesFrom": [
-              "../../../audio/*",
-              "!../../../audio/index.ts",
               "../../audio/*",
               "!../../audio/index.ts",
               "../audio/*",
@@ -2489,8 +2478,6 @@
               "!./audio/index.ts"
             ],
             "importTypesFrom": [
-              "../../../audio/*",
-              "!../../../audio/index.ts",
               "../../audio/*",
               "!../../audio/index.ts",
               "../audio/*",
@@ -2508,8 +2495,6 @@
           "excludeFiles": ["session/**"],
           "mustNot": {
             "importValuesFrom": [
-              "../../../session/*",
-              "!../../../session/index.ts",
               "../../session/*",
               "!../../session/index.ts",
               "../session/*",
@@ -2518,8 +2503,6 @@
               "!./session/index.ts"
             ],
             "importTypesFrom": [
-              "../../../session/*",
-              "!../../../session/index.ts",
               "../../session/*",
               "!../../session/index.ts",
               "../session/*",
@@ -2537,8 +2520,6 @@
           "excludeFiles": ["upload/**"],
           "mustNot": {
             "importValuesFrom": [
-              "../../../upload/*",
-              "!../../../upload/index.ts",
               "../../upload/*",
               "!../../upload/index.ts",
               "../upload/*",
@@ -2547,8 +2528,6 @@
               "!./upload/index.ts"
             ],
             "importTypesFrom": [
-              "../../../upload/*",
-              "!../../../upload/index.ts",
               "../../upload/*",
               "!../../upload/index.ts",
               "../upload/*",

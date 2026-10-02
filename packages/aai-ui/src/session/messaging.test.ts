@@ -166,21 +166,6 @@ describe("createBrowserSession", () => {
       lastSocket?.simulateMessage(makeConfig(16_000, 24_000, "sess-123"));
       expect(onSessionId).toHaveBeenCalledWith("sess-123");
     });
-
-    it("handles config with empty sessionId (no onSessionId call expected)", () => {
-      const onSessionId = vi.fn();
-      core = createBrowserSession({
-        platformUrl: "ws://localhost:3000",
-        WebSocket: MockWebSocketConstructor,
-        onSessionId,
-      });
-      core.connect();
-      lastSocket?.simulateOpen();
-
-      // sessionId="" is falsy — onSessionId should not be called
-      lastSocket?.simulateMessage(makeConfig(16_000, 24_000, ""));
-      expect(onSessionId).not.toHaveBeenCalled();
-    });
   });
 
   // ─── send/sendJson ──────────────────────────────────────────────────────
@@ -269,18 +254,6 @@ describe("createBrowserSession", () => {
       core.disconnect();
       core.connect();
       expect(lastSocket?.url).toContain("sessionId=sess-123");
-      expect(lastSocket?.url).not.toContain("resume=1");
-    });
-
-    it("falls back to resume=1 on reconnect when config carried no sessionId", () => {
-      core.connect();
-      lastSocket?.simulateOpen();
-      // Older servers may omit sessionId — greeting suppression still applies.
-      lastSocket?.simulateMessage(makeConfig(16_000, 24_000, ""));
-      core.disconnect();
-      core.connect();
-      expect(lastSocket?.url).toContain("resume=1");
-      expect(lastSocket?.url).not.toContain("sessionId=");
     });
 
     it("carries `location` on the first connect AND on the resume after it", () => {

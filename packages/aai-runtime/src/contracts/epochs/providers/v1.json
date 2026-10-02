@@ -3,7 +3,7 @@
   "capability": "providers",
   "epoch": 1,
   "rule": 2,
-  "sha256": "40c58722955f77f8c94a6b14e2c19fff3798d2bd0b4760c1889b46b6e57a9df1",
+  "sha256": "09aa9e5fa420a011b15786258eb9b3402ffc7956c4949c341782392697b78fb2",
   "exports": [
     "LlmRegistryEntry",
     "OpenerRegistryEntry",
@@ -28,5 +28,5 @@
     "resolveLlm",
     "salvageJson"
   ],
-  "rollup": "1c31f86d471f330a041259b2c554df5d4579c05cdcdca6219191348dab7a323f"
+  "rollup": "90c7057b08839914a9956cff48e477edda0a49734ac1da31601019881714f4b0"
 }

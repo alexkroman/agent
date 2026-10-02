@@ -94,10 +94,9 @@ export type PlatformCall = {
    * argument: a route serving a dozen methods behind a body field prints one line
    * per call whatever the method was, so `POST /:slug/workflow-journal` had to be
    * decomposed by counting requests. It is not how the SERVER decides what to do
-   * — the method stays in the body as well — because a guest and the platform it
-   * calls are deployed independently and a bundle older than this field must keep
-   * working. See `workflow-journal-handler.ts`, which reads the path first and
-   * falls back to the body.
+   * — the method stays in the body as well, because a socket frame (below) has no
+   * segment. See `aai-server/guest-handlers/workflow-journal.ts`, which reads the
+   * path first and the body second.
    *
    * **It reaches the HTTP fallback ONLY.** A socket frame carries a `route` the
    * platform checks against a closed set (`platform/socket-handler.ts`), so a

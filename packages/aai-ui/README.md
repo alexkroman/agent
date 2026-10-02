@@ -35,12 +35,14 @@ The session's state lives in a slot, and `syncState` is what the browser sees
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
-const desk = sessionSlot("desk", () => ({ symbols: [] as string[] }));
+const desk = sessionSlot("desk", () => ({ symbols: [] as string[] }), {
+  view: (state) => ({ symbols: state.symbols }),
+});
 
 export default agent({
   name: "Market Desk",
   systemPrompt: "You look up quotes and keep the caller's watchlist.",
-  syncState: { desk: desk.projection((state) => ({ symbols: state.symbols })) },
+  syncState: desk.projected,
 });
 ```
 
@@ -247,7 +249,7 @@ of them something a `client.tsx` reaches for:
 
 | Subpath       | Reach for it when                                                                                                                                                                                                                               |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/client-dir` | serving the prebuilt default client from Node — `defaultClientDir()`, the filesystem path `createRuntimeServer({ clientDir })` wants                                                                                                            |
+| `/client-dir` | serving the prebuilt default client from Node — `defaultClientDir()`, the filesystem path `createServerForRuntime({ clientDir })` wants                                                                                                         |
 | `/internal`   | never, from application code: the plumbing `mountClient()` installs for itself (the session and theme providers, the default shell's URL chips, the tool-config context, the pre-connection lookup). Not a public API and not covered by semver |
 
 ## Documentation

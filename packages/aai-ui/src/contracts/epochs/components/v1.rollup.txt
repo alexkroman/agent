@@ -82,6 +82,33 @@ export type ControlsProps = {
 };
 
 // @public
+type ConversationItem = {
+    kind: "message";
+    message: ChatMessage;
+} | {
+    kind: "tool";
+    toolCall: ToolCallInfo;
+};
+
+// @public
+type ConversationLogEntry = {
+    readonly kind: "session";
+    readonly sessionId: string;
+    readonly run: number;
+    readonly at: number;
+    readonly items: readonly ConversationItem[];
+    readonly clientId?: string;
+} | {
+    readonly kind: "note";
+    readonly at: number;
+    readonly text: string;
+} | {
+    readonly kind: "spoken";
+    readonly at: number;
+    readonly text: string;
+};
+
+// @public
 export function ConversationView(input: ConversationViewProps): ReactNode;
 
 // @public
@@ -91,6 +118,13 @@ export type ConversationViewProps = {
     renderStreaming?: ((text: string) => ReactNode) | undefined;
     renderTranscript?: ((transcript: UseUserTranscriptResult) => ReactNode) | undefined;
     transcriptPosition?: "inline" | "below" | undefined;
+    log?: readonly ConversationLogEntry[] | undefined;
+    renderNote?: ((entry: Extract<ConversationLogEntry, {
+        kind: "note";
+    }>) => ReactNode) | undefined;
+    renderSessionHeader?: ((entry: Extract<ConversationLogEntry, {
+        kind: "session";
+    }>) => ReactNode) | undefined;
     empty?: ReactNode | undefined;
     thinkingLabel?: string | undefined;
     thinkingIndicator?: ReactNode | undefined;
@@ -130,6 +164,7 @@ export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps
 // @public
 export type MessageListProps = {
     className?: string;
+    log?: readonly ConversationLogEntry[] | undefined;
 };
 
 // @public

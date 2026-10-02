@@ -5,5 +5,5 @@
   "rule": 2,
   "sha256": "7b870d6727f3fcef14615dc90c40703a656ea944394388861df1b1a003c73e77",
   "exports": ["Procedure", "ProcedureNotFinishedError", "ProcedureRunOptions", "procedure"],
-  "rollup": "c0fb72d66cdb67b26eee621a24108a992eb8a8be96e24946ef4d7cff8018fcb7"
+  "rollup": "de71072ae5c2d8a1962327c5e7d5eea5fb27b0b7523f07ffe6a31de565be60a0"
 }

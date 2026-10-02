@@ -560,22 +560,6 @@ type SayOptions = {
 // @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
-// @public @deprecated
-export interface ScriptedToolContext {
-    ctx: TestToolContext;
-    desk: StubDelegate;
-    model: StubGenerate;
-}
-
-// @public @deprecated
-export function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
-
-// @public @deprecated
-export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
-    generate?: StubGenerateScript | undefined;
-    delegate?: StubDelegateScript | undefined;
-};
-
 // @public
 export interface SentEvent {
     // (undocumented)
@@ -608,7 +592,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     audioFormat: z.ZodString;
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
+    sessionId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"audio.completed">;
     meta: z.ZodObject<{

@@ -3,7 +3,7 @@
   "capability": "s2s",
   "epoch": 1,
   "rule": 2,
-  "sha256": "a44dfc24973592f70e01528c2a43a0589774208b572b80204a8217c70423e5e7",
+  "sha256": "d614b307e150d02f78831d5d757f062f5bf6ca3455cd50cbb29daccaf9f66ae9",
   "exports": [
     "AssemblyAIS2sOptions",
     "OpenAIS2sOptions",
@@ -12,5 +12,5 @@
     "assemblyAIS2s",
     "openAIS2s"
   ],
-  "rollup": "8c57228df0c6f1e24d7ab19b3bea4c7416c91d456001d961bd08c5e30818fe27"
+  "rollup": "a81b90847f5aab2bb46a5eebe16bbd40f65686c020c7536ad8e00cacb9565078"
 }

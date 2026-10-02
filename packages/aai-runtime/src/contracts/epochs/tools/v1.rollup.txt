@@ -1,5 +1,6 @@
 import type { JSONSchema7 } from 'json-schema';
 import type { McpServers } from '@alexkroman1/aai';
+import { ToolBearingDef } from '@alexkroman1/aai/manifest';
 import type { ToolInputSchema } from '@alexkroman1/aai';
 import { ToolRegistry } from '@alexkroman1/aai/manifest';
 import type { ToolSet } from 'ai';
@@ -11,10 +12,16 @@ type LogContext = Record<string, unknown>;
 type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
-type Logger = Record<LogLevel, LogFn>;
-
-// @public
-type LogLevel = "info" | "warn" | "error" | "debug";
+interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
 
 // @public
 export const MCP_CONNECT_TIMEOUT_MS = 10000;
@@ -71,7 +78,7 @@ export type McpToolsOptions = McpConnectOptions & {
     openSession?: McpSessionOpener | undefined;
 };
 
-// @public
+// @public @sealed
 export type McpToolSurface<D> = {
     agent: D;
     servers: readonly McpServerStatus[];
@@ -90,11 +97,11 @@ export type ResolvedMcpServer = {
     key: string;
     url: string;
     token?: string;
+    headers?: Readonly<Record<string, string>>;
 };
 
 // @public
-export function withMcpTools<D extends {
-    readonly tools: ToolRegistry;
+export function withMcpTools<D extends ToolBearingDef & {
     readonly mcpServers?: McpServers | undefined;
 }>(def: D, options?: McpToolsOptions): Promise<McpToolSurface<D>>;
 

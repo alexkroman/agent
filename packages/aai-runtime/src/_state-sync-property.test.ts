@@ -216,13 +216,15 @@ type World = {
 
 /** The decision under test, built over one world's slots. */
 function syncFor(keys: readonly string[]): StateSync {
-  const slots = keys.map((key) => sessionSlot(key, () => SMALL[0] as Cell));
   return createStateSync(
-    slots.map((slot) =>
-      slot.projection((cell) => {
-        if (cell.boom) throw new Error(`the ${slot.key} projection failed`);
-        return { tag: cell.tag, blob: "x".repeat(cell.fill) };
-      }),
+    keys.map(
+      (key) =>
+        sessionSlot(key, () => SMALL[0] as Cell, {
+          view: (cell) => {
+            if (cell.boom) throw new Error(`the ${key} projection failed`);
+            return { tag: cell.tag, blob: "x".repeat(cell.fill) };
+          },
+        }).projected,
     ),
   );
 }

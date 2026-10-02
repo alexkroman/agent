@@ -35,9 +35,9 @@ durable runs, no microphone — whose default template is
   `../studio-session-ensure.ts`), which recurs on every open, reload, CLI push
   refresh and adopt; a per-request flag would let a second tab build the other
   product. That is why `sessionParams` takes the whole `StudioWorkspace`.
-- **Absent reads as `agent`** (`resolveProjectKind`, which narrows an `unknown`
-  from stored JSON): every pre-switcher workspace was a voice agent, and a
-  caller naming no kind (the CLI's first push, evals) gets it.
+- **Every workspace document carries a `kind`**: `POST /studio/projects`
+  requires one, the CLI's first push stamps `agent`, and `parseWorkspace`
+  reads a document without one as malformed (`isProjectKind`).
 - **One preamble, five fragments swapped** — the overview line, the
   product-shape section, the spoken-replies rule, the `client.tsx` section, and
   the alignment examples. Tools, the write-then-typecheck loop, "you cannot

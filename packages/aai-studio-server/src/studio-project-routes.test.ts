@@ -30,79 +30,41 @@ describe("project CRUD", () => {
     ({ fetch } = await createFakedCombined());
   });
 
-  test("create starts an EMPTY project and duplicate returns 409", async () => {
+  test("create starts an EMPTY project", async () => {
     // No starter agent: the coding agent's first turn goes into the user's
     // agent rather than into dismantling a dice roller.
-    const res = await createProject(fetch);
+    const res = await authFetch(fetch, "/studio/projects", { body: { kind: "agent" } });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { files: Record<string, string> };
     expect(Object.keys(body.files)).toEqual([]);
-    expect((await createProject(fetch)).status).toBe(409);
   });
 
-  test("create stamps the project's kind, defaulting to a voice agent", async () => {
+  test("create stamps the project's kind", async () => {
     // The kind selects the coding agent's system prompt at every later session
     // install, so it is stored on the workspace rather than held per request.
-    const created = await authFetch(fetch, "/studio/projects", {
-      body: { name: "flow", kind: "workflow" },
-    });
+    const created = await authFetch(fetch, "/studio/projects", { body: { kind: "workflow" } });
     expect(created.status).toBe(201);
-    expect((await created.json()) as { kind?: string }).toMatchObject({ kind: "workflow" });
-    const read = await authFetch(fetch, "/studio/projects/flow", { method: "GET" });
+    const { name, kind } = (await created.json()) as { name: string; kind?: string };
+    expect(kind).toBe("workflow");
+    const read = await authFetch(fetch, `/studio/projects/${name}`, { method: "GET" });
     expect((await read.json()) as { kind?: string }).toMatchObject({ kind: "workflow" });
+  });
 
-    // Omitted (the CLI's first push, evals, anything predating the switcher):
-    // a voice agent, which is what those projects have always been.
+  test("a first push, which has no switcher to ask, creates a voice agent", async () => {
     await createProject(fetch, "voice");
     const plain = await authFetch(fetch, "/studio/projects/voice", { method: "GET" });
     expect((await plain.json()) as { kind?: string }).toMatchObject({ kind: "agent" });
   });
 
-  test("create rejects a kind that is not one of the two", async () => {
-    // A kind the server does not know would otherwise be stamped and then
-    // silently resolved back to `agent` on every read — a request that looks
-    // accepted and does the opposite of what it asked for.
-    const res = await authFetch(fetch, "/studio/projects", {
-      body: { name: "odd", kind: "phone" },
-    });
-    expect(res.status).toBe(400);
-  });
-
-  test("create slugifies a human-typed name", async () => {
-    // A project name doubles as the deploy slug, but people type "My Agent".
-    const res = await authFetch(fetch, "/studio/projects", { body: { name: "My Agent" } });
-    expect(res.status).toBe(201);
-    expect((await res.json()) as { name: string }).toMatchObject({ name: "my-agent" });
-    // The slug is what everything downstream addresses it by.
-    expect((await authFetch(fetch, "/studio/projects/my-agent", { method: "GET" })).status).toBe(
-      200,
-    );
-  });
-
   test.each([
-    ["  Spaced  Out  ", "spaced-out"],
-    ["Pizza Bot 3000!", "pizza-bot-3000"],
-    // Transliterated, not stripped — this is why slugify beats a regex.
-    ["Café Ordering", "cafe-ordering"],
-    ["already-a-slug", "already-a-slug"],
-    // slugify normalizes "_" to "-"; both are valid slugs, "-" reads better in a URL.
-    ["UPPER_CASE", "upper-case"],
-  ])("create normalizes %j to %j", async (input, expected) => {
-    const res = await authFetch(fetch, "/studio/projects", { body: { name: input } });
-    expect(res.status).toBe(201);
-    expect((await res.json()) as { name: string }).toMatchObject({ name: expected });
-  });
-
-  test.each(["!!!", "   ", "-", "…"])(
-    "create rejects the name %j, which slugifies to nothing",
-    async (name) => {
-      expect((await authFetch(fetch, "/studio/projects", { body: { name } })).status).toBe(400);
-    },
-  );
-
-  test("create rejects a name that would claim a reserved slug", async () => {
-    // Better to fail here than to let the project exist and die at publish.
-    const res = await authFetch(fetch, "/studio/projects", { body: { name: "Studio" } });
+    ["a kind that is not one of the two", { kind: "phone" }],
+    ["no kind at all", {}],
+    // The caller does not name the project: the server generates it.
+    ["a name", { name: "mine", kind: "agent" }],
+  ])("create rejects %s", async (_label, body) => {
+    // An unknown kind would otherwise be stamped and select no prompt — a
+    // request that looks accepted and does the opposite of what it asked for.
+    const res = await authFetch(fetch, "/studio/projects", { body });
     expect(res.status).toBe(400);
   });
 
@@ -110,7 +72,7 @@ describe("project CRUD", () => {
     // The chat-first flow: the client sends the first message, the SERVER
     // names the project — same generator as slugless CLI deploys.
     const res = await authFetch(fetch, "/studio/projects", {
-      body: { prompt: "Build me a contact form agent for my site" },
+      body: { prompt: "Build me a contact form agent for my site", kind: "agent" },
     });
     expect(res.status).toBe(201);
     const { name } = (await res.json()) as { name: string };
@@ -124,7 +86,7 @@ describe("project CRUD", () => {
   test("create with the same prompt twice yields two distinct projects", async () => {
     const make = async () => {
       const res = await authFetch(fetch, "/studio/projects", {
-        body: { prompt: "pizza ordering" },
+        body: { prompt: "pizza ordering", kind: "agent" },
       });
       expect(res.status).toBe(201);
       return ((await res.json()) as { name: string }).name;
@@ -132,8 +94,8 @@ describe("project CRUD", () => {
     expect(await make()).not.toBe(await make());
   });
 
-  test("create with no name and no prompt still generates a name", async () => {
-    const res = await authFetch(fetch, "/studio/projects", { body: {} });
+  test("create with no prompt still generates a name", async () => {
+    const res = await authFetch(fetch, "/studio/projects", { body: { kind: "agent" } });
     expect(res.status).toBe(201);
     const { name } = (await res.json()) as { name: string };
     expect(name).toMatch(/-[a-z0-9]{6}$/);
@@ -191,27 +153,6 @@ describe("project CRUD", () => {
     expect(
       (await authFetch(fetch, "/studio/projects/proj/file", { method: "DELETE" })).status,
     ).toBe(400);
-  });
-
-  test("concurrent creates: one wins, the loser cannot reset the files", async () => {
-    const [a, b] = await Promise.all([createProject(fetch), createProject(fetch)]);
-    expect([a.status, b.status].sort()).toEqual([201, 409]);
-
-    // The status pair alone was the whole test, and it is the half that does
-    // not name the risk: a losing create that answered 409 having ALREADY
-    // written would blow the winner's files away, and nothing here read them
-    // back. Mark the project, race two more creates at it, and the mark has to
-    // survive both.
-    await authFetch(fetch, "/studio/projects/proj/file", {
-      method: "PUT",
-      body: { path: "marker.ts", content: "export const marker = 1;" },
-    });
-    const [c, d] = await Promise.all([createProject(fetch), createProject(fetch)]);
-    expect([c.status, d.status]).toEqual([409, 409]);
-    const { files } = (await (
-      await authFetch(fetch, "/studio/projects/proj", { method: "GET" })
-    ).json()) as { files: Record<string, string> };
-    expect(files["marker.ts"]).toBe("export const marker = 1;");
   });
 
   test("concurrent file writes both survive", async () => {

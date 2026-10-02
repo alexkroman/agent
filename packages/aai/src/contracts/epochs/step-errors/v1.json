@@ -3,39 +3,16 @@
   "capability": "step-errors",
   "epoch": 1,
   "rule": 2,
-  "sha256": "71aafffbea9b8fce4e938093311af484ffdab18ae9f3509e40f78a2c1091c493",
+  "sha256": "6333333c23d6b00f7f16b67b90a16e9b5a8a4b34817239baa663aab1586877e9",
   "exports": [
     "DEFAULT_RETRY_DELAY_MS",
     "FatalError",
     "RetryableError",
     "RetryableErrorOptions",
-    "sendToChannelOrFail",
-    "stepFetchOrFail",
-    "stepGenerateJsonOrFail",
-    "stepGenerateOrFail",
-    "stepTranscribePollOrFail",
-    "stepTranscribeSubmitOrFail",
-    "stepTranscribeSyncOrFail",
-    "stepTranscribeUploadOrFail",
     "throwFatalStepError",
     "throwFfmpegStepError",
     "throwStepError",
     "toStepError"
   ],
-  "rollup": "751e87990ca1c7404a731ec6fc012bd6ce8f0139ecb8ae3228bb11094a2e592e",
-  "revision": 1,
-  "revisions": [
-    {
-      "revision": 0,
-      "rule": 2,
-      "sha256": "8d3c43d6b679af7d5ba963cfbecdeb26315661c270a69c0acf1ebcd403ea373e",
-      "reason": "minted"
-    },
-    {
-      "revision": 1,
-      "rule": 2,
-      "sha256": "71aafffbea9b8fce4e938093311af484ffdab18ae9f3509e40f78a2c1091c493",
-      "reason": "compatible (checked): no export added or removed; every old export still assignable"
-    }
-  ]
+  "rollup": "d7cc8fae053f7c4f68bb71a783efad38ff7f1cc5e056fde46beaec3ed7181a01"
 }

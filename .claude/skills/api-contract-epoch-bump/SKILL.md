@@ -108,6 +108,7 @@ template exercises — and consider dropping them in the same epoch.
 
 ## 5. Changeset
 
-The `check:api-contracts` output suggests a bump type (removed name → `major`,
-added → `minor`; anything the probe calls breaking → `major`). Use it in the
+The `check:api-contracts` output suggests a bump type (removed name → break,
+added → `minor`; anything the probe calls breaking → break). A break is `minor`
+while the packages are on `0.x`. Use it in the
 changeset — see the `changeset-release` skill.

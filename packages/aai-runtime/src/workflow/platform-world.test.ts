@@ -27,7 +27,7 @@ describe("resolvePlatformQueue", () => {
     });
   });
 
-  test("prefers the DIAL base over the public one, which is a different claim", () => {
+  test("dials the DIAL base, never the public one, which is a different claim", () => {
     // The regression, and the whole reason the two keys split. The public base
     // is what a third party is handed, so it must resolve from the internet;
     // this one is dialled from inside the sandbox. Under a microVM backend the
@@ -43,17 +43,10 @@ describe("resolvePlatformQueue", () => {
     ).toBe("http://host.microsandbox.internal:8080/demo");
   });
 
-  test("falls back to the public base, for a guest booted before the key existed", () => {
-    // Not politeness: an agent sandbox runs the harness image PINNED at deploy
-    // time, so a guest older than this key receives only the public one and
-    // would otherwise lose its platform world entirely — durable runs silently
-    // onto the DevKit's local world, session state silently onto memory. On
-    // every backend but microsandbox the two values are identical, which is
-    // what makes the fallback restore that guest's exact prior behaviour.
-    expect(resolvePlatformQueue({ AAI_PUBLIC_BASE_URL: BASE, AAI_GUEST_TOKEN: TOKEN })).toEqual({
-      base: BASE,
-      token: TOKEN,
-    });
+  test("the public base alone is not a dial base", () => {
+    expect(
+      resolvePlatformQueue({ AAI_PUBLIC_BASE_URL: BASE, AAI_GUEST_TOKEN: TOKEN }),
+    ).toBeUndefined();
   });
 
   test.each([
@@ -61,10 +54,6 @@ describe("resolvePlatformQueue", () => {
     ["only the base", { AAI_PLATFORM_BASE_URL: BASE }],
     ["only the token", { AAI_GUEST_TOKEN: TOKEN }],
     ["blank values", { AAI_PLATFORM_BASE_URL: "  ", AAI_GUEST_TOKEN: "  " }],
-    [
-      "a blank dial base with a blank public one behind it",
-      { AAI_PLATFORM_BASE_URL: " ", AAI_PUBLIC_BASE_URL: " ", AAI_GUEST_TOKEN: TOKEN },
-    ],
   ])("declines %s", (_label, env) => {
     expect(resolvePlatformQueue(env)).toBeUndefined();
   });
@@ -72,13 +61,13 @@ describe("resolvePlatformQueue", () => {
 
 describe("platformGuestOptions", () => {
   test("reads the PROCESS env, which is where the platform puts the pair", () => {
-    vi.stubEnv("AAI_PUBLIC_BASE_URL", BASE);
+    vi.stubEnv("AAI_PLATFORM_BASE_URL", BASE);
     vi.stubEnv("AAI_GUEST_TOKEN", TOKEN);
     expect(platformGuestOptions()).toEqual({ base: BASE, token: TOKEN });
   });
 
   test("declines when the process env has neither, which is `aai dev`", () => {
-    vi.stubEnv("AAI_PUBLIC_BASE_URL", undefined);
+    vi.stubEnv("AAI_PLATFORM_BASE_URL", undefined);
     vi.stubEnv("AAI_GUEST_TOKEN", undefined);
     expect(platformGuestOptions()).toBeUndefined();
   });
@@ -93,16 +82,6 @@ describe("describePlatformQueueGap", () => {
     [{ AAI_GUEST_TOKEN: TOKEN }, /AAI_GUEST_TOKEN is set but AAI_PLATFORM_BASE_URL/],
   ])("names which half is missing for %o", (env, expected) => {
     expect(describePlatformQueueGap(env)).toMatch(expected);
-  });
-
-  test("reports the same gap through the fallback, so an older guest is not silent", () => {
-    // The gap is about the PAIR, and the fallback is part of what resolves the
-    // base — so a pinned older guest missing only its token has to be named
-    // too, or the one deployment shape that cannot be redeployed out of the
-    // problem is the one that reports nothing.
-    expect(describePlatformQueueGap({ AAI_PUBLIC_BASE_URL: BASE })).toMatch(
-      /AAI_PLATFORM_BASE_URL is set but AAI_GUEST_TOKEN/,
-    );
   });
 
   test.each([

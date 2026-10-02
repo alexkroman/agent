@@ -58,10 +58,9 @@ export type SessionMode = "s2s" | "pipeline" | "text";
  * (`providers/_default-providers.ts`), which every config layer applies
  * *before* calling this: unset pipeline stages are filled from the
  * all-AssemblyAI pipeline, so a partial triple never reaches this check on
- * an authoring path. The partial-triple error below therefore only fires on
- * raw wire shapes that skipped the fill, and "nothing set" reaches here only
- * for raw pre-default shapes (still classified as "s2s" for wire tolerance
- * with stored configs that predate the flip).
+ * an authoring path. The incomplete-triple error below therefore only fires on
+ * raw wire shapes that skipped the fill — including one that sets nothing at
+ * all, which is S2S only with an explicit `s2s` descriptor.
  *
  * @internal
  */
@@ -77,7 +76,6 @@ export function assertProviderTriple(
   const hasS2s = s2s != null;
   const anyPipeline = hasStt || hasLlm || hasTts;
   const allSet = hasStt && hasLlm && hasTts;
-  const noneSetPipeline = !anyPipeline;
   const named = (flags: [string, boolean][]) =>
     flags
       .filter(([, on]) => on)
@@ -94,15 +92,17 @@ export function assertProviderTriple(
         'Remove the pipeline stage(s) for a speech-to-speech agent (`mode: "s2s"`), or remove `s2s` for a pipeline agent.',
     );
   }
-  if (!(allSet || noneSetPipeline)) {
+  if (hasS2s) return "s2s";
+  if (!allSet) {
     const missing = named(stages.map(([field, on]) => [field, !on]));
+    const sets = anyPipeline ? `sets ${named(stages)} but not ${missing}` : "sets none of them";
     throw new Error(
-      `stt, llm, and tts must be set together on a RESOLVED config — this one sets ${named(stages)} but not ${missing}. ` +
+      `stt, llm, and tts must be set together on a RESOLVED config — this one ${sets}. ` +
         "`agent()` and `toAgentConfig` fill unset stages with the AssemblyAI defaults, so an author may set any subset; " +
         "a config reaching this check skipped that fill. Build it with `agent({ … })`, or set the missing stage(s) explicitly.",
     );
   }
-  return allSet ? "pipeline" : "s2s";
+  return "pipeline";
 }
 
 /**

@@ -256,14 +256,14 @@ describe("SessionEventSchema", () => {
   const META = { id: "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV", at: 1_700_000_000_000 };
   test.each([
     [
-      "handshake",
+      "handshake without sessionId",
       {
         type: "session.configured",
         audioFormat: "pcm16",
         sampleRate: 16_000,
         ttsSampleRate: 24_000,
       },
-      true,
+      false,
     ],
     [
       "handshake with sessionId",

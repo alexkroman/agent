@@ -58,7 +58,7 @@ function entry(n: number): StepEntry {
     output: n,
     error: undefined,
     attempts: 1,
-    startedAt: undefined,
+    startedAt: 1000 + n,
     finishedAt: 1000 + n,
   };
 }

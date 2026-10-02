@@ -80,10 +80,9 @@ export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) =>
  * is a computed route, never mistaken for the seam itself (see
  * `ToolContextOverrides.generate`).
  *
- * Named because it is written down in three places — that function, the
- * `generate` field of `createToolContext`'s overrides, and
- * `ScriptedToolContextOptions` — and a union restated at each of them is a union
- * that drifts.
+ * Named because it is written down in two places — that function and the
+ * `generate` field of `createToolContext`'s overrides — and a union restated at
+ * each of them is a union that drifts.
  *
  * @public
  */

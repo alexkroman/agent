@@ -132,7 +132,13 @@ describe("guest workspace/deploy (Publish = aai deploy in the sandbox)", () => {
     warm.conn.listen();
     return (await warm.conn.sendRequest(
       "workspace/deploy",
-      { files, serverUrl, apiKey: "integration-test-key", slug: "integration-publish" },
+      {
+        files,
+        serverUrl,
+        apiKey: "integration-test-key",
+        slug: "integration-publish",
+        skipTypecheck: false,
+      },
       300_000,
     )) as DeployResult;
   }

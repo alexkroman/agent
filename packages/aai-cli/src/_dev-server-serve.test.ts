@@ -134,7 +134,7 @@ describe("viteDevConfig", () => {
 
   test.each(["", "   ", undefined])("binds the BACKEND's host for AAI_DEV_HOST=%o", (value) => {
     // `devBindHost` normalizes blank to "unset", and unset takes the same
-    // constant `createRuntimeServer` binds rather than Vite's own default. Vite's
+    // constant `createServerForRuntime` binds rather than Vite's own default. Vite's
     // default is the HOSTNAME `localhost`, so Node binds whatever
     // `getaddrinfo` answers first — measured `::1` on macOS, which makes
     // `http://127.0.0.1:<port>` ECONNREFUSED against a healthy server whose

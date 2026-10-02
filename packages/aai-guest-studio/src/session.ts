@@ -172,7 +172,3 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
   installedFor = identity;
   return session;
 }
-
-// Re-exported for the ~30 call sites that read them from here; core DECLARES
-// them because `bundle.ts`'s slot is what holds one (see that type's doc).
-export type { StudioSession, StudioSessionParams } from "aai-guest-core/types";

@@ -2,11 +2,15 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "spoken",
   "epoch": 1,
-  "sha256": "d1867120b639a06f1f8c24e128d99dfff9a0088fc949af25c0f37daf24cbae61",
+  "rule": 2,
+  "sha256": "9a5d2a437ba6c92b995ed3d5b25e75bd035634adb075b39558420be36dc50999",
   "exports": [
     "MintCodeOptions",
     "ResolveOneOptions",
+    "codeMatches",
+    "hashCode",
     "mintCode",
+    "mintDigitCode",
     "resolveOne",
     "spokenAlphanumeric",
     "spokenDate",
@@ -14,5 +18,6 @@
     "spokenMoney",
     "spokenOrdinal",
     "spokenTime"
-  ]
+  ],
+  "rollup": "026e9042c313363ef0e4dd7021301f730342b3607646291aaa9caaa1386514fd"
 }

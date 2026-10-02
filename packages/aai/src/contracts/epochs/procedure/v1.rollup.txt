@@ -2,7 +2,7 @@ import { AnyStateMachine } from 'xstate';
 import { InputFrom } from 'xstate';
 import { OutputFrom } from 'xstate';
 
-// @public
+// @public @sealed
 export interface Procedure<M extends AnyStateMachine> {
     readonly machine: M;
     run(input: InputFrom<M>, options?: ProcedureRunOptions): Promise<OutputFrom<M>>;

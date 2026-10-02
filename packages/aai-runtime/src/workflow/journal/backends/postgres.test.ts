@@ -82,6 +82,7 @@ describe("every jsonb binding casts through text", () => {
       status: "ok",
       output: "value",
       attempts: 1,
+      startedAt: 2,
       finishedAt: 2,
     });
     await journal.deliverHook("tok", { ok: true });
@@ -199,6 +200,7 @@ describe("no statement ever binds `undefined`", () => {
           name: "a",
           status: "ok",
           attempts: 1,
+          startedAt: 2,
           finishedAt: 2,
         }),
     ],

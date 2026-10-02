@@ -137,14 +137,4 @@ describe("a reload resumes", () => {
     second.connect();
     expect(lastSocket?.url).not.toContain("sessionId");
   });
-
-  it("a config frame with no sessionId stores nothing", () => {
-    // An older server omits it; there is no id to present, and storing an empty
-    // string would make `readStoredSessionId` answer with a falsy id forever.
-    const core = reload();
-    core.connect();
-    lastSocket?.simulateOpen();
-    lastSocket?.simulateMessage(makeConfig(16_000, 24_000, ""));
-    expect(readStoredSessionId(AGENT)).toBeUndefined();
-  });
 });

@@ -10,6 +10,7 @@ export type CreateInboxOptions = {
     onNotice?: ((notice: InboxNotice) => void) | undefined;
     onEvent?: ((event: InboxEvent) => void) | undefined;
     events?: boolean | undefined;
+    token?: VoiceSessionOptions["token"];
     WebSocket?: WebSocketConstructor | undefined;
 };
 
@@ -56,6 +57,21 @@ export type UseInboxOptions = {
 export type UseInboxResult = {
     readonly connected: boolean;
     stopPlayback(): void;
+};
+
+// @public
+type VoiceSessionOptions = {
+    platformUrl: string;
+    onSessionId?: ((sessionId: string) => void) | undefined;
+    resumeSessionId?: string | undefined;
+    location?: string | (() => string | undefined) | undefined;
+    phone?: string | (() => string | undefined) | undefined;
+    client?: string | (() => string | undefined) | undefined;
+    preConnectAudio?: boolean | undefined;
+    token?: string | ((attempt: {
+        readonly sessionId: string | undefined;
+    }) => string | undefined | Promise<string | undefined>) | undefined;
+    WebSocket?: WebSocketConstructor | undefined;
 };
 
 // @public

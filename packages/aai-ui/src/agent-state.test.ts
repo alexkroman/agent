@@ -46,16 +46,18 @@ describe("useAgentState", () => {
     // projection run over the slot's own default, so a field added to the
     // projection reaches the first render too.
     const core = createMockCore();
-    const cartSlot = sessionSlot("cart", () => ({ items: ["seeded"] }));
-    const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
+    const projection = sessionSlot("cart", () => ({ items: ["seeded"] }), {
+      view: (cart) => ({ count: cart.items.length }),
+    }).projected;
     const { result } = renderHook(() => useAgentState(projection), { wrapper: wrap(core) });
     expect(result.current).toEqual({ count: 1 });
   });
 
   it("selects the projection's OWN slot from the frame", () => {
     const core = createMockCore();
-    const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-    const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
+    const projection = sessionSlot("cart", () => ({ items: [] as string[] }), {
+      view: (cart) => ({ count: cart.items.length }),
+    }).projected;
     const { result } = renderHook(() => useAgentState(projection), { wrapper: wrap(core) });
     act(() => core.update({ agentState: { cart: { count: 7 }, other: { count: 99 } } }));
     expect(result.current).toEqual({ count: 7 });
@@ -65,8 +67,9 @@ describe("useAgentState", () => {
     // A fresh object per render re-fires every downstream effect and memo that
     // depends on the frame.
     const core = createMockCore();
-    const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-    const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
+    const projection = sessionSlot("cart", () => ({ items: [] as string[] }), {
+      view: (cart) => ({ count: cart.items.length }),
+    }).projected;
     const { result, rerender } = renderHook(() => useAgentState(projection), {
       wrapper: wrap(core),
     });

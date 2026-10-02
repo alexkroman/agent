@@ -78,10 +78,10 @@ describe("createStudioApp", () => {
 
   it("scopes projects to the caller's bearer key", async () => {
     const { fetch } = makeApp();
-    const created = await fetch("/studio/projects", {
-      method: "POST",
+    const created = await fetch("/studio/projects/my-project/source", {
+      method: "PUT",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "my-project" }),
+      body: JSON.stringify({ files: {} }),
     });
     expect(created.status).toBe(201);
 

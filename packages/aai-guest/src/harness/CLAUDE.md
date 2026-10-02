@@ -76,10 +76,6 @@ platform replica. `bundle-source.ts` is the guest half.
 - **No fallback on failure.** Signing throws → the spawn fails. `signedUrl`
   returning `null` means only "this backend cannot sign" (the memory blob store
   in dev/tests), which takes the byte path. Never conflate the two.
-- **Old pinned guests don't understand URLs** — `GUEST_CONTRACT_VERSION` 1 reads
-  only `AAI_BUNDLE_PATH`. `guestUnderstandsBundleUrl` allows a URL only with no
-  pin, `SANDBOX_IGNORE_IMAGE_PINS` (must agree with `resolveSpawnImage`), or a
-  pin equal to the server's own harness tag.
 
 ## Why the buffer lives in the guest
 
@@ -136,7 +132,7 @@ gated (a carrier holds no ticket; its webhook verification is the route's).
 
 ## A phone call is an ordinary session
 
-`WS /phone` (`aai-runtime/telephony/`, served by `createRuntimeServer` here and
+`WS /phone` (`aai-runtime/telephony/`, served by `createServerForRuntime` here and
 under `aai dev`) runs a carrier media stream (Twilio, Telnyx) as an ordinary
 session — **only for carriers the agent declares** (`agent({ telephony:
 ["twilio"] })`), identically everywhere. The TwiML webhook route is "Telephony"

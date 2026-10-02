@@ -136,41 +136,24 @@ describe("ProjectNameSchema", () => {
 });
 
 describe("CreateProjectSchema", () => {
-  test("accepts prompt-only, name-only, and empty bodies", () => {
-    expect(CreateProjectSchema.safeParse({ prompt: "hi there" }).success).toBe(true);
-    expect(CreateProjectSchema.safeParse({ name: "My Agent" }).success).toBe(true);
-    expect(CreateProjectSchema.safeParse({}).success).toBe(true);
+  test("requires a kind, with or without a prompt", () => {
+    expect(CreateProjectSchema.safeParse({ prompt: "hi there", kind: "agent" }).success).toBe(true);
+    expect(CreateProjectSchema.safeParse({ kind: "workflow" }).success).toBe(true);
+    expect(CreateProjectSchema.safeParse({ prompt: "hi there" }).success).toBe(false);
+    expect(CreateProjectSchema.safeParse({}).success).toBe(false);
   });
 
-  test("still slugifies and validates an explicit name", () => {
-    const parsed = CreateProjectSchema.parse({ name: "My Agent" });
-    expect(parsed.name).toBe("my-agent");
-    expect(CreateProjectSchema.safeParse({ name: "!!!" }).success).toBe(false);
-    expect(CreateProjectSchema.safeParse({ name: "studio" }).success).toBe(false);
-  });
-
-  test("explains an unslugifiable name", () => {
-    const result = CreateProjectSchema.safeParse({ name: "!!!" });
-    expect(result.error?.issues[0]?.message).toBe(
-      "Project name must contain at least two letters or numbers",
-    );
-  });
-
-  test("explains a reserved name", () => {
-    // Refused at creation rather than at publish: a project that can never go
-    // live is a dead end the user would only discover after building in it.
-    const result = CreateProjectSchema.safeParse({ name: "studio-assets" });
-    expect(result.error?.issues[0]?.message).toBe("That name is reserved");
-  });
-
-  test("rejects a name longer than the typed cap and an empty one", () => {
-    expect(CreateProjectSchema.safeParse({ name: "a".repeat(101) }).success).toBe(false);
-    expect(CreateProjectSchema.safeParse({ name: "" }).success).toBe(false);
+  test("refuses a caller-chosen name: the server generates it", () => {
+    expect(CreateProjectSchema.safeParse({ name: "my-agent", kind: "agent" }).success).toBe(false);
   });
 
   test("rejects a prompt longer than the excerpt cap", () => {
-    expect(CreateProjectSchema.safeParse({ prompt: "x".repeat(2001) }).success).toBe(false);
-    expect(CreateProjectSchema.safeParse({ prompt: "x".repeat(2000) }).success).toBe(true);
+    expect(CreateProjectSchema.safeParse({ prompt: "x".repeat(2001), kind: "agent" }).success).toBe(
+      false,
+    );
+    expect(CreateProjectSchema.safeParse({ prompt: "x".repeat(2000), kind: "agent" }).success).toBe(
+      true,
+    );
   });
 });
 

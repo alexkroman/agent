@@ -153,7 +153,7 @@ export type ClientNotifier = (
  */
 export const CLIENT_INBOX_UNAVAILABLE_MESSAGE =
   "This process has no client inbox, so a step cannot reach a device. It is served by " +
-  "createRuntimeServer (aai dev, aai start, a self-hosted server) at WS /inbox. " +
+  "createServerForRuntime (aai dev, aai start, a self-hosted server) at WS /inbox. " +
   "In a test, publish a notifier of your own with `publishClientNotifier`.";
 
 /**

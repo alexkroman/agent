@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// @public
+// @public @sealed
 export type AgentClient = WorkflowApi & {
     config(): Promise<ClientConfigResponse>;
     readonly baseUrl: string;
@@ -19,7 +19,7 @@ export type AnyWorkflowDef<R = unknown> = {
 export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
 
 // @public
-const ClientConfigResponseSchema: z.ZodObject<{
+export const ClientConfigResponseSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
     greeting: z.ZodOptional<z.ZodString>;
     sessionUrl: z.ZodOptional<z.ZodString>;
@@ -27,6 +27,7 @@ const ClientConfigResponseSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>;
+    sessionToken: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
 // @public
@@ -39,6 +40,14 @@ export function createWorkflowApiClient(options: WorkflowApiClientOptions): Work
 export type EventStreamFrame = {
     event: string;
     data: unknown;
+};
+
+// @public
+export type FindByKeyOptions = {
+    since?: number | Date;
+    statuses?: readonly WorkflowRunStatus[];
+    limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -56,7 +65,37 @@ export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is T
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
+type PollOptions<T> = {
+    everyMs: number;
+    maxMs: number;
+    done: (value: T) => boolean;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+type PollResult<T> = {
+    value: T;
+    done: boolean;
+    checks: number;
+};
+
+// @public
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
+
+// @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
 
 // @public
 type SleepOptions = {
@@ -99,6 +138,8 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 export type StartOptions = {
     key?: string;
+    dedupeKey?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -198,47 +239,29 @@ export type WakeUpOptions = {
     correlationIds?: string[];
 };
 
-// @public
+// @public @sealed
 export type WorkflowApi = {
-    list(): Promise<WorkflowSummary[]>;
+    list(options?: WorkflowApiCallOptions): Promise<WorkflowSummary[]>;
     upload(file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
-    start(workflow: string, input?: unknown, options?: {
-        key?: string;
-    }): Promise<string>;
-    startAndWait(workflow: string, input?: unknown, options?: {
-        key?: string;
-        wait?: number;
-    }): Promise<WorkflowRunSnapshot>;
-    get(runId: string, options?: {
-        wait?: number;
-    }): Promise<WorkflowRunSnapshot | undefined>;
-    find(workflow: string, key: string, options?: {
-        limit?: number;
-    }): Promise<WorkflowRunSnapshot[]>;
-    recent(workflow: string, options?: {
-        limit?: number;
-    }): Promise<WorkflowRunSnapshot[]>;
-    cancel(runId: string): Promise<boolean>;
+    start(workflow: string, input?: unknown, options?: WorkflowStartOptions): Promise<string>;
+    startAndWait(workflow: string, input?: unknown, options?: WorkflowStartAndWaitOptions): Promise<WorkflowRunSnapshot>;
+    get(runId: string, options?: WorkflowGetOptions): Promise<WorkflowRunSnapshot | undefined>;
+    find(workflow: string, key: string, options?: WorkflowRunListOptions): Promise<WorkflowRunSnapshot[]>;
+    recent(workflow: string, options?: WorkflowRunListOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string, options?: WorkflowApiCallOptions): Promise<boolean>;
     watch(runId: string, signal?: AbortSignal): Promise<Response>;
-    streamOutput(runId: string, options?: {
-        namespace?: string;
-        startIndex?: number;
-        signal?: AbortSignal;
-    }): Promise<Response>;
-    follow(runId: string, options?: {
-        signal?: AbortSignal;
-    }): AsyncIterable<WorkflowRunSnapshot>;
-    followOutput(runId: string, options?: {
-        namespace?: string;
-        fromIndex?: number;
-        signal?: AbortSignal;
-    }): AsyncIterable<unknown>;
-    wake(runId: string, options?: WakeUpOptions): Promise<number>;
+    streamOutput(runId: string, options?: WorkflowStreamOutputOptions): Promise<Response>;
+    follow(runId: string, options?: WorkflowApiCallOptions): AsyncIterable<WorkflowRunSnapshot>;
+    followOutput(runId: string, options?: WorkflowFollowOutputOptions): AsyncIterable<unknown>;
+    wake(runId: string, options?: WakeUpOptions & WorkflowApiCallOptions): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
-    uploadInfo(id: string): Promise<UploadInfo>;
-    download(id: string, options?: {
-        signal?: AbortSignal;
-    }): Promise<Blob>;
+    uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadInfo>;
+    download(id: string, options?: WorkflowApiCallOptions): Promise<Blob>;
+};
+
+// @public
+export type WorkflowApiCallOptions = {
+    signal?: AbortSignal;
 };
 
 // @public
@@ -261,6 +284,8 @@ type WorkflowContext = {
     random(): Promise<number>;
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -268,21 +293,27 @@ type WorkflowContext = {
 };
 
 // @public
-type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
-    description?: string;
-    input?: P;
-    uploads?: readonly string[];
-    output?: StandardSchemaV1<unknown, R>;
-    run: WorkflowBody<InferSchemaOutput<P>, R>;
+export type WorkflowFollowOutputOptions = {
+    namespace?: string;
+    fromIndex?: number;
+    signal?: AbortSignal;
 };
 
 // @public
-export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+export type WorkflowGetOptions = {
+    wait?: number;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowInputOf<D> = D extends {
+    readonly run: (input: infer I, ctx: never) => unknown;
+} ? I : never;
 
 // @public
 export type WorkflowOutputOf<D> = D extends {
-    run: WorkflowBody<never, infer R>;
-    output?: StandardSchemaV1<unknown, infer O> | undefined;
+    readonly run: (input: never, ctx: never) => infer R;
+    readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 } ? Awaited<unknown extends O ? R : O> : never;
 
 // @public
@@ -291,6 +322,13 @@ export type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
+};
+
+// @public
+export type WorkflowRunListOptions = {
+    limit?: number;
+    signal?: AbortSignal;
 };
 
 // @public
@@ -317,6 +355,26 @@ export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 
 // @public
 export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
+export type WorkflowStartAndWaitOptions = {
+    key?: string;
+    wait?: number;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowStartOptions = {
+    key?: string;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowStreamOutputOptions = {
+    namespace?: string;
+    startIndex?: number;
+    signal?: AbortSignal;
+};
 
 // @public
 export type WorkflowSummary = {

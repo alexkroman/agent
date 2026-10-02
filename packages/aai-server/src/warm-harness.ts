@@ -203,11 +203,6 @@ export function startGuestLogging(proc: GuestProcLike, label: string): void {
   void drainProcStream(proc.stderr, `[${label}] stderr`);
 }
 
-// The agent guest's boot env, split for the line cap — see `guest/boot-env.ts`.
-// Re-exported rather than moved at every call site: both spawners and the
-// specs take it from here, exactly as `dialGuest` above.
-export { agentBootEnv, OTEL_GUEST_ENV_KEYS } from "./guest/boot-env.ts";
-
 /**
  * The host's handle on one AGENT-MODE guest — the whole surviving surface of
  * the platform↔deployed-agent relationship: a session URL to hand to the

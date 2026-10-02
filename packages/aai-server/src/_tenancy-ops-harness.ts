@@ -125,6 +125,7 @@ export type TenantDump = {
     status: string;
     output: string | undefined;
     attempts: number;
+    startedAt: number;
     finishedAt: number;
   }[];
   attempts: { runId: string; key: string; n: number }[];

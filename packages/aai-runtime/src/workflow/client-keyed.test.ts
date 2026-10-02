@@ -228,16 +228,14 @@ describe("ctx.workflows over a real engine", () => {
     expect(await workflows.findByKey("speaker-1", { statuses: ["completed"] })).toEqual([]);
   });
 
-  test("findByKey withOutput: false leaves a completed run's output unread", async () => {
-    // An adapter whose record carries no `output`, so reading one is a
-    // `readOutput` round trip — the cost the option exists to skip.
-    const readOutput = vi.fn(async () => "said");
+  test("findByKey withOutput: false leaves a completed run's output off the snapshot", async () => {
     const getRun = vi.fn(
       async (runId: string): Promise<WdkRunRecord> => ({
         runId,
         workflowName: "remind",
         status: runId === "done" ? "completed" : "running",
         createdAt: runId === "done" ? 100 : 200,
+        ...(runId === "done" ? { output: "said" } : {}),
       }),
     );
     const keys = createMemoryKeyStore();
@@ -246,21 +244,15 @@ describe("ctx.workflows over a real engine", () => {
     const workflows = createWorkflowClient({
       workflows: { remind, research },
       keys,
-      wdk: { getRun, readOutput } as Partial<WdkAdapter> as WdkAdapter,
+      wdk: { getRun } as Partial<WdkAdapter> as WdkAdapter,
       logger: silentLogger,
     });
     const full = await workflows.findByKey("speaker-1");
-    expect(readOutput).toHaveBeenCalledOnce();
+    expect(full.find((r) => r.runId === "done")).toMatchObject({ output: "said" });
     const lean = await workflows.findByKey("speaker-1", { withOutput: false });
-    expect(readOutput).toHaveBeenCalledOnce();
     expect(lean).toEqual(
       full.map((r) => (r.status === "completed" ? { ...r, output: undefined } : r)),
     );
-    // A filter that rejects the completed run keeps its output unread even by default.
-    readOutput.mockClear();
-    const running = await workflows.findByKey("speaker-1", { statuses: ["running"] });
-    expect(running.map((r) => r.runId)).toEqual(["live"]);
-    expect(readOutput).not.toHaveBeenCalled();
   });
 
   test("cancelAll cancels the key's unfinished runs of one workflow and counts them", async () => {

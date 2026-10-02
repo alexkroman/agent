@@ -69,7 +69,13 @@ describe("messagesFromEvents", () => {
 
   test("everything but a transcript and a settled tool call is ignored", () => {
     const events = [
-      at({ type: "session.configured", audioFormat: "pcm16", sampleRate: 1, ttsSampleRate: 1 }),
+      at({
+        type: "session.configured",
+        audioFormat: "pcm16",
+        sampleRate: 1,
+        ttsSampleRate: 1,
+        sessionId: "s",
+      }),
       at({ type: "speech.started" }),
       user("hi"),
       at({ type: "tool.called", toolCallId: "c1", toolName: "look", args: {} }),

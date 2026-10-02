@@ -6,9 +6,6 @@
  * of `createSessionCore` are 143 of those lines with no behaviour in them.
  * Splitting on that seam is what the file-length gate asks for, and it mirrors
  * `aai-ui/session-core-types.ts`, which made the same cut for the same reason.
- *
- * `core.ts` re-exports both names, so every existing import path is
- * unchanged.
  */
 
 import type { Message, SayOptions, SpeechHandle } from "@alexkroman1/aai";

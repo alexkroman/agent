@@ -27,9 +27,9 @@
 
 import { saidIn, toolCallsInEvents, toolNames } from "@alexkroman1/aai-runtime/eval";
 import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
+import type { StudioSession } from "aai-guest-core/types";
 import { describe, expect, test } from "vitest";
 import { createStudioAgent, STUDIO_TOOL_TIMEOUT_MS, type StudioAgentDeps } from "./agent.ts";
-import type { StudioSession } from "./session.ts";
 
 /**
  * A session whose workspace is never touched.

@@ -41,7 +41,7 @@ true together, and any one of them missing puts it silently back to two:
   are the open internet and third-party webhook senders, so forwarding an
   inbound `traceparent` would let any of them choose the trace id a tenant's
   spans are filed under.
-- `createRuntimeServer` calls `adoptRequestTrace(req.headers)` at the top of
+- `createServerForRuntime` calls `adoptRequestTrace(req.headers)` at the top of
   every request (`aai-runtime/_request-trace.ts`).
 - the telemetry bridge's operation span parents to that context rather than
   hard-rooting at `ROOT_CONTEXT`, which is what it used to do.

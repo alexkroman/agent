@@ -108,7 +108,10 @@ export async function makeBroker(
 ) {
   const workspaces = createMemoryWorkspaceStore();
   const chats = createMemoryChatStore();
-  await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+  await createWorkspace(workspaces, SCOPE, PROJECT, {
+    kind: "agent",
+    files: { "agent.ts": "// v1" },
+  });
   const spawn = fakeSpawn(guests);
   // Every preview job enqueued: the ROW is what a redelivery elsewhere sees.
   const enqueued: PreviewJob[] = [];

@@ -157,7 +157,7 @@ describe("createToolContext", () => {
   });
 
   test("a fake the spec built itself can be NAMED, and is then both seam and ctx.model", async () => {
-    // The escape hatch under the sugar, and what `scriptedToolContext` uses: a
+    // The escape hatch under the sugar: a
     // fake built elsewhere — shared across two contexts, say — handed over by
     // name.
     const model = stubGenerate({ reply: (call) => `answered ${call.prompt}` });

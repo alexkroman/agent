@@ -61,7 +61,12 @@
 import { existsSync, rmSync } from "node:fs";
 import { authoringSurface, generateCapabilityReports, parseEntrypoint } from "./_api-contracts.mjs";
 import { hasBase, useBase } from "./_api-contracts-base.mjs";
-import { classify, internalSurfaceSnapshot, runChecks } from "./_api-contracts-checks.mjs";
+import {
+  BREAKING_BUMP,
+  classify,
+  internalSurfaceSnapshot,
+  runChecks,
+} from "./_api-contracts-checks.mjs";
 import { applyUpdate, fixtureFiles, planBump, verdict } from "./_api-contracts-mint.mjs";
 import {
   lowerOwnershipBaseline,
@@ -327,7 +332,7 @@ function bump(target) {
         ? `  epoch ${plan.previous}: RETAINED as supported\n` +
           `  Write epoch ${plan.previous}'s example — it is a promise now: ` +
           `${rel(fixturePath(pkg, capability, plan.previous))}\n  Suggested changeset bump: ${suggested}.`
-        : `  epoch ${plan.previous}: DROPPED — ${reason}\n  Suggested changeset bump: major.`),
+        : `  epoch ${plan.previous}: DROPPED — ${reason}\n  Suggested changeset bump: ${BREAKING_BUMP}.`),
   );
 }
 

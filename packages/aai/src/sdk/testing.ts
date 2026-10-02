@@ -167,12 +167,6 @@ export {
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,
 } from "./testing-recording-workflows.ts";
-// Deprecated: `createToolContext({ generate, delegate })` is the same call.
-export {
-  type ScriptedToolContext,
-  type ScriptedToolContextOptions,
-  scriptedToolContext,
-} from "./testing-scripted.ts";
 export {
   STUB_SPEECH_PCM_BYTES,
   type StubSpeech,

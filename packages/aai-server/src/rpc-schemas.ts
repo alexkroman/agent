@@ -78,11 +78,10 @@ export type WorkspaceDeployParams = {
   allowPreviewSlug?: boolean;
   /**
    * `--skipTypecheck`: forwarded to the in-sandbox `aai deploy` so a Publish
-   * can skip its tsc gate the way `aai deploy --skipTypecheck` does. Absent
-   * (the default) runs the gate; `| undefined` so the sender can pass a plain
-   * `boolean | undefined` through rather than a guarded spread.
+   * can skip its tsc gate the way `aai deploy --skipTypecheck` does. Always
+   * sent; `false` runs the gate.
    */
-  skipTypecheck?: boolean | undefined;
+  skipTypecheck: boolean;
 };
 
 export type GuestRpcSchema = {

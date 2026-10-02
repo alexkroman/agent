@@ -45,8 +45,8 @@
     "dropped": {}
   },
   "page": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "push-to-talk": {
@@ -55,14 +55,9 @@
     "dropped": {}
   },
   "session": {
-    "current": 5,
-    "supported": [5],
-    "dropped": {
-      "1": "BrowserSession gained three required methods (startUserTurn, commitUserTurn, clearUserTurn) and SessionActions with it, so a hand-written epoch-1 BrowserSession or SessionActions double no longer satisfies the type. aai-ui has no external implementers of either, and a consumer that only CALLS the session is unaffected.",
-      "2": "BrowserSession is SEALED (a type-only browserSessionBrand only createBrowserSession mints), its three push-to-talk methods became the session.userTurn sub-handle (start/commit/clear), SessionActions is declared on its own without them, and usePushToTalk moved to the push-to-talk capability. An epoch-2 hand-written session double, or a caller of session.startUserTurn(), no longer compiles.",
-      "3": "Session and SessionActions gain a required sendText; a hand-built Session (a test double written as a literal) no longer compiles",
-      "4": "`SessionSnapshot.agentState` is the slot-keyed `AgentStateFrame | null` rather than `unknown`"
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "tap-to-talk": {
     "current": 1,
@@ -75,8 +70,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   }
 }

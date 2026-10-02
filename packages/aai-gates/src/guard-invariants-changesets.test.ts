@@ -51,6 +51,12 @@ const changesets = sole(
       file: string,
       source: string,
     ) => { file: string; line: number; text: string }[];
+    checkChangesetPreRelease: (
+      file: string,
+      source: string,
+      preRelease: Set<string>,
+    ) => { file: string; line: number; text: string }[];
+    preReleasePackageNames: () => Set<string>;
     workspacePackageNames: () => Set<string>;
     versionablePackageNames: () => Set<string>;
     SHIPS_VIA: readonly { name: string; carriers: readonly string[]; via: string }[];
@@ -79,6 +85,28 @@ describe("guard-invariants rule 20 (changeset package names)", () => {
     ["an empty frontmatter block", "---\n---\n\n"],
   ])("spares %s", (_label, source) => {
     expect(check(source), "rule 20 flagged a legitimate changeset").toEqual([]);
+  });
+
+  describe("a major bump during 0.x", () => {
+    const preRelease = new Set(["@alexkroman1/aai"]);
+    const checkPre = (source: string) =>
+      changesets?.checkChangesetPreRelease("c.md", source, preRelease) ?? [];
+
+    test("flags `major` on a 0.x package, naming the 1.0.0 it would release", () => {
+      const [finding] = checkPre('---\n"@alexkroman1/aai": major\n---\n\nx\n');
+      expect(finding?.text).toMatch(/would release 1\.0\.0/);
+    });
+
+    test.each([
+      ["a minor on a 0.x package", '---\n"@alexkroman1/aai": minor\n---\n\nx\n'],
+      ["a major on a package past 0.x", '---\n"aai-server": major\n---\n\nx\n'],
+    ])("spares %s", (_label, source) => {
+      expect(checkPre(source)).toEqual([]);
+    });
+
+    test("reads the real workspace versions", () => {
+      expect(changesets?.preReleasePackageNames()).toContain("@alexkroman1/aai");
+    });
   });
 
   test("the workspace-name corpus is floored", () => {

@@ -34,9 +34,6 @@ import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
 import { runTool } from '@alexkroman1/aai/testing';
 import { SaidLine } from '@alexkroman1/aai/testing';
 import { schemaInputIssues } from '@alexkroman1/aai/testing';
-import { ScriptedToolContext } from '@alexkroman1/aai/testing';
-import { scriptedToolContext } from '@alexkroman1/aai/testing';
-import { ScriptedToolContextOptions } from '@alexkroman1/aai/testing';
 import { SentEvent } from '@alexkroman1/aai/testing';
 import { STUB_SPEECH_PCM_BYTES } from '@alexkroman1/aai/testing';
 import { StubClientInbox } from '@alexkroman1/aai/testing';
@@ -170,12 +167,6 @@ export { runTool }
 export { SaidLine }
 
 export { schemaInputIssues }
-
-export { ScriptedToolContext }
-
-export { scriptedToolContext }
-
-export { ScriptedToolContextOptions }
 
 export { SentEvent }
 

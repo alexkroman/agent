@@ -97,7 +97,6 @@ export function ProjectView(props: ProjectViewProps) {
     hasGithubResult() ? "settings" : "preview",
   );
   const [publishOpen, setPublishOpen] = useState(false);
-  const [previewNonce, setPreviewNonce] = useState(0);
   /** The file the user picked, or null to follow the workspace's default. */
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   // A chat turn is in flight. Publish locks on this: the preview only
@@ -198,10 +197,8 @@ export function ProjectView(props: ProjectViewProps) {
   // Refresh server state after agent turns / saves. The project's own data
   // arrives over the event stream (which also covers the preview deploy that
   // follows an edit); the invalidations cover the project list and force an
-  // immediate re-read for the edit itself. Deliberately does NOT bump
-  // previewNonce: the preview iframe reloads by itself when `previewVersion`
-  // changes, and a forced reload here would kill any in-progress voice
-  // session for nothing.
+  // immediate re-read for the edit itself. The preview iframe reloads by
+  // itself when `previewVersion` changes.
   const invalidateWorkspace = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.project(project) });
     void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
@@ -227,9 +224,6 @@ export function ProjectView(props: ProjectViewProps) {
     mutationFn: () => api.deploy(bearer, project),
     onSuccess: () => {
       invalidateWorkspace();
-      // The PRODUCTION agent changed — reload the pane's production-fallback
-      // iframe (projects that predate auto previews frame production).
-      setPreviewNonce((n) => n + 1);
       setSelectedTab("preview");
     },
   });
@@ -327,8 +321,6 @@ export function ProjectView(props: ProjectViewProps) {
             // tell a first build in flight from an untouched project.
             hasAgent={hasBuild}
             previewError={workspace.data?.previewError}
-            deployedSlug={deployedSlug}
-            nonce={previewNonce}
             onPreviewMissing={wakePreview}
           />
         )}

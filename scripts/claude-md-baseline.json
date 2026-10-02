@@ -9,7 +9,6 @@
       "scripts/starter-eval/": 1
     },
     ".agents/testing.md": {
-      "host/fixtures/": 1,
       "workflow-interleavings/": 1
     }
   }

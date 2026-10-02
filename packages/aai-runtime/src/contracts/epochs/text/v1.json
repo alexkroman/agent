@@ -2,12 +2,14 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "text",
   "epoch": 1,
-  "sha256": "64a1bab92067fb54665721c2a477404fbea5f4a63f1263591aa179f828316a90",
+  "rule": 2,
+  "sha256": "f08d15148be51b1fafa662c96699012c2afe0638a13decbc371996c5ec10db7b",
   "exports": [
     "TextAgent",
     "TextAgentOptions",
     "TextTurnOptions",
     "TextTurnResult",
     "createTextAgent"
-  ]
+  ],
+  "rollup": "7cfcf8be1969a8b59e659a5b3685be50b09de9f44b959acedf04a780c01dbe8f"
 }

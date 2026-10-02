@@ -173,7 +173,7 @@ describe("toAgentConfig", () => {
     // This test used to assert the opposite: that a nullary thunk was
     // SNAPSHOTTED here and the config carried the string it answered with. That
     // was right for a thunk and is wrong for the resolver `systemPrompt` now
-    // takes, which is handed the live session (`AgentInstructions`) — there is
+    // takes, which is handed the live session (`AgentSystemPrompt`'s function arm) — there is
     // no session at serialization time, so there is nothing honest to snapshot
     // and a value taken here would be one turn's answer frozen for the life of
     // the deployment. Not a regression: what resolves per request is the LIVE

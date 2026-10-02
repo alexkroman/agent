@@ -69,7 +69,7 @@ function frame(container: HTMLElement): HTMLIFrameElement {
 describe("PreviewPane", () => {
   test("no deploys at all: the placeholder explains auto previews", () => {
     stubHealth([]);
-    render(<PreviewPane nonce={0} />);
+    render(<PreviewPane />);
     expect(screen.getByText("Nothing to preview yet")).toBeDefined();
     expect(document.querySelector("iframe")).toBeNull();
   });
@@ -77,29 +77,15 @@ describe("PreviewPane", () => {
   test("a preview slug frames the PREVIEW agent, keyed by version", async () => {
     stubHealth(["p-preview"]);
     const { container, rerender } = render(
-      <PreviewPane previewSlug="p-preview" previewVersion="h1" nonce={0} />,
+      <PreviewPane previewSlug="p-preview" previewVersion="h1" />,
     );
     await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
     const first = frame(container);
     expect(first.getAttribute("src")).toBe("/p-preview/");
     // A new preview deploy (new version) remounts the frame — that is the
     // only reload path; nothing else may kill an in-progress voice session.
-    rerender(<PreviewPane previewSlug="p-preview" previewVersion="h2" nonce={0} />);
+    rerender(<PreviewPane previewSlug="p-preview" previewVersion="h2" />);
     expect(frame(container)).not.toBe(first);
-  });
-
-  test("preview wins over production when both exist", async () => {
-    stubHealth(["p-preview", "p"]);
-    const { container } = render(
-      <PreviewPane previewSlug="p-preview" deployedSlug="p" nonce={0} />,
-    );
-    await waitFor(() => expect(frame(container).getAttribute("src")).toBe("/p-preview/"));
-  });
-
-  test("a pre-preview project falls back to the production agent", async () => {
-    stubHealth(["legacy"]);
-    const { container } = render(<PreviewPane deployedSlug="legacy" nonce={3} />);
-    await waitFor(() => expect(frame(container).getAttribute("src")).toBe("/legacy/"));
   });
 
   test("a rebuild takes the whole pane, not a banner over a stale frame", async () => {
@@ -110,7 +96,6 @@ describe("PreviewPane", () => {
         previewVersion="h1"
         previewStale={true}
         hasAgent={true}
-        nonce={0}
       />,
     );
     await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
@@ -122,7 +107,7 @@ describe("PreviewPane", () => {
     // The stale flag is true before the first preview deploy lands, so the
     // pane can say the build is on its way rather than "nothing to preview".
     stubHealth([]);
-    render(<PreviewPane previewStale={true} hasAgent={true} nonce={0} />);
+    render(<PreviewPane previewStale={true} hasAgent={true} />);
     await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
   });
 
@@ -130,7 +115,7 @@ describe("PreviewPane", () => {
     // "No preview yet" IS stale server-side — without an agent to build,
     // that must not read as a deploy on the way.
     stubHealth([]);
-    render(<PreviewPane previewStale={true} nonce={0} />);
+    render(<PreviewPane previewStale={true} />);
     expect(screen.getByText("Nothing to preview yet")).toBeDefined();
   });
 
@@ -142,7 +127,6 @@ describe("PreviewPane", () => {
         previewVersion="h1"
         previewStale={true}
         hasAgent={true}
-        nonce={0}
       />,
     );
     await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
@@ -152,7 +136,6 @@ describe("PreviewPane", () => {
         previewVersion="h2"
         previewStale={false}
         hasAgent={true}
-        nonce={0}
       />,
     );
     await waitFor(() => expect(frame(container).getAttribute("src")).toBe("/p-preview/"));
@@ -169,7 +152,6 @@ describe("PreviewPane", () => {
         previewError={cliOutput}
         previewStale={true}
         hasAgent={true}
-        nonce={0}
       />,
     );
     await waitFor(() => expect(screen.getByText(/preview build failed/i)).toBeDefined());
@@ -184,7 +166,7 @@ describe("PreviewPane", () => {
     // Publish control in the top bar.
     stubHealth(["p-preview"]);
     const { container } = render(
-      <PreviewPane previewSlug="p-preview" previewVersion="h1" previewStale={false} nonce={0} />,
+      <PreviewPane previewSlug="p-preview" previewVersion="h1" previewStale={false} />,
     );
     await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
     expect(screen.queryByText(/updates automatically as you edit/i)).toBeNull();
@@ -198,9 +180,7 @@ describe("PreviewPane readiness probe", () => {
     // deploy still in flight) framed `/:slug/`, and the platform's bare
     // `{"error":"HTML not found"}` rendered as the entire pane.
     stubHealth([]);
-    const { container } = render(
-      <PreviewPane previewSlug="p-preview" previewStale={true} nonce={0} />,
-    );
+    const { container } = render(<PreviewPane previewSlug="p-preview" previewStale={true} />);
     await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
     expect(container.querySelector("iframe")).toBeNull();
   });
@@ -209,9 +189,7 @@ describe("PreviewPane readiness probe", () => {
     vi.useFakeTimers();
     const served: string[] = [];
     stubHealth(served);
-    const { container } = render(
-      <PreviewPane previewSlug="p-preview" previewVersion="h1" nonce={0} />,
-    );
+    const { container } = render(<PreviewPane previewSlug="p-preview" previewVersion="h1" />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
@@ -230,13 +208,13 @@ describe("PreviewPane readiness probe", () => {
     vi.useFakeTimers();
     const fetchMock = stubHealth(["p-preview"]);
     const { container, rerender } = render(
-      <PreviewPane previewSlug="p-preview" previewVersion="h1" nonce={0} />,
+      <PreviewPane previewSlug="p-preview" previewVersion="h1" />,
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(container.querySelector("iframe")).not.toBeNull();
-    rerender(<PreviewPane previewSlug="p-preview" previewVersion="h2" nonce={0} />);
+    rerender(<PreviewPane previewSlug="p-preview" previewVersion="h2" />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(PROBE_RETRY_MS * 3);
     });
@@ -255,9 +233,7 @@ describe("PreviewPane: reporting a missing preview", () => {
   async function pollFor(ms: number, onPreviewMissing?: () => Promise<unknown>) {
     vi.useFakeTimers();
     const fetchMock = stubHealth([]);
-    render(
-      <PreviewPane previewSlug="p-preview" nonce={0} {...omitUndefined({ onPreviewMissing })} />,
-    );
+    render(<PreviewPane previewSlug="p-preview" {...omitUndefined({ onPreviewMissing })} />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(ms);
     });

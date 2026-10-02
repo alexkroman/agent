@@ -62,7 +62,7 @@ export const ClientConfigResponseSchema = z.object({
    * lookup presenting the previous ticket (`SESSION_TICKET_HEADER`) gets one
    * for the same session, any other lookup one for a new session. And `aai dev`
    * with `AAI_SESSION_SECRET` set, for the client it serves itself. A
-   * self-hosted `createRuntimeServer` never does: this endpoint is
+   * self-hosted `createServerForRuntime` never does: this endpoint is
    * unauthenticated, and there the ticket is meant to prove the operator's own
    * login, which a ticket anyone could fetch here would not.
    */
@@ -75,7 +75,7 @@ export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
 /**
  * Build the `GET /client-config` response body from an agent-shaped config.
  *
- * Every server that serves the endpoint (a self-hosted `createRuntimeServer`, the
+ * Every server that serves the endpoint (a self-hosted `createServerForRuntime`, the
  * platform's per-slug handler, the CLI dev server) goes through this, so a
  * surface rule can't drift between them.
  */

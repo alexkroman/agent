@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "state",
   "epoch": 1,
-  "sha256": "053bd7c32122a6fad305ac6d949adc099458efd58556a47025856e687a6a11ff",
+  "rule": 2,
+  "sha256": "8341aed77e1497b928a9e5fc25cabd877d3a70115a653f9635a280204aaf5934",
   "exports": [
     "DeepReadonly",
     "SessionSlot",
@@ -13,5 +14,6 @@
     "SlotToolDef",
     "StateProjection",
     "sessionSlot"
-  ]
+  ],
+  "rollup": "c9969d8baab9819f588da06fea8a89a438bcd79bec9baa21f4db7f023fb12588"
 }

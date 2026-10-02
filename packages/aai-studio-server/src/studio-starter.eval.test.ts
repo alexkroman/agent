@@ -106,9 +106,10 @@ describeStarters("starter eval — studio codegen", () => {
       name: starter.label,
       async body(t) {
         const client = createStudioClient(ORIGIN, evalApiKey());
-        const project = `eval-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        let project: string | undefined;
         try {
-          const turn = await client.runTurn(project, starter.kind, starter.prompt);
+          project = await client.createProject(starter.kind);
+          const turn = await client.runTurn(project, starter.prompt);
           const files = await client.workspace(project);
           gradeStarter(t, { label: starter.label, kind: starter.kind, turn, files });
           // The BEHAVIOUR half, opt-in — see `evalContracts` for the cost
@@ -145,7 +146,7 @@ describeStarters("starter eval — studio codegen", () => {
           // In `finally` rather than after the grade: a case that THREW is the
           // one most likely to have created a project, and grading is what
           // throws.
-          await client.deleteProject(project);
+          if (project !== undefined) await client.deleteProject(project);
         }
       },
     })),

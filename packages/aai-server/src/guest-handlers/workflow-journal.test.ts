@@ -220,6 +220,7 @@ describe("POST /:slug/workflow-journal", () => {
             name: "a",
             status: "ok",
             attempts: 1,
+            startedAt: 1,
             finishedAt: 1,
           },
         },

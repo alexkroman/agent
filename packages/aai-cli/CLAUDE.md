@@ -60,8 +60,6 @@ A narrowed run must never report a green verdict over specs it skipped.
 - **The result carries the set** — `cli-test-data-carries-the-set` and
   `cli-eval-data-carries-the-set` in `konsistent.json` require
   `ran`/`unrun`/`complete` on `TestData` and `ran` on `EvalData`.
-- **`--all` is accepted, does nothing, and warns** (`TEST_ALL_DEPRECATION`,
-  via `notify`) — old CI pipelines pass it and `assertKnownArgv` would refuse it.
 - **`aai build` runs the whole suite**
   (`runVitest(cwd, { candidates: TEST_FILES, all: true })`); `--skip-tests` is
   the honest opt-out.
@@ -277,7 +275,7 @@ from a project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
 
 ## Running the SDK's own server (`aai dev` and host mode)
 
-`createRuntimeServer` (`packages/aai-runtime/src/server/server.ts`) is `aai dev`'s
+`createServerForRuntime` (`packages/aai-runtime/src/server/server.ts`) is `aai dev`'s
 backend; with no `AAI_SESSION_SECRET` it authenticates no one, so both
 defaults fail closed.
 This package owns `AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`;

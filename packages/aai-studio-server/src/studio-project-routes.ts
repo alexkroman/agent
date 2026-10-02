@@ -89,12 +89,12 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
     const scope = requestScope(c);
     const limited = await deps.projectCreate(scope, c.req.raw);
     if (limited) return limited;
-    const { name, prompt, kind } = c.req.valid("json");
-    // No explicit name: the server generates one, v0-style — a readable base
+    const { prompt, kind } = c.req.valid("json");
+    // The server generates the name, v0-style — a readable base
     // from the creating prompt plus a random suffix, via the same generator
     // slugless CLI deploys use (see aai-server/slug-generate.ts). The suffix
     // makes a same-scope collision negligible; one retry absorbs it anyway.
-    const attempts = name ? [name] : [generateProjectName(prompt), generateProjectName(prompt)];
+    const attempts = [generateProjectName(prompt), generateProjectName(prompt)];
     // Creation is atomic at the store (versioned insert): two concurrent
     // creates — even on different replicas — cannot both succeed, so the
     // loser can never reset the winner's files. No lock needed here.

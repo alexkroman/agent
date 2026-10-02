@@ -15,16 +15,22 @@ type AgentCustomEvent = {
 type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
 // @public
+type AgentStateFrame = Readonly<Record<string, unknown>>;
+
+// @public @sealed
 type BrowserSession = {
+    readonly [browserSessionBrand]: true;
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
         signal?: AbortSignal;
     }): void;
     cancel(): void;
-    startUserTurn(): void;
-    commitUserTurn(): void;
-    clearUserTurn(): void;
+    readonly userTurn: UserTurnControls;
+    readonly identity: SessionIdentity;
+    sendText(text: string, options?: SendTextOptions): void;
+    sendToolResult(toolCallId: string, outcome: ToolCallOutcome): void;
+    setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -32,8 +38,12 @@ type BrowserSession = {
     toggle(): void;
     end(): void;
     restart(): void;
+    resume(sessionId: string): void;
     [Symbol.dispose](): void;
 };
+
+// @public
+const browserSessionBrand: unique symbol;
 
 // @public
 type ChatMessage = {
@@ -43,7 +53,7 @@ type ChatMessage = {
 };
 
 // @public
-export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "token" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
     theme?: ClientTheme;
@@ -80,22 +90,37 @@ type ClientTheme = {
 export function mountClient(config: ClientConfig): ClientHandle;
 
 // @public
+type SendTextOptions = {
+    connect?: boolean | undefined;
+};
+
+// @public
 type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
     readonly fatal: boolean;
 };
 
+// @public @sealed
+type SessionIdentity = {
+    readonly platformUrl: string;
+    clientId(): string | undefined;
+    holderId(): string;
+    sessionId(): string | undefined;
+    ticket(): string | undefined | Promise<string | undefined>;
+};
+
 // @public
 type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
+    readonly micMuted: boolean;
     readonly apiUrl: string;
     readonly contentVersion: number;
     readonly messages: ChatMessage[];
     readonly toolCalls: ToolCallInfo[];
     readonly customEvents: AgentCustomEvent[];
-    readonly agentState: unknown;
+    readonly agentState: AgentStateFrame | null;
     readonly userTranscript: string | null;
     readonly agentTranscript: string | null;
     readonly error: SessionError | null;
@@ -115,16 +140,37 @@ type ToolCallInfo = {
 };
 
 // @public
+type ToolCallOutcome = {
+    result: unknown;
+} | {
+    error: string;
+};
+
+// @public
 export type ToolDisplayConfig = Record<string, {
     icon?: string;
     label?: string;
 }>;
 
 // @public
+type UserTurnControls = {
+    start(): void;
+    commit(): void;
+    clear(): void;
+};
+
+// @public
 type VoiceSessionOptions = {
     platformUrl: string;
     onSessionId?: ((sessionId: string) => void) | undefined;
     resumeSessionId?: string | undefined;
+    location?: string | (() => string | undefined) | undefined;
+    phone?: string | (() => string | undefined) | undefined;
+    client?: string | (() => string | undefined) | undefined;
+    preConnectAudio?: boolean | undefined;
+    token?: string | ((attempt: {
+        readonly sessionId: string | undefined;
+    }) => string | undefined | Promise<string | undefined>) | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
 

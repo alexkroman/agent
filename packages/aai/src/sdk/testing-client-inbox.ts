@@ -3,7 +3,7 @@
  * `stubClientInbox()` — a device on the other end of `stepNotifyClient`, for a
  * spec: it records every notice a step pushed and answers each one.
  *
- * Published into the same slot `createRuntimeServer` fills, so a step under test
+ * Published into the same slot `createServerForRuntime` fills, so a step under test
  * takes the path production does, including the `ClientUnreachableError` it
  * throws when the answer is not an ack.
  *

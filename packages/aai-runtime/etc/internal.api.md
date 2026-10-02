@@ -865,7 +865,7 @@ type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
-    startedAt?: number | undefined;
+    startedAt: number;
     finishedAt: number;
 };
 

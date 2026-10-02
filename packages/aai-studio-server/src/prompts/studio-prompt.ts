@@ -24,7 +24,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createLogger } from "aai-server/logger";
-import { DEFAULT_PROJECT_KIND, type ProjectKind } from "../studio-project-kind.ts";
+import type { ProjectKind } from "../studio-project-kind.ts";
 import { scaffoldDir } from "../studio-scaffold.ts";
 import { studioPreamble } from "./studio-preamble.ts";
 
@@ -137,10 +137,7 @@ export function loadScaffoldGuide(guidePath: string = scaffoldGuidePath()): stri
 }
 
 /** Pure composition: studio preamble for `kind` + guide (or the fallback). */
-export function composeStudioPrompt(
-  guide: string | null,
-  kind: ProjectKind = DEFAULT_PROJECT_KIND,
-): string {
+export function composeStudioPrompt(guide: string | null, kind: ProjectKind): string {
   return studioPreamble(kind) + (guide ?? FALLBACK_GUIDE);
 }
 
@@ -149,11 +146,8 @@ export function composeStudioPrompt(
  * preamble + the CLI's scaffold CLAUDE.md (or the compact fallback). Cached
  * per kind — the guide is static for the process lifetime, and a studio
  * replica serves both kinds.
- *
- * Defaults to a voice agent, which is what every project written before the
- * new-project screen had a switcher is (see `resolveProjectKind`).
  */
-export function studioSystemPrompt(kind: ProjectKind = DEFAULT_PROJECT_KIND): string {
+export function studioSystemPrompt(kind: ProjectKind): string {
   const cached = cachedPrompts.get(kind);
   if (cached !== undefined) return cached;
   const guide = loadScaffoldGuide();

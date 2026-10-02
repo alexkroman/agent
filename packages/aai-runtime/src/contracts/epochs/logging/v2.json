@@ -1,9 +1,0 @@
-{
-  "kind": "aai-authoring-capability-contract",
-  "capability": "logging",
-  "epoch": 2,
-  "rule": 2,
-  "sha256": "17376e38b574515abbd67e731bf4bbb6b70c99eae290e5801f62ce5feadcbafe",
-  "exports": ["LogContext", "LogFn", "LogLevel", "Logger"],
-  "rollup": "045f87aee047178bf3fdf39c37c33bc76f047ec04818738dacf881103eb9160c"
-}

@@ -300,16 +300,3 @@ export function agentPlatformBaseUrl(
   }
   return agentPublicBaseUrl(slug, env);
 }
-
-/**
- * The public origin split into the two `X-Forwarded-*` values a downstream
- * service needs, so a proxy forwards what the CLIENT saw rather than the
- * cleartext hop it received.
- */
-export function publicForwardedHeaders(
-  req: Request,
-  env: NodeJS.ProcessEnv = process.env,
-): { host: string; proto: string } {
-  const url = new URL(resolvePublicOrigin(req, env));
-  return { host: url.host, proto: url.protocol.replace(/:$/, "") };
-}

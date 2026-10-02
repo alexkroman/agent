@@ -238,24 +238,9 @@ describe("reading a run", () => {
     expect(readOutput).not.toHaveBeenCalled();
   });
 
-  test("an adapter whose record carries no output falls back to readOutput", async () => {
-    // `WdkRunRecord.output` is OPTIONAL and the RETAINED epoch 2 template carries
-    // none — retained on the written grounds that such an adapter's callers "fall
-    // back to `readOutput` exactly as they did". They had stopped.
-    const readOutput = vi.fn(async () => ({ late: true }));
-    const { client } = makeClient({
-      wdk: { getRun: async () => record({ status: "completed" }), readOutput },
-    });
-    expect(await client.get("wrun_1")).toMatchObject({
-      status: "completed",
-      output: { late: true },
-    });
-    expect(readOutput).toHaveBeenCalledOnce();
-  });
-
   test("a completed run that returned nothing costs no round trip", async () => {
-    // PRESENCE, not definedness: a returning-nothing body is a completed run whose
-    // output IS `undefined`; a read to learn that costs the common case.
+    // A returning-nothing body is a completed run whose output IS `undefined`;
+    // a read to learn that costs the common case.
     const readOutput = vi.fn(async () => "never");
     const { client } = makeClient({
       wdk: {

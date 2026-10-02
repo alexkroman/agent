@@ -236,7 +236,7 @@ describe("createAgentRequestHandler", () => {
    *
    * It replaced a fake `WorkflowSurface` with three handlers on it — `flow`,
    * `step` and `webhook`. Two went with the DevKit and the third moved to
-   * `createRuntimeServer`, so one door is left and it takes a run id.
+   * `createServerForRuntime`, so one door is left and it takes a run id.
    */
   const deliverWorkflow = () => async () => undefined;
 

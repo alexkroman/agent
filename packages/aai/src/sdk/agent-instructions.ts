@@ -51,16 +51,6 @@
 import type { AgentSessionContext } from "./agent-session-context.ts";
 
 /**
- * A system-prompt resolver — the function half of {@link AgentSystemPrompt}.
- *
- * @deprecated Name {@link AgentSystemPrompt} (what `agent({ systemPrompt })`
- * takes); for the function alone, `Exclude<AgentSystemPrompt, string>`.
- * Identical type.
- * @public
- */
-export type AgentInstructions = Exclude<AgentSystemPrompt, string>;
-
-/**
  * What `agent({ systemPrompt })` accepts: the text, or a function that answers
  * it per request from the live {@link AgentSessionContext}.
  *

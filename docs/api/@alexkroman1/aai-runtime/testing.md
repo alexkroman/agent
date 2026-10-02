@@ -272,8 +272,7 @@ Override any of them.
 **`generate` and `delegate` also take a SCRIPT**, which is the way in for a
 tool that calls a model: pass `stubGenerate`'s own argument and the fake is
 built here, installed, and handed back on `ctx.model` (`ctx.desk` for
-`delegate`). It replaces the deprecated [scriptedToolContext](#scriptedtoolcontext-1), which
-returned the same two fakes beside the context.
+`delegate`).
 
 **Each call is a distinct session.** `sessionId` auto-increments, which is
 what makes the two-context isolation test — the same tool run against two
@@ -1545,55 +1544,6 @@ for await (const delta of turn.textStream) console.log(delta);
 
 ***
 
-### ~~scriptedToolContext()~~
-
-```ts
-function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
-```
-
-Build a [TestToolContext](#testtoolcontext) whose `generate` and `delegate` are both
-scripted, and hand back the fakes beside it.
-
-#### Parameters
-
-##### options?
-
-[`ScriptedToolContextOptions`](#scriptedtoolcontextoptions)
-
-#### Returns
-
-[`ScriptedToolContext`](#scriptedtoolcontext)
-
-#### Deprecated
-
-Use `createToolContext({ generate, delegate })` — it takes the
-same two scripts and exposes the same fakes as `ctx.model` and `ctx.desk`, so
-`const { model, desk } = scriptedToolContext(…)` is `const ctx =
-createToolContext(…)` read as `ctx.model` / `ctx.desk`. This predates it and
-stays working.
-
-Each call is a distinct session, as with `createToolContext`. A spec that
-wants two sessions sharing one script calls this twice with the same routes
-object — the routes are read at call time, so a function route with its own
-queue is shared and a fixed route is not affected either way.
-
-#### Example
-
-```ts
-import { scriptedToolContext } from "@alexkroman1/aai/testing";
-
-const TRIAGE = "You triage email.";
-const { ctx, model, desk } = scriptedToolContext({
-  generate: { routes: { [TRIAGE]: { object: { response: "email" } } } },
-  delegate: { routes: { "meeting-assistant": "Free Wednesday 1pm." } },
-});
-// … run the tool against `ctx`, then:
-// expect(model.calls.map((call) => call.system)).toEqual([TRIAGE]);
-// expect(desk.calls[0]?.subagent.name).toBe("meeting-assistant");
-```
-
-***
-
 ### stubClientInbox()
 
 ```ts
@@ -2686,44 +2636,6 @@ readonly text: string;
 ```
 
 The text, exactly as passed.
-
-***
-
-### ~~ScriptedToolContext~~
-
-What [scriptedToolContext](#scriptedtoolcontext-1) answers: the context to run tools against,
-and the two fakes it was built from, for asserting what each was asked.
-
-#### Deprecated
-
-`createToolContext` answers a `TestToolContext`, which carries
-both fakes itself (`ctx.model`, `ctx.desk`). See [scriptedToolContext](#scriptedtoolcontext-1).
-
-#### Properties
-
-##### ~~ctx~~
-
-```ts
-ctx: TestToolContext;
-```
-
-Pass to `runTool`/`toolRunner`, or straight to a tool's `execute`.
-
-##### ~~desk~~
-
-```ts
-desk: StubDelegate;
-```
-
-The `ctx.delegate` fake — `desk.calls` is every subagent run the tools asked for.
-
-##### ~~model~~
-
-```ts
-model: StubGenerate;
-```
-
-The `ctx.generate` fake — `model.calls` is every prompt the tools sent.
 
 ***
 
@@ -4527,7 +4439,7 @@ optional codeVersion?: string;
 ```
 
 The bundle this run was STARTED against — `AAI_BUNDLE_SHA256`, or absent
-off the platform and for a row that predates the column.
+off the platform.
 
 A run outlives the bundle that started it, which is what makes the
 divergence message's two-cause fork ("the CODE changed while this run was in
@@ -4581,8 +4493,8 @@ the client before it gets here (`workflow/run-label.ts`), or absent.
 On the run record rather than in a side table for the reason `codeVersion`
 is: it is a fact about the run fixed at `createRun`, so writing it in the
 same statement means no reader can see the run without it, and it goes when
-the run does. Every backend must round-trip it and none may invent one — a
-row that predates the column reads as absent (`conformance-cases.ts`).
+the run does. Every backend must round-trip it and none may invent one
+(`conformance-cases.ts`).
 
 ##### output?
 
@@ -4866,54 +4778,6 @@ The tool's name, as the agent's `tools` record keys it.
 
 ***
 
-### ~~ScriptedToolContextOptions~~
-
-```ts
-type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
-  delegate?: StubDelegateScript;
-  generate?: StubGenerateScript;
-};
-```
-
-What [scriptedToolContext](#scriptedtoolcontext-1) takes: `stubGenerate`'s script as
-`generate`, `stubDelegate`'s as `delegate`, and any other field of the
-context — `sessionId`, `env`, `workflows` — as `createToolContext` takes it.
-
-Either script may be omitted: the fake is still built, so `model.calls` and
-`desk.calls` are always there to assert on, and a call it was not scripted
-for rejects naming the route it lacked — which is a spec that drifted from
-its tool, not a case to paper over.
-
-An intersection ALIAS rather than an `interface extends`, because TypeDoc
-renders an interface's inherited members with their ORIGINAL doc comments —
-`ToolContext`'s, whose `{@link}`s resolve on the root entry and not on this
-one, which failed the docs build as three unresolved links.
-
-#### Type Declaration
-
-##### ~~delegate?~~
-
-```ts
-optional delegate?: StubDelegateScript;
-```
-
-The script `stubDelegate` takes — `{ reply }`, or `{ routes }` keyed by subagent name.
-
-##### ~~generate?~~
-
-```ts
-optional generate?: StubGenerateScript;
-```
-
-The script `stubGenerate` takes — `{ reply }`, or `{ routes }` keyed by system prompt.
-
-#### Deprecated
-
-Pass these to `createToolContext` — `ToolContextOverrides`
-takes both scripts. See [scriptedToolContext](#scriptedtoolcontext-1).
-
-***
-
 ### SleepEntry
 
 ```ts
@@ -5020,7 +4884,7 @@ type StepEntry = {
   key: string;
   name: string;
   output?: unknown;
-  startedAt?: number;
+  startedAt: number;
   status: "ok" | "failed";
 };
 ```
@@ -5084,10 +4948,10 @@ The step's own name, without the occurrence suffix — for `aai workflow` output
 optional output?: unknown;
 ```
 
-##### startedAt?
+##### startedAt
 
 ```ts
-optional startedAt?: number;
+startedAt: number;
 ```
 
 When the walk REACHED this step, so `finishedAt - startedAt` is what it
@@ -5115,12 +4979,6 @@ not; `attempts` beside it is what separates the two readings.
 It does NOT include time queued behind `StepGate`, which is taken before
 this clock starts. Attributing contention to the step would report a fast
 step on a loaded worker as a slow one; it shows in the GAP above instead.
-
-**OPTIONAL, and absence means the row predates this field.** The journal is
-append-only over tables that already hold rows, so a run in flight when
-this shipped has entries with no start — and a reader must render that as
-unknown rather than as zero, which would report a long step as instant.
-Every write sets it.
 
 ##### status
 
@@ -5643,10 +5501,9 @@ disambiguate: `{ reply: { text } }` is a reply, and a function under `reply`
 is a computed route, never mistaken for the seam itself (see
 `ToolContextOverrides.generate`).
 
-Named because it is written down in three places — that function, the
-`generate` field of `createToolContext`'s overrides, and
-`ScriptedToolContextOptions` — and a union restated at each of them is a union
-that drifts.
+Named because it is written down in two places — that function and the
+`generate` field of `createToolContext`'s overrides — and a union restated at
+each of them is a union that drifts.
 
 #### Union Members
 

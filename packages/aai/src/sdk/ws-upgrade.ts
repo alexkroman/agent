@@ -71,7 +71,7 @@ export function parseWsUpgradeParams(
   // page. `skipGreeting` follows the RESOLVED id — a client that is not
   // actually resuming should still be greeted.
   const resumeFrom = raw !== undefined && RESUME_ID_RE.test(raw) ? raw : undefined;
-  const skipGreeting = resumeFrom !== undefined || params.has("resume");
+  const skipGreeting = resumeFrom !== undefined;
   // Control characters stripped and an over-long one dropped — the rule
   // `sessionContext`'s `location` is held to as well (`session-location.ts`).
   const clientLocation = normalizeClientLocation(params.get("location"));

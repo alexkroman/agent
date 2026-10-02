@@ -114,6 +114,7 @@ describe("a walk whose snapshot went stale", () => {
       status: "ok",
       output: 7,
       attempts: 1,
+      startedAt: Date.now(),
       finishedAt: Date.now(),
     });
 
@@ -161,6 +162,7 @@ describe("a walk whose snapshot went stale", () => {
       status: "ok" as const,
       output: 1,
       attempts: 1,
+      startedAt: finishedAt,
       finishedAt,
     });
     // A parent settles at or AFTER its child, always — it is still running while

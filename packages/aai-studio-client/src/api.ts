@@ -263,13 +263,10 @@ export const api = {
    * (`contact-form-x7k2mq`) — so names are minted in exactly one place,
    * shared with the CLI's slugless deploy path.
    *
-   * `kind` is the hero's switcher position. Sent on every create rather than
-   * only for workflows: the server defaults an absent one to `agent`, and
-   * saying which was chosen is what keeps that default from doubling as
-   * "nobody chose".
+   * `kind` is the hero's switcher position, which the server requires.
    */
-  createProject: (key: string, opts: { prompt?: string; kind?: ProjectKind }) =>
-    request<{ name: string; files: Record<string, string>; kind?: ProjectKind }>(key, "/projects", {
+  createProject: (key: string, opts: { prompt?: string; kind: ProjectKind }) =>
+    request<{ name: string; files: Record<string, string>; kind: ProjectKind }>(key, "/projects", {
       method: "POST",
       body: JSON.stringify(omitUndefined({ prompt: opts.prompt, kind: opts.kind })),
     }),
@@ -432,7 +429,7 @@ export const api = {
     request<{ ok: true; slug: string; url: string; output: string }>(
       key,
       projectPath(project, "/deploy"),
-      { method: "POST", body: "{}" },
+      { method: "POST", body: JSON.stringify({ skipTypecheck: false }) },
     ),
 
   // PROJECT secrets — written to both of the project's deployed agents

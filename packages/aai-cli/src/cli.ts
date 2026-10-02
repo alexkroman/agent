@@ -56,11 +56,6 @@ const mainMeta = {
   },
 };
 
-/** What `aai test --all` says: the flag is kept for old CI scripts, and does nothing. */
-export const TEST_ALL_DEPRECATION =
-  "`aai test --all` is deprecated and does nothing — every spec in the project runs by default. " +
-  "Drop the flag; use `--only` to narrow to agent.test.ts.";
-
 const init = defineExec({
   meta: { name: "init", description: "Scaffold a new agent project" },
   args: {
@@ -188,21 +183,11 @@ const test = defineExec({
       type: "boolean",
       description: "Run agent.test.ts alone, not every spec in the project",
     },
-    // Accepted, IGNORED and announced: it is what the old failure's own hint
-    // told people to put in CI, and `assertKnownArgv` refuses an undeclared
-    // flag, so dropping it would turn every scripted `aai test --all` into a
-    // usage error over behaviour that is now the default.
-    all: {
-      type: "boolean",
-      description: "Deprecated, does nothing: every spec in the project is the default",
-    },
   },
   // Without the agent gate, a directory with no agent.ts reported a green,
   // skipped run — which in CI reads as a passing suite.
   cwd: "agent",
   async run({ args, cwd, ui }) {
-    // `notify`, so a CI log (JSON mode, auto-selected on a pipe) still shows it.
-    if (args.all === true) ui.notify("warn", TEST_ALL_DEPRECATION);
     const { executeTest } = await import("./test.ts");
     return executeTest(cwd, { only: args.only === true }, { ui });
   },

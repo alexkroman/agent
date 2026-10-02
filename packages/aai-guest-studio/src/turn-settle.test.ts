@@ -14,8 +14,8 @@
 
 import { setHostSend } from "aai-guest-core/rpc";
 import { installFakeHostChannel } from "aai-guest-core/test-utils";
+import type { StudioSession } from "aai-guest-core/types";
 import { describe, expect, test, vi } from "vitest";
-import type { StudioSession } from "./session.ts";
 
 const snapshotWorkspace = vi.fn<
   (dir: string) => Promise<{ files: Record<string, string>; warnings: string[] }>

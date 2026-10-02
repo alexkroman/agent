@@ -4,13 +4,13 @@
  *
  * Every guest harness runs in a [Modal Sandbox](https://modal.com/docs/guide/sandbox)
  * — a remote, isolated container managed by Modal's infrastructure. The
- * sandbox is created from a snapshot image with the harness baked in (built
- * once per harness version — see modal/context.ts), the harness is exec'd as a
+ * sandbox is created from a registry image with the harness baked in (built
+ * once per harness version — see guest/image-source.ts), the harness is exec'd as a
  * Node process serving a WebSocket, and the host dials that socket through
  * the sandbox's Modal tunnel. JSON-RPC 2.0 messages flow both ways over the
  * socket (see rpc-transport.ts).
  *
- * The shared Modal context (client, App, snapshot image, harness bytes) lives
+ * The shared Modal context (client, App, guest image, harness bytes) lives
  * in modal/context.ts; the deployed-agent spawn — no control channel, boot
  * artifacts written before exec — is modal/agent-sandbox.ts.
  *
@@ -34,6 +34,7 @@
 import { randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
+import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "../guest/exec-env.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "../guest/readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "../guest/routes.ts";
 import { createLogger } from "../logger.ts";
@@ -53,7 +54,6 @@ import {
   modalContext,
   resetModalContext,
 } from "./context.ts";
-import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "./harness-image.ts";
 
 const log = createLogger("modal.sandbox");
 

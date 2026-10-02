@@ -51,7 +51,7 @@
  * replaced, and the broker names the live one.
  *
  * The session surface IS the dev server: the harness wraps the same
- * `createRuntimeServer` `aai dev` runs (health, client-config, `/websocket`
+ * `createServerForRuntime` `aai dev` runs (health, client-config, `/websocket`
  * sessions), adding only the `/ws` control channel via the server's
  * `upgrade` hook and a lazy runtime facade (the runtime is built on the
  * first session, never at load — studio inspection loads carry an empty
@@ -117,12 +117,11 @@ const DeployParamsSchema = z.object({
    */
   allowPreviewSlug: z.boolean().optional(),
   /**
-   * `--skipTypecheck`: deploy without the in-sandbox `tsc` gate. Additive and
-   * optional — an older host that never sends it typechecks as before (absent
-   * reads as "run the gate", the safe default). Mirrors `aai deploy`'s own
-   * flag, so a studio Publish and a laptop deploy honor it identically.
+   * `--skipTypecheck`: deploy without the in-sandbox `tsc` gate; `false` runs
+   * it. Mirrors `aai deploy`'s own flag, so a studio Publish and a laptop deploy
+   * honor it identically.
    */
-  skipTypecheck: z.boolean().optional(),
+  skipTypecheck: z.boolean(),
 });
 
 /**
@@ -277,7 +276,7 @@ export function main(): void {
   // The control channel keeps ws's default payload cap — bundle/load frames
   // run to ~30 MB (workers ship their runtime); client sessions get the
   // protocol's own cap (applied by
-  // createRuntimeServer's WebSocketServer).
+  // createServerForRuntime's WebSocketServer).
   const controlWss = new WebSocketServer({ noServer: true });
 
   controlWss.on("connection", (ws) => {

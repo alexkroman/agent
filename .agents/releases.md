@@ -11,6 +11,11 @@ read_when: >-
 
 - **`aai`, `aai-ui`, `aai-cli` and `aai-runtime` are one fixed release group**
   (`.changeset/config.json`): a changeset naming one bumps all four.
+- **The packages are on `0.x`, so a breaking change is a `minor` bump.** A
+  `major` releases 1.0.0 for all four at once; rule 20 of `guard-invariants`
+  refuses `major` on a `0.x` package (`checkChangesetPreRelease`), so leaving
+  `0.x` is a deliberate PR that removes that check. Every `0.x` version below
+  `0.13.0` is already burned on npm by an earlier history.
 - **Private packages are versioned too** (`privatePackages: { version: true }`),
   so a changeset may name them; `guard-invariants` rule 20 only rejects that
   when the flag is off. A server-only change ships by naming `aai-server` or

@@ -14,7 +14,7 @@ import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_logger-test-utils.ts";
 import { makeClientSink, makeMockCore } from "../_session-test-utils.ts";
 import { type AttachSessionOptions, attachSession } from "./attach.ts";
-import type { ServerSession } from "./core.ts";
+import type { ServerSession } from "./core-types.ts";
 import { createSessionDirectory } from "./directory.ts";
 
 const readyConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };

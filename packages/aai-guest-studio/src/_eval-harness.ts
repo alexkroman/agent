@@ -50,12 +50,13 @@ import {
 import { type EvalMode, resolveEvalMode } from "@alexkroman1/aai-runtime/eval/vitest";
 import { setHostSend } from "aai-guest-core/rpc";
 import { type FakeHostChannel, installFakeHostChannel } from "aai-guest-core/test-utils";
+import type { StudioSession } from "aai-guest-core/types";
 import { afterEach, beforeEach, describe, test } from "vitest";
 import { type StudioPromptKind, shippedStudioPrompt } from "./_eval-prompt.ts";
 import { createStudioAgent, STUDIO_TOOL_TIMEOUT_MS } from "./agent.ts";
 import { typecheckWorkspaceDir } from "./build.ts";
 import { studioBundleAccess } from "./bundle-access.ts";
-import { initStudioSession, type StudioSession } from "./session.ts";
+import { initStudioSession } from "./session.ts";
 import { bundledTemplatesRoot } from "./template-tools.ts";
 import { runWorkspaceTests } from "./test.ts";
 import { HARD_TURN_MS } from "./turn-budget.ts";

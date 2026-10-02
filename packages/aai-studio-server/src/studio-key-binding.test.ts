@@ -38,11 +38,19 @@ describe("key ownership", () => {
     const mallory = devToken("mallory@example.com");
 
     await onboardKey(fetch, alice, "alices-key");
-    await authFetch(fetch, "/studio/projects", { body: { name: "alices-app" }, key: alice });
+    await authFetch(fetch, "/studio/projects/alices-app/source", {
+      method: "PUT",
+      body: { files: {} },
+      key: alice,
+    });
 
     await onboardKey(fetch, mallory, "alices-key");
     await onboardKey(fetch, mallory, "mallorys-key");
-    await authFetch(fetch, "/studio/projects", { body: { name: "mallorys-app" }, key: mallory });
+    await authFetch(fetch, "/studio/projects/mallorys-app/source", {
+      method: "PUT",
+      body: { files: {} },
+      key: mallory,
+    });
 
     const cliView = (await (
       await authFetch(fetch, "/studio/projects", { method: "GET", key: "alices-key" })

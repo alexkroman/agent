@@ -18,12 +18,12 @@
  * that log per method at zero added volume.
  *
  * The body is still consulted, and {@link WORKFLOW_JOURNAL_ROUTE} is still
- * registered without the segment, because the guest is deployed independently of
- * this server: an agent bundle carries its own copy of `aai-runtime` (see "A
- * deployed guest has TWO copies of this package" in that package's guide), so a
- * bundle older than the path form goes on POSTing to the bare route with the
- * method in the body. Dropping either half breaks one direction of a mixed
- * deployment, and a journal call that 404s is a durable run that stops.
+ * registered without the segment, because the path form exists on the HTTP
+ * fallback ONLY. The guest's preferred transport is the platform socket, whose
+ * frame names a route from a closed set (`platform/socket-handler.ts`) and is
+ * replayed here as `POST /:slug/workflow-journal` — no segment, method in the
+ * body. Dropping either half stops every socket-borne journal call, and a
+ * journal call that 404s is a durable run that stops.
  *
  * The PATH WINS when both are present, so a request cannot be logged as one
  * operation and executed as another. They disagree only if a caller makes them,
@@ -56,7 +56,6 @@ import { normalizeRunLabel, PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/int
 import { HTTPException } from "hono/http-exception";
 import {
   isOneOf,
-  optionalInt,
   optionalString,
   requiredInt,
   requiredSize,
@@ -223,10 +222,7 @@ function stepEntry(body: Record<string, unknown>): journal.JournalStepRow {
     output: optionalString(record, "output"),
     error: optionalString(record, "error"),
     attempts: requiredInt(record, "attempts"),
-    // OPTIONAL, unlike every field above it: the column was added to a table
-    // that already held rows, so an engine older than it sends nothing and an
-    // absent start is the honest answer. See `StepEntry.startedAt`.
-    startedAt: optionalInt(record, "startedAt"),
+    startedAt: requiredInt(record, "startedAt"),
     finishedAt: requiredInt(record, "finishedAt"),
   };
 }
@@ -255,9 +251,9 @@ export function createWorkflowJournalHandler(
     if (!isRecord(fields)) {
       throw new HTTPException(400, { message: "body must be a JSON object" });
     }
-    // The PATH first, the body second. A guest current enough to send the segment
-    // sends both and they agree; one older than it sends only the body. See the
-    // module doc for why neither half may be dropped.
+    // The PATH first, the body second. An HTTP call sends both and they agree; a
+    // socket frame sends only the body. See the module doc for why neither half
+    // may be dropped.
     const named: unknown = c.req.param(METHOD_PARAM) ?? fields.method;
     if (!isMethod(named)) {
       // The value is not echoed: it is caller-supplied and this reply is a

@@ -1,5 +1,5 @@
 {
-  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 289 left. The value is always 1 — see scripts/check-module-tests.mjs.",
+  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 285 left. The value is always 1 — see scripts/check-module-tests.mjs.",
   "modules-without-tests": {
     "packages/aai-cli/src/_deploy.ts": 1,
     "packages/aai-cli/src/_mock-api.ts": 1,
@@ -38,7 +38,6 @@
     "packages/aai-runtime/src/internal.ts": 1,
     "packages/aai-runtime/src/mcp/drift.ts": 1,
     "packages/aai-runtime/src/platform/endpoint.ts": 1,
-    "packages/aai-runtime/src/platform/socket-frames.ts": 1,
     "packages/aai-runtime/src/platform/socket-registry.ts": 1,
     "packages/aai-runtime/src/providers/_llm-registry.ts": 1,
     "packages/aai-runtime/src/providers/_socket.ts": 1,
@@ -134,7 +133,6 @@
     "packages/aai-server/src/_tenancy-platform-harness.ts": 1,
     "packages/aai-server/src/_tenancy-state-harness.ts": 1,
     "packages/aai-server/src/_tenancy-world-harness.ts": 1,
-    "packages/aai-server/src/_timing-safe.ts": 1,
     "packages/aai-server/src/_upgrade-reply.ts": 1,
     "packages/aai-server/src/agent-sweeps.ts": 1,
     "packages/aai-server/src/agent-workflow-routes.ts": 1,
@@ -252,7 +250,6 @@
     "packages/aai/src/sdk/constants.ts": 1,
     "packages/aai/src/sdk/db.ts": 1,
     "packages/aai/src/sdk/endpointing-constants.ts": 1,
-    "packages/aai/src/sdk/event-stream.ts": 1,
     "packages/aai/src/sdk/is-record.ts": 1,
     "packages/aai/src/sdk/pipeline-tuning-constants.ts": 1,
     "packages/aai/src/sdk/playback-timing-constants.ts": 1,

@@ -18,18 +18,8 @@ describe("parseWsUpgradeParams", () => {
     });
   });
 
-  test("sets skipGreeting when resume param is present", () => {
-    expect(parseWsUpgradeParams("/ws?resume=1")).toEqual({
-      resumeFrom: undefined,
-      skipGreeting: true,
-    });
-  });
-
-  test("sessionId takes precedence for resumeFrom", () => {
-    expect(parseWsUpgradeParams("/ws?resume=1&sessionId=sess-42")).toEqual({
-      resumeFrom: "sess-42",
-      skipGreeting: true,
-    });
+  test("a `resume` param without an id is not a resume", () => {
+    expect(parseWsUpgradeParams("/ws?resume=1")).toEqual({ skipGreeting: false });
   });
 
   test("handles full URL with query params", () => {
@@ -50,7 +40,10 @@ describe("parseWsUpgradeParams", () => {
     // so a param AFTER one whose value contains "?" is still seen.
     // (`sessionId` can no longer carry a literal "?" — see the shape guard
     // below — so the truncation this pins is shown on another param.)
-    expect(parseWsUpgradeParams("/ws?other=a?b&resume=1")).toEqual({ skipGreeting: true });
+    expect(parseWsUpgradeParams("/ws?other=a?b&sessionId=s1")).toEqual({
+      resumeFrom: "s1",
+      skipGreeting: true,
+    });
   });
 
   // The id becomes the key of the runtime's session and ctx.state maps, and
@@ -84,21 +77,19 @@ describe("parseWsUpgradeParams", () => {
 
   test("location is passed through, whitespace-normalized, and bounded", () => {
     const addr = "123 Example St, Portland, OR 97201";
-    const q = (v: string) =>
-      parseWsUpgradeParams(`/websocket?resume=1&location=${encodeURIComponent(v)}`);
-    expect(q(addr)).toEqual({ skipGreeting: true, clientLocation: addr });
+    const q = (v: string) => parseWsUpgradeParams(`/websocket?location=${encodeURIComponent(v)}`);
+    expect(q(addr)).toEqual({ skipGreeting: false, clientLocation: addr });
     expect(q("  123 Example St,\n Portland\u0000, OR  ").clientLocation).toBe(
       "123 Example St, Portland , OR",
     );
     expect(q("   ").clientLocation).toBeUndefined();
     expect(q("x".repeat(201)).clientLocation).toBeUndefined();
-    expect(parseWsUpgradeParams("/websocket?resume=1")).toEqual({ skipGreeting: true });
+    expect(parseWsUpgradeParams("/websocket")).toEqual({ skipGreeting: false });
   });
 
   test("client names the device, and an unusable one is dropped rather than refused", () => {
-    const q = (v: string) =>
-      parseWsUpgradeParams(`/websocket?resume=1&client=${encodeURIComponent(v)}`);
-    expect(q("kitchen-speaker_2")).toEqual({ skipGreeting: true, clientId: "kitchen-speaker_2" });
+    const q = (v: string) => parseWsUpgradeParams(`/websocket?client=${encodeURIComponent(v)}`);
+    expect(q("kitchen-speaker_2")).toEqual({ skipGreeting: false, clientId: "kitchen-speaker_2" });
     for (const bad of ["", "has space", "a/b", "x".repeat(65)]) {
       expect.soft(q(bad).clientId, JSON.stringify(bad)).toBeUndefined();
     }
@@ -107,15 +98,15 @@ describe("parseWsUpgradeParams", () => {
   test("phone is normalized to E.164, and an invalid one is dropped with a warning that omits it", () => {
     const warn = vi.fn();
     const q = (v: string) =>
-      parseWsUpgradeParams(`/websocket?resume=1&phone=${encodeURIComponent(v)}`, { warn });
-    expect(q("+1 (503) 555-0123")).toEqual({ skipGreeting: true, clientPhone: "+15035550123" });
+      parseWsUpgradeParams(`/websocket?phone=${encodeURIComponent(v)}`, { warn });
+    expect(q("+1 (503) 555-0123")).toEqual({ skipGreeting: false, clientPhone: "+15035550123" });
     expect(warn).not.toHaveBeenCalled();
-    expect(q("5035550123")).toEqual({ skipGreeting: true });
+    expect(q("5035550123")).toEqual({ skipGreeting: false });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).not.toContain("5035550123");
     // Absent or blank is no report at all, not an invalid one.
-    expect(q("  ")).toEqual({ skipGreeting: true });
-    expect(parseWsUpgradeParams("/websocket?resume=1", { warn })).toEqual({ skipGreeting: true });
+    expect(q("  ")).toEqual({ skipGreeting: false });
+    expect(parseWsUpgradeParams("/websocket", { warn })).toEqual({ skipGreeting: false });
     expect(warn).toHaveBeenCalledTimes(1);
   });
 });

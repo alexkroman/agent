@@ -2,12 +2,14 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "dialog",
   "epoch": 1,
-  "sha256": "0f45aac07852ca13070304eb08acbd2c258e6c163f29468bdb2694326c71523d",
+  "rule": 2,
+  "sha256": "94b6aa654ca46bec592fb098ee551027e996b54822f8982e29e594ac282e7304",
   "exports": [
     "AnyDialog",
     "Dialog",
-    "DialogBargeIn",
     "DialogEvent",
+    "DialogEventNames",
+    "DialogGate",
     "DialogOptions",
     "DialogPosition",
     "DialogSessionEventName",
@@ -19,5 +21,6 @@
     "DialogToolResult",
     "DialogVoiceConfig",
     "dialog"
-  ]
+  ],
+  "rollup": "8c6c76068a992cb39f1e489ee52b33438fb556e730452c73a19882fa3af72baa"
 }

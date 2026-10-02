@@ -37,20 +37,5 @@
     "spokenErrorReason",
     "withLock"
   ],
-  "rollup": "3564c81dd8231fb94817354b89e49e2f427c584e13b2537cdbcdeef6ca252b81",
-  "revision": 1,
-  "revisions": [
-    {
-      "revision": 0,
-      "rule": 2,
-      "sha256": "d08ca59924a89cc3bff7ed1daab56fac9fe3eea2aa9cba50d449d4303e9787d2",
-      "reason": "minted"
-    },
-    {
-      "revision": 1,
-      "rule": 2,
-      "sha256": "9df8b5d9022ba628a075612ef109eee12ff5fe6250ddb39b571ab617262c8b65",
-      "reason": "additive (checked): +FitToolResultOptions, +HttpError, +JsonClient, +JsonClientContext, +JsonClientOptions, +JsonRequestInit, +NormalizePhoneOptions, +SpokenErrorReasonOptions, +fitToolResult, +jsonClient, +normalizePhone, +spokenErrorReason"
-    }
-  ]
+  "rollup": "6fe432c12e7b19662805c42d0b6f0702c44c5427bbc56e342abd4f05e3c7001d"
 }

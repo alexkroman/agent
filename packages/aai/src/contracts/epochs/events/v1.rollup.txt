@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
 // @public
+export interface ClientEventMap {
+}
+
+// @public
+export type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
 export type EventMapOf<U extends {
     type: string;
 }> = {
@@ -8,7 +15,14 @@ export type EventMapOf<U extends {
 };
 
 // @public
-export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
+type SayOptions = {
+    interrupt?: boolean | undefined;
+    interruptible?: boolean | undefined;
+    record?: boolean | undefined;
+};
+
+// @public
+export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timedOut", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
 
 // @public
 export type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
@@ -18,11 +32,12 @@ export type SessionEventBody<K extends SessionEventType = SessionEventType> = {
     [T in K]: Omit<SessionEventMap[T], "meta">;
 }[K];
 
-// @public
+// @public @sealed
 type SessionEventContext = {
     sessionId: string;
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
+    speech: SessionSpeech;
 };
 
 // @public
@@ -49,7 +64,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     audioFormat: z.ZodString;
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
+    sessionId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"audio.completed">;
     meta: z.ZodObject<{
@@ -69,7 +84,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.updated">;
+    type: z.ZodLiteral<"userTranscript.updated">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -77,21 +92,21 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     text: z.ZodString;
     eotConfidence: z.ZodOptional<z.ZodNumber>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.committed">;
+    type: z.ZodLiteral<"userTranscript.committed">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.updated">;
+    type: z.ZodLiteral<"agentTranscript.updated">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.committed">;
+    type: z.ZodLiteral<"agentTranscript.committed">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -101,6 +116,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
+    recorded: z.ZodOptional<z.ZodLiteral<false>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -137,7 +153,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.timed-out">;
+    type: z.ZodLiteral<"session.timedOut">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -174,7 +190,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
-    state: z.ZodUnknown;
+    state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"usage.updated">;
     meta: z.ZodObject<{
@@ -197,7 +213,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     replacement: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-turn.exceeded">;
+    type: z.ZodLiteral<"userTurn.exceeded">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -208,6 +224,20 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failedOver">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
@@ -260,10 +290,52 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 export type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public
+export type SessionEventTypeList = readonly [
+"session.configured",
+"audio.completed",
+"speech.started",
+"speech.stopped",
+"userTranscript.updated",
+"userTranscript.committed",
+"agentTranscript.updated",
+"agentTranscript.committed",
+"tool.called",
+"tool.completed",
+"reply.completed",
+"reply.cancelled",
+"session.reset",
+"session.timedOut",
+"error.reported",
+"custom.emitted",
+"state.updated",
+"usage.updated",
+"guardrail.blocked",
+"userTurn.exceeded",
+"provider.failedOver",
+"metrics.collected",
+"history.restored"
+];
+
+// @public
 export type SessionSourcedEventType = (typeof SESSION_SOURCED_EVENT_TYPES)[number];
+
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
 
 // @public
 type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped";

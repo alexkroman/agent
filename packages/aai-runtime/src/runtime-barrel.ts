@@ -160,7 +160,6 @@ export {
   type AgentServerOptions,
   createAgentServer,
   createHostServer,
-  createRuntimeServer,
   createServerForRuntime,
   DEFAULT_LISTEN_HOST,
   type HostServerOptions,

@@ -35,10 +35,12 @@ allowlist; a path that genuinely does not ship belongs in `isShippedSource`
 
 ## 2. Pick the bump type
 
-`patch` (fix), `minor` (feature), `major` (break). For a published package,
-read the `check:api-contracts` output first: a removed export or a change the
-compatibility probe calls breaking is `major` — see the
-`api-contract-epoch-bump` skill.
+**Every package is on `0.x`, so a break is `minor`** and everything else is
+`patch`. `major` would release 1.0.0 — across all four published packages, via
+the fixed group — and `guard-invariants` rule 20 refuses it on a `0.x`
+package. For a published package, read the `check:api-contracts` output first:
+a removed export or a change the compatibility probe calls breaking is the
+break case — see the `api-contract-epoch-bump` skill.
 
 ## 3. Write it (non-interactive)
 

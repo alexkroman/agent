@@ -286,6 +286,7 @@ describe("session event stream — hydration", () => {
       audioFormat: "pcm16",
       sampleRate: 16_000,
       ttsSampleRate: 24_000,
+      sessionId: SID,
     });
     await second.hydrate(SID);
     await second.flush(SID);

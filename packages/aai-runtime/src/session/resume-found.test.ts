@@ -161,7 +161,7 @@ describe("composeSessionGreeting", () => {
     expect(greeting.line()).toBe("Hi, agent here.");
   });
 
-  test("`resume=1` with no id skips without a lookup", () => {
+  test("a skip with no id (a host's own `skipGreeting`) skips without a lookup", () => {
     expect(compose({ skip: true }).greeting.opening()).toBe("");
   });
 });

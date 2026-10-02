@@ -4,11 +4,16 @@ import { z } from 'zod';
 export function createMetricsCollector(options?: MetricsCollectorOptions): MetricsCollector;
 
 // @public
-export type MetricsCollectedEvent = Extract<SessionEvent, {
-    type: "metrics.collected";
-}>;
+type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
 
 // @public
+export type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
+
+// @public @sealed
 export interface MetricsCollector {
     collect(sample: MetricsSample): void;
     reset(): void;
@@ -23,7 +28,7 @@ export interface MetricsCollectorOptions {
 // @public
 export type MetricsSample = Omit<MetricsCollectedEvent, "type" | "meta">;
 
-// @public
+// @public @sealed
 export interface MetricsSummary {
     interrupted: number;
     latencyMs?: MetricStat;
@@ -55,9 +60,13 @@ export interface MetricStat {
 }
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
-// @public (undocumented)
+// @public
+interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
+
+// @public
 const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
@@ -67,7 +76,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     audioFormat: z.ZodString;
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
+    sessionId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"audio.completed">;
     meta: z.ZodObject<{
@@ -87,7 +96,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.updated">;
+    type: z.ZodLiteral<"userTranscript.updated">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -95,21 +104,21 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     text: z.ZodString;
     eotConfidence: z.ZodOptional<z.ZodNumber>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.committed">;
+    type: z.ZodLiteral<"userTranscript.committed">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.updated">;
+    type: z.ZodLiteral<"agentTranscript.updated">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
     text: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.committed">;
+    type: z.ZodLiteral<"agentTranscript.committed">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -119,6 +128,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
+    recorded: z.ZodOptional<z.ZodLiteral<false>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool.called">;
     meta: z.ZodObject<{
@@ -155,7 +165,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.timed-out">;
+    type: z.ZodLiteral<"session.timedOut">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -192,7 +202,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
     }, z.core.$strip>;
-    state: z.ZodUnknown;
+    state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"usage.updated">;
     meta: z.ZodObject<{
@@ -215,7 +225,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     replacement: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-turn.exceeded">;
+    type: z.ZodLiteral<"userTurn.exceeded">;
     meta: z.ZodObject<{
         id: z.ZodString;
         at: z.ZodNumber;
@@ -226,6 +236,20 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"provider.failedOver">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    stage: z.ZodEnum<{
+        llm: "llm";
+        stt: "stt";
+        tts: "tts";
+    }>;
+    from: z.ZodString;
+    to: z.ZodString;
+    reason: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"metrics.collected">;
     meta: z.ZodObject<{
@@ -273,3 +297,6 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         afterMessageIndex: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
+
+// @public
+type SessionEventType = Extract<keyof SessionEventMap, string>;

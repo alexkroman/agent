@@ -230,15 +230,6 @@ export type WorkflowAppAgentParams = Omit<
 };
 
 /**
- * The workflow-app member under its old name.
- *
- * @deprecated Use {@link WorkflowAppAgentParams}, named after the
- * `mode: "workflow-app"` it selects. Identical type.
- * @public
- */
-export type StaticAgentParams = WorkflowAppAgentParams;
-
-/**
  * What `agent()` returns for a declaration in mode `M`: the one definition
  * type, with `mode` known. Each overload returns its own, so a reader of the
  * result can narrow on the mode it declared without re-deriving it.

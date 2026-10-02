@@ -14,20 +14,5 @@
     "useToolCallStart",
     "useToolResult"
   ],
-  "rollup": "9e150234676d93fedf01065e6f4977188854b70d6da5c8f2333fe84f2e15d386",
-  "revision": 1,
-  "revisions": [
-    {
-      "revision": 0,
-      "rule": 2,
-      "sha256": "8da1deb2035707fd1608ee0ab982efc0eb1fe715d6b754409594a23ddf87cc6e",
-      "reason": "minted"
-    },
-    {
-      "revision": 1,
-      "rule": 2,
-      "sha256": "3073548bdd16ca2b3e75e6e6046fa835719e893dbdc39c0ab5cf2b3d264fa2a8",
-      "reason": "additive (checked): +AgentStateFrame, +selectAgentState, +useClientTool"
-    }
-  ]
+  "rollup": "b3fa1b6af5f1d82ce24c0a8566e5fafc43fb41c76d2f61d4fb9e977ba1e53583"
 }

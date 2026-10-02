@@ -137,14 +137,11 @@ const CONFLICT_METHODS = new Set(["claimHook"]);
  * and inferring the order from the engine's source. `/workflow-journal/appendStep`
  * decomposes that log per method for free, at zero added log volume.
  *
- * The BODY keeps it because the two ends of this wire are deployed
- * independently: a user's bundle carries its own copy of this package ("User-shipped
- * runtime" in `packages/aai-guest/CLAUDE.md`), so a bundle older than the path
- * form has to keep working against a newer platform,
- * and the platform reads the path first and falls back to the body
- * (`aai-server/workflow-journal-handler.ts`). A newer guest against an older
- * platform is the same question from the other side and is why the legacy route
- * stays registered rather than being replaced.
+ * The BODY keeps it because the path reaches the HTTP fallback only: the
+ * preferred transport is the platform socket, whose frame names a route from a
+ * closed set and carries no segment (`pathSegment` in `platform/rpc.ts`). The
+ * platform reads the path first and the body second
+ * (`aai-server/guest-handlers/workflow-journal.ts`).
  */
 async function call(
   options: PlatformEndpoint,
@@ -238,16 +235,11 @@ function toStep(value: unknown): StepEntry | undefined {
   if (typeof value.key !== "string" || typeof value.name !== "string") return undefined;
   if (value.status !== "ok" && value.status !== "failed") return undefined;
   const attempts = Number(value.attempts);
+  const startedAt = Number(value.startedAt);
   const finishedAt = Number(value.finishedAt);
-  if (!(Number.isFinite(attempts) && Number.isFinite(finishedAt))) return undefined;
-  // NOT part of the refusal above, unlike `attempts` and `finishedAt`. An
-  // absent start is legitimate — a row written before the column existed — so a
-  // missing one must read as unknown rather than sink the whole entry, which is
-  // the answer that makes a double execution deterministic. A present-but-junk
-  // value is dropped the same way for the same reason: nothing downstream reads
-  // it to make a decision, so refusing the entry over it would trade a durable
-  // answer for a diagnostic.
-  const startedAt = value.startedAt === undefined ? undefined : Number(value.startedAt);
+  if (!(Number.isFinite(attempts) && Number.isFinite(startedAt) && Number.isFinite(finishedAt))) {
+    return undefined;
+  }
   return {
     key: value.key,
     name: value.name,
@@ -255,7 +247,7 @@ function toStep(value: unknown): StepEntry | undefined {
     output: decode(value.output),
     error: errorOf(value.error),
     attempts,
-    ...(startedAt !== undefined && Number.isFinite(startedAt) ? { startedAt } : {}),
+    startedAt,
     finishedAt,
   };
 }

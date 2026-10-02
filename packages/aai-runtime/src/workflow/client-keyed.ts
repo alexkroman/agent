@@ -24,10 +24,10 @@ const WORKFLOW_LOOKUP_CONCURRENCY = 4;
  * What a keyed read may narrow BEFORE a record becomes a snapshot.
  *
  * Applied to the raw WDK record, which already carries `createdAt` and
- * `status`, so a run the caller's filters would discard never costs the
- * `readOutput` its snapshot would otherwise pay — and a caller that never reads
- * `output` (`withOutput: false`) pays it for no run at all. The set of run ids
- * read is unchanged: `lookup` is still asked for `limit` of them.
+ * `status`, so a run the caller's filters would discard never becomes a
+ * snapshot — and a caller that never reads `output` (`withOutput: false`) gets
+ * none. The set of run ids read is unchanged: `lookup` is still asked for
+ * `limit` of them.
  *
  * @internal
  */

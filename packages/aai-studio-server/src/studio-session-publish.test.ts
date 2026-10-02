@@ -51,7 +51,10 @@ describe("studio publish (workspace/deploy)", () => {
   test("a sandbox that never starts returns failure output, not a throw", async () => {
     const workspaces = createMemoryWorkspaceStore();
     const chats = createMemoryChatStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await createWorkspace(workspaces, SCOPE, PROJECT, {
+      kind: "agent",
+      files: { "agent.ts": "// v1" },
+    });
     const broker = createStudioSessionBroker({
       workspaces,
       chats,
@@ -149,16 +152,15 @@ describe("studio publish (workspace/deploy)", () => {
     }
   });
 
-  test("skipTypecheck rides the workspace/deploy frame; omitted by default", async () => {
+  test("skipTypecheck rides the workspace/deploy frame, false unless asked", async () => {
     const target = { serverUrl: "https://platform.example", apiKey: "caller-key" };
 
     const off = fakeGuest();
     const offBroker = await makeBroker([off]);
     await offBroker.broker.deployWorkspace(SCOPE, PROJECT, { "agent.ts": "// v1" }, target);
     const offFrame = off.requests.find((r) => r.method === "workspace/deploy");
-    // Undefined by default (JSON-RPC drops it on the wire), so the guest's
-    // `aai deploy` runs its tsc gate as before.
-    expect((offFrame?.params as { skipTypecheck?: unknown })?.skipTypecheck).toBeUndefined();
+    // So the guest's `aai deploy` runs its tsc gate.
+    expect(offFrame?.params).toMatchObject({ skipTypecheck: false });
     await offBroker.broker.dispose();
 
     const on = fakeGuest();

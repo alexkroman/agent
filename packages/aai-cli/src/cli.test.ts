@@ -9,7 +9,7 @@ import { describe, expect, test } from "vitest";
 import { findUnknownFlags } from "./_cli-common.ts";
 import { HELP_SECTIONS, rootHelp } from "./_help.ts";
 import { withTempDir } from "./_test-utils.ts";
-import { mainCommand, TEST_ALL_DEPRECATION } from "./cli.ts";
+import { mainCommand } from "./cli.ts";
 
 const BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), "../bin.mjs");
 
@@ -240,17 +240,10 @@ describe("JSON mode keeps stdout to one result line", () => {
 });
 
 describe("aai test's flags", () => {
-  /**
-   * `--all` was the widening the old `incomplete_run` failure told people to
-   * put in CI, and running every non-eval spec is the DEFAULT now — so the flag
-   * has to keep PARSING or that instruction becomes a usage error on upgrade.
-   * `assertKnownArgv` refuses an undeclared flag, which is what makes this a
-   * behaviour rather than a comment.
-   */
-  test.each(["--all", "--only"])("%s is accepted rather than refused as unknown", async (flag) => {
+  test("--only is accepted rather than refused as unknown", async () => {
     await withTempDir(async (dir) => {
-      const { exitCode, stdout } = await runBin(["test", flag], dir);
-      // Both fail here, but on the agent gate — not on the flag.
+      const { exitCode, stdout } = await runBin(["test", "--only"], dir);
+      // It fails here, but on the agent gate — not on the flag.
       expect(exitCode).toBe(1);
       const parsed = JSON.parse(stdout.trim()) as { code?: string; error?: string };
       expect(parsed.code).not.toBe("usage");
@@ -259,15 +252,14 @@ describe("aai test's flags", () => {
   });
 });
 
-describe("aai test --all is deprecated", () => {
-  test("still runs, and says the flag does nothing — on stderr, so a piped CI log shows it", async () => {
+describe("aai test --all is gone", () => {
+  test("is refused as an unknown flag — every spec already runs by default", async () => {
     await withTempDir(async (dir) => {
       const { writeFile } = await import("node:fs/promises");
       await writeFile(path.join(dir, "agent.ts"), "export default {};\n");
-      const { exitCode, stdout, stderr } = await runBin(["test", "--all"], dir);
-      expect(exitCode).toBe(0);
-      expect(JSON.parse(stdout.trim())).toMatchObject({ ok: true });
-      expect(stderr).toContain(TEST_ALL_DEPRECATION);
+      const { exitCode, stdout } = await runBin(["test", "--all"], dir);
+      expect(exitCode).toBe(1);
+      expect(JSON.parse(stdout.trim())).toMatchObject({ ok: false, code: "usage" });
     });
   });
 });

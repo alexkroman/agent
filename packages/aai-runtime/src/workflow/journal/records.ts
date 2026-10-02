@@ -42,7 +42,7 @@ export type RunRecord = {
   error?: { message: string } | undefined;
   /**
    * The bundle this run was STARTED against — `AAI_BUNDLE_SHA256`, or absent
-   * off the platform and for a row that predates the column.
+   * off the platform.
    *
    * A run outlives the bundle that started it, which is what makes the
    * divergence message's two-cause fork ("the CODE changed while this run was in
@@ -62,8 +62,8 @@ export type RunRecord = {
    * On the run record rather than in a side table for the reason `codeVersion`
    * is: it is a fact about the run fixed at `createRun`, so writing it in the
    * same statement means no reader can see the run without it, and it goes when
-   * the run does. Every backend must round-trip it and none may invent one — a
-   * row that predates the column reads as absent (`conformance-cases.ts`).
+   * the run does. Every backend must round-trip it and none may invent one
+   * (`conformance-cases.ts`).
    */
   label?: string | undefined;
 };
@@ -114,14 +114,8 @@ export type StepEntry = {
    * It does NOT include time queued behind `StepGate`, which is taken before
    * this clock starts. Attributing contention to the step would report a fast
    * step on a loaded worker as a slow one; it shows in the GAP above instead.
-   *
-   * **OPTIONAL, and absence means the row predates this field.** The journal is
-   * append-only over tables that already hold rows, so a run in flight when
-   * this shipped has entries with no start — and a reader must render that as
-   * unknown rather than as zero, which would report a long step as instant.
-   * Every write sets it.
    */
-  startedAt?: number | undefined;
+  startedAt: number;
   finishedAt: number;
 };
 

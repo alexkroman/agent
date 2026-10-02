@@ -28,7 +28,6 @@ import { studioSystemPrompt } from "./prompts/studio-prompt.ts";
 import { MAX_CHAT_STEPS, studioMaxOutputTokens } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
 import type { PreviewOrigin } from "./studio-preview.ts";
-import { resolveProjectKind } from "./studio-project-kind.ts";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import type { SessionFleet } from "./studio-session-fleet.ts";
 import { chatUrlForGuest } from "./studio-session-wire.ts";
@@ -110,7 +109,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       project,
       files: workspace.files,
       apiKey,
-      system: studioSystemPrompt(resolveProjectKind(workspace.kind)),
+      system: studioSystemPrompt(workspace.kind),
       model: studioLlmModelId(env),
       ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
       maxSteps: MAX_CHAT_STEPS,

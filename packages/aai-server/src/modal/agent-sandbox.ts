@@ -13,6 +13,8 @@
 
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
+import { agentBootEnv } from "../guest/boot-env.ts";
+import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "../guest/exec-env.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "../guest/readiness.ts";
 import { guestTokenFor } from "../guest/token.ts";
 import { createLogger } from "../logger.ts";
@@ -21,7 +23,6 @@ import { resolveSandboxRole } from "../sandbox/role.ts";
 import type { WorkerSource } from "../sandbox/vm.ts";
 import {
   type AgentServerHandle,
-  agentBootEnv,
   agentServerFromGuest,
   type GuestFetch,
   startGuestLogging,
@@ -34,7 +35,6 @@ import {
   type ModalSpawnContext,
   modalContext,
 } from "./context.ts";
-import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "./harness-image.ts";
 
 const log = createLogger("modal.agent-sandbox");
 

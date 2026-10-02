@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Studio mode's preview server: the loaded bundle's OWN `createRuntimeServer`,
- * rebuilt whenever a different bundle loads.
+ * Studio mode's preview server: the loaded bundle's OWN `createServerForRuntime`
+ * (`GuestHost.createRuntimeServer`), rebuilt whenever a different bundle loads.
  *
  * The harness carries no runtime ("User-shipped runtime" in this package's
  * guide), so the server shell a preview session, its workflow API and its client

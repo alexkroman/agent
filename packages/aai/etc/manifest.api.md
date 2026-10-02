@@ -150,7 +150,7 @@ interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTu
 }
 
 // @public
-interface AgentDef extends AgentDeclaration {
+interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
     syncState?: Readonly<Record<string, StateProjection>>;
     tools: ToolMap;
     toolsets?: readonly Toolset[];
@@ -695,7 +695,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     audioFormat: z.ZodString;
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
+    sessionId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"audio.completed">;
     meta: z.ZodObject<{
@@ -1080,7 +1080,7 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type SyncStateDeclaration = StateProjection | readonly StateProjection[] | Readonly<Record<string, StateProjection>>;
+type SyncStateDeclaration = StateProjection | readonly StateProjection[];
 
 // @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];

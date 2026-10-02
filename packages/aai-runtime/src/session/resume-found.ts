@@ -72,10 +72,9 @@ export function createResumeFindings(): ResumeFindings {
  *
  * Two properties:
  *
- * - **A `resume=1` with NO id is left alone.** There is nothing to look up, and
- *   the caller has asserted it already heard the opening line; second-guessing
- *   that would re-greet a legitimate reconnect. Only a session that presented an
- *   id has a claim to check.
+ * - **A skip with NO id is left alone.** There is nothing to look up, and the
+ *   host has asserted the opening line is not wanted. Only a session that
+ *   presented an id has a claim to check.
  * - **It returns a THUNK, and must.** The transport is constructed before either
  *   lookup runs (both are inside the `session.start()` window), so a value
  *   computed here would read `false` every time and the whole mechanism would
@@ -84,7 +83,7 @@ export function createResumeFindings(): ResumeFindings {
  * @internal
  */
 export function resolveSkipGreeting(
-  /** What the socket claimed — `?sessionId=` or `resume=1`. */
+  /** What the socket claimed — `?sessionId=` — or the host's own `skipGreeting`. */
   claimed: SkipGreetingOption | undefined,
   /** Whether an ID was presented, i.e. whether there is a claim to CHECK. */
   resumed: boolean | undefined,
@@ -110,7 +109,7 @@ export function resolveSkipGreeting(
  * @internal
  */
 export function composeSessionGreeting(args: {
-  /** What the socket claimed — `?sessionId=` or `resume=1`. */
+  /** What the socket claimed — `?sessionId=` — or the host's own `skipGreeting`. */
   skipGreeting: SkipGreetingOption | undefined;
   /** Whether an ID was presented, i.e. whether there is a claim to CHECK. */
   resumed: boolean | undefined;

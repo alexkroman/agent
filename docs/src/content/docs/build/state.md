@@ -101,7 +101,7 @@ call:
 import { agent } from "@alexkroman1/aai";
 import { cartSlot } from "./shared.ts";
 
-export default agent({ name: "Store", syncState: { cart: cartSlot.projected } });
+export default agent({ name: "Store", syncState: cartSlot.projected });
 ```
 
 **3. Read it in the browser** with the same object:
@@ -125,9 +125,9 @@ have to agree, and nothing checks that they do.
 
 ### More than one slot
 
-`syncState` is keyed by slot name, one entry per slot the page shows. The
-browser frame is keyed the same way, so each panel reads its own slot and
-re-renders only when that slot changes:
+`syncState` takes a list, one projection per slot the page shows. The browser
+frame is keyed by slot name, so each panel reads its own slot and re-renders
+only when that slot changes:
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -140,7 +140,7 @@ const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
 export default agent({
   name: "Store",
   // The frame: { cart: { count }, prefs: { units } }.
-  syncState: { cart: cartSlot.projected, prefs: prefsSlot.projected },
+  syncState: [cartSlot.projected, prefsSlot.projected],
 });
 ```
 

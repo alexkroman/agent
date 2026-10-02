@@ -18,7 +18,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   type AgentServer,
   createRuntime,
-  createRuntimeServer,
+  createServerForRuntime,
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
   type Logger,
@@ -152,7 +152,7 @@ const REAL_SEAMS: DevServerSeams = {
   watch,
   serve: (runtimeOptions, serverOptions) => {
     const runtime = createRuntime(runtimeOptions);
-    return createRuntimeServer({ ...serverOptions(runtime), runtime });
+    return createServerForRuntime({ ...serverOptions(runtime), runtime });
   },
 };
 
@@ -173,7 +173,7 @@ export async function startDevServer(
   // agent's runs read (`aai-runtime/workflow-data-dir.ts`).
   //
   // Set HERE, once, before anything builds a server: `installWorkflowSupport`
-  // reads it out of `process.env` on every `createRuntimeServer`, and unset it falls
+  // reads it out of `process.env` on every `createServerForRuntime`, and unset it falls
   // back to a per-PROCESS `tmpdir()/aai-workflow-data-<pid>`. The directory
   // beside the project is what makes a restart a SAVE rather than a new
   // deployment — the same upload's bytes come back byte-identical, which that

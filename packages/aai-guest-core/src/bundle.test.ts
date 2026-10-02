@@ -31,6 +31,9 @@ import {
 import { executeTool } from "./trial.ts";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./types.ts";
 
+/** A runtime's workflow and route hooks, none of which these specs drive. */
+const NO_HOOKS = { workflows: undefined, deliverWorkflow: undefined, serveRoute: undefined };
+
 /** A factory carrying the real host surface, as the worker wrapper builds one. */
 const factory = (build: () => GuestRuntime): CreateGuestRuntime =>
   Object.assign(build, { host: GUEST_HOST });
@@ -234,6 +237,7 @@ describe("lazyRuntime", () => {
         return {
           startSession: (ws) => started.push(ws),
           shutdown: () => Promise.resolve(),
+          ...NO_HOOKS,
         };
       }),
     });
@@ -260,7 +264,7 @@ describe("lazyRuntime", () => {
     const shutdown = vi.fn().mockResolvedValue(undefined);
     const state = makeState();
     await lazyRuntime(state).shutdown(); // nothing built yet — must not throw
-    state.runtime = { startSession: () => undefined, shutdown };
+    state.runtime = { startSession: () => undefined, shutdown, ...NO_HOOKS };
     await lazyRuntime(state).shutdown();
     expect(shutdown).toHaveBeenCalledOnce();
   });
@@ -277,6 +281,7 @@ describe("ensureRuntime", () => {
       createRuntime: factory(() => ({
         startSession: () => undefined,
         shutdown: () => Promise.resolve(),
+        ...NO_HOOKS,
       })),
     });
     const first = ensureRuntime(state);

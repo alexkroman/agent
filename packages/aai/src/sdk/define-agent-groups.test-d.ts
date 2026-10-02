@@ -28,7 +28,7 @@ import { type SpeakerDef, speaker } from "./speaker.ts";
 import type { ToolMap } from "./tool-def.ts";
 import type { AgentDef, ToolContext } from "./types.ts";
 
-/** The function half of `AgentSystemPrompt` (the deprecated `AgentInstructions`). */
+/** The function half of `AgentSystemPrompt`: a resolver. */
 type Resolver = Exclude<AgentSystemPrompt, string>;
 
 /**
@@ -37,7 +37,7 @@ type Resolver = Exclude<AgentSystemPrompt, string>;
  *
  * They are refused at CONFIG time rather than by the type on the s2s and text
  * arms — the same treatment `temperature` has always had, and for the reason
- * `StaticAgentParamsCore` records: a message on one arm of this union is a
+ * `WorkflowAppAgentParams` records: a message on one arm of this union is a
  * message in every diagnostic tsc prints, including a plain voice agent's
  * one-character mistake. What the TYPE settles is that they are declarable at
  * all, and that a workflow app (which runs no model and speaks nothing) cannot.

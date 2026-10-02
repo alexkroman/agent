@@ -35,23 +35,14 @@ export const PROJECT_KINDS = ["agent", "workflow"] as const;
 export type ProjectKind = (typeof PROJECT_KINDS)[number];
 
 /**
- * What an unstamped project is. Every workspace written before the switcher
- * existed lacks the field, and a voice agent is what those projects were
- * built as — so absent must read as `agent` rather than as "unknown".
- */
-export const DEFAULT_PROJECT_KIND: ProjectKind = "agent";
-
-/**
- * The kind a stored value names, or the default for anything else.
+ * True when a stored value names a kind.
  *
  * Takes `unknown` because the caller is reading a JSON document out of the
- * workspace store: `parseWorkspace` shape-checks `files` and casts the rest,
- * so a `kind` read from a row is a claim rather than a value. Narrowing here
- * is what keeps a hand-edited (or older, or newer) document from selecting no
- * prompt at all.
+ * workspace store, so a `kind` read from a row is a claim rather than a value.
+ * `parseWorkspace` reads a document without one as malformed — every writer
+ * stamps it, and migration `20261001000000_studio_workspace_kind.sql` stamped
+ * the documents written before the switcher existed.
  */
-export function resolveProjectKind(value: unknown): ProjectKind {
-  return (PROJECT_KINDS as readonly string[]).includes(value as string)
-    ? (value as ProjectKind)
-    : DEFAULT_PROJECT_KIND;
+export function isProjectKind(value: unknown): value is ProjectKind {
+  return (PROJECT_KINDS as readonly string[]).includes(value as string);
 }

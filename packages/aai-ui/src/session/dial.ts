@@ -68,7 +68,7 @@ export type Dialer = {
    * A completed handshake: adopt the server's session id and record that this
    * connection has been established, so every later attempt resumes.
    */
-  configured(sid: string | undefined): void;
+  configured(sid: string): void;
   /** A ticket for another socket on this server — `SessionIdentity.ticket`. */
   ticket(): string | undefined | Promise<string | undefined>;
   /** Drop the resume identity, so the next connect is a NEW session. */
@@ -109,9 +109,6 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
    */
   let sessionId: string | undefined =
     options.resumeSessionId ?? readStoredSessionId(options.platformUrl);
-
-  /** Whether a handshake has completed on this core — the `resume=1` fallback. */
-  let hasConnected = false;
 
   /**
    * Whether `platformUrl`'s `client-config` says anything per ATTEMPT: a
@@ -168,8 +165,7 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
    *   `websocket` path is used.
    * - Once the first `config` arrives, every reconnect carries `?sessionId=<id>`
    *   and the server resumes the SAME session (id, tool state) instead of minting
-   *   a new one. `resume=1` remains only as the greeting-suppression fallback for
-   *   a server whose config carried no id.
+   *   a new one.
    * - The session ticket (`session/ticket.ts`) is the `token` option's,
    *   asked for THIS attempt, else the `sessionToken` this attempt's
    *   `client-config` issued — to a lookup that presented the last one when
@@ -204,8 +200,8 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
     }
     const carriage = ticketCarriage(own ?? cfg?.sessionToken);
     const next = cfg?.sessionUrl
-      ? buildBrokeredWsUrl(cfg.sessionUrl, hasConnected, sessionId, report())
-      : buildWsUrl(options.platformUrl, hasConnected, sessionId, report());
+      ? buildBrokeredWsUrl(cfg.sessionUrl, sessionId, report())
+      : buildWsUrl(options.platformUrl, sessionId, report());
     // The snapshot's `apiUrl` deliberately stays the long-living platform
     // endpoint set at construction — never the brokered sandbox tunnel URL,
     // which is ephemeral (dies on idle eviction/redeploy) and useless to share.
@@ -225,7 +221,7 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
       if (options.WebSocket) {
         const carriage = ticketCarriage(resolveSessionTokenSync(options.token, { sessionId }));
         const target = withQueryToken(
-          buildWsUrl(options.platformUrl, hasConnected, sessionId, report()),
+          buildWsUrl(options.platformUrl, sessionId, report()),
           carriage,
         );
         return carriage.protocols
@@ -243,21 +239,15 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
       );
     },
     configured: (sid) => {
-      if (sid) {
-        sessionId = sid;
-        // Stored before any caller callback runs, so an `onSessionId` that throws
-        // does not cost the next load its resume.
-        writeStoredSessionId(options.platformUrl, sid);
-      }
-      hasConnected = true;
+      sessionId = sid;
+      // Stored before any caller callback runs, so an `onSessionId` that throws
+      // does not cost the next load its resume.
+      writeStoredSessionId(options.platformUrl, sid);
       confirm(sid);
     },
     adopt: (sid) => {
       sessionId = sid;
       writeStoredSessionId(options.platformUrl, sid);
-      // Not "connected": this session has not handshaken on THIS core yet, and
-      // the id alone is what makes the attempt a resume.
-      hasConnected = false;
     },
     forget: () => {
       sessionId = undefined;
@@ -267,7 +257,6 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
       // And its ticket: presenting it would re-mint for the discarded session.
       serverTicket = undefined;
       clearStoredTicket(options.platformUrl);
-      hasConnected = false;
       confirm(undefined);
     },
     sessionId: () => confirmed,

@@ -202,10 +202,6 @@ const RETENTION: Record<string, Verdict> = {
     pruned: "run-sweep",
     why: "outstanding attempt charges for a run's steps",
   },
-  workflow_attempts: {
-    pruned: "run-sweep",
-    why: "the retired scalar-counter table, still swept while old containers write it",
-  },
   workflow_hooks: { pruned: "run-sweep", why: "a run's `waitFor` windows and their tokens" },
   workflow_queue: {
     pruned: "unpruned",
@@ -254,7 +250,7 @@ describe("every aai_platform table has a retention verdict", () => {
     // The whole output of the assertion above is a set comparison, so an empty
     // corpus would compare `[]` against `[]` and pass. Floored at the count when
     // this landed.
-    expect(declaredTables().length).toBeGreaterThanOrEqual(17);
+    expect(declaredTables().length).toBeGreaterThanOrEqual(16);
   });
 });
 

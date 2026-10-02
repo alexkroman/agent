@@ -412,6 +412,18 @@ describe("an injected prompt rolled back leaves the history as it found it", () 
    */
   const doors: readonly Door[] = ["history", "bargeIn"];
 
+  /**
+   * Scripts that reach a tool-pair eviction on every run. The state needs a
+   * `tools` fill, a full LLM window and an eviction that lands on the pair, and
+   * the random corpus's reach of it has a left tail down to single digits.
+   * Found by logging per-script reach over 400 random runs; the driver has no
+   * randomness of its own, so each script's count is exact.
+   */
+  const PINNED_SCRIPTS: readonly Fill[][] = [
+    [{ t: "tools" }, { t: "steps", n: 1 }],
+    [{ t: "user" }, { t: "user" }, { t: "tools" }, { t: "reasoning" }],
+  ];
+
   test("at every depth, through both doors", () => {
     fc.assert(
       fc.property(fc.array(fillArb, { minLength: 1, maxLength: 6 }), (script) => {
@@ -435,7 +447,12 @@ describe("an injected prompt rolled back leaves the history as it found it", () 
       // budget, and it is the fix that makes the floors mean something rather
       // than lowering them until they stop firing: a floor under a distribution
       // whose minimum is zero cannot be set at all.
-      { numRuns: 80 },
+      // Two of the 80 runs are PINNED scripts, run first: each reaches the
+      // tool-pair eviction deterministically (232 and 208 evictions across both
+      // doors), so `toolPairEvicted` has a floor no unlucky seed can take away.
+      // The random runs still explore; they just no longer carry that floor
+      // alone — at 80 random runs it came out 4 against `> 60` in CI.
+      { numRuns: 80, examples: PINNED_SCRIPTS.map((script): [Fill[]] => [script]) },
     );
 
     // `ROLLBACK_FUZZ_COVERAGE=1` prints the table, the way the pipeline, S2S and
@@ -476,13 +493,13 @@ describe("an injected prompt rolled back leaves the history as it found it", () 
       4000,
     ); // 9070-12892 over 8 runs
     // The longest left tail — it needs the `tools` fill AND a full LLM window
-    // AND the eviction to reach a pair — so the floor sits under a THIRD of the
-    // minimum rather than near it. (As `toolHealedAtCap`, at `numRuns: 20`, this
-    // was the one that reached zero.)
+    // AND the eviction to reach a pair. The random corpus alone came out as low
+    // as 4 (a CI run against the old `> 60`), so `PINNED_SCRIPTS` carry this
+    // floor: 440 from them on every run, plus whatever the random runs add.
     expect(
       reached.toolPairEvicted,
       "no rollback's push ever evicted a whole tool pair to restore",
-    ).toBeGreaterThan(60); // 236-1004 over 8 runs
+    ).toBeGreaterThan(400); // 440 from PINNED_SCRIPTS (deterministic) + random
     // The control: a script that resets on every step never fills anything, so
     // most rollbacks are the ordinary below-the-bound kind the unit suite pins.
     // A corpus that lost this would be one where the equality is only ever

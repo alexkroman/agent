@@ -103,22 +103,15 @@ describe("route", () => {
     expect(await handler(req({ clientId: "kitchen" }), ctx)).toEqual({ client: "kitchen" });
   });
 
-  test("a RouteError thrown inside answers its status; any other throw propagates", async () => {
+  test("a throw inside propagates to the dispatcher, a RouteError included", async () => {
+    // The dispatcher (`aai-runtime`'s `runtime/agent-routes.ts`) is what turns a
+    // RouteError into its status, for `route()` handlers and plain ones alike.
     const refusing = route({
       handler: () => {
         throw routeError(404, "no such app");
       },
     });
-    expect(readRouteResponse(await refusing(req(), ctx))).toEqual({
-      status: 404,
-      body: { error: "no such app" },
-    });
-    const crashing = route({
-      handler: () => {
-        throw new Error("boom");
-      },
-    });
-    await expect(crashing(req(), ctx)).rejects.toThrow("boom");
+    await expect(refusing(req(), ctx)).rejects.toThrow("no such app");
   });
 
   test("without a schema the body passes through untouched and clientId stays optional", async () => {

@@ -19,8 +19,8 @@ import { vi } from "vitest";
 import { makeEmitter } from "../_session-test-utils.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "../transports/capabilities.ts";
 import type { Transport } from "../transports/types.ts";
-import type { ServerSession, ServerSessionOptions } from "./core.ts";
 import { createSessionCore } from "./core.ts";
+import type { ServerSession, ServerSessionOptions } from "./core-types.ts";
 import type { SessionEventStream } from "./event-stream.ts";
 
 // `playAudioDone` / `start` / `stop` are plain `vi.fn()`s like every other

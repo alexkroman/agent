@@ -53,7 +53,15 @@ function run(over: Partial<RunRecord> = {}): RunRecord {
 
 /** A settled step entry. */
 function step(over: Partial<StepEntry> = {}): StepEntry {
-  return { key: "work#0", name: "work", status: "ok", attempts: 1, finishedAt: 1, ...over };
+  return {
+    key: "work#0",
+    name: "work",
+    status: "ok",
+    attempts: 1,
+    startedAt: 1,
+    finishedAt: 1,
+    ...over,
+  };
 }
 
 /** The two writes every log starts with: the create, and the first delivery. */

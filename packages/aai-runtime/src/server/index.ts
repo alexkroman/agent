@@ -18,7 +18,6 @@ export { createHostServer } from "./host-server.ts";
 export type { ServerRoute, ServerRouteMatch } from "./routes.ts";
 export { SERVER_ROUTES, WORKFLOW_CALLBACK_ROUTES } from "./routes.ts";
 export { createServerForRuntime, DEFAULT_LISTEN_HOST } from "./server.ts";
-export { createRuntimeServer } from "./server-renamed.ts";
 export type {
   SessionAuth,
   SessionAuthOptions,

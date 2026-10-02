@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * The shared Modal context — everything every spawn path needs BEFORE it can
- * ask Modal for a sandbox: the client, the App, the snapshot image the guest
+ * ask Modal for a sandbox: the client, the App, the registry image the guest
  * boots from, and the harness bytes that image is keyed on.
  *
  * Split from modal/sandbox.ts (which owns the control-channel spawn) for the
@@ -27,7 +27,7 @@ import {
   type SandboxCreateParams,
 } from "modal";
 import { keyedMemoAsync, memoAsync } from "../_memo.ts";
-import { createGuestImageSource, snapshotImageSource } from "../guest/image-source.ts";
+import { createGuestImageSource } from "../guest/image-source.ts";
 import { createLogger } from "../logger.ts";
 import { SandboxNameTakenError } from "../sandbox/directory.ts";
 import { SandboxUnavailableError } from "../sandbox/errors.ts";
@@ -82,8 +82,8 @@ export type ModalSandboxLike = {
  * The one operation spawning needs from Modal — injectable for tests.
  *
  * `createGuestSandbox` creates a sandbox with the given harness code present
- * at `HARNESS_REMOTE_PATH`, served from a baked snapshot image (built
- * once per harness version, published under a content-addressed tag).
+ * at `HARNESS_REMOTE_PATH`, served from a registry image (built once per
+ * harness version, published under a content-addressed tag).
  * `imageTag` pins the spawn to a specific published harness image — the one
  * recorded on the agent's row at deploy time — so a deployed bundle never
  * meets a harness/Node environment it wasn't deployed against. An
@@ -107,12 +107,8 @@ export type ModalSpawnContext = {
    */
   lookupGuestSandbox(name: string): Promise<ModalSandboxLike | null>;
   /**
-   * Resolve the snapshot image guests spawn from — building and publishing it
-   * when this harness version has never been baked.
-   *
-   * Idempotent and memoized on the harness code, which is exactly what makes
-   * it callable at boot: `createGuestSandbox` awaits the SAME promise, so a
-   * spawn racing the prewarm joins it rather than starting a second build.
+   * Compute the current harness image tag ahead of any spawn. Idempotent and
+   * memoized on the harness code, so it is callable at boot.
    */
   prepareGuestImage(code: string): Promise<void>;
 };
@@ -122,8 +118,8 @@ export type ModalSpawnContext = {
 /**
  * Default base image for guest sandboxes. Node only — the guest runs the
  * same runtime as the host, and Modal's sandbox is the security boundary.
- * The harness is baked on top via a one-time filesystem snapshot (see
- * `buildContext`). Override with `MODAL_SANDBOX_IMAGE` (pin a version tag in
+ * The harness and toolchain are layered on top by
+ * `guest-image.Dockerfile`. Override with `MODAL_SANDBOX_IMAGE` (pin a version tag in
  * production for reproducible guests).
  */
 export const DEFAULT_SANDBOX_IMAGE = "node:26-slim";
@@ -133,7 +129,7 @@ export const DEFAULT_SANDBOX_IMAGE = "node:26-slim";
  * unless `MODAL_SANDBOX_IMAGE` overrides it. One reader rather than a
  * `process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE` per call site:
  * the tag is an INPUT to the harness image hash (`localHarnessImageTag`), so a
- * site that read the env differently would key the snapshot on a different
+ * site that read the env differently would key the image on a different
  * image than the one the spawn actually uses.
  */
 export function sandboxBaseTag(): string {
@@ -369,19 +365,13 @@ async function buildContext(): Promise<ModalSpawnContext> {
   const appName = process.env.MODAL_APP_NAME ?? DEFAULT_MODAL_APP_NAME;
   const app = await client.apps.fromName(appName, { createIfMissing: true });
   const baseTag = sandboxBaseTag();
-  const baseImage = client.images.fromRegistry(baseTag);
 
-  // Registry pull, or the legacy in-process snapshot build — see
-  // guest/image-source.ts for the policy. Logged because `fromRegistry` is
-  // lazy: an image that was never published fails at CREATE, and "which image
-  // am I pulling, and from where" must be answerable from one line rather than
-  // inferred from the shape of that later error.
-  const images = createGuestImageSource({
-    client,
-    baseTag,
-    snapshot: () => snapshotImageSource({ client, app, baseTag, baseImage }),
-  });
-  log.info("Guest image source", { kind: images.kind, reason: images.reason, baseTag });
+  // A registry pull — see guest/image-source.ts. Logged because `fromRegistry`
+  // is lazy: an image that was never published fails at CREATE, and "which
+  // image am I pulling, and from where" must be answerable from one line rather
+  // than inferred from the shape of that later error.
+  const images = createGuestImageSource({ client, baseTag });
+  log.info("Guest image source", { reason: images.reason, baseTag });
 
   /**
    * Every named create funnels through here, so the "lost the race"
@@ -444,19 +434,12 @@ export const modalContext = memoAsync(buildContext);
  * Fire-and-forget warm-up of everything a spawn needs before it can ask Modal
  * for a sandbox, so the FIRST session pays for none of it: the Modal context
  * (app lookup, a gRPC round trip) and — given `harnessPath` — the guest
- * snapshot image.
+ * image tag, which means reading the ~13 MB harness and a synchronous SHA-256
+ * over it.
  *
- * The image is the expensive half and the reason this takes a path at all.
- * Resolving it means reading the ~13 MB harness, a synchronous SHA-256 over it
- * for the content-addressed tag, and a lookup; on a harness version nobody has
- * published yet (i.e. right after every deploy) it means BUILDING — toolchain
- * layer, builder sandbox, 13 MB write, snapshot, publish. That landed on one
- * unlucky user's first voice session.
- *
- * Both stages are memoized, so a spawn racing this joins it rather than
- * starting a second build, and replicas racing each other are no worse than
- * the concurrent cold spawns that raced before. Failures only warn — the memo
- * resets and the next spawn retries as if it were the first caller.
+ * Both stages are memoized, so a spawn racing this joins it. Failures only
+ * warn — the memo resets and the next spawn retries as if it were the first
+ * caller.
  */
 export function prewarmModal(harnessPath?: string): void {
   void (async () => {

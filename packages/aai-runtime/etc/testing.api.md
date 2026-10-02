@@ -51,9 +51,6 @@ import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
 import { runTool } from '@alexkroman1/aai/testing';
 import { SaidLine } from '@alexkroman1/aai/testing';
 import { schemaInputIssues } from '@alexkroman1/aai/testing';
-import { ScriptedToolContext } from '@alexkroman1/aai/testing';
-import { scriptedToolContext } from '@alexkroman1/aai/testing';
-import { ScriptedToolContextOptions } from '@alexkroman1/aai/testing';
 import { SentEvent } from '@alexkroman1/aai/testing';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
@@ -347,12 +344,6 @@ export type ScriptedToolCall = {
     readonly id?: string;
 };
 
-export { ScriptedToolContext }
-
-export { scriptedToolContext }
-
-export { ScriptedToolContextOptions }
-
 export { SentEvent }
 
 // @public
@@ -378,7 +369,7 @@ export type StepEntry = {
         message: string;
     } | undefined;
     attempts: number;
-    startedAt?: number | undefined;
+    startedAt: number;
     finishedAt: number;
 };
 

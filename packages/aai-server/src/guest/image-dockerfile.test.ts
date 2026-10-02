@@ -26,12 +26,8 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { DEFAULT_SANDBOX_IMAGE } from "../modal/context.ts";
-import {
-  GUEST_ROOT,
-  HARNESS_COMPILE_CACHE_PATH,
-  HARNESS_REMOTE_PATH,
-} from "../modal/harness-image.ts";
 import { GUEST_SYSTEM_PACKAGES } from "../modal/system-packages.ts";
+import { GUEST_ROOT, HARNESS_COMPILE_CACHE_PATH, HARNESS_REMOTE_PATH } from "./exec-env.ts";
 
 const DOCKERFILE = readFileSync(
   path.join(import.meta.dirname, "..", "..", "guest-image.Dockerfile"),

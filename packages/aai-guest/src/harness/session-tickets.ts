@@ -54,7 +54,7 @@ export function guestTicketVerifier(
   };
 }
 
-/** The `auth` handle `createRuntimeServer` takes in a deployed guest. */
+/** The `auth` handle `createServerForRuntime` takes in a deployed guest. */
 export function guestSessionAuth(
   host: TicketHost,
   guestToken: string,

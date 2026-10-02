@@ -137,11 +137,11 @@ all measured:
   `sandbox/directory.ts` rests on and microsandbox does not share. A SIGKILLed
   VM left its slug permanently unreachable; `createReclaimingName`'s doc has it.
 
-## No warm pool — every spawn boots from the snapshot image
+## No warm pool — every spawn boots from the guest image
 
 There is NO warm sandbox pool, and none should be re-added without a
 measurement that needs one. Every spawn — agent, studio — boots
-directly from the published content-addressed harness snapshot image, one code
+directly from the published content-addressed harness image, one code
 path per backend, and every sandbox knows its identity (role/slug tags) at
 creation. When Modal's
 JS SDK exposes sandbox MEMORY snapshots (today it exposes only
@@ -269,34 +269,24 @@ and inherit it, which matters because their `test_agent`/Publish builds are
 the workload the cap exists for. (This said "BOTH Modal apps … keep the two
 blocks in lockstep" until the second one went with the split deployment.)
 
-## The guest snapshot image is resolved AT BOOT, not on the first spawn
+## The guest image tag is computed AT BOOT, not on the first spawn
 
 `prewarmModal(harnessPath)` in modal/context.ts, called from
 `assertSandboxBackendOrWarn`. Two memoized stages otherwise charged to
 whoever spawns first: the Modal app lookup (a gRPC round trip), and the
-harness image — reading the ~13 MB harness, the synchronous SHA-256 that
-forms its content-addressed tag, and resolving that tag. On a harness
-version nobody has published yet — i.e. right after EVERY deploy —
-"resolving" means BUILDING: toolchain layer, builder sandbox, 13 MB write,
-`snapshotFilesystem`, publish. That landed on one unlucky user's first
-voice session or studio chat. `createGuestSandbox` awaits the same memoized
-promise, so a spawn racing the prewarm joins it rather than starting a
-second build, and replicas racing each other are no worse than the
-concurrent cold spawns that raced before (the resolver tries
-`images.fromName(tag)` first). Fire-and-forget: a failure only warns and
-the memo resets, exactly as when the first spawn was the first caller.
+harness image tag — reading the ~13 MB harness and the synchronous SHA-256
+that forms its content-addressed tag. A spawn racing the prewarm joins the
+same memo. Fire-and-forget: a failure only warns and the memo resets,
+exactly as when the first spawn was the first caller.
 
 ## A `skopeo` manifest miss is reported as nothing at all
 
 **Modal reports it as `Image build for im-<id> failed with the exception:` and
 then NOTHING** — no tag, no registry, no remedy. One outage per image path so
-far, and the two paths failed differently. PINNED: the TAG is
-source-independent, the IMAGE is not (each source publishes one place
-only), so setting
-`GUEST_IMAGE_REGISTRY` orphaned every earlier `harness_image_tag`;
-`resolvePinAcrossSources` probes Modal first and logs the ref. CURRENT — a
-studio session, a first-ever spawn — logged nothing, that promise having been
-kept on the pinned half alone, and its create escaped
+far, and the two paths failed differently. PINNED: setting
+`GUEST_IMAGE_REGISTRY` orphaned every pin recorded while images were built
+in-process and published to Modal alone. CURRENT — a studio session, a
+first-ever spawn — logged no pull reference, and its create escaped
 `SandboxUnavailableError`, both spawners calling `createGuestSandbox` OUTSIDE
 the terminating `try`: a 500 where the taxonomy owes a 503. See
 `translateSpawnFailure`.
@@ -397,23 +387,23 @@ Four things to know before reaching for it:
   Modal App sandboxes are created under (default `aai-server`). **Its major
   tracks the SERVICE image's and `.node-version`, and that split floor decides
   which Node 26 features may be used where — a rule `tsc` cannot enforce.** See
-  "The snapshot image" in
+  "The guest image" in
   `packages/aai-guest/CLAUDE.md`.
 - **Modal reports a `skopeo` manifest miss as
   `Image build for im-<id> failed with the exception:` and then NOTHING** — no
   tag, no registry, no remedy — one outage per image path so far, and the PINNED
-  and CURRENT paths each failed a different way. `resolvePinAcrossSources`
-  probes Modal first and logs the ref; a create escaping
+  and CURRENT paths each failed a different way. Every pull reference is
+  logged once per tag (`guest/image-source.ts`); a create escaping
   `SandboxUnavailableError` is a 500 where the taxonomy owes a 503 (see
   `translateSpawnFailure`). Both accounts, and the gate that no-op'd over a
   broken publisher for three green deploys, are in
   [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 - **The harness, the build toolchain, and the V8 compile cache are baked into
-  a snapshot image**, not written per spawn — with the toolchain LOCKED by a
+  the guest image**, not written per spawn — with the toolchain LOCKED by a
   committed lockfile so one `harness_image_tag` can only ever mean one tree.
-  That artifact is the guest's, so its construction, its two cache layers, and
-  the split install (`npm ci` for third-party, `npm install` for
-  `@alexkroman1/*`) are documented where it is owned: see "The snapshot image"
+  That artifact is the guest's, so its construction and the split install
+  (`npm ci` for third-party, `npm install` for `@alexkroman1/*`) are
+  documented where it is owned: see "The guest image"
   in `packages/aai-guest/CLAUDE.md`. The host half — `modal/harness-image.ts`,
   the content-addressed tag, and per-deploy pinning via `harness_image_tag` —
   stays here.
@@ -455,12 +445,11 @@ Four things to know before reaching for it:
   the guard and got an agent the hourly sweep would delete. Inferring the
   opt-in from the slug's shape would NOT have fixed it: a production Publish
   of such a project passes exactly that slug.
-- **The guest snapshot image is resolved AT BOOT, not on the first spawn**
+- **The guest image tag is computed AT BOOT, not on the first spawn**
   (`prewarmModal(harnessPath)` in modal/context.ts) — otherwise the Modal app
-  lookup and the harness image resolve, or right after every deploy BUILD, on
-  one unlucky user's first voice session or studio chat. A spawn racing the
-  prewarm joins the same memoized promise. Details in
-  [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
+  lookup and the ~13 MB harness hash land on one unlucky user's first voice
+  session or studio chat. A spawn racing the prewarm joins the same memo.
+  Details in [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 - **Readiness is Modal's readiness PROBE**, not host-side polling
   (`GUEST_READINESS_PROBE` in modal/context.ts): every guest sandbox is
   created with `readinessProbe: Probe.withTcp(8080)` and the spawn awaits

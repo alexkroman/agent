@@ -158,7 +158,7 @@ export function checkChangeset(file, source, known) {
  * this one answers "will changesets version it", which is a question about the
  * manifest and the config together.
  *
- * @returns {{name: string, private: boolean}[]}
+ * @returns {{name: string, private: boolean, version: string}[]}
  */
 function workspacePackages() {
   const dirs = readdirSync(new URL("../packages", import.meta.url), { withFileTypes: true })
@@ -169,9 +169,9 @@ function workspacePackages() {
   for (const dir of [...dirs, "docs"]) {
     const source = readRepoFile(`${dir}/package.json`);
     if (source === undefined) continue;
-    const { name, private: isPrivate } = JSON.parse(source);
+    const { name, private: isPrivate, version } = JSON.parse(source);
     if (typeof name === "string" && name.length > 0) {
-      packages.push({ name, private: isPrivate === true });
+      packages.push({ name, private: isPrivate === true, version: String(version ?? "") });
     }
   }
   return packages;
@@ -265,6 +265,49 @@ export function checkChangesetConsumable(file, source, versionable) {
         "will bump.",
     },
   ];
+}
+
+/**
+ * Every workspace package still on a `0.x` version.
+ *
+ * @returns {Set<string>}
+ */
+export function preReleasePackageNames() {
+  return new Set(
+    workspacePackages()
+      .filter(({ version }) => version.startsWith("0."))
+      .map(({ name }) => name),
+  );
+}
+
+/**
+ * A `major` bump on a `0.x` package is how the project leaves `0.x`, so it must
+ * be a decision rather than a habit.
+ *
+ * Under semver a `0.x` minor already MAY break, which is the whole point of the
+ * phase: a breaking change is `minor`, everything else `patch`. Changesets reads
+ * `major` literally and takes `0.13.0` to `1.0.0` — and the fixed release group
+ * carries that to all four published packages at once. `api-contracts.mjs`
+ * suggests `major` for a removed name, so the slip is the default path, not a
+ * typo. Leaving `0.x` on purpose means removing this check in the same PR.
+ *
+ * @param {string} file
+ * @param {string} source
+ * @param {Set<string>} preRelease
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+export function checkChangesetPreRelease(file, source, preRelease) {
+  const parsed = parseChangesetFrontmatter(source);
+  if ("error" in parsed) return [];
+  return parsed.entries
+    .filter(({ name, bump }) => bump === "major" && preRelease.has(name))
+    .map(({ name, line }) => ({
+      file,
+      line,
+      text:
+        `"${name}" is on 0.x and has bump type "major", which would release 1.0.0. ` +
+        "During 0.x a breaking change is `minor`.",
+    }));
 }
 
 /**
@@ -392,6 +435,7 @@ export function scanChangesetPackageNames() {
   const known = workspacePackageNames();
   assertShipsViaResolves(known);
   const versionable = versionablePackageNames();
+  const preRelease = preReleasePackageNames();
   const files = git(["ls-files", "--", ".changeset"])
     .split("\n")
     .filter((file) => file.endsWith(".md") && !file.endsWith("/README.md"));
@@ -403,6 +447,7 @@ export function scanChangesetPackageNames() {
     found.push(...checkChangeset(file, source, known));
     found.push(...checkChangesetConsumable(file, source, versionable));
     found.push(...checkChangesetShippable(file, source));
+    found.push(...checkChangesetPreRelease(file, source, preRelease));
   }
   return found;
 }

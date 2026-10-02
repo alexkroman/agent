@@ -83,7 +83,7 @@ export type AgentDef = {
   /**
    * The agent's mode — `"workflow-app"` when it serves a page rather than voice
    * sessions. Read here so the harness can pass `page: frontDoorOf(mode)` to
-   * `createRuntimeServer`, which declines the voice surfaces for `"static"` and
+   * `createServerForRuntime`, which declines the voice surfaces for `"static"` and
    * reports it in `/client-config`. A MIRROR of the SDK's `AgentDef.mode`,
    * spelled as a string for this file's no-value-imports reason (`types.test.ts`
    * pins the key set); absent reads as a voice agent, as it does everywhere else.
@@ -91,14 +91,14 @@ export type AgentDef = {
   mode?: string;
   /**
    * Which phone carriers may open a media stream on `WS /phone` — read here so
-   * the harness can pass the declaration to `createRuntimeServer`, which serves
+   * the harness can pass the declaration to `createServerForRuntime`, which serves
    * the route for exactly those carriers and refuses every other upgrade.
    *
    * Spelled out rather than imported for this file's stated reason (no
-   * workspace value imports), and optional for `mode`'s: it MIRRORS the SDK's
-   * `AgentDef`, and a bundle built with an older SDK carries none — which reads
-   * as no carrier, the same refusal an explicit `false` makes. A carrier name a
-   * newer SDK adds is carried at run time regardless, the bundle's agent being
+   * workspace value imports), and optional because it MIRRORS the SDK's
+   * `AgentDef` — absent reads as no carrier, the same refusal an explicit
+   * `false` makes. A carrier name a newer SDK adds is carried at run time
+   * regardless, the bundle's agent being
    * asserted to this type rather than validated against it — which is why the
    * names are `string` rather than a copy of this build's carrier union: the
    * runtime's `enabledCarriers` is the validation, and drops a name it has no
@@ -120,36 +120,22 @@ export type GuestRuntime = {
   startSession(ws: unknown, opts: unknown): void;
   shutdown(): Promise<void>;
   /**
-   * The bundle's `ctx.workflows`, forwarded to the SDK's own `createRuntimeServer` so
-   * this guest serves the workflow HTTP API (`/workflows/*`).
-   *
-   * OPTIONAL because the harness↔bundle contract is versioned additively and
-   * this arrived late: a bundle built with an older SDK returns a two-method
-   * runtime, and the API then answers 404 rather than failing the boot.
-   * Deliberately loose for the same reason the two methods above are — the shape
-   * belongs to the bundle's SDK, and the harness only hands it back.
+   * The bundle's `ctx.workflows`, forwarded to the SDK's own `createServerForRuntime` so
+   * this guest serves the workflow HTTP API (`/workflows/*`). Deliberately loose
+   * for the same reason the two methods above are — the shape belongs to the
+   * bundle's SDK, and the harness only hands it back.
    */
-  workflows?: unknown;
+  workflows: unknown;
   /**
    * The bundle's `deliverWorkflow` — re-walk one run for a platform delivery.
-   *
-   * OPTIONAL for exactly the reason `workflows` above is: the harness↔bundle
-   * contract is versioned additively, and a bundle built before the replay engine
-   * returns a runtime without it. The delivery door then answers as it did
-   * before — that bundle's runs are the DevKit's and its own world holds their
-   * schedule, so there is nothing here for the platform to drive.
    *
    * This is what makes a DEPLOYED run's `ctx.sleep` come back: a guest's own
    * timers die with a sandbox that self-exits, so the platform's queue holds the
    * schedule and a due message boots the guest and lands here.
    */
-  deliverWorkflow?: unknown;
-  /**
-   * The bundle's `serveRoute` — `agent({ routes })`, for the `/api` surface.
-   * OPTIONAL for the `workflows` reason: a bundle built before routes returns a
-   * runtime without it, and `/api` is then left to static serving.
-   */
-  serveRoute?: unknown;
+  deliverWorkflow: unknown;
+  /** The bundle's `serveRoute` — `agent({ routes })`, for the `/api` surface. */
+  serveRoute: unknown;
 };
 
 /**
@@ -164,15 +150,13 @@ export type GuestRuntime = {
  * tunnel that changes on every respawn. Provider resolution, tool dispatch and
  * session state stay out, on the bundle's SDK's version.
  *
- * Additive-only, and every field OPTIONAL for the same reason: a bundle built
- * against an older SDK ignores what it does not read, and a bundle built against
- * a newer one receiving nothing degrades rather than failing boot (an absent
- * `publicUrl` makes `ctx.workflows.publicWebhookUrl` throw, which is the designed
- * answer). `GUEST_CONTRACT_VERSION` records each addition.
+ * `publicUrl` is absent under `aai dev`'s subprocess backend and in tests, which
+ * makes `ctx.workflows.publicWebhookUrl` throw — the designed answer.
+ * `GUEST_CONTRACT_VERSION` records each addition.
  */
 export type CreateGuestRuntime = ((opts: {
   env: Record<string, string>;
-  runCode?: (code: string) => Promise<string | { error: string }>;
+  runCode: (code: string) => Promise<string | { error: string }>;
   publicUrl?: string;
 }) => GuestRuntime) & {
   /**
@@ -235,8 +219,7 @@ export type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification | JsonRpcRespo
  * `bundle.ts`'s `studio` slot is what holds one, and a package that owns a
  * slot owns the slot's type — otherwise core imports the studio package for a
  * type and the two packages form a cycle no bundler can resolve. It is pure
- * data, so nothing behavioural crosses with it; `aai-guest-studio/session`
- * re-exports both names for the ~30 call sites that read them from there.
+ * data, so nothing behavioural crosses with it.
  */
 export type StudioSessionParams = {
   /** Workspace scope (`user:<uid>` or a key digest) — half of this guest's identity. */

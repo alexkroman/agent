@@ -42,7 +42,7 @@ import pTimeout from "p-timeout";
 import type { Logger } from "../logger.ts";
 import { consoleLogger } from "../logger.ts";
 import { closeRefused, endOnRequest, SessionRefusedError } from "./attach-end.ts";
-import type { ServerSession } from "./core.ts";
+import type { ServerSession } from "./core-types.ts";
 import type { SessionDirectory } from "./directory.ts";
 import { stampSessionEvent } from "./event-stream.ts";
 import { createWsSessionLifecycle } from "./ws-lifecycle.ts";

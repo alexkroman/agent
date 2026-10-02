@@ -1,5 +1,54 @@
 import type { DefaultToolResult } from '@alexkroman1/aai';
+import type { SessionErrorCode } from '@alexkroman1/aai/protocol';
 import type { StateProjection } from '@alexkroman1/aai';
+
+// @public
+type AgentCustomEvent = {
+    readonly id: number;
+    readonly event: string;
+    readonly data: unknown;
+};
+
+// @public
+type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+
+// @public
+export type AgentStateFrame = Readonly<Record<string, unknown>>;
+
+// @public
+type ChatMessage = {
+    id: number;
+    role: "user" | "assistant";
+    content: string;
+};
+
+// @public
+export function selectAgentState<V = DefaultToolResult>(slot: string): (snapshot: SessionSnapshot) => V | undefined;
+
+// @public
+type SessionError = {
+    readonly code: SessionErrorCode;
+    readonly message: string;
+    readonly fatal: boolean;
+};
+
+// @public
+type SessionSnapshot = {
+    readonly state: AgentState;
+    readonly recording: boolean;
+    readonly micMuted: boolean;
+    readonly apiUrl: string;
+    readonly contentVersion: number;
+    readonly messages: ChatMessage[];
+    readonly toolCalls: ToolCallInfo[];
+    readonly customEvents: AgentCustomEvent[];
+    readonly agentState: AgentStateFrame | null;
+    readonly userTranscript: string | null;
+    readonly agentTranscript: string | null;
+    readonly error: SessionError | null;
+    readonly started: boolean;
+    readonly running: boolean;
+};
 
 // @public
 export type ToolCallInfo = {
@@ -13,13 +62,19 @@ export type ToolCallInfo = {
 };
 
 // @public
-export function useAgentState<S = DefaultToolResult>(): S | null;
+export function useAgentState(): AgentStateFrame | null;
 
 // @public
 export function useAgentState<V>(projection: StateProjection<V>): V;
 
 // @public
-export function useAgentState<S = DefaultToolResult>(fallback: S): S;
+export function useAgentState<V = DefaultToolResult>(slot: string): V | null;
+
+// @public
+export function useAgentState<V>(slot: string, fallback: V): V;
+
+// @public
+export function useClientTool<A = ToolCallInfo["args"]>(toolName: string, handler: (args: A, toolCall: ToolCallInfo) => unknown): void;
 
 // @public
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void;

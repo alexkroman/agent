@@ -61,12 +61,8 @@ export const HARNESS_ORPHAN_POLL_MS = 30_000;
  *
  * v2 added `AAI_BUNDLE_URL` beside `AAI_BUNDLE_PATH` — the guest fetches its
  * own bundle from a signed Storage URL instead of the platform reading it and
- * writing it into the sandbox. Additive, but a v1 harness reads only the path
- * and would fail boot on a URL, and NOTHING can ask a guest its version
- * before exec. So the host decides by comparing the deploy's pinned harness
- * image against the one it builds (`guestUnderstandsBundleUrl` in
- * aai-server/sandbox-vm.ts) — this constant is the record of why that check
- * exists, not the mechanism.
+ * writing it into the sandbox. The host sends the URL whenever its blob store
+ * can sign, and the path otherwise.
  *
  * v3 added `AAI_PUBLIC_BASE_URL` — the agent's own public base URL (origin plus
  * slug), which the harness passes to the bundle's runtime as `publicUrl` so a
@@ -90,12 +86,8 @@ export const HARNESS_ORPHAN_POLL_MS = 30_000;
  * its first `events.create`). `aai-server/public-origin.ts`'s
  * `agentPlatformBaseUrl` is the derivation and the argument.
  *
- * Additive, and needing no image comparison for the v3 reason: an older pinned
- * harness ignores the new key, and `resolvePlatformQueue` falls back to
- * `AAI_PUBLIC_BASE_URL` — which on every backend but microsandbox carries the
- * identical value, so that guest keeps exactly the behaviour it had. What it
- * does NOT get is the microVM fix, which is local-dev-only and cured by a
- * redeploy.
+ * The bundle's runtime dials `AAI_PLATFORM_BASE_URL` alone; a bundle built
+ * before v4 must be redeployed.
  *
  * v5 made `__aaiCreateRuntime.host` REQUIRED on the harness↔bundle handshake —
  * the typed `GuestHost` surface (`aai-runtime/guest-host.ts`) a harness that

@@ -102,10 +102,10 @@ function takeNumber(group: Record<string, unknown>, key: string): number | undef
  * `syncState` → the canonical record keyed by SLOT NAME, which is what the
  * `agent_state` frame and the browser select by.
  *
- * Accepts a projection, a list of them, or the deprecated record (whose keys
- * must equal each projection's own slot key — a key that disagreed would
- * publish one name and render another). Idempotent: the record it returns is
- * accepted unchanged, since `toAgentConfig` also sees `agent()`'s output.
+ * Accepts a projection or a list of them. Idempotent: the canonical record it
+ * returns is accepted unchanged, since `toAgentConfig` also sees `agent()`'s
+ * output — and each key must equal its projection's own slot key, since a key
+ * that disagreed would publish one name and render another.
  */
 function normalizeSyncState(syncState: unknown): Record<string, unknown> {
   const isProjection = (value: unknown): value is { key: unknown } =>

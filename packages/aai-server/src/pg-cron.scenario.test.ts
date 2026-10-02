@@ -364,8 +364,8 @@ describeWithStack("the pg_cron sweep bodies", () => {
     );
     await sql(
       `insert into aai_platform.workflow_steps
-         (slug, run_id, key, name, status, attempts, finished_at)
-       values ('pgc-wkf', 'old_done', 'k', 'n', 'ok', 1, $1)`,
+         (slug, run_id, key, name, status, attempts, started_at, finished_at)
+       values ('pgc-wkf', 'old_done', 'k', 'n', 'ok', 1, $1, $1)`,
       [now - 40 * day],
     );
     await sql(

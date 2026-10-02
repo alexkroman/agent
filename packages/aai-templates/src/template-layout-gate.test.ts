@@ -12,7 +12,7 @@
  *
  * ## 1. A `workflowApp()` has no model turn, so two files there are unreachable
  *
- * `workflowApp` takes `StaticAgentParams` — no `llm`, no `stt`, no `tts` — so
+ * `workflowApp` takes `WorkflowAppAgentParams` — no `llm`, no `stt`, no `tts` — so
  * there is no turn for a model to take. A `tools/` file in one is discovered by
  * the bundler, shipped in the guest bundle, and callable by nobody; a
  * `system-prompt.md` beside it is read by nothing at all.
@@ -200,7 +200,7 @@ describe.each(WORKFLOW_APPS)("%s (a workflow app)", (name: string) => {
   test("ships no tools/ and no system-prompt.md, which it could not reach", () => {
     expect(
       has(name, "tools"),
-      `${name} is a workflowApp() — StaticAgentParams, so no llm/stt/tts and no model ` +
+      `${name} is a workflowApp() — WorkflowAppAgentParams, so no llm/stt/tts and no model ` +
         "turn — but ships a tools/ directory. Those tools are discovered by the bundler " +
         "and callable by nobody. Delete them, or make this a voice agent().",
     ).toBe(false);

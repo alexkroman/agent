@@ -65,3 +65,11 @@ Every session event name is now `<subject>.<verb>` in camelCase
 variants v2 and v3 pinned, and nothing published depends on either yet, so both
 were deleted rather than kept as a red suite: v1's reasoning above, applied
 again. v4 is v3's messages under the new names, plus a `userTurn.exceeded`.
+
+## v5 made `session.configured`'s `sessionId` required, and retired v4
+
+Every server has always sent it, and the client's greeting-suppression fallback
+for a server that did not (`?resume=1`) is gone, so a handshake without an id is
+no longer a valid frame. v5 is v4's messages minus the id-less handshake;
+nothing published depends on v4, so it was deleted rather than kept as a red
+suite — v1's reasoning above, applied again.

@@ -51,7 +51,6 @@ export {
   createPgRateLimiter,
   createRateLimiter,
   type RateLimiter,
-  type RateLimitVerdict,
 } from "./rate-limit.ts";
 export { startService } from "./serve-lifecycle.ts";
 export {

@@ -3628,10 +3628,6 @@ field skips either.
 
 - [`PipelineTuning`](#pipelinetuning).[`PipelinePhrases`](#pipelinephrases).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets).[`AgentSessionLifecycle`](#agentsessionlifecycle).[`AgentRoutes`](#agentroutes).[`AgentClientInbox`](#agentclientinbox)
 
-#### Extended by
-
-- [`AgentDef`](#agentdef)
-
 #### Properties
 
 ##### builtinTools?
@@ -4304,9 +4300,7 @@ agent({ name: "Cart", syncState: cartSlot.projected });
 agent({ name: "Cart", syncState: [cartSlot.projected, prefsSlot.projected] });
 ```
 
-The record form `{ cart: cartSlot.projected }` still compiles and is
-normalized to the same thing, but is deprecated: its key must repeat the
-slot's own name. `agent()` returns the record keyed by slot name (see
+`agent()` returns the record keyed by slot name (see
 [AgentDef.syncState](#syncstate-1)).
 
 ###### Inherited from
@@ -4524,7 +4518,7 @@ tables nobody authors. Optional fields remain optional — `undefined` means
 
 #### Extends
 
-- [`AgentDeclaration`](#agentdeclaration)
+- `Omit`\<[`AgentDeclaration`](#agentdeclaration), `"syncState"`\>
 
 #### Properties
 
@@ -4802,7 +4796,7 @@ provider stops emitting rather than wrapping up.
 
 ###### Inherited from
 
-[`AgentDeclaration`](#agentdeclaration).[`maxOutputTokens`](#maxoutputtokens)
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-3)
 
 ##### maxRetries?
 
@@ -4830,7 +4824,7 @@ line do the work.
 
 ###### Inherited from
 
-[`AgentDeclaration`](#agentdeclaration).[`maxRetries`](#maxretries)
+[`ModelTuning`](#modeltuning).[`maxRetries`](#maxretries-3)
 
 ##### maxSteps
 
@@ -5229,10 +5223,6 @@ The `syncState` projections, keyed by each one's slot name — the canonical
 form `agent()` normalizes a projection or a list into. See
 [AgentObservation.syncState](#syncstate) for what to write.
 
-###### Overrides
-
-[`AgentDeclaration`](#agentdeclaration).[`syncState`](#syncstate)
-
 ##### systemPrompt
 
 ```ts
@@ -5322,7 +5312,7 @@ researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
-[`AgentDeclaration`](#agentdeclaration).[`temperature`](#temperature)
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-5)
 
 ##### toolChoice?
 
@@ -5793,9 +5783,7 @@ agent({ name: "Cart", syncState: cartSlot.projected });
 agent({ name: "Cart", syncState: [cartSlot.projected, prefsSlot.projected] });
 ```
 
-The record form `{ cart: cartSlot.projected }` still compiles and is
-normalized to the same thing, but is deprecated: its key must repeat the
-slot's own name. `agent()` returns the record keyed by slot name (see
+`agent()` returns the record keyed by slot name (see
 [AgentDef.syncState](#syncstate-1)).
 
 ***
@@ -8153,19 +8141,16 @@ another drawn, so the caller does not have to loop.
 The per-REQUEST knobs every model loop this runtime runs takes — the agent's
 own conversational loop and a [SpeakerDef](#speakerdef)'s delegated one alike.
 
-**One declaration, extended by both, rather than a list each restates.**
-`SpeakerDef` used to carry its own `temperature` and `maxOutputTokens` beside
-`AgentModelTuning`'s, with one-line docs of their own, and a `maxRetries` that
-meant something else entirely (the guardrail's revision budget, now
-[SpeakerDef.maxRevisions](#maxrevisions)). A knob added here reaches both loops, and
-the name means one thing wherever it is written.
+**One declaration, extended by both, rather than a list each restates.** A
+knob added here reaches both loops, and the name means one thing wherever it
+is written.
 
 Every field is passed straight through to the provider request, so each is
 refused in S2S mode on the AGENT — there the provider runs the loop; see this
 module's header. A subagent always runs on this runtime, whatever the parent's
 mode, so it may set `temperature` and `maxOutputTokens` — but not
-`maxRetries`, which [SpeakerDef](#speakerdef) omits so the old guardrail-budget
-spelling fails to compile.
+`maxRetries`, which [SpeakerDef](#speakerdef) omits: its guardrail budget is
+`maxRevisions`.
 
 #### Extended by
 
@@ -9025,7 +9010,7 @@ The HTTP status: 2xx, 4xx or 5xx.
 
 **`Sealed`**
 
-What [AgentSessionLifecycle.sessionContext](#sessioncontext-2) is called with.
+What [AgentSessionLifecycle.sessionContext](#sessioncontext) is called with.
 
 #### Properties
 
@@ -9083,7 +9068,7 @@ it fired is dropped.
 
 **`Sealed`**
 
-What [AgentSessionLifecycle.onSessionEnd](#onsessionend-2) is called with.
+What [AgentSessionLifecycle.onSessionEnd](#onsessionend) is called with.
 
 #### Properties
 
@@ -9739,7 +9724,7 @@ session.configured: {
      id: string;
   };
   sampleRate: number;
-  sessionId?: string;
+  sessionId: string;
   ttsSampleRate: number;
   type: "session.configured";
 };
@@ -9766,10 +9751,10 @@ audioFormat: string;
 sampleRate: number;
 ```
 
-###### sessionId?
+###### sessionId
 
 ```ts
-optional sessionId?: string;
+sessionId: string;
 ```
 
 ###### ttsSampleRate
@@ -10333,39 +10318,6 @@ Every write goes through [SessionSlot.update](#update). See
 ###### Returns
 
 [`DeepReadonly`](#deepreadonly)\<`T`\>
-
-##### ~~projection()~~
-
-```ts
-projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
-```
-
-A `syncState` projection over this slot through a view composed at the
-call: read the value (defaulting when the session has not touched it),
-then project.
-
-###### Type Parameters
-
-###### P
-
-`P`
-
-###### Parameters
-
-###### project
-
-(`value`: [`DeepReadonly`](#deepreadonly)\<`T`\>) => `P`
-
-###### Returns
-
-[`StateProjection`](#stateprojection)\<`P`\>
-
-###### Deprecated
-
-Declare the view on the slot —
-`sessionSlot(key, create, { view })` — and pass [SessionSlot.projected](#projected).
-A projection composed here is a value both ends must name, export and
-import, and an inline one is a fresh object per render. Still works.
 
 ##### reset()
 
@@ -11414,7 +11366,7 @@ provider stops emitting rather than wrapping up.
 optional maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
 ```
 
-Not a field. Typed as the message that names the rename, so
+Not a field. Typed as a message naming [SpeakerDef.maxRevisions](#maxrevisions), so
 `speaker({ maxRetries: 3 })` fails to compile with the fix in the error
 rather than with a bare excess-property one — the idiom `agent({ tools })`
 uses. See [SpeakerDef.maxRevisions](#maxrevisions).
@@ -11431,11 +11383,9 @@ How many times a [SpeakerDef.guardrail](#guardrail) may send an answer back.
 
 `1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
 
-**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-3) retries
-a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
-delegation that SUCCEEDED and was judged not good enough. A subagent does
-not accept `maxRetries` at all, so code written against the old name fails
-to compile rather than quietly meaning something else.
+Not `maxRetries`: [ModelTuning.maxRetries](#maxretries-3) retries a provider REQUEST
+that failed (a 429, a socket reset), where this re-runs a delegation that
+SUCCEEDED and was judged not good enough.
 
 One, not CrewAI's three, because a revision is another FULL run of the
 subagent and the caller is on a live phone call — the third attempt at a
@@ -12459,7 +12409,7 @@ provider stops emitting rather than wrapping up.
 optional maxRetries?: "a speaker's guardrail budget is `maxRevisions`; a delegated run takes no provider-retry setting";
 ```
 
-Not a field. Typed as the message that names the rename, so
+Not a field. Typed as a message naming [SpeakerDef.maxRevisions](#maxrevisions), so
 `speaker({ maxRetries: 3 })` fails to compile with the fix in the error
 rather than with a bare excess-property one — the idiom `agent({ tools })`
 uses. See [SpeakerDef.maxRevisions](#maxrevisions).
@@ -12480,11 +12430,9 @@ How many times a [SpeakerDef.guardrail](#guardrail) may send an answer back.
 
 `1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
 
-**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-3) retries
-a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
-delegation that SUCCEEDED and was judged not good enough. A subagent does
-not accept `maxRetries` at all, so code written against the old name fails
-to compile rather than quietly meaning something else.
+Not `maxRetries`: [ModelTuning.maxRetries](#maxretries-3) retries a provider REQUEST
+that failed (a 429, a socket reset), where this re-runs a delegation that
+SUCCEEDED and was judged not good enough.
 
 One, not CrewAI's three, because a revision is another FULL run of the
 subagent and the caller is on a live phone call — the third attempt at a
@@ -12845,22 +12793,6 @@ that wants the other trade returns a verdict from its own `catch`.
 
   \| [`GuardrailVerdict`](#guardrailverdict)
   \| `Promise`\<[`GuardrailVerdict`](#guardrailverdict)\>
-
-***
-
-### ~~AgentInstructions~~
-
-```ts
-type AgentInstructions = Exclude<AgentSystemPrompt, string>;
-```
-
-A system-prompt resolver — the function half of [AgentSystemPrompt](#agentsystemprompt).
-
-#### Deprecated
-
-Name [AgentSystemPrompt](#agentsystemprompt) (what `agent({ systemPrompt })`
-takes); for the function alone, `Exclude<AgentSystemPrompt, string>`.
-Identical type.
 
 ***
 
@@ -14777,7 +14709,7 @@ type SessionContext = {
 };
 ```
 
-What [AgentSessionLifecycle.sessionContext](#sessioncontext-2) may answer.
+What [AgentSessionLifecycle.sessionContext](#sessioncontext) may answer.
 
 #### Properties
 
@@ -14805,7 +14737,7 @@ agent({
 ```
 
 It replaces the TEXT, never the decision: a session that would not greet —
-a resume, `?resume=1` — still does not, and one that would speaks this
+a resume (`?sessionId=`) — still does not, and one that would speaks this
 exactly as it speaks the agent's (synthesized as written, no model call,
 recorded in history as the agent's opening line, spoken again after a
 client `reset`). An empty string means no greeting this session. Control
@@ -15426,21 +15358,6 @@ A successful or failed Standard Schema validation.
 
 ***
 
-### ~~StaticAgentParams~~
-
-```ts
-type StaticAgentParams = WorkflowAppAgentParams;
-```
-
-The workflow-app member under its old name.
-
-#### Deprecated
-
-Use [WorkflowAppAgentParams](#workflowappagentparams), named after the
-`mode: "workflow-app"` it selects. Identical type.
-
-***
-
 ### StepOptions
 
 ```ts
@@ -15574,15 +15491,10 @@ Compile-time stage tag; never present at runtime.
 ```ts
 type SyncStateDeclaration = 
   | StateProjection
-  | readonly StateProjection[]
-| Readonly<Record<string, StateProjection>>;
+  | readonly StateProjection[];
 ```
 
 What `agent({ syncState })` accepts: one slot projection, or a list of them.
-
-The third member, a record keyed by slot name, is the DEPRECATED spelling —
-the key has to repeat the projection's own slot key. It is still accepted
-and normalized; write the projection or the list instead.
 
 ***
 
@@ -18253,7 +18165,7 @@ run parks on a human approval, a review that may take a week, or anything
 else somebody else decides.
 
 **The WEBHOOK route reaches this.** `ctx.workflows.publicWebhookUrl(token)`
-mints a URL that `createRuntimeServer` serves, and a delivery to it resolves the
+mints a URL that `createServerForRuntime` serves, and a delivery to it resolves the
 wait: the route calls `WorkflowClient.signal`, which writes the payload
 against this hook's own journal row and re-walks the body. So a
 payment-callback flow is a supported shape.
@@ -19115,7 +19027,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      id: z.ZodString;
   }, z.core.$strip>;
   sampleRate: z.ZodNumber;
-  sessionId: z.ZodOptional<z.ZodString>;
+  sessionId: z.ZodString;
   ttsSampleRate: z.ZodNumber;
   type: z.ZodLiteral<"session.configured">;
 }, z.core.$strip>, z.ZodObject<{
