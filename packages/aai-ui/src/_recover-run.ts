@@ -11,7 +11,10 @@
  * `StartOptions.key` is the handle that survives that, and it always was — a
  * caller's own name for a run, indexed by the agent, read back with
  * `find(workflow, key)`. What was missing is the two lines that ASK. This is
- * them, plus the four decisions they turn out to carry.
+ * them, plus the four decisions they turn out to carry. The question lives
+ * here; the decisions about WHEN are positions of the form's statechart
+ * (`_workflow-form-state.ts`), where this lookup is the `recovering` state's
+ * invoke.
  *
  * ## It is a MOUNT-time act, not "whenever there is no run"
  *
@@ -25,9 +28,10 @@
  * ## The lookup NEVER wins a race against a submit
  *
  * A person who reloads and immediately submits has started the run they want,
- * and an answer that was already in flight names an older one. The caller
- * therefore adopts through `current ?? found`: the recovered id fills an empty
- * slot and never replaces a full one.
+ * and an answer that was already in flight names an older one. A `SUBMIT` (or a
+ * `RESET`) leaves `recovering`, which stops the lookup, so the late answer is
+ * dropped by the machine rather than reconciled against the run that replaced
+ * it.
  *
  * ## A failed lookup is REPORTED
  *
@@ -52,11 +56,9 @@
  * always open empty says so, and then nothing here runs.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
-import { useEffect, useRef, useState } from "react";
 import type { WorkflowApi } from "./workflow-client.ts";
 
-/** What {@link useRecoveredRun} needs. */
+/** What a page's recovery needs; `_submission-state.ts` turns it into the lookup. */
 export type RecoverRunOptions = {
   /** The workflow whose runs are indexed under `key`. */
   workflow: string;
@@ -66,59 +68,21 @@ export type RecoverRunOptions = {
   enabled: boolean;
   /** The stable getter from `useWorkflowApiRef`. */
   getClient: () => WorkflowApi;
-  /** Adopt this run. Called at most once, and never with an empty answer. */
-  onFound: (runId: string) => void;
-  /** The lookup failed, and the page has to say so. */
-  onError: (message: string) => void;
 };
 
 /**
- * Look up the newest run for a key, once, as the component mounts.
+ * Look up the newest run for a key.
  *
- * @param opts - See {@link RecoverRunOptions}.
- * @returns Whether the lookup is still out. A caller folds it into its own
- *   `pending`, because a form offering Submit while a live run is arriving is a
- *   form inviting a second one.
- *
- * @internal
+ * @returns The run's id, or `undefined` for a key with no runs. A failure
+ *   REJECTS, so the machine can report it — see "A failed lookup is REPORTED".
  */
-export function useRecoveredRun(opts: RecoverRunOptions): boolean {
-  const { workflow, key, enabled, getClient } = opts;
-  // True from the FIRST render rather than from the effect, so there is no
-  // frame in which a page about to adopt a run reads as idle.
-  const [recovering, setRecovering] = useState(enabled);
-  // The two callbacks through a ref, for the reason `_workflow-api-ref.ts`
-  // holds the client in one: a call site writes them inline, so as dependencies
-  // they would restart the lookup on every render it causes.
-  const handlers = useRef(opts);
-  handlers.current = opts;
-
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    setRecovering(true);
-    getClient()
-      // The newest is the only one a form can show; the rest are what
-      // `useWorkflowRuns` is for.
-      .find(workflow, key, { limit: 1 })
-      .then((found) => {
-        if (cancelled) return;
-        const newest = found[0];
-        if (newest !== undefined) handlers.current.onFound(newest.runId);
-        setRecovering(false);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        handlers.current.onError(errorMessage(err));
-        setRecovering(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // `getClient` is stable for the component's life; a changed KEY is a
-    // different run and is meant to re-ask. Nothing else may re-arm this — see
-    // the module doc on `reset()`.
-  }, [enabled, key, workflow, getClient]);
-
-  return recovering;
+export async function findRecoveredRun(
+  client: WorkflowApi,
+  workflow: string,
+  key: string,
+): Promise<string | undefined> {
+  // The newest is the only one a form can show; the rest are what
+  // `useWorkflowRuns` is for.
+  const found = await client.find(workflow, key, { limit: 1 });
+  return found[0]?.runId;
 }
