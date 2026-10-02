@@ -4205,7 +4205,7 @@ that module's own note.
 ```ts
 type ProjectFiles = {
   systemPrompt?: string;
-  tools?: ToolModules;
+  tools?: Readonly<Record<string, unknown>>;
 };
 ```
 
@@ -4235,7 +4235,7 @@ its own project uses.
 ##### tools?
 
 ```ts
-readonly optional tools?: ToolModules;
+readonly optional tools?: Readonly<Record<string, unknown>>;
 ```
 
 `import.meta.glob("./tools/*.ts", { eager: true })`, written at the CALL
@@ -4243,6 +4243,11 @@ SITE — see the module doc for why it cannot be a directory string.
 
 Omit it for a project with no `tools/` directory. Passing an EMPTY glob is
 an error, not a no-op: see [deployedAgent](#deployedagent).
+
+Spelled out rather than named as `ToolModules` (the same type, on
+`/manifest`): the value is a glob result, not something a spec names, so
+`/testing` exports no alias for it and a named one would be a declaration no
+capability owns.
 
 ***
 

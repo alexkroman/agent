@@ -81,11 +81,12 @@ describe("API-EXPORTS.json", () => {
     expect(surface["@alexkroman1/aai/workflow-api"]).toContain("WorkflowRunSnapshot");
     expect(surface["@alexkroman1/aai"]).not.toContain("WorkflowRunSnapshot");
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("WorkflowRunSnapshot");
-    // `ToolModules` is `ProjectFiles.tools`'s type and lives on `/manifest`,
-    // which is not an authoring subpath at all — so it is forgotten HERE and
-    // absent from the root too, which is the intended shape: the value a caller
-    // passes is an `import.meta.glob` result, not something to name. Most specs
-    // now import `virtual:aai/agent` and never see one.
+    // `ToolModules` is the shape of `ProjectFiles.tools` and lives on
+    // `/manifest`, which is not an authoring subpath at all — so `/testing`
+    // spells the field's type out instead of naming it, and it is absent from
+    // the root too, which is the intended shape: the value a caller passes is an
+    // `import.meta.glob` result, not something to name. Most specs now import
+    // `virtual:aai/agent` and never see one.
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("ToolModules");
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
       "DeployedConfig",

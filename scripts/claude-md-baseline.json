@@ -1,15 +1,5 @@
 {
   "_description": "Shrink-only baselines for the agent-guide gate (header of scripts/check-claude-md.mjs). `guides`: size budgets for AUTO-LOADED guides still over the 40,000-char cap — a listed guide may be at most its recorded size, and one not listed must be at most 40,000. `dangling`: per guide, backticked paths known to resolve to no tracked file and how many times each may occur — a miss past its count fails. `pnpm claude-md:update` lowers or removes entries (a shrunk guide, a fixed path) and never raises or adds one — an increase is a hand edit in a reviewable diff.",
   "guides": {},
-  "dangling": {
-    ".agents/ratchets.md": {
-      ".github/zizmor.yml": 1,
-      "host/workflow-keys.ts": 1,
-      "host/workflow-notify.ts": 1,
-      "scripts/starter-eval/": 1
-    },
-    ".agents/testing.md": {
-      "workflow-interleavings/": 1
-    }
-  }
+  "dangling": {}
 }

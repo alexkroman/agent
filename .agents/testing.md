@@ -148,7 +148,7 @@ does not discriminate.
 | Studio starter evals (what they measure), studio concurrency fuzz                                                                                                 | `packages/aai-studio-server/CLAUDE.md`                   |
 | The eval runner, its assertion vocabulary, and both eval targets                                                                                                  | `packages/aai-evals/CLAUDE.md`                           |
 | Sandbox/SSRF boundary tests, and why there is no load or chaos tier                                                                                               | `packages/aai-server/CLAUDE.md`                          |
-| Workflow durability harnesses (`workflow/journal/_log.ts`, `_invariants.ts`, `workflow/_engine-harness.ts`, `workflow-interleavings/`, `testing/run-workflow.ts`) | each module's doc comment in `packages/aai-runtime/src/` |
+| Workflow durability harnesses (`workflow/journal/_log.ts`, `_invariants.ts`, `workflow/_engine-harness.ts`, `workflow/interleavings/`, `testing/run-workflow.ts`) | each module's doc comment in `packages/aai-runtime/src/` |
 
 ## A provider's HTTP path is tested against `@copilotkit/aimock`
 

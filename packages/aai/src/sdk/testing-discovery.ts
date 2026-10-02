@@ -91,8 +91,13 @@ export type ProjectFiles = {
    *
    * Omit it for a project with no `tools/` directory. Passing an EMPTY glob is
    * an error, not a no-op: see {@link deployedAgent}.
+   *
+   * Spelled out rather than named as `ToolModules` (the same type, on
+   * `/manifest`): the value is a glob result, not something a spec names, so
+   * `/testing` exports no alias for it and a named one would be a declaration no
+   * capability owns.
    */
-  readonly tools?: ToolModules;
+  readonly tools?: Readonly<Record<string, unknown>>;
   /**
    * `import prompt from "./system-prompt.md?raw"`.
    *

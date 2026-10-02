@@ -226,13 +226,12 @@ clear, not as a precedent for skipping.
   file BINARY to `git grep`, silently exempting it from every line rule and
   every hatch pattern — and the corpus floor cannot catch it BY DESIGN, the file
   still being in `git ls-files`. It has cost this repo three times
-  (`host/workflow-notify.ts`, `host/workflow-keys.ts`,
-  `konsistent-config.test.ts`, which used raw NULs as regex placeholder
-  sentinels), the first two fixed one byte at a time with no detector added —
-  which is the argument for the detector. Spell the character as an escape:
-  byte-identical, and the file is text again. A genuinely binary extension goes
-  in `KNOWN_BINARY` (`scripts/_ratchet.mjs`), a DENY-list so a new source
-  extension defaults into being checked.
+  (`workflow/notify.ts`, `workflow/keys.ts`, `konsistent-config.test.ts`, which
+  used raw NULs as regex placeholder sentinels), the first two fixed one byte at
+  a time with no detector added — which is the argument for the detector. Spell
+  the character as an escape: byte-identical, and the file is text again. A
+  genuinely binary extension goes in `KNOWN_BINARY` (`scripts/_ratchet.mjs`), a
+  DENY-list so a new source extension defaults into being checked.
 
   **The three CAST patterns skip COMMENT-ONLY lines; the five suppression
   patterns do not.** A `biome-ignore` genuinely is a comment, and suppressing
@@ -401,9 +400,9 @@ clear, not as a precedent for skipping.
   existed**, and the trap generalizes to every git pathspec in the repo. A
   pathspec is fnmatch WITHOUT `FNM_PATHNAME`, so `*` already crosses `/` and
   `scripts/**/*.mjs` parses as "scripts/" + anything + "/" + anything + ".mjs" —
-  the literal slash makes a subdirectory MANDATORY. It therefore matched
-  `scripts/starter-eval/` and not one of the ~29 files at the top level —
-  exactly where an unreviewed harness hides — while printing "all files within
+  the literal slash makes a subdirectory MANDATORY. It therefore matched the one
+  subdirectory `scripts/` then had and not one of the ~29 files at the top level
+  — exactly where an unreviewed harness hides — while printing "all files within
   caps ✓"; adding `scripts/*.mjs`/`scripts/*.ts` took the measured set from 6
   files to 35. **Both ratchets' `:!scripts/**/*.md` exclusions had it too**, and
   `:!scripts/*.md` now sits beside each. `packages/**/*.ts` is unaffected only
@@ -521,9 +520,10 @@ clear, not as a precedent for skipping.
   `permissions: contents: read`, every checkout that does not push sets
   `persist-credentials: false`, and the two that do carry an inline
   `# zizmor: ignore[artipacked]` saying why. **CI passes `--base origin/main`,
-  so zizmor's policy (`.github/zizmor.yml`, none today) is read from the base**:
-  a PR that relaxes it is still audited under the policy it is trying to change.
-  Same PATH/`AAI_REQUIRE_WORKFLOW_LINT=1` shape as `check:shell`; `check.yml`
+  so zizmor's policy file (none today; `scripts/check-workflows.mjs` names where
+  it would live) is read from the base**: a PR that relaxes it is still audited
+  under the policy it is trying to change. Same
+  PATH/`AAI_REQUIRE_WORKFLOW_LINT=1` shape as `check:shell`; `check.yml`
   installs pinned versions with pipx. Offline audits only.
 - **`pnpm check:template-types`** (`scripts/check-template-types.mjs`) — every
   template, plus the scaffold's `server.mjs` and `vitest.config.ts`, compiled
