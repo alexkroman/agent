@@ -14,6 +14,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { body, ramp } from "../_upload-store-test-utils.ts";
 import { createBrokeredUploadBlobs } from "./blobs-brokered.ts";
 import { createHttpUploadBackend, storageEndpoint } from "./blobs-http.ts";
 import { UploadTooLargeError } from "./store.ts";
@@ -46,13 +47,6 @@ function scripted(answer: (call: Call) => Response) {
     await fetch(String(input), init as RequestInit | undefined);
   return { calls, fetch: seam };
 }
-
-async function* body(...pieces: Uint8Array[]): AsyncGenerator<Uint8Array> {
-  for (const piece of pieces) yield piece;
-}
-
-const ramp = (n: number, from = 0): Uint8Array =>
-  Uint8Array.from({ length: n }, (_, at) => (from + at) % 251);
 
 describe("Storage over its REST API", () => {
   const open = (answer: (call: Call) => Response) => {

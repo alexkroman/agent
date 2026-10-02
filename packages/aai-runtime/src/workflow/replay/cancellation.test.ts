@@ -10,22 +10,8 @@
 import { publishStepReporter } from "@alexkroman1/aai/host-internal";
 import { RetryableError } from "@alexkroman1/aai/step-errors";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
-import { createMemoryJournal } from "../journal/backends/memory.ts";
-import type { JournalStore } from "../journal/types.ts";
+import { seedRun } from "../_replay-test-utils.ts";
 import { replayRun } from "../replay.ts";
-
-/** A journal holding the one run these specs walk. */
-async function seed(): Promise<{ journal: JournalStore }> {
-  const journal = createMemoryJournal();
-  await journal.createRun({
-    runId: "wrun_1",
-    workflow: "digest",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  });
-  return { journal };
-}
 
 /** Swallow the engine's retry narration, which an unpublished slot prints. */
 function quietReporter(): void {
@@ -35,7 +21,7 @@ function quietReporter(): void {
 
 describe("cancellation", () => {
   test("stops before the next step and propagates the abort", async () => {
-    const { journal } = await seed();
+    const journal = await seedRun();
     const controller = new AbortController();
     const second = vi.fn(() => "should not run");
     await expect(
@@ -57,7 +43,7 @@ describe("cancellation", () => {
 
   test("a cancel during a retry's BACKOFF ends the walk without waiting it out", async () => {
     quietReporter();
-    const { journal } = await seed();
+    const journal = await seedRun();
     const controller = new AbortController();
     const reason = new Error("cancelled mid-backoff");
     let calls = 0;

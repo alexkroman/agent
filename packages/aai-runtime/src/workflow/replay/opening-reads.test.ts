@@ -18,28 +18,15 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryJournal } from "../journal/backends/memory.ts";
+import { seedRun } from "../_replay-test-utils.ts";
 import type { JournalStore } from "../journal/types.ts";
 import { replayRun } from "../replay.ts";
 
 const RUN = "wrun_1";
 
-/** A journal holding one running run, ready to replay. */
-async function seed(): Promise<JournalStore> {
-  const journal = createMemoryJournal();
-  await journal.createRun({
-    runId: RUN,
-    workflow: "digest",
-    status: "running",
-    createdAt: Date.now(),
-    input: {},
-  });
-  return journal;
-}
-
 describe("the two reads a walk opens with", () => {
   test("are ISSUED together, not one after the other", async () => {
-    const journal = await seed();
+    const journal = await seedRun({ runId: RUN });
     const order: string[] = [];
     const gate = Promise.withResolvers<void>();
     const slow: JournalStore = {
