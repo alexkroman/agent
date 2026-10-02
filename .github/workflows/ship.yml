@@ -748,6 +748,28 @@ jobs:
       # Builds the harness bundle the image COPYs, plus everything it bundles.
       - run: pnpm exec turbo run build --filter aai-guest...
 
+      # The worker the deploy job's smoke-spawn deploys. Built HERE, from the
+      # same tree and by the same `aai build` a user runs, because the harness
+      # drives an agent entirely through the runtime the BUNDLE ships
+      # (`__aaiCreateRuntime.host`) and refuses one without it. The hand-written
+      # stub this replaced could not carry that surface, and it failed every
+      # spawn the moment the harness started requiring it. This job already
+      # holds the built CLI and SDK, so the deploy job stays `node`-only.
+      - name: Build the smoke worker
+        working-directory: packages/aai-templates/templates/quickstart-agent
+        run: |
+          set -euo pipefail
+          node ../../../aai-cli/bin.mjs build --json --skip-tests --skip-typecheck
+          mkdir -p "$RUNNER_TEMP/smoke-worker"
+          cp .aai/worker.mjs "$RUNNER_TEMP/smoke-worker/worker.mjs"
+      - name: Upload the smoke worker
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-worker
+          path: ${{ runner.temp }}/smoke-worker/worker.mjs
+          if-no-files-found: error
+          retention-days: 7
+
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -1016,9 +1038,16 @@ jobs:
       # cannot read, so nothing else in this workflow can tell whether the
       # registry production pulls from is the registry we published to.
       #
-      # Node builtins only, so it needs no `pnpm install`.
+      # Node builtins only, so it needs no `pnpm install` — the worker it
+      # deploys is built by the `guest-image` job, which holds the CLI.
+      - name: Download the smoke worker
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: smoke-worker
+          path: ${{ runner.temp }}/smoke-worker
       - name: Smoke-spawn a sandbox
         env:
           AAI_PLATFORM_URL: ${{ steps.deploy.outputs.url }}
           AAI_API_KEY: ${{ secrets.AAI_SMOKE_API_KEY }}
-        run: node scripts/smoke-spawn.mjs
+          SMOKE_WORKER: ${{ runner.temp }}/smoke-worker/worker.mjs
+        run: node scripts/smoke-spawn.mjs --worker "$SMOKE_WORKER"

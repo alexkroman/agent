@@ -30,15 +30,14 @@
  * boot the harness inside, and broker a session URL. That is the whole failure
  * class above.
  *
- * It deliberately does NOT exercise the SDK installed in the image: the worker
- * below is the same self-contained stub `agent-server-integration.test.ts`
- * boots a real harness with, carrying no bare imports, because a deployed
- * worker bundle is self-contained by construction (the CLI bundles it
- * `noExternal`) and a hand-written one that imported `@alexkroman1/aai` would
- * be testing a resolution path no real bundle uses. The SDK's own integrity is
- * covered where it is installed — `stageSdkPackDir` verifies each tarball
- * against the publish plan, and the image build fails on an `npm install` that
- * does not resolve.
+ * The worker it deploys is a REAL one: `aai build` of the quickstart template,
+ * built by the `guest-image` job from the same tree and handed over as an
+ * artifact. It cannot be a hand-written stub any more — the harness drives an
+ * agent entirely through the runtime the bundle ships
+ * (`__aaiCreateRuntime.host`: the HTTP server, the session gate, the workflow
+ * door) and refuses a bundle without it, so a stub would have to re-implement
+ * that internal contract and would drift from it silently. One did: it failed
+ * every spawn from the release that started requiring the surface.
  *
  * No provider is contacted: `EnvSchema` does not validate the key, and nothing
  * here starts a voice session, so the placeholder below costs nothing.
@@ -53,7 +52,7 @@
  *
  * CLI, and the deploy job's only caller:
  *   AAI_PLATFORM_URL=… AAI_API_KEY=… node scripts/smoke-spawn.mjs
- *     [--timeout-seconds N] [--interval-seconds N]
+ *     --worker <path/to/worker.mjs> [--timeout-seconds N] [--interval-seconds N]
  *
  * Its spec is `packages/aai-gates/src/smoke-spawn-gate.test.ts`. Every exported
  * function here exists to be driven from there: nothing above the CLI guard at
@@ -63,6 +62,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import process from "node:process";
 // `scheduler.wait`, matching the polling scripts this replaced.
 import { scheduler } from "node:timers/promises";
@@ -87,23 +87,6 @@ const DEFAULT_INTERVAL_SECONDS = 10;
 const REQUEST_TIMEOUT_MS = 60_000;
 
 /**
- * A worker that boots the harness and nothing else.
- *
- * Byte-for-byte the shape `agent-server-integration.test.ts` proves against a
- * real harness subprocess — the two runtime hooks the harness looks for, plus
- * the default export it reads the agent from. See the module doc for why it
- * carries no imports.
- */
-const SMOKE_WORKER = `
-export const __aaiConfig = { name: "ci-smoke" };
-export const __aaiCreateRuntime = () => ({
-  startSession: () => undefined,
-  shutdown: () => Promise.resolve(),
-});
-export default { name: "ci-smoke", systemPrompt: "p", greeting: "", tools: {} };
-`;
-
-/**
  * A slug that cannot collide with a real agent or with a previous run's leak.
  *
  * `VALID_SLUG_RE` wants `[a-z0-9][a-z0-9_-]*[a-z0-9]`, and the `-preview`
@@ -116,14 +99,19 @@ export function smokeSlug(random = () => randomBytes(5).toString("hex")) {
   return `ci-smoke-${random()}`;
 }
 
-/** The deploy body for {@link SMOKE_WORKER}. */
-export function smokeDeployBody(slug) {
+/**
+ * The deploy body for one smoke agent.
+ *
+ * @param {string} slug
+ * @param {string} worker - the built worker bundle's source
+ */
+export function smokeDeployBody(slug, worker) {
   return {
     slug,
     // Present because a deployed agent declares its provider key, and unused
     // because nothing here opens a session. Not a real credential.
     env: { ASSEMBLYAI_API_KEY: "ci-smoke-not-a-real-key" },
-    worker: SMOKE_WORKER,
+    worker,
     clientFiles: { "index.html": "<!doctype html><title>ci smoke</title>" },
   };
 }
@@ -266,10 +254,21 @@ export async function main(argv, env = process.env) {
     options: {
       "timeout-seconds": { type: "string" },
       "interval-seconds": { type: "string" },
+      worker: { type: "string" },
     },
     argv,
   });
   const { base, key } = readSettings(env);
+  // Required, for the same reason the two settings are: without it there is
+  // nothing to spawn, and a skip would read as a pass.
+  if (!flags.worker) {
+    throw new Error(
+      "--worker is required: the path to a built worker bundle (`aai build`'s " +
+        "`.aai/worker.mjs`). The ship workflow's `guest-image` job builds it and " +
+        "uploads it as the `smoke-worker` artifact.",
+    );
+  }
+  const worker = await readFile(flags.worker, "utf-8");
   const timeoutSeconds = seconds(
     flags["timeout-seconds"],
     "--timeout-seconds",
@@ -286,7 +285,7 @@ export async function main(argv, env = process.env) {
   console.log(`Smoke-spawning ${slug} on ${base}`);
   const deployed = await request({
     url: `${base}/deploy`,
-    init: { method: "POST", headers: auth, body: JSON.stringify(smokeDeployBody(slug)) },
+    init: { method: "POST", headers: auth, body: JSON.stringify(smokeDeployBody(slug, worker)) },
   });
   if (!deployed.ok) {
     console.error(
@@ -319,8 +318,11 @@ export async function main(argv, env = process.env) {
     console.log(`sandbox spawned and brokered ${spawned.detail} ✓`);
     return 0;
   } finally {
+    // No trailing slash: Hono's `mergePath` collapses the agents router's
+    // `DELETE /` to `/:slug`, so `/:slug/` matches nothing and 404s — which is
+    // how every smoke agent leaked. The same path `aai delete` uses.
     const deleted = await request({
-      url: `${base}/${slug}/`,
+      url: `${base}/${slug}`,
       init: { method: "DELETE", headers: auth },
     });
     if (deleted.ok) console.log(`cleaned up ${slug}`);

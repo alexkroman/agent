@@ -563,6 +563,26 @@ describe("the rollout is observed, not only predicted", () => {
       source.indexOf("scripts/smoke-spawn.mjs"),
     );
   });
+
+  /**
+   * The harness drives an agent through the runtime its BUNDLE ships, so the
+   * smoke worker must be a real `aai build` output — a hand-written stub cannot
+   * carry that surface and failed every spawn once the harness required it.
+   * The deploy job has no `pnpm install`, so the image job (which holds the
+   * built CLI) builds it and hands it over.
+   */
+  test("the smoke worker is a real build, handed from the image job to the spawn", () => {
+    const imageJob = withoutYamlComments(jobs.body("guest-image"));
+    expect(imageJob).toContain("name: Build the smoke worker");
+    expect(imageJob).toMatch(/aai-cli\/bin\.mjs build/);
+    expect(imageJob).toMatch(/name: smoke-worker\n/);
+    const deployJob = withoutYamlComments(jobs.body("deploy"));
+    expect(deployJob).toMatch(/name: smoke-worker\n/);
+    expect(deployJob).toMatch(/smoke-spawn\.mjs --worker /);
+    expect(deployJob.indexOf("name: Download the smoke worker")).toBeLessThan(
+      deployJob.indexOf("name: Smoke-spawn a sandbox"),
+    );
+  });
 });
 
 describe("the migration step enforces its own rules", () => {
