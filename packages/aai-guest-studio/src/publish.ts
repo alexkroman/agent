@@ -21,7 +21,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
-import { scrubDir, workspaceDependencyOptions } from "./build.ts";
+import { installWorkspaceDependencies, scrubDir } from "./build.ts";
 import { ensureProjectShape, fileExists } from "./project-shape.ts";
 import {
   CLI_OUTPUT_CAP,
@@ -30,7 +30,7 @@ import {
   runCapped,
   type SpawnCappedResult,
 } from "./spawn.ts";
-import { ensureWorkspaceDependencies, withDependencyWarning } from "./workspace-deps.ts";
+import { type EnsureDependencies, withDependencyWarning } from "./workspace-deps.ts";
 
 /** Wall-clock cap for one `aai deploy` run (cold build + upload). */
 const DEPLOY_TIMEOUT_MS = 300_000;
@@ -125,6 +125,8 @@ export async function deployWorkspaceDir(
     skipTypecheck?: boolean | undefined;
     /** Test seam: entry script spawned instead of the resolved CLI. */
     cliEntry?: string | undefined;
+    /** Test seam: defaults to {@link installWorkspaceDependencies}. */
+    ensureDependencies?: EnsureDependencies | undefined;
   },
 ): Promise<GuestPublishResult> {
   let cliEntry: string;
@@ -153,7 +155,8 @@ export async function deployWorkspaceDir(
   // no node_modules at all — whatever the manifest declares beyond the baked
   // toolchain has to be installed here or `aai deploy`'s bundler cannot resolve
   // it. Ordered after `ensureProjectShape`, so the manifest exists to install.
-  const depWarning = await ensureWorkspaceDependencies(dir, workspaceDependencyOptions());
+  const { ensureDependencies = installWorkspaceDependencies } = opts;
+  const depWarning = await ensureDependencies(dir);
   // Every failure exit carries the dependency warning, and the success exit
   // does not — stated once here rather than restated at each `return`, so a
   // fourth failure path cannot silently forget it.

@@ -173,6 +173,14 @@ export function previewQueueConformance(make: () => PreviewQueue): void {
     }
   }
 
+  /** A fresh queue holding one job under a fresh scope. */
+  async function enqueueOne() {
+    const queue = make();
+    const scope = uid();
+    await queue.enqueue({ scope, project: "p", serverUrl: "https://p.test" });
+    return { queue, scope };
+  }
+
   afterEach(async () => {
     // `archive` on an already-acked or already-archived id is a no-op on both
     // arms, so the cases that settle their own job need no exemption here.
@@ -207,17 +215,13 @@ export function previewQueueConformance(make: () => PreviewQueue): void {
   test("a claimed job is INVISIBLE to a second claim, not deleted", async () => {
     // At-least-once, by visibility timeout rather than by deletion, so a replica
     // that dies mid-deploy loses nothing.
-    const queue = make();
-    const scope = uid();
-    await queue.enqueue({ scope, project: "p", serverUrl: "https://p.test" });
+    const { queue, scope } = await enqueueOne();
     expect(await claimMine(queue, scope)).toBeDefined();
     expect(await claimMine(queue, scope)).toBeUndefined();
   });
 
   test("ack removes the job for good", async () => {
-    const queue = make();
-    const scope = uid();
-    await queue.enqueue({ scope, project: "p", serverUrl: "https://p.test" });
+    const { queue, scope } = await enqueueOne();
     const claimed = await claimMine(queue, scope);
     await queue.ack(claimed?.id ?? "");
     // Nothing to redeliver: an acked job must not come back after its
@@ -226,9 +230,7 @@ export function previewQueueConformance(make: () => PreviewQueue): void {
   });
 
   test("archive takes a job out of the queue too", async () => {
-    const queue = make();
-    const scope = uid();
-    await queue.enqueue({ scope, project: "p", serverUrl: "https://p.test" });
+    const { queue, scope } = await enqueueOne();
     const claimed = await claimMine(queue, scope);
     await queue.archive(claimed?.id ?? "");
     expect(await claimMine(queue, scope)).toBeUndefined();

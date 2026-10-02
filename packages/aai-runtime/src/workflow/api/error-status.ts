@@ -12,7 +12,7 @@
  * environmental condition reachable here is either mapped to a status or named,
  * with a reason, as one a 500 is right for. "Nobody thought about this code" is
  * what both of the window's 500-that-should-have-been-503 defects were, and
- * `workflow/api/error-classification.test.ts` is what makes silence fail: it
+ * `workflow/api/error-status.test.ts` is what makes silence fail: it
  * sweeps the codes a Node service on this platform can actually meet and requires
  * an answer for each. Three of the entries below — `ENETDOWN`, `ENOTCONN`,
  * `EAGAIN` — and the whole {@link isResourceExhausted} branch came from that
@@ -110,7 +110,7 @@ const TRANSPORT_FAILURE_CODES: ReadonlySet<string> = new Set([
   "ENETUNREACH",
   "ENETRESET",
   "EAI_AGAIN",
-  // Found by `workflow/api/error-classification.test.ts`, which requires every
+  // Found by `workflow/api/error-status.test.ts`, which requires every
   // reachable environmental code to have an ANSWER rather than requiring somebody
   // to have thought of it. All three are the same "a hop out failed" condition as
   // their neighbours and were absent only because no production incident had

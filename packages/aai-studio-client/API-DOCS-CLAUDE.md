@@ -40,8 +40,8 @@ reads it (`GET /:slug/workflows`, `GET /:slug/client-config`).
     one line (reading / could not read / declares none). A FAILED
     `client-config` defaults to voice, since `ClientConfigResponse.page` is
     optional.
-  - `panes/docs.test.tsx` pins both, each negative beside a positive — a
-    `queryByText(…)).toBeNull()` alone passes for a pane that renders nothing.
+  - `components/api-docs.test.tsx` pins both, each negative beside a positive —
+    a `queryByText(…)).toBeNull()` alone passes for a pane that renders nothing.
 - **Voice session or page is asked of the AGENT** (`client-config`), never read
   off the project's stored `kind`, which selects the coding agent's prompt and
   can disagree with what is deployed.

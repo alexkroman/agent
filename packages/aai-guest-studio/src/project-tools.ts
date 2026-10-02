@@ -70,10 +70,10 @@ const NPM_INFO_FIELDS = [
  * separate signal field would have nowhere to go.
  */
 async function npmOutput(
-  dir: string,
+  io: ProjectIo,
   args: string[],
 ): Promise<{ exitCode: number | null; output: string }> {
-  const result = await runNpm(dir, args);
+  const result = await io.runNpm(io.dir, args);
   return { exitCode: result.exitCode, output: outputWithKillNote(result, NPM_TIMEOUT_MS) };
 }
 
@@ -95,10 +95,14 @@ function npmFailure(label: string, exitCode: number | null, body: string): strin
   return `${label} failed [exit code ${exitCode}]\n${body || "(no output)"}`;
 }
 
-async function npmTool(dir: string, verb: "install" | "uninstall", spec: string): Promise<string> {
+async function npmTool(
+  io: ProjectIo,
+  verb: "install" | "uninstall",
+  spec: string,
+): Promise<string> {
   if (!PACKAGE_SPEC_RE.test(spec)) return invalidSpec(spec);
   try {
-    const { exitCode, output } = await npmOutput(dir, [verb, spec]);
+    const { exitCode, output } = await npmOutput(io, [verb, spec]);
     const body = output.trim();
     if (exitCode === 0) {
       return `npm ${verb} ${spec} succeeded${body ? `\n${body}` : ""}`;
@@ -189,7 +193,7 @@ function skipNotes(pinned: string[], undeclared: string[]): string[] {
  * not which versions the manifest now asks for — and the manifest is what the
  * build bundles.
  */
-async function updateDependencies(dir: string, requested?: string[]): Promise<string> {
+async function updateDependencies(io: ProjectIo, requested?: string[]): Promise<string> {
   const names = [...new Set(requested ?? [])];
   const invalid = names.filter((name) => !PACKAGE_NAME_RE.test(name));
   if (invalid.length > 0) {
@@ -198,7 +202,7 @@ async function updateDependencies(dir: string, requested?: string[]): Promise<st
       "Pass names only; the target version is always the registry's latest."
     );
   }
-  const manifest = await readWorkspaceManifest(dir);
+  const manifest = await readWorkspaceManifest(io.dir);
   if (manifest === null) {
     return "Error: package.json is missing or is not valid JSON — fix it before updating dependencies";
   }
@@ -210,12 +214,12 @@ async function updateDependencies(dir: string, requested?: string[]): Promise<st
   }
 
   try {
-    const { exitCode, output } = await npmOutput(dir, [
+    const { exitCode, output } = await npmOutput(io, [
       "install",
       ...targets.map((name) => `${name}@latest`),
     ]);
     const body = output.trim();
-    const after = declaredSpecs(await readWorkspaceManifest(dir));
+    const after = declaredSpecs(await readWorkspaceManifest(io.dir));
     // A failure is diffed too, and only the diff decides whether to claim
     // nothing changed: npm aborts a resolution conflict before touching the
     // manifest, but a lifecycle-script failure lands after the write, and
@@ -241,16 +245,16 @@ async function updateDependencies(dir: string, requested?: string[]): Promise<st
   }
 }
 
-async function downloadToWorkspace(dir: string, url: string, rel: string): Promise<string> {
+async function downloadToWorkspace(io: ProjectIo, url: string, rel: string): Promise<string> {
   let abs: string;
   try {
-    abs = resolveInside(dir, rel);
+    abs = resolveInside(io.dir, rel);
   } catch (err) {
     return `Error: ${errorMessage(err)}`;
   }
   let response: Response;
   try {
-    response = await safeFetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+    response = await io.safeFetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   } catch (err) {
     return `Error: fetch failed: ${errorMessage(err)}`;
   }
@@ -275,11 +279,22 @@ async function downloadToWorkspace(dir: string, url: string, rel: string): Promi
 export type ProjectToolDeps = {
   /** Absolute workspace root the session materialized. */
   dir: string;
+  /** Test seam: the npm runner. Defaults to {@link runNpm}. */
+  runNpm?: typeof runNpm | undefined;
+  /** Test seam: the SSRF-screened fetch. Defaults to {@link safeFetch}. */
+  safeFetch?: typeof safeFetch | undefined;
 };
+
+/** {@link ProjectToolDeps} with every collaborator resolved. */
+type ProjectIo = { dir: string; runNpm: typeof runNpm; safeFetch: typeof safeFetch };
 
 /** Build the dependency + asset tools over the session workspace. */
 export function createProjectTools(deps: ProjectToolDeps): Record<string, ToolDef> {
-  const { dir } = deps;
+  const io: ProjectIo = {
+    dir: deps.dir,
+    runNpm: deps.runNpm ?? runNpm,
+    safeFetch: deps.safeFetch ?? safeFetch,
+  };
   return {
     npm_info: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.npm_info,
@@ -289,7 +304,7 @@ export function createProjectTools(deps: ProjectToolDeps): Record<string, ToolDe
       execute: async ({ package: spec }) => {
         if (!PACKAGE_SPEC_RE.test(spec)) return invalidSpec(spec);
         try {
-          const { exitCode, output } = await npmOutput(dir, ["view", spec, ...NPM_INFO_FIELDS]);
+          const { exitCode, output } = await npmOutput(io, ["view", spec, ...NPM_INFO_FIELDS]);
           const body = output.trim();
           if (exitCode !== 0) {
             return npmFailure(`npm view ${spec}`, exitCode, body);
@@ -305,14 +320,14 @@ export function createProjectTools(deps: ProjectToolDeps): Record<string, ToolDe
       inputSchema: z.object({
         package: z.string().describe('npm package to install, e.g. "date-fns" or "lodash@4"'),
       }),
-      execute: ({ package: spec }) => npmTool(dir, "install", spec),
+      execute: ({ package: spec }) => npmTool(io, "install", spec),
     }),
     remove_dependency: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.remove_dependency,
       inputSchema: z.object({
         package: z.string().describe("npm package to uninstall"),
       }),
-      execute: ({ package: spec }) => npmTool(dir, "uninstall", spec),
+      execute: ({ package: spec }) => npmTool(io, "uninstall", spec),
     }),
     update_dependencies: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.update_dependencies,
@@ -325,7 +340,7 @@ export function createProjectTools(deps: ProjectToolDeps): Record<string, ToolDe
               "Omit to update every updatable package declared in package.json.",
           ),
       }),
-      execute: ({ packages }) => updateDependencies(dir, packages),
+      execute: ({ packages }) => updateDependencies(io, packages),
     }),
     download_to_workspace: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.download_to_workspace,
@@ -333,7 +348,7 @@ export function createProjectTools(deps: ProjectToolDeps): Record<string, ToolDe
         url: z.string().describe("The URL of the text file to download"),
         path: z.string().describe("Workspace-relative path to save it at, e.g. data/menu.json"),
       }),
-      execute: ({ url, path: rel }) => downloadToWorkspace(dir, url, rel),
+      execute: ({ url, path: rel }) => downloadToWorkspace(io, url, rel),
     }),
   };
 }

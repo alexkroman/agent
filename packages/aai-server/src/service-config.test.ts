@@ -20,8 +20,8 @@
  * whose whole job is holding `pg_advisory_lock` across a deploy — so the bound
  * would abort deploys, in production only, with nothing failing here.
  *
- * The `postgres` module is never reached: `createPostgresDb` is mocked, so no
- * connection is opened and what this spec reads is the options object.
+ * The `postgres` module is never reached: `createPostgresDb` is faked through
+ * the `deps` argument, so no connection is opened and what this spec reads is the options object.
  *
  * The SECOND section is the `LISTEN`'s own handle, and it is the one assertion
  * this file makes about ROUTING rather than about deadlines: a `LISTEN` is
@@ -42,7 +42,7 @@
  */
 
 import type { CloseableDb, CreatePostgresDbOptions } from "@alexkroman1/aai-runtime";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { ADMIN_POOL_MAX, SLUG_LOCK_POOL_MAX } from "./constants.ts";
 import { GUEST_TOKEN_SECRET_ENV } from "./guest/token.ts";
@@ -52,8 +52,9 @@ import {
   PLATFORM_DB_RESERVE_TIMEOUT_MS,
 } from "./platform/db-errors.ts";
 import { QUEUE_NOTIFY_LISTEN } from "./platform/db-limits.ts";
+import { createMemoryPlatformEvents } from "./platform/events.ts";
 import type { AdminDb } from "./platform/lock.ts";
-import { buildPlatformDb, buildServiceConfig } from "./service-config.ts";
+import { buildPlatformDb, buildServiceConfig, type PlatformDbDeps } from "./service-config.ts";
 
 /** Every pool `buildPlatformDb` built, in construction order. */
 const pools: CreatePostgresDbOptions[] = [];
@@ -95,21 +96,19 @@ function inertDb(url: string): CloseableDb {
   };
 }
 
-vi.mock("@alexkroman1/aai-runtime", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@alexkroman1/aai-runtime")>()),
-  createPostgresDb: (opts: CreatePostgresDbOptions) => {
+/**
+ * The constructors handed to `buildPlatformDb` / `buildServiceConfig`. The
+ * Realtime client is not this spec's subject and is the one binding here that
+ * would reach the network on construction. The in-process emitter is the same
+ * `PlatformEvents`, so nothing is faked beyond the transport.
+ */
+const deps: PlatformDbDeps = {
+  createPostgresDb: (opts) => {
     pools.push(opts);
     return inertDb(opts.url);
   },
-}));
-
-// The Realtime client is not this spec's subject and is the one binding here
-// that would reach the network on construction. The in-process emitter is the
-// same `PlatformEvents`, so nothing is faked beyond the transport.
-vi.mock("./realtime-events.ts", async () => {
-  const { createMemoryPlatformEvents } = await import("./platform/events.ts");
-  return { createRealtimePlatformEvents: () => createMemoryPlatformEvents().events };
-});
+  createRealtimePlatformEvents: () => createMemoryPlatformEvents().events,
+};
 
 /** A direct SESSION-mode string — what `assertSessionModeUrl` demands. */
 const DIRECT_URL = "postgres://postgres:pw@127.0.0.1:54322/postgres";
@@ -201,7 +200,7 @@ describe("buildPlatformDb pool wiring", () => {
   });
 
   test("the ADMIN pool bounds a RESERVED query, at the pooled deadline", () => {
-    buildPlatformDb(platformEnv());
+    buildPlatformDb(platformEnv(), deps);
     const { admin } = builtPools();
     // The same number on both paths deliberately: a reservation here is an
     // ordinary short statement (a journal read, a session-slot write), not a
@@ -213,7 +212,7 @@ describe("buildPlatformDb pool wiring", () => {
   });
 
   test("the ADMIN pool bounds the ACQUIRE too, which neither query deadline covers", () => {
-    buildPlatformDb(platformEnv());
+    buildPlatformDb(platformEnv(), deps);
     const { admin } = builtPools();
     // A statement's deadline starts once a connection is in hand, so a request
     // that never got one was bounded by nothing on this side: `reserve()` queues
@@ -227,7 +226,7 @@ describe("buildPlatformDb pool wiring", () => {
   });
 
   test("the SLUG-LOCK pool leaves a reservation UNBOUNDED", () => {
-    buildPlatformDb(platformEnv());
+    buildPlatformDb(platformEnv(), deps);
     const { slugLock } = builtPools();
     // Its reservation holds `pg_advisory_lock` for a whole deploy — blob
     // uploads, config extraction, a sandbox spawn — so either query bound
@@ -259,14 +258,14 @@ describe("buildPlatformDb pool wiring", () => {
     // thing to find out about here rather than in whichever test next assumes
     // it.
     expect(ADMIN_POOL_MAX).not.toBe(SLUG_LOCK_POOL_MAX);
-    buildPlatformDb(platformEnv());
+    buildPlatformDb(platformEnv(), deps);
     const { admin, slugLock } = builtPools();
     expect(pools[0]).toBe(admin);
     expect(pools[1]).toBe(slugLock);
   });
 
   test("the pooler routes the ADMIN pool only; the slug lock stays DIRECT", () => {
-    buildPlatformDb(platformEnv({ PLATFORM_POOLER_URL: POOLER_URL }));
+    buildPlatformDb(platformEnv({ PLATFORM_POOLER_URL: POOLER_URL }), deps);
     const { admin, slugLock } = builtPools();
     // Transaction-mode multiplexing is what keeps `ADMIN_POOL_MAX x
     // MAX_CONTAINERS` out of the instance's `max_connections`; the slug lock
@@ -284,7 +283,7 @@ describe("buildPlatformDb pool wiring", () => {
  * handle on this tier is a wiring failure and not a case to branch on.
  */
 function adminOf(env: NodeJS.ProcessEnv): AdminDb {
-  const { adminDb } = buildPlatformDb(env);
+  const { adminDb } = buildPlatformDb(env, deps);
   if (!adminDb) throw new Error("the platform tier must expose adminDb");
   return adminDb;
 }
@@ -381,9 +380,9 @@ describe("buildServiceConfig auth wiring", () => {
     // the claim is the DERIVATION — a literal `true` at the call site would pass
     // any assertion about the option object's shape while disabling verification
     // in production.
-    const strict = await buildServiceConfig(serviceEnv());
+    const strict = await buildServiceConfig(serviceEnv(), deps);
     expect(strict.keyVerifier).toBeDefined();
-    const declaredLocal = await buildServiceConfig(serviceEnv({ AAI_LOCAL_DEV: "1" }));
+    const declaredLocal = await buildServiceConfig(serviceEnv({ AAI_LOCAL_DEV: "1" }), deps);
     expect(declaredLocal.keyVerifier).toBeUndefined();
   });
 
@@ -393,7 +392,7 @@ describe("buildServiceConfig auth wiring", () => {
     // on `storage.objects` RLS and every Realtime subscribe retries forever, so
     // the service boots healthy and silently stops invalidating sandboxes.
     await expect(
-      buildServiceConfig(serviceEnv({ SUPABASE_SERVICE_ROLE_KEY: PUBLISHABLE_KEY })),
+      buildServiceConfig(serviceEnv({ SUPABASE_SERVICE_ROLE_KEY: PUBLISHABLE_KEY }), deps),
     ).rejects.toThrow(/PUBLISHABLE/);
   });
 
@@ -404,6 +403,7 @@ describe("buildServiceConfig auth wiring", () => {
     await expect(
       buildServiceConfig(
         memoryEnv({ SUPABASE_SERVICE_ROLE_KEY: PUBLISHABLE_KEY, AAI_LOCAL_DEV: "1" }),
+        deps,
       ),
     ).rejects.toThrow(/PUBLISHABLE/);
   });
@@ -414,13 +414,13 @@ describe("buildServiceConfig auth wiring", () => {
     // not fall back to the no-auth dev-token implementation. Free to assert now
     // the fixture exists, and the same failure direction as the three above.
     const { SUPABASE_PUBLISHABLE_KEY: _dropped, ...noBrowserAuth } = serviceEnv();
-    await expect(buildServiceConfig(noBrowserAuth)).rejects.toThrow(/dev tokens/);
+    await expect(buildServiceConfig(noBrowserAuth, deps)).rejects.toThrow(/dev tokens/);
     // The memory tier is where that implementation is legitimate.
-    await expect(buildServiceConfig(memoryEnv())).resolves.toBeDefined();
+    await expect(buildServiceConfig(memoryEnv(), deps)).resolves.toBeDefined();
   });
 
   test("the guest-token warning follows hasPlatformDb: a platform db WARNS", async () => {
-    await buildServiceConfig(serviceEnv());
+    await buildServiceConfig(serviceEnv(), deps);
     expect(logs.warns().filter((w) => w.includes(GUEST_TOKEN_SECRET_ENV))).toHaveLength(1);
   });
 
@@ -428,7 +428,7 @@ describe("buildServiceConfig auth wiring", () => {
     // The other half of the same derived argument: a deployment with no platform
     // database has no peer for a per-process token to be unreachable from, so a
     // hardcoded `true` would warn here about a degradation that cannot exist.
-    await buildServiceConfig(memoryEnv());
+    await buildServiceConfig(memoryEnv(), deps);
     expect(logs.warns().filter((w) => w.includes(GUEST_TOKEN_SECRET_ENV))).toHaveLength(0);
   });
 });

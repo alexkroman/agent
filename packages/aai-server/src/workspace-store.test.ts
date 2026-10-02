@@ -10,7 +10,7 @@ import {
   refusingDdl,
   type SqlHandler,
 } from "./_sql-test-utils.ts";
-import { workspaceStoreConformance } from "./store-conformance-cases.ts";
+import { workspaceStoreConformance } from "./store-conformance-test-defs.ts";
 import { createMemoryWorkspaceStore, createPgWorkspaceStore } from "./workspace-store.ts";
 
 /**

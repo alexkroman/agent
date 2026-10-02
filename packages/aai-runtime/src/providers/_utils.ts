@@ -52,6 +52,30 @@ export function requireApiKey(
   return explicit;
 }
 
+/**
+ * The slice of a `ws` client socket the raw-`ws` openers drive.
+ *
+ * Structural rather than `ws`'s class so a spec's fake socket is one with no
+ * cast — a real `ws` client cannot stand in, because `new WebSocket(null)`
+ * dereferences options its types do not take. Every real `ws` client is one.
+ */
+export interface ProviderSocket {
+  readonly readyState: number;
+  /** Unsent bytes, read by the audio backpressure gate; a fake may omit it. */
+  readonly bufferedAmount?: number | undefined;
+  on(event: "message", fn: (data: WebSocket.RawData, isBinary: boolean) => void): unknown;
+  on(event: "error", fn: (err: Error) => void): unknown;
+  on(event: "close", fn: (code: number, reason: Buffer) => void): unknown;
+  on(event: "open", fn: () => void): unknown;
+  off(event: string, fn: (...args: unknown[]) => void): unknown;
+  removeAllListeners(): unknown;
+  /** `ws`'s two `send` overloads, the shape a `ws` client has. */
+  send: ((data: string | Uint8Array) => void) &
+    ((data: string | Uint8Array, options: { binary?: boolean }) => void);
+  close(code?: number): void;
+  terminate(): void;
+}
+
 /** Bound and abort-wire one socket open — see {@link waitForOpen}. */
 export interface WaitForOpenOptions {
   /**
@@ -70,7 +94,10 @@ export interface WaitForOpenOptions {
  * SYN or a stalled proxy emits neither), or with the signal's reason if the
  * session aborts first.
  */
-export async function waitForOpen(ws: WebSocket, opts: WaitForOpenOptions = {}): Promise<void> {
+export async function waitForOpen(
+  ws: ProviderSocket,
+  opts: WaitForOpenOptions = {},
+): Promise<void> {
   // rejects on "error" (p-event's default rejectionEvents)
   await pEvent(ws, "open", omitUndefined({ timeout: opts.timeoutMs, signal: opts.signal }));
 }

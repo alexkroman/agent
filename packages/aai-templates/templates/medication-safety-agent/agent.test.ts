@@ -8,9 +8,11 @@ import {
   toolInputIssues,
 } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { excerptAround, type FdaLabel, toDrugInfo } from "./fda.ts";
-import CheckDrugInteraction from "./tools/check_drug_interaction.ts";
-import MedicationLookup from "./tools/medication_lookup.ts";
+import { excerptAround, type FdaLabel, type LabelLookup, toDrugInfo } from "./fda.ts";
+import type CheckDrugInteraction from "./tools/check_drug_interaction.ts";
+import { checkDrugInteraction } from "./tools/check_drug_interaction.ts";
+import type MedicationLookup from "./tools/medication_lookup.ts";
+import { medicationLookup } from "./tools/medication_lookup.ts";
 
 /**
  * Only the NETWORK half of `fda.ts` is faked.
@@ -18,17 +20,10 @@ import MedicationLookup from "./tools/medication_lookup.ts";
  * `fetchFdaLabel` is the one function in this template that leaves the process,
  * so it is the one thing a unit test may not run — everything the tools are
  * actually about (the cross-mention scan, the refuse-on-a-missing-drug rule,
- * the field folding) is pure and stays real. `importActual` rather than a whole
- * module stub for exactly that reason: a fully mocked `fda.ts` would leave
- * `toDrugInfo` returning `undefined` and the tools passing over nothing.
+ * the field folding) is pure and stays real. Each tool takes its lookup as an
+ * argument, so the fake is handed in rather than swapped into `fda.ts`.
  */
-vi.mock("./fda.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./fda.ts")>()),
-  fetchFdaLabel: vi.fn(),
-}));
-
-const { fetchFdaLabel } = await import("./fda.ts");
-const label = vi.mocked(fetchFdaLabel);
+const label = vi.fn<LabelLookup>();
 
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
@@ -48,13 +43,15 @@ import agentDef from "virtual:aai/agent";
  * the zod schema the tool really declares, so a renamed or retyped field breaks
  * the BUILD here and the two files cannot drift apart quietly.
  *
- * Handed the tool FILE's default export — the very object `agentDef` registers
- * under that name — `runTool` types the result as the tool's own return, so a
- * spec reading a field needs no cast.
+ * Handed the tool FILE's own factory — the one its default export, the very
+ * object `agentDef` registers under that name, is built by — over the fake
+ * lookup, `runTool` types the result as the tool's own return, so a spec
+ * reading a field needs no cast.
  */
-const lookUp = (args: InferToolInput<typeof MedicationLookup>) => runTool(MedicationLookup, args);
+const lookUp = (args: InferToolInput<typeof MedicationLookup>) =>
+  runTool(medicationLookup(label), args);
 const check = (args: InferToolInput<typeof CheckDrugInteraction>) =>
-  runTool(CheckDrugInteraction, args);
+  runTool(checkDrugInteraction(label), args);
 
 const IBUPROFEN: FdaLabel = {
   openfda: { generic_name: ["IBUPROFEN"], brand_name: ["Advil"], manufacturer_name: ["Acme"] },

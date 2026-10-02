@@ -10,17 +10,15 @@
 
 import { readdir } from "node:fs/promises";
 import { materialize } from "aai-guest-core/test-utils";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { buildWorkspaceDir, typecheckWorkspaceDir, withBuildDir, workspacesRoot } from "./build.ts";
-import { ensureWorkspaceDependencies } from "./workspace-deps.ts";
+import type { EnsureDependencies } from "./workspace-deps.ts";
 
-// Mocked for both directions: it keeps a build here from ever spawning a real
-// `npm install`, and it is the only way to drive the warning path without one.
-// Its own behaviour is covered in studio/workspace-deps.test.ts.
-vi.mock("./workspace-deps.ts", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("./workspace-deps.ts")>();
-  return { ...mod, ensureWorkspaceDependencies: vi.fn(() => Promise.resolve(null)) };
-});
+// The dependency install is handed in for both directions: it keeps a build
+// here from ever spawning a real `npm install`, and it is the only way to drive
+// the warning path without one. Its own behaviour is covered in
+// studio/workspace-deps.test.ts.
+const noInstall: EnsureDependencies = () => Promise.resolve(null);
 
 describe("withBuildDir", () => {
   test("materializes into a fresh dir under the workspaces root and cleans up", async () => {
@@ -93,7 +91,8 @@ describe("buildWorkspaceDir", () => {
         "agent.ts": `export const n: number = "nope";\n`,
       },
       materialize,
-      (dir) => buildWorkspaceDir(dir, { worker: true, client: false }),
+      (dir) =>
+        buildWorkspaceDir(dir, { worker: true, client: false }, { ensureDependencies: noInstall }),
     );
     expect(result.worker).toBeUndefined();
     expect(result.buildError).toContain("Type check failed");
@@ -105,7 +104,6 @@ describe("buildWorkspaceDir", () => {
   test("a dependency that would not install is named ahead of the failure it causes", async () => {
     // Without this the agent reads only the bundler's "failed to resolve
     // import", naming a package its own package.json plainly declares.
-    vi.mocked(ensureWorkspaceDependencies).mockResolvedValueOnce("Could not install ms");
     const result = await withBuildDir(
       {
         // Same tsconfig as the test above, so this fails at the typecheck
@@ -116,7 +114,12 @@ describe("buildWorkspaceDir", () => {
         "agent.ts": `export const n: number = "nope";\n`,
       },
       materialize,
-      (dir) => buildWorkspaceDir(dir, { worker: true, client: false }),
+      (dir) =>
+        buildWorkspaceDir(
+          dir,
+          { worker: true, client: false },
+          { ensureDependencies: () => Promise.resolve("Could not install ms") },
+        ),
     );
     expect(result.buildError).toMatch(/^Could not install ms/);
   });

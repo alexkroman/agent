@@ -68,7 +68,7 @@ export function queueReducer(state: MessageQueue, action: QueueAction): MessageQ
       // must not let the next render start a turn.
       //
       // It also must not hand the dispatched message BACK, which is the half
-      // that took a property to settle (`message-queue-conservation.test.ts`).
+      // that took a property to settle (`hooks/use-message-queue.test.ts`).
       // Between the chat accepting a handover and the next render, the message
       // is already in the transcript while the latch is still armed — so a
       // Stop that drained it would put a second copy in the composer, and the

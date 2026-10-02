@@ -5,48 +5,26 @@
 
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-// Mock createBrowserSession to avoid real WebSocket connections. PARTIAL: the
-// mock session in `_react-test-utils.ts` reads `CLEARED_SESSION_STATE` from the
-// same module.
-vi.mock("./session/index.ts", async (importOriginal) => {
-  const snapshot = {
-    state: "disconnected" as const,
-    messages: [],
-    toolCalls: [],
-    userTranscript: null,
-    agentTranscript: null,
-    error: null,
-    started: false,
-    running: false,
-  };
-  return {
-    ...(await importOriginal<object>()),
-    createBrowserSession: vi.fn(() => ({
-      getSnapshot: () => snapshot,
-      subscribe: () => () => undefined,
-      connect: vi.fn(),
-      cancel: vi.fn(),
-      resetState: vi.fn(),
-      reset: vi.fn(),
-      disconnect: vi.fn(),
-      start: vi.fn(),
-      toggle: vi.fn(),
-      end: vi.fn(),
-      [Symbol.dispose]: vi.fn(),
-    })),
-  };
-});
-
 import { createMockSessionCore, flushEffects } from "./_react-test-utils.ts";
 import { type ToolDisplayConfig, useToolConfig } from "./components/tool-config-context.ts";
-import { mountClient } from "./define-client.tsx";
-import { createBrowserSession } from "./session/index.ts";
+import { type ClientConfig, mountClientWith } from "./define-client.tsx";
+import type { createBrowserSession } from "./session/index.ts";
 
 /** A core the default shell will render its children under. */
 function startedCore() {
   return createMockSessionCore({ state: "ready", started: true });
 }
+
+/**
+ * The session factory, faked so no test opens a real WebSocket: an idle core
+ * by default, which a test can override per call.
+ */
+const createSession = vi.fn<typeof createBrowserSession>(() =>
+  createMockSessionCore({ running: false }),
+);
+
+/** `mountClient`, over the faked session factory. */
+const mountClient = (config: ClientConfig) => mountClientWith(config, createSession);
 
 describe("mountClient", () => {
   let container: HTMLElement;
@@ -108,12 +86,10 @@ describe("mountClient", () => {
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
-    const core = vi.mocked(createBrowserSession).mock.results[0]?.value as {
-      [Symbol.dispose]: ReturnType<typeof vi.fn>;
-    };
-    expect(core[Symbol.dispose]).not.toHaveBeenCalled();
+    const dispose = vi.spyOn(handle.session, Symbol.dispose);
+    expect(dispose).not.toHaveBeenCalled();
     handle.dispose();
-    expect(core[Symbol.dispose]).toHaveBeenCalledOnce();
+    expect(dispose).toHaveBeenCalledOnce();
   });
 
   it("Symbol.dispose aliases dispose", () => {
@@ -197,9 +173,8 @@ describe("mountClient", () => {
       pathname: "/agent/",
       href: "https://example.com/agent/",
     });
-    const mockedCreateSessionCore = vi.mocked(createBrowserSession);
     const handle = mountClient({ name: "Test", target: container });
-    expect(mockedCreateSessionCore).toHaveBeenCalledWith(
+    expect(createSession).toHaveBeenCalledWith(
       expect.objectContaining({ platformUrl: "https://example.com/agent/" }),
     );
     handle.dispose();
@@ -320,7 +295,7 @@ describe("mountClient", () => {
     function Aside() {
       return createElement("div", { "data-testid": "aside" }, "Aside");
     }
-    vi.mocked(createBrowserSession).mockReturnValueOnce(startedCore());
+    createSession.mockReturnValueOnce(startedCore());
     const handle = mountClient({
       name: "T",
       sidebar: Aside,

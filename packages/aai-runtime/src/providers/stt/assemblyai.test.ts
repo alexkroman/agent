@@ -18,15 +18,10 @@ import type { TurnEvent } from "assemblyai";
 import { describe, expect, test, vi } from "vitest";
 import { flush } from "../../_timing-test-utils.ts";
 import type { SttTurnMeta } from "../openers.ts";
-import { fakeOf, openSessionWith } from "./_assemblyai-test-utils.ts";
+import { fakeOf, fakeTranscriber, openSessionWith } from "./_assemblyai-test-utils.ts";
 import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-
-vi.mock("assemblyai", async () => {
-  const { assemblyAIModuleMock } = await import("./_assemblyai-test-utils.ts");
-  return assemblyAIModuleMock();
-});
 
 async function openSession(
   providerOpts: Parameters<typeof openAssemblyAI>[0],
@@ -174,7 +169,7 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
     // turn_is_formatted on the trace, an STT revision is indistinguishable
     // from the transport dropping a final.
     const { open, debugSpy } = await withDebugModule();
-    const provider = open({ model: "u3pro-rt" });
+    const provider = open({ model: "u3pro-rt" }, fakeTranscriber);
     const session = (await provider.open({
       sampleRate: 16_000,
       apiKey: "k",
@@ -215,7 +210,7 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
     // The adapter returns early on empty text; without a trace those events
     // are invisible, and "STT went quiet" looks the same as "no audio".
     const { open, debugSpy } = await withDebugModule();
-    const provider = open({ model: "u3pro-rt" });
+    const provider = open({ model: "u3pro-rt" }, fakeTranscriber);
     const session = (await provider.open({
       sampleRate: 16_000,
       apiKey: "k",

@@ -7,15 +7,8 @@ import { flush } from "../../_timing-test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
 // The shared TTS fake, not a fourth copy of it — see its module comment for
 // the divergence three hand-rolled copies had already produced.
-import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
+import { createFakeWebSocket, FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
 import { openRime, type RimeSession } from "./rime.ts";
-
-// Async factory importing an import-free module: the adapter's own "ws"
-// import must not be reachable from the factory (it would re-enter the mock).
-vi.mock("ws", async () => {
-  const { FakeWebSocket } = await import("./_fake-ws-test-utils.ts");
-  return { default: FakeWebSocket, WebSocket: FakeWebSocket };
-});
 
 beforeEach(() => {
   FakeWebSocket.reset();
@@ -34,7 +27,7 @@ async function openSession(
   ws: FakeWebSocket;
   controller: AbortController;
 }> {
-  const opener = openRime(opts);
+  const opener = openRime(opts, createFakeWebSocket);
   const controller = new AbortController();
 
   const openPromise = opener.open({
@@ -54,7 +47,7 @@ async function openSession(
 
 describe("rime TTS adapter", () => {
   test("openRime returns an opener with name 'rime'", () => {
-    const opener = openRime({ voice: "cove" });
+    const opener = openRime({ voice: "cove" }, createFakeWebSocket);
     expect(opener.name).toBe("rime");
   });
 
@@ -95,7 +88,7 @@ describe("rime TTS adapter", () => {
   });
 
   test("open() throws tts_auth_failed when API key is missing", async () => {
-    const opener = openRime({ voice: "cove" });
+    const opener = openRime({ voice: "cove" }, createFakeWebSocket);
     const controller = new AbortController();
 
     const openPromise = opener.open({
@@ -115,7 +108,7 @@ describe("rime TTS adapter", () => {
     // with no owner.
     FakeWebSocket.neverOpen = true;
     const controller = new AbortController();
-    const openPromise = openRime({ voice: "cove" }).open({
+    const openPromise = openRime({ voice: "cove" }, createFakeWebSocket).open({
       sampleRate: 16_000,
       apiKey: "test-key",
       signal: controller.signal,
@@ -136,7 +129,7 @@ describe("rime TTS adapter", () => {
     // this the session's own hang-up could not reach a socket still connecting.
     FakeWebSocket.neverOpen = true;
     const controller = new AbortController();
-    const openPromise = openRime({ voice: "cove" }).open({
+    const openPromise = openRime({ voice: "cove" }, createFakeWebSocket).open({
       sampleRate: 16_000,
       apiKey: "test-key",
       signal: controller.signal,
@@ -293,12 +286,12 @@ describe("rime TTS adapter", () => {
 
   test("close() drops the session listeners but leaves a no-op error guard", async () => {
     const { session, ws } = await openSession();
-    expect(ws.listenerCount()).toBeGreaterThan(1);
+    expect(ws.listenersTotal()).toBeGreaterThan(1);
     await session.close();
     // The session's message/close/error handlers are gone; only a single
     // no-op `error` guard remains so a late error during the close handshake
     // can't crash the process.
-    expect(ws.listenerCount()).toBe(1);
+    expect(ws.listenersTotal()).toBe(1);
     expect(() => ws._fire("error", new Error("late reset"))).not.toThrow();
   });
 });

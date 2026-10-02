@@ -13,33 +13,44 @@
  * options.
  */
 
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  blobFetch,
+  closeEgressFetch,
+  EGRESS_RPC_HTTP2_ENV,
+  egressDeps,
+  egressRpcAllowsH2,
+  rpcFetch,
+} from "./_egress-fetch.ts";
+import { createEgressPool, type EgressPoolOptions } from "./_egress-pool.ts";
+import { platformPost } from "./platform/index.ts";
+import { createBrokeredUploadBlobs, createHttpUploadBackend } from "./uploads/index.ts";
 
-const agentOptions: unknown[] = [];
+const agentOptions: EgressPoolOptions[] = [];
 /** One entry per pool `close()` — a drain is DRAINED, never destroyed. */
 const closes: number[] = [];
-const requests: { url: unknown; init: Record<string, unknown> }[] = [];
+const requests: { url: unknown; init: (RequestInit & { dispatcher?: unknown }) | undefined }[] = [];
 
-vi.mock("undici", () => ({
-  Agent: class {
-    constructor(options: unknown) {
-      agentOptions.push(options);
-    }
-    async close(): Promise<void> {
-      closes.push(agentOptions.length);
-    }
-  },
-  fetch: vi.fn(async (url: unknown, init: Record<string, unknown>) => {
+// Both collaborators are swapped through the module's own seam: the pool is the
+// real one (an undici `Agent` opens nothing until a request reaches it), with its
+// options and closes recorded; the request never leaves the process.
+beforeEach(() => {
+  vi.spyOn(egressDeps, "createPool").mockImplementation((options) => {
+    agentOptions.push(options);
+    const pool = createEgressPool(options);
+    return {
+      dispatcher: pool.dispatcher,
+      async close(): Promise<void> {
+        closes.push(agentOptions.length);
+        await pool.close();
+      },
+    };
+  });
+  vi.spyOn(egressDeps, "fetch").mockImplementation(async (url, init) => {
     requests.push({ url, init });
     return new Response("ok", { headers: { "content-length": "2" } });
-  }),
-}));
-
-const { blobFetch, closeEgressFetch, EGRESS_RPC_HTTP2_ENV, egressRpcAllowsH2, rpcFetch } =
-  await import("./_egress-fetch.ts");
-const { createBrokeredUploadBlobs } = await import("./uploads/index.ts");
-const { createHttpUploadBackend } = await import("./uploads/index.ts");
-const { platformPost } = await import("./platform/index.ts");
+  });
+});
 
 /** Forget any pool a previous test built, so `agentOptions` counts this test's. */
 async function fresh(): Promise<void> {
@@ -78,8 +89,8 @@ describe("the RPC pool", () => {
   test("attaches that pool's dispatcher to every request", async () => {
     await fresh();
     await rpcFetch("https://platform.test/x", { method: "HEAD" });
-    expect(requests[0]?.init.dispatcher).toBeDefined();
-    expect(requests[0]?.init.method).toBe("HEAD");
+    expect(requests[0]?.init?.dispatcher).toBeDefined();
+    expect(requests[0]?.init?.method).toBe("HEAD");
   });
 });
 
@@ -108,7 +119,7 @@ describe("the RPC pool's HTTP/2 switch", () => {
     await fresh();
     await rpcFetch("https://platform.test/a");
     expect(agentOptions[0]).toMatchObject({ allowH2: true });
-    expect((agentOptions[0] as { pipelining: number }).pipelining).toBeGreaterThan(1);
+    expect(agentOptions[0]?.pipelining).toBeGreaterThan(1);
   });
 
   test("does not reach the BYTE pool, which has no switch to offer", async () => {
@@ -128,7 +139,7 @@ describe("the two pools are two pools", () => {
     await blobFetch("https://bucket.test/c");
     expect(agentOptions).toHaveLength(2);
     // Different dispatchers, which is the whole of the isolation claim.
-    expect(requests[0]?.init.dispatcher).not.toBe(requests[1]?.init.dispatcher);
+    expect(requests[0]?.init?.dispatcher).not.toBe(requests[1]?.init?.dispatcher);
   });
 
   test("a process that only ever RPCs never opens the byte pool", async () => {
@@ -187,7 +198,7 @@ describe("the runtime's own callers default to it", () => {
     await blobs.size("prefix/upl_1/0");
     expect(global).not.toHaveBeenCalled();
     expect(agentOptions[0]).toMatchObject({ allowH2: false });
-    expect(requests[0]?.init.method).toBe("HEAD");
+    expect(requests[0]?.init?.method).toBe("HEAD");
   });
 
   test("the operator's own bucket, reached the same way", async () => {

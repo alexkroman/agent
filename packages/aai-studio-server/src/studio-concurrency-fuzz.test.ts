@@ -10,7 +10,7 @@
  * These are property tests, not scenario tests: fast-check builds a different
  * interleaving of edits, drains and deploy failures on every run, then asserts
  * invariants that must hold for EVERY interleaving. The example-based suite
- * next door (`studio-preview-deploy.test.ts`) pins the specific orderings that
+ * next door (`studio-preview.test.ts`) pins the specific orderings that
  * once broke; this one covers the orderings nobody thought to write down. Both
  * matter — the bugs here are the kind that survive a green example suite
  * because they need three things to land in one particular order.

@@ -54,7 +54,7 @@ A NON-fatal error (`fatal: false`) is still retired by later activity.
 - **XState falls through to an ancestor's handler when a child's guard fails**,
   so every handler that clears the banner carries the fatal guard.
 - A declined transition returns the position unchanged; `updateState` drops
-  snapshots that differ in nothing (pinned by `events.test.ts`).
+  snapshots that differ in nothing (pinned by `messages.test.ts`).
 
 ## The audio path is a statechart (`audio-state.ts`)
 

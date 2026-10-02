@@ -3,7 +3,7 @@
  * The two routes that wake a project's preview, at the wiring level — what
  * reaches `wakeProjectPreview` and with what. The wake's own behaviour (the
  * broker 404 check, the stale-redeploy gates, the sandbox warm-up) is
- * studio-preview.test.ts.
+ * studio-preview-wake.test.ts.
  *
  * They are one file because they are one mechanism with two triggers, and the
  * pair is the whole point: the session call fires ONCE per project open, so on

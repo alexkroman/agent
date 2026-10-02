@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { requireDeployedSlug, resolveDeployTarget } from "./_agent.ts";
+import { requireDeployedSlug } from "./_agent.ts";
 import { type ApiTestSeam, apiRequest, apiTestSeam, HINT_NOT_DEPLOYED } from "./_api-client.ts";
 import { writeProjectConfig } from "./_config.ts";
 import { type CommandResult, ok } from "./_output.ts";
-import { studioProjectApiUrl } from "./_studio.ts";
+import { REAL_STUDIO_DEPS, type StudioDeps, studioProjectApiUrl } from "./_studio.ts";
 import { defaultUi, type Ui } from "./_ui.ts";
 
 export type DeleteOpts = ApiTestSeam & {
@@ -14,8 +14,11 @@ export type DeleteOpts = ApiTestSeam & {
   apiKey: string;
 };
 
-export async function runDelete(opts: DeleteOpts): Promise<void> {
-  await apiRequest(`${opts.url}/${opts.slug}`, {
+export async function runDelete(
+  opts: DeleteOpts,
+  request: typeof apiRequest = apiRequest,
+): Promise<void> {
+  await request(`${opts.url}/${opts.slug}`, {
     method: "DELETE",
     apiKey: opts.apiKey,
     action: "delete",
@@ -39,14 +42,15 @@ export async function executeDelete(
     server?: string | undefined;
   },
   ui: Ui = defaultUi,
+  deps: StudioDeps = REAL_STUDIO_DEPS,
 ): Promise<CommandResult<DeleteData>> {
   const { cwd } = opts;
-  const { config, serverUrl, apiKey } = await resolveDeployTarget(cwd, opts.server);
+  const { config, serverUrl, apiKey } = await deps.resolveDeployTarget(cwd, opts.server);
 
   if (config?.studioProject) {
     const project = config.studioProject;
     ui.log.step(`Deleting studio project ${project} (and its deployed agents)`);
-    await apiRequest(studioProjectApiUrl(serverUrl, project), {
+    await deps.apiRequest(studioProjectApiUrl(serverUrl, project), {
       method: "DELETE",
       apiKey,
       action: "delete",
@@ -72,7 +76,7 @@ export async function executeDelete(
   // would have returned is already in scope.
   const slug = requireDeployedSlug(config);
   ui.log.step(`Deleting ${slug}`);
-  await runDelete({ url: serverUrl, slug, apiKey });
+  await runDelete({ url: serverUrl, slug, apiKey }, deps.apiRequest);
   ui.log.success(`Deleted ${serverUrl}/${slug}`);
   return ok({ slug });
 }

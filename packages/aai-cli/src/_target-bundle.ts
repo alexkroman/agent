@@ -31,6 +31,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { invariant } from "@alexkroman1/aai/internal";
 import { build, type Rollup } from "vite";
+import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
 
 /**
@@ -236,4 +237,30 @@ export async function targetPathExists(target: string): Promise<boolean> {
     () => true,
     () => false,
   );
+}
+
+/**
+ * Files copied verbatim into a target's output, each one read at RUNTIME by a
+ * path no bundler can see. A missing one is skipped rather than fatal.
+ *
+ * **`.env` is deliberately NOT here.** `resolveServerEnv` reads
+ * `DEPLOY_ENV_FILES` — `.env.example` then `.env` — but only the first is a
+ * DECLARATION; the second holds a developer's own keys, and copying it would
+ * bake them into a deployment artifact and let them silently win over the
+ * values set in the target's own environment. Declarations ship, values come
+ * from the platform environment. Verified by building the `quickstart-agent`
+ * template for Vercel: a local `.env` with live credentials landed in the
+ * function until this list dropped it.
+ */
+const RUNTIME_FILES: readonly string[] = [WORKER_ARTIFACT_REL, ".env.example"];
+
+/** Copy each {@link RUNTIME_FILES} entry that exists under `cwd` into `outDir`. */
+export async function copyRuntimeFiles(cwd: string, outDir: string): Promise<void> {
+  for (const rel of RUNTIME_FILES) {
+    const from = path.join(cwd, rel);
+    if (!(await targetPathExists(from))) continue;
+    const to = path.join(outDir, rel);
+    await fs.mkdir(path.dirname(to), { recursive: true });
+    await fs.copyFile(from, to);
+  }
 }

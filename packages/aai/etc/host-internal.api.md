@@ -736,6 +736,11 @@ export function describeProvider<Kind extends string>(definition: ProviderDefini
 // @internal
 export const DETACHED_SESSION_SPEECH: SessionSpeech;
 
+// @internal
+export type DnsLookup = (hostname: string) => Promise<{
+    address: string;
+}>;
+
 // @public
 export const ELEVENLABS_API_KEY_ENV: string;
 
@@ -1555,7 +1560,7 @@ interface SonioxSttOptions extends ProviderCredentialOptions {
     model?: string;
 }
 
-// @public
+// @public (undocumented)
 export type SpawnCappedResult = {
     exitCode: number | null;
     signal: NodeJS.Signals | null;
@@ -1606,7 +1611,7 @@ export type SpeechSynthesizer = (request: {
 }) => Promise<Uint8Array>;
 
 // @internal
-export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
+export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch, lookupFn?: DnsLookup): Promise<Response>;
 
 // @public
 export function stageMembers<D>(descriptor: D | undefined): (D | {

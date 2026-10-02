@@ -10,7 +10,7 @@ import {
 import { DEFAULT_STT_PROMPT } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_STT_EU_URL, type AssemblyAISttOptions } from "@alexkroman1/aai/stt";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
+import { AssemblyAI, type StreamingTranscriber, type StreamingTranscriberParams } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { createAudioSendGate } from "../../_audio-gate.ts";
 import { consoleLogger } from "../../logger.ts";
@@ -33,9 +33,34 @@ import {
 import { isCommittingTurn, turnWordSpanMs } from "./_assemblyai-turn.ts";
 import { createInputLevelLedger } from "./_input-level-ledger.ts";
 
+/**
+ * The slice of the SDK's `StreamingTranscriber` this adapter drives.
+ *
+ * @internal
+ */
+export type AssemblyAITranscriber = Pick<
+  StreamingTranscriber,
+  "on" | "connect" | "close" | "sendAudio" | "updateConfiguration" | "forceEndpoint"
+>;
+
+/**
+ * Build the transcriber for one session — the seam a spec hands a fake through
+ * (see {@link openAssemblyAI}).
+ *
+ * @internal
+ */
+export type CreateAssemblyAITranscriber = (
+  apiKey: string,
+  params: StreamingTranscriberParams,
+) => AssemblyAITranscriber;
+
+/** The production {@link CreateAssemblyAITranscriber}: the real SDK client. */
+const sdkTranscriber: CreateAssemblyAITranscriber = (apiKey, params) =>
+  new AssemblyAI({ apiKey }).streaming.transcriber(params);
+
 export interface AssemblyAISession extends SttSession {
   /** @internal Test-only: exposes the underlying SDK transcriber for fixture replay. */
-  readonly _transcriber: StreamingTranscriber;
+  readonly _transcriber: AssemblyAITranscriber;
 }
 
 function supportsFormatTurns(resolvedSpeechModel: string): boolean {
@@ -59,7 +84,7 @@ function supportsFormatTurns(resolvedSpeechModel: string): boolean {
  *
  * @internal Exported for the connect-timeout regression test only.
  */
-export function suppressDiscardedSocketError(transcriber: StreamingTranscriber): void {
+export function suppressDiscardedSocketError(transcriber: AssemblyAITranscriber): void {
   const internals = transcriber as unknown as {
     socket?: { once?: (event: string, fn: () => void) => unknown };
     discardPendingSocket?: (this: unknown) => void;
@@ -85,7 +110,7 @@ export function suppressDiscardedSocketError(transcriber: StreamingTranscriber):
  * {@link suppressDiscardedSocketError} already relies on; if the SDK renames
  * its internals the probe degrades to `undefined` and the gate is skipped.
  */
-function transcriberBufferedAmount(transcriber: StreamingTranscriber): number | undefined {
+function transcriberBufferedAmount(transcriber: AssemblyAITranscriber): number | undefined {
   const socket = (transcriber as unknown as { socket?: { bufferedAmount?: unknown } }).socket;
   const buffered = socket?.bufferedAmount;
   return typeof buffered === "number" ? buffered : undefined;
@@ -182,7 +207,10 @@ function buildTranscriberParams(
   return { params, awaitingFormatted, settings };
 }
 
-export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
+export function openAssemblyAI(
+  opts: AssemblyAISttOptions = {},
+  createTranscriber: CreateAssemblyAITranscriber = sdkTranscriber,
+): SttOpener {
   return {
     name: "assemblyai",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
@@ -193,7 +221,6 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
         (msg) => createSttError("stt_auth_failed", msg),
       );
 
-      const client = new AssemblyAI({ apiKey });
       const {
         params: transcriberParams,
         awaitingFormatted,
@@ -209,8 +236,9 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
        * partial for the length of the call.
        */
       let currentMinTurnSilenceMs = settings.minTurnSilenceMs;
-      const transcriber = client.streaming.transcriber(
-        transcriberParams as Parameters<typeof client.streaming.transcriber>[0],
+      const transcriber = createTranscriber(
+        apiKey,
+        transcriberParams as StreamingTranscriberParams,
       );
       suppressDiscardedSocketError(transcriber);
 

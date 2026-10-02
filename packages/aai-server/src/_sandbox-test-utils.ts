@@ -30,9 +30,9 @@ export function fakeSandbox(overrides: Partial<Sandbox> = {}): Sandbox {
  * Overrides are spread last (a busy or dead guest replaces
  * `activeSessions`/`alive`).
  *
- * A suite mocking `spawnAgentServer` arms this in a `beforeEach`, not in its
- * `vi.hoisted` factory: that factory runs before imports initialize, and a
- * hoisted `vi.fn()` is never reset by `restoreMocks`.
+ * A suite faking `spawnAgentServer` (the `spawnAgentServer` option on
+ * `SandboxOptions` / `ResolveSandboxOpts` / `OrchestratorOpts`) arms this in a
+ * `beforeEach`: a module-level `vi.fn()` is never reset by `restoreMocks`.
  */
 export function spawnedAgent(overrides: Partial<AgentServerHandle> = {}): AgentServerHandle {
   return {

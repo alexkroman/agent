@@ -8,29 +8,30 @@
  * seam is "what the adapter does with a live stream" against "what it dials
  * with", and both halves need the same fake transcriber.
  *
- * `vi.mock` is hoisted above imports, so a suite cannot hand
- * {@link assemblyAIModuleMock} to it directly — call it from an ASYNC factory
- * that `await import`s this module:
- *
- * ```ts no-check
- * vi.mock("assemblyai", async () => {
- *   const { assemblyAIModuleMock } = await import("./_assemblyai-test-utils.ts");
- *   return assemblyAIModuleMock();
- * });
- * ```
+ * The fake reaches the adapter through `openAssemblyAI`'s `createTranscriber`
+ * seam ({@link fakeTranscriber}), so no suite replaces the `assemblyai` module.
  */
 
-import type { AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
+import type { BeginEvent, StreamingTranscriberParams } from "assemblyai";
+import type {
+  AssemblyAISession,
+  CreateAssemblyAITranscriber,
+  openAssemblyAI,
+} from "./assemblyai.ts";
 
-/** The stand-in the mocked `assemblyai` module hands the adapter. */
+/** A listener as the fake stores it: fired with whatever a test hands `_fire`. */
+type Listener = (...args: unknown[]) => void;
+
+/** The stand-in {@link fakeTranscriber} hands the adapter. */
 export interface FakeTranscriber {
   readonly params: Record<string, unknown>;
   readonly updateConfigurationCalls: Record<string, unknown>[];
   /** How many times the adapter asked the service to end the turn now. */
   forceEndpointCalls: number;
   readonly sentAudio: ArrayBufferLike[];
-  on(ev: string, fn: (...args: unknown[]) => void): void;
-  connect(): Promise<void>;
+  /** Generic so it fits each of the SDK's typed `on` overloads. */
+  on<A extends unknown[]>(ev: string, fn: (...args: A) => void): void;
+  connect(): Promise<BeginEvent>;
   close(): Promise<void>;
   sendAudio(_data: ArrayBufferLike): void;
   updateConfiguration(config: Record<string, unknown>): void;
@@ -38,20 +39,24 @@ export interface FakeTranscriber {
   _fire(ev: string, ...args: unknown[]): void;
 }
 
-function makeFakeTranscriber(params: Record<string, unknown>): FakeTranscriber {
-  const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+function makeFakeTranscriber(params: StreamingTranscriberParams): FakeTranscriber {
+  const listeners = new Map<string, Listener[]>();
   return {
     params,
     updateConfigurationCalls: [],
     forceEndpointCalls: 0,
     sentAudio: [],
-    on(ev, fn) {
+    on<A extends unknown[]>(ev: string, fn: (...args: A) => void) {
       const arr = listeners.get(ev) ?? [];
-      arr.push(fn);
+      // The test names the event and supplies its payload, so the payload is
+      // the listener's by construction.
+      arr.push((...args) => fn(...(args as A)));
       listeners.set(ev, arr);
     },
     async connect() {
-      this._fire("open", { type: "Begin", id: "mock-sess", expires_at: 0 });
+      const begin: BeginEvent = { type: "Begin", id: "mock-sess", expires_at: 0 };
+      this._fire("open", begin);
+      return begin;
     },
     async close() {
       /* no-op */
@@ -71,31 +76,25 @@ function makeFakeTranscriber(params: Record<string, unknown>): FakeTranscriber {
   };
 }
 
-/** The module shape `vi.mock("assemblyai", …)` must return. */
-export function assemblyAIModuleMock(): { AssemblyAI: new () => unknown } {
-  return {
-    AssemblyAI: class {
-      streaming = {
-        transcriber: (params: Record<string, unknown>): FakeTranscriber =>
-          makeFakeTranscriber(params),
-      };
-    },
-  };
-}
+/** Each transcriber {@link fakeTranscriber} built, by the handle the adapter holds. */
+const fakes = new WeakMap<object, FakeTranscriber>();
 
-/**
- * The mocked `assemblyai` module hands the adapter a {@link FakeTranscriber},
- * but `AssemblyAISession._transcriber` is typed as the real SDK's
- * `StreamingTranscriber` — structurally unrelated shapes, so the narrowing
- * needs a cast. Keep it to this one seam rather than repeating it at every
- * assertion; the escape-hatch ratchet counts each occurrence.
- */
+/** The `createTranscriber` every suite opens with: a {@link FakeTranscriber}, recorded. */
+export const fakeTranscriber: CreateAssemblyAITranscriber = (_apiKey, params) => {
+  const fake = makeFakeTranscriber(params);
+  fakes.set(fake, fake);
+  return fake;
+};
+
+/** The {@link FakeTranscriber} behind a session opened through {@link fakeTranscriber}. */
 export function fakeOf(session: AssemblyAISession): FakeTranscriber {
-  return session._transcriber as unknown as FakeTranscriber;
+  const fake = fakes.get(session._transcriber);
+  if (!fake) throw new Error("session was not opened through fakeTranscriber");
+  return fake;
 }
 
 /**
- * Open a session against the mocked SDK. Takes the opener factory rather than
+ * Open a session against {@link fakeTranscriber}. Takes the opener factory rather than
  * importing it, so a suite that reloads the module graph (the `AAI_DEBUG`
  * trace test) can pass its own freshly imported copy.
  */
@@ -105,7 +104,7 @@ export async function openSessionWith(
   openOpts: Partial<Parameters<ReturnType<typeof openAssemblyAI>["open"]>[0]> = {},
 ): Promise<AssemblyAISession> {
   const controller = new AbortController();
-  return (await open(providerOpts).open({
+  return (await open(providerOpts, fakeTranscriber).open({
     sampleRate: 16_000,
     apiKey: "k",
     signal: controller.signal,
