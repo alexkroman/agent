@@ -1,5 +1,13 @@
 # @alexkroman1/aai-ui
 
+## 0.14.1
+
+### Patch Changes
+
+- 7554cd0: A session hung up before its pre-connect capture opened no longer opens the
+  microphone at all, instead of opening it and closing it straight after
+- @alexkroman1/aai@0.14.1
+
 ## 0.14.0
 
 ### Patch Changes
