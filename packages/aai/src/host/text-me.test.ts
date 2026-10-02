@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { setSessionPhone } from "../sdk/session-phone.ts";
-import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
+import { createToolContext } from "@alexkroman1/aai/testing";
+import { fakeFetch } from "./_test-utils.ts";
 import { createTextMe } from "./text-me.ts";
 
 const OWNER = "+15555550100";
@@ -19,7 +20,7 @@ describe("text_me", () => {
     const mockFetch = textbelt();
     const result = await createTextMe(fakeFetch(mockFetch)).execute(
       { message: "Turn left on Main St.", url: "https://maps.example.com/route" },
-      createMockToolContext({ sessionId: "text-me-owner", env }),
+      createToolContext({ sessionId: "text-me-owner", env }),
     );
     expect(result).toEqual({ sent: true });
     expect(mockFetch.mock.calls[0]?.[0]).toBe("https://textbelt.com/text");
@@ -35,7 +36,7 @@ describe("text_me", () => {
     setSessionPhone("text-me-listed", "+15555550123");
     await createTextMe(fakeFetch(listed)).execute(
       { message: "hi" },
-      createMockToolContext({
+      createToolContext({
         sessionId: "text-me-listed",
         env: { ...env, SMS_ALLOWED_PHONES: "+1 (555) 555-0123" },
       }),
@@ -46,7 +47,7 @@ describe("text_me", () => {
     setSessionPhone("text-me-unlisted", "+15555550199");
     await createTextMe(fakeFetch(unlisted)).execute(
       { message: "hi" },
-      createMockToolContext({ sessionId: "text-me-unlisted", env }),
+      createToolContext({ sessionId: "text-me-unlisted", env }),
     );
     expect(sentBody(unlisted).phone).toBe(OWNER);
   });
@@ -57,13 +58,13 @@ describe("text_me", () => {
     expect(
       await tool.execute(
         { message: "hi" },
-        createMockToolContext({ env: { SMS_TO_PHONE: OWNER } }),
+        createToolContext({ env: { SMS_TO_PHONE: OWNER } }),
       ),
     ).toEqual({ error: expect.stringContaining("TEXTBELT_KEY") });
     expect(
       await tool.execute(
         { message: "hi" },
-        createMockToolContext({ env: { TEXTBELT_KEY: "textbelt-test-key" } }),
+        createToolContext({ env: { TEXTBELT_KEY: "textbelt-test-key" } }),
       ),
     ).toEqual({ error: expect.stringContaining("SMS_TO_PHONE") });
     expect(mockFetch).not.toHaveBeenCalled();
@@ -73,7 +74,7 @@ describe("text_me", () => {
     const mockFetch = textbelt();
     const result = await createTextMe(fakeFetch(mockFetch)).execute(
       { message: "hi", url: "javascript:alert(1)" },
-      createMockToolContext({ env }),
+      createToolContext({ env }),
     );
     expect(result).toEqual({ error: "Only an http(s) link can be texted." });
     expect(mockFetch).not.toHaveBeenCalled();
@@ -82,7 +83,7 @@ describe("text_me", () => {
   test("a Textbelt refusal is the tool's result, not a throw, and names no number", async () => {
     const result = await createTextMe(
       fakeFetch(textbelt({ success: false, error: "Out of quota" })),
-    ).execute({ message: "hi" }, createMockToolContext({ env }));
+    ).execute({ message: "hi" }, createToolContext({ env }));
     expect(result).toEqual({ error: expect.stringContaining("Out of quota") });
     expect(JSON.stringify(result)).not.toContain(OWNER);
   });
@@ -93,7 +94,7 @@ describe("text_me", () => {
       "https://textbelt.com/whitelist?key=textbelt-test-key or email support@textbelt.com.";
     const result = await createTextMe(fakeFetch(textbelt({ success: false, error }))).execute(
       { message: "hi", url: "https://maps.example.com/route" },
-      createMockToolContext({ env }),
+      createToolContext({ env }),
     );
     expect(result).toEqual({ error: expect.stringContaining("verified accounts") });
     expect(JSON.stringify(result)).not.toContain("textbelt-test-key");
@@ -104,7 +105,7 @@ describe("text_me", () => {
     const failing = vi.fn(() => Promise.reject(new TypeError("fetch failed")));
     const result = await createTextMe(fakeFetch(failing)).execute(
       { message: "hi" },
-      createMockToolContext({ env }),
+      createToolContext({ env }),
     );
     expect(result).toEqual({ error: expect.stringContaining("did not send") });
   });
@@ -114,7 +115,7 @@ describe("text_me", () => {
     const url = "https://example.com/recipe";
     await createTextMe(fakeFetch(mockFetch)).execute(
       { message: "y".repeat(1000), url },
-      createMockToolContext({ env }),
+      createToolContext({ env }),
     );
     const message = sentBody(mockFetch).message ?? "";
     expect(message.endsWith(`…\n${url}`)).toBe(true);
@@ -125,7 +126,7 @@ describe("text_me", () => {
     const mockFetch = textbelt();
     const result = await createTextMe(fakeFetch(mockFetch)).execute(
       { message: "The menu (https://example.com/menu) is long.", url: "https://example.com/x" },
-      createMockToolContext({ env: { ...env, TEXTBELT_LINKS: "strip" } }),
+      createToolContext({ env: { ...env, TEXTBELT_LINKS: "strip" } }),
     );
     expect(result).toEqual({ sent: true, note: expect.stringContaining("Links were left out") });
     expect(sentBody(mockFetch).message).toBe("The menu is long.");
@@ -135,7 +136,7 @@ describe("text_me", () => {
     const mockFetch = textbelt();
     const result = await createTextMe(fakeFetch(mockFetch)).execute(
       { message: "Milk, eggs, bread." },
-      createMockToolContext({ env: { ...env, TEXTBELT_LINKS: "strip" } }),
+      createToolContext({ env: { ...env, TEXTBELT_LINKS: "strip" } }),
     );
     expect(result).toEqual({ sent: true });
     expect(sentBody(mockFetch).message).toBe("Milk, eggs, bread.");
@@ -145,7 +146,7 @@ describe("text_me", () => {
     const mockFetch = textbelt();
     const result = await createTextMe(fakeFetch(mockFetch)).execute(
       { message: "https://example.com/a" },
-      createMockToolContext({ env: { ...env, TEXTBELT_LINKS: "strip" } }),
+      createToolContext({ env: { ...env, TEXTBELT_LINKS: "strip" } }),
     );
     expect(result).toEqual({ error: expect.stringContaining("only links") });
     expect(mockFetch).not.toHaveBeenCalled();

@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
+import { createToolContext } from "@alexkroman1/aai/testing";
+import { fakeFetch } from "./_test-utils.ts";
 import { createOpenMeteo } from "./open-meteo.ts";
 import { setSessionLocation } from "./session-location.ts";
 
@@ -57,7 +58,7 @@ function run(
   mockFetch: ReturnType<typeof openMeteoFetch>,
   args: Parameters<ReturnType<typeof createOpenMeteo>["execute"]>[0],
 ) {
-  return createOpenMeteo(fakeFetch(mockFetch)).execute(args, createMockToolContext());
+  return createOpenMeteo(fakeFetch(mockFetch)).execute(args, createToolContext());
 }
 
 describe("open_meteo", () => {
@@ -176,7 +177,7 @@ describe("open_meteo", () => {
     );
     const result = await createOpenMeteo(fakeFetch(mockFetch)).execute(
       { location: "Paris" },
-      createMockToolContext(),
+      createToolContext(),
     );
     expect(result).toEqual({
       error: "Forecast request failed: 503 Service Unavailable",
@@ -190,7 +191,7 @@ describe("open_meteo", () => {
     );
     const result = await createOpenMeteo(fakeFetch(mockFetch)).execute(
       { location: "Paris" },
-      createMockToolContext(),
+      createToolContext(),
     );
     expect(result).toEqual({
       error: "Geocoding request failed: socket hang up",
@@ -203,7 +204,7 @@ describe("open_meteo", () => {
     setSessionLocation("meteo-located", "123 Example St, Portland, OR 97201");
     const result = await createOpenMeteo(fakeFetch(mockFetch)).execute(
       {},
-      createMockToolContext({ sessionId: "meteo-located" }),
+      createToolContext({ sessionId: "meteo-located" }),
     );
     expect(new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams.get("name")).toBe("Portland");
     expect(result).toMatchObject({ location: "Portland, Oregon, United States" });
@@ -213,7 +214,7 @@ describe("open_meteo", () => {
     const mockFetch = openMeteoFetch([paris]);
     const result = await createOpenMeteo(fakeFetch(mockFetch)).execute(
       {},
-      createMockToolContext({ sessionId: "meteo-unlocated" }),
+      createToolContext({ sessionId: "meteo-unlocated" }),
     );
     expect(result).toEqual({ error: expect.stringContaining("ask where") });
     expect(mockFetch).not.toHaveBeenCalled();

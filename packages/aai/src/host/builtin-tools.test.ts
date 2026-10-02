@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
+import { createToolContext } from "@alexkroman1/aai/testing";
+import { fakeFetch } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import { SESSION_NOTES_TTL_MS } from "./session-notes.ts";
 
@@ -27,7 +28,7 @@ function firstFetchCall(mockFetch: {
 
 function runCode(code: string): Promise<unknown> {
   const { defs } = resolveAllBuiltins(["run_code"]);
-  return defs.run_code?.execute({ code }, createMockToolContext()) as Promise<unknown>;
+  return defs.run_code?.execute({ code }, createToolContext()) as Promise<unknown>;
 }
 
 describe("resolveAllBuiltins schemas", () => {
@@ -136,7 +137,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = await defs.fetch_json?.execute({ url: "https://api.example.com/data" }, ctx);
     expect(result).toEqual(mockData);
   });
@@ -147,7 +148,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = await defs.fetch_json?.execute({ url: "https://api.example.com/fail" }, ctx);
     expect(result).toEqual({
       error: "HTTP 500 Internal Server Error",
@@ -160,7 +161,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = await defs.fetch_json?.execute({ url: "https://api.example.com/text" }, ctx);
     expect(result).toEqual({
       error: "Response was not valid JSON",
@@ -190,7 +191,7 @@ describe("resolveAllBuiltins defs", () => {
     });
     const result = await defs.fetch_json?.execute(
       { url: "https://api.example.com/huge" },
-      createMockToolContext(),
+      createToolContext(),
     );
     expect(result).toEqual({ error: "Response too large", url: "https://api.example.com/huge" });
     // 1 MB of 64 KiB chunks is 16, plus the one past the budget and the
@@ -205,7 +206,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     await defs.fetch_json?.execute(
       {
         url: "https://api.example.com",
@@ -226,7 +227,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     await defs.fetch_json?.execute(
       {
         url: "https://api.example.com",
@@ -245,7 +246,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     // SDK tools pass through — SSRF is enforced by the network adapter in
     // the platform sandbox and by the runtime's fetch in self-hosted mode.
     await defs.fetch_json?.execute({ url: "http://169.254.169.254/latest/meta-data/" }, ctx);
@@ -270,7 +271,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext({ env: {} });
+    const ctx = createToolContext({ env: {} });
     const result = await defs.web_search?.execute({ query: "test" }, ctx);
     expect(Array.isArray(result)).toBe(true);
   });
@@ -281,7 +282,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = await defs.web_search?.execute({ query: "test" }, ctx);
     expect(result).toEqual({ error: "Search request failed: 500 Internal Server Error" });
   });
@@ -291,7 +292,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = await defs.web_search?.execute({ query: "aai sdk", max_results: 2 }, ctx);
     expect(result).toEqual([
       // uddg redirect decoded to the real URL; <b> highlight stripped in-word.
@@ -312,7 +313,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = (await defs.web_search?.execute(
       { query: "q", max_results: 50 },
       ctx,
@@ -326,7 +327,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = await defs.web_search?.execute({ query: "q" }, ctx);
     expect(result).toMatchObject({ error: expect.stringContaining("bot-detection") });
   });
@@ -339,7 +340,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["visit_webpage"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = (await defs.visit_webpage?.execute(
       { url: "https://example.com" },
       ctx,
@@ -355,7 +356,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["visit_webpage"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = await defs.visit_webpage?.execute({ url: "https://example.com/missing" }, ctx);
     expect(result).toEqual({
       error: "Failed to fetch: 404 Not Found",
@@ -372,7 +373,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["visit_webpage"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = (await defs.visit_webpage?.execute(
       { url: "https://example.com" },
       ctx,
@@ -391,7 +392,7 @@ describe("resolveAllBuiltins defs", () => {
     // db is a throwing stub in the mock context — a no-op must not touch it.
     const result = await defs.think?.execute(
       { thought: "check the policy first" },
-      createMockToolContext(),
+      createToolContext(),
     );
     expect(result).toBe("ok");
   });
@@ -403,7 +404,7 @@ describe("resolveAllBuiltins defs", () => {
 
   test("remember stores notes per session and recall reads them back", async () => {
     const { defs } = resolveAllBuiltins(["remember", "recall"]);
-    const ctx = createMockToolContext({ sessionId: "notes-basic" });
+    const ctx = createToolContext({ sessionId: "notes-basic" });
 
     await defs.remember?.execute({ key: "user_id", value: "usr_123" }, ctx);
     const saved = await defs.remember?.execute({ key: "res_code", value: "BOB12" }, ctx);
@@ -427,8 +428,8 @@ describe("resolveAllBuiltins defs", () => {
 
   test("remember overwrites a key and notes are isolated per session", async () => {
     const { defs } = resolveAllBuiltins(["remember", "recall"]);
-    const s1 = createMockToolContext({ sessionId: "notes-iso-1" });
-    const s2 = createMockToolContext({ sessionId: "notes-iso-2" });
+    const s1 = createToolContext({ sessionId: "notes-iso-1" });
+    const s2 = createToolContext({ sessionId: "notes-iso-2" });
 
     await defs.remember?.execute({ key: "zip", value: "19122" }, s1);
     await defs.remember?.execute({ key: "zip", value: "94103" }, s1);
@@ -438,7 +439,7 @@ describe("resolveAllBuiltins defs", () => {
 
   test("two concurrent remember calls both persist", async () => {
     const { defs } = resolveAllBuiltins(["remember", "recall"]);
-    const ctx = createMockToolContext({ sessionId: "notes-concurrent" });
+    const ctx = createToolContext({ sessionId: "notes-concurrent" });
 
     // One LLM step's tool calls execute concurrently (pipeline streamText runs
     // them in parallel). Map updates are synchronous, so no per-key lock is
@@ -457,7 +458,7 @@ describe("resolveAllBuiltins defs", () => {
     vi.useFakeTimers();
     try {
       const { defs } = resolveAllBuiltins(["remember", "recall"]);
-      const ctx = createMockToolContext({ sessionId: "notes-ttl" });
+      const ctx = createToolContext({ sessionId: "notes-ttl" });
 
       await defs.remember?.execute({ key: "user_id", value: "usr_123" }, ctx);
       vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
@@ -474,7 +475,7 @@ describe("resolveAllBuiltins defs", () => {
 
   test("calculate evaluates expressions and reports errors in-band", async () => {
     const { defs, guidance } = resolveAllBuiltins(["calculate"]);
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     expect(guidance.some((g) => g.includes("calculate"))).toBe(true);
     expect(await defs.calculate?.execute({ expression: "(75 + 120.40) * 1.0725" }, ctx)).toEqual({
       expression: "(75 + 120.40) * 1.0725",
@@ -506,7 +507,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["visit_webpage"], {
       fetch: fakeFetch(mockFetch),
     });
-    const ctx = createMockToolContext();
+    const ctx = createToolContext();
     const result = (await defs.visit_webpage?.execute({ url: START }, ctx)) as {
       url: string;
       content: string;

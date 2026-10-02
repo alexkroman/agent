@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
+import { createToolContext } from "@alexkroman1/aai/testing";
+import { fakeFetch } from "./_test-utils.ts";
 import { createGooglePlaces } from "./google-places.ts";
 import { setSessionLocation } from "./session-location.ts";
 
@@ -28,7 +29,7 @@ const placesBody = {
   ],
 };
 
-const withKey = () => createMockToolContext({ env: { GOOGLE_PLACES_API_KEY: "places-test-key" } });
+const withKey = () => createToolContext({ env: { GOOGLE_PLACES_API_KEY: "places-test-key" } });
 
 function placesFetch(response: Response) {
   return vi.fn((_url: string, _init: RequestInit) => Promise.resolve(response));
@@ -100,7 +101,7 @@ describe("google_places", () => {
     const mockFetch = placesFetch(Response.json(placesBody));
     const result = await createGooglePlaces(fakeFetch(mockFetch)).execute(
       { query: "q" },
-      createMockToolContext(),
+      createToolContext(),
     );
     expect(result).toMatchObject({
       error: expect.stringContaining("Missing GOOGLE_PLACES_API_KEY"),
@@ -133,7 +134,7 @@ describe("google_places", () => {
       );
     });
     const tool = createGooglePlaces(fakeFetch(mockFetch));
-    const ctx = createMockToolContext({
+    const ctx = createToolContext({
       sessionId: "places-located",
       env: { GOOGLE_PLACES_API_KEY: "places-test-key" },
     });
@@ -178,7 +179,7 @@ describe("google_places", () => {
         body.textQuery === "nowhere at all" ? Response.json({}) : Response.json(placesBody),
       );
     });
-    const ctx = createMockToolContext({
+    const ctx = createToolContext({
       sessionId: "places-unlocatable",
       env: { GOOGLE_PLACES_API_KEY: "places-test-key" },
     });
