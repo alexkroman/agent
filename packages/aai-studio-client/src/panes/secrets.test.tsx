@@ -5,11 +5,10 @@
 // agents AND the project's own record, so the pane mirrors nothing and needs
 // no publish first, and a change here writes nothing into the conversation.
 //
-// Two forms, one endpoint: a NAME/VALUE pair for the ordinary case (one key,
-// its value in a password field) and a .env textarea for the bulk one. What
-// these tests hold is the split — each form clears only on its own success,
-// refuses a platform-managed name by name rather than saving it into a list it
-// would then be absent from, and reports its failure in one place.
+// One form: a NAME/VALUE pair (one key, its value in a password field). It
+// clears only on success, refuses a platform-managed name by name rather than
+// saving it into a list it would then be absent from, and reports its failure
+// in one place.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { type UserEvent, userEvent } from "@testing-library/user-event";
@@ -26,35 +25,24 @@ function renderPane() {
   renderWithClient(<SecretsPane bearer="sk-test" project="demo" />);
 }
 
-/** The .env box — the pane clears it on a successful save, only then. */
-function pasteBox(): HTMLTextAreaElement {
-  return screen.getByPlaceholderText("OPENAI_API_KEY=...");
-}
-
 /** Fill the one-key form. */
 async function typePair(user: UserEvent, name: string, value: string): Promise<void> {
   await user.type(screen.getByLabelText("Name"), name);
   await user.type(screen.getByLabelText("Value"), value);
 }
 
-/** Paste a .env into the bulk box, the way it arrives in practice. */
-async function pasteEnv(user: UserEvent, text: string): Promise<void> {
-  await user.click(pasteBox());
-  await user.paste(text);
-}
-
 const LIST = "/studio/projects/demo/secret";
 
 describe("SecretsPane", () => {
-  test("the pane leads with adding a key, then what is attached, then the paste box", async () => {
-    // Adding is the common case and comes first; the .env box is the power
-    // path and comes last. Card titles are eyebrow spans, and inside this pane
-    // every one of them is a section title.
+  test("the pane leads with adding a key, then what is attached — no paste box", async () => {
+    // Card titles are eyebrow spans, and inside this pane every one of them is
+    // a section title.
     stubFetch({ [`GET ${LIST}`]: () => jsonResponse({ vars: [], pending: [] }) });
     renderPane();
     expect(await screen.findByText("Attached keys")).toBeInTheDocument();
     const titles = [...document.querySelectorAll(".eyebrow")].map((el) => el.textContent);
-    expect(titles).toEqual(["Add a secret", "Attached keys", "Paste a .env"]);
+    expect(titles).toEqual(["Add a secret", "Attached keys"]);
+    expect(screen.queryByText("Save secrets")).toBeNull();
   });
 
   test("usable with nothing published — no publish-first gate", async () => {
@@ -171,44 +159,6 @@ describe("SecretsPane", () => {
     expect(screen.getByLabelText("Value")).toHaveValue("1");
   });
 
-  test("a .env paste saves every key in one request and clears the box", async () => {
-    const user = userEvent.setup();
-    const fetchMock = stubFetch({
-      [`GET ${LIST}`]: () => jsonResponse({ vars: [] }),
-      [`PUT ${LIST}`]: () => jsonResponse({ vars: ["A", "B"] }),
-    });
-    renderPane();
-    await pasteEnv(user, "A=1\nB=2");
-    fireEvent.click(screen.getByText("Save secrets"));
-    await waitFor(() => expect(pasteBox()).toHaveValue(""));
-    const puts = fetchCallsWith(fetchMock, "PUT");
-    expect(puts).toHaveLength(1);
-    expect(puts[0]?.init.body).toBe(JSON.stringify({ A: "1", B: "2" }));
-  });
-
-  test("saving an empty paste box is a no-op — no request at all", async () => {
-    const fetchMock = stubFetch({ [`GET ${LIST}`]: () => jsonResponse({ vars: [] }) });
-    renderPane();
-    await waitFor(() => expect(callsTo(fetchMock, LIST)).toBe(1));
-    fireEvent.click(screen.getByText("Save secrets"));
-    expect(callsTo(fetchMock, LIST)).toBe(1);
-  });
-
-  test("a failed paste reports itself ONCE — the two forms don't share an error", async () => {
-    const user = userEvent.setup();
-    // The reason there are two mutations rather than one: `error` and
-    // `isPending` are read beside the button that fired them.
-    stubFetch({
-      [`GET ${LIST}`]: () => jsonResponse({ vars: [] }),
-      [`PUT ${LIST}`]: () => jsonResponse({ error: "vault unavailable" }, 503),
-    });
-    renderPane();
-    await pasteEnv(user, "A=1");
-    fireEvent.click(screen.getByText("Save secrets"));
-    await waitFor(() => expect(screen.getAllByText("vault unavailable")).toHaveLength(1));
-    expect(pasteBox()).toHaveValue("A=1");
-  });
-
   test("a failed listing surfaces the server's error message", async () => {
     stubFetch({ [`GET ${LIST}`]: () => jsonResponse({ error: "unauthorized" }, 401) });
     renderPane();
@@ -262,32 +212,5 @@ describe("SecretsPane", () => {
     fireEvent.click(screen.getByText("Add secret"));
     expect(screen.getByText(/managed for you and can't be set here/)).toBeInTheDocument();
     expect(fetchCallsWith(fetchMock, "PUT")).toHaveLength(0);
-  });
-
-  test("a managed key inside a paste is dropped and the rest still saves", async () => {
-    const user = userEvent.setup();
-    const fetchMock = stubFetch({
-      [`GET ${LIST}`]: () => jsonResponse({ vars: [] }),
-      [`PUT ${LIST}`]: () => jsonResponse({ vars: ["OPENAI_API_KEY"] }),
-    });
-    renderPane();
-    await waitFor(() => expect(callsTo(fetchMock, LIST)).toBe(1));
-    await pasteEnv(user, "ASSEMBLYAI_API_KEY=leaked\nOPENAI_API_KEY=ok");
-    fireEvent.click(screen.getByText("Save secrets"));
-    expect(await screen.findByText(/managed for you and can't be set here/)).toBeInTheDocument();
-    const [put] = fetchCallsWith(fetchMock, "PUT");
-    expect(put?.init.body).toContain("OPENAI_API_KEY");
-    expect(put?.init.body).not.toContain("ASSEMBLYAI_API_KEY");
-  });
-
-  test("a paste of nothing but managed keys sends no request at all", async () => {
-    const user = userEvent.setup();
-    const fetchMock = stubFetch({ [`GET ${LIST}`]: () => jsonResponse({ vars: [] }) });
-    renderPane();
-    await waitFor(() => expect(callsTo(fetchMock, LIST)).toBe(1));
-    await pasteEnv(user, "ASSEMBLYAI_API_KEY=leaked");
-    fireEvent.click(screen.getByText("Save secrets"));
-    expect(screen.getByText(/managed for you and can't be set here/)).toBeInTheDocument();
-    expect(callsTo(fetchMock, LIST)).toBe(1);
   });
 });

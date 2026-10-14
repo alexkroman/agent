@@ -11,11 +11,8 @@
  * unchanged.
  *
  * The product-shape section that used to open this file ("Voice Agents and
- * Workflow Apps") is now MODE-DEPENDENT and lives in `studio-preamble-mode.ts`,
- * composed in immediately before this text — a workflow project's coding agent
- * must not read "default to a VOICE agent". Everything here is shared by both
- * modes, the provider rules included: "actually make it a voice agent" is one
- * message away in either project.
+ * Workflow Apps") lives in `studio-preamble.ts`, composed in immediately
+ * before this text.
  */
 
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";

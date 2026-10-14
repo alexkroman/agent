@@ -161,11 +161,11 @@ assertEveryGuideFileListed(MARKDOWN_FILES);
  * plus the one module that sits outside it.
  *
  * `src/prompts/` exists so this corpus is resolved rather than remembered. The
- * hand-written list it replaced documented its own cost:
- * `studio-preamble-mode.ts` carried no fence and was listed anyway, "so the
- * first example added is checked rather than discovered by a user". Nothing
+ * hand-written list it replaced documented its own cost: a module with no
+ * fence was listed anyway, "so the first example added is checked rather than
+ * discovered by a user". Nothing
  * floored it either, the way two gate specs floor `MARKDOWN_FILES` above at 8,
- * so a fifth prompt module would have compiled under no gate —
+ * so a new prompt module would have compiled under no gate —
  * {@link MIN_PROMPT_SOURCES} is that floor, since a resolved directory cannot
  * be parsed out of this file. `aai-guest/src/studio-chat.ts` stays named: the
  * guest's HTTP chat surface, which carries prompt text without being a prompt
@@ -182,8 +182,8 @@ const PROMPT_SOURCES = [
   "packages/aai-guest-studio/src/chat.ts",
 ];
 
-/** Four modules in `prompts/` plus the guest's chat surface. Lower it deliberately. */
-const MIN_PROMPT_SOURCES = 5;
+/** Three modules in `prompts/` plus the guest's chat surface. Lower it deliberately. */
+const MIN_PROMPT_SOURCES = 4;
 if (PROMPT_SOURCES.length < MIN_PROMPT_SOURCES) {
   console.error(
     `check-doc-examples: found only ${PROMPT_SOURCES.length} prompt sources, expected at ` +

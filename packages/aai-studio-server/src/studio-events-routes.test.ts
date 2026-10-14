@@ -132,7 +132,7 @@ test("the first event is the project's current state", async () => {
   // said nothing at all about the file map and a populated (or wrong) one in
   // the first frame passed on `previewStale` alone.
   expect(initial?.files).toEqual({});
-  expect(initial).toMatchObject({ previewStale: true, kind: "agent" });
+  expect(initial).toMatchObject({ previewStale: true });
 });
 
 test("a workspace write pushes the updated project state", async () => {
@@ -236,7 +236,7 @@ test("the project list stream subscribes before its first read", async () => {
       ...base.events,
       watchScopeProjects: (s, cb) => {
         // A project created on another device as this stream subscribes.
-        raced ??= createWorkspace(base.workspaces, s, "raced", { kind: "agent", files: {} });
+        raced ??= createWorkspace(base.workspaces, s, "raced", { files: {} });
         return base.events.watchScopeProjects(s, cb);
       },
     },

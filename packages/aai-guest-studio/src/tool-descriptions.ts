@@ -136,7 +136,7 @@ SKIP WHEN:
 
 IMPORTANT: if you generate a design brief, you MUST follow it.`,
 
-  read_logs: `Read what the project's DEPLOYED agent has printed — the same output the user sees in the studio's Logs pane, most recent lines last.
+  read_logs: `Read what the project's DEPLOYED agent has printed, most recent lines last. The studio has no log view, so this is the only place that output can be read in the studio.
 
 WHEN TO USE:
 - A runtime failure only a real call produces: a tool that throws mid-session, a missing provider key, a response shape that isn't what the code expects. test_agent loads the bundle HERE and cannot see any of that.

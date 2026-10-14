@@ -1,51 +1,35 @@
 ---
 summary: >-
-  The studio coding agent's system prompt: the per-kind preambles, the
-  scaffold reference they embed, the project kind that selects one, and what
-  the prompt must say about the agent's capabilities.
+  The studio coding agent's system prompt: the one preamble, the scaffold
+  reference it embeds, and what the prompt must say about the agent's
+  capabilities.
 read_when: >-
-  editing prompt text in `src/prompts/`, the project-kind switch, or what the
-  coding agent is told it can and cannot do.
+  editing prompt text in `src/prompts/`, or what the coding agent is told it
+  can and cannot do.
 ---
 
 # `src/prompts/` — the coding agent's system prompt
 
 - **Prompt text lives in this directory, and nothing else does.**
   `check-doc-examples` compiles every `ts` fence in it by reading the directory,
-  so a new module here is gated by default.
-- `studio-prompt.ts` composes a kind's preamble with the scaffold `CLAUDE.md`
-  plus every `agent-guide/` topic file inlined after it in routing-table order
-  (the studio agent cannot open a topic file the way a laptop agent does), or a
-  built-in fallback, cached per kind. `studio-preamble.ts` is the shared
-  preamble; `studio-preamble-mode.ts` names the fragments that differ.
+  so a new module here is gated by default (its `MIN_PROMPT_SOURCES` floor
+  counts these modules — lower it deliberately when one goes).
+- `studio-prompt.ts` composes the preamble (`studio-preamble.ts`) with the
+  scaffold `CLAUDE.md` plus every `agent-guide/` topic file inlined after it in
+  routing-table order (the studio agent cannot open a topic file the way a
+  laptop agent does), or a built-in fallback, and caches the result.
 - `pnpm sync:studio-prompt` regenerates the committed copies in
-  `packages/aai-guest-studio/studio-prompts/` that the guest's eval reads;
-  `check:studio-prompt` fails when they are stale.
+  `packages/aai-guest-studio/studio-prompts/` (`system-prompt.md`,
+  `starters.json`) that the guest's eval reads; `check:studio-prompt` fails when
+  they are stale.
 
-## A project has a KIND
+## Every project is a voice agent
 
-Chosen once at create time (`studio-project-kind.ts`; the hero's Agent/Workflow
-switcher sends it and `POST /studio/projects` stamps it on the workspace).
-`agent` is a voice session; `workflow` is a static `workflowApp()` — a form,
-durable runs, no microphone — whose default template is
-`transcription-workflow`.
-
-- **It lives on the WORKSPACE, not on a request.** The prompt is installed per
-  session (`studio/session-init` → `sessionParams` in
-  `../studio-session-ensure.ts`), which recurs on every open, reload, CLI push
-  refresh and adopt; a per-request flag would let a second tab build the other
-  product. That is why `sessionParams` takes the whole `StudioWorkspace`.
-- **Every workspace document carries a `kind`**: `POST /studio/projects`
-  requires one, the CLI's first push stamps `agent`, and `parseWorkspace` reads
-  a document without one as malformed (`isProjectKind`).
-- **One preamble, five fragments swapped** — the overview line, the
-  product-shape section, the spoken-replies rule, the `client.tsx` section, and
-  the alignment examples. Tools, the write-then-typecheck loop, "you cannot
-  publish", the refusals and the scaffold reference are shared: two copies
-  drift, and a project that changes shape must keep the whole reference (it
-  documents both `agent()` and `workflowApp()`).
-- **The kind is a default, not a cage.** Both prompts switch shapes when the
-  user asks outright; nothing rewrites the stamp.
+There is ONE prompt: it defaults to `agent()` — a microphone, a session — and
+builds a form-fronted `workflowApp()` only when the user asks outright. The
+scaffold reference below it documents both. The Voice agent / Workflow switch
+(and its per-kind prompt) is retired: a stored workspace's `kind` key is
+ignored, and nothing selects a prompt per project.
 
 ## What the prompt must tell the agent
 

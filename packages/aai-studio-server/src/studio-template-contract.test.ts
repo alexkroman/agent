@@ -72,10 +72,9 @@ describe("templateNamed", () => {
     // The floor under the selection: if this pattern stopped matching, every
     // contract would silently not run and the tier would still print green.
     const { STARTERS } = await import("aai-studio-client/starters");
-    const named = Object.values(STARTERS)
-      .flat()
-      .map((s) => templateNamed(s.prompt))
-      .filter((t): t is string => t !== undefined);
+    const named = STARTERS.map((s) => templateNamed(s.prompt)).filter(
+      (t): t is string => t !== undefined,
+    );
     expect(named.length).toBeGreaterThan(8);
     // In parallel: fifteen `stat`s awaited one at a time, in the tier CI gates.
     await Promise.all(
@@ -129,7 +128,7 @@ describe("runTemplateContract", () => {
   const base = { files: { "agent.ts": "export default {}" }, templatesDir: TEMPLATES_DIR };
 
   test("a prompt naming no template does not run and does not fail", async () => {
-    // Six starters name none. Holding one to a contract it never asked for is
+    // A typed prompt names none. Holding one to a contract it never asked for is
     // the over-specification failure this grader has been bitten by four times.
     const run = fakeRunner(1);
     const result = await runTemplateContract({

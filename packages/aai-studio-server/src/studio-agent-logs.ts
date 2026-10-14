@@ -3,10 +3,10 @@
  * What the coding agent's `read_logs` tool actually reads: the project's own
  * deployed agent, through the platform's owner-authenticated `GET /:slug/logs`.
  *
- * The gap it closes is the one the Logs pane closed for the HUMAN. A studio
- * agent's runtime failure — a tool that throws on a live call, a provider key
- * that is missing, a `console.error` the code prints on the path nobody tested
- * — is visible in the pane and nowhere the coding agent can reach. Its only
+ * The gap it closes: a studio agent's runtime failure — a tool that throws on
+ * a live call, a provider key that is missing, a `console.error` the code
+ * prints on the path nobody tested — is in the agent's log ring and nowhere
+ * else the coding agent can reach. Its only
  * runtime evidence was `test_agent`, which loads the bundle in the SANDBOX and
  * therefore cannot see anything the deployed agent did with a real caller on
  * the line.

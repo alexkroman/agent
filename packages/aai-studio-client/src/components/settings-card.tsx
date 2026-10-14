@@ -1,8 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
-// One Settings-page section: eyebrow heading, blurb, body. The pane is a stack of
-// these, and SEVEN modules render one — secrets, phone, workflows, snippet, docs,
-// docs-uploads, api-docs — which is why it is a shared module rather than a local
-// in panes/settings.tsx.
+// One page section: eyebrow heading, blurb, body. The Settings and Secrets
+// panes are stacks of these, and the phone card renders one too — which is why
+// it is a shared module rather than a local in panes/settings.tsx.
 
 import type { ReactNode } from "react";
 

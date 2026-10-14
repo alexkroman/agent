@@ -92,13 +92,6 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     scope: string,
     project: string,
     apiKey: string,
-    /**
-     * The project's workspace — its files AND its kind. Passed whole rather
-     * than as a file map: the kind is what selects the system prompt, and a
-     * signature that took only the files could not carry it, which is how the
-     * two would drift into a workflow project's agent running under the voice
-     * prompt.
-     */
     workspace: StudioWorkspace,
   ) {
     return {
@@ -109,7 +102,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       project,
       files: workspace.files,
       apiKey,
-      system: studioSystemPrompt(workspace.kind),
+      system: studioSystemPrompt(),
       model: studioLlmModelId(env),
       ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
       maxSteps: MAX_CHAT_STEPS,

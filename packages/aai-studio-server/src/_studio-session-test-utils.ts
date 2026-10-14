@@ -111,7 +111,6 @@ export async function makeBroker(
   const workspaces = createMemoryWorkspaceStore();
   const chats = createMemoryChatStore();
   await createWorkspace(workspaces, SCOPE, PROJECT, {
-    kind: "agent",
     files: { "agent.ts": "// v1" },
   });
   const spawn = fakeSpawn(guests);

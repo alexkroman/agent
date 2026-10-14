@@ -26,7 +26,6 @@ import {
 import type { StudioWorkspace } from "./studio-workspace.ts";
 
 const workspace = (files: Record<string, string>, hash = "hash-1"): StudioWorkspace => ({
-  kind: "agent",
   files,
   hash,
   updatedAt: 0,

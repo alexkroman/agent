@@ -38,7 +38,6 @@ export {
   SafePathSchema,
   SecretKeySchema,
   SecretUpdatesSchema,
-  SLUG_PATTERN_SOURCE,
   VALID_SLUG_RE,
 } from "./schemas.ts";
 export {

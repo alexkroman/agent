@@ -89,7 +89,7 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
     const scope = requestScope(c);
     const limited = await deps.projectCreate(scope, c.req.raw);
     if (limited) return limited;
-    const { prompt, kind } = c.req.valid("json");
+    const { prompt } = c.req.valid("json");
     // The server generates the name, v0-style — a readable base
     // from the creating prompt plus a random suffix, via the same generator
     // slugless CLI deploys use (see aai-server/slug-generate.ts). The suffix
@@ -100,9 +100,6 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
     // loser can never reset the winner's files. No lock needed here.
     for (const candidate of attempts) {
       try {
-        // `kind` is stamped once, here: it selects the coding agent's system
-        // prompt at every later session install (studio-session-ensure.ts), so
-        // it has to outlive the request that chose it.
         const workspace = await createWorkspace(c.env.workspaces, scope, candidate, {
           // A new project starts EMPTY. It used to ship a working dice-roller
           // agent, which read as helpful and was not: the coding agent's first
@@ -113,9 +110,8 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
           // tsconfig.json and vitest.config.ts when the session
           // materializes.
           files: {},
-          kind,
         });
-        return c.json({ name: candidate, files: workspace.files, kind: workspace.kind }, 201);
+        return c.json({ name: candidate, files: workspace.files }, 201);
       } catch (err) {
         if (!(err instanceof WorkspaceConflictError)) throw err;
       }

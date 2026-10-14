@@ -235,15 +235,15 @@ describe("partsPlan", () => {
       { numRuns: 200 },
     );
 
-    // Floors under the OBSERVED MINIMUM over 20 calibration runs, range in each
-    // trailing comment. All three branches have to be reached: the decline is
+    // Floors under the OBSERVED MINIMUM over calibration runs, range in each
+    // trailing comment (the re-cut's re-measured over 40 runs after a run drew 8). All three branches have to be reached: the decline is
     // the default for a small file, the re-cut is the bug the `resumable` flag
     // was added for, and the fan-out is the path itself.
     expect(reached.declined, "no draw was ever declined").toBeGreaterThan(20); // 34-58
     expect(
       reached.singlePartRecut,
       "the resumable one-part re-cut was never reached",
-    ).toBeGreaterThan(8); // 15-30
+    ).toBeGreaterThan(3); // 8-31
     expect(reached.fannedOut, "no plan ever had more than one part").toBeGreaterThan(90); // 119-144
     expect(reached.viewAtOffset, "every planned body was a view at offset zero").toBeGreaterThan(
       90,

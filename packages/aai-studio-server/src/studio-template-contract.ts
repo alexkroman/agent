@@ -208,7 +208,7 @@ export async function runTemplateContract(opts: {
 }): Promise<ContractRun> {
   const template = templateNamed(opts.prompt);
   if (template === undefined) {
-    // Not a shortfall: six starters name no template, and holding one to a
+    // Not a shortfall: a prompt may name no template, and holding one to a
     // contract it never asked for is the over-specification failure this
     // package's grader has been bitten by four times.
     return { outcome: "skipped", note: "prompt names no template" };

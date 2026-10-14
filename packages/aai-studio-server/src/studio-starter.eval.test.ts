@@ -32,8 +32,8 @@
  * its own prompts in the ordinary unit run.
  *
  * It lives in `aai-studio-server` rather than in `aai-evals`: the framework this
- * drives is general, and everything this file names — the origin, the project
- * kinds, the starters, the grading — is the studio. See
+ * drives is general, and everything this file names — the origin, the
+ * starters, the grading — is the studio. See
  * `../STARTER-EVAL-CLAUDE.md`.
  *
  * @module
@@ -42,7 +42,7 @@
 import path from "node:path";
 import { describeEvalTier, describeEvalTierWhen, evalApiKey, evalKeyEnv } from "aai-evals/gate";
 import { evalOnlySelects, registerEvalCases } from "aai-evals/register";
-import { STARTERS } from "aai-studio-client/starters";
+import { STARTERS, type Starter } from "aai-studio-client/starters";
 import { evalContracts, evalOrigin } from "./studio-eval-env.ts";
 import { createStudioClient } from "./studio-eval-target.ts";
 import { gradeStarter } from "./studio-starter-grade.ts";
@@ -75,10 +75,8 @@ async function studioReachable(origin: string): Promise<boolean> {
 
 const ORIGIN = evalOrigin();
 
-/** Every starter, with the project KIND that selects its coding-agent prompt. */
-const STARTER_CASES = Object.entries(STARTERS).flatMap(([kind, list]) =>
-  list.map((starter) => ({ ...starter, kind })),
-);
+/** Every starter the home hero offers. */
+const STARTER_CASES: readonly Starter[] = STARTERS;
 
 /**
  * Probed only when this file has a case to run.
@@ -108,10 +106,10 @@ describeStarters("starter eval — studio codegen", () => {
         const client = createStudioClient(ORIGIN, evalApiKey());
         let project: string | undefined;
         try {
-          project = await client.createProject(starter.kind);
+          project = await client.createProject();
           const turn = await client.runTurn(project, starter.prompt);
           const files = await client.workspace(project);
-          gradeStarter(t, { label: starter.label, kind: starter.kind, turn, files });
+          gradeStarter(t, { label: starter.label, turn, files });
           // The BEHAVIOUR half, opt-in — see `evalContracts` for the cost
           // argument and `studio-template-contract.ts` for why the template's own eval
           // is the contract. A starter naming no template, or naming one that

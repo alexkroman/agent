@@ -219,7 +219,7 @@ export function main(): void {
   installLeakWatch();
   // Before anything else can write: this tees both process streams into the
   // ring `GET /manage/logs` serves, and every line produced before it is
-  // installed is a line the studio's Logs pane cannot show.
+  // installed is a line `aai logs` and `read_logs` cannot show.
   captureGuestOutput();
   // Warm-up mode: reaching here means this module has been compiled and
   // evaluated, which is the entire point (see the header). Exit 0 so the image

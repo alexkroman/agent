@@ -29,7 +29,6 @@
     "@uiw/react-codemirror": "^4.25.12",
     "ai": "catalog:",
     "clsx": "catalog:",
-    "dotenv": "^18.0.3",
     "react": "catalog:",
     "react-dom": "catalog:",
     "xstate": "catalog:",

@@ -65,7 +65,7 @@ describe("loadScaffoldGuide", () => {
 
 describe("studioSystemPrompt", () => {
   test("composes the studio preamble with the scaffold guide", () => {
-    const prompt = studioSystemPrompt("agent");
+    const prompt = studioSystemPrompt();
     // Studio preamble (workflow + environment overrides).
     expect(prompt).toContain("AssemblyAI Build coding agent");
     expect(prompt).toContain("test_agent");
@@ -133,7 +133,7 @@ describe("studioSystemPrompt", () => {
   });
 
   test("lists the SDK's real subpaths without naming removed ones", () => {
-    const prompt = studioSystemPrompt("agent").replace(/\s+/g, " ");
+    const prompt = studioSystemPrompt().replace(/\s+/g, " ");
     expect(prompt).toContain("Never invent an SDK subpath");
     // Interpolated from the package's own exports map, so it can't drift.
     expect(prompt).toContain("@alexkroman1/aai/llm");
@@ -154,104 +154,30 @@ describe("studioSystemPrompt", () => {
     const guide = loadScaffoldGuide();
     expect(guide).toContain("## Workflow\n");
 
-    const prompt = studioSystemPrompt("agent").replace(/\s+/g, " ");
+    const prompt = studioSystemPrompt().replace(/\s+/g, " ");
     // The exclusion has to name what it means precisely.
     expect(prompt).toContain("`pnpm dev` / `pnpm test` / `pnpm build` loop");
   });
 
-  test("is cached across calls, per kind", () => {
-    expect(studioSystemPrompt("agent")).toBe(studioSystemPrompt("agent"));
-    expect(studioSystemPrompt("workflow")).toBe(studioSystemPrompt("workflow"));
-    // One cache entry per kind, not one entry the second caller overwrites —
-    // a studio replica serves both kinds, interleaved.
-    expect(studioSystemPrompt("agent")).not.toBe(studioSystemPrompt("workflow"));
+  test("is cached across calls", () => {
+    expect(studioSystemPrompt()).toBe(studioSystemPrompt());
   });
 
-  test("names the transcription-workflow template in the workflow prompt", () => {
-    // The mode's default is a STATIC workflow app, and the template is how it
-    // gets one: `use_template` lands the whole working front door (form,
-    // durable body, webhook resume, watching page) where a prose description
-    // lands the agent's best guess at it. The other workflow shape — a voice
-    // agent whose tool starts a run — is what a model reaches for unprompted,
-    // so the prompt has to name the file to copy, not just describe the shape.
-    const prompt = studioSystemPrompt("workflow").replace(/\s+/g, " ");
-    expect(prompt).toContain("Default to a STATIC workflow app");
-    expect(prompt).toContain("Start from the `transcription-workflow` template");
-    expect(prompt).toContain("use_template");
-    // Mounted with mountPage(), never mountClient() — a static page opened as
-    // a session dials a /websocket the server declines.
-    expect(prompt).toContain("mountPage({ name, component })");
-    // The escape hatch it must NOT take: workflowApp() is that declaration
-    // with the discriminant already set, and the fields it refuses are refused
-    // on purpose.
-    expect(prompt).toContain('agent({ mode: "workflow-app" })');
-    // Bodies are transformed only under workflows/.
-    expect(prompt).toContain("Bodies go in `workflows/*.ts` and nowhere else");
-  });
-
-  test("the workflow prompt does not gate the build on a database", () => {
-    // The prompt has been wrong in BOTH directions here, which is why it is
-    // pinned. It first said a workflow app "NEEDS the database … until they do,
-    // starting a run fails", turning every project's first turn into an
-    // instruction to flip a switch it did not need. It then said runs are not
-    // durable without one — true of the DevKit's local world, and false once the
-    // platform started keeping every deployed app's runs on its own database.
-    //
-    // So the assertions are: no switch is mentioned (there is none to flip), and
-    // the ONE real limitation is still named.
-    const prompt = studioSystemPrompt("workflow").replace(/\s+/g, " ");
-    expect(prompt).toContain("Runs are DURABLE with no setup");
+  test("the prompt does not send an author to provision a database", () => {
+    // Runs and uploads are both the platform's, so neither the preamble nor
+    // the scaffold guide it embeds may tell an author they need a database.
+    const prompt = studioSystemPrompt().replace(/\s+/g, " ");
+    expect(prompt).toContain("Do not tell an author to set a `DATABASE_URL` for durability");
     expect(prompt).not.toContain("It NEEDS the database");
-    // The dead switch, asserted as an ABSENCE: recommending it sends the user to
-    // a pane that no longer exists.
     expect(prompt).not.toContain("Settings → Database");
     expect(prompt).not.toContain("aai storage enable");
-    // And now the THIRD direction, which is why the comment above says "both"
-    // and this says otherwise: uploads used to be the one real limitation — an
-    // upload's record needed a database the author supplied, so a run outlived
-    // its own bytes — and they are the platform's too now (`platform/uploads.ts`,
-    // the `workflow_uploads` table). So the exception is GONE, and what has to
-    // be absent is the advice it justified: a deployed app needs no database of
-    // its own for durability of either half, and telling an author to set one
-    // sends them to provision something the platform already provides.
-    expect(prompt).toContain("File UPLOADS are durable with no setup");
     expect(prompt).not.toContain("A file UPLOAD is the exception");
     expect(prompt).not.toContain("set a DATABASE_URL secret if you want");
-    // And the SCAFFOLD GUIDE has to agree, which is the half a preamble
-    // assertion cannot reach: `studioSystemPrompt` is the preamble PLUS that
-    // guide, so retiring the exception from one of them left the prompt saying
-    // both things at once — under different wording, so every assertion above
-    // still passed. These are the guide's own sentences.
     expect(prompt).not.toContain("One thing does need a database whatever the run does");
     expect(prompt).not.toContain("refuse by name without a `DATABASE_URL`");
   });
-
-  test("the two prompts share everything that is not mode-specific", () => {
-    // The workflow prompt is the SAME arc with five fragments swapped, not a
-    // second preamble: the tools, the write-then-typecheck inner loop, the
-    // "you cannot publish" rule, the refusals and the whole reference below
-    // are identical, and two copies of that would drift within a release.
-    const workflow = studioSystemPrompt("workflow");
-    for (const shared of [
-      "AssemblyAI Build coding agent",
-      "test_agent",
-      "You cannot publish",
-      "Act, don't propose",
-      "## Refusals",
-      "Default to a cascaded (pipeline-mode) agent",
-      "# aai framework reference (scaffold CLAUDE.md)",
-      "## `agent()` API",
-    ]) {
-      expect(workflow, shared).toContain(shared);
-    }
-    // And the voice-agent guidance that WOULD contradict it is gone: nothing
-    // here speaks, so there is no prompt or greeting to write voice rules for.
-    expect(workflow).not.toContain("Replies are spoken aloud");
-    expect(workflow).toContain("Nothing here is spoken");
-  });
-
   test("falls back to the built-in guide when the scaffold file is absent", () => {
-    const prompt = composeStudioPrompt(null, "agent");
+    const prompt = composeStudioPrompt(null);
     expect(prompt).toContain("AssemblyAI Build coding agent");
     expect(prompt).toContain("agent() essentials");
     // The preamble points at a "Design guidelines" section; the fallback is

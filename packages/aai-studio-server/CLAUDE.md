@@ -22,7 +22,7 @@ coding agent runs in is `packages/aai-guest/CLAUDE.md` and
   CLI round-trip, sessions and the fleet-wide sandbox, previews, event streams,
   secrets, agent logs, Publish, LLM selection, auth, rate limits.
 - [`src/prompts/CLAUDE.md`](src/prompts/CLAUDE.md) — the coding agent's system
-  prompt, the project kind, and what the prompt must say.
+  prompt and what it must say.
 
 Reference siblings, read on demand:
 [`GITHUB-SYNC-CLAUDE.md`](GITHUB-SYNC-CLAUDE.md) (Sync to GitHub),
@@ -43,8 +43,7 @@ Reference siblings, read on demand:
   (`buildWorkspace` for Publish).
 - `studio-workspace.ts` (file store), `studio-deploy.ts` (guest build → validate
   config → deploy), `studio-llm.ts` (gateway model; the key is always the
-  caller's), `studio-project-kind.ts` (voice agent vs workflow app),
-  `studio-static.ts` (serves the built client).
+  caller's), `studio-static.ts` (serves the built client).
 - `prompts/` — prompt text, and only prompt text.
 - `index.ts` — the service entry; see below.
 

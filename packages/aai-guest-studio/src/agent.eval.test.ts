@@ -110,7 +110,7 @@ const PIZZA_TEMPLATE = "pizza-ordering-agent";
  * grading it, because everything that turns those five words into a project
  * comes from the shipped system prompt.
  */
-const PIZZA_STARTER = studioStarter("agent", "A pizza counter that keeps a real cart");
+const PIZZA_STARTER = studioStarter("A pizza counter that keeps a real cart");
 
 /** An agent whose name disagrees with the spec beside it. */
 const MISNAMED_AGENT = `import { agent } from "@alexkroman1/aai";
@@ -398,7 +398,7 @@ describeStudioEval((test) => {
     },
     // `studioPrompt` is the whole reason this case exists: on the thin harness
     // constant it would be grading five words with no workflow behind them.
-    { files: {}, live: true, maxSteps: 20, studioPrompt: "agent" },
+    { files: {}, live: true, maxSteps: 20, studioPrompt: true },
   );
 
   // ---- the mechanisms a live model will not provoke -------------------------

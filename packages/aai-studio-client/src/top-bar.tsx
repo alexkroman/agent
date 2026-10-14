@@ -147,16 +147,11 @@ export function PublishMenu(props: PublishMenuProps) {
  * of the code rather than something to use, and "Playground" said what it was
  * for without naming what it is.
  */
-export type StudioTab = "preview" | "docs" | "workflows" | "code" | "logs" | "secrets" | "settings";
+export type StudioTab = "preview" | "code" | "secrets" | "settings";
 
-// Logs sits directly after Code, which is where its use is: you write
-// something, you run it, you read what it printed.
 const TABS: { id: StudioTab; label: string }[] = [
   { id: "preview", label: "UI" },
-  { id: "docs", label: "API" },
-  { id: "workflows", label: "Workflows" },
   { id: "code", label: "Code" },
-  { id: "logs", label: "Logs" },
   { id: "secrets", label: "Secrets" },
   { id: "settings", label: "Settings" },
 ];

@@ -94,8 +94,8 @@ export type Sandbox = {
    */
   drain(deadlineMs?: number): Promise<void>;
   /**
-   * This guest's buffered stdout/stderr (`GET /manage/logs`), for the studio's
-   * Logs pane and `aai logs`.
+   * This guest's buffered stdout/stderr (`GET /manage/logs`), for the coding
+   * agent's `read_logs` and `aai logs`.
    *
    * NEVER rejects, and a sandbox that is still BOOTING resolves an empty page
    * rather than waiting out its readiness: a log pane polls, and a poll that

@@ -13,7 +13,7 @@ read_when: >-
 Every studio module sits directly in `src/`, so this guide covers all of them.
 Elsewhere:
 
-- Prompt text and the project kind: [`prompts/CLAUDE.md`](prompts/CLAUDE.md).
+- Prompt text: [`prompts/CLAUDE.md`](prompts/CLAUDE.md).
 - Sync to GitHub (`studio-github-*.ts`):
   [`../GITHUB-SYNC-CLAUDE.md`](../GITHUB-SYNC-CLAUDE.md) — read it before
   editing those files.
@@ -84,8 +84,9 @@ Elsewhere:
   `POST /studio/projects` and the SERVER mints the name (a prompt-derived base
   plus a random suffix, via `aai-server/slug-generate.ts`). An explicit `name`
   stays for programmatic callers. Each project lives at `/studio/chat/<name>`.
-- A project's kind selects its system prompt — "A project has a KIND" in
-  [`prompts/CLAUDE.md`](prompts/CLAUDE.md).
+- **There is no project kind**: every project is a voice agent under one system
+  prompt. A stored workspace's legacy `kind` key is ignored, and
+  `POST /studio/projects` still accepts (and ignores) one from an old tab.
 - **Reserved slugs** (`RESERVED_SLUGS` in `schemas.ts`): `studio` and
   `studio-assets` would shadow the studio routes. Enforced in `validateSlug`,
   `DeployBodySchema`, and the deploy core.
@@ -346,13 +347,8 @@ it and the only surface for an agent in no project. Never fan out in the client
 - **A client can never name a provider or model**: `POST /studio/chat`'s schema
   strips `model`. Validate any future request-side choice host-side.
 
-## Static and public pages
+## Static pages
 
-- **`GET /studio/api/<slug>`** (`studio-app.ts`) serves the shell with NO
-  session: registered above `app.route("/studio", …)` so it never passes the
-  auth middleware, and no ownership check because it returns only the shell —
-  the browser reads the agent's already-public routes. Its param carries
-  `SLUG_PATTERN_SOURCE`; `/studio` is already reserved.
 - **The shell is `no-store`; hashed assets are `immutable`**
   (`studio-static.ts`) — a cached shell pins a browser to assets a rolling
   deploy deletes (a white page). Client half: `stale-build.ts` in

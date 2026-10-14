@@ -244,19 +244,17 @@ describe("guest studio chat surface", () => {
         "// updated by agent",
       );
       // …and the settled turn pushed workspace + conversation to the host
-      // (the settle runs after the stream closes, so poll for it).
+      // (the settle runs after the stream closes, so poll for it). The poll
+      // waits on THIS turn's content, not on the method name: the fake host is
+      // module-level, so a prior test's sync can already be recorded, and a
+      // name-only wait returned before this turn's own sync landed.
       await vi.waitFor(() => {
-        const methods = host.calls.map((c) => c.method);
-        expect(methods).toContain("studio/sync-workspace");
-        expect(methods).toContain("studio/persist-chat");
+        const synced = host.calls
+          .filter((c) => c.method === "studio/sync-workspace")
+          .map((c) => (c.params as { files?: Record<string, string> }).files?.["agent.ts"]);
+        expect(synced).toContain("// updated by agent");
+        expect(host.calls.map((c) => c.method)).toContain("studio/persist-chat");
       });
-      // Content-scoped for the same reason as the checkpoint test below: the
-      // FIRST recorded sync is not necessarily this test's, since the fake host
-      // is module-level and a prior turn can still be emitting.
-      const synced = host.calls
-        .filter((c) => c.method === "studio/sync-workspace")
-        .map((c) => (c.params as { files?: Record<string, string> }).files?.["agent.ts"]);
-      expect(synced).toContain("// updated by agent");
     } finally {
       await close();
     }
@@ -361,7 +359,10 @@ describe("guest studio chat surface", () => {
 
   test("a turn with no file edits does not checkpoint the workspace mid-turn", async () => {
     const host = fakeHost();
-    const session = await makeSession({ "agent.ts": "x" });
+    // A file body no other test uses, so this turn's syncs can be told apart
+    // from a previous test's late ones (the fake host is module-level).
+    const marker = "// read-only turn";
+    const session = await makeSession({ "agent.ts": marker });
     const { url, close } = await serve(
       session,
       deps(scriptedTextModel([{ text: "Just talking." }])),
@@ -369,14 +370,22 @@ describe("guest studio chat surface", () => {
     try {
       // Drained first — see the checkpoint test above.
       await (await post(url, chatBody("say hi"))).text();
-      // Wait for the SETTLE, not just any persist — the inbound snapshot now
-      // fires at turn start, so it lands long before the turn is done.
+      // Wait for THIS turn's SETTLE, by content — the inbound snapshot fires at
+      // turn start, and a previous test's persist can already be recorded.
       await vi.waitFor(() => {
-        const persists = host.calls.filter((c) => c.method === "studio/persist-chat");
-        expect(persists.length).toBeGreaterThanOrEqual(2);
+        const settled = host.calls.some(
+          (c) =>
+            c.method === "studio/persist-chat" &&
+            JSON.stringify(c.params).includes("Just talking."),
+        );
+        expect(settled).toBe(true);
       });
       // Only the settle's sync — a read-only turn must not spam the host.
-      const syncs = host.calls.filter((c) => c.method === "studio/sync-workspace");
+      const syncs = host.calls.filter(
+        (c) =>
+          c.method === "studio/sync-workspace" &&
+          (c.params as { files?: Record<string, string> }).files?.["agent.ts"] === marker,
+      );
       expect(syncs.length).toBe(1);
     } finally {
       await close();
@@ -525,7 +534,14 @@ describe("guest studio chat surface", () => {
     try {
       await (await post(url, chatBody("say hi"))).text();
       await vi.waitFor(() => {
-        const settled = host.calls.filter((c) => c.method === "studio/persist-chat").at(-1);
+        // THIS turn's settle, by content: a previous test's late persist can be
+        // the last one recorded, and its ids would pass without checking ours.
+        const settled = host.calls
+          .filter(
+            (c) =>
+              c.method === "studio/persist-chat" && JSON.stringify(c.params).includes("Hello."),
+          )
+          .at(-1);
         const { messages } = (settled?.params ?? {}) as {
           messages?: { id: string; role: string }[];
         };

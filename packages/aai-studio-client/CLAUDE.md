@@ -11,32 +11,28 @@ read_when: >-
 # packages/aai-studio-client — studio front-end guide
 
 The studio's React front-end (private package). The server it talks to over
-HTTP/SSE is documented in `packages/aai-studio-server/CLAUDE.md`. Two more
-guides cover the rest of this package:
-
-- `src/panes/CLAUDE.md` (auto-loaded there) — the switcher and every pane:
-  Settings, Secrets, Workflows, Logs, Code, the UI preview and the chat panel.
-- `API-DOCS-CLAUDE.md` (read on demand) — the API pane, its generated snippets
-  and form-field map, and the public `/studio/api/<slug>` page.
+HTTP/SSE is documented in `packages/aai-studio-server/CLAUDE.md`.
+`src/panes/CLAUDE.md` (auto-loaded there) covers the switcher and every pane:
+Settings, Secrets, Code, the UI preview and the chat panel.
 
 ## Layout
 
-Three directories: `panes/` (the eight modules `project-view.tsx` renders),
+Three directories: `panes/` (the five modules `project-view.tsx` renders),
 `components/`, `hooks/` (the `use-*` modules).
 
 - **A PANE and a COMPONENT are different categories, and the roster says so.**
-  konsistent's `studio-client-pane-modules` names the eight — `chat.tsx`,
-  `preview.tsx`, `docs.tsx`, `workflows.tsx`, `code-view.tsx`, `logs-view.tsx`,
-  `secrets.tsx`, `settings.tsx` — as what the switcher renders.
+  konsistent's `studio-client-pane-modules` names the five — `chat.tsx`,
+  `preview.tsx`, `code-view.tsx`, `secrets.tsx`, `settings.tsx` — as what
+  `project-view.tsx` renders.
 - **The FRAME stays at `src/` root**: it is what a pane is mounted BY. `app.tsx`
   (the root), `main.tsx` (the Vite entry), `project-view.tsx` (renders the
-  eight), `top-bar.tsx` (the switcher), `pane-shell.tsx` (the shared shell) and
-  `public-api.tsx` (a top-level ROUTE, never a tab). `auth.tsx`, `starters.ts`
-  (an export subpath) and `_test-utils.ts` stay there too.
-- **`studio-client-pane-export` names FIVE panes and that is not the roster.**
-  Those five have a filename equal to their tab id, so they export `<Tab>Pane`;
-  `code-view.tsx` (tab `code`) and `logs-view.tsx` (tab `logs`) are named for
-  what they are, and `chat.tsx` sits outside the switcher.
+  panes), `top-bar.tsx` (the switcher) and `pane-shell.tsx` (the shared shell).
+  `auth.tsx`, `starters.ts` (an export subpath) and `_test-utils.ts` stay there
+  too.
+- **`studio-client-pane-export` names THREE panes and that is not the roster.**
+  Those three have a filename equal to their tab id, so they export `<Tab>Pane`;
+  `code-view.tsx` (tab `code`) is named for what it is, and `chat.tsx` sits
+  outside the switcher.
 - **On any file move, re-check `studio-client-cleanup-is-setup`.** It is keyed
   on `src/{suite}.test.tsx` and a konsistent `**` glob needs a subdirectory to
   match, so both spellings are listed; a spec moved into a directory neither
@@ -66,22 +62,11 @@ page with build instructions (unit tests do not need it).
   while a project is open — its workspace, chat and sandbox queries, the panes,
   Publish, and the unsaved editor drafts. `ProjectView` is mounted
   `key={project}`, so per-project state resets on a switch with no effect.
-- **The home hero's Voice agent / Workflow switch is the ONLY place a project's
-  `kind` is set** (`components/home.tsx`, `starters.ts`, `api.createProject`).
-  It is sent as `kind` on `POST /studio/projects`, stamped on the workspace and
-  read at every session install to pick the coding agent's system prompt ("A
-  project has a KIND" in `packages/aai-studio-server/src/prompts/CLAUDE.md`).
-  - Each position owns its copy (`KIND_COPY`) AND its starter list
-    (`STARTERS[kind]`) — two lists, not one tagged list, so a workflow-mode pick
-    never lands a voice template in a project whose prompt forbids one.
-    `research-handoff-agent` stays under Voice agent: it is an `agent()` that
-    hands off to a run.
-  - Both catalogs are sampled once per MOUNT (`useState`), not per flip, or the
-    chips read as unrelated to the position just chosen.
-  - `creating` disables the switch (the kind is baked into the in-flight
-    create); a still-loading `/studio/status` does not.
-  - It is a `fieldset` of real radios with an `sr-only` legend, so arrow keys
-    and the accessible name come from the markup.
+- **Every project is a voice agent.** The home hero (`components/home.tsx`) is
+  one prompt box plus starter chips sampled once per MOUNT (`useState`) from
+  `starters.ts`'s one `STARTERS` list; `POST /studio/projects` carries only the
+  prompt. There is no project kind: the server still ACCEPTS a legacy `kind`
+  from a tab loaded before the switch was retired, and ignores it.
 
 ## Every cross-origin the page dials must be in its `connect-src`
 
@@ -259,8 +244,8 @@ a Tailwind app on its own tokens (`bg-panel`, `text-muted`, `border-line`,
 `bg-indigo`). **A rule crosses; a look does not.** What crosses today:
 
 - `Markdown` and `ToolCallRow` — a parse and a disclosure shape.
-- `AutoScroll` (`components/chat-transcript.tsx`, `panes/logs-view.tsx`) — the
-  one owner of stick-to-bottom, driven by a `ResizeObserver`. Do not depend on
+- `AutoScroll` (`components/chat-transcript.tsx`) — the one owner of
+  stick-to-bottom, driven by a `ResizeObserver`. Do not depend on
   `use-stick-to-bottom` directly. It is unthemed (`className`,
   `contentClassName`, `scrollClassName`) and forwards `initial`/`resize`; both
   panes pass `scrollClassName="overflow-y-auto"` because the default hides the

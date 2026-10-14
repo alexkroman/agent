@@ -11,7 +11,7 @@ import { PublishMenu, TopBar } from "./top-bar.tsx";
 const noop = (): void => undefined;
 
 /** Every pane label, in the order the segmented control renders them. */
-const PANE_LABELS = ["UI", "API", "Workflows", "Code", "Logs", "Secrets", "Settings"];
+const PANE_LABELS = ["UI", "Code", "Secrets", "Settings"];
 
 const barProps = {
   project: "demo" as string | null,
@@ -53,8 +53,6 @@ describe("TopBar", () => {
     ["Code", "code"],
     ["Settings", "settings"],
     ["UI", "preview"],
-    ["API", "docs"],
-    ["Workflows", "workflows"],
     ["Secrets", "secrets"],
   ])("the switcher moves to the %s pane", (label, id) => {
     const onSelectTab = vi.fn();
@@ -65,9 +63,8 @@ describe("TopBar", () => {
 
   // The switcher's order is a product decision with nothing else holding it:
   // the panes are peers, so a reshuffle of TABS is invisible to every other
-  // assertion here. UI leads API because the client someone can actually use
-  // comes before the contract it exercises.
-  test("the switcher runs UI before API, then the rest in order", () => {
+  // assertion here.
+  test("the switcher runs UI, Code, Secrets, Settings", () => {
     render(<TopBar {...barProps} />);
     const rendered = screen
       .getAllByRole("button")
@@ -87,10 +84,12 @@ describe("TopBar", () => {
    * project to have a database — the world is the platform's — so the gate is gone
    * and this pins the absence.
    */
-  test("offers every pane with no opt-in, and no Database tab at all", () => {
+  test("offers every pane with no opt-in, and no removed tab", () => {
     render(<TopBar {...barProps} />);
-    expect(screen.queryByRole("button", { name: "Database" })).toBeNull();
-    for (const label of ["UI", "API", "Workflows", "Code", "Logs", "Secrets", "Settings"]) {
+    for (const removed of ["Database", "API", "Workflows", "Logs"]) {
+      expect(screen.queryByRole("button", { name: removed })).toBeNull();
+    }
+    for (const label of PANE_LABELS) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
   });

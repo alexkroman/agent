@@ -11,7 +11,6 @@ import { previewSlugFor, projectSlugFor } from "./studio-project-slugs.ts";
 import type { StudioWorkspace } from "./studio-workspace.ts";
 
 const workspace = (extra: Partial<StudioWorkspace> = {}): StudioWorkspace => ({
-  kind: "agent",
   files: {},
   hash: "h",
   updatedAt: 0,

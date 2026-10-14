@@ -7,9 +7,8 @@
  * authoritative route table. This is the other end of it, and it is HERE rather
  * than in whichever package needed it first because by the time it was written
  * down it had been written THREE times — the browser client
- * (`aai-ui/workflow-client.ts`), the studio's Workflows card
- * (`aai-studio-client/src/workflows-card.tsx`), and `aai workflow`
- * (`aai-cli/workflow.ts`) — with the doc example on
+ * (`aai-ui/workflow-client.ts`), the studio's (since-removed) Workflows card,
+ * and `aai workflow` (`aai-cli/workflow.ts`) — with the doc example on
  * {@link responseErrorMessage} standing in for a fourth, because what every
  * caller reached for first was the three lines at the top of one of these.
  *

@@ -88,15 +88,15 @@ web builtins, the SDK's tool executor with its `ctx` and the 120s
 turn deadline, and `test_agent`'s real build → bundle load → trial.
 
 **The system prompt is a PER-CASE choice.** The shipped prompt is
-`studioSystemPrompt(kind)` in `packages/aai-studio-server/src/prompts/`, which
-this package may not import (`guest-package-boundary`, and a task-graph cycle).
-`_eval-prompt.ts` reads the copies `scripts/sync-studio-prompt.mjs` commits per
-kind under `studio-prompts/` (held current by `check:studio-prompt`):
+`studioSystemPrompt()` in `packages/aai-studio-server/src/prompts/`, which this
+package may not import (`guest-package-boundary`, and a task-graph cycle).
+`_eval-prompt.ts` reads the copy `scripts/sync-studio-prompt.mjs` commits as
+`studio-prompts/system-prompt.md` (held current by `check:studio-prompt`):
 
-| A case with…                            | runs on              | and therefore grades                                                             |
-| --------------------------------------- | -------------------- | -------------------------------------------------------------------------------- |
-| no `studioPrompt` (the default)         | `STUDIO_EVAL_PROMPT` | the tool set, the tool DESCRIPTIONS, each tool's own result prose, and the model |
-| `studioPrompt: "agent"` \| `"workflow"` | the shipped text     | the studio's PROMPT, plus all of the above                                       |
+| A case with…                    | runs on              | and therefore grades                                                             |
+| ------------------------------- | -------------------- | -------------------------------------------------------------------------------- |
+| no `studioPrompt` (the default) | `STUDIO_EVAL_PROMPT` | the tool set, the tool DESCRIPTIONS, each tool's own result prose, and the model |
+| `studioPrompt: true`            | the shipped text     | the studio's PROMPT, plus all of the above                                       |
 
 Either way the guest-owned `toolchainPromptSection()` that `initStudioSession`
 appends is present, as in production.
@@ -107,13 +107,9 @@ appends is present, as in production.
   templates, don't delete a failing spec) — those belong to the guest's own
   surfaces under eval. That is also why the shipped prompt is opted into per
   CASE, not per file.
-- **A starter's prompt is read, not retyped**: `studioStarter(kind, label)`
-  reads the synced catalog and throws naming the real labels. Most starters are
-  one sentence naming a template, so grading them means grading the shipped
-  prompt.
-- **`workflow.md` is committed and no case reads it** — only
-  `_eval-prompt.test.ts` reaches `shippedStudioPrompt("workflow")`; the "Build a
-  workflow app" starters are the obvious next cases.
+- **A starter's prompt is read, not retyped**: `studioStarter(label)` reads the
+  synced catalog and throws naming the real labels. Most starters are one
+  sentence naming a template, so grading them means grading the shipped prompt.
 - Not exercised here: `chat.ts`'s turn shaping (wall-clock `stopWhen`,
   compaction's `prepareStep`, mid-turn checkpoints, end-of-turn sync) —
   `chat.scenario.test.ts` covers those.

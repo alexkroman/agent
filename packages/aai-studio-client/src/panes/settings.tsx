@@ -5,33 +5,22 @@
 // that width, so it is laid out as a real page instead.
 //
 // The sections run in the order a project needs them: getting the code out
-// (components/github-card.tsx) first, and the delete-project button last.
-// Three subjects have LEFT this pane. Two left for panes of their own, for the
-// same reason — a card is the wrong size for them. The carrier webhook URLs
-// went to the API pane (panes/docs.tsx): they document how something CALLS
-// this agent. Secrets went to a pane of their own (panes/secrets.tsx): one
-// textarea of `KEY=value` lines was the whole UI for the piece of project
-// configuration people come back to most. The third, the "Work locally" card
-// of `aai pull` commands, left for GOOD: GitHub sync is the one way out of the
-// studio the product points at, and a second, copy-pasted path beside it split
-// the answer to "how do I get this code?" in two.
+// (components/github-card.tsx) first, then the carrier webhook URLs
+// (components/phone-card.tsx), and the delete-project button last. Secrets
+// have a pane of their own (panes/secrets.tsx).
 //
-// Every section here works from the moment a project exists — no publish, no
-// build — and nothing writes into the conversation: each card reports its own
+// Nothing here writes into the conversation: each card reports its own
 // outcome beside the control that did it (see "No studio action writes into
 // the transcript" in the package guide).
 
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../api.ts";
 import { GithubCard, type GithubSyncState } from "../components/github-card.tsx";
+import { PhoneCard } from "../components/phone-card.tsx";
 import { Card } from "../components/settings-card.tsx";
 import { PaneShell } from "../pane-shell.tsx";
+import { queryKeys } from "../query-keys.ts";
 
-/**
- * No slug of any kind: every card left here works from the moment a project
- * exists, which is what "nothing on this pane gates on a deploy" now means
- * literally rather than nearly. The cards that needed a deployed agent — the
- * carrier webhook URLs and the workflow runs — are panes of their own, as
- * Secrets now is.
- */
 type SettingsPaneProps = {
   /** The open project's name — the target of the Delete project button. */
   project: string;
@@ -46,6 +35,12 @@ type SettingsPaneProps = {
    * become the place future cards reach for arbitrary project state.
    */
   data: GithubSyncState | undefined;
+  /**
+   * The project's published slug, for the phone card's webhook URLs. Absent
+   * until the first Publish — only that card gates on it; Delete project must
+   * work before anything is published.
+   */
+  deployedSlug?: string | undefined;
   /** Delete the project (workspace + chat). The app navigates home after. */
   onDeleteProject: () => void;
   deleting: boolean;
@@ -55,9 +50,16 @@ export function SettingsPane({
   project,
   bearer,
   data,
+  deployedSlug,
   onDeleteProject,
   deleting,
 }: SettingsPaneProps) {
+  // Shared cache key with the Secrets pane: the phone card reports whether
+  // each carrier's signing secret is set, and a save there shows up here.
+  const secrets = useQuery({
+    queryKey: queryKeys.secrets(project),
+    queryFn: () => api.listSecrets(bearer, project),
+  });
   return (
     <PaneShell
       title="Settings"
@@ -71,6 +73,12 @@ export function SettingsPane({
           — and it renders NOTHING when the platform has no GitHub App, so on a
           self-hosted deploy the pane is Delete project alone. */}
       <GithubCard bearer={bearer} project={project} data={data} />
+
+      <PhoneCard
+        deployedSlug={deployedSlug}
+        secretNames={secrets.data?.vars ?? []}
+        pendingSecrets={secrets.data?.pending ?? []}
+      />
 
       <Card
         title="Danger zone"
