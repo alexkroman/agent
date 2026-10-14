@@ -22,7 +22,12 @@ export type ControlsProps = {
 };
 
 /**
- * Session control buttons: **Stop / Resume** and **New Conversation**.
+ * Session control buttons: **Stop / Resume**, **New Conversation** and
+ * **End Call**.
+ *
+ * End Call is `end()`: it hangs up, drops the resume identity and returns the
+ * shell to its start screen, so the provider sockets close and the next start
+ * is a new session. Stop only pauses — the session is kept for a resume.
  *
  * Reads session state from {@link useSession}. Must be rendered inside a
  * `SessionProvider`.
@@ -48,7 +53,7 @@ export const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>> = m
     // Narrow subscription: only re-render when `running` flips, not on every
     // snapshot change (messages, transcripts, audio state, ...).
     const running = useSessionSelector((s) => s.running);
-    const { toggle, restart } = useSessionCore();
+    const { toggle, restart, end } = useSessionCore();
 
     return (
       // `flex-wrap`, because the row could not shrink: two nowrap buttons plus
@@ -69,6 +74,14 @@ export const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>> = m
          */}
         <Button variant="ghost" onClick={restart}>
           New Conversation
+        </Button>
+        {/*
+         * `end`, NOT `toggle`. Stop drops the socket and keeps the session for
+         * a resume; without this button the stock shell had no way to actually
+         * hang up, so an author had to write their own before a call could end.
+         */}
+        <Button variant="ghost" onClick={end}>
+          End Call
         </Button>
         {/*
          * Below `sm` the chips take a line of their own rather than sharing one

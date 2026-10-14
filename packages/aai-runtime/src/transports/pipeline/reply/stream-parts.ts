@@ -170,8 +170,41 @@ export function llmErrorSentence(error: unknown): string {
   const call = (RetryError.isInstance(error) ? error.lastError : error) ?? error;
   const described = errorMessage(call);
   if (!APICallError.isInstance(call)) return described;
-  if (call.statusCode !== 401 && call.statusCode !== 403) return described;
-  return `The LLM provider rejected this agent's API key: ${described}. Check the API key in the agent's environment.`;
+  if (call.statusCode === 401 || call.statusCode === 403) {
+    return `The LLM provider rejected this agent's API key: ${described}. Check the API key in the agent's environment.`;
+  }
+  return gatewayRefusalSentence(call.responseBody) ?? described;
+}
+
+/**
+ * The two 400s the AssemblyAI LLM Gateway answers a FIRST project with, each
+ * turned into the edit that fixes it — or `undefined` for any other body.
+ *
+ * Both are the gateway's own sentences, matched on the response body because
+ * the status (400, "invalid request body") is shared with every malformed
+ * request. Each was hit by a new author who could not tell from the banner
+ * what to change, or where:
+ *
+ * - **"does not have access to this LLM Gateway model"** — the LLM Gateway is
+ *   not covered by AssemblyAI's free credits, so a key on an account with no
+ *   payment method is refused for the default model. The answer is billing, or
+ *   the `llm` field; naming `agent.ts` matters because a template's `agent()`
+ *   call usually omits `llm`, so there is no line to find.
+ * - **"does not support tools"** / **"does not support tool_choice"** — the
+ *   model has no tool calling (`tools: false` in the gateway catalog), and this
+ *   agent has tools. A tool-free agent never sees it: the request omits the
+ *   key (`startLlmStream`).
+ */
+function gatewayRefusalSentence(body: string | undefined): string | undefined {
+  if (body === undefined) return undefined;
+  if (/does not have access to this LLM Gateway model/i.test(body)) {
+    return 'Your AssemblyAI account cannot use this LLM Gateway model. The LLM Gateway is not part of the free credits: add a payment method at https://www.assemblyai.com/dashboard (Settings → Billing), or set `llm: "<model id>"` in agent.ts to a model your account can use.';
+  }
+  const noTools = /model (\S+) does not support tool/i.exec(body);
+  if (noTools !== null) {
+    return `The LLM model ${noTools[1]} cannot call tools, and this agent has tools. Set \`llm: "<model id>"\` in agent.ts to a model that supports tool calling.`;
+  }
+  return undefined;
 }
 
 /** Stateful per-turn stream-part handler — see {@link createStreamPartHandler}. */

@@ -225,7 +225,7 @@ Available from `@alexkroman1/aai-ui`:
 | `ChatView`          | `icon?, title?`                                                    | Chat interface (header + messages + controls)                                                                             |
 | `SidebarLayout`     | `sidebar, children, sidebarWidth?, sidebarPosition?`               | Two-column layout                                                                                                         |
 | `MessageList`       | —                                                                  | Messages with auto-scroll, tool calls, transcript                                                                         |
-| `Controls`          | —                                                                  | Stop/Resume + New Conversation buttons                                                                                    |
+| `Controls`          | —                                                                  | Stop/Resume, New Conversation and End Call buttons                                                                        |
 | `Button`            | —                                                                  | Styled button                                                                                                             |
 | `UploadProgressBar` | `upload, onPause?, onResume?`                                      | Bytes in flight, with pause/resume                                                                                        |
 
