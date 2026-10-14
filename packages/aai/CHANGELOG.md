@@ -1,5 +1,13 @@
 # @alexkroman1/aai
 
+## 0.14.4
+
+### Patch Changes
+
+- d266c27: Route `agent({ routes })` on the managed platform: `/:slug/api/*` now forwards
+  to the agent's sandbox (per-IP rate limited), so a deployed page's
+  `fetch("api/…")` no longer 404s.
+
 ## 0.14.3
 
 ### Patch Changes
