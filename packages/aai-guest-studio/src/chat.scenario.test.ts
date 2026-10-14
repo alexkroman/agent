@@ -244,19 +244,17 @@ describe("guest studio chat surface", () => {
         "// updated by agent",
       );
       // …and the settled turn pushed workspace + conversation to the host
-      // (the settle runs after the stream closes, so poll for it).
+      // (the settle runs after the stream closes, so poll for it). The poll
+      // waits on THIS turn's content, not on the method name: the fake host is
+      // module-level, so a prior test's sync can already be recorded, and a
+      // name-only wait returned before this turn's own sync landed.
       await vi.waitFor(() => {
-        const methods = host.calls.map((c) => c.method);
-        expect(methods).toContain("studio/sync-workspace");
-        expect(methods).toContain("studio/persist-chat");
+        const synced = host.calls
+          .filter((c) => c.method === "studio/sync-workspace")
+          .map((c) => (c.params as { files?: Record<string, string> }).files?.["agent.ts"]);
+        expect(synced).toContain("// updated by agent");
+        expect(host.calls.map((c) => c.method)).toContain("studio/persist-chat");
       });
-      // Content-scoped for the same reason as the checkpoint test below: the
-      // FIRST recorded sync is not necessarily this test's, since the fake host
-      // is module-level and a prior turn can still be emitting.
-      const synced = host.calls
-        .filter((c) => c.method === "studio/sync-workspace")
-        .map((c) => (c.params as { files?: Record<string, string> }).files?.["agent.ts"]);
-      expect(synced).toContain("// updated by agent");
     } finally {
       await close();
     }
