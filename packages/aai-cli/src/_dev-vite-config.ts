@@ -228,6 +228,12 @@ export function viteDevConfig(
    * (`defaultClientPlugins`); empty when Vite loads the project's config.
    */
   clientPlugins: import("vite").PluginOption[] = [],
+  /**
+   * `PUBLIC_URL` (set by `--tunnel`): its host is the one non-loopback name
+   * Vite must answer. Vite 403s any other `Host` header, so without it a tunnel
+   * — and every webhook through it — is blocked before reaching the proxy.
+   */
+  publicUrl?: string,
 ): import("vite").InlineConfig {
   const target = `http://127.0.0.1:${backendPort}`;
   // Resolved once here rather than per request: it is invariant for the life of
@@ -251,7 +257,18 @@ export function viteDevConfig(
       // IPv6 note above. Vite's own default is the HOSTNAME `localhost`,
       // which resolves to `::1` first on macOS.
       host: devBindHost() ?? DEFAULT_LISTEN_HOST,
+      ...omitUndefined({ allowedHosts: publicHost(publicUrl) }),
       proxy: devProxyTable(target, viteRoot),
     },
   };
+}
+
+/** The hostname of a public URL as Vite's `allowedHosts`, or nothing to add. */
+function publicHost(publicUrl: string | undefined): string[] | undefined {
+  if (!publicUrl) return undefined;
+  try {
+    return [new URL(publicUrl).hostname];
+  } catch {
+    return undefined;
+  }
 }

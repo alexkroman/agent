@@ -41,7 +41,7 @@
 set -uo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-CLI="$REPO/packages/aai-cli/cli.ts"
+CLI="$REPO/packages/aai-cli/src/cli.ts"
 WORKDIR=${WORKDIR:-"$HOME/aai-loadtest"}
 
 # Refused rather than ignored, because ignoring it is not enough to help: a

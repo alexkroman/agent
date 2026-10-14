@@ -410,7 +410,7 @@ export async function startDevServer(
       // scaffold's config used to declare, from the project's own deps.
       const clientPlugins = (await defaultClientPlugins(cwd)) ?? [];
       viteServer = await io.createViteServer(
-        viteDevConfig(cwd, vitePort, backendPort, clientPlugins),
+        viteDevConfig(cwd, vitePort, backendPort, clientPlugins, process.env.PUBLIC_URL?.trim()),
       );
       await viteServer.listen();
       // Post-listen socket errors would otherwise be an unhandled 'error'
