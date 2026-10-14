@@ -166,3 +166,17 @@ describe("the workflow prefix's bypass", () => {
     await expect(ownedByVite(undefined)).resolves.toBeUndefined();
   });
 });
+
+describe("allowedHosts", () => {
+  test("admits the tunnel's hostname, so Vite does not 403 a request through it", () => {
+    const config = viteDevConfig(PROJECT, 3000, 3001, [], "https://a-b-c.trycloudflare.com");
+    expect(config.server?.allowedHosts).toEqual(["a-b-c.trycloudflare.com"]);
+  });
+
+  test("adds nothing without a public URL, keeping Vite's localhost-only default", () => {
+    expect(viteDevConfig(PROJECT, 3000, 3001).server).not.toHaveProperty("allowedHosts");
+    expect(viteDevConfig(PROJECT, 3000, 3001, [], "not a url").server).not.toHaveProperty(
+      "allowedHosts",
+    );
+  });
+});

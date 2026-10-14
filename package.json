@@ -6,7 +6,7 @@
     "node": ">=24 <27"
   },
   "scripts": {
-    "aai": "node packages/aai-cli/cli.ts",
+    "aai": "node packages/aai-cli/src/cli.ts",
     "api-nameable:update": "node scripts/check-api-nameable.mjs --update",
     "api-report": "node scripts/api-report.mjs",
     "artifact-size": "node scripts/artifact-size-report.mjs",
