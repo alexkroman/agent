@@ -66,20 +66,49 @@ const agentSources = import.meta.glob("../templates/*/agent.ts", {
  * synchronous. A module that fails to load now fails once, naming its path,
  * instead of surfacing as one opaque timeout.
  */
-const agentPages = new Map<string, "voice" | "static">();
+const agentPages = new Map<string, Page>();
+
+/**
+ * What a template's page is: a voice SESSION (`mountClient()`), a workflow app's
+ * STATIC page (`mountPage()`), or a PHONE agent's console (`mountPage()` too).
+ */
+type Page = "voice" | "static" | "phone";
+
+/**
+ * Voice agents reached ONLY by phone, whose page is therefore a console and not
+ * a session — each with the reason it cannot be the other.
+ *
+ * A third kind rather than "voice agents may use either mount", which would
+ * pass the mistake this file exists for. An entry must name a template that
+ * declares `telephony` (asserted below), so the list cannot excuse an ordinary
+ * voice agent that mounted the wrong helper.
+ */
+const PHONE_ONLY_TEMPLATES: Readonly<Record<string, string>> = {
+  "outbound-call-agent":
+    "it talks only on calls it placed — `sessionContext` refuses every session that is not a signed " +
+    "call, so a browser session would be refused at connect. Its page drives `/api/v1/calls` instead.",
+};
+
+/** The page kind a template's resolved agent declares. */
+function pageKind(name: string, def: { mode?: string; telephony?: unknown } | undefined): Page {
+  if (def?.mode === "workflow-app") return "static";
+  if (name in PHONE_ONLY_TEMPLATES && def?.telephony !== undefined) return "phone";
+  return "voice";
+}
 
 beforeAll(async () => {
   await Promise.all(
     Object.entries(agentModules).map(async ([path, load]) => {
-      const mod = (await load()) as { default?: { mode?: string } };
+      const mod = (await load()) as { default?: { mode?: string; telephony?: unknown } };
+      const name = path.split("/")[2] ?? "";
       // Absent reads as "voice" everywhere else, so it reads that way here.
-      agentPages.set(path, mod.default?.mode === "workflow-app" ? "static" : "voice");
+      agentPages.set(path, pageKind(name, mod.default));
     }),
   );
 }, 60_000);
 
 /** The `page` a template resolved to, or a failure naming the template. */
-function pageOf(agentPath: string): "voice" | "static" {
+function pageOf(agentPath: string): Page {
   const page = agentPages.get(agentPath);
   if (!page) throw new Error(`No agent.ts beside ${agentPath}`);
   return page;
@@ -202,12 +231,19 @@ describe("template client mounts", () => {
   );
 
   test.each(clients)("$name: the mount matches what agent.ts declares", ({ source, agentPath }) => {
-    const isStatic = pageOf(agentPath) === "static";
+    const mountsPage = pageOf(agentPath) !== "voice";
     expect(
       mountsWith(source).page,
-      isStatic ? "expected mountPage()" : "expected mountClient()",
-    ).toBe(isStatic);
+      mountsPage ? "expected mountPage()" : "expected mountClient()",
+    ).toBe(mountsPage);
   });
+
+  test.each(Object.keys(PHONE_ONLY_TEMPLATES))(
+    "%s: a phone-only exemption names a template that declares telephony",
+    (name) => {
+      expect(pageOf(`../templates/${name}/agent.ts`)).toBe("phone");
+    },
+  );
 });
 
 const agents = byTemplate(agentSources);
